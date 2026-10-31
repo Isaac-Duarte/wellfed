@@ -25,6 +25,7 @@ pub mod feed;
 pub mod flash_coord;
 pub mod indicator;
 pub mod liveness;
+pub mod log_ring;
 pub mod log_tail;
 pub mod mdns;
 pub mod ota;

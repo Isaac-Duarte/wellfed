@@ -4,9 +4,9 @@
 //!
 //! Each source gives [`SAMPLES`] one-byte samples, [`LINE`] to a record,
 //! numbered so the host can tell a lost line from a short run. Records are
-//! paced: logging holds the scheduler while UART drains (about 16 ms a
-//! line at 115200), so the loop waits between lines to leave the other
-//! tasks their time. The health tests run beside the stream at a placeholder
+//! paced to what the UART can send (about 17 ms a line at 115200), so the
+//! queue holds few of them and a line that finds it full waits little. The
+//! health tests run beside the stream at a placeholder
 //! claim of one bit a sample, and the last record says whether they passed:
 //! the first physical check of the tests themselves.
 

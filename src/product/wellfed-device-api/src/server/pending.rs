@@ -286,10 +286,13 @@ impl Server {
         record: &mut impl FnMut(Record),
     ) -> Result<(), Reason> {
         // A chunk that went in, or a page of bank 1 read out, is not worth
-        // a line each: an image is about two thousand of them, and the log
-        // would cost the loop seconds.
+        // a line each: an image is about two thousand of them. Nor is a chunk
+        // refused `Busy`, which a client sends again at once, about two
+        // hundred times for one meal call.
+        let chunk = op == Action::CHUNK || op == Action::CALL_CHUNK;
         if !(op == Action::CHUNK && matches!(reply, Reply::Update(_)))
             && !(op == Action::CALL_CHUNK && matches!(reply, Reply::Call))
+            && !(chunk && matches!(reply, Reply::Refused(Refusal::Busy)))
             && !matches!(reply, Reply::Bank1 { .. })
         {
             record(Record::Request {

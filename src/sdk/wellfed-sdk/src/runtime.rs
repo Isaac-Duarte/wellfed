@@ -402,6 +402,8 @@ fn storm_step(feeding: bool, now: u32) {
 unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
     static PROGRESS: AtomicU32 = AtomicU32::new(0);
     static STOPPED: AtomicBool = AtomicBool::new(false);
+    // A checkpoint was refused, which latches.
+    static REFUSED: AtomicBool = AtomicBool::new(false);
     // Uptime of the last checkpoint. Each one refreshes the hardware (the
     // feed period exceeds the refresh rate limit), so a reset's host
     // timestamp, less this, times the watchdog's expiry.
@@ -483,6 +485,7 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
                 sdk::log(line);
             }
         }
+        flush_before_reset(&REFUSED);
         return FEED_MS;
     }
     {
@@ -491,26 +494,48 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
             let gap = feed_gap();
             if watchdog.checkpoint(u64::from(progress)) {
                 FED_MS.store(now, Ordering::Relaxed);
-            } else if !STOPPED.swap(true, Ordering::Relaxed) {
-                supervision::stopping();
-                // A refused checkpoint latches (a gap past the progress
-                // limit, an altered register, a clock fault): the hardware
-                // is never refreshed again and resets the platform within
-                // its expiry. Say so once, with the gap that led to it.
-                let mut report = startup::Report::new();
-                if let Ok(line) = report.record(format_args!(
-                    "PLSUP1 stop watchdog_fault={} gap_ms={} fed_ms={} ms={}\r\n",
-                    watchdog.fault.code(),
-                    gap,
-                    FED_MS.load(Ordering::Relaxed),
-                    now
-                )) {
-                    sdk::log(line);
+            } else {
+                // Keyed to the refusal, not to `STOPPED`: a transient stop
+                // that recovered set that already, and this reset still needs
+                // its writes held and the network left.
+                STOPPED.store(true, Ordering::Relaxed);
+                if !REFUSED.swap(true, Ordering::Relaxed) {
+                    supervision::stopping();
+                    // A refused checkpoint latches (a gap past the progress
+                    // limit, an altered register, a clock fault): the hardware
+                    // is never refreshed again and resets the platform within
+                    // its expiry. Say so once, with the gap that led to it.
+                    let mut report = startup::Report::new();
+                    if let Ok(line) = report.record(format_args!(
+                        "PLSUP1 stop watchdog_fault={} gap_ms={} fed_ms={} ms={}\r\n",
+                        watchdog.fault.code(),
+                        gap,
+                        FED_MS.load(Ordering::Relaxed),
+                        now
+                    )) {
+                        sdk::log(line);
+                    }
                 }
             }
         }
     }
+    flush_before_reset(&REFUSED);
     FEED_MS
+}
+
+/// The watchdog feeder's share of a crash's last words: with the reset certain
+/// a hung task may be why, and the drain may never run again, so this task
+/// sends what is left. Only then. It runs above Wi-Fi and the loop, so on a
+/// transient stop, which feeding survives, a flush would hold them all for as
+/// long as the ring takes, and its time would count towards the very
+/// checkpoint gap that decides whether the board resets.
+fn flush_before_reset(refused: &AtomicBool) {
+    if supervision::reset_certain(
+        RESTART.load(Ordering::Acquire),
+        refused.load(Ordering::Relaxed),
+    ) {
+        sdk::log_flush();
+    }
 }
 
 /// The feeder task's last checkpoint attempt and the longest gap between
@@ -984,6 +1009,42 @@ fn probe_step() -> u32 {
     step.delay_ms
 }
 
+/// How long a line can wait for the drain to look, with none queued.
+const DRAIN_IDLE_MS: u32 = 10;
+
+/// The Wi-Fi probe's next step, in uptime milliseconds. Only this task's.
+static PROBE_DUE: AtomicU32 = AtomicU32::new(0);
+/// The probe ended: the task lives on for the drain.
+static PROBE_ENDED: AtomicBool = AtomicBool::new(false);
+
+/// The diagnostic task's life after startup: it sends the logged lines to the
+/// UART and steps the Wi-Fi probe. It sits below the loop and the service
+/// task (priority 1), so sending never takes their time; between their
+/// passes it gets its 1 ms ticks, and when they hold it off the ring takes up
+/// the lines they log. The start hook has returned by its first pass, so the
+/// lines of every task the hook started went out with it waiting (`log`).
+fn drain_and_probe() -> u32 {
+    sdk::log_drain_open();
+
+    let now = sdk::uptime_ms();
+    if !PROBE_ENDED.load(Ordering::Relaxed)
+        && deadline_passed(now, PROBE_DUE.load(Ordering::Relaxed))
+    {
+        match probe_step() {
+            0 => PROBE_ENDED.store(true, Ordering::Relaxed),
+            delay => PROBE_DUE.store(now.wrapping_add(delay), Ordering::Relaxed),
+        }
+    }
+
+    if sdk::log_drain() {
+        return 1;
+    }
+    if PROBE_ENDED.load(Ordering::Relaxed) {
+        return DRAIN_IDLE_MS;
+    }
+    until(now, PROBE_DUE.load(Ordering::Relaxed)).clamp(1, DRAIN_IDLE_MS)
+}
+
 /// The boot's generator start. `first` (raw samples, before conditioning)
 /// and `check` (a hash of one discarded output block) let the bench compare
 /// boots without revealing a secret.
@@ -1044,7 +1105,7 @@ fn log_led_readback(led: leds::Led, high: bool, stage: &str, value: leds::Readba
 unsafe extern "C" fn diagnostic_task(_: *mut c_void) -> u32 {
     STARTUP_BEAT.store(sdk::uptime_ms(), Ordering::Release);
     if PROBING.load(Ordering::Relaxed) {
-        return probe_step();
+        return drain_and_probe();
     }
 
     sdk::log(c"\r\nWellfed local firmware: Rust bringup\r\n");

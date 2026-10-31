@@ -55,6 +55,13 @@ use wellfed_core::record::Event;
 
 /// How often waits look at the UART and the server again.
 const POLL: Duration = Duration::from_secs(1);
+/// The UART's silence taken to mean the feeder's line queue is empty: longer
+/// than a handshake or a flash sector holds the task that sends it. WPA3 work
+/// on a join holds that task for 0.85-1.0 s, so during a join a silence this
+/// long can end with lines still queued.
+const UART_QUIET: Duration = Duration::from_millis(300);
+const UART_QUIET_MAX: Duration = Duration::from_secs(2);
+const UART_QUIET_POLL: Duration = Duration::from_millis(50);
 const STATUS_POLL: Duration = Duration::from_secs(5);
 /// A build that just started on bank 0 joins the hotspot and answers the
 /// device API well within this, a reconnect included.
@@ -304,6 +311,37 @@ impl<'r> Ctx<'r> {
     fn mark(&mut self) -> Result<usize> {
         self.pull()?;
         Ok(self.log.len())
+    }
+
+    /// [`Self::mark`], once what the feeder logged before this call has come
+    /// out: the firmware queues its lines for the UART, so a record of what
+    /// just happened can arrive after the answer. For a mark whose next record
+    /// must be new, or a count that must miss nothing. Ends at the first
+    /// silence of [`UART_QUIET`], or at [`UART_QUIET_MAX`], past the time to
+    /// send a full queue, when other lines keep the UART busy; the run notes
+    /// that, as the mark then rests on the queue's time and not on a silence.
+    fn quiet_mark(&mut self) -> Result<usize> {
+        let deadline = self.rig.clock() + UART_QUIET_MAX;
+        let mut heard = self.rig.clock();
+        loop {
+            let bytes = self.rig.uart()?;
+            let at = self.rig.clock();
+            if !bytes.is_empty() {
+                self.log.feed(&bytes, at);
+                heard = at;
+            }
+            if at.saturating_sub(heard) >= UART_QUIET {
+                return Ok(self.log.len());
+            }
+            if at >= deadline {
+                self.note(&format!(
+                    "  The UART never went quiet in {:.0} s; marked anyway",
+                    UART_QUIET_MAX.as_secs_f64()
+                ));
+                return Ok(self.log.len());
+            }
+            self.rig.wait(UART_QUIET_POLL)?;
+        }
     }
 
     /// Wait up to `within` for a record at or after `since` that `matches`;

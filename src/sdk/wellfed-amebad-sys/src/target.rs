@@ -13,6 +13,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use wellfed_board_plaf103::pins::{IR_PA_BIT, IR_PB_BIT, MOTOR_MASK};
 use wellfed_board_plaf103::{STORAGE_OFFSET, STORAGE_SECTORS};
+use wellfed_core::log_ring::Room;
 
 use super::{
     AUDIO_PAGE_SAMPLES, FlashMmuEntry, GpioRouting, Irq, Isr, LpClock, SECTOR_BYTES, SYSTICK_CTRL,
@@ -89,10 +90,12 @@ const _: () = assert!(
         && k::WELLFED_PINMUX_GPIO == 0
 );
 
-/// The log UART's line status and receive buffer, as offsets into
+/// The log UART's line status and receive and transmit buffer, as offsets into
 /// `UART_TypeDef` (`LSR`, `RB_THR`) in the pinned `hal_platform.h`.
 const LOGUART_LSR: u32 = 0x14;
 const LOGUART_RBR: u32 = 0x24;
+/// The same register written: the transmit FIFO.
+const LOGUART_THR: u32 = LOGUART_RBR;
 
 /// The oldest byte the log UART received, if any. Only the `virtual-panel`
 /// variant calls it: no other code in the image reads that FIFO (no vendor
@@ -546,6 +549,13 @@ pub fn panic_outputs_safe() {
     cortex_m::asm::dsb();
 }
 
+unsafe extern "C" {
+    /// The ROM's print, past the link's wrap of it: the panic handler has
+    /// already sent what is queued, so nothing is left to settle, and the
+    /// stack audit charges this path to every task's bound.
+    fn __real_DiagPrintf(format: *const core::ffi::c_char, ...) -> core::ffi::c_int;
+}
+
 /// The panic handler's `PLPNC1` line: where the panic happened, printed
 /// directly, since interrupts are already masked and the scheduler cannot be
 /// paused from here. The message is not formatted: that could panic again
@@ -564,7 +574,7 @@ pub fn panic_record(file: &str, line: u32, column: u32) {
 
     // SAFETY: a NUL-terminated format and buffer, and plain integers.
     unsafe {
-        raw::_rtl_printf(
+        __real_DiagPrintf(
             c"PLPNC1 panic file=%s line=%d col=%d\r\n".as_ptr(),
             path.as_ptr(),
             line,
@@ -1462,19 +1472,196 @@ pub fn current_task() -> usize {
         .map_or(handle, |slot| slot.id.load(Ordering::Acquire))
 }
 
-/// One line, not split by another task's print: from a task, the scheduler
-/// is paused for the print (interrupts keep running). Before the scheduler
-/// starts, or from an interrupt, it prints directly. With the `log-tail`
-/// feature the line is then copied into [`crate::LOG_TAIL`], still
-/// unscheduled, so the UART sees it at the same moment as before and tasks
-/// never contend for the tail.
+/// Queue one line for the UART ([`crate::LOG_RING`]); no task waits for it to
+/// go out. With the `log-tail` feature it is copied into [`crate::LOG_TAIL`]
+/// at the same moment, in the same order.
+///
+/// Until the drain runs ([`log_drain_open`]), and on a boot where it never
+/// does, the caller sends its line itself before returning, as a preemptible
+/// spin: the first boot lines are on the wire when `log` returns, and another
+/// task that preempts the spin sends the rest of the line ahead of its own.
+///
+/// A full ring costs a [`may_drop`](wellfed_core::log_ring::may_drop) line
+/// its place, and an interrupt's line too, since neither should wait. Any
+/// other line waits here, sending as it goes, for room: usually one line's
+/// time at the UART, with every other task still running. Other loggers at
+/// its priority or above can take that room first, so the wait ends after
+/// about a ring's worth of bursts ([`LOG_WAIT_BURSTS`]); the line is then
+/// dropped too, and `PLLOG1` reports it.
+///
+/// Out of line, as are the sends below it: a caller formats its line and then
+/// logs it, so its frame sits under the formatting, a task's deepest path.
+#[inline(never)]
 pub fn log(message: &CStr) {
-    unscheduled(|| {
-        // SAFETY: a NUL-terminated format and string.
-        unsafe { raw::_rtl_printf(c"%s".as_ptr(), message.as_ptr()) };
-        #[cfg(feature = "log-tail")]
-        crate::LOG_TAIL.push(message.to_bytes());
+    let line = message.to_bytes();
+
+    #[cfg(feature = "log-tail")]
+    {
+        let _guard = crate::IrqGuard::lock();
+        crate::LOG_TAIL.push(line);
+    }
+
+    // Room is checked and taken in one masked section: another logger may fill
+    // what a send here just freed, and that is another wait, up to the limit.
+    let may_wait = !wellfed_core::log_ring::may_drop(line) && ipsr() == 0 && primask() == 0;
+    let (mut stuck, mut bursts) = (0, 0);
+    loop {
+        {
+            let _guard = crate::IrqGuard::lock();
+            let room = crate::LOG_RING.try_push(line);
+            if room == Room::Fits {
+                break;
+            }
+            if room == Room::Never
+                || !may_wait
+                || stuck >= LOG_STUCK_READS
+                || bursts >= LOG_WAIT_BURSTS
+            {
+                crate::LOG_RING.count_dropped();
+                break;
+            }
+        }
+        match log_burst() {
+            Burst::Sent => {
+                stuck = 0;
+                bursts += 1;
+            }
+            Burst::NoRoom => stuck += 1,
+        }
+    }
+
+    if !LOG_DRAINING.load(Ordering::Acquire) {
+        log_flush();
+    }
+}
+
+/// The drain has started: from here on [`log`] only queues.
+static LOG_DRAINING: AtomicBool = AtomicBool::new(false);
+
+/// Bytes put in the UART FIFO at a time, once it reads empty: the one setting
+/// that assumes the FIFO's depth, and 1 would assume nothing, at about 1 B/ms.
+/// Below its 16 bytes, for what can land there as well: a line end's added `\r`, and the
+/// one or two bytes of a vendor print preempted between its own empty check
+/// and its write. At 115200 baud 8 bytes last 0.7 ms, so the FIFO reads empty
+/// again by the next 1 ms tick.
+const LOG_BURST: usize = 8;
+
+/// Status reads with no room before the UART counts as stuck, far past the
+/// 0.8 ms a burst takes at any plausible read time. A wait for a stuck UART
+/// gives up rather than hang the caller, a fault handler above all.
+const LOG_STUCK_READS: u32 = 100_000;
+
+/// Bursts a line waits for room before it is dropped: enough to send a whole
+/// ring, about 0.4 s. Without a limit, other loggers that keep refilling the
+/// ring hold the caller for as long as they keep up, past the 10 s liveness
+/// limit of the service task.
+const LOG_WAIT_BURSTS: usize = crate::LOG_RING_BYTES / LOG_BURST;
+
+/// A burst's outcome.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Burst {
+    Sent,
+    /// The FIFO still holds bytes.
+    NoRoom,
+}
+
+/// Move one burst from the ring to the UART FIFO. Every path that sends
+/// comes through here with interrupts masked, for the time of a status read
+/// and at most nine register writes, so tasks, a fault handler and the panic
+/// handler can each pick up where another stopped, with no lock to find
+/// held. Writes the bytes `LOGUART_PutChar` would: a `\r` follows every `\n`.
+///
+/// Always inlined, with what it calls, into the few sends: the panic handler
+/// flushes, and the stack audit charges a panic's depth under every nested
+/// formatting call, four times over on every task's bound.
+#[inline(always)]
+fn log_burst() -> Burst {
+    let _guard = crate::IrqGuard::lock();
+
+    let status = reg(k::WELLFED_LOGUART + LOGUART_LSR);
+    // SAFETY: the log UART's registers are always mapped on KM4. Reading the
+    // status clears only its error flags, which nothing here acts on.
+    if unsafe { ptr::read_volatile(status) } & k::WELLFED_LOGUART_THR_EMPTY == 0 {
+        return Burst::NoRoom;
+    }
+
+    let thr = reg(k::WELLFED_LOGUART + LOGUART_THR);
+    crate::LOG_RING.pop(LOG_BURST, |byte| {
+        // SAFETY: the FIFO read empty above, and a line's end stops the pop,
+        // so this burst writes at most `LOG_BURST` + 1 of its 16 bytes.
+        unsafe {
+            ptr::write_volatile(thr, u32::from(byte));
+            if byte == b'\n' {
+                ptr::write_volatile(thr, u32::from(b'\r'));
+            }
+        }
     });
+    wellfed_log_mid_line.store(crate::LOG_RING.mid_line(), Ordering::Relaxed);
+    Burst::Sent
+}
+
+/// Send until `done`, or until the UART looks stuck. Preemptible unless the
+/// caller masked interrupts.
+fn send_until(done: impl Fn() -> bool) {
+    let mut stuck = 0;
+    while !done() && stuck < LOG_STUCK_READS {
+        match log_burst() {
+            Burst::Sent => stuck = 0,
+            Burst::NoRoom => stuck += 1,
+        }
+    }
+}
+
+/// The drain's start: [`log`] only queues from here on.
+pub fn log_drain_open() {
+    LOG_DRAINING.store(true, Ordering::Release);
+}
+
+/// The drain's step: one burst if the UART has room; whether lines still
+/// wait, so that the caller comes back at the next tick. With none waiting it
+/// leaves the status register alone: reading it clears the receive overrun
+/// flag the `virtual-panel` variant refuses a line on.
+#[inline(never)]
+pub fn log_drain() -> bool {
+    if crate::LOG_RING.pending() {
+        log_burst();
+    }
+    crate::LOG_RING.pending()
+}
+
+/// Send everything queued before returning: what lets a crash say its last
+/// words. Safe with interrupts masked and from a fault handler, where a ring
+/// call that was interrupted has only left its line unpublished; 4 KiB at
+/// 115200 baud is about 0.36 s, inside the watchdog's shortest expiry.
+#[inline(never)]
+pub fn log_flush() {
+    send_until(|| !crate::LOG_RING.pending());
+}
+
+/// A line of ours is partly on the wire. The print wraps in `example_entry.c`
+/// read it from RAM, and call [`wellfed_log_settle`] only when it is set, so
+/// a vendor print with XIP unavailable does not reach for flash.
+#[expect(non_upper_case_globals, reason = "a C symbol")]
+#[unsafe(no_mangle)]
+pub static wellfed_log_mid_line: AtomicBool = AtomicBool::new(false);
+
+/// Called by a vendor print before it starts: the line partly on the wire
+/// finishes first, as otherwise the print lands inside it and neither parses.
+/// The lines queued behind it stay queued, and come after the print. From an
+/// interrupt or with interrupts masked it does nothing: the wait would be up
+/// to a line's 16 ms with them masked, and a rare split line costs less.
+#[unsafe(no_mangle)]
+pub extern "C" fn wellfed_log_settle() {
+    if ipsr() != 0 || primask() != 0 {
+        return;
+    }
+    send_until(|| !crate::LOG_RING.mid_line());
+}
+
+/// The fault handler's call, before its first print ([`log_flush`]).
+#[unsafe(no_mangle)]
+pub extern "C" fn wellfed_log_flush() {
+    log_flush();
 }
 
 /// Run `f` with no other task scheduled: from a task, the scheduler is

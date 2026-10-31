@@ -1,13 +1,12 @@
 //! The log tail: the newest record lines in a RAM ring, for the device
-//! API to stream to an owner while the UART prints them as before.
+//! API to stream to an owner while the UART queue sends them too.
 //!
-//! Every line the SDK's `log` prints is also copied in here, from a task or
+//! Every line the SDK's `log` takes is also copied in here, from a task or
 //! an interrupt, so the ring never blocks and never waits:
 //! - **One writer at a time, never waiting for another.** On the KM4 a
-//!   task logs with the scheduler suspended, so the only writer that can
-//!   find another mid-copy is an interrupt that preempted it. That writer
-//!   drops its line (the UART still prints it) and counts it, rather than
-//!   wait for a writer that cannot run until it returns. A dropped line
+//!   writer masks interrupts for its copy, so none finds another mid-copy.
+//!   A host writer that does drops its line and counts it, rather than
+//!   wait for a writer that may not run until it returns. A dropped line
 //!   still takes a number, so a reader sees the hole as dropped lines,
 //!   but only once the next line is written: until then nothing shows it.
 //! - **Readers never block writers.** A reader copies a line, then checks
@@ -93,8 +92,8 @@ impl<const N: usize> LogTail<N> {
             return;
         }
         if self.writing.swap(true, Ordering::Acquire) {
-            // This writer interrupted another mid-copy, which cannot go on
-            // until it returns: drop the line rather than wait.
+            // Another writer is mid-copy and may not go on until this one
+            // returns: drop the line rather than wait.
             self.skipped.fetch_add(1, Ordering::Relaxed);
             return;
         }
@@ -416,8 +415,7 @@ mod tests {
         assert_eq!((batch.seq, batch.dropped), (98, 0));
     }
 
-    /// A writer that finds another mid-copy (an interrupt, on the feeder)
-    /// drops its line and counts it.
+    /// A writer that finds another mid-copy drops its line and counts it.
     #[test]
     fn a_writer_that_interrupts_another_drops_its_line_and_counts_it() {
         let tail = LogTail::<RING>::new();

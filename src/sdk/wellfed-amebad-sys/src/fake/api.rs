@@ -786,10 +786,20 @@ pub fn panic_outputs_safe() {
     });
 }
 
+/// The host's output has no line time to spare a task, so a line is out by
+/// the time this returns and the drain below has nothing to do.
 pub fn log(message: &CStr) {
     print!("{}", message.to_string_lossy());
     crate::LOG_TAIL.push(message.to_bytes());
 }
+
+pub fn log_drain_open() {}
+
+pub fn log_drain() -> bool {
+    false
+}
+
+pub fn log_flush() {}
 
 /// One host thread drives the fake, so nothing else can be scheduled.
 pub fn unscheduled<R>(f: impl FnOnce() -> R) -> R {

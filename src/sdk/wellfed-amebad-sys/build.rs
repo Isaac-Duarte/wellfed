@@ -55,7 +55,6 @@ mod sdk {
         "xTaskCreate",
         "vTaskDelay",
         "vTaskDelete",
-        "_rtl_printf",
         "vTaskSuspendAll",
         "xTaskResumeAll",
         "xTaskGetSchedulerState",

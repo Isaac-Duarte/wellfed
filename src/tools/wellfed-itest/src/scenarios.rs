@@ -247,7 +247,8 @@ fn ota_update(ctx: &mut Ctx) -> Result<()> {
 
 fn requests(ctx: &mut Ctx) -> Result<()> {
     let build = ctx.baseline()?.build.clone();
-    let since = ctx.mark()?;
+    // The baseline's own status request logged this same record.
+    let since = ctx.quiet_mark()?;
     let status = ctx.device_status()?;
     ctx.note(&format!("  {}", status.matches(&build)?));
     ctx.expect("PLAPI1 request op=status", since, RECORD_WAIT, |e| {
@@ -345,7 +346,7 @@ pub(super) fn set_settings(ctx: &mut Ctx, change: SettingsPatch) -> Result<u32> 
 }
 
 fn request_auth(ctx: &mut Ctx) -> Result<()> {
-    let since = ctx.mark()?;
+    let since = ctx.quiet_mark()?;
     let unenrolled = ctx.rig.intrude(Intruder::UnenrolledKey)?;
     ctx.note(&format!("  unenrolled key: {unenrolled:?}"));
     require(
@@ -358,7 +359,7 @@ fn request_auth(ctx: &mut Ctx) -> Result<()> {
         ended_for(e, "unknown-key")
     })?;
 
-    let since = ctx.mark()?;
+    let since = ctx.quiet_mark()?;
     let tampered = ctx.rig.intrude(Intruder::Tampered)?;
     ctx.note(&format!("  tampered handshake: {tampered:?}"));
     require(tampered == Rebuffed::Dropped, || ScenariosError::Tampered {
@@ -736,6 +737,8 @@ fn power_cuts(ctx: &mut Ctx, staged: &super::Staged) -> Result<()> {
         matches!(e, Event::Trial(Trial::Booting { boot: 1, .. }))
     })?;
     ctx.idle(TRIAL_CUT_AFTER)?;
+    // A confirmation still queued for the UART counts too.
+    ctx.quiet_mark()?;
     let confirmed = |e: &Event<'_>| matches!(e, Event::Confirm(Confirm::Confirmed { .. }));
     require(ctx.log.count(since, confirmed) == 0, || {
         ScenariosError::EarlyConfirm

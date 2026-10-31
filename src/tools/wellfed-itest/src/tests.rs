@@ -1040,6 +1040,38 @@ fn suite(feeder: &mut Feeder, flags: &[&str]) -> (Vec<Report>, Option<Silent>) {
     run(&mut ctx, &scenarios).unwrap()
 }
 
+/// The firmware queues its lines, so a record of what just happened can come
+/// after the answer: it must land before the mark, not after it, or it passes
+/// for the next request's.
+#[test]
+fn a_quiet_mark_waits_out_a_line_still_queued() {
+    let mut feeder = Feeder::new(GOOD);
+    feeder.line(0.2, "PLAPI1 request slot=0 op=status result=status");
+    let args = args(&[]);
+    let mut ctx = Ctx::new(&mut feeder, &args);
+
+    let lagging = ctx.mark().unwrap();
+    assert_eq!(ctx.quiet_mark().unwrap(), lagging + 1);
+    let quiet_for = ctx.rig.clock();
+    assert!(quiet_for.as_secs_f64() >= 0.5, "{quiet_for:?}");
+    assert!(!feeder.notes.iter().any(|n| n.contains("never went quiet")));
+}
+
+#[test]
+fn a_quiet_mark_gives_up_on_a_uart_that_keeps_talking() {
+    let mut feeder = Feeder::new(GOOD);
+    for tenth in 0..100 {
+        feeder.line(f64::from(tenth) / 10.0, "PLAPI1 stats heap_free=1");
+    }
+    let args = args(&[]);
+    let mut ctx = Ctx::new(&mut feeder, &args);
+
+    ctx.quiet_mark().unwrap();
+    assert!(ctx.rig.clock() <= UART_QUIET_MAX + UART_QUIET_POLL);
+    assert!(ctx.rig.clock() >= UART_QUIET_MAX);
+    assert!(feeder.notes.iter().any(|n| n.contains("never went quiet")));
+}
+
 fn verdicts(reports: &[Report]) -> Vec<(&str, &str)> {
     reports
         .iter()

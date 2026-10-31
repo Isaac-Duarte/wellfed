@@ -82,6 +82,10 @@ struct Fake {
     update: bool,
     /// An install holds the flash.
     installing: bool,
+    /// Serves `Capabilities::CALL`.
+    call: bool,
+    /// The next chunk's mailbox is full: a chunk is refused `Busy`.
+    chunks_busy: bool,
     /// Update requests queued, in order, and the next one's answer.
     updates: Vec<String>,
     update_done: Option<(u32, Result<UpdateAnswer, Refusal>)>,
@@ -387,6 +391,9 @@ impl Device for Fake {
         if self.update {
             capabilities = capabilities.union(Capabilities::UPDATE);
         }
+        if self.call {
+            capabilities = capabilities.union(Capabilities::CALL);
+        }
         if self.log {
             capabilities = capabilities.union(Capabilities::LOG);
         }
@@ -557,7 +564,18 @@ impl Device for Fake {
             .map(|(_, answer)| answer)
     }
 
+    fn call_chunk(&mut self, _offset: u32, _data: &[u8]) -> Result<(), Refusal> {
+        if self.chunks_busy {
+            Err(Refusal::Busy)
+        } else {
+            Err(Refusal::Invalid)
+        }
+    }
+
     fn update_chunk(&mut self, offset: u32, _data: &[u8]) -> Result<UpdateView, Refusal> {
+        if self.chunks_busy {
+            return Err(Refusal::Busy);
+        }
         if !self.installing {
             return Err(Refusal::Update(UpdateRefusal::NotInstalling));
         }
@@ -3171,6 +3189,50 @@ fn chunks_are_answered_with_the_state_and_never_push_out_a_remembered_write() {
         logged, 1,
         "only the refused chunk is logged, not every one taken"
     );
+}
+
+/// A client sends a chunk refused `Busy` again at once, so each would be a
+/// line on the UART: about two hundred for one meal call.
+#[test]
+fn a_chunk_refused_busy_logs_no_line_and_any_other_refusal_does() {
+    let mut rig = update_rig();
+    rig.device.call = true;
+    rig.publish();
+    let mut owner = open(&mut rig, OWNER);
+    let chunk_lines = |rig: &Rig, op_name: &str| {
+        rig.records
+            .iter()
+            .filter(|r| matches!(r, Record::Request { op, .. } if *op == op_name))
+            .count()
+    };
+    let update = |offset| Op::UpdateChunk {
+        offset,
+        data: vec![0; 512],
+    };
+    let call = |offset| Op::CallChunk {
+        offset,
+        data: vec![0; 512],
+    };
+    let busy = Answer::Refused(model::Refusal::Busy);
+
+    rig.device.chunks_busy = true;
+    assert_eq!(ask(&mut rig, &mut owner, 1, update(0)), busy);
+    assert_eq!(ask(&mut rig, &mut owner, 2, call(0)), busy);
+    assert_eq!(chunk_lines(&rig, "update-chunk"), 0);
+    assert_eq!(chunk_lines(&rig, "call-chunk"), 0);
+
+    rig.device.chunks_busy = false;
+    let not_installing = model::Refusal::Update(model::UpdateRefusal::NotInstalling);
+    assert_eq!(
+        ask(&mut rig, &mut owner, 3, update(0)),
+        Answer::Refused(not_installing)
+    );
+    assert_eq!(
+        ask(&mut rig, &mut owner, 4, call(0)),
+        Answer::Refused(model::Refusal::Invalid)
+    );
+    assert_eq!(chunk_lines(&rig, "update-chunk"), 1);
+    assert_eq!(chunk_lines(&rig, "call-chunk"), 1);
 }
 
 #[test]
