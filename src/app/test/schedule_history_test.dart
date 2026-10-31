@@ -42,6 +42,36 @@ const _noRecording = FeederReply.call(
 
 void main() {
   group('Schedule', () {
+    testWidgets('each meal is its own node, with its switch its own switch', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      final (feeder, session) = await oneFeeder(tester);
+      session.status(fakeCard(plans: _plans([_plan(60), _plan(120)])));
+      await showTab(tester, ScheduleTab(feeder: feeder));
+
+      // Offline is the hard case: with no tap on the row or the switch, nothing
+      // else keeps them from merging into one node.
+      unawaited(session.updates.close());
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await settle(tester);
+
+      final switches = find.byType(Switch);
+      expect(switches, findsNWidgets(2));
+      final first = tester.getSemantics(switches.first);
+      expect(first.label, '1:00 AM on');
+      expect(
+        first.rect.width,
+        lessThanOrEqualTo(tester.getSize(switches.first).width),
+      );
+
+      final row = tester.getSemantics(find.text('1:00 AM'));
+      expect(row.label, isNot(contains('2:00 AM')));
+
+      semantics.dispose();
+    });
+
     testWidgets(
       'coming to the tab reads the plans again, and only when online',
       (tester) async {

@@ -264,55 +264,63 @@ class _MealRowState extends State<_MealRow> {
       if (plan.call > 0) _calls(plan.call),
     ].join(' · ');
 
-    return InkWell(
-      onTap: widget.online
-          ? () => unawaited(
-              openMealEditor(
-                context,
-                feeder: widget.feeder,
-                held: widget.plans,
-                slot: widget.slot,
-              ),
-            )
-          : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Space.s4,
-          vertical: Space.s2,
-        ),
-        decoration: BoxDecoration(
-          border: widget.first ? null : Border(top: BorderSide(color: c.line)),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    time,
-                    style: TextStyle(
-                      fontSize: Sizes.md,
-                      fontWeight: Fonts.semibold,
-                      color: plan.enabled ? c.text : c.textMuted,
+    // A node of its own: with no tap to tell them apart, as offline, every meal
+    // on the panel would merge into one.
+    return Semantics(
+      container: true,
+      child: InkWell(
+        onTap: widget.online
+            ? () => unawaited(
+                openMealEditor(
+                  context,
+                  feeder: widget.feeder,
+                  held: widget.plans,
+                  slot: widget.slot,
+                ),
+              )
+            : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: Space.s4,
+            vertical: Space.s2,
+          ),
+          decoration: BoxDecoration(
+            border: widget.first
+                ? null
+                : Border(top: BorderSide(color: c.line)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      time,
+                      style: TextStyle(
+                        fontSize: Sizes.md,
+                        fontWeight: Fonts.semibold,
+                        color: plan.enabled ? c.text : c.textMuted,
+                      ),
                     ),
-                  ),
-                  Text(
-                    parts,
-                    style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
-                  ),
-                ],
+                    Text(
+                      parts,
+                      style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Semantics(
-              label: '$time ${plan.enabled ? 'on' : 'off'}',
-              child: Switch(
-                // What the feeder last said: an answer moves it.
-                value: plan.enabled,
-                onChanged: widget.online && !_asking ? _set : null,
+              Semantics(
+                container: true,
+                label: '$time ${plan.enabled ? 'on' : 'off'}',
+                child: Switch(
+                  // What the feeder last said: an answer moves it.
+                  value: plan.enabled,
+                  onChanged: widget.online && !_asking ? _set : null,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

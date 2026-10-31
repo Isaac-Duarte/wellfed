@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/clock_portion.dart';
@@ -52,6 +54,36 @@ void main() {
       ports.session.opened();
       await tester.pump();
       expect(ports.answers, [(kitchen.identity, 'test')]);
+    });
+
+    // Offline is the hard case: with no tap on the row or the switch, nothing
+    // else keeps them from merging into one node.
+    testWidgets('each row is its own node, and each switch its own switch', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      final (_, session) = await _settingsTab(tester);
+      unawaited(session.updates.close());
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await settle(tester);
+
+      final switches = find.byType(Switch);
+      expect(switches, findsNWidgets(2));
+      final lights = tester.getSemantics(switches.first);
+      final sounds = tester.getSemantics(switches.last);
+      expect(lights.label, isNot(contains('Any time')));
+      expect(sounds.label, isNot(contains('7:00 AM')));
+      expect(lights, isNot(same(sounds)));
+      expect(
+        lights.rect.width,
+        lessThanOrEqualTo(tester.getSize(switches.first).width),
+      );
+
+      final hours = tester.getSemantics(find.text('7:00 AM to 10:00 PM'));
+      expect(hours.label, isNot(contains('Any time')));
+
+      semantics.dispose();
     });
 
     testWidgets('shows what the feeder holds', (tester) async {
