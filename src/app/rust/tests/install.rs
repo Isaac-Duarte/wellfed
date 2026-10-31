@@ -1474,6 +1474,75 @@ fn a_pick_up_that_reads_the_build_lets_the_next_install_ask() {
     });
 }
 
+/// A known feeder the owner picked says nothing about where stock's install
+/// went. It takes no record for that device, leaves any record there, and closes
+/// no trial on its word, unless the record already names it.
+#[test]
+fn a_picked_feeder_leaves_another_devices_record_and_trial() {
+    local(async {
+        let fixture = Fixture::new(Provisioning::Consumer);
+        let keys = Keypair::from_secret([0x51; 32]);
+        let sim = Running::start(&Flash::memory(), Some(*keys.public())).await;
+        let hex = wellfed_formats::hex::encode(&sim.identity);
+        let spec = || {
+            let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.57");
+            spec.known_feeders = vec![KnownFeeder {
+                identity: hex.clone(),
+                name: "Kitchen".into(),
+                address: Some(sim.address.to_string()),
+            }];
+            spec.feeder = Some(hex.clone());
+            spec
+        };
+        let data = Path::new(&spec().data_dir).to_path_buf();
+        std::fs::create_dir_all(&data).unwrap();
+        with_enrolled(&data, "AF_TEST");
+        let config = data.join("installer.json");
+        let record = data.join("backups/installing.json");
+
+        let pick_up = async || {
+            let (run, mut heard) = started(&fixture, spec());
+            let build = loop {
+                match next(&mut heard).await {
+                    InstallUpdate::Ask { ask, .. } => panic!("{ask:?}"),
+                    InstallUpdate::Event {
+                        event: InstallEvent::ReplacementAnswers { build, .. },
+                    } => break build,
+                    InstallUpdate::Event { .. } => {}
+                    InstallUpdate::Ended { end } => panic!("{end:?}"),
+                }
+            };
+            run.stop();
+            ended(&mut heard).await;
+            build
+        };
+
+        // With no record it still goes on, every time, by the pick alone.
+        let build = pick_up().await;
+        assert!(!record.exists());
+        open_trial(&data, "AF_TEST", &build);
+        pick_up().await;
+        assert!(!record.exists());
+        assert!(wellfed_install::stock::open_request(&config));
+
+        // The device's real replacement keeps its record, and the trial waits.
+        let replacement = [0x77; 32];
+        paired(&data, "AF_TEST", &replacement);
+        pick_up().await;
+        assert_eq!(
+            recorded_identity(&spec()),
+            wellfed_formats::hex::encode(&replacement)
+        );
+        assert!(wellfed_install::stock::open_request(&config));
+
+        // A record that names the picked feeder is the install's own.
+        paired(&data, "AF_TEST", &sim.identity);
+        pick_up().await;
+        assert!(!wellfed_install::stock::open_request(&config));
+        sim.stop().await;
+    });
+}
+
 /// A trial nothing answered for stays open: not for another build, another
 /// feeder, or a feeder this phone never paired from that stock.
 #[test]

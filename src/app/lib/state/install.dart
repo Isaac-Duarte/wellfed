@@ -540,6 +540,7 @@ class InstallFlow extends ChangeNotifier {
   /// nothing.
   void newWifiForSetup() {
     settingUpAgain = true;
+    _pickedFeeder = null;
     _home = null;
     _resumeAfterWifi = true;
     _resumeAddress = null;
@@ -568,6 +569,13 @@ class InstallFlow extends ChangeNotifier {
     _forget = forget;
     final resumeFrom = stop?.resume;
     if (resumeFrom == Resume.fromBank0) {
+      // No enrollment leaves no record, but this flow knows the feeder it
+      // paired. Setup would send the owner to a factory reset, and lose the
+      // identity its backup belongs to. Only a new Wi-Fi needs setup again, and
+      // the other ways into resume are the owner asking for Bluetooth.
+      if (pending != PendingInstall.paired && !settingUpAgain) {
+        _pickedFeeder ??= _identity;
+      }
       await resume();
       return;
     }

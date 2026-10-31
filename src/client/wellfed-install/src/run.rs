@@ -959,7 +959,17 @@ where
                 self.io
                     .report
                     .event(Event::KeyKnownAt { identity, address });
-                self.paired_at(identity, address)?;
+                // A feeder the owner picked says nothing about where stock's
+                // install went, so it is not recorded as that device's: a
+                // record is what closes the device's trial on a feeder's word,
+                // and a trial left open only makes a later run wait. A record
+                // that names it already is a `Recorded` lookup, not this.
+                if matches!(lookup, Lookup::Picked { .. }) {
+                    self.identity = Some(identity);
+                    self.found = Some(address);
+                } else {
+                    self.paired_at(identity, address)?;
+                }
                 install.paired();
                 return Ok(());
             }
@@ -1074,11 +1084,14 @@ where
         .keep(&self.backups)
     }
 
-    /// The install is done: its record is no longer anyone's to resume.
+    /// The install is done: its record is no longer anyone's to resume. One
+    /// naming another feeder is an install this picked feeder's run didn't do.
     fn clear_paired(&self) -> Result<(), Error> {
-        match self.stock.device()? {
-            Some(device) => storage::Paired::clear(&self.backups, &device),
-            None => Ok(()),
+        match (self.stock.device()?, &self.identity) {
+            (Some(device), Some(identity)) => {
+                storage::Paired::clear(&self.backups, &device, identity)
+            }
+            _ => Ok(()),
         }
     }
 

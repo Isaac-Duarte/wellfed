@@ -208,7 +208,7 @@ enum Refused {
     )]
     NoSigner,
     #[error(
-        "a consumer image joins no network until Bluetooth setup gives it one: pass --home-network <file> or --home-ssid <network> (or --ssid)"
+        "a consumer image joins no network until Bluetooth setup gives it one: pass --home-network <file> or --home-ssid <network> (or --ssid), or --from-bank0 --feeder <identity> for a feeder already on Wi-Fi"
     )]
     NoHomeNetwork,
     #[error(
