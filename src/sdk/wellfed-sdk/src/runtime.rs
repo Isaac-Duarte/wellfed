@@ -495,8 +495,11 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
             if watchdog.checkpoint(u64::from(progress)) {
                 FED_MS.store(now, Ordering::Relaxed);
             } else {
-                REFUSED.store(true, Ordering::Relaxed);
-                if !STOPPED.swap(true, Ordering::Relaxed) {
+                // Keyed to the refusal, not to `STOPPED`: a transient stop
+                // that recovered set that already, and this reset still needs
+                // its writes held and the network left.
+                STOPPED.store(true, Ordering::Relaxed);
+                if !REFUSED.swap(true, Ordering::Relaxed) {
                     supervision::stopping();
                     // A refused checkpoint latches (a gap past the progress
                     // limit, an altered register, a clock fault): the hardware
