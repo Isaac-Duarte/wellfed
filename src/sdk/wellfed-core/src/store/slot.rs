@@ -481,6 +481,41 @@ pub fn crc32(p: &[u8]) -> u32 {
     crc.finish()
 }
 
+/// What each value of the register's low nibble contributes as it shifts
+/// out: 64 bytes in mapped flash, 960 fewer than the byte-wide table's 1 KiB.
+///
+/// The small table is the one that is never slower than the bit loop. The
+/// stores scan with it hot, where the byte-wide table would save about half
+/// again. But short records take it cold, some of them with interrupts masked
+/// (the clock's carry), and a miss is a read over XIP: this table costs at
+/// most two 32-byte D-cache lines, and the byte-wide one could miss once per
+/// byte of a short record. Those misses would cost more than the bit loop
+/// they replace.
+///
+/// Aligned so that it spans exactly those two lines. A `Crc32` reads it, so
+/// nothing that runs while flash is parked may use one: the park and hook
+/// code calls out to nothing, which the RAM-park audit checks.
+#[repr(align(32))]
+struct NibbleTable([u32; 16]);
+
+static NIBBLES: NibbleTable = NibbleTable(nibble_table());
+
+const fn nibble_table() -> [u32; 16] {
+    let mut table = [0; 16];
+    let mut value = 0;
+    while value < 16 {
+        let mut register = value;
+        let mut bit = 0;
+        while bit < 4 {
+            register = (register >> 1) ^ if register & 1 != 0 { 0xedb8_8320 } else { 0 };
+            bit += 1;
+        }
+        table[value as usize] = register;
+        value += 1;
+    }
+    table
+}
+
 /// [`crc32`] over bytes that arrive in pieces, such as a record read from
 /// flash a chunk at a time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -498,12 +533,14 @@ impl Crc32 {
     }
 
     pub fn update(&mut self, p: &[u8]) {
+        let table = &NIBBLES.0;
+        let mut crc = self.0;
         for &byte in p {
-            self.0 ^= u32::from(byte);
-            for _ in 0..8 {
-                self.0 = (self.0 >> 1) ^ if self.0 & 1 != 0 { 0xedb8_8320 } else { 0 };
-            }
+            crc ^= u32::from(byte);
+            crc = (crc >> 4) ^ table[(crc & 0xf) as usize];
+            crc = (crc >> 4) ^ table[(crc & 0xf) as usize];
         }
+        self.0 = crc;
     }
 
     pub const fn finish(self) -> u32 {

@@ -114,7 +114,7 @@ fn count(kept: &mut Kept) -> u32 {
         let count_ms = kept.count.millis;
         kept.lost = Some(Lost {
             count_ms,
-            had_time: kept.clock.read(count_ms).is_some(),
+            had_time: kept.clock.unix_ms(count_ms).is_some(),
         });
         kept.clock.forget();
         sdk::time_carry_store(&[0; CARRY_WORDS]);
@@ -225,6 +225,28 @@ pub fn keep() {
     }
     let rtc = rtc_seconds();
     update(|clock, now, kept_at| store(clock, now, rtc, kept_at));
+    keep_year();
+}
+
+/// Work out the zone's transitions for the year the clock reads, if they are
+/// not kept already, so a reader need not. `keep` calls it within `KEEP_MS`
+/// of a new year, a first fix or a new rule; until then a reader takes the
+/// rule whole, slower but no different.
+///
+/// The divides run unmasked, on copies. The loop is the only task that stores
+/// a year, and `keep_year` refuses one whose rule has been replaced since the
+/// copy, so a settings write between the two cannot leave the old zone's
+/// transitions in place. Readers on any task copy the rule and its year
+/// together, with interrupts masked, so they never see one without the other.
+#[inline(never)]
+fn keep_year() {
+    let (course, offsets, now) = update(|clock, now, _| (clock.course(), clock.offsets(), now));
+    let due = course
+        .unix_ms(now)
+        .and_then(|unix_ms| offsets.year_due(unix_ms));
+    if let Some(due) = due {
+        update(|clock, _, _| clock.keep_year(due));
+    }
 }
 
 /// Store the clock at count `now` and RTC second `rtc`, or clear the
@@ -345,10 +367,24 @@ pub fn state() -> State {
     clock.state(now)
 }
 
+/// The time now, for a caller that drops the offset: `state` without working
+/// one out.
+pub fn unix_ms() -> Option<u64> {
+    let (course, now) = update(|clock, now, _| (clock.course(), now));
+    course.unix_ms(now)
+}
+
 /// The zone's offset east of UTC at `unix_ms`: its rule, or a client
-/// sync's offsets; `None` with neither.
+/// sync's offsets; `None` with neither. Worked out from a copy, since a year
+/// not kept takes the rule's divides, which must not run masked. It needs no
+/// count, so it extends none: `keep` does that every pass.
 pub fn offset_at(unix_ms: u64) -> Option<i32> {
-    update(|clock, _, _| clock.offset_at(unix_ms))
+    let offsets = {
+        let _guard = IrqGuard::lock();
+        // SAFETY: interrupts are masked, so this is the only reference.
+        unsafe { (*CLOCK.get()).clock.offsets() }
+    };
+    offsets.at(unix_ms)
 }
 
 /// Log the KM0 RTC's registers as `PLTIM1 rtc`, once at boot: whether it
@@ -364,6 +400,15 @@ pub fn log_rtc() {
     )) {
         sdk::log(line);
     }
+}
+
+/// Whether no year needs keeping for `unix_ms`: the clock's kept year covers
+/// it, or its zone has no daylight time (host tests).
+#[cfg(not(target_os = "none"))]
+pub fn year_kept_for(unix_ms: u64) -> bool {
+    let _guard = IrqGuard::lock();
+    // SAFETY: interrupts are masked, so this is the only reference.
+    unsafe { (*CLOCK.get()).clock.offsets().year_due(unix_ms).is_none() }
 }
 
 /// Forget every sync and the count, as a reset does (host tests).

@@ -93,6 +93,7 @@ fn queue(fill: impl FnOnce(&mut Queued, &mut [u8; CHUNK_MAX as usize])) -> bool 
     // SAFETY: `Filling` makes this the only accessor until `Queued`.
     unsafe { fill(&mut *PENDING.get(), &mut *DATA.get()) };
     STATE.store(Hand::Queued as u8, Ordering::Release);
+    wellfed_hal::writer_wake::wake();
     true
 }
 

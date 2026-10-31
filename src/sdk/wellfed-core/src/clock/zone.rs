@@ -58,6 +58,44 @@ enum Date {
     Month { month: u8, week: u8, weekday: u8 },
 }
 
+/// One year of a rule's transitions, as seconds from that year's first
+/// instant, so a reader answers with a subtraction and a few compares. Working
+/// them out takes about two dozen 64-bit software divides on the KM4
+/// ([`Rule::year_at`]), against a clock read several times a pass.
+///
+/// It is a pure function of the rule and the year, so a copy kept too long
+/// only stops covering the instant asked about. It can be wrong only for
+/// another rule, which [`WallClock`](super::wall::WallClock) refuses to keep.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Year {
+    /// New Year in the rule's standard local time.
+    from_s: i64,
+    /// Up to the next New Year; 0 covers nothing.
+    len_s: i32,
+    start_s: i32,
+    end_s: i32,
+}
+
+impl Year {
+    /// Covers nothing: every instant goes to the rule.
+    pub const NONE: Self = Self {
+        from_s: 0,
+        len_s: 0,
+        start_s: 0,
+        end_s: 0,
+    };
+
+    /// Seconds since the year's first instant, if `unix_s` falls within it.
+    fn within(&self, unix_s: i64) -> Option<i64> {
+        let at = unix_s.checked_sub(self.from_s)?;
+        (0..i64::from(self.len_s)).contains(&at).then_some(at)
+    }
+
+    pub fn covers(&self, unix_s: i64) -> bool {
+        self.within(unix_s).is_some()
+    }
+}
+
 /// The rule text failed to parse.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Invalid;
@@ -117,17 +155,50 @@ impl Rule {
         let start = dst.start.utc_s(year, self.std_offset_s);
         let end = dst.end.utc_s(year, dst.offset_s);
 
-        let in_dst = if start < end {
-            start <= unix_s && unix_s < end
-        } else {
-            // Southern hemisphere: daylight time spans New Year.
-            !(end <= unix_s && unix_s < start)
-        };
-        if in_dst {
+        if in_daylight(start, end, unix_s) {
             dst.offset_s
         } else {
             self.std_offset_s
         }
+    }
+
+    /// [`offset_at`](Self::offset_at), from `year`'s transitions when it
+    /// covers `unix_s`. `year` must be this rule's, from
+    /// [`year_at`](Self::year_at), or [`Year::NONE`].
+    pub fn offset_in(&self, year: &Year, unix_s: i64) -> i32 {
+        let Some(dst) = self.dst else {
+            return self.std_offset_s;
+        };
+        let Some(at) = year.within(unix_s) else {
+            return self.offset_at(unix_s);
+        };
+
+        if in_daylight(i64::from(year.start_s), i64::from(year.end_s), at) {
+            dst.offset_s
+        } else {
+            self.std_offset_s
+        }
+    }
+
+    /// The transitions of the year holding `unix_s`, the year as
+    /// [`offset_at`](Self::offset_at) reckons it; `None` for a zone with no
+    /// daylight time, whose offset takes no working out.
+    pub fn year_at(&self, unix_s: i64) -> Option<Year> {
+        let dst = self.dst?;
+        let std_offset_s = i64::from(self.std_offset_s);
+        let local_days = (unix_s + std_offset_s).div_euclid(86_400);
+        let (year, _, _) = civil_from_days(local_days);
+
+        let from_s = days_from_civil(year, 1, 1) * 86_400 - std_offset_s;
+        let next_s = days_from_civil(year + 1, 1, 1) * 86_400 - std_offset_s;
+        let start_s = dst.start.utc_s(year, self.std_offset_s) - from_s;
+        let end_s = dst.end.utc_s(year, dst.offset_s) - from_s;
+        Some(Year {
+            from_s,
+            len_s: i32::try_from(next_s - from_s).ok()?,
+            start_s: i32::try_from(start_s).ok()?,
+            end_s: i32::try_from(end_s).ok()?,
+        })
     }
 
     /// The first instant after `unix_s` at which the offset changes, and
@@ -150,6 +221,16 @@ impl Rule {
             }
         }
         best.map(|at| (at, self.offset_at(at)))
+    }
+}
+
+/// Whether daylight time holds at `at`, between a year's two transitions.
+const fn in_daylight(start: i64, end: i64, at: i64) -> bool {
+    if start < end {
+        start <= at && at < end
+    } else {
+        // Southern hemisphere: daylight time spans New Year.
+        !(end <= at && at < start)
     }
 }
 

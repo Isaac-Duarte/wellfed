@@ -87,6 +87,7 @@ pub fn change(calibration: Calibration) -> CalibrationResult {
     // SAFETY: `Filling` makes this the only accessor until `Queued`.
     unsafe { *PENDING.get() = calibration };
     STATE.store(Hand::Queued as u8, Ordering::Release);
+    wellfed_hal::writer_wake::wake();
     CalibrationResult::Current {
         view: view(),
         pending: true,

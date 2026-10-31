@@ -76,6 +76,7 @@ pub fn request(change: Change) -> Requested {
         Ordering::Release,
     );
     STATE.store(Hand::Queued as u8, Ordering::Release);
+    wellfed_hal::writer_wake::wake();
     Requested::Queued
 }
 

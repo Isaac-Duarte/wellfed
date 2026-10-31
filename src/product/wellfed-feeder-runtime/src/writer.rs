@@ -63,6 +63,13 @@
 //! the event queue in order) and the writer asks again each poll, so it runs
 //! once the owner is at rest with its outputs stopped, before the next feed.
 //! Reads of the event ring are answered meanwhile: they take no lease.
+//!
+//! Queuing a mailbox wakes a writer at rest (`wellfed_hal::writer_wake`), so
+//! a write starts without waiting out [`POLL_MS`]; that poll stays, and is
+//! all the work relies on. A wake cuts short only the delay of a step that did
+//! nothing, so a write's own delay stands: [`POLL_MS`] after every mailbox
+//! write that erases, an upload's chunks alone following sooner. The turn above
+//! and the attempt marker are the same either way.
 
 use core::fmt;
 
@@ -122,6 +129,11 @@ pub const EVENTS_POLL_MS: u32 = 5;
 /// sends a frame runs about 16 ms (measured), so a batch of 16 outlasts
 /// a shorter linger and its next read would wait out the idle poll.
 pub const READ_LINGER_POLLS: u32 = 200;
+/// Polls at [`EVENTS_POLL_MS`] after the last chunk of a clip still
+/// `Receiving`: about 1 s. Bounded, because a client that walks away leaves
+/// the clip `Receiving` until the next upload or delete, for as long as the
+/// feeder then runs, and battery mode pays for every wake.
+pub const RECEIVE_LINGER_POLLS: u32 = READ_LINGER_POLLS;
 /// While a write waits for a feed to end: within the poll a claim allows a
 /// waiting writer before passing it.
 pub const WRITE_WAIT_POLL_MS: u32 = POLL_MS;
@@ -130,7 +142,10 @@ const _: () = assert!(WRITE_WAIT_POLL_MS <= WRITER_POLL_MS);
 /// Where the meal call's queued work stands after the writer's look.
 enum CallSave {
     /// Written (or refused), with the record it makes, if any.
-    Done(Option<Record>),
+    Done {
+        record: Option<Record>,
+        delay_ms: u32,
+    },
     /// A feed holds the outputs.
     Turn,
     /// A call plays from the clip.
@@ -555,6 +570,10 @@ pub struct Step {
     pub record: Option<Record>,
     /// Arming finished this step, armed or not: later writers may start.
     pub settled: bool,
+    /// No record was served or appended and nothing waits for a turn, so a
+    /// queued mailbox may cut this step's delay short
+    /// (`wellfed_hal::writer_wake`).
+    pub rested: bool,
 }
 
 fn next(delay_ms: u32, record: Option<Record>) -> Step {
@@ -562,6 +581,7 @@ fn next(delay_ms: u32, record: Option<Record>) -> Step {
         delay_ms,
         record,
         settled: false,
+        rested: false,
     }
 }
 
@@ -604,6 +624,8 @@ pub struct Writer<F> {
     read_batch: [ring::Record; events::READ_BATCH],
     /// Polls left at the read pace after the last answered read.
     reading: u32,
+    /// Polls left at the upload's pace.
+    receiving: u32,
     traces: TraceRing<Region<F, TRACES_BASE, TRACES_UNITS>>,
     stats: StatsStore<Slots<F, STATS_BASE>>,
     stats_opened: bool,
@@ -660,6 +682,7 @@ impl<F> Default for Writer<F> {
             events_opened: false,
             read_batch: [EMPTY; events::READ_BATCH],
             reading: 0,
+            receiving: 0,
             traces: TraceRing::default(),
             stats: StatsStore::default(),
             stats_opened: false,
@@ -827,10 +850,21 @@ impl<F: FlashOps> Writer<F> {
     /// Apply the call's queued work, or say why it waits (it stays
     /// queued).
     fn save_call<H: Hooks>(&mut self, queued: Queued, data: &[u8]) -> CallSave {
+        // An upload's next chunk follows at once. A start or a delete erases,
+        // and a client alternating them must wear the sector no faster than
+        // the idle poll let it, so it keeps that delay whole.
+        let delay_ms = match queued {
+            Queued::Chunk { .. } => EVENTS_POLL_MS,
+            Queued::Change(_) => POLL_MS,
+        };
+
         if self.stage == Stage::Serve || !H::armed() {
-            return CallSave::Done(Some(Record::CallError {
-                stage: ErrorStage::Unarmed,
-            }));
+            return CallSave::Done {
+                record: Some(Record::CallError {
+                    stage: ErrorStage::Unarmed,
+                }),
+                delay_ms,
+            };
         }
         // The sectors first: a call that plays reads them.
         if !audio::call_write_begin() {
@@ -853,7 +887,7 @@ impl<F: FlashOps> Writer<F> {
         audio::call_write_end();
 
         let clip = self.call.clip;
-        CallSave::Done(if !ok {
+        let record = if !ok {
             Some(Record::CallError {
                 stage: ErrorStage::Save,
             })
@@ -864,7 +898,8 @@ impl<F: FlashOps> Writer<F> {
             None
         } else {
             Some(Record::Call { clip })
-        })
+        };
+        CallSave::Done { record, delay_ms }
     }
 
     /// The step while a write waits for its turn: the event ring's readers
@@ -1014,11 +1049,13 @@ impl<F: FlashOps> Writer<F> {
     /// either has more waiting.
     fn events_step(&mut self, writable: bool) -> Step {
         let mut record = None;
+        let mut appended = false;
         let mut deferred = false;
         if let Some(queued) = events::pending() {
             if !writable {
                 events::finish_pending(self.events.last_seq());
             } else if let Some(_turn) = self.take_turn() {
+                appended = true;
                 arming::set_attempt();
                 let appended = self.events.append(queued.at, &queued.body);
                 arming::clear_attempt();
@@ -1033,10 +1070,23 @@ impl<F: FlashOps> Writer<F> {
             }
         }
         // A reader catching up asks again as soon as it has the answer.
+        let served = events::read_request().is_some();
         let read = self.answer_read();
+        // An upload's next chunk comes within a round trip of the last one.
+        self.receiving = self.receiving.saturating_sub(1);
 
-        let more = (events::pending().is_some() && !deferred) || read;
-        next(if more { EVENTS_POLL_MS } else { POLL_MS }, record)
+        // An event a feed's turn deferred holds off everything that would
+        // ask for that turn again, or the writer would contest the loop's
+        // claim every poll as the feed starts. Reads take no turn.
+        let writes = !deferred && (events::pending().is_some() || self.receiving > 0);
+        let delay_ms = if writes || read {
+            EVENTS_POLL_MS
+        } else {
+            POLL_MS
+        };
+        let mut step = next(delay_ms, record);
+        step.rested = !served && !appended && !deferred;
+        step
     }
 
     /// Append the sealed trace, if one waits: under the write turn, which a
@@ -1461,21 +1511,17 @@ impl<F: FlashOps> Writer<F> {
                     self.armed = H::armed();
                     self.stage = Stage::Idle;
                     self.publish();
-                    Step {
-                        delay_ms: POLL_MS,
-                        record: Some(Record::Arming(event)),
-                        settled: true,
-                    }
+                    let mut step = next(POLL_MS, Some(Record::Arming(event)));
+                    step.settled = true;
+                    step
                 }
                 Poll::Failed(event) => {
                     self.skipped = matches!(event, arming::Event::Skip { .. });
                     self.stage = Stage::Serve;
                     self.publish();
-                    Step {
-                        delay_ms: POLL_MS,
-                        record: Some(Record::Arming(event)),
-                        settled: true,
-                    }
+                    let mut step = next(POLL_MS, Some(Record::Arming(event)));
+                    step.settled = true;
+                    step
                 }
             },
 
@@ -1639,11 +1685,15 @@ impl<F: FlashOps> Writer<F> {
                 // The chunk's bytes are copied out of the mailbox only as the
                 // flash takes them.
                 match call::with_pending(|queued, data| self.save_call::<H>(queued, data)) {
-                    Some(CallSave::Done(record)) => {
+                    Some(CallSave::Done { record, delay_ms }) => {
                         self.publish();
                         call::finish();
-                        // An upload's next chunk follows at once.
-                        return next(EVENTS_POLL_MS, record);
+                        self.receiving = if matches!(self.call.clip, CallClip::Receiving { .. }) {
+                            RECEIVE_LINGER_POLLS
+                        } else {
+                            0
+                        };
+                        return next(delay_ms, record);
                     }
                     Some(CallSave::Turn) => return self.waiting(),
                     // A call plays from the clip for seconds: the work below
@@ -1739,6 +1789,7 @@ pub unsafe fn wellfed_store_step(provider: *mut Provider) -> u32 {
     };
     // SAFETY: the caller's contract.
     let step = unsafe { writer.step::<Hardware, wellfed_sdk::SdkHooks>(provider) };
+    wellfed_hal::writer_wake::settle(step.rested);
 
     if let Some(record) = step.record {
         let mut report = startup::Report::new();

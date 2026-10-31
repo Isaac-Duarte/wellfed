@@ -93,6 +93,7 @@ pub fn request(fields: SettingsFields) -> SettingsResult {
     // SAFETY: `Filling` makes this the only accessor until `Queued`.
     unsafe { *PENDING.get() = fields };
     STATE.store(Hand::Queued as u8, Ordering::Release);
+    crate::writer_wake::wake();
     SettingsResult::Current {
         view,
         pending: true,
