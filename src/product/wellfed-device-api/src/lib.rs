@@ -22,7 +22,9 @@
 //! - **Writes carry their base generation;** a stale one is refused with
 //!   the current generation.
 //! - **A feed is answered once it is durably reserved,** with the number
-//!   the journal holds it under; its result is a `Fed` event, which only
+//!   the journal holds it under, or with its refusal if it waits for storage
+//!   writes past their deadline (`Server::feed_refused`), when a later feed
+//!   takes that number; its result is a `Fed` event, which only
 //!   sessions whose hello carries [`Capabilities::FEED`] are sent. A feed
 //!   is asked of the device only while its [`Device::readiness`] is ready,
 //!   which `Status` also reports ([`Capabilities::READINESS`]); a restart

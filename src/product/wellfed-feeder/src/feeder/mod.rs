@@ -46,7 +46,9 @@ pub mod time;
 use core::fmt;
 
 use wellfed_core::ota::install::Phase as InstallPhase;
-use wellfed_proto::api::{Blocked, EventBody, Phase, Readiness, Refusal, Source, TraceSummary};
+use wellfed_proto::api::{
+    Blocked, EventBody, Phase, Readiness, Refusal, Source, Supply, TraceSummary,
+};
 use wellfed_session::noise::Keypair;
 
 pub use platform::Platform;
@@ -77,6 +79,20 @@ pub trait Feeds {
     fn blocked(&self) -> Option<Blocked>;
     /// Hand one feed to the owner; the number its journal holds it under.
     fn submit(&mut self, portions: u8, by: Source) -> Result<u32, Refusal>;
+    /// Who asked for the feed `submit` took but whose claim on the outputs
+    /// still waits for storage writes; `None` with no such feed. The loop
+    /// tries it once a pass ([`Self::claim_step`]) and serves everything else
+    /// meanwhile; `busy` and `blocked` read it as a feed in flight, and the
+    /// device API refuses changes that would queue a write behind it.
+    fn claiming(&self) -> Option<Source> {
+        None
+    }
+    /// One try of the waiting feed's claim, `hold` being a reason not to feed
+    /// that arose since it was asked for. Its refusal, once it has one: a feed
+    /// claimed here has gone to the owner, and [`Self::reserved`] follows it.
+    fn claim_step(&mut self, _hold: Option<Blocked>) -> Option<RefusedClaim> {
+        None
+    }
     /// Whether the feed `feed` is reserved yet: `None` while it waits.
     fn reserved(&self, feed: u32) -> Option<Result<(), Refusal>>;
     /// Stop the feed `feed` if it is still running.
@@ -101,6 +117,15 @@ pub trait Feeds {
     fn high_water(&self) -> Option<u32> {
         None
     }
+}
+
+/// A feed `submit` accepted and numbered, whose claim on the outputs ended
+/// refused: nothing moved, and the next feed takes the same number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RefusedClaim {
+    pub feed: u32,
+    pub by: Source,
+    pub refusal: Refusal,
 }
 
 /// The rotor's phase and this boot's mark counts, from the feeding owner.
@@ -305,23 +330,77 @@ impl<P: Platform> Feeder<P> {
         feeds: &mut F,
         mut record: impl FnMut(Record<P::Record>),
     ) -> u32 {
+        let owner_delay = self.owner_stage(now_ms, feeds, &mut record);
+        let (local_delay, reading) = self.local_stage(now_ms, feeds, &mut record);
+
+        let reset = self.owner.reset_pending();
+        let inputs = Inputs {
+            now_ms,
+            setup: self.owner.setup_on(),
+            locked: self.owner.lock().map(Lock::locked),
+            recovery: self.owner.take_recovery(),
+            signer: self.owner.take_signer(),
+            pairing: self.owner.pairing(),
+            identity: self.identity.keypair(),
+            supply: reading,
+            battery_hold: self.supply.holds(),
+            meal: self.schedule.holds(),
+            reset,
+            claim: self.schedule.claim_in_flight(),
+            call_lead: self.call.lead_at(),
+            feeds,
+        };
+        let serve_delay = self
+            .serve
+            .step(&mut self.platform, &mut self.lock, inputs, |r| {
+                record(Record::Serve(r))
+            });
+
+        // After the owner and the device API, so neither waits on playback
+        // within the pass. A feed in flight still pays for this step in its
+        // gap between owner steps.
+        let speaker_delay = self.speaker_stage(&mut record);
+
+        owner_delay
+            .min(local_delay)
+            .min(serve_delay)
+            .min(speaker_delay)
+    }
+
+    /// The speaker's step, unless setup mode steps it itself; the delay it
+    /// asks for. Out of line so its record's frame is not under the device
+    /// API's paths.
+    #[inline(never)]
+    fn speaker_stage(&mut self, record: &mut impl FnMut(Record<P::Record>)) -> u32 {
+        if self.owner.setup_on() || self.platform.speaker_idle() {
+            return u32::MAX;
+        }
+
+        let step = self.platform.speaker_step();
+        if let Some(r) = step.record {
+            record(Record::Driver(r));
+        }
+        step.delay_ms
+    }
+
+    /// The pass's first two steps: the identity, the panel's owner and the
+    /// restart it may have made due; the delay the owner asks for. Out of
+    /// line, apart from [`Self::local_stage`], because setup mode's session
+    /// handshake under the owner's step is one of the loop's deepest paths
+    /// and needs none of that stage's frame.
+    #[inline(never)]
+    fn owner_stage<F: Feeds>(
+        &mut self,
+        now_ms: u32,
+        feeds: &mut F,
+        record: &mut impl FnMut(Record<P::Record>),
+    ) -> u32 {
         if let Some(r) = self.identity.step(&mut self.platform) {
             record(Record::Identity(r));
         }
 
         let remote = self.lock.take();
-        let refusal = if feeds.busy() {
-            Some(ResetRefusal::Feeding)
-        } else if self.platform.installing()
-            || self
-                .platform
-                .update_progress()
-                .is_some_and(|progress| progress.phase != InstallPhase::Idle)
-        {
-            Some(ResetRefusal::Updating)
-        } else {
-            None
-        };
+        let refusal = self.reset_refusal(feeds);
         let delay = self.owner.step(
             &mut self.platform,
             now_ms,
@@ -346,7 +425,37 @@ impl<P: Platform> Feeder<P> {
             self.platform.hand_counts(counts);
             self.platform.reset();
         }
+        delay
+    }
 
+    /// Why a factory reset cannot run now, if so. Out of line so the install
+    /// progress it reads is not in [`Self::owner_stage`]'s frame.
+    #[inline(never)]
+    fn reset_refusal<F: Feeds>(&mut self, feeds: &F) -> Option<ResetRefusal> {
+        if feeds.busy() {
+            Some(ResetRefusal::Feeding)
+        } else if self.platform.installing()
+            || self
+                .platform
+                .update_progress()
+                .is_some_and(|progress| progress.phase != InstallPhase::Idle)
+        {
+            Some(ResetRefusal::Updating)
+        } else {
+            None
+        }
+    }
+
+    /// The pass's third step, up to the device API: the delay it asks for and
+    /// the supply it judged. Out of line because its frame would otherwise
+    /// stay live under every request and handshake, the loop's deepest paths.
+    #[inline(never)]
+    fn local_stage<F: Feeds>(
+        &mut self,
+        now_ms: u32,
+        feeds: &mut F,
+        record: &mut impl FnMut(Record<P::Record>),
+    ) -> (u32, Supply) {
         // The boot's facts (and its `Boot` event) first, so the supply's
         // brownout hold is armed before the first readiness.
         let boot = self.serve.boot(&mut self.platform, now_ms);
@@ -377,6 +486,7 @@ impl<P: Platform> Feeder<P> {
             record(Record::Supply(supply::Record::InstallStopped { stopped }));
         }
 
+        self.claim_turn(feeds, now_ms, record);
         if self.owner.take_dispense() {
             let ready = self.readiness(feeds);
             let portions = feeding::DISPENSE_PORTIONS;
@@ -389,10 +499,15 @@ impl<P: Platform> Feeder<P> {
             }
         }
         let ready = self.ready(feeds);
-        self.schedule
-            .step(&mut self.platform, feeds, now_ms, ready, |r| {
-                record(Record::Schedule(r))
-            });
+        // A waiting feed is the next one, so nothing is decided around it: a
+        // plan's refused claim comes back to the schedule as it left, and
+        // no write of the plans joins the writes the feed waits for.
+        if feeds.claiming().is_none() {
+            self.schedule
+                .step(&mut self.platform, feeds, now_ms, ready, |r| {
+                    record(Record::Schedule(r))
+                });
+        }
         // After the schedule, so a pass that runs a meal decides it first;
         // the reminder only reads the plans.
         self.reminder
@@ -437,50 +552,65 @@ impl<P: Platform> Feeder<P> {
             .step(&mut self.platform, now_ms, pressed, allowed, at_rest);
 
         // Requests read what the owner holds after this step.
-        let lock = self.owner.lock();
-        if let Some(lock) = lock {
+        if let Some(lock) = self.owner.lock() {
             self.lock.publish(lock.locked());
         }
         self.serve.stats().presses(self.owner.presses());
-        let reset = self.owner.reset_pending();
-        let inputs = Inputs {
-            now_ms,
-            setup: self.owner.setup_on(),
-            locked: lock.map(Lock::locked),
-            recovery: self.owner.take_recovery(),
-            signer: self.owner.take_signer(),
-            pairing: self.owner.pairing(),
-            identity: self.identity.keypair(),
-            supply: reading,
-            battery_hold: self.supply.holds(),
-            meal: self.schedule.holds(),
-            reset,
-            claim: self.schedule.claim_in_flight(),
-            call_lead: self.call.lead_at(),
-            feeds,
-        };
-        let serve_delay = self
-            .serve
-            .step(&mut self.platform, &mut self.lock, inputs, |r| {
-                record(Record::Serve(r))
-            });
 
-        // After the owner and the device API, so neither waits on playback
-        // within the pass. A feed in flight still pays for this step in its
-        // gap between owner steps. Setup mode steps the speaker itself.
-        let mut speaker_delay = u32::MAX;
-        if !self.owner.setup_on() && !self.platform.speaker_idle() {
-            let step = self.platform.speaker_step();
-            if let Some(r) = step.record {
-                record(Record::Driver(r));
+        (lights_delay.min(beep_delay), reading)
+    }
+
+    /// One pass's try of a feed waiting to claim the outputs, and the end of
+    /// one refused. What held for it when it was asked for is asked again,
+    /// since passes run between two tries: a gesture may have started setup
+    /// mode, and an install or a restart may have begun. Out of line so its
+    /// frame is not under every session's deepest path.
+    #[inline(never)]
+    fn claim_turn<F: Feeds>(
+        &mut self,
+        feeds: &mut F,
+        now_ms: u32,
+        record: &mut impl FnMut(Record<P::Record>),
+    ) {
+        let Some(by) = feeds.claiming() else {
+            return;
+        };
+        // As readiness tells each asker: a client always sees setup mode block.
+        let setup = match by {
+            Source::Client(_) => self.owner.setup_on(),
+            _ => self.owner.setup_holds_feeds(),
+        };
+        let hold = feeding::claim_hold(
+            self.platform.restarting(),
+            setup,
+            self.platform.installing(),
+            self.supply.holds(),
+        );
+        let Some(refused) = feeds.claim_step(hold) else {
+            return;
+        };
+
+        // Before anything can take its number again.
+        self.serve
+            .server()
+            .feed_refused(refused.feed, refused.refusal);
+        match refused.by {
+            Source::Panel => {
+                let result = Err(refused.refusal);
+                record(Record::Feeding(feeding::Record::Dispense { result }));
+                let reason = feeding::refused_reason(feeds, self.readiness(feeds));
+                self.readiness.refused(&mut self.platform, now_ms, reason);
+                self.lights.refused(now_ms, |r| record(Record::Lights(r)));
             }
-            speaker_delay = step.delay_ms;
+            Source::Schedule(plan) => self.schedule.claim_refused(
+                &mut self.platform,
+                plan,
+                refused.refusal,
+                now_ms,
+                |r| record(Record::Schedule(r)),
+            ),
+            Source::Client(_) | Source::Feeder => {}
         }
-        delay
-            .min(serve_delay)
-            .min(speaker_delay)
-            .min(lights_delay)
-            .min(beep_delay)
     }
 
     /// The feeder's states as the lights show them, after this pass's

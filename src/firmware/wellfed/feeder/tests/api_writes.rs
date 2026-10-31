@@ -11,7 +11,7 @@ use wellfed_device_api::{Device, KeyChange};
 use wellfed_feeder::feeder::{Feeder, NoFeeds};
 use wellfed_feeder::store::net::NetStore;
 use wellfed_feeder_runtime::{keys, network};
-use wellfed_fw_feeder::feeding::{claim_outputs, writes_queued};
+use wellfed_fw_feeder::feeding::{ClaimTurn, Claiming, writes_queued};
 use wellfed_fw_feeder::platform::Plaf103;
 use wellfed_sdk::hal::interlock::{INTERLOCK, Interlock};
 use wellfed_sdk::hal::sdk::fake;
@@ -165,23 +165,31 @@ fn a_change_queued_just_before_a_feed_goes_first() {
         let interlock = Interlock::new();
         assert!(writes_queued());
 
-        // The settings writer takes it on its next poll and finishes it.
+        // The settings writer takes it on its next poll and finishes it; the
+        // claim is tried once a pass until then.
         let now = Cell::new(0_u32);
-        let claimed = claim_outputs(
-            &interlock,
-            writes_queued,
-            || now.get(),
-            |ms| {
-                now.set(now.get() + ms);
-                if now.get() == 200 {
-                    settings::finish();
-                    network::finish();
-                    keys::finish(keys::KeyResult::Done);
-                }
-            },
-            |_| unreachable!(),
-        );
-        assert_eq!(claimed, Ok(()));
+        let by = wellfed_proto::api::Source::Panel;
+        let mut claiming = Claiming::new(1, 1, by, now.get());
+        loop {
+            let turn = claiming.step(
+                &interlock,
+                None,
+                writes_queued(),
+                now.get(),
+                |_| unreachable!(),
+            );
+            if turn == ClaimTurn::Claimed {
+                break;
+            }
+            assert_eq!(turn, ClaimTurn::Waiting);
+            assert!(!interlock.outputs_claimed(), "the writer can go on");
+            now.set(now.get() + 10);
+            if now.get() == 200 {
+                settings::finish();
+                network::finish();
+                keys::finish(keys::KeyResult::Done);
+            }
+        }
         assert_eq!(now.get(), 200, "claimed once the change was written");
         assert!(now.get() < WRITE_WAIT_MS);
     }

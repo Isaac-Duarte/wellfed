@@ -121,7 +121,14 @@ A client that may want to cancel keeps its session open across the feed, as `wel
 
 **A join during a feed** waits in the Wi-Fi task until the owner is at rest with its outputs stopped. It waits at most `FEED_BOUND_MS`: the owner's own cap on a feed's emitters-on time plus 2 s, about 9 min 40 s for 48 portions. `PLOWN1 joins …` counts waits, and joins forced past that bound.
 
-**A storage write running** when a feed comes makes the feed wait in the loop, at most `WRITE_WAIT_MS`. That is 3 s: one record's erase and two programs at their whole lease budget, after the writer's 200 ms poll. A write still running then, or a client's change still queued for the writer, refuses the feed `Busy` (`held=3`).
+**A storage write running** when a feed comes makes the feed wait, at most `WRITE_WAIT_MS`. That is 3 s: one record's erase and two programs at their whole lease budget, after the writer's 200 ms poll. A write still running then, or a client's change still queued for the writer, refuses the feed `Busy` (`held=3`).
+
+The loop tries the claim once a pass and never sleeps for it, so it keeps serving meanwhile:
+- The request stays unanswered. `Feeding` still means the feed is reserved, and a refusal comes as that request's answer. A retry of the id, on any session, waits for the same feed or hears the same refusal.
+- Others read it as a feed in flight: readiness says `feeding`, and another feed, a restart or an update offer is refused `Busy`. A change that would queue a write behind it is refused `Busy`, as during a feed.
+- Setup mode, an install or the battery hold that starts meanwhile ends it, refused, with nothing moved.
+- A cancel naming its number is refused `NotFound` and changes nothing: the feed isn't running, and its number hasn't been announced.
+- A plan's occurrence due meanwhile waits its turn. A press or a plan refused this way ends as an immediate refusal does: `PLFEED1 dispense refused=…` and its event, or the occurrence given back. So a press can log `dispense feed=N` and then be refused.
 
 **A feed a reset interrupted** (power cut, watchdog, fault) is resolved when the owner next opens.
 - The journal records it as uncertain under its own id.
@@ -445,7 +452,7 @@ From the `feeder` builds' manifest audits and `PLAPI1` records:
 | Loop stack bound | 3,912 of 6,144 | 4,552 of 8,192 | 5,412 of 8,192 |
 | Heap free, steady | 146,464 | 125,088 | — |
 
-- **Stack.** The loop's stack is 8 KiB. At 6 KiB the bound sat 56 bytes under the audit's 25 % margin. The recovery responder's 1.2 KB frame runs out of line (`rescue_op`), so it never nests under the handshake step's 1.1 KB. The deepest path in the latest build is still a feed's submission under a session's request.
+- **Stack.** The loop's stack is 8 KiB. At 6 KiB the bound sat 56 bytes under the audit's 25 % margin. The recovery responder's 1.2 KB frame runs out of line (`rescue_op`), so it never nests under the handshake step's 1.1 KB. The [resource budget](resource-budget.md#tasks) names the deepest path in the latest build.
 - **Heap.** Flat at 125,088 free over minutes, and through a garbage flood. The difference from the first product budget is not yet attributed.
 - **Other tasks' bounds:** `wellfed` 2,808 of 4,096, `wellfed-key` 1,248 of 2,048, `wellfed-svc` 11,744 of 16,384, `wellfed-wdg` 1,420 of 2,048.
 

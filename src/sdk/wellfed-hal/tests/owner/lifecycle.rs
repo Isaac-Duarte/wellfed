@@ -31,6 +31,8 @@ fn serialized_lifecycle_and_durable_success() {
             && s.result.motion_possible
     );
     assert!(f.reserve_calls == 1 && f.finish_calls == 1 && !f.disk.pending_request);
+    assert_eq!((f.owner.high_water_id(), s.high_water_id), (1, 1));
+    assert!(!f.owner.faulted());
 
     assert!(f.owner.acknowledge(1));
     f.advance(1);
@@ -60,6 +62,7 @@ fn reservation_failure_cannot_move_outputs_or_retry() {
     assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
     f.step();
     assert!(f.status().state == OwnerState::Fault && f.status().fault == OwnerFault::Storage);
+    assert!(f.owner.faulted());
     assert!(!f.status().result.motion_possible && !f.status().result_durable);
     assert!(f.reserve_calls == 1 && f.finish_calls == 0);
 

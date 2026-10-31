@@ -19,8 +19,8 @@ use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness::Running;
 use wellfed_feeder_sim::serve::Control;
 use wellfed_model::{
-    Answer, Blocked, EventBody, FeedFault, FeedOutcome, FeedReason, FoodLevel, Op, Pushed,
-    Readiness, Refusal, Source,
+    Answer, Blocked, EventBody, FeedFault, FeedOutcome, FeedReason, FoodLevel, Generation, Op,
+    Pushed, Readiness, Refusal, SettingsPatch, Source,
 };
 use wellfed_session::noise::Keypair;
 
@@ -515,6 +515,189 @@ fn the_feeding_history_reads_every_feed_after_a_restart() {
             (None, FeedReason::Interrupted)
         );
         assert!(feeds[0].seq < feeds[1].seq, "oldest first");
+        sim.stop().await;
+    });
+}
+
+/// A feed behind a storage write: the request waits, unanswered, while the
+/// loop serves everyone else honestly, and it is answered `Feeding` only once
+/// its claim is taken and it is reserved. One feed runs, under one number.
+#[test]
+fn a_feed_behind_a_write_is_answered_once_it_runs_and_the_loop_serves_meanwhile() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = start(&flash).await;
+        let mut owner = open(&sim).await;
+        let mut other = open(&sim).await;
+        owner.subscribe(None, false).await.unwrap();
+        sim.control(Control::HoldWrite(true));
+
+        let feed = owner.ask([1; 16], &Op::Feed { portions: 1 });
+        let meanwhile = async {
+            sleep(Duration::from_millis(200)).await;
+
+            // Readiness says so, a second feed and a restart are refused, and
+            // a change that would queue a write behind it is refused too.
+            assert_eq!(
+                readiness(&mut other, 2).await,
+                Some(Readiness::Blocked(Blocked::Feeding))
+            );
+            let second = other.ask([3; 16], &Op::Feed { portions: 1 }).await.unwrap();
+            assert_eq!(second, Answer::Refused(Refusal::Busy));
+            let reboot = other.ask([4; 16], &Op::Reboot).await.unwrap();
+            assert_eq!(reboot, Answer::Refused(Refusal::Busy));
+            let change = Op::PutSettings {
+                base: Generation(0),
+                changes: SettingsPatch {
+                    volume: Some(21),
+                    ..SettingsPatch::default()
+                },
+            };
+            let change = other.ask([5; 16], &change).await.unwrap();
+            assert_eq!(change, Answer::Refused(Refusal::Busy));
+            assert_eq!(feeding::reserved(&flash), Some(0), "nothing reserved yet");
+
+            sim.control(Control::HoldWrite(false));
+        };
+        let (answer, ()) = tokio::join!(feed, meanwhile);
+
+        assert_eq!(answer.unwrap(), Answer::Feeding { feed: 1 });
+        assert_eq!(feeding::reserved(&flash), Some(1));
+        let again = owner.ask([1; 16], &Op::Feed { portions: 1 }).await.unwrap();
+        assert_eq!(again, Answer::Feeding { feed: 1 }, "the same feed");
+        let EventBody::Fed {
+            feed, requested, ..
+        } = next_fed(&mut owner).await
+        else {
+            panic!("a feed");
+        };
+        assert_eq!((feed, requested), (1, 1));
+        assert_eq!(feeding::reserved(&flash), Some(1), "and no other");
+        sim.stop().await;
+    });
+}
+
+/// A write that outlasts the wait refuses the feed `Busy`, once. Nothing moved,
+/// the retry of that id still hears `Busy`, though the next feed has the number
+/// it was promised, and the feeder is ready again.
+#[test]
+fn a_feed_past_its_claim_s_deadline_is_refused_and_its_id_stays_refused() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = start(&flash).await;
+        let mut owner = open(&sim).await;
+        owner.subscribe(None, false).await.unwrap();
+        sim.control(Control::HoldWrite(true));
+
+        let begun = std::time::Instant::now();
+        let answer = owner.ask([1; 16], &Op::Feed { portions: 1 }).await.unwrap();
+        assert_eq!(answer, Answer::Refused(Refusal::Busy));
+        assert!(begun.elapsed() >= Duration::from_millis(2_900), "its wait");
+        assert_eq!(feeding::reserved(&flash), Some(0), "nothing reserved");
+        assert_eq!(readiness(&mut owner, 2).await, Some(Readiness::Ready));
+        sim.control(Control::HoldWrite(false));
+
+        // The next feed takes the number the refused one was given.
+        let next = owner.ask([3; 16], &Op::Feed { portions: 1 }).await.unwrap();
+        assert_eq!(next, Answer::Feeding { feed: 1 });
+        let again = owner.ask([1; 16], &Op::Feed { portions: 1 }).await.unwrap();
+        assert_eq!(again, Answer::Refused(Refusal::Busy), "the first answer");
+        next_fed(&mut owner).await;
+        assert_eq!(feeding::reserved(&flash), Some(1));
+        sim.stop().await;
+    });
+}
+
+/// A client whose session ended while its feed waited hears the truth on a new
+/// session: the refusal, even though the number now names another feed that
+/// is running, and never that feed's `Feeding` as its own.
+#[test]
+fn a_client_gone_while_its_claim_was_refused_hears_the_refusal_on_a_retry() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = start(&flash).await;
+        sim.control(Control::HoldWrite(true));
+        let mut gone = open(&sim).await;
+        gone.request([1; 16], &Op::Feed { portions: 1 }).unwrap();
+        let unanswered = gone.receive(Duration::from_millis(100)).await;
+        assert!(unanswered.is_err(), "{unanswered:?}");
+        drop(gone);
+
+        // Past the deadline, with the number free again.
+        sleep(Duration::from_millis(3_100)).await;
+        sim.control(Control::HoldWrite(false));
+        sim.control(Control::StallFeeds(true));
+        let mut owner = open(&sim).await;
+        let next = owner.ask([2; 16], &Op::Feed { portions: 1 }).await.unwrap();
+        assert_eq!(next, Answer::Feeding { feed: 1 });
+
+        let retry = owner.ask([1; 16], &Op::Feed { portions: 1 }).await.unwrap();
+        assert_eq!(retry, Answer::Refused(Refusal::Busy));
+        sim.control(Control::StallFeeds(false));
+        sim.stop().await;
+    });
+}
+
+/// A client whose session ended while its feed waited, and whose feed then ran,
+/// hears `Feeding` on a new session, as for a feed queued before its reservation.
+#[test]
+fn a_client_gone_while_its_claim_waited_hears_its_feed_on_a_retry() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = start(&flash).await;
+        sim.control(Control::HoldWrite(true));
+        let mut gone = open(&sim).await;
+        gone.request([1; 16], &Op::Feed { portions: 1 }).unwrap();
+        let unanswered = gone.receive(Duration::from_millis(100)).await;
+        assert!(unanswered.is_err(), "{unanswered:?}");
+        drop(gone);
+        sim.control(Control::HoldWrite(false));
+
+        let mut owner = open(&sim).await;
+        let retry = owner.ask([1; 16], &Op::Feed { portions: 1 }).await.unwrap();
+        assert_eq!(retry, Answer::Feeding { feed: 1 });
+        assert_eq!(feeding::reserved(&flash), Some(1), "one feed");
+        sim.stop().await;
+    });
+}
+
+/// A cancel naming a feed still waiting for its claim finds nothing running:
+/// `NotFound`, and the feed goes on to run as if nobody had asked, once.
+#[test]
+fn a_cancel_of_a_feed_waiting_for_its_claim_is_not_found_and_the_feed_runs() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = start(&flash).await;
+        let mut owner = open(&sim).await;
+        let mut other = open(&sim).await;
+        owner.subscribe(None, false).await.unwrap();
+        sim.control(Control::HoldWrite(true));
+
+        let feed = owner.ask([1; 16], &Op::Feed { portions: 2 });
+        let cancel = async {
+            sleep(Duration::from_millis(100)).await;
+            let refused = other
+                .ask([2; 16], &Op::CancelFeed { feed: 1 })
+                .await
+                .unwrap();
+            assert_eq!(refused, Answer::Refused(Refusal::NotFound));
+            sim.control(Control::HoldWrite(false));
+        };
+        let (answer, ()) = tokio::join!(feed, cancel);
+        assert_eq!(answer.unwrap(), Answer::Feeding { feed: 1 });
+
+        let EventBody::Fed {
+            feed,
+            completed,
+            outcome,
+            ..
+        } = next_fed(&mut owner).await
+        else {
+            panic!("a feed");
+        };
+        assert_eq!((feed, completed, outcome), (1, 2, FeedOutcome::Done));
+        assert_eq!(feeding::reserved(&flash), Some(1), "one feed");
+        assert_eq!(readiness(&mut other, 3).await, Some(Readiness::Ready));
         sim.stop().await;
     });
 }

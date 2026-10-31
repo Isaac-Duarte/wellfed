@@ -72,7 +72,8 @@ impl Service {
 
     /// Stop the feed numbered `feed` if it is still running. Its result is
     /// still its `Fed` event, `cancelled` with the portions it gave. One
-    /// that has ended is refused `not_found`. A cancel whose outcome was
+    /// that has ended, or a number no feed holds yet, is refused
+    /// `not_found`. A cancel whose outcome was
     /// unknown is resent under its request id, and `not_found` then is no
     /// failure: the first attempt may have stopped the feed, or it ended on
     /// its own; its `Fed` event says which.

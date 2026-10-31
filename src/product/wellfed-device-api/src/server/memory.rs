@@ -54,6 +54,15 @@ impl Memory {
             .map(|&(_, result)| result)
     }
 
+    /// A feed remembered as queued was refused: a retry hears that.
+    pub(super) fn refuse_queued(&mut self, feed: u32, refusal: Refusal) {
+        for (_, result) in self.ids.iter_mut().flatten() {
+            if *result == (Remembered::Queued { feed }) {
+                *result = Remembered::Refused(refusal);
+            }
+        }
+    }
+
     /// Remember `id`'s answer, replacing what an earlier stage of the same
     /// write left (a queued feed's reservation).
     pub(super) fn remember(&mut self, id: RequestId, result: Remembered) {

@@ -2,7 +2,7 @@
 //! other of its two tasks.
 
 use wellfed_core::clock::wall::Restart;
-use wellfed_feeder::feeder::{Feeder, Feeds, Marks};
+use wellfed_feeder::feeder::{Feeder, Feeds, Marks, RefusedClaim};
 use wellfed_feeder::panel::BUTTONS;
 use wellfed_feeder::stats::reset_cause;
 use wellfed_proto::api::{Blocked, EventBody, Refusal, ResetCause, Source, TraceSummary};
@@ -56,9 +56,9 @@ fn restart() -> Restart {
 }
 
 /// The feeding owner's step, then the pass with a Noise operation and one
-/// formatted record; the build's stack audit checks the bound. A handshake
-/// operation's X25519 is the deepest path, about 5 KiB with the device API
-/// above it, inside 6 KiB's margin, so the loop has 8 KiB.
+/// formatted record; the build's stack audit checks the bound, and the
+/// resource budget names the deepest path. The bound is past 6 KiB's margin,
+/// so the loop has 8 KiB.
 const LOOP_STACK_WORDS: u16 = 2048;
 
 /// The loop task's: the product's loop on this board. Built at compile
@@ -104,6 +104,16 @@ impl Feeds for Feeding {
     #[cfg(feature = "gap-probe")]
     fn submit(&mut self, _: u8, _: Source) -> Result<u32, Refusal> {
         Err(Refusal::Unavailable)
+    }
+
+    fn claiming(&self) -> Option<Source> {
+        Feeding::claiming(self)
+    }
+
+    fn claim_step(&mut self, hold: Option<Blocked>) -> Option<RefusedClaim> {
+        Feeding::claim_step(self, hold, |record| {
+            log(format_args!("PLOWN1 {record}\r\n"));
+        })
     }
 
     fn reserved(&self, feed: u32) -> Option<Result<(), Refusal>> {

@@ -260,6 +260,9 @@ impl Server {
     }
 
     /// The client list borrows labels from the table, so it is encoded here.
+    /// Out of line because it holds a whole wire message: inlined into
+    /// `answer`, that would sit above `seal_answer` and its own message.
+    #[inline(never)]
     pub(super) fn list_clients(&mut self, index: usize, id: RequestId) -> Result<(), Reason> {
         let Phase::Open { key: me, .. } = self.slots[index].phase else {
             return Ok(());

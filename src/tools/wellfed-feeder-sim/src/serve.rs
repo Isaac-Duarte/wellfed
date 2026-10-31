@@ -52,6 +52,8 @@ pub enum Control {
     /// Hold a feed in flight where it is (`true`), as a motor that stopped
     /// moving, or let it go on. A restart lets go.
     StallFeeds(bool),
+    /// Hold a storage write in the way of a feed's claim (`true`), or end it.
+    HoldWrite(bool),
     /// The adapter fitted (`true`) or pulled, from now on and across
     /// restarts.
     Adapter(bool),
@@ -154,6 +156,7 @@ pub async fn serve(
                     reboot = true;
                 }
                 Some(Control::StallFeeds(stalled)) => booted.sim.stall_feeds(stalled),
+                Some(Control::HoldWrite(held)) => booted.sim.hold_write(held),
                 Some(Control::Adapter(adapter)) => {
                     supply.adapter = adapter;
                     booted.sim.platform().set_supply(supply);

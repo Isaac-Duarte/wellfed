@@ -70,9 +70,10 @@
 //! Storage writes take the same turn: a flash lease while the outputs may
 //! move fails its stopped-outputs check and resets the board. A store write
 //! that comes during a feed waits until the outputs are released (at most
-//! `FEED_BOUND_MS`), and a feed that finds a write running waits for it in
-//! the loop, at most `WRITE_WAIT_MS`. The journal writes under the loop's
-//! own claim, at the owner's rest boundaries.
+//! `FEED_BOUND_MS`), and a feed that finds a write running keeps asking on
+//! each pass, at most `WRITE_WAIT_MS`, with the loop serving everything else
+//! meanwhile ([`Claiming`]). The journal writes under the loop's own claim, at
+//! the owner's rest boundaries.
 //!
 //! The food beam is also read at rest (`wellfed_core::feed::food_read`), so
 //! the low-food light and `Status.food` follow a refill or a restart with no
@@ -87,8 +88,8 @@ use wellfed_core::feed::sensor_inputs::SensorLimits;
 use wellfed_core::feed::storage::{OwnerResult, RotorPhase};
 use wellfed_core::store::feed_journal::{JournalConfig, JournalError};
 use wellfed_feeder::feed::Durability;
-use wellfed_proto::api::Refusal;
-use wellfed_sdk::hal::interlock::{self, Held, Interlock};
+use wellfed_proto::api::{Blocked, Refusal, Source};
+use wellfed_sdk::hal::interlock::{self, ClaimStep, ClaimWait, Held, Interlock};
 use wellfed_sdk::hal::owner::{
     FeedTrace, OwnerConfig, OwnerFault, OwnerState, OwnerStatus, SubmitResult,
 };
@@ -210,26 +211,71 @@ const _: () = assert!(
 /// sees it. About 9 min 40 s for the largest request.
 pub const FEED_BOUND_MS: u32 = CONFIG.optics_max_on_ms + 2000;
 
-/// Claims the outputs in `interlock` for one feed, before it is submitted,
-/// on the clock `now_ms` that `delay` advances. A storage write running or
-/// waiting, or a change `queued` in a mailbox, goes first (the loop waits
-/// for it, at most `WRITE_WAIT_MS`). A join running or waiting, or a write
-/// still running or a change still queued past that wait, refuses the feed
-/// `Busy`, final for that write id (clients never retry a feed on their
-/// own); `held` hears why, for the log.
-pub fn claim_outputs(
-    interlock: &Interlock,
-    queued: impl FnMut() -> bool,
-    now_ms: impl FnMut() -> u32,
-    delay: impl FnMut(u32),
-    held: impl FnOnce(Held),
-) -> Result<(), Refusal> {
-    interlock
-        .claim_feed_after_writes(FEED_BOUND_MS, queued, now_ms, delay)
-        .map_err(|why| {
-            held(why);
-            Refusal::Busy
-        })
+/// A feed waiting to claim the outputs, from its `submit` until the claim is
+/// taken or refused: its number is promised, and nothing has moved. While one
+/// waits the loop reads it as a feed in flight (`busy`, `Blocked::Feeding`) so
+/// nothing else starts, and the device API refuses changes that would queue a
+/// write behind it, as if the outputs were claimed. It holds nothing in the
+/// interlock, so the writes it waits for can finish.
+#[derive(Debug)]
+pub struct Claiming {
+    /// The number `submit` answered, the journal's next.
+    pub feed: u32,
+    pub portions: u8,
+    pub by: Source,
+    wait: ClaimWait,
+}
+
+/// What one pass's try of a [`Claiming`] came to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClaimTurn {
+    /// The outputs are claimed: hand the feed to the owner in this pass.
+    Claimed,
+    /// Try again on the next pass.
+    Waiting,
+    /// Over, nothing claimed and nothing moved.
+    Refused(Refusal),
+}
+
+impl Claiming {
+    pub const fn new(feed: u32, portions: u8, by: Source, now_ms: u32) -> Self {
+        Self {
+            feed,
+            portions,
+            by,
+            wait: ClaimWait::new(now_ms),
+        }
+    }
+
+    /// One try at `now_ms`. `hold` is a reason not to feed that arose since
+    /// the feed was asked for (setup mode, an install, a restart, the battery
+    /// hold): a pass runs between two tries, so what readiness said at `submit`
+    /// no longer speaks for this moment. A storage write running or waiting,
+    /// or a change `queued` in a mailbox, goes first, for at most
+    /// `WRITE_WAIT_MS`. A join running or waiting, or a write still running or
+    /// a change still queued past that wait, refuses the feed `Busy`, final
+    /// for that write id (clients never retry a feed on their own); `held`
+    /// hears why, for the log.
+    pub fn step(
+        &mut self,
+        interlock: &Interlock,
+        hold: Option<Blocked>,
+        queued: bool,
+        now_ms: u32,
+        held: impl FnOnce(Held),
+    ) -> ClaimTurn {
+        if let Some(blocked) = hold {
+            return ClaimTurn::Refused(blocked.refusal());
+        }
+        match interlock.claim_feed_after_writes(&mut self.wait, FEED_BOUND_MS, queued, now_ms) {
+            ClaimStep::Claimed => ClaimTurn::Claimed,
+            ClaimStep::Wait => ClaimTurn::Waiting,
+            ClaimStep::Refused(why) => {
+                held(why);
+                ClaimTurn::Refused(Refusal::Busy)
+            }
+        }
+    }
 }
 
 /// Whether a client's change waits in a mailbox for the settings writer,
@@ -550,6 +596,9 @@ pub fn outlet_breaks(pins: &PinWatch) -> u32 {
 /// The body of a `PLOWN1` line.
 impl core::fmt::Display for Record {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // Traces and pin watches are borrowed, not bound by value: a copy
+        // would sit in this frame, which the stack audit charges at every
+        // nesting level of every line the loop formats.
         match *self {
             Record::Journal { error, created } => write!(
                 f,
@@ -591,9 +640,9 @@ impl core::fmt::Display for Record {
                 result.code()
             ),
             Record::Fed {
-                result,
+                ref result,
                 durability,
-                trace,
+                ref trace,
             } => write!(
                 f,
                 "fed id={} requested={} completed={} outcome={} reason={} durable={} drive_ms={} rising={} falling={}",
@@ -607,7 +656,7 @@ impl core::fmt::Display for Record {
                 trace.rising,
                 trace.falling,
             ),
-            Record::Current { feed, trace } => {
+            Record::Current { feed, ref trace } => {
                 write!(f, "current id={feed} first_edge_ms=")?;
                 match trace.first_edge_ms {
                     Some(ms) => write!(f, "{ms}")?,
@@ -630,7 +679,7 @@ impl core::fmt::Display for Record {
                     }
                 )
             }
-            Record::Edges { feed, trace } => {
+            Record::Edges { feed, ref trace } => {
                 write!(f, "edges id={feed} at=")?;
                 let mut logged = trace.edge_ms.iter().flatten().peekable();
                 if logged.peek().is_none() {
@@ -673,7 +722,7 @@ impl core::fmt::Display for Record {
             Record::Held { portions, held } => {
                 write!(f, "feed portions={portions} held={}", held.code())
             }
-            Record::Joins(status) => write!(
+            Record::Joins(ref status) => write!(
                 f,
                 "joins refused={} deferred={} forced={} waited_max_ms={} long_joins={}",
                 status.refused,
@@ -682,7 +731,7 @@ impl core::fmt::Display for Record {
                 status.waited_max_ms,
                 status.long_joins,
             ),
-            Record::Writes(status) => write!(
+            Record::Writes(ref status) => write!(
                 f,
                 "interlock writes_deferred={} writes_forced={} write_waited_max_ms={} \
                  feeds_delayed={}",
@@ -691,7 +740,7 @@ impl core::fmt::Display for Record {
                 status.write_waited_max_ms,
                 status.feeds_delayed
             ),
-            Record::Pins { feed, pins } => {
+            Record::Pins { feed, ref pins } => {
                 let [start_a, start_b] = pins.start.unwrap_or_default();
                 let [changed_a, changed_b] = pins.changed;
                 write!(
@@ -738,7 +787,7 @@ mod target {
     use wellfed_core::feed::storage::{OwnerResult, RotorPhase};
     use wellfed_core::store::feed_journal::{FeedJournal, JournalError};
     use wellfed_feeder::feed::{self, Durability};
-    use wellfed_feeder::feeder::Marks;
+    use wellfed_feeder::feeder::{Marks, RefusedClaim};
     use wellfed_feeder_runtime::traces;
     use wellfed_proto::api::{Blocked, EventBody, Phase, Refusal, Source, TraceSummary};
     use wellfed_sdk::hal::interlock::{self, INTERLOCK, Turn};
@@ -748,7 +797,8 @@ mod target {
     use wellfed_sdk::{JournalSlots, Slot};
 
     use super::{
-        CONFIG, Cadence, JOURNAL, Opened, PowerCycle, Proof, Record, Recovery, drive_figures,
+        CONFIG, Cadence, ClaimTurn, Claiming, JOURNAL, Opened, PowerCycle, Proof, Record, Recovery,
+        drive_figures,
     };
 
     type Journal = FeedJournal<JournalSlots>;
@@ -814,6 +864,8 @@ mod target {
         refused: bool,
         logged: Option<OwnerStatus>,
         current: Option<Current>,
+        /// The feed waiting to claim the outputs; never with `current`.
+        claiming: Option<Claiming>,
         /// Why the last feed ended before its reservation, for the API's
         /// poll: its id and the refusal.
         unreserved: Option<(u64, Refusal)>,
@@ -897,11 +949,7 @@ mod target {
                 current.max_gap_ms = current.max_gap_ms.max(now.wrapping_sub(last));
             }
             self.stepped_ms = Some(now);
-            let in_flight = if self.current.is_some() {
-                super::InFlight::Feed
-            } else {
-                super::InFlight::Nothing
-            };
+            let in_flight = self.in_flight();
             let held = super::food_read_held(
                 wellfed_sdk::confirming(),
                 setup,
@@ -967,7 +1015,7 @@ mod target {
                 && status.fault == OwnerFault::Sensor
                 && status.stopped
                 && status.optics_off
-                && self.current.is_none()
+                && self.in_flight() == super::InFlight::Nothing
                 && !wellfed_sdk::hal::ota::mailbox::installing();
             let cycle = if sdk::backup_read(BOOT_COUNT_REGISTER) <= 1 {
                 PowerCycle::FirstBoot
@@ -984,12 +1032,7 @@ mod target {
         /// Hands the outputs' turn back by `may_release`, and watches for a
         /// join that holds its turn too long.
         fn release(&mut self, status: &OwnerStatus, record: &mut impl FnMut(Record)) {
-            let in_flight = if self.current.is_some() {
-                super::InFlight::Feed
-            } else {
-                super::InFlight::Nothing
-            };
-            if super::may_release(in_flight, status) {
+            if super::may_release(self.in_flight(), status) {
                 INTERLOCK.release_feed();
             }
             INTERLOCK.watch_join(wellfed_sdk::hal::sdk::uptime_ms());
@@ -1145,20 +1188,93 @@ mod target {
         ) -> Result<u32, Refusal> {
             let owner = OWNER.enter().ok_or(Refusal::Busy)?;
             // An install holds the flash; the owner refuses it as well.
-            if self.current.is_some() || wellfed_sdk::hal::ota::mailbox::installing() {
+            if self.in_flight() == super::InFlight::Feed
+                || wellfed_sdk::hal::ota::mailbox::installing()
+            {
                 return Err(Refusal::Busy);
             }
-            // A feed goes before a food reading, and the claim below can wait
-            // in this task for a write, which lit emitters would outlast.
+            let number = u32::try_from(owner.high_water_id().wrapping_add(1))
+                .map_err(|_| Refusal::NotWritable)?;
+
+            let now = wellfed_sdk::hal::sdk::uptime_ms();
+            let mut claiming = Claiming::new(number, portions, by, now);
+            match Self::try_claim(&mut claiming, &owner, None, &mut record) {
+                ClaimTurn::Claimed => self.hand_over(&owner, &claiming, &mut record),
+                ClaimTurn::Refused(refusal) => Err(refusal),
+                ClaimTurn::Waiting => {
+                    self.claiming = Some(claiming);
+                    Ok(number)
+                }
+            }
+        }
+
+        /// Who asked for the feed waiting to claim the outputs.
+        pub fn claiming(&self) -> Option<Source> {
+            self.claiming.as_ref().map(|claiming| claiming.by)
+        }
+
+        /// One pass's try of the feed waiting to claim the outputs: its
+        /// refusal, once it has one. `hold` is why it must not start now.
+        pub fn claim_step(
+            &mut self,
+            hold: Option<Blocked>,
+            mut record: impl FnMut(Record),
+        ) -> Option<RefusedClaim> {
+            let owner = OWNER.enter()?;
+            let mut claiming = self.claiming.take()?;
+
+            let turn = Self::try_claim(&mut claiming, &owner, hold, &mut record);
+            let refusal = match turn {
+                ClaimTurn::Waiting => {
+                    self.claiming = Some(claiming);
+                    return None;
+                }
+                ClaimTurn::Refused(refusal) => refusal,
+                // The owner's own checks may still refuse it; the claim then
+                // goes back at its next step, as for any refused feed.
+                ClaimTurn::Claimed => match self.hand_over(&owner, &claiming, &mut record) {
+                    Ok(_) => return None,
+                    Err(refusal) => refusal,
+                },
+            };
+            self.unreserved = Some((u64::from(claiming.feed), refusal));
+            Some(RefusedClaim {
+                feed: claiming.feed,
+                by: claiming.by,
+                refusal,
+            })
+        }
+
+        /// One try of `claiming`. A reading ends first, each try: a feed goes
+        /// before one, and lit emitters would outlast the writes it waits for.
+        fn try_claim(
+            claiming: &mut Claiming,
+            owner: &Owner<Journal>,
+            hold: Option<Blocked>,
+            record: &mut impl FnMut(Record),
+        ) -> ClaimTurn {
             owner.yield_food_read(&INTERLOCK);
-            let clock = wellfed_sdk::hal::sdk::uptime_ms;
-            let delay = wellfed_sdk::hal::sdk::delay_ms;
-            super::claim_outputs(&INTERLOCK, super::writes_queued, clock, delay, |held| {
+            let portions = claiming.portions;
+            let now = wellfed_sdk::hal::sdk::uptime_ms();
+            claiming.step(&INTERLOCK, hold, super::writes_queued(), now, |held| {
                 record(Record::Held { portions, held });
-            })?;
-            let status = owner.status();
-            let feed = status.high_water_id.wrapping_add(1);
-            let number = u32::try_from(feed).map_err(|_| Refusal::NotWritable)?;
+            })
+        }
+
+        /// The claim is taken: the owner gets the feed under the number it was
+        /// promised. Only a reservation moves the journal's high water and no
+        /// other feed starts while one waits, so that is still the next.
+        fn hand_over(
+            &mut self,
+            owner: &Owner<Journal>,
+            claiming: &Claiming,
+            record: &mut impl FnMut(Record),
+        ) -> Result<u32, Refusal> {
+            let (number, portions, by) = (claiming.feed, claiming.portions, claiming.by);
+            let feed = u64::from(number);
+            if owner.high_water_id().wrapping_add(1) != feed {
+                return Err(Refusal::Busy);
+            }
 
             let result = owner.submit(feed, u16::from(portions));
             record(Record::Submitted {
@@ -1183,9 +1299,7 @@ mod target {
                     Ok(number)
                 }
                 SubmitResult::RejectRequest => Err(Refusal::Portions { asked: portions }),
-                SubmitResult::RejectStopped if status.state == OwnerState::Fault => {
-                    Err(Refusal::Fault)
-                }
+                SubmitResult::RejectStopped if owner.faulted() => Err(Refusal::Fault),
                 // Still opening, busy, or a phase only a double bowl needs.
                 SubmitResult::RejectStopped
                 | SubmitResult::RejectBusy
@@ -1194,23 +1308,42 @@ mod target {
             }
         }
 
+        /// Whether the loop has a feed between its asking and its recorded
+        /// result, its claim taken or not.
+        fn in_flight(&self) -> super::InFlight {
+            if self.current.is_some() || self.claiming.is_some() {
+                super::InFlight::Feed
+            } else {
+                super::InFlight::Nothing
+            }
+        }
+
         /// Whether the feed `feed` is reserved yet: `None` while it waits.
         pub fn reserved(&self, feed: u32) -> Option<Result<(), Refusal>> {
             let feed = u64::from(feed);
+            let claiming = self.claiming.as_ref();
+            if claiming.is_some_and(|claiming| u64::from(claiming.feed) == feed) {
+                return None;
+            }
             match (self.current, self.unreserved) {
                 (Some(current), _) if current.feed == feed => current.reserved.then_some(Ok(())),
                 (_, Some((ended, refusal))) if ended == feed => Some(Err(refusal)),
                 // Not the feed in flight nor the last one unreserved: it was
-                // reserved and has ended. A feed ends unreserved only when
-                // the owner faults before reserving it, and a faulted owner
-                // takes no feed until a restart (which empties the server's
-                // memory of ids), so no later feed can have replaced it in
-                // `unreserved`.
+                // reserved and has ended. A feed ends unreserved when the
+                // owner faults before reserving it, and a faulted owner takes
+                // no feed until a restart (which empties the server's memory
+                // of ids); or when its claim is refused, which the server
+                // hears at once (`RefusedClaim`) and answers itself, since the
+                // next feed takes the same number. So nothing still asks after
+                // a feed a later one replaced here.
                 _ => Some(Ok(())),
             }
         }
 
-        /// Stop the feed `feed` if it is still running.
+        /// Stop the feed `feed` if it is still running. One still waiting to
+        /// claim the outputs is not running: its number has been announced to
+        /// nobody, a cancel could not promise the `Fed` event a cancel means,
+        /// and a refused claim's number goes to the next feed.
         pub fn cancel(&self, feed: u32) -> bool {
             let feed = u64::from(feed);
             self.current.is_some_and(|current| current.feed == feed)
@@ -1284,7 +1417,7 @@ mod target {
             if self.interrupted.is_some() {
                 return Some(Blocked::Resolving);
             }
-            if self.current.is_some() || status.state != OwnerState::Idle {
+            if self.in_flight() == super::InFlight::Feed || status.state != OwnerState::Idle {
                 return Some(Blocked::Feeding);
             }
             // On the pack below its floor, a feed would only sag it
@@ -1336,7 +1469,7 @@ mod target {
 
         /// A feed is queued or runs: no install starts.
         pub fn busy(&self) -> bool {
-            self.current.is_some() || self.feeding()
+            self.in_flight() == super::InFlight::Feed || self.feeding()
         }
 
         /// A feed is being prepared or driven: the loop defers handshakes.

@@ -48,6 +48,10 @@ struct Fake {
     wifi_generation: u32,
     ticket: u32,
     feeds: u32,
+    /// A queued feed is not reserved yet.
+    unreserved: bool,
+    /// Feeds are asked for, not refused as unserved.
+    ready: bool,
     events: Vec<proto::Event>,
     time: TimeSettingsView,
     calibration: CalibrationView,
@@ -304,6 +308,14 @@ impl Device for Fake {
         Some(KeyOutcome::Done)
     }
 
+    fn readiness(&mut self) -> proto::Readiness {
+        if self.ready {
+            proto::Readiness::Ready
+        } else {
+            proto::Readiness::Blocked(proto::Blocked::Unserved)
+        }
+    }
+
     fn capabilities(&self) -> Capabilities {
         Capabilities::FEED
             .union(Capabilities::TIME)
@@ -333,7 +345,7 @@ impl Device for Fake {
     }
 
     fn feed_reserved(&mut self, _feed: u32) -> Option<Result<(), Refusal>> {
-        Some(Ok(()))
+        (!self.unreserved).then_some(Ok(()))
     }
 
     fn cancel_feed(&mut self, feed: u32) -> bool {
@@ -435,6 +447,23 @@ impl Rig {
             },
             |r| records.push(r),
         );
+    }
+
+    /// Hold each queued feed before its reservation, or let them through.
+    /// Either way the device takes feeds from now on.
+    pub fn hold_reservations(&mut self, held: bool) {
+        self.device.ready = true;
+        self.device.unreserved = held;
+    }
+
+    /// The device refused the feed it numbered `feed`.
+    pub fn feed_refused(&mut self, feed: u32, refusal: Refusal) {
+        self.server.feed_refused(feed, refusal);
+    }
+
+    /// The feeds the device was asked for.
+    pub fn feeds(&self) -> u32 {
+        self.device.feeds
     }
 
     /// As much of `bytes` as the slot has room for; how much that was.
