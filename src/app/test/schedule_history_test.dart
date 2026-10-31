@@ -9,6 +9,7 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/widgets/icons.dart';
 
 import 'fakes.dart';
 import 'harness.dart';
@@ -497,6 +498,45 @@ void main() {
       expect(find.text("Couldn't feed"), findsNothing);
       expect(find.text('Can feed again'), findsNothing);
       expect(find.text('A press was refused'), findsOneWidget);
+    });
+
+    testWidgets('setup mode is not a problem, and shows under All', (
+      tester,
+    ) async {
+      await show(tester, [
+        entry(
+          1,
+          const HistoryBody.feedingBlocked(reason: Blocked.setup),
+          at: now,
+        ),
+        entry(
+          2,
+          const HistoryBody.feedingBlocked(reason: Blocked.updating),
+          at: now,
+        ),
+      ]);
+
+      expect(find.text('In setup mode'), findsOneWidget);
+      expect(find.text('Installing an update'), findsOneWidget);
+      final setup = find.ancestor(
+        of: find.text('In setup mode'),
+        matching: find.byType(Row),
+      );
+      final other = find.ancestor(
+        of: find.text('Installing an update'),
+        matching: find.byType(Row),
+      );
+      Glyph glyph(Finder row) => tester
+          .widget<StrokeIcon>(
+            find.descendant(of: row, matching: find.byType(StrokeIcon)),
+          )
+          .glyph;
+      expect(glyph(setup), Glyph.info);
+      expect(glyph(other), Glyph.warning);
+
+      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Problems'));
+      expect(find.text('In setup mode'), findsNothing);
+      expect(find.text('Installing an update'), findsOneWidget);
     });
 
     testWidgets('an uncertain feed of no known source says interrupted', (

@@ -23,7 +23,9 @@ bool _shown(_Filter filter, HistoryBody body) => switch (filter) {
       result.outcome != FeedOutcome.done ||
           result.confirmed != result.requested,
     HistoryBody_Food(:final level) => level == FoodLevel.low,
-    HistoryBody_FeedingBlocked(:final reason) => reason != null,
+    // Setup mode is the owner's own choice, not something gone wrong.
+    HistoryBody_FeedingBlocked(:final reason) =>
+      reason != null && reason != Blocked.setup,
     HistoryBody_Missed() ||
     HistoryBody_DispenseRefused() ||
     HistoryBody_Lost() ||
@@ -328,6 +330,12 @@ class _EntryRow extends StatelessWidget {
         c.textMuted,
         "Some events here weren't kept",
         '',
+      ),
+      HistoryBody_FeedingBlocked(reason: Blocked.setup) => (
+        Glyph.info,
+        c.textMuted,
+        'Not ready to feed',
+        blockedWords(Blocked.setup),
       ),
       HistoryBody_FeedingBlocked(reason: final reason?) => (
         Glyph.warning,
