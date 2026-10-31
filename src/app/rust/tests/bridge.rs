@@ -32,6 +32,7 @@ use wellfed_client::setup::{Ask, Session, panel_position};
 use wellfed_connect::Connection;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness::{Relay, Running};
+use wellfed_feeder_sim::serve::Control;
 use wellfed_session::noise::Keypair;
 use wellfed_session::setup_code::Code;
 
@@ -225,6 +226,19 @@ async fn next<T>(
     .expect("no such update in time")
 }
 
+/// Updates through `pick` until the caller's timeout gives up.
+async fn next_forever<T>(
+    heard: &mut mpsc::UnboundedReceiver<SessionUpdate>,
+    mut pick: impl FnMut(SessionUpdate) -> Option<T>,
+) -> T {
+    loop {
+        let update = heard.recv().await.expect("the session ended");
+        if let Some(found) = pick(update) {
+            return found;
+        }
+    }
+}
+
 #[test]
 fn a_session_shows_the_card_and_runs_a_feed_to_its_end() {
     local(async {
@@ -280,6 +294,157 @@ fn a_session_shows_the_card_and_runs_a_feed_to_its_end() {
         })
         .await;
         assert_eq!(error, None);
+        sim.stop().await;
+    });
+}
+
+/// A stalled feed's session on a runtime whose clock moves only when idle.
+fn paused(test: impl Future<Output = ()>) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap();
+    runtime.block_on(LocalSet::new().run_until(test));
+}
+
+/// A session through `relay`, with a feed of 2 that stays in flight.
+async fn feed_in_flight(
+    sim: &Running,
+    relay: &Relay,
+) -> (
+    mpsc::UnboundedSender<Command>,
+    mpsc::UnboundedReceiver<SessionUpdate>,
+) {
+    let (commands, mut heard) = start_session(sim.identity, relay.address, false);
+    next(&mut heard, |update| match update {
+        SessionUpdate::Status { .. } => Some(()),
+        _ => None,
+    })
+    .await;
+    // The backlog's quiet moment passes first: a real session is past it.
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    sim.control(Control::StallFeeds(true));
+    commands.send(Command::Feed { portions: 2 }).unwrap();
+    next(&mut heard, |update| match update {
+        SessionUpdate::FeedStarted { .. } => Some(()),
+        _ => None,
+    })
+    .await;
+    (commands, heard)
+}
+
+/// A feeder that loses power mid-feed sends no reset, and the screen hears of
+/// it from the feed's own silence limit, well before the usual one.
+#[test]
+fn a_silent_feeder_ends_the_session_of_a_running_feed_within_20_s() {
+    paused(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let relay = Relay::start(sim.address).await;
+        let (_commands, mut heard) = feed_in_flight(&sim, &relay).await;
+
+        relay.pause();
+        let error = tokio::time::timeout(
+            Duration::from_secs(21),
+            next_forever(&mut heard, |update| match update {
+                SessionUpdate::FeedUnanswered | SessionUpdate::FeedStarted { .. } => {
+                    panic!("the feed was already answered, once");
+                }
+                SessionUpdate::Closed { error } => Some(error),
+                _ => None,
+            }),
+        )
+        .await
+        .expect("closed by the feed's silence limit");
+
+        assert!(error.is_some());
+        sim.stop().await;
+    });
+}
+
+/// The reads that keep the link heard from also keep a slow feed's session
+/// open, for as long as the feeder keeps answering.
+#[test]
+fn a_feeder_answering_keeps_a_stalled_feeds_session_open() {
+    paused(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let relay = Relay::start(sim.address).await;
+        let (commands, mut heard) = feed_in_flight(&sim, &relay).await;
+
+        let waited = tokio::time::timeout(
+            Duration::from_secs(60),
+            next_forever(&mut heard, |update| match update {
+                SessionUpdate::Closed { error } => panic!("it closed: {error:?}"),
+                _ => None::<()>,
+            }),
+        )
+        .await;
+        assert!(waited.is_err());
+
+        // The usual limit is back once the feed has ended: the session
+        // survives a 30 s silence that a running feed's would not.
+        sim.control(Control::StallFeeds(false));
+        next(&mut heard, |update| match update {
+            SessionUpdate::FeedEnded { .. } => Some(()),
+            _ => None,
+        })
+        .await;
+        relay.pause();
+        let silent = tokio::time::timeout(
+            Duration::from_secs(30),
+            next_forever(&mut heard, |update| match update {
+                SessionUpdate::Closed { error } => panic!("it closed: {error:?}"),
+                _ => None::<()>,
+            }),
+        )
+        .await;
+        assert!(silent.is_err());
+
+        commands.send(Command::Close).unwrap();
+        sim.stop().await;
+    });
+}
+
+/// A session that lost its feed never sends it again: only the new session's
+/// history reports it, once.
+#[test]
+fn a_feed_lost_with_its_session_is_read_back_and_not_resent() {
+    paused(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let relay = Relay::start(sim.address).await;
+        let (_commands, mut heard) = feed_in_flight(&sim, &relay).await;
+
+        relay.pause();
+        tokio::time::timeout(
+            Duration::from_secs(21),
+            next_forever(&mut heard, |update| match update {
+                SessionUpdate::Closed { .. } => Some(()),
+                _ => None,
+            }),
+        )
+        .await
+        .expect("closed by the feed's silence limit");
+
+        sim.control(Control::StallFeeds(false));
+        tokio::time::sleep(Duration::from_secs(60)).await;
+
+        let (again, mut heard) = start_session(sim.identity, sim.address, false);
+        let entries = next(&mut heard, |update| match update {
+            SessionUpdate::History { entries, .. } => Some(entries),
+            _ => None,
+        })
+        .await;
+        let fed = entries
+            .iter()
+            .filter(|entry| matches!(entry.body, HistoryBody::Fed { .. }))
+            .count();
+        assert_eq!(fed, 1);
+
+        again.send(Command::Close).unwrap();
         sim.stop().await;
     });
 }

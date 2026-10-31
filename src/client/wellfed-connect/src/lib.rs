@@ -283,6 +283,13 @@ impl Connection {
         self.session.cursor()
     }
 
+    /// Change how long a silent feeder is given before the session ends with
+    /// [`Error::Silent`]; [`SILENCE`] is the usual limit. The caller keeps a
+    /// shorter limit fed with its own requests.
+    pub fn set_silence(&mut self, silence: Duration) {
+        self.session.set_silence(silence);
+    }
+
     /// Messages that arrived while [`Self::ask`] waited, not yet taken by
     /// [`Self::next`].
     pub fn queued(&self) -> usize {

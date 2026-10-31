@@ -455,8 +455,15 @@ class FakeSession with _FakeOpaque implements FeederSession {
   @override
   void feed({required int portions}) => feeds.add(portions);
 
+  /// What a cancel throws, as a session already gone does.
+  Object? cancelFails;
+  final cancels = <int>[];
+
   @override
-  void cancelFeed({required int feed}) {}
+  void cancelFeed({required int feed}) {
+    if (cancelFails case final error?) throw error;
+    cancels.add(feed);
+  }
 
   @override
   void refresh() {}

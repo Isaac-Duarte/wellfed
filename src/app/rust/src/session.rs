@@ -9,6 +9,12 @@
 //! `Fed` event (or the history) settles it. Every other write goes the same
 //! way, and its absent answer comes back as such.
 //!
+//! While this session's own feed runs it reads the status every
+//! [`FEED_PROBE`] and gives a silent feeder [`FEED_SILENCE`], not the usual
+//! 90 s: a feeder that lost power sends no reset, so nothing else tells the
+//! screen that the feed it is following may have stopped. That only ends the
+//! session. The reads are reads, and the feed itself is not sent again.
+//!
 //! After pairing, or whenever the feeder's clock is not set, the session
 //! gives the feeder this phone's clock and zone, as `wellfed time` does.
 //! That sync carries the zone's next change too, so a feeder with no zone
@@ -43,6 +49,16 @@ const TURN: Duration = Duration::from_secs(30);
 /// While the history comes in: a backlog whose newest event this session
 /// skips never reaches its end, so a quiet moment ends it instead.
 const QUIET: Duration = Duration::from_secs(2);
+/// How often the status is read while this session's own feed runs. Nothing
+/// else is due from the feeder until the feed's end, and an answer is the only
+/// way to hear it is still there.
+const FEED_PROBE: Duration = Duration::from_secs(5);
+/// How long a feeder that is running this session's feed may stay silent. The
+/// feeder answers reads during a feed, so this is room for three unanswered
+/// reads. A stall longer than this that the feeder survives only costs a
+/// reconnect: its `Fed` event still arrives in the history, and replaces what
+/// the screen says.
+const FEED_SILENCE: Duration = Duration::from_secs(20);
 
 /// The device API's request id.
 type RequestId = [u8; 16];
@@ -126,6 +142,8 @@ struct Serving<'a, U> {
     /// Until it ends, events only fill `batch`; after it they are news.
     backlog: Option<Backlog>,
     batch: Vec<HistoryEntry>,
+    /// This session's own feed, from the feeder's `Feeding` until its `Fed`.
+    running: Option<u32>,
 }
 
 async fn serve(
@@ -161,6 +179,7 @@ async fn serve(
         facts: Facts::default(),
         backlog: Some(backlog),
         batch: Vec::new(),
+        running: None,
     };
     if sync_clock || status.clock.is_none() {
         let sync = wellfed_client::time::sync(Timestamp::now(), &TimeZone::system());
@@ -179,11 +198,7 @@ async fn serve(
     }
 
     loop {
-        let wait = if serving.backlog.is_some() {
-            QUIET
-        } else {
-            TURN
-        };
+        let wait = serving.wait();
         tokio::select! {
             command = commands.recv() => {
                 let Some(command) = command else { return Ok(()) };
@@ -218,6 +233,15 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         self.connection.request(id, op)?;
         self.asked.insert(id, what);
         Ok(())
+    }
+
+    /// How long to wait on the connection before [`Self::turn`].
+    const fn wait(&self) -> Duration {
+        match (self.backlog, self.running) {
+            (Some(_), _) => QUIET,
+            (None, Some(_)) => FEED_PROBE,
+            (None, None) => TURN,
+        }
     }
 
     /// Say the card again; `false` once nobody listens.
@@ -298,7 +322,12 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             }
             (Asked::Clock, _) => Ok((self.update)(SessionUpdate::ClockNotSynced)),
             (what, answer) => {
-                Ok(feed_answered(what, answer).is_none_or(|message| (self.update)(message)))
+                let message = feed_answered(what, answer);
+                if let Some(SessionUpdate::FeedStarted { feed, .. }) = &message {
+                    self.running = Some(*feed);
+                    self.connection.set_silence(FEED_SILENCE);
+                }
+                Ok(message.is_none_or(|message| (self.update)(message)))
             }
         }
     }
@@ -318,6 +347,10 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         };
         if let Some(feed) = fed {
             self.facts.feeds.push(feed);
+            if self.running == Some(feed.feed) {
+                self.running = None;
+                self.connection.set_silence(wellfed_connect::SILENCE);
+            }
         }
         let entry = match pushed {
             Pushed::Event(event) => event_entry(event),
