@@ -429,8 +429,11 @@ void main() {
       expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
     });
 
-    /// The screen, a recording ready to pick, its session just ended.
-    Future<(FakeFeederPorts, FakeSession)> dropped(WidgetTester tester) async {
+    /// The screen on an open session, holding what `first` answers.
+    Future<(FakeFeederPorts, FakeSession)> onScreen(
+      WidgetTester tester,
+      FeederReply first,
+    ) async {
       final book = FakeBook()..feeders = [kitchen];
       final ports = FakeFeederPorts();
       final feeder = FeederController(book, ports, kitchen);
@@ -438,8 +441,8 @@ void main() {
       await tester.pump();
       ports.session.opened();
       await tester.pump();
-      final first = ports.session;
-      first.replies.add(_noRecording);
+      final session = ports.session;
+      session.replies.add(first);
       await showTab(
         tester,
         MealCallScreen(
@@ -447,8 +450,13 @@ void main() {
           pick: () async => Uint8List.fromList([1]),
         ),
       );
-      first.requests.clear();
+      session.requests.clear();
+      return (ports, session);
+    }
 
+    /// The screen, a recording ready to pick, its session just ended.
+    Future<(FakeFeederPorts, FakeSession)> dropped(WidgetTester tester) async {
+      final (ports, first) = await onScreen(tester, _noRecording);
       unawaited(first.updates.close());
       await tester.pump();
       return (ports, first);
@@ -504,7 +512,7 @@ void main() {
         const CallClip.none(),
         pick: () async => Uint8List.fromList([1]),
       );
-      session.replies.addAll(List.filled(100, const FeederReply.unanswered()));
+      session.answering = (_) async => const FeederReply.unanswered();
       session.requests.clear();
 
       await tester.tap(find.text('Choose a recording'));
@@ -520,7 +528,7 @@ void main() {
       final (ports, first) = await dropped(tester);
 
       await tester.tap(find.text('Choose a recording'));
-      for (var second = 0; second < 60; second++) {
+      for (var second = 0; second < 70; second++) {
         await tester.pump(const Duration(seconds: 1));
       }
 
@@ -530,6 +538,167 @@ void main() {
       await tester.pump(const Duration(minutes: 1));
       expect(find.text(noReach), findsOneWidget);
       expect(find.text('Choose a recording'), findsOneWidget);
+    });
+
+    const stored = FeederReply.call(
+      call: CallInfo(
+        writable: true,
+        clip: CallClip.stored(bytes: 9, crc: 1),
+        ms: 3500,
+      ),
+    );
+
+    testWidgets('a read that never answers counts against the wait', (
+      tester,
+    ) async {
+      final session = await show(
+        tester,
+        const CallClip.none(),
+        pick: () async => Uint8List.fromList([1]),
+      );
+      session.answering = (_) => Completer<FeederReply>().future;
+      session.requests.clear();
+
+      await tester.tap(find.text('Choose a recording'));
+      await tester.pump(MealCallScreen.reachWait);
+      await settle(tester);
+
+      expect(session.requests, hasLength(1), reason: 'the one read that hung');
+      expect(find.text(noReach), findsOneWidget);
+    });
+
+    /// A write answered `Unanswered` as its session dies with it.
+    void dyingOn<T extends FeederRequest>(FakeSession session) {
+      session.answering = (request) async {
+        if (request is T) {
+          unawaited(session.updates.close());
+          return const FeederReply.unanswered();
+        }
+        if (session.updates.isClosed) return const FeederReply.notSent();
+        return stored;
+      };
+    }
+
+    testWidgets('an upload lost with its session drops the old clip and says '
+        'only what it knows', (tester) async {
+      final (ports, first) = await onScreen(tester, stored);
+      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      dyingOn<FeederRequest_UploadCall>(first);
+
+      await tester.tap(find.text('Replace the recording'));
+      await settle(tester);
+
+      expect(find.textContaining('may or may not have'), findsOneWidget);
+      expect(find.textContaining('Nothing changed'), findsNothing);
+      expect(find.text('Stored: 3.5 s a play'), findsNothing);
+      expect(find.text('Reading…'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 3));
+      final second = ports.session;
+      second.replies.add(_noRecording);
+      second.opened();
+      await settle(tester);
+
+      expect(find.text('No recording stored'), findsOneWidget);
+      expect(find.textContaining('Nothing changed'), findsNothing);
+      expect(find.textContaining('may or may not have'), findsOneWidget);
+      expect(second.requests.whereType<FeederRequest_UploadCall>(), isEmpty);
+    });
+
+    testWidgets('an upload lost for good cannot say what the feeder holds', (
+      tester,
+    ) async {
+      final (_, first) = await onScreen(tester, stored);
+      dyingOn<FeederRequest_UploadCall>(first);
+
+      await tester.tap(find.text('Replace the recording'));
+      await tester.pump();
+      for (var second = 0; second < 70; second++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+
+      expect(find.text("Can't read it right now"), findsOneWidget);
+      expect(find.textContaining('Nothing changed'), findsNothing);
+      expect(find.textContaining('may or may not have'), findsOneWidget);
+    });
+
+    testWidgets('a delete lost with its session says the same', (tester) async {
+      final (ports, first) = await onScreen(tester, stored);
+      dyingOn<FeederRequest_DeleteCall>(first);
+
+      await tester.tap(find.text('Delete the recording'));
+      await settle(tester);
+
+      expect(find.textContaining('may or may not have'), findsOneWidget);
+      expect(find.textContaining('Nothing changed'), findsNothing);
+      expect(find.text('Stored: 3.5 s a play'), findsNothing);
+
+      await tester.pump(const Duration(seconds: 3));
+      ports.session.replies.add(stored);
+      ports.session.opened();
+      await settle(tester);
+      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+    });
+
+    testWidgets('two quick taps open one picker', (tester) async {
+      var picks = 0;
+      final picking = Completer<Uint8List?>();
+      await show(
+        tester,
+        const CallClip.none(),
+        pick: () {
+          picks++;
+          return picking.future;
+        },
+      );
+
+      await tester.tap(find.text('Choose a recording'));
+      await tester.tap(find.text('Choose a recording'));
+      await settle(tester);
+      expect(picks, 1);
+
+      picking.complete(null);
+      await settle(tester);
+      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      expect(button.onPressed, isNotNull);
+    });
+
+    testWidgets('a screen opened during an upload does not start another', (
+      tester,
+    ) async {
+      final (feeder, session) = await oneFeeder(tester);
+      final uploading = Completer<FeederReply>();
+      session.answering = (request) => request is FeederRequest_UploadCall
+          ? uploading.future
+          : Future.value(_noRecording);
+      Widget screen() => MealCallScreen(
+        feeder: feeder,
+        pick: () async => Uint8List.fromList([1]),
+      );
+
+      await showTab(tester, screen());
+      await tester.tap(find.text('Choose a recording'));
+      await settle(tester);
+
+      await tester.pumpWidget(themed(const SizedBox()));
+      await showTab(tester, screen());
+      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      expect(button.onPressed, isNull);
+      expect(find.text('Working… keep this screen open.'), findsOneWidget);
+
+      session.answering = (_) async => stored;
+      uploading.complete(stored);
+      await settle(tester);
+
+      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      expect(
+        session.requests.whereType<FeederRequest_UploadCall>(),
+        hasLength(1),
+      );
+      expect(
+        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNotNull,
+      );
     });
 
     testWidgets('a recording refused or unanswered says so, then reads', (
