@@ -144,9 +144,8 @@ fn wifi_changes_against_the_stores_generation_and_a_stale_base_is_refused() {
     });
 }
 
-/// The firmware's loop does not step the speaker yet, so a tune is
-/// refused `unavailable`; the server passes the refusal on as it would
-/// `muted`.
+/// A feeder whose sound settings don't let the tune through refuses it
+/// `muted`, and the server passes the refusal on with its reason.
 #[test]
 fn a_tune_the_feeder_cannot_play_is_refused_with_its_reason() {
     local(async {
@@ -159,7 +158,7 @@ fn a_tune_the_feeder_cannot_play_is_refused_with_its_reason() {
         let played = service.play(&owner(), id, chime, Some([1; 16])).await;
 
         assert!(
-            matches!(played, Err(Error::Refused(FeederRefusal::Unavailable))),
+            matches!(played, Err(Error::Refused(FeederRefusal::Muted))),
             "{played:?}"
         );
         server.shutdown().await;
