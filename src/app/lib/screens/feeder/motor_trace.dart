@@ -58,7 +58,7 @@ class MotorTracesScreen extends StatelessWidget {
                     subtitle: Text(
                       entry.atMs == null
                           ? deliveredText(result)
-                          : '${clockTextMs(context, entry.atMs!)} · '
+                          : '${momentTextMs(context, entry.atMs!)} · '
                                 '${deliveredText(result)}',
                     ),
                     onTap: () => unawaited(

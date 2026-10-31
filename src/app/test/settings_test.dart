@@ -257,6 +257,14 @@ void main() {
       expect(find.text('11 g'), findsOneWidget);
     });
 
+    testWidgets('coming to the screen reads the time again', (tester) async {
+      final (feeder, session) = await oneFeeder(tester);
+      session.status(fakeCard(time: time));
+      await showTab(tester, ClockPortionScreen(feeder: feeder));
+
+      expect(session.requests, contains(const FeederRequest.getTime()));
+    });
+
     testWidgets('where the time comes from goes against its generation', (
       tester,
     ) async {

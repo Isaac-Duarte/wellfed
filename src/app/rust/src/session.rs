@@ -34,6 +34,7 @@ use wellfed_session::noise::Keypair;
 use crate::api::error::{BridgeError, ErrorKind};
 use crate::api::keys::random;
 use crate::api::session::{FeedRefusal, HistoryEntry, SessionUpdate};
+use crate::requests::TimeRead;
 use crate::today::{Facts, event_entry, gap_entry, result};
 
 /// How long one wait on the connection lasts before the loop looks at its
@@ -277,16 +278,24 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                 Ok(self.card())
             }
             (Asked::Time, Some(Answer::Time(time))) => {
-                self.facts.time = Some(time);
+                self.facts.time = Some(TimeRead::new(time, Timestamp::now()));
                 Ok(self.card())
             }
             (Asked::Ask(reply), answer) => {
                 // A screen's read is news for the card as well.
-                if let Some(Answer::Plans(plans)) = &answer {
-                    self.facts.plans = Some(*plans);
-                    if !self.card() {
-                        return Ok(false);
+                let news = match &answer {
+                    Some(Answer::Plans(plans)) => {
+                        self.facts.plans = Some(*plans);
+                        true
                     }
+                    Some(Answer::Time(time)) => {
+                        self.facts.time = Some(TimeRead::new(time.clone(), Timestamp::now()));
+                        true
+                    }
+                    _ => false,
+                };
+                if news && !self.card() {
+                    return Ok(false);
                 }
                 // Dart stopped waiting: nothing to tell it.
                 let _ = reply.send(answer);

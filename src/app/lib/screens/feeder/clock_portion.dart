@@ -33,6 +33,8 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
   void initState() {
     super.initState();
     unawaited(_read());
+    // The session keeps the answer: it comes back here as the card.
+    unawaited(widget.feeder.ask(const FeederRequest.getTime()));
   }
 
   Future<void> _read() async {
@@ -142,7 +144,7 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
           FactList([
             (
               'Feeder time',
-              Text(clock == null ? 'Not set' : clockTextMs(context, clock)),
+              Text(clock == null ? 'Not set' : momentTextMs(context, clock)),
             ),
             if (error != null) ('Could be off by', Text(_errorText(error))),
             if (card != null)

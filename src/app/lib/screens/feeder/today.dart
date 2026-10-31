@@ -175,7 +175,7 @@ class _Summary extends StatelessWidget {
 
   static String _lastFed(BuildContext context, api.FeedResult last) {
     final at = last.atMs;
-    final when = at == null ? '' : ' ${clockTextMs(context, at)} ·';
+    final when = at == null ? '' : ' ${momentTextMs(context, at)} ·';
     return 'Last fed$when ${deliveredText(last)}';
   }
 }
@@ -192,7 +192,7 @@ class _Facts extends StatelessWidget {
     // A time only when the last feed took this reading: one at rest has none.
     final fed = card.lastFed;
     final last = fed?.hopper == card.food ? fed?.atMs : null;
-    final at = last == null ? '' : ' at ${clockTextMs(context, last)}';
+    final at = last == null ? '' : ' ${atMomentTextMs(context, last)}';
     final (food, foodColor) = switch (card.food) {
       FoodLevel.present => ('In the hopper$at', c.food),
       FoodLevel.low => ('Low$at', c.fault),
@@ -271,40 +271,58 @@ String clockWords(BuildContext context, api.Card card) {
   final by = switch ((time.last, time.ntp)) {
     (TimeSource.ntp, NtpView_Gateway()) => 'Set by your router',
     (TimeSource.ntp, _) => 'Set by a time server',
-    (TimeSource.owner || TimeSource.client, _) => 'Set by a phone',
+    (TimeSource.owner || TimeSource.client, _) => 'Set by a paired device',
     (null, _) => 'Set',
   };
   final at = time.lastAtMs;
-  return at == null ? by : '$by at ${clockTextMs(context, at)}';
+  return at == null ? by : '$by ${atMomentTextMs(context, at)}';
 }
 
+/// One fact, one accessibility node. Without the container every row's text
+/// and the lock's switch merge into the list item, as one switch that reads
+/// out the whole panel.
 class _Row extends StatelessWidget {
-  const _Row(this.glyph, this.label, {required this.value, this.first = false});
+  const _Row(
+    this.glyph,
+    this.label, {
+    required this.value,
+    this.first = false,
+    this.valueNamed = false,
+  });
 
   final Glyph glyph;
   final String label;
   final Widget value;
   final bool first;
 
+  /// The value carries `label` itself, so the words are not read out twice.
+  final bool valueNamed;
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return Container(
-      constraints: const BoxConstraints(minHeight: 48),
-      padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: 8),
-      decoration: BoxDecoration(
-        border: first ? null : Border(top: BorderSide(color: c.line)),
-      ),
-      child: Row(
-        children: [
-          StrokeIcon(glyph, size: 22, color: c.textMuted),
-          const SizedBox(width: 14),
-          Text(label, style: TextStyle(fontSize: 15, color: c.text)),
-          const SizedBox(width: Space.s3),
-          Expanded(
-            child: Align(alignment: Alignment.centerRight, child: value),
-          ),
-        ],
+    return Semantics(
+      container: true,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 48),
+        padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: 8),
+        decoration: BoxDecoration(
+          border: first ? null : Border(top: BorderSide(color: c.line)),
+        ),
+        child: Row(
+          children: [
+            StrokeIcon(glyph, size: 22, color: c.textMuted),
+            const SizedBox(width: 14),
+            ExcludeSemantics(
+              excluding: valueNamed,
+              child: Text(label, style: TextStyle(fontSize: 15, color: c.text)),
+            ),
+            const SizedBox(width: Space.s3),
+            Expanded(
+              child: Align(alignment: Alignment.centerRight, child: value),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -409,13 +427,19 @@ class _LockRowState extends State<_LockRow> {
   @override
   Widget build(BuildContext context) {
     final locked = widget.card.locked;
+    const name = 'Lock the buttons';
     return _Row(
       Glyph.lock,
-      'Lock the buttons',
-      value: Switch(
-        // What the feeder last said, not what was asked: an answer moves it.
-        value: locked ?? false,
-        onChanged: widget.online && locked != null && !_asking ? _set : null,
+      name,
+      valueNamed: true,
+      value: Semantics(
+        container: true,
+        label: name,
+        child: Switch(
+          // What the feeder last said, not what was asked: an answer moves it.
+          value: locked ?? false,
+          onChanged: widget.online && locked != null && !_asking ? _set : null,
+        ),
       ),
     );
   }
@@ -472,7 +496,7 @@ String faultTitle(BuildContext context, FeedReason reason, int? atMs) {
     FeedReason.cancelled => 'A feed was stopped',
     FeedReason.done => 'A feed ended',
   };
-  return atMs == null ? what : '$what at ${clockTextMs(context, atMs)}';
+  return atMs == null ? what : '$what ${atMomentTextMs(context, atMs)}';
 }
 
 /// How far the fault's feed got, when its history has come in.
@@ -480,7 +504,8 @@ String? _stoppedAfter(api.FaultView fault) {
   final fed = fault.result;
   if (fed == null) return null;
   return fed.uncertain
-      ? 'It stopped somewhere between ${deliveredText(fed)} portions.'
+      ? 'It stopped somewhere between ${fed.confirmed} and ${fed.atMost} of '
+            '${fed.requested} portions.'
       : 'It stopped after ${deliveredText(fed)} portions.';
 }
 

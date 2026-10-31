@@ -35,6 +35,19 @@ Future<(FeederFleet, FakeSession)> _fleet(WidgetTester tester) async {
 
 FeederController _only(FeederFleet fleet) => fleet.all.single;
 
+/// `hour`:`minute` today, in milliseconds: a time with no day on it stays bare
+/// only while it is today's.
+int _todayAt(int hour, int minute) {
+  final now = DateTime.now();
+  return DateTime(
+    now.year,
+    now.month,
+    now.day,
+    hour,
+    minute,
+  ).millisecondsSinceEpoch;
+}
+
 /// A phone-sized frame, so the whole tab fits as the board draws it.
 void _phone(WidgetTester tester) {
   tester.view.physicalSize = const Size(412, 915);
@@ -63,11 +76,11 @@ void main() {
     final (fleet, session) = await _fleet(tester);
     await _showShell(tester, fleet);
 
-    final fedAt = DateTime(2026, 10, 30, 7, 30).millisecondsSinceEpoch;
+    final fedAt = _todayAt(7, 30);
     session.status(
       fakeCard(
         nextMeal: NextMealView(
-          atMs: DateTime(2026, 10, 30, 12, 30).millisecondsSinceEpoch,
+          atMs: _todayAt(12, 30),
           minute: 12 * 60 + 30,
           portions: 2,
         ),
@@ -78,7 +91,7 @@ void main() {
           ntp: const NtpView.gateway(port: 123),
           syncs: 3,
           last: TimeSource.ntp,
-          lastAtMs: DateTime(2026, 10, 30, 11, 58).millisecondsSinceEpoch,
+          lastAtMs: _todayAt(11, 58),
         ),
       ),
     );
@@ -96,6 +109,74 @@ void main() {
     expect(find.text('Set by your router at 11:58 AM'), findsOneWidget);
     expect(find.text('Change in 9 days'), findsOneWidget);
     expect(find.text('Changed today'), findsNothing);
+  });
+
+  testWidgets('a moment from an earlier day says which day', (tester) async {
+    final (fleet, session) = await _fleet(tester);
+    await _showShell(tester, fleet);
+
+    final yesterday = DateTime.now().subtract(const Duration(days: 1));
+    final at = DateTime(
+      yesterday.year,
+      yesterday.month,
+      yesterday.day,
+      21,
+    ).millisecondsSinceEpoch;
+    session.status(
+      fakeCard(
+        lastFed: fakeFed(atMs: at),
+        time: TimeInfo(
+          generation: 1,
+          writable: true,
+          ntp: const NtpView.off(),
+          syncs: 3,
+          last: TimeSource.client,
+          lastAtMs: at,
+        ),
+      ),
+    );
+    await settle(tester);
+
+    expect(find.text('Last fed Yesterday 9:00 PM · 2 of 2'), findsOneWidget);
+    expect(find.text('In the hopper yesterday at 9:00 PM'), findsOneWidget);
+    expect(
+      find.text('Set by a paired device yesterday at 9:00 PM'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('each fact is its own node, and the lock its own switch', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final (fleet, session) = await _fleet(tester);
+    await _showShell(tester, fleet);
+    session.status(fakeCard(locked: false));
+    await settle(tester);
+
+    final food = tester.getSemantics(find.text('Food'));
+    expect(food.label, contains('Food'));
+    expect(food.label, isNot(contains('Wi-Fi')));
+    expect(food.label, isNot(contains('Lock the buttons')));
+    expect(tester.getSemantics(find.text('Wi-Fi')), isNot(same(food)));
+
+    final lock = tester.getSemantics(find.byType(Switch));
+    expect(
+      lock,
+      matchesSemantics(
+        label: 'Lock the buttons',
+        hasToggledState: true,
+        hasEnabledState: true,
+        isEnabled: true,
+        isFocusable: true,
+        hasTapAction: true,
+        hasFocusAction: true,
+      ),
+    );
+    final bounds = tester.getSize(find.byType(Switch));
+    expect(lock.rect.width, lessThanOrEqualTo(bounds.width));
+
+    semantics.dispose();
   });
 
   testWidgets('a low reading says low, and never that the hopper is empty', (
@@ -119,7 +200,7 @@ void main() {
     await _showShell(tester, fleet);
 
     // The last feed read food; the level has gone low since, with no event.
-    final fedAt = DateTime(2026, 10, 30, 7, 30).millisecondsSinceEpoch;
+    final fedAt = _todayAt(7, 30);
     session.status(
       fakeCard(
         food: FoodLevel.low,
@@ -152,6 +233,62 @@ void main() {
     await settle(tester);
 
     expect(find.text('Last fed 0 to 2 of 2'), findsOneWidget);
+  });
+
+  testWidgets('a feed that stopped unsure says the range in words', (
+    tester,
+  ) async {
+    final (fleet, session) = await _fleet(tester);
+    await _showShell(tester, fleet);
+
+    session.status(
+      fakeCard(
+        fault: FaultView(
+          feed: 7,
+          outcome: FeedOutcome.uncertain,
+          reason: FeedReason.power,
+          result: fakeFed(
+            confirmed: 0,
+            atMost: 2,
+            outcome: FeedOutcome.uncertain,
+            reason: FeedReason.power,
+          ),
+        ),
+      ),
+    );
+    await settle(tester);
+
+    expect(
+      find.textContaining(
+        'It stopped somewhere between 0 and 2 of 2 portions.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets("History's filter survives a tab away while the screen is open", (
+    tester,
+  ) async {
+    final (fleet, session) = await _fleet(tester);
+    await _showShell(tester, fleet);
+    session.status(fakeCard());
+    await settle(tester);
+
+    bool problems() => tester
+        .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Problems'))
+        .selected;
+
+    await _tap(tester, find.text('History'));
+    expect(problems(), isFalse);
+    // A plain tap: scrolling it into view would slide the tabs' page as well.
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Problems'));
+    await settle(tester);
+    expect(problems(), isTrue);
+
+    await _tap(tester, find.text('Today'));
+    expect(find.widgetWithText(ChoiceChip, 'Problems'), findsNothing);
+    await _tap(tester, find.text('History'));
+    expect(problems(), isTrue);
   });
 
   group('the lock', () {
@@ -256,7 +393,7 @@ void main() {
               confirmed: 1,
               outcome: FeedOutcome.failed,
               reason: FeedReason.jammed,
-              atMs: DateTime(2026, 10, 30, 7, 30).millisecondsSinceEpoch,
+              atMs: _todayAt(7, 30),
             ),
           ),
         ),
@@ -368,6 +505,25 @@ void main() {
       expect(find.text('Finish installing'), findsOneWidget);
     });
 
+    testWidgets('a last feed with no time says so', (tester) async {
+      final (_, session) = await home(tester);
+      session.status(
+        fakeCard(
+          lastFed: fakeFed(
+            confirmed: 0,
+            atMost: 2,
+            outcome: FeedOutcome.uncertain,
+            reason: FeedReason.interrupted,
+          ),
+        ),
+      );
+      await settle(tester);
+
+      expect(find.text('Time unknown'), findsOneWidget);
+      expect(find.text('Unknown'), findsNothing);
+      expect(find.text('0 to 2 of 2'), findsOneWidget);
+    });
+
     testWidgets("shows the next meal, the last feed and today's meals", (
       tester,
     ) async {
@@ -380,9 +536,7 @@ void main() {
             minute: 12 * 60 + 30,
             portions: 2,
           ),
-          lastFed: fakeFed(
-            atMs: DateTime(2026, 10, 30, 7, 30).millisecondsSinceEpoch,
-          ),
+          lastFed: fakeFed(atMs: _todayAt(7, 30)),
           meals: [
             MealView(
               slot: 0,

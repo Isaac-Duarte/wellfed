@@ -5,6 +5,7 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/code_tiles.dart';
 import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/when.dart';
 
 Widget _themed(Widget child, {Brightness brightness = Brightness.light}) =>
     MaterialApp(
@@ -13,6 +14,36 @@ Widget _themed(Widget child, {Brightness brightness = Brightness.light}) =>
     );
 
 void main() {
+  testWidgets('a moment says its day unless it is today', (tester) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      _themed(
+        Builder(
+          builder: (built) {
+            context = built;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    final now = DateTime(2026, 10, 31, 9);
+    String moment(DateTime at) =>
+        momentTextMs(context, at.millisecondsSinceEpoch, now: now);
+    String inSentence(DateTime at) =>
+        atMomentTextMs(context, at.millisecondsSinceEpoch, now: now);
+
+    final today = DateTime(2026, 10, 31, 6, 5);
+    final yesterday = DateTime(2026, 10, 30, 21);
+    final older = DateTime(2026, 10, 27, 21);
+
+    expect(moment(today), '6:05 AM');
+    expect(moment(yesterday), 'Yesterday 9:00 PM');
+    expect(moment(older), 'Tue 27 Oct 9:00 PM');
+    expect(inSentence(today), 'at 6:05 AM');
+    expect(inSentence(yesterday), 'yesterday at 9:00 PM');
+    expect(inSentence(older), 'on Tue 27 Oct at 9:00 PM');
+  });
+
   testWidgets('the code shows each press as its panel button, in order', (
     tester,
   ) async {

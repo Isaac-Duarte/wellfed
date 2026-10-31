@@ -183,10 +183,28 @@ void main() {
       session.requests.clear();
       await tapIn(tester, find.text('1:00 AM'));
       await tapIn(tester, find.text('Delete meal'));
+      await tapIn(tester, find.widgetWithText(FilledButton, 'Delete'));
       expect(
         (session.requests.single as FeederRequest_EditPlans).edit,
         const PlanEdit.delete(slot: 0),
       );
+    });
+
+    testWidgets('deleting a meal asks first, naming its time', (tester) async {
+      final session = await show(tester, _plans([_plan(60)]));
+      session.requests.clear();
+
+      await tapIn(tester, find.text('1:00 AM'));
+      await tapIn(tester, find.text('Delete meal'));
+
+      expect(find.text('Delete this meal?'), findsOneWidget);
+      expect(find.textContaining('1:00 AM meal'), findsOneWidget);
+      expect(session.requests, isEmpty);
+
+      await tapIn(tester, find.text('Cancel'));
+      expect(find.text('Delete this meal?'), findsNothing);
+      expect(find.text('Delete meal'), findsOneWidget);
+      expect(session.requests, isEmpty);
     });
 
     testWidgets('a refused or unanswered save keeps the editor open', (
@@ -249,6 +267,7 @@ void main() {
           )
           ..add(FeederReply.plans(plans: fresh));
         await tapIn(tester, find.text('Delete meal'));
+        await tapIn(tester, find.widgetWithText(FilledButton, 'Delete'));
 
         expect(
           find.text('The meals changed while you were editing'),
@@ -453,6 +472,50 @@ void main() {
       final fed = tester.getTopLeft(find.text('Fed 2 of 2')).dy;
       final started = tester.getTopLeft(find.text('Started up')).dy;
       expect(fed, lessThan(started));
+    });
+
+    testWidgets('a readiness change reads as one, not a refused feed', (
+      tester,
+    ) async {
+      await show(tester, [
+        entry(
+          1,
+          const HistoryBody.feedingBlocked(reason: Blocked.setup),
+          at: now,
+        ),
+        entry(2, const HistoryBody.feedingBlocked(), at: now),
+        entry(
+          3,
+          const HistoryBody.dispenseRefused(reason: Blocked.fault),
+          at: now,
+        ),
+      ]);
+
+      expect(find.text('Not ready to feed'), findsOneWidget);
+      expect(find.text('In setup mode'), findsOneWidget);
+      expect(find.text('Ready to feed again'), findsOneWidget);
+      expect(find.text("Couldn't feed"), findsNothing);
+      expect(find.text('Can feed again'), findsNothing);
+      expect(find.text('A press was refused'), findsOneWidget);
+    });
+
+    testWidgets('an uncertain feed of no known source says interrupted', (
+      tester,
+    ) async {
+      final uncertain = fakeFed(
+        confirmed: 0,
+        atMost: 2,
+        outcome: FeedOutcome.uncertain,
+        reason: FeedReason.interrupted,
+        by: const FedBy.unknown(),
+      );
+      await show(tester, [
+        entry(1, HistoryBody.fed(result: uncertain), at: now),
+      ]);
+
+      expect(find.text('Fed between 0 and 2'), findsOneWidget);
+      expect(find.text('Interrupted · not repeated'), findsOneWidget);
+      expect(find.textContaining('Unknown'), findsNothing);
     });
 
     testWidgets('an uncertain feed is a range, also in its detail', (

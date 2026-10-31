@@ -359,30 +359,37 @@ class FeederCard extends StatelessWidget {
     final next = card.nextMeal;
     final last = card.lastFed;
     final lastAt = last?.atMs;
-    return Row(
-      children: [
-        Expanded(
-          child: next == null
-              ? const _Tile('Next meal', 'None', 'No meal set')
-              : _Tile(
-                  'Next meal',
-                  minuteText(context, next.minute),
-                  portionsText(next.portions),
-                ),
-        ),
-        const SizedBox(width: Space.s2),
-        Expanded(
-          child: last == null
-              ? const _Tile('Last fed', 'None', 'Not read yet')
-              : _Tile(
-                  'Last fed',
-                  lastAt == null ? 'Unknown' : clockTextMs(context, lastAt),
-                  deliveredText(last),
-                ),
-        ),
-        const SizedBox(width: Space.s2),
-        Expanded(child: _Tile('Power', power, battery)),
-      ],
+    // Equal heights, as a day or "Time unknown" takes the last-fed tile's value
+    // onto a second line.
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: next == null
+                ? const _Tile('Next meal', 'None', 'No meal set')
+                : _Tile(
+                    'Next meal',
+                    minuteText(context, next.minute),
+                    portionsText(next.portions),
+                  ),
+          ),
+          const SizedBox(width: Space.s2),
+          Expanded(
+            child: last == null
+                ? const _Tile('Last fed', 'None', 'Not read yet')
+                : _Tile(
+                    'Last fed',
+                    lastAt == null
+                        ? 'Time unknown'
+                        : momentTextMs(context, lastAt),
+                    deliveredText(last),
+                  ),
+          ),
+          const SizedBox(width: Space.s2),
+          Expanded(child: _Tile('Power', power, battery)),
+        ],
+      ),
     );
   }
 
@@ -424,7 +431,7 @@ class FeederCard extends StatelessWidget {
     final at = last?.hopper == FoodLevel.low ? last?.atMs : null;
     return at == null
         ? 'Food is low.'
-        : 'Food read low at ${clockTextMs(context, at)}.';
+        : 'Food read low ${atMomentTextMs(context, at)}.';
   }
 
   /// The compact card's second line.
@@ -642,7 +649,7 @@ class _Tile extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             value,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: Sizes.md,

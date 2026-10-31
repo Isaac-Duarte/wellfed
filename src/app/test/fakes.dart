@@ -594,6 +594,7 @@ FeedResult fakeFed({
   FeedOutcome outcome = FeedOutcome.done,
   FeedReason reason = FeedReason.done,
   int? atMs,
+  FedBy by = const FedBy.panel(),
 }) => FeedResult(
   feed: feed,
   requested: requested,
@@ -604,7 +605,7 @@ FeedResult fakeFed({
   uncertain: outcome == FeedOutcome.uncertain,
   words: '$confirmed of $requested portions, ${outcome.name}',
   atMs: atMs,
-  by: const FedBy.panel(),
+  by: by,
   hopper: FoodLevel.present,
 );
 

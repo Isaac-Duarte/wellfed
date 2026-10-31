@@ -365,31 +365,65 @@ pub(crate) fn settings_view(settings: &Settings) -> SettingsView {
     }
 }
 
-pub(crate) fn time_info(view: &TimeView) -> TimeInfo {
-    let ntp = match view.ntp {
-        NtpServer::Off => NtpView::Off,
-        NtpServer::Gateway { port } => NtpView::Gateway { port },
-        NtpServer::Address { ip, port } => NtpView::Address {
-            ip: Ipv4Addr::to_string(&ip),
-            port,
-        },
-    };
-    let now_ms = Timestamp::now().as_millisecond();
-    TimeInfo {
-        generation: view.generation.0,
-        writable: view.writable,
-        zone: view.zone.clone(),
-        ntp,
-        clock_ms: view.clock_ms.and_then(|ms| i64::try_from(ms).ok()),
-        error_ms: view.error_ms,
-        offset_s: view.offset_s,
-        syncs: view.syncs,
-        last: view.last,
-        last_at_ms: view
-            .last_age_s
-            .map(|age| now_ms.saturating_sub(i64::from(age).saturating_mul(1000))),
-        ntp_last: view.ntp_last,
+/// The feeder's time as read, and this phone's clock when it was. The view's
+/// numbers are all as of that moment, while the card is built again long after
+/// it, so each stands against the read and never against the build.
+pub(crate) struct TimeRead {
+    pub(crate) view: TimeView,
+    read_at: Timestamp,
+}
+
+impl TimeRead {
+    pub(crate) const fn new(view: TimeView, read_at: Timestamp) -> Self {
+        Self { view, read_at }
     }
+
+    /// The read as of `now`. The clock runs on, and its error grows at the
+    /// view's rate bound, the feeder's own reckoning between fixes. When it
+    /// was last set does not move. Time is the phone's wall clock, which goes
+    /// on through a phone's sleep; if it steps back, no time has passed.
+    pub(crate) fn info(&self, now: Timestamp) -> TimeInfo {
+        let view = &self.view;
+        let ntp = match view.ntp {
+            NtpServer::Off => NtpView::Off,
+            NtpServer::Gateway { port } => NtpView::Gateway { port },
+            NtpServer::Address { ip, port } => NtpView::Address {
+                ip: Ipv4Addr::to_string(&ip),
+                port,
+            },
+        };
+        let read_ms = self.read_at.as_millisecond();
+        let elapsed_ms = now.as_millisecond().saturating_sub(read_ms).max(0);
+
+        TimeInfo {
+            generation: view.generation.0,
+            writable: view.writable,
+            zone: view.zone.clone(),
+            ntp,
+            clock_ms: view
+                .clock_ms
+                .and_then(|ms| i64::try_from(ms).ok())
+                .map(|ms| ms.saturating_add(elapsed_ms)),
+            error_ms: view
+                .error_ms
+                .map(|error| error.saturating_add(grown_ms(elapsed_ms, view.rate_bound_ppb))),
+            offset_s: view.offset_s,
+            syncs: view.syncs,
+            last: view.last,
+            last_at_ms: view
+                .last_age_s
+                .map(|age| read_ms.saturating_sub(i64::from(age).saturating_mul(1000))),
+            ntp_last: view.ntp_last,
+        }
+    }
+}
+
+/// What `bound_ppb` adds to the error over `elapsed_ms`, rounded up as the
+/// feeder rounds its own.
+fn grown_ms(elapsed_ms: i64, bound_ppb: u32) -> u32 {
+    let elapsed = u128::try_from(elapsed_ms).unwrap_or(0);
+    let grown = (elapsed * u128::from(bound_ppb)).div_ceil(1_000_000_000);
+    u32::try_from(grown).unwrap_or(u32::MAX)
 }
 
 /// Each portion's time: from the drive's start or the mark before, to its own
@@ -490,9 +524,12 @@ fn reply_of(answer: Answer) -> FeederReply {
         Answer::Settings(settings) => FeederReply::Settings {
             settings: settings_view(&settings),
         },
-        Answer::Time(time) => FeederReply::Time {
-            time: time_info(&time),
-        },
+        Answer::Time(time) => {
+            let now = Timestamp::now();
+            FeederReply::Time {
+                time: TimeRead::new(time, now).info(now),
+            }
+        }
         Answer::Plans(plans) => FeederReply::Plans {
             plans: plans_view(&plans),
         },
@@ -530,6 +567,68 @@ fn reply_of(answer: Answer) -> FeederReply {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn read_at(read_at: Timestamp) -> TimeRead {
+        TimeRead::new(
+            TimeView {
+                generation: Generation(1),
+                writable: true,
+                zone: None,
+                ntp: NtpServer::Off,
+                clock_ms: Some(1_000_000),
+                error_ms: Some(50),
+                offset_s: None,
+                rate_ppb: 0,
+                // 100 parts per million.
+                rate_bound_ppb: 100_000,
+                learned: true,
+                syncs: 1,
+                last: None,
+                last_age_s: Some(600),
+                ntp_last: None,
+            },
+            read_at,
+        )
+    }
+
+    fn at_ms(ms: i64) -> Timestamp {
+        Timestamp::from_millisecond(ms).expect("a test's moment is in range")
+    }
+
+    #[test]
+    fn the_set_time_stays_while_the_clock_and_its_error_run_on() {
+        let read = at_ms(2_000_000_000);
+        let time = read_at(read);
+
+        let first = time.info(read);
+        assert_eq!(first.clock_ms, Some(1_000_000));
+        assert_eq!(first.error_ms, Some(50));
+        assert_eq!(first.last_at_ms, Some(2_000_000_000 - 600_000));
+
+        // The card built again eight minutes on, as the phone saw it creep.
+        let later = time.info(at_ms(2_000_000_000 + 480_000));
+        assert_eq!(later.last_at_ms, first.last_at_ms);
+        assert_eq!(later.clock_ms, Some(1_000_000 + 480_000));
+        assert_eq!(later.error_ms, Some(50 + 48));
+    }
+
+    #[test]
+    fn a_phone_clock_stepping_back_passes_no_time() {
+        let read = at_ms(2_000_000_000);
+        let time = read_at(read);
+
+        let info = time.info(at_ms(1_000_000_000));
+        assert_eq!(info.clock_ms, Some(1_000_000));
+        assert_eq!(info.error_ms, Some(50));
+        assert_eq!(info.last_at_ms, Some(2_000_000_000 - 600_000));
+    }
+
+    #[test]
+    fn the_growth_rounds_up_and_saturates() {
+        assert_eq!(grown_ms(0, 100_000), 0);
+        assert_eq!(grown_ms(1, 100_000), 1);
+        assert_eq!(grown_ms(i64::MAX, u32::MAX), u32::MAX);
+    }
 
     #[test]
     fn a_portion_runs_from_the_mark_before_and_marks_must_add_up() {

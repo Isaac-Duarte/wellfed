@@ -10,6 +10,29 @@ String clockText(BuildContext context, DateTime at) =>
 String clockTextMs(BuildContext context, int ms) =>
     clockText(context, DateTime.fromMillisecondsSinceEpoch(ms));
 
+/// A moment that may be old: `9:00 PM` today, `Yesterday 9:00 PM`, or
+/// `Fri 30 Oct 9:00 PM`. A bare time the next morning would read as today's.
+String momentTextMs(BuildContext context, int ms, {DateTime? now}) {
+  final at = DateTime.fromMillisecondsSinceEpoch(ms);
+  final clock = clockText(context, at);
+  return DateUtils.isSameDay(at, now ?? DateTime.now())
+      ? clock
+      : '${dayText(at, now: now)} $clock';
+}
+
+/// The same moment for the middle of a sentence: `at 9:00 PM`,
+/// `yesterday at 9:00 PM`, or `on Fri 30 Oct at 9:00 PM`.
+String atMomentTextMs(BuildContext context, int ms, {DateTime? now}) {
+  final at = DateTime.fromMillisecondsSinceEpoch(ms);
+  final clock = clockText(context, at);
+  return switch (dayText(at, now: now)) {
+    'Today' => 'at $clock',
+    'Yesterday' => 'yesterday at $clock',
+    'Tomorrow' => 'tomorrow at $clock',
+    final day => 'on $day at $clock',
+  };
+}
+
 /// A minute of the feeder's local day, as a plan keeps it.
 String minuteText(BuildContext context, int minute) =>
     _text(context, TimeOfDay(hour: minute ~/ 60 % 24, minute: minute % 60));
