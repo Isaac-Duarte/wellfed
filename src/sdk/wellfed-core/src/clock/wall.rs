@@ -61,7 +61,7 @@
 //! any instant. Without one, a client sync's offset and next change stand
 //! in, as before the setting existed, correct across one change.
 
-use super::zone::Rule;
+use super::zone::{Rule, Year};
 
 /// Earliest accepted fix (2026-01-01T00:00:00Z); an earlier one is a bad
 /// source clock, not a time.
@@ -286,26 +286,67 @@ struct Hint {
     next_offset_s: i32,
 }
 
+/// What the time itself takes to read: a reader that drops the offset copies
+/// this much out from under its lock, and works it out unmasked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct WallClock {
+pub struct Course {
     /// The last trusted fix.
     trust: Option<Anchor>,
-    /// Where the clock reads: the trusted fix, or an untrusted fix's
-    /// overlap with the trusted interval. Its own error is never reported.
-    centre: Option<Anchor>,
+    /// How far ahead of the trusted estimate the clock reads (its centre):
+    /// zero after a trusted fix, or the distance to an untrusted fix's
+    /// overlap with the trusted interval. Both carry forward at one rate, so
+    /// one projection serves a read.
+    lead_us: i64,
+    rate_ppb: i32,
+    rate_bound_ppb: u32,
+}
+
+/// The clock at some uptime.
+#[derive(Clone, Copy)]
+struct Now {
+    trust: Anchor,
+    centre_us: u64,
+    /// The error the reading reports.
+    error_us: u64,
+}
+
+/// What the offset at an instant takes: the zone's rule and its current
+/// year, or a client's offsets. Copied out on its own, because the schedule
+/// asks for hundreds of offsets at a minute's rollover.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Offsets {
+    hint: Option<Hint>,
+    rule: Option<Rule>,
+    /// The rule's transitions for the year last kept
+    /// ([`WallClock::keep_year`]); [`Year::NONE`] until then.
+    year: Year,
+}
+
+/// A rule's year, worked out by [`Offsets::year_due`] for
+/// [`WallClock::keep_year`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct YearDue {
+    rule: Rule,
+    year: Year,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WallClock {
+    course: Course,
     /// The first owner's fix since the rate was last forgotten: the rate
     /// is measured across it.
     base: Option<Anchor>,
-    rate_ppb: i32,
-    rate_bound_ppb: u32,
     learned: bool,
     /// NTP answers in a row outside the trusted interval.
     disjoint: u8,
-    hint: Option<Hint>,
-    rule: Option<Rule>,
+    offsets: Offsets,
     syncs: u32,
     last: Option<(Origin, u32)>,
 }
+
+// A reader of the whole clock copies this much with interrupts masked, so what
+// the clock keeps to make reads cheaper must not lengthen that span.
+const _: () = assert!(size_of::<WallClock>() <= 168);
 
 impl Default for WallClock {
     fn default() -> Self {
@@ -329,19 +370,99 @@ impl Sync {
     }
 }
 
+impl Course {
+    /// `anchor` carried to uptime `now`, its error grown by the rate
+    /// bound; `None` past half the uptime clock's range.
+    fn project(&self, anchor: Anchor, now: u32) -> Option<Anchor> {
+        let elapsed = now.wrapping_sub(anchor.uptime_ms);
+        if elapsed >= crate::HALF_RANGE {
+            return None;
+        }
+
+        // Microseconds: ppb of milliseconds is a millionth.
+        let elapsed = i64::from(elapsed);
+        let corrected = elapsed * 1000 + elapsed * i64::from(self.rate_ppb) / 1_000_000;
+        let unix_us = u64::try_from(i64::try_from(anchor.unix_us).ok()? + corrected).ok()?;
+        let grown = u64::try_from(elapsed).ok()? * u64::from(self.rate_bound_ppb);
+        Some(Anchor {
+            uptime_ms: now,
+            unix_us,
+            error_us: anchor.error_us + grown.div_ceil(1_000_000),
+        })
+    }
+
+    /// The trusted interval and the centre at `now`, and the error the
+    /// reading reports, while the clock is valid.
+    fn current(&self, now: u32) -> Option<Now> {
+        let trust = self.project(self.trust?, now)?;
+        let centre_us = trust.unix_us.checked_add_signed(self.lead_us)?;
+        let error_us = self.lead_us.unsigned_abs() + trust.error_us;
+        (error_us.div_ceil(1000) <= MAX_ERROR_MS).then_some(Now {
+            trust,
+            centre_us,
+            error_us,
+        })
+    }
+
+    /// The time at uptime `now`, or `None` before the first fix and once
+    /// the error passes `MAX_ERROR_MS`.
+    pub fn unix_ms(&self, now: u32) -> Option<u64> {
+        Some(self.current(now)?.centre_us / 1000)
+    }
+}
+
+impl Offsets {
+    /// The offset east of UTC at `unix_ms`: the zone's rule, else the last
+    /// client sync's offsets (its next offset from the change it named);
+    /// `None` with neither.
+    pub fn at(&self, unix_ms: u64) -> Option<i32> {
+        let unix_s = i64::try_from(unix_ms / 1000).ok()?;
+        if let Some(rule) = &self.rule {
+            return Some(rule.offset_in(&self.year, unix_s));
+        }
+        let hint = self.hint?;
+        let change = hint.next_change_s;
+        Some(if change != 0 && unix_ms >= change.saturating_mul(1000) {
+            hint.next_offset_s
+        } else {
+            hint.offset_s
+        })
+    }
+
+    /// The year to keep when time reads `unix_ms`, if the rule keeps
+    /// daylight time and the kept year does not cover that instant. Takes
+    /// the divides the kept year saves, so it runs on a copy, unmasked.
+    pub fn year_due(&self, unix_ms: u64) -> Option<YearDue> {
+        let rule = self.rule?;
+        let unix_s = i64::try_from(unix_ms / 1000).ok()?;
+        if self.year.covers(unix_s) {
+            return None;
+        }
+        Some(YearDue {
+            rule,
+            year: rule.year_at(unix_s)?,
+        })
+    }
+}
+
 impl WallClock {
     /// Unset, for a static.
     pub const fn new() -> Self {
         Self {
-            trust: None,
-            centre: None,
+            course: Course {
+                trust: None,
+                lead_us: 0,
+                rate_ppb: 0,
+                rate_bound_ppb: UNLEARNED_PPM * 1000,
+            },
             base: None,
-            rate_ppb: 0,
-            rate_bound_ppb: UNLEARNED_PPM * 1000,
             learned: false,
             disjoint: 0,
-            hint: None,
-            rule: None,
+            offsets: Offsets {
+                hint: None,
+                rule: None,
+                year: Year::NONE,
+            },
             syncs: 0,
             last: None,
         }
@@ -361,7 +482,7 @@ impl WallClock {
                 origin,
             },
         )?;
-        self.hint = Some(Hint {
+        self.offsets.hint = Some(Hint {
             offset_s: sync.offset_s,
             next_change_s: sync.next_change_s,
             next_offset_s: sync.next_offset_s,
@@ -384,8 +505,10 @@ impl WallClock {
         // to read: NTP must fall inside that, so an answer re-sets the clock
         // by at most the old interval each expiry, not to anything. Owner
         // and client syncs re-set it freely, as before the anchor.
-        let expired = match self.current(now) {
-            None if fix.origin == Origin::Ntp => self.trust.and_then(|t| self.project(t, now)),
+        let expired = match self.course.current(now) {
+            None if fix.origin == Origin::Ntp => {
+                self.course.trust.and_then(|t| self.course.project(t, now))
+            }
             _ => None,
         };
         if let Some(old) = expired
@@ -395,7 +518,7 @@ impl WallClock {
             return Err(SyncError::Bounded);
         }
 
-        let jump = match (self.current(now), fix.origin) {
+        let jump = match (self.course.current(now), fix.origin) {
             // Nothing valid to weigh it against: any fix inside the expired
             // interval, if there is one, is trusted. Only an owner's sets a
             // rate's baseline or measures one: an NTP or client answer could
@@ -409,9 +532,9 @@ impl WallClock {
                 }
                 Jump::First
             }
-            (Some((_, centre, error_us)), Origin::Owner) => {
-                let delta = signed(point.unix_us, centre.unix_us);
-                let consistent = delta.unsigned_abs() <= error_us + point.error_us;
+            (Some(clock), Origin::Owner) => {
+                let delta = signed(point.unix_us, clock.centre_us);
+                let consistent = delta.unsigned_abs() <= clock.error_us + point.error_us;
                 self.trusted(point);
                 if consistent {
                     self.learn(point);
@@ -423,20 +546,20 @@ impl WallClock {
                 }
                 classify(delta)
             }
-            (Some((trust, centre, _)), Origin::Client | Origin::Ntp) => {
-                let delta = signed(point.unix_us, trust.unix_us);
-                if delta.unsigned_abs() > trust.error_us + point.error_us {
+            (Some(clock), Origin::Client | Origin::Ntp) => {
+                let delta = signed(point.unix_us, clock.trust.unix_us);
+                if delta.unsigned_abs() > clock.trust.error_us + point.error_us {
                     if fix.origin == Origin::Ntp {
                         self.missed();
                     }
                     return Err(SyncError::Bounded);
                 }
-                let moved = narrow(trust, point);
-                self.centre = Some(moved);
+                let moved_us = narrow(clock.trust, point);
+                self.course.lead_us = signed(moved_us, clock.trust.unix_us);
                 if fix.origin == Origin::Ntp {
                     self.disjoint = 0;
                 }
-                classify(signed(moved.unix_us, centre.unix_us))
+                classify(signed(moved_us, clock.centre_us))
             }
         };
         self.syncs = self.syncs.saturating_add(1);
@@ -460,22 +583,22 @@ impl WallClock {
     /// and for a millisecond count that lost its place, across which no
     /// projection holds.
     pub fn forget(&mut self) {
-        self.trust = None;
-        self.centre = None;
+        self.course.trust = None;
+        self.course.lead_us = 0;
         self.forget_rate();
         self.base = None;
         self.disjoint = 0;
     }
 
     fn trusted(&mut self, point: Anchor) {
-        self.trust = Some(point);
-        self.centre = Some(point);
+        self.course.trust = Some(point);
+        self.course.lead_us = 0;
         self.disjoint = 0;
     }
 
     fn forget_rate(&mut self) {
-        self.rate_ppb = 0;
-        self.rate_bound_ppb = UNLEARNED_PPM * 1000;
+        self.course.rate_ppb = 0;
+        self.course.rate_bound_ppb = UNLEARNED_PPM * 1000;
         self.learned = false;
     }
 
@@ -519,85 +642,72 @@ impl WallClock {
         // A rate that moved since the last measurement is evidence of how
         // much it varies: the bound covers that too.
         let moved = if self.learned {
-            measured.abs_diff(self.rate_ppb)
+            measured.abs_diff(self.course.rate_ppb)
         } else {
             0
         };
-        self.rate_ppb = measured;
-        self.rate_bound_ppb =
+        self.course.rate_ppb = measured;
+        self.course.rate_bound_ppb =
             (uncertainty + moved).clamp(LEARNED_FLOOR_PPM * 1000, UNLEARNED_PPM * 1000);
         self.learned = true;
     }
 
-    /// Set or clear the zone's rule.
+    /// Set or clear the zone's rule. The kept year goes with the old rule,
+    /// so a reading between here and the next [`keep_year`](Self::keep_year)
+    /// takes the new rule whole.
     pub fn set_rule(&mut self, rule: Option<Rule>) {
-        self.rule = rule;
+        self.offsets.rule = rule;
+        self.offsets.year = Year::NONE;
     }
 
-    /// `anchor` carried to uptime `now`, its error grown by the rate
-    /// bound; `None` past half the uptime clock's range.
-    fn project(&self, anchor: Anchor, now: u32) -> Option<Anchor> {
-        let elapsed = now.wrapping_sub(anchor.uptime_ms);
-        if elapsed >= crate::HALF_RANGE {
-            return None;
+    /// Keep a year worked out from an earlier copy of the clock, unless the
+    /// rule has changed since: the caller worked it out unmasked, so a
+    /// settings write may have come in between.
+    pub fn keep_year(&mut self, due: YearDue) {
+        if self.offsets.rule == Some(due.rule) {
+            self.offsets.year = due.year;
         }
-
-        // Microseconds: ppb of milliseconds is a millionth.
-        let elapsed = i64::from(elapsed);
-        let corrected = elapsed * 1000 + elapsed * i64::from(self.rate_ppb) / 1_000_000;
-        let unix_us = u64::try_from(i64::try_from(anchor.unix_us).ok()? + corrected).ok()?;
-        let grown = u64::try_from(elapsed).ok()? * u64::from(self.rate_bound_ppb);
-        Some(Anchor {
-            uptime_ms: now,
-            unix_us,
-            error_us: anchor.error_us + grown.div_ceil(1_000_000),
-        })
     }
 
-    /// The trusted interval and the centre at `now`, and the error the
-    /// reading reports, while the clock is valid.
-    fn current(&self, now: u32) -> Option<(Anchor, Anchor, u64)> {
-        let trust = self.project(self.trust?, now)?;
-        let centre = self.project(self.centre?, now)?;
-        let error_us = signed(centre.unix_us, trust.unix_us).unsigned_abs() + trust.error_us;
-        (error_us.div_ceil(1000) <= MAX_ERROR_MS).then_some((trust, centre, error_us))
+    /// What the time alone takes to read.
+    pub const fn course(&self) -> Course {
+        self.course
+    }
+
+    /// What an offset takes.
+    pub const fn offsets(&self) -> Offsets {
+        self.offsets
+    }
+
+    /// The time at uptime `now`, as [`read`](Self::read) gives it, without
+    /// the offset.
+    pub fn unix_ms(&self, now: u32) -> Option<u64> {
+        self.course.unix_ms(now)
     }
 
     /// The time at uptime `now`, or `None` before the first fix and once
     /// the error passes `MAX_ERROR_MS`.
     pub fn read(&self, now: u32) -> Option<Reading> {
-        let (_, centre, error_us) = self.current(now)?;
-        let unix_ms = centre.unix_us / 1000;
+        let clock = self.course.current(now)?;
+        let unix_ms = clock.centre_us / 1000;
         Some(Reading {
             unix_ms,
             offset_s: self.offset_at(unix_ms),
-            error_ms: error_us.div_ceil(1000),
+            error_ms: clock.error_us.div_ceil(1000),
         })
     }
 
-    /// The offset east of UTC at `unix_ms`: the zone's rule, else the last
-    /// client sync's offsets (its next offset from the change it named);
-    /// `None` with neither.
+    /// The offset east of UTC at `unix_ms`: see [`Offsets::at`].
     pub fn offset_at(&self, unix_ms: u64) -> Option<i32> {
-        let unix_s = i64::try_from(unix_ms / 1000).ok()?;
-        if let Some(rule) = self.rule {
-            return Some(rule.offset_at(unix_s));
-        }
-        let hint = self.hint?;
-        let change = hint.next_change_s;
-        Some(if change != 0 && unix_ms >= change.saturating_mul(1000) {
-            hint.next_offset_s
-        } else {
-            hint.offset_s
-        })
+        self.offsets.at(unix_ms)
     }
 
     pub fn state(&self, now: u32) -> State {
         State {
             reading: self.read(now),
             syncs: self.syncs,
-            rate_ppb: self.rate_ppb,
-            rate_bound_ppb: self.rate_bound_ppb,
+            rate_ppb: self.course.rate_ppb,
+            rate_bound_ppb: self.course.rate_bound_ppb,
             learned: self.learned,
             last: self.last,
         }
@@ -614,14 +724,14 @@ impl WallClock {
     /// feeding plan may ask whether an owner confirmed the time); the rate,
     /// the sync count and the baseline are not.
     pub fn carry(&self, now: u32, rtc_s: u32) -> Option<[u32; CARRY_WORDS]> {
-        let (trust, centre, _) = self.current(now)?;
+        let clock = self.course.current(now)?;
         Some(
             Carry {
                 rtc_s,
-                trust_us: trust.unix_us,
-                trust_error_us: trust.error_us,
-                centre_us: centre.unix_us,
-                hint: self.hint,
+                trust_us: clock.trust.unix_us,
+                trust_error_us: clock.trust.error_us,
+                centre_us: clock.centre_us,
+                hint: self.offsets.hint,
                 last: self.last.and_then(|(origin, at)| {
                     let age = now.wrapping_sub(at);
                     (age < crate::HALF_RANGE).then_some((origin, age))
@@ -647,7 +757,7 @@ impl WallClock {
         rtc_s: Option<u32>,
         restart: Restart,
     ) -> Result<Resumed, NoResume> {
-        if self.current(now).is_some() {
+        if self.course.current(now).is_some() {
             return Err(NoResume::Set);
         }
         if restart == Restart::Cold {
@@ -669,23 +779,19 @@ impl WallClock {
             unix_us: carry.trust_us + gap_us,
             error_us,
         };
-        let centre = Anchor {
-            uptime_ms: now,
-            unix_us: carry.centre_us + gap_us,
-            error_us,
-        };
+        let lead_us = signed(carry.centre_us + gap_us, trust.unix_us);
         // The record's times are inside 2026-2099 and the gap is minutes,
         // so the sums above cannot overflow.
-        let reported_us = signed(centre.unix_us, trust.unix_us).unsigned_abs() + error_us;
+        let reported_us = lead_us.unsigned_abs() + error_us;
         if reported_us.div_ceil(1000) > MAX_ERROR_MS {
             return Err(NoResume::Expired);
         }
 
         self.trusted(trust);
-        self.centre = Some(centre);
+        self.course.lead_us = lead_us;
         self.base = None;
         self.forget_rate();
-        self.hint = carry.hint;
+        self.offsets.hint = carry.hint;
         // The last fix keeps its origin and its age, now across the gap: the
         // uptime it came at lies before this boot, which only an age reads.
         self.last = carry.last.and_then(|(origin, age_ms)| {
@@ -853,20 +959,14 @@ fn classify(delta_us: i64) -> Jump {
     }
 }
 
-/// The overlap of two intervals known to overlap: its middle, and its half
-/// width as the error.
-fn narrow(clock: Anchor, fix: Anchor) -> Anchor {
+/// The middle of two intervals' overlap, known to exist.
+fn narrow(clock: Anchor, fix: Anchor) -> u64 {
     let low = clock
         .unix_us
         .saturating_sub(clock.error_us)
         .max(fix.unix_us.saturating_sub(fix.error_us));
     let high = (clock.unix_us + clock.error_us).min(fix.unix_us + fix.error_us);
-    let width = high.saturating_sub(low);
-    Anchor {
-        uptime_ms: fix.uptime_ms,
-        unix_us: low + width / 2,
-        error_us: width.div_ceil(2),
-    }
+    low + high.saturating_sub(low) / 2
 }
 
 /// What a schedule does with one occurrence due at `due_ms` (UTC).

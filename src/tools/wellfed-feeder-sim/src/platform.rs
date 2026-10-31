@@ -1112,7 +1112,7 @@ impl Platform for SimPlatform {
     }
 
     fn wall_ms(&mut self, now_ms: u32) -> Option<u64> {
-        self.clock.read(now_ms).map(|reading| reading.unix_ms)
+        self.clock.unix_ms(now_ms)
     }
 
     fn time_sync(&mut self, now_ms: u32, sync: Sync, origin: Origin) -> Result<Jump, SyncError> {

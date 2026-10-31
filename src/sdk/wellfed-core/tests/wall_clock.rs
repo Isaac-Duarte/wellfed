@@ -3,7 +3,7 @@ use wellfed_core::clock::wall::{
     MIN_UNIX_MS, MISSED_GRACE_MS, NoResume, Occurrence, Origin, Reading, Restart, Resumed, STEP_MS,
     SYNC_ERROR_MS, Sync, SyncError, UNLEARNED_PPM, WallClock, occurrence,
 };
-use wellfed_core::clock::zone::Zone;
+use wellfed_core::clock::zone::{Rule, Zone};
 
 // 2026-10-22T13:00:00Z; Mountain Daylight Time until 2026-11-01T08:00:00Z.
 const NOON: u64 = 1_792_674_000_000;
@@ -103,6 +103,128 @@ fn the_offset_follows_the_announced_change_or_the_zone_rule() {
     assert_eq!(clock.read(999).unwrap().offset_s, Some(-5 * 3600));
     clock.set_rule(None);
     assert_eq!(clock.read(999).unwrap().offset_s, Some(MDT));
+}
+
+/// The clock after one sync at `unix_ms`, its year kept as the HAL keeps it.
+fn kept(rule: Rule, unix_ms: u64) -> WallClock {
+    let mut clock = WallClock::default();
+    let fix = Sync {
+        next_change_s: 0,
+        ..sync(unix_ms)
+    };
+    clock.sync(0, fix, Origin::Owner).unwrap();
+    clock.set_rule(Some(rule));
+    let due = clock.offsets().year_due(unix_ms).unwrap();
+    clock.keep_year(due);
+    clock
+}
+
+#[test]
+fn readings_with_a_kept_year_match_the_rule_across_both_transitions_and_new_year() {
+    let denver = Zone::parse(b"MST7MDT,M3.2.0,M11.1.0").unwrap().rule();
+    let sydney = Zone::parse(b"AEST-10AEDT,M10.1.0,M4.1.0/3").unwrap().rule();
+    // 2026-03-08T09:00:00Z, 2026-11-01T08:00:00Z, and New Year for each zone.
+    let edges: [(Rule, u64); 6] = [
+        (denver, 1_772_960_400),
+        (denver, FALL_BACK_S),
+        (denver, 1_798_786_800),
+        (sydney, 1_775_318_400),
+        (sydney, 1_791_043_200),
+        (sydney, 1_798_725_600),
+    ];
+
+    for (rule, edge_s) in edges {
+        let mut clock = kept(rule, (edge_s - 60) * 1000);
+        for second in 0..120 {
+            let reading = clock.read(second * 1000).unwrap();
+            let unix_s = i64::try_from(reading.unix_ms / 1000).unwrap();
+            assert_eq!(
+                reading.offset_s,
+                Some(rule.offset_at(unix_s)),
+                "at {unix_s}"
+            );
+            assert_eq!(clock.unix_ms(second * 1000), Some(reading.unix_ms));
+        }
+
+        // Past the year kept, the same reading again once it is replaced.
+        let after = (edge_s + 60) * 1000;
+        if let Some(due) = clock.offsets().year_due(after) {
+            clock.keep_year(due);
+        }
+        assert_eq!(
+            clock.offset_at(after),
+            Some(rule.offset_at(i64::try_from(after / 1000).unwrap()))
+        );
+        assert_eq!(clock.offsets().year_due(after), None, "the year is kept");
+    }
+}
+
+#[test]
+fn a_zone_change_never_leaves_the_old_zones_year_in_force() {
+    let denver = Zone::parse(b"MST7MDT,M3.2.0,M11.1.0").unwrap().rule();
+    let sydney = Zone::parse(b"AEST-10AEDT,M10.1.0,M4.1.0/3").unwrap().rule();
+    let berlin = Zone::parse(b"CET-1CEST,M3.5.0,M10.5.0/3").unwrap().rule();
+    let unix_s = i64::try_from(NOON / 1000).unwrap();
+    let mut clock = WallClock::default();
+    clock.sync(0, sync(NOON), Origin::Owner).unwrap();
+    clock.set_rule(Some(denver));
+
+    // Worked out from a copy, before each change below reaches the clock.
+    let due = clock.offsets().year_due(NOON).unwrap();
+    clock.keep_year(due);
+    assert_eq!(clock.offset_at(NOON), Some(denver.offset_at(unix_s)));
+
+    // The change drops the year with the rule.
+    clock.set_rule(Some(sydney));
+    assert_eq!(clock.offset_at(NOON), Some(sydney.offset_at(unix_s)));
+    assert!(clock.offsets().year_due(NOON).is_some(), "nothing kept");
+
+    // A year worked out for the old rule, arriving late, is not kept.
+    clock.keep_year(due);
+    assert_eq!(clock.offset_at(NOON), Some(sydney.offset_at(unix_s)));
+    assert!(
+        clock.offsets().year_due(NOON).is_some(),
+        "still nothing kept"
+    );
+
+    // Nor once the zone is cleared, when the sync's offsets take over.
+    clock.set_rule(None);
+    clock.keep_year(due);
+    assert_eq!(clock.offset_at(NOON), Some(MDT));
+    assert_eq!(clock.offsets().year_due(NOON), None, "no rule to keep for");
+
+    // Back to the first rule, that year is good for it: it depends on nothing else.
+    clock.set_rule(Some(denver));
+    clock.keep_year(due);
+    assert_eq!(clock.offsets().year_due(NOON), None);
+    assert_eq!(clock.offset_at(NOON), Some(denver.offset_at(unix_s)));
+
+    // A zone with no daylight time keeps no year.
+    let phoenix = Zone::parse(b"MST7").unwrap().rule();
+    clock.set_rule(Some(phoenix));
+    assert_eq!(clock.offsets().year_due(NOON), None);
+    assert_eq!(clock.offset_at(NOON), Some(MST));
+    clock.set_rule(Some(berlin));
+    assert_eq!(clock.offset_at(NOON), Some(berlin.offset_at(unix_s)));
+}
+
+/// The reading and its error depend only on the uptime, however a fix moved
+/// the reading within the trusted interval.
+#[test]
+fn a_reading_moved_by_ntp_keeps_its_lead_as_time_passes() {
+    let mut clock = WallClock::default();
+    clock.sync(0, sync(NOON), Origin::Owner).unwrap();
+    let now = 600_000;
+    clock
+        .fix(now, ntp(NOON + u64::from(now) + 1_500, 100))
+        .unwrap();
+    let moved = clock.read(now).unwrap();
+    assert!(moved.unix_ms > NOON + u64::from(now));
+
+    let later = clock.read(now + 60_000).unwrap();
+    assert_eq!(later.unix_ms, moved.unix_ms + 60_000);
+    assert!(later.error_ms > moved.error_ms, "the bound grows as ever");
+    assert_eq!(clock.unix_ms(now + 60_000), Some(later.unix_ms));
 }
 
 #[test]
