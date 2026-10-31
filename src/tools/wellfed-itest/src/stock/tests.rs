@@ -61,7 +61,7 @@ fn record(request_id: &str, phase: &str, download_reported: bool) -> Value {
     json!({"sequence": 1, "input": {"request_id": request_id, "server_token": uuid::Uuid::nil()},
            "created_at": "2026-10-23T12:00:00Z", "updated_at": "2026-10-23T12:00:00Z",
            "phase": phase, "download_reported": download_reported, "resolution_note": null,
-           "image_sha256": "0".repeat(64)})
+           "image_sha256": "0".repeat(64), "build": "cd", "stock_reported": false})
 }
 
 struct StockFeeder {
@@ -293,14 +293,16 @@ impl Rig for StockFeeder {
             .chain(earlier)
             .map(|(id, phase)| record(&id, phase, !self.reports.is_empty()))
             .collect();
-        Ok(serde_json::from_value(json!({
-            "device_online": self.stock_online,
-            "attributes": {"softwareVersion": self.version, "powerType": 1},
-            "version_reported_at": "2026-10-23T12:00:00Z",
-            "ota_trial_enabled": true,
-            "ota_trials": trials,
-            "ota_reports": self.reports,
-        }))?)
+        let attributes = json!({"softwareVersion": self.version, "powerType": 1});
+        Ok(StockStatus(wellfed_formats::stock::StockStatus {
+            device_online: self.stock_online,
+            attributes: serde_json::from_value(attributes)?,
+            version_reported_at: serde_json::from_value(json!("2026-10-23T12:00:00Z"))?,
+            ota_trial_enabled: true,
+            ota_trials: serde_json::from_value(json!(trials))?,
+            ota_reports: serde_json::from_value(json!(self.reports))?,
+            ..wellfed_formats::stock::StockStatus::default()
+        }))
     }
 
     fn hotspot(&mut self, _hotspot: Hotspot) -> Result<()> {
@@ -689,10 +691,12 @@ fn a_start_record_from_bank_1_is_refused() {
 
 #[test]
 fn trial_phases_read_from_the_server_s_ledger() {
-    let status: StockStatus = serde_json::from_value(json!({
-        "ota_trials": [record(EARLIER, "replacement_healthy", true)],
-    }))
-    .unwrap();
+    let status = StockStatus(wellfed_formats::stock::StockStatus {
+        ota_trials: vec![
+            serde_json::from_value(record(EARLIER, "replacement_healthy", true)).unwrap(),
+        ],
+        ..wellfed_formats::stock::StockStatus::default()
+    });
     assert_eq!(
         status.trial(EARLIER).map(|t| t.phase),
         Some(TrialPhase::ReplacementHealthy)

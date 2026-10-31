@@ -162,7 +162,7 @@ fn commands() {
         download_reported: false,
         resolution_note: None,
         image_sha256: DIGEST.into(),
-        build: None,
+        build: String::new(),
         stock_reported: false,
         answered_at: None,
         restored_at: None,

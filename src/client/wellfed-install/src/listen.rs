@@ -215,7 +215,7 @@ mod tests {
             download_reported: false,
             resolution_note: None,
             image_sha256: String::new(),
-            build: None,
+            build: String::new(),
             stock_reported: false,
             answered_at: None,
             restored_at: None,
@@ -289,6 +289,7 @@ mod tests {
                     "created_at": sent, "updated_at": sent,
                     "phase": "uncertain", "download_reported": false,
                     "resolution_note": null, "image_sha256": "ab".repeat(32),
+                    "build": "cd", "stock_reported": false,
                 }
             },
         });

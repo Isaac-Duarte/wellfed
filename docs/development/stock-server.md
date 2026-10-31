@@ -70,7 +70,7 @@ Use your own isolated gateway or access point, and capture only the device you m
 
    Starting the service does not redirect traffic or command feeding.
 
-The configuration format is version 1. An older configuration may still carry `max_portions`, which is refused as an unknown field: delete that line. Edit the configuration while the service is stopped, and keep the ledger beside it.
+The configuration format is version 1. Edit the configuration while the service is stopped, and keep the ledger beside it.
 
 ### Redirect the feeder's broker traffic
 
@@ -97,7 +97,7 @@ An install needs no capture. `init-installer` writes a config with fresh secrets
 
 - **Enrollment.** With no device known, `serve` starts the broker first and waits. Within the window, it admits the first CONNECT that looks like stock's: a client ID stock's topics can carry (not the server's), with a username and password, from a known relayed address. It records that device beside the config, mode 0600, named for the config (`installer.json`'s is `installer.device.json`). The record holds the client ID (which is the device ID), username, password and the address it connected from. Then the rest of the server starts with that device.
 - **Stock's first reports.** Stock sends its clock request, its start event and its version report as soon as it is admitted, and only heartbeats after. The broker keeps no message for a later subscriber, so it tells the server of the enrollment at once and holds the feeder's CONNACK until the server's session has subscribed (at most 3 s). Before, the server subscribed 0.7 s too late and the version report was lost (physical, October 30).
-- **Pinned.** The record is created whole or not at all: written aside, then hard-linked into place, which never replaces. So a reader never sees half a record, and a killed broker leaves none behind. A second feeder, a wrong password, or anyone after the window is refused, as with a captured config. A later `serve` needs no window and answers the enrolled feeder alone. To start over, stop the server and remove the record.
+- **Pinned.** The record is created whole or not at all: written aside, then moved into place by a step that never replaces (`renameat2(RENAME_NOREPLACE)` on Linux and Android, a hard link elsewhere). So a reader never sees half a record, and a killed broker leaves none behind. A second feeder, a wrong password, or anyone after the window is refused, as with a captured config. A later `serve` needs no window and answers the enrolled feeder alone. To start over, stop the server and remove the record.
 - **Contested.** Inside the window, any second stock-shaped identity, or a wrong password for the enrolled one, is noted in `installer.contested.json`, without its credentials. The status document's `enrollment` shows the device, its address and the contest. `POST /api/ota/trial` refuses (409) while the contest stands, because which feeder is the owner's can no longer be told. Only attempts inside the window count. After it closes, a second identity is refused but not flagged, so the installer's owner check of the device ID and address is then the only one.
 - **One or the other.** A config that names a captured device and has an enrollment beside it is refused.
 - **No redirect.** An installer's config has no hotspot interface or feeder MAC, so `network` refuses it. `ota-images` admits the enrolled feeder's address unless `--peer` is given.

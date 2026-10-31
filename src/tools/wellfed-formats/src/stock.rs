@@ -2,8 +2,8 @@
 //! reads to follow stock and its install trials.
 //!
 //! The trial records are the server's persisted ledger entries, so they
-//! refuse fields they do not know; the rest of the document defaults what
-//! is absent and ignores what it does not know.
+//! refuse fields they do not know; the rest of the document ignores what it
+//! does not know.
 
 use std::fmt;
 use std::net::Ipv4Addr;
@@ -16,7 +16,6 @@ use uuid::Uuid;
 
 /// The server's view of stock.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
 pub struct StockStatus {
     /// The feeder's MQTT session reaches the server's broker.
     pub broker_connected: bool,
@@ -201,15 +200,12 @@ pub struct TrialRecord {
     pub image_sha256: String,
     /// The served build's identity (its frozen review's startup identity,
     /// 64 lowercase hex), from the same lease. A trial closes on the
-    /// replacement's answer only when that answer names this build. `None`
-    /// in records written before it was kept: those never close that way.
-    #[serde(default)]
-    pub build: Option<String>,
+    /// replacement's answer only when that answer names this build.
+    pub build: String,
     /// Stock reported its version after the trial was submitted, so it was
     /// still running then. A trial so marked never closes on a client's
     /// word that the replacement answered: only fresh version evidence, or a
     /// session the replacement's own key opened after it, resolves it.
-    #[serde(default)]
     pub stock_reported: bool,
     /// When a proven session's answer closed it. Stock reporting after that
     /// reopens it, unless a restore put stock back ([`Self::restored_at`]).
@@ -358,22 +354,14 @@ mod tests {
     }
 
     #[test]
-    fn a_document_from_an_older_server_still_reads() {
-        // Servers before the replacement's broker was deleted also sent its
-        // health; the field is ignored.
-        let status: StockStatus =
-            serde_json::from_value(json!({"device_online": true, "replacement": null})).unwrap();
-        assert!(status.device_online);
-    }
-
-    #[test]
     fn a_trial_record_refuses_fields_it_does_not_know() {
         let id = Uuid::nil();
         let record = json!({"sequence": 1, "input": {"request_id": id, "server_token": id},
                             "created_at": "2026-10-25T00:00:00Z",
                             "updated_at": "2026-10-25T00:00:00Z", "phase": "submitted",
                             "download_reported": false, "resolution_note": null,
-                            "image_sha256": "00"});
+                            "image_sha256": "00", "build": "cd",
+                            "stock_reported": false});
         let read: TrialRecord = serde_json::from_value(record.clone()).unwrap();
         assert_eq!(read.phase, TrialPhase::Submitted);
 

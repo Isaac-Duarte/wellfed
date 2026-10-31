@@ -9,12 +9,6 @@
 //! stopped. `validate` keeps the HTTP API on loopback and the broker on one
 //! specific IPv4 address.
 //!
-//! A file written while the replacement firmware still had a broker role
-//! keeps that role's `firmware` field. [`load`] drops it unread, so such a
-//! file still loads without being rewritten (it holds working credentials
-//! and is edited only by hand, with the service stopped); any other field
-//! the type does not know is still refused.
-//!
 //! An installer's config ([`InstallConfig`], written by `init-installer`)
 //! has no device at all: the broker trusts the first stock feeder that
 //! connects during an install ([`crate::enroll`]), and [`load`] then takes
@@ -36,8 +30,6 @@ use wellfed_formats::hex;
 
 use crate::{enroll::Enrollment, protocol::lenient, storage};
 
-/// The retired replacement-firmware broker role's field.
-const RETIRED_ROLE: &str = "firmware";
 /// The field a config with a captured device has, and an installer's lacks.
 const DEVICE_FIELD: &str = "device_id";
 
@@ -426,7 +418,6 @@ pub fn state(path: &Path) -> Result<State> {
 /// server answers would then be a guess.
 fn parse_state(bytes: &[u8], enrollment: Option<Enrollment>) -> Result<State> {
     let UniqueKeys(mut fields) = serde_json::from_slice(bytes)?;
-    fields.remove(RETIRED_ROLE);
 
     match (fields.contains_key(DEVICE_FIELD), enrollment) {
         (true, None) => Ok(State::Device(Box::new(serde_json::from_value(
@@ -503,10 +494,6 @@ mod tests {
         "timezone":"UTC","plans":[],"binding_response":null,
         "hotspot_interface":"wlan1","target_mac":"02:00:00:00:00:01""#;
 
-    const FIRMWARE: &str = r#""firmware":{"client_id":"wellfed-fw-AF_TEST",
-        "username":"wellfed-fw","request_key":null,
-        "password":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#;
-
     const INSTALLER: &str = r#"{"version":1,
         "server_password":"ssssssssssssssssssssssssssssssss",
         "api_token":"tttttttttttttttttttttttttttttttt",
@@ -563,18 +550,7 @@ mod tests {
     }
 
     #[test]
-    fn a_file_with_the_retired_role_still_loads() {
-        let config = parse(format!("{{{STOCK},{FIRMWARE}}}").as_bytes()).unwrap();
-        assert!(config.validate().is_ok());
-        assert_eq!(config.device_id, "AF_TEST");
-    }
-
-    #[test]
     fn a_repeated_key_is_refused_as_the_struct_parse_did() {
-        let firmware_twice = format!("{{{STOCK},{FIRMWARE},{FIRMWARE}}}");
-        let error = parse(firmware_twice.as_bytes()).err().unwrap();
-        assert!(error.to_string().contains("duplicate field `firmware`"));
-
         let version_twice = format!("{{{STOCK},\"version\":1}}");
         let error = parse(version_twice.as_bytes()).err().unwrap();
         assert!(error.to_string().contains("duplicate field `version`"));

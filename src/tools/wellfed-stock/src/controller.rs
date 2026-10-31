@@ -228,7 +228,7 @@ pub fn close_answered(
     };
     if record.sequence != sequence
         || !matches!(record.phase, TrialPhase::Submitted | TrialPhase::Uncertain)
-        || record.build.as_deref() != Some(build)
+        || record.build != build
     {
         return Ok(false);
     }
@@ -479,7 +479,7 @@ impl Controller {
             return Err(Rejection::ImageServer);
         };
         let image_sha256 = lease.sha256.clone();
-        let build = Some(lease.build.clone());
+        let build = lease.build.clone();
 
         let record = ota::trial::Record {
             sequence: self.ledger.ota_trials.len() + 1,
@@ -549,7 +549,7 @@ impl Controller {
             .ok_or(Rejection::Conflict)?;
         if record.phase == TrialPhase::ReplacementHealthy
             && record.resolution_note.as_ref() == Some(&answer.note)
-            && record.build.as_deref() == Some(answer.build.as_str())
+            && record.build == answer.build
         {
             return Ok(record.clone());
         }
@@ -562,7 +562,7 @@ impl Controller {
         if stock_online || record.stock_reported {
             return Err(Rejection::StockRunning);
         }
-        if answer.bank != 0 || record.build.as_deref() != Some(answer.build.as_str()) {
+        if answer.bank != 0 || record.build != answer.build {
             return Err(Rejection::WrongBuild);
         }
 

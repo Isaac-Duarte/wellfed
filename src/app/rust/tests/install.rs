@@ -613,6 +613,7 @@ fn what_an_earlier_run_left_is_read_from_its_records() {
                 "created_at": at, "updated_at": at,
                 "phase": "uncertain", "download_reported": false,
                 "resolution_note": null, "image_sha256": "ab".repeat(32),
+                "build": "cd", "stock_reported": false,
             }
         },
     });

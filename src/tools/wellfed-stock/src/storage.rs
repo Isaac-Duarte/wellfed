@@ -19,8 +19,9 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
 
 /// Write a new private file; refuses to replace an existing one. The file
 /// appears whole or not at all: the bytes go to a temporary file beside it
-/// first, which is then hard-linked into place (a link never replaces), so
-/// a reader polling for it never sees it half written, and a writer killed
+/// first, which is then moved into place by a step that never replaces
+/// (`renameat2(RENAME_NOREPLACE)` on Linux and Android, a hard link elsewhere),
+/// so a reader polling for it never sees it half written, and a writer killed
 /// partway leaves no empty file that would refuse the next attempt.
 pub fn write_new_json(path: &Path, value: &impl Serialize) -> Result<()> {
     let mut text = serde_json::to_vec_pretty(value)?;
