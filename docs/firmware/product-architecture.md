@@ -56,7 +56,7 @@ Most of this is design. What has been built and observed is on the [roadmap](../
   - Native Swift and Kotlin would mean two or three UIs for one maintainer.
 - **No web UI for owners, and the browser never talks to the feeder.** Browsers have no raw TCP, no mDNS, and no Web Bluetooth on iOS or Firefox. Chrome restricts HTTPS pages from reaching LAN devices. A UI served by the feeder would cost flash and a second listener, and its page would arrive over plain HTTP. A browser UI on the server was dropped on October 30, 2026: it would repeat every app screen, its feeding-safety logic included, and reach only owners who run a server. It would come back only as the way onto iPhones if Apple refuses the app.
 - **The app alone is the complete product.** The server is an opt-in add-on, for long history, remote access, accounts, pets and food, and firmware releases.
-- **The installer** is the app on Android or a computer, and `wellfed-server` or the CLI. An install on an iPhone is an open question: iOS suspends an app soon after it leaves the screen, and the phone is serving the feeder its firmware.
+- **The installer** is the app on Android or a computer, or the CLI. The server is not an installer: every install from stock runs from a frontend or the CLI. The server only installs firmware releases on a feeder already running Wellfed. An install on an iPhone is an open question: iOS suspends an app soon after it leaves the screen, and the phone is serving the feeder its firmware.
 - **Distribution:** APKs and server builds as GitHub releases. App stores and F-Droid come later. Apple's review of an app that replaces a feeder's firmware is an open question, to settle before any public iPhone release.
 - **App and server together.** When a server is configured, the app goes through it first. It goes straight to the feeder on the LAN only when the server is down, and an uncertain write never switches path ([two paths, one feed](../server/README.md#two-paths-one-feed)). Going app-direct only was rejected: no remote access, and each person's actions would reach the audit log only through the feeder.
 - **Notifications** aren't planned ([deferred](#deferred)).
@@ -73,7 +73,7 @@ Most of this is design. What has been built and observed is on the [roadmap](../
       │ HTTP                                   └────────┘
       ▼                                            ▲
   wellfed-server (optional) ── Noise stream ──────┘
-      history store, release fetching, installer
+      history store, release fetching, release installs
       ▲
       │ HTTP
   the CLI, and later a Home Assistant integration
@@ -84,7 +84,7 @@ In code:
 | Part | Where | What it holds |
 | --- | --- | --- |
 | SDK | `src/sdk/` | Mechanisms only: the runtime, clock and time sources, journal, feeding owner, buttons, Noise transport, the BLE link and the updater |
-| Product policy | `src/product/wellfed-feeder` | Schedules, child lock, alerts, history policy, the request and entity model, the product's stores, and the loop itself |
+| Product policy | `src/product/wellfed-feeder` | Schedules, child lock, reminders, history policy, the request and entity model, the product's stores, and the loop itself |
 | Product runtime | `src/product/wellfed-feeder-runtime` | The product's stores on the SDK runtime: the settings writer and its mailboxes |
 | Firmware | `src/firmware/wellfed/feeder` | The PLAF103's wiring, and the feeding owner stepped in the loop |
 | Client core | `wellfed-client` | The sans-IO protocol logic every client shares |
@@ -97,7 +97,7 @@ Some detail on each:
 - **`wellfed-feeder-runtime`** is linked by every PLAF103 firmware, so a firmware swap keeps the owner's data.
 - **The firmware** supplies the `Platform` (pins, drivers, sockets, mailboxes) and steps the feeding owner in one loop task, before the product's pass. Another model gets its own thin firmware.
 - **`wellfed-client`** turns bytes in into bytes out: the Noise handshake, pairing, invites, requests, event-cursor sync and the installer's steps. It never opens a socket or a radio. `wellfed-connect` drives its device API sessions over tokio TCP for the server, the CLI and the Android app alike, and `wellfed-install` drives the install from stock for the CLI and the app, with stock's server in its own process. The app carries its BLE setup bytes in Dart, and WASM can run it later.
-- **`wellfed-server`** links single-purpose libraries for its shared pieces: the Noise client and request types in `wellfed-client` and `wellfed-model`, the stock protocol in `wellfed-stock`, and signing in `wellfed-signing`. The bench's old catch-all server is deleted ([tools](../../src/tools/README.md)).
+- **`wellfed-server`** links single-purpose libraries for its shared pieces: the Noise client and request types in `wellfed-client` and `wellfed-model`, and its sessions in `wellfed-connect`. It speaks no stock protocol and holds no signing key: it verifies releases, and an owner signs a return to stock on their own computer. The bench's old catch-all server is deleted ([tools](../../src/tools/README.md)).
 
 ## Frontends
 
@@ -111,7 +111,6 @@ Some detail on each:
   - Windows, once there is a machine to test it on.
 - **The CLI** (`wellfed`) speaks the device API and, under `wellfed server`, the server's HTTP API. It also runs the install. It stays the tool the bench drives, on Linux.
 - **One UI** means one codebase for one maintainer. The server's HTTP API stays public through `openapi.json`, for anyone building another client.
-- **Setup first.** The app's first milestone covers the risky parts in the real app rather than a throwaway spike: BLE setup on a real phone, NSD discovery on a real network, and a session with feeds. Its Rust half is tested against the simulated feeder.
 
 ## Setup and pairing
 
@@ -126,7 +125,7 @@ Some detail on each:
   - The panel still feeds: Dispense works while no phone runs a session, and the idle reboot waits for a feed in flight. During a session the buttons key the code in, and nothing feeds. Setup mode started with Lock and Mic refuses every feed; the hold does not change an unprovisioned setup already running.
   - A Wi-Fi store the writer cannot read does not start it. Setup could not save Wi-Fi to that store anyway, so a factory reset is the way back.
   - Nothing in setup mode depends on the bank, so this works from bank 0, where stock installs the image.
-  - Host-tested and simulated only; no consumer image has run on a feeder. Setup mode's heap has been measured from bank 1 only.
+  - It has run on the feeder from bank 0, by the app and the CLI ([consumer installation](consumer-installation.md#evidence)). Setup mode's heap has been measured from bank 1 only.
 - **Cost.** A running feeder pays only BLE's flash cost: the linked stack and an 11.5 KB controller patch. Heap, the C tasks (outside our stack audit) and shared radio time are spent only in setup mode.
 
 **The first client.** In one BLE session (Noise XX) the app sends its own client key and learns the feeder's identity key. The app shows a one-time code of button presses, which the owner keys in on the feeder. Both sides prove the code, bound to the handshake, so a relay in radio range cannot pose as either ([why a code](bluetooth.md#why-a-code)). Then the app sends the Wi-Fi credentials, and its key becomes an owner key.
@@ -139,7 +138,7 @@ Some detail on each:
 
 **Randomness.** Noise needs unpredictable ephemeral keys. The SDK offers no vetted random generator, so the firmware builds its own from measured ADC noise, with health tests ([pairing](pairing.md#no-hardware-rng)).
 
-**Bench shortcuts that go away:** broker credentials as a build input, captured stock credentials, and `sudo nft` redirects. The installer ends by handing the feeder to this pairing flow, not to a server.
+**Bench shortcuts a consumer never needs:** captured stock credentials and `sudo nft` redirects. The installer ends by handing the feeder to this pairing flow, not to a server.
 
 ## Device API
 
@@ -184,15 +183,15 @@ The event cursor is described under [data](#data).
 
 What the feeder can measure decides what anyone can store. On the PLAF103:
 
-| Signal | Source | Status |
+| Signal | Source | What we have |
 | --- | --- | --- |
-| Feed requested, source, result | Feeding owner, journal | Works |
-| Delivered portions | Rotor marks on PA18; the outlet beam for food passing | Partial: one mark per portion is observed; counting food needs calibration |
-| Food level (present, low) | Food beam | Partial: polarity known; levels need the food-level feature |
-| Motor current per feed | ADC channel 4 | Partial: read during drives; scaling to milliamps needs a reference |
-| Supply voltage, adapter or battery | ADC channel 5, PA19 | Works |
-| Buttons, lock, resets | PB4–PB7 | Works |
-| Connectivity, boots, updates, clock syncs | Runtime | Works: reported in health and statistics |
+| Feed requested, source, result | Feeding owner, journal | Recorded for every feed |
+| Delivered portions | Rotor marks on PA18; the outlet beam for food passing | One mark per portion is observed. Grams come from the owner's calibration, and outlet-beam breaks are a lower bound on food that fell |
+| Food level (present, low) | Food beam | The status and the low-food light show the latest reading. It warns low, and does not measure how much is left |
+| Motor current per feed | ADC channel 4 | Read during drives. Scaling to milliamps needs a reference |
+| Supply voltage, adapter or battery | ADC channel 5, PA19 | Read and reported |
+| Buttons, lock, resets | PB4–PB7 | Read and recorded |
+| Connectivity, boots, updates, clock syncs | Runtime | Reported in health and statistics |
 
 The feeder has no scale, bowl sensor or camera. It knows what it dispensed, never what the pet ate.
 
@@ -241,8 +240,9 @@ Paused by the owner, until the server has proven itself on a real feeder. When i
 
 ## Evidence
 
-- **Design:** the decisions above are the owner's, recorded on October 23, 2026, with the app-and-server path decided on October 26, the "not automatic" setup rule on October 24, and the frontends, the dropped web UI, notifications and the Home Assistant route on October 30.
+- **Design:** the decisions above are the owner's, recorded on October 23, 2026, with the app-and-server path decided on October 26, the "not automatic" setup rule on October 24, the frontends, the dropped web UI, notifications and the Home Assistant route on October 30, and that the server is not an installer on October 31.
 - **Observed:** a Wi-Fi association held every task, a priority-4 one included, for 0.45–0.72 s on October 25 ([resource budget](resource-budget.md#scheduling-gaps-across-wi-fi-rejoins)).
 - **Observed:** PA18 rests HIGH and reads LOW for about 1.17 s at each rotor mark, one mark per portion. During a 3 s empty drive, channel 4 read a scaled maximum of 166 and a mean of 64 ([motor pulse](motor-pulse.md)).
 - **Observed:** the task-slot limit was found in another session's captures (`fw44-simon-01`).
 - **Modeled** (October 29): setup mode at an unprovisioned boot. On the firmware's platform it starts once, only after the Wi-Fi store is loaded and armed and the plans are loaded; stored or build credentials, or an enabled plan, start nothing; an idle reboot enters it again; and Lock and Mic start it as before (`wellfed-fw-feeder/tests/setup.rs`). In the simulator, a consumer-like boot starts it, the client's setup exchange pairs over the simulated link and saves the Wi-Fi, and the next boot starts nothing (`wellfed-feeder-sim/tests/setup.rs`). Not yet on hardware.
+- **Observed** (October 30): a consumer image on the research unit started setup mode by itself at boot, from bank 0, and both the app and the CLI paired through it and gave it Wi-Fi ([consumer installation](consumer-installation.md#evidence)).

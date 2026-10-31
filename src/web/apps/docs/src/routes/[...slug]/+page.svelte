@@ -3,7 +3,6 @@
   import { CopyButton } from "@wellfed/ui";
   import { loadMarkdown } from "#lib/api/markdown.ts";
   import { OG_IMAGE, SITE } from "#lib/links.ts";
-  import ModeSwitch from "#lib/ModeSwitch.svelte";
   import Toc from "#lib/Toc.svelte";
   import type { PageProps } from "./$types";
 
@@ -44,7 +43,6 @@
       {#if data.section}<p class="eyebrow" data-pagefind-ignore>{data.section}</p>{/if}
       <div class="page-tools" data-pagefind-ignore>
         {#if markdown?.slug === doc.slug}<CopyButton text={markdown.text} label="Copy as Markdown" />{/if}
-        {#if doc.hasDetails}<ModeSwitch />{/if}
       </div>
     </div>
     <div class="prose">

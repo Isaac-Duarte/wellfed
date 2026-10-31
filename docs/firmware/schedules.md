@@ -2,7 +2,7 @@
 
 The feeder keeps up to ten feeding plans and runs them itself, with no server. This page explains what a plan is, when one runs, and how the feeder makes sure a meal runs at most once through restarts, clock jumps and daylight changes. It is for owners who want to know what to expect and for anyone changing the schedule code.
 
-Status: **Works**. Observed on our feeder; daylight changes and power cuts between a claim and its feed are tested in simulation only. The meal reminder and the meal call are **Experimental**: tested on the host and in simulation only.
+Plans, the meal reminder and the meal call have all run on our feeder. Daylight changes and power cuts between a claim and its feed are tested in simulation only. The [roadmap](../roadmap.md) has the current status.
 
 ## Plans
 
@@ -136,6 +136,8 @@ The plans live in storage sectors 11 and 12 (`wellfed_feeder::store::plans`): on
 
 ## Evidence
 
+- **Observed, October 29, 2026** (owner listening, hopper empty): the meal call at volumes 10, 50 and 100, each played before its meal, which then fed on time ([speaker](audio.md#evidence)). A settings write made during a feed was refused `Busy`.
+- **Observed, October 28, 2026** (evening, unattended, hopper empty): a meal reminder set 5 minutes ahead of a plan arrived on time, a reboot inside the lead repeated it once, and the meal fed on time. A plan calling a clip twice played it and then fed on time. With sound off, the next plan logged `result=muted` and fed on time.
 - **Observed, October 28, 2026** (`fp03-ota-20261028`, hopper empty): a daily plan fed once at its minute; a reboot within that minute, with the clock carried across it, ran nothing again; a plan set to run once fed and disabled itself; a plan due while the feeder had no clock after a cold boot held, and the sync 16 minutes later recorded it missed, unfed.
 - **Simulated, October 28, 2026.** The meal call, on the same loop: a clip uploaded through the platform's chunks, a plan calling twice called once, between its lead and a second before its meal, and fed at its minute; a plan without a call, a plan with no clip stored, and an occurrence already run are not called. The call store's tests cover an upload chunk by chunk, a stream that misses its CRC, the longest clip, a delete, a changed byte, and a power cut at the header's every byte and through the rest. The conformance suite uploads and deletes a clip on both platforms.
 - **Simulated, October 28, 2026.** The meal reminder, on the same loop: off by default, its lead before the meal with the meal still run once, a disabled plan and a feeder without time, a plan edited inside the lead, a restart inside the lead, and Denver's spring and autumn changes.

@@ -5,11 +5,11 @@
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import { GitHubMark } from "@wellfed/ui";
-  import type { Snippet } from "svelte";
+  import { onMount, type Snippet } from "svelte";
   import { favicon, lockup, lockupOnLight, themeColor } from "#lib/brand.ts";
   import { HOME, REPO } from "#lib/links.ts";
-  import { HEAD_HTML } from "#lib/mode.ts";
   import Search from "#lib/Search.svelte";
+  import { HEAD_HTML, mountTabs, syncTabs } from "#lib/tabs.ts";
   import type { LayoutProps } from "./$types";
 
   let { data, children }: LayoutProps & { children: Snippet } = $props();
@@ -17,6 +17,10 @@
   // On phones the sidebar is a drawer under the header, closed after each move.
   let menuOpen = $state(false);
   afterNavigate(() => (menuOpen = false));
+
+  // Each navigation brings in a page's own tabs, in their server-written state.
+  onMount(mountTabs);
+  afterNavigate(syncTabs);
 </script>
 
 <svelte:head>
@@ -62,10 +66,14 @@
       <div class="group">
         <p>{section.label}</p>
         <ul>
-          {#each section.links as link (link.slug)}
-            {@const href = resolve("/[...slug]", { slug: link.slug })}
+          {#each section.links as link (link.label)}
             <li>
-              <a {href} aria-current={page.url.pathname === href ? "page" : undefined}>{link.label}</a>
+              {#if "slug" in link}
+                {@const href = resolve("/[...slug]", { slug: link.slug })}
+                <a {href} aria-current={page.url.pathname === href ? "page" : undefined}>{link.label}</a>
+              {:else}
+                <a href={link.href} rel="external">{link.label}</a>
+              {/if}
             </li>
           {/each}
         </ul>

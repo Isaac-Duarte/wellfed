@@ -3,12 +3,10 @@ export interface Heading {
   depth: 2 | 3;
   id: string;
   text: string;
-  /** After the page's `<!-- details -->`, so hidden in Overview. */
-  detail: boolean;
 }
 
 export interface Doc {
-  /** The path under docs/, such as `firmware/device-api.md`. */
+  /** The path under docs/, such as `guide/install.md`. */
   file: string;
   /** The route without its leading slash; a folder's README is the folder. */
   slug: string;
@@ -16,7 +14,7 @@ export interface Doc {
   description: string;
   html: string;
   headings: Heading[];
-  /** The page ends an overview with `<!-- details -->`. */
-  hasDetails: boolean;
+  /** The route of each PNG the page shows, without the leading slash. */
+  images: string[];
   editUrl: string;
 }

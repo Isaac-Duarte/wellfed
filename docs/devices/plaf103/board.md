@@ -30,8 +30,6 @@ flowchart LR
   chip <-->|UART| console["Console: UART on CON5, for recovery"]
 ```
 
-<!-- details -->
-
 ## Signal map
 
 The roles come from stock 1.1.15, and many have since been confirmed on the board. The SDK numbers a pin as `(port << 5) | pin` ([chip](../../chips/rtl8721dm/README.md#pins)).

@@ -160,6 +160,9 @@ body {
   color: var(--color-text);
   background: var(--color-sunken);
 }
+.sidebar a[rel="external"]::after {
+  content: " ↗" / "";
+}
 .sidebar a[aria-current="page"] {
   background: var(--color-accent-soft);
   color: var(--color-accent);
@@ -374,41 +377,74 @@ body {
 }
 
 /*
- * Overview | Details. A page's overview ends with `<!-- details -->`; what
- * follows is .details, hidden in Overview. data-mode is set before first
- * paint (mode.ts), and never without JavaScript, when everything shows.
+ * App | CLI tabs (content.ts, tabs.ts). data-tab is set before first paint, and
+ * never without JavaScript, when both panels show and there is nothing to
+ * switch. The tab's own heading stays for a screen reader's outline and for a
+ * link into the panel, but the tab already shows its name.
  */
-.details-more {
+.tabs {
+  margin: var(--space-5) 0;
+}
+:root:not([data-tab]) .tab-bar {
   display: none;
 }
-:root[data-mode="overview"] .details {
-  display: none;
+.tab-bar {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-pill);
 }
-:root[data-mode="details"] .details {
-  margin-top: var(--space-6);
-}
-:root[data-mode="overview"] .details-more {
-  display: block;
-  margin-top: var(--space-6);
-}
-.details-more button {
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--color-line-strong);
+.tab {
+  padding: 3px var(--space-3);
+  border: 0;
   border-radius: var(--radius-pill);
   background: none;
-  color: var(--color-text);
+  color: var(--color-text-muted);
   font: inherit;
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   cursor: pointer;
 }
-.details-more button:hover {
-  border-color: var(--color-accent);
+.tab:hover {
+  color: var(--color-text);
+}
+:root[data-tab="app"] .tab[data-tab="app"],
+:root[data-tab="cli"] .tab[data-tab="cli"] {
+  background: var(--color-accent-soft);
   color: var(--color-accent);
 }
-.details-more button:focus-visible {
+.tab:focus-visible,
+.tab-panel:focus-visible {
   outline: none;
   box-shadow: var(--focus);
+}
+:root[data-tab="app"] .tab-panel[data-tab-panel="cli"],
+:root[data-tab="cli"] .tab-panel[data-tab-panel="app"] {
+  display: none;
+}
+:root[data-tab] .prose .tab-heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/*
+ * An image beside a page: mostly a phone's screen, which at the column's full
+ * width would be taller than the window. Height follows the width, whatever the
+ * file's own size attributes say.
+ */
+.prose img {
+  display: block;
+  width: auto;
+  max-width: min(100%, 280px);
+  height: auto;
+  margin-block: var(--space-5);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
 }
 
 /*
@@ -472,6 +508,21 @@ body {
   stroke: var(--color-line-strong);
   stroke-width: 1;
   stroke-dasharray: 4 4;
+}
+/* Line art traced from the 3D model: its outlines, then its creases. */
+.diagram .d-line {
+  fill: none;
+  stroke: var(--color-text);
+  stroke-width: 1.25;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.diagram .d-line-soft {
+  fill: none;
+  stroke: var(--color-line-strong);
+  stroke-width: 1;
+  stroke-linejoin: round;
+  stroke-linecap: round;
 }
 .diagram .d-wire {
   fill: none;

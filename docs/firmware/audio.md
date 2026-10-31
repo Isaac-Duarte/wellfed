@@ -2,7 +2,7 @@
 
 The PLAF103 has a real speaker, not a piezo buzzer. Stock uses it to play a meal call the owner records in the app. Wellfed drives the same audio path with a small set of built-in tunes and the owner's own meal call, played one at a time and always bounded. No feed decision reads the speaker, though its steps do take time in the loop a feed shares ([device API](device-api.md)).
 
-Status: **Works** for the built-in tunes. The meal call's clip is **Experimental**: tested on the host and in simulation. Which sounds play when is product policy and not settled. A feed plays no tune.
+The built-in tunes and your own meal call have both been heard on our feeder. Which sounds play when is product policy and not settled. A feed plays no tune. The [roadmap](../roadmap.md) has the current status.
 
 ## What stock does
 
@@ -78,10 +78,10 @@ The task logs `PLAUD1` lines:
 ## Not done yet
 
 - **Stock's clips.** Playing stock's own clips needs a read-only FAT reader, the SDK's Helix AAC decoder and a 44.1 kHz codec setup. The owner's meal call replaces them.
-- **The meal call on the speaker.** Heard on the bench: not yet.
 
 ## Evidence
 
+- **Meal call, on the speaker.** Observed (October 29, owner listening, hopper empty): plans calling a 2 s clip twice before a 1-portion meal, at volumes 10, 50 and 100. Each step was clearly louder than the last, and each call finished with no underruns before its feed ran. An earlier unattended run (October 28) kept the clip across a reboot, and with sound off logged `result=muted` and fed on time.
 - **The buzzer.** Observed (October 28, owner listening, `feeder` `buzzer` variant v334): with the amplifier and codec off, a 200 ms HIGH on PA25 gave a clear beep, and 512 Hz and 2,048 Hz square waves on it sounded rough, as an active buzzer's own oscillator chopped by its supply would. The pad read back HIGH while driven HIGH and LOW while driven LOW. The normal build went back on afterwards.
 - **Playback.** Observed (October 22, OTA v20 and v21, owner listening). The startup chime played on the first boot (`done tune=chime ms=624 underruns=0 drained=1`) and was heard clearly, as were `coin` and `twinkle`. A `coin` sent during `twinkle` got `busy`. With the decibel scale, volumes 40, 80 and 100 were clearly stepped and clean. With `sound` off, a play request was refused with `muted`. Settings were then restored (sound on, volume 40, generation 2985). These requests went over the since-deleted MQTT transport, which reached the same `audio::request`.
 - **Amplifier settle.** Observed (October 24): a 60 ms settle swallowed a 50 ms tick whole, so the settle is 150 ms.

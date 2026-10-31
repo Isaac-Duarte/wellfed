@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 380" role="img" aria-labelledby="install-route-title install-route-desc">
+  <title id="install-route-title">How a phone gets Wellfed onto a stock feeder</title>
+  <desc id="install-route-desc">After you hold Reset, the feeder opens its own setup network. The phone joins it and sends one message with your home Wi-Fi and the phone's address. The feeder joins your home network and connects to the phone, which is standing in for the vendor's server. The phone then asks once for an update, and the feeder's own updater downloads Wellfed from the phone. No vendor cloud is involved.</desc>
+  <defs>
+    <marker id="install-route-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head-accent" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="d-box" x="30" y="30" width="150" height="320" rx="10"/>
+  <text x="105" y="60" text-anchor="middle" class="d-title">Your phone</text>
+  <text x="105" y="78" text-anchor="middle" class="d-muted">or computer</text>
+
+  <rect class="d-box" x="540" y="30" width="150" height="320" rx="10"/>
+  <text x="615" y="60" text-anchor="middle" class="d-title">The feeder</text>
+  <text x="615" y="78" text-anchor="middle" class="d-muted">on stock firmware</text>
+
+  <text x="360" y="112" text-anchor="middle" class="d-title">1. You hold Reset</text>
+  <text x="360" y="130" text-anchor="middle" class="d-muted">the feeder opens its own setup network</text>
+  <line class="d-wire-accent" x1="536" y1="142" x2="184" y2="142" marker-end="url(#install-route-arrow)"/>
+
+  <text x="360" y="176" text-anchor="middle" class="d-title">2. One setup message</text>
+  <text x="360" y="194" text-anchor="middle" class="d-muted">your home Wi-Fi, and the phone's address</text>
+  <line class="d-wire-accent" x1="184" y1="206" x2="536" y2="206" marker-end="url(#install-route-arrow)"/>
+
+  <text x="360" y="240" text-anchor="middle" class="d-title">3. The feeder calls the phone</text>
+  <text x="360" y="258" text-anchor="middle" class="d-muted">over your home network, not the vendor's cloud</text>
+  <line class="d-wire-accent" x1="536" y1="270" x2="184" y2="270" marker-end="url(#install-route-arrow)"/>
+
+  <text x="360" y="304" text-anchor="middle" class="d-title">4. One update request, then the download</text>
+  <text x="360" y="322" text-anchor="middle" class="d-muted">the feeder's own updater does the install</text>
+  <line class="d-wire-accent" x1="184" y1="334" x2="536" y2="334" marker-end="url(#install-route-arrow)"/>
+</svg>

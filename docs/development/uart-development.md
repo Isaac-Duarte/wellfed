@@ -1,6 +1,6 @@
 # Development updates over UART
 
-This guide installs a reviewed build on a PLAF103 over UART, rewriting only the application sectors that changed. It is for developers with a [bench](../devices/plaf103/bench.md) and a full backup. Status: **Experimental**, and only for the tested PLAF103 bank layout.
+This guide installs a reviewed build on a PLAF103 over UART, rewriting only the application sectors that changed. It is for developers with a [bench](../devices/plaf103/bench.md) and a full backup. It is experimental, and holds only for the tested PLAF103 bank layout.
 
 The path works inside an already established, supervised helper session. It accepts complete, frozen source and target images. The pinned stock-recovery writer keeps its original restrictions.
 

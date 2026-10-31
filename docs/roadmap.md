@@ -43,6 +43,9 @@ This page tracks what works today and what comes next. It covers the replacement
 | Child lock | Works | |
 | Reset button | Works | Clears clients, Wi-Fi, settings, plans, history and statistics, and keeps the calibration, the feed journal and the flash wear counts. Checked on the feeder: a hold on an unlocked panel wipes it, and the owner pairs again over Bluetooth. |
 | Buttons | Works | |
+| Startup and build identity | Works | Starts with the motor stopped and reports its build. |
+| Flash, journal and settings | Works | See [flash layout](devices/plaf103/flash-layout.md). |
+| Stop timer and watchdog | Works | |
 | Indicator lights | Works | Which states show is not settled. |
 | Speaker | Works | Plays sounds; which sounds play when is not settled. |
 | Clock and time zones | Partial | Needs a time source after each power-up. Offline time is experimental. |
@@ -57,9 +60,9 @@ This page tracks what works today and what comes next. It covers the replacement
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Command-line client (`wellfed`) | Partial | Every owner setting and action: pairing, status, settings, plans, the meal call, feeds, history, the desiccant reminder, lock, Wi-Fi, time, invites and the installer, with text for people and `--json` for scripts. The meal call, the desiccant reminder and the newer status fields are tested in simulation only. See [the command overview](../src/tools/README.md#the-wellfed-command-line). |
-| Self-hosted server | Partial | Optional: the app alone is the complete product, and the server adds long history, remote access, accounts, pets and food, and firmware releases. It has no web page of its own, and you use it through the CLI until the app connects to it. Adopts a real feeder and keeps its history whole across a server restart, a power cut and a Wi-Fi drop. A phone talking to the feeder directly gets no events while the server is connected. Feeds, plans with the next meal, accounts, releases and installs are tested in simulation only. |
-| Android app | Partial | Installs from stock through the feeder's own Wi-Fi after a Reset hold, sets up a feeder over Bluetooth or takes it back over the LAN, and has a screen for everything the device API offers: meals, history, settings, people and invites, updates and diagnostics. Its install and its return to the vendor's firmware have run end to end on the research unit several times, including from a feeder set up in the vendor's app. Every screen has been walked on that feeder, including a power cut mid-feed, an interrupted recording and a damaged install record. The known gap: the install's search for its feeder changed after the last run from stock, so that step has only its tests until the next real Reset. There are no alerts yet. See [the app](../src/app/README.md). |
+| Command-line client (`wellfed`) | Partial | Every owner setting and action: pairing, status, settings, plans, the meal call, feeds, history, the desiccant reminder, lock, Wi-Fi, time, invites and the installer, with text for people and `--json` for scripts. Its install's own hop onto the feeder's setup network has not run on hardware; a manual join has. See [the command overview](../src/tools/README.md#the-wellfed-command-line). |
+| Self-hosted server | Partial | Heavy work in progress, a proof of concept. Optional: the app alone is the complete product, and the server adds long history, remote access, accounts, pets and food, and firmware releases. It has no web page of its own, and you use it through the CLI until the app connects to it. Adopts a real feeder and keeps its history whole across a server restart, a power cut and a Wi-Fi drop. A phone talking to the feeder directly gets no events while the server is connected. Feeds, plans with the next meal, accounts, releases and release installs are tested in simulation only. Installs from stock run from the app or the CLI, never from the server. |
+| Android app | Partial | Installs from stock through the feeder's own Wi-Fi after a Reset hold, sets up a feeder over Bluetooth or takes it back over the LAN, and has a screen for everything the device API offers: meals, history, settings, people and invites, updates and diagnostics. Its install and its return to the vendor's firmware have run end to end on the research unit several times, including from a feeder set up in the vendor's app. Every screen has been walked on that feeder, including a power cut mid-feed, an interrupted recording and a damaged install record. The known gap: the install's search for its feeder changed after the last run from stock, so that step has only its tests until the next real Reset. It does not connect to a server. There are no alerts yet. See [the app](../src/app/README.md). |
 | Desktop app (macOS and Linux) | Not started | The same app as Android, including the install. |
 | iPhone app | Not started | The same app, for setup and daily use. Whether it can install is an open question, so you would install from Android or a computer. |
 | Windows app | Not started | Waits for a machine to test it on. |
@@ -74,9 +77,8 @@ This page tracks what works today and what comes next. It covers the replacement
 ## What's next
 
 1. A long unattended run with injected faults, to prove the feeder stays safe over hours.
-2. Checking calibration, jams, lights and the battery on the bench.
-3. Schedules, then a finished manual feed with stock's portion rules.
-4. Finishing the Android app: its next install from stock on the research unit, then alerts.
-5. Proving the server on a real feeder, and connecting the app to it.
-6. A first research release.
-7. The desktop app on macOS and Linux, then iPhone, then Windows.
+2. Checking the battery floor and a brownout on a bench supply, and a feed's peak current with a full hopper and on batteries.
+3. Finishing the Android app: its next install from stock on the research unit, then alerts.
+4. Running feeds through the server on a real feeder, including a lost answer and its retry, then connecting the app to it.
+5. A first research release.
+6. The desktop app on macOS and Linux, then iPhone, then Windows.

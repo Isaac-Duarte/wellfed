@@ -3,8 +3,9 @@
 //! `fuzz` runs one cargo-fuzz target for a bounded time, or replays one
 //! saved input.
 //!
-//! `check-repository` checks local documentation links, portable repository
-//! inputs, that no Python returns under `src/`, and the source rules (raw
+//! `check-repository` checks local documentation links, the docs' staleness
+//! rules (`doc_checks`: commands, make targets, paths, status words, time-bound
+//! wording, anchors), portable repository inputs, that no Python returns under `src/`, and the source rules (raw
 //! output writers only through the HAL's owners, no board card ids), that
 //! each diagram in `docs/` still matches its Mermaid, that every device API op
 //! has a client in the CLI and the app, then the server's crate
@@ -17,7 +18,9 @@
 
 #![forbid(unsafe_code)]
 
+mod clap_tree;
 mod diagrams;
+mod doc_checks;
 mod fuzz;
 mod layers;
 mod op_clients;

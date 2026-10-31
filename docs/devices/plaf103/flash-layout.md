@@ -34,8 +34,6 @@ flowchart TD
   bank0 -->|no| wait["Wait forever: only UART recovers"]
 ```
 
-<!-- details -->
-
 All values are flash offsets, with exclusive ends. Mapped external flash begins at `0x08000000`. The machine-readable version is [layout.json](../../../src/firmware/devices/plaf103/layout.json).
 
 ## How it boots

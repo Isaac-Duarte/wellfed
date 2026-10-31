@@ -77,8 +77,7 @@ These are the promises the runtime keeps, whatever the rest of the firmware does
 
 - **Flash across both cores.** Flash coordination, the SDK hooks and RAM parking are tested, but complete exclusive flash ownership across both cores is unfinished. KM0's own SDK flash users are not yet mediated, which is safe only while KM0 never sleeps.
 - **Electrical acceptance.** Voltage and transient acceptance of the stopped outputs, and Port A input readback, are unresolved ([startup diagnostics](startup-diagnostics.md)).
-- **Schedules.** Running on the feeder ([schedules](schedules.md)). The sound before a meal is not built.
-- **The rest** is on the [roadmap](../roadmap.md): calibration, jams, lights and battery checks on hardware, and a long unattended run.
+- **The rest** is on the [roadmap](../roadmap.md).
 
 ## Crates
 
@@ -105,6 +104,6 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 ## Evidence
 
 - **Modeled:** the stores' torn writes and restart behavior are host-tested once against the slot layer and again per store. The fake NOR runs at 256-byte, 4 KiB and odd-tail unit sizes. It models erase to 0xFF, bit-clearing programs, byte-ordered program cuts, and erase cuts that leave old data with an arbitrary deterministic subset of bits raised. It does not model weakly programmed or erased cells, unstable reads, page wrap, or a real part's timing. This is simulation, not flash evidence.
-- **Modeled:** the core diagnostic uses synthetic inputs and memory-only motor outputs. Separately, the default application enables GPIO clocks, requests physical motor STOP and infrared off, and runs a bounded LED probe. The minimal KM0 main restores the stock shared-pad supply prerequisite.
+- **Modeled:** the core diagnostic uses synthetic inputs and memory-only motor outputs. Separately, the default application enables GPIO clocks, requests physical motor STOP and infrared off, and verifies each indicator LOW. The minimal KM0 main restores the stock shared-pad supply prerequisite.
 - **Observed:** feeds through the device API and the Dispense button, and power cuts during a feed resolving as uncertain, on the research unit. See the [roadmap](../roadmap.md) and the topic pages' Evidence sections.
 - SDK build success and model coverage do not establish electrical safety or physical reliability.

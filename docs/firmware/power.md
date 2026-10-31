@@ -2,7 +2,7 @@
 
 The feeder runs from its adapter, with three D cells as a backup. This page covers how the firmware reads the supply and the pack's charge, what the feeder does on its batteries, the battery floor below which it will not feed, what happens after a brownout, and why the chip does not sleep yet.
 
-Status: **Experimental**. The inputs are observed on our unit. Battery mode, the charge, the floor, the brownout handling and the supply reporting are host-tested and simulated. None has run on the pack under load, and battery mode has not run on hardware.
+The inputs and battery mode are observed on our unit. The charge, the floor and the brownout handling are tested only in simulation. No feed's surge or sag on the pack has been measured. The [roadmap](../roadmap.md) has the current status.
 
 ## Inputs
 
@@ -78,7 +78,7 @@ The UART shows `PLBAT2 radio off|on` and `PLBAT2 install stop queued=1` from the
 
 ## The floor
 
-The pack's floor is `wellfed_hal::power::FLOOR`, in the battery channel's scaled unit (pin millivolts). It is **provisional**: no motor has run on the pack yet, and the regulator's dropout and the chip's brownout level are unmeasured on this board. The SDK leaves the brownout thresholds at their reset values and documents them only as codes.
+The pack's floor is `wellfed_hal::power::FLOOR`, in the battery channel's scaled unit (pin millivolts). It is **provisional**: no feed's surge or sag on the pack has been measured, and the regulator's dropout and the chip's brownout level are unmeasured on this board. The SDK leaves the brownout thresholds at their reset values and documents them only as codes.
 
 | Limit | Pin mV | Pack | Why |
 | --- | ---: | ---: | --- |
@@ -154,13 +154,14 @@ Physical acceptance needs the cells in, which is the owner's call. The order kee
 - The floor's figures under load, and the board's brownout level.
 - Whether a real brownout sets `BOOT_Reason`'s bit here. The storm breaker's brownout rule and the brownout hold both rest on it.
 - Sleep, and with it the KM0 flash users on the DLPS path.
-- Whether the vendor's `wifi_off` and `wifi_on` cycle cleanly on this board, again and again, how long each stalls the tasks, and how much current battery mode saves.
+- How long the vendor's `wifi_off` and `wifi_on` each stall the tasks, and how much current battery mode saves.
 - Whether 2 s is enough for a failed join's teardown before `wifi_off`, and 500 ms for a leave's.
 - Whether a pack that browned out rebounds under 50 % at rest (the brownout hold's release).
 - Stock lights its warning at 20 % or less whenever a pack reads, and duty-cycles its beams on batteries. Neither is built.
 
 ## Evidence
 
+- **Battery mode on the feeder.** Observed (October 28, unattended apart from the owner's press, three D cells, hopper empty). Cutting the adapter with relay 1, the status read `on batteries` at once, and the radio went off after 5 s. A Dispense press fed 1 portion on the cells. With the adapter back the radio came on and the feeder rejoined in 12 s, in the same boot. Over 20 cycles, 20 s on the cells and a minute apart, every one rejoined in 12–13 s in the same boot, with the heap's low water steady at 129,440 B, every leave reading 0, and no status-30 reject or hang.
 - **Pack and adapter inputs.** Observed (October 23, UART and meter, the `adc` probe, three D cells, no reboot between states):
 
   | State | PA19 | Channel 5 mean (raw) | Scaled (mV) | Pack on meter |

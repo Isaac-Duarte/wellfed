@@ -83,7 +83,7 @@ impl Service {
     }
 
     /// The food section's reads received in `from..to`, oldest first: the
-    /// food beam as the feeder last read it, for the food views and alerts.
+    /// food beam as the feeder last read it, for the food views.
     pub async fn food_readings(
         &self,
         id: FeederId,

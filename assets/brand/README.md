@@ -13,7 +13,7 @@ These are Wellfed's logo, icons and design tokens, and the rules for using them.
 | `app-icon.svg`, `favicon.svg` | The mark on a navy tile; PNGs in `png/` |
 | `android/` | The adaptive launcher icon (foreground, monochrome for themed icons, navy background) |
 | `og.svg` | The 1200 × 630 social card for well-fed.dev ([site](../../docs/web/site.md#social-card)) |
-| `tokens.json` | The palette, light and dark theme roles (the dark theme is neutral graphite), the contrast pairs every theme must meet, and type, spacing, radii, focus, elevation and motion, shared by the app and the web UI. `pnpm generate` in `src/web/` writes the CSS and refuses a pair under its minimum |
+| `tokens.json` | The palette, light and dark theme roles (the dark theme is neutral graphite), the contrast pairs every theme must meet, and type, spacing, radii, focus, elevation and motion, shared by the app and the web frontends. `pnpm generate` in `src/web/` writes the CSS and refuses a pair under its minimum |
 
 ## Rules
 

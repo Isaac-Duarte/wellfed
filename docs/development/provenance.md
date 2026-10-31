@@ -14,7 +14,7 @@ No old Git history, raw captures, private evidence, vendor binaries, device back
 
 [import-manifest.json](import-manifest.json) records the source revision and SHA-256 of each selected file **before** the portability and documentation changes. Those hashes describe the import, not the current files or any deployable image. The private revision is an audit reference, not a public dependency or a reproducible link.
 
-## What changed on the way in
+## What changed as it came in
 
 - Network and capture inputs became explicit.
 - New configurations default to UTC.

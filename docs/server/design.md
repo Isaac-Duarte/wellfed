@@ -37,7 +37,7 @@ src/server/wellfed-mirror    the per-feeder runtime: connect, sync, ingest and p
                               each feeder's mirror events
 src/server/wellfed-releases  fetch, upload and verify releases, the release cache, and each feeder's verified stock backup
 src/server/wellfed-service   the use cases: accounts and auth, household, commands and their journal, pets and food,
-                              derived views, alerts, audit, export, and the hub. No axum, no SQL
+                              derived views, audit, export, and the hub. No axum, no SQL
 src/server/wellfed-server    the binary: config, axum routers per resource, the auth extractors, SSE, the jobs
                               supervisor
 src/server/wellfed-server-testkit  a temp store, a fixed clock and random, the simulator harness, signed test releases, the server in process
@@ -47,13 +47,13 @@ src/app/                      Flutter app, plus a thin flutter_rust_bridge crate
 
 The map is the target. Today the server is `wellfed-api`, `wellfed-store`, `wellfed-mirror`, `wellfed-releases`, `wellfed-service` and `wellfed-server`, with `wellfed-server-client` and `wellfed-server-testkit` beside them. The app talks to feeders only, not yet to a server. There is no web UI, and none is planned.
 
-The server's crates follow one rule: **a crate per runtime or dependency boundary, a module per domain inside it.** A new domain, such as pets or alerts, is a module and some tables, not a crate. It gets a crate only if it brings its own runtime (tasks), a heavy dependency (`reqwest`) or a consumer outside the server. That's why the mirror (the feeder tasks), the releases (`reqwest` and the verifier) and the HTTP client (the CLI) are crates, and accounts and alerts are not.
+The server's crates follow one rule: **a crate per runtime or dependency boundary, a module per domain inside it.** A new domain, such as pets or food, is a module and some tables, not a crate. It gets a crate only if it brings its own runtime (tasks), a heavy dependency (`reqwest`) or a consumer outside the server. That's why the mirror (the feeder tasks), the releases (`reqwest` and the verifier) and the HTTP client (the CLI) are crates, and accounts and pets are not.
 
 | Crate | What it owns |
 | --- | --- |
 | `wellfed-api` | Every HTTP body, a module per resource. It builds for every target, including the app's Android library, so it carries no server dependencies. `wellfed-service` returns these bodies directly until a second API version exists. |
 | `wellfed-store` | All SQL, a module per table group (`users`, `feeders`, `history`, `projections`, `samples`, `owner`, `commands`, `releases`, `jobs`). One crate, so the sqlx offline metadata and the migrations stay in one place. |
-| `wellfed-mirror` | Every task that holds a feeder session: connect, sync, clock sync, ingest, reconnect and the command lanes. It also holds the injected `Clock` and `Random` every server crate uses. It never sees a user, an alert or a stream id. |
+| `wellfed-mirror` | Every task that holds a feeder session: connect, sync, clock sync, ingest, reconnect and the command lanes. It also holds the injected `Clock` and `Random` every server crate uses. It never sees a user or a stream id. |
 | `wellfed-releases` | Fetching, uploading and verifying releases, the release cache, and each feeder's stock backup. |
 | `wellfed-service` | The use cases, a module per domain, each with its own error enum wrapped in the crate's `Error`. It owns the auth rules, the hub and each job's body. It never sees a socket or an HTTP type. |
 | `wellfed-server` | The binary. A handler parses, authorizes through an axum extractor, calls one service method and maps the result. It never sees SQL. The jobs supervisor lives here. |
@@ -136,7 +136,7 @@ Releases and stock backups are files in the data directory, not tables.
 
 **Two command lanes.** Commands reach the task through a bounded channel per lane: short commands, and the steps of a long operation such as an install. A short command waits at most one step of a long one. Each lane has one request in flight, matched to its answer by id. A command times out as "unknown, retry with the same key", never "failed", because the feeder may have run it. A feeder heard from not at all for 90 s counts as gone, so a feeder that loses power shows offline within that time.
 
-**The hub** is the service's. It merges each feeder's broadcast with command results, alerts and install progress, and assigns the stream ids `GET /stream` resumes from. A forwarder that falls behind drops its backlog and publishes `resync`. The SSE `id` is `<epoch>-<seq>`, with the epoch fixed at each start, so an id from before a restart resyncs.
+**The hub** is the service's. It merges each feeder's broadcast with command results and install progress, and assigns the stream ids `GET /stream` resumes from. A forwarder that falls behind drops its backlog and publishes `resync`. The SSE `id` is `<epoch>-<seq>`, with the epoch fixed at each start, so an id from before a restart resyncs.
 
 **Discovery** browses mDNS (`mdns-sd`) for a paired feeder whose stored address fails, unless `discovery = "off"`.
 

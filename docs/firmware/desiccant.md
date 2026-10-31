@@ -2,7 +2,7 @@
 
 The hopper's desiccant pack keeps the food dry, and it needs replacing every few weeks. The feeder counts the days since you last replaced it and reports when it is due, with no server and no cloud. This page explains how the count works, what you see while the clock is unknown, and where it is stored. It is for owners and for anyone changing the reminder.
 
-Status: **Experimental**. Built and tested on the host and in simulation; not yet run on the feeder.
+The count has run on our feeder. The [roadmap](../roadmap.md) has the current status.
 
 ## Using it
 
@@ -58,7 +58,7 @@ A reset is answered `Done` with the settings' new generation, and records a `Set
 | Works with the app alone | No | Yes |
 | Period | 14 days observed; range unknown | 1 to 90 days, 14 by default |
 | Below zero | Keeps counting | Keeps counting |
-| Notification | Phone push from the cloud | Due state in the status; server alerts are not built |
+| Notification | Phone push from the cloud | Due state in the status. No notification, and none is planned ([deferred](product-architecture.md#deferred)) |
 
 ## Storage
 
@@ -75,4 +75,5 @@ A record of an older version reads as erased: the settings open on their default
 
 ## Evidence
 
+- **Observed, October 28, 2026** (evening, unattended, hopper empty): the reminder read `not started` after an install. A reset was refused before the clock was set and accepted after it, with 14 days left. A period of 1 day then read 1 day left, and a reboot kept the period and the date. No server ran.
 - **Modeled, October 28, 2026.** Host tests cover the count through zero and below, a reset dated after today, the local day with and without an offset, and Denver's spring and autumn changes (`wellfed-core`'s `desiccant` tests). The settings store's tests save and reopen the fields, refuse a period outside its limits, treat a bad field as corrupt and keep the old or new record through a power cut at every byte. Over the device API, `wellfed-client`'s tests, the conformance suite on both platforms, `wellfed-feeder-sim` across a restart and the server through its journal all record a replacement, refuse one without a clock and report the count.

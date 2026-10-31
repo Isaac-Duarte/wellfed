@@ -117,7 +117,7 @@ The link audit is unchanged and passes: `ftl_init` and every flash erase and pro
 - **Heap:** `ready heap_free` read 45–70 KB with an earlier speaker build.
 - **Task stacks:** the C-created BT tasks (`bte_task`, `trace_task`, the HCI send task and `wellfed_ble`) are outside the stack audit. They rest on the SDK's sizes and the setup-mode heap figure in the [resource budget](resource-budget.md#ram).
 - **Starting the stack beside a joined Wi-Fi:** the resource budget started it at boot; setup mode starts it later, with Wi-Fi already up.
-- **Setup at an unprovisioned boot:** host-tested and simulated only. No consumer image has started it on a feeder, and its heap has been measured from bank 1 only, never from bank 0, where stock installs the image. The stack needs `wifi_on` first, which a consumer image's Wi-Fi task still calls with nothing to join.
+- **Setup at an unprovisioned boot:** it runs on the feeder from bank 0, where stock installs the image, as both installers show ([consumer installation](consumer-installation.md#evidence)). Its heap has been measured from bank 1 only. The stack needs `wifi_on` first, which a consumer image's Wi-Fi task still calls with nothing to join.
 
 ## Evidence
 

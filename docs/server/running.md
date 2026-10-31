@@ -6,7 +6,7 @@ The server is one static binary. You can run it under systemd or in a container.
 
 ## Install it
 
-Each GitHub release carries one static binary per target, `wellfed-server-x86_64-unknown-linux-musl` and `wellfed-server-aarch64-unknown-linux-musl`, and the same binary in a container image. Pick the way that suits your machine.
+There is no published release yet, so you build it yourself ([packaging](#packaging)). You get one static binary per target, `wellfed-server-x86_64-unknown-linux-musl` and `wellfed-server-aarch64-unknown-linux-musl`, and the same binary in a container image. Pick the way that suits your machine.
 
 ### With systemd
 
@@ -147,7 +147,7 @@ Caddy obtains and renews the certificate, preserves `Host` and sets `X-Forwarded
 > [!WARNING]
 > Anyone listed in `trusted_proxies` can claim to be any client. List only the proxy's own address, or a container network's range such as `172.16.0.0/12` when the proxy runs in one. Never list your LAN or the internet.
 
-The public name goes in `hosts`, since the server refuses names it wasn't given. The `Origin` check compares the browser's `Origin` with `Host`, so the pages work through the proxy unchanged.
+The public name goes in `hosts`, since the server refuses names it wasn't given. The `Origin` check compares the browser's `Origin` with `Host`, so browser requests work through the proxy unchanged.
 
 A request's own `x-request-id` is kept when it is one plain id: at most 64 bytes of letters, digits, `.`, `_` and `-`. So the proxy's id appears in both logs. Anything else gets a fresh UUID.
 

@@ -34,7 +34,7 @@ These are the words the rest of the docs use without stopping to explain them.
 
 **Noise.** The [Noise Protocol Framework](https://noiseprotocol.org/), which the device API uses for encryption and to check who is talking.
 
-**Owner and member.** The roles a paired client can have. An owner can do everything, including updates and adding others. A member is invited by an owner and can do less.
+**Owner and member.** The roles a person's paired client can have. An owner can do everything, including updates and adding others. A member is invited by an owner and can do less. A feeder also lists two roles that aren't people: `Server`, for the optional server, and `UpdateSigner`, for a key that only signs updates.
 
 **Pairing.** How a phone or computer first gets its key onto the feeder, over Bluetooth, while you are standing next to it. See [pairing](firmware/pairing.md).
 
@@ -42,4 +42,4 @@ These are the words the rest of the docs use without stopping to explain them.
 
 **SDK.** Here, usually the Wellfed SDK: the Rust runtime every Wellfed firmware runs inside. "Vendor SDK" means Realtek's AmebaD SDK underneath it.
 
-**Evidence levels.** Every finding is labelled by how we know it: *observed* on a real feeder, *recovered* from firmware analysis, or *modeled* in tests and simulation. See [evidence levels](evidence.md).
+**Evidence levels.** Every finding is labelled by how we know it: *observed* on a real feeder, *recovered* from firmware analysis, or *modeled* in tests and simulation. A finding can also be *external*, reported by another project, or *unknown*. See [evidence levels](evidence.md).

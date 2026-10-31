@@ -1,6 +1,6 @@
 # Render spec
 
-The images the app, the web UI and the docs need from `plaf103.blend`, and the rules for making them. It is written for whoever extends `render.py`. Brand rules are in [brand](../brand/README.md), licensing in [assets](../README.md#license).
+The images the app, the websites and the docs need from `plaf103.blend`, and the rules for making them. It is written for whoever extends `render.py`. Brand rules are in [brand](../brand/README.md), licensing in [assets](../README.md#license).
 
 ## Ground rules
 
@@ -56,7 +56,7 @@ Lettering is never rendered. Layouts add the lockup from `assets/brand/` afterwa
 
 ## Hotspots
 
-For `panel`, `front` and `card`, write `<view>.json` beside the image: each named part's projected center and radius, normalized to the image (origin top left, 0–1). The app draws highlights, pulses and LED colors over the render instead of needing a render per state.
+For `panel`, `front` and `card`, write `<view>.json` beside the image: each named part's projected center and radius, normalized to the image (origin top left, 0–1). They let the app draw highlights, pulses and LED colors over the render instead of needing a render per state. Nothing reads them yet.
 
 ```json
 {
@@ -95,13 +95,9 @@ For `panel`, `front` and `card`, write `<view>.json` beside the image: each name
 - Hotspot circles drawn over `panel.png` land on the right icons. Commit that overlay check as a scratch image, not under `renders/`.
 - The report lists anything the model lacked, any icon-to-part mapping that remains uncertain, and the render time per image.
 
-## Status
+## Where the renders stand
 
-| Set | Status | Notes |
-| --- | --- | --- |
-| Priority 1: the app | Partial | Rendered, but predates the model's current proportions and icon placement; needs regenerating |
-| Priority 2: README, releases and store | Not started | |
-| Priority 3: docs | Not started | |
+The Priority 1 images are rendered, but they predate the model's current proportions and icon placement, so they need regenerating. Priority 2 (README, releases and store) and Priority 3 (docs) have not been rendered.
 
 Open items for the owner:
 

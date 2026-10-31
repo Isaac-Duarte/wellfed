@@ -36,7 +36,7 @@
 //!   the last has left. None of it is stored.
 //!
 //! The mirror knows feeders by id, identity, key and address. It knows
-//! nothing of users, alerts or stream ids, and the request ids it sends for
+//! nothing of users or stream ids, and the request ids it sends for
 //! a caller are the caller's. Time and randomness come in through [`Clock`]
 //! and [`Random`], so tests can fix them.
 //!

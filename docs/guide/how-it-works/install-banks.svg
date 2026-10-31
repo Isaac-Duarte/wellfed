@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 350" role="img" aria-labelledby="install-banks-title install-banks-desc">
+  <title id="install-banks-title">What each firmware bank holds during an install</title>
+  <desc id="install-banks-desc">Four stages, on the one feeder tested. At the start, stock runs from bank 1. After stock's update, Wellfed runs from bank 0 and stock is still in bank 1. Next, Wellfed copies bank 1 to your phone, and the phone checks the copy. Only then is Wellfed written over bank 1: it runs from there, bank 0 stays as its fallback, and the only copy of stock is the one you hold.</desc>
+
+  <text x="94" y="30" text-anchor="middle" class="d-title">1. Before</text>
+  <text x="272" y="30" text-anchor="middle" class="d-title">2. Stock installs</text>
+  <text x="448" y="30" text-anchor="middle" class="d-title">3. Backup</text>
+  <text x="626" y="30" text-anchor="middle" class="d-title">4. Permanent</text>
+
+  <text x="94" y="48" text-anchor="middle" class="d-muted">on our test feeder</text>
+  <text x="272" y="48" text-anchor="middle" class="d-muted">Wellfed in the other bank</text>
+  <text x="448" y="48" text-anchor="middle" class="d-muted">the phone checks the copy</text>
+  <text x="626" y="48" text-anchor="middle" class="d-muted">only after a good backup</text>
+
+  <rect class="d-accent" x="20" y="66" width="148" height="66" rx="8"/>
+  <text x="94" y="94" text-anchor="middle" class="d-title">Bank 1</text>
+  <text x="94" y="113" text-anchor="middle" class="d-muted">stock, running</text>
+  <rect class="d-box" x="20" y="146" width="148" height="66" rx="8"/>
+  <text x="94" y="174" text-anchor="middle" class="d-title">Bank 0</text>
+  <text x="94" y="193" text-anchor="middle" class="d-muted">not running</text>
+
+  <rect class="d-box" x="198" y="66" width="148" height="66" rx="8"/>
+  <text x="272" y="94" text-anchor="middle" class="d-title">Bank 1</text>
+  <text x="272" y="113" text-anchor="middle" class="d-muted">stock, still there</text>
+  <rect class="d-accent" x="198" y="146" width="148" height="66" rx="8"/>
+  <text x="272" y="174" text-anchor="middle" class="d-title">Bank 0</text>
+  <text x="272" y="193" text-anchor="middle" class="d-muted">Wellfed, running</text>
+
+  <rect class="d-box" x="374" y="66" width="148" height="66" rx="8"/>
+  <text x="448" y="94" text-anchor="middle" class="d-title">Bank 1</text>
+  <text x="448" y="113" text-anchor="middle" class="d-muted">stock, being copied</text>
+  <rect class="d-accent" x="374" y="146" width="148" height="66" rx="8"/>
+  <text x="448" y="174" text-anchor="middle" class="d-title">Bank 0</text>
+  <text x="448" y="193" text-anchor="middle" class="d-muted">Wellfed, running</text>
+
+  <rect class="d-accent" x="552" y="66" width="148" height="66" rx="8"/>
+  <text x="626" y="94" text-anchor="middle" class="d-title">Bank 1</text>
+  <text x="626" y="113" text-anchor="middle" class="d-muted">Wellfed, running</text>
+  <rect class="d-box" x="552" y="146" width="148" height="66" rx="8"/>
+  <text x="626" y="174" text-anchor="middle" class="d-title">Bank 0</text>
+  <text x="626" y="193" text-anchor="middle" class="d-muted">Wellfed, the fallback</text>
+
+  <rect class="d-panel" x="374" y="262" width="326" height="66" rx="8"/>
+  <text x="537" y="290" text-anchor="middle" class="d-title">On your phone</text>
+  <text x="537" y="309" text-anchor="middle" class="d-muted">your feeder's own copy of stock</text>
+  <line class="d-wire d-dashed" x1="448" y1="212" x2="448" y2="262"/>
+</svg>

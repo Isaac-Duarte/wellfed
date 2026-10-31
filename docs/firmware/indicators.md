@@ -2,7 +2,7 @@
 
 The panel has four single-color lights, one behind each icon. The indicator service decides what each light shows when several things want it at once, and it checks every change it makes. If a light cannot be trusted, the service turns them all off rather than show a wrong state.
 
-Status: **Works**. The service is built and host-tested, and its colors and transitions passed the [bench check](#bench-check) with the owner watching (October 28). Which states show is still provisional.
+The service is built and host-tested, and its colors and transitions passed the [bench check](#bench-check) with the owner watching (October 28). Which states show is still provisional.
 
 ## The lights
 
@@ -96,4 +96,3 @@ Record which steps passed, each icon's color, and any `PLIND1 fail` line. Watch 
   - `wellfed-hal/tests/leds.rs`: the service's writes with the motor and an emitter on, and latch and direction failures.
   - `wellfed-fw-feeder/tests/lights.rs`: the mapping on the board's platform against the fake GPIO. Each state lights its pad, a fault shows over the battery blink and an offer over the lock, the refused flash ends after 3 s, the setting works, food blinks during a simulated feed with the motor bits untouched, a failure darkens all four for the boot, and a loop pass lights the lock and a held fault.
 - **Builds.** Fresh `device` and `firstboot` `feeder` builds pass their link, RAM-park and stack audits (loop stack 5,412 of 8,192 B).
-- **On the board.** Not yet: the bench check above needs the owner watching.

@@ -149,6 +149,9 @@ pub(crate) fn check(root: &Path) -> io::Result<Summary> {
     summary
         .errors
         .extend(crate::op_clients::check(&root, &names));
+    summary
+        .errors
+        .extend(crate::doc_checks::check(&root, &names));
     summary.errors.extend(
         crate::diagrams::check(&root, &names)
             .iter()
@@ -352,7 +355,7 @@ fn missing_settings<'a>(root: &'a str, nested: &str) -> Vec<&'a str> {
 }
 
 /// The local file a Markdown link names: no scheme, no host, a nonempty path.
-fn local_path(target: &str) -> Option<String> {
+pub(crate) fn local_path(target: &str) -> Option<String> {
     if SCHEME.is_match(target) || target.starts_with("//") {
         return None;
     }
@@ -382,7 +385,7 @@ fn unquote(text: &str) -> String {
 }
 
 /// Resolve symlinks where the path exists, and `..` lexically where it does not.
-fn normalize(path: &Path) -> PathBuf {
+pub(crate) fn normalize(path: &Path) -> PathBuf {
     if let Ok(real) = path.canonicalize() {
         return real;
     }

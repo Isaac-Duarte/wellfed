@@ -3,6 +3,15 @@
 Run with Blender 5.2 (not a host tool; Blender's bundled Python):
 
     blender -b assets/model/plaf103.blend -P assets/model/lineart.py
+    blender -b assets/model/plaf103.blend -P assets/model/lineart.py -- --view panel
+
+The default view is `card`; any other view of render.py's can be traced by name,
+and writes assets/renders/<view>-lines.json.
+
+`-- --figures` writes the owner guide's feeder drawings from those files, without
+tracing: SVGs under docs/guide/, styled only by the docs site's `.d-` classes.
+The model shows how the feeder looks. It isn't a measured drawing, so a figure
+carries names and no dimensions.
 
 The drawing is the model's own geometry as render.py's card camera sees it:
 silhouettes (an edge between a face toward the camera and one away from it),
@@ -28,8 +37,10 @@ from mathutils import Vector
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import render  # noqa: E402  (Blender adds no script directory to the path)
 
-OUT = render.RENDERS / "card-lines.json"
-VIEW = "card"
+# Blender keeps its own arguments before a lone `--`.
+_ARGS = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
+VIEW = _ARGS[_ARGS.index("--view") + 1] if "--view" in _ARGS else "card"
+OUT = render.RENDERS / f"{VIEW}-lines.json"
 
 # Drawing units: the camera frame is SIZE across, origin top left.
 SIZE = 1000
@@ -354,4 +365,108 @@ def main():
     print(f"traced {OUT.name}: {count} paths from {len(edges)} lines in {time.monotonic() - started:.1f} s", flush=True)
 
 
-main()
+GUIDE = Path(__file__).resolve().parents[2] / "docs" / "guide"
+WIDTH = 720
+
+# Each figure: the traced view, the crop in the trace's units, the scale to the
+# figure's, where the crop's corner lands, the figure's height, and its labels.
+# A label is its text, a muted line, the point it names (a hotspot, or the
+# trace's own coordinates where the model has none), and where the text sits.
+FIGURES = {
+    "feeder": {
+        "view": "card",
+        "title": "The parts of the feeder",
+        "desc": "The feeder is a tall hopper with a lid on top and a narrow window showing the food. Under the hopper a ring holds the buttons and lights. Below the ring, food leaves through an outlet into a bowl at the front.",
+        "crop": (280, 90, 520, 830),
+        "scale": 0.62,
+        "at": (200, 10),
+        "height": 540,
+        "skip": ("food",),
+        "labels": [
+            ("Lid", "lift it to refill", (400, 112), (30, 66), "start"),
+            ("Hopper", "holds 5 L of dry food", (360, 340), (30, 220), "start"),
+            ("Control ring", "buttons and lights", (345, 612), (30, 388), "start"),
+            ("Food window", "shows the food level", "window", (535, 180), "start"),
+            ("Outlet", "food comes out here", "outlet", (535, 360), "start"),
+            ("Bowl", "lifts out to wash", "bowl", (535, 480), "start"),
+        ],
+    },
+    "control-ring": {
+        "view": "panel",
+        "title": "The buttons and lights on the control ring",
+        "desc": "From left to right, the ring has the Lock and Dispense buttons, then four lights for low food, lock, Wi-Fi and error, then the Mic and Reset buttons. Reset, at the far right, is the one you hold to erase the feeder when an install asks you to.",
+        "crop": (0, 420, 1000, 220),
+        "scale": 0.72,
+        "at": (0, 66),
+        "height": 300,
+        "skip": ("food",),
+        "highlight": "button_reset",
+        "labels": [
+            ("Low food", None, "led_food", (250, 28), "middle"),
+            ("Lock", None, "led_lock", (325, 28), "middle"),
+            ("Wi-Fi", None, "led_connection", (396, 28), "middle"),
+            ("Error", None, "led_fault", (466, 28), "middle"),
+            ("Lock", "button", "button_lock", (66, 256), "middle"),
+            ("Dispense", "button", "button_dispense", (150, 256), "middle"),
+            ("Mic", "button", "button_mic", (578, 256), "middle"),
+            ("Reset", "hold to erase", "button_reset", (656, 256), "middle"),
+        ],
+    },
+}
+
+
+def figure(name, spec):
+    trace = json.loads((render.RENDERS / f"{spec['view']}-lines.json").read_text())
+    x0, y0, w, h = spec["crop"]
+    scale, (ax, ay) = spec["scale"], spec["at"]
+
+    def place(x, y):
+        return ax + (x - x0) * scale, ay + (y - y0) * scale
+
+    def inside(x, y):
+        return x0 <= x <= x0 + w and y0 <= y <= y0 + h
+
+    def redraw(path):
+        points = [tuple(map(float, p.split())) for p in path[1:].split(" L")]
+        if not any(inside(*p) for p in points):
+            return None
+        return "M" + " L".join("{:.1f} {:.1f}".format(*place(*p)) for p in points)
+
+    out = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {spec["height"]}" role="img" aria-labelledby="{name}-title {name}-desc">',
+        f'  <title id="{name}-title">{spec["title"]}</title>',
+        f'  <desc id="{name}-desc">{spec["desc"]}</desc>',
+    ]
+
+    if "highlight" in spec:
+        cx, cy = place(*trace["anchors"][spec["highlight"]])
+        out.append(f'  <circle class="d-accent" cx="{cx:.1f}" cy="{cy:.1f}" r="24"/>')
+
+    for group in trace["groups"]:
+        if group["part"] in spec["skip"]:
+            continue
+        paths = [d for d in map(redraw, group["paths"]) if d]
+        if paths:
+            style = "d-line" if group["line"] == "outline" or group["part"] == "icon" else "d-line-soft"
+            out.append(f'  <path class="{style}" d="{" ".join(paths)}"/>')
+
+    for text, note, point, (tx, ty), anchor in spec["labels"]:
+        px, py = place(*(trace["anchors"][point] if isinstance(point, str) else point))
+        # The leader stops short of the text, above it or below it or beside it.
+        sx = tx + 92 if anchor == "start" and px > tx + 92 else (tx - 6 if anchor == "start" else tx)
+        sy = ty - 4 if anchor == "start" else (ty + 8 if ty < py else ty - 16)
+        out.append(f'  <line class="d-wire" x1="{sx:.1f}" y1="{sy:.1f}" x2="{px:.1f}" y2="{py:.1f}"/>')
+        out.append(f'  <text x="{tx}" y="{ty}" text-anchor="{anchor}" class="d-title">{text}</text>')
+        if note:
+            out.append(f'  <text x="{tx}" y="{ty + 17}" text-anchor="{anchor}" class="d-muted">{note}</text>')
+
+    out.append("</svg>\n")
+    (GUIDE / f"{name}.svg").write_text("\n".join(out))
+    print(f"wrote {name}.svg", flush=True)
+
+
+if "--figures" in _ARGS:
+    for name, spec in FIGURES.items():
+        figure(name, spec)
+else:
+    main()

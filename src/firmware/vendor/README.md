@@ -9,6 +9,6 @@ make -C src/firmware/vendor help
 
 Host tests need no SDK and no private inputs. `bootstrap` explicitly downloads the pinned SDK and compiler. SDK build outputs stay ignored. Builds never flash hardware.
 
-The images do touch hardware when they run. The startup diagnostic requests physical STOP/off GPIO and runs a bounded LED sequence ([startup behavior](../../../docs/firmware/startup-diagnostics.md)).
+The images do touch hardware when they run. The startup diagnostic requests physical STOP/off GPIO and verifies each indicator LOW ([startup behavior](../../../docs/firmware/startup-diagnostics.md)).
 
 The [UART recovery reference](../../../docs/devices/plaf103/recovery.md) is restricted to one exact tested profile. Its writer does not automatically accept a new build.

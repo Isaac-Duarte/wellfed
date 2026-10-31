@@ -58,8 +58,6 @@ flowchart LR
 
 The [board page](board.md) lists every pin and what we still don't know about each.
 
-<!-- details -->
-
 ## Sold as
 
 PETLIBRO Granary automatic feeder, 5 L, model **PLAF103**, with FCC ID **2A3DEPLAF103S**. It shipped with stock firmware 1.1.15 on our unit.
@@ -94,34 +92,31 @@ You can read the whole 8 MiB flash over UART, and repeated reads match. A pinned
 
 Most owners never need UART. Wellfed installs over stock's own updater and can go back to stock over the air; see [consumer installation](../../firmware/consumer-installation.md).
 
-## Status
+## Hardware blocks
 
-What works on the PLAF103 by hardware block. The Stock column summarizes [stock 1.1.15's behavior](stock/README.md). The project-wide view is the [roadmap](../../roadmap.md).
+What stock does with each block, and what Wellfed does with it. The Stock column summarizes [stock 1.1.15's behavior](stock/README.md). Where each capability stands is on the [roadmap](../../roadmap.md). All of it holds for our unit and the builds we tested. It is not a general reliability claim; see [evidence levels](../../evidence.md).
 
-| Block | Stock 1.1.15 | Wellfed | Notes |
-| --- | --- | --- | --- |
-| Console, loader and backups | ROM loader over [UART](uart.md) | **Works** | |
-| Startup and build identity | — | **Works** | Starts with the motor stopped and reports its build. |
-| Flash, journal and settings | Factory loader picks the bank | **Works** | See [flash layout](flash-layout.md). |
-| Stop timer and watchdog | — | **Works** | |
-| Clock and time zones | Synced by the cloud | **Partial** | Needs a time source after each power-up. Offline time is experimental. |
-| Wi-Fi | Cloud MQTT | **Works** | DHCP-server loss and lease expiry are untested. |
-| Local device API | None | **Works** | See [device API](../../firmware/device-api.md). |
-| Bluetooth LE | Wi-Fi and broker setup | **Works** | Setup and pairing. |
-| Updates and boot recovery | Own updater, no rollback ([requirements](stock/ota-requirements.md)) | **Works** | Signed updates with rollback, and both ways between stock and Wellfed. |
-| Motor and feeding | Yes | **Works** | Supervised, and a power cut never repeats a feed. Calibration and jam handling are experimental. |
-| Food, outlet and feedback sensors | Yes | **Works** | Read on hardware. The food-level feature is not built. |
-| Power and battery | Yes | **Partial** | Power source and battery voltage read. Battery transitions and brownout are experimental. |
-| Buttons and child lock | Yes ([stock](stock/README.md#panel-buttons-and-child-lock)) | **Works** | The reset button forgets paired clients but keeps settings for now. |
-| Indicators | Yes | **Partial** | Each LED lights. The service that drives them waits for a bench check. |
-| Speaker | Yes | **Works** | Which sounds play when is not settled. |
-| Schedules | Yes ([stock](stock/README.md#clock-and-schedules)) | **Not started** | |
-| Home Assistant | Through the vendor cloud | **Not started** | Paused. |
+| Block | Stock 1.1.15 | Wellfed |
+| --- | --- | --- |
+| Console, loader and backups | ROM loader over [UART](uart.md) | Reads, writes and recovers the feeder over the same UART. |
+| Startup and build identity | — | Starts with the motor stopped and reports its build. |
+| Flash, journal and settings | Factory loader picks the bank | See [flash layout](flash-layout.md). |
+| Stop timer and watchdog | — | Both run under Wellfed. |
+| Clock and time zones | Synced by the cloud | Needs a time source after each power-up. |
+| Wi-Fi | Cloud MQTT | DHCP-server loss and lease expiry are untested. |
+| Local device API | None | See [device API](../../firmware/device-api.md). |
+| Bluetooth LE | Wi-Fi and broker setup | Setup and pairing. |
+| Updates and boot recovery | Own updater, no rollback ([requirements](stock/ota-requirements.md)) | Signed updates with rollback, and both ways between stock and Wellfed. |
+| Motor and feeding | Yes | Supervised, and a power cut never repeats a feed. |
+| Food, outlet and feedback sensors | Yes | The status and the low-food light show the latest food reading. |
+| Power and battery | Yes | Stock's battery mode. The charge, the floor and the brownout hold are tested only in simulation. |
+| Buttons and child lock | Yes ([stock](stock/README.md#panel-buttons-and-child-lock)) | The reset button clears clients, Wi-Fi, settings, plans, history and statistics. |
+| Indicators | Yes | Which states show is not settled. |
+| Speaker | Yes | Which sounds play when is not settled. |
+| Schedules | Yes ([stock](stock/README.md#clock-and-schedules)) | Up to ten plans, run on the feeder with no server. |
+| Home Assistant | Through the vendor cloud | Paused. |
 
-A **Works** entry holds for our unit and the builds we tested. It is not a general reliability claim; see [evidence levels](../../evidence.md).
-
-## Notes
-
+$1
 - Every finding comes from one research unit. Compare your own board before trusting a pin or an offset.
 - There is no schematic and no complete connector pinout. The routes from the SoC to the motor driver are not traced.
 - Unknown flash ranges are not free space.
@@ -144,4 +139,3 @@ Machine-readable device data lives in [`src/firmware/devices/plaf103/`](../../..
 
 - **Observed:** board photographs of the research unit identify the RTL8721DM and the GD25Q64ESIG. UART reports flash ID `C8 40 17`, which matches the GD25Q64E's nominal 8 MiB. Two separately acquired 8 MiB reads matched.
 - **External:** the FCC internal-photo exhibit is a comparison reference only. The research unit's own PCB revision is not established.
-- **Status table:** each Works and Partial entry was accepted on the research unit for the exact images tested, October 2026. The roadmap carries the current summary.

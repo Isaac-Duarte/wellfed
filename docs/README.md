@@ -6,9 +6,11 @@ Every finding carries an [evidence level](evidence.md) that says how we know it.
 
 ## Using Wellfed
 
+The [owner guide](guide/README.md) is the place to start if you own a feeder. It is also what [docs.well-fed.dev](web/docs-site.md) publishes, along with a few of the pages below. This index lists everything.
+
 | Page | What it covers |
 | --- | --- |
-| [Roadmap](roadmap.md) | What works today and what comes next |
+| [Roadmap](roadmap.md) | What works today and what is planned |
 | [Glossary](glossary.md) | The words the rest of the docs use without explaining |
 | [Supported devices](devices/README.md) | Which feeders Wellfed runs on |
 | [Consumer installation](firmware/consumer-installation.md) | Moving a stock feeder to Wellfed over the air, and going back |
@@ -30,6 +32,7 @@ The firmware docs describe Wellfed's own replacement, which isn't tied to one de
 | [QA firmware](firmware/qa.md) | The guided self-test image |
 | [Resource budget](firmware/resource-budget.md) | Flash, RAM and task limits of the product image |
 | [Device layer](firmware/device-layer.md) | Where the board's assumptions live, so a second model can be added |
+| [Bring-up probes](firmware/bring-up-probes.md) | The bounded tests that first brought each piece of hardware up |
 | [The server](server/README.md) | What the optional server adds, [running it](server/running.md), and [how it's built](server/design.md) |
 | [well-fed.dev](web/site.md) | The project's landing page |
 | [docs.well-fed.dev](web/docs-site.md) | This documentation as a website |
@@ -39,12 +42,14 @@ Feeder components:
 | Page | What it covers |
 | --- | --- |
 | [Motor pulse](firmware/motor-pulse.md) | The supervised motor drive |
+| [Schedules](firmware/schedules.md) | Feeding plans, the meal reminder and the meal call |
 | [Portions and calibration](firmware/calibration.md) | Counting portions and calibrating them |
 | [Jams and sensor faults](firmware/jams-and-sensor-faults.md) | What happens when food or feedback goes missing |
 | [Optical inputs](firmware/optical-inputs.md) | The food, outlet and feedback sensors |
 | [Buttons](firmware/buttons.md) | Panel buttons and gestures |
 | [Indicators](firmware/indicators.md) | The panel lights |
 | [Audio](firmware/audio.md) | The speaker and built-in tunes |
+| [Desiccant reminder](firmware/desiccant.md) | Counting the days until the desiccant pack is due |
 | [Clock](firmware/clock.md) | Wall clock, offline time and missed time |
 | [Power](firmware/power.md) | The supply, the battery floor, brownout and sleep |
 
@@ -59,7 +64,7 @@ Facts about a **chip** hold for every board built on it. Facts about a **device*
 | [Motor driver](devices/plaf103/motor-driver.md) | The motor driver and its electrical checks |
 | [UART](devices/plaf103/uart.md) | Console wiring and loader entry |
 | [Flash layout](devices/plaf103/flash-layout.md) | Boot flow and what lives where in flash |
-| [Recovery](devices/plaf103/recovery.md) | The experimental UART recovery writers |
+| [Recovery](devices/plaf103/recovery.md) | UART backup and the recovery writers |
 | [Relay bench](devices/plaf103/bench.md) | Powering and flashing the feeder from the bench |
 | [Stock behavior and protocol](devices/plaf103/stock/README.md) | What stock firmware 1.1.15 does |
 | [Stock OTA requirements](devices/plaf103/stock/ota-requirements.md) | What stock's updater accepts |

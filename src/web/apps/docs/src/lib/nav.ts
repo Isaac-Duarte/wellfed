@@ -1,12 +1,25 @@
-// The sidebar: every file under docs/ in reading order, grouped as
-// docs/README.md groups them. A file's label defaults to its first heading;
-// `label` gives a shorter one where the heading is long. nav.test.ts fails when
-// a doc is missing here or an entry names a file that doesn't exist.
-export interface NavEntry {
-  /** The path under docs/, such as `firmware/device-api.md`. */
+// The sidebar, and the only list of what the site publishes: a file listed here
+// is rendered, searched and given a `.md` copy. Any other doc stays on GitHub,
+// and links to it go there. A page's label defaults to its first heading; `label`
+// gives a shorter one where the heading is long. nav.test.ts fails when an entry
+// names a file that doesn't exist, when a file is listed twice, and when a file
+// under docs/guide/ is left out.
+import { blob } from "#lib/links.ts";
+
+export interface NavPage {
+  /** The path under docs/, such as `guide/install.md`. */
   file: string;
   label?: string;
 }
+
+/** A doc the site links to on GitHub, instead of publishing. */
+export interface NavOnGitHub {
+  /** The path under docs/, such as `development/README.md`. */
+  onGitHub: string;
+  label: string;
+}
+
+export type NavEntry = NavPage | NavOnGitHub;
 
 export interface NavGroup {
   label: string;
@@ -17,93 +30,36 @@ export const NAV: NavGroup[] = [
   {
     label: "Start",
     entries: [
-      { file: "README.md", label: "Overview" },
-      { file: "roadmap.md", label: "Roadmap" },
-      { file: "glossary.md", label: "Glossary" },
-      { file: "evidence.md", label: "Evidence levels" },
-      { file: "references.md", label: "References" },
-    ],
-  },
-  {
-    label: "Using Wellfed",
-    entries: [
-      { file: "devices/README.md", label: "Supported devices" },
-      { file: "firmware/consumer-installation.md", label: "Installation" },
+      { file: "guide/README.md", label: "Overview" },
+      { file: "guide/before-you-start.md", label: "Before you start" },
+      { file: "guide/install.md", label: "Install" },
     ],
   },
   {
     label: "How it works",
-    entries: [
-      { file: "firmware/product-architecture.md", label: "Product architecture" },
-      { file: "firmware/README.md", label: "Firmware architecture" },
-      { file: "firmware/device-api.md", label: "Device API" },
-      { file: "firmware/pairing.md", label: "Pairing" },
-      { file: "firmware/bluetooth.md", label: "Bluetooth" },
-      { file: "firmware/ota-design.md", label: "OTA design" },
-      { file: "firmware/bank-policy.md", label: "Bank policy" },
-      { file: "firmware/startup-diagnostics.md", label: "Startup diagnostics" },
-      { file: "firmware/qa.md", label: "QA firmware" },
-      { file: "firmware/resource-budget.md", label: "Resource budget" },
-      { file: "firmware/device-layer.md", label: "Device layer" },
-      { file: "firmware/bring-up-probes.md", label: "Bring-up probes" },
-    ],
+    entries: [{ file: "guide/how-it-works/install-and-rollback.md", label: "Install and rollback" }],
   },
   {
-    label: "Feeder components",
+    label: "Reference",
     entries: [
-      { file: "firmware/schedules.md", label: "Schedules" },
-      { file: "firmware/motor-pulse.md", label: "Motor pulse" },
-      { file: "firmware/calibration.md", label: "Portions and calibration" },
-      { file: "firmware/jams-and-sensor-faults.md", label: "Jams and sensor faults" },
-      { file: "firmware/optical-inputs.md", label: "Optical inputs" },
-      { file: "firmware/buttons.md", label: "Buttons" },
-      { file: "firmware/indicators.md", label: "Indicators" },
-      { file: "firmware/audio.md", label: "Audio" },
-      { file: "firmware/clock.md", label: "Clock" },
-      { file: "firmware/power.md", label: "Power" },
-      { file: "firmware/desiccant.md", label: "Desiccant reminder" },
-    ],
-  },
-  {
-    label: "Server and web",
-    entries: [
-      { file: "server/README.md", label: "The server" },
+      { file: "devices/README.md", label: "Supported devices" },
+      { file: "roadmap.md", label: "Roadmap" },
       { file: "server/running.md", label: "Running the server" },
-      { file: "server/design.md", label: "Server design" },
-      { file: "web/site.md", label: "well-fed.dev" },
-      { file: "web/docs-site.md", label: "docs.well-fed.dev" },
+      { file: "glossary.md", label: "Glossary" },
     ],
   },
   {
-    label: "Hardware",
-    entries: [
-      { file: "devices/plaf103/README.md", label: "PLAF103" },
-      { file: "devices/plaf103/board.md", label: "Board and signal map" },
-      { file: "devices/plaf103/motor-driver.md", label: "Motor driver" },
-      { file: "devices/plaf103/uart.md", label: "UART" },
-      { file: "devices/plaf103/flash-layout.md", label: "Flash layout" },
-      { file: "devices/plaf103/recovery.md", label: "Recovery" },
-      { file: "devices/plaf103/bench.md", label: "Relay bench" },
-      { file: "devices/plaf103/stock/README.md", label: "Stock behavior" },
-      { file: "devices/plaf103/stock/ota-requirements.md", label: "Stock OTA requirements" },
-      { file: "chips/rtl8721dm/README.md", label: "RTL8721DM" },
-      { file: "chips/rtl8721dm/pins.md", label: "RTL8721DM pins" },
-      { file: "devices/_template/README.md", label: "Device template" },
-    ],
-  },
-  {
-    label: "Contributing",
-    entries: [
-      { file: "development/README.md", label: "Development setup" },
-      { file: "development/writing.md", label: "Writing docs" },
-      { file: "development/rust.md", label: "Rust standard" },
-      { file: "development/typescript.md", label: "TypeScript standard" },
-      { file: "development/firmware-builds.md", label: "SDK builds" },
-      { file: "development/stock-server.md", label: "Stock server" },
-      { file: "development/rust-flash.md", label: "Rust flash client" },
-      { file: "development/uart-development.md", label: "UART development updates" },
-      { file: "development/fixtures.md", label: "Optional fixtures" },
-      { file: "development/provenance.md", label: "Import provenance" },
-    ],
+    label: "Contribute",
+    entries: [{ onGitHub: "development/README.md", label: "Development guide" }],
   },
 ];
+
+export const isPage = (entry: NavEntry): entry is NavPage => "file" in entry;
+
+/** Every published file, by its path under docs/. */
+export const PUBLISHED: readonly string[] = NAV.flatMap((group) =>
+  group.entries.filter(isPage).map((entry) => entry.file),
+);
+
+/** A sidebar entry's address on GitHub. */
+export const onGitHubUrl = (entry: NavOnGitHub) => blob(`docs/${entry.onGitHub}`);

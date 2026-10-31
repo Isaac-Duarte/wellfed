@@ -19,7 +19,7 @@ So far it does:
 - **App settings:** appearance, this phone's name, kept backups and About.
 - **Restore:** the vendor's firmware back on the feeder, from the backup the install kept or a copy you saved. You press Dispense on the feeder, and it goes across as an update. Then stock runs, which this app cannot talk to.
 
-Servers come later ([roadmap](../../docs/roadmap.md)). Meal reminders are a setting on the feeder for now: the app sends no notifications.
+Servers come later ([roadmap](../../docs/roadmap.md)). Meal reminders are a setting on the feeder. The app sends no notifications, and none are planned ([deferred](../../docs/firmware/product-architecture.md#deferred)).
 
 `cargo xtask check-repository` fails when an `Op` has no client in the app, or a request the bridge offers has no screen.
 
@@ -86,7 +86,7 @@ The app's own file gained `appearance`, with no fallback for older files: clear 
 The versions this was built with:
 
 - Flutter 3.47.8 (stable), for example in `~/.local/flutter`.
-- The Android SDK command-line tools, with platform 36, build-tools 36.0.0 and NDK 27.0.12077973. Run `flutter config --android-sdk <path>`.
+- The Android SDK command-line tools, with platforms 37 (the app) and 36 (the `rust_builder` plugin), build-tools 36.0.0, and the NDK that the pinned Flutter names as `flutter.ndkVersion`. Run `flutter config --android-sdk <path>`.
 - The Rust targets: `rustup target add --toolchain 1.99.1 aarch64-linux-android x86_64-linux-android`.
 - `cargo install flutter_rust_bridge_codegen --version 2.13.0 --locked`.
 

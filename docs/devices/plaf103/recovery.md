@@ -6,16 +6,16 @@ The writers here are pinned to our research unit's baseline and one reviewed dia
 
 ## What has been shown
 
-| Operation | Status |
-| --- | --- |
-| Enter download mode without the stock application | Works |
-| Full 8 MiB read, repeated reads matching | Works |
-| Bounded write-back of body sectors | Works |
-| Marker activation with preservation checks | Works |
-| Install and boot the UART-only diagnostic image | Works |
-| Restore stock 1.1.15 to bank 1 and boot it | Works |
-| Restore a full bank | Not verified on hardware |
-| Recover from a power cut mid-write | Not verified on hardware |
+On our unit:
+
+- entering download mode without the stock application;
+- a full 8 MiB read, with repeated reads matching;
+- a bounded write-back of body sectors;
+- marker activation with preservation checks;
+- installing and booting the UART-only diagnostic image;
+- restoring stock 1.1.15 to bank 1 and booting it.
+
+Not verified on hardware: restoring a full bank, and recovering from a power cut mid-write.
 
 The diagnostics also showed build-bound startup, physical stop and off requests, and bounded indicator control. None of this validates motor operation, schedules, networking, watchdog timing or long-run reliability.
 

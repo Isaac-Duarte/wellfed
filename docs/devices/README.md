@@ -6,7 +6,7 @@ A model counts as supported only when a unit of that model has been through our 
 
 | Model | Product | SoC | Status | Notes |
 | --- | --- | --- | --- | --- |
-| [PLAF103](plaf103/README.md) | Granary 5 L | [RTL8721DM](../chips/rtl8721dm/README.md) | **Partial** | Our research device. Feeding, updates and the device API work; see [its status table](plaf103/README.md#status). |
+| [PLAF103](plaf103/README.md) | Granary 5 L | [RTL8721DM](../chips/rtl8721dm/README.md) | **Partial** | Our research device. Feeding, updates and the device API work; see [the roadmap](../roadmap.md). |
 | PLAF108 | Feeder | ESP8266/ESP32 family (External) | Not supported | No unit inspected. A different SoC family. An ESPHome replacement exists outside this project ([references](../references.md#peer-projects)). |
 | PLAF203 | Camera feeder | Embedded Linux with Tuya IPC (External) | Not supported | No unit inspected. Root access and filesystem notes exist outside this project ([references](../references.md#peer-projects)). |
 | AF301 (mainboard PLNF301) | RFID feeder | RTL8721DM (External) | Not supported | Same SoC, reported by a peer project. Its pin map is a lead for our [pin table](../chips/rtl8721dm/pins.md), not a PLAF103 fact. |

@@ -2,19 +2,20 @@
 
 <img src="assets/renders/card.png" alt="The PETLIBRO Granary PLAF103 feeder, rendered from our 3D model" width="240" align="right">
 
-Your pet's dinner shouldn't need the internet. Wellfed is open firmware for the **PETLIBRO Granary PLAF103** pet feeder. It runs the feeder on your own Wi-Fi, with no vendor cloud and no account. A command-line client talks to it today, and an optional self-hosted server and a phone app are on the way.
+Your pet's dinner shouldn't need the internet. Wellfed is open firmware for the **PETLIBRO Granary PLAF103** pet feeder. It runs the feeder on your own Wi-Fi, with no vendor cloud and no account. An Android app and a command-line client talk to it directly, and you can add a self-hosted server.
 
 > [!NOTE]
-> Wellfed isn't ready to look after a real pet yet. It feeds reliably on our test feeder, but schedules aren't built and it hasn't finished its long unattended run. We're an independent project, not affiliated with PETLIBRO.
+> Wellfed is in heavy development and isn't ready to look after a real pet yet. It feeds reliably on our test feeder, but it hasn't finished its long unattended run, and there's no release to install yet. We're an independent project, not affiliated with PETLIBRO.
 
 ## What works
 
-- **Feeding.** Each feed stops on time, and a power cut never makes it feed twice. The feed button and the command line both work.
+- **Feeding.** Each feed stops on time, and a power cut never makes it feed twice. The feed button, the app and the command line all work.
+- **Schedules.** Up to ten meal plans run on the feeder itself, with no server.
 - **Staying local.** The feeder joins your Wi-Fi, pairs over Bluetooth and only talks to the devices you pair with it.
 - **Installing.** Wellfed installs over the air from the stock firmware. No screwdriver or soldering, and you can go back to stock the same way.
 - **Updating.** If a new version fails to start, the feeder goes back to the one that worked.
 
-Schedules, the server's web page and the phone app come next. The [roadmap](docs/roadmap.md) shows where each piece stands.
+The Android app and the optional server are still in progress. The [roadmap](docs/roadmap.md) shows where each piece stands.
 
 ## Is it for you?
 
@@ -23,7 +24,7 @@ It's a good fit if you own a PLAF103, you're comfortable at a command line, and 
 Wait a little longer if:
 
 - a pet depends on the feeder for its meals;
-- you want a phone app;
+- you want a finished phone app, or a release you can just install;
 - you have a different feeder. Only the PLAF103 is supported for now;
 - you can't risk the feeder. If an install goes badly wrong, getting it back means opening it up and wiring to its board.
 
@@ -42,6 +43,7 @@ Wait a little longer if:
 You don't need a feeder to build and test Wellfed, and the checks never touch one. Install Rust through rustup, plus Make, CMake and a C compiler, then run:
 
 ```sh
+cargo install cargo-nextest cargo-deny
 cargo build --locked
 make check
 ```

@@ -1,6 +1,6 @@
 # Assets
 
-This folder holds the brand and product imagery for the app, the web UI and the docs. Everything here is ours: the renders come from our own 3D model, not vendor photos.
+This folder holds the brand and product imagery for the app, the websites and the docs. Everything here is ours: the renders come from our own 3D model, not vendor photos.
 
 | Path | Contents |
 | --- | --- |
@@ -40,7 +40,7 @@ Each image is a 1024 px transparent PNG with a contact shadow, plus a `-cutout` 
 | `back`, `bottom` | Rear three-quarter, showing the USB-C power port, and underside. The model has no battery door yet |
 | `card-lines.json` | The website hero's line drawing: the `card` view traced by `lineart.py` into 2D paths and hotspots, not an image. Retrace with `blender -b assets/model/plaf103.blend -P assets/model/lineart.py` |
 
-`card.json`, `front.json` and `panel.json` hold the hotspots: each button's, indicator's, window's, outlet's and bowl's projected center and radius (normalized, origin top left), and whether it is visible. The app uses them to draw highlights and indicator light over the image ([hotspots](model/RENDERS.md#hotspots)). Every state of a view, and every cutout, shares its JSON. Every indicator is rendered unlit.
+`card.json`, `front.json` and `panel.json` hold the hotspots: each button's, indicator's, window's, outlet's and bowl's projected center and radius (normalized, origin top left), and whether it is visible. They are there so the app can draw highlights and indicator light over the image, though nothing reads them yet ([hotspots](model/RENDERS.md#hotspots)). Every state of a view, and every cutout, shares its JSON. Every indicator is rendered unlit.
 
 **Every render is unbranded.** The script hides the hopper lettering and the PCB label, so no image suggests this project makes the hardware.
 

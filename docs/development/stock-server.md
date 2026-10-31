@@ -176,7 +176,7 @@ Operation with a nonempty plan, and stock's time-recovery behavior, are unvalida
 
 The broker once served the replacement firmware too, as a role with its own credential and namespace (`firmware-credential`, health, requests and `ota-offer`). That role is deleted, with the firmware's MQTT transport. Builds take updates over the [device API](../firmware/ota-design.md#updates-over-the-device-api), which `wellfed-bench ota` pushes, and `wellfed-build` no longer reads `private/fw-mqtt.json`.
 
-A configuration written while the role existed keeps its `firmware` section. `wellfed-stock` ignores it unread, so the file loads as it is.
+A configuration written while the role existed has a `firmware` section. `wellfed-stock` refuses a config with a field it doesn't know, so delete that section.
 
 ## Evidence
 

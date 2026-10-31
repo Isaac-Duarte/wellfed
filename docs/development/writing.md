@@ -24,13 +24,13 @@ The first paragraph says what the page covers and who it's for. If a page is doi
 
 The body states what is true now and explains it. It doesn't tell the story of how we found out.
 
-How we know goes in a short `## Evidence` section at the end of the page. Each entry carries its [evidence level](../evidence.md) (observed, recovered, modeled), the date, and the capture or review names that back it. Keep it to what supports the claims above it.
+How we know goes in a short `## Evidence` section at the end of the page. Each entry carries its [evidence level](../evidence.md) (observed, recovered, modeled) and the date. Name the capture or review behind it only where that name can be public. Keep it to what supports the claims above it.
 
 Board card ids (the `FW…`, `FP…` and `SV…` labels) never appear in tracked docs, and `cargo xtask check-repository` refuses them. Work history lives in the ignored `.agents/` folder and in commit messages. The public summary of what works is the [roadmap](../roadmap.md).
 
 ## Status
 
-Status tables use one closed set of words:
+Status lives in one place, the [roadmap](../roadmap.md), plus the status column of [supported devices](../devices/README.md). Every other page links there. It may state a gap or a fact, but not a status word. The roadmap uses one closed set of words:
 
 | Word | Meaning |
 | --- | --- |
@@ -39,7 +39,7 @@ Status tables use one closed set of words:
 | **Experimental** | Built and tested on the host or in simulation; not yet confirmed on hardware. |
 | **Not started** | Planned, nothing built yet. |
 
-Put one word in each cell, plus a short note at most. Longer caveats go in a Notes list under the table.
+Put one word in each cell, plus a short note at most.
 
 ## Guides
 
@@ -62,15 +62,39 @@ Keep `WARNING` for bricking, data loss and electrical or battery hazards. Use `N
 
 Lead with the one idea that makes the rest make sense. Then follow one concrete thing through the system, such as a single feed from the button press to the event the app sees. Link out to the detailed pages rather than repeating them.
 
-## Overviews
+## Owner pages
 
-A dense reference page can open with an **overview** for a reader who is new to the subject: what the thing is, a diagram, and each new term defined where it first appears. End the overview with this line on its own:
+[`docs/guide/`](../guide/README.md) holds the pages written for someone who owns a feeder or is deciding whether to run Wellfed. They are the heart of the [docs site](../web/docs-site.md), and every other page stays on GitHub unless the site lists it. Assume a reader comfortable with a terminal and a home network, but not with this firmware. Define a term where it first appears, and link to a technical page rather than repeating it.
+
+### App and CLI steps
+
+Where the app and the CLI differ, write both under these markers, each on its own line:
 
 ```markdown
-<!-- details -->
+<!-- tabs -->
+
+### App
+
+Tap **Install**.
+
+### CLI
+
+Run `wellfed install`.
+
+<!-- /tabs -->
 ```
 
-GitHub hides the comment and shows the whole page. The docs site shows an **Overview | Details** switch on that page, and in Overview it shows only what comes before the line. Keep facts in the details. An overview simplifies, so it links to the detail it leaves out rather than restating it.
+GitHub hides the comments and shows both sections. The site shows a switch that remembers the reader's choice. App comes first, and both sections are required.
+
+### Screenshots
+
+A screenshot is a PNG beside the page, shown with an inline Markdown image whose alt text says what matters in it. Before one enters Git:
+
+- Paint over anything private with a solid block, since blur and pixelation can be reversed: Wi-Fi names and passwords, device IDs, serials, MAC and IP addresses, keys and setup codes, account and people names, and notifications. Crop out the status bar where you can.
+- Export a fresh PNG with no metadata, and check that with a metadata dump.
+- Look at the image at full size. Keep the original out of Git.
+
+Retake a screenshot when the screen it shows changes, since no check notices.
 
 ## Diagrams
 
@@ -104,9 +128,24 @@ Each full inventory lives in one place: tools in [src/tools/README.md](../../src
 
 ## Device pages
 
-Every device folder starts from [the template](../devices/_template/README.md), so all devices answer the same questions in the same order: what it's sold as, how to identify it, the SoC and flash, UART access, recovery, status and notes.
+Every device folder starts from [the template](../devices/_template/README.md), so all devices answer the same questions in the same order: what it's sold as, how to identify it, the SoC and flash, UART access, recovery, its hardware blocks and notes.
+
+## What the checks refuse
+
+`cargo xtask check-repository` runs these over every tracked Markdown file, so `make check-docs` fails on them. `## Evidence` sections record what was true on their date, so only the anchor check reads them.
+
+| Check | What it refuses | What it leaves alone |
+| --- | --- | --- |
+| Commands and flags | A `wellfed*` command in a code span or a shell fence with no such subcommand, or a flag that subcommand doesn't take. It reads each tool's clap derives, and runs nothing | Placeholders like `<review>` and `NAME`, which end the check of that line |
+| Make targets | A `make <target>` the Makefile (or `-C` folder's Makefile) doesn't have | Variables like `FIRMWARE=feeder` |
+| Paths | A backticked repository path that resolves to no file or folder. A shorthand may be the tail of the real path | `private/`, `.agents/`, build output, and the named vendor files. A word counts as a path only if it starts with `src/`, `docs/` or `assets/`, or ends in a source extension |
+| Status | A `Status:` line, a `Status` heading or column, or a table cell holding a status word | The roadmap, supported devices, and this page |
+| Time-bound wording | "come next", "on the way", "not built" and their like, and a past date in "until <date>" | The roadmap, this page, and "for now" and "not yet", which are often true |
+| Anchors | A link's `#anchor` with no heading to land on, GitHub's way of writing them | Links to other sites, and `#L12` line links |
+
+No check can catch a wrong statement about the code, such as which crates the server links. **A change to behavior updates its page in the same change.** Search the docs for the name you changed, and if a status moved, update the roadmap.
 
 ## Before you finish
 
-- Run `make check-docs`. It checks links, card ids and private paths.
+- Run `make check-docs`. It checks links and anchors, card ids, private paths, and the rules above.
 - Read the page once from the top as a newcomer would. If you'd skim a paragraph, cut it.

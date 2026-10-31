@@ -24,24 +24,24 @@ Where the console header is, its voltage and baud rate, and how ROM download mod
 
 Whether you can back up and restore this unit, and what a restore has been shown to do. Matching full backups come first. The details go in `recovery.md`, and the flash map in `flash-layout.md`, backed by `src/firmware/devices/<model>/layout.json`. Unknown gaps in the flash are not free space.
 
-## Status
+## Hardware blocks
 
-One row per hardware block. The Stock column says in a few words what the stock firmware does. The Wellfed column holds one status word: **Works**, **Partial**, **Experimental** or **Not started** ([what they mean](../../development/writing.md#status)). Keep each note short and put longer caveats in a list under the table.
+One row per hardware block. The Stock column says in a few words what the stock firmware does. The Wellfed column says what Wellfed does with it. Status words stay out of this table: where each capability stands goes on the [roadmap](../../roadmap.md).
 
-| Block | Stock | Wellfed | Notes |
-| --- | --- | --- | --- |
-| Console and backups | | | |
-| Flash and boot | | | |
-| Wi-Fi | | | |
-| Bluetooth LE | | | |
-| Over-the-air updates | | | |
-| Motor and feeding | | | |
-| Food and outlet sensors | | | |
-| Power and battery | | | |
-| Buttons and child lock | | | |
-| Indicators | | | |
-| Speaker | | | |
-| Clock and schedules | | | |
+| Block | Stock | Wellfed |
+| --- | --- | --- |
+| Console and backups | | |
+| Flash and boot | | |
+| Wi-Fi | | |
+| Bluetooth LE | | |
+| Over-the-air updates | | |
+| Motor and feeding | | |
+| Food and outlet sensors | | |
+| Power and battery | | |
+| Buttons and child lock | | |
+| Indicators | | |
+| Speaker | | |
+| Clock and schedules | | |
 
 ## Notes
 

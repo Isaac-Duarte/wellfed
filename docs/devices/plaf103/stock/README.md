@@ -54,7 +54,7 @@ Stock's event task runs its button handler once per loop, with a 50-tick delay a
 - The panel starts locked at every boot, so an unattended reboot never leaves Dispense live.
 - Any gesture, Lock included, restarts the relock count, and a button still held keeps it off until release. Stock counts only Mic, Reset and Dispense.
 - A `SetLock` request over the [device API](../../../firmware/device-api.md) locks or unlocks from the network. A remote unlock relocks on the same 30 s timer.
-- `disableHardwareButton` and its recovery sequence are not implemented. The reset button is separate work on the [roadmap](../../../roadmap.md).
+- `disableHardwareButton` and its recovery sequence are not implemented. Wellfed's own reset button is on the [roadmap](../../../roadmap.md).
 
 ## Bluetooth LE
 

@@ -2,7 +2,7 @@
   "name": "@wellfed/docs",
   "private": true,
   "type": "module",
-  "description": "docs.well-fed.dev: the repository's docs/ rendered and searchable, prerendered to static files for a Cloudflare Worker",
+  "description": "docs.well-fed.dev: the owner-facing pages of the repository's docs/, rendered and searchable, prerendered to static files for a Cloudflare Worker",
   "imports": {
     "#lib": "./src/lib",
     "#lib/*": "./src/lib/*"

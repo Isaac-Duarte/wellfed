@@ -44,8 +44,6 @@ sequenceDiagram
   Note over B1,B0: Three unconfirmed boots: KM0 clears bank 1's marker,<br/>and the loader boots bank 0 again
 ```
 
-<!-- details -->
-
 ## The one rule: bank 1 wins
 
 The loader checks bank 1 first and boots it whenever it is valid. Bank 0 boots only when bank 1 fails. **Bank 1 has fixed priority; bank 0 is only a fallback.**

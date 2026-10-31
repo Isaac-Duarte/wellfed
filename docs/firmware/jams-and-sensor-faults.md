@@ -2,7 +2,7 @@
 
 A feed can go wrong: kibble jams the rotor, the mark sensor stops reporting, the outlet is blocked, or the ADC stops converting. In every case the feeding owner stops the motor, writes an explicit outcome and reason to the journal and the `Fed` event, and never restarts the feed by itself. A client never resends an uncertain feed, and the feeder never re-runs one.
 
-Status: **Experimental**. Every case runs on hardware through fault-injection variants. Real jams with food, taped sensors and a current reference wait for the owner ([left for the owner](#left-for-the-owner)).
+Every case runs on hardware through fault-injection variants, and a taped outlet beam has been tried by hand. A jam with real food and a current reference are still open ([left for the owner](#left-for-the-owner)). The [roadmap](../roadmap.md) has the current status.
 
 The limits are in `feeding::CONFIG` (`src/firmware/wellfed/feeder/src/feeding.rs`). The behavior is the controller's (`wellfed_core::feed::controller`) and the owner's (`wellfed_hal::owner`). The drive itself, its marks and its current are in [motor and feeds](motor-pulse.md#how-a-feed-drives-the-motor).
 
@@ -146,14 +146,16 @@ Unattended, hopper empty, D cells out, at most 3 portions a feed, the logic anal
 
 ## Left for the owner
 
-- **A real jam.** A kibble or a wedge in the rotor, with food. The stall current the 300 limit is meant to catch is not measured (the simulator's 1000 raw is a guess), nor whether a 1 s reversal frees a real jam.
-- **Taped sensors.** PA18 covered (lost marks), a stuck mark, the outlet beam blocked with paper before and during a feed, and the food beam covered and uncovered between feeds.
+- **A real jam.** A kibble or a wedge in the rotor, with food. Kibble pressed into the rotor by hand did not jam it ([Evidence](#evidence)). The stall current the 300 limit is meant to catch is not measured (the simulator's 1000 raw is a guess), nor whether a 1 s reversal frees a real jam.
+- **Taped sensors.** PA18 covered (lost marks), and a stuck mark.
 - **The rotor on D cells.** A feed on batteries alone with the analyzer and UART. The gap between marks (8.5 s at most on the adapter) must stay well under the 11 s `mark_gap_ms`, and the drive current under the 300 limit, or both limits need a battery case.
 - **A current reference.** A USB power meter in series, or a confirmed sense-resistor scaling, to put 300, 1000 and the surge in milliamps.
 - **Food readings.** The food beam's reading across a refill, so the statistics' low and refilled counts have a physical check.
 
 ## Evidence
 
+- **A taped outlet, and kibble by hand.** Observed (October 29, owner present, hopper empty). The outlet beam taped before a feed ended it `outlet_blocked` with no drive, and the rotor stayed still. Covered mid-feed, a 3-portion feed ended `outlet_blocked` at 1 of 3, with the motor stopped 1.0 s after the beam was blocked and no resume. Kibbles pressed into the rotor gap did not jam it: the feed finished 1 of 1 with no reversal, at a peak current of 260 against 281–289 on normal food feeds.
+- **The renamed reasons.** Observed (October 28, unattended, hopper empty, `feed-jam` variant): 1 portion done after a reversal, 2 portions `jammed`, 3 portions `mark_stuck`, and the status named the last fault.
 - **The variants on hardware.** Observed (October 26, `feed-jam` v233 and `sensor-fault` v234, hopper empty, feeds 48–53, UART captures `fw19-{jam,sensor}-20261026-feed{1,2,3}-uart`):
   - A jam that frees credited its portion after one reversal (feed 48, `Done`, 11.5 s).
   - A jam that persists ended `Failed`, `Overcurrent` after three reversals (49, 7.2 s); that reason is now `Jammed`.

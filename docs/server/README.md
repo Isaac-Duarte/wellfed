@@ -12,15 +12,15 @@ The server adds what a small device can't hold:
 - **Accounts and audit.** Each person logs in as themselves, with a role (owner, member or viewer). The audit log names who fed, changed a setting or adopted a feeder.
 - **Long history.** Every event and sample the feeder reports, kept for as long as you like, with hourly rollups for charts.
 - **Owner data.** Pets, foods, weights and refills, which the feeder doesn't track.
-- **Releases and installs.** It fetches or takes signed firmware releases, verifies them, and installs one when an owner asks. It also keeps each feeder's stock firmware backup, so you can go back to stock.
+- **Releases and installs.** It fetches or takes signed firmware releases, verifies them, and installs one on a feeder running Wellfed when an owner asks. It does not install from stock: the app and the CLI do that. It also keeps each feeder's stock firmware backup, so you can go back to stock.
 
 One server serves one household, with as many feeders as you own.
 
-**Status: Experimental.** Everything here is built and tested against the host-simulated feeder. No server has met a real feeder yet. See the [roadmap](../roadmap.md).
+**This is heavy work in progress, a proof of concept.** The server adopts a real feeder and keeps its history whole across a restart, a power cut and a Wi-Fi drop. Feeds, accounts, releases and release installs are tested in simulation only. The [roadmap](../roadmap.md) lists it as Partial.
 
 ## Two paths, one feed
 
-When a server is configured, the app talks to it whenever it can reach it. That way remote access works and the audit log names the person. Each owner's or member's phone also holds its own key on every feeder. When the server is down, the phone uses that key on the home network, for reads and new requests only. A viewer's phone holds no key, so the server alone enforces a viewer's limits.
+The app does not connect to a server yet, so this is the design it is being built to. When a server is configured, the app talks to it whenever it can reach it. That way remote access works and the audit log names the person. Each owner's or member's phone also holds its own key on every feeder. When the server is down, the phone uses that key on the home network, for reads and new requests only. A viewer's phone holds no key, so the server alone enforces a viewer's limits.
 
 The danger is a retry that crosses paths. The server and the phone send different request ids, so a feed that timed out on one path and was retried on the other could feed twice. So **an uncertain write never switches path.** It is retried on its own path under its own key, or resolved from the feeder's history (a feed by its `Fed` event). It is never resent on the other path. The CLI follows the same rule: each command takes one path, the device API or `wellfed server`, with no fallback between them.
 
@@ -75,4 +75,5 @@ Some conventions hold across the API:
 ## Evidence
 
 - **Simulation**, October 24–27, 2026: the server's crates and their tests run against `wellfed-feeder-sim` over real TCP and Noise. Feeds, uncertain writes, installs, the stock backup and restore, export and import were exercised this way.
+- **Observed**, October 28, 2026: the server adopted the research unit by invite, mirrored its history, and changed its settings and lock. The history stayed whole across a server restart, a power cut and a Wi-Fi drop.
 - **Static analysis**, October 27, 2026: the route groups above match the committed `openapi.json`, and the role rules match `Permission::can` in `wellfed-service`.

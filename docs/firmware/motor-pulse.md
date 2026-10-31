@@ -2,7 +2,7 @@
 
 One motor turns the feeder's rotor, and only one piece of firmware may drive it: the [feeding owner](../glossary.md). Every feed, from the app, the CLI or the Dispense button, is a request to that owner. This page explains what bounds a drive, what a feed records, what happens when power is cut mid-feed, and the fault-injection variants that prove the motor stops even when the loop or the stop path fails. It ends with the first-pulse probe that brought the motor up.
 
-Status: **Works**. Feeds through the owner, stopping on time and surviving a power cut without feeding twice, are observed on our unit.
+Feeds through the owner, stopping on time and surviving a power cut without feeding twice, are observed on our unit.
 
 ## How a feed drives the motor
 

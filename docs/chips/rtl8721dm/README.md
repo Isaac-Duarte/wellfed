@@ -28,8 +28,6 @@ flowchart LR
   soc <--> pins
 ```
 
-<!-- details -->
-
 ## Cores and SDK
 
 - **Two cores.** KM0, the low-power core, and KM4, the application core, run separate images built separately. Wellfed's KM0 image contains only `wellfed-hal-common`. The application and the Rust runtime run on KM4 ([firmware architecture](../../firmware/README.md)).

@@ -8,7 +8,7 @@ These docs follow the [writing guide](writing.md). The code follows the [Rust st
 
 We develop on Linux. You need:
 
-- Rust **1.99.1** through rustup. [rust-toolchain.toml](../../rust-toolchain.toml) pins it, with rustfmt, Clippy and the three ARM targets, so rustup fetches them on first use.
+- Rust **1.99.1** through rustup. [rust-toolchain.toml](../../rust-toolchain.toml) pins it, with rustfmt, Clippy and the four ARM targets, so rustup fetches them on first use.
 - `cargo-nextest` and `cargo-deny`: `cargo install cargo-nextest cargo-deny`.
 - GNU Make, CMake and a C compiler. The `unicorn-engine` crate builds the Unicorn emulator library with them. On Linux it also links libatomic.
 - Permission to open loopback sockets. Network tests bind them with synthetic identities.
@@ -45,9 +45,8 @@ If your environment forbids local sockets, give the network tests permission to 
 | `src/firmware/devices/` | Per-device descriptions and layouts |
 | `src/firmware/bench/` | The bench board's RP2040 firmware and its relay protocol crate ([bench firmware](../../src/firmware/bench/README.md)) |
 | `src/hardware/bench/` | The Wellfed Bench board: KiCad project, fab outputs and enclosure ([bench board](../../src/hardware/bench/README.md)) |
-| `src/web/` | Web frontends (a pnpm workspace): the bench page, the [well-fed.dev](../web/site.md) site, shared tokens and components, and API types generated from Rust. `make ui` builds them |
+| `src/web/` | Web frontends (a pnpm workspace): the bench page, the [well-fed.dev](../web/site.md) site, the [docs site](../web/docs-site.md), shared tokens and components, and API types generated from Rust. `make ui` builds them |
 | `src/fuzz/` | Fuzz targets ([fuzzing](#fuzzing)) |
-| `src/scripts/` | Developer scripts: `bench-dashboard` serves the bench page for this checkout |
 | `assets/` | Brand marks, design tokens, the feeder's 3D model and its renders ([assets](../../assets/README.md)) |
 | `docs/` | Hardware findings, firmware design and contributor guides |
 | `private/` | Ignored, contributor-owned secrets, evidence, dependencies and artifacts |
@@ -70,7 +69,7 @@ The repository is self-contained. SDK and toolchain copies and fixtures resolve 
 | `check-deps` | cargo-deny: licenses, advisories, duplicate versions and sources ([deny.toml](../../deny.toml)), then the fuzz crate's and the bench board firmware's lockfiles under their own policies ([fuzz](../../src/fuzz/deny.toml), [bench board](../../src/firmware/bench/wellfed-bench-board/deny.toml)) |
 | `check-cross` | The SDK-independent KM0 and KM4 FFI static libraries, and `check-bench-board`: Clippy and a release build of the [bench board firmware](../../src/firmware/bench/README.md) for the RP2040 |
 | `check-virtual-feeder` | The simulator; see [the simulator](#the-simulator). Also part of `check-rust` |
-| `check-docs` | Local Markdown links, portability checks, no Python under `src/`, and the source rules (raw output writers, card ids) |
+| `check-docs` | Local Markdown links and anchors, the commands, make targets and paths the docs name, status words and time-bound wording ([rules](writing.md#what-the-checks-refuse)), portability checks, no Python under `src/`, and the source rules (raw output writers, card ids). It builds only `xtask`, and runs no tool |
 | `check-fixtures` | The optional binary and SDK evidence suite. Missing inputs or skips fail ([fixtures](fixtures.md)) |
 | `check-web` | The web frontends: ESLint, Prettier, licenses, types, unit tests, the build and Playwright. Needs Node and pnpm ([TypeScript standard](typescript.md)) |
 | `check-app` | The Android app: its generated bindings and theme tokens unchanged, `dart format`, `flutter analyze`, widget tests and a debug APK. Needs Flutter and the Android SDK ([the app](../../src/app/README.md)) |

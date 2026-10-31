@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300" role="img" aria-labelledby="trial-boot-title trial-boot-desc">
+  <title id="trial-boot-title">How a bad update gives way to the old one</title>
+  <desc id="trial-boot-desc">Bank 0 writes the new build into bank 1, and the new build starts on trial. If it starts cleanly it confirms itself and stays. If it keeps failing or hangs, the feeder goes back to bank 0, which still works.</desc>
+  <defs>
+    <marker id="trial-boot-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+    <marker id="trial-boot-arrow-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head-ok" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+    <marker id="trial-boot-arrow-fault" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head-fault" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="d-box" x="24" y="110" width="180" height="76" rx="8"/>
+  <text x="114" y="142" text-anchor="middle" class="d-title">Bank 0 writes</text>
+  <text x="114" y="161" text-anchor="middle" class="d-muted">the new build into bank 1</text>
+
+  <line class="d-wire" x1="204" y1="148" x2="262" y2="148" marker-end="url(#trial-boot-arrow)"/>
+
+  <rect class="d-accent" x="266" y="110" width="170" height="76" rx="8"/>
+  <text x="351" y="142" text-anchor="middle" class="d-title">Trial boot</text>
+  <text x="351" y="161" text-anchor="middle" class="d-muted">not yet trusted</text>
+
+  <path class="d-wire-ok" d="M436,128 L470,128 L470,66 L504,66" marker-end="url(#trial-boot-arrow-ok)"/>
+  <rect class="d-ok" x="508" y="28" width="188" height="76" rx="8"/>
+  <text x="602" y="60" text-anchor="middle" class="d-title">Confirmed</text>
+  <text x="602" y="79" text-anchor="middle" class="d-muted">started cleanly, so it stays</text>
+
+  <path class="d-wire-fault" d="M436,168 L470,168 L470,230 L504,230" marker-end="url(#trial-boot-arrow-fault)"/>
+  <rect class="d-fault" x="508" y="192" width="188" height="76" rx="8"/>
+  <text x="602" y="224" text-anchor="middle" class="d-title">Back to bank 0</text>
+  <text x="602" y="243" text-anchor="middle" class="d-muted">bank 0 still works</text>
+</svg>

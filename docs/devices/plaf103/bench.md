@@ -25,7 +25,7 @@ These hold for every command on this page. The sections below give the detail.
 
 ### Wiring
 
-A DSD TECH SH-UR04A USB relay board (CP2102 serial, 9600 8N1) adds four switches to the [UART wiring](uart.md). The [wiring diagram](../../../src/tools/wellfed-bench/wiring.svg) carries reference designators and net names for a bench PCB. That PCB is the [Wellfed Bench board](../../../src/hardware/bench/README.md), which puts the adapter and the four switches on one USB cable. It is designed but not built, so this page still describes the relay board.
+A DSD TECH SH-UR04A USB relay board (CP2102 serial, 9600 8N1) adds four switches to the [UART wiring](uart.md). The [wiring diagram](../../../src/tools/wellfed-bench/wiring.svg) carries reference designators and net names for a bench PCB. That PCB is the [Wellfed Bench board](../../../src/hardware/bench/README.md), which puts the adapter and the four switches on one USB cable. It is designed and no board exists yet, so this page still describes the relay board.
 
 | Relay | Contacts | Connection | Role |
 | --- | --- | --- | --- |
@@ -401,7 +401,7 @@ What a run does:
 
 `feed-stall` and `stop-fail` move the motor only for a feed request, like the feeder, and inject a fault into it ([motor pulse](../../firmware/motor-pulse.md)). `owner-fail` never opens its feeding owner, so its trial must fall back. `owner-stall` resets about 3 minutes into every boot once confirmed, a reset storm ([OTA design](../../firmware/ota-design.md)).
 
-The bring-up areas and the trial images are variants of one `bringup` firmware. So `--firmware optics` builds `wellfed-build --firmware bringup --variant optics` (likewise `buttons`, `adc` and `speaker`), `--firmware trial --variant stall` builds `--firmware bringup --variant stall`, and `--firmware trial` alone builds its normal image. `qa`, `blink` and `feeder` pass through unchanged. The motor pulse (`--firmware motor`, `--variant pulse`) is refused: motion builds stay manual, then go through `--review` with `--attended-motion`.
+The bring-up areas and the trial images are variants of one `bringup` firmware. So `--firmware optics` builds `wellfed-build build --firmware bringup --variant optics` (likewise `buttons`, `adc` and `speaker`), `--firmware trial --variant stall` builds `--firmware bringup --variant stall`, and `--firmware trial` alone builds its normal image. `qa`, `blink` and `feeder` pass through unchanged. The motor pulse (`--firmware motor`, `--variant pulse`) is refused: motion builds stay manual, then go through `--review` with `--attended-motion`.
 
 **Refused before anything runs:** an existing `NAME-review`, `--firmware` or `--variant` without `--build`, `--variant` without the firmware that declares it, and `--build` with `--review`.
 
@@ -490,7 +490,7 @@ Feeds and cancels are sent once, never resent on a fresh session: the feeder rem
 
 ### How a run behaves
 
-**Bench state.** Before changing anything, the suite refuses if the UART port is missing, `wellfed-stock` is not built, an evidence name is in use, or anything already answers on the server's `http_listen` (stop that `serve`; the suite runs its own). It then:
+**Bench state.** Before changing anything, the suite refuses if the UART port is missing, the `wellfed-stock` binary is missing, an evidence name is in use, or anything already answers on the server's `http_listen` (stop that `serve`; the suite runs its own). It then:
 
 1. records whether the hotspot connection named in `private/hotspot.json` is active, and brings it up;
 2. with `--power`, records relay 1 and switches the supply on;
@@ -505,9 +505,9 @@ At the end, or on an error or Ctrl+C, the suite stops its children and puts the 
 
 **Failures.** A failed scenario stops the rest, which are recorded as skipped, unless `--keep-going` is given. Scenarios that change device state restore it on failure too, while the feeder still answers.
 
-If there is no `PL…` record, no device API answer and no fresh bank-0 health for 180 s, the feeder counts as silent. Every wait checks this, so an unpowered feeder stops an install watch within 3 minutes rather than at its 15-minute deadline. Only the wrong-credential wait in `wifi-fallback`, where the feeder is unreachable on purpose, is exempt. The suite then stops whatever `--keep-going` says, prints the last confirmed review and the `flash-prepare` command to recover it over UART, and exits 2. A scenario failure exits 1.
+If there is no `PL…` record for 180 s and the device API does not answer, the feeder counts as silent. Every wait checks this, so an unpowered feeder stops an install watch within 3 minutes rather than at its 15-minute deadline. Only the wrong-credential wait in `wifi-fallback`, where the feeder is unreachable on purpose, is exempt. The suite then stops whatever `--keep-going` says, prints the last confirmed review and the `flash-prepare` command to recover it over UART, and exits 2. A scenario failure exits 1.
 
-**Cold boots.** After a supply cut the server keeps reporting the old session's health as online and fresh until the broker's keepalive lapses, and a request sent then is lost. So after a cold boot the suite waits for `PLMQT1 ready` and accepts only health received after it.
+**Cold boots.** The old session's sockets die with the power, so a request sent on them is lost. After a cold boot the suite waits for the baseline's `PLFW1 start` on bank 1, then accepts only a status read in a session opened after it.
 
 **Evidence.**
 

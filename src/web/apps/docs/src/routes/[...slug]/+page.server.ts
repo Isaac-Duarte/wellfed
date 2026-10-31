@@ -3,7 +3,7 @@ import { bySlug } from "#lib/server/content.ts";
 import { placeOf } from "#lib/server/site.ts";
 import type { EntryGenerator, PageServerLoad } from "./$types";
 
-// Every doc is a page, even one the sidebar leaves out: links reach it.
+// Only a published doc is a page: a link to any other goes to GitHub.
 export const entries: EntryGenerator = () => [...bySlug.keys()].map((slug) => ({ slug }));
 
 export const load: PageServerLoad = ({ params }) => {
