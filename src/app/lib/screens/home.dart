@@ -175,7 +175,7 @@ class FeederCard extends StatelessWidget {
           const SizedBox(height: Space.s4),
           FilledButton(
             onPressed: controller.canFeed
-                ? () => showFeedSheet(context, controller)
+                ? () => feedNow(context, controller)
                 : null,
             child: const Text('Feed now'),
           ),
@@ -248,7 +248,7 @@ class FeederCard extends StatelessWidget {
                   ),
                 ),
                 onPressed: controller.canFeed
-                    ? () => showFeedSheet(context, controller)
+                    ? () => feedNow(context, controller)
                     : null,
                 child: const Text('Feed'),
               ),

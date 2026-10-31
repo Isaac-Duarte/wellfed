@@ -12,9 +12,23 @@ import '../widgets/layout.dart';
 import '../widgets/when.dart';
 import 'feeder/tabs.dart';
 
-/// Feed now: confirm the portions, then follow the feed to its end. The
-/// sheet shows only what the feeder said; an uncertain feed shows its range
-/// and is never offered again as a retry.
+/// The Feed now button: a new feed, so a known ending the owner has moved on
+/// from gives way to the portions. One that isn't known stays until it is
+/// closed, as the owner should look at the bowl before feeding again.
+Future<void> feedNow(BuildContext context, FeederController feeder) {
+  final feed = feeder.feed;
+  final known = switch (feed.phase) {
+    FeedPhase.ended => !(feed.result?.uncertain ?? true),
+    FeedPhase.refused || FeedPhase.notSent => true,
+    _ => false,
+  };
+  if (known) feeder.dismissFeed();
+  return showFeedSheet(context, feeder);
+}
+
+/// Confirm the portions, then follow the feed to its end. The sheet shows
+/// only what the feeder said; an uncertain feed shows its range and is never
+/// offered again as a retry.
 Future<void> showFeedSheet(BuildContext context, FeederController feeder) =>
     showModalBottomSheet<void>(
       context: context,

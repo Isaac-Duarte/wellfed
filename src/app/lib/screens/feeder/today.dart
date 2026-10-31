@@ -80,9 +80,7 @@ class TodayTab extends StatelessWidget {
           ),
           const SizedBox(height: Space.s3),
           FilledButton(
-            onPressed: feeder.canFeed
-                ? () => showFeedSheet(context, feeder)
-                : null,
+            onPressed: feeder.canFeed ? () => feedNow(context, feeder) : null,
             child: Text(
               stopped ? 'Feed now · unavailable until restart' : 'Feed now',
             ),

@@ -685,6 +685,47 @@ void main() {
       expect(session.feeds, [1]);
     });
 
+    testWidgets('Feed now after a known result, tapped away, asks portions', (
+      tester,
+    ) async {
+      final session = await sheet(tester);
+      await _tap(tester, find.text('Feed 1 portion'));
+      session.updates.add(
+        const SessionUpdate.feedStarted(feed: 7, portions: 2, dueSeconds: 49),
+      );
+      await settle(tester);
+      session.updates.add(SessionUpdate.feedEnded(result: fakeFed(feed: 7)));
+      await settle(tester);
+      expect(find.text('Fed 2 of 2 portions'), findsOneWidget);
+
+      await tester.tapAt(const Offset(10, 10));
+      await settle(tester);
+      expect(find.text('Fed 2 of 2 portions'), findsNothing);
+
+      await _tap(tester, find.text('Feed now'));
+      expect(find.text('Fed 2 of 2 portions'), findsNothing);
+      expect(find.text('Feed 1 portion'), findsOneWidget);
+    });
+
+    testWidgets(
+      'Feed now after an unknown result, tapped away, still says so',
+      (tester) async {
+        final session = await sheet(tester);
+        await _tap(tester, find.text('Feed 1 portion'));
+        session.updates.add(const SessionUpdate.feedUnanswered());
+        await settle(tester);
+        expect(find.text('Did Kitchen feed?'), findsOneWidget);
+
+        await tester.tapAt(const Offset(10, 10));
+        await settle(tester);
+        await _tap(tester, find.text('Feed now'));
+
+        expect(find.text('Did Kitchen feed?'), findsOneWidget);
+        expect(find.text('Feed 1 portion'), findsNothing);
+        expect(session.feeds, [1]);
+      },
+    );
+
     testWidgets('an uncertain feed shows a range, and the history', (
       tester,
     ) async {
