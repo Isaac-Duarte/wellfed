@@ -1054,6 +1054,7 @@ fn a_quiet_mark_waits_out_a_line_still_queued() {
     assert_eq!(ctx.quiet_mark().unwrap(), lagging + 1);
     let quiet_for = ctx.rig.clock();
     assert!(quiet_for.as_secs_f64() >= 0.5, "{quiet_for:?}");
+    assert!(!feeder.notes.iter().any(|n| n.contains("never went quiet")));
 }
 
 #[test]
@@ -1068,6 +1069,7 @@ fn a_quiet_mark_gives_up_on_a_uart_that_keeps_talking() {
     ctx.quiet_mark().unwrap();
     assert!(ctx.rig.clock() <= UART_QUIET_MAX + UART_QUIET_POLL);
     assert!(ctx.rig.clock() >= UART_QUIET_MAX);
+    assert!(feeder.notes.iter().any(|n| n.contains("never went quiet")));
 }
 
 fn verdicts(reports: &[Report]) -> Vec<(&str, &str)> {

@@ -1483,8 +1483,11 @@ pub fn current_task() -> usize {
 ///
 /// A full ring costs a [`may_drop`](wellfed_core::log_ring::may_drop) line
 /// its place, and an interrupt's line too, since neither should wait. Any
-/// other line waits here, sending as it goes, for room: at most one line's
-/// time at the UART, with every other task still running.
+/// other line waits here, sending as it goes, for room: usually one line's
+/// time at the UART, with every other task still running. Other loggers at
+/// its priority or above can take that room first, so the wait ends after
+/// about a ring's worth of bursts ([`LOG_WAIT_BURSTS`]); the line is then
+/// dropped too, and `PLLOG1` reports it.
 ///
 /// Out of line, as are the sends below it: a caller formats its line and then
 /// logs it, so its frame sits under the formatting, a task's deepest path.
@@ -1498,11 +1501,10 @@ pub fn log(message: &CStr) {
         crate::LOG_TAIL.push(line);
     }
 
-    // Room is checked and taken in one masked section: a logger above this
-    // one may fill what a send here just freed, and that is another wait, not
-    // a dropped line.
+    // Room is checked and taken in one masked section: another logger may fill
+    // what a send here just freed, and that is another wait, up to the limit.
     let may_wait = !wellfed_core::log_ring::may_drop(line) && ipsr() == 0 && primask() == 0;
-    let mut stuck = 0;
+    let (mut stuck, mut bursts) = (0, 0);
     loop {
         {
             let _guard = crate::IrqGuard::lock();
@@ -1510,13 +1512,20 @@ pub fn log(message: &CStr) {
             if room == Room::Fits {
                 break;
             }
-            if room == Room::Never || !may_wait || stuck >= LOG_STUCK_READS {
+            if room == Room::Never
+                || !may_wait
+                || stuck >= LOG_STUCK_READS
+                || bursts >= LOG_WAIT_BURSTS
+            {
                 crate::LOG_RING.count_dropped();
                 break;
             }
         }
         match log_burst() {
-            Burst::Sent => stuck = 0,
+            Burst::Sent => {
+                stuck = 0;
+                bursts += 1;
+            }
             Burst::NoRoom => stuck += 1,
         }
     }
@@ -1541,6 +1550,12 @@ const LOG_BURST: usize = 8;
 /// 0.8 ms a burst takes at any plausible read time. A wait for a stuck UART
 /// gives up rather than hang the caller, a fault handler above all.
 const LOG_STUCK_READS: u32 = 100_000;
+
+/// Bursts a line waits for room before it is dropped: enough to send a whole
+/// ring, about 0.4 s. Without a limit, other loggers that keep refilling the
+/// ring hold the caller for as long as they keep up, past the 10 s liveness
+/// limit of the service task.
+const LOG_WAIT_BURSTS: usize = crate::LOG_RING_BYTES / LOG_BURST;
 
 /// A burst's outcome.
 #[derive(Clone, Copy, PartialEq, Eq)]

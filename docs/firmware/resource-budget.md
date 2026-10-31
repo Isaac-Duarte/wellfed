@@ -133,7 +133,8 @@ The worst figures are a hang's call trail, which goes out before the scheduler s
 **A full ring.** A line goes in whole or not at all, so lines stay whole and in order, and what is dropped is the new line.
 
 - `PLAPI1` lines drop, being the one record a client's request rate can drive. So does any line logged from an interrupt or with interrupts masked, or one too long for the ring. The next line, or an empty ring, brings `PLLOG1 dropped=N` first, where the hole is. The log tail has them all the same.
-- Every other line waits for room in its caller, sending as it goes: at most one line's time, with other tasks still running, and longer only if a logger above it takes the room again. That is a line of evidence's price for a full ring: its own task's time, never the system's.
+- Every other line waits for room in its caller, sending as it goes: usually one line's time, with other tasks still running. That is a line of evidence's price for a full ring: its own task's time, never the system's.
+- Another logger at the same priority or above can keep taking that room. So the wait ends after a ring's worth of bursts, about 0.4 s, and then that line drops too, reported through `PLLOG1`. The service task's 10 s liveness limit is why the wait has an end. Such a line is not guaranteed; it takes a flood of other lines to lose it.
 
 A `call-chunk` or `update-chunk` refused `Busy` logs no line, since a client sends it again at once.
 
