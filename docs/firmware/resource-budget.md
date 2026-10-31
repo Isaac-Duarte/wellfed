@@ -9,7 +9,7 @@ It fits.
 - **Flash:** the current `feeder` image uses about three quarters of a bank, with room for what's still planned.
 - **Heap:** about 120 KB free in Bluetooth setup mode, the tightest case.
 - **Tasks:** none spare, by design. Everything new joins the loop task.
-- **Latency:** two rules keep the loop responsive: one handshake operation per pass, and feeds and Wi-Fi joins take turns.
+- **Latency:** three rules keep the loop responsive: one handshake operation per pass, feeds and Wi-Fi joins take turns, and logging never holds the scheduler.
 - **Storage:** a 48-sector region, with 3 sectors still free; the meal call's clip takes the last 8.
 
 ## Flash
@@ -54,7 +54,7 @@ The session table is the 11,576-byte `BUDGET` static, about 2.9 KB a client. It 
 
 - **No leak:** the normal image held 146,464 free for three more minutes.
 - **BLE:** setup mode costs about 15–19 KB of heap (`PLBLE1 ready heap_free=135136`).
-- **Headroom:** about 120 KB, with the four-client table already counted. lwIP's own pools are separate (see [clients](#clients-request-ids-and-buffers)).
+- **Headroom:** about 120 KB as measured, with the four-client table already counted. The [log ring](#logging), added since, takes 4 KiB of it. lwIP's own pools are separate (see [clients](#clients-request-ids-and-buffers)).
 - **The device API's cost** (146,464 down to 125,088) is not yet attributed.
 
 ## Tasks
@@ -75,6 +75,7 @@ A firmware gets four tasks (`FIRMWARE_TASKS`). The product uses two:
 
 - The C Wi-Fi task (`wellfed_wifi`, 1,280 words, created by `example_entry.c`). The Rust it reaches through `wellfed_wifi_select`, `wellfed_wifi_outcome` and `wellfed_wifi_watch` is unbounded by the audit, as is the shim's own C. That Rust is the credential choice, a flash-mapped read of the stored credentials, the interlock's atomics and `vTaskDelay` while a join waits, and the link's liveness machine. Nothing on that path formats.
 - The BLE stack's own C tasks, which cost heap. The setup-mode figure above includes them.
+- The two print wraps and the fault handler's call into the log ring ([logging](#logging)), which run on the calling C task's stack or the handler's: 24 B for the wrap, 40 B for the send.
 
 **A stack audit fix.** The first product build overflowed the loop's 4 KiB stack (`cfsr=100000`, STKOF) on every trial boot, and KM0 rolled it back. The audit had passed it because its frame pattern skipped Thumb-2 `subw sp, sp, #imm`, which LLVM uses for frames up to 4 KiB. The pattern now counts it. The corrected audit also needed:
 
@@ -107,6 +108,54 @@ Sessions today use Noise IK rather than KK ([device API](device-api.md)).
 During a feed, only IK session handshakes go on, one operation a pass, and the owner is stepped again right after each such pass. A refused one closes unanswered and holds the rest until the feed ends; invites and recovery wait. The owner's observation gap (100 ms) bounds a pass during a drive. An operation (one or two X25519s, about 55 ms with no preemption) fits it, with the owner stepped on both sides ([device API](device-api.md#in-the-firmware)). `PLOWN1 steps` measures the real gap per feed.
 
 The motor's stop guarantees never depend on loop timing. They stay with the supervision and hardware timers.
+
+## Logging
+
+A record line takes up to 16 ms to send at 115200 baud, and `sdk::log` used to hold the scheduler for it. It now copies the line into a RAM ring (`wellfed_core::log_ring`) and returns. The figures below are static analysis, or modeled from captures, until the bench measures them.
+
+**Who sends.** The diagnostic task (priority 1, 4 KiB stack), between its Wi-Fi probe steps. Each pass puts up to 8 bytes in the LOGUART FIFO if the FIFO reads empty, then sleeps 1 ms while lines wait and up to 10 ms when none do. That sends about 8 B/ms against the wire's 11.5, so a 180-byte line takes about 23 ms from its first byte to its last. The FIFO depth of 16 comes from the vendor's Bluetooth UART driver, which fills the same UART block 16 bytes at a time, and has not been measured on the log UART. The burst stays at 8 to leave room for a vendor print caught between its check and its write.
+
+The task sits under the loop and the service task, so sending takes no time from them. They can hold it off, and the ring takes up what they log meanwhile. With the loop at 1 ms passes it gets one burst per pass, about 3–4 B/ms.
+
+**Boot.** Until the task's first pass after the start hook, `log` sends its own line before returning, as a preemptible spin. So does a boot where that pass never comes: a halted boot, or a failed startup. Boot lines are on the wire when `log` returns, as they were.
+
+**Size.** 4 KiB of `.bss`, on every firmware, which takes 4 KiB from the heap; `.ram_image2.bss` went from 66,304 to 70,432 bytes in the first image with it. The feeder's image also keeps the 4 KiB log tail, which holds the same lines for the device API and is not used for this: it drops its oldest lines first, which could be the one being sent.
+
+Replaying the timed UART bytes of 1,116 recent captures through a model of the ring, boot's synchronous part and crash dumps left out (modeled, October 31):
+
+| Backlog | Median | 95 % | 99 % | Worst |
+| --- | ---: | ---: | ---: | ---: |
+| At the full rate, 8 B/ms | 112 B | 496 B | 514 B | 2,847 B |
+| At a quarter of it, 2 B/ms | 124 B | 625 B | 771 B | 6,117 B |
+
+The worst figures are a hang's call trail, which goes out before the scheduler starts, so the ring never queues it; the model cannot tell. The arrivals are limited by the wire, so a real burst is sharper than a capture shows. The steady rate is far under the wire's: 272 B/s at most over any capture longer than a minute. A feed's end is about 470 B.
+
+**A full ring.** A line goes in whole or not at all, so lines stay whole and in order, and what is dropped is the new line.
+
+- `PLAPI1` lines drop, being the one record a client's request rate can drive. So does any line logged from an interrupt or with interrupts masked, or one too long for the ring. The next line, or an empty ring, brings `PLLOG1 dropped=N` first, where the hole is. The log tail has them all the same.
+- Every other line waits for room in its caller, sending as it goes: at most one line's time, with other tasks still running. That is a line of evidence's price for a full ring: its own task's time, never the system's.
+
+A `call-chunk` or `update-chunk` refused `Busy` logs no line, since a client sends it again at once.
+
+**Crashes.** The lines still queued go out first, so they keep their order.
+
+| Path | What sends them |
+| --- | --- |
+| Hard, bus, usage or memory fault | The vendor handler, patched to flush before its first print |
+| Panic | The panic handler, after it stops the outputs and before `PLPNC1` |
+| Supervision stops feeding, or a refused checkpoint | The watchdog feeder (priority 7), every pass until the reset |
+
+A send is one masked burst that leaves the ring consistent, so these can take over from one another with no lock to find held. The whole ring takes about 0.36 s, inside the watchdog's shortest expiry of over 2 s. An interrupted copy has not been published, so a fault in one loses only that line.
+
+These can still lose lines: a hang with interrupts masked, or above priority 7, which stops the feeder too; and a power cut or brownout. Each loses what was queued, where it once lost at most the line being printed. That is usually under 25 ms of lines, and the ring is not kept across a reset. A hang's crumb and call trail do not go through the ring ([startup diagnostics](startup-diagnostics.md)).
+
+**How long interrupts stay masked.** Copying a line takes about 8 instructions a byte, so a 191-byte line is about 1,500 instructions, or 8 µs at 200 MHz without XIP cache misses; the log tail's copy, in its own section, is about the same. A burst is a status read and at most nine register writes, about 2 µs. Both are estimates from the disassembly.
+
+**Vendor prints stay outside the ring.** The Wi-Fi driver and the SDK print from their own tasks, about 34 lines per join, spinning on the UART themselves. The firmware's own C ports print nothing on KM4. At priorities above the drain, such a print could land inside a line partly sent, and neither would parse: about once per join, by a model of the same captures.
+
+So the KM4 link wraps `DiagPrintf` and `_rtl_printf`. A wrapped print first lets the line partly on the wire finish, at worst one line's time, spinning at its own priority. Lines still queued behind that one stay queued, so a vendor line can come out ahead of a logged line that happened before it. A print from inside the ROM, or from the object that defines the print, is not wrapped and can still split a line. KM0 prints only at boot, before KM4 logs through the ring.
+
+**Stack.** No task's bound rose except `wellfed-halt`'s, by 8 B of a 2 KiB stack, as its deepest path now runs through `log`'s frame. The audit charges a panic's depth under each nested formatting call, four times over, so the send is inlined into `log_flush`, and the panic line calls the ROM's print directly.
 
 ## Scheduling gaps across Wi-Fi rejoins
 
@@ -192,7 +241,7 @@ The shim's own `PLWIF3` records (scan, connect, DHCP, loss, backoff, with their 
 **Reading it.** For each rejoin window, compare `p4 late` with `loop late`. If the priority-4 task stays far under 1 s while the loop's lateness reaches hundreds of milliseconds, priority helps. If both are held about as long, the hold is in a driver section above priority 4 or with interrupts masked, and joins must be held during a feed instead.
 
 > [!NOTE]
-> Logging holds the scheduler while the UART drains, about 16 ms for a full line at 115200 baud. Every record line adds a gap of up to that length to what the probe sees. A `p4 max` of 10–40 ms in quiet windows is logging, not the radio.
+> The runs below predate the [log ring](#logging), when logging held the scheduler for up to 16 ms a line, so a `p4 max` of 10–40 ms in quiet windows was logging, not the radio. Logging no longer adds to what the probe sees.
 
 ### Repeating the measurement
 
@@ -255,6 +304,7 @@ The vendor responder is 33.5 KB of code and 2.3 KB of BSS, and it creates its ow
 - **Observed** (October 24): the device API's figures, from the `feeder` builds' manifest audits and `PLAPI1` records ([device API](device-api.md#resources)).
 - **Observed** (October 25), the scheduling gaps: `gap-probe` v170 (`2b0806ce…`) on bank 1, six 180 s captures (`ar9-gap-20261025-cap-01`…`06`) while the hotspot was cycled ten times (60 s up, 15 s down). That gave 86 complete windows, 20 with a rejoin, across two boots. The hard fault was in `cap-04`. Bank 1 was then restored to the reviewed `e43324be…` (v171, `ar9-restore-20261025-01`).
 - **Observed** (October 25): the WPA3 SAE handshake holding the loop past 1 s, in `fw16-stall-01`.
+- **Modeled** (October 31): the log ring's whole lines, wrap, drop count and report are host-tested; its bounds and sections come from the image audits, and its backlog from replaying captures. None of it has run on hardware: the probe's `p4 max` before and after is still to measure.
 - **Modeled:** the interlock, including storage writes' turn, is host-tested. A feed with the hotspot cycling, showing that no association overlaps a feed, has not yet run on hardware.
 - **Modeled:** the `gap-probe` variant was built and host-tested before its run.
 - **Recovered:** the storage region's safety, from a static pass over stock 1.1.15 and the research unit's 15 full dumps. The owner chose 32 sectors on October 23 and 48 on October 26.

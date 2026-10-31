@@ -5,10 +5,12 @@
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     // KM4 owns the motor and infrared GPIO: mask interrupts and request motor
     // STOP and infrared OFF with raw register writes before halting, then
-    // say where. KM0 drives neither and has no print here, so it only halts.
+    // send the lines still queued and say where. KM0 drives neither and has
+    // no print here, so it only halts.
     #[cfg(feature = "km4")]
     {
         wellfed_amebad_sys::panic_outputs_safe();
+        wellfed_amebad_sys::log_flush();
         if let Some(at) = info.location() {
             wellfed_amebad_sys::panic_record(at.file(), at.line(), at.column());
         }

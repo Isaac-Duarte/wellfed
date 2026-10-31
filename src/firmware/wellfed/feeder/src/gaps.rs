@@ -27,8 +27,7 @@ use wellfed_sdk::hal::supervision::config::SYSTIMER_HZ;
 /// under the owner's 100 ms observation gap.
 pub const PERIOD_MS: u32 = 10;
 /// Between records: several windows to a rejoin, and few enough lines that
-/// logging, which holds the scheduler while UART drains, stays a small
-/// share of what the probe sees.
+/// sending them stays a small share of the time.
 pub const WINDOW_MS: u32 = 10_000;
 /// Lateness thresholds counted per window: the owner's observation gap
 /// (rounded down), a stall the panel would show, and the beat's gap while

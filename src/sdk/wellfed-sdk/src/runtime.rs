@@ -483,6 +483,9 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
                 sdk::log(line);
             }
         }
+        // The reset is coming and a hung task may be why: the drain may
+        // never run again, so this task sends what is left.
+        sdk::log_flush();
         return FEED_MS;
     }
     {
@@ -509,6 +512,10 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
                 }
             }
         }
+    }
+    // A refused checkpoint latches, so the reset is coming, as above.
+    if STOPPED.load(Ordering::Relaxed) {
+        sdk::log_flush();
     }
     FEED_MS
 }
@@ -984,6 +991,42 @@ fn probe_step() -> u32 {
     step.delay_ms
 }
 
+/// How long a line can wait for the drain to look, with none queued.
+const DRAIN_IDLE_MS: u32 = 10;
+
+/// The Wi-Fi probe's next step, in uptime milliseconds. Only this task's.
+static PROBE_DUE: AtomicU32 = AtomicU32::new(0);
+/// The probe ended: the task lives on for the drain.
+static PROBE_ENDED: AtomicBool = AtomicBool::new(false);
+
+/// The diagnostic task's life after startup: it sends the logged lines to the
+/// UART and steps the Wi-Fi probe. It sits below the loop and the service
+/// task (priority 1), so sending never takes their time; between their
+/// passes it gets its 1 ms ticks, and when they hold it off the ring takes up
+/// the lines they log. The start hook has returned by its first pass, so the
+/// lines of every task the hook started went out with it waiting (`log`).
+fn drain_and_probe() -> u32 {
+    sdk::log_drain_open();
+
+    let now = sdk::uptime_ms();
+    if !PROBE_ENDED.load(Ordering::Relaxed)
+        && deadline_passed(now, PROBE_DUE.load(Ordering::Relaxed))
+    {
+        match probe_step() {
+            0 => PROBE_ENDED.store(true, Ordering::Relaxed),
+            delay => PROBE_DUE.store(now.wrapping_add(delay), Ordering::Relaxed),
+        }
+    }
+
+    if sdk::log_drain() {
+        return 1;
+    }
+    if PROBE_ENDED.load(Ordering::Relaxed) {
+        return DRAIN_IDLE_MS;
+    }
+    until(now, PROBE_DUE.load(Ordering::Relaxed)).clamp(1, DRAIN_IDLE_MS)
+}
+
 /// The boot's generator start. `first` (raw samples, before conditioning)
 /// and `check` (a hash of one discarded output block) let the bench compare
 /// boots without revealing a secret.
@@ -1044,7 +1087,7 @@ fn log_led_readback(led: leds::Led, high: bool, stage: &str, value: leds::Readba
 unsafe extern "C" fn diagnostic_task(_: *mut c_void) -> u32 {
     STARTUP_BEAT.store(sdk::uptime_ms(), Ordering::Release);
     if PROBING.load(Ordering::Relaxed) {
-        return probe_step();
+        return drain_and_probe();
     }
 
     sdk::log(c"\r\nWellfed local firmware: Rust bringup\r\n");

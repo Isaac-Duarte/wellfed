@@ -350,12 +350,18 @@ const TRAIL_WRAPS: [&str; 7] = [
     "rtw_os_indicate_disconnect",
 ];
 
-/// The KM4 link rule's additions: the Rust archive, then the trail's wraps.
-/// KM0 links only the archive.
+/// What vendor C prints through, the prebuilt driver's objects included. Its
+/// wrap in `example_entry.c` lets a line of ours partly on the wire finish
+/// first, so a print does not land inside it.
+const PRINT_WRAPS: [&str; 2] = ["DiagPrintf", "_rtl_printf"];
+
+/// The KM4 link rule's additions: the Rust archive, then the trail's and the
+/// prints' wraps. KM0 links only the archive.
 fn link_additions(core: Core, archive: &Path) -> String {
     let wraps: String = match core {
         Core::Hp => TRAIL_WRAPS
             .iter()
+            .chain(&PRINT_WRAPS)
             .map(|name| format!(" -Wl,--wrap={name}"))
             .collect(),
         Core::Lp => String::new(),
@@ -363,14 +369,23 @@ fn link_additions(core: Core, archive: &Path) -> String {
     format!("{}{wraps}", archive.display())
 }
 
-/// Print the Cortex-M33 fault status and address registers before the
-/// vendor backtrace. CFSR's IMPRECISERR or a BFAR in a peripheral marks a
-/// bus fault the stacked PC does not point at. Read-only; the handler still
-/// ends in its own loop.
+/// Send the logged lines still queued, then print the Cortex-M33 fault status
+/// and address registers before the vendor backtrace. Those lines come first
+/// because they are what led here; the flush spins with interrupts masked, as
+/// the handler's own prints do. CFSR's IMPRECISERR or a BFAR in a peripheral
+/// marks a bus fault the stacked PC does not point at. Read-only; the handler
+/// still ends in its own loop.
 fn fault_registers(pinned: &str) -> Result<String> {
+    let anchor = "\tu8 IsPstack = 0;\n";
+    let flushed = replace_once(
+        pinned,
+        anchor,
+        &format!("{anchor}\textern void wellfed_log_flush(void);\n\twellfed_log_flush();\n"),
+        SdkAnchor::FaultHandler,
+    )?;
     let anchor = "\tcm_backtrace_fault((uint32_t)(IsPstack ? pstack : mstack), lr_value);";
     replace_once(
-        pinned,
+        &flushed,
         anchor,
         &format!(
             "\tDBG_8195A(\"PLFLT1 cfsr=%x hfsr=%x mmfar=%x bfar=%x lr=%x psp=%d\\r\\n\",\n\
@@ -1130,6 +1145,9 @@ mod tests {
                 "{name}"
             );
         }
+        for name in PRINT_WRAPS {
+            assert!(km4.contains(&format!(" -Wl,--wrap={name}")), "{name}");
+        }
         assert!(
             !km4.contains("rtw_enter_critical") && !km4.contains("rtw_exit_critical"),
             "the register-access sections stay unwrapped"
@@ -1147,6 +1165,8 @@ mod tests {
         let line = text.find("PLFLT1 cfsr=").unwrap();
         assert!(line < text.find("cm_backtrace_fault").unwrap());
         assert!(text.contains("0xE000ED28") && text.contains("0xE000ED38"));
+        // The queued lines go first, ahead of the handler's own prints.
+        assert!(text.find("wellfed_log_flush();").unwrap() < line);
 
         // A changed handler is refused, not patched elsewhere.
         for changed in ["\twhile(1);\n".to_string(), pinned.repeat(2)] {

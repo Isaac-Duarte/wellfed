@@ -47,6 +47,38 @@
 
 void wellfed_app_start(void);
 
+/* Vendor prints stay outside the log ring: they spin on the UART themselves,
+ * from whichever task or interrupt calls them. The builder links the KM4
+ * image with --wrap for each print, so one from any other object, the
+ * prebuilt Wi-Fi driver's included, first lets a logged line partly on the
+ * wire finish (wellfed_log_settle, at worst one line's time), and only then
+ * prints. Otherwise it lands inside that line and neither one parses.
+ *
+ * Naked, because the print is variadic and reads its arguments from where
+ * the caller left them; a tail call leaves them there. The flag is read here
+ * in RAM, so that a print with XIP off, none expected, reaches for flash only
+ * if a line is out. A print from inside the ROM, or a call inside the object
+ * that defines the print, is not redirected. */
+#define WELLFED_PRINT_WRAP(name)                                  \
+    IMAGE2_RAM_TEXT_SECTION                                       \
+    __attribute__((naked)) void __wrap_##name(void)               \
+    {                                                             \
+        __asm volatile(                                           \
+            "movw ip, #:lower16:wellfed_log_mid_line\n\t"         \
+            "movt ip, #:upper16:wellfed_log_mid_line\n\t"         \
+            "ldrb ip, [ip]\n\t"                                    \
+            "cmp ip, #0\n\t"                                       \
+            "beq 1f\n\t"                                           \
+            "push {r0, r1, r2, r3, ip, lr}\n\t"                    \
+            "bl wellfed_log_settle\n\t"                            \
+            "pop {r0, r1, r2, r3, ip, lr}\n"                       \
+            "1:\n\t"                                               \
+            "b.w __real_" #name "\n\t");                           \
+    }
+
+WELLFED_PRINT_WRAP(DiagPrintf)
+WELLFED_PRINT_WRAP(_rtl_printf)
+
 /* The call trail: the last calls into a few vendor primitives, kept where
  * a watchdog reset leaves the RAM alone, so the boot after a silent hang
  * can say where it stalled. The tick hook's crumb names the task; the trail

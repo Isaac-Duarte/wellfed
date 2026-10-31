@@ -345,15 +345,24 @@ pub enum Irq {
 /// The log tail's size: about 70 record lines of the usual length.
 pub const LOG_TAIL_BYTES: usize = 4096;
 
-/// The newest lines [`log`] printed, for the device API to stream. A task
-/// copies its line in while the scheduler is still suspended for the
-/// print, so only an interrupt can find another writer mid-copy (it drops
-/// its line and counts it). On the target it exists only with the
-/// `log-tail` feature, so a firmware that serves no API spends no RAM on
-/// it.
+/// The newest lines [`log`] took, for the device API to stream. A line goes
+/// in with interrupts masked, so no writer finds another mid-copy. On the
+/// target it exists only with the `log-tail` feature, so a firmware that
+/// serves no API spends no RAM on it.
 #[cfg(any(not(target_os = "none"), feature = "log-tail"))]
 pub static LOG_TAIL: wellfed_core::log_tail::LogTail<LOG_TAIL_BYTES> =
     wellfed_core::log_tail::LogTail::new();
+
+/// The UART queue's size: 0.5 s of sending at the drain's full rate, and 6
+/// times the 95th percentile of the backlog recent captures imply at a
+/// quarter of that rate (the resource budget has the figures).
+#[cfg(all(target_os = "none", feature = "km4"))]
+const LOG_RING_BYTES: usize = 4096;
+
+/// The lines [`log`] queued that the UART has yet to send.
+#[cfg(all(target_os = "none", feature = "km4"))]
+static LOG_RING: wellfed_core::log_ring::LogRing<LOG_RING_BYTES> =
+    wellfed_core::log_ring::LogRing::new();
 
 #[cfg(all(target_os = "none", feature = "km4"))]
 mod target;
@@ -378,6 +387,7 @@ mod guard {
 
     impl IrqGuard {
         #[must_use]
+        #[inline(always)]
         pub fn lock() -> Self {
             let saved = super::primask();
             super::disable_irq();
@@ -386,6 +396,7 @@ mod guard {
     }
 
     impl Drop for IrqGuard {
+        #[inline(always)]
         fn drop(&mut self) {
             super::set_primask(self.0);
         }
