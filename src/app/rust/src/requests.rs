@@ -371,24 +371,37 @@ pub(crate) fn settings_view(settings: &Settings) -> SettingsView {
     }
 }
 
-/// The feeder's time as read, and this phone's clock when it was. The view's
+/// The feeder's time as read, and this phone's clocks when it was. The view's
 /// numbers are all as of that moment, while the card is built again long after
 /// it, so each stands against the read and never against the build.
 pub(crate) struct TimeRead {
     pub(crate) view: TimeView,
+    /// Places "last set" in the phone's own time.
     read_at: Timestamp,
+    /// Measures what has passed since, so a step of the phone's clock does not
+    /// move the feeder's. The session reads the time again about once a minute,
+    /// which bounds what this drifts by.
+    read_mono: Instant,
 }
 
 impl TimeRead {
-    pub(crate) const fn new(view: TimeView, read_at: Timestamp) -> Self {
-        Self { view, read_at }
+    pub(crate) const fn new(view: TimeView, read_at: Timestamp, read_mono: Instant) -> Self {
+        Self {
+            view,
+            read_at,
+            read_mono,
+        }
+    }
+
+    /// A view that just came in.
+    pub(crate) fn just_read(view: TimeView) -> Self {
+        Self::new(view, Timestamp::now(), Instant::now())
     }
 
     /// The read as of `now`. The clock runs on, and its error grows at the
     /// view's rate bound, the feeder's own reckoning between fixes. When it
-    /// was last set does not move. Time is the phone's wall clock, which goes
-    /// on through a phone's sleep; if it steps back, no time has passed.
-    pub(crate) fn info(&self, now: Timestamp) -> TimeInfo {
+    /// was last set does not move.
+    pub(crate) fn info(&self, now: Instant) -> TimeInfo {
         let view = &self.view;
         let ntp = match view.ntp {
             NtpServer::Off => NtpView::Off,
@@ -399,7 +412,8 @@ impl TimeRead {
             },
         };
         let read_ms = self.read_at.as_millisecond();
-        let elapsed_ms = now.as_millisecond().saturating_sub(read_ms).max(0);
+        let elapsed = now.saturating_duration_since(self.read_mono);
+        let elapsed_ms = i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX);
 
         TimeInfo {
             generation: view.generation.0,
@@ -530,12 +544,9 @@ fn reply_of(answer: Answer) -> FeederReply {
         Answer::Settings(settings) => FeederReply::Settings {
             settings: settings_view(&settings),
         },
-        Answer::Time(time) => {
-            let now = Timestamp::now();
-            FeederReply::Time {
-                time: TimeRead::new(time, now).info(now),
-            }
-        }
+        Answer::Time(time) => FeederReply::Time {
+            time: TimeRead::just_read(time).info(Instant::now()),
+        },
         Answer::Plans(plans) => FeederReply::Plans {
             plans: plans_view(&plans),
         },
@@ -572,9 +583,11 @@ fn reply_of(answer: Answer) -> FeederReply {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
-    fn read_at(read_at: Timestamp) -> TimeRead {
+    fn read_at(read_at: Timestamp, read_mono: Instant) -> TimeRead {
         TimeRead::new(
             TimeView {
                 generation: Generation(1),
@@ -594,6 +607,7 @@ mod tests {
                 ntp_last: None,
             },
             read_at,
+            read_mono,
         )
     }
 
@@ -603,8 +617,8 @@ mod tests {
 
     #[test]
     fn the_set_time_stays_while_the_clock_and_its_error_run_on() {
-        let read = at_ms(2_000_000_000);
-        let time = read_at(read);
+        let read = Instant::now();
+        let time = read_at(at_ms(2_000_000_000), read);
 
         let first = time.info(read);
         assert_eq!(first.clock_ms, Some(1_000_000));
@@ -612,7 +626,7 @@ mod tests {
         assert_eq!(first.last_at_ms, Some(2_000_000_000 - 600_000));
 
         // The card built again eight minutes on, as the phone saw it creep.
-        let later = time.info(at_ms(2_000_000_000 + 480_000));
+        let later = time.info(read + Duration::from_secs(480));
         assert_eq!(later.last_at_ms, first.last_at_ms);
         assert_eq!(later.clock_ms, Some(1_000_000 + 480_000));
         assert_eq!(later.error_ms, Some(50 + 48));
@@ -666,11 +680,11 @@ mod tests {
     }
 
     #[test]
-    fn a_phone_clock_stepping_back_passes_no_time() {
-        let read = at_ms(2_000_000_000);
-        let time = read_at(read);
+    fn a_moment_before_the_read_passes_no_time() {
+        let read = Instant::now() + Duration::from_secs(60);
+        let time = read_at(at_ms(2_000_000_000), read);
 
-        let info = time.info(at_ms(1_000_000_000));
+        let info = time.info(read - Duration::from_secs(30));
         assert_eq!(info.clock_ms, Some(1_000_000));
         assert_eq!(info.error_ms, Some(50));
         assert_eq!(info.last_at_ms, Some(2_000_000_000 - 600_000));

@@ -3,6 +3,8 @@
 //! reckoning is `wellfed_client`'s, on the feeder's own clock and zone, so
 //! Dart holds no schedule logic and the card says what the feeder will do.
 
+use std::time::Instant;
+
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use wellfed_client::history::Feed;
@@ -34,7 +36,7 @@ impl Facts {
     /// The card, once the status is in.
     pub(crate) fn card(&self) -> Option<Card> {
         let status = self.status.as_ref()?;
-        let time: Option<TimeInfo> = self.time.as_ref().map(|read| read.info(Timestamp::now()));
+        let time: Option<TimeInfo> = self.time.as_ref().map(|read| read.info(Instant::now()));
         let adapter = status
             .supply
             .and_then(|supply| supply.adapter)
