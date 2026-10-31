@@ -775,7 +775,7 @@ fn explain(error: wellfed_install::Error) -> anyhow::Error {
         Error::Handover(ref source) if source.is::<FrameRefused>() => anyhow::Error::from(error)
             .context(
                 "The setup frame was refused before it went: your Wi-Fi password was not sent. \
-                 The feeder stays in setup mode, so run this again from the feeder's network, \
+                 The feeder stays in setup mode, so run this again from your own network, \
                  with no second Reset hold",
             ),
         Error::Setup(_) => anyhow::Error::from(error).context(
