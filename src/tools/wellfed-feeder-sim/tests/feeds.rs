@@ -661,38 +661,43 @@ fn a_client_gone_while_its_claim_waited_hears_its_feed_on_a_retry() {
     });
 }
 
-/// A cancel naming a feed that still waits for its claim stops it from ever
-/// running: the cancel is done, the feed's request refused, nothing reserved.
+/// A cancel naming a feed still waiting for its claim finds nothing running:
+/// `NotFound`, and the feed goes on to run as if nobody had asked, once.
 #[test]
-fn a_cancel_stops_a_feed_still_waiting_for_its_claim() {
+fn a_cancel_of_a_feed_waiting_for_its_claim_is_not_found_and_the_feed_runs() {
     local(async {
         let flash = Flash::memory();
         let sim = start(&flash).await;
         let mut owner = open(&sim).await;
         let mut other = open(&sim).await;
+        owner.subscribe(None, false).await.unwrap();
         sim.control(Control::HoldWrite(true));
 
-        let feed = owner.ask([1; 16], &Op::Feed { portions: 1 });
+        let feed = owner.ask([1; 16], &Op::Feed { portions: 2 });
         let cancel = async {
             sleep(Duration::from_millis(100)).await;
-            let wrong = other
-                .ask([2; 16], &Op::CancelFeed { feed: 9 })
+            let refused = other
+                .ask([2; 16], &Op::CancelFeed { feed: 1 })
                 .await
                 .unwrap();
-            assert_eq!(wrong, Answer::Refused(Refusal::NotFound));
-            let done = other
-                .ask([3; 16], &Op::CancelFeed { feed: 1 })
-                .await
-                .unwrap();
-            assert_eq!(done, Answer::Done { generation: None });
+            assert_eq!(refused, Answer::Refused(Refusal::NotFound));
             sim.control(Control::HoldWrite(false));
         };
         let (answer, ()) = tokio::join!(feed, cancel);
+        assert_eq!(answer.unwrap(), Answer::Feeding { feed: 1 });
 
-        assert_eq!(answer.unwrap(), Answer::Refused(Refusal::Busy));
-        sleep(Duration::from_millis(100)).await;
-        assert_eq!(feeding::reserved(&flash), Some(0), "it never ran");
-        assert_eq!(readiness(&mut other, 4).await, Some(Readiness::Ready));
+        let EventBody::Fed {
+            feed,
+            completed,
+            outcome,
+            ..
+        } = next_fed(&mut owner).await
+        else {
+            panic!("a feed");
+        };
+        assert_eq!((feed, completed, outcome), (1, 2, FeedOutcome::Done));
+        assert_eq!(feeding::reserved(&flash), Some(1), "one feed");
+        assert_eq!(readiness(&mut other, 3).await, Some(Readiness::Ready));
         sim.stop().await;
     });
 }

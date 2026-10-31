@@ -242,6 +242,11 @@ impl Sim {
         self.feeds.fill(food);
     }
 
+    /// A client's cancel of the feed numbered `feed`: whether it found it.
+    pub fn cancel_feed(&self, feed: u32) -> bool {
+        wellfed_feeder::feeder::Feeds::cancel(&self.feeds, feed)
+    }
+
     /// Hold a storage write in the way of a feed's claim, or end it.
     pub fn hold_write(&mut self, held: bool) {
         self.feeds.hold_write(held);

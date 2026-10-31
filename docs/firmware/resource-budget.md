@@ -64,11 +64,11 @@ A firmware gets four tasks (`FIRMWARE_TASKS`). The product uses two:
 | Task | Stack | Audited bound |
 | --- | --- | --- |
 | `wellfed-key`, the button service | 2 KiB | 1,248 B |
-| `wellfed-loop`, the loop | 8 KiB (2,048 words) | 5,852 B in the latest build (battery mode); 5,412 B with traces and the stock backup; 4,784 B when the feeding owner and the join interlock arrived |
+| `wellfed-loop`, the loop | 8 KiB (2,048 words) | 5,816 B in the latest `firstboot` feeder build; 5,852 B with battery mode; 5,412 B with traces and the stock backup; 4,784 B when the feeding owner and the join interlock arrived |
 
 - Both bounds include the formatting the task can reach. The audit charges it, since it bounds indirect calls by class.
-- In the loop, a handshake operation's X25519 is the deepest path. The device API took the bound past a 6 KiB stack's 25 % margin; the feeding owner's step stays below it.
-- **The loop's headroom is narrowing.** The audit refuses a bound above 75 % of the stack: 6,144 B of 8 KiB. At 5,852 B the loop has 292 B left, down from 732 B at 5,412 B. The next feature that deepens the loop's deepest path may need a bigger stack or a shallower path. The build fails the audit rather than overflowing, so this cannot slip through unnoticed.
+- In the loop, the deepest path is a handshake operation's record line: `Feeder::pass > Serve::step > Server::step > handshake_turn > handshake_op > handshake_written`, then the log and 1,812 B of formatting. The device API took the bound past a 6 KiB stack's 25 % margin; the feeding owner's step stays below it.
+- **The loop's headroom is narrowing.** The audit refuses a bound above 75 % of the stack: 6,144 B of 8 KiB. At 5,816 B the loop has 328 B left, down from 732 B at 5,412 B. The next feature that deepens the loop's deepest path may need a bigger stack or a shallower path. The build fails the audit rather than overflowing, so this cannot slip through unnoticed.
 - Test variants add a third task: `gap-probe` adds `wellfed-gap` (256 words at priority 4) for the [scheduling-gap measurement](#scheduling-gaps-across-wi-fi-rejoins), and `held-stall` adds `wellfed-hld` (256 words at priority 3) for the reset-storm drill.
 
 **Outside the audit.** The stack audit takes its roots from the firmware's `spawn` calls, so C-created tasks are outside it:

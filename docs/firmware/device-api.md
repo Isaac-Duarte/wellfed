@@ -126,7 +126,8 @@ A client that may want to cancel keeps its session open across the feed, as `wel
 The loop tries the claim once a pass and never sleeps for it, so it keeps serving meanwhile:
 - The request stays unanswered. `Feeding` still means the feed is reserved, and a refusal comes as that request's answer. A retry of the id, on any session, waits for the same feed or hears the same refusal.
 - Others read it as a feed in flight: readiness says `feeding`, and another feed, a restart or an update offer is refused `Busy`. A change that would queue a write behind it is refused `Busy`, as during a feed.
-- A cancel naming its number ends it, refused, with nothing moved. Setup mode, an install or the battery hold that starts meanwhile does the same.
+- Setup mode, an install or the battery hold that starts meanwhile ends it, refused, with nothing moved.
+- A cancel naming its number is refused `NotFound` and changes nothing: the feed isn't running, and its number hasn't been announced.
 - A plan's occurrence due meanwhile waits its turn. A press or a plan refused this way ends as an immediate refusal does: `PLFEED1 dispense refused=…` and its event, or the occurrence given back. So a press can log `dispense feed=N` and then be refused.
 
 **A feed a reset interrupted** (power cut, watchdog, fault) is resolved when the owner next opens.

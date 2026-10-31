@@ -75,7 +75,6 @@ struct Claiming {
     portions: u16,
     by: Source,
     wait: ClaimWait,
-    cancelled: Cell<bool>,
 }
 
 /// The simulator's journal: its own binding (nonzero, never a real
@@ -433,7 +432,6 @@ impl Feeds for SimFeeds {
             portions,
             by,
             wait: ClaimWait::new(self.now_ms),
-            cancelled: Cell::new(false),
         };
         match self.try_claim(&mut claiming) {
             ClaimStep::Claimed => self.hand_over(&claiming),
@@ -450,9 +448,7 @@ impl Feeds for SimFeeds {
     fn claim_step(&mut self, hold: Option<Blocked>) -> Option<RefusedClaim> {
         let mut claiming = self.claiming.take()?;
 
-        let refusal = if claiming.cancelled.get() {
-            Refusal::Busy
-        } else if let Some(blocked) = hold {
+        let refusal = if let Some(blocked) = hold {
             blocked.refusal()
         } else {
             match self.try_claim(&mut claiming) {
@@ -504,12 +500,7 @@ impl Feeds for SimFeeds {
     }
 
     fn cancel(&self, feed: u32) -> bool {
-        if let Some(claiming) = &self.claiming
-            && claiming.feed == feed
-        {
-            claiming.cancelled.set(true);
-            return true;
-        }
+        // As the firmware's: a feed still waiting for its claim is not running.
         let Some(current) = &self.current else {
             return false;
         };

@@ -82,8 +82,6 @@
 //! `submit` ends a reading before it claims, a writer waiting ends it within a
 //! step, and a trial holds readings until it has confirmed ([`food_read_held`]).
 
-use core::cell::Cell;
-
 use wellfed_core::feed::controller::FeedLimits;
 use wellfed_core::feed::progress::BowlMode;
 use wellfed_core::feed::sensor_inputs::SensorLimits;
@@ -226,8 +224,6 @@ pub struct Claiming {
     pub portions: u8,
     pub by: Source,
     wait: ClaimWait,
-    /// A cancel asked for it before the claim was taken.
-    cancelled: Cell<bool>,
 }
 
 /// What one pass's try of a [`Claiming`] came to.
@@ -248,17 +244,7 @@ impl Claiming {
             portions,
             by,
             wait: ClaimWait::new(now_ms),
-            cancelled: Cell::new(false),
         }
-    }
-
-    /// Whether the feed is `feed`; if so, it will not be claimed.
-    pub fn cancel(&self, feed: u32) -> bool {
-        let ours = self.feed == feed;
-        if ours {
-            self.cancelled.set(true);
-        }
-        ours
     }
 
     /// One try at `now_ms`. `hold` is a reason not to feed that arose since
@@ -278,9 +264,6 @@ impl Claiming {
         now_ms: u32,
         held: impl FnOnce(Held),
     ) -> ClaimTurn {
-        if self.cancelled.get() {
-            return ClaimTurn::Refused(Refusal::Busy);
-        }
         if let Some(blocked) = hold {
             return ClaimTurn::Refused(blocked.refusal());
         }
@@ -1207,7 +1190,7 @@ mod target {
             {
                 return Err(Refusal::Busy);
             }
-            let number = u32::try_from(owner.status().high_water_id.wrapping_add(1))
+            let number = u32::try_from(owner.high_water_id().wrapping_add(1))
                 .map_err(|_| Refusal::NotWritable)?;
 
             let now = wellfed_sdk::hal::sdk::uptime_ms();
@@ -1284,10 +1267,9 @@ mod target {
             claiming: &Claiming,
             record: &mut impl FnMut(Record),
         ) -> Result<u32, Refusal> {
-            let status = owner.status();
             let (number, portions, by) = (claiming.feed, claiming.portions, claiming.by);
             let feed = u64::from(number);
-            if status.high_water_id.wrapping_add(1) != feed {
+            if owner.high_water_id().wrapping_add(1) != feed {
                 return Err(Refusal::Busy);
             }
 
@@ -1314,9 +1296,7 @@ mod target {
                     Ok(number)
                 }
                 SubmitResult::RejectRequest => Err(Refusal::Portions { asked: portions }),
-                SubmitResult::RejectStopped if status.state == OwnerState::Fault => {
-                    Err(Refusal::Fault)
-                }
+                SubmitResult::RejectStopped if owner.faulted() => Err(Refusal::Fault),
                 // Still opening, busy, or a phase only a double bowl needs.
                 SubmitResult::RejectStopped
                 | SubmitResult::RejectBusy
@@ -1357,11 +1337,11 @@ mod target {
             }
         }
 
-        /// Stop the feed `feed` if it is still running.
+        /// Stop the feed `feed` if it is still running. One still waiting to
+        /// claim the outputs is not running: its number has been announced to
+        /// nobody, a cancel could not promise the `Fed` event a cancel means,
+        /// and a refused claim's number goes to the next feed.
         pub fn cancel(&self, feed: u32) -> bool {
-            if self.claiming.as_ref().is_some_and(|c| c.cancel(feed)) {
-                return true;
-            }
             let feed = u64::from(feed);
             self.current.is_some_and(|current| current.feed == feed)
                 && OWNER.enter().is_some_and(|owner| owner.cancel(feed))

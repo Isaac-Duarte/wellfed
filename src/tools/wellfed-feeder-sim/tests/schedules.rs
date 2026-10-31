@@ -640,6 +640,26 @@ fn a_cut_while_a_meal_waits_for_its_claim_is_missed_and_never_fed() {
     assert!(feeder.fed().is_empty());
 }
 
+/// A client's cancel can't touch a meal still waiting for its claim: it finds
+/// nothing running, and the meal runs once under the plan, claimed once.
+#[test]
+fn a_cancel_leaves_a_meal_waiting_for_its_claim_to_run_once() {
+    let mut feeder = breakfast();
+    feeder.sim.hold_write(true);
+    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 500);
+    assert_eq!(feeder.claims, 1);
+    assert!(!feeder.sim.cancel_feed(1), "nothing is running yet");
+
+    feeder.sim.hold_write(false);
+    feeder.run(10_000);
+    assert_eq!(
+        feeder.fed(),
+        [(1, 2, FeedOutcome::Done, Source::Schedule(0))]
+    );
+    assert_eq!(feeder.claims, 1);
+    assert!(feeder.missed().is_empty());
+}
+
 /// A second meal that comes due while the first's feed waits for its claim
 /// waits its turn too, and each runs once.
 #[test]

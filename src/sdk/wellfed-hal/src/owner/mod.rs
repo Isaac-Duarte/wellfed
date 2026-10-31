@@ -505,6 +505,23 @@ impl<S> Owner<S> {
         }
     }
 
+    /// The newest feed the journal holds, as [`Self::status`] reports it. For
+    /// a caller on the loop's deepest path, which cannot spare the frame of a
+    /// whole status.
+    pub fn high_water_id(&self) -> u64 {
+        let _guard = IrqGuard::lock();
+        // SAFETY: as for `submit`.
+        unsafe { (*self.shared.get()).published.high_water_id }
+    }
+
+    /// Whether the owner is at a fault, as [`Self::status`] reports its state:
+    /// a request waiting in the mailbox only ever changes an idle state.
+    pub fn faulted(&self) -> bool {
+        let _guard = IrqGuard::lock();
+        // SAFETY: as for `submit`.
+        unsafe { (*self.shared.get()).published.state == OwnerState::Fault }
+    }
+
     pub fn status(&self) -> OwnerStatus {
         let _guard = IrqGuard::lock();
         // SAFETY: as for `submit`.

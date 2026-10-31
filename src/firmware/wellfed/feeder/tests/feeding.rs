@@ -201,38 +201,13 @@ fn a_feed_waits_for_a_running_store_write_and_is_refused_past_the_wait() {
 /// Every way a waiting claim can end: claimed once, refused once, and neither
 /// leaves anything held but the claim it took.
 #[test]
-fn a_waiting_claim_ends_once_and_a_cancel_or_a_new_reason_stops_it() {
+fn a_waiting_claim_ends_once_and_a_new_reason_stops_it() {
     use wellfed_fw_feeder::feeding::{ClaimTurn, Claiming};
     use wellfed_proto::api::{Blocked, Refusal, Source};
-    use wellfed_sdk::hal::interlock::{Interlock, Turn, WRITE_WAIT_MS, WriteStep, WriteTurn};
+    use wellfed_sdk::hal::interlock::{Interlock, Turn, WRITE_WAIT_MS};
 
     let never = |_| unreachable!();
     let interlock = Interlock::new();
-    let mut turn = WriteTurn::new();
-    assert!(matches!(
-        turn.begin(&interlock, 0, || true),
-        WriteStep::Go(_)
-    ));
-
-    // A cancel of another number leaves it; its own ends it, with no claim
-    // left behind even once the write is done.
-    let mut claiming = Claiming::new(7, 1, Source::Panel, 0);
-    assert_eq!(
-        claiming.step(&interlock, None, false, 0, never),
-        ClaimTurn::Waiting
-    );
-    assert!(!claiming.cancel(6));
-    assert_eq!(
-        claiming.step(&interlock, None, false, 10, never),
-        ClaimTurn::Waiting
-    );
-    assert!(claiming.cancel(7));
-    interlock.end_write();
-    assert_eq!(
-        claiming.step(&interlock, None, false, 20, never),
-        ClaimTurn::Refused(Refusal::Busy)
-    );
-    assert_eq!(interlock.turn(), Turn::Free);
 
     // A reason that arose while it waited stops it, deadline or not.
     let mut claiming = Claiming::new(7, 1, Source::Panel, 0);
