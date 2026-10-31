@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
@@ -32,6 +34,10 @@ PlansView _plans(List<PlanView?> filled, {int generation = 3}) => PlansView(
   generation: generation,
   writable: true,
   plans: [...filled, ...List.filled(10 - filled.length, null)],
+);
+
+const _noRecording = FeederReply.call(
+  call: CallInfo(writable: true, clip: CallClip.none()),
 );
 
 void main() {
@@ -354,19 +360,124 @@ void main() {
         pick: () async => Uint8List.fromList([1, 2, 3]),
       );
       expect(find.text('No recording stored'), findsOneWidget);
-      session.replies.add(
-        const FeederReply.call(
-          call: CallInfo(
-            writable: true,
-            clip: CallClip.stored(bytes: 9, crc: 1),
-            ms: 3500,
+      session.replies
+        ..add(_noRecording)
+        ..add(
+          const FeederReply.call(
+            call: CallInfo(
+              writable: true,
+              clip: CallClip.stored(bytes: 9, crc: 1),
+              ms: 3500,
+            ),
           ),
-        ),
-      );
+        );
 
       await tapIn(tester, find.text('Choose a recording'));
       expect(session.requests.last, isA<FeederRequest_UploadCall>());
       expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+    });
+
+    /// The screen, a recording ready to pick, its session just ended.
+    Future<(FakeFeederPorts, FakeSession)> dropped(WidgetTester tester) async {
+      final book = FakeBook()..feeders = [kitchen];
+      final ports = FakeFeederPorts();
+      final feeder = FeederController(book, ports, kitchen);
+      addTearDown(feeder.dispose);
+      await tester.pump();
+      ports.session.opened();
+      await tester.pump();
+      final first = ports.session;
+      first.replies.add(_noRecording);
+      await showTab(
+        tester,
+        MealCallScreen(
+          feeder: feeder,
+          pick: () async => Uint8List.fromList([1]),
+        ),
+      );
+      first.requests.clear();
+
+      unawaited(first.updates.close());
+      await tester.pump();
+      return (ports, first);
+    }
+
+    const noReach = "Couldn't reach the feeder. Choose the recording again.";
+
+    testWidgets('a recording waits for the session, then goes once', (
+      tester,
+    ) async {
+      final (ports, first) = await dropped(tester);
+
+      await tester.tap(find.text('Choose a recording'));
+      await settle(tester);
+      expect(
+        find.text('Reaching the feeder… keep this screen open.'),
+        findsOneWidget,
+      );
+
+      // The controller's first retry comes after 3 s.
+      await tester.pump(const Duration(seconds: 3));
+      final second = ports.session;
+      expect(second, isNot(same(first)));
+      second.replies
+        ..add(_noRecording)
+        ..add(
+          const FeederReply.call(
+            call: CallInfo(
+              writable: true,
+              clip: CallClip.stored(bytes: 9, crc: 1),
+              ms: 3500,
+            ),
+          ),
+        );
+      second.opened();
+      await settle(tester);
+
+      expect(first.requests, isEmpty);
+      expect(second.requests.first, const FeederRequest.getCall());
+      expect(
+        second.requests.whereType<FeederRequest_UploadCall>(),
+        hasLength(1),
+      );
+      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      expect(find.textContaining('Reaching'), findsNothing);
+    });
+
+    testWidgets('a dead session loses the read, never the upload', (
+      tester,
+    ) async {
+      final session = await show(
+        tester,
+        const CallClip.none(),
+        pick: () async => Uint8List.fromList([1]),
+      );
+      session.replies.addAll(List.filled(100, const FeederReply.unanswered()));
+      session.requests.clear();
+
+      await tester.tap(find.text('Choose a recording'));
+      await tester.pump(MealCallScreen.reachWait);
+      await settle(tester);
+
+      expect(session.requests.whereType<FeederRequest_UploadCall>(), isEmpty);
+      expect(find.text(noReach), findsOneWidget);
+    });
+
+    testWidgets('no session in time leaves a lasting message, and sends '
+        'nothing', (tester) async {
+      final (ports, first) = await dropped(tester);
+
+      await tester.tap(find.text('Choose a recording'));
+      for (var second = 0; second < 60; second++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+
+      expect(first.requests, isEmpty);
+      expect(ports.session.requests, isEmpty);
+      expect(find.text(noReach), findsOneWidget);
+      await tester.pump(const Duration(minutes: 1));
+      expect(find.text(noReach), findsOneWidget);
+      expect(find.text('Choose a recording'), findsOneWidget);
     });
 
     testWidgets('a recording refused or unanswered says so, then reads', (
@@ -377,14 +488,16 @@ void main() {
         const CallClip.none(),
         pick: () async => Uint8List.fromList([1]),
       );
-      session.replies.add(
-        const FeederReply.refused(refusal: FeederRefusal.forbidden()),
-      );
+      session.replies
+        ..add(_noRecording)
+        ..add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
       await tapIn(tester, find.text('Choose a recording'));
       expect(find.textContaining("isn't allowed"), findsOneWidget);
 
       session.requests.clear();
-      session.replies.add(const FeederReply.unanswered());
+      session.replies
+        ..add(_noRecording)
+        ..add(const FeederReply.unanswered());
       await tapIn(tester, find.text('Choose a recording'));
       expect(find.textContaining('may or may not have'), findsOneWidget);
       expect(

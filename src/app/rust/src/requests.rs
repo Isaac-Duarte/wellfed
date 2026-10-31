@@ -200,11 +200,17 @@ async fn upload_call(commands: &mpsc::UnboundedSender<Command>, wav: &[u8]) -> F
         return not_asked(NotAsked::BadRecording);
     };
     let mut upload = Upload::new(&clip);
+    let mut started = false;
     loop {
         match upload.poll(Instant::now()) {
             Step::Ask(op) => match ask(commands, op).await {
-                Ok(answer) => upload.answer(&answer, Instant::now()),
-                // Starting over is the owner's call.
+                Ok(answer) => {
+                    started = true;
+                    upload.answer(&answer, Instant::now());
+                }
+                // Part of it went out, and the feeder's old clip with it, so
+                // "not sent" would be untrue. Starting over is the owner's call.
+                Err(Lost::NotSent) if started => return FeederReply::Unanswered,
                 Err(lost) => return lost.into(),
             },
             Step::Wait(wait) => tokio::time::sleep(wait).await,
@@ -610,6 +616,53 @@ mod tests {
         assert_eq!(later.last_at_ms, first.last_at_ms);
         assert_eq!(later.clock_ms, Some(1_000_000 + 480_000));
         assert_eq!(later.error_ms, Some(50 + 48));
+    }
+
+    /// A second of 16-bit mono WAV at 8 kHz, loud enough to keep.
+    fn recording() -> Vec<u8> {
+        let samples: Vec<u8> = (0..8_000i16)
+            .flat_map(|n| (if n % 16 < 8 { 8_000i16 } else { -8_000 }).to_le_bytes())
+            .collect();
+        let mut file = b"RIFF\0\0\0\0WAVEfmt ".to_vec();
+        file.extend(16u32.to_le_bytes());
+        file.extend(1u16.to_le_bytes());
+        file.extend(1u16.to_le_bytes());
+        file.extend(8_000u32.to_le_bytes());
+        file.extend(16_000u32.to_le_bytes());
+        file.extend(2u16.to_le_bytes());
+        file.extend(16u16.to_le_bytes());
+        file.extend(b"data");
+        file.extend(u32::try_from(samples.len()).unwrap().to_le_bytes());
+        file.extend(samples);
+        file
+    }
+
+    #[tokio::test]
+    async fn an_upload_is_not_sent_only_when_none_of_it_went_out() {
+        let wav = recording();
+
+        // The session ended first: the Dart side may wait and send it.
+        let (commands, receiver) = mpsc::unbounded_channel();
+        drop(receiver);
+        assert!(matches!(
+            upload_call(&commands, &wav).await,
+            FeederReply::NotSent
+        ));
+
+        // The start went out and was answered, and then the session ended.
+        let (commands, mut receiver) = mpsc::unbounded_channel();
+        let feeder = async move {
+            let Some(Command::Ask { reply, .. }) = receiver.recv().await else {
+                panic!("the upload's start comes first");
+            };
+            reply
+                .send(Some(Answer::Done { generation: None }))
+                .expect("the upload is waiting");
+            // The next op, dropped unsent with the session.
+            drop(receiver.recv().await);
+        };
+        let (reply, ()) = tokio::join!(upload_call(&commands, &wav), feeder);
+        assert!(matches!(reply, FeederReply::Unanswered));
     }
 
     #[test]

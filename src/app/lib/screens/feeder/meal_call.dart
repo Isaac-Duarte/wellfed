@@ -27,6 +27,11 @@ Future<Uint8List?> _pickWav() async {
 class MealCallScreen extends StatefulWidget {
   const MealCallScreen({super.key, required this.feeder, this.pick = _pickWav});
 
+  /// How long a picked recording waits for the session to come back. It covers
+  /// the session's longest retry and a connect: the picker can sit open long
+  /// enough for the session to end behind it.
+  static const reachWait = Duration(seconds: 45);
+
   final FeederController feeder;
   final PickRecording pick;
 
@@ -38,6 +43,13 @@ class _MealCallScreenState extends State<MealCallScreen> {
   CallInfo? _call;
   bool _reading = true;
   bool _busy = false;
+
+  /// A session is being waited for, not a write.
+  bool _reaching = false;
+
+  /// Why the last recording came to nothing, until the next is chosen. A
+  /// snackbar alone can pass while the screen is still coming back.
+  String? _problem;
 
   @override
   void initState() {
@@ -55,8 +67,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
     showProblem(context, reply);
   }
 
-  /// A write's answer, then the feeder's view again: an upload left unknown
-  /// shows here as what the feeder holds, and is not sent again.
+  /// A write's answer, then the feeder's view again.
   Future<void> _write(FeederRequest request) async {
     setState(() => _busy = true);
     final reply = await widget.feeder.ask(request);
@@ -70,21 +81,78 @@ class _MealCallScreenState extends State<MealCallScreen> {
     }
   }
 
+  /// An upload left unknown shows here as what the feeder holds, and is not
+  /// sent again.
   Future<void> _upload() async {
+    setState(() => _problem = null);
     final Uint8List? wav;
     try {
       wav = await widget.pick();
     } on Exception {
       if (mounted) {
-        showProblem(
-          context,
-          const FeederReply.notAsked(reason: NotAsked.badRecording),
-        );
+        setState(() => _problem = notAskedWords(NotAsked.badRecording));
       }
       return;
     }
     if (wav == null || !mounted) return;
-    await _write(FeederRequest.uploadCall(wav: wav));
+
+    setState(() {
+      _busy = true;
+      _reaching = true;
+    });
+    final reply = await _sendOnce(wav);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _reaching = false;
+    });
+
+    if (reply == null) {
+      setState(
+        () =>
+            _problem = "Couldn't reach the feeder. Choose the recording again.",
+      );
+    } else if (reply is FeederReply_Call) {
+      setState(() => _call = reply.call);
+    } else {
+      setState(() => _problem = replyProblem(reply));
+      unawaited(_read());
+    }
+  }
+
+  /// Send `wav` once the session answers; `null` if it does not in time. A
+  /// session that died behind the picker can still look open, so a read goes
+  /// first: it is free to get lost, and the upload then goes on a session seen
+  /// alive. This wait belongs to this screen only. A feed's path never waits,
+  /// and an upload that may have started is never sent again.
+  Future<FeederReply?> _sendOnce(Uint8List wav) async {
+    const step = Duration(milliseconds: 500);
+    final feeder = widget.feeder;
+    for (
+      var waited = Duration.zero;
+      waited < MealCallScreen.reachWait;
+      waited += step
+    ) {
+      if (feeder.connection == Connection.online) {
+        final read = await feeder.ask(const FeederRequest.getCall());
+        if (!mounted) return null;
+        if (read is! FeederReply_NotSent && read is! FeederReply_Unanswered) {
+          setState(() {
+            _reaching = false;
+            if (read is FeederReply_Call) _call = read.call;
+          });
+
+          final reply = await feeder.ask(FeederRequest.uploadCall(wav: wav));
+          // Only "not sent" means none of it went out, so only that waits.
+          if (reply is! FeederReply_NotSent) return reply;
+          if (!mounted) return null;
+          setState(() => _reaching = true);
+        }
+      }
+      await Future<void>.delayed(step);
+      if (!mounted) return null;
+    }
+    return null;
   }
 
   @override
@@ -142,10 +210,16 @@ class _MealCallScreenState extends State<MealCallScreen> {
           ),
           const SizedBox(height: Space.s4),
           if (_busy) ...[
-            const Notice(
+            Notice(
               tone: Tone.neutral,
-              text: 'Working… keep this screen open.',
+              text: _reaching
+                  ? 'Reaching the feeder… keep this screen open.'
+                  : 'Working… keep this screen open.',
             ),
+            const SizedBox(height: Space.s3),
+          ],
+          if (_problem case final problem?) ...[
+            Notice(tone: Tone.warning, text: problem),
             const SizedBox(height: Space.s3),
           ],
           FilledButton(
