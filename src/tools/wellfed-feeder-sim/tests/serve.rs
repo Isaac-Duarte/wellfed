@@ -1628,7 +1628,15 @@ fn a_client_that_stops_reading_rests_the_loop_and_loses_its_slot() {
         assert_eq!(delays.last().unwrap_or(&owner::POLL_MS), &owner::POLL_MS);
 
         sim.control(Control::BlockSends(false));
-        assert!(stuck.next(WAIT).await.is_err(), "its socket is closed");
+        let closed = stuck.next(WAIT).await;
+        assert!(matches!(closed, Err(ConnectError::Closed)), "{closed:?}");
+
+        // Every other slot taken, so the last connection can only have the
+        // one the stuck client gave up.
+        let mut others = Vec::new();
+        for _ in 1..wellfed_device_api::SESSIONS {
+            others.push(sim.open(OWNER).await.unwrap());
+        }
         let mut next = sim.open(OWNER).await.unwrap();
         assert!(matches!(status(&mut sim, &mut next).await, Status { .. }));
         sim.stop().await;

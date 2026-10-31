@@ -539,8 +539,10 @@ impl Board {
             return Err(CaptureFault::Board);
         };
 
+        // Asked only of a capture that converts: a poll with no conversion
+        // has nothing for the fault to show.
         #[cfg(feature = "feed-faults")]
-        let converts = !crate::feed_faults::adc_fails();
+        let converts = channels == Channels::Neither || !crate::feed_faults::adc_fails();
         #[cfg(not(feature = "feed-faults"))]
         let converts = true;
         if channels == Channels::Both {
@@ -549,7 +551,8 @@ impl Board {
         }
         let current_failed = channels == Channels::Both && !reading.current_adc_valid;
         if channels != Channels::Neither && !current_failed {
-            reading.battery_adc_valid = adc::convert(ADC_BATTERY, limit, &mut reading.battery);
+            reading.battery_adc_valid =
+                converts && adc::convert(ADC_BATTERY, limit, &mut reading.battery);
         }
         if current_failed || (channels != Channels::Neither && !reading.battery_adc_valid) {
             let _ = self.with(BoardState::trip_now);

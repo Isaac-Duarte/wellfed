@@ -401,12 +401,12 @@ impl SimPlatform {
         self.banks = Some(Rc::clone(banks));
     }
 
-    /// What the supply reads from now on.
     /// Every client's window shut (`true`), so no send takes a byte, or open.
     pub fn block_sends(&mut self, blocked: bool) {
         self.sends_blocked = blocked;
     }
 
+    /// What the supply reads from now on.
     pub fn set_supply(&mut self, supply: SimSupply) {
         self.supply = supply;
     }
