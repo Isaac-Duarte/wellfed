@@ -92,6 +92,7 @@ pub fn change(settings: TimeSettings) -> TimeSettingsResult {
     // SAFETY: `Filling` makes this the only accessor until `Queued`.
     unsafe { *PENDING.get() = settings };
     STATE.store(Hand::Queued as u8, Ordering::Release);
+    wellfed_hal::writer_wake::wake();
     TimeSettingsResult::Current {
         view: view(),
         pending: true,

@@ -130,6 +130,7 @@ fn start() -> (MutexGuard<'static, ()>, Writer<Armed>, Provider) {
     stats::reset();
     INTERLOCK.reset();
     supervision::reset();
+    wellfed_hal::writer_wake::reset();
     ARMED.with(|a| a.set(true));
     PROGRAM_FAILS.with(|f| f.set(false));
     ERASE_FAILS.with(|f| f.set(None));
@@ -1787,6 +1788,255 @@ fn a_meal_call_change_waits_for_a_call_without_holding_up_other_work() {
     let mut speaker = Speaker::quiet();
     speaker.step();
     assert_eq!(call::change(CallChange::Delete), CallResult::Busy);
+}
+
+/// One step, whole.
+fn whole_step(writer: &mut Writer<Armed>, provider: &mut Provider) -> writer::Step {
+    // SAFETY: the provider outlives the run.
+    unsafe { writer.step::<NoMmio, Armed>(provider) }
+}
+
+fn notifies() -> u32 {
+    fake::with(|h| h.task_notifies)
+}
+
+#[test]
+fn every_mailbox_wakes_the_writer_once_when_queued_and_not_when_refused() {
+    use wellfed_device_api::mailbox::{
+        Calibration, CallChange, NtpServer, PLANS, PlansChange, TimeSettings,
+    };
+    use wellfed_device_api::wifi::Credentials;
+    use wellfed_feeder_runtime::{calibration, call, plans, time};
+    use wellfed_hal::writer_wake;
+
+    let (_guard, mut writer, mut provider) = start();
+    calibration::reset();
+    call::reset();
+    plans::reset();
+    time::reset();
+    open_all(&mut writer, &mut provider);
+    step(&mut writer, &mut provider); // the stats store's early save
+    writer_wake::bind();
+
+    let queue: [(&str, &mut dyn FnMut() -> bool); 7] = [
+        ("settings", &mut || {
+            matches!(
+                settings::request(SettingsFields {
+                    volume: Some(10),
+                    ..SettingsFields::default()
+                }),
+                SettingsResult::Current { pending: true, .. }
+            )
+        }),
+        ("wifi", &mut || {
+            let set = Credentials::new(b"home", b"passphrase").unwrap();
+            network::saving() || {
+                network::change(Some(set));
+                network::saving()
+            }
+        }),
+        ("keys", &mut || {
+            let phone = Change::Enroll {
+                key: [7; 32],
+                label: Label::new(b"phone").unwrap(),
+                role: Role::Owner,
+            };
+            keys::request(phone) == Requested::Queued
+        }),
+        ("time", &mut || {
+            let change = TimeSettings {
+                zone: None,
+                ntp: NtpServer::Off,
+            };
+            time::change(change) != wellfed_device_api::mailbox::TimeSettingsResult::Busy
+        }),
+        ("calibration", &mut || {
+            let change = Calibration {
+                portion_mg: Some(9_800),
+            };
+            calibration::change(change) != wellfed_device_api::mailbox::CalibrationResult::Busy
+        }),
+        ("plans", &mut || {
+            let change = PlansChange::Replace {
+                table: [None; PLANS],
+                at_s: Some(1_000),
+            };
+            plans::change(change) != wellfed_device_api::mailbox::PlansResult::Busy
+        }),
+        ("call", &mut || {
+            let start = CallChange::Start { bytes: 600, crc: 1 };
+            call::change(start) != wellfed_device_api::mailbox::CallResult::Busy
+        }),
+    ];
+
+    for (name, queue) in queue {
+        let before = notifies();
+        assert!(queue(), "{name} queued");
+        assert_eq!(notifies(), before + 1, "{name} woke the writer");
+
+        // The slot taken: refused, or for a repeat of the same change no new
+        // work, and no wake either way when it is refused.
+        let full = notifies();
+        if !queue() {
+            assert_eq!(notifies(), full, "{name} refused without a wake");
+        }
+        assert!(step(&mut writer, &mut provider).is_some(), "{name} saved");
+    }
+}
+
+/// A notification only brings a step forward: with none at all, each mailbox
+/// is still taken by the next poll, as the tests above all do; and a writer
+/// that just wrote keeps its delay.
+#[test]
+fn only_a_writer_at_rest_is_stepped_early() {
+    use wellfed_hal::writer_wake;
+
+    let (_guard, mut writer, mut provider) = start();
+    open_all(&mut writer, &mut provider);
+    step(&mut writer, &mut provider); // the stats store's early save
+    writer_wake::bind();
+    let quieter = SettingsFields {
+        volume: Some(10),
+        ..SettingsFields::default()
+    };
+
+    // At rest: a wake takes.
+    let idle = whole_step(&mut writer, &mut provider);
+    assert!(idle.rested);
+    assert_eq!(idle.delay_ms, writer::POLL_MS);
+    writer_wake::settle(idle.rested);
+    assert!(!writer_wake::take(), "nothing queued");
+    settings::request(quieter);
+    assert!(writer_wake::take(), "steps the writer now");
+
+    // After the write: a second change waits out the writer's delay.
+    let saved = whole_step(&mut writer, &mut provider);
+    assert!(matches!(saved.record, Some(Record::Saved { .. })));
+    assert!(!saved.rested);
+    assert_eq!(saved.delay_ms, writer::POLL_MS);
+    writer_wake::settle(saved.rested);
+    settings::request(SettingsFields {
+        volume: Some(20),
+        ..SettingsFields::default()
+    });
+    assert!(!writer_wake::take(), "the delay stands");
+
+    // Its poll takes the change regardless: the wake was dropped, not the work.
+    assert!(matches!(
+        step(&mut writer, &mut provider),
+        Some(Record::Saved { .. })
+    ));
+}
+
+#[test]
+fn a_wake_during_a_feed_writes_nothing_until_the_owner_is_at_rest() {
+    use wellfed_hal::writer_wake;
+
+    let (_guard, mut writer, mut provider) = start();
+    open_all(&mut writer, &mut provider);
+    step(&mut writer, &mut provider); // the stats store's early save
+    writer_wake::bind();
+    let idle = whole_step(&mut writer, &mut provider);
+    writer_wake::settle(idle.rested);
+
+    INTERLOCK.claim_feed(u32::MAX).unwrap();
+    let before = fake::with(|h| h.storage.clone());
+    let writes = notifies();
+    assert!(matches!(
+        settings::request(SettingsFields {
+            volume: Some(10),
+            ..SettingsFields::default()
+        }),
+        SettingsResult::Current { pending: true, .. }
+    ));
+    assert_eq!(notifies(), writes + 1, "woken");
+    assert!(writer_wake::take(), "the writer was at rest");
+
+    // Stepped at once, and at every poll after: it waits for the turn, and no
+    // later wake hurries it, since it no longer counts as resting.
+    for _ in 0..5 {
+        let waiting = whole_step(&mut writer, &mut provider);
+        assert_eq!(waiting.record, None);
+        assert_eq!(waiting.delay_ms, writer::WRITE_WAIT_POLL_MS);
+        assert!(!waiting.rested);
+        writer_wake::settle(waiting.rested);
+    }
+    assert_eq!(
+        fake::with(|h| h.storage.clone()),
+        before,
+        "no write while the outputs are claimed"
+    );
+    assert!(settings::current().is_some_and(|view| view.writable));
+
+    INTERLOCK.release_feed();
+    assert!(matches!(
+        step(&mut writer, &mut provider),
+        Some(Record::Saved { .. })
+    ));
+}
+
+#[test]
+fn an_upload_polls_at_the_read_pace_while_it_runs_and_not_for_ever() {
+    use wellfed_core::store::slot::crc32;
+    use wellfed_device_api::mailbox::CallChange;
+    use wellfed_feeder_runtime::call;
+
+    let (_guard, mut writer, mut provider) = start();
+    call::reset();
+    wellfed_hal::audio::reset();
+    open_all(&mut writer, &mut provider);
+    step(&mut writer, &mut provider); // the stats store's early save
+    assert_eq!(
+        whole_step(&mut writer, &mut provider).delay_ms,
+        writer::POLL_MS,
+        "idle before it starts"
+    );
+
+    let stream: Vec<u8> = (0..1_100u32).map(|i| (i * 7) as u8).collect();
+    let crc = crc32(&stream);
+    call::change(CallChange::Start { bytes: 1_100, crc });
+    let started = whole_step(&mut writer, &mut provider);
+    assert_eq!(started.delay_ms, writer::EVENTS_POLL_MS);
+
+    // Between chunks, the upload's pace, each chunk starting the count again.
+    for _ in 0..3 {
+        let between = whole_step(&mut writer, &mut provider);
+        assert_eq!(between.delay_ms, writer::EVENTS_POLL_MS);
+        assert!(between.rested, "and a wake may still cut it short");
+    }
+    assert_eq!(call::chunk(0, &stream[..512]), Ok(()));
+    assert_eq!(
+        whole_step(&mut writer, &mut provider).delay_ms,
+        writer::EVENTS_POLL_MS
+    );
+
+    // A client that walks away: the pace lapses, with the clip still receiving.
+    for _ in 1..writer::RECEIVE_LINGER_POLLS {
+        assert_eq!(
+            whole_step(&mut writer, &mut provider).delay_ms,
+            writer::EVENTS_POLL_MS
+        );
+    }
+    let lapsed = whole_step(&mut writer, &mut provider);
+    assert_eq!(lapsed.delay_ms, writer::POLL_MS);
+
+    // It comes back, and goes on to the end. The last chunk leaves the clip
+    // stored, and the writer idle after the one step that follows it.
+    assert_eq!(call::chunk(512, &stream[512..1_024]), Ok(()));
+    assert_eq!(
+        whole_step(&mut writer, &mut provider).delay_ms,
+        writer::EVENTS_POLL_MS
+    );
+    assert_eq!(call::chunk(1_024, &stream[1_024..]), Ok(()));
+    assert_eq!(
+        whole_step(&mut writer, &mut provider).delay_ms,
+        writer::EVENTS_POLL_MS
+    );
+    assert_eq!(
+        whole_step(&mut writer, &mut provider).delay_ms,
+        writer::POLL_MS,
+        "the clip is stored"
+    );
 }
 
 /// Whether the factory reset's marker is down.

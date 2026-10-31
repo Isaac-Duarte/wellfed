@@ -1472,6 +1472,53 @@ pub fn current_task() -> usize {
         .map_or(handle, |slot| slot.id.load(Ordering::Acquire))
 }
 
+/// The calling task's handle, for [`task_notify`]; 0 from an interrupt or
+/// before the scheduler runs.
+pub fn task_handle() -> usize {
+    if ipsr() != 0
+        // SAFETY: the pinned SDK routine, with plain-value arguments.
+        || unsafe { raw::xTaskGetSchedulerState() } != k::WELLFED_SCHEDULER_RUNNING as _
+    {
+        return 0;
+    }
+    // SAFETY: the pinned SDK routine; it reads the current TCB pointer.
+    unsafe { raw::xTaskGetCurrentTaskHandle() as usize }
+}
+
+/// End `handle`'s [`task_wait_notified`], or the next one it starts.
+///
+/// The SDK's task-context call, so it does nothing from an interrupt, nor
+/// with the scheduler stopped or suspended: a notification is only ever a
+/// shortcut, and the waiter's timeout is what its work relies on.
+///
+/// `handle` must be a live task's: the caller keeps it from being deleted.
+pub fn task_notify(handle: usize) {
+    if ipsr() != 0
+        // SAFETY: the pinned SDK routine, with plain-value arguments.
+        || unsafe { raw::xTaskGetSchedulerState() } != k::WELLFED_SCHEDULER_RUNNING as _
+    {
+        return;
+    }
+    // SAFETY: the pinned SDK routine; the caller's contract keeps the handle
+    // live, and no previous value is asked for.
+    unsafe {
+        raw::xTaskGenericNotify(
+            handle as raw::TaskHandle_t,
+            0,
+            k::WELLFED_NOTIFY_INCREMENT as raw::eNotifyAction,
+            ptr::null_mut(),
+        )
+    };
+}
+
+/// Sleep up to `ms`, ending early on a [`task_notify`] of this task, and
+/// take any that came since the last wait. Task context only.
+pub fn task_wait_notified(ms: u32) {
+    // configTICK_RATE_HZ is 1000, so pdMS_TO_TICKS(ms) == ms.
+    // SAFETY: the pinned SDK routine, with plain-value arguments.
+    unsafe { raw::ulTaskNotifyTake(k::WELLFED_PD_TRUE as raw::BaseType_t, ms) };
+}
+
 /// Queue one line for the UART ([`crate::LOG_RING`]); no task waits for it to
 /// go out. With the `log-tail` feature it is copied into [`crate::LOG_TAIL`]
 /// at the same moment, in the same order.

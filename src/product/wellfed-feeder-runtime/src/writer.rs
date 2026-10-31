@@ -63,6 +63,11 @@
 //! the event queue in order) and the writer asks again each poll, so it runs
 //! once the owner is at rest with its outputs stopped, before the next feed.
 //! Reads of the event ring are answered meanwhile: they take no lease.
+//!
+//! Queuing a mailbox wakes a writer at rest (`wellfed_hal::writer_wake`), so
+//! a write starts without waiting out [`POLL_MS`]; that poll stays, and is
+//! all the work relies on. A write's own delay, the turn above and the
+//! attempt marker are the same either way.
 
 use core::fmt;
 
@@ -122,6 +127,11 @@ pub const EVENTS_POLL_MS: u32 = 5;
 /// sends a frame runs about 16 ms (measured), so a batch of 16 outlasts
 /// a shorter linger and its next read would wait out the idle poll.
 pub const READ_LINGER_POLLS: u32 = 200;
+/// Polls at [`EVENTS_POLL_MS`] after the last chunk of a clip still
+/// `Receiving`: about 1 s. Bounded, because a client that walks away leaves
+/// the clip `Receiving` until the next upload or delete, for as long as the
+/// feeder then runs, and battery mode pays for every wake.
+pub const RECEIVE_LINGER_POLLS: u32 = READ_LINGER_POLLS;
 /// While a write waits for a feed to end: within the poll a claim allows a
 /// waiting writer before passing it.
 pub const WRITE_WAIT_POLL_MS: u32 = POLL_MS;
@@ -555,6 +565,9 @@ pub struct Step {
     pub record: Option<Record>,
     /// Arming finished this step, armed or not: later writers may start.
     pub settled: bool,
+    /// Nothing was written and nothing waits for a turn, so a queued mailbox
+    /// may cut this step's delay short (`wellfed_hal::writer_wake`).
+    pub rested: bool,
 }
 
 fn next(delay_ms: u32, record: Option<Record>) -> Step {
@@ -562,6 +575,7 @@ fn next(delay_ms: u32, record: Option<Record>) -> Step {
         delay_ms,
         record,
         settled: false,
+        rested: false,
     }
 }
 
@@ -604,6 +618,8 @@ pub struct Writer<F> {
     read_batch: [ring::Record; events::READ_BATCH],
     /// Polls left at the read pace after the last answered read.
     reading: u32,
+    /// Polls left at the upload's pace.
+    receiving: u32,
     traces: TraceRing<Region<F, TRACES_BASE, TRACES_UNITS>>,
     stats: StatsStore<Slots<F, STATS_BASE>>,
     stats_opened: bool,
@@ -660,6 +676,7 @@ impl<F> Default for Writer<F> {
             events_opened: false,
             read_batch: [EMPTY; events::READ_BATCH],
             reading: 0,
+            receiving: 0,
             traces: TraceRing::default(),
             stats: StatsStore::default(),
             stats_opened: false,
@@ -1034,9 +1051,13 @@ impl<F: FlashOps> Writer<F> {
         }
         // A reader catching up asks again as soon as it has the answer.
         let read = self.answer_read();
+        // An upload's next chunk comes within a round trip of the last one.
+        self.receiving = self.receiving.saturating_sub(1);
 
-        let more = (events::pending().is_some() && !deferred) || read;
-        next(if more { EVENTS_POLL_MS } else { POLL_MS }, record)
+        let more = (events::pending().is_some() && !deferred) || read || self.receiving > 0;
+        let mut step = next(if more { EVENTS_POLL_MS } else { POLL_MS }, record);
+        step.rested = true;
+        step
     }
 
     /// Append the sealed trace, if one waits: under the write turn, which a
@@ -1461,21 +1482,17 @@ impl<F: FlashOps> Writer<F> {
                     self.armed = H::armed();
                     self.stage = Stage::Idle;
                     self.publish();
-                    Step {
-                        delay_ms: POLL_MS,
-                        record: Some(Record::Arming(event)),
-                        settled: true,
-                    }
+                    let mut step = next(POLL_MS, Some(Record::Arming(event)));
+                    step.settled = true;
+                    step
                 }
                 Poll::Failed(event) => {
                     self.skipped = matches!(event, arming::Event::Skip { .. });
                     self.stage = Stage::Serve;
                     self.publish();
-                    Step {
-                        delay_ms: POLL_MS,
-                        record: Some(Record::Arming(event)),
-                        settled: true,
-                    }
+                    let mut step = next(POLL_MS, Some(Record::Arming(event)));
+                    step.settled = true;
+                    step
                 }
             },
 
@@ -1642,6 +1659,11 @@ impl<F: FlashOps> Writer<F> {
                     Some(CallSave::Done(record)) => {
                         self.publish();
                         call::finish();
+                        self.receiving = if matches!(self.call.clip, CallClip::Receiving { .. }) {
+                            RECEIVE_LINGER_POLLS
+                        } else {
+                            0
+                        };
                         // An upload's next chunk follows at once.
                         return next(EVENTS_POLL_MS, record);
                     }
@@ -1739,6 +1761,7 @@ pub unsafe fn wellfed_store_step(provider: *mut Provider) -> u32 {
     };
     // SAFETY: the caller's contract.
     let step = unsafe { writer.step::<Hardware, wellfed_sdk::SdkHooks>(provider) };
+    wellfed_hal::writer_wake::settle(step.rested);
 
     if let Some(record) = step.record {
         let mut report = startup::Report::new();

@@ -175,6 +175,7 @@ pub struct Hardware {
     pub task: Option<TaskStep>,
     pub task_context: *mut c_void,
     pub task_delays: u32,
+    pub task_notifies: u32,
     pub task_deletes: u32,
 
     pub wake_locks: u32,
@@ -343,6 +344,7 @@ impl Default for Hardware {
             task: None,
             task_context: core::ptr::null_mut(),
             task_delays: 0,
+            task_notifies: 0,
             task_deletes: 0,
             wake_locks: 0,
             adc_delay_ticks: 0,
