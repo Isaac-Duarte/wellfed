@@ -803,12 +803,16 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
         })
     }
 
-    /// A client's tune, played only when nothing else has a claim on the
-    /// moment. The loop steps it after the owner and the device API, so it
-    /// could not delay a feed in any case; a feed is silent by the owner's
-    /// choice, and a client gets `Busy` rather than a sound that overlaps
-    /// one. Setup mode owns the speaker for its own tunes, and an install or
-    /// a restart has the feeder's attention. A flash write is no reason to
+    /// A client's tune, queued only when nothing else has a claim on the
+    /// moment. A feed is silent by the owner's choice, so with one already
+    /// in flight a client gets `Busy`. A tune already sounding is not cut
+    /// when a feed comes after it (a Dispense press, a client's feed, a meal
+    /// with no call or whose call has ended): it plays on through the drive,
+    /// and its steps, the codec's close and its `done` record among them,
+    /// run inside passes between the owner's steps and count against the
+    /// gap the owner allows them. The meal call shares this path. Setup mode
+    /// owns the speaker for its own tunes, and an install or a restart has
+    /// the feeder's attention. A flash write is no reason to
     /// wait: a tune writes nothing and reads no sector a writer changes, and
     /// the meal call plays through writes the same way, at worst with
     /// underruns the speaker's `done` record counts.

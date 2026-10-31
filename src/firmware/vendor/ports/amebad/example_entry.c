@@ -1307,12 +1307,18 @@ static volatile unsigned int wellfed_audio_dma;
 static volatile unsigned int wellfed_audio_on_zero;
 static volatile unsigned int wellfed_audio_underruns;
 static GDMA_InitTypeDef wellfed_audio_gdma;
-static int wellfed_audio_opened;
+/* Set before the DMA starts and cleared before it stops: the interrupt
+ * restarts the channel only while this is set, so one taken during a close
+ * cannot turn the channel back on. */
+static volatile int wellfed_audio_opened;
 
 static u32 wellfed_audio_done(void *data)
 {
     GDMA_InitTypeDef *gdma = data;
     GDMA_ClearINT(gdma->GDMA_Index, gdma->GDMA_ChNum);
+    if (!wellfed_audio_opened) {
+        return 0;
+    }
     if (!wellfed_audio_on_zero) {
         wellfed_audio_own[wellfed_audio_dma] = 0;
         wellfed_audio_dma = (wellfed_audio_dma + 1) % WELLFED_AUDIO_PAGES;
@@ -1379,14 +1385,15 @@ int wellfed_audio_open(unsigned int rate_hz)
     AUDIO_SP_Init(AUDIO_SPORT_DEV, &sport);
     AUDIO_SP_TdmaCmd(AUDIO_SPORT_DEV, ENABLE);
     AUDIO_SP_TxStart(AUDIO_SPORT_DEV, ENABLE);
+    wellfed_audio_opened = 1;
     if (!AUDIO_SP_TXGDMA_Init(0, &wellfed_audio_gdma, &wellfed_audio_gdma, wellfed_audio_done,
                               wellfed_audio_zero, WELLFED_AUDIO_PAGE)) {
+        wellfed_audio_opened = 0;
         AUDIO_SP_TxStart(AUDIO_SPORT_DEV, DISABLE);
         AUDIO_SP_TdmaCmd(AUDIO_SPORT_DEV, DISABLE);
         CODEC_DeInit(APP_LINE_OUT);
         return 0;
     }
-    wellfed_audio_opened = 1;
     return 1;
 }
 
@@ -1429,13 +1436,13 @@ void wellfed_audio_close(void)
     if (!wellfed_audio_opened) {
         return;
     }
+    wellfed_audio_opened = 0;
     GDMA_Cmd(wellfed_audio_gdma.GDMA_Index, wellfed_audio_gdma.GDMA_ChNum, DISABLE);
     GDMA_ClearINT(wellfed_audio_gdma.GDMA_Index, wellfed_audio_gdma.GDMA_ChNum);
     GDMA_ChnlFree(wellfed_audio_gdma.GDMA_Index, wellfed_audio_gdma.GDMA_ChNum);
     AUDIO_SP_TxStart(AUDIO_SPORT_DEV, DISABLE);
     AUDIO_SP_TdmaCmd(AUDIO_SPORT_DEV, DISABLE);
     CODEC_DeInit(APP_LINE_OUT);
-    wellfed_audio_opened = 0;
 }
 
 void wellfed_tick_hook(const char *name, int suspended);

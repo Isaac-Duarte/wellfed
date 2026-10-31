@@ -34,6 +34,8 @@ pub trait Device {
     fn wifi(&mut self, change: Option<Option<Credentials>>) -> WifiResult;
     fn lock(&mut self, locked: bool) -> LockResult;
     /// Queue a tune for the speaker, or say why it will not sound now.
+    /// `Started` means queued, not heard: a codec that then will not open
+    /// reaches only the log.
     fn play(&mut self, tune: CoreTune) -> PlayResult;
     /// A client's sync; `origin` says whether it may step the clock.
     fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult;

@@ -1,6 +1,6 @@
 # Speaker
 
-The PLAF103 has a real speaker, not a piezo buzzer. Stock uses it to play a meal call the owner records in the app. Wellfed drives the same audio path with a small set of built-in tunes and the owner's own meal call, played one at a time and always bounded, so the speaker can never get in the way of a feed.
+The PLAF103 has a real speaker, not a piezo buzzer. Stock uses it to play a meal call the owner records in the app. Wellfed drives the same audio path with a small set of built-in tunes and the owner's own meal call, played one at a time and always bounded. No feed decision reads the speaker, though its steps do take time in the loop a feed shares ([device API](device-api.md)).
 
 Status: **Works** for the built-in tunes. The meal call's clip is **Experimental**: tested on the host and in simulation. Which sounds play when is product policy and not settled. A feed plays no tune.
 
@@ -59,6 +59,8 @@ A tune is queued only through `audio::request`. It answers:
 The meal call is queued through `audio::request_call(plays)`, with the same answers; `Busy` too while no clip is stored. The `feeder` firmware's loop asks for it ahead of a plan's meal and steps the speaker while it plays.
 
 The device API's `Play` request carries a tune, which the `feeder` firmware's loop queues and steps the same way. A tune needs more than a free speaker there: a feed queued or running, outputs claimed, a plan's meal being claimed, BLE setup mode, an install or a restart answers `Busy`, and so does a tune that would still sound when a meal call's lead begins. Sound settings bind a test sound like any other, so `sound` off, volume 0 or a closed sound window answers `Muted`. A store write holds nothing back: a tune writes no flash and reads no sector a writer changes. Setup mode silences whatever is playing as it starts.
+
+`Started` means queued, not heard. The speaker opens the codec on its next step, after the device API has answered `Done`, so a codec that will not open reaches only the log (`error stage=open`).
 
 To build the speaker firmware, run `wellfed-build build --profile firstboot --firmware bringup --variant speaker`, or `wellfed-bench ota NAME --build --firmware speaker` to install it. It runs the tune task and plays the startup chime. It does not touch motion, and OTA, recovery and confirmation work as in every firmware.
 

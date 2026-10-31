@@ -36,9 +36,13 @@
 //! neither a History line nor a flash write. No feed waits on it or is refused for it, as stock.
 //!
 //! **Silent.** A feed plays no tune; that is the owner's choice. A tune a
-//! client asks for with `play` is stepped after the owner and the device
-//! API in each pass, so a speaker that is busy, will not open or stalls
-//! never delays a feed's start, its stop or its terminal result.
+//! client asks for with `play` is refused while a feed is in flight, but one
+//! already sounding plays on through a feed that comes after it. It is
+//! stepped after the owner and the device API in each pass, and no feed
+//! decision reads the speaker, so a speaker that is busy, will not open or
+//! stalls does not hold back a feed's start, its stop or its terminal
+//! result. Each speaker step still takes its time inside the pass, which
+//! counts against the gap allowed between the owner's steps.
 
 use core::fmt;
 

@@ -465,8 +465,9 @@ impl<P: Platform> Feeder<P> {
                 record(Record::Serve(r))
             });
 
-        // After the owner and the device API, so playback never delays
-        // either; setup mode steps the speaker itself.
+        // After the owner and the device API, so neither waits on playback
+        // within the pass. A feed in flight still pays for this step in its
+        // gap between owner steps. Setup mode steps the speaker itself.
         let mut speaker_delay = u32::MAX;
         if !self.owner.setup_on() && !self.platform.speaker_idle() {
             let step = self.platform.speaker_step();

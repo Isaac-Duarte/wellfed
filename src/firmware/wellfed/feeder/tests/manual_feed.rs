@@ -2,29 +2,37 @@
 //! feeding owner: a Dispense press the panel allows queues one portion
 //! through the path a client's feed takes; readiness refuses a press and
 //! records its lasting reasons; a feed plays no tune; and a tune a client
-//! asked for (the real speaker on the fake codec) never holds up a feed,
-//! its cancel or its result, whether it plays, fails to open or stalls. A
+//! asked for (the real speaker on the fake codec) leaves a feed's path, its
+//! cancel and its result alone, whether it plays, fails to open or stalls. A
 //! client's `play` sounds through the loop at rest, and is refused with a
-//! feed in flight or the sound settings against it.
+//! feed in flight or the sound settings against it. These passes take no
+//! real time, so they say nothing of what a speaker step costs a feed's
+//! gap between owner steps; `PLOWN1 steps max_gap_ms` measures that.
 
 use std::sync::{Mutex, MutexGuard};
 
 use wellfed_core::buttons::{Button, Buttons, Gesture};
+use wellfed_core::clock::wall::{Origin, Sync};
+use wellfed_core::schedule::{Plan, Weekdays};
+use wellfed_core::store::slot::SlotIo;
 use wellfed_core::tone::{PlayResult, Tune};
 use wellfed_device_api::Device;
-use wellfed_device_api::mailbox::{SettingsFields, SettingsResult, SettingsView};
+use wellfed_device_api::mailbox::{CallClip, SettingsFields, SettingsResult, SettingsView};
 use wellfed_feeder::feeder::owner::POLL_MS;
-use wellfed_feeder::feeder::{Feeder, Feeds, Record};
-use wellfed_feeder_runtime::events;
+use wellfed_feeder::feeder::{Feeder, Feeds, Platform, Record};
+use wellfed_feeder::store::call::CallStore;
+use wellfed_feeder::store::plans::PlansStore;
+use wellfed_feeder_runtime::{call, events, plans};
 use wellfed_fw_feeder::platform::{Driver, Plaf103};
 use wellfed_proto::api::{
     Battery, Blocked, EventBody, FeedOutcome, FeedReason, FoodLevel, Readiness, Refusal, Source,
     Supply,
 };
 use wellfed_sdk::hal::interlock::INTERLOCK;
+use wellfed_sdk::hal::ota::mailbox::{self, Request};
 use wellfed_sdk::hal::power::{self, Monitor};
 use wellfed_sdk::hal::sdk::fake;
-use wellfed_sdk::hal::{audio, buttons, settings};
+use wellfed_sdk::hal::{audio, buttons, clock, settings, supervision};
 
 /// The button queue, the settings, the speaker's slot and the event queue
 /// are process-wide.
@@ -38,6 +46,60 @@ struct Owner {
     below_floor: Option<bool>,
     /// A feed is queued or runs.
     busy: bool,
+}
+
+/// The plans' sectors on the fake flash, so a store opens writable.
+struct PlanSectors;
+
+impl SlotIo for PlanSectors {
+    fn unit_bytes(&self) -> u32 {
+        wellfed_sdk::hal::sdk::SECTOR_BYTES
+    }
+    fn read(&self, slot: u32, offset: u32, bytes: &mut [u8]) -> bool {
+        wellfed_sdk::hal::sdk::storage_read(plans::PLANS_BASE + slot, offset, bytes)
+    }
+    fn program(&self, _: u32, _: u32, _: &[u8]) -> bool {
+        false
+    }
+    fn erase(&self, _: u32) -> bool {
+        false
+    }
+    fn writable(&self) -> bool {
+        true
+    }
+}
+
+/// 2026-10-28T08:00:00Z, the instant of the plans these tests publish.
+const MEAL_MS: u64 = 1_793_145_600_000 + 8 * 3_600_000;
+/// A 2,000-byte clip plays for 500 ms, and a call's lead adds a second.
+const CLIP_BYTES: u32 = 2_000;
+const LEAD_MS: u64 = 1_500;
+
+/// One daily plan at [`MEAL_MS`]'s minute, not yet run, as the writer
+/// publishes it with no write of its own: a claim stays in flight.
+fn publish_plan(plays: u8) {
+    let mut store = PlansStore::<PlanSectors>::default();
+    store.open(PlanSectors);
+    assert!(store.writable());
+    store.plans.table[0] = Some(Plan {
+        minute: 8 * 60,
+        portions: 1,
+        days: Weekdays::EVERY_DAY,
+        enabled: true,
+        call: plays,
+    });
+    store.plans.marks[0] = u32::try_from(MEAL_MS / 1000).unwrap() - 1;
+    plans::publish(&store, true);
+}
+
+/// A stored clip. The fake flash's bytes play as whatever they decode to.
+fn publish_clip() {
+    let mut store = CallStore::<PlanSectors>::default();
+    store.clip = CallClip::Stored {
+        bytes: CLIP_BYTES,
+        crc: 0,
+    };
+    call::publish(&store, true);
 }
 
 impl Feeds for Owner {
@@ -55,6 +117,10 @@ impl Feeds for Owner {
 
     fn below_floor(&self) -> Option<bool> {
         self.below_floor
+    }
+
+    fn high_water(&self) -> Option<u32> {
+        Some(0)
     }
 
     fn submit(&mut self, portions: u8, by: Source) -> Result<u32, Refusal> {
@@ -88,6 +154,12 @@ impl Rig {
         settings::reset();
         audio::reset();
         events::reset();
+        clock::reset();
+        plans::reset();
+        call::reset();
+        mailbox::reset();
+        supervision::reset();
+        INTERLOCK.reset();
         settings::publish(SettingsView {
             lights: true,
             sound: true,
@@ -113,7 +185,12 @@ impl Rig {
             buttons::inject(gesture);
         }
         self.now += POLL_MS;
-        fake::with(|h| h.uptime_ms = self.now);
+        // The wall clock reads SYSTIMER, at 32,768 ticks a second.
+        let ticks = u32::try_from(u64::from(self.now) * 32_768 / 1000).unwrap();
+        fake::with(|h| {
+            h.uptime_ms = self.now;
+            h.raw_ticks = ticks;
+        });
         let lines = &mut self.lines;
         self.feeder
             .pass(self.now, &mut self.owner, |r: Record<Driver>| {
@@ -123,6 +200,26 @@ impl Rig {
 
     fn pass(&mut self) -> u32 {
         self.pass_with(&[])
+    }
+
+    /// An owner's sync: the wall clock reads `unix_ms` now, at UTC.
+    fn sync(&mut self, unix_ms: u64) {
+        let sync = Sync {
+            unix_ms,
+            offset_s: 0,
+            next_change_s: 0,
+            next_offset_s: 0,
+        };
+        let now = self.now;
+        self.feeder
+            .platform_mut()
+            .time_sync(now, sync, Origin::Owner)
+            .unwrap();
+    }
+
+    fn wall(&mut self) -> u64 {
+        let now = self.now;
+        self.feeder.platform_mut().wall_ms(now).unwrap()
     }
 
     fn unlock(&mut self) {
@@ -146,6 +243,10 @@ impl Rig {
 
     fn logged(&self, line: &str) -> bool {
         self.lines.iter().any(|l| l == line)
+    }
+
+    fn logged_prefix(&self, prefix: &str) -> bool {
+        self.lines.iter().any(|l| l.starts_with(prefix))
     }
 
     /// The queued events' bodies, oldest first, as the writer would take
@@ -438,6 +539,109 @@ fn a_feed_in_flight_refuses_a_tune() {
     assert_eq!(play(&mut rig, Tune::Test), PlayResult::Started);
 }
 
+/// `Busy` from the loop's own check, for a speaker that is itself free: the
+/// request queued nothing, and the slot takes a tune asked of it directly.
+fn refused_by_the_loop(rig: &mut Rig) {
+    assert_eq!(play(rig, Tune::Test), PlayResult::Busy);
+    assert_eq!(audio::request(Tune::Test), PlayResult::Started);
+}
+
+/// A plan's claim commits the next feed to its meal before the owner has it.
+#[test]
+fn a_plan_s_claim_in_flight_refuses_a_tune() {
+    let mut rig = Rig::new();
+    publish_plan(0);
+    rig.sync(MEAL_MS + 5_000);
+    rig.pass();
+    rig.pass();
+    let claimed = format!("PLSCH1 claimed plan=0 due={}", MEAL_MS / 1000);
+    assert!(rig.logged(&claimed), "{:?}", rig.lines);
+
+    refused_by_the_loop(&mut rig);
+}
+
+#[test]
+fn an_install_holding_the_flash_refuses_a_tune() {
+    let mut rig = Rig::new();
+    mailbox::request(Request::Cancel).unwrap();
+    assert!(mailbox::installing());
+
+    refused_by_the_loop(&mut rig);
+}
+
+#[test]
+fn a_restart_on_its_way_refuses_a_tune() {
+    let mut rig = Rig::new();
+    supervision::begin_restart_grace(rig.now);
+
+    refused_by_the_loop(&mut rig);
+}
+
+/// A rig with a plan at [`MEAL_MS`] calling once, its clock `ahead_of_lead`
+/// before the call's lead begins, less the pass that reads the plan.
+fn rig_ahead_of_a_call(ahead_of_lead: u64) -> Rig {
+    let mut rig = Rig::new();
+    publish_plan(1);
+    publish_clip();
+    rig.sync(MEAL_MS - LEAD_MS - ahead_of_lead);
+    rig.pass();
+    rig
+}
+
+/// Run past the meal on the real speaker: the call starts as its lead begins
+/// and ends before its meal, and the meal is claimed at its instant. When a
+/// tune asked for beforehand ended, if one played.
+fn the_call_runs_on_time(rig: &mut Rig) -> Option<u64> {
+    let mut tune_done = None;
+    let mut call_start = None;
+    let mut call_done = None;
+    for _ in 0..250 {
+        if rig.wall() >= MEAL_MS + 40 {
+            break;
+        }
+        rig.pass();
+        fake::play_audio(2);
+        let wall = rig.wall();
+        tune_done = tune_done.or(rig.logged_prefix("PLAUD1 done tune=test").then_some(wall));
+        call_start = call_start.or(rig.logged_prefix("PLAUD1 play tune=call").then_some(wall));
+        call_done = call_done.or(rig.logged_prefix("PLAUD1 done tune=call").then_some(wall));
+    }
+
+    let lead_at = MEAL_MS - LEAD_MS;
+    let (call_start, call_done) = (call_start.unwrap(), call_done.unwrap());
+    assert!(
+        (lead_at..lead_at + 2 * u64::from(POLL_MS)).contains(&call_start),
+        "{call_start} against {lead_at}"
+    );
+    assert!(call_done < MEAL_MS, "{call_done} against {MEAL_MS}");
+
+    let due = MEAL_MS / 1000;
+    assert!(rig.logged(&format!("PLSCH1 called plan=0 due={due} result=started")));
+    assert!(!rig.logged(&format!("PLSCH1 called plan=0 due={due} result=busy")));
+    assert!(rig.logged(&format!("PLSCH1 claimed plan=0 due={due}")));
+    tune_done
+}
+
+/// The test tune holds the speaker for 2 s with its spare, so one asked for
+/// 2.1 s ahead of the lead plays, ends in time, and costs the call nothing.
+#[test]
+fn a_call_starts_on_time_after_a_tune_that_fit_before_its_lead() {
+    let mut rig = rig_ahead_of_a_call(2_100);
+    assert_eq!(play(&mut rig, Tune::Test), PlayResult::Started);
+
+    let tune_done = the_call_runs_on_time(&mut rig).unwrap();
+    assert!(tune_done < MEAL_MS - LEAD_MS, "{tune_done}");
+}
+
+/// One asked for 1.9 s ahead of the lead is refused, and never plays.
+#[test]
+fn a_call_starts_on_time_after_refusing_a_tune_that_would_not_fit() {
+    let mut rig = rig_ahead_of_a_call(1_900);
+    assert_eq!(play(&mut rig, Tune::Test), PlayResult::Busy);
+
+    assert_eq!(the_call_runs_on_time(&mut rig), None);
+}
+
 /// A feed's outputs may be claimed before the owner says it is busy.
 #[test]
 fn claimed_outputs_refuse_a_tune() {
@@ -492,19 +696,24 @@ fn a_queued_store_write_does_not_hold_a_tune() {
     assert_eq!(play(&mut rig, Tune::Test), PlayResult::Started);
 }
 
-/// A feed's path while the speaker is busy with a requested tune: queued,
-/// cancelled through the device API, and its `Fed` event recorded, with the
-/// loop's delay never longer than its poll.
-fn feed_despite_the_speaker(rig: &mut Rig) {
+/// A feed's path through a tune a client asked for first: queued, in flight
+/// for 200 passes with the DMA taking `pages` a pass, cancelled through the
+/// device API, and its `Fed` event recorded. Another tune is refused all the
+/// way, and the loop never asks to wait longer than its poll.
+fn feed_despite_the_speaker(rig: &mut Rig, pages: usize) {
     rig.unlock();
     rig.press_dispense();
     let feed = u32::try_from(rig.owner.submitted.len()).unwrap();
     assert_eq!(rig.owner.submitted.last(), Some(&(1, Source::Panel)));
 
-    for _ in 0..10 {
-        assert!(rig.pass() <= POLL_MS, "the speaker never holds the loop");
+    rig.owner.busy = true;
+    for _ in 0..200 {
+        assert!(rig.pass() <= POLL_MS, "a delay no longer than the poll");
+        fake::play_audio(pages);
+        assert_eq!(play(rig, Tune::Coin), PlayResult::Busy);
     }
     assert!(rig.feeder.device(rig.now, &mut rig.owner).cancel_feed(feed));
+    rig.owner.busy = false;
     let fed = EventBody::Fed {
         feed,
         requested: 1,
@@ -521,13 +730,16 @@ fn feed_despite_the_speaker(rig: &mut Rig) {
 #[test]
 fn a_playing_tune_keeps_playing_and_the_feed_goes_on() {
     let mut rig = Rig::new();
-    assert_eq!(audio::request(Tune::Chime), PlayResult::Started);
+    assert_eq!(play(&mut rig, Tune::Chime), PlayResult::Started);
 
-    feed_despite_the_speaker(&mut rig);
-    for _ in 0..200 {
-        rig.pass();
-        fake::play_audio(2);
-    }
+    feed_despite_the_speaker(&mut rig, 2);
+    assert!(
+        rig.lines
+            .iter()
+            .any(|l| l.starts_with("PLAUD1 done tune=chime")),
+        "it ended during the drive: {:?}",
+        rig.lines
+    );
 
     let tunes: Vec<_> = rig
         .lines
@@ -546,9 +758,9 @@ fn a_playing_tune_keeps_playing_and_the_feed_goes_on() {
 fn a_codec_that_will_not_open_holds_up_nothing() {
     let mut rig = Rig::new();
     fake::with(|h| h.audio_open_fails = true);
-    assert_eq!(audio::request(Tune::Coin), PlayResult::Started);
+    assert_eq!(play(&mut rig, Tune::Coin), PlayResult::Started);
 
-    feed_despite_the_speaker(&mut rig);
+    feed_despite_the_speaker(&mut rig, 2);
     assert!(
         rig.lines
             .iter()
@@ -561,10 +773,10 @@ fn a_codec_that_will_not_open_holds_up_nothing() {
 #[test]
 fn a_stalled_ring_holds_up_nothing_and_still_ends() {
     let mut rig = Rig::new();
-    assert_eq!(audio::request(Tune::Coin), PlayResult::Started);
+    assert_eq!(play(&mut rig, Tune::Coin), PlayResult::Started);
 
     // The DMA never takes a page: the tune cannot finish.
-    feed_despite_the_speaker(&mut rig);
+    feed_despite_the_speaker(&mut rig, 0);
     for _ in 0..300 {
         rig.pass();
     }
