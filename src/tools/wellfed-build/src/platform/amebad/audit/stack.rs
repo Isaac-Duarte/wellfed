@@ -11,7 +11,7 @@
 //! (`#[wellfed_sdk::task(name = "name", stack = WORDS, priority = N)] fn entry`),
 //! it walks the direct call graph from the task's entry function and
 //! sums the frames along the deepest path. Frames come from each function's
-//! prologue (`push`, `stmdb sp!`, `vpush`, `sub sp`), and a linker veneer
+//! prologue (`push`, `stmdb sp!`, `vpush`, `str [sp, #-n]!`, `sub sp`), and a linker veneer
 //! (`__name_veneer`, the long branch into RAM or ROM) leads to its target.
 //! Recursion is cut at the cycle.
 //!
@@ -231,9 +231,15 @@ static DECLARED: LazyLock<Regex> = LazyLock::new(|| {
 });
 static CONSTANT: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"const (\w+): u16 = (\d+);").expect("stack audit pattern"));
+/// A direct call or tail call, conditional ones included: `blne` in an IT
+/// block and `bne.w` both leave the function. A branch inside the function
+/// names an offset (`<name+0x12>`), which the target's pattern leaves out.
 static CALL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\t(?:bl|blx|b\.w|b)(?:\.[nw])?\t[0-9a-f]+ <([^>+]+)>")
-        .expect("stack audit pattern")
+    Regex::new(concat!(
+        r"\t(?:bl|blx|b)(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)?(?:\.[nw])?",
+        r"\t[0-9a-f]+ <([^>+]+)>",
+    ))
+    .expect("stack audit pattern")
 });
 /// A call or tail call through a register. objdump names r9 to r12 `sb`, `sl`,
 /// `fp` and `ip`, and a tail call through a pointer is `bx rN` (`bx ip` in
@@ -288,6 +294,11 @@ static PUSH: LazyLock<Regex> = LazyLock::new(|| {
 });
 static VPUSH: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^vpush\s*\{d(\d+)-d(\d+)\}").expect("stack audit pattern"));
+/// A prologue slot saved by writeback: LLVM keeps `push` to the low registers
+/// and the frame pointer's pair, then saves the rest as `str.w fp, [sp, #-4]!`.
+static WRITEBACK: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^str(?:\.w)?\s+\w+,\s*\[sp,\s*#-(\d+)\]!").expect("stack audit pattern")
+});
 static SUB: LazyLock<Regex> = LazyLock::new(|| {
     // `subw` is Thumb-2's 12-bit-immediate form, which LLVM picks for frames
     // up to 4 KiB; missing it hid curve25519's 1948-byte frame.
@@ -390,6 +401,10 @@ fn frames(listing: &str) -> Vec<(String, Function)> {
                 let (low, high): (u64, u64) =
                     (vpush[1].parse().unwrap_or(0), vpush[2].parse().unwrap_or(0));
                 f.frame += 8 * (high + 1).saturating_sub(low);
+                continue;
+            }
+            if let Some(slot) = WRITEBACK.captures(insn) {
+                f.frame += slot[1].parse::<u64>().unwrap_or(0);
                 continue;
             }
             if let Some(sub) = SUB.captures(insn) {
@@ -1066,6 +1081,70 @@ mod tests {
                 "{other}"
             );
         }
+    }
+
+    /// Calls and tail calls that only run on a condition still leave the
+    /// function, so a path through one counts; a branch inside it is no call.
+    #[test]
+    fn conditional_calls_are_edges_and_inner_branches_are_not() {
+        let listing = "\
+00001000 <caller>:
+    1000:\tb580      \tpush\t{r7, lr}
+    1002:\tbf18      \tit\tne
+    1004:\tf000 f800 \tblne\t2000 <linked>
+    1008:\tf040 8000 \tbne.w\t3000 <tailed>
+    100c:\tf43f affa \tbeq.w\t1004 <caller+0x4>
+    1010:\td1f8      \tbne.n\t1004 <caller+0x4>
+    1012:\tf47f aff9 \tbne.w\t1008 <caller+0x8>
+    1016:\tddfa      \tble.n\t100e <caller+0xe>
+    1018:\tb100      \tcbz\tr0, 101c <caller+0x1c>
+    101a:\tf000 f800 \tbl\t4000 <plain>
+    101e:\tf000 b800 \tb.w\t5000 <jumped>
+00002000 <linked>:
+    2000:\tb082      \tsub\tsp, #8
+00003000 <tailed>:
+    3000:\tb084      \tsub\tsp, #16
+00004000 <plain>:
+    4000:\t4770      \tbx\tlr
+00005000 <jumped>:
+    5000:\t4770      \tbx\tlr
+";
+        let functions: HashMap<String, Function> = frames(listing).into_iter().collect();
+
+        let calls: Vec<&str> = functions["caller"]
+            .calls
+            .iter()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(calls, ["jumped", "linked", "plain", "tailed"]);
+
+        let ((depth, path, _), _) = Graph::new(&functions, &[]).worst("caller", Charges::default());
+        assert_eq!(depth, 8 + 16);
+        assert_eq!(path, ["caller", "tailed"]);
+    }
+
+    /// A slot saved by writeback ahead of `sub sp` is part of the frame.
+    #[test]
+    fn writeback_slots_count_towards_the_frame() {
+        let listing = "\
+00001000 <fn>:
+    1000:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}
+    1002:\taf03      \tadd\tr7, sp, #12
+    1004:\tf84d bd04 \tstr.w\tfp, [sp, #-4]!
+    1008:\tb090      \tsub\tsp, #64
+    100a:\tf84d 0d04 \tstr.w\tr0, [sp, #-4]!
+00002000 <other>:
+    2000:\tf84d 8d08 \tstr.w\tr8, [sp, #-8]!
+    2004:\t9001      \tstr\tr0, [sp, #4]
+";
+        let functions: HashMap<String, Function> = frames(listing).into_iter().collect();
+
+        assert_eq!(
+            functions["fn"].frame,
+            20 + 4 + 64,
+            "after `sub sp` is the body"
+        );
+        assert_eq!(functions["other"].frame, 8, "a plain store moves nothing");
     }
 
     #[test]
