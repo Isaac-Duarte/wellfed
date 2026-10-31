@@ -609,7 +609,7 @@ impl<S: Copy> Serve<S> {
                 );
                 self.server.sample(Sample {
                     at_ms: now_ms,
-                    metric: Metric::Power(power),
+                    metric: Metric::Power(super::supply::power(power, supply.battery)),
                 });
             }
             if platform.capabilities().contains(Capabilities::POWER) {
@@ -765,7 +765,10 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
             link_losses: link.link_losses,
             dns_losses: link.check_losses,
             clock_ms: self.platform.wall_ms(now_ms),
-            power: self.platform.power(now_ms),
+            power: self
+                .platform
+                .power(now_ms)
+                .map(|power| super::supply::power(power, self.supply.battery)),
             locked: self.locked,
             settings_generation,
             wifi_generation,

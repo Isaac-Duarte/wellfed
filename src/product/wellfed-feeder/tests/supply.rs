@@ -7,10 +7,10 @@ use wellfed_core::supply::{Pack, Reading};
 use wellfed_feeder::feeder::feeding::readiness;
 use wellfed_feeder::feeder::supply::{
     CELLS_MS, EVENT_MS, RADIO_MIN_ON_MS, RADIO_OFF_MS, RELEASE_MS, RELEASE_PERCENT, Radio, Record,
-    Released, Watch, supply,
+    Released, Watch, power, supply,
 };
 use wellfed_feeder::feeder::{Feeds, NoFeeds};
-use wellfed_proto::api::{Battery, Blocked, Readiness, Refusal, ResetCause, Source, Supply};
+use wellfed_proto::api::{Battery, Blocked, Power, Readiness, Refusal, ResetCause, Source, Supply};
 
 const FRESH: Battery = Battery::Reading {
     mv: 4757,
@@ -153,6 +153,20 @@ fn a_rail_decaying_at_a_cut_reports_no_battery() {
         ..rail
     };
     assert_eq!(watch.cells(1_040, low), want);
+}
+
+/// The raw reading gives no millivolts for a pack judged absent, and is left
+/// alone otherwise.
+#[test]
+fn the_raw_power_follows_the_judged_pack() {
+    let rail = Power {
+        adapter: false,
+        battery_mv: Some(3_861),
+    };
+
+    assert_eq!(power(rail, Battery::Absent).battery_mv, None);
+    assert_eq!(power(rail, FRESH), rail);
+    assert_eq!(power(rail, Battery::Implausible { mv: 3_861 }), rail);
 }
 
 /// A board still running past the wait has cells, whatever the adapter read

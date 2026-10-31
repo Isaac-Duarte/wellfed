@@ -95,6 +95,15 @@ enum Waiting {
     },
 }
 
+/// A pressed key's enrollment that outlived its session: the writer finishes
+/// a queued change whoever is waiting for it.
+#[derive(Clone, Copy)]
+struct SignerLeft {
+    ticket: u32,
+    key: [u8; 32],
+    slot: u8,
+}
+
 #[derive(Clone, Copy)]
 struct Pending {
     id: RequestId,
@@ -182,6 +191,8 @@ pub struct Server {
     signer: Option<pairing::Event>,
     /// A session waiting for an update key's press ended: cancel the offer.
     cancel_signer: bool,
+    /// A session waiting for a pressed key's enrollment ended.
+    signer_left: Option<SignerLeft>,
     /// Subscribers that ended since the last pass, by slot: the device
     /// hears of each on the next.
     readers_left: [bool; SESSIONS],
@@ -228,6 +239,7 @@ impl Server {
             cancel_rescue: false,
             signer: None,
             cancel_signer: false,
+            signer_left: None,
             readers_left: [false; SESSIONS],
             feeding: false,
             handshook: false,
@@ -338,18 +350,53 @@ impl Server {
     }
 
     /// A session that waits for an update key's press ended: the next
-    /// pass cancels the offer, so the next Dispense press feeds again.
+    /// pass cancels the offer, so the next Dispense press feeds again. One
+    /// past its press has queued the key, which lands anyway: the passes
+    /// that follow record it ([`Self::settle_signer_left`]).
     fn forget_signer(&mut self, index: usize) {
-        if let Phase::Open {
-            pending:
-                Some(Pending {
-                    waiting: Waiting::Signer { .. },
-                    ..
-                }),
+        let Phase::Open {
+            pending: Some(Pending { waiting, .. }),
             ..
         } = self.slots[index].phase
-        {
-            self.cancel_signer = true;
+        else {
+            return;
+        };
+        match waiting {
+            Waiting::Signer { .. } => self.cancel_signer = true,
+            Waiting::SignerKeys { ticket, key } => {
+                self.signer_left = Some(SignerLeft {
+                    ticket,
+                    key,
+                    slot: slot_id(index),
+                });
+            }
+            _ => {}
+        }
+    }
+
+    /// Record a pressed key whose session has gone, once the writer has
+    /// finished it. Out of line, as [`Self::tell_readers_left`] is, so it does
+    /// not grow `step`'s frame.
+    #[inline(never)]
+    fn settle_signer_left<D: Device>(
+        &mut self,
+        now_ms: u32,
+        device: &mut D,
+        record: &mut impl FnMut(Record),
+    ) {
+        let Some(left) = self.signer_left else {
+            return;
+        };
+        let Some(outcome) = device.keys_outcome(left.ticket) else {
+            return;
+        };
+
+        self.signer_left = None;
+        if matches!(
+            outcome,
+            crate::KeyOutcome::Done | crate::KeyOutcome::Duplicate
+        ) {
+            pending::signer_landed(now_ms, device, outcome, left.slot, &left.key, record);
         }
     }
 
@@ -416,6 +463,7 @@ impl Server {
             self.signer = None;
         }
         self.tell_readers_left(device);
+        self.settle_signer_left(now_ms, device, &mut record);
 
         // A feed queued before the deadline (a Dispense press: the server
         // refuses its own) holds the restart until it has ended, so the

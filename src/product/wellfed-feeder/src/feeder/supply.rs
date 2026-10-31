@@ -61,7 +61,7 @@ use core::fmt;
 
 pub use wellfed_core::liveness::Radio;
 use wellfed_core::supply::{Pack, Reading};
-use wellfed_proto::api::{Battery, ResetCause, Supply};
+use wellfed_proto::api::{Battery, Power, ResetCause, Supply};
 
 /// The least time between two `Supply` events.
 pub const EVENT_MS: u32 = 60_000;
@@ -111,6 +111,18 @@ pub fn supply(reading: Reading, below_floor: Option<bool>) -> Supply {
         adapter: reading.adapter,
         battery,
         below_floor,
+    }
+}
+
+/// The raw reading as the judged supply allows: no millivolts for a pack
+/// judged absent, so the rail at a cut never shows as a number here either.
+pub const fn power(power: Power, battery: Battery) -> Power {
+    match battery {
+        Battery::Absent => Power {
+            battery_mv: None,
+            ..power
+        },
+        _ => power,
     }
 }
 

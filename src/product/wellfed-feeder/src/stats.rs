@@ -31,11 +31,15 @@ pub const HISTORY_MS: u32 = 60 * 60_000;
 /// boot's uptime, the first this long in. The most of a boot a power cut
 /// loses.
 pub const SAVE_MS: u32 = 60 * 60_000;
-/// The least time between two saves a finished feed asks for, and so the
-/// most of a boot's feeds a power cut loses. Each is a save outside the early
-/// budget, so a boot short of the hourly save still keeps what it fed, and
-/// at most six erases an hour: at a feed every ten minutes all year about
-/// 52,600 erases, 26,300 a sector, three times the budget's bound.
+/// The least time within a boot between two saves a finished feed asks for,
+/// and so the most of a boot's feeds a power cut loses. Each is a save outside
+/// the early budget, so a boot short of the hourly save still keeps what it
+/// fed. That is at most one erase per finished feed and, within a boot, six
+/// an hour; the limit's clock is in RAM, so each boot's first counted feed
+/// saves at once. A feed every ten minutes all year adds about 26,300 erases a
+/// sector, about 35,100 with the hourly bound; three meals a day add about
+/// 550. [`Keeper::fed`] counts cancelled and expired feeds too, so a save can
+/// follow no motion.
 pub const FEED_SAVE_MS: u32 = 10 * 60_000;
 
 /// The early saves' budget: each boot's own save as it starts (so its

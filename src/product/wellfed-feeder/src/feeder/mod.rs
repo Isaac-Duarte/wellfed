@@ -531,10 +531,11 @@ impl<P: Platform> Feeder<P> {
             *by = Schedule::source(&mut self.platform, *feed, *by);
         }
         self.serve.stats().fed(&body);
-        // The writer saves the totals soon after a feed (`FEED_SAVE_MS`).
+        events::record_outcome(&mut self.platform, now_ms, body);
+        // The writer saves the totals soon after a feed (`FEED_SAVE_MS`), and
+        // behind every queued record, so the event goes in first.
         let counts = self.serve.stats().counts(now_ms);
         self.platform.hand_counts(counts);
-        events::record_outcome(&mut self.platform, now_ms, body);
     }
 
     /// A feed's trace was sealed: its figures join the statistics.
