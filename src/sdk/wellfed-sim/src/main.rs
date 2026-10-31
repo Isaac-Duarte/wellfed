@@ -30,7 +30,9 @@ use wellfed_core::feed::storage::{OwnerRecovery, OwnerResult, OwnerStorage, Roto
 use wellfed_core::flash_coord::{FlashCoord, FlashParty, FlashReply, FlashToken};
 use wellfed_core::store::feed_journal::{FeedJournal, JournalConfig, JournalError};
 use wellfed_core::store::slot::SlotIo;
-use wellfed_hal::interlock::{INTERLOCK, WRITER_POLL_MS, WriteStep, WriteTurn};
+use wellfed_hal::interlock::{
+    ClaimStep, ClaimWait, INTERLOCK, WRITER_POLL_MS, WriteStep, WriteTurn,
+};
 use wellfed_hal::owner::{Owner, OwnerConfig, OwnerState, Step};
 use wellfed_hal::sdk::fake;
 use wellfed_hal::stopped;
@@ -59,6 +61,8 @@ const MAX_LINE: usize = 1024;
 
 /// The feedback input, PA18.
 const FEEDBACK: u32 = 1 << 18;
+/// Between two of a claim's tries: a loop pass, near the feeder's own.
+const CLAIM_PASS_MS: u32 = 10;
 
 /// The background store writer: what the settings writer's stores, the
 /// event ring and the update stage do in the firmware's service task, one
@@ -786,25 +790,26 @@ fn run(ms: u32) {
 }
 
 /// A feed, as the firmware's loop submits it: claim the outputs first,
-/// letting a queued or running store write go first (time passes for the
-/// writer meanwhile, not for the loop), then hand it to the owner.
+/// letting a queued or running store write go first (the claim is tried again
+/// each pass, time passing for the writer between tries; no feed is queued for
+/// the owner yet, so its steps do not matter here), then hand it to the owner.
 fn submit(id: u64, portions: u16) -> Submission {
     // SAFETY: see `w`.
     unsafe { (*w()).owner.yield_food_read(&INTERLOCK) };
-    let claimed = INTERLOCK.claim_feed_after_writes(
-        FEED_BOUND_MS,
+    let mut wait = ClaimWait::new(now_ms());
+    loop {
         // SAFETY: see `w`.
-        || unsafe { (*w()).writer.queued || (*w()).writer.lease.is_some() },
-        now_ms,
-        |ms| {
-            for _ in 0..ms {
-                tick();
-                changes();
+        let queued = unsafe { (*w()).writer.queued || (*w()).writer.lease.is_some() };
+        match INTERLOCK.claim_feed_after_writes(&mut wait, FEED_BOUND_MS, queued, now_ms()) {
+            ClaimStep::Claimed => break,
+            ClaimStep::Refused(_) => return Submission::RejectHeld,
+            ClaimStep::Wait => {
+                for _ in 0..CLAIM_PASS_MS {
+                    tick();
+                    changes();
+                }
             }
-        },
-    );
-    if claimed.is_err() {
-        return Submission::RejectHeld;
+        }
     }
     // SAFETY: see `w`.
     let result = unsafe { (*w()).owner.submit(id, portions) };

@@ -565,6 +565,106 @@ fn a_refused_feed_gives_its_occurrence_back_and_retries_without_spinning() {
     assert!(feeder.fed().is_empty());
 }
 
+/// A meal behind a storage write: claimed, waiting, then fed once under the
+/// plan, nothing given back and nothing missed.
+#[test]
+fn a_meal_behind_a_write_runs_once_when_its_claim_is_taken() {
+    let mut feeder = breakfast();
+    feeder.sim.hold_write(true);
+    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 500);
+    assert_eq!(feeder.claims, 1);
+    assert!(feeder.plans().claim.is_some());
+    assert!(!feeder.sim.feed_outputs_claimed(), "the write goes on");
+    assert!(feeder.fed().is_empty());
+
+    feeder.sim.hold_write(false);
+    feeder.run(10_000);
+    assert_eq!(
+        feeder.fed(),
+        [(1, 2, FeedOutcome::Done, Source::Schedule(0))]
+    );
+    assert_eq!(feeder.claims, 1, "claimed once");
+    assert!(feeder.missed().is_empty());
+}
+
+/// A meal whose claim is refused past the wait is not lost: the occurrence goes
+/// back, is claimed again after the retry's wait, and feeds once the write has
+/// gone. Refused for good past the grace, it is missed by name.
+#[test]
+fn a_meal_past_its_claim_s_deadline_gives_its_occurrence_back_and_retries() {
+    let mut feeder = breakfast();
+    feeder.sim.hold_write(true);
+    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 2_000);
+    assert!(feeder.plans().claim.is_some(), "still within its wait");
+    feeder.run(2_000);
+    assert_eq!(feeder.plans().claim, None, "given back");
+    assert_eq!(feeder.claims, 1);
+    assert!(feeder.fed().is_empty());
+
+    feeder.sim.hold_write(false);
+    feeder.run(u64::from(schedule::RETRY_MS) + 5_000);
+    assert_eq!(feeder.claims, 2, "claimed again after the retry's wait");
+    assert_eq!(
+        feeder.fed(),
+        [(1, 2, FeedOutcome::Done, Source::Schedule(0))]
+    );
+    assert!(feeder.missed().is_empty());
+
+    let mut feeder = breakfast();
+    feeder.sim.hold_write(true);
+    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 50 * MINUTE_MS);
+    let due = seconds(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS);
+    assert_eq!(
+        feeder.missed(),
+        [(0, due, MissedReason::Blocked(Blocked::Feeding))]
+    );
+    assert!(feeder.fed().is_empty());
+}
+
+/// A cut while a meal's feed waits for its claim is a cut before its feed: the
+/// journal never moved, so the occurrence is missed and never runs.
+#[test]
+fn a_cut_while_a_meal_waits_for_its_claim_is_missed_and_never_fed() {
+    let mut feeder = breakfast();
+    feeder.sim.hold_write(true);
+    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 500);
+    assert!(feeder.plans().claim.is_some());
+
+    feeder.restart();
+    feeder.run(100);
+    feeder.sync(WEDNESDAY + 7 * HOUR_MS + 31 * MINUTE_MS);
+    feeder.run(MINUTE_MS);
+
+    let due = seconds(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS);
+    assert_eq!(feeder.missed(), [(0, due, MissedReason::Interrupted)]);
+    assert!(feeder.fed().is_empty());
+}
+
+/// A second meal that comes due while the first's feed waits for its claim
+/// waits its turn too, and each runs once.
+#[test]
+fn a_meal_due_while_another_waits_for_its_claim_runs_after_it() {
+    let mut feeder = Feeder::new();
+    feeder.run(100);
+    feeder.sync(WEDNESDAY + 7 * HOUR_MS);
+    let meals = table(&[(0, plan(7 * 60 + 30, 1)), (1, plan(7 * 60 + 30, 2))]);
+    feeder.put(meals);
+    feeder.sim.hold_write(true);
+    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 500);
+    assert_eq!(feeder.claims, 1, "nothing is decided around a waiting feed");
+    feeder.sim.hold_write(false);
+    feeder.run(30_000);
+
+    assert_eq!(
+        feeder.fed(),
+        [
+            (1, 1, FeedOutcome::Done, Source::Schedule(0)),
+            (2, 2, FeedOutcome::Done, Source::Schedule(1)),
+        ]
+    );
+    assert!(feeder.missed().is_empty());
+}
+
 #[test]
 fn a_plan_saved_without_a_clock_starts_after_the_clock_returns() {
     let mut feeder = Feeder::new();

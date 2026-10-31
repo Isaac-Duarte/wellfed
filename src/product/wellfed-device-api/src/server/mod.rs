@@ -26,7 +26,7 @@ use crate::setup::Responder;
 use crate::{BUFFER, Device, Reader, Reason, Record, SESSIONS};
 use wellfed_core::deadline_passed;
 use wellfed_proto::api::{
-    Capabilities, FRAME_MAX, FeederMessage, Open, OpenRefusal, RequestId, Sample,
+    Capabilities, FRAME_MAX, FeederMessage, Open, OpenRefusal, Refusal, RequestId, Sample,
 };
 
 use wellfed_session::noise::{Handshake, Keypair, Transport};
@@ -80,6 +80,8 @@ enum Waiting {
     Feed {
         feed: u32,
     },
+    /// The feed it waited for ended refused, before anything moved.
+    FeedRefused(Refusal),
     Update {
         ticket: u32,
     },
@@ -334,6 +336,27 @@ impl Server {
                 self.end(slot, Reason::Closed, &mut record);
                 self.slots[slot] = Slot::FREE;
             }
+        }
+    }
+
+    /// The feed `feed` was accepted but ended refused before it was reserved:
+    /// every request that names it hears `refusal`, the sessions still waiting
+    /// and the ids remembered for a client that has gone. Told at once, since
+    /// the next feed takes the same number, and asking the device after that
+    /// would answer for someone else's feed.
+    pub fn feed_refused(&mut self, feed: u32, refusal: Refusal) {
+        for slot in &mut self.slots {
+            if let Phase::Open {
+                pending: Some(pending),
+                ..
+            } = &mut slot.phase
+                && matches!(pending.waiting, Waiting::Feed { feed: waited } if waited == feed)
+            {
+                pending.waiting = Waiting::FeedRefused(refusal);
+            }
+        }
+        for memory in &mut self.memories {
+            memory.refuse_queued(feed, refusal);
         }
     }
 

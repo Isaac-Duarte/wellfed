@@ -11,16 +11,18 @@ use std::rc::Rc;
 
 use wellfed_client::setup::{Ask, Credentials, Session, Step};
 use wellfed_core::buttons::{Button, Buttons, Gesture};
+use wellfed_device_api::Reader;
 use wellfed_device_api::mailbox::{KeyResult, WifiResult};
 use wellfed_feeder::feeder::platform::BuildWifi;
 use wellfed_feeder::feeder::setup::{self, Cause, Ended};
 use wellfed_feeder::feeder::{self, Platform, feeding, owner};
+use wellfed_feeder::store::events::Read;
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::sim::{Record, Sim};
 use wellfed_model::setup::{Enrolled, Reply, WifiSaved};
-use wellfed_proto::api::Refusal;
+use wellfed_proto::api::{EventBody, Refusal};
 use wellfed_session::noise::Keypair;
 use wellfed_session::setup_code::Code;
 
@@ -116,6 +118,20 @@ impl Feeder {
             let delay = self.sim.pass(self.now, |record| records.push(record));
             self.now += delay.clamp(1, 1000).min(end - self.now);
         }
+    }
+
+    /// The refused presses the ring holds.
+    fn refused_events(&mut self) -> usize {
+        let mut count = 0;
+        let mut after = None;
+        while let Some(Read::Record(record)) =
+            self.sim.platform().event_after(Reader::slot(0), after)
+        {
+            after = Some(record.seq);
+            let body = wellfed_proto::decode_padded::<EventBody>(&record.body);
+            count += usize::from(matches!(body, Some(EventBody::DispenseRefused { .. })));
+        }
+        count
     }
 
     /// The setup starts this boot recorded, by cause.
@@ -275,6 +291,88 @@ fn dispense_feeds_nothing_while_a_phone_runs_a_session() {
     assert_eq!(feeder.dispensed(), [Err(Refusal::Busy)]);
 }
 
+/// A press behind a storage write: accepted, and fed once the write ends. A
+/// second press meanwhile is refused and starts nothing.
+#[test]
+fn a_press_behind_a_write_feeds_when_its_claim_is_taken() {
+    let mut feeder = Feeder::first_boot();
+    feeder.run(1_000);
+    feeder.hold(&[Button::Lock]);
+    feeder.sim.hold_write(true);
+    feeder.press(Button::Dispense);
+    assert!(matches!(feeder.dispensed()[..], [Ok(1)]));
+    assert!(!feeder.sim.feed_outputs_claimed());
+
+    feeder.press(Button::Dispense);
+    assert!(matches!(
+        feeder.dispensed()[..],
+        [Ok(1), Err(Refusal::Busy)]
+    ));
+
+    feeder.sim.hold_write(false);
+    feeder.run(30);
+    assert!(feeder.sim.feed_outputs_claimed(), "taken on a later pass");
+    feeder.run(5_000);
+    assert_eq!(feeding_journal(&feeder), Some(1), "one feed");
+}
+
+/// A press whose claim is refused past the wait is what an immediate refusal
+/// is: the log's refused line, and the `DispenseRefused` event.
+#[test]
+fn a_press_past_its_claim_s_deadline_is_refused_as_any_press_is() {
+    let mut feeder = Feeder::first_boot();
+    feeder.run(1_000);
+    feeder.hold(&[Button::Lock]);
+    feeder.sim.hold_write(true);
+    feeder.press(Button::Dispense);
+    feeder.run(3_100);
+
+    assert!(matches!(
+        feeder.dispensed()[..],
+        [Ok(1), Err(Refusal::Busy)]
+    ));
+    assert!(!feeder.sim.feed_outputs_claimed());
+    assert_eq!(feeding_journal(&feeder), Some(0), "it never ran");
+    assert!(
+        feeder.refused_events() >= 1,
+        "the refused press is recorded"
+    );
+
+    // The feeder takes the next press, under the same number.
+    feeder.sim.hold_write(false);
+    feeder.press(Button::Dispense);
+    assert!(matches!(
+        feeder.dispensed()[..],
+        [Ok(1), Err(Refusal::Busy), Ok(1)]
+    ));
+    feeder.run(5_000);
+    assert_eq!(feeding_journal(&feeder), Some(1));
+}
+
+/// Setup mode the owner holds the buttons for, while a press waits behind a
+/// write: it ends in a restart, so the waiting feed is refused rather than
+/// started into it.
+#[test]
+fn setup_started_while_a_press_waits_stops_its_claim() {
+    let mut feeder = Feeder::new(BuildWifi::Present);
+    feeder.run(1_000);
+    feeder.hold(&[Button::Lock]);
+    feeder.sim.hold_write(true);
+    feeder.press(Button::Dispense);
+    assert!(matches!(feeder.dispensed()[..], [Ok(1)]));
+
+    feeder.hold(&[Button::Lock, Button::Mic]);
+    assert_eq!(feeder.starts(), [Cause::Hold]);
+    assert!(matches!(
+        feeder.dispensed()[..],
+        [Ok(1), Err(Refusal::Busy)]
+    ));
+    feeder.sim.hold_write(false);
+    feeder.run(1_000);
+    assert!(!feeder.sim.feed_outputs_claimed());
+    assert_eq!(feeding_journal(&feeder), Some(0), "it never ran");
+}
+
 #[test]
 fn the_idle_reboot_waits_for_a_feed_in_flight() {
     let mut feeder = Feeder::first_boot();
@@ -310,4 +408,9 @@ fn lock_and_mic_setup_still_refuses_dispense() {
 
     feeder.press(Button::Dispense);
     assert_eq!(feeder.dispensed(), [Err(Refusal::Busy)]);
+}
+
+/// How many feeds this feeder's journal has reserved.
+fn feeding_journal(feeder: &Feeder) -> Option<u64> {
+    wellfed_feeder_sim::feeding::reserved(&feeder.flash)
 }

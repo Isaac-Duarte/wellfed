@@ -261,11 +261,33 @@ mod writes {
     use std::cell::Cell;
 
     use wellfed_hal::interlock::{
-        Held, Interlock, JoinStart, Turn, WRITE_POLL_MS, WRITE_WAIT_MS, WriteStart, WriteStep,
-        WriteTurn,
+        ClaimStep, ClaimWait, Held, Interlock, JoinStart, Turn, WRITE_WAIT_MS, WriteStart,
+        WriteStep, WriteTurn,
     };
 
     use super::{BOUND_MS, Clock};
+
+    /// Between two of a claim's tries in these tests: a loop pass.
+    const PASS_MS: u32 = 10;
+
+    /// Tries a claim once a pass until it ends, with `bound_ms` and `queued`:
+    /// `between` runs after each pass's time has gone by.
+    fn claim_with(
+        interlock: &Interlock,
+        bound_ms: u32,
+        mut queued: impl FnMut() -> bool,
+        mut now: impl FnMut() -> u32,
+        mut between: impl FnMut(u32),
+    ) -> Result<(), Held> {
+        let mut wait = ClaimWait::new(now());
+        loop {
+            match interlock.claim_feed_after_writes(&mut wait, bound_ms, queued(), now()) {
+                ClaimStep::Claimed => return Ok(()),
+                ClaimStep::Refused(held) => return Err(held),
+                ClaimStep::Wait => between(PASS_MS),
+            }
+        }
+    }
 
     /// Claims on `interlock` after writes, with `at_wait` at each wait.
     fn claim(
@@ -273,7 +295,8 @@ mod writes {
         now: &Cell<u32>,
         mut at_wait: impl FnMut(u32),
     ) -> Result<(), Held> {
-        interlock.claim_feed_after_writes(
+        claim_with(
+            interlock,
             BOUND_MS,
             || false,
             || now.get(),
@@ -300,11 +323,11 @@ mod writes {
         let now = Cell::new(1000);
         let mut taken = None;
         let result = claim(&interlock, &now, |at| {
-            if at == 1000 + 2 * WRITE_POLL_MS {
+            if at == 1000 + 2 * PASS_MS {
                 taken = Some(turn.begin(&interlock, at, || true));
                 assert_eq!(interlock.claim_feed(BOUND_MS), Err(Held::Writing));
             }
-            if at == 1000 + 5 * WRITE_POLL_MS {
+            if at == 1000 + 5 * PASS_MS {
                 interlock.end_write();
             }
         });
@@ -313,13 +336,149 @@ mod writes {
         assert_eq!(
             taken,
             Some(WriteStep::Go(WriteStart::Waited {
-                ms: 1000 + 2 * WRITE_POLL_MS - 100
+                ms: 1000 + 2 * PASS_MS - 100
             }))
         );
         assert_eq!(interlock.turn(), Turn::Feeding);
         let status = interlock.status();
         assert_eq!((status.writes_deferred, status.writes_forced), (1, 0));
         assert_eq!(status.feeds_delayed, 1);
+    }
+
+    /// A claim behind a write holds nothing between its tries: the write goes
+    /// on and a second writer may start, none of them sees the outputs
+    /// claimed, and the claim lands on the first try after they have gone.
+    #[test]
+    fn a_claim_behind_a_write_is_taken_on_a_later_pass_and_holds_nothing_before() {
+        let interlock = Interlock::new();
+        let (mut first, mut second) = (WriteTurn::new(), WriteTurn::new());
+        assert!(matches!(
+            first.begin(&interlock, 0, || true),
+            WriteStep::Go(_)
+        ));
+
+        let mut wait = ClaimWait::new(0);
+        for now in [0, 10, 20] {
+            assert_eq!(
+                interlock.claim_feed_after_writes(&mut wait, BOUND_MS, false, now),
+                ClaimStep::Wait
+            );
+            assert!(!interlock.outputs_claimed(), "no claim while it waits");
+            assert!(!interlock.claim_in_bound(now));
+        }
+        assert_eq!(interlock.status().feeds_delayed, 1, "once a feed");
+        assert_eq!(interlock.status().refused, 0);
+
+        // A second write, asked for while the claim waits, goes first too.
+        assert_eq!(second.begin(&interlock, 25, || true), WriteStep::Wait);
+        interlock.end_write();
+        assert_eq!(
+            interlock.claim_feed_after_writes(&mut wait, BOUND_MS, false, 30),
+            ClaimStep::Wait,
+            "the waiting writer's turn"
+        );
+        assert!(matches!(
+            second.begin(&interlock, 35, || true),
+            WriteStep::Go(_)
+        ));
+        assert_eq!(
+            interlock.claim_feed_after_writes(&mut wait, BOUND_MS, false, 40),
+            ClaimStep::Wait
+        );
+        interlock.end_write();
+
+        // Queued work holds it as a running write does.
+        assert_eq!(
+            interlock.claim_feed_after_writes(&mut wait, BOUND_MS, true, 50),
+            ClaimStep::Wait
+        );
+        assert!(!interlock.outputs_claimed());
+
+        assert_eq!(
+            interlock.claim_feed_after_writes(&mut wait, BOUND_MS, false, 60),
+            ClaimStep::Claimed
+        );
+        assert!(interlock.outputs_claimed());
+        assert!(interlock.claim_in_bound(60));
+        assert_eq!(interlock.status().feeds_delayed, 1);
+    }
+
+    /// The deadline is a bound on the wait however rarely the claim is tried,
+    /// and a refused claim leaves the turn as it found it.
+    #[test]
+    fn a_claim_past_its_deadline_is_refused_and_holds_nothing() {
+        let interlock = Interlock::new();
+        let mut turn = WriteTurn::new();
+        assert!(matches!(
+            turn.begin(&interlock, 0, || true),
+            WriteStep::Go(_)
+        ));
+
+        // The uptime wraps during the wait.
+        let begun = u32::MAX - 100;
+        let mut wait = ClaimWait::new(begun);
+        let last = begun.wrapping_add(WRITE_WAIT_MS - 1);
+        assert_eq!(
+            interlock.claim_feed_after_writes(&mut wait, BOUND_MS, false, last),
+            ClaimStep::Wait
+        );
+        let due = begun.wrapping_add(WRITE_WAIT_MS);
+        assert_eq!(
+            interlock.claim_feed_after_writes(&mut wait, BOUND_MS, false, due),
+            ClaimStep::Refused(Held::Writing)
+        );
+        assert_eq!(interlock.turn(), Turn::Free);
+        assert!(interlock.writing(), "the write keeps its turn");
+        assert_eq!(interlock.status().refused, 1);
+
+        // A change still in its mailbox refuses it the same way.
+        interlock.end_write();
+        let mut wait = ClaimWait::new(0);
+        assert_eq!(
+            interlock.claim_feed_after_writes(&mut wait, BOUND_MS, true, WRITE_WAIT_MS),
+            ClaimStep::Refused(Held::Writing)
+        );
+        assert_eq!(interlock.turn(), Turn::Free);
+
+        // Waiting writers are passed at the deadline, and not before.
+        let mut waiting = WriteTurn::new();
+        interlock.claim_feed(BOUND_MS).unwrap();
+        assert_eq!(waiting.begin(&interlock, 0, || true), WriteStep::Wait);
+        interlock.release_feed();
+        let mut wait = ClaimWait::new(0);
+        assert_eq!(
+            interlock.claim_feed_after_writes(&mut wait, BOUND_MS, false, WRITE_WAIT_MS - 1),
+            ClaimStep::Wait
+        );
+        assert_eq!(
+            interlock.claim_feed_after_writes(&mut wait, BOUND_MS, false, WRITE_WAIT_MS),
+            ClaimStep::Claimed
+        );
+    }
+
+    /// A join that takes its turn while a claim waits refuses it at its next
+    /// try, as a join always refuses a claim at once, and takes nothing back.
+    #[test]
+    fn a_join_that_starts_while_a_claim_waits_refuses_it() {
+        let interlock = Interlock::new();
+        let mut turn = WriteTurn::new();
+        assert!(matches!(
+            turn.begin(&interlock, 0, || true),
+            WriteStep::Go(_)
+        ));
+        let mut wait = ClaimWait::new(0);
+        assert_eq!(
+            interlock.claim_feed_after_writes(&mut wait, BOUND_MS, false, 0),
+            ClaimStep::Wait
+        );
+
+        let clock = Clock::new();
+        assert_eq!(clock.join(&interlock, |_| {}), JoinStart::Free);
+        assert_eq!(
+            interlock.claim_feed_after_writes(&mut wait, BOUND_MS, false, 10),
+            ClaimStep::Refused(Held::Joining)
+        );
+        assert_eq!(interlock.turn(), Turn::Joining);
     }
 
     #[test]
@@ -337,7 +496,7 @@ mod writes {
 
         assert_eq!(result, Err(Held::Writing));
         assert_eq!(now.get(), WRITE_WAIT_MS);
-        assert_eq!(waits.get(), WRITE_WAIT_MS / WRITE_POLL_MS);
+        assert_eq!(waits.get(), WRITE_WAIT_MS / PASS_MS);
         assert_eq!(interlock.turn(), Turn::Free);
         assert_eq!(interlock.status().refused, 1);
 
@@ -484,7 +643,8 @@ mod writes {
         // (B passed the writer after its wait).
         interlock.release_feed();
         let now = Cell::new(BOUND_MS - 5);
-        let claimed = interlock.claim_feed_after_writes(
+        let claimed = claim_with(
+            &interlock,
             BOUND_MS,
             || false,
             || now.get(),
@@ -532,7 +692,8 @@ mod writes {
         let now = Cell::new(0);
 
         // The writer takes the queued change, writes it and finishes it.
-        let claimed = interlock.claim_feed_after_writes(
+        let claimed = claim_with(
+            &interlock,
             BOUND_MS,
             || queued.get(),
             || now.get(),
@@ -550,7 +711,8 @@ mod writes {
         // Work that never moves (a stalled writer) refuses the feed at the
         // deadline: nothing moved, and the change would land after it.
         now.set(0);
-        let claimed = interlock.claim_feed_after_writes(
+        let claimed = claim_with(
+            &interlock,
             BOUND_MS,
             || true,
             || now.get(),
@@ -566,8 +728,7 @@ mod writes {
         let interlock = Interlock::new();
         assert!(!interlock.claim_in_bound(0));
 
-        let claimed =
-            interlock.claim_feed_after_writes(BOUND_MS, || false, || 1000, |_| unreachable!());
+        let claimed = claim_with(&interlock, BOUND_MS, || false, || 1000, |_| unreachable!());
         assert_eq!(claimed, Ok(()));
         assert!(interlock.claim_in_bound(1000));
         assert!(interlock.claim_in_bound(1000 + BOUND_MS - 1));
@@ -637,7 +798,8 @@ mod writes {
 
         let mut fed = 0;
         while !writes.is_finished() || fed == 0 {
-            let claimed = INTERLOCK.claim_feed_after_writes(
+            let claimed = claim_with(
+                &INTERLOCK,
                 u32::MAX,
                 || false,
                 || 0,

@@ -121,7 +121,13 @@ A client that may want to cancel keeps its session open across the feed, as `wel
 
 **A join during a feed** waits in the Wi-Fi task until the owner is at rest with its outputs stopped. It waits at most `FEED_BOUND_MS`: the owner's own cap on a feed's emitters-on time plus 2 s, about 9 min 40 s for 48 portions. `PLOWN1 joins …` counts waits, and joins forced past that bound.
 
-**A storage write running** when a feed comes makes the feed wait in the loop, at most `WRITE_WAIT_MS`. That is 3 s: one record's erase and two programs at their whole lease budget, after the writer's 200 ms poll. A write still running then, or a client's change still queued for the writer, refuses the feed `Busy` (`held=3`).
+**A storage write running** when a feed comes makes the feed wait, at most `WRITE_WAIT_MS`. That is 3 s: one record's erase and two programs at their whole lease budget, after the writer's 200 ms poll. A write still running then, or a client's change still queued for the writer, refuses the feed `Busy` (`held=3`).
+
+The loop tries the claim once a pass and never sleeps for it, so it keeps serving meanwhile:
+- The request stays unanswered. `Feeding` still means the feed is reserved, and a refusal comes as that request's answer. A retry of the id, on any session, waits for the same feed or hears the same refusal.
+- Others read it as a feed in flight: readiness says `feeding`, and another feed, a restart or an update offer is refused `Busy`. A change that would queue a write behind it is refused `Busy`, as during a feed.
+- A cancel naming its number ends it, refused, with nothing moved. Setup mode, an install or the battery hold that starts meanwhile does the same.
+- A plan's occurrence due meanwhile waits its turn. A press or a plan refused this way ends as an immediate refusal does: `PLFEED1 dispense refused=…` and its event, or the occurrence given back. So a press can log `dispense feed=N` and then be refused.
 
 **A feed a reset interrupted** (power cut, watchdog, fault) is resolved when the owner next opens.
 - The journal records it as uncertain under its own id.

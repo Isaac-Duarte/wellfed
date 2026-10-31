@@ -49,12 +49,12 @@
 //!   claimed, counted as forced, and only while they read stopped: a write
 //!   never starts into moving outputs. Each writer times its own wait
 //!   ([`WriteTurn`]).
-//! - A claim waits in the loop ([`Interlock::claim_feed_after_writes`]), in
-//!   [`WRITE_POLL_MS`] steps for at most [`WRITE_WAIT_MS`], for a write
-//!   running, a writer waiting, or a client's change queued for a writer
-//!   that has not asked yet. A write still running, or a change still
-//!   queued, then refuses the feed; waiting writers are passed: they have
-//!   not started, and wait for the release.
+//! - A claim is tried once a loop pass ([`Interlock::claim_feed_after_writes`],
+//!   timed by its [`ClaimWait`]) for at most [`WRITE_WAIT_MS`], while a write
+//!   runs, a writer waits, or a client's change is queued for a writer that
+//!   has not asked yet. The loop never sleeps for it. A write still running,
+//!   or a change still queued, then refuses the feed; waiting writers are
+//!   passed: they have not started, and wait for the release.
 //!
 //! The feed journal writes under the loop's own claim, from the owner's rest
 //! boundaries (the outputs already stopped), so it takes no write turn.
@@ -87,9 +87,6 @@ pub const JOIN_POLL_MS: u32 = 50;
 /// A join holding its turn this long is counted: the shim's scan wait is
 /// 10 s, and associations and DHCP have finished within seconds on the bench.
 pub const LONG_JOIN_MS: u32 = 60_000;
-
-/// How often a claim waiting for a storage write looks again.
-pub const WRITE_POLL_MS: u32 = 10;
 
 /// The slowest a waiting writer may poll for its turn. Every writer runs
 /// in the runtime's service task (the confirmation, the settings writer,
@@ -246,6 +243,36 @@ pub enum WriteStart {
     Forced { ms: u32 },
 }
 
+/// What one try of a claim behind storage writes found.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClaimStep {
+    /// The outputs are claimed.
+    Claimed,
+    /// Writes still go first: try again on a later pass.
+    Wait,
+    /// Refused, finally: this claim holds nothing and is over.
+    Refused(Held),
+}
+
+/// One claim's wait for storage writes, kept by the loop between its tries,
+/// so a pass never sleeps for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClaimWait {
+    /// When the feed asked, in uptime ms.
+    begun: u32,
+    /// Counted once in `feeds_delayed`.
+    waited: bool,
+}
+
+impl ClaimWait {
+    pub const fn new(now_ms: u32) -> Self {
+        Self {
+            begun: now_ms,
+            waited: false,
+        }
+    }
+}
+
 /// The turn byte: the feed and join [`Turn`], and the write flags.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct State {
@@ -364,6 +391,7 @@ pub struct Status {
 /// The turn between the loop (feeds) and the C Wi-Fi task (joins), as
 /// atomics: neither task blocks the other except a join waiting, in its own
 /// task, for the release.
+#[derive(Debug)]
 pub struct Interlock {
     turn: AtomicU8,
     /// The claimant's bound on one claim; what a join waits at most.
@@ -537,7 +565,9 @@ impl Interlock {
         // Counted before the claim can land, so a writer that sees the claim
         // never pairs it with the previous count. A claim that then fails
         // (or a race that makes it the loop's own) counts once too many,
-        // which only restarts a waiting writer's forced bound later.
+        // which only restarts a waiting writer's forced bound later; a writer
+        // reads the count only while the outputs are claimed, so a claim
+        // tried every pass moves nothing it times.
         if self.turn() == Turn::Free {
             self.claims.fetch_add(1, Ordering::AcqRel);
         }
@@ -547,53 +577,53 @@ impl Interlock {
         })
     }
 
-    /// As [`Self::claim_feed`], but storage writes first get up to
-    /// [`WRITE_WAIT_MS`], waiting in `delay` steps: a write running, a
-    /// writer waiting for its turn, or work `queued` for a writer that has
-    /// not asked for its turn yet (a client's change in a mailbox). Past the
-    /// wait a write still running refuses the claim, and waiting writers are
-    /// passed: they have not started, and wait for the release. Work still
-    /// queued in a mailbox at the deadline (a stalled writer) refuses the
-    /// claim as a running write does: the client's change would otherwise
-    /// land after the feed. A join still refuses at once.
+    /// One try of a claim that gives storage writes up to [`WRITE_WAIT_MS`]
+    /// from `wait`'s start: a write running, a writer waiting for its turn,
+    /// or work `queued` for a writer that has not asked for its turn yet (a
+    /// client's change in a mailbox). The caller tries again on a later pass
+    /// after [`ClaimStep::Wait`], and holds nothing meanwhile: writers go on,
+    /// and a join's turn refuses the claim on its next try.
+    ///
+    /// Past the wait a write still running refuses the claim, and waiting
+    /// writers are passed: they have not started, and wait for the release.
+    /// Work still queued in a mailbox at the deadline (a stalled writer)
+    /// refuses the claim as a running write does: the client's change would
+    /// otherwise land after the feed. A join still refuses at once.
     pub fn claim_feed_after_writes(
         &self,
+        wait: &mut ClaimWait,
         bound_ms: u32,
-        mut queued: impl FnMut() -> bool,
-        mut now_ms: impl FnMut() -> u32,
-        mut delay: impl FnMut(u32),
-    ) -> Result<(), Held> {
-        let begun = now_ms();
-        let mut waited = false;
-        loop {
-            let passed = now_ms().wrapping_sub(begun) >= WRITE_WAIT_MS;
-            let waiters = if passed {
-                Waiters::Passed
-            } else {
-                Waiters::GoFirst
-            };
-            let result = match (queued(), passed) {
-                (true, false) => Err(Held::WriteWaiting),
-                (true, true) => Err(Held::Writing),
-                (false, _) => self.try_claim(bound_ms, waiters),
-            };
-            match result {
-                Ok(()) => {
-                    self.claimed_at_ms.store(now_ms(), Ordering::Release);
-                    return Ok(());
-                }
-                Err(Held::Writing | Held::WriteWaiting) if !passed => {}
-                Err(held) => {
-                    self.refused.fetch_add(1, Ordering::Relaxed);
-                    return Err(held);
-                }
-            }
+        queued: bool,
+        now_ms: u32,
+    ) -> ClaimStep {
+        let passed = now_ms.wrapping_sub(wait.begun) >= WRITE_WAIT_MS;
+        let waiters = if passed {
+            Waiters::Passed
+        } else {
+            Waiters::GoFirst
+        };
+        let result = match (queued, passed) {
+            (true, false) => Err(Held::WriteWaiting),
+            (true, true) => Err(Held::Writing),
+            (false, _) => self.try_claim(bound_ms, waiters),
+        };
 
-            if !waited {
-                waited = true;
-                self.feeds_delayed.fetch_add(1, Ordering::Relaxed);
+        match result {
+            Ok(()) => {
+                self.claimed_at_ms.store(now_ms, Ordering::Release);
+                ClaimStep::Claimed
             }
-            delay(WRITE_POLL_MS);
+            Err(Held::Writing | Held::WriteWaiting) if !passed => {
+                if !wait.waited {
+                    wait.waited = true;
+                    self.feeds_delayed.fetch_add(1, Ordering::Relaxed);
+                }
+                ClaimStep::Wait
+            }
+            Err(held) => {
+                self.refused.fetch_add(1, Ordering::Relaxed);
+                ClaimStep::Refused(held)
+            }
         }
     }
 

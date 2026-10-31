@@ -25,6 +25,14 @@
 //! still recorded. Back-to-back feeds share the reason `Feeding`, so presses
 //! across them record once. Every press goes to the log.
 //!
+//! **A claim behind writes.** A feed that finds storage writes ahead of it is
+//! accepted and numbered, and its claim on the outputs is tried once a pass
+//! ([`Feeds::claim_step`]) for at most 3 s, the loop serving everything else
+//! meanwhile. So a `queue` that returns a number has not started anything yet:
+//! a client's answer waits for the reservation, as it always did, and a press
+//! or a plan hears a late refusal through [`super::Feeder`]'s own pass, with
+//! the same consequences an immediate one has.
+//!
 //! **Food level.** The food beam is lit during feeds and in a short window at
 //! rest (`wellfed_core::feed::food_read`), so its level is the latest of
 //! either's. With no feed in flight, a level that differs from the last one
@@ -86,6 +94,28 @@ pub const fn held(ready: Readiness, meal: bool) -> Readiness {
     match ready {
         Readiness::Ready if meal => Readiness::Blocked(Blocked::Feeding),
         ready => ready,
+    }
+}
+
+/// Why a feed asked for while ready must not claim the outputs now, of the
+/// reasons that can arise while it waits. The owner's own are behind this: it
+/// checks them as it takes the feed.
+pub const fn claim_hold(
+    restarting: bool,
+    setup: bool,
+    installing: bool,
+    battery_hold: bool,
+) -> Option<Blocked> {
+    if restarting {
+        Some(Blocked::Restarting)
+    } else if setup {
+        Some(Blocked::Setup)
+    } else if installing {
+        Some(Blocked::Updating)
+    } else if battery_hold {
+        Some(Blocked::Battery)
+    } else {
+        None
     }
 }
 
@@ -269,6 +299,20 @@ pub(super) const fn refusal_name(refusal: Refusal) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A waiting feed stops for any reason that can arise while it waits, in
+    /// the order readiness names them.
+    #[test]
+    fn a_waiting_feed_is_held_by_what_arises_while_it_waits() {
+        assert_eq!(claim_hold(false, false, false, false), None);
+        let held = |restarting, setup, installing, battery| {
+            claim_hold(restarting, setup, installing, battery)
+        };
+        assert_eq!(held(true, true, true, true), Some(Blocked::Restarting));
+        assert_eq!(held(false, true, true, true), Some(Blocked::Setup));
+        assert_eq!(held(false, false, true, true), Some(Blocked::Updating));
+        assert_eq!(held(false, false, false, true), Some(Blocked::Battery));
+    }
 
     /// One `Food` event a change, and only at rest: none before the beam
     /// has read, none while a feed runs however it flickers, none for a

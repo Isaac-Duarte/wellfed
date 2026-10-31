@@ -297,19 +297,7 @@ impl Schedule {
                             feed,
                         });
                     }
-                    Err(refusal) => {
-                        record(Record::Refused {
-                            plan: held.plan,
-                            refusal,
-                        });
-                        let due = u64::from(held.due_s) * 1000;
-                        self.waiting = Some((held.plan, due, blocked(refusal)));
-                        self.retry_at = Some(now_ms.wrapping_add(RETRY_MS));
-                        self.step = Step::Queue(
-                            PlansChange::Release { claim: held },
-                            Expect::Released(held),
-                        );
-                    }
+                    Err(refusal) => self.give_back(held, refusal, now_ms, record),
                 }
             }
             Expect::Released(_) => {}
@@ -338,6 +326,47 @@ impl Schedule {
                     missed(platform, now_ms, plan, due_s, reason, record);
                 }
             }
+        }
+    }
+
+    /// The owner refused the claimed feed: the occurrence is given back, and
+    /// claimed again after [`RETRY_MS`].
+    fn give_back(
+        &mut self,
+        held: Claim,
+        refusal: Refusal,
+        now_ms: u32,
+        record: &mut impl FnMut(Record),
+    ) {
+        record(Record::Refused {
+            plan: held.plan,
+            refusal,
+        });
+        let due = u64::from(held.due_s) * 1000;
+        self.waiting = Some((held.plan, due, blocked(refusal)));
+        self.retry_at = Some(now_ms.wrapping_add(RETRY_MS));
+        self.step = Step::Queue(PlansChange::Release { claim: held }, Expect::Released(held));
+    }
+
+    /// The feed `plan`'s claim queued was accepted, but its own claim on the
+    /// outputs ended refused: as a refusal when it was queued. The schedule
+    /// has not stepped since (the loop holds it while a feed waits), so the
+    /// plans still hold the claim.
+    pub fn claim_refused<P: Platform>(
+        &mut self,
+        platform: &mut P,
+        plan: u8,
+        refusal: Refusal,
+        now_ms: u32,
+        mut record: impl FnMut(Record),
+    ) {
+        let held = match platform.plans() {
+            PlansResult::Current { view, .. } => view.claim.filter(|held| held.plan == plan),
+            PlansResult::Busy | PlansResult::ReadOnly | PlansResult::Unserved => None,
+        };
+        match held {
+            Some(held) => self.give_back(held, refusal, now_ms, &mut record),
+            None => record(Record::Dropped),
         }
     }
 

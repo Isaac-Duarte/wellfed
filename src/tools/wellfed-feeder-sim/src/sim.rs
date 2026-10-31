@@ -242,6 +242,16 @@ impl Sim {
         self.feeds.fill(food);
     }
 
+    /// Hold a storage write in the way of a feed's claim, or end it.
+    pub fn hold_write(&mut self, held: bool) {
+        self.feeds.hold_write(held);
+    }
+
+    /// Whether a feed's claim on the outputs was taken and has not ended.
+    pub fn feed_outputs_claimed(&self) -> bool {
+        self.feeds.outputs_claimed()
+    }
+
     /// Refuse every feed `Busy` though readiness says ready, as an owner
     /// that lost a race does, or stop.
     pub fn refuse_feeds(&mut self, refusing: bool) {

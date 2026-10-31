@@ -77,6 +77,20 @@ pub trait Feeds {
     fn blocked(&self) -> Option<Blocked>;
     /// Hand one feed to the owner; the number its journal holds it under.
     fn submit(&mut self, portions: u8, by: Source) -> Result<u32, Refusal>;
+    /// Who asked for the feed `submit` took but whose claim on the outputs
+    /// still waits for storage writes; `None` with no such feed. The loop
+    /// tries it once a pass ([`Self::claim_step`]) and serves everything else
+    /// meanwhile; `busy` and `blocked` read it as a feed in flight, and the
+    /// device API refuses changes that would queue a write behind it.
+    fn claiming(&self) -> Option<Source> {
+        None
+    }
+    /// One try of the waiting feed's claim, `hold` being a reason not to feed
+    /// that arose since it was asked for. Its refusal, once it has one: a feed
+    /// claimed here has gone to the owner, and [`Self::reserved`] follows it.
+    fn claim_step(&mut self, _hold: Option<Blocked>) -> Option<RefusedClaim> {
+        None
+    }
     /// Whether the feed `feed` is reserved yet: `None` while it waits.
     fn reserved(&self, feed: u32) -> Option<Result<(), Refusal>>;
     /// Stop the feed `feed` if it is still running.
@@ -101,6 +115,15 @@ pub trait Feeds {
     fn high_water(&self) -> Option<u32> {
         None
     }
+}
+
+/// A feed `submit` accepted and numbered, whose claim on the outputs ended
+/// refused: nothing moved, and the next feed takes the same number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RefusedClaim {
+    pub feed: u32,
+    pub by: Source,
+    pub refusal: Refusal,
 }
 
 /// The rotor's phase and this boot's mark counts, from the feeding owner.
@@ -377,6 +400,7 @@ impl<P: Platform> Feeder<P> {
             record(Record::Supply(supply::Record::InstallStopped { stopped }));
         }
 
+        self.claim_turn(feeds, now_ms, &mut record);
         if self.owner.take_dispense() {
             let ready = self.readiness(feeds);
             let portions = feeding::DISPENSE_PORTIONS;
@@ -389,10 +413,15 @@ impl<P: Platform> Feeder<P> {
             }
         }
         let ready = self.ready(feeds);
-        self.schedule
-            .step(&mut self.platform, feeds, now_ms, ready, |r| {
-                record(Record::Schedule(r))
-            });
+        // A waiting feed is the next one, so nothing is decided around it: a
+        // plan's refused claim comes back to the schedule as it left, and
+        // no write of the plans joins the writes the feed waits for.
+        if feeds.claiming().is_none() {
+            self.schedule
+                .step(&mut self.platform, feeds, now_ms, ready, |r| {
+                    record(Record::Schedule(r))
+                });
+        }
         // After the schedule, so a pass that runs a meal decides it first;
         // the reminder only reads the plans.
         self.reminder
@@ -481,6 +510,59 @@ impl<P: Platform> Feeder<P> {
             .min(speaker_delay)
             .min(lights_delay)
             .min(beep_delay)
+    }
+
+    /// One pass's try of a feed waiting to claim the outputs, and the end of
+    /// one refused. What held for it when it was asked for is asked again,
+    /// since passes run between two tries: a gesture may have started setup
+    /// mode, and an install or a restart may have begun. Out of line so its
+    /// frame is not under every session's deepest path.
+    #[inline(never)]
+    fn claim_turn<F: Feeds>(
+        &mut self,
+        feeds: &mut F,
+        now_ms: u32,
+        record: &mut impl FnMut(Record<P::Record>),
+    ) {
+        let Some(by) = feeds.claiming() else {
+            return;
+        };
+        // As readiness tells each asker: a client always sees setup mode block.
+        let setup = match by {
+            Source::Client(_) => self.owner.setup_on(),
+            _ => self.owner.setup_holds_feeds(),
+        };
+        let hold = feeding::claim_hold(
+            self.platform.restarting(),
+            setup,
+            self.platform.installing(),
+            self.supply.holds(),
+        );
+        let Some(refused) = feeds.claim_step(hold) else {
+            return;
+        };
+
+        // Before anything can take its number again.
+        self.serve
+            .server()
+            .feed_refused(refused.feed, refused.refusal);
+        match refused.by {
+            Source::Panel => {
+                let result = Err(refused.refusal);
+                record(Record::Feeding(feeding::Record::Dispense { result }));
+                let reason = feeding::refused_reason(feeds, self.readiness(feeds));
+                self.readiness.refused(&mut self.platform, now_ms, reason);
+                self.lights.refused(now_ms, |r| record(Record::Lights(r)));
+            }
+            Source::Schedule(plan) => self.schedule.claim_refused(
+                &mut self.platform,
+                plan,
+                refused.refusal,
+                now_ms,
+                |r| record(Record::Schedule(r)),
+            ),
+            Source::Client(_) | Source::Feeder => {}
+        }
     }
 
     /// The feeder's states as the lights show them, after this pass's

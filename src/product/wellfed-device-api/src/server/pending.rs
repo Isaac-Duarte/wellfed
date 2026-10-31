@@ -180,6 +180,7 @@ impl Server {
                 Some(Ok(())) => Reply::Feeding(feed),
                 Some(Err(refusal)) => Reply::Refused(refusal),
             },
+            Waiting::FeedRefused(refusal) => Reply::Refused(refusal),
             Waiting::Update { ticket } => match device.update_outcome(ticket) {
                 None => return Ok(None),
                 Some(Ok(UpdateAnswer::View(view))) => Reply::Update(view),

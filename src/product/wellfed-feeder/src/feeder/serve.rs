@@ -350,8 +350,10 @@ impl<S: Copy> Serve<S> {
         // recovery enrolls a key, a store write that would wait out the
         // feed, so the invite is redeemed (and the recovery code taken) only
         // once it can be written. Held for at most the claim's bound, as
-        // joins are.
-        let feeding = feeds.feeding() || platform.claim_in_bound(now_ms);
+        // joins are. A feed still waiting to claim them counts: an enrollment
+        // now would queue the very write it would then wait for.
+        let feeding =
+            feeds.feeding() || feeds.claiming().is_some() || platform.claim_in_bound(now_ms);
         // The sessions this pass opened, counted once the device lets go of
         // the statistics.
         let mut opened = [None; SESSIONS];
@@ -726,6 +728,15 @@ impl TaskCache {
     }
 }
 
+impl<P: Platform, F: Feeds> FeederDevice<'_, P, F> {
+    /// Whether a change that writes must be refused as during a feed: the
+    /// outputs are claimed, or a feed waits for the writes ahead of it, which
+    /// this write would join.
+    fn outputs_claimed(&self) -> bool {
+        self.platform.outputs_claimed() || self.feeds.claiming().is_some()
+    }
+}
+
 impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
     fn random(&mut self, out: &mut [u8; 32]) -> bool {
         self.platform.random(out)
@@ -783,7 +794,7 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
     }
 
     fn settings(&mut self, change: SettingsFields) -> SettingsResult {
-        if change.changes() && self.platform.outputs_claimed() {
+        if change.changes() && self.outputs_claimed() {
             return SettingsResult::Busy;
         }
         self.platform.settings_request(change)
@@ -792,7 +803,7 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
     fn wifi(&mut self, change: Option<Option<Credentials>>) -> WifiResult {
         match change {
             None => self.platform.wifi(),
-            Some(_) if self.platform.outputs_claimed() => WifiResult::Busy,
+            Some(_) if self.outputs_claimed() => WifiResult::Busy,
             Some(credentials) => self.platform.wifi_change(credentials),
         }
     }
@@ -821,7 +832,7 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
     /// owner's sound settings let through, so the `sound` switch, a volume
     /// of 0 and the sound window all silence it.
     fn play(&mut self, tune: Tune) -> PlayResult {
-        let feed = self.feed_active() || self.platform.outputs_claimed();
+        let feed = self.feed_active() || self.outputs_claimed();
         let elsewhere = self.setup || self.platform.installing() || self.platform.restarting();
         let wall_ms = self.platform.wall_ms(self.now_ms);
         if feed || elsewhere || call::crowds(self.call_lead, wall_ms, tune) {
@@ -837,7 +848,7 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
     fn time_settings(&mut self, change: Option<TimeSettings>) -> TimeSettingsResult {
         match change {
             None => self.platform.time_settings(),
-            Some(_) if self.platform.outputs_claimed() => TimeSettingsResult::Busy,
+            Some(_) if self.outputs_claimed() => TimeSettingsResult::Busy,
             Some(settings) => self.platform.time_settings_change(settings),
         }
     }
@@ -845,7 +856,7 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
     fn calibration(&mut self, change: Option<Calibration>) -> CalibrationResult {
         match change {
             None => self.platform.calibration(),
-            Some(_) if self.platform.outputs_claimed() => CalibrationResult::Busy,
+            Some(_) if self.outputs_claimed() => CalibrationResult::Busy,
             Some(calibration) => self.platform.calibration_change(calibration),
         }
     }
@@ -855,7 +866,7 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
     fn plans(&mut self, change: Option<Table>) -> PlansResult {
         match change {
             None => self.platform.plans(),
-            Some(_) if self.platform.outputs_claimed() => PlansResult::Busy,
+            Some(_) if self.outputs_claimed() => PlansResult::Busy,
             Some(table) => {
                 let at_s = self
                     .platform
@@ -872,13 +883,13 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
     fn call(&mut self, change: Option<CallChange>) -> CallResult {
         match change {
             None => self.platform.call(),
-            Some(_) if self.platform.outputs_claimed() => CallResult::Busy,
+            Some(_) if self.outputs_claimed() => CallResult::Busy,
             Some(change) => self.platform.call_change(change),
         }
     }
 
     fn call_chunk(&mut self, offset: u32, data: &[u8]) -> Result<(), Refusal> {
-        if self.platform.outputs_claimed() {
+        if self.outputs_claimed() {
             return Err(Refusal::Busy);
         }
         self.platform.call_chunk(offset, data)
@@ -899,7 +910,7 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
     /// `None` while the outputs are claimed, as when the slot is taken: a
     /// revocation is refused `Busy`, and an enrollment asks again.
     fn keys(&mut self, change: KeyChange) -> Option<u32> {
-        if self.platform.outputs_claimed() {
+        if self.outputs_claimed() {
             return None;
         }
         let change = match change {

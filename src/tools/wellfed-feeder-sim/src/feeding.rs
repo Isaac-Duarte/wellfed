@@ -33,6 +33,10 @@
 //!   outlet or a jam no reversal freed, `Failed` with one portion delivered
 //!   (none for a feed of one, which ends before its mark), never resumed
 //!   or retried.
+//! - [`SimFeeds::hold_write`] holds a storage write on a claim's way, on an
+//!   interlock of its own, as the settings writer does: a feed then waits to
+//!   claim the outputs once a pass, for at most `WRITE_WAIT_MS`, and is
+//!   refused past it, the firmware's claim on the firmware's interlock.
 //! - The hopper has food until [`SimFeeds::fill`] empties it. Each feed
 //!   reads it as the food beam would, runs whatever it reads (as the
 //!   firmware's and stock's do) and records the reading in its `Fed`
@@ -51,7 +55,8 @@ use wellfed_core::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult};
 use wellfed_core::store::feed_journal::{FeedJournal, JournalConfig, JournalError};
 use wellfed_core::supply::Floor;
 use wellfed_feeder::feed::{self, Durability};
-use wellfed_feeder::feeder::Feeds;
+use wellfed_feeder::feeder::{Feeds, RefusedClaim};
+use wellfed_hal::interlock::{ClaimStep, ClaimWait, Interlock, WriteStep, WriteTurn};
 use wellfed_proto::api::{Blocked, EventBody, PORTIONS_MAX, Refusal, Source};
 
 use crate::flash::{Flash, Region};
@@ -59,6 +64,19 @@ use crate::platform::SimSupply;
 
 /// How long one portion takes to drive.
 pub const PORTION_MS: u32 = 200;
+
+/// How long the bound on one claim is here; nothing waits it out.
+const CLAIM_BOUND_MS: u32 = 600_000;
+
+/// A feed waiting to claim the outputs: numbered, with nothing moved.
+#[derive(Debug)]
+struct Claiming {
+    feed: u32,
+    portions: u16,
+    by: Source,
+    wait: ClaimWait,
+    cancelled: Cell<bool>,
+}
 
 /// The simulator's journal: its own binding (nonzero, never a real
 /// board's), the firmware's bowl and per-feed cap.
@@ -92,6 +110,12 @@ pub struct SimFeeds {
     /// `Fed` event is not recorded yet.
     interrupted: Option<OwnerResult>,
     current: Option<Current>,
+    /// The feed waiting to claim the outputs; never with `current`.
+    claiming: Option<Claiming>,
+    /// The turn a feed's claim takes against a write a test holds.
+    interlock: Interlock,
+    /// The uptime as the last step read it, for a claim's wait.
+    now_ms: u32,
     /// The last feed that ended without a reservation, and why.
     unreserved: Option<(u64, Refusal)>,
     stalled: bool,
@@ -130,6 +154,9 @@ impl SimFeeds {
             failed,
             interrupted,
             current: None,
+            claiming: None,
+            interlock: Interlock::new(),
+            now_ms: 0,
             unreserved: None,
             stalled: false,
             refusing: false,
@@ -179,6 +206,22 @@ impl SimFeeds {
         self.stalled = stalled;
     }
 
+    /// Hold a storage write in the way of a feed's claim, or end it.
+    pub fn hold_write(&mut self, held: bool) {
+        if held {
+            let begun = WriteTurn::new().begin(&self.interlock, self.now_ms, || true);
+            assert!(matches!(begun, WriteStep::Go(_)), "one write at a time");
+        } else {
+            self.interlock.end_write();
+        }
+    }
+
+    /// Whether the outputs are claimed: a feed's claim was taken and it has
+    /// not ended.
+    pub fn outputs_claimed(&self) -> bool {
+        self.interlock.outputs_claimed()
+    }
+
     /// Refuse every feed `Busy` while readiness says ready, or stop.
     pub fn refuse(&mut self, refusing: bool) {
         self.refusing = refusing;
@@ -187,6 +230,10 @@ impl SimFeeds {
     /// Step the owner at `now_ms`: the `Fed` event of a feed that ended,
     /// if one did, and how soon to step again while a feed runs.
     pub fn step(&mut self, now_ms: u32) -> (Option<EventBody>, Option<u32>) {
+        self.now_ms = now_ms;
+        if self.current.is_none() && self.claiming.is_none() {
+            self.interlock.release_feed();
+        }
         if let Some(result) = self.interrupted.take() {
             let number = u32::try_from(result.id).unwrap_or(u32::MAX);
             return (
@@ -194,7 +241,7 @@ impl SimFeeds {
                 None,
             );
         }
-        if self.current.is_none() {
+        if self.current.is_none() && self.claiming.is_none() {
             self.read_food(now_ms);
         }
         let Some(current) = self.current.as_mut() else {
@@ -283,6 +330,30 @@ impl SimFeeds {
         }
     }
 
+    /// One try of a feed's claim. The simulator queues nothing for a writer.
+    fn try_claim(&self, claiming: &mut Claiming) -> ClaimStep {
+        self.interlock.claim_feed_after_writes(
+            &mut claiming.wait,
+            CLAIM_BOUND_MS,
+            false,
+            self.now_ms,
+        )
+    }
+
+    /// The claim is taken: the owner has the feed, under its number.
+    fn hand_over(&mut self, claiming: &Claiming) {
+        self.current = Some(Current {
+            feed: u64::from(claiming.feed),
+            portions: claiming.portions,
+            by: claiming.by,
+            reserved: false,
+            driven_ms: 0,
+            stepped_ms: None,
+            cancelled: Cell::new(false),
+        });
+        self.unreserved = None;
+    }
+
     /// Write `result` into the journal: the `Fed` event it makes, uncertain
     /// when the write fails.
     fn finish(&mut self, result: &OwnerResult, by: Source) -> EventBody {
@@ -318,7 +389,7 @@ impl Feeds for SimFeeds {
     }
 
     fn busy(&self) -> bool {
-        self.current.is_some()
+        self.current.is_some() || self.claiming.is_some()
     }
 
     fn blocked(&self) -> Option<Blocked> {
@@ -326,7 +397,7 @@ impl Feeds for SimFeeds {
             Some(Blocked::Journal)
         } else if self.interrupted.is_some() {
             Some(Blocked::Resolving)
-        } else if self.current.is_some() {
+        } else if self.current.is_some() || self.claiming.is_some() {
             Some(Blocked::Feeding)
         } else if self.supply_low() {
             Some(Blocked::Battery)
@@ -343,6 +414,7 @@ impl Feeds for SimFeeds {
         if self.failed
             || self.interrupted.is_some()
             || self.current.is_some()
+            || self.claiming.is_some()
             || self.refusing
             || self.supply_low()
         {
@@ -356,21 +428,63 @@ impl Feeds for SimFeeds {
         let feed = self.journal.view.recovery.high_water_id.wrapping_add(1);
         let number = u32::try_from(feed).map_err(|_| Refusal::NotWritable)?;
 
-        self.current = Some(Current {
-            feed,
+        let mut claiming = Claiming {
+            feed: number,
             portions,
             by,
-            reserved: false,
-            driven_ms: 0,
-            stepped_ms: None,
+            wait: ClaimWait::new(self.now_ms),
             cancelled: Cell::new(false),
-        });
+        };
+        match self.try_claim(&mut claiming) {
+            ClaimStep::Claimed => self.hand_over(&claiming),
+            ClaimStep::Wait => self.claiming = Some(claiming),
+            ClaimStep::Refused(_) => return Err(Refusal::Busy),
+        }
         Ok(number)
+    }
+
+    fn claiming(&self) -> Option<Source> {
+        self.claiming.as_ref().map(|claiming| claiming.by)
+    }
+
+    fn claim_step(&mut self, hold: Option<Blocked>) -> Option<RefusedClaim> {
+        let mut claiming = self.claiming.take()?;
+
+        let refusal = if claiming.cancelled.get() {
+            Refusal::Busy
+        } else if let Some(blocked) = hold {
+            blocked.refusal()
+        } else {
+            match self.try_claim(&mut claiming) {
+                ClaimStep::Claimed => {
+                    self.hand_over(&claiming);
+                    return None;
+                }
+                ClaimStep::Wait => {
+                    self.claiming = Some(claiming);
+                    return None;
+                }
+                ClaimStep::Refused(_) => Refusal::Busy,
+            }
+        };
+        self.unreserved = Some((u64::from(claiming.feed), refusal));
+        Some(RefusedClaim {
+            feed: claiming.feed,
+            by: claiming.by,
+            refusal,
+        })
     }
 
     fn reserved(&self, feed: u32) -> Option<Result<(), Refusal>> {
         let feed = u64::from(feed);
         match (&self.current, self.unreserved) {
+            _ if self
+                .claiming
+                .as_ref()
+                .is_some_and(|claiming| u64::from(claiming.feed) == feed) =>
+            {
+                None
+            }
             (Some(current), _) if current.feed == feed => current.reserved.then_some(Ok(())),
             (_, Some((ended, refusal))) if ended == feed => Some(Err(refusal)),
             // Reserved, and ended since.
@@ -390,6 +504,12 @@ impl Feeds for SimFeeds {
     }
 
     fn cancel(&self, feed: u32) -> bool {
+        if let Some(claiming) = &self.claiming
+            && claiming.feed == feed
+        {
+            claiming.cancelled.set(true);
+            return true;
+        }
         let Some(current) = &self.current else {
             return false;
         };

@@ -63,9 +63,31 @@ fn the_journal_matches_the_owner() {
     assert_ne!(JOURNAL.binding, 0);
 }
 
+/// A feed's claim as the loop tries it: once a pass (`delay` advancing the
+/// clock `now_ms` between two), to its end.
+fn claim_outputs(
+    interlock: &wellfed_sdk::hal::interlock::Interlock,
+    mut queued: impl FnMut() -> bool,
+    mut now_ms: impl FnMut() -> u32,
+    mut delay: impl FnMut(u32),
+    held: impl FnMut(wellfed_sdk::hal::interlock::Held),
+) -> Result<(), wellfed_proto::api::Refusal> {
+    use wellfed_fw_feeder::feeding::{ClaimTurn, Claiming};
+    use wellfed_proto::api::Source;
+
+    let mut claiming = Claiming::new(1, 1, Source::Panel, now_ms());
+    let mut held = held;
+    loop {
+        match claiming.step(interlock, None, queued(), now_ms(), &mut held) {
+            ClaimTurn::Claimed => return Ok(()),
+            ClaimTurn::Refused(refusal) => return Err(refusal),
+            ClaimTurn::Waiting => delay(10),
+        }
+    }
+}
+
 #[test]
 fn a_feed_during_a_wifi_join_is_refused_busy() {
-    use wellfed_fw_feeder::feeding::claim_outputs;
     use wellfed_proto::api::Refusal;
     use wellfed_sdk::hal::interlock::{Held, Interlock, JoinStart};
 
@@ -89,7 +111,7 @@ fn a_feed_during_a_wifi_join_is_refused_busy() {
 #[test]
 fn a_join_waits_out_the_longest_feed_and_no_longer() {
     use std::cell::Cell;
-    use wellfed_fw_feeder::feeding::{FEED_BOUND_MS, claim_outputs};
+    use wellfed_fw_feeder::feeding::FEED_BOUND_MS;
     use wellfed_sdk::hal::interlock::{Interlock, JoinStart};
 
     // The owner's own cap on a feed's emitters-on time, which holds the
@@ -106,7 +128,7 @@ fn a_join_waits_out_the_longest_feed_and_no_longer() {
 
 #[test]
 fn a_store_write_waits_out_the_longest_feed_and_no_longer() {
-    use wellfed_fw_feeder::feeding::{FEED_BOUND_MS, claim_outputs};
+    use wellfed_fw_feeder::feeding::FEED_BOUND_MS;
     use wellfed_sdk::hal::interlock::{Interlock, WriteStart, WriteStep, WriteTurn};
 
     let interlock = Interlock::new();
@@ -127,7 +149,6 @@ fn a_store_write_waits_out_the_longest_feed_and_no_longer() {
 #[test]
 fn a_feed_waits_for_a_running_store_write_and_is_refused_past_the_wait() {
     use std::cell::Cell;
-    use wellfed_fw_feeder::feeding::claim_outputs;
     use wellfed_proto::api::Refusal;
     use wellfed_sdk::hal::interlock::{
         Held, Interlock, WRITE_WAIT_MS, WriteStart, WriteStep, WriteTurn,
@@ -175,6 +196,76 @@ fn a_feed_waits_for_a_running_store_write_and_is_refused_past_the_wait() {
     assert_eq!(claimed, Err(Refusal::Busy));
     assert_eq!(held, Some(Held::Writing));
     assert_eq!(now.get(), WRITE_WAIT_MS);
+}
+
+/// Every way a waiting claim can end: claimed once, refused once, and neither
+/// leaves anything held but the claim it took.
+#[test]
+fn a_waiting_claim_ends_once_and_a_cancel_or_a_new_reason_stops_it() {
+    use wellfed_fw_feeder::feeding::{ClaimTurn, Claiming};
+    use wellfed_proto::api::{Blocked, Refusal, Source};
+    use wellfed_sdk::hal::interlock::{Interlock, Turn, WRITE_WAIT_MS, WriteStep, WriteTurn};
+
+    let never = |_| unreachable!();
+    let interlock = Interlock::new();
+    let mut turn = WriteTurn::new();
+    assert!(matches!(
+        turn.begin(&interlock, 0, || true),
+        WriteStep::Go(_)
+    ));
+
+    // A cancel of another number leaves it; its own ends it, with no claim
+    // left behind even once the write is done.
+    let mut claiming = Claiming::new(7, 1, Source::Panel, 0);
+    assert_eq!(
+        claiming.step(&interlock, None, false, 0, never),
+        ClaimTurn::Waiting
+    );
+    assert!(!claiming.cancel(6));
+    assert_eq!(
+        claiming.step(&interlock, None, false, 10, never),
+        ClaimTurn::Waiting
+    );
+    assert!(claiming.cancel(7));
+    interlock.end_write();
+    assert_eq!(
+        claiming.step(&interlock, None, false, 20, never),
+        ClaimTurn::Refused(Refusal::Busy)
+    );
+    assert_eq!(interlock.turn(), Turn::Free);
+
+    // A reason that arose while it waited stops it, deadline or not.
+    let mut claiming = Claiming::new(7, 1, Source::Panel, 0);
+    assert_eq!(
+        claiming.step(&interlock, Some(Blocked::Setup), false, 1, never),
+        ClaimTurn::Refused(Refusal::Busy)
+    );
+    assert_eq!(interlock.turn(), Turn::Free);
+
+    // Taken once the queue has gone.
+    let mut claiming = Claiming::new(7, 1, Source::Panel, 0);
+    assert_eq!(
+        claiming.step(&interlock, None, true, 1, never),
+        ClaimTurn::Waiting
+    );
+    assert!(!interlock.outputs_claimed());
+    assert_eq!(
+        claiming.step(&interlock, None, false, 2, never),
+        ClaimTurn::Claimed
+    );
+    assert!(interlock.outputs_claimed());
+    interlock.release_feed();
+
+    // Past the deadline, with the change still queued, refused with its reason.
+    let mut claiming = Claiming::new(7, 1, Source::Panel, 0);
+    let mut why = None;
+    assert_eq!(
+        claiming.step(&interlock, None, true, WRITE_WAIT_MS, |held| why =
+            Some(held)),
+        ClaimTurn::Refused(Refusal::Busy)
+    );
+    assert_eq!(why, Some(wellfed_sdk::hal::interlock::Held::Writing));
+    assert_eq!(interlock.turn(), Turn::Free);
 }
 
 #[test]
