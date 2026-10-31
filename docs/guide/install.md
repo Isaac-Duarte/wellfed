@@ -96,7 +96,9 @@ The run prints the six presses by button name and rings the terminal bell. Press
 
 <!-- /tabs -->
 
-![The app shows the ring's symbols and a countdown, with the six presses hidden here because they are a one-time code](app-claim.png)
+![The app shows six buttons to press in order, a map of the ring's symbols and a countdown](app-claim.png)
+
+The code in this screenshot is from an old run and has expired. Yours will be different.
 
 ## Step 5: Make it permanent
 
@@ -145,4 +147,4 @@ Follow what the stop screen offers, since the right move depends on where it sto
 
 - **Observed, October 30, 2026.** The app ran these steps on one research feeder from a real Reset hold, including a retry after a wrong password.
 - **Observed, October 31, 2026.** The CLI ran them from stock on the same feeder and was resumed once after a setup code timed out. Its own hop onto the feeder's network hasn't run; the network was joined by hand.
-- The screenshots are from an October 30 run. Device details and the one-time code are painted over.
+- The screenshots are from an October 30 run. Device details are painted over. The setup code shown had expired.

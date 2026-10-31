@@ -90,7 +90,7 @@ GitHub hides the comments and shows both sections. The site shows a switch that 
 
 A screenshot is a PNG beside the page, shown with an inline Markdown image whose alt text says what matters in it. Before one enters Git:
 
-- Paint over anything private with a solid block, since blur and pixelation can be reversed: Wi-Fi names and passwords, device IDs, serials, MAC and IP addresses, keys and setup codes, account and people names, and notifications. Crop out the status bar where you can.
+- Paint over anything private with a solid block, since blur and pixelation can be reversed: Wi-Fi names and passwords, device IDs, serials, MAC and IP addresses, keys and live setup codes, account and people names, and notifications. Crop out the status bar where you can.
 - Export a fresh PNG with no metadata, and check that with a metadata dump.
 - Look at the image at full size. Keep the original out of Git.
 
