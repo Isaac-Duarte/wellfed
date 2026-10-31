@@ -75,6 +75,13 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
     await _write(
       FeederRequest.putTime(base: time.generation, zone: zone, ntp: ntp),
     );
+
+    // The feeder writes no event for a time setting, so nothing else would
+    // tell the card: its chips would stay as they were, and its old generation
+    // would get the next change refused as stale.
+    if (mounted) {
+      unawaited(widget.feeder.ask(const FeederRequest.getTime()));
+    }
   }
 
   Future<void> _address() async {

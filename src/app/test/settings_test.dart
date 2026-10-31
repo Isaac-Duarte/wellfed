@@ -271,10 +271,50 @@ void main() {
       final session = await show(tester);
 
       await tapIn(tester, find.widgetWithText(ChoiceChip, 'Phones only'));
-      final put = session.requests.single as FeederRequest_PutTime;
+      final put = session.requests.first as FeederRequest_PutTime;
       expect(put.base, 8);
       expect(put.ntp, 'off');
       expect(put.zone, isNull);
+    });
+
+    testWidgets('a time change reads the time again, so the next goes against '
+        'the new generation', (tester) async {
+      final (feeder, session) = await oneFeeder(tester);
+      session.status(fakeCard(time: time));
+      session.replies.add(
+        const FeederReply.calibration(calibration: calibration),
+      );
+      await showTab(tester, ClockPortionScreen(feeder: feeder));
+      session.requests.clear();
+
+      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Phones only'));
+      expect(session.requests, hasLength(2));
+      expect(session.requests.first, isA<FeederRequest_PutTime>());
+      expect(session.requests.last, const FeederRequest.getTime());
+
+      // What the session then says of that read.
+      session.status(
+        fakeCard(
+          time: const TimeInfo(
+            generation: 9,
+            writable: true,
+            ntp: NtpView.off(),
+            syncs: 1,
+          ),
+        ),
+      );
+      await settle(tester);
+      session.requests.clear();
+
+      expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Phones only'))
+            .selected,
+        isTrue,
+      );
+      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Router'));
+      final next = session.requests.first as FeederRequest_PutTime;
+      expect(next.base, 9);
     });
 
     testWidgets('a bad address and an unanswered change say so', (
@@ -283,6 +323,8 @@ void main() {
       final session = await show(tester);
       session.replies
         ..add(const FeederReply.notAsked(reason: NotAsked.badNtp))
+        // The read after that change.
+        ..add(const FeederReply.done(generation: null))
         ..add(const FeederReply.unanswered());
 
       await tapIn(tester, find.widgetWithText(ChoiceChip, 'Address'));
