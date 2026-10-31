@@ -2,7 +2,7 @@
 //! wake, none to one that has gone, and an early step only for a writer at
 //! rest. A wake is a shortcut, so anything refused here falls to the poll.
 
-use wellfed_hal::sdk::fake;
+use wellfed_hal::sdk::{self, fake};
 use wellfed_hal::writer_wake;
 
 fn notifies() -> u32 {
@@ -31,14 +31,16 @@ fn a_wake_reaches_only_a_bound_task_and_steps_only_a_rested_writer() {
     assert!(writer_wake::take(), "two wakes, one step");
     assert!(!writer_wake::take());
 
-    // A spurious notification finds nothing wanted: no early step.
+    // A spurious notification, from nothing queued: no early step.
+    sdk::task_notify(sdk::task_handle());
+    assert_eq!(notifies(), 3);
     assert!(!writer_wake::take());
 
     // A writer that wrote or waits for a turn keeps its delay, and the wake
     // goes: the mailbox still holds the work for its next poll.
     writer_wake::settle(false);
     writer_wake::wake();
-    assert_eq!(notifies(), 3);
+    assert_eq!(notifies(), 4);
     assert!(!writer_wake::take());
     writer_wake::settle(true);
     assert!(!writer_wake::take(), "dropped, not saved up");
@@ -46,5 +48,5 @@ fn a_wake_reaches_only_a_bound_task_and_steps_only_a_rested_writer() {
     // A task that ended has no handle to notify.
     writer_wake::unbind();
     writer_wake::wake();
-    assert_eq!(notifies(), 3);
+    assert_eq!(notifies(), 4);
 }

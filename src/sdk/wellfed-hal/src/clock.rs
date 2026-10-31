@@ -402,6 +402,15 @@ pub fn log_rtc() {
     }
 }
 
+/// Whether no year needs keeping for `unix_ms`: the clock's kept year covers
+/// it, or its zone has no daylight time (host tests).
+#[cfg(not(target_os = "none"))]
+pub fn year_kept_for(unix_ms: u64) -> bool {
+    let _guard = IrqGuard::lock();
+    // SAFETY: interrupts are masked, so this is the only reference.
+    unsafe { (*CLOCK.get()).clock.offsets().year_due(unix_ms).is_none() }
+}
+
 /// Forget every sync and the count, as a reset does (host tests).
 #[cfg(not(target_os = "none"))]
 pub fn reset() {

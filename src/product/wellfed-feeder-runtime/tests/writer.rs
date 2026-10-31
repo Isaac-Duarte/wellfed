@@ -1803,7 +1803,8 @@ fn notifies() -> u32 {
 #[test]
 fn every_mailbox_wakes_the_writer_once_when_queued_and_not_when_refused() {
     use wellfed_device_api::mailbox::{
-        Calibration, CallChange, NtpServer, PLANS, PlansChange, TimeSettings,
+        Calibration, CalibrationResult, CallChange, CallResult, NtpServer, PLANS, PlansChange,
+        PlansResult, TimeSettings, TimeSettingsResult, WifiResult,
     };
     use wellfed_device_api::wifi::Credentials;
     use wellfed_feeder_runtime::{calibration, call, plans, time};
@@ -1830,10 +1831,10 @@ fn every_mailbox_wakes_the_writer_once_when_queued_and_not_when_refused() {
         }),
         ("wifi", &mut || {
             let set = Credentials::new(b"home", b"passphrase").unwrap();
-            network::saving() || {
-                network::change(Some(set));
-                network::saving()
-            }
+            matches!(
+                network::change(Some(set)),
+                WifiResult::Current { pending: true, .. }
+            )
         }),
         ("keys", &mut || {
             let phone = Change::Enroll {
@@ -1848,24 +1849,36 @@ fn every_mailbox_wakes_the_writer_once_when_queued_and_not_when_refused() {
                 zone: None,
                 ntp: NtpServer::Off,
             };
-            time::change(change) != wellfed_device_api::mailbox::TimeSettingsResult::Busy
+            matches!(
+                time::change(change),
+                TimeSettingsResult::Current { pending: true, .. }
+            )
         }),
         ("calibration", &mut || {
             let change = Calibration {
                 portion_mg: Some(9_800),
             };
-            calibration::change(change) != wellfed_device_api::mailbox::CalibrationResult::Busy
+            matches!(
+                calibration::change(change),
+                CalibrationResult::Current { pending: true, .. }
+            )
         }),
         ("plans", &mut || {
             let change = PlansChange::Replace {
                 table: [None; PLANS],
                 at_s: Some(1_000),
             };
-            plans::change(change) != wellfed_device_api::mailbox::PlansResult::Busy
+            matches!(
+                plans::change(change),
+                PlansResult::Current { pending: true, .. }
+            )
         }),
         ("call", &mut || {
             let start = CallChange::Start { bytes: 600, crc: 1 };
-            call::change(start) != wellfed_device_api::mailbox::CallResult::Busy
+            matches!(
+                call::change(start),
+                CallResult::Current { pending: true, .. }
+            )
         }),
     ];
 
@@ -1874,12 +1887,9 @@ fn every_mailbox_wakes_the_writer_once_when_queued_and_not_when_refused() {
         assert!(queue(), "{name} queued");
         assert_eq!(notifies(), before + 1, "{name} woke the writer");
 
-        // The slot taken: refused, or for a repeat of the same change no new
-        // work, and no wake either way when it is refused.
-        let full = notifies();
-        if !queue() {
-            assert_eq!(notifies(), full, "{name} refused without a wake");
-        }
+        // The slot taken: refused, with no wake.
+        assert!(!queue(), "{name} refused");
+        assert_eq!(notifies(), before + 1, "{name} refused without a wake");
         assert!(step(&mut writer, &mut provider).is_some(), "{name} saved");
     }
 }
@@ -1975,6 +1985,143 @@ fn a_wake_during_a_feed_writes_nothing_until_the_owner_is_at_rest() {
     ));
 }
 
+/// A client alternating a start and a delete erases a sector each time, so
+/// neither lets a wake cut its delay; the chunks between them still may.
+#[test]
+fn a_call_change_keeps_the_poll_and_only_a_chunk_is_followed_at_once() {
+    use wellfed_device_api::mailbox::CallChange;
+    use wellfed_feeder_runtime::call;
+    use wellfed_hal::writer_wake;
+
+    let (_guard, mut writer, mut provider) = start();
+    call::reset();
+    wellfed_hal::audio::reset();
+    open_all(&mut writer, &mut provider);
+    step(&mut writer, &mut provider); // the stats store's early save
+    writer_wake::bind();
+
+    let upload = CallChange::Start { bytes: 600, crc: 1 };
+    for change in [upload, CallChange::Delete, upload, CallChange::Delete] {
+        let idle = whole_step(&mut writer, &mut provider);
+        writer_wake::settle(idle.rested);
+        call::change(change);
+        assert!(
+            idle.rested && writer_wake::take(),
+            "the first starts at once"
+        );
+
+        let erased = whole_step(&mut writer, &mut provider);
+        assert_eq!(erased.delay_ms, writer::POLL_MS);
+        assert!(!erased.rested);
+        writer_wake::settle(erased.rested);
+
+        // The next change, straight behind it, waits out the delay.
+        let other = match change {
+            CallChange::Delete => upload,
+            _ => CallChange::Delete,
+        };
+        call::change(other);
+        assert!(!writer_wake::take(), "the delay stands");
+        assert_eq!(
+            whole_step(&mut writer, &mut provider).delay_ms,
+            writer::POLL_MS
+        );
+        call::change(change);
+        whole_step(&mut writer, &mut provider);
+    }
+
+    // A chunk: followed at the upload's pace, and then a wake takes.
+    call::change(upload);
+    whole_step(&mut writer, &mut provider);
+    assert_eq!(call::chunk(0, &[0; 512]), Ok(()));
+    let chunk = whole_step(&mut writer, &mut provider);
+    assert_eq!(chunk.delay_ms, writer::EVENTS_POLL_MS);
+    let between = whole_step(&mut writer, &mut provider);
+    assert_eq!(between.delay_ms, writer::EVENTS_POLL_MS);
+    writer_wake::settle(between.rested);
+    assert_eq!(call::chunk(512, &[0; 88]), Ok(()));
+    assert!(writer_wake::take(), "the next chunk starts at once");
+}
+
+#[test]
+fn only_a_step_that_did_nothing_rests() {
+    let (_guard, mut writer, mut provider) = start();
+    open_all(&mut writer, &mut provider);
+    step(&mut writer, &mut provider); // the stats store's early save
+
+    assert!(
+        whole_step(&mut writer, &mut provider).rested,
+        "nothing to do"
+    );
+
+    // An event appended.
+    assert!(events::record(None, [1; 16]));
+    let appended = whole_step(&mut writer, &mut provider);
+    assert_eq!(events::last_seq(), Some(1));
+    assert!(!appended.rested, "appended");
+    assert!(whole_step(&mut writer, &mut provider).rested);
+
+    // A record served; the linger after it does nothing, at the read's pace.
+    assert_eq!(events::read_result(A, None), None, "asked");
+    let served = whole_step(&mut writer, &mut provider);
+    assert_eq!(served.delay_ms, writer::EVENTS_POLL_MS);
+    assert!(!served.rested, "served");
+    let linger = whole_step(&mut writer, &mut provider);
+    assert_eq!(linger.delay_ms, writer::EVENTS_POLL_MS);
+    assert!(linger.rested);
+    assert!(matches!(
+        events::read_result(A, None),
+        Some(Read::Record(_))
+    ));
+
+    // An event deferred, by a feed's turn.
+    INTERLOCK.claim_feed(u32::MAX).unwrap();
+    assert!(events::record(None, [2; 16]));
+    let deferred = whole_step(&mut writer, &mut provider);
+    assert_eq!(events::last_seq(), Some(1), "deferred");
+    assert!(!deferred.rested, "deferred");
+    INTERLOCK.release_feed();
+    assert!(!whole_step(&mut writer, &mut provider).rested, "appended");
+    assert_eq!(events::last_seq(), Some(2));
+}
+
+/// The upload's pace must not become a claim's rival: an event held back by a
+/// feed's turn stops the writer asking for that turn every 5 ms.
+#[test]
+fn an_upload_does_not_linger_while_a_feed_defers_an_event() {
+    use wellfed_device_api::mailbox::CallChange;
+    use wellfed_feeder_runtime::call;
+
+    let (_guard, mut writer, mut provider) = start();
+    call::reset();
+    wellfed_hal::audio::reset();
+    open_all(&mut writer, &mut provider);
+    step(&mut writer, &mut provider); // the stats store's early save
+
+    call::change(CallChange::Start { bytes: 600, crc: 1 });
+    whole_step(&mut writer, &mut provider);
+    assert_eq!(
+        whole_step(&mut writer, &mut provider).delay_ms,
+        writer::EVENTS_POLL_MS,
+        "at the upload's pace"
+    );
+
+    INTERLOCK.claim_feed(u32::MAX).unwrap();
+    assert!(events::record(None, [1; 16]));
+    assert_eq!(
+        whole_step(&mut writer, &mut provider).delay_ms,
+        writer::POLL_MS
+    );
+
+    // Reads take no turn, so a reader keeps its pace.
+    assert_eq!(events::read_result(A, None), None, "asked");
+    assert_eq!(
+        whole_step(&mut writer, &mut provider).delay_ms,
+        writer::EVENTS_POLL_MS
+    );
+    INTERLOCK.release_feed();
+}
+
 #[test]
 fn an_upload_polls_at_the_read_pace_while_it_runs_and_not_for_ever() {
     use wellfed_core::store::slot::crc32;
@@ -1996,7 +2143,7 @@ fn an_upload_polls_at_the_read_pace_while_it_runs_and_not_for_ever() {
     let crc = crc32(&stream);
     call::change(CallChange::Start { bytes: 1_100, crc });
     let started = whole_step(&mut writer, &mut provider);
-    assert_eq!(started.delay_ms, writer::EVENTS_POLL_MS);
+    assert_eq!(started.delay_ms, writer::POLL_MS, "it erased");
 
     // Between chunks, the upload's pace, each chunk starting the count again.
     for _ in 0..3 {

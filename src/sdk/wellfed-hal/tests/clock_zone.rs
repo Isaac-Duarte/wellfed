@@ -62,7 +62,8 @@ fn every_reading_agrees_with_the_rule_as_the_loop_keeps_the_year() {
     clock::keep();
     sync_to(FALL_BACK_S - 30);
     clock::set_rule(Some(denver));
-    reading_agrees(denver);
+    let unix_ms = reading_agrees(denver);
+    assert!(!clock::year_kept_for(unix_ms), "only the loop keeps it");
 
     // The loop's store comes due and keeps the year: the same answers, on
     // both sides of the transition.
@@ -72,6 +73,7 @@ fn every_reading_agrees_with_the_rule_as_the_loop_keeps_the_year() {
         at(now);
         clock::keep();
         let unix_ms = reading_agrees(denver);
+        assert!(clock::year_kept_for(unix_ms));
         assert_eq!(clock::offset_at(FALL_BACK_S * 1000 - 1), Some(-6 * 3600));
         assert_eq!(clock::offset_at(FALL_BACK_S * 1000), Some(-7 * 3600));
         assert_eq!(unix_ms, (FALL_BACK_S - 30) * 1000 + u64::from(now - 1_000));
@@ -80,30 +82,43 @@ fn every_reading_agrees_with_the_rule_as_the_loop_keeps_the_year() {
     // A settings write: the new zone holds from that moment, with no pass of
     // the loop in between, and after its year is kept too.
     clock::set_rule(Some(sydney));
-    reading_agrees(sydney);
+    let unix_ms = reading_agrees(sydney);
+    assert!(
+        !clock::year_kept_for(unix_ms),
+        "the old year went with the rule"
+    );
     now += 10_000;
     at(now);
     clock::keep();
-    reading_agrees(sydney);
+    let unix_ms = reading_agrees(sydney);
+    assert!(clock::year_kept_for(unix_ms));
     clock::set_rule(Some(denver));
     reading_agrees(denver);
 
-    // Across New Year, the kept year stops covering the reading before the
-    // loop's next store replaces it.
-    sync_to(NEW_YEAR_S - 5);
-    clock::keep();
-    now += 10_000;
-    at(now);
-    clock::keep();
-    reading_agrees(denver);
-    for _ in 0..3 {
-        now += 4_000;
-        at(now);
-        reading_agrees(denver);
-    }
+    // The last store of the year keeps that year, up to New Year and no further.
+    sync_to(NEW_YEAR_S - 15);
     now += 10_000;
     at(now);
     clock::keep();
     let unix_ms = reading_agrees(denver);
-    assert!(unix_ms > NEW_YEAR_S * 1000, "past New Year");
+    assert_eq!(unix_ms, (NEW_YEAR_S - 5) * 1000);
+    assert!(clock::year_kept_for(NEW_YEAR_S * 1000 - 1));
+    assert!(!clock::year_kept_for(NEW_YEAR_S * 1000));
+
+    // Past New Year, before the next store: the kept year does not cover the
+    // reading, which takes the rule whole.
+    now += 6_000;
+    at(now);
+    clock::keep();
+    let unix_ms = reading_agrees(denver);
+    assert_eq!(unix_ms, (NEW_YEAR_S + 1) * 1000);
+    assert!(!clock::year_kept_for(unix_ms));
+
+    // The next store replaces it.
+    now += 4_000;
+    at(now);
+    clock::keep();
+    let unix_ms = reading_agrees(denver);
+    assert_eq!(unix_ms, (NEW_YEAR_S + 5) * 1000);
+    assert!(clock::year_kept_for(unix_ms));
 }

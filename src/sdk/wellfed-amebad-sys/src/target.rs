@@ -1492,6 +1492,8 @@ pub fn task_handle() -> usize {
 /// shortcut, and the waiter's timeout is what its work relies on.
 ///
 /// `handle` must be a live task's: the caller keeps it from being deleted.
+/// On this port the call's critical section unmasks interrupts as it exits at
+/// nesting 0, so nothing may rely on an outer `IrqGuard` lasting past it.
 pub fn task_notify(handle: usize) {
     if ipsr() != 0
         // SAFETY: the pinned SDK routine, with plain-value arguments.

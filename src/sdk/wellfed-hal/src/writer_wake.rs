@@ -7,11 +7,12 @@
 //! write: each still takes the write turn, which a feed's claim holds until
 //! the owner is at rest.
 //!
-//! **It keeps the writer's rest.** Only a writer that rested on its last step
-//! is stepped early. After a write it keeps the delay it chose, so a client
-//! repeating a change wears the flash and masks interrupts no faster than the
-//! poll let it. And it never hurries a writer still arming, or one waiting for
-//! the write turn, since asking again sooner gets it no sooner.
+//! **It keeps the writer's rest.** Only a writer whose last step did nothing
+//! is stepped early. After a write, or a read it served, it keeps the delay it
+//! chose, so a client repeating a change wears the flash and masks interrupts
+//! no faster than the poll let it. And it never hurries a writer still arming,
+//! or one waiting for the write turn, since asking again sooner gets it no
+//! sooner.
 //!
 //! **Task context only**, as every mailbox is filled from a task:
 //! [`sdk::task_notify`] refuses anything else, leaving the work to the poll.
@@ -40,7 +41,8 @@ pub fn unbind() {
 }
 
 /// A mailbox holds new work. Masked from the handle's load to the notification,
-/// so the service task cannot run, end and be deleted in between.
+/// so the service task cannot run, end and be deleted in between. Never call it
+/// under an outer `IrqGuard`: the notification unmasks ([`sdk::task_notify`]).
 pub fn wake() {
     WANTED.store(true, Ordering::Release);
 
