@@ -663,6 +663,69 @@ void main() {
       expect(button.onPressed, isNotNull);
     });
 
+    /// A screen opened while an upload an earlier one started is on its way;
+    /// what ends the upload, and what the read after it gets.
+    Future<void> reopenedUntil(
+      WidgetTester tester,
+      FeederReply end,
+      FeederReply read,
+    ) async {
+      final (feeder, session) = await oneFeeder(tester);
+      final uploading = Completer<FeederReply>();
+      session.answering = (request) => request is FeederRequest_UploadCall
+          ? uploading.future
+          : Future.value(_noRecording);
+      Widget screen() => MealCallScreen(
+        feeder: feeder,
+        pick: () async => Uint8List.fromList([1]),
+      );
+
+      await showTab(tester, screen());
+      await tester.tap(find.text('Choose a recording'));
+      await settle(tester);
+      await tester.pumpWidget(themed(const SizedBox()));
+      await showTab(tester, screen());
+
+      session.answering = (_) async => read;
+      uploading.complete(end);
+      await settle(tester);
+
+      expect(find.text('Reading…'), findsNothing);
+      expect(
+        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNotNull,
+      );
+    }
+
+    testWidgets('a reopened screen says an upload was refused', (tester) async {
+      await reopenedUntil(
+        tester,
+        const FeederReply.refused(refusal: FeederRefusal.forbidden()),
+        _noRecording,
+      );
+
+      expect(find.textContaining("isn't allowed"), findsOneWidget);
+      expect(find.text('No recording stored'), findsOneWidget);
+    });
+
+    testWidgets('a reopened screen says an upload went unanswered', (
+      tester,
+    ) async {
+      await reopenedUntil(tester, const FeederReply.unanswered(), _noRecording);
+
+      expect(find.textContaining('may or may not have'), findsOneWidget);
+      expect(find.text('No recording stored'), findsOneWidget);
+    });
+
+    testWidgets('a reopened screen reads even after an upload not sent', (
+      tester,
+    ) async {
+      await reopenedUntil(tester, const FeederReply.notSent(), stored);
+
+      expect(find.textContaining('before this went out'), findsOneWidget);
+      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+    });
+
     testWidgets('a screen opened during an upload does not start another', (
       tester,
     ) async {

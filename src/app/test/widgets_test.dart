@@ -14,6 +14,8 @@ Widget _themed(Widget child, {Brightness brightness = Brightness.light}) =>
     );
 
 void main() {
+  // Dart's local time cannot be faked, so this needs a host zone with DST:
+  // `make check-app` sets TZ for it. Under UTC it passes without proving this.
   test(
     'yesterday is yesterday on every day of the year, DST days included',
     () {

@@ -86,8 +86,20 @@ class _MealCallScreenState extends State<MealCallScreen> {
       unawaited(_read());
     } else {
       _busy = true;
-      unawaited(sending.whenComplete(_readBack));
+      unawaited(sending.then(_uploadEnded));
     }
+  }
+
+  /// The upload an earlier screen started has ended. Whatever came of it, this
+  /// screen reads: unlike [_settle], even after "not sent", as it opened with
+  /// nothing read yet.
+  Future<void> _uploadEnded(FeederReply reply) async {
+    if (!mounted) return;
+    setState(() {
+      _problem = replyProblem(reply);
+      if (reply is FeederReply_Unanswered) _call = null;
+    });
+    await _readBack();
   }
 
   Future<void> _read() async {
