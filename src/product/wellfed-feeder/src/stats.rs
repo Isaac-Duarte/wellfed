@@ -11,8 +11,9 @@
 //! here, so no figure costs a write turn or wears a sector. The lifetime
 //! figures are this boot's added to the [`Totals`] the settings writer
 //! keeps in the stats store (`store::stats`), which it loads at boot and
-//! saves at most every [`SAVE_MS`], so a power cut loses at most that much
-//! of a boot's counts.
+//! saves every [`SAVE_MS`] and soon after a feed (at most every
+//! [`FEED_SAVE_MS`]), so a power cut loses at most an hour of a boot's
+//! counts, and at most ten minutes of its feeds.
 
 use wellfed_proto::api::{
     self as proto, Counters, Counts, CurrentUnit, EventBody, FLASH_SECTORS, FeedFault, FeedOutcome,
@@ -30,13 +31,24 @@ pub const HISTORY_MS: u32 = 60 * 60_000;
 /// boot's uptime, the first this long in. The most of a boot a power cut
 /// loses.
 pub const SAVE_MS: u32 = 60 * 60_000;
+/// The least time within a boot between two saves a finished feed asks for,
+/// and so the most of a boot's feeds a power cut loses. Each is a save outside
+/// the early budget, so a boot short of the hourly save still keeps what it
+/// fed. That is at most one erase per finished feed and, within a boot, six
+/// an hour; the limit's clock is in RAM, so each boot's first counted feed
+/// saves at once. A feed every ten minutes all year adds about 26,300 erases a
+/// sector, about 35,100 with the hourly bound; three meals a day add about
+/// 550. [`Keeper::fed`] counts cancelled and expired feeds too, so a save can
+/// follow no motion.
+pub const FEED_SAVE_MS: u32 = 10 * 60_000;
+
 /// The early saves' budget: each boot's own save as it starts (so its
 /// reset counts however short it is) and an intentional restart's within
 /// `RESTART_SETTLED_MS` of boot spend a token, and each settled save gives
 /// one back. So early saves never outnumber settled ones by more than
-/// this, and with no later restarts the store's wear is at most this many
-/// erases plus two per hour of uptime: about 17,500 a year, 8,800 of each
-/// of its two sectors, whatever the crash pattern.
+/// this, and with no later restarts or feeds the store's wear is at most
+/// this many erases plus two per hour of uptime: about 17,500 a year, 8,800
+/// of each of its two sectors, whatever the crash pattern.
 pub const EARLY_SAVES: u8 = 6;
 /// A boot this old has a settled stretch behind it: an intentional
 /// restart's save then spends no early token, so an owner's restart keeps
@@ -639,7 +651,7 @@ impl Keeper {
             portions: self.portions,
             presses: self.presses,
             sessions: self.sessions,
-            reconnects: self.link.link_losses.saturating_add(self.link.check_losses),
+            reconnects: self.link.link_losses,
             dhcp_renewals: self.link.dhcp_renewals,
             outages: self.supply.outages,
             battery_s: self.supply.battery_s(),

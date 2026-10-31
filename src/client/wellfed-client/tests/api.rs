@@ -3266,6 +3266,76 @@ fn an_update_key_enrolls_only_once_dispense_is_pressed() {
             ..
         }
     )));
+
+    // The enrolment is in the history, with what confirmed it.
+    let history = |rig: &Rig| {
+        rig.device
+            .events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.body,
+                    EventBody::Enrolled {
+                        role: proto::Role::UpdateSigner,
+                        path: proto::Path::Press,
+                        ..
+                    }
+                )
+            })
+            .count()
+    };
+    assert_eq!(history(&rig), 1);
+
+    // Offered and pressed again, the key is already there: nothing changed.
+    assert_eq!(
+        ask_within(&mut rig, &mut owner, 3, enroll_laptop(), 5),
+        None
+    );
+    rig.signer = press_dispense(&mut rig);
+    let again = poll_answer(&mut rig, &mut owner, 3, 50).unwrap();
+    assert_eq!(again, Answer::Done { generation: None });
+    assert_eq!(history(&rig), 1, "no event for a key already enrolled");
+}
+
+/// The session goes after the press, with the key queued: the writer still
+/// enrolls it, so the history must still say so.
+#[test]
+fn a_pressed_key_whose_session_left_is_still_in_the_history() {
+    let mut rig = update_rig();
+    let mut owner = open(&mut rig, OWNER);
+    assert_eq!(
+        ask_within(&mut rig, &mut owner, 1, enroll_laptop(), 5),
+        None
+    );
+    rig.signer = press_dispense(&mut rig);
+    rig.pass();
+    assert!(rig.device.keys_pending.is_some(), "the key is queued");
+
+    let records = &mut rig.records;
+    rig.server.closed(owner.slot, |r| records.push(r));
+    rig.pass();
+    let enrolled = |rig: &Rig| {
+        rig.device
+            .events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.body,
+                    EventBody::Enrolled {
+                        path: proto::Path::Press,
+                        ..
+                    }
+                )
+            })
+            .count()
+    };
+    assert_eq!(enrolled(&rig), 0, "not before the writer has finished");
+
+    rig.device.write();
+    rig.pass();
+    rig.pass();
+    assert!(rig.device.clients.iter().any(|c| c.key == [0x5e; 32]));
+    assert_eq!(enrolled(&rig), 1);
 }
 
 #[test]

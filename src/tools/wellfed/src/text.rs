@@ -100,7 +100,7 @@ pub(crate) fn status(status: &Status, zone: &TimeZone) -> String {
         "Power: {power}\n\
          Desiccant: {}\n\
          Panel: {panel}\n\
-         Wi-Fi: {} dBm ({} credentials), {} link losses, {} gateway losses\n\
+         Wi-Fi: {} dBm ({} credentials), {} link losses ({} noticed by the gateway or lease check)\n\
          Sessions {}, settings generation {}, Wi-Fi generation {}, last event {}\n\
          Faults {}, reset flags {:#x}",
         status.desiccant,
@@ -335,6 +335,7 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
                 EnrollPath::Setup => "setup",
                 EnrollPath::Invite => "an invite",
                 EnrollPath::Recovery => "recovery",
+                EnrollPath::Press => "a press on the panel",
             };
             format!("client {client} enrolled as {} through {path}", role.code())
         }
@@ -530,7 +531,7 @@ mod tests {
              pack below the floor a feed on batteries needs",
             "Desiccant: due (3 days over)",
             "Panel: unlocked",
-            "Wi-Fi: -54 dBm (stored credentials), 1 link losses, 0 gateway losses",
+            "Wi-Fi: -54 dBm (stored credentials), 1 link losses (0 noticed by the gateway or lease check)",
         ] {
             assert!(text.lines().any(|l| l == line), "{line:?} not in\n{text}");
         }
@@ -605,9 +606,17 @@ mod tests {
             event(EventBody::Supply {
                 adapter: Some(true),
                 battery: Battery::Absent,
-                below_floor: Some(false)
+                below_floor: None
             }),
             "supply: adapter; no batteries"
+        );
+        assert_eq!(
+            event(EventBody::Enrolled {
+                client: wellfed_model::Hex([0xaa, 0xbb, 0xcc, 0xdd]),
+                role: wellfed_model::ClientRole::UpdateSigner,
+                path: EnrollPath::Press,
+            }),
+            "client aabbccdd enrolled as update_signer through a press on the panel"
         );
         assert_eq!(
             event(EventBody::DispenseRefused {

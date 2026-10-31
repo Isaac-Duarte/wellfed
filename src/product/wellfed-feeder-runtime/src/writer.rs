@@ -51,7 +51,8 @@
 //! boot's reset and publishes them for the loop, and saves them with this
 //! boot's counts and erases as the boot starts (so a short boot's reset
 //! counts), in an intentional restart's grace (before the watchdog's
-//! feeding stops), and every [`SAVE_MS`] of uptime; only
+//! feeding stops), after a finished feed at most every [`FEED_SAVE_MS`],
+//! and every [`SAVE_MS`] of uptime; only
 //! when nothing else is queued, never per event, and the early ones within
 //! the store's tokens.
 //!
@@ -71,7 +72,7 @@ use wellfed_core::store::handover;
 use wellfed_core::store::seed::{SeedStatus, SeedStore};
 use wellfed_core::store::update::{UpdateStatus, UpdateStore};
 use wellfed_device_api::mailbox::{CallChange, CallClip};
-use wellfed_feeder::stats::{SAVE_MS, TOTAL_SECTORS, Totals, reset_cause};
+use wellfed_feeder::stats::{FEED_SAVE_MS, SAVE_MS, TOTAL_SECTORS, Totals, reset_cause};
 use wellfed_feeder::store::calibration::CalibrationStore;
 use wellfed_feeder::store::call::CallStore;
 use wellfed_feeder::store::clients::{ClientError, ClientStatus, ClientStore};
@@ -530,6 +531,8 @@ enum SaveTrigger {
     Restart,
     /// The timed save, every `SAVE_MS` of uptime.
     Due,
+    /// A feed ended since the last save, at most every `FEED_SAVE_MS`.
+    Feed,
 }
 
 impl SaveTrigger {
@@ -540,6 +543,7 @@ impl SaveTrigger {
             Self::Boot => SaveKind::Early,
             Self::Restart => SaveKind::restart(uptime_ms),
             Self::Due => SaveKind::Settled,
+            Self::Feed => SaveKind::Feed,
         }
     }
 }
@@ -609,6 +613,10 @@ pub struct Writer<F> {
     /// When the next settled save of the totals is due, in uptime ms;
     /// `None` once a save failed (no retry this boot).
     stats_due: Option<u32>,
+    /// This boot's feeds in the last save: any others want a save.
+    stats_feeds: u32,
+    /// When a feed last asked for a save, in uptime ms.
+    stats_feed_at: Option<u32>,
     /// The boot's own early save, and the intentional restart's, had their
     /// one attempt.
     stats_boot_saved: bool,
@@ -657,6 +665,8 @@ impl<F> Default for Writer<F> {
             stats_opened: false,
             stats_base: Totals::ZERO,
             stats_due: Some(SAVE_MS),
+            stats_feeds: 0,
+            stats_feed_at: None,
             stats_boot_saved: false,
             stats_restart_saved: false,
             turn: WriteTurn::new(),
@@ -1080,7 +1090,7 @@ impl<F: FlashOps> Writer<F> {
 
     /// The save of the totals wanted now, if any: the boot's own as it
     /// starts, an intentional restart's (in its grace, before the feeding
-    /// stops), or the timed one. A trigger the store refuses (no early token
+    /// stops), the timed one, or a finished feed's. A trigger the store refuses (no early token
     /// left, or a store it cannot write) is dropped for the boot.
     fn stats_wanted(&mut self) -> Option<SaveTrigger> {
         let now = sdk::uptime_ms();
@@ -1093,6 +1103,8 @@ impl<F: FlashOps> Writer<F> {
             .is_some_and(|due| wellfed_core::deadline_passed(now, due))
         {
             SaveTrigger::Due
+        } else if self.feed_unsaved(now) {
+            SaveTrigger::Feed
         } else {
             return None;
         };
@@ -1102,6 +1114,18 @@ impl<F: FlashOps> Writer<F> {
         }
         self.stats_done(trigger);
         None
+    }
+
+    /// Whether a feed ended since the last save, and none asked for one
+    /// within `FEED_SAVE_MS`. A boot's first feed asks at once: the boot may
+    /// not last long enough for anything later.
+    fn feed_unsaved(&self, now: u32) -> bool {
+        // A failed save stops the store's saves for the boot (no retry).
+        self.stats_due.is_some()
+            && self
+                .stats_feed_at
+                .is_none_or(|at| now.wrapping_sub(at) >= FEED_SAVE_MS)
+            && stats::counts().is_some_and(|counts| counts.feeds != self.stats_feeds)
     }
 
     /// `trigger` has had its one attempt.
@@ -1114,6 +1138,7 @@ impl<F: FlashOps> Writer<F> {
                 supervision::restart_flushed();
             }
             SaveTrigger::Due => {}
+            SaveTrigger::Feed => self.stats_feed_at = Some(sdk::uptime_ms()),
         }
     }
 
@@ -1154,6 +1179,7 @@ impl<F: FlashOps> Writer<F> {
         drop(turn);
 
         self.stats_done(trigger);
+        self.stats_feeds = boot.feeds;
         let record = if saved {
             if kind == SaveKind::Settled {
                 self.stats_due = Some(now.wrapping_add(SAVE_MS));

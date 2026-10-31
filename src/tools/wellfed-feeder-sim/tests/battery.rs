@@ -285,8 +285,8 @@ fn a_brownout_hold_lifts_on_fresh_cells_without_the_adapter() {
 }
 
 /// The phantom at a power cut: with no cells, the adapter goes and the
-/// decaying rail reads as a pack for a moment. The radio stays on and
-/// nothing is held.
+/// decaying rail reads as a pack for a moment. The radio stays on, nothing
+/// is held, and the history says no battery.
 #[test]
 fn a_rail_decaying_at_a_cut_is_not_battery_mode() {
     let mut feeder = Feeder::boot(0, SimSupply::MAINS);
@@ -296,6 +296,12 @@ fn a_rail_decaying_at_a_cut_is_not_battery_mode() {
     feeder.supply(SimSupply::MAINS);
     feeder.run(10_000);
     assert_eq!(feeder.radio(), Radio::On);
+    let cut = feeder.supplies();
+    let cut = cut.first().expect("the adapter's going is an event");
+    assert_eq!(
+        (cut.adapter, cut.battery, cut.below_floor),
+        (Some(false), Battery::Absent, None)
+    );
     assert!(
         feeder.power_records().is_empty(),
         "{:?}",
@@ -331,6 +337,33 @@ fn id(n: u8) -> RequestId {
     [n; 16]
 }
 
+/// The rail at a cut with no cells, over TCP: no battery in the status, in
+/// the judged supply or in the raw power reading.
+#[test]
+fn a_client_reads_no_battery_from_a_rail_at_a_cut() {
+    paused(async {
+        let flash = Flash::memory();
+        let owner = *Keypair::from_secret(OWNER).public();
+        let address = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+        let banks: Rc<RefCell<Banks>> = Banks::new();
+        let sim = harness::Running::start_with(&flash, &banks, None, Some(owner), address).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let mut connection = open(&sim, 1).await;
+
+        sim.control(Control::Pack(Some(1871)));
+        sim.control(Control::Adapter(false));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let Answer::Status(status) = connection.ask(id(1), &Op::Status).await.unwrap() else {
+            panic!("a status");
+        };
+        let supply = status.supply.expect("the supply, to a POWER session");
+        assert_eq!(supply.adapter, Some(false));
+        assert_eq!(supply.battery, wellfed_model::Battery::Absent);
+        assert_eq!(status.power.and_then(|power| power.battery_mv), None);
+    });
+}
+
 /// What a client sees: the supply with its charge in the status, an
 /// update refused by name on the batteries, the session gone with the
 /// radio, and the feeder back once the adapter is.
@@ -343,7 +376,8 @@ fn a_client_sees_the_supply_and_loses_the_feeder_on_batteries() {
         let banks: Rc<RefCell<Banks>> = Banks::new();
         let sim = harness::Running::start_with(&flash, &banks, None, Some(owner), address).await;
         sim.control(Control::Pack(Some(FRESH_PIN_MV)));
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Cells fitted on the adapter read once they have stayed.
+        tokio::time::sleep(Duration::from_millis(u64::from(supply::CELLS_MS) + 100)).await;
 
         let mut connection = open(&sim, 1).await;
         let Answer::Status(status) = connection.ask(id(1), &Op::Status).await.unwrap() else {

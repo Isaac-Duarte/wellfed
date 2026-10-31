@@ -10,7 +10,7 @@ use wellfed_core::store::seed::SeedStatus;
 use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::mailbox::{SettingsFields, SettingsResult};
-use wellfed_feeder::stats::{EARLY_SAVES, RESTART_SETTLED_MS, SAVE_MS, Totals};
+use wellfed_feeder::stats::{EARLY_SAVES, FEED_SAVE_MS, RESTART_SETTLED_MS, SAVE_MS, Totals};
 use wellfed_feeder::store::clients::ClientStatus;
 use wellfed_feeder::store::events::Read;
 use wellfed_feeder::store::net::NetStatus;
@@ -1211,7 +1211,7 @@ fn lifetime_totals_count_the_boot_and_save_at_a_bounded_rate() {
 
     let counts = Counts {
         uptime_s: 3_600,
-        feeds: 3,
+        presses: 3,
         ..Counts::default()
     };
     stats::hand_counts(counts);
@@ -1223,7 +1223,10 @@ fn lifetime_totals_count_the_boot_and_save_at_a_bounded_rate() {
     assert_eq!(stats::totals(), Some(base), "the base stays this boot's");
 
     // The rate: nothing until a full interval later, however much changed.
-    stats::hand_counts(Counts { feeds: 4, ..counts });
+    stats::hand_counts(Counts {
+        presses: 4,
+        ..counts
+    });
     idle(&mut writer, &mut provider, 5);
     sdk::delay_ms(SAVE_MS - 1);
     idle(&mut writer, &mut provider, 5);
@@ -1246,7 +1249,7 @@ fn lifetime_totals_count_the_boot_and_save_at_a_bounded_rate() {
     );
     assert_eq!(save, saved(4, 1));
     let totals = stats::totals().expect("the stored totals");
-    assert_eq!(totals.counts.feeds, 4);
+    assert_eq!(totals.counts.presses, 4);
     assert_eq!(totals.counts.uptime_s, 3_600);
     assert_eq!(
         totals.resets,
@@ -1316,6 +1319,52 @@ fn short_boots_count_their_resets_while_tokens_last() {
     );
     let (_, _, save) = boot(&mut provider);
     assert_eq!(save, None);
+}
+
+/// A boot's feeds survive a power cut long before the hourly save: the
+/// first at once and later ones at most every `FEED_SAVE_MS`, with no early
+/// token spent, so a spent budget does not lose them.
+#[test]
+fn a_finished_feed_saves_the_totals_at_a_bounded_rate() {
+    let (_guard, _, mut provider) = start();
+    fake::with(|h| h.boot_reason = 1 << 17);
+    for _ in 0..u32::from(EARLY_SAVES) {
+        boot(&mut provider);
+    }
+    let (mut writer, open, _) = boot(&mut provider);
+    assert!(matches!(open, Some(Record::StatsOpen { missed: true, .. })));
+    let generation = |record| match record {
+        Some(Record::StatsSaved { generation, early }) => {
+            assert_eq!(early, EARLY_SAVES, "no token moves");
+            generation
+        }
+        other => panic!("not a save: {other:?}"),
+    };
+
+    idle(&mut writer, &mut provider, 3);
+    let fed = |feeds| Counts {
+        feeds,
+        ..Counts::default()
+    };
+    stats::hand_counts(fed(1));
+    let first = generation(step(&mut writer, &mut provider));
+    idle(&mut writer, &mut provider, 3);
+
+    // Another feed inside the interval waits for its end.
+    stats::hand_counts(fed(2));
+    idle(&mut writer, &mut provider, 3);
+    sdk::delay_ms(FEED_SAVE_MS - 1);
+    idle(&mut writer, &mut provider, 3);
+    sdk::delay_ms(1);
+    assert_eq!(generation(step(&mut writer, &mut provider)), first + 1);
+
+    // With no feed since, the interval's end asks for nothing.
+    sdk::delay_ms(FEED_SAVE_MS);
+    idle(&mut writer, &mut provider, 3);
+
+    // A cut now: the next boot starts from what the feeds left.
+    let (_, _, _) = boot(&mut provider);
+    assert_eq!(stats::totals().unwrap().counts.feeds, 2);
 }
 
 /// Whatever the crash pattern, the store's erases stay within the early

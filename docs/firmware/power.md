@@ -28,7 +28,7 @@ The monitor logs `PLBAT1` records, in every firmware that does not claim the ADC
   - `Unread`, no sample: the monitor has not run, its ADC failed, or the firmware does not sample;
   - `Stale { age_ms }`, older than three monitor periods.
 
-  `below_floor` is the feeding owner's verdict on the pack's floor, `None` before it has judged and in a firmware without an owner. The judging is `wellfed_core::supply::classify`, against the board's `power::PACK`.
+  `below_floor` is the feeding owner's verdict on the pack's floor, `None` before it has judged, in a firmware without an owner, and with no pack fitted. The judging is `wellfed_core::supply::classify`, against the board's `power::PACK`.
 - **Status.** A session that claims `POWER` gets the supply in its status (`Outcome::FeederStatus { supply }`), and `wellfed status` prints it.
 - **`Metric::Supply`** goes to subscribers with the bit at each power sample (5 s), beside the version 1 `Power` metric, which is unchanged.
 - **`EventBody::Supply`** records the adapter coming or going and the pack crossing its floor, at most one a minute (`feeder::supply::EVENT_MS`). Changes inside the minute are recorded once it ends, as the supply then stands, so a chattering adapter or a pack hovering at its floor costs one event a minute. A boot's first reading is a baseline, not an event, and a stale sample changes nothing.
@@ -50,9 +50,11 @@ On its batteries the feeder does what stock does ([stock firmware](../devices/pl
 | Updates | An offer is refused `Update(Battery)` as soon as the adapter reads absent. An install that is receiving stops when Wi-Fi goes off. |
 | Below the floor | No feed starts ([below](#the-floor)). |
 
-**When it starts.** The loop enters battery mode once every fresh sample for 5 s (`feeder::supply::RADIO_OFF_MS`) has read the adapter absent with a plausible pack. A shorter loss changes nothing. Only a fresh sample moves the mode: an unknown adapter, or a pack that reads absent or implausible on the pack alone, neither starts the wait nor ends it.
+**When it starts.** The loop enters battery mode once every fresh sample for 5 s (`feeder::supply::RADIO_OFF_MS`) has read the adapter absent with a plausible pack. A shorter loss changes nothing. If the adapter last read no pack, the [phantom's mask](#battery-mode) holds the pack back for up to 5 s first, so the radio goes off up to 5 s later, about 10 s after the pull. Only a fresh sample moves the mode: an unknown adapter, or a pack that reads absent or implausible on the pack alone, neither starts the wait nor ends it.
 
-**The phantom at a power cut.** With no cells fitted, cutting the adapter reads the decaying 5 V rail as a plausible pack (3.86 V was seen) for the moment before the board stops. That moment is far shorter than the 5 s wait, so it never turns Wi-Fi off. It cannot lift a brownout hold either, which needs 3 minutes ([below](#brownout)). It does leave one `Supply` event with that reading, which is what the rail read.
+**No cells, or a flat pack.** On the adapter these read differently, so the feeder tells them apart. An empty holder reads about 16 mV at the pin. A pack reads its own voltage through the divider, so anything from about 1 V at the pack up (`NO_PACK_PIN_MV`, 500 mV at the pin) is a pack, however flat. A pack under that, about 0.34 V a cell, reads as no batteries. No flat pack has been measured here yet: [bench check 2](#bench-checks) covers it. A pack that is not there has no floor to be below, so `below_floor` is `None` then, whatever the owner makes of the near-zero channel, and `wellfed status` says `adapter; no batteries`.
+
+**The phantom at a power cut.** With no cells fitted, cutting the adapter reads the decaying 5 V rail as a plausible pack (3.86 V was seen) for the moment before the board stops. So once the adapter's samples read no pack, the loop keeps reporting no pack until the channel has read something else for 5 s (`feeder::supply::CELLS_MS`), whatever the adapter pin says. The `Supply` event at the cut reads `Absent`, and the status and metrics, the version 1 `Power` ones included, give no millivolts. The moment is far shorter than the 5 s, so it never starts battery mode or lifts a brownout hold ([below](#brownout)). Cells fitted on the adapter read 5 s after they go in.
 
 **What "Wi-Fi off" does.** The loop asks the platform for the radio off on every pass (`Platform::radio`). On the feeder, the C Wi-Fi task then:
 
@@ -148,6 +150,7 @@ Physical acceptance needs the cells in, which is the owner's call. The order kee
    - **Cycles.** Pull and restore the adapter about 20 times, at least a minute apart. Each `wifi_off` and `wifi_on` must return, with no hang or reset. Note the heap's low water (`wellfed stats`) before and after: it must not fall from cycle to cycle.
    - **Discovery.** After a cycle, `wellfed` finds the feeder over mDNS again, without its address.
 6. **The brownout bit is fresh.** After the brownout of step 4, with the adapter in, force a watchdog reset with a build or probe that stalls the watchdog, such as the `owner-stall` variant. (`wellfed reboot` is deliberate and does not count.) The next boot must not log `PLTRL1 brownout=1`, and its `Boot` event's reset flags must not carry bit 18. If it does, the bit is stale on this board: the bounds above still hold, but record it.
+7. **No cells.** With no cells and the adapter in, `wellfed status` reads `Power: adapter; no batteries`, with no words about a floor. Fit cells: within 5 s it reads the charge. Take them out again, cut relay 1, restore it, and read the history: the `Supply` event at the cut reads `no batteries`, not a voltage.
 
 ## Open questions
 
@@ -182,7 +185,7 @@ Physical acceptance needs the cells in, which is the owner's call. The order kee
   - Product: `wellfed-feeder/tests/supply.rs` (events and their rate limit, the brownout hold, readiness order); the firmware's `tests/manual_feed.rs` (a press refused on a low pack, the adapter's loss as a `Supply` event from the board's samples); `wellfed-client/tests/api.rs` (the battery reason to a `POWER` session, and as `Starting` to an older one); wire fixtures for every new variant.
   - Simulation: the real owner on the fake SDK (`wellfed-sim`). The plant sags the battery channel by `surge_sag_adc` and `drive_sag_adc` while it drives on the pack, both unmeasured and zero by default. The adapter pulled mid-feed fails it, and nothing drives until a new feed, which completes on the pack. A surge under the floor is tolerated, and a sustained sag or one under the cutoff fails the feed. Under the floor and in the band no feed drives; at the clear level one does. Checked-in scenarios: `adapter-loss-mid-feed.json`, `battery-sag.json`.
 - **The brownout bit on hardware.** Unknown: whether a real brownout on this board sets bit 18.
-- **The phantom at a cut.** Observed (October 28, the server's bench run): a relay-1 cut with no cells recorded `Supply { adapter: false, battery: Reading 3861 mV }`, the decaying rail.
+- **The phantom at a cut.** Observed (October 28, the server's bench run, before the fix): a relay-1 cut with no cells recorded `Supply { adapter: false, battery: Reading 3861 mV }`, the decaying rail. The fix is modeled only: `wellfed-feeder/tests/supply.rs` and `wellfed-feeder-sim/tests/battery.rs`.
 - **Battery mode, the charge and the hold's release.** Modeled (October 28):
   - Core: `wellfed-core/tests/supply.rs` (stock's steps at every boundary, a reading's charge).
   - Product: `wellfed-feeder/tests/supply.rs` (the 5 s wait, the radio back at once, a short loss, the radio's minute back on, a boot on batteries across the uptime's wrap, unknown or implausible packs that neither start nor end the wait, setup mode, the rail at a cut, the hold lifted by the adapter or by 3 minutes at 50 %, and every interruption restarting it).

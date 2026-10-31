@@ -227,12 +227,8 @@ impl Server {
                 {
                     Reply::Refused(Refusal::Invalid)
                 }
-                Some(KeyOutcome::Done | KeyOutcome::Duplicate) => {
-                    record(Record::UpdateKey {
-                        slot: slot_id(index),
-                        change: UpdateKeyChange::Enrolled,
-                        key: key_id(&key),
-                    });
+                Some(outcome @ (KeyOutcome::Done | KeyOutcome::Duplicate)) => {
+                    signer_landed(now_ms, device, outcome, slot_id(index), &key, record);
                     Reply::Done(None)
                 }
                 Some(KeyOutcome::Full) => Reply::Refused(Refusal::Full),
@@ -422,6 +418,32 @@ impl Server {
         };
         self.seal_and_send(index, &FeederMessage::Response { id, result })
     }
+}
+
+/// A pressed key's enrollment went through, with its session or after it. A
+/// key that was already enrolled changed nothing, so it leaves no history.
+#[inline(never)]
+pub(super) fn signer_landed<D: Device>(
+    now_ms: u32,
+    device: &mut D,
+    outcome: KeyOutcome,
+    slot: u8,
+    key: &[u8; 32],
+    record: &mut impl FnMut(Record),
+) {
+    if matches!(outcome, KeyOutcome::Done) {
+        let body = EventBody::Enrolled {
+            client: fingerprint(key),
+            role: proto::Role::UpdateSigner,
+            path: proto::Path::Press,
+        };
+        device.record(now_ms, body);
+    }
+    record(Record::UpdateKey {
+        slot,
+        change: UpdateKeyChange::Enrolled,
+        key: key_id(key),
+    });
 }
 
 /// The zone's text, copied out of the device's view for the answer to

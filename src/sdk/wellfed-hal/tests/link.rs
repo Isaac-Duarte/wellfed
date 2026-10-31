@@ -129,7 +129,7 @@ fn losses_count_by_cause() {
     lost(Cause::Gateway);
     lost(Cause::Lease);
     let status = net_status::read();
-    assert_eq!((status.link_losses, status.check_losses), (1, 2));
+    assert_eq!((status.link_losses, status.check_losses), (3, 2));
     assert_eq!(status.last_loss, 2);
     assert_eq!(status.generation, 3, "every loss is a new generation");
 }

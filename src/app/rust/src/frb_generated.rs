@@ -4143,25 +4143,31 @@ impl SseDecode for crate::api::session::HistoryBody {
             }
             8 => {
                 let mut var_fingerprint = <String>::sse_decode(deserializer);
+                return crate::api::session::HistoryBody::UpdateKeyAdded {
+                    fingerprint: var_fingerprint,
+                };
+            }
+            9 => {
+                let mut var_fingerprint = <String>::sse_decode(deserializer);
                 let mut var_by = <crate::api::session::FedBy>::sse_decode(deserializer);
                 return crate::api::session::HistoryBody::Revoked {
                     fingerprint: var_fingerprint,
                     by: var_by,
                 };
             }
-            9 => {
+            10 => {
                 let mut var_by = <crate::api::session::FedBy>::sse_decode(deserializer);
                 return crate::api::session::HistoryBody::ClockSet { by: var_by };
             }
-            10 => {
+            11 => {
                 let mut var_count = <u16>::sse_decode(deserializer);
                 return crate::api::session::HistoryBody::Lost { count: var_count };
             }
-            11 => {
+            12 => {
                 let mut var_reason = <Option<crate::api::model::Blocked>>::sse_decode(deserializer);
                 return crate::api::session::HistoryBody::FeedingBlocked { reason: var_reason };
             }
-            12 => {
+            13 => {
                 let mut var_minute = <u16>::sse_decode(deserializer);
                 let mut var_portions = <u8>::sse_decode(deserializer);
                 return crate::api::session::HistoryBody::MealSoon {
@@ -4169,21 +4175,21 @@ impl SseDecode for crate::api::session::HistoryBody {
                     portions: var_portions,
                 };
             }
-            13 => {
+            14 => {
                 let mut var_adapter = <Option<bool>>::sse_decode(deserializer);
                 return crate::api::session::HistoryBody::Supply {
                     adapter: var_adapter,
                 };
             }
-            14 => {
+            15 => {
                 let mut var_reason = <crate::api::model::Blocked>::sse_decode(deserializer);
                 return crate::api::session::HistoryBody::DispenseRefused { reason: var_reason };
             }
-            15 => {
+            16 => {
                 let mut var_level = <crate::api::model::FoodLevel>::sse_decode(deserializer);
                 return crate::api::session::HistoryBody::Food { level: var_level };
             }
-            16 => {
+            17 => {
                 let mut var_from = <u64>::sse_decode(deserializer);
                 let mut var_to = <u64>::sse_decode(deserializer);
                 return crate::api::session::HistoryBody::Gap {
@@ -4191,7 +4197,7 @@ impl SseDecode for crate::api::session::HistoryBody {
                     to: var_to,
                 };
             }
-            17 => {
+            18 => {
                 return crate::api::session::HistoryBody::Other;
             }
             _ => {
@@ -7876,43 +7882,46 @@ impl flutter_rust_bridge::IntoDart for crate::api::session::HistoryBody {
             crate::api::session::HistoryBody::Joined { fingerprint } => {
                 [7.into_dart(), fingerprint.into_into_dart().into_dart()].into_dart()
             }
+            crate::api::session::HistoryBody::UpdateKeyAdded { fingerprint } => {
+                [8.into_dart(), fingerprint.into_into_dart().into_dart()].into_dart()
+            }
             crate::api::session::HistoryBody::Revoked { fingerprint, by } => [
-                8.into_dart(),
+                9.into_dart(),
                 fingerprint.into_into_dart().into_dart(),
                 by.into_into_dart().into_dart(),
             ]
             .into_dart(),
             crate::api::session::HistoryBody::ClockSet { by } => {
-                [9.into_dart(), by.into_into_dart().into_dart()].into_dart()
+                [10.into_dart(), by.into_into_dart().into_dart()].into_dart()
             }
             crate::api::session::HistoryBody::Lost { count } => {
-                [10.into_dart(), count.into_into_dart().into_dart()].into_dart()
+                [11.into_dart(), count.into_into_dart().into_dart()].into_dart()
             }
             crate::api::session::HistoryBody::FeedingBlocked { reason } => {
-                [11.into_dart(), reason.into_into_dart().into_dart()].into_dart()
+                [12.into_dart(), reason.into_into_dart().into_dart()].into_dart()
             }
             crate::api::session::HistoryBody::MealSoon { minute, portions } => [
-                12.into_dart(),
+                13.into_dart(),
                 minute.into_into_dart().into_dart(),
                 portions.into_into_dart().into_dart(),
             ]
             .into_dart(),
             crate::api::session::HistoryBody::Supply { adapter } => {
-                [13.into_dart(), adapter.into_into_dart().into_dart()].into_dart()
+                [14.into_dart(), adapter.into_into_dart().into_dart()].into_dart()
             }
             crate::api::session::HistoryBody::DispenseRefused { reason } => {
-                [14.into_dart(), reason.into_into_dart().into_dart()].into_dart()
+                [15.into_dart(), reason.into_into_dart().into_dart()].into_dart()
             }
             crate::api::session::HistoryBody::Food { level } => {
-                [15.into_dart(), level.into_into_dart().into_dart()].into_dart()
+                [16.into_dart(), level.into_into_dart().into_dart()].into_dart()
             }
             crate::api::session::HistoryBody::Gap { from, to } => [
-                16.into_dart(),
+                17.into_dart(),
                 from.into_into_dart().into_dart(),
                 to.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            crate::api::session::HistoryBody::Other => [17.into_dart()].into_dart(),
+            crate::api::session::HistoryBody::Other => [18.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -11053,47 +11062,51 @@ impl SseEncode for crate::api::session::HistoryBody {
                 <i32>::sse_encode(7, serializer);
                 <String>::sse_encode(fingerprint, serializer);
             }
-            crate::api::session::HistoryBody::Revoked { fingerprint, by } => {
+            crate::api::session::HistoryBody::UpdateKeyAdded { fingerprint } => {
                 <i32>::sse_encode(8, serializer);
+                <String>::sse_encode(fingerprint, serializer);
+            }
+            crate::api::session::HistoryBody::Revoked { fingerprint, by } => {
+                <i32>::sse_encode(9, serializer);
                 <String>::sse_encode(fingerprint, serializer);
                 <crate::api::session::FedBy>::sse_encode(by, serializer);
             }
             crate::api::session::HistoryBody::ClockSet { by } => {
-                <i32>::sse_encode(9, serializer);
+                <i32>::sse_encode(10, serializer);
                 <crate::api::session::FedBy>::sse_encode(by, serializer);
             }
             crate::api::session::HistoryBody::Lost { count } => {
-                <i32>::sse_encode(10, serializer);
+                <i32>::sse_encode(11, serializer);
                 <u16>::sse_encode(count, serializer);
             }
             crate::api::session::HistoryBody::FeedingBlocked { reason } => {
-                <i32>::sse_encode(11, serializer);
+                <i32>::sse_encode(12, serializer);
                 <Option<crate::api::model::Blocked>>::sse_encode(reason, serializer);
             }
             crate::api::session::HistoryBody::MealSoon { minute, portions } => {
-                <i32>::sse_encode(12, serializer);
+                <i32>::sse_encode(13, serializer);
                 <u16>::sse_encode(minute, serializer);
                 <u8>::sse_encode(portions, serializer);
             }
             crate::api::session::HistoryBody::Supply { adapter } => {
-                <i32>::sse_encode(13, serializer);
+                <i32>::sse_encode(14, serializer);
                 <Option<bool>>::sse_encode(adapter, serializer);
             }
             crate::api::session::HistoryBody::DispenseRefused { reason } => {
-                <i32>::sse_encode(14, serializer);
+                <i32>::sse_encode(15, serializer);
                 <crate::api::model::Blocked>::sse_encode(reason, serializer);
             }
             crate::api::session::HistoryBody::Food { level } => {
-                <i32>::sse_encode(15, serializer);
+                <i32>::sse_encode(16, serializer);
                 <crate::api::model::FoodLevel>::sse_encode(level, serializer);
             }
             crate::api::session::HistoryBody::Gap { from, to } => {
-                <i32>::sse_encode(16, serializer);
+                <i32>::sse_encode(17, serializer);
                 <u64>::sse_encode(from, serializer);
                 <u64>::sse_encode(to, serializer);
             }
             crate::api::session::HistoryBody::Other => {
-                <i32>::sse_encode(17, serializer);
+                <i32>::sse_encode(18, serializer);
             }
             _ => {
                 unimplemented!("");

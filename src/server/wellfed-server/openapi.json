@@ -6149,7 +6149,8 @@
         "enum": [
           "setup",
           "invite",
-          "recovery"
+          "recovery",
+          "press"
         ]
       },
       "ErrorCode": {
@@ -7194,7 +7195,7 @@
           "dns_losses": {
             "type": "integer",
             "format": "int32",
-            "description": "Losses the feeder's link check noticed (its DHCP lease ran out or\nits gateway stopped answering) rather than the association. The name\nis from the internet DNS check that check replaced.",
+            "description": "Those of `link_losses` the feeder's link check noticed (its DHCP\nlease ran out or its gateway stopped answering) rather than the\nassociation. The name is from the internet DNS check that check\nreplaced.",
             "minimum": 0
           },
           "faults": {
@@ -7229,6 +7230,7 @@
           "link_losses": {
             "type": "integer",
             "format": "int32",
+            "description": "Every time this boot a joined link was lost and the feeder went on\nto rejoin, whatever noticed it.",
             "minimum": 0
           },
           "locked": {
@@ -10705,7 +10707,7 @@
               "boolean",
               "null"
             ],
-            "description": "Whether the feeding owner judges the pack below the floor a feed\nneeds; absent before it has judged."
+            "description": "Whether the feeding owner judges the pack below the floor a feed\nneeds; absent before it has judged, and with no pack fitted."
           }
         }
       },

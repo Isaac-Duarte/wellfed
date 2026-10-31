@@ -337,7 +337,7 @@ impl DeviceStatus {
             uptime_ms: status.uptime_ms,
             boot_count: status.boot_count,
             wifi: status.wifi,
-            losses: status.link_losses.saturating_add(status.dns_losses),
+            losses: status.link_losses,
             clock_ms: status
                 .clock
                 .and_then(|clock| u64::try_from(clock.as_millisecond()).ok()),

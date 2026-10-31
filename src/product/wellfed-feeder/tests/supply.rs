@@ -6,11 +6,11 @@
 use wellfed_core::supply::{Pack, Reading};
 use wellfed_feeder::feeder::feeding::readiness;
 use wellfed_feeder::feeder::supply::{
-    EVENT_MS, RADIO_MIN_ON_MS, RADIO_OFF_MS, RELEASE_MS, RELEASE_PERCENT, Radio, Record, Released,
-    Watch, supply,
+    CELLS_MS, EVENT_MS, RADIO_MIN_ON_MS, RADIO_OFF_MS, RELEASE_MS, RELEASE_PERCENT, Radio, Record,
+    Released, Watch, power, supply,
 };
 use wellfed_feeder::feeder::{Feeds, NoFeeds};
-use wellfed_proto::api::{Battery, Blocked, Readiness, Refusal, ResetCause, Source, Supply};
+use wellfed_proto::api::{Battery, Blocked, Power, Readiness, Refusal, ResetCause, Source, Supply};
 
 const FRESH: Battery = Battery::Reading {
     mv: 4757,
@@ -80,10 +80,138 @@ fn every_reading_keeps_its_uncertainty_on_the_wire() {
             Supply {
                 adapter: None,
                 battery,
-                below_floor: Some(true),
+                below_floor: (battery != Battery::Absent).then_some(true),
             }
         );
     }
+}
+
+/// With no pack there is no floor to be below: the owner's verdict on the
+/// near-zero channel is not passed on. A flat pack keeps it.
+#[test]
+fn no_pack_has_no_verdict_and_a_flat_pack_does() {
+    let reading = |pack| Reading {
+        adapter: Some(true),
+        pack,
+    };
+
+    let empty = supply(reading(Pack::Absent), Some(true));
+    assert_eq!((empty.battery, empty.below_floor), (Battery::Absent, None));
+
+    let flat = Pack::Reading {
+        mv: 3300,
+        percent: 0,
+    };
+    assert_eq!(supply(reading(flat), Some(true)).below_floor, Some(true));
+}
+
+/// The adapter read no pack, then the cut: the rail on the channel, with
+/// the adapter gone or its pin still high, reads as no pack and leaves that
+/// in the history.
+#[test]
+fn a_rail_decaying_at_a_cut_reports_no_battery() {
+    let mut watch = Watch::new();
+    let reset = ResetCause::PowerOn;
+    let judged = |mv| Battery::Reading { mv, percent: 100 };
+    let empty = Supply {
+        adapter: Some(true),
+        battery: Battery::Absent,
+        below_floor: None,
+    };
+
+    let first = watch.cells(0, empty);
+    assert_eq!(watch.note(0, reset, first, |_| {}), None);
+
+    // One poll may see the rail before the detect pin falls.
+    let early = Supply {
+        battery: judged(4_200),
+        below_floor: Some(true),
+        ..empty
+    };
+    let seen = watch.cells(1_000, early);
+    assert_eq!(seen, empty);
+    assert_eq!(watch.note(1_000, reset, seen, |_| {}), None);
+
+    let rail = Supply {
+        adapter: Some(false),
+        battery: judged(3_861),
+        below_floor: Some(true),
+    };
+    let seen = watch.cells(1_020, rail);
+    let want = Supply {
+        adapter: Some(false),
+        battery: Battery::Absent,
+        below_floor: None,
+    };
+    assert_eq!(seen, want);
+    assert_eq!(watch.note(1_020, reset, seen, |_| {}), Some(want));
+    assert_eq!(watch.radio(1_020, false, |_| {}), Radio::On);
+
+    // Under what a pack could run the board on, too.
+    let low = Supply {
+        battery: Battery::Implausible { mv: 2_100 },
+        ..rail
+    };
+    assert_eq!(watch.cells(1_040, low), want);
+}
+
+/// The raw reading gives no millivolts for a pack judged absent, and is left
+/// alone otherwise.
+#[test]
+fn the_raw_power_follows_the_judged_pack() {
+    let rail = Power {
+        adapter: false,
+        battery_mv: Some(3_861),
+    };
+
+    assert_eq!(power(rail, Battery::Absent).battery_mv, None);
+    assert_eq!(power(rail, FRESH), rail);
+    assert_eq!(power(rail, Battery::Implausible { mv: 3_861 }), rail);
+}
+
+/// A board still running past the wait has cells, whatever the adapter read
+/// before; and cells fitted on the adapter read once they have stayed.
+#[test]
+fn a_pack_is_believed_once_it_has_stayed() {
+    let mut watch = Watch::new();
+    let empty = pack(Some(true), Battery::Absent);
+    watch.cells(0, empty);
+
+    let fitted = pack(Some(true), FRESH);
+    assert_eq!(watch.cells(1_000, fitted).battery, Battery::Absent);
+    assert_eq!(
+        watch.cells(1_000 + CELLS_MS - 1, fitted).battery,
+        Battery::Absent
+    );
+    assert_eq!(watch.cells(1_000 + CELLS_MS, fitted), fitted);
+
+    // From then on a cut reads the pack at once.
+    let alone = pack(Some(false), FRESH);
+    assert_eq!(watch.cells(1_000 + CELLS_MS + 1, alone), alone);
+
+    // A pack that read absent on the adapter and carries the board on.
+    let mut watch = Watch::new();
+    watch.cells(0, empty);
+    assert_eq!(watch.cells(100, alone).battery, Battery::Absent);
+    assert_eq!(watch.cells(100 + CELLS_MS, alone), alone);
+
+    // Reading nothing again starts the wait over.
+    let mut watch = Watch::new();
+    watch.cells(0, empty);
+    watch.cells(100, fitted);
+    watch.cells(200, empty);
+    assert_eq!(watch.cells(100 + CELLS_MS, fitted).battery, Battery::Absent);
+
+    // A boot that has only ever run on its pack believes it from the start,
+    // and no fresh sample changes nothing.
+    let mut watch = Watch::new();
+    assert_eq!(watch.cells(0, alone), alone);
+    let unread = Supply {
+        adapter: None,
+        battery: Battery::Unread,
+        below_floor: None,
+    };
+    assert_eq!(watch.cells(100, unread), unread);
 }
 
 #[test]

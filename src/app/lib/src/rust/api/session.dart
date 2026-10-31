@@ -340,6 +340,10 @@ sealed class HistoryBody with _$HistoryBody {
       HistoryBody_PlansChanged;
   const factory HistoryBody.joined({required String fingerprint}) =
       HistoryBody_Joined;
+
+  /// An update signing key was added, with a press on the feeder.
+  const factory HistoryBody.updateKeyAdded({required String fingerprint}) =
+      HistoryBody_UpdateKeyAdded;
   const factory HistoryBody.revoked({
     required String fingerprint,
     required FedBy by,
