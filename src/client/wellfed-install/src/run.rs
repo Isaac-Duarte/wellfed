@@ -10,7 +10,7 @@
 //! runs out, since they change nothing.
 
 use std::future::Future;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -382,6 +382,14 @@ async fn go_again<T>(
     prompter.code_lapsed(route).await.map_err(Error::Platform)
 }
 
+/// The frame's socket: bound to `from`, an address on the feeder's link, so the
+/// bind fails once that link has dropped rather than the password going out
+/// another way.
+async fn frame_socket(from: Option<Ipv4Addr>) -> std::io::Result<tokio::net::UdpSocket> {
+    let from = from.unwrap_or(Ipv4Addr::UNSPECIFIED);
+    tokio::net::UdpSocket::bind(SocketAddr::from((from, 0))).await
+}
+
 /// The run's IO state beside the steps.
 struct Run<P, B, D, K, R> {
     io: Platform<P, B, D, K, R>,
@@ -606,10 +614,14 @@ where
             .done(Prompt::SetupMode)
             .await
             .map_err(Error::Handover)?;
-        let to = wellfed_client::install::SETUP_ADDRESS;
-        let socket = tokio::net::UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], 0)))
+        let from = self
+            .io
+            .prompter
+            .frame_source()
             .await
-            .map_err(Error::UdpSocket)?;
+            .map_err(Error::Handover)?;
+        let to = wellfed_client::install::SETUP_ADDRESS;
+        let socket = frame_socket(from).await.map_err(Error::UdpSocket)?;
         socket
             .send_to(frame, to)
             .await
@@ -1450,6 +1462,24 @@ mod tests {
         let read = again_while_lost(&report, async || -> Result<(), Error> { Err(lost()) });
         assert!(read.await.unwrap_err().is_connection_lost());
         assert!(began.elapsed() >= BACKUP_RECONNECT);
+    }
+
+    /// An address this host does not hold, as when the feeder's link dropped,
+    /// fails the socket, so nothing can go. By default the socket binds anywhere,
+    /// and loopback shows a given address is the one used.
+    #[tokio::test]
+    async fn the_frame_s_socket_binds_to_the_feeder_s_link() {
+        // TEST-NET-1 is on no interface.
+        assert!(
+            frame_socket(Some(Ipv4Addr::new(192, 0, 2, 1)))
+                .await
+                .is_err()
+        );
+
+        let any = frame_socket(None).await.unwrap();
+        assert!(any.local_addr().unwrap().ip().is_unspecified());
+        let given = frame_socket(Some(Ipv4Addr::LOCALHOST)).await.unwrap();
+        assert!(given.local_addr().unwrap().ip().is_loopback());
     }
 
     /// Only a window that closed with nothing keyed in may go again, and only

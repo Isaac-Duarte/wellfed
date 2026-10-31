@@ -3,18 +3,20 @@
 //! The setup frame carries the Wi-Fi password in the clear to 192.168.1.1, and
 //! many home routers are 192.168.1.1 too. So a frame goes only after [`look`]
 //! has found the route to that address on a network named like the feeder's,
-//! or the person has named such a network where this computer cannot tell. The
-//! decisions here are pure; what they read and change on this computer sits
-//! behind [`Host`], so a test fakes it and no test touches a real network.
+//! or the person has named such a network where neither NetworkManager nor `iw`
+//! can tell. A name is no proof of whose network it is, so a hop is the person's
+//! consent to that one network ([`super::guide`]). The decisions here are pure;
+//! what they read and change on this computer sits behind [`Host`], so a test
+//! fakes it and no test touches a real network.
 //!
 //! [`Nmcli`] is that seam on Linux with NetworkManager. A profile it joins with
-//! carries two settings the feeder's access point needs: NetworkManager's
-//! address-conflict detection reports `acd conflict` on the offered
-//! 192.168.1.100, so a plain join times out (physical, October 31, 2026), and
-//! `ipv4.dad-timeout 0` turns that off. `connection.autoconnect no` keeps the
-//! profile from ever coming up by itself. Route settings keep the feeder's
-//! address on this link when another interface holds the same subnet, and the
-//! default route where it was.
+//! carries two settings from a manual join (physical, October 31, 2026): it timed
+//! out with `acd conflict` on the offered 192.168.1.100, and once its profile was
+//! modified with `ipv4.dad-timeout 0` and `connection.autoconnect no`, that
+//! profile joined and the frame reached stock. The profile made here has not run
+//! on hardware. Its route settings, which keep the feeder's address on this link
+//! when another interface holds the same subnet and leave the default route
+//! where it was, come from static analysis alone.
 
 use std::fmt::Write as _;
 use std::net::{IpAddr, Ipv4Addr};
@@ -26,6 +28,9 @@ use wellfed_client::install::{SETUP_ADDRESS, SETUP_SSID_PREFIX};
 pub(crate) const PROFILE: &str = "wellfed-feeder-setup";
 /// How long NetworkManager gets to bring a connection up.
 const UP_WAIT_SECONDS: &str = "30";
+/// What the manual steps show for what this computer could not name.
+const INTERFACE_PLACEHOLDER: &str = "<wifi-interface>";
+const NETWORK_PLACEHOLDER: &str = "<feeder-network>";
 
 /// Why no frame goes: what the check found, and that nothing was sent.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -54,6 +59,20 @@ pub(crate) enum FrameRefused {
         "{typed:?} is not the feeder's network, whose name starts {SETUP_SSID_PREFIX}; nothing was sent"
     )]
     NotConfirmed { typed: String },
+    #[error(
+        "this computer could not read its route to {SETUP_ADDRESS}, so it cannot say where the frame would go; nothing was sent"
+    )]
+    RouteUnreadable,
+    #[error(
+        "the route to {SETUP_ADDRESS} through {interface} names no address of this computer to send from; nothing was sent"
+    )]
+    NoSource { interface: String },
+    #[error(
+        "the route to {SETUP_ADDRESS} moved from {from}, the interface you checked, to {to}; nothing was sent"
+    )]
+    RouteMoved { from: String, to: String },
+    #[error("you did not agree to send your Wi-Fi password to {ssid:?}; nothing was sent")]
+    NotConsented { ssid: String },
 }
 
 /// One command this computer ran that did not do its job.
@@ -76,6 +95,8 @@ pub(crate) struct Route {
     pub(crate) gateway: Option<IpAddr>,
     /// The address is this computer's own.
     pub(crate) local: bool,
+    /// This computer's address the route sends from.
+    pub(crate) source: Option<Ipv4Addr>,
 }
 
 /// What an interface is connected to.
@@ -83,8 +104,7 @@ pub(crate) struct Route {
 pub(crate) enum Link {
     Wifi(String),
     NotWifi,
-    /// This computer cannot tell: no NetworkManager, or it does not manage
-    /// this interface.
+    /// Neither NetworkManager nor `iw` can tell.
     Unknown,
 }
 
@@ -94,8 +114,9 @@ pub(crate) struct Radio {
     pub(crate) interface: String,
     /// The connection it carries now.
     pub(crate) connection: Option<String>,
-    /// That connection is an access point this computer serves.
-    pub(crate) hotspot: bool,
+    /// A hop may not take it: its connection is an access point this computer
+    /// serves, or could not be read to show it is not.
+    pub(crate) reserved: bool,
 }
 
 /// A hop to the feeder's network: where this computer goes back to.
@@ -127,27 +148,37 @@ pub(crate) trait Host {
     /// This computer's address on the Wi-Fi network `ssid`, as a client or as
     /// its hotspot.
     fn address_on(&self, ssid: &str) -> Option<Ipv4Addr>;
+
+    /// Whether `address` is on one of this computer's interfaces. Unread counts
+    /// as no.
+    fn holds(&self, address: IpAddr) -> bool;
 }
 
 /// What the check before the frame found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Look {
-    /// On the feeder's network: the frame may go.
+    /// On the feeder's network: the frame may go, from `source`.
     Feeder {
         ssid: String,
+        source: Ipv4Addr,
     },
     Refused(FrameRefused),
-    /// This computer cannot name the network, so the person must.
-    Ask,
+    /// The network on `interface` has no name this computer can read, so the
+    /// person must give it. The frame would go from `source`.
+    Ask {
+        interface: String,
+        source: Ipv4Addr,
+    },
 }
 
 /// Where the frame would go now. Anything but the feeder's network is a
-/// refusal or a question, never an assumption.
+/// refusal or a question, never an assumption. A route it cannot read is a
+/// refusal too: a person could not tell which interface they are vouching for.
 pub(crate) fn look(host: &impl Host) -> Look {
     let route = match host.route(*SETUP_ADDRESS.ip()) {
         Ok(Some(route)) => route,
         Ok(None) => return Look::Refused(FrameRefused::NoRoute),
-        Err(_) => return Look::Ask,
+        Err(_) => return Look::Refused(FrameRefused::RouteUnreadable),
     };
     let interface = route.interface.clone();
     if route.local {
@@ -156,11 +187,34 @@ pub(crate) fn look(host: &impl Host) -> Look {
     if let Some(gateway) = route.gateway {
         return Look::Refused(FrameRefused::ThroughGateway { interface, gateway });
     }
+    let Some(source) = route.source else {
+        return Look::Refused(FrameRefused::NoSource { interface });
+    };
     match host.link(&route.interface) {
-        Link::Wifi(ssid) if ssid.starts_with(SETUP_SSID_PREFIX) => Look::Feeder { ssid },
+        Link::Wifi(ssid) if ssid.starts_with(SETUP_SSID_PREFIX) => Look::Feeder { ssid, source },
         Link::Wifi(ssid) => Look::Refused(FrameRefused::OtherNetwork { interface, ssid }),
         Link::NotWifi => Look::Refused(FrameRefused::NotWifi { interface }),
-        Link::Unknown => Look::Ask,
+        Link::Unknown => Look::Ask { interface, source },
+    }
+}
+
+/// The address to send the frame from, read again right before it goes. The
+/// person's word for an unnamed network covers only the interface they were
+/// asked about (`vouched`).
+pub(crate) fn frame_source(
+    host: &impl Host,
+    vouched: Option<&str>,
+) -> Result<Ipv4Addr, FrameRefused> {
+    match look(host) {
+        Look::Feeder { source, .. } => Ok(source),
+        Look::Ask { interface, source } => match vouched {
+            Some(from) if from == interface => Ok(source),
+            from => Err(FrameRefused::RouteMoved {
+                from: from.unwrap_or("none").to_string(),
+                to: interface,
+            }),
+        },
+        Look::Refused(refused) => Err(refused),
     }
 }
 
@@ -176,13 +230,14 @@ pub(crate) fn confirmed(typed: &str) -> Result<String, FrameRefused> {
     }
 }
 
-/// The interface to hop on: one that carries nothing, or else one that carries
-/// something other than a hotspot, since the feeder must keep reaching that.
+/// The interface to hop on: one that carries nothing, or else one known to
+/// carry something other than a hotspot, since the feeder must keep reaching
+/// that.
 pub(crate) fn pick(radios: &[Radio]) -> Option<&Radio> {
     radios
         .iter()
         .find(|radio| radio.connection.is_none())
-        .or_else(|| radios.iter().find(|radio| !radio.hotspot))
+        .or_else(|| radios.iter().find(|radio| !radio.reserved))
 }
 
 /// The feeder networks among `heard`, each once.
@@ -227,23 +282,40 @@ pub(crate) fn profile_args(interface: &str, ssid: &str) -> Vec<String> {
     .to_vec()
 }
 
-/// The steps for a person, naming what this computer knows.
+/// The steps for a person: the exact commands, with a named placeholder for
+/// whatever this computer does not know.
 pub(crate) fn manual_steps(interface: Option<&str>, ssid: Option<&str>) -> String {
     let network = ssid.map_or_else(|| format!("{SETUP_SSID_PREFIX}…"), str::to_string);
     let mut steps = format!(
         "Join this computer to the feeder's own Wi-Fi network, {network}, on a Wi-Fi interface \
-         that is not serving a hotspot."
+         that is not serving a hotspot, in your network settings."
     );
-    if let (Some(interface), Some(ssid)) = (interface, ssid) {
-        let add = profile_args(interface, ssid)
-            .iter()
-            .map(|arg| quoted(arg))
-            .collect::<Vec<_>>()
-            .join(" ");
+    let word = |arg: &String| {
+        if arg == INTERFACE_PLACEHOLDER || arg == NETWORK_PLACEHOLDER {
+            arg.clone()
+        } else {
+            quoted(arg)
+        }
+    };
+    let add = profile_args(
+        interface.unwrap_or(INTERFACE_PLACEHOLDER),
+        ssid.unwrap_or(NETWORK_PLACEHOLDER),
+    )
+    .iter()
+    .map(word)
+    .collect::<Vec<_>>()
+    .join(" ");
+    let _ = write!(
+        steps,
+        " With NetworkManager:\n\n    nmcli {add}\n    nmcli connection up {PROFILE}\n\n\
+         Afterwards, remove it with: nmcli connection delete {PROFILE}"
+    );
+    if interface.is_none() || ssid.is_none() {
         let _ = write!(
             steps,
-            " With NetworkManager:\n\n    nmcli {add}\n    nmcli connection up {PROFILE}\n\n\
-             Afterwards, remove it with: nmcli connection delete {PROFILE}"
+            "\nReplace {INTERFACE_PLACEHOLDER} with your Wi-Fi interface (`ip link` lists them) \
+             and {NETWORK_PLACEHOLDER} with the name of your feeder's network, wherever they \
+             show above."
         );
     }
     steps
@@ -275,6 +347,31 @@ fn parse_route(line: &str) -> Option<Route> {
         interface: (*after("dev")?).to_string(),
         gateway: after("via").and_then(|via| via.parse().ok()),
         local: words.first() == Some(&"local"),
+        source: after("src").and_then(|source| source.parse().ok()),
+    })
+}
+
+/// The network in `iw dev <interface> link`'s output, if it is connected.
+fn parse_iw_link(output: &str) -> Option<String> {
+    output
+        .lines()
+        .find_map(|line| line.trim_start().strip_prefix("SSID: "))
+        .map(|ssid| ssid.trim_end().to_string())
+        .filter(|ssid| !ssid.is_empty())
+}
+
+/// Whether `address` shows in `ip -o addr show`, as `inet` or `inet6` with its
+/// prefix length.
+fn parse_holds(listing: &str, address: IpAddr) -> bool {
+    listing.lines().any(|line| {
+        let mut words = line.split_whitespace();
+        while let Some(word) = words.next() {
+            if word == "inet" || word == "inet6" {
+                let held = words.next().and_then(|held| held.split('/').next());
+                return held.and_then(|held| held.parse().ok()) == Some(address);
+            }
+        }
+        false
     })
 }
 
@@ -306,21 +403,22 @@ fn named(field: &str) -> Option<String> {
     (!field.is_empty() && field != "--").then(|| field.to_string())
 }
 
-/// The Wi-Fi interfaces in `nmcli -t -f DEVICE,TYPE,CONNECTION device`, with
-/// whether each carries a hotspot asked of `mode`.
+/// The Wi-Fi interfaces in `nmcli -t -f DEVICE,TYPE,CONNECTION device`. A
+/// connection is free to replace only if `mode` reads it as a plain client:
+/// a hop must not take down a hotspot it failed to recognize.
 fn parse_radios(listing: &str, mode: impl Fn(&str) -> Option<String>) -> Vec<Radio> {
     listing
         .lines()
         .filter_map(|line| match terse_fields(line).as_slice() {
             [interface, kind, connection] if kind == "wifi" => {
                 let connection = named(connection);
-                let hotspot = connection
+                let reserved = connection
                     .as_deref()
-                    .is_some_and(|name| mode(name).as_deref() == Some("ap"));
+                    .is_some_and(|name| mode(name).as_deref() != Some("infrastructure"));
                 Some(Radio {
                     interface: interface.clone(),
                     connection,
-                    hotspot,
+                    reserved,
                 })
             }
             _ => None,
@@ -377,13 +475,17 @@ impl Host for Nmcli {
     }
 
     fn link(&self, interface: &str) -> Link {
-        match Self::field(&["-g", "GENERAL.TYPE", "device", "show", interface]).as_deref() {
-            None => return Link::Unknown,
-            Some("wifi") => {}
-            Some(_) => return Link::NotWifi,
+        let kind = Self::field(&["-g", "GENERAL.TYPE", "device", "show", interface]);
+        if kind.as_deref().is_some_and(|kind| kind != "wifi") {
+            return Link::NotWifi;
         }
         Self::field(&["-g", "GENERAL.CONNECTION", "device", "show", interface])
             .and_then(|name| Self::connection_field(&name, "802-11-wireless.ssid"))
+            // NetworkManager may be absent, or not manage this interface.
+            .or_else(|| {
+                let output = Self::run("iw", &["dev", interface, "link"]).ok()?;
+                parse_iw_link(&output)
+            })
             .map_or(Link::Unknown, Link::Wifi)
     }
 
@@ -452,6 +554,10 @@ impl Host for Nmcli {
             Self::nmcli(&["-g", "IP4.ADDRESS", "device", "show", &radio.interface]).ok()?;
         address.lines().next()?.split('/').next()?.parse().ok()
     }
+
+    fn holds(&self, address: IpAddr) -> bool {
+        Self::run("ip", &["-o", "addr", "show"]).is_ok_and(|listing| parse_holds(&listing, address))
+    }
 }
 
 #[cfg(test)]
@@ -475,13 +581,17 @@ pub(crate) mod tests {
         pub(crate) left: RefCell<Vec<Hop>>,
         pub(crate) on_feeder: RefCell<Option<String>>,
         pub(crate) address: Option<Ipv4Addr>,
+        pub(crate) held: Vec<IpAddr>,
     }
+
+    pub(crate) const SOURCE: Ipv4Addr = Ipv4Addr::new(192, 168, 1, 100);
 
     pub(crate) fn wifi_route(interface: &str) -> Option<Route> {
         Some(Route {
             interface: interface.to_string(),
             gateway: None,
             local: false,
+            source: Some(SOURCE),
         })
     }
 
@@ -542,6 +652,10 @@ pub(crate) mod tests {
         fn address_on(&self, _: &str) -> Option<Ipv4Addr> {
             self.address
         }
+
+        fn holds(&self, address: IpAddr) -> bool {
+            self.held.contains(&address)
+        }
     }
 
     /// A test holds on to the host a guide owns, to read it after the drop.
@@ -573,6 +687,10 @@ pub(crate) mod tests {
         fn address_on(&self, ssid: &str) -> Option<Ipv4Addr> {
             (**self).address_on(ssid)
         }
+
+        fn holds(&self, address: IpAddr) -> bool {
+            (**self).holds(address)
+        }
     }
 
     fn host(route: Option<Route>, link: Link) -> FakeHost {
@@ -592,7 +710,8 @@ pub(crate) mod tests {
         assert_eq!(
             look(&feeder),
             Look::Feeder {
-                ssid: "PL-AF103-AB12".into()
+                ssid: "PL-AF103-AB12".into(),
+                source: SOURCE
             }
         );
 
@@ -632,6 +751,7 @@ pub(crate) mod tests {
                 interface: "wlan1".into(),
                 gateway: Some(gateway),
                 local: false,
+                source: Some(SOURCE),
             }),
             Link::Wifi("PL-AF103-AB12".into()),
         );
@@ -648,6 +768,7 @@ pub(crate) mod tests {
                 interface: "lo".into(),
                 gateway: None,
                 local: true,
+                source: Some(*SETUP_ADDRESS.ip()),
             }),
             Link::Unknown,
         );
@@ -657,17 +778,66 @@ pub(crate) mod tests {
                 interface: "lo".into()
             })
         );
+
+        let sourceless = host(
+            Some(Route {
+                interface: "wlan1".into(),
+                gateway: None,
+                local: false,
+                source: None,
+            }),
+            Link::Wifi("PL-AF103-AB12".into()),
+        );
+        assert_eq!(
+            look(&sourceless),
+            Look::Refused(FrameRefused::NoSource {
+                interface: "wlan1".into()
+            })
+        );
     }
 
-    /// Where the name cannot be read, it is asked for, never assumed.
+    /// Right before the frame, the route is read again. A link that dropped, or
+    /// moved off the interface the person vouched for, stops it.
+    #[test]
+    fn the_source_is_read_again_and_covers_only_what_was_checked() {
+        let feeder = host(wifi_route("wlan1"), Link::Wifi("PL-AF103-AB12".into()));
+        assert_eq!(frame_source(&feeder, None), Ok(SOURCE));
+
+        let unnamed = host(wifi_route("wlan1"), Link::Unknown);
+        assert_eq!(frame_source(&unnamed, Some("wlan1")), Ok(SOURCE));
+        assert_eq!(
+            frame_source(&unnamed, Some("wlan0")),
+            Err(FrameRefused::RouteMoved {
+                from: "wlan0".into(),
+                to: "wlan1".into()
+            })
+        );
+        assert!(frame_source(&unnamed, None).is_err());
+
+        let dropped = host(None, Link::Unknown);
+        assert_eq!(
+            frame_source(&dropped, Some("wlan1")),
+            Err(FrameRefused::NoRoute)
+        );
+    }
+
+    /// Where the name cannot be read, it is asked for, never assumed, and the
+    /// question names the interface. A route it cannot read has no interface to
+    /// name, so that is refused.
     #[test]
     fn an_unreadable_network_is_asked_about() {
-        assert_eq!(look(&host(wifi_route("wlan1"), Link::Unknown)), Look::Ask);
+        assert_eq!(
+            look(&host(wifi_route("wlan1"), Link::Unknown)),
+            Look::Ask {
+                interface: "wlan1".into(),
+                source: SOURCE
+            }
+        );
         let no_tool = FakeHost {
             no_route_tool: true,
             ..FakeHost::default()
         };
-        assert_eq!(look(&no_tool), Look::Ask);
+        assert_eq!(look(&no_tool), Look::Refused(FrameRefused::RouteUnreadable));
 
         assert_eq!(confirmed(" PL-AF103-AB12\n").unwrap(), "PL-AF103-AB12");
         assert_eq!(
@@ -679,11 +849,11 @@ pub(crate) mod tests {
         assert!(confirmed("").is_err());
     }
 
-    fn radio(interface: &str, connection: Option<&str>, hotspot: bool) -> Radio {
+    fn radio(interface: &str, connection: Option<&str>, reserved: bool) -> Radio {
         Radio {
             interface: interface.into(),
             connection: connection.map(str::to_string),
-            hotspot,
+            reserved,
         }
     }
 
@@ -717,8 +887,9 @@ pub(crate) mod tests {
         assert_eq!(feeders(&heard), ["PL-AF103-AB12"]);
     }
 
-    /// The physical finding is what makes the join work, so it is pinned, and
-    /// the manual steps give the same profile.
+    /// The two settings a manual join needed on hardware are pinned, and the
+    /// manual steps give the same profile. This profile itself has not joined a
+    /// feeder yet.
     #[test]
     fn the_profile_turns_off_conflict_detection_and_autoconnect() {
         let args = profile_args("wlan1", "PL-AF103-AB12").join(" ");
@@ -734,7 +905,29 @@ pub(crate) mod tests {
 
         let unknown = manual_steps(None, None);
         assert!(unknown.contains("PL-AF103-…"), "{unknown}");
-        assert!(!unknown.contains("nmcli"), "{unknown}");
+        assert!(unknown.contains("ifname <wifi-interface>"), "{unknown}");
+        assert!(unknown.contains("ssid <feeder-network>"), "{unknown}");
+        assert!(unknown.contains("Replace <wifi-interface>"), "{unknown}");
+
+        // Two feeders: the interface is known, and the network stays a placeholder.
+        let chosen = manual_steps(Some("wlan1"), None);
+        assert!(chosen.contains("ifname wlan1"), "{chosen}");
+        assert!(chosen.contains("ssid <feeder-network>"), "{chosen}");
+        assert!(!steps.contains("Replace"), "{steps}");
+    }
+
+    #[test]
+    fn iw_and_ip_output_is_read() {
+        let connected =
+            "Connected to aa:bb:cc:dd:ee:ff (on wlan0)\n\tSSID: Maple St\n\tfreq: 2412\n";
+        assert_eq!(parse_iw_link(connected).as_deref(), Some("Maple St"));
+        assert_eq!(parse_iw_link("Not connected.\n"), None);
+
+        let listing = "1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever\n\
+                       3: wlan0    inet 10.42.103.1/24 brd 10.42.103.255 scope global wlan0\n";
+        assert!(parse_holds(listing, "10.42.103.1".parse().unwrap()));
+        assert!(!parse_holds(listing, "10.42.103.2".parse().unwrap()));
+        assert!(!parse_holds("", "10.42.103.1".parse().unwrap()));
     }
 
     #[test]
@@ -748,7 +941,8 @@ pub(crate) mod tests {
             Some(Route {
                 interface: "eth0".into(),
                 gateway: "10.0.0.1".parse().ok(),
-                local: false
+                local: false,
+                source: "10.0.0.5".parse().ok(),
             })
         );
         assert!(
@@ -776,6 +970,13 @@ pub(crate) mod tests {
                 radio("wlan2", None, false),
             ]
         );
+
+        // A plain client is free to replace. A mode it could not read is not.
+        let client = parse_radios("wlan0:wifi:Home\n", |_| Some("infrastructure".to_string()));
+        assert_eq!(client, [radio("wlan0", Some("Home"), false)]);
+        let unread = parse_radios("wlan0:wifi:Home\n", |_| None);
+        assert_eq!(unread, [radio("wlan0", Some("Home"), true)]);
+        assert_eq!(pick(&unread), None);
     }
 
     #[test]

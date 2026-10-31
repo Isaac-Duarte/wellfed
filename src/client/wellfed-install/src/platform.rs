@@ -9,7 +9,7 @@
 //! A platform's own failure comes back as a [`PlatformError`], kept whole,
 //! so its text reaches the person as the platform wrote it.
 
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 use wellfed_client::install::PairRoute;
@@ -69,6 +69,15 @@ pub trait Prompter {
     /// Take whatever answer an earlier announcement left unread, before a
     /// request whose window a wait would spend.
     async fn settle(&mut self) -> Result<(), PlatformError>;
+
+    /// Called right before the setup frame goes, after [`Self::done`] on
+    /// [`Prompt::SetupMode`]: the address on the feeder's link to send it from,
+    /// so a link gone by then fails the send. An error sends nothing. By
+    /// default `None`, for a platform whose own network API holds the socket to
+    /// that link, and the frame goes from any address.
+    async fn frame_source(&mut self) -> Result<Option<Ipv4Addr>, PlatformError> {
+        Ok(None)
+    }
 
     /// The feeder's window for the code closed with nothing keyed in, on
     /// pairing `route`. Nothing was lost: stock is intact in bank 1, and only

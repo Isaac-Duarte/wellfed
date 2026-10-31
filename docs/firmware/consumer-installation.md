@@ -79,16 +79,22 @@ This is the app's main route. The vendor app provisions a PLAF103 through the fe
 
 **On a phone.** The app asks Android for a network whose name starts with `PL-AF103-`, and Android shows its own picker. Once joined, the process's sockets go over that network until the frame is out. A phone that can hold a local-only network alongside its Wi-Fi stays on both, as the research unit's Pixel did (observed). One that cannot leaves home for those seconds and has to be back within stock's wait, which is modeled but not run. It comes back at the address the frame named, or the run stops: the feeder would look in the wrong place. The password goes unencrypted over the setup network, so the screen says so. A phone that set the feeder up in the vendor's app can keep that network saved, and on the research unit's Pixel Android's picker then found nothing, though the feeder was broadcasting, until the saved network was forgotten in Wi-Fi settings (observed once). The screen says so when a join fails.
 
-**On a computer.** Before the frame goes, `wellfed install` checks that the route to 192.168.1.1 leaves through an interface on a network named `PL-AF103-…`. The frame carries your Wi-Fi password in the clear, and many home routers are 192.168.1.1 too, so a frame sent from home Wi-Fi would hand it to the router. Any other network, a route through a gateway, or no route at all is refused, and nothing is sent. Where this computer cannot read the network's name, you type the name yourself, and only a name of that form passes.
+**On a computer.** Before the frame goes, `wellfed install` checks that the route to 192.168.1.1 leaves through an interface on a network named `PL-AF103-…`. The frame carries your Wi-Fi password in the clear, and many home routers are 192.168.1.1 too, so a frame sent from home Wi-Fi would hand it to the router. Any other network, a route through a gateway, no route, or a route it cannot read is refused, and nothing is sent. It reads the network's name from NetworkManager, then from `iw`. If neither can tell, it names the interface, says the password goes out over it in the clear, and asks you to type the network's name. Only a name of that form passes. Right before the send it reads the route again, and sends from this computer's address on that link, so a link that dropped fails instead of reaching a router.
+
+Before any of this, the run refuses a config whose broker address is not on this computer. Holding Reset wipes the feeder, and a stale address in the frame would leave it looking in the wrong place.
 
 On Linux with NetworkManager it hops by itself:
 
-1. It takes a Wi-Fi interface that is not serving a hotspot, and looks for the feeder's network from there.
-2. If that interface carries a connection, it warns you that the connection and any SSH over it drop for a few seconds, and waits for Enter.
-3. It joins with a profile of its own, `wellfed-feeder-setup`. The profile sets `ipv4.dad-timeout 0`, because NetworkManager's address-conflict detection otherwise reports `acd conflict` on the address the feeder offers and the join times out (observed). It also sets `connection.autoconnect no`, so it never comes up by itself.
-4. After the frame, it removes the profile and brings the previous connection back. It does this however the run ends, unless the process is killed outright.
+1. It takes a Wi-Fi interface known not to serve a hotspot, and looks for the feeder's network from there. If it cannot read what an interface's connection is, it leaves that interface alone.
+2. It names the one network it found and asks `[y/N]`. A name proves nothing about whose network it is, since a neighbour's feeder or anyone's open network can carry it. Your yes is the consent to join it and to send it your Wi-Fi name and password. Any other answer ends the run with nothing joined and nothing sent. If the interface carries a connection, the question also warns you that it and any SSH over it drop for a few seconds.
+3. It joins with a profile of its own, `wellfed-feeder-setup`, which sets `ipv4.dad-timeout 0` and `connection.autoconnect no`, the two settings a manual join needed ([Evidence](#evidence)). This profile has not joined a feeder yet.
+4. After the frame, it removes the profile and brings the previous connection back. It does this however the run ends, a closed terminal included, unless the process is killed outright.
 
-If `nmcli` is missing, two feeders are in setup mode, or the join fails, it prints the exact commands and checks again when you press Enter.
+If it cannot hop, it says why, prints the `nmcli` commands to join by hand, and checks again when you press Enter:
+
+- If the join fails, the commands name the interface and the network.
+- If two feeders are in setup mode, it lists both, and the network is a `<feeder-network>` placeholder for you to fill in.
+- If `nmcli` is missing, or no interface is free, both are placeholders. Without NetworkManager the commands do not apply, so join in your system's network settings instead.
 
 **If the feeder does not arrive.** Two minutes after the frame with no feeder at the broker, the run stops with nothing asked of stock. A wrong password or a Wi-Fi with no 2.4 GHz band ends this way. Stock then keeps nothing and reopens its setup network, so a new frame needs no second Reset hold (static analysis; seen only for an unanswered `BINDING`, not yet for a wrong password). That is a new frame to a feeder visibly still in setup mode, unlike the install request, which is never resent. Once stock has reached the broker it has kept the frame and has no setup network left, so a later run only waits for it.
 
@@ -188,7 +194,7 @@ Two steps need presses at the panel inside a window the feeder times itself: the
 
 In either mode, a standard input that closes before an answer ends the run. It is never read as no, nor as done. In `lines` mode an answer of the wrong kind, such as `"yes"` to the restart, ends it too.
 
-**Stopping it.** SIGTERM or Ctrl-C ends the run the way its end does: it stops the image server and the stock server's broker, then exits with an error that names the step it stopped in. It also names a write whose outcome had not settled:
+**Stopping it.** SIGTERM, Ctrl-C or a terminal that closes (SIGHUP) ends the run the way its end does: it stops the image server and the stock server's broker, then exits with an error that names the step it stopped in. It also names a write whose outcome had not settled:
 
 - the install request, from when it is sent until the replacement answers;
 - the promotion's push, until bank 1 confirms it;
@@ -329,6 +335,6 @@ The decisions are in [product architecture](product-architecture.md). For the in
 - **Recovered** (October 28, read-only static pass over the 1.1.15 image): the broker kept as a DNS name in `0x3e8000` on plaintext 1883 with no TLS or pinning; setup mode reached only through the Reset hold, whose factory restore erases the plans; the plan reply's fields.
 - **Observed** (October 23, `fw40-stock-ota-07-uart-01`): stock looking its broker name up through the network's resolver and then a public one, and a set-up stock connecting with no `BINDING`.
 - **Observed** (October 30): the restore, run on the research unit from the app from bank 0 and from bank 1, and by the bench job from bank 1.
-- **Observed** (October 31): a plain `nmcli dev wifi connect` to stock's setup network timed out, with NetworkManager reporting `acd conflict` on the offered 192.168.1.100.
-- **Modeled** (October 31): the check before the frame, the hop and its way back, the manual fallback, the numbered steps and the new code after a lapsed window, host-tested with this computer's network behind a fake. No `wellfed-feeder-setup` profile has joined a feeder yet, and no run has taken a second code.
+- **Observed** (October 31): a manual `nmcli dev wifi connect` to stock's setup network timed out, with NetworkManager reporting `acd conflict` on the offered 192.168.1.100. After `nmcli con modify` set `ipv4.dad-timeout 0` and `connection.autoconnect no` on that profile, it joined and the frame reached stock.
+- **Modeled** (October 31): the check before the frame, the consent, the hop and its way back, the manual fallback, the numbered steps and the new code after a lapsed window, host-tested with this computer's network behind a fake. The program's own hop has not run on hardware, and no run has taken a second code.
 - **Modeled** (October 26): the installer, trust on first use, the setup-frame encoder, the backup gate, the stock backup read and `wellfed restore-stock`, host-tested and simulated, on synthetic bytes. Nothing has run on the feeder yet.

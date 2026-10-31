@@ -569,6 +569,14 @@ pub(crate) mod tests {
         tokio::task::yield_now().await;
         assert_eq!(written.text(), at_end);
 
+        // An error prints after a pause: the countdown leaves nothing on its line.
+        screen.countdown("Key in the code", 60);
+        while !written.text().ends_with("s left") {
+            tokio::task::yield_now().await;
+        }
+        screen.pause();
+        assert!(written.text().ends_with(CLEAR_LINE), "{:?}", written.text());
+
         // Plain, nothing is drawn or started.
         let (plain, written) = super::tests::screen(Style::Plain, Detail::Milestones);
         plain.countdown("Key in the code", 60);

@@ -17,7 +17,7 @@ use clap::{Parser, Subcommand};
 use reqwest::Method;
 use serde::Serialize;
 use tracing::info;
-use wellfed_client::install::{SETUP_ADDRESS, SetupFrame};
+use wellfed_client::install::{SETUP_ADDRESS, SETUP_SSID_PREFIX, SetupFrame};
 use wellfed_formats::bench::lease::Lease;
 use wellfed_stock::{
     build_info::BUILD,
@@ -174,6 +174,12 @@ enum Action {
         broker: Option<std::net::SocketAddr>,
         #[arg(long, default_value_t = std::net::SocketAddr::V4(SETUP_ADDRESS))]
         to: std::net::SocketAddr,
+        /// The feeder's setup network this computer is on now, as you read it.
+        /// This tool does not check: the frame carries the password in the
+        /// clear, and a home router may hold the same address. `wellfed install`
+        /// checks for itself.
+        #[arg(long)]
+        on_feeder_network: String,
     },
 
     /// Explicit feeder-only gateway routing and WAN isolation; needs sudo.
@@ -294,8 +300,14 @@ async fn main() -> Result<()> {
             id,
             broker,
             to,
+            on_feeder_network,
         } => {
             use wellfed_stock::setup::send;
+            anyhow::ensure!(
+                on_feeder_network.starts_with(SETUP_SSID_PREFIX),
+                "{on_feeder_network:?} is not a feeder's setup network, whose name starts \
+                 {SETUP_SSID_PREFIX}; nothing was sent"
+            );
             let _lease = bench_lease(&config)?;
             let broker = match broker {
                 Some(broker) => broker,

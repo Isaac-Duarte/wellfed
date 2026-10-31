@@ -104,11 +104,12 @@ impl Track {
 }
 
 /// What ends a run through its cleanup: SIGTERM (a bench job's cancel, or
-/// the app's), SIGINT (a terminal's Ctrl-C).
+/// the app's), SIGINT (a terminal's Ctrl-C), SIGHUP (a terminal that closed).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stop {
     Terminate,
     Interrupt,
+    Hangup,
 }
 
 impl fmt::Display for Stop {
@@ -116,6 +117,7 @@ impl fmt::Display for Stop {
         f.write_str(match self {
             Self::Terminate => "SIGTERM",
             Self::Interrupt => "SIGINT",
+            Self::Hangup => "SIGHUP",
         })
     }
 }

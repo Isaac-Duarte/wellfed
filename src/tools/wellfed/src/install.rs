@@ -257,6 +257,32 @@ enum Refused {
         "this computer has no address on {ssid:?}, so it cannot say where the feeder finds its broker: join that network first, or pass --broker <this computer's address>:1883"
     )]
     NoBrokerAddress { ssid: String },
+    /// The frame would point stock at this address after the Reset hold has
+    /// erased everything, so a stale one strands it. Checked before that hold.
+    #[error(
+        "the setup frame would tell the feeder its broker is {broker}, which is not an address of this computer: {} may be stale. Nothing was asked of the feeder. Remove it for this run to write it again, or pass --broker <this computer's address>:1883",
+        path.display()
+    )]
+    BrokerNotHere { path: PathBuf, broker: SocketAddr },
+}
+
+/// The broker a frame would name, which only a broker on this computer can be:
+/// its server runs here. Refused before the Reset hold wipes the feeder.
+fn require_broker_here(
+    args: &InstallArgs,
+    host: &impl Host,
+    config: &ServerConfig,
+    path: &Path,
+) -> Result<()> {
+    if args.ssid.is_none() {
+        return Ok(());
+    }
+    let broker = args.broker.unwrap_or(config.mqtt_listen);
+    wellfed_formats::require(host.holds(broker.ip()), || Refused::BrokerNotHere {
+        path: path.to_path_buf(),
+        broker,
+    })?;
+    Ok(())
 }
 
 /// How a run's progress reaches the person.
@@ -438,6 +464,7 @@ pub(crate) async fn run(args: InstallArgs) -> Result<()> {
     if config.has_plan_snapshot() {
         return Err(ConfigRefused::PlanSnapshot { path: config_path }.into());
     }
+    require_broker_here(&args, &Nmcli, &config, &config_path)?;
     let directory = config_path.parent().context("config directory missing")?;
     let _lease = Lease::acquire_in(directory).context("bench lease")?;
 
@@ -561,12 +588,13 @@ pub(crate) async fn run(args: InstallArgs) -> Result<()> {
                 bluetooth,
                 discovery: Mdns,
                 keys,
-                report: screen,
+                report: screen.clone(),
             };
             let arguments: Vec<OsString> = std::env::args_os().collect();
-            wellfed_install::run(plan, platform, signalled()?)
-                .await
-                .map_err(|error| with_resume(error, &resume_command(&arguments, provisioning)))
+            let ended = wellfed_install::run(plan, platform, signalled()?).await;
+            // A countdown may still be drawn, and the error prints next.
+            screen.pause();
+            ended.map_err(|error| with_resume(error, &resume_command(&arguments, provisioning)))
         }
     }
 }
@@ -576,16 +604,19 @@ const INTRODUCTION: &str = "\nInstalling Wellfed, in five steps. Stay near the f
                             and 4 need you there, and this run says when. If it stops, it says \
                             what was kept and how to go on. Ctrl-C stops it safely.";
 
-/// Resolves on SIGTERM or SIGINT. Once seen, the handlers stay installed but
-/// nothing listens, so a second Ctrl-C does not cut the stop short; the stop
-/// is itself bounded.
+/// Resolves on SIGTERM, SIGINT or SIGHUP, so a terminal that closes still ends
+/// the run through its stop, which undoes a hop to the feeder's network. Once
+/// seen, the handlers stay installed but nothing listens, so a second Ctrl-C
+/// does not cut the stop short; the stop is itself bounded.
 pub(crate) fn signalled() -> Result<impl Future<Output = Stop>> {
     let mut terminate = signal(SignalKind::terminate()).context("handle SIGTERM")?;
     let mut interrupt = signal(SignalKind::interrupt()).context("handle SIGINT")?;
+    let mut hangup = signal(SignalKind::hangup()).context("handle SIGHUP")?;
     Ok(async move {
         tokio::select! {
             _ = terminate.recv() => Stop::Terminate,
             _ = interrupt.recv() => Stop::Interrupt,
+            _ = hangup.recv() => Stop::Hangup,
         }
     })
 }
@@ -645,8 +676,8 @@ fn explain(error: wellfed_install::Error) -> anyhow::Error {
             ),
         Error::Setup(_) => anyhow::Error::from(error).context(
             "Bluetooth setup failed: the feeder runs the replacement from bank 0 and still holds \
-             stock in bank 1. Run again with --from-bank0; with no Wi-Fi stored, the \
-             replacement starts setup again at its next boot",
+             stock in bank 1. Run again with --from-bank0; with no Wi-Fi stored, it stays in \
+             Bluetooth setup for another try, and goes back to setup by itself if it restarts",
         ),
         Error::OtherDevice {
             expected,
@@ -1326,6 +1357,55 @@ mod tests {
         let text = format!("{:#}", with_resume(other, "resume"));
         assert!(!text.contains("resume"), "{text}");
         assert!(!text.contains("safe in bank 1"), "{text}");
+    }
+
+    /// A broker that is not on this computer is refused before the Reset hold:
+    /// the frame would strand a wiped feeder there. Without a frame, nothing is
+    /// checked, since nothing is named.
+    #[test]
+    fn a_stale_broker_is_refused_before_the_reset_hold() {
+        use network::tests::FakeHost;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("installer.json");
+        let here = FakeHost {
+            address: Some("10.42.103.1".parse().unwrap()),
+            held: vec!["10.42.103.1".parse().unwrap()],
+            ..FakeHost::default()
+        };
+        let frame = args(&["--ssid", "Lab"]);
+        ensure_config(&frame, &here, &path).unwrap();
+        let config: ServerConfig = wellfed_formats::load(&path).unwrap();
+        require_broker_here(&frame, &here, &config, &path).unwrap();
+
+        // The same config on a computer that has moved on.
+        let moved = FakeHost {
+            held: vec!["10.42.103.9".parse().unwrap()],
+            ..FakeHost::default()
+        };
+        let error = require_broker_here(&frame, &moved, &config, &path).unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Refused>(),
+            Some(Refused::BrokerNotHere { broker, .. }) if broker.ip().to_string() == "10.42.103.1"
+        ));
+
+        // --broker is what the frame would name, so it is what must be here.
+        let named = args(&["--ssid", "Lab", "--broker", "10.42.103.9:1883"]);
+        require_broker_here(&named, &moved, &config, &path).unwrap();
+
+        require_broker_here(&args(&[]), &moved, &config, &path).unwrap();
+    }
+
+    /// A terminal that closes ends the run through its stop, so a hop is undone.
+    #[tokio::test]
+    async fn a_closed_terminal_stops_the_run() {
+        let stop = signalled().unwrap();
+        let status = std::process::Command::new("kill")
+            .args(["-HUP", &std::process::id().to_string()])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(stop.await, Stop::Hangup);
     }
 
     /// The frame's refusal reaches the owner saying the password did not go.

@@ -1,16 +1,23 @@
 //! The person at the feeder, when a person at a terminal runs the install.
 //!
-//! This is where the setup frame is guarded. The run sends the frame as soon as
-//! [`Prompter::done`] returns from [`Prompt::SetupMode`], so that call returns
-//! only once this computer is on the feeder's network ([`network::look`]), and
-//! otherwise fails, and the run stops with nothing sent. `--prompts lines` never
-//! comes here, and also never sends a frame: `--ssid` is refused there.
+//! This is where the setup frame is guarded. [`Prompter::done`] on
+//! [`Prompt::SetupMode`] returns only once this computer is on the feeder's
+//! network ([`network::look`]), and otherwise fails, and the run stops with
+//! nothing sent. [`Prompter::frame_source`] then reads the route again right
+//! before the send, and the socket binds to that address, so a link that dropped
+//! fails rather than reaching a router. `--prompts lines` never comes here, and
+//! also never sends a frame: `--ssid` is refused there.
+//!
+//! A network's name proves nothing about whose it is: a neighbour's feeder or a
+//! rogue open access point can carry it. So a hop names the network and asks
+//! once. That answer is the consent to both the hop and the password going there.
 //!
 //! The hop itself never touches the frame's no-retry rule: it only moves this
 //! computer. A hop is undone at [`Prompt::JoinBack`], or at the latest when the
 //! run lets this go, however it ended.
 
 use std::io::Write;
+use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use wellfed_client::install::PairRoute;
@@ -21,7 +28,7 @@ use wellfed_session::setup_code::Code;
 
 use super::network::{self, FrameRefused, Hop, Host, Look};
 use super::screen::{Screen, Step};
-use crate::ask::{AskError, Asker};
+use crate::ask::Asker;
 
 /// How often a hop looks for the feeder's network, which may still be coming
 /// up when the person presses Enter.
@@ -49,6 +56,8 @@ pub(crate) struct Guide<W, H: Host> {
     /// What a hop found, for the manual steps to name.
     interface: Option<String>,
     ssid: Option<String>,
+    /// The interface the person named the network of.
+    vouched: Option<String>,
     scan_pause: Duration,
 }
 
@@ -61,6 +70,7 @@ impl<W: Write, H: Host> Guide<W, H> {
             hop: None,
             interface: None,
             ssid: None,
+            vouched: None,
             scan_pause: SCAN_PAUSE,
         }
     }
@@ -73,25 +83,28 @@ impl<W: Write, H: Host> Guide<W, H> {
         }
         loop {
             match network::look(&self.host) {
-                Look::Feeder { ssid } => {
+                Look::Feeder { ssid, .. } => {
                     self.screen.line(&format!(
                         "This computer is on the feeder's network, {ssid}."
                     ));
                     return Ok(());
                 }
-                Look::Ask => {
+                Look::Ask { interface, .. } => {
                     self.screen.line(&self.manual_steps());
                     let typed = self
                         .asker
-                        .typed(
-                            "This computer cannot read its network's name. Look at your Wi-Fi \
-                             settings, and type the name of the network it is on now:",
-                        )
+                        .typed(&format!(
+                            "This computer cannot read the name of the network on {interface}. \
+                             Your Wi-Fi password goes out over {interface} in the clear, to \
+                             whatever answers there, so check first. Look at your Wi-Fi settings, \
+                             and type the name of the network {interface} is on now:"
+                        ))
                         .await?;
                     match network::confirmed(&typed) {
                         Ok(ssid) => {
                             self.screen
                                 .line(&format!("Going by what you typed: {ssid}."));
+                            self.vouched = Some(interface);
                             return Ok(());
                         }
                         Err(refused) => self.refused(refused).await?,
@@ -121,10 +134,11 @@ impl<W: Write, H: Host> Guide<W, H> {
         network::manual_steps(self.interface.as_deref(), self.ssid.as_deref())
     }
 
-    /// Move this computer to the feeder's network if it can. Anything in the
-    /// way is said and left to the person: [`Self::reach_feeder`] goes on to
-    /// check where this computer is, whatever happened here.
-    async fn hop(&mut self) -> Result<(), AskError> {
+    /// Move this computer to the feeder's network if it can, on the person's
+    /// consent, whose refusal ends the run. Anything else in the way is said
+    /// and left to the person: [`Self::reach_feeder`] goes on to check where
+    /// this computer is, whatever happened here.
+    async fn hop(&mut self) -> Result<(), PlatformError> {
         let radios = match self.host.radios() {
             Ok(radios) => radios,
             Err(error) => {
@@ -134,7 +148,8 @@ impl<W: Write, H: Host> Guide<W, H> {
         };
         let Some(radio) = network::pick(&radios).cloned() else {
             self.say_manual(
-                "This computer has no Wi-Fi interface free of a hotspot to join the feeder with.",
+                "Each Wi-Fi interface here serves a hotspot, or could not be read to show it does \
+                 not, so this computer will not take one to join the feeder.",
             );
             return Ok(());
         };
@@ -157,19 +172,24 @@ impl<W: Write, H: Host> Guide<W, H> {
         };
         self.ssid = Some(ssid.clone());
 
-        if let Some(previous) = &radio.connection {
-            let answer = self
-                .asker
-                .typed(&format!(
-                    "To reach the feeder, {} leaves {previous} for a few seconds, so this \
-                     computer's connection there, and any SSH over it, drops until it comes \
-                     back.\nPress Enter to go on, or type m to join by hand.",
-                    radio.interface
-                ))
-                .await?;
-            if answer.trim().eq_ignore_ascii_case("m") {
-                return Ok(());
-            }
+        let drops = radio.connection.as_ref().map_or_else(String::new, |previous| {
+            format!(
+                "\n{} leaves {previous} for a few seconds, so this computer's connection there, \
+                 and any SSH over it, drops until it comes back.",
+                radio.interface
+            )
+        });
+        let answer = self
+            .asker
+            .typed(&format!(
+                "Found one feeder network: {ssid}. Check that its name matches your feeder: a \
+                 neighbour's feeder, or anyone's open network with that name, would look the \
+                 same.{drops}\nIs {ssid} your feeder? Yes joins it and sends it your Wi-Fi name \
+                 and password, once and in the clear. [y/N]"
+            ))
+            .await?;
+        if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+            return Err(Box::new(FrameRefused::NotConsented { ssid }));
         }
 
         self.screen
@@ -330,6 +350,11 @@ impl<W: Write, H: Host> Prompter for Guide<W, H> {
         Ok(())
     }
 
+    async fn frame_source(&mut self) -> Result<Option<Ipv4Addr>, PlatformError> {
+        let source = network::frame_source(&self.host, self.vouched.as_deref())?;
+        Ok(Some(source))
+    }
+
     async fn code_lapsed(&mut self, route: PairRoute) -> Result<bool, PlatformError> {
         self.screen.pause();
         let answer = self.asker.typed(lapsed_words(route)).await?;
@@ -355,13 +380,13 @@ impl<W, H: Host> Drop for Guide<W, H> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::network::tests::{FakeHost, wifi_route};
+    use super::super::network::tests::{FakeHost, SOURCE, wifi_route};
     use super::super::network::{Link, Radio};
     use super::super::screen::tests::{Written, screen};
     use super::super::screen::{Detail, Style};
     use super::*;
 
-    use crate::ask::{Prompts, scripted, written};
+    use crate::ask::{AskError, Prompts, scripted, written};
 
     fn guide(host: FakeHost, lines: &[&str]) -> (Guide<Vec<u8>, FakeHost>, Written) {
         let (screen, shown) = screen(Style::Plain, Detail::Milestones);
@@ -382,7 +407,7 @@ mod tests {
         Radio {
             interface: "wlan0".into(),
             connection: Some("Home".into()),
-            hotspot: false,
+            reserved: false,
         }
     }
 
@@ -449,6 +474,21 @@ mod tests {
         let (mut named, shown) = guide(unknown(), &["", "PL-AF103-AB12"]);
         named.done(Prompt::SetupMode).await.unwrap();
         assert!(shown.text().contains("Going by what you typed"));
+        let asked = written(&named.asker).join("\n");
+        assert!(asked.contains("the network on wlan1"), "{asked}");
+        assert!(asked.contains("over wlan1 in the clear"), "{asked}");
+
+        // The word covers that interface, read again right before the send.
+        assert_eq!(named.frame_source().await.unwrap(), Some(SOURCE));
+        named.host.route = wifi_route("wlan0");
+        let error = named.frame_source().await.unwrap_err();
+        assert_eq!(
+            refusal(&error),
+            Some(&FrameRefused::RouteMoved {
+                from: "wlan1".into(),
+                to: "wlan0".into()
+            })
+        );
 
         let (mut home, _) = guide(unknown(), &["", "Maple St", "q"]);
         let error = home.done(Prompt::SetupMode).await.unwrap_err();
@@ -472,13 +512,22 @@ mod tests {
             joins: true,
             ..FakeHost::default()
         };
-        let (mut guide, shown) = guide(host, &["", ""]);
+        let (mut guide, shown) = guide(host, &["", "y"]);
         guide.done(Prompt::SetupMode).await.unwrap();
 
         assert_eq!(*guide.host.joined.borrow(), ["PL-AF103-AB12"]);
         let asked = written(&guide.asker).join("\n");
         assert!(asked.contains("leaves Home for a few seconds"), "{asked}");
         assert!(asked.contains("any SSH over it"), "{asked}");
+        assert!(asked.contains("Is PL-AF103-AB12 your feeder?"), "{asked}");
+        assert!(asked.contains("password"), "{asked}");
+
+        // The route is read again before the send: a dropped link stops it.
+        assert_eq!(guide.frame_source().await.unwrap(), Some(SOURCE));
+        let hopped = guide.host.on_feeder.borrow_mut().take();
+        let error = guide.frame_source().await.unwrap_err();
+        assert!(refusal(&error).is_some(), "{error}");
+        *guide.host.on_feeder.borrow_mut() = hopped;
 
         guide.done(Prompt::JoinBack).await.unwrap();
         assert_eq!(
@@ -489,6 +538,35 @@ mod tests {
             }]
         );
         assert!(shown.text().contains("back on Home"));
+    }
+
+    /// Only a yes joins and sends. Anything else, Enter included, ends the run
+    /// with nothing joined and nothing sent, on a free interface too.
+    #[tokio::test]
+    async fn a_hop_goes_only_on_a_yes() {
+        for answer in ["", "n", "maybe"] {
+            let host = FakeHost {
+                route: wifi_route("wlan0"),
+                link: Some(Link::Wifi("Maple St".into())),
+                radios: vec![Radio {
+                    interface: "wlan1".into(),
+                    connection: None,
+                    reserved: false,
+                }],
+                heard: vec!["PL-AF103-AB12".into()],
+                joins: true,
+                ..FakeHost::default()
+            };
+            let (mut guide, _) = guide(host, &["", answer]);
+            let error = guide.done(Prompt::SetupMode).await.unwrap_err();
+            assert_eq!(
+                refusal(&error),
+                Some(&FrameRefused::NotConsented {
+                    ssid: "PL-AF103-AB12".into()
+                })
+            );
+            assert!(guide.host.joined.borrow().is_empty());
+        }
     }
 
     /// However the run ends after a hop, the hop is undone.
@@ -505,7 +583,7 @@ mod tests {
         let host = std::rc::Rc::new(host);
         let (shown, _) = screen(Style::Plain, Detail::Milestones);
         let mut guide = Guide::new(
-            scripted(Prompts::Terminal, &["", ""]),
+            scripted(Prompts::Terminal, &["", "y"]),
             shown,
             std::rc::Rc::clone(&host),
         );
@@ -528,7 +606,7 @@ mod tests {
             joins: false,
             ..FakeHost::default()
         };
-        let (mut guide, shown) = guide(host, &["", "", "q"]);
+        let (mut guide, shown) = guide(host, &["", "y", "q"]);
         let error = guide.done(Prompt::SetupMode).await.unwrap_err();
 
         assert!(refusal(&error).is_some(), "{error}");
@@ -549,18 +627,21 @@ mod tests {
             radios: vec![Radio {
                 interface: "wlan0".into(),
                 connection: Some("Lab".into()),
-                hotspot: true,
+                reserved: true,
             }],
             ..FakeHost::default()
         };
         let (mut guide_one, shown) = guide(hotspot_only, &["", "q"]);
         assert!(guide_one.done(Prompt::SetupMode).await.is_err());
         assert!(guide_one.host.joined.borrow().is_empty());
-        assert!(shown.text().contains("free of a hotspot"));
+        assert!(shown.text().contains("will not take one"));
+        // The steps name the interface and network as placeholders here.
+        assert!(shown.text().contains("ifname <wifi-interface>"));
 
         let (mut no_nmcli, shown) = guide(on_home_wifi(), &["", "q"]);
         assert!(no_nmcli.done(Prompt::SetupMode).await.is_err());
         assert!(shown.text().contains("cannot join by itself"));
+        assert!(shown.text().contains("ssid <feeder-network>"));
     }
 
     /// Two feeders in setup mode: which one is the person's to say.
@@ -577,7 +658,10 @@ mod tests {
         let (mut guide, shown) = guide(host, &["", "q"]);
         assert!(guide.done(Prompt::SetupMode).await.is_err());
         assert!(guide.host.joined.borrow().is_empty());
-        assert!(shown.text().contains("PL-AF103-AAAA, PL-AF103-BBBB"));
+        let text = shown.text();
+        assert!(text.contains("PL-AF103-AAAA, PL-AF103-BBBB"), "{text}");
+        assert!(text.contains("ifname wlan0"), "{text}");
+        assert!(text.contains("ssid <feeder-network>"), "{text}");
     }
 
     #[tokio::test]
