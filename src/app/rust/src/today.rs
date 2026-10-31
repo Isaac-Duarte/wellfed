@@ -3,6 +3,8 @@
 //! reckoning is `wellfed_client`'s, on the feeder's own clock and zone, so
 //! Dart holds no schedule logic and the card says what the feeder will do.
 
+use std::time::Instant;
+
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use wellfed_client::history::Feed;
@@ -10,7 +12,6 @@ use wellfed_client::plans::{self, MealState};
 use wellfed_client::time::{feeder_zone, next_meal};
 use wellfed_model::{
     Battery, Event, EventBody, FeedOutcome, Gap, Plans, Readiness, Settings, Source, Status,
-    TimeView,
 };
 
 use crate::api::feeder::TimeInfo;
@@ -18,7 +19,7 @@ use crate::api::session::{
     Card, FaultView, FedBy, FeedResult, HistoryBody, HistoryEntry, MealStanding, MealView,
     NextMealView,
 };
-use crate::requests::{plans_view, settings_view, time_info};
+use crate::requests::{TimeRead, plans_view, settings_view};
 
 /// What a session has read of the feeder.
 #[derive(Default)]
@@ -26,7 +27,7 @@ pub(crate) struct Facts {
     pub(crate) status: Option<Status>,
     pub(crate) settings: Option<Settings>,
     pub(crate) plans: Option<Plans>,
-    pub(crate) time: Option<TimeView>,
+    pub(crate) time: Option<TimeRead>,
     /// The history's feeds so far, oldest first.
     pub(crate) feeds: Vec<Feed>,
 }
@@ -35,7 +36,7 @@ impl Facts {
     /// The card, once the status is in.
     pub(crate) fn card(&self) -> Option<Card> {
         let status = self.status.as_ref()?;
-        let time: Option<TimeInfo> = self.time.as_ref().map(time_info);
+        let time: Option<TimeInfo> = self.time.as_ref().map(|read| read.info(Instant::now()));
         let adapter = status
             .supply
             .and_then(|supply| supply.adapter)
@@ -91,8 +92,8 @@ impl Facts {
         let (Some(plans), Some(now)) = (self.plans.as_ref(), status.clock) else {
             return (None, Vec::new());
         };
-        let zone = self.time.as_ref().map_or_else(TimeZone::system, |view| {
-            feeder_zone(view, TimeZone::system())
+        let zone = self.time.as_ref().map_or_else(TimeZone::system, |read| {
+            feeder_zone(&read.view, TimeZone::system())
         });
 
         let next = next_meal(plans, now, &zone).map(|meal| NextMealView {

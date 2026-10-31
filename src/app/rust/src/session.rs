@@ -21,7 +21,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -34,6 +34,7 @@ use wellfed_session::noise::Keypair;
 use crate::api::error::{BridgeError, ErrorKind};
 use crate::api::keys::random;
 use crate::api::session::{FeedRefusal, HistoryEntry, SessionUpdate};
+use crate::requests::TimeRead;
 use crate::today::{Facts, event_entry, gap_entry, result};
 
 /// How long one wait on the connection lasts before the loop looks at its
@@ -43,6 +44,10 @@ const TURN: Duration = Duration::from_secs(30);
 /// While the history comes in: a backlog whose newest event this session
 /// skips never reaches its end, so a quiet moment ends it instead.
 const QUIET: Duration = Duration::from_secs(2);
+/// How often a quiet session reads the time again. The feeder records no event
+/// for an NTP fix in step, which it takes every 17 minutes, or for a clock it
+/// has forgotten, so no event says when, by what or how well it was last set.
+const TIME_EVERY: Duration = Duration::from_secs(60);
 
 /// The device API's request id.
 type RequestId = [u8; 16];
@@ -126,6 +131,10 @@ struct Serving<'a, U> {
     /// Until it ends, events only fill `batch`; after it they are news.
     backlog: Option<Backlog>,
     batch: Vec<HistoryEntry>,
+    /// When this session last asked for the time by itself.
+    time_asked: Instant,
+    /// The feed this session started, until its end comes.
+    running: Option<u32>,
 }
 
 async fn serve(
@@ -161,6 +170,8 @@ async fn serve(
         facts: Facts::default(),
         backlog: Some(backlog),
         batch: Vec::new(),
+        time_asked: Instant::now(),
+        running: None,
     };
     if sync_clock || status.clock.is_none() {
         let sync = wellfed_client::time::sync(Timestamp::now(), &TimeZone::system());
@@ -240,6 +251,25 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         Ok(())
     }
 
+    /// Read the time again if it is due, unless a read is already on its way
+    /// or this session's feed is running.
+    fn reread_time(&mut self) -> Result<(), BridgeError> {
+        let due = time_read_due(
+            self.time_asked.elapsed(),
+            self.asked.values().any(|what| matches!(what, Asked::Time)),
+            self.running.is_some()
+                || self
+                    .asked
+                    .values()
+                    .any(|what| matches!(what, Asked::Feed { .. })),
+        );
+        if due {
+            self.time_asked = Instant::now();
+            self.request(&Op::GetTime, Asked::Time)?;
+        }
+        Ok(())
+    }
+
     /// Hand over the history so far.
     fn end_backlog(&mut self) -> bool {
         self.backlog = None;
@@ -256,6 +286,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             return Ok(false);
         }
         self.refresh()?;
+        self.reread_time()?;
         Ok(true)
     }
 
@@ -277,16 +308,24 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                 Ok(self.card())
             }
             (Asked::Time, Some(Answer::Time(time))) => {
-                self.facts.time = Some(time);
+                self.facts.time = Some(TimeRead::just_read(time));
                 Ok(self.card())
             }
             (Asked::Ask(reply), answer) => {
                 // A screen's read is news for the card as well.
-                if let Some(Answer::Plans(plans)) = &answer {
-                    self.facts.plans = Some(*plans);
-                    if !self.card() {
-                        return Ok(false);
+                let news = match &answer {
+                    Some(Answer::Plans(plans)) => {
+                        self.facts.plans = Some(*plans);
+                        true
                     }
+                    Some(Answer::Time(time)) => {
+                        self.facts.time = Some(TimeRead::just_read(time.clone()));
+                        true
+                    }
+                    _ => false,
+                };
+                if news && !self.card() {
+                    return Ok(false);
                 }
                 // Dart stopped waiting: nothing to tell it.
                 let _ = reply.send(answer);
@@ -298,6 +337,9 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             }
             (Asked::Clock, _) => Ok((self.update)(SessionUpdate::ClockNotSynced)),
             (what, answer) => {
+                if let (Asked::Feed { .. }, Some(Answer::Feeding { feed })) = (&what, &answer) {
+                    self.running = Some(*feed);
+                }
                 Ok(feed_answered(what, answer).is_none_or(|message| (self.update)(message)))
             }
         }
@@ -317,6 +359,9 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             _ => None,
         };
         if let Some(feed) = fed {
+            if self.running == Some(feed.feed) {
+                self.running = None;
+            }
             self.facts.feeds.push(feed);
         }
         let entry = match pushed {
@@ -359,6 +404,13 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
     }
 }
 
+/// Whether a quiet turn should read the time again: after [`TIME_EVERY`], with
+/// no read on its way, and not while this session's feed runs, when reads have
+/// a more urgent job.
+fn time_read_due(since_asked: Duration, on_its_way: bool, feeding: bool) -> bool {
+    since_asked >= TIME_EVERY && !on_its_way && !feeding
+}
+
 /// The screen's update for a feed's or a cancel's answer, or its absence.
 fn feed_answered(what: Asked, answer: Option<Answer>) -> Option<SessionUpdate> {
     match (what, answer) {
@@ -394,6 +446,15 @@ mod tests {
     use wellfed_model::{FeedOutcome, FeedReason, FoodLevel, Generation, MissedReason, Source};
 
     use super::*;
+
+    #[test]
+    fn the_time_is_read_again_about_once_a_minute_and_never_twice_at_once() {
+        // A turn comes at least 30 s after the last, so the second is due.
+        assert!(!time_read_due(Duration::from_secs(30), false, false));
+        assert!(time_read_due(Duration::from_secs(60), false, false));
+        assert!(!time_read_due(Duration::from_secs(60), true, false));
+        assert!(!time_read_due(Duration::from_secs(60), false, true));
+    }
 
     #[test]
     fn a_feed_or_a_missed_meal_reads_the_plans_again() {

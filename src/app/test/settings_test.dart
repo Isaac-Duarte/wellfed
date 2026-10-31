@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/clock_portion.dart';
@@ -52,6 +54,36 @@ void main() {
       ports.session.opened();
       await tester.pump();
       expect(ports.answers, [(kitchen.identity, 'test')]);
+    });
+
+    // Offline is the hard case: with no tap on the row or the switch, nothing
+    // else keeps them from merging into one node.
+    testWidgets('each row is its own node, and each switch its own switch', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      final (_, session) = await _settingsTab(tester);
+      unawaited(session.updates.close());
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await settle(tester);
+
+      final switches = find.byType(Switch);
+      expect(switches, findsNWidgets(2));
+      final lights = tester.getSemantics(switches.first);
+      final sounds = tester.getSemantics(switches.last);
+      expect(lights.label, isNot(contains('Any time')));
+      expect(sounds.label, isNot(contains('7:00 AM')));
+      expect(lights, isNot(same(sounds)));
+      expect(
+        lights.rect.width,
+        lessThanOrEqualTo(tester.getSize(switches.first).width),
+      );
+
+      final hours = tester.getSemantics(find.text('7:00 AM to 10:00 PM'));
+      expect(hours.label, isNot(contains('Any time')));
+
+      semantics.dispose();
     });
 
     testWidgets('shows what the feeder holds', (tester) async {
@@ -257,16 +289,82 @@ void main() {
       expect(find.text('11 g'), findsOneWidget);
     });
 
+    testWidgets('coming to the screen reads the time again', (tester) async {
+      final (feeder, session) = await oneFeeder(tester);
+      session.status(fakeCard(time: time));
+      await showTab(tester, ClockPortionScreen(feeder: feeder));
+
+      expect(session.requests, contains(const FeederRequest.getTime()));
+    });
+
+    testWidgets('offline it does not pass off an old reading as the time', (
+      tester,
+    ) async {
+      final session = await show(tester);
+      expect(find.text('under 1 s'), findsOneWidget);
+
+      unawaited(session.updates.close());
+      await tester.pump();
+      await settle(tester);
+
+      expect(find.text("Can't read it right now"), findsOneWidget);
+      expect(find.text('Could be off by'), findsNothing);
+      expect(find.text('under 1 s'), findsNothing);
+
+      // Run out the controller's retry timer before the test ends.
+      await tester.pump(const Duration(seconds: 3));
+    });
+
     testWidgets('where the time comes from goes against its generation', (
       tester,
     ) async {
       final session = await show(tester);
 
       await tapIn(tester, find.widgetWithText(ChoiceChip, 'Phones only'));
-      final put = session.requests.single as FeederRequest_PutTime;
+      final put = session.requests.first as FeederRequest_PutTime;
       expect(put.base, 8);
       expect(put.ntp, 'off');
       expect(put.zone, isNull);
+    });
+
+    testWidgets('a time change reads the time again, so the next goes against '
+        'the new generation', (tester) async {
+      final (feeder, session) = await oneFeeder(tester);
+      session.status(fakeCard(time: time));
+      session.replies.add(
+        const FeederReply.calibration(calibration: calibration),
+      );
+      await showTab(tester, ClockPortionScreen(feeder: feeder));
+      session.requests.clear();
+
+      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Phones only'));
+      expect(session.requests, hasLength(2));
+      expect(session.requests.first, isA<FeederRequest_PutTime>());
+      expect(session.requests.last, const FeederRequest.getTime());
+
+      // What the session then says of that read.
+      session.status(
+        fakeCard(
+          time: const TimeInfo(
+            generation: 9,
+            writable: true,
+            ntp: NtpView.off(),
+            syncs: 1,
+          ),
+        ),
+      );
+      await settle(tester);
+      session.requests.clear();
+
+      expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Phones only'))
+            .selected,
+        isTrue,
+      );
+      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Router'));
+      final next = session.requests.first as FeederRequest_PutTime;
+      expect(next.base, 9);
     });
 
     testWidgets('a bad address and an unanswered change say so', (
@@ -275,6 +373,8 @@ void main() {
       final session = await show(tester);
       session.replies
         ..add(const FeederReply.notAsked(reason: NotAsked.badNtp))
+        // The read after that change.
+        ..add(const FeederReply.done(generation: null))
         ..add(const FeederReply.unanswered());
 
       await tapIn(tester, find.widgetWithText(ChoiceChip, 'Address'));

@@ -5,6 +5,7 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/code_tiles.dart';
 import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/when.dart';
 
 Widget _themed(Widget child, {Brightness brightness = Brightness.light}) =>
     MaterialApp(
@@ -13,6 +14,52 @@ Widget _themed(Widget child, {Brightness brightness = Brightness.light}) =>
     );
 
 void main() {
+  // Dart's local time cannot be faked, so this needs a host zone with DST:
+  // `make check-app` sets TZ for it. Under UTC it passes without proving this.
+  test(
+    'yesterday is yesterday on every day of the year, DST days included',
+    () {
+      for (var day = 1; day <= 366; day++) {
+        final now = DateTime(2026, 1, day, 12);
+        expect(dayText(DateTime(2026, 1, day, 6), now: now), 'Today');
+        expect(dayText(DateTime(2026, 1, day - 1, 21), now: now), 'Yesterday');
+        expect(dayText(DateTime(2026, 1, day + 1, 6), now: now), 'Tomorrow');
+      }
+    },
+  );
+
+  testWidgets('a moment says its day unless it is today', (tester) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      _themed(
+        Builder(
+          builder: (built) {
+            context = built;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    final now = DateTime(2026, 10, 31, 9);
+    String moment(DateTime at) =>
+        momentTextMs(context, at.millisecondsSinceEpoch, now: now);
+    String inSentence(DateTime at) =>
+        atMomentTextMs(context, at.millisecondsSinceEpoch, now: now);
+
+    final today = DateTime(2026, 10, 31, 6, 5);
+    final yesterday = DateTime(2026, 10, 30, 21);
+    final older = DateTime(2026, 10, 27, 21);
+
+    expect(moment(today), '6:05 AM');
+    expect(moment(yesterday), 'Yesterday 9:00 PM');
+    expect(moment(older), 'Tue 27 Oct 9:00 PM');
+    expect(inSentence(today), 'at 6:05 AM');
+    expect(inSentence(yesterday), 'yesterday at 9:00 PM');
+    expect(inSentence(older), 'on Tue 27 Oct at 9:00 PM');
+    expect(portionWord(1), 'portion');
+    expect(portionWord(2), 'portions');
+  });
+
   testWidgets('the code shows each press as its panel button, in order', (
     tester,
   ) async {

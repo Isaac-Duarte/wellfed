@@ -205,20 +205,25 @@ class _Tile extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    child: Container(
-      constraints: const BoxConstraints(minHeight: 52),
-      padding: const EdgeInsets.symmetric(
-        horizontal: Space.s4,
-        vertical: Space.s2,
+  // A node of its own: with no tap to tell them apart, as offline, every row
+  // on the panel would merge into one.
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    child: InkWell(
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 52),
+        padding: const EdgeInsets.symmetric(
+          horizontal: Space.s4,
+          vertical: Space.s2,
+        ),
+        decoration: BoxDecoration(
+          border: first
+              ? null
+              : Border(top: BorderSide(color: context.colors.line)),
+        ),
+        child: child,
       ),
-      decoration: BoxDecoration(
-        border: first
-            ? null
-            : Border(top: BorderSide(color: context.colors.line)),
-      ),
-      child: child,
     ),
   );
 }
@@ -291,6 +296,7 @@ class _WindowRow extends StatelessWidget {
       children: [
         Expanded(child: _Words(name, windowText(context, window))),
         Semantics(
+          container: true,
           label: name,
           child: Switch(
             value: on,

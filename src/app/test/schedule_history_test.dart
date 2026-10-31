@@ -1,14 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/feed_detail.dart';
 import 'package:wellfed/screens/feeder/history.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
+import 'package:wellfed/screens/feeder/meal_editor.dart';
 import 'package:wellfed/screens/feeder/schedule.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/widgets/icons.dart';
 
 import 'fakes.dart';
 import 'harness.dart';
@@ -33,8 +37,42 @@ PlansView _plans(List<PlanView?> filled, {int generation = 3}) => PlansView(
   plans: [...filled, ...List.filled(10 - filled.length, null)],
 );
 
+const _noRecording = FeederReply.call(
+  call: CallInfo(writable: true, clip: CallClip.none()),
+);
+
 void main() {
   group('Schedule', () {
+    testWidgets('each meal is its own node, with its switch its own switch', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      final (feeder, session) = await oneFeeder(tester);
+      session.status(fakeCard(plans: _plans([_plan(60), _plan(120)])));
+      await showTab(tester, ScheduleTab(feeder: feeder));
+
+      // Offline is the hard case: with no tap on the row or the switch, nothing
+      // else keeps them from merging into one node.
+      unawaited(session.updates.close());
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      await settle(tester);
+
+      final switches = find.byType(Switch);
+      expect(switches, findsNWidgets(2));
+      final first = tester.getSemantics(switches.first);
+      expect(first.label, '1:00 AM on');
+      expect(
+        first.rect.width,
+        lessThanOrEqualTo(tester.getSize(switches.first).width),
+      );
+
+      final row = tester.getSemantics(find.text('1:00 AM'));
+      expect(row.label, isNot(contains('2:00 AM')));
+
+      semantics.dispose();
+    });
+
     testWidgets(
       'coming to the tab reads the plans again, and only when online',
       (tester) async {
@@ -183,10 +221,49 @@ void main() {
       session.requests.clear();
       await tapIn(tester, find.text('1:00 AM'));
       await tapIn(tester, find.text('Delete meal'));
+      await tapIn(tester, find.widgetWithText(FilledButton, 'Delete'));
       expect(
         (session.requests.single as FeederRequest_EditPlans).edit,
         const PlanEdit.delete(slot: 0),
       );
+    });
+
+    testWidgets("the editor's switch is its own node, named On", (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await show(tester, _plans([_plan(60)]));
+
+      await tapIn(tester, find.text('1:00 AM'));
+      final toggle = find.descendant(
+        of: find.byType(MealEditor),
+        matching: find.byType(Switch),
+      );
+      await tester.ensureVisible(toggle);
+      await tester.pump();
+
+      final node = tester.getSemantics(toggle);
+      expect(node.label, 'On');
+      expect(node.rect.width, lessThanOrEqualTo(tester.getSize(toggle).width));
+
+      semantics.dispose();
+    });
+
+    testWidgets('deleting a meal asks first, naming its time', (tester) async {
+      final session = await show(tester, _plans([_plan(60)]));
+      session.requests.clear();
+
+      await tapIn(tester, find.text('1:00 AM'));
+      await tapIn(tester, find.text('Delete meal'));
+
+      expect(find.text('Delete this meal?'), findsOneWidget);
+      expect(find.textContaining('1:00 AM meal'), findsOneWidget);
+      expect(session.requests, isEmpty);
+
+      await tapIn(tester, find.text('Cancel'));
+      expect(find.text('Delete this meal?'), findsNothing);
+      expect(find.text('Delete meal'), findsOneWidget);
+      expect(session.requests, isEmpty);
     });
 
     testWidgets('a refused or unanswered save keeps the editor open', (
@@ -249,6 +326,7 @@ void main() {
           )
           ..add(FeederReply.plans(plans: fresh));
         await tapIn(tester, find.text('Delete meal'));
+        await tapIn(tester, find.widgetWithText(FilledButton, 'Delete'));
 
         expect(
           find.text('The meals changed while you were editing'),
@@ -334,19 +412,356 @@ void main() {
         pick: () async => Uint8List.fromList([1, 2, 3]),
       );
       expect(find.text('No recording stored'), findsOneWidget);
-      session.replies.add(
-        const FeederReply.call(
-          call: CallInfo(
-            writable: true,
-            clip: CallClip.stored(bytes: 9, crc: 1),
-            ms: 3500,
+      session.replies
+        ..add(_noRecording)
+        ..add(
+          const FeederReply.call(
+            call: CallInfo(
+              writable: true,
+              clip: CallClip.stored(bytes: 9, crc: 1),
+              ms: 3500,
+            ),
           ),
-        ),
-      );
+        );
 
       await tapIn(tester, find.text('Choose a recording'));
       expect(session.requests.last, isA<FeederRequest_UploadCall>());
       expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+    });
+
+    /// The screen on an open session, holding what `first` answers.
+    Future<(FakeFeederPorts, FakeSession)> onScreen(
+      WidgetTester tester,
+      FeederReply first,
+    ) async {
+      final book = FakeBook()..feeders = [kitchen];
+      final ports = FakeFeederPorts();
+      final feeder = FeederController(book, ports, kitchen);
+      addTearDown(feeder.dispose);
+      await tester.pump();
+      ports.session.opened();
+      await tester.pump();
+      final session = ports.session;
+      session.replies.add(first);
+      await showTab(
+        tester,
+        MealCallScreen(
+          feeder: feeder,
+          pick: () async => Uint8List.fromList([1]),
+        ),
+      );
+      session.requests.clear();
+      return (ports, session);
+    }
+
+    /// The screen, a recording ready to pick, its session just ended.
+    Future<(FakeFeederPorts, FakeSession)> dropped(WidgetTester tester) async {
+      final (ports, first) = await onScreen(tester, _noRecording);
+      unawaited(first.updates.close());
+      await tester.pump();
+      return (ports, first);
+    }
+
+    const noReach = "Couldn't reach the feeder. Choose the recording again.";
+
+    testWidgets('a recording waits for the session, then goes once', (
+      tester,
+    ) async {
+      final (ports, first) = await dropped(tester);
+
+      await tester.tap(find.text('Choose a recording'));
+      await settle(tester);
+      expect(
+        find.text('Reaching the feeder… keep this screen open.'),
+        findsOneWidget,
+      );
+
+      // The controller's first retry comes after 3 s.
+      await tester.pump(const Duration(seconds: 3));
+      final second = ports.session;
+      expect(second, isNot(same(first)));
+      second.replies
+        ..add(_noRecording)
+        ..add(
+          const FeederReply.call(
+            call: CallInfo(
+              writable: true,
+              clip: CallClip.stored(bytes: 9, crc: 1),
+              ms: 3500,
+            ),
+          ),
+        );
+      second.opened();
+      await settle(tester);
+
+      expect(first.requests, isEmpty);
+      expect(second.requests.first, const FeederRequest.getCall());
+      expect(
+        second.requests.whereType<FeederRequest_UploadCall>(),
+        hasLength(1),
+      );
+      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      expect(find.textContaining('Reaching'), findsNothing);
+    });
+
+    testWidgets('a dead session loses the read, never the upload', (
+      tester,
+    ) async {
+      final session = await show(
+        tester,
+        const CallClip.none(),
+        pick: () async => Uint8List.fromList([1]),
+      );
+      session.answering = (_) async => const FeederReply.unanswered();
+      session.requests.clear();
+
+      await tester.tap(find.text('Choose a recording'));
+      await tester.pump(MealCallScreen.reachWait);
+      await settle(tester);
+
+      expect(session.requests.whereType<FeederRequest_UploadCall>(), isEmpty);
+      expect(find.text(noReach), findsOneWidget);
+    });
+
+    testWidgets('no session in time leaves a lasting message, and sends '
+        'nothing', (tester) async {
+      final (ports, first) = await dropped(tester);
+
+      await tester.tap(find.text('Choose a recording'));
+      for (var second = 0; second < 70; second++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+
+      expect(first.requests, isEmpty);
+      expect(ports.session.requests, isEmpty);
+      expect(find.text(noReach), findsOneWidget);
+      await tester.pump(const Duration(minutes: 1));
+      expect(find.text(noReach), findsOneWidget);
+      expect(find.text('Choose a recording'), findsOneWidget);
+    });
+
+    const stored = FeederReply.call(
+      call: CallInfo(
+        writable: true,
+        clip: CallClip.stored(bytes: 9, crc: 1),
+        ms: 3500,
+      ),
+    );
+
+    testWidgets('a read that never answers counts against the wait', (
+      tester,
+    ) async {
+      final session = await show(
+        tester,
+        const CallClip.none(),
+        pick: () async => Uint8List.fromList([1]),
+      );
+      session.answering = (_) => Completer<FeederReply>().future;
+      session.requests.clear();
+
+      await tester.tap(find.text('Choose a recording'));
+      await tester.pump(MealCallScreen.reachWait);
+      await settle(tester);
+
+      expect(session.requests, hasLength(1), reason: 'the one read that hung');
+      expect(find.text(noReach), findsOneWidget);
+    });
+
+    /// A write answered `Unanswered` as its session dies with it.
+    void dyingOn<T extends FeederRequest>(FakeSession session) {
+      session.answering = (request) async {
+        if (request is T) {
+          unawaited(session.updates.close());
+          return const FeederReply.unanswered();
+        }
+        if (session.updates.isClosed) return const FeederReply.notSent();
+        return stored;
+      };
+    }
+
+    testWidgets('an upload lost with its session drops the old clip and says '
+        'only what it knows', (tester) async {
+      final (ports, first) = await onScreen(tester, stored);
+      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      dyingOn<FeederRequest_UploadCall>(first);
+
+      await tester.tap(find.text('Replace the recording'));
+      await settle(tester);
+
+      expect(find.textContaining('may or may not have'), findsOneWidget);
+      expect(find.textContaining('Nothing changed'), findsNothing);
+      expect(find.text('Stored: 3.5 s a play'), findsNothing);
+      expect(find.text('Reading…'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 3));
+      final second = ports.session;
+      second.replies.add(_noRecording);
+      second.opened();
+      await settle(tester);
+
+      expect(find.text('No recording stored'), findsOneWidget);
+      expect(find.textContaining('Nothing changed'), findsNothing);
+      expect(find.textContaining('may or may not have'), findsOneWidget);
+      expect(second.requests.whereType<FeederRequest_UploadCall>(), isEmpty);
+    });
+
+    testWidgets('an upload lost for good cannot say what the feeder holds', (
+      tester,
+    ) async {
+      final (_, first) = await onScreen(tester, stored);
+      dyingOn<FeederRequest_UploadCall>(first);
+
+      await tester.tap(find.text('Replace the recording'));
+      await tester.pump();
+      for (var second = 0; second < 70; second++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+
+      expect(find.text("Can't read it right now"), findsOneWidget);
+      expect(find.textContaining('Nothing changed'), findsNothing);
+      expect(find.textContaining('may or may not have'), findsOneWidget);
+    });
+
+    testWidgets('a delete lost with its session says the same', (tester) async {
+      final (ports, first) = await onScreen(tester, stored);
+      dyingOn<FeederRequest_DeleteCall>(first);
+
+      await tester.tap(find.text('Delete the recording'));
+      await settle(tester);
+
+      expect(find.textContaining('may or may not have'), findsOneWidget);
+      expect(find.textContaining('Nothing changed'), findsNothing);
+      expect(find.text('Stored: 3.5 s a play'), findsNothing);
+
+      await tester.pump(const Duration(seconds: 3));
+      ports.session.replies.add(stored);
+      ports.session.opened();
+      await settle(tester);
+      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+    });
+
+    testWidgets('two quick taps open one picker', (tester) async {
+      var picks = 0;
+      final picking = Completer<Uint8List?>();
+      await show(
+        tester,
+        const CallClip.none(),
+        pick: () {
+          picks++;
+          return picking.future;
+        },
+      );
+
+      await tester.tap(find.text('Choose a recording'));
+      await tester.tap(find.text('Choose a recording'));
+      await settle(tester);
+      expect(picks, 1);
+
+      picking.complete(null);
+      await settle(tester);
+      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      expect(button.onPressed, isNotNull);
+    });
+
+    /// A screen opened while an upload an earlier one started is on its way;
+    /// what ends the upload, and what the read after it gets.
+    Future<void> reopenedUntil(
+      WidgetTester tester,
+      FeederReply end,
+      FeederReply read,
+    ) async {
+      final (feeder, session) = await oneFeeder(tester);
+      final uploading = Completer<FeederReply>();
+      session.answering = (request) => request is FeederRequest_UploadCall
+          ? uploading.future
+          : Future.value(_noRecording);
+      Widget screen() => MealCallScreen(
+        feeder: feeder,
+        pick: () async => Uint8List.fromList([1]),
+      );
+
+      await showTab(tester, screen());
+      await tester.tap(find.text('Choose a recording'));
+      await settle(tester);
+      await tester.pumpWidget(themed(const SizedBox()));
+      await showTab(tester, screen());
+
+      session.answering = (_) async => read;
+      uploading.complete(end);
+      await settle(tester);
+
+      expect(find.text('Reading…'), findsNothing);
+      expect(
+        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNotNull,
+      );
+    }
+
+    testWidgets('a reopened screen says an upload was refused', (tester) async {
+      await reopenedUntil(
+        tester,
+        const FeederReply.refused(refusal: FeederRefusal.forbidden()),
+        _noRecording,
+      );
+
+      expect(find.textContaining("isn't allowed"), findsOneWidget);
+      expect(find.text('No recording stored'), findsOneWidget);
+    });
+
+    testWidgets('a reopened screen says an upload went unanswered', (
+      tester,
+    ) async {
+      await reopenedUntil(tester, const FeederReply.unanswered(), _noRecording);
+
+      expect(find.textContaining('may or may not have'), findsOneWidget);
+      expect(find.text('No recording stored'), findsOneWidget);
+    });
+
+    testWidgets('a reopened screen reads even after an upload not sent', (
+      tester,
+    ) async {
+      await reopenedUntil(tester, const FeederReply.notSent(), stored);
+
+      expect(find.textContaining('before this went out'), findsOneWidget);
+      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+    });
+
+    testWidgets('a screen opened during an upload does not start another', (
+      tester,
+    ) async {
+      final (feeder, session) = await oneFeeder(tester);
+      final uploading = Completer<FeederReply>();
+      session.answering = (request) => request is FeederRequest_UploadCall
+          ? uploading.future
+          : Future.value(_noRecording);
+      Widget screen() => MealCallScreen(
+        feeder: feeder,
+        pick: () async => Uint8List.fromList([1]),
+      );
+
+      await showTab(tester, screen());
+      await tester.tap(find.text('Choose a recording'));
+      await settle(tester);
+
+      await tester.pumpWidget(themed(const SizedBox()));
+      await showTab(tester, screen());
+      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      expect(button.onPressed, isNull);
+      expect(find.text('Working… keep this screen open.'), findsOneWidget);
+
+      session.answering = (_) async => stored;
+      uploading.complete(stored);
+      await settle(tester);
+
+      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      expect(
+        session.requests.whereType<FeederRequest_UploadCall>(),
+        hasLength(1),
+      );
+      expect(
+        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNotNull,
+      );
     });
 
     testWidgets('a recording refused or unanswered says so, then reads', (
@@ -357,14 +772,16 @@ void main() {
         const CallClip.none(),
         pick: () async => Uint8List.fromList([1]),
       );
-      session.replies.add(
-        const FeederReply.refused(refusal: FeederRefusal.forbidden()),
-      );
+      session.replies
+        ..add(_noRecording)
+        ..add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
       await tapIn(tester, find.text('Choose a recording'));
       expect(find.textContaining("isn't allowed"), findsOneWidget);
 
       session.requests.clear();
-      session.replies.add(const FeederReply.unanswered());
+      session.replies
+        ..add(_noRecording)
+        ..add(const FeederReply.unanswered());
       await tapIn(tester, find.text('Choose a recording'));
       expect(find.textContaining('may or may not have'), findsOneWidget);
       expect(
@@ -453,6 +870,89 @@ void main() {
       final fed = tester.getTopLeft(find.text('Fed 2 of 2')).dy;
       final started = tester.getTopLeft(find.text('Started up')).dy;
       expect(fed, lessThan(started));
+    });
+
+    testWidgets('a readiness change reads as one, not a refused feed', (
+      tester,
+    ) async {
+      await show(tester, [
+        entry(
+          1,
+          const HistoryBody.feedingBlocked(reason: Blocked.setup),
+          at: now,
+        ),
+        entry(2, const HistoryBody.feedingBlocked(), at: now),
+        entry(
+          3,
+          const HistoryBody.dispenseRefused(reason: Blocked.fault),
+          at: now,
+        ),
+      ]);
+
+      expect(find.text('Not ready to feed'), findsOneWidget);
+      expect(find.text('In setup mode'), findsOneWidget);
+      expect(find.text('Ready to feed again'), findsOneWidget);
+      expect(find.text("Couldn't feed"), findsNothing);
+      expect(find.text('Can feed again'), findsNothing);
+      expect(find.text('A press was refused'), findsOneWidget);
+    });
+
+    testWidgets('setup mode is not a problem, and shows under All', (
+      tester,
+    ) async {
+      await show(tester, [
+        entry(
+          1,
+          const HistoryBody.feedingBlocked(reason: Blocked.setup),
+          at: now,
+        ),
+        entry(
+          2,
+          const HistoryBody.feedingBlocked(reason: Blocked.updating),
+          at: now,
+        ),
+      ]);
+
+      expect(find.text('In setup mode'), findsOneWidget);
+      expect(find.text('Installing an update'), findsOneWidget);
+      final setup = find.ancestor(
+        of: find.text('In setup mode'),
+        matching: find.byType(Row),
+      );
+      final other = find.ancestor(
+        of: find.text('Installing an update'),
+        matching: find.byType(Row),
+      );
+      Glyph glyph(Finder row) => tester
+          .widget<StrokeIcon>(
+            find.descendant(of: row, matching: find.byType(StrokeIcon)),
+          )
+          .glyph;
+      expect(glyph(setup), Glyph.info);
+      expect(glyph(other), Glyph.warning);
+
+      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Problems'));
+      expect(find.text('In setup mode'), findsNothing);
+      expect(find.text('Installing an update'), findsOneWidget);
+    });
+
+    testWidgets('an uncertain feed of no known source says interrupted', (
+      tester,
+    ) async {
+      final uncertain = fakeFed(
+        confirmed: 0,
+        atMost: 2,
+        outcome: FeedOutcome.uncertain,
+        reason: FeedReason.interrupted,
+        by: const FedBy.unknown(),
+      );
+      await show(tester, [
+        entry(1, HistoryBody.fed(result: uncertain), at: now),
+      ]);
+
+      expect(find.text('Fed between 0 and 2'), findsOneWidget);
+      expect(find.text('Interrupted · not repeated'), findsOneWidget);
+      expect(find.textContaining('Unknown'), findsNothing);
     });
 
     testWidgets('an uncertain feed is a range, also in its detail', (

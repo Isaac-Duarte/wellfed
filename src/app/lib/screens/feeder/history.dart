@@ -23,7 +23,9 @@ bool _shown(_Filter filter, HistoryBody body) => switch (filter) {
       result.outcome != FeedOutcome.done ||
           result.confirmed != result.requested,
     HistoryBody_Food(:final level) => level == FoodLevel.low,
-    HistoryBody_FeedingBlocked(:final reason) => reason != null,
+    // Setup mode is the owner's own choice, not something gone wrong.
+    HistoryBody_FeedingBlocked(:final reason) =>
+      reason != null && reason != Blocked.setup,
     HistoryBody_Missed() ||
     HistoryBody_DispenseRefused() ||
     HistoryBody_Lost() ||
@@ -65,7 +67,20 @@ class HistoryTab extends StatefulWidget {
 }
 
 class _HistoryTabState extends State<HistoryTab> {
-  _Filter _filter = _Filter.all;
+  /// The route's storage keeps the choice while the feeder screen stays open,
+  /// as a tab away disposes this state.
+  static const _filterKey = 'history-filter';
+
+  late _Filter _filter =
+      PageStorage.maybeOf(context)?.readState(context, identifier: _filterKey)
+          as _Filter? ??
+      _Filter.all;
+
+  void _choose(_Filter filter) {
+    PageStorage.maybeOf(context)
+        ?.writeState(context, filter, identifier: _filterKey);
+    setState(() => _filter = filter);
+  }
 
   @override
   void initState() {
@@ -117,7 +132,7 @@ class _HistoryTabState extends State<HistoryTab> {
                 ChoiceChip(
                   label: Text(name),
                   selected: _filter == filter,
-                  onSelected: (_) => setState(() => _filter = filter),
+                  onSelected: (_) => _choose(filter),
                 ),
             ],
           ),
@@ -235,7 +250,9 @@ class _EntryRow extends StatelessWidget {
         Glyph.warning,
         c.warning,
         'Fed between ${result.confirmed} and ${result.atMost}',
-        '${_asker(context, result.by)} · not repeated',
+        result.by is FedBy_Unknown
+            ? 'Interrupted · not repeated'
+            : '${_asker(context, result.by)} · not repeated',
       ),
       HistoryBody_Fed(:final result)
           when result.outcome == FeedOutcome.done &&
@@ -314,16 +331,22 @@ class _EntryRow extends StatelessWidget {
         "Some events here weren't kept",
         '',
       ),
+      HistoryBody_FeedingBlocked(reason: Blocked.setup) => (
+        Glyph.info,
+        c.textMuted,
+        'Not ready to feed',
+        blockedWords(Blocked.setup),
+      ),
       HistoryBody_FeedingBlocked(reason: final reason?) => (
         Glyph.warning,
         c.warning,
-        "Couldn't feed",
+        'Not ready to feed',
         blockedWords(reason),
       ),
       HistoryBody_FeedingBlocked(reason: null) => (
         Glyph.check,
         c.ok,
-        'Can feed again',
+        'Ready to feed again',
         '',
       ),
       HistoryBody_MealSoon(:final minute, :final portions) => (

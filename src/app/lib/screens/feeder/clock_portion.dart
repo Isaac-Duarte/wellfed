@@ -33,6 +33,8 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
   void initState() {
     super.initState();
     unawaited(_read());
+    // The session keeps the answer: it comes back here as the card.
+    unawaited(widget.feeder.ask(const FeederRequest.getTime()));
   }
 
   Future<void> _read() async {
@@ -73,6 +75,13 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
     await _write(
       FeederRequest.putTime(base: time.generation, zone: zone, ntp: ntp),
     );
+
+    // The feeder writes no event for a time setting, so nothing else would
+    // tell the card: its chips would stay as they were, and its old generation
+    // would get the next change refused as stale.
+    if (mounted) {
+      unawaited(widget.feeder.ask(const FeederRequest.getTime()));
+    }
   }
 
   Future<void> _address() async {
@@ -107,8 +116,10 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
     final c = context.colors;
     final card = widget.feeder.card;
     final time = card?.time;
-    final clock = time?.clockMs;
-    final error = time?.errorMs;
+    // An offline card's clock is an old reading, not the feeder's time now.
+    final current = widget.feeder.cardIsCurrent;
+    final clock = current ? time?.clockMs : null;
+    final error = current ? time?.errorMs : null;
     final zone = time?.zone;
     final label = TextStyle(
       fontSize: Sizes.base,
@@ -142,7 +153,11 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
           FactList([
             (
               'Feeder time',
-              Text(clock == null ? 'Not set' : clockTextMs(context, clock)),
+              Text(switch (clock) {
+                _ when !current => "Can't read it right now",
+                null => 'Not set',
+                final clock => momentTextMs(context, clock),
+              }),
             ),
             if (error != null) ('Could be off by', Text(_errorText(error))),
             if (card != null)

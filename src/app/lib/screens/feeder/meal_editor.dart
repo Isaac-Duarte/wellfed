@@ -202,6 +202,30 @@ class _MealEditorState extends State<MealEditor> {
   static String _line(BuildContext context, PlanView plan) =>
       '${minuteText(context, plan.minute)} · ${portionsText(plan.portions)}';
 
+  /// Ask first: one tap would take the meal off the schedule. A delete chosen
+  /// again after a stale refusal has been asked already, so it skips this.
+  Future<void> _confirmDelete() async {
+    final time = minuteText(context, _original?.minute ?? _minute);
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete this meal?'),
+        content: Text('The $time meal comes off the schedule.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (sure == true && mounted) await _delete();
+  }
+
   Future<void> _delete() async {
     final slot = widget.slot;
     if (slot == null) return;
@@ -409,10 +433,18 @@ class _MealEditorState extends State<MealEditor> {
           const SizedBox(height: Space.s3),
           Row(
             children: [
-              Expanded(child: Text('On', style: label)),
-              Switch(
-                value: _enabled,
-                onChanged: (on) => setState(() => _enabled = on),
+              // The switch carries the name, so its node is its own size: a
+              // tap at the node's center lands on the switch.
+              Expanded(
+                child: ExcludeSemantics(child: Text('On', style: label)),
+              ),
+              Semantics(
+                container: true,
+                label: 'On',
+                child: Switch(
+                  value: _enabled,
+                  onChanged: (on) => setState(() => _enabled = on),
+                ),
               ),
             ],
           ),
@@ -426,7 +458,7 @@ class _MealEditorState extends State<MealEditor> {
             const SizedBox(height: Space.s4),
             OutlinedButton(
               style: OutlinedButton.styleFrom(foregroundColor: c.fault),
-              onPressed: _asking ? null : _delete,
+              onPressed: _asking ? null : _confirmDelete,
               child: const Text('Delete meal'),
             ),
           ],

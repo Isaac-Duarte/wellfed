@@ -105,6 +105,8 @@ check-web: ui
 # built for arm64 phones and x86_64 emulators only.
 APP = src/app
 APP_GENERATED = $(APP)/lib/src/rust $(APP)/rust/src/frb_generated.rs $(APP)/lib/theme/tokens.g.dart
+# The tests run in a zone with DST on any builder: the day-count test only proves
+# anything across a DST day, and Dart's local time cannot be faked.
 check-app:
 	cd $(APP) && flutter_rust_bridge_codegen generate
 	cargo test --locked -p wellfed-app-bridge --test tokens
@@ -112,7 +114,7 @@ check-app:
 		{ git status --short -- $(APP_GENERATED); echo "generated app files are stale: commit the regenerated ones"; exit 1; }
 	cd $(APP) && dart format --set-exit-if-changed lib test
 	cd $(APP) && flutter analyze
-	cd $(APP) && flutter test
+	cd $(APP) && TZ=America/Denver flutter test
 	cd $(APP) && flutter build apk --debug --target-platform android-arm64,android-x64
 
 # The image the APK installs is a build-time input, from a frozen review and

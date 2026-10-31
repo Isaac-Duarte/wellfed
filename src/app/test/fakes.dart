@@ -439,6 +439,9 @@ class FakeSession with _FakeOpaque implements FeederSession {
 
   /// What the next requests get, in order; `Done` once they run out.
   final replies = <FeederReply>[];
+
+  /// What a request gets instead, for a session that hangs or dies mid-way.
+  Future<FeederReply> Function(FeederRequest)? answering;
   int closes = 0;
 
   @override
@@ -447,6 +450,9 @@ class FakeSession with _FakeOpaque implements FeederSession {
   @override
   Future<FeederReply> ask({required FeederRequest request}) async {
     requests.add(request);
+    final answer = answering;
+    if (answer != null) return answer(request);
+    if (updates.isClosed) return const FeederReply.notSent();
     return replies.isEmpty
         ? const FeederReply.done(generation: null)
         : replies.removeAt(0);
@@ -594,6 +600,7 @@ FeedResult fakeFed({
   FeedOutcome outcome = FeedOutcome.done,
   FeedReason reason = FeedReason.done,
   int? atMs,
+  FedBy by = const FedBy.panel(),
 }) => FeedResult(
   feed: feed,
   requested: requested,
@@ -604,7 +611,7 @@ FeedResult fakeFed({
   uncertain: outcome == FeedOutcome.uncertain,
   words: '$confirmed of $requested portions, ${outcome.name}',
   atMs: atMs,
-  by: const FedBy.panel(),
+  by: by,
   hopper: FoodLevel.present,
 );
 

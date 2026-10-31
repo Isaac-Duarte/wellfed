@@ -436,6 +436,59 @@ async fn opened(
     (commands, heard)
 }
 
+/// A time setting moves no event, so only a screen's read can tell the card of
+/// it: through the session, the card must take what that read answered.
+#[test]
+fn a_screens_read_of_the_time_reaches_the_card() {
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, mut heard) = opened(sim.identity, sim.address).await;
+
+        let FeederReply::Time { time } =
+            requests::run(&commands, sim.identity, FeederRequest::GetTime).await
+        else {
+            panic!("no time");
+        };
+        let reply = requests::run(
+            &commands,
+            sim.identity,
+            FeederRequest::PutTime {
+                base: time.generation,
+                zone: None,
+                ntp: Some("off".into()),
+            },
+        )
+        .await;
+        let FeederReply::Done {
+            generation: Some(moved),
+        } = reply
+        else {
+            panic!("the change did not land: {reply:?}");
+        };
+        assert_ne!(moved, time.generation);
+
+        let FeederReply::Time { time: read } =
+            requests::run(&commands, sim.identity, FeederRequest::GetTime).await
+        else {
+            panic!("no time");
+        };
+        assert_eq!(read.generation, moved);
+
+        next(&mut heard, |update| match update {
+            SessionUpdate::Status { card } => card
+                .time
+                .filter(|time| time.generation == moved)
+                .map(|_| ()),
+            _ => None,
+        })
+        .await;
+
+        commands.send(Command::Close).unwrap();
+        sim.stop().await;
+    });
+}
+
 #[test]
 fn requests_read_and_change_the_feeder_through_the_session() {
     local(async {
