@@ -128,8 +128,9 @@ pub struct Plan {
     /// check passes without asking for exactly this device, and stops the
     /// run for another.
     pub expect_device: Option<String>,
-    /// The feeder's identity, as a hex prefix, when the keys know more
-    /// than one.
+    /// The feeder's identity, as a hex prefix. A run from bank 0 with no record
+    /// and no address uses a feeder the keys know only when this names it: the
+    /// keys may know other feeders of the owner's, and nothing else says which.
     pub feeder: Option<String>,
     /// The replacement's address; where it answered or stock connected
     /// from otherwise.
@@ -194,11 +195,39 @@ where
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Look {
     /// Only where this run knows its feeder is: the given address, or
-    /// where stock connected from.
+    /// where stock connected from. Never where the client last reached that
+    /// identity, which says nothing about this run's feeder.
     Known,
-    /// Over the platform's discovery too: for an identity this run learned
-    /// from the feeder itself, which no other feeder answers to.
+    /// Where the client last reached it, and over the platform's discovery too:
+    /// for an identity this run learned from the feeder itself or the owner
+    /// picked, which no other feeder answers to.
     Discovered,
+}
+
+/// Where to try before discovery and the run's own address: where an identity
+/// last answered, unless an address was given. Only by [`Look::Discovered`]: a run
+/// from stock that tried where Home last reached a known feeder would move onto
+/// that feeder, though it is not the one stock's request went to.
+fn places_first(
+    look: Look,
+    given: Option<SocketAddr>,
+    last: Option<SocketAddr>,
+    home: Option<SocketAddr>,
+) -> [Option<SocketAddr>; 2] {
+    if given.is_none() && look == Look::Discovered {
+        [last, home]
+    } else {
+        [None, None]
+    }
+}
+
+/// Whether this run has a place of its own to find its feeder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Located {
+    /// Stock connected from it, or it was given.
+    Yes,
+    /// A run from bank 0 with no address given.
+    No,
 }
 
 /// Where a run looks for a feeder this client's key already opens,
@@ -218,18 +247,25 @@ enum Lookup {
     /// only where this run knows its feeder is, never by discovery, and
     /// setup follows if it does not answer.
     KeyFile { identity: [u8; 32] },
+    /// The feeder the owner named for a run from bank 0: looked for as a
+    /// record's is. Its not answering stops the run, since setup could only
+    /// reach another feeder.
+    Picked { identity: [u8; 32] },
     /// Nothing to try: Bluetooth setup.
     Setup,
 }
 
 /// The lookup for a run whose broker enrolled `device`: the record when it
-/// is this install's (and `prefix`, if given, names its feeder), else the
-/// keys' feeder, else setup.
+/// is this install's (and `prefix`, if given, names its feeder). Else the keys'
+/// feeder where this run has a place of its own to try it, or from bank 0 only if
+/// `prefix` named it. Else setup: a known feeder that answers is not this run's
+/// for that alone.
 fn lookup(
     record: Option<&storage::Paired>,
     device: Option<&str>,
     prefix: Option<&str>,
     known: Option<[u8; 32]>,
+    located: Located,
 ) -> Lookup {
     let ours = record.filter(|record| {
         let identity = wellfed_formats::hex::encode(&record.identity.0);
@@ -240,7 +276,11 @@ fn lookup(
             identity: record.identity.0,
             last: record.address,
         },
-        (None, Some(identity)) => Lookup::KeyFile { identity },
+        (None, Some(identity)) => match (located, prefix) {
+            (Located::Yes, _) => Lookup::KeyFile { identity },
+            (Located::No, Some(_)) => Lookup::Picked { identity },
+            (Located::No, None) => Lookup::Setup,
+        },
         (None, None) => Lookup::Setup,
     }
 }
@@ -266,9 +306,12 @@ fn looked_up(
     unjoined: Unjoined,
 ) -> Result<Looked, Error> {
     match (lookup, answered) {
-        (Lookup::Recorded { identity, .. } | Lookup::KeyFile { identity }, Some(address)) => {
-            Ok(Looked::Paired(identity, address))
-        }
+        (
+            Lookup::Recorded { identity, .. }
+            | Lookup::KeyFile { identity }
+            | Lookup::Picked { identity },
+            Some(address),
+        ) => Ok(Looked::Paired(identity, address)),
         (
             Lookup::Recorded {
                 identity,
@@ -279,7 +322,9 @@ fn looked_up(
             Unjoined::Wait => Looked::Rejoining(identity),
             Unjoined::SetUpAgain => Looked::SetUp,
         }),
-        (Lookup::Recorded { identity, .. }, None) => Err(Error::NotAnswering { feeder: identity }),
+        (Lookup::Recorded { identity, .. } | Lookup::Picked { identity }, None) => {
+            Err(Error::NotAnswering { feeder: identity })
+        }
         (Lookup::KeyFile { .. } | Lookup::Setup, _) => Ok(Looked::SetUp),
     }
 }
@@ -404,6 +449,7 @@ struct Run<P, B, D, K, R> {
     expect_device: Option<String>,
     feeder: Option<String>,
     address: Option<SocketAddr>,
+    located: Located,
     unjoined: Unjoined,
     backups: PathBuf,
     /// The one request's id, once made.
@@ -466,6 +512,11 @@ where
             promotion,
         };
 
+        let located = if matches!(plan.start, Start::Stock(_)) || plan.address.is_some() {
+            Located::Yes
+        } else {
+            Located::No
+        };
         let build = plan.review.build().to_string();
         let mut install = match plan.start {
             Start::Stock(provision) => Install::new(provision, &build, options)?,
@@ -485,6 +536,7 @@ where
             expect_device: plan.expect_device,
             feeder: plan.feeder,
             address: plan.address,
+            located,
             unjoined: plan.unjoined,
             backups: plan.backups,
             request: None,
@@ -810,6 +862,14 @@ where
         {
             self.found = record.address;
         }
+        // From bank 0, the feeder the owner named has no other place to start.
+        if self.found.is_none()
+            && self.located == Located::No
+            && self.feeder.is_some()
+            && let Some(identity) = self.io.keys.feeder(self.feeder.as_deref())
+        {
+            self.found = self.io.keys.last_address(&identity);
+        }
         let address = self.address()?;
         if let Some(identity) = self.io.keys.feeder(self.feeder.as_deref()) {
             let deadline = Instant::now() + REPLACEMENT_WAIT;
@@ -884,11 +944,13 @@ where
             device.as_deref(),
             prefix,
             self.io.keys.feeder(prefix),
+            self.located,
         );
         let answered = match lookup {
             Lookup::Recorded { identity, last } => {
                 self.answering(identity, Look::Discovered, last).await
             }
+            Lookup::Picked { identity } => self.answering(identity, Look::Discovered, None).await,
             Lookup::KeyFile { identity } => self.answering(identity, Look::Known, None).await,
             Lookup::Setup => None,
         };
@@ -1021,10 +1083,10 @@ where
     }
 
     /// Where the feeder with `identity` opens a session with this client's
-    /// key now, if anywhere: the given address; else `last` (where it
-    /// answered before), then where this client last reached it, then (by
-    /// `look`) by discovery, then where it answered this run or stock
-    /// connected from. Opening a session sends nothing.
+    /// key now, if anywhere: the given address; else, by [`Look::Discovered`],
+    /// `last` (where it answered before), where this client last reached it and
+    /// discovery; then where it answered this run or stock connected from.
+    /// Opening a session sends nothing.
     async fn answering(
         &self,
         identity: [u8; 32],
@@ -1033,12 +1095,13 @@ where
     ) -> Option<SocketAddr> {
         // Known places go before discovery: its wait is the longest here, and
         // a dozing phone's discovery may not answer at all.
-        if self.address.is_none() {
-            let known = [last, self.io.keys.last_address(&identity)];
-            for address in known.into_iter().flatten() {
-                if self.opens_at(identity, address).await {
-                    return Some(address);
-                }
+        let home = self.io.keys.last_address(&identity);
+        for address in places_first(look, self.address, last, home)
+            .into_iter()
+            .flatten()
+        {
+            if self.opens_at(identity, address).await {
+                return Some(address);
             }
         }
         if self.address.is_none()
@@ -1607,32 +1670,50 @@ mod tests {
             identity: [0xab; 32],
             last: recorded.address,
         };
-        assert_eq!(lookup(Some(&recorded), Some("AF_A"), None, known), ours);
+        let yes = Located::Yes;
         assert_eq!(
-            lookup(Some(&recorded), Some("AF_A"), Some("abab"), known),
+            lookup(Some(&recorded), Some("AF_A"), None, known, yes),
+            ours
+        );
+        assert_eq!(
+            lookup(Some(&recorded), Some("AF_A"), Some("abab"), known, yes),
             ours
         );
         // A prefix naming another passes the record over.
+        let key = Lookup::KeyFile {
+            identity: [0xcd; 32],
+        };
         assert_eq!(
-            lookup(Some(&recorded), Some("AF_A"), Some("cd"), known),
-            Lookup::KeyFile {
-                identity: [0xcd; 32]
-            }
+            lookup(Some(&recorded), Some("AF_A"), Some("cd"), known, yes),
+            key
         );
 
         // A stale record from another stock device: never this run's.
+        assert_eq!(lookup(Some(&recorded), Some("AF_B"), None, known, yes), key);
         assert_eq!(
-            lookup(Some(&recorded), Some("AF_B"), None, known),
-            Lookup::KeyFile {
-                identity: [0xcd; 32]
-            }
-        );
-        assert_eq!(
-            lookup(Some(&recorded), Some("AF_B"), None, None),
+            lookup(Some(&recorded), Some("AF_B"), None, None, yes),
             Lookup::Setup
         );
         // No enrolled device (a captured config): the record is no one's.
-        assert_eq!(lookup(Some(&recorded), None, None, None), Lookup::Setup);
+        assert_eq!(
+            lookup(Some(&recorded), None, None, None, yes),
+            Lookup::Setup
+        );
+
+        // From bank 0 with nowhere of its own to look, the keys' feeder is this
+        // run's only if the owner named it, and a run from stock never moves to
+        // one by a name: only where stock connected from.
+        let no = Located::No;
+        assert_eq!(lookup(None, None, None, known, no), Lookup::Setup);
+        let picked = Lookup::Picked {
+            identity: [0xcd; 32],
+        };
+        assert_eq!(lookup(None, None, Some("cd"), known, no), picked);
+        assert_eq!(lookup(None, Some("AF_B"), Some("cd"), known, yes), key);
+        assert!(matches!(
+            looked_up(picked, None, Unjoined::Wait),
+            Err(Error::NotAnswering { .. })
+        ));
 
         // This install's feeder not answering stops the run.
         let here: SocketAddr = "192.168.4.31:7100".parse().unwrap();
@@ -1677,6 +1758,30 @@ mod tests {
             Looked::Paired([0xcd; 32], here)
         );
         assert_eq!(looked_up(Lookup::Setup, None, wait).unwrap(), Looked::SetUp);
+    }
+
+    /// A run that has only its own place to look, as one from stock has, never
+    /// tries where Home last reached the key's known feeder.
+    #[test]
+    fn only_a_feeder_this_run_identified_is_tried_where_it_last_answered() {
+        let (given, last, home): (SocketAddr, SocketAddr, SocketAddr) = (
+            "192.168.4.1:7100".parse().unwrap(),
+            "192.168.4.2:7100".parse().unwrap(),
+            "192.168.4.3:7100".parse().unwrap(),
+        );
+
+        assert_eq!(
+            places_first(Look::Known, None, None, Some(home)),
+            [None, None]
+        );
+        assert_eq!(
+            places_first(Look::Discovered, None, Some(last), Some(home)),
+            [Some(last), Some(home)]
+        );
+        assert_eq!(
+            places_first(Look::Discovered, Some(given), Some(last), Some(home)),
+            [None, None]
+        );
     }
 
     /// Refused is the server's word with no record in its ledger, and keeps

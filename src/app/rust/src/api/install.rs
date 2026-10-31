@@ -64,6 +64,9 @@ pub struct InstallSpec {
     /// Forget the feeder the broker trusted before: the owner said it was
     /// not theirs, or two answered.
     pub forget_enrollment: bool,
+    /// The known feeder the owner picked for a run from bank 0, by its identity
+    /// in hex. With none, a known feeder that answers is left alone.
+    pub feeder: Option<String>,
     /// The owner gave a new Wi-Fi for a feeder that paired and never joined,
     /// and put it back in setup mode: Bluetooth setup goes again rather than
     /// waiting for it.

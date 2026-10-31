@@ -906,7 +906,7 @@ fn plan(
         home,
         backup: None,
         expect_device: None,
-        feeder: None,
+        feeder: spec.feeder,
         address: spec
             .address
             .as_deref()

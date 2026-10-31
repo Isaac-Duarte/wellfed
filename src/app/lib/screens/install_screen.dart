@@ -102,6 +102,7 @@ class _InstallScreenState extends State<InstallScreen> {
         InstallStage.reset => _Reset(flow: _flow),
         InstallStage.handover => _Handover(flow: _flow, onLeave: _leave),
         InstallStage.confirm => _Confirm(flow: _flow, onLeave: _leave),
+        InstallStage.which => _WhichFeeder(flow: _flow),
         InstallStage.sending => _Sending(flow: _flow),
         InstallStage.claim => _Claim(flow: _flow),
         InstallStage.finishing => _Finishing(flow: _flow),
@@ -285,9 +286,7 @@ class _Before extends StatelessWidget {
         // For a feeder past stock with no record to pick up from: Continue is
         // the Reset route, which is stock's.
         OutlinedButton(
-          onPressed: flow.mayStart && !damaged
-              ? () => unawaited(flow.resume())
-              : null,
+          onPressed: flow.mayStart && !damaged ? flow.alreadyRuns : null,
           child: const Text('This feeder already runs Wellfed'),
         ),
         FilledButton(
@@ -300,6 +299,40 @@ class _Before extends StatelessWidget {
       ],
     );
   }
+}
+
+/// With no record of the install, only the owner can say which feeder this is: a
+/// known feeder answering says nothing about it.
+class _WhichFeeder extends StatelessWidget {
+  const _WhichFeeder({required this.flow});
+
+  final InstallFlow flow;
+
+  @override
+  Widget build(BuildContext context) => StepScaffold(
+    leading: Leading.back,
+    onLeading: () => flow.back(InstallStage.before),
+    appBarTitle: 'Install Wellfed',
+    title: 'Which feeder?',
+    body: 'This finishes the install on the feeder you choose.',
+    content: [
+      for (final feeder in flow.knownFeeders) ...[
+        RouteCard(
+          glyph: Glyph.install,
+          title: feeder.name,
+          body: 'Already on this phone.',
+          onTap: () => unawaited(flow.pickFeeder(feeder.identity)),
+        ),
+        const SizedBox(height: Space.s3),
+      ],
+      RouteCard(
+        glyph: Glyph.install,
+        title: 'Another feeder, over Bluetooth',
+        body: 'Hold it into setup mode with its buttons. This phone shows how.',
+        onTap: () => unawaited(flow.pickFeeder(null)),
+      ),
+    ],
+  );
 }
 
 /// Ask once before a repair that gives something up. `true` when the owner agreed.
@@ -1098,8 +1131,8 @@ class _Stopped extends StatelessWidget {
     ),
     (
       "The backup didn't match",
-      "Wellfed won't make itself permanent without a good backup. The feeder "
-          'keeps its original firmware.',
+      "Wellfed won't make itself permanent without a good backup, so this "
+          'stop changed nothing on the feeder.',
     ),
   ];
 
@@ -1165,8 +1198,8 @@ class _Stopped extends StatelessWidget {
     ),
     StopCase_BackupMismatch() => (
       "The backup didn't match",
-      "Wellfed won't make itself permanent without a good backup. The feeder "
-          'keeps its original firmware.',
+      "Wellfed won't make itself permanent without a good backup, so this "
+          'stop changed nothing on the feeder.',
     ),
     StopCase_NotYourFeeder() => (
       "That wasn't your feeder",

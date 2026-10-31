@@ -135,6 +135,7 @@ impl Fixture {
             image_dir: path("image"),
             data_dir: path("install"),
             forget_enrollment: false,
+            feeder: None,
             setup_again: false,
         }
     }
@@ -1233,8 +1234,50 @@ fn a_damaged_record_stops_the_run_and_forgetting_keeps_the_backup() {
     });
 }
 
+/// A known feeder that would answer, its address counting connections, and
+/// another feeder advertising setup: the run is the advertising one's, and the
+/// known one hears nothing.
+async fn known_feeder_is_left_alone(ip: &str) {
+    let fixture = Fixture::new(Provisioning::Consumer);
+    let known = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let known_at = known.local_addr().unwrap();
+    let connections = std::rc::Rc::new(std::cell::Cell::new(0));
+    let counted = connections.clone();
+    tokio::task::spawn_local(async move {
+        while known.accept().await.is_ok() {
+            counted.set(counted.get() + 1);
+        }
+    });
+
+    let advertising = Keypair::from_secret([0x75; 32]);
+    let mut spec = fixture.spec(InstallStart::Bank0, ip);
+    spec.known_feeders = vec![KnownFeeder {
+        identity: wellfed_formats::hex::encode(&[0x76; 32]),
+        name: "Kitchen".into(),
+        address: Some(known_at.to_string()),
+    }];
+    let store = spec.store_path.clone();
+
+    let (run, mut heard) = started(&fixture, spec);
+    let end = set_up_by(&advertising, &run, &mut heard).await;
+
+    let InstallEnd::Stopped { case, .. } = end else {
+        panic!("{end:?}");
+    };
+    assert_ne!(case, StopCase::OtherFeeder);
+    assert_eq!(connections.get(), 0, "the known feeder was tried");
+    let saved = std::fs::read_to_string(store).unwrap();
+    assert!(saved.contains(&wellfed_formats::hex::encode(advertising.public())));
+}
+
+#[test]
+fn a_known_feeder_that_answers_gets_nothing_unless_picked() {
+    local(known_feeder_is_left_alone("127.41.8.56"));
+}
+
 /// Forgetting leaves no record, and a feeder this phone knows on bank 0 is still
-/// finished from there: asked of nothing on stock, by what it answers.
+/// finished from there once the owner picks it: asked of nothing on stock, by what
+/// it answers.
 #[test]
 fn a_known_feeder_goes_on_from_bank_0_after_forgetting() {
     local(async {
@@ -1247,6 +1290,7 @@ fn a_known_feeder_goes_on_from_bank_0_after_forgetting() {
             name: "Kitchen".into(),
             address: Some(sim.address.to_string()),
         }];
+        spec.feeder = Some(wellfed_formats::hex::encode(&sim.identity));
         let data = Path::new(&spec.data_dir).to_path_buf();
         std::fs::create_dir_all(&data).unwrap();
         with_enrolled(&data, "AF_TEST");

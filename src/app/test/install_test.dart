@@ -8,6 +8,7 @@ import 'package:wellfed/screens/install_screen.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/setup.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/install.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -244,7 +245,85 @@ void main() {
       expect(ports.specs.single.home?.ssid, 'Maple St');
     });
 
-    testWidgets('an uncertain write never offers it', (tester) async {
+    group('with no record, which feeder', () {
+      const kitchen = KnownFeeder(
+        identity: 'aa',
+        name: 'Kitchen',
+        address: 'lan:4747',
+      );
+
+      Future<(FakeInstallPorts, InstallFlow)> asked(WidgetTester tester) async {
+        final ports = FakeInstallPorts();
+        final book = FakeBook()..feeders = [kitchen];
+        final flow = InstallFlow(book, ports);
+        addTearDown(flow.dispose);
+        await flow.load();
+        flow.alreadyRuns();
+        return (ports, flow);
+      }
+
+      testWidgets('nothing starts until the owner says', (tester) async {
+        final (ports, flow) = await asked(tester);
+        expect(flow.stage, InstallStage.which);
+        expect(ports.runs, isEmpty);
+      });
+
+      testWidgets('a picked feeder goes to the run, with no Wi-Fi to ask', (
+        tester,
+      ) async {
+        final (ports, flow) = await asked(tester);
+        await flow.pickFeeder('aa');
+        expect(ports.specs.single.feeder, 'aa');
+        expect(ports.specs.single.start, InstallStart.bank0);
+      });
+
+      testWidgets('another feeder names none, and asks for the Wi-Fi', (
+        tester,
+      ) async {
+        final (ports, flow) = await asked(tester);
+        await flow.pickFeeder(null);
+        expect(flow.stage, InstallStage.wifi);
+        expect(ports.runs, isEmpty);
+
+        flow.setHome(
+          const WifiCredentials(ssid: 'Maple St', passphrase: 'correcthorse'),
+        );
+        await tester.pump();
+        expect(ports.specs.single.feeder, isNull);
+      });
+    });
+
+    testWidgets('the screen lists the known feeders and another', (
+      tester,
+    ) async {
+      final ports = FakeInstallPorts();
+      final book = FakeBook()
+        ..feeders = [
+          const KnownFeeder(
+            identity: 'aa',
+            name: 'Kitchen',
+            address: 'lan:4747',
+          ),
+        ];
+      await tester.pumpWidget(_app(book, ports));
+      await settle(tester);
+      await tester.ensureVisible(find.text('This feeder already runs Wellfed'));
+      await settle(tester);
+      await tester.tap(find.text('This feeder already runs Wellfed'));
+      await settle(tester);
+
+      expect(find.text('Which feeder?'), findsOneWidget);
+      expect(find.text('Kitchen'), findsOneWidget);
+      expect(find.text('Another feeder, over Bluetooth'), findsOneWidget);
+      expect(ports.runs, isEmpty);
+
+      await tester.tap(find.text('Kitchen'));
+      await settle(tester);
+      expect(ports.specs.single.feeder, 'aa');
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('an uncertain write\'s stop does not offer it', (tester) async {
       final ports = FakeInstallPorts(pendingInstall: PendingInstall.paired);
       await _stopped(
         tester,

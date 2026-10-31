@@ -4518,6 +4518,7 @@ impl SseDecode for crate::api::install::InstallSpec {
         let mut var_imageDir = <String>::sse_decode(deserializer);
         let mut var_dataDir = <String>::sse_decode(deserializer);
         let mut var_forgetEnrollment = <bool>::sse_decode(deserializer);
+        let mut var_feeder = <Option<String>>::sse_decode(deserializer);
         let mut var_setupAgain = <bool>::sse_decode(deserializer);
         return crate::api::install::InstallSpec {
             start: var_start,
@@ -4531,6 +4532,7 @@ impl SseDecode for crate::api::install::InstallSpec {
             image_dir: var_imageDir,
             data_dir: var_dataDir,
             forget_enrollment: var_forgetEnrollment,
+            feeder: var_feeder,
             setup_again: var_setupAgain,
         };
     }
@@ -8222,6 +8224,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::install::InstallSpec {
             self.image_dir.into_into_dart().into_dart(),
             self.data_dir.into_into_dart().into_dart(),
             self.forget_enrollment.into_into_dart().into_dart(),
+            self.feeder.into_into_dart().into_dart(),
             self.setup_again.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -11386,6 +11389,7 @@ impl SseEncode for crate::api::install::InstallSpec {
         <String>::sse_encode(self.image_dir, serializer);
         <String>::sse_encode(self.data_dir, serializer);
         <bool>::sse_encode(self.forget_enrollment, serializer);
+        <Option<String>>::sse_encode(self.feeder, serializer);
         <bool>::sse_encode(self.setup_again, serializer);
     }
 }
