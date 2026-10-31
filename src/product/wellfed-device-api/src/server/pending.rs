@@ -277,9 +277,7 @@ impl Server {
         }
     }
 
-    /// Seal one request's answer. Kept out of line: the wire message is as
-    /// large as its largest variant, so only this frame holds one.
-    #[inline(never)]
+    /// One request's line and answer.
     #[expect(clippy::too_many_arguments, reason = "one answer's whole context")]
     pub(super) fn answer<D: Device>(
         &mut self,
@@ -304,10 +302,33 @@ impl Server {
                 result: reply.name(),
             });
         }
+
+        // The client list encodes itself, so neither it nor the line above
+        // sits under `seal_answer`'s frame.
+        match reply {
+            Reply::Clients => self.list_clients(index, id),
+            reply => self.seal_answer(index, id, reply, now_ms, device),
+        }
+    }
+
+    /// Seal one request's answer. Kept out of line: the wire message is as
+    /// large as its largest variant, so only this frame holds one.
+    #[inline(never)]
+    fn seal_answer<D: Device>(
+        &mut self,
+        index: usize,
+        id: RequestId,
+        reply: Reply,
+        now_ms: u32,
+        device: &mut D,
+    ) -> Result<(), Reason> {
         // The time view's zone borrows this until the answer is sealed.
         let zone;
         let result = match reply {
-            Reply::Clients => return self.list_clients(index, id),
+            // `answer` takes this one before it gets here: a direct call to
+            // `list_clients` would put this frame back under it, in the stack
+            // audit's bound.
+            Reply::Clients => Outcome::Refused(Refusal::Unavailable),
             Reply::Done(generation) => Outcome::Done { generation },
             Reply::Refused(refusal) => Outcome::Refused(refusal),
             Reply::Settings(settings) => Outcome::Settings(settings),

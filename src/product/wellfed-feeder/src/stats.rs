@@ -151,16 +151,18 @@ impl Totals {
         sum
     }
 
-    /// The erases as the v1 wire carries them: the first
-    /// [`FLASH_SECTORS`].
-    pub fn erases(&self) -> proto::Erases {
-        let mut storage = [0; FLASH_SECTORS];
-        for (out, total) in storage.iter_mut().zip(self.storage) {
-            *out = total;
+    /// The erases as the v1 wire carries them (the first [`FLASH_SECTORS`])
+    /// with a boot's own added, held at the top rather than wrapped. Added in
+    /// place rather than through [`Self::plus`]: a whole sum of the totals
+    /// would sit on the loop's stack under a `Stats` request.
+    pub fn erases_with(&self, boot: &proto::Erases) -> proto::Erases {
+        let mut storage = boot.storage;
+        for (out, total) in storage.iter_mut().zip(&self.storage) {
+            *out = out.saturating_add(*total);
         }
         proto::Erases {
             storage,
-            update: self.update,
+            update: self.update.saturating_add(boot.update),
         }
     }
 }
@@ -671,11 +673,7 @@ impl Keeper {
         events_kept: u32,
         events_capacity: u32,
     ) -> proto::Flash {
-        let lifetime = stored.map(|stored| {
-            stored
-                .plus(&Counts::default(), &erases.storage, erases.update)
-                .erases()
-        });
+        let lifetime = stored.map(|stored| stored.erases_with(&erases));
         proto::Flash {
             boot: erases,
             lifetime,

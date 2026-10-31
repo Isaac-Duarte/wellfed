@@ -305,45 +305,7 @@ impl<S: Copy> Serve<S> {
             call_lead,
             feeds,
         } = inputs;
-        let boot = self.boot(platform, now_ms);
-        let lost = platform.take_lost();
-        if lost > 0 {
-            let count = u16::try_from(lost).unwrap_or(u16::MAX);
-            events::record(platform, now_ms, EventBody::Lost { count });
-        }
-        self.keep_stats(platform, &*feeds, now_ms);
-
-        let (table, seen) = self.server.clients_table();
-        if let Some(generation) = platform.clients_since(seen.max(self.clients_seen), table) {
-            self.clients_seen = generation;
-            self.server
-                .clients_changed(generation, |r| record(Record::Server(r)));
-        }
-
-        let ip = platform.ipv4();
-        if self.responder.is_none()
-            && let Some(identity) = identity
-        {
-            self.responder = Some(Responder::new(identity.public(), PORT));
-        }
-        if let Some(responder) = self.responder.as_mut() {
-            responder.set_ip(ip, now_ms);
-        }
-        if ip != self.advertised {
-            self.advertised = ip;
-            if let Some(ip) = ip {
-                record(Record::Address { ip });
-            }
-        }
-        if ip.is_some() {
-            self.open_sockets(platform, now_ms, &mut record);
-        }
-        self.mdns(platform, now_ms);
-        let clock_ms = platform.clock_ms(now_ms);
-        self.time
-            .step(platform, clock_ms, ip, |r| record(Record::Time(r)));
-        self.accept(platform, now_ms, &mut record);
-        self.receive(platform, &mut record);
+        let boot = self.before_server(platform, &*feeds, now_ms, identity, &mut record);
 
         // While the outputs are claimed, not only while they move, only IK
         // session handshakes go on (until one is refused): an invite's join or a
@@ -398,7 +360,23 @@ impl<S: Copy> Serve<S> {
         for handshake_ms in opened.into_iter().flatten() {
             self.stats.opened(handshake_ms);
         }
-        self.send(platform, &mut record);
+        self.after_server(platform, now_ms, supply, &mut record);
+
+        if busy { 1 } else { POLL_MS }
+    }
+
+    /// The pass's work behind the server's step: the sockets' answers, the
+    /// live samples and the minute's record. Out of line for the same reason
+    /// as [`Self::before_server`].
+    #[inline(never)]
+    fn after_server<P: Platform<Socket = S>>(
+        &mut self,
+        platform: &mut P,
+        now_ms: u32,
+        supply: Supply,
+        record: &mut impl FnMut(Record),
+    ) {
+        self.send(platform, record);
         self.samples(platform, now_ms, supply);
 
         if wellfed_core::deadline_passed(now_ms, self.next_heap) {
@@ -412,8 +390,61 @@ impl<S: Copy> Serve<S> {
                 failed: self.failed,
             });
         }
+    }
 
-        if busy { 1 } else { POLL_MS }
+    /// The pass's work ahead of the server's step: the boot's facts, lost
+    /// records, the statistics, the client table, mDNS, the clock and what
+    /// the sockets hold. Out of line because its frame would otherwise stay
+    /// live under every request and handshake, the loop's deepest paths.
+    #[inline(never)]
+    fn before_server<P: Platform<Socket = S>, F: Feeds>(
+        &mut self,
+        platform: &mut P,
+        feeds: &F,
+        now_ms: u32,
+        identity: Option<&Keypair>,
+        record: &mut impl FnMut(Record),
+    ) -> Boot {
+        let boot = self.boot(platform, now_ms);
+        let lost = platform.take_lost();
+        if lost > 0 {
+            let count = u16::try_from(lost).unwrap_or(u16::MAX);
+            events::record(platform, now_ms, EventBody::Lost { count });
+        }
+        self.keep_stats(platform, feeds, now_ms);
+
+        let (table, seen) = self.server.clients_table();
+        if let Some(generation) = platform.clients_since(seen.max(self.clients_seen), table) {
+            self.clients_seen = generation;
+            self.server
+                .clients_changed(generation, |r| record(Record::Server(r)));
+        }
+
+        let ip = platform.ipv4();
+        if self.responder.is_none()
+            && let Some(identity) = identity
+        {
+            self.responder = Some(Responder::new(identity.public(), PORT));
+        }
+        if let Some(responder) = self.responder.as_mut() {
+            responder.set_ip(ip, now_ms);
+        }
+        if ip != self.advertised {
+            self.advertised = ip;
+            if let Some(ip) = ip {
+                record(Record::Address { ip });
+            }
+        }
+        if ip.is_some() {
+            self.open_sockets(platform, now_ms, record);
+        }
+        self.mdns(platform, now_ms);
+        let clock_ms = platform.clock_ms(now_ms);
+        self.time
+            .step(platform, clock_ms, ip, |r| record(Record::Time(r)));
+        self.accept(platform, now_ms, record);
+        self.receive(platform, record);
+        boot
     }
 
     fn open_sockets<P: Platform<Socket = S>>(
@@ -735,6 +766,47 @@ impl<P: Platform, F: Feeds> FeederDevice<'_, P, F> {
     fn outputs_claimed(&self) -> bool {
         self.platform.outputs_claimed() || self.feeds.claiming().is_some()
     }
+
+    // The heavy `Stats` sections, each out of line so the totals it copies and
+    // the section it builds stay out of `Device::stats`'s frame, which every
+    // other section pays for too.
+
+    #[inline(never)]
+    fn counters_section(&mut self, now_ms: u32) -> Stats<'_> {
+        let stored = self.platform.totals();
+        Stats::Counters(self.stats.counters(now_ms, stored.as_ref()))
+    }
+
+    #[inline(never)]
+    fn memory_section(&mut self, now_ms: u32) -> Stats<'_> {
+        let (heap_free, heap_min) = self.platform.heap();
+        let (stacks, tasks_total) = self.tasks.read(&mut *self.platform, now_ms);
+        let mut tasks = [None; TASKS_MAX];
+        for (out, task) in tasks.iter_mut().zip(stacks) {
+            *out = Some(WireTask {
+                name: task.name(),
+                free_min: task.free_min,
+            });
+        }
+        Stats::Memory(proto::Memory {
+            heap_free,
+            heap_min,
+            tasks,
+            tasks_total,
+        })
+    }
+
+    #[inline(never)]
+    fn flash_section(&mut self) -> Stats<'_> {
+        let fill = self.platform.events_fill();
+        let stored = self.platform.totals();
+        Stats::Flash(Keeper::flash(
+            self.platform.erases(),
+            stored.as_ref(),
+            fill.kept,
+            fill.capacity,
+        ))
+    }
 }
 
 impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
@@ -1011,37 +1083,9 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
 
     fn stats(&mut self, section: StatsSection, now_ms: u32) -> Stats<'_> {
         match section {
-            StatsSection::Counters => {
-                let stored = self.platform.totals();
-                Stats::Counters(self.stats.counters(now_ms, stored.as_ref()))
-            }
-            StatsSection::Memory => {
-                let (heap_free, heap_min) = self.platform.heap();
-                let (stacks, tasks_total) = self.tasks.read(&mut *self.platform, now_ms);
-                let mut tasks = [None; TASKS_MAX];
-                for (out, task) in tasks.iter_mut().zip(stacks) {
-                    *out = Some(WireTask {
-                        name: task.name(),
-                        free_min: task.free_min,
-                    });
-                }
-                Stats::Memory(proto::Memory {
-                    heap_free,
-                    heap_min,
-                    tasks,
-                    tasks_total,
-                })
-            }
-            StatsSection::Flash => {
-                let fill = self.platform.events_fill();
-                let stored = self.platform.totals();
-                Stats::Flash(Keeper::flash(
-                    self.platform.erases(),
-                    stored.as_ref(),
-                    fill.kept,
-                    fill.capacity,
-                ))
-            }
+            StatsSection::Counters => self.counters_section(now_ms),
+            StatsSection::Memory => self.memory_section(now_ms),
+            StatsSection::Flash => self.flash_section(),
             StatsSection::Power => Stats::Power(self.stats.power_stats()),
             StatsSection::Food => Stats::Food(self.stats.food_stats()),
             StatsSection::Feeds => Stats::Feeds(self.stats.feed_stats(self.platform.traces_fill())),

@@ -596,6 +596,9 @@ pub fn outlet_breaks(pins: &PinWatch) -> u32 {
 /// The body of a `PLOWN1` line.
 impl core::fmt::Display for Record {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // Traces and pin watches are borrowed, not bound by value: a copy
+        // would sit in this frame, which the stack audit charges at every
+        // nesting level of every line the loop formats.
         match *self {
             Record::Journal { error, created } => write!(
                 f,
@@ -637,9 +640,9 @@ impl core::fmt::Display for Record {
                 result.code()
             ),
             Record::Fed {
-                result,
+                ref result,
                 durability,
-                trace,
+                ref trace,
             } => write!(
                 f,
                 "fed id={} requested={} completed={} outcome={} reason={} durable={} drive_ms={} rising={} falling={}",
@@ -653,7 +656,7 @@ impl core::fmt::Display for Record {
                 trace.rising,
                 trace.falling,
             ),
-            Record::Current { feed, trace } => {
+            Record::Current { feed, ref trace } => {
                 write!(f, "current id={feed} first_edge_ms=")?;
                 match trace.first_edge_ms {
                     Some(ms) => write!(f, "{ms}")?,
@@ -676,7 +679,7 @@ impl core::fmt::Display for Record {
                     }
                 )
             }
-            Record::Edges { feed, trace } => {
+            Record::Edges { feed, ref trace } => {
                 write!(f, "edges id={feed} at=")?;
                 let mut logged = trace.edge_ms.iter().flatten().peekable();
                 if logged.peek().is_none() {
@@ -719,7 +722,7 @@ impl core::fmt::Display for Record {
             Record::Held { portions, held } => {
                 write!(f, "feed portions={portions} held={}", held.code())
             }
-            Record::Joins(status) => write!(
+            Record::Joins(ref status) => write!(
                 f,
                 "joins refused={} deferred={} forced={} waited_max_ms={} long_joins={}",
                 status.refused,
@@ -728,7 +731,7 @@ impl core::fmt::Display for Record {
                 status.waited_max_ms,
                 status.long_joins,
             ),
-            Record::Writes(status) => write!(
+            Record::Writes(ref status) => write!(
                 f,
                 "interlock writes_deferred={} writes_forced={} write_waited_max_ms={} \
                  feeds_delayed={}",
@@ -737,7 +740,7 @@ impl core::fmt::Display for Record {
                 status.write_waited_max_ms,
                 status.feeds_delayed
             ),
-            Record::Pins { feed, pins } => {
+            Record::Pins { feed, ref pins } => {
                 let [start_a, start_b] = pins.start.unwrap_or_default();
                 let [changed_a, changed_b] = pins.changed;
                 write!(

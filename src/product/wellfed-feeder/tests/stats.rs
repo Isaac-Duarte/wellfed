@@ -259,4 +259,14 @@ fn lifetime_figures_add_this_boot_to_the_stored_totals() {
     assert_eq!(lifetime.update, 7);
     assert_eq!(flash.boot, boot);
     assert_eq!(Keeper::flash(boot, None, 1, 2).lifetime, None);
+
+    // Held at the top, for a sector's count and for bank 1's.
+    let mut full = stored;
+    full.storage[13] = u32::MAX;
+    full.update = u32::MAX;
+    let lifetime = Keeper::flash(boot, Some(&full), 1, 2).lifetime.unwrap();
+    assert_eq!(
+        (lifetime.storage[13], lifetime.update),
+        (u32::MAX, u32::MAX)
+    );
 }

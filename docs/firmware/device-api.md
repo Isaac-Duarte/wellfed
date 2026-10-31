@@ -452,7 +452,7 @@ From the `feeder` builds' manifest audits and `PLAPI1` records:
 | Loop stack bound | 3,912 of 6,144 | 4,552 of 8,192 | 5,412 of 8,192 |
 | Heap free, steady | 146,464 | 125,088 | — |
 
-- **Stack.** The loop's stack is 8 KiB. At 6 KiB the bound sat 56 bytes under the audit's 25 % margin. The recovery responder's 1.2 KB frame runs out of line (`rescue_op`), so it never nests under the handshake step's 1.1 KB. The deepest path in the latest build is still a feed's submission under a session's request.
+- **Stack.** The loop's stack is 8 KiB. At 6 KiB the bound sat 56 bytes under the audit's 25 % margin. The recovery responder's 1.2 KB frame runs out of line (`rescue_op`), so it never nests under the handshake step's 1.1 KB. The [resource budget](resource-budget.md#tasks) names the deepest path in the latest build.
 - **Heap.** Flat at 125,088 free over minutes, and through a garbage flood. The difference from the first product budget is not yet attributed.
 - **Other tasks' bounds:** `wellfed` 2,808 of 4,096, `wellfed-key` 1,248 of 2,048, `wellfed-svc` 11,744 of 16,384, `wellfed-wdg` 1,420 of 2,048.
 
