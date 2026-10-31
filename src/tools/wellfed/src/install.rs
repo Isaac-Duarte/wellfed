@@ -33,7 +33,7 @@ mod network;
 mod screen;
 
 use std::ffi::OsString;
-use std::io::IsTerminal;
+use std::io::{BufRead, IsTerminal};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -41,7 +41,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use guide::Guide;
-use network::{FrameRefused, Host, Nmcli};
+use network::{FrameRefused, Host, Link, Nmcli};
 use screen::{Detail, Screen, Style};
 use tokio::signal::unix::{SignalKind, signal};
 use wellfed_client::install::{InstallError, Provision, SetupFrame, StockBackup, manifest_version};
@@ -260,29 +260,110 @@ enum Refused {
     /// The frame would point stock at this address after the Reset hold has
     /// erased everything, so a stale one strands it. Checked before that hold.
     #[error(
-        "the setup frame would tell the feeder its broker is {broker}, which is not an address of this computer: {} may be stale. Nothing was asked of the feeder. Remove it for this run to write it again, or pass --broker <this computer's address>:1883",
+        "the setup frame would tell the feeder its broker is {broker}, which is not an address of this computer, so {} looks stale. Nothing was asked of the feeder. Remove that file, and this run writes a new one for {ssid:?}",
         path.display()
     )]
-    BrokerNotHere { path: PathBuf, broker: SocketAddr },
+    BrokerNotHere {
+        path: PathBuf,
+        broker: SocketAddr,
+        ssid: String,
+    },
+    /// An address of this computer, but not one a feeder on `ssid` can reach:
+    /// the hotspot's, say, on a run that gives it the home network.
+    #[error(
+        "the setup frame would tell the feeder its broker is {broker}, on this computer's Wi-Fi network {on:?}, but it joins {ssid:?}, so {} looks stale. Nothing was asked of the feeder. Remove that file, and this run writes a new one for {ssid:?}",
+        path.display()
+    )]
+    BrokerOnOtherNetwork {
+        path: PathBuf,
+        broker: SocketAddr,
+        on: String,
+        ssid: String,
+    },
+    /// The server listens where the config says (`Bind::Configured`), so a
+    /// frame naming anywhere else points stock at nothing.
+    #[error(
+        "--broker {broker} is not where {} has the broker listen, {listen}. Nothing was asked of the feeder. Remove that file, and this run writes a new one with --broker",
+        path.display()
+    )]
+    BrokerNotListening {
+        path: PathBuf,
+        broker: SocketAddr,
+        listen: SocketAddr,
+    },
+    #[error(
+        "you did not confirm that the feeder on {ssid:?} can reach this computer at {broker}. Nothing was asked of the feeder"
+    )]
+    BrokerNotConfirmed { broker: SocketAddr, ssid: String },
 }
 
-/// The broker a frame would name, which only a broker on this computer can be:
-/// its server runs here. Refused before the Reset hold wipes the feeder.
+/// The broker a frame would name must be where this run's server listens, and
+/// on the network the frame gives the feeder: after the Reset hold wipes it,
+/// the feeder goes there and nowhere else. Where this computer cannot read that
+/// network's name, as on a wired interface, `confirm` asks once.
 fn require_broker_here(
     args: &InstallArgs,
     host: &impl Host,
     config: &ServerConfig,
     path: &Path,
+    confirm: impl FnOnce(&str) -> Result<bool>,
 ) -> Result<()> {
-    if args.ssid.is_none() {
+    let Some(ssid) = args.ssid.clone() else {
         return Ok(());
+    };
+    let path = path.to_path_buf();
+    let listen = config.mqtt_listen;
+    let broker = args.broker.unwrap_or(listen);
+    if broker != listen {
+        return Err(Refused::BrokerNotListening {
+            path,
+            broker,
+            listen,
+        }
+        .into());
     }
-    let broker = args.broker.unwrap_or(config.mqtt_listen);
-    wellfed_formats::require(host.holds(broker.ip()), || Refused::BrokerNotHere {
-        path: path.to_path_buf(),
-        broker,
-    })?;
-    Ok(())
+    let Some(interface) = host.interface_of(broker.ip()) else {
+        return Err(Refused::BrokerNotHere { path, broker, ssid }.into());
+    };
+    match host.link(&interface) {
+        Link::Wifi(on) if on == ssid => Ok(()),
+        Link::Wifi(on) => Err(Refused::BrokerOnOtherNetwork {
+            path,
+            broker,
+            on,
+            ssid,
+        }
+        .into()),
+        Link::NotWifi | Link::Unknown => {
+            let question = format!(
+                "This computer cannot read which network {} on {interface} is part of. Can a \
+                 device on {ssid:?} reach this computer at {}? The feeder, once wiped, looks for \
+                 it there and nowhere else. [y/N]",
+                broker.ip(),
+                broker.ip()
+            );
+            wellfed_formats::require(confirm(&question)?, || Refused::BrokerNotConfirmed {
+                broker,
+                ssid,
+            })?;
+            Ok(())
+        }
+    }
+}
+
+/// One yes or no at this terminal, before anything else reads standard input
+/// for the run. Only `y` or `yes` is yes; a closed input is no.
+fn confirm_at_terminal(question: &str) -> Result<bool> {
+    eprintln!("{question}");
+    let mut line = String::new();
+    std::io::stdin()
+        .lock()
+        .read_line(&mut line)
+        .context("read the answer")?;
+    Ok(matches!(
+        line.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
 }
 
 /// How a run's progress reaches the person.
@@ -464,7 +545,7 @@ pub(crate) async fn run(args: InstallArgs) -> Result<()> {
     if config.has_plan_snapshot() {
         return Err(ConfigRefused::PlanSnapshot { path: config_path }.into());
     }
-    require_broker_here(&args, &Nmcli, &config, &config_path)?;
+    require_broker_here(&args, &Nmcli, &config, &config_path, confirm_at_terminal)?;
     let directory = config_path.parent().context("config directory missing")?;
     let _lease = Lease::acquire_in(directory).context("bench lease")?;
 
@@ -607,18 +688,41 @@ const INTRODUCTION: &str = "\nInstalling Wellfed, in five steps. Stay near the f
 /// Resolves on SIGTERM, SIGINT or SIGHUP, so a terminal that closes still ends
 /// the run through its stop, which undoes a hop to the feeder's network. Once
 /// seen, the handlers stay installed but nothing listens, so a second Ctrl-C
-/// does not cut the stop short; the stop is itself bounded.
+/// does not cut the stop short; the stop is itself bounded. A SIGHUP this
+/// process was started ignoring (`nohup`) stays ignored: whoever started it
+/// asked for the run to outlive the terminal.
 pub(crate) fn signalled() -> Result<impl Future<Output = Stop>> {
     let mut terminate = signal(SignalKind::terminate()).context("handle SIGTERM")?;
     let mut interrupt = signal(SignalKind::interrupt()).context("handle SIGINT")?;
-    let mut hangup = signal(SignalKind::hangup()).context("handle SIGHUP")?;
+    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    let mut hangup = if hangup_ignored(&status) {
+        None
+    } else {
+        Some(signal(SignalKind::hangup()).context("handle SIGHUP")?)
+    };
     Ok(async move {
+        let hung_up = async {
+            match &mut hangup {
+                Some(hangup) => hangup.recv().await,
+                None => std::future::pending().await,
+            }
+        };
         tokio::select! {
             _ = terminate.recv() => Stop::Terminate,
             _ = interrupt.recv() => Stop::Interrupt,
-            _ = hangup.recv() => Stop::Hangup,
+            _ = hung_up => Stop::Hangup,
         }
     })
+}
+
+/// Whether `/proc/self/status` lists SIGHUP, signal 1 and so the mask's lowest
+/// bit, among the ignored signals.
+fn hangup_ignored(status: &str) -> bool {
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("SigIgn:"))
+        .and_then(|mask| u64::from_str_radix(mask.trim(), 16).ok())
+        .is_some_and(|mask| mask & 1 == 1)
 }
 
 /// How the replacement is paired, by the review's provisioning.
@@ -1368,37 +1472,102 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("installer.json");
-        let here = FakeHost {
-            address: Some("10.42.103.1".parse().unwrap()),
-            held: vec!["10.42.103.1".parse().unwrap()],
+        let on_network = |ssid: &str, address: &str| FakeHost {
+            address: Some(address.parse().unwrap()),
+            held: vec![address.parse().unwrap()],
+            link: Some(Link::Wifi(ssid.into())),
             ..FakeHost::default()
         };
+        let never = |question: &str| -> Result<bool> { panic!("asked: {question}") };
+        let refused = |error: anyhow::Error| error.downcast::<Refused>().unwrap();
+
+        let here = on_network("Lab", "10.42.103.1");
         let frame = args(&["--ssid", "Lab"]);
         ensure_config(&frame, &here, &path).unwrap();
         let config: ServerConfig = wellfed_formats::load(&path).unwrap();
-        require_broker_here(&frame, &here, &config, &path).unwrap();
+        require_broker_here(&frame, &here, &config, &path, never).unwrap();
 
         // The same config on a computer that has moved on.
-        let moved = FakeHost {
-            held: vec!["10.42.103.9".parse().unwrap()],
-            ..FakeHost::default()
-        };
-        let error = require_broker_here(&frame, &moved, &config, &path).unwrap_err();
+        let moved = on_network("Lab", "10.42.103.9");
+        let error = require_broker_here(&frame, &moved, &config, &path, never).unwrap_err();
         assert!(matches!(
-            error.downcast_ref::<Refused>(),
-            Some(Refused::BrokerNotHere { broker, .. }) if broker.ip().to_string() == "10.42.103.1"
+            refused(error),
+            Refused::BrokerNotHere { broker, .. } if broker.ip().to_string() == "10.42.103.1"
         ));
 
-        // --broker is what the frame would name, so it is what must be here.
-        let named = args(&["--ssid", "Lab", "--broker", "10.42.103.9:1883"]);
-        require_broker_here(&named, &moved, &config, &path).unwrap();
+        // The hotspot's address is this computer's, but a feeder given the
+        // home network cannot reach it.
+        let home = args(&["--ssid", "Home"]);
+        let error = require_broker_here(&home, &here, &config, &path, never).unwrap_err();
+        let error = refused(error);
+        assert!(error.to_string().contains("Remove that file"), "{error}");
+        assert!(matches!(
+            error,
+            Refused::BrokerOnOtherNetwork { on, ssid, .. } if on == "Lab" && ssid == "Home"
+        ));
 
-        require_broker_here(&args(&[]), &moved, &config, &path).unwrap();
+        // --broker names what the frame says, but the server listens where the
+        // config has it, so it must be the same address.
+        let named = args(&["--ssid", "Lab", "--broker", "10.42.103.9:1883"]);
+        let error = require_broker_here(&named, &moved, &config, &path, never).unwrap_err();
+        assert!(matches!(refused(error), Refused::BrokerNotListening { .. }));
+
+        // No frame names nothing.
+        require_broker_here(&args(&[]), &moved, &config, &path, never).unwrap();
+
+        // A network it cannot read, or a wired interface: asked once, naming
+        // the address and the network, and only a yes passes.
+        for link in [Link::Unknown, Link::NotWifi] {
+            let unread = FakeHost {
+                link: Some(link),
+                ..on_network("", "10.42.103.1")
+            };
+            let mut asked = String::new();
+            require_broker_here(&frame, &unread, &config, &path, |question| {
+                asked = question.to_string();
+                Ok(true)
+            })
+            .unwrap();
+            assert!(asked.contains("10.42.103.1"), "{asked}");
+            assert!(asked.contains("\"Lab\""), "{asked}");
+
+            let error =
+                require_broker_here(&frame, &unread, &config, &path, |_| Ok(false)).unwrap_err();
+            assert!(matches!(refused(error), Refused::BrokerNotConfirmed { .. }));
+        }
+
+        // The refusal's advice works: with the file gone, the run writes one
+        // for the network it was given, which then passes.
+        std::fs::remove_file(&path).unwrap();
+        let home_here = on_network("Home", "192.168.4.20");
+        ensure_config(&home, &home_here, &path).unwrap();
+        let config: ServerConfig = wellfed_formats::load(&path).unwrap();
+        require_broker_here(&home, &home_here, &config, &path, never).unwrap();
+
+        // So does the same for a stale --broker.
+        std::fs::remove_file(&path).unwrap();
+        let broker = args(&["--ssid", "Home", "--broker", "192.168.4.20:1883"]);
+        ensure_config(&broker, &FakeHost::default(), &path).unwrap();
+        let config: ServerConfig = wellfed_formats::load(&path).unwrap();
+        require_broker_here(&broker, &home_here, &config, &path, never).unwrap();
+    }
+
+    #[test]
+    fn an_ignored_hangup_is_read_from_the_process_status() {
+        let status = |mask: &str| format!("Name:\twellfed\nSigIgn:\t{mask}\nSigCgt:\t0\n");
+        assert!(hangup_ignored(&status("0000000000000001")));
+        assert!(hangup_ignored(&status("0000000000001003")));
+        assert!(!hangup_ignored(&status("0000000000001000")));
+        assert!(!hangup_ignored(""));
     }
 
     /// A terminal that closes ends the run through its stop, so a hop is undone.
     #[tokio::test]
     async fn a_closed_terminal_stops_the_run() {
+        // Under nohup the signal stays ignored, by design, and nothing would end.
+        if hangup_ignored(&std::fs::read_to_string("/proc/self/status").unwrap_or_default()) {
+            return;
+        }
         let stop = signalled().unwrap();
         let status = std::process::Command::new("kill")
             .args(["-HUP", &std::process::id().to_string()])

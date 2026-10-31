@@ -149,9 +149,9 @@ pub(crate) trait Host {
     /// its hotspot.
     fn address_on(&self, ssid: &str) -> Option<Ipv4Addr>;
 
-    /// Whether `address` is on one of this computer's interfaces. Unread counts
-    /// as no.
-    fn holds(&self, address: IpAddr) -> bool;
+    /// The interface of this computer's that holds `address`. Unread counts as
+    /// none.
+    fn interface_of(&self, address: IpAddr) -> Option<String>;
 }
 
 /// What the check before the frame found.
@@ -360,18 +360,16 @@ fn parse_iw_link(output: &str) -> Option<String> {
         .filter(|ssid| !ssid.is_empty())
 }
 
-/// Whether `address` shows in `ip -o addr show`, as `inet` or `inet6` with its
-/// prefix length.
-fn parse_holds(listing: &str, address: IpAddr) -> bool {
-    listing.lines().any(|line| {
-        let mut words = line.split_whitespace();
-        while let Some(word) = words.next() {
-            if word == "inet" || word == "inet6" {
-                let held = words.next().and_then(|held| held.split('/').next());
-                return held.and_then(|held| held.parse().ok()) == Some(address);
-            }
-        }
-        false
+/// The interface `ip -o addr show` lists `address` on: each line is its index,
+/// its name, `inet` or `inet6`, then the address with its prefix length.
+fn parse_interface_of(listing: &str, address: IpAddr) -> Option<String> {
+    listing.lines().find_map(|line| {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let [_, interface, _, held, ..] = words.as_slice() else {
+            return None;
+        };
+        let held: IpAddr = held.split('/').next()?.parse().ok()?;
+        (held == address).then(|| (*interface).to_string())
     })
 }
 
@@ -404,17 +402,18 @@ fn named(field: &str) -> Option<String> {
 }
 
 /// The Wi-Fi interfaces in `nmcli -t -f DEVICE,TYPE,CONNECTION device`. A
-/// connection is free to replace only if `mode` reads it as a plain client:
-/// a hop must not take down a hotspot it failed to recognize.
+/// connection is free to replace only if `mode` reads it as a plain client,
+/// which a blank mode is to NetworkManager too. One it could not read (`None`)
+/// is not: a hop must not take down a hotspot it failed to recognize.
 fn parse_radios(listing: &str, mode: impl Fn(&str) -> Option<String>) -> Vec<Radio> {
     listing
         .lines()
         .filter_map(|line| match terse_fields(line).as_slice() {
             [interface, kind, connection] if kind == "wifi" => {
                 let connection = named(connection);
-                let reserved = connection
-                    .as_deref()
-                    .is_some_and(|name| mode(name).as_deref() != Some("infrastructure"));
+                let reserved = connection.as_deref().is_some_and(|name| {
+                    !matches!(mode(name).as_deref(), Some("infrastructure" | ""))
+                });
                 Some(Radio {
                     interface: interface.clone(),
                     connection,
@@ -492,7 +491,16 @@ impl Host for Nmcli {
     fn radios(&self) -> Result<Vec<Radio>, HostError> {
         let listing = Self::nmcli(&["-t", "-f", "DEVICE,TYPE,CONNECTION", "device"])?;
         Ok(parse_radios(&listing, |name| {
-            Self::connection_field(name, "802-11-wireless.mode")
+            // Not `connection_field`, which reads blank and failed alike.
+            let args = [
+                "-g",
+                "802-11-wireless.mode",
+                "connection",
+                "show",
+                "id",
+                name,
+            ];
+            Self::nmcli(&args).ok().map(|mode| mode.trim().to_string())
         }))
     }
 
@@ -555,8 +563,9 @@ impl Host for Nmcli {
         address.lines().next()?.split('/').next()?.parse().ok()
     }
 
-    fn holds(&self, address: IpAddr) -> bool {
-        Self::run("ip", &["-o", "addr", "show"]).is_ok_and(|listing| parse_holds(&listing, address))
+    fn interface_of(&self, address: IpAddr) -> Option<String> {
+        let listing = Self::run("ip", &["-o", "addr", "show"]).ok()?;
+        parse_interface_of(&listing, address)
     }
 }
 
@@ -653,8 +662,8 @@ pub(crate) mod tests {
             self.address
         }
 
-        fn holds(&self, address: IpAddr) -> bool {
-            self.held.contains(&address)
+        fn interface_of(&self, address: IpAddr) -> Option<String> {
+            self.held.contains(&address).then(|| "wlan9".to_string())
         }
     }
 
@@ -688,8 +697,8 @@ pub(crate) mod tests {
             (**self).address_on(ssid)
         }
 
-        fn holds(&self, address: IpAddr) -> bool {
-            (**self).holds(address)
+        fn interface_of(&self, address: IpAddr) -> Option<String> {
+            (**self).interface_of(address)
         }
     }
 
@@ -925,9 +934,11 @@ pub(crate) mod tests {
 
         let listing = "1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever\n\
                        3: wlan0    inet 10.42.103.1/24 brd 10.42.103.255 scope global wlan0\n";
-        assert!(parse_holds(listing, "10.42.103.1".parse().unwrap()));
-        assert!(!parse_holds(listing, "10.42.103.2".parse().unwrap()));
-        assert!(!parse_holds("", "10.42.103.1".parse().unwrap()));
+        let of = |listing, address: &str| parse_interface_of(listing, address.parse().unwrap());
+        assert_eq!(of(listing, "10.42.103.1").as_deref(), Some("wlan0"));
+        assert_eq!(of(listing, "127.0.0.1").as_deref(), Some("lo"));
+        assert_eq!(of(listing, "10.42.103.2"), None);
+        assert_eq!(of("", "10.42.103.1"), None);
     }
 
     #[test]
@@ -974,6 +985,8 @@ pub(crate) mod tests {
         // A plain client is free to replace. A mode it could not read is not.
         let client = parse_radios("wlan0:wifi:Home\n", |_| Some("infrastructure".to_string()));
         assert_eq!(client, [radio("wlan0", Some("Home"), false)]);
+        let blank = parse_radios("wlan0:wifi:Home\n", |_| Some(String::new()));
+        assert_eq!(blank, [radio("wlan0", Some("Home"), false)]);
         let unread = parse_radios("wlan0:wifi:Home\n", |_| None);
         assert_eq!(unread, [radio("wlan0", Some("Home"), true)]);
         assert_eq!(pick(&unread), None);

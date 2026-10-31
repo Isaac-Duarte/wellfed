@@ -81,7 +81,7 @@ This is the app's main route. The vendor app provisions a PLAF103 through the fe
 
 **On a computer.** Before the frame goes, `wellfed install` checks that the route to 192.168.1.1 leaves through an interface on a network named `PL-AF103-…`. The frame carries your Wi-Fi password in the clear, and many home routers are 192.168.1.1 too, so a frame sent from home Wi-Fi would hand it to the router. Any other network, a route through a gateway, no route, or a route it cannot read is refused, and nothing is sent. It reads the network's name from NetworkManager, then from `iw`. If neither can tell, it names the interface, says the password goes out over it in the clear, and asks you to type the network's name. Only a name of that form passes. Right before the send it reads the route again, and sends from this computer's address on that link, so a link that dropped fails instead of reaching a router.
 
-Before any of this, the run refuses a config whose broker address is not on this computer. Holding Reset wipes the feeder, and a stale address in the frame would leave it looking in the wrong place.
+Before any of this, the run checks the broker address the frame would name, since holding Reset wipes the feeder and a stale address would leave it looking in the wrong place. The address must be where the config has the server listen, and on the interface whose network is `--ssid`. If that network's name cannot be read, as on a wired interface, the run names the address and the network and asks once. Otherwise it refuses, and removing the config lets the run write a new one.
 
 On Linux with NetworkManager it hops by itself:
 
@@ -194,7 +194,7 @@ Two steps need presses at the panel inside a window the feeder times itself: the
 
 In either mode, a standard input that closes before an answer ends the run. It is never read as no, nor as done. In `lines` mode an answer of the wrong kind, such as `"yes"` to the restart, ends it too.
 
-**Stopping it.** SIGTERM, Ctrl-C or a terminal that closes (SIGHUP) ends the run the way its end does: it stops the image server and the stock server's broker, then exits with an error that names the step it stopped in. It also names a write whose outcome had not settled:
+**Stopping it.** SIGTERM, Ctrl-C or a terminal that closes (SIGHUP, unless started under `nohup`, which keeps it running) ends the run the way its end does: it stops the image server and the stock server's broker, then exits with an error that names the step it stopped in. It also names a write whose outcome had not settled:
 
 - the install request, from when it is sent until the replacement answers;
 - the promotion's push, until bank 1 confirms it;
