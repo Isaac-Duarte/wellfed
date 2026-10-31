@@ -148,6 +148,10 @@ pub enum HistoryBody {
     Joined {
         fingerprint: String,
     },
+    /// An update signing key was added, with a press on the feeder.
+    UpdateKeyAdded {
+        fingerprint: String,
+    },
     Revoked {
         fingerprint: String,
         by: FedBy,

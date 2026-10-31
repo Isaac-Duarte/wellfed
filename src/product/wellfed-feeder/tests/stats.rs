@@ -142,7 +142,7 @@ fn the_gateway_metric_names_only_an_answer_since_the_last() {
         gateway_ms: ms,
         channel: Some(11),
         ap_changes: 1,
-        link_losses: 2,
+        link_losses: 3,
         check_losses: 1,
         dhcp_renewals: 4,
         ..Link::default()

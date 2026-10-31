@@ -1239,10 +1239,12 @@ pub struct Status<'a> {
     pub faults: u32,
     pub rssi: i32,
     pub wifi: WifiSource,
+    /// Every time this boot a joined link was lost and the feeder went on
+    /// to rejoin, whatever noticed it.
     pub link_losses: u32,
-    /// Losses the link check noticed (the DHCP lease ran out or the gateway
-    /// stopped answering) rather than the association. The name is from the
-    /// internet DNS check that check replaced, kept for the wire.
+    /// Those of `link_losses` the link check noticed (the DHCP lease ran out
+    /// or the gateway stopped answering) rather than the association. The
+    /// name is from the internet DNS check that check replaced.
     pub dns_losses: u32,
     /// Unix milliseconds, `None` while the clock is invalid.
     pub clock_ms: Option<u64>,
@@ -1309,8 +1311,8 @@ pub struct Supply {
     pub battery: Battery,
     /// Whether the feeding owner judges the pack below the floor a feed
     /// needs (with its hold and hysteresis); `None` before it has judged,
-    /// or in a firmware without one. Judged on the adapter too, where it
-    /// does not refuse feeds.
+    /// in a firmware without one, or with no pack fitted. Judged on the
+    /// adapter too, where it does not refuse feeds.
     pub below_floor: Option<bool>,
 }
 
@@ -1618,6 +1620,9 @@ pub enum Path {
     Setup,
     Invite,
     Recovery,
+    /// An owner's session asked and a press on the panel confirmed: how an
+    /// update signer's key joins.
+    Press,
 }
 
 /// A live measurement, sent only to subscribers and never stored.

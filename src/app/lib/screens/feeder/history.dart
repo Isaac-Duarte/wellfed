@@ -38,6 +38,7 @@ bool _shown(_Filter filter, HistoryBody body) => switch (filter) {
     HistoryBody_WifiChanged() ||
     HistoryBody_PlansChanged() ||
     HistoryBody_Joined() ||
+    HistoryBody_UpdateKeyAdded() ||
     HistoryBody_Revoked() ||
     HistoryBody_ClockSet() => true,
     _ => false,
@@ -305,6 +306,12 @@ class _EntryRow extends StatelessWidget {
         Glyph.add,
         c.textMuted,
         'Someone joined',
+        feeder.clientName(fingerprint),
+      ),
+      HistoryBody_UpdateKeyAdded(:final fingerprint) => (
+        Glyph.add,
+        c.textMuted,
+        'Update key added',
         feeder.clientName(fingerprint),
       ),
       HistoryBody_Revoked(:final fingerprint, :final by) => (

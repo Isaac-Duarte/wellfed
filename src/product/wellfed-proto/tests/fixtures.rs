@@ -1118,6 +1118,15 @@ fn messages() -> Vec<Fixture> {
             ]),
             feeder,
         ),
+        (
+            "event-enrolled-press",
+            entry(&EventBody::Enrolled {
+                client: [1, 2, 3, 4],
+                role: Role::UpdateSigner,
+                path: Path::Press,
+            }),
+            |b| decode::<EventBody>(b).is_ok(),
+        ),
     ]
 }
 

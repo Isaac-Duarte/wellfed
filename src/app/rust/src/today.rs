@@ -11,7 +11,8 @@ use wellfed_client::history::Feed;
 use wellfed_client::plans::{self, MealState};
 use wellfed_client::time::{feeder_zone, next_meal};
 use wellfed_model::{
-    Battery, Event, EventBody, FeedOutcome, Gap, Plans, Readiness, Settings, Source, Status,
+    Battery, ClientRole, Event, EventBody, FeedOutcome, Gap, Plans, Readiness, Settings, Source,
+    Status,
 };
 
 use crate::api::feeder::TimeInfo;
@@ -183,6 +184,13 @@ pub(crate) fn event_entry(event: &Event) -> HistoryEntry {
         EventBody::Settings { by, .. } => HistoryBody::SettingsChanged { by: source_of(by) },
         EventBody::Wifi { by, .. } => HistoryBody::WifiChanged { by: source_of(by) },
         EventBody::Plans { by, .. } => HistoryBody::PlansChanged { by: source_of(by) },
+        EventBody::Enrolled {
+            client,
+            role: ClientRole::UpdateSigner,
+            ..
+        } => HistoryBody::UpdateKeyAdded {
+            fingerprint: client.to_string(),
+        },
         EventBody::Enrolled { client, .. } => HistoryBody::Joined {
             fingerprint: client.to_string(),
         },
@@ -216,5 +224,38 @@ pub(crate) const fn gap_entry(gap: &Gap) -> HistoryEntry {
             from: gap.from,
             to: gap.to,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wellfed_model::{EnrollPath, Hex};
+
+    use super::*;
+
+    #[test]
+    fn a_key_enrolled_with_a_press_reads_as_an_update_key_and_a_client_as_joined() {
+        let entry = |role, path| {
+            event_entry(&Event {
+                epoch: 1,
+                seq: 1,
+                at: None,
+                body: EventBody::Enrolled {
+                    client: Hex([0xaa, 0xbb, 0xcc, 0xdd]),
+                    role,
+                    path,
+                },
+            })
+            .body
+        };
+
+        assert!(matches!(
+            entry(ClientRole::UpdateSigner, EnrollPath::Press),
+            HistoryBody::UpdateKeyAdded { fingerprint } if fingerprint == "aabbccdd"
+        ));
+        assert!(matches!(
+            entry(ClientRole::Member, EnrollPath::Invite),
+            HistoryBody::Joined { .. }
+        ));
     }
 }

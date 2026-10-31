@@ -226,7 +226,17 @@ impl Server {
                 {
                     Reply::Refused(Refusal::Invalid)
                 }
-                Some(KeyOutcome::Done | KeyOutcome::Duplicate) => {
+                Some(outcome @ (KeyOutcome::Done | KeyOutcome::Duplicate)) => {
+                    // A key that was already enrolled changed nothing, so it
+                    // leaves no history.
+                    if matches!(outcome, KeyOutcome::Done) {
+                        let body = EventBody::Enrolled {
+                            client: fingerprint(&key),
+                            role: proto::Role::UpdateSigner,
+                            path: proto::Path::Press,
+                        };
+                        device.record(now_ms, body);
+                    }
                     record(Record::UpdateKey {
                         slot: slot_id(index),
                         change: UpdateKeyChange::Enrolled,

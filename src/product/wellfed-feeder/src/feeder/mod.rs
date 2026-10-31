@@ -351,6 +351,7 @@ impl<P: Platform> Feeder<P> {
         // brownout hold is armed before the first readiness.
         let boot = self.serve.boot(&mut self.platform, now_ms);
         let reading = supply::supply(self.platform.supply(now_ms), feeds.below_floor());
+        let reading = self.supply.cells(now_ms, reading);
         let reset = crate::stats::reset_cause(boot.reset_flags);
         let changed = self
             .supply
@@ -530,6 +531,9 @@ impl<P: Platform> Feeder<P> {
             *by = Schedule::source(&mut self.platform, *feed, *by);
         }
         self.serve.stats().fed(&body);
+        // The writer saves the totals soon after a feed (`FEED_SAVE_MS`).
+        let counts = self.serve.stats().counts(now_ms);
+        self.platform.hand_counts(counts);
         events::record_outcome(&mut self.platform, now_ms, body);
     }
 
@@ -549,6 +553,7 @@ impl<P: Platform> Feeder<P> {
     pub fn device<'a, F: Feeds>(&'a mut self, now_ms: u32, feeds: &'a mut F) -> impl Device + 'a {
         let boot = self.serve.boot(&mut self.platform, now_ms);
         let supply = supply::supply(self.platform.supply(now_ms), feeds.below_floor());
+        let supply = self.supply.cells(now_ms, supply);
         let ntp_last = self.serve.ntp_last();
         let (stats, tasks, page) = self.serve.stats_parts();
         FeederDevice {

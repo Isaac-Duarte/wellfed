@@ -136,7 +136,7 @@ All storage-region sectors are named in one table, `wellfed_board_plaf103::stora
   - **Owner:** everything, including managing clients.
   - **Member:** feeding and settings.
   - **Server:** the optional server.
-  - **Update signer:** an owner's Ed25519 update-signing key, enrolled with `EnrollUpdateKey` once someone presses Dispense ([OTA design](ota-design.md#keys-and-anti-rollback)). It never opens a session.
+  - **Update signer:** an owner's Ed25519 update-signing key, enrolled with `EnrollUpdateKey` once someone presses Dispense ([OTA design](ota-design.md#keys-and-anti-rollback)), which the history records as `Enrolled { path: Press }`. It never opens a session.
 - **Reset:** the panel's factory reset forgets every client, then erases the store, and the next boot draws a new identity.
 
 > [!NOTE]

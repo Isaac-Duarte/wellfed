@@ -20,7 +20,8 @@
 //! **Early saves** are the one each boot makes as it starts, so its reset
 //! is counted even if it ends at once, and one at an intentional restart
 //! within `RESTART_SETTLED_MS` of boot (a later restart's save is
-//! `SaveKind::Restart`, outside the budget).
+//! `SaveKind::Restart`, outside the budget). A save after a feed
+//! (`SaveKind::Feed`) is outside it too.
 //! Each takes one of `EARLY_SAVES` tokens and each settled save (the
 //! hourly one) gives one back, so early saves never outnumber settled ones
 //! by more than `EARLY_SAVES`, which bounds the store's wear under any
@@ -106,6 +107,10 @@ pub enum SaveKind {
     /// settled stretch of uptime behind it. Only [`SaveKind::restart`]
     /// gives it, from the boot's uptime.
     Restart,
+    /// A finished feed's, at most every `FEED_SAVE_MS` and only with a feed
+    /// behind it, so a spent budget never costs a short boot its feeds:
+    /// neither takes a token nor gives one back.
+    Feed,
 }
 
 impl SaveKind {
@@ -147,7 +152,7 @@ impl Budget {
                 early: self.early.saturating_sub(1),
                 missed: self.missed,
             },
-            SaveKind::Restart => self,
+            SaveKind::Restart | SaveKind::Feed => self,
         }
     }
 }

@@ -630,6 +630,7 @@ impl From<proto::Path> for EnrollPath {
             proto::Path::Setup => Self::Setup,
             proto::Path::Invite => Self::Invite,
             proto::Path::Recovery => Self::Recovery,
+            proto::Path::Press => Self::Press,
         }
     }
 }
@@ -640,6 +641,7 @@ impl From<EnrollPath> for proto::Path {
             EnrollPath::Setup => Self::Setup,
             EnrollPath::Invite => Self::Invite,
             EnrollPath::Recovery => Self::Recovery,
+            EnrollPath::Press => Self::Press,
         }
     }
 }

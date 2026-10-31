@@ -241,7 +241,7 @@ So the owner extended the region to 32 sectors (0x340000–0x360000), then to 48
 
 **Stock's clock block.** The same pass found that stock's clock checkpoint save block-erases **0x3f0000–0x400000**, 64 KiB at a time, at minute 30 and on save. It is in `layout.json`'s preserve ranges (`clock_checkpoint_block`). Nothing of ours is near it.
 
-**Statistics wear.** Sectors 32–33 hold the lifetime statistics: one 288-byte record, saved hourly, as each boot starts and at an intentional restart, within a budget each hourly save refills by one. That is at most 6 erases plus 2 per hour of uptime under any crash pattern, about 8,800 a year of each sector ([statistics](device-api.md#statistics)).
+**Statistics wear.** Sectors 32–33 hold the lifetime statistics: one 288-byte record, saved hourly, as each boot starts and at an intentional restart, within a budget each hourly save refills by one. That is at most 6 erases plus 2 per hour of uptime under any crash pattern, about 8,800 a year of each sector. A save after a feed adds at most one erase per feed, and at most 6 an hour ([statistics](device-api.md#statistics)).
 
 ## mDNS
 

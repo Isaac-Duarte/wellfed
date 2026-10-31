@@ -14,9 +14,13 @@ const DHCP_ASSIGNED: i32 = 2;
 
 static RSSI: AtomicI32 = AtomicI32::new(0);
 static ATTEMPT: AtomicU32 = AtomicU32::new(0);
+/// Every loss of a joined link, whatever noticed it. An access point that
+/// goes silent usually shows first as an unanswered gateway, 11-16 s in and
+/// before the driver gives up on its beacons, so counting only the
+/// association would read 0 after a real outage.
 static LINK_LOSSES: AtomicU32 = AtomicU32::new(0);
-/// Losses the watch noticed (the lease or the gateway) rather than the
-/// association.
+/// Those of [`LINK_LOSSES`] the watch noticed (the lease or the gateway)
+/// rather than the association.
 static CHECK_LOSSES: AtomicU32 = AtomicU32::new(0);
 /// 0 none, 1 link, 2 the watch's check.
 static LAST_LOSS: AtomicU32 = AtomicU32::new(0);
@@ -40,7 +44,10 @@ static AP_CHANGES: AtomicU32 = AtomicU32::new(0);
 pub struct Status {
     pub rssi: i32,
     pub attempt: u32,
+    /// Every loss of a joined link.
     pub link_losses: u32,
+    /// Those the watch noticed, the lease or the gateway, rather than the
+    /// association.
     pub check_losses: u32,
     pub last_loss: u32,
     /// The link is known good: associated, leased and, once its gateway
@@ -66,14 +73,15 @@ pub fn observe(event: &WifiEvent) {
             GENERATION.fetch_add(1, Ordering::Release);
         }
         WifiEvent::LOST => {
-            // Any cause but the association's is the watch's check.
-            let (counter, cause) = if event.result != 0 {
-                (&CHECK_LOSSES, 2)
-            } else {
-                (&LINK_LOSSES, 1)
-            };
+            LINK_LOSSES.fetch_add(1, Ordering::Relaxed);
 
-            counter.fetch_add(1, Ordering::Relaxed);
+            // Any cause but the association's is the watch's check.
+            let cause = if event.result != 0 {
+                CHECK_LOSSES.fetch_add(1, Ordering::Relaxed);
+                2
+            } else {
+                1
+            };
             LAST_LOSS.store(cause, Ordering::Relaxed);
             CHANNEL.store(0, Ordering::Relaxed);
             GENERATION.fetch_add(1, Ordering::Release);

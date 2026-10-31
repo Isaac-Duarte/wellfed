@@ -463,6 +463,9 @@ pub enum EnrollPath {
     Setup,
     Invite,
     Recovery,
+    /// A session asked and a press on the feeder's panel confirmed: how an
+    /// update signer's key joins.
+    Press,
 }
 
 /// A live measurement, sent only to subscribers and never stored on the

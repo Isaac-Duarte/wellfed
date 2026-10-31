@@ -54,9 +54,10 @@ pub enum BuildWifi {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Link {
     pub rssi: i32,
+    /// Every loss of the joined link, whatever noticed it.
     pub link_losses: u32,
-    /// Losses the link's checks found (its gateway stopped answering, or its
-    /// lease went).
+    /// Those the link's checks found (its gateway stopped answering, or its
+    /// lease went) rather than the association.
     pub check_losses: u32,
     /// Leases renewed (or rebound) without a rejoin.
     pub dhcp_renewals: u32,

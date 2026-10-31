@@ -8,6 +8,16 @@
 //! `Supply` metric, the status and the events carry it as it is, unknowns
 //! named, with the pack's charge on stock's curve.
 //!
+//! **No cells.** On the adapter a pack reads its own voltage and an empty
+//! holder reads about 16 mV at the pin, so "no pack" is told from "a flat
+//! pack" by [`Pack::Absent`]'s threshold, and a pack that is not there has
+//! no floor to be below: [`supply`] reports no verdict for it, whatever
+//! the owner made of the near-zero channel. Cutting the adapter breaks
+//! that reading: the decaying 5 V rail shows on the channel as a plausible
+//! pack for the moment before the board stops. Cells cannot be fitted to a
+//! board in that moment, so [`Watch::cells`] keeps "no pack" across it,
+//! until the channel has read something else for [`CELLS_MS`].
+//!
 //! **Events.** The adapter coming or going and the pack crossing its floor
 //! are recorded as `Supply` events, at most one per [`EVENT_MS`]: a change
 //! inside that window is recorded once it ends, as the supply then stands,
@@ -74,8 +84,22 @@ pub const RELEASE_PERCENT: u8 = 50;
 /// feeding owner's.
 pub const RELEASE_MS: u32 = 180_000;
 
-/// The wire's form of a judged reading, with the owner's verdict.
+/// How long the channel must read something else, after the adapter read
+/// no pack, before it is believed. A board with no cells does not run this
+/// long past a cut (the radio's own wait, [`RADIO_OFF_MS`], rests on the same
+/// fact), and cells fitted on the adapter showing this much later costs
+/// nothing.
+pub const CELLS_MS: u32 = RADIO_OFF_MS;
+
+/// The wire's form of a judged reading, with the owner's verdict. A pack
+/// that is not there is not below anything: the owner judges the channel
+/// (near zero, so under its cutoff) with or without one.
 pub fn supply(reading: Reading, below_floor: Option<bool>) -> Supply {
+    let below_floor = if matches!(reading.pack, Pack::Absent) {
+        None
+    } else {
+        below_floor
+    };
     let battery = match reading.pack {
         Pack::Absent => Battery::Absent,
         Pack::Reading { mv, percent } => Battery::Reading { mv, percent },
@@ -171,6 +195,15 @@ pub struct Watch {
     radio: Option<Radio>,
     /// When battery mode last brought the radio back on.
     radio_on_ms: Option<u32>,
+    no_cells: Option<NoCells>,
+}
+
+/// The adapter's samples read no pack, so what the channel shows next is
+/// not yet a pack.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct NoCells {
+    /// Since when the channel has read something else.
+    other_since: Option<u32>,
 }
 
 impl Default for Watch {
@@ -188,6 +221,38 @@ impl Watch {
             mode: Mode::Mains,
             radio: None,
             radio_on_ms: None,
+            no_cells: None,
+        }
+    }
+
+    /// `supply` as the rest of the loop and the device API should see it:
+    /// no pack while the adapter's last word was that there is none, and
+    /// the channel has read otherwise for less than [`CELLS_MS`]. Taken
+    /// before [`Self::note`] on the same reading.
+    pub fn cells(&mut self, now_ms: u32, supply: Supply) -> Supply {
+        // No fresh sample says nothing either way.
+        let Some(adapter) = supply.adapter else {
+            return supply;
+        };
+        if supply.battery == Battery::Absent {
+            if adapter || self.no_cells.is_some() {
+                self.no_cells = Some(NoCells { other_since: None });
+            }
+            return supply;
+        }
+
+        let Some(no_cells) = self.no_cells.as_mut() else {
+            return supply;
+        };
+        let since = *no_cells.other_since.get_or_insert(now_ms);
+        if now_ms.wrapping_sub(since) >= CELLS_MS {
+            self.no_cells = None;
+            return supply;
+        }
+        Supply {
+            battery: Battery::Absent,
+            below_floor: None,
+            ..supply
         }
     }
 

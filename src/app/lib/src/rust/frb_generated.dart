@@ -3555,37 +3555,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 7:
         return HistoryBody_Joined(fingerprint: dco_decode_String(raw[1]));
       case 8:
+        return HistoryBody_UpdateKeyAdded(
+          fingerprint: dco_decode_String(raw[1]),
+        );
+      case 9:
         return HistoryBody_Revoked(
           fingerprint: dco_decode_String(raw[1]),
           by: dco_decode_box_autoadd_fed_by(raw[2]),
         );
-      case 9:
-        return HistoryBody_ClockSet(by: dco_decode_box_autoadd_fed_by(raw[1]));
       case 10:
-        return HistoryBody_Lost(count: dco_decode_u_16(raw[1]));
+        return HistoryBody_ClockSet(by: dco_decode_box_autoadd_fed_by(raw[1]));
       case 11:
+        return HistoryBody_Lost(count: dco_decode_u_16(raw[1]));
+      case 12:
         return HistoryBody_FeedingBlocked(
           reason: dco_decode_opt_box_autoadd_blocked(raw[1]),
         );
-      case 12:
+      case 13:
         return HistoryBody_MealSoon(
           minute: dco_decode_u_16(raw[1]),
           portions: dco_decode_u_8(raw[2]),
         );
-      case 13:
+      case 14:
         return HistoryBody_Supply(
           adapter: dco_decode_opt_box_autoadd_bool(raw[1]),
         );
-      case 14:
-        return HistoryBody_DispenseRefused(reason: dco_decode_blocked(raw[1]));
       case 15:
-        return HistoryBody_Food(level: dco_decode_food_level(raw[1]));
+        return HistoryBody_DispenseRefused(reason: dco_decode_blocked(raw[1]));
       case 16:
+        return HistoryBody_Food(level: dco_decode_food_level(raw[1]));
+      case 17:
         return HistoryBody_Gap(
           from: dco_decode_u_64(raw[1]),
           to: dco_decode_u_64(raw[2]),
         );
-      case 17:
+      case 18:
         return HistoryBody_Other();
       default:
         throw Exception("unreachable");
@@ -6548,35 +6552,38 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return HistoryBody_Joined(fingerprint: var_fingerprint);
       case 8:
         var var_fingerprint = sse_decode_String(deserializer);
+        return HistoryBody_UpdateKeyAdded(fingerprint: var_fingerprint);
+      case 9:
+        var var_fingerprint = sse_decode_String(deserializer);
         var var_by = sse_decode_box_autoadd_fed_by(deserializer);
         return HistoryBody_Revoked(fingerprint: var_fingerprint, by: var_by);
-      case 9:
+      case 10:
         var var_by = sse_decode_box_autoadd_fed_by(deserializer);
         return HistoryBody_ClockSet(by: var_by);
-      case 10:
+      case 11:
         var var_count = sse_decode_u_16(deserializer);
         return HistoryBody_Lost(count: var_count);
-      case 11:
+      case 12:
         var var_reason = sse_decode_opt_box_autoadd_blocked(deserializer);
         return HistoryBody_FeedingBlocked(reason: var_reason);
-      case 12:
+      case 13:
         var var_minute = sse_decode_u_16(deserializer);
         var var_portions = sse_decode_u_8(deserializer);
         return HistoryBody_MealSoon(minute: var_minute, portions: var_portions);
-      case 13:
+      case 14:
         var var_adapter = sse_decode_opt_box_autoadd_bool(deserializer);
         return HistoryBody_Supply(adapter: var_adapter);
-      case 14:
+      case 15:
         var var_reason = sse_decode_blocked(deserializer);
         return HistoryBody_DispenseRefused(reason: var_reason);
-      case 15:
+      case 16:
         var var_level = sse_decode_food_level(deserializer);
         return HistoryBody_Food(level: var_level);
-      case 16:
+      case 17:
         var var_from = sse_decode_u_64(deserializer);
         var var_to = sse_decode_u_64(deserializer);
         return HistoryBody_Gap(from: var_from, to: var_to);
-      case 17:
+      case 18:
         return HistoryBody_Other();
       default:
         throw UnimplementedError('');
@@ -9990,38 +9997,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case HistoryBody_Joined(fingerprint: final fingerprint):
         sse_encode_i_32(7, serializer);
         sse_encode_String(fingerprint, serializer);
-      case HistoryBody_Revoked(fingerprint: final fingerprint, by: final by):
+      case HistoryBody_UpdateKeyAdded(fingerprint: final fingerprint):
         sse_encode_i_32(8, serializer);
+        sse_encode_String(fingerprint, serializer);
+      case HistoryBody_Revoked(fingerprint: final fingerprint, by: final by):
+        sse_encode_i_32(9, serializer);
         sse_encode_String(fingerprint, serializer);
         sse_encode_box_autoadd_fed_by(by, serializer);
       case HistoryBody_ClockSet(by: final by):
-        sse_encode_i_32(9, serializer);
+        sse_encode_i_32(10, serializer);
         sse_encode_box_autoadd_fed_by(by, serializer);
       case HistoryBody_Lost(count: final count):
-        sse_encode_i_32(10, serializer);
+        sse_encode_i_32(11, serializer);
         sse_encode_u_16(count, serializer);
       case HistoryBody_FeedingBlocked(reason: final reason):
-        sse_encode_i_32(11, serializer);
+        sse_encode_i_32(12, serializer);
         sse_encode_opt_box_autoadd_blocked(reason, serializer);
       case HistoryBody_MealSoon(minute: final minute, portions: final portions):
-        sse_encode_i_32(12, serializer);
+        sse_encode_i_32(13, serializer);
         sse_encode_u_16(minute, serializer);
         sse_encode_u_8(portions, serializer);
       case HistoryBody_Supply(adapter: final adapter):
-        sse_encode_i_32(13, serializer);
+        sse_encode_i_32(14, serializer);
         sse_encode_opt_box_autoadd_bool(adapter, serializer);
       case HistoryBody_DispenseRefused(reason: final reason):
-        sse_encode_i_32(14, serializer);
+        sse_encode_i_32(15, serializer);
         sse_encode_blocked(reason, serializer);
       case HistoryBody_Food(level: final level):
-        sse_encode_i_32(15, serializer);
+        sse_encode_i_32(16, serializer);
         sse_encode_food_level(level, serializer);
       case HistoryBody_Gap(from: final from, to: final to):
-        sse_encode_i_32(16, serializer);
+        sse_encode_i_32(17, serializer);
         sse_encode_u_64(from, serializer);
         sse_encode_u_64(to, serializer);
       case HistoryBody_Other():
-        sse_encode_i_32(17, serializer);
+        sse_encode_i_32(18, serializer);
     }
   }
 

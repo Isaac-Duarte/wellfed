@@ -26,10 +26,13 @@ pub struct Status {
     /// Wi-Fi signal, dBm.
     pub rssi: i32,
     pub wifi: WifiSource,
+    /// Every time this boot a joined link was lost and the feeder went on
+    /// to rejoin, whatever noticed it.
     pub link_losses: u32,
-    /// Losses the feeder's link check noticed (its DHCP lease ran out or
-    /// its gateway stopped answering) rather than the association. The name
-    /// is from the internet DNS check that check replaced.
+    /// Those of `link_losses` the feeder's link check noticed (its DHCP
+    /// lease ran out or its gateway stopped answering) rather than the
+    /// association. The name is from the internet DNS check that check
+    /// replaced.
     pub dns_losses: u32,
     /// The feeder's clock; `None` while it is invalid.
     pub clock: Option<Timestamp>,
@@ -107,7 +110,7 @@ pub struct Supply {
     pub adapter: Option<bool>,
     pub battery: Battery,
     /// Whether the feeding owner judges the pack below the floor a feed
-    /// needs; absent before it has judged.
+    /// needs; absent before it has judged, and with no pack fitted.
     pub below_floor: Option<bool>,
 }
 
