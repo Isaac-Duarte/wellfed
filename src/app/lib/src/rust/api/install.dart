@@ -389,6 +389,10 @@ class InstallSpec {
   /// not theirs, or two answered.
   final bool forgetEnrollment;
 
+  /// The known feeder the owner picked for a run from bank 0, by its identity
+  /// in hex. With none, a known feeder that answers is left alone.
+  final String? feeder;
+
   /// The owner gave a new Wi-Fi for a feeder that paired and never joined,
   /// and put it back in setup mode: Bluetooth setup goes again rather than
   /// waiting for it.
@@ -406,6 +410,7 @@ class InstallSpec {
     required this.imageDir,
     required this.dataDir,
     required this.forgetEnrollment,
+    this.feeder,
     required this.setupAgain,
   });
 
@@ -422,6 +427,7 @@ class InstallSpec {
       imageDir.hashCode ^
       dataDir.hashCode ^
       forgetEnrollment.hashCode ^
+      feeder.hashCode ^
       setupAgain.hashCode;
 
   @override
@@ -440,6 +446,7 @@ class InstallSpec {
           imageDir == other.imageDir &&
           dataDir == other.dataDir &&
           forgetEnrollment == other.forgetEnrollment &&
+          feeder == other.feeder &&
           setupAgain == other.setupAgain;
 }
 

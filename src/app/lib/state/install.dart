@@ -33,6 +33,9 @@ enum InstallStage {
   /// A feeder connected: is it the owner's?
   confirm,
 
+  /// With no record to go by: which feeder already runs Wellfed?
+  which,
+
   /// Stock downloads the replacement from this phone.
   sending,
 
@@ -178,6 +181,13 @@ class InstallFlow extends ChangeNotifier {
 
   WifiCredentials? _home;
   bool _forget = false;
+
+  /// The known feeder the owner picked for a run from bank 0. With none, a known
+  /// feeder that answers is left alone.
+  String? _pickedFeeder;
+
+  /// The feeders this phone knows, for the owner to pick from.
+  List<KnownFeeder> get knownFeeders => _book.feeders;
 
   /// The owner gave a new Wi-Fi for a feeder that never joined: the run goes
   /// through Bluetooth setup again, and the claim screen says how to get the
@@ -340,6 +350,7 @@ class InstallFlow extends ChangeNotifier {
   /// the first screen is the owner's choice of a new request.
   void back(InstallStage to) {
     _resumeAfterWifi = false;
+    _pickedFeeder = null;
     _resumeAddress = null;
     settingUpAgain = false;
     final paths = _paths;
@@ -434,6 +445,23 @@ class InstallFlow extends ChangeNotifier {
     );
   }
 
+  /// A feeder already on the replacement, with no record of it: nothing says
+  /// which one unless this phone knows none.
+  void alreadyRuns() {
+    if (_book.feeders.isEmpty) {
+      unawaited(resume());
+    } else {
+      _go(InstallStage.which);
+    }
+  }
+
+  /// The owner's answer: a known feeder by its identity, or `null` for another,
+  /// over Bluetooth.
+  Future<void> pickFeeder(String? identity) async {
+    _pickedFeeder = identity;
+    await resume();
+  }
+
   /// Pick up from bank 0: the replacement runs, and only its owner is
   /// missing, or the backup and the promotion. With `address`, it answers
   /// there. A consumer image that never paired needs its Wi-Fi for Bluetooth
@@ -455,6 +483,7 @@ class InstallFlow extends ChangeNotifier {
     }
     if (provisioning == ImageProvisioning.consumer &&
         pending != PendingInstall.paired &&
+        _pickedFeeder == null &&
         address == null &&
         _home == null) {
       _resumeAfterWifi = true;
@@ -585,6 +614,7 @@ class InstallFlow extends ChangeNotifier {
         imageDir: paths.image,
         dataDir: paths.data,
         forgetEnrollment: forget,
+        feeder: _pickedFeeder,
         setupAgain: settingUpAgain,
       ),
     );
@@ -969,9 +999,11 @@ class InstallFlow extends ChangeNotifier {
   bool get mayForget =>
       _paths != null && _run == null && listening != Listening.running;
 
-  /// A stop that leaves a record behind, or one no pick-up gets past. Never on
-  /// an uncertain write: the feeder may be mid-way, and only a pick-up reads where
-  /// it got to. A damaged ledger has an action of its own, which this cannot do.
+  /// A stop that leaves a record behind, or one no pick-up gets past. Not offered
+  /// on an uncertain write's stop: the feeder may be mid-way, and a pick-up reads
+  /// where it got to. A reopened screen has no such stop to go by and does offer
+  /// it, which is recoverable: the first screen's action reads the feeder and
+  /// sends nothing. A damaged ledger has an action of its own, which this cannot do.
   bool get forgetOffered {
     if (!mayForget) return false;
     final case_ = stop?.case_;
@@ -1025,6 +1057,7 @@ class InstallFlow extends ChangeNotifier {
     settingUpAgain = false;
     waitReason = null;
     restartAgain = false;
+    _pickedFeeder = null;
     listening = Listening.idle;
     listeningForEarlier = false;
     _resetProgress();
