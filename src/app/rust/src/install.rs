@@ -163,13 +163,27 @@ pub fn check_image(dir: &Path, pin: Option<&Pin>) -> ImageCheck {
 }
 
 pub fn pending(data_dir: &Path) -> PendingInstall {
-    if wellfed_install::storage::resumable(&data_dir.join(BACKUPS)) {
+    let (config, backups) = (data_dir.join(CONFIG), data_dir.join(BACKUPS));
+    if wellfed_install::stock::damaged_record(&config, &backups).is_some() {
+        PendingInstall::Damaged
+    } else if wellfed_install::storage::resumable(&backups) {
         PendingInstall::Paired
     } else if wellfed_install::stock::open_request(&data_dir.join(CONFIG)) {
         PendingInstall::RequestOpen
     } else {
         PendingInstall::Nothing
     }
+}
+
+/// The owner's way out of an install whose record is stuck or damaged. Keeps the
+/// backups and every device's ledger.
+pub fn forget_install(data_dir: &Path) -> Result<(), Error> {
+    wellfed_install::stock::forget_install(&data_dir.join(CONFIG), &data_dir.join(BACKUPS))
+}
+
+/// Whether any feeder has an install request with no known outcome.
+pub fn request_open(data_dir: &Path) -> bool {
+    wellfed_install::stock::any_open_request(&data_dir.join(CONFIG))
 }
 
 /// A session with the feeder `identity` read `build`. A failure only leaves the
@@ -663,7 +677,10 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
             (StopCase::Other, FromBank0)
         }
         Error::NotAnswering { .. } | Error::NoAddress => (StopCase::NotAnswering, FromBank0),
-        Error::NoHomeNetwork => (StopCase::Other, FromBank0),
+        // A pick-up whose record no longer leads anywhere goes through setup
+        // again, which takes the Wi-Fi.
+        Error::NoHomeNetwork => (StopCase::NoWifiGiven, FromBank0),
+        Error::EnrollmentUnreadable { .. } => (StopCase::DamagedRecord, Nothing),
         Error::StockServer(_)
         | Error::Images(_)
         | Error::StockServerGone
@@ -1020,6 +1037,17 @@ fn run_on_this_thread(
             };
         }
     };
+
+    let data = Path::new(&spec.data_dir);
+    if let Some(detail) =
+        wellfed_install::stock::damaged_record(&data.join(CONFIG), &data.join(BACKUPS))
+    {
+        return InstallEnd::Stopped {
+            case: StopCase::DamagedRecord,
+            resume: Resume::Nothing,
+            detail,
+        };
+    }
 
     let again = if matches!(spec.start, InstallStart::Bank0) {
         Resume::FromBank0

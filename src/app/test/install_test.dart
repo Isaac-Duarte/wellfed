@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/install_screen.dart';
+import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/store.dart';
@@ -126,6 +127,123 @@ Future<FakeRun> _stopped(
 }
 
 void main() {
+  group('forgetting an install', () {
+    Future<void> tapForget(WidgetTester tester) async {
+      await tester.ensureVisible(find.text('Forget this install'));
+      await settle(tester);
+      await tester.tap(find.text('Forget this install'));
+      await settle(tester);
+    }
+
+    testWidgets('a damaged record reaches it from the first screen', (
+      tester,
+    ) async {
+      final ports = FakeInstallPorts(pendingInstall: PendingInstall.damaged);
+      await _open(tester, ports);
+
+      expect(
+        find.textContaining(
+          "This phone can't read its record of an earlier install.",
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      final go = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Continue'),
+      );
+      expect(go.onPressed, isNull);
+
+      await tapForget(tester);
+      expect(
+        find.text('Every backup of the original firmware stays on this phone.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('no known result'), findsNothing);
+      await tester.tap(find.text('Forget'));
+      await settle(tester);
+
+      expect(ports.forgets, 1);
+      expect(find.text('Forget this install'), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Continue'))
+            .onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets('a damaged stop reaches it, not a dead end', (tester) async {
+      final ports = FakeInstallPorts();
+      await _stopped(tester, ports, const StopCase.damagedRecord());
+      expect(find.text("This phone can't read its install record"), findsOne);
+
+      await tapForget(tester);
+      await tester.tap(find.text('Forget'));
+      await settle(tester);
+
+      expect(ports.forgets, 1);
+      expect(find.text('Install Wellfed'), findsOneWidget);
+    });
+
+    testWidgets('an other-feeder stop offers it, and cancel clears nothing', (
+      tester,
+    ) async {
+      final ports = FakeInstallPorts();
+      await _stopped(
+        tester,
+        ports,
+        const StopCase.otherFeeder(),
+        resume: Resume.fromBank0,
+      );
+      expect(find.textContaining('after a factory reset'), findsOneWidget);
+
+      await tapForget(tester);
+      await tester.tap(find.text('Cancel'));
+      await settle(tester);
+
+      expect(ports.forgets, 0);
+      expect(find.text('A different feeder answered'), findsOneWidget);
+    });
+
+    testWidgets('an open request is warned of, and kept', (tester) async {
+      final ports = FakeInstallPorts(pendingInstall: PendingInstall.requestOpen)
+        ..openRequest = true;
+      await _open(tester, ports);
+
+      await tapForget(tester);
+      expect(find.textContaining('no known result'), findsOneWidget);
+      expect(
+        find.textContaining('never sent it a second time'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('it is not offered while listening', (tester) async {
+      final ports = FakeInstallPorts()..pendingInstall = PendingInstall.paired;
+      await _stopped(tester, ports, const StopCase.uncertain());
+      expect(find.text('Forget this install'), findsNothing);
+    });
+
+    testWidgets('a failure says so and stays', (tester) async {
+      final ports = FakeInstallPorts(pendingInstall: PendingInstall.damaged)
+        ..forgetFails = const BridgeError(
+          kind: ErrorKind.store,
+          message: 'read-only',
+        );
+      await _open(tester, ports);
+
+      await tapForget(tester);
+      await tester.tap(find.text('Forget'));
+      await settle(tester);
+
+      expect(
+        find.textContaining('read-only', findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.text('Forget this install'), findsOneWidget);
+    });
+  });
+
   group('2.1 before you start', () {
     testWidgets('it says what it takes and offers no choice of route', (
       tester,
@@ -752,11 +870,27 @@ void main() {
     );
 
     testWidgets(
-      'hearing the replacement advertise setup picks up from bank 0',
+      'a setup advert keeps it listening, and the owner picks up from bank 0',
       (tester) async {
         final ports = FakeInstallPorts();
         await _stopped(tester, ports, const StopCase.uncertain());
         ports.heard.add(null);
+        await settle(tester);
+
+        // It could be any feeder in setup mode.
+        expect(ports.listeners.single.stops, 0);
+        expect(ports.runs, hasLength(1));
+        expect(
+          find.textContaining(
+            'A feeder nearby is waiting for setup.',
+            findRichText: true,
+          ),
+          findsOneWidget,
+        );
+
+        await tester.ensureVisible(find.text('Set up this feeder'));
+        await settle(tester);
+        await tester.tap(find.text('Set up this feeder'));
         await settle(tester);
 
         expect(ports.listeners.single.stops, 1);
@@ -965,7 +1099,7 @@ void main() {
       ),
       (
         const StopCase.otherFeeder(),
-        'That was a different feeder',
+        'A different feeder answered',
         Resume.fromBank0,
         'Pick up where it stopped',
       ),

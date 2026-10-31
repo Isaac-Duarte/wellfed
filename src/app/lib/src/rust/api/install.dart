@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import 'error.dart';
 import 'keys.dart';
 import 'model.dart';
 
@@ -28,6 +29,15 @@ BuildCheck checkBuild() => RustLib.instance.api.crateApiInstallCheckBuild();
 /// What an earlier run left, read from its records alone.
 PendingInstall pendingInstall({required String dataDir}) =>
     RustLib.instance.api.crateApiInstallPendingInstall(dataDir: dataDir);
+
+/// Forget the install in progress: its record and the feeder its broker trusted.
+/// Keeps every backup, and every device's ledger of what was asked of it.
+void forgetInstall({required String dataDir}) =>
+    RustLib.instance.api.crateApiInstallForgetInstall(dataDir: dataDir);
+
+/// Whether any feeder has an install request with no known outcome.
+bool installRequestOpen({required String dataDir}) =>
+    RustLib.instance.api.crateApiInstallInstallRequestOpen(dataDir: dataDir);
 
 /// A session with this feeder read `build`, which settles the stock trial that
 /// installed it, if one is open.
@@ -472,6 +482,10 @@ sealed class ListenUpdate with _$ListenUpdate {
 enum PendingInstall {
   nothing,
 
+  /// A record it left cannot be read, so no run can start until it is
+  /// forgotten.
+  damaged,
+
   /// It paired with this phone and did not reach the end: pick up from
   /// bank 0.
   paired,
@@ -569,9 +583,14 @@ sealed class StopCase with _$StopCase {
   const factory StopCase.setupFailed({SetupRefusal? refusal}) =
       StopCase_SetupFailed;
 
-  /// Bluetooth setup went through on another feeder than this install's. That
-  /// one now has this phone's key and the Wi-Fi; this install stays with its own.
+  /// Bluetooth setup went through on a feeder with another identity than this
+  /// install's: another feeder, or this one after a factory reset. It accepted
+  /// this phone; this install stays with the identity it recorded.
   const factory StopCase.otherFeeder() = StopCase_OtherFeeder;
+
+  /// This phone's own record of the install cannot be read. Only forgetting
+  /// the install clears it.
+  const factory StopCase.damagedRecord() = StopCase_DamagedRecord;
 
   /// The feeder this install paired with does not answer.
   const factory StopCase.notAnswering() = StopCase_NotAnswering;

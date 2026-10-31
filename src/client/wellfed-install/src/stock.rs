@@ -84,6 +84,47 @@ pub fn forget_enrollment(config: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// Forget the install in progress: the paired record, the broker's trust and,
+/// when the config itself cannot be read, the config, set aside under another
+/// name so the next run makes a new one. This is the owner's way out of a record
+/// that stranded the install.
+///
+/// It keeps what guards a feeder or belongs to the owner. Each device's ledger
+/// stays, so a request with no known outcome still blocks a second one when that
+/// device comes back, and every backup and promotion stays with its feeder.
+pub fn forget_install(config: &Path, backups: &Path) -> Result<(), Error> {
+    forget_enrollment(config)?;
+    crate::storage::forget_paired(backups)?;
+    if config.exists() && wellfed_stock::config::state(config).is_err() {
+        let aside = config.with_extension("json.damaged");
+        std::fs::rename(config, aside).map_err(|source| Error::Remove {
+            path: config.to_path_buf(),
+            source,
+        })?;
+    }
+    Ok(())
+}
+
+/// What is wrong with the install's own records beside `config` and in
+/// `backups`, if a run could not read them. The stock ledgers are not in this:
+/// [`forget_install`] does not touch them, so it could not repair one.
+pub fn damaged_record(config: &Path, backups: &Path) -> Option<String> {
+    if config.exists()
+        && let Err(error) = wellfed_stock::config::state(config)
+    {
+        return Some(format!("{}: {error:#}", config.display()));
+    }
+    crate::storage::Paired::load(backups)
+        .err()
+        .map(|error| crate::text(&error))
+}
+
+/// Whether any feeder this installer has dealt with has a request whose outcome
+/// is not settled. Counts as open if the ledgers cannot be read.
+pub fn any_open_request(config: &Path) -> bool {
+    wellfed_stock::controller::any_open_request(config).unwrap_or(true)
+}
+
 /// Where the ledger of `device`, by the installer's config, lives.
 pub fn ledger_path(config: &Path, device: &str) -> Result<PathBuf, Error> {
     wellfed_stock::controller::ledger_path(config, device)
@@ -528,6 +569,44 @@ mod tests {
         enroll("AF_FIRST");
         assert_eq!(serve("AF_FIRST").await, Some(TrialPhase::Uncertain));
         assert!(open_request(&path));
+    }
+
+    /// Forgetting an install leaves what guards a feeder and what the owner
+    /// kept, and a damaged config no longer stops a new one.
+    #[test]
+    fn forgetting_an_install_keeps_the_backups_and_the_ledgers() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("installer.json");
+        let backups = dir.path().join("backups");
+        std::fs::write(&config, "not json").unwrap();
+        std::fs::write(Enrollment::path(&config), "not json").unwrap();
+        let identity = [0xab; 32];
+        let backup = crate::storage::backup_path(&backups, &identity);
+        std::fs::create_dir_all(backup.parent().unwrap()).unwrap();
+        std::fs::write(&backup, "the backup").unwrap();
+        std::fs::write(backups.join("installing.json"), "not json").unwrap();
+        let ledger = ledger_path(&config, "AF_A").unwrap();
+        std::fs::write(&ledger, "the ledger").unwrap();
+        assert!(damaged_record(&config, &backups).is_some());
+        assert!(any_open_request(&config));
+
+        forget_install(&config, &backups).unwrap();
+
+        assert_eq!(damaged_record(&config, &backups), None);
+        assert!(!config.exists());
+        assert!(!Enrollment::path(&config).exists());
+        assert!(!backups.join("installing.json").exists());
+        assert_eq!(std::fs::read(&backup).unwrap(), b"the backup");
+        assert_eq!(std::fs::read(&ledger).unwrap(), b"the ledger");
+        assert_eq!(
+            std::fs::read(dir.path().join("installer.json.damaged")).unwrap(),
+            b"not json"
+        );
+
+        // A settled ledger is no open request, and an unreadable one still is.
+        assert!(any_open_request(&config));
+        std::fs::write(&ledger, r#"{"device_id":"AF_A","ota_trials":{}}"#).unwrap();
+        assert!(!any_open_request(&config));
     }
 
     /// Forgetting the broker's trust takes the contest with it, and is safe

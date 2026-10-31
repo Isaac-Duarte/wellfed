@@ -79,7 +79,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1464125642;
+  int get rustContentHash => 1669818943;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -246,6 +246,8 @@ abstract class RustLibApi extends BaseApi {
 
   String crateApiStoreFingerprint({required List<int> identity});
 
+  void crateApiInstallForgetInstall({required String dataDir});
+
   void crateApiRestoreForgetRestoreKey({
     required String dataDir,
     required List<int> identity,
@@ -256,6 +258,8 @@ abstract class RustLibApi extends BaseApi {
   String crateApiStoreIdentityHex({required List<int> identity});
 
   Future<void> crateApiInitApp();
+
+  bool crateApiInstallInstallRequestOpen({required String dataDir});
 
   Uint8List? crateApiJoinInviteFeeder({required String text});
 
@@ -1723,6 +1727,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "fingerprint", argNames: ["identity"]);
 
   @override
+  void crateApiInstallForgetInstall({required String dataDir}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dataDir, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 45)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateApiInstallForgetInstallConstMeta,
+        argValues: [dataDir],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiInstallForgetInstallConstMeta =>
+      const TaskConstMeta(debugName: "forget_install", argNames: ["dataDir"]);
+
+  @override
   void crateApiRestoreForgetRestoreKey({
     required String dataDir,
     required List<int> identity,
@@ -1733,7 +1760,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dataDir, serializer);
           sse_encode_list_prim_u_8_loose(identity, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 45)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 46)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1759,7 +1786,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(hex, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 46)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 47)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_u_8_strict,
@@ -1782,7 +1809,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(identity, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 47)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 48)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1807,7 +1834,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 48,
+            funcId: 49,
             port: port_,
           );
         },
@@ -1826,13 +1853,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "init_app", argNames: []);
 
   @override
+  bool crateApiInstallInstallRequestOpen({required String dataDir}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dataDir, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 50)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiInstallInstallRequestOpenConstMeta,
+        argValues: [dataDir],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiInstallInstallRequestOpenConstMeta =>
+      const TaskConstMeta(
+        debugName: "install_request_open",
+        argNames: ["dataDir"],
+      );
+
+  @override
   Uint8List? crateApiJoinInviteFeeder({required String text}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 49)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_list_prim_u_8_strict,
@@ -1869,7 +1922,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 50,
+            funcId: 52,
             port: port_,
           );
         },
@@ -1900,7 +1953,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dataDir, serializer);
           sse_encode_list_prim_u_8_loose(identity, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
@@ -1928,7 +1981,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 52,
+            funcId: 54,
             port: port_,
           );
         },
@@ -1953,7 +2006,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dataDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 55)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_pending_install,
@@ -1988,7 +2041,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 54,
+            funcId: 56,
             port: port_,
           );
         },
@@ -2023,7 +2076,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 55,
+            funcId: 57,
             port: port_,
           );
         },
@@ -2050,7 +2103,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 56,
+            funcId: 58,
             port: port_,
           );
         },
@@ -2074,7 +2127,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 57)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2096,7 +2149,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -4596,24 +4649,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 16:
         return StopCase_OtherFeeder();
       case 17:
-        return StopCase_NotAnswering();
+        return StopCase_DamagedRecord();
       case 18:
-        return StopCase_NotJoined();
+        return StopCase_NotAnswering();
       case 19:
-        return StopCase_PhoneOffWifi();
+        return StopCase_NotJoined();
       case 20:
-        return StopCase_WifiRefused();
+        return StopCase_PhoneOffWifi();
       case 21:
-        return StopCase_NoWifiGiven();
+        return StopCase_WifiRefused();
       case 22:
-        return StopCase_PromotionFailed();
+        return StopCase_NoWifiGiven();
       case 23:
-        return StopCase_FellBack();
+        return StopCase_PromotionFailed();
       case 24:
-        return StopCase_ServerFailed();
+        return StopCase_FellBack();
       case 25:
-        return StopCase_Cancelled();
+        return StopCase_ServerFailed();
       case 26:
+        return StopCase_Cancelled();
+      case 27:
         return StopCase_Other();
       default:
         throw Exception("unreachable");
@@ -7964,24 +8019,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 16:
         return StopCase_OtherFeeder();
       case 17:
-        return StopCase_NotAnswering();
+        return StopCase_DamagedRecord();
       case 18:
-        return StopCase_NotJoined();
+        return StopCase_NotAnswering();
       case 19:
-        return StopCase_PhoneOffWifi();
+        return StopCase_NotJoined();
       case 20:
-        return StopCase_WifiRefused();
+        return StopCase_PhoneOffWifi();
       case 21:
-        return StopCase_NoWifiGiven();
+        return StopCase_WifiRefused();
       case 22:
-        return StopCase_PromotionFailed();
+        return StopCase_NoWifiGiven();
       case 23:
-        return StopCase_FellBack();
+        return StopCase_PromotionFailed();
       case 24:
-        return StopCase_ServerFailed();
+        return StopCase_FellBack();
       case 25:
-        return StopCase_Cancelled();
+        return StopCase_ServerFailed();
       case 26:
+        return StopCase_Cancelled();
+      case 27:
         return StopCase_Other();
       default:
         throw UnimplementedError('');
@@ -11207,26 +11264,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_opt_box_autoadd_setup_refusal(refusal, serializer);
       case StopCase_OtherFeeder():
         sse_encode_i_32(16, serializer);
-      case StopCase_NotAnswering():
+      case StopCase_DamagedRecord():
         sse_encode_i_32(17, serializer);
-      case StopCase_NotJoined():
+      case StopCase_NotAnswering():
         sse_encode_i_32(18, serializer);
-      case StopCase_PhoneOffWifi():
+      case StopCase_NotJoined():
         sse_encode_i_32(19, serializer);
-      case StopCase_WifiRefused():
+      case StopCase_PhoneOffWifi():
         sse_encode_i_32(20, serializer);
-      case StopCase_NoWifiGiven():
+      case StopCase_WifiRefused():
         sse_encode_i_32(21, serializer);
-      case StopCase_PromotionFailed():
+      case StopCase_NoWifiGiven():
         sse_encode_i_32(22, serializer);
-      case StopCase_FellBack():
+      case StopCase_PromotionFailed():
         sse_encode_i_32(23, serializer);
-      case StopCase_ServerFailed():
+      case StopCase_FellBack():
         sse_encode_i_32(24, serializer);
-      case StopCase_Cancelled():
+      case StopCase_ServerFailed():
         sse_encode_i_32(25, serializer);
-      case StopCase_Other():
+      case StopCase_Cancelled():
         sse_encode_i_32(26, serializer);
+      case StopCase_Other():
+        sse_encode_i_32(27, serializer);
     }
   }
 

@@ -20,7 +20,9 @@ use wellfed_app_bridge::api::install::{
 use wellfed_app_bridge::api::model::SetupRefusal;
 use wellfed_app_bridge::api::setup::WifiCredentials;
 use wellfed_app_bridge::api::store::KnownFeeder;
-use wellfed_app_bridge::install::{Listener, Pin, Run, check_image, pending};
+use wellfed_app_bridge::install::{
+    Listener, Pin, Run, check_image, forget_install, pending, request_open,
+};
 use wellfed_client::setup::{Deframer, frame};
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness::{Running, SetupFeeder};
@@ -1189,6 +1191,44 @@ fn setup_again_on_another_feeder_stops_and_keeps_the_record() {
             recorded_identity(&record),
             wellfed_formats::hex::encode(ours.public())
         );
+    });
+}
+
+/// A damaged `installer.json` stops a run before anything starts, and forgetting
+/// the install clears it, with the backup and the ledger as they were.
+#[test]
+fn a_damaged_record_stops_the_run_and_forgetting_keeps_the_backup() {
+    local(async {
+        let fixture = Fixture::new(Provisioning::Consumer);
+        let spec = fixture.spec(InstallStart::Bank0, "127.41.8.36");
+        let data = Path::new(&spec.data_dir).to_path_buf();
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::write(data.join("installer.json"), "not json").unwrap();
+        let backup = wellfed_install::storage::backup_path(&data.join("backups"), &[0xab; 32]);
+        std::fs::create_dir_all(backup.parent().unwrap()).unwrap();
+        std::fs::write(&backup, "the backup").unwrap();
+        open_trial(&data, "AF_A", "ab");
+        assert_eq!(pending(&data), PendingInstall::Damaged);
+        assert!(request_open(&data));
+
+        let (_run, mut heard) = started(&fixture, spec);
+        let end = loop {
+            if let InstallUpdate::Ended { end } = next(&mut heard).await {
+                break end;
+            }
+        };
+        let InstallEnd::Stopped { case, resume, .. } = end else {
+            panic!("{end:?}");
+        };
+        assert_eq!(case, StopCase::DamagedRecord);
+        assert_eq!(resume, Resume::Nothing);
+
+        forget_install(&data).unwrap();
+
+        assert_eq!(pending(&data), PendingInstall::Nothing);
+        assert_eq!(std::fs::read(&backup).unwrap(), b"the backup");
+        // The no-retry guard outlives it.
+        assert!(request_open(&data));
     });
 }
 

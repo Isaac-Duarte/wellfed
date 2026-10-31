@@ -141,13 +141,49 @@ pub fn open_request(config_path: &Path) -> Result<bool> {
     }
     let ledger: Ledger =
         serde_json::from_slice(&fs::read(&path)?).context("invalid stock ledger")?;
+    Ok(unsettled(&ledger))
+}
+
+/// Whether any device with a ledger beside the config has a request whose
+/// outcome is not settled, whichever feeder the config names now. An unreadable
+/// ledger counts as open: only a readable one can rule a request out. Reads the
+/// ledgers only.
+pub fn any_open_request(config_path: &Path) -> Result<bool> {
+    let directory = config_path.parent().context("config directory missing")?;
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    for entry in entries {
+        let path = entry?.path();
+        let is_ledger = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("stock-ledger.") && name.ends_with(".json"));
+        if !is_ledger {
+            continue;
+        }
+        let ledger = fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Ledger>(&bytes).ok());
+        if ledger.as_ref().is_none_or(unsettled) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// The ledger's latest trial is submitted (the server that sent it is gone),
+/// uncertain, or failed.
+fn unsettled(ledger: &Ledger) -> bool {
     let latest = ledger.ota_trials.values().max_by_key(|r| r.sequence);
-    Ok(latest.is_some_and(|record| {
+    latest.is_some_and(|record| {
         matches!(
             record.phase,
             TrialPhase::Submitted | TrialPhase::Uncertain | TrialPhase::ReportedError
         )
-    }))
+    })
 }
 
 /// The sequence of `device`'s latest trial, which an answer seen now is about.

@@ -56,6 +56,12 @@ abstract interface class InstallPorts {
   /// What an earlier run left on the feeder.
   PendingInstall pending(InstallPaths paths);
 
+  /// Clear the install in progress. Keeps the backups and the stock ledgers.
+  void forgetInstall(InstallPaths paths);
+
+  /// Any feeder has an install request with no known outcome.
+  bool requestOpen(InstallPaths paths);
+
   /// The checked copy of stock kept for the feeder with `identity`.
   String? keptBackup(InstallPaths paths, List<int> identity);
 
@@ -161,6 +167,14 @@ class AppInstallPorts implements InstallPorts {
   @override
   PendingInstall pending(InstallPaths paths) =>
       pendingInstall(dataDir: paths.data);
+
+  @override
+  void forgetInstall(InstallPaths paths) =>
+      rust.forgetInstall(dataDir: paths.data);
+
+  @override
+  bool requestOpen(InstallPaths paths) =>
+      installRequestOpen(dataDir: paths.data);
 
   @override
   String? keptBackup(InstallPaths paths, List<int> identity) =>

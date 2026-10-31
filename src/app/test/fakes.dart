@@ -234,6 +234,20 @@ class FakeInstallPorts implements InstallPorts {
   @override
   PendingInstall pending(InstallPaths paths) => pendingInstall;
 
+  int forgets = 0;
+  bool openRequest = false;
+  Object? forgetFails;
+
+  @override
+  void forgetInstall(InstallPaths paths) {
+    if (forgetFails case final error?) throw error;
+    forgets++;
+    pendingInstall = PendingInstall.nothing;
+  }
+
+  @override
+  bool requestOpen(InstallPaths paths) => openRequest;
+
   @override
   String? keptBackup(InstallPaths paths, List<int> identity) => kept;
 

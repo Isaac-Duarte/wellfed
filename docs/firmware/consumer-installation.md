@@ -264,6 +264,7 @@ The vendor's firmware can't ship with the app. But each feeder already holds its
 - **Rebuild.** The installer is the server during an install, so the backup lands in the app. It restores the marker's first word, accepting only bytes that lost bits from the marker's (the whole bank must still hash to the pin), and rebuilds the OTA container: a 32-byte header, the payload length and byte-sum, as in [the container format](../devices/plaf103/stock/ota-requirements.md#the-image-container).
 - **Checks.** The rebuilt image must match the stock image profile. For 1.1.15 it must match the pinned payload hash exactly, so a damaged read shows before anything relies on it.
 - **Storage** is per device. The CLI keeps it under the owner's data directory, `private/stock-backups/<identity>/stock-1.1.15.bin`, written once and never replaced by a different copy. The app, and your server if you want, will keep it the same way.
+- **Forget this install.** The app offers this when an install's record is stuck or damaged. It clears the paired record and the feeder the phone's broker trusted, and sets aside an unreadable `installer.json`. It changes nothing on the feeder. It keeps every backup and every device's stock ledger, so a request with no known outcome still blocks a second one when that feeder comes back. If such a request is open, the app says so before you confirm.
 - **Export and restore** from the CLI:
   - `wellfed backup read` reads and keeps it from a replacement on bank 0, outside an install;
   - `wellfed backup show` prints its version, digest and path;

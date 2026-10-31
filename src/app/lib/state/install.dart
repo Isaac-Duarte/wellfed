@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../platform/install_ports.dart';
+import '../src/rust/api/error.dart';
 import '../src/rust/api/install.dart';
 import '../src/rust/api/setup.dart';
 import '../src/rust/api/store.dart';
@@ -169,6 +170,10 @@ class InstallFlow extends ChangeNotifier {
   Listening listening = Listening.idle;
   Duration listened = Duration.zero;
   bool stockSeen = false;
+
+  /// A feeder nearby advertises setup while this listens. It says nothing about
+  /// which feeder, so only the owner can say it is this one.
+  bool setupSeen = false;
   String? listenerDetail;
 
   WifiCredentials? _home;
@@ -820,6 +825,7 @@ class InstallFlow extends ChangeNotifier {
         unawaited(_release());
       case final InstallEnd_Stopped stopped:
         stop = stopped;
+        _readPending();
         stage = InstallStage.stopped;
         _windowAsk = null;
         _recognizeAsk = null;
@@ -880,6 +886,7 @@ class InstallFlow extends ChangeNotifier {
     listening = Listening.running;
     listened = Duration.zero;
     stockSeen = false;
+    setupSeen = false;
     _notify();
     await _hold('Listening for the feeder. Leave it plugged in.');
     if (_disposed || listening != Listening.running) return;
@@ -901,11 +908,12 @@ class InstallFlow extends ChangeNotifier {
       },
     );
     // A consumer image has no network until setup gives it one, so it is
-    // only heard advertising setup. Hearing it means it installed.
-    _heard = _ports.setupHeard().listen(
-      (_) => unawaited(resume()),
-      onError: (Object _) {},
-    );
+    // only heard advertising setup. Any feeder in setup mode sounds the same,
+    // so this keeps listening until the owner says it is this one.
+    _heard = _ports.setupHeard().listen((_) {
+      setupSeen = true;
+      _notify();
+    }, onError: (Object _) {});
     _notify();
   }
 
@@ -938,6 +946,7 @@ class InstallFlow extends ChangeNotifier {
     listening = end;
     unawaited(_heard?.cancel());
     _heard = null;
+    _readPending();
     unawaited(_release());
     _notify();
   }
@@ -949,6 +958,65 @@ class InstallFlow extends ChangeNotifier {
     _listenUpdates = null;
     unawaited(_heard?.cancel());
     _heard = null;
+  }
+
+  void _readPending() {
+    final paths = _paths;
+    if (paths != null) pending = _ports.pending(paths);
+  }
+
+  /// The way out of a stuck or damaged record is open: nothing is using it.
+  bool get mayForget =>
+      _paths != null && _run == null && listening != Listening.running;
+
+  /// A stop that leaves a record behind, or one no pick-up gets past.
+  bool get forgetOffered {
+    if (!mayForget) return false;
+    return pending != PendingInstall.nothing ||
+        switch (stop?.case_) {
+          StopCase_OtherFeeder() || StopCase_DamagedRecord() => true,
+          _ => false,
+        };
+  }
+
+  /// Some feeder's install request has no known outcome, so forgetting needs
+  /// words of its own.
+  bool get requestStillOpen {
+    final paths = _paths;
+    return paths != null && _ports.requestOpen(paths);
+  }
+
+  /// Why forgetting failed, when it did.
+  String? forgetFailed;
+
+  /// Clear the install in progress and go back to the first screen. The backups
+  /// stay, and the ledger keeps a request with no known outcome from going to
+  /// that feeder a second time.
+  void forgetInstall() {
+    final paths = _paths;
+    if (paths == null || !mayForget) return;
+    try {
+      _ports.forgetInstall(paths);
+    } on BridgeError catch (failed) {
+      forgetFailed = failed.message;
+      _notify();
+      return;
+    }
+    forgetFailed = null;
+    stop = null;
+    _frameTaken = false;
+    _frameAddress = null;
+    _feederReset = false;
+    _identity = null;
+    _identityBytes = null;
+    _address = null;
+    backupPath = null;
+    settingUpAgain = false;
+    listening = Listening.idle;
+    listeningForEarlier = false;
+    _resetProgress();
+    _readPending();
+    _go(InstallStage.before);
   }
 
   /// End the run through its cleanup; the end says what it left.
