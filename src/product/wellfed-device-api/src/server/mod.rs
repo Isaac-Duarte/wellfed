@@ -392,10 +392,9 @@ impl Server {
         };
 
         self.signer_left = None;
-        if matches!(
-            outcome,
-            crate::KeyOutcome::Done | crate::KeyOutcome::Duplicate
-        ) {
+        // Only a new key is news: a duplicate may belong to a session client,
+        // which the live path refuses, so it must not read as enrolled here.
+        if matches!(outcome, crate::KeyOutcome::Done) {
             pending::signer_landed(now_ms, device, outcome, left.slot, &left.key, record);
         }
     }
