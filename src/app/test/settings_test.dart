@@ -297,6 +297,24 @@ void main() {
       expect(session.requests, contains(const FeederRequest.getTime()));
     });
 
+    testWidgets('offline it does not pass off an old reading as the time', (
+      tester,
+    ) async {
+      final session = await show(tester);
+      expect(find.text('under 1 s'), findsOneWidget);
+
+      unawaited(session.updates.close());
+      await tester.pump();
+      await settle(tester);
+
+      expect(find.text("Can't read it right now"), findsOneWidget);
+      expect(find.text('Could be off by'), findsNothing);
+      expect(find.text('under 1 s'), findsNothing);
+
+      // Run out the controller's retry timer before the test ends.
+      await tester.pump(const Duration(seconds: 3));
+    });
+
     testWidgets('where the time comes from goes against its generation', (
       tester,
     ) async {

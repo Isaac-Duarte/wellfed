@@ -505,8 +505,8 @@ String? _stoppedAfter(api.FaultView fault) {
   if (fed == null) return null;
   return fed.uncertain
       ? 'It stopped somewhere between ${fed.confirmed} and ${fed.atMost} of '
-            '${fed.requested} portions.'
-      : 'It stopped after ${deliveredText(fed)} portions.';
+            '${fed.requested} ${portionWord(fed.requested)}.'
+      : 'It stopped after ${deliveredText(fed)} ${portionWord(fed.requested)}.';
 }
 
 /// A fault holds feeding until a restart (7.3).

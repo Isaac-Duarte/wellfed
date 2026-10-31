@@ -48,7 +48,10 @@ String untilText(DateTime now, int atMs) {
       : 'in ${minutes ~/ 60} h $rest min';
 }
 
-String portionsText(int n) => n == 1 ? '1 portion' : '$n portions';
+String portionsText(int n) => '$n ${portionWord(n)}';
+
+/// `portion` or `portions`, for a count said elsewhere in the sentence.
+String portionWord(int n) => n == 1 ? 'portion' : 'portions';
 
 String _text(BuildContext context, TimeOfDay time) =>
     MaterialLocalizations.of(context).formatTimeOfDay(
@@ -80,11 +83,13 @@ const _monthNames = [
 /// `Today`, `Yesterday`, or `Fri 30 Oct`, by this phone's calendar.
 String dayText(DateTime at, {DateTime? now}) {
   final today = now ?? DateTime.now();
-  final days = DateTime(
+  // Calendar days, in UTC: two local midnights across a spring-forward day are
+  // 23 hours apart, which is 0 whole days.
+  final days = DateTime.utc(
     today.year,
     today.month,
     today.day,
-  ).difference(DateTime(at.year, at.month, at.day)).inDays;
+  ).difference(DateTime.utc(at.year, at.month, at.day)).inDays;
   return switch (days) {
     0 => 'Today',
     1 => 'Yesterday',

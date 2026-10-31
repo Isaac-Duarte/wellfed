@@ -433,10 +433,18 @@ class _MealEditorState extends State<MealEditor> {
           const SizedBox(height: Space.s3),
           Row(
             children: [
-              Expanded(child: Text('On', style: label)),
-              Switch(
-                value: _enabled,
-                onChanged: (on) => setState(() => _enabled = on),
+              // The switch carries the name, so its node is its own size: a
+              // tap at the node's center lands on the switch.
+              Expanded(
+                child: ExcludeSemantics(child: Text('On', style: label)),
+              ),
+              Semantics(
+                container: true,
+                label: 'On',
+                child: Switch(
+                  value: _enabled,
+                  onChanged: (on) => setState(() => _enabled = on),
+                ),
               ),
             ],
           ),

@@ -235,6 +235,36 @@ void main() {
     expect(find.text('Last fed 0 to 2 of 2'), findsOneWidget);
   });
 
+  testWidgets('a one-portion feed that stopped says portion, not portions', (
+    tester,
+  ) async {
+    final (fleet, session) = await _fleet(tester);
+    await _showShell(tester, fleet);
+
+    session.status(
+      fakeCard(
+        fault: FaultView(
+          feed: 7,
+          outcome: FeedOutcome.uncertain,
+          reason: FeedReason.power,
+          result: fakeFed(
+            confirmed: 0,
+            atMost: 1,
+            requested: 1,
+            outcome: FeedOutcome.uncertain,
+            reason: FeedReason.power,
+          ),
+        ),
+      ),
+    );
+    await settle(tester);
+
+    expect(
+      find.textContaining('It stopped somewhere between 0 and 1 of 1 portion.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('a feed that stopped unsure says the range in words', (
     tester,
   ) async {

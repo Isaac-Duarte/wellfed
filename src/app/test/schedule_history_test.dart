@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/feed_detail.dart';
 import 'package:wellfed/screens/feeder/history.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
+import 'package:wellfed/screens/feeder/meal_editor.dart';
 import 'package:wellfed/screens/feeder/schedule.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -225,6 +226,27 @@ void main() {
         (session.requests.single as FeederRequest_EditPlans).edit,
         const PlanEdit.delete(slot: 0),
       );
+    });
+
+    testWidgets("the editor's switch is its own node, named On", (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await show(tester, _plans([_plan(60)]));
+
+      await tapIn(tester, find.text('1:00 AM'));
+      final toggle = find.descendant(
+        of: find.byType(MealEditor),
+        matching: find.byType(Switch),
+      );
+      await tester.ensureVisible(toggle);
+      await tester.pump();
+
+      final node = tester.getSemantics(toggle);
+      expect(node.label, 'On');
+      expect(node.rect.width, lessThanOrEqualTo(tester.getSize(toggle).width));
+
+      semantics.dispose();
     });
 
     testWidgets('deleting a meal asks first, naming its time', (tester) async {

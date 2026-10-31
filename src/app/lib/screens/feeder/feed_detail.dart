@@ -33,7 +33,7 @@ class FeedDetail extends StatelessWidget {
         result.confirmed == result.requested;
     final title = result.uncertain
         ? 'Fed between ${result.confirmed} and ${result.atMost} portions'
-        : 'Fed ${deliveredText(result)} portions';
+        : 'Fed ${deliveredText(result)} ${portionWord(result.requested)}';
     final detail = result.uncertain
         ? '${result.requested} asked for · '
               '${result.confirmed == 0 ? 'none' : result.confirmed} confirmed '

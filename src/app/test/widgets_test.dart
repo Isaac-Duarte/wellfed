@@ -14,6 +14,18 @@ Widget _themed(Widget child, {Brightness brightness = Brightness.light}) =>
     );
 
 void main() {
+  test(
+    'yesterday is yesterday on every day of the year, DST days included',
+    () {
+      for (var day = 1; day <= 366; day++) {
+        final now = DateTime(2026, 1, day, 12);
+        expect(dayText(DateTime(2026, 1, day, 6), now: now), 'Today');
+        expect(dayText(DateTime(2026, 1, day - 1, 21), now: now), 'Yesterday');
+        expect(dayText(DateTime(2026, 1, day + 1, 6), now: now), 'Tomorrow');
+      }
+    },
+  );
+
   testWidgets('a moment says its day unless it is today', (tester) async {
     late BuildContext context;
     await tester.pumpWidget(
@@ -42,6 +54,8 @@ void main() {
     expect(inSentence(today), 'at 6:05 AM');
     expect(inSentence(yesterday), 'yesterday at 9:00 PM');
     expect(inSentence(older), 'on Tue 27 Oct at 9:00 PM');
+    expect(portionWord(1), 'portion');
+    expect(portionWord(2), 'portions');
   });
 
   testWidgets('the code shows each press as its panel button, in order', (

@@ -116,8 +116,10 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
     final c = context.colors;
     final card = widget.feeder.card;
     final time = card?.time;
-    final clock = time?.clockMs;
-    final error = time?.errorMs;
+    // An offline card's clock is an old reading, not the feeder's time now.
+    final current = widget.feeder.cardIsCurrent;
+    final clock = current ? time?.clockMs : null;
+    final error = current ? time?.errorMs : null;
     final zone = time?.zone;
     final label = TextStyle(
       fontSize: Sizes.base,
@@ -151,7 +153,11 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
           FactList([
             (
               'Feeder time',
-              Text(clock == null ? 'Not set' : momentTextMs(context, clock)),
+              Text(switch (clock) {
+                _ when !current => "Can't read it right now",
+                null => 'Not set',
+                final clock => momentTextMs(context, clock),
+              }),
             ),
             if (error != null) ('Could be off by', Text(_errorText(error))),
             if (card != null)
