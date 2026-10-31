@@ -478,10 +478,12 @@ sealed class SessionUpdate with _$SessionUpdate {
   const factory SessionUpdate.status({required Card card}) =
       SessionUpdate_Status;
 
-  /// The feeder reserved the feed under `feed` and runs it now.
+  /// The feeder reserved the feed under `feed` and runs it now. Past
+  /// `due_seconds` a feeder that stayed on has ended it itself.
   const factory SessionUpdate.feedStarted({
     required int feed,
     required int portions,
+    required int dueSeconds,
   }) = SessionUpdate_FeedStarted;
   const factory SessionUpdate.feedRefused({required FeedRefusal refusal}) =
       SessionUpdate_FeedRefused;

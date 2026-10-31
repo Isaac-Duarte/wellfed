@@ -234,6 +234,33 @@ class FakeInstallPorts implements InstallPorts {
   @override
   PendingInstall pending(InstallPaths paths) => pendingInstall;
 
+  int forgets = 0;
+  bool openRequest = false;
+  Object? forgetFails;
+
+  @override
+  void forgetInstall(InstallPaths paths) {
+    if (forgetFails case final error?) throw error;
+    forgets++;
+    pendingInstall = PendingInstall.nothing;
+  }
+
+  @override
+  bool requestOpen(InstallPaths paths) => openRequest;
+
+  int ledgersSetAside = 0;
+  final backupsSetAside = <(String, BackupProblem)>[];
+
+  @override
+  void setAsideLedgers(InstallPaths paths) {
+    ledgersSetAside++;
+    pendingInstall = PendingInstall.nothing;
+  }
+
+  @override
+  void setAsideBackup(InstallPaths paths, String path, BackupProblem problem) =>
+      backupsSetAside.add((path, problem));
+
   @override
   String? keptBackup(InstallPaths paths, List<int> identity) => kept;
 
@@ -461,8 +488,15 @@ class FakeSession with _FakeOpaque implements FeederSession {
   @override
   void feed({required int portions}) => feeds.add(portions);
 
+  /// What a cancel throws, as a session already gone does.
+  Object? cancelFails;
+  final cancels = <int>[];
+
   @override
-  void cancelFeed({required int feed}) {}
+  void cancelFeed({required int feed}) {
+    if (cancelFails case final error?) throw error;
+    cancels.add(feed);
+  }
 
   @override
   void refresh() {}

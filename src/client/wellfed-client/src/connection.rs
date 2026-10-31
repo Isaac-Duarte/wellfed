@@ -213,6 +213,15 @@ impl Connection {
         self.cursor
     }
 
+    /// Change the silence limit from now on, still counted from when the
+    /// feeder was last heard. A client watching something time-bound asks
+    /// for a shorter one, and is the one to keep a shorter limit fed with
+    /// requests: the keepalive runs on [`Timing::keepalive`] whatever this
+    /// says.
+    pub fn set_silence(&mut self, silence: Duration) {
+        self.timing.silence = silence;
+    }
+
     fn live(&self) -> Result<(), Error> {
         self.ended.map_or(Ok(()), |ended| Err(ended.error()))
     }

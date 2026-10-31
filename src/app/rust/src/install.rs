@@ -45,6 +45,7 @@ use crate::api::model::SetupRefusal;
 use crate::api::setup::CONTROL_PIECE;
 use crate::api::store::{KnownFeeder, load_store, save_store};
 use wellfed_install::StockPlans;
+use wellfed_install::storage::BackupFault;
 
 /// The run's future is deep; a debug build's frames are large.
 pub(crate) const STACK: usize = 16 * 1024 * 1024;
@@ -163,13 +164,41 @@ pub fn check_image(dir: &Path, pin: Option<&Pin>) -> ImageCheck {
 }
 
 pub fn pending(data_dir: &Path) -> PendingInstall {
-    if wellfed_install::storage::resumable(&data_dir.join(BACKUPS)) {
+    let (config, backups) = (data_dir.join(CONFIG), data_dir.join(BACKUPS));
+    if wellfed_install::stock::damaged_record(&config, &backups).is_some() {
+        PendingInstall::Damaged
+    } else if wellfed_install::stock::damaged_ledgers(&config) {
+        PendingInstall::LedgerDamaged
+    } else if wellfed_install::storage::resumable(&backups) {
         PendingInstall::Paired
     } else if wellfed_install::stock::open_request(&data_dir.join(CONFIG)) {
         PendingInstall::RequestOpen
     } else {
         PendingInstall::Nothing
     }
+}
+
+/// The owner's way out of an install whose record is stuck or damaged. Keeps the
+/// backups and every device's ledger.
+pub fn forget_install(data_dir: &Path) -> Result<(), Error> {
+    wellfed_install::stock::forget_install(&data_dir.join(CONFIG), &data_dir.join(BACKUPS))
+}
+
+/// The owner accepted that the phone no longer knows whether a request to the
+/// feeder a damaged ledger was about is open. Renames, and never deletes.
+pub fn set_aside_ledgers(data_dir: &Path) -> Result<(), Error> {
+    wellfed_install::stock::set_aside_ledgers(&data_dir.join(CONFIG))
+}
+
+/// The owner accepted that the backup at `path` is no longer one to go back with.
+/// Renames, and never deletes.
+pub fn set_aside_backup(data_dir: &Path, path: &Path, fault: BackupFault) -> Result<(), Error> {
+    wellfed_install::storage::set_aside_backup(&data_dir.join(BACKUPS), path, fault)
+}
+
+/// Whether any feeder has an install request with no known outcome.
+pub fn request_open(data_dir: &Path) -> bool {
+    wellfed_install::stock::any_open_request(&data_dir.join(CONFIG))
 }
 
 /// A session with the feeder `identity` read `build`. A failure only leaves the
@@ -621,15 +650,32 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
             InstallError::WrongReplacement { .. } => (StopCase::Other, Nothing),
         },
         Error::Backup(inner) if inner.is_connection_lost() => (StopCase::NotAnswering, FromBank0),
+        Error::Backup(inner)
+            if matches!(
+                **inner,
+                Error::BackupDamaged { .. } | Error::BackupExists { .. }
+            ) =>
+        {
+            stop_of(inner, from_stock)
+        }
+        Error::BackupDamaged { path, .. } => (
+            StopCase::BackupDamaged {
+                path: path.display().to_string(),
+            },
+            FromBank0,
+        ),
+        Error::BackupExists { path } => (
+            StopCase::BackupDiffers {
+                path: path.display().to_string(),
+            },
+            FromBank0,
+        ),
         Error::Handover(_) | Error::FrameSend { .. } | Error::UdpSocket(_) => {
             (StopCase::HandoverFailed, FromStart)
         }
-        Error::Backup(_)
-        | Error::NotStock(_)
-        | Error::Unverified
-        | Error::BackupDamaged { .. }
-        | Error::BackupExists { .. }
-        | Error::KeepGiven(_) => (StopCase::BackupMismatch, FromBank0),
+        Error::Backup(_) | Error::NotStock(_) | Error::Unverified | Error::KeepGiven(_) => {
+            (StopCase::BackupMismatch, FromBank0)
+        }
         Error::Setup(inner) => {
             let refusal = match inner.as_ref() {
                 Error::SetupRefused(refusal) => Some(*refusal),
@@ -663,7 +709,10 @@ pub fn stop_of(error: &Error, from_stock: bool) -> (StopCase, Resume) {
             (StopCase::Other, FromBank0)
         }
         Error::NotAnswering { .. } | Error::NoAddress => (StopCase::NotAnswering, FromBank0),
-        Error::NoHomeNetwork => (StopCase::Other, FromBank0),
+        // A pick-up whose record no longer leads anywhere goes through setup
+        // again, which takes the Wi-Fi.
+        Error::NoHomeNetwork => (StopCase::NoWifiGiven, FromBank0),
+        Error::EnrollmentUnreadable { .. } => (StopCase::DamagedRecord, Nothing),
         Error::StockServer(_)
         | Error::Images(_)
         | Error::StockServerGone
@@ -1021,6 +1070,24 @@ fn run_on_this_thread(
         }
     };
 
+    let data = Path::new(&spec.data_dir);
+    if let Some(detail) =
+        wellfed_install::stock::damaged_record(&data.join(CONFIG), &data.join(BACKUPS))
+    {
+        return InstallEnd::Stopped {
+            case: StopCase::DamagedRecord,
+            resume: Resume::Nothing,
+            detail,
+        };
+    }
+    if wellfed_install::stock::damaged_ledgers(&data.join(CONFIG)) {
+        return InstallEnd::Stopped {
+            case: StopCase::LedgerDamaged,
+            resume: Resume::Nothing,
+            detail: "a stock ledger does not parse".to_string(),
+        };
+    }
+
     let again = if matches!(spec.start, InstallStart::Bank0) {
         Resume::FromBank0
     } else {
@@ -1144,6 +1211,12 @@ fn listen_on_this_thread(
     deliver: &impl Fn(ListenUpdate) -> bool,
     stop: watch::Receiver<bool>,
 ) -> ListenUpdate {
+    if wellfed_install::stock::damaged_ledgers(config) {
+        return ListenUpdate::Failed {
+            detail: "a stock ledger does not parse".to_string(),
+        };
+    }
+
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -1292,6 +1365,20 @@ mod tests {
         assert_eq!(
             stop_of(&Error::Backup(Box::new(Error::Unverified)), true),
             (StopCase::BackupMismatch, Resume::FromBank0)
+        );
+        assert_eq!(
+            stop_of(
+                &Error::Backup(Box::new(Error::BackupExists {
+                    path: "kept.bin".into()
+                })),
+                true
+            ),
+            (
+                StopCase::BackupDiffers {
+                    path: "kept.bin".into()
+                },
+                Resume::FromBank0
+            )
         );
         assert_eq!(
             stop_of(&Error::Handover("no network".into()), true),

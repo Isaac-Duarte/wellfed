@@ -111,28 +111,3 @@ fn missing_inputs_or_invalid_network_settings_do_not_write_configuration() {
         assert!(!dir.path().join("server.json").exists());
     }
 }
-
-/// A configuration written while the replacement firmware had a broker role
-/// still loads as stock's, with the role ignored and the file untouched.
-#[test]
-fn a_configuration_with_the_retired_firmware_role_still_loads() {
-    let dir = TempDir::new().unwrap();
-    assert!(init(&inputs(&dir)).status.success());
-    let path = dir.path().join("server.json");
-
-    let mut raw: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    raw["firmware"] = serde_json::json!({
-        "client_id": "wellfed-fw-SYNTHETIC_FEEDER", "username": "wellfed-fw",
-        "password": "a".repeat(64), "request_key": "5a".repeat(32),
-    });
-    fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
-    let written = fs::read(&path).unwrap();
-
-    let config = config::load(&path).unwrap();
-    assert_eq!(config.device_id, "SYNTHETIC_FEEDER");
-    assert_eq!(fs::read(&path).unwrap(), written);
-
-    raw["other"] = serde_json::json!(1);
-    fs::write(&path, serde_json::to_vec(&raw).unwrap()).unwrap();
-    assert!(config::load(&path).is_err());
-}

@@ -2292,6 +2292,29 @@ fn the_keepalive_goes_out_when_quiet_and_silence_ends_the_session() {
 }
 
 #[test]
+fn a_shorter_silence_ends_the_session_sooner_and_the_usual_one_comes_back() {
+    let mut rig = Rig::new();
+    let mut owner = live(&mut rig, OWNER);
+    while owner.connection.poll_transmit().is_some() {}
+    let short = Duration::from_secs(20);
+    let heard = owner.now(&rig);
+
+    owner.connection.set_silence(short);
+    let due = owner.connection.poll_timeout().unwrap();
+    assert!(due <= heard + short, "{due:?}");
+
+    // Back to the usual limit, 20 s of silence is nothing.
+    owner.connection.set_silence(Timing::DEFAULT.silence);
+    owner.connection.handle_timeout(heard + short).unwrap();
+
+    owner.connection.set_silence(short);
+    assert!(matches!(
+        owner.connection.handle_timeout(heard + short),
+        Err(Error::Silent)
+    ));
+}
+
+#[test]
 fn a_major_2_hello_gets_the_typed_version_refusal() {
     let mut rig = Rig::new();
     let hello = Hello {

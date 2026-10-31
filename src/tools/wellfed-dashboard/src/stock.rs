@@ -121,12 +121,13 @@ mod tests {
 
     #[test]
     fn status_shows_stock() {
-        let status: StockStatus = serde_json::from_value(json!({
-            "broker_connected": true,
-            "device_online": true,
-            "attributes": { "softwareVersion": "1.1.15", "powerType": 1 },
-        }))
-        .unwrap();
+        let attributes = json!({ "softwareVersion": "1.1.15", "powerType": 1 });
+        let status = StockStatus {
+            broker_connected: true,
+            device_online: true,
+            attributes: serde_json::from_value(attributes).unwrap(),
+            ..StockStatus::default()
+        };
 
         let view = serde_json::to_value(view("127.0.0.1:8080".into(), &status)).unwrap();
 

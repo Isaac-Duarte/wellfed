@@ -15,6 +15,7 @@ use std::sync::Mutex;
 use flutter_rust_bridge::frb;
 use wellfed_install::build_info::BUILD;
 
+use crate::api::error::{BridgeError, ErrorKind};
 use crate::api::keys::ClientKey;
 use crate::api::model::SetupRefusal;
 use crate::api::setup::WifiCredentials;
@@ -299,9 +300,25 @@ pub enum StopCase {
     SetupFailed {
         refusal: Option<SetupRefusal>,
     },
-    /// Bluetooth setup went through on another feeder than this install's. That
-    /// one now has this phone's key and the Wi-Fi; this install stays with its own.
+    /// Bluetooth setup went through on a feeder with another identity than this
+    /// install's: another feeder, or this one after a factory reset. It accepted
+    /// this phone, may hold the Wi-Fi, and stays in the app's list of feeders;
+    /// this install stays with the identity it recorded.
     OtherFeeder,
+    /// This phone's own record of the install cannot be read. Only forgetting
+    /// the install clears it.
+    DamagedRecord,
+    /// A stock ledger does not parse. It counts as an open request until the
+    /// owner accepts setting it aside.
+    LedgerDamaged,
+    /// The kept backup at `path` does not open.
+    BackupDamaged {
+        path: String,
+    },
+    /// The feeder's read differs from the kept backup at `path`.
+    BackupDiffers {
+        path: String,
+    },
     /// The feeder this install paired with does not answer.
     NotAnswering,
     /// The feeder took the Wi-Fi over Bluetooth and never joined it: a wrong
@@ -533,6 +550,12 @@ pub fn check_build() -> BuildCheck {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PendingInstall {
     Nothing,
+    /// A record it left cannot be read, so no run can start until it is
+    /// forgotten.
+    Damaged,
+    /// A stock ledger does not parse, so no run can start until the owner sets
+    /// it aside.
+    LedgerDamaged,
     /// It paired with this phone and did not reach the end: pick up from
     /// bank 0.
     Paired,
@@ -546,6 +569,57 @@ pub enum PendingInstall {
 #[frb(sync)]
 pub fn pending_install(data_dir: String) -> PendingInstall {
     install::pending(std::path::Path::new(&data_dir))
+}
+
+/// Forget the install in progress: its record and the feeder its broker trusted.
+/// Keeps every backup, and every device's ledger of what was asked of it.
+#[frb(sync)]
+pub fn forget_install(data_dir: String) -> Result<(), BridgeError> {
+    install::forget_install(std::path::Path::new(&data_dir))
+        .map_err(|error| BridgeError::new(ErrorKind::Store, install::text(&error)))
+}
+
+/// The owner accepted that this phone no longer knows whether an install request
+/// to the feeder a damaged ledger was about is open. Renames it; never deletes.
+#[frb(sync)]
+pub fn set_aside_ledgers(data_dir: String) -> Result<(), BridgeError> {
+    install::set_aside_ledgers(std::path::Path::new(&data_dir))
+        .map_err(|error| BridgeError::new(ErrorKind::Store, install::text(&error)))
+}
+
+/// Why an owner gives up a kept backup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackupProblem {
+    /// It does not open.
+    Damaged,
+    /// A run stopped because the feeder's read differs from it.
+    Differs,
+}
+
+/// The owner accepted that the backup at `path` is no longer one to go back with.
+/// Renames it; never deletes.
+#[frb(sync)]
+pub fn set_aside_backup(
+    data_dir: String,
+    path: String,
+    problem: BackupProblem,
+) -> Result<(), BridgeError> {
+    let fault = match problem {
+        BackupProblem::Damaged => wellfed_install::storage::BackupFault::Damaged,
+        BackupProblem::Differs => wellfed_install::storage::BackupFault::Differs,
+    };
+    install::set_aside_backup(
+        std::path::Path::new(&data_dir),
+        std::path::Path::new(&path),
+        fault,
+    )
+    .map_err(|error| BridgeError::new(ErrorKind::Store, install::text(&error)))
+}
+
+/// Whether any feeder has an install request with no known outcome.
+#[frb(sync)]
+pub fn install_request_open(data_dir: String) -> bool {
+    install::request_open(std::path::Path::new(&data_dir))
 }
 
 /// A session with this feeder read `build`, which settles the stock trial that

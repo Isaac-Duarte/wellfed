@@ -45,7 +45,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1464125642;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 810520828;
 
 // Section: executor
 
@@ -2067,6 +2067,36 @@ fn wire__crate__api__store__fingerprint_impl(
         },
     )
 }
+fn wire__crate__api__install__forget_install_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "forget_install",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_data_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, crate::api::error::BridgeError>((move || {
+                let output_ok = crate::api::install::forget_install(api_data_dir)?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__restore__forget_restore_key_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -2191,6 +2221,37 @@ fn wire__crate__api__init_app_impl(
                     std::result::Result::Ok(output_ok)
                 })())
             }
+        },
+    )
+}
+fn wire__crate__api__install__install_request_open_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "install_request_open",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_data_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok =
+                    Ok::<_, ()>(crate::api::install::install_request_open(api_data_dir))?;
+                std::result::Result::Ok(output_ok)
+            })())
         },
     )
 }
@@ -2476,6 +2537,69 @@ fn wire__crate__api__store__save_store_impl(
                     std::result::Result::Ok(output_ok)
                 })())
             }
+        },
+    )
+}
+fn wire__crate__api__install__set_aside_backup_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_aside_backup",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_data_dir = <String>::sse_decode(&mut deserializer);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            let api_problem = <crate::api::install::BackupProblem>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, crate::api::error::BridgeError>((move || {
+                let output_ok =
+                    crate::api::install::set_aside_backup(api_data_dir, api_path, api_problem)?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__install__set_aside_ledgers_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_aside_ledgers",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_data_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, crate::api::error::BridgeError>((move || {
+                let output_ok = crate::api::install::set_aside_ledgers(api_data_dir)?;
+                std::result::Result::Ok(output_ok)
+            })())
         },
     )
 }
@@ -3104,6 +3228,18 @@ impl SseDecode for crate::api::restore::BackupCheck {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseDecode for crate::api::install::BackupProblem {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::install::BackupProblem::Damaged,
+            1 => crate::api::install::BackupProblem::Differs,
+            _ => unreachable!("Invalid variant for BackupProblem: {}", inner),
+        };
     }
 }
 
@@ -5245,8 +5381,10 @@ impl SseDecode for crate::api::install::PendingInstall {
         let mut inner = <i32>::sse_decode(deserializer);
         return match inner {
             0 => crate::api::install::PendingInstall::Nothing,
-            1 => crate::api::install::PendingInstall::Paired,
-            2 => crate::api::install::PendingInstall::RequestOpen,
+            1 => crate::api::install::PendingInstall::Damaged,
+            2 => crate::api::install::PendingInstall::LedgerDamaged,
+            3 => crate::api::install::PendingInstall::Paired,
+            4 => crate::api::install::PendingInstall::RequestOpen,
             _ => unreachable!("Invalid variant for PendingInstall: {}", inner),
         };
     }
@@ -5602,9 +5740,11 @@ impl SseDecode for crate::api::session::SessionUpdate {
             2 => {
                 let mut var_feed = <u32>::sse_decode(deserializer);
                 let mut var_portions = <u8>::sse_decode(deserializer);
+                let mut var_dueSeconds = <u32>::sse_decode(deserializer);
                 return crate::api::session::SessionUpdate::FeedStarted {
                     feed: var_feed,
                     portions: var_portions,
+                    due_seconds: var_dueSeconds,
                 };
             }
             3 => {
@@ -5897,33 +6037,47 @@ impl SseDecode for crate::api::install::StopCase {
                 return crate::api::install::StopCase::OtherFeeder;
             }
             17 => {
-                return crate::api::install::StopCase::NotAnswering;
+                return crate::api::install::StopCase::DamagedRecord;
             }
             18 => {
-                return crate::api::install::StopCase::NotJoined;
+                return crate::api::install::StopCase::LedgerDamaged;
             }
             19 => {
-                return crate::api::install::StopCase::PhoneOffWifi;
+                let mut var_path = <String>::sse_decode(deserializer);
+                return crate::api::install::StopCase::BackupDamaged { path: var_path };
             }
             20 => {
-                return crate::api::install::StopCase::WifiRefused;
+                let mut var_path = <String>::sse_decode(deserializer);
+                return crate::api::install::StopCase::BackupDiffers { path: var_path };
             }
             21 => {
-                return crate::api::install::StopCase::NoWifiGiven;
+                return crate::api::install::StopCase::NotAnswering;
             }
             22 => {
-                return crate::api::install::StopCase::PromotionFailed;
+                return crate::api::install::StopCase::NotJoined;
             }
             23 => {
-                return crate::api::install::StopCase::FellBack;
+                return crate::api::install::StopCase::PhoneOffWifi;
             }
             24 => {
-                return crate::api::install::StopCase::ServerFailed;
+                return crate::api::install::StopCase::WifiRefused;
             }
             25 => {
-                return crate::api::install::StopCase::Cancelled;
+                return crate::api::install::StopCase::NoWifiGiven;
             }
             26 => {
+                return crate::api::install::StopCase::PromotionFailed;
+            }
+            27 => {
+                return crate::api::install::StopCase::FellBack;
+            }
+            28 => {
+                return crate::api::install::StopCase::ServerFailed;
+            }
+            29 => {
+                return crate::api::install::StopCase::Cancelled;
+            }
+            30 => {
                 return crate::api::install::StopCase::Other;
             }
             _ => {
@@ -6486,14 +6640,14 @@ fn pde_ffi_dispatcher_primary_impl(
         31 => wire__crate__api__restore__RestoreRun_run_impl(port, ptr, rust_vec_len, data_len),
         37 => wire__crate__api__store__app_store_default_impl(port, ptr, rust_vec_len, data_len),
         39 => wire__crate__api__store__appearance_default_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__join__join_feeder_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__store__load_store_impl(port, ptr, rust_vec_len, data_len),
-        54 => {
+        49 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__join__join_feeder_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__store__load_store_impl(port, ptr, rust_vec_len, data_len),
+        56 => {
             wire__crate__api__restore__read_restore_feeder_impl(port, ptr, rust_vec_len, data_len)
         }
-        55 => wire__crate__api__store__save_store_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__feeder__settings_changes_default_impl(
+        57 => wire__crate__api__store__save_store_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__feeder__settings_changes_default_impl(
             port,
             ptr,
             rust_vec_len,
@@ -6550,14 +6704,18 @@ fn pde_ffi_dispatcher_sync_impl(
         42 => wire__crate__api__install__check_image_impl(ptr, rust_vec_len, data_len),
         43 => wire__crate__api__install__feeder_answered_impl(ptr, rust_vec_len, data_len),
         44 => wire__crate__api__store__fingerprint_impl(ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__restore__forget_restore_key_impl(ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__store__identity_bytes_impl(ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__store__identity_hex_impl(ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__join__invite_feeder_impl(ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__install__kept_backup_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__install__forget_install_impl(ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__restore__forget_restore_key_impl(ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__store__identity_bytes_impl(ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__store__identity_hex_impl(ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__install__install_request_open_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__join__invite_feeder_impl(ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__install__kept_backup_impl(ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6747,6 +6905,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::restore::BackupCheck>
     for crate::api::restore::BackupCheck
 {
     fn into_into_dart(self) -> crate::api::restore::BackupCheck {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::install::BackupProblem {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Damaged => 0.into_dart(),
+            Self::Differs => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::install::BackupProblem
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::install::BackupProblem>
+    for crate::api::install::BackupProblem
+{
+    fn into_into_dart(self) -> crate::api::install::BackupProblem {
         self
     }
 }
@@ -8448,8 +8627,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::install::PendingInstall {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
             Self::Nothing => 0.into_dart(),
-            Self::Paired => 1.into_dart(),
-            Self::RequestOpen => 2.into_dart(),
+            Self::Damaged => 1.into_dart(),
+            Self::LedgerDamaged => 2.into_dart(),
+            Self::Paired => 3.into_dart(),
+            Self::RequestOpen => 4.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -8903,10 +9084,15 @@ impl flutter_rust_bridge::IntoDart for crate::api::session::SessionUpdate {
             crate::api::session::SessionUpdate::Status { card } => {
                 [1.into_dart(), card.into_into_dart().into_dart()].into_dart()
             }
-            crate::api::session::SessionUpdate::FeedStarted { feed, portions } => [
+            crate::api::session::SessionUpdate::FeedStarted {
+                feed,
+                portions,
+                due_seconds,
+            } => [
                 2.into_dart(),
                 feed.into_into_dart().into_dart(),
                 portions.into_into_dart().into_dart(),
+                due_seconds.into_into_dart().into_dart(),
             ]
             .into_dart(),
             crate::api::session::SessionUpdate::FeedRefused { refusal } => {
@@ -9178,16 +9364,24 @@ impl flutter_rust_bridge::IntoDart for crate::api::install::StopCase {
                 [15.into_dart(), refusal.into_into_dart().into_dart()].into_dart()
             }
             crate::api::install::StopCase::OtherFeeder => [16.into_dart()].into_dart(),
-            crate::api::install::StopCase::NotAnswering => [17.into_dart()].into_dart(),
-            crate::api::install::StopCase::NotJoined => [18.into_dart()].into_dart(),
-            crate::api::install::StopCase::PhoneOffWifi => [19.into_dart()].into_dart(),
-            crate::api::install::StopCase::WifiRefused => [20.into_dart()].into_dart(),
-            crate::api::install::StopCase::NoWifiGiven => [21.into_dart()].into_dart(),
-            crate::api::install::StopCase::PromotionFailed => [22.into_dart()].into_dart(),
-            crate::api::install::StopCase::FellBack => [23.into_dart()].into_dart(),
-            crate::api::install::StopCase::ServerFailed => [24.into_dart()].into_dart(),
-            crate::api::install::StopCase::Cancelled => [25.into_dart()].into_dart(),
-            crate::api::install::StopCase::Other => [26.into_dart()].into_dart(),
+            crate::api::install::StopCase::DamagedRecord => [17.into_dart()].into_dart(),
+            crate::api::install::StopCase::LedgerDamaged => [18.into_dart()].into_dart(),
+            crate::api::install::StopCase::BackupDamaged { path } => {
+                [19.into_dart(), path.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::install::StopCase::BackupDiffers { path } => {
+                [20.into_dart(), path.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::install::StopCase::NotAnswering => [21.into_dart()].into_dart(),
+            crate::api::install::StopCase::NotJoined => [22.into_dart()].into_dart(),
+            crate::api::install::StopCase::PhoneOffWifi => [23.into_dart()].into_dart(),
+            crate::api::install::StopCase::WifiRefused => [24.into_dart()].into_dart(),
+            crate::api::install::StopCase::NoWifiGiven => [25.into_dart()].into_dart(),
+            crate::api::install::StopCase::PromotionFailed => [26.into_dart()].into_dart(),
+            crate::api::install::StopCase::FellBack => [27.into_dart()].into_dart(),
+            crate::api::install::StopCase::ServerFailed => [28.into_dart()].into_dart(),
+            crate::api::install::StopCase::Cancelled => [29.into_dart()].into_dart(),
+            crate::api::install::StopCase::Other => [30.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -10065,6 +10259,22 @@ impl SseEncode for crate::api::restore::BackupCheck {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::api::install::BackupProblem {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::install::BackupProblem::Damaged => 0,
+                crate::api::install::BackupProblem::Differs => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -11917,8 +12127,10 @@ impl SseEncode for crate::api::install::PendingInstall {
         <i32>::sse_encode(
             match self {
                 crate::api::install::PendingInstall::Nothing => 0,
-                crate::api::install::PendingInstall::Paired => 1,
-                crate::api::install::PendingInstall::RequestOpen => 2,
+                crate::api::install::PendingInstall::Damaged => 1,
+                crate::api::install::PendingInstall::LedgerDamaged => 2,
+                crate::api::install::PendingInstall::Paired => 3,
+                crate::api::install::PendingInstall::RequestOpen => 4,
                 _ => {
                     unimplemented!("");
                 }
@@ -12233,10 +12445,15 @@ impl SseEncode for crate::api::session::SessionUpdate {
                 <i32>::sse_encode(1, serializer);
                 <crate::api::session::Card>::sse_encode(card, serializer);
             }
-            crate::api::session::SessionUpdate::FeedStarted { feed, portions } => {
+            crate::api::session::SessionUpdate::FeedStarted {
+                feed,
+                portions,
+                due_seconds,
+            } => {
                 <i32>::sse_encode(2, serializer);
                 <u32>::sse_encode(feed, serializer);
                 <u8>::sse_encode(portions, serializer);
+                <u32>::sse_encode(due_seconds, serializer);
             }
             crate::api::session::SessionUpdate::FeedRefused { refusal } => {
                 <i32>::sse_encode(3, serializer);
@@ -12491,35 +12708,49 @@ impl SseEncode for crate::api::install::StopCase {
             crate::api::install::StopCase::OtherFeeder => {
                 <i32>::sse_encode(16, serializer);
             }
-            crate::api::install::StopCase::NotAnswering => {
+            crate::api::install::StopCase::DamagedRecord => {
                 <i32>::sse_encode(17, serializer);
             }
-            crate::api::install::StopCase::NotJoined => {
+            crate::api::install::StopCase::LedgerDamaged => {
                 <i32>::sse_encode(18, serializer);
             }
-            crate::api::install::StopCase::PhoneOffWifi => {
+            crate::api::install::StopCase::BackupDamaged { path } => {
                 <i32>::sse_encode(19, serializer);
+                <String>::sse_encode(path, serializer);
             }
-            crate::api::install::StopCase::WifiRefused => {
+            crate::api::install::StopCase::BackupDiffers { path } => {
                 <i32>::sse_encode(20, serializer);
+                <String>::sse_encode(path, serializer);
             }
-            crate::api::install::StopCase::NoWifiGiven => {
+            crate::api::install::StopCase::NotAnswering => {
                 <i32>::sse_encode(21, serializer);
             }
-            crate::api::install::StopCase::PromotionFailed => {
+            crate::api::install::StopCase::NotJoined => {
                 <i32>::sse_encode(22, serializer);
             }
-            crate::api::install::StopCase::FellBack => {
+            crate::api::install::StopCase::PhoneOffWifi => {
                 <i32>::sse_encode(23, serializer);
             }
-            crate::api::install::StopCase::ServerFailed => {
+            crate::api::install::StopCase::WifiRefused => {
                 <i32>::sse_encode(24, serializer);
             }
-            crate::api::install::StopCase::Cancelled => {
+            crate::api::install::StopCase::NoWifiGiven => {
                 <i32>::sse_encode(25, serializer);
             }
-            crate::api::install::StopCase::Other => {
+            crate::api::install::StopCase::PromotionFailed => {
                 <i32>::sse_encode(26, serializer);
+            }
+            crate::api::install::StopCase::FellBack => {
+                <i32>::sse_encode(27, serializer);
+            }
+            crate::api::install::StopCase::ServerFailed => {
+                <i32>::sse_encode(28, serializer);
+            }
+            crate::api::install::StopCase::Cancelled => {
+                <i32>::sse_encode(29, serializer);
+            }
+            crate::api::install::StopCase::Other => {
+                <i32>::sse_encode(30, serializer);
             }
             _ => {
                 unimplemented!("");

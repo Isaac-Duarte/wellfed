@@ -247,10 +247,12 @@ pub enum SessionUpdate {
     Status {
         card: Card,
     },
-    /// The feeder reserved the feed under `feed` and runs it now.
+    /// The feeder reserved the feed under `feed` and runs it now. Past
+    /// `due_seconds` a feeder that stayed on has ended it itself.
     FeedStarted {
         feed: u32,
         portions: u8,
+        due_seconds: u32,
     },
     FeedRefused {
         refusal: FeedRefusal,

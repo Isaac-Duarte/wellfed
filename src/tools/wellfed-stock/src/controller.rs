@@ -141,13 +141,72 @@ pub fn open_request(config_path: &Path) -> Result<bool> {
     }
     let ledger: Ledger =
         serde_json::from_slice(&fs::read(&path)?).context("invalid stock ledger")?;
+    Ok(unsettled(&ledger))
+}
+
+/// Whether any device with a ledger beside the config has a request whose
+/// outcome is not settled, whichever feeder the config names now. An unreadable
+/// ledger counts as open: only a readable one can rule a request out. Reads the
+/// ledgers only.
+pub fn any_open_request(config_path: &Path) -> Result<bool> {
+    for path in ledger_files(config_path)? {
+        let ledger = fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Ledger>(&bytes).ok());
+        if ledger.as_ref().is_none_or(unsettled) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// The ledgers beside the config that were read and do not parse. One that could
+/// not be read at all is not here: that says nothing about the file.
+pub fn unreadable_ledgers(config_path: &Path) -> Result<Vec<PathBuf>> {
+    let mut unreadable = Vec::new();
+    for path in ledger_files(config_path)? {
+        let parses = fs::read(&path)
+            .map(|bytes| serde_json::from_slice::<Ledger>(&bytes).is_ok())
+            .unwrap_or(true);
+        if !parses {
+            unreadable.push(path);
+        }
+    }
+    Ok(unreadable)
+}
+
+/// Every device's ledger beside the config.
+fn ledger_files(config_path: &Path) -> Result<Vec<PathBuf>> {
+    let directory = config_path.parent().context("config directory missing")?;
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.into()),
+    };
+    let mut files = Vec::new();
+    for entry in entries {
+        let path = entry?.path();
+        let is_ledger = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("stock-ledger.") && name.ends_with(".json"));
+        if is_ledger {
+            files.push(path);
+        }
+    }
+    Ok(files)
+}
+
+/// The ledger's latest trial is submitted (the server that sent it is gone),
+/// uncertain, or failed.
+fn unsettled(ledger: &Ledger) -> bool {
     let latest = ledger.ota_trials.values().max_by_key(|r| r.sequence);
-    Ok(latest.is_some_and(|record| {
+    latest.is_some_and(|record| {
         matches!(
             record.phase,
             TrialPhase::Submitted | TrialPhase::Uncertain | TrialPhase::ReportedError
         )
-    }))
+    })
 }
 
 /// The sequence of `device`'s latest trial, which an answer seen now is about.
@@ -192,7 +251,7 @@ pub fn close_answered(
     };
     if record.sequence != sequence
         || !matches!(record.phase, TrialPhase::Submitted | TrialPhase::Uncertain)
-        || record.build.as_deref() != Some(build)
+        || record.build != build
     {
         return Ok(false);
     }
@@ -443,7 +502,7 @@ impl Controller {
             return Err(Rejection::ImageServer);
         };
         let image_sha256 = lease.sha256.clone();
-        let build = Some(lease.build.clone());
+        let build = lease.build.clone();
 
         let record = ota::trial::Record {
             sequence: self.ledger.ota_trials.len() + 1,
@@ -513,7 +572,7 @@ impl Controller {
             .ok_or(Rejection::Conflict)?;
         if record.phase == TrialPhase::ReplacementHealthy
             && record.resolution_note.as_ref() == Some(&answer.note)
-            && record.build.as_deref() == Some(answer.build.as_str())
+            && record.build == answer.build
         {
             return Ok(record.clone());
         }
@@ -526,7 +585,7 @@ impl Controller {
         if stock_online || record.stock_reported {
             return Err(Rejection::StockRunning);
         }
-        if answer.bank != 0 || record.build.as_deref() != Some(answer.build.as_str()) {
+        if answer.bank != 0 || record.build != answer.build {
             return Err(Rejection::WrongBuild);
         }
 

@@ -201,6 +201,9 @@ class _Before extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final refusal = _refusal();
+    final damaged =
+        flow.pending == PendingInstall.damaged ||
+        flow.pending == PendingInstall.ledgerDamaged;
     return StepScaffold(
       leading: Leading.close,
       appBarTitle: 'Install Wellfed',
@@ -239,6 +242,27 @@ class _Before extends StatelessWidget {
                 'to it a second time.',
           ),
         ],
+        if (flow.pending == PendingInstall.damaged) ...[
+          const SizedBox(height: Space.s4),
+          const Notice(
+            tone: Tone.warning,
+            lead: "This phone can't read its record of an earlier install.",
+            text: 'Forget that install to go on. Its backups stay.',
+          ),
+        ],
+        if (flow.pending == PendingInstall.ledgerDamaged) ...[
+          const SizedBox(height: Space.s4),
+          const Notice(
+            tone: Tone.warning,
+            lead: "This phone can't read its record of an install request.",
+            text:
+                'It treats that request as still open until you say otherwise.',
+          ),
+        ],
+        if (flow.repairFailed case final failed?) ...[
+          const SizedBox(height: Space.s4),
+          Notice(tone: Tone.fault, lead: "That didn't work.", text: failed),
+        ],
       ],
       actions: [
         if (flow.mayStart && flow.pending == PendingInstall.paired)
@@ -256,13 +280,170 @@ class _Before extends StatelessWidget {
             child: const Text('Look for it over Bluetooth'),
           ),
         ],
+        if (flow.pending == PendingInstall.ledgerDamaged)
+          _SetAsideLedger(flow: flow),
+        // For a feeder past stock with no record to pick up from: Continue is
+        // the Reset route, which is stock's.
+        OutlinedButton(
+          onPressed: flow.mayStart && !damaged
+              ? () => unawaited(flow.resume())
+              : null,
+          child: const Text('This feeder already runs Wellfed'),
+        ),
         FilledButton(
-          onPressed: flow.mayStart ? () => unawaited(_begin(context)) : null,
+          onPressed: flow.mayStart && !damaged
+              ? () => unawaited(_begin(context))
+              : null,
           child: const Text('Continue'),
         ),
+        if (flow.forgetOffered) _ForgetInstall(flow: flow),
       ],
     );
   }
+}
+
+/// Ask once before a repair that gives something up. `true` when the owner agreed.
+Future<bool> _agreed(
+  BuildContext context, {
+  required String title,
+  required String confirm,
+  required List<String> words,
+}) async {
+  final sure = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final (i, line) in words.indexed) ...[
+              if (i > 0) const SizedBox(height: Space.s3),
+              Text(line),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text(confirm),
+        ),
+      ],
+    ),
+  );
+  return sure == true;
+}
+
+/// The way out of a stuck or damaged install record, which keeps every backup and
+/// never touches the stock ledger.
+class _ForgetInstall extends StatelessWidget {
+  const _ForgetInstall({required this.flow});
+
+  final InstallFlow flow;
+
+  Future<void> _confirm(BuildContext context) async {
+    final sure = await _agreed(
+      context,
+      title: 'Forget this install?',
+      confirm: 'Forget',
+      words: [
+        'This clears what this phone kept for the install in progress: which '
+            'feeder it was installing on, and which feeder it trusted. It changes '
+            'nothing on the feeder.',
+        'Every backup of the original firmware stays on this phone.',
+        if (flow.forgetEndsPickUp)
+          '"Pick up where it stopped" ends here. To finish this feeder later, '
+              'choose "This feeder already runs Wellfed" on the first screen.',
+        if (flow.requestStillOpen)
+          'An install sent to a feeder has no known result. Wellfed stops '
+              'listening for it, but keeps the record, so that feeder is never '
+              'sent it a second time. If that feeder comes back, starting again '
+              'waits until its result is known.',
+      ],
+    );
+    if (sure) flow.forgetInstall();
+  }
+
+  @override
+  Widget build(BuildContext context) => TextButton(
+    onPressed: () => unawaited(_confirm(context)),
+    child: const Text('Forget this install'),
+  );
+}
+
+/// The owner's way past a stock ledger that does not parse. It gives up the guard
+/// the ledger held, so the words say so, and nothing does this by itself.
+class _SetAsideLedger extends StatelessWidget {
+  const _SetAsideLedger({required this.flow});
+
+  final InstallFlow flow;
+
+  Future<void> _confirm(BuildContext context) async {
+    final sure = await _agreed(
+      context,
+      title: 'Set the damaged record aside?',
+      confirm: 'Set it aside',
+      words: const [
+        'This phone no longer knows whether an install it sent to a feeder is '
+            'still open. If you go on, it could send that feeder the install '
+            'again.',
+        'Check that feeder first. Wait until it has finished anything it '
+            'started, and see whether it runs Wellfed or its original firmware.',
+        'The record is renamed and kept on this phone, not deleted. Every backup '
+            'stays.',
+      ],
+    );
+    if (sure) flow.setAsideLedgers();
+  }
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton(
+    onPressed: () => unawaited(_confirm(context)),
+    child: const Text('Set the damaged record aside'),
+  );
+}
+
+/// The owner's way past a kept backup a run stopped on. The comparison that
+/// stopped it is not loosened: the file goes only by this choice.
+class _SetAsideBackup extends StatelessWidget {
+  const _SetAsideBackup({
+    required this.flow,
+    required this.path,
+    required this.problem,
+  });
+
+  final InstallFlow flow;
+  final String path;
+  final BackupProblem problem;
+
+  Future<void> _confirm(BuildContext context) async {
+    final sure = await _agreed(
+      context,
+      title: 'Set this backup aside?',
+      confirm: 'Set it aside',
+      words: const [
+        'That copy of the original firmware can no longer be used to go back to '
+            'it.',
+        'Wellfed reads a fresh copy only if the feeder still holds its original '
+            "firmware. If it doesn't, this phone has no copy left to go back "
+            'with.',
+        'The file is renamed and kept on this phone, not deleted.',
+      ],
+    );
+    if (sure) unawaited(flow.setAsideBackup(path, problem));
+  }
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton(
+    onPressed: () => unawaited(_confirm(context)),
+    child: const Text('Set this backup aside'),
+  );
 }
 
 /// Android refused what a pick-up may need.
@@ -1077,11 +1258,36 @@ class _Stopped extends StatelessWidget {
       },
     ),
     StopCase_OtherFeeder() => (
-      'That was a different feeder',
-      'The code was keyed in on another feeder than the one this install is '
-          'for. That one now lists this phone as its owner and has your Wi-Fi, '
-          "and nothing else was done to it. Put this install's feeder in setup "
-          'mode, then pick up and key in the code on its buttons.',
+      'A different feeder answered',
+      'The code was keyed in on a feeder this install does not know. It may be '
+          'another feeder, or this one after a factory reset, which gives it a '
+          'new identity. It accepted this phone and may now hold your Wi-Fi '
+          'password, and it stays known to this phone even if you forget this '
+          "install. To carry on with this install's feeder, put it in setup "
+          'mode, then pick up and key in the code on its buttons. Otherwise, '
+          'forget this install.',
+    ),
+    StopCase_LedgerDamaged() => (
+      "This phone can't read an install request's record",
+      'Nothing was sent to the feeder. Until you say otherwise, Wellfed treats '
+          'that request as still open.',
+    ),
+    StopCase_BackupDamaged() => (
+      "This phone's backup is damaged",
+      'The copy of the original firmware it kept for this feeder no longer '
+          'opens. Wellfed stays where it is on the feeder, and nothing was '
+          'overwritten.',
+    ),
+    StopCase_BackupDiffers() => (
+      "The backup doesn't match the one kept",
+      'What the feeder holds differs from the copy this phone kept, and a kept '
+          "copy is never replaced. Wellfed won't make itself permanent until "
+          'that is settled.',
+    ),
+    StopCase_DamagedRecord() => (
+      "This phone can't read its install record",
+      'Nothing was sent to the feeder. Forget this install to go on. Every '
+          'backup of the original firmware stays on this phone.',
     ),
     StopCase_NotAnswering() => (
       'The feeder stopped answering',
@@ -1176,6 +1382,21 @@ class _Stopped extends StatelessWidget {
               text: 'Wellfed is making sure before it asks again.',
             ),
           ],
+          if (flow.setupSeen) ...[
+            const SizedBox(height: Space.s3),
+            const Notice(
+              tone: Tone.neutral,
+              lead: 'A feeder nearby is waiting for setup.',
+              text:
+                  "If it's this one, it installed. If it's another feeder, "
+                  'keep listening.',
+            ),
+            const SizedBox(height: Space.s2),
+            OutlinedButton(
+              onPressed: () => unawaited(flow.resume()),
+              child: const Text('Set up this feeder'),
+            ),
+          ],
           const SizedBox(height: Space.s5),
         ],
         if (flow.bluetoothRefused) ...[
@@ -1183,6 +1404,20 @@ class _Stopped extends StatelessWidget {
           const SizedBox(height: Space.s4),
         ],
         ..._nextSteps(context, stop),
+        if (flow.mayForget &&
+            flow.pending == PendingInstall.ledgerDamaged &&
+            stop.case_ is! StopCase_LedgerDamaged) ...[
+          const SizedBox(height: Space.s2),
+          _SetAsideLedger(flow: flow),
+        ],
+        if (flow.forgetOffered) ...[
+          const SizedBox(height: Space.s2),
+          _ForgetInstall(flow: flow),
+        ],
+        if (flow.repairFailed case final failed?) ...[
+          const SizedBox(height: Space.s2),
+          Notice(tone: Tone.fault, lead: "That didn't work.", text: failed),
+        ],
         if (stop.detail.isNotEmpty && !listening) ...[
           const SizedBox(height: Space.s4),
           Text(
@@ -1237,6 +1472,17 @@ class _Stopped extends StatelessWidget {
           home(),
         ],
       },
+      StopCase_LedgerDamaged() => [_SetAsideLedger(flow: flow), home()],
+      StopCase_BackupDamaged(:final path) => [
+        _SetAsideBackup(flow: flow, path: path, problem: BackupProblem.damaged),
+        const SizedBox(height: Space.s2),
+        home(),
+      ],
+      StopCase_BackupDiffers(:final path) => [
+        _SetAsideBackup(flow: flow, path: path, problem: BackupProblem.differs),
+        const SizedBox(height: Space.s2),
+        home(),
+      ],
       StopCase_EarlierRequestOpen() => [
         primary('Listen for it', () => unawaited(flow.listenForOpenRequest())),
       ],

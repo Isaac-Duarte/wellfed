@@ -84,6 +84,86 @@ pub fn forget_enrollment(config: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// Forget the install in progress: the paired record, the broker's trust and,
+/// when the config itself cannot be read, the config, set aside under another
+/// name so the next run makes a new one. This is the owner's way out of a record
+/// that stranded the install.
+///
+/// It keeps what guards a feeder or belongs to the owner. Each device's ledger
+/// stays, so a request with no known outcome still blocks a second one when that
+/// device comes back, and every backup and promotion stays with its feeder.
+pub fn forget_install(config: &Path, backups: &Path) -> Result<(), Error> {
+    forget_enrollment(config)?;
+    crate::storage::forget_paired(backups)?;
+
+    let readable = match std::fs::read(config) {
+        Ok(_) => true,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        // That says nothing about the file, so it stays.
+        Err(source) => {
+            return Err(Error::Read {
+                path: config.to_path_buf(),
+                source,
+            });
+        }
+    };
+    if readable && wellfed_stock::config::state(config).is_err() {
+        wellfed_formats::private::set_aside(config).map_err(|source| Error::Remove {
+            path: config.to_path_buf(),
+            source,
+        })?;
+    }
+    Ok(())
+}
+
+/// What is wrong with the install's own records beside `config` and in
+/// `backups`, if a run could not parse them. A file that could not be read at all
+/// is not damage, and the stock ledgers have [`damaged_ledgers`].
+pub fn damaged_record(config: &Path, backups: &Path) -> Option<String> {
+    let cannot_read = |path: &Path| {
+        std::fs::read(path).is_err_and(|error| error.kind() != std::io::ErrorKind::NotFound)
+    };
+    if config.exists()
+        && !cannot_read(config)
+        && !cannot_read(&Enrollment::path(config))
+        && let Err(error) = wellfed_stock::config::state(config)
+    {
+        return Some(format!("{}: {error:#}", config.display()));
+    }
+    match crate::storage::Paired::load(backups) {
+        Err(error @ Error::Parse { .. }) => Some(crate::text(&error)),
+        _ => None,
+    }
+}
+
+/// Whether a stock ledger beside `config` was read and does not parse. It counts
+/// as an open request until the owner accepts [`set_aside_ledgers`].
+pub fn damaged_ledgers(config: &Path) -> bool {
+    wellfed_stock::controller::unreadable_ledgers(config)
+        .is_ok_and(|unreadable| !unreadable.is_empty())
+}
+
+/// Rename every ledger that does not parse, never deleting or replacing one.
+///
+/// This gives up the guard those ledgers held: this phone no longer knows whether
+/// a request to that feeder is still open, so the next one would go out. Only the
+/// owner may ask for it, having been told so.
+pub fn set_aside_ledgers(config: &Path) -> Result<(), Error> {
+    let unreadable = wellfed_stock::controller::unreadable_ledgers(config)
+        .map_err(|error| Error::StockServer(error.into()))?;
+    for path in unreadable {
+        wellfed_formats::private::set_aside(&path)
+            .map_err(|source| Error::Remove { path, source })?;
+    }
+    Ok(())
+}
+
+/// Whether any feeder this installer has dealt with has a request whose outcome
+/// is not settled. Counts as open if the ledgers cannot be read.
+pub fn any_open_request(config: &Path) -> bool {
+    wellfed_stock::controller::any_open_request(config).unwrap_or(true)
+}
+
 /// Where the ledger of `device`, by the installer's config, lives.
 pub fn ledger_path(config: &Path, device: &str) -> Result<PathBuf, Error> {
     wellfed_stock::controller::ledger_path(config, device)
@@ -508,6 +588,7 @@ mod tests {
                     "created_at": at, "updated_at": at,
                     "phase": "submitted", "download_reported": false,
                     "resolution_note": null, "image_sha256": "ab".repeat(32),
+                    "build": "cd", "stock_reported": false,
                 }
             },
         });
@@ -528,6 +609,135 @@ mod tests {
         enroll("AF_FIRST");
         assert_eq!(serve("AF_FIRST").await, Some(TrialPhase::Uncertain));
         assert!(open_request(&path));
+    }
+
+    /// Forgetting an install leaves what guards a feeder and what the owner
+    /// kept, and a damaged config no longer stops a new one.
+    #[test]
+    fn forgetting_an_install_keeps_the_backups_and_the_ledgers() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("installer.json");
+        let backups = dir.path().join("backups");
+        std::fs::write(&config, "not json").unwrap();
+        std::fs::write(Enrollment::path(&config), "not json").unwrap();
+        let identity = [0xab; 32];
+        let backup = crate::storage::backup_path(&backups, &identity);
+        std::fs::create_dir_all(backup.parent().unwrap()).unwrap();
+        std::fs::write(&backup, "the backup").unwrap();
+        std::fs::write(backups.join("installing.json"), "not json").unwrap();
+        let ledger = ledger_path(&config, "AF_A").unwrap();
+        std::fs::write(&ledger, "the ledger").unwrap();
+        assert!(damaged_record(&config, &backups).is_some());
+        assert!(any_open_request(&config));
+
+        forget_install(&config, &backups).unwrap();
+
+        assert_eq!(damaged_record(&config, &backups), None);
+        assert!(!config.exists());
+        assert!(!Enrollment::path(&config).exists());
+        assert!(!backups.join("installing.json").exists());
+        assert_eq!(std::fs::read(&backup).unwrap(), b"the backup");
+        assert_eq!(std::fs::read(&ledger).unwrap(), b"the ledger");
+        assert_eq!(
+            std::fs::read(dir.path().join("installer.json.damaged-1")).unwrap(),
+            b"not json"
+        );
+
+        // A settled ledger is no open request, and an unreadable one still is,
+        // until the owner accepts setting it aside.
+        assert!(any_open_request(&config));
+        assert!(damaged_ledgers(&config));
+        set_aside_ledgers(&config).unwrap();
+        assert!(!any_open_request(&config));
+        assert!(!damaged_ledgers(&config));
+        assert_eq!(
+            std::fs::read(ledger.with_file_name(format!(
+                "{}.damaged-1",
+                ledger.file_name().unwrap().to_str().unwrap()
+            )))
+            .unwrap(),
+            b"the ledger"
+        );
+        std::fs::write(&ledger, r#"{"device_id":"AF_A","ota_trials":{}}"#).unwrap();
+        assert!(!any_open_request(&config));
+        assert!(!damaged_ledgers(&config));
+    }
+
+    /// The whole guard: a request with no known outcome, the install forgotten,
+    /// the same feeder enrolling again, and its second request refused.
+    #[test]
+    fn a_second_request_is_refused_after_forgetting_and_re_enrolling() {
+        use wellfed_stock::build_info::Build;
+        use wellfed_stock::controller::{Controller, Rejection};
+        use wellfed_stock::ota::image::Lease;
+        use wellfed_stock::ota::trial::Input;
+        use wellfed_stock::protocol::Channel;
+
+        const BUILD: Build = Build {
+            commit: "unknown",
+            clean: false,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let backups = dir.path().join("backups");
+        let path = dir.path().join("installer.json");
+        let listen: SocketAddr = "127.41.6.1:21883".parse().unwrap();
+        installer_config(&path, listen, None).unwrap();
+        let enroll = || {
+            let record = Enrollment {
+                client_id: "AF_FIRST".into(),
+                username: "stock".into(),
+                password: "its-password".into(),
+                address: "127.41.6.2".parse().unwrap(),
+                enrolled_at: chrono::DateTime::UNIX_EPOCH,
+            };
+            wellfed_stock::enroll::create(&record, &Enrollment::path(&path)).unwrap();
+        };
+        let ask = |controller: &mut Controller| {
+            let now = chrono::Utc::now();
+            controller.status.broker_connected = true;
+            let report = json!({"cmd": "ATTR_PUSH_EVENT", "softwareVersion": "1.1.15",
+                                "powerType": 1});
+            controller
+                .observe(
+                    Channel::Event,
+                    &serde_json::from_value(report).unwrap(),
+                    now,
+                )
+                .unwrap();
+            controller.enable_ota_trial();
+            let token = uuid::Uuid::new_v4();
+            let lease = Lease {
+                token,
+                peer: "10.0.0.2".parse().unwrap(),
+                expires_at: now + chrono::TimeDelta::minutes(15),
+                sha256: "ab".repeat(32),
+                build: "cd".repeat(32),
+            };
+            let input = Input {
+                request_id: uuid::Uuid::new_v4(),
+                server_token: token,
+            };
+            controller.ota_trial(input, Some(&lease), now).map(drop)
+        };
+        let load = || {
+            let config = wellfed_stock::config::load(&path).unwrap();
+            let ledger = ledger_path(&path, "AF_FIRST").unwrap();
+            Controller::load(config, ledger, BUILD).unwrap()
+        };
+
+        enroll();
+        let mut first = load();
+        ask(&mut first).unwrap();
+        drop(first);
+
+        forget_install(&path, &backups).unwrap();
+        assert!(!open_request(&path), "nobody is enrolled to name it");
+        assert!(any_open_request(&path), "but the ledger still holds it");
+
+        enroll();
+        assert!(open_request(&path));
+        let mut second = load();
+        assert!(matches!(ask(&mut second), Err(Rejection::OtaActive)));
     }
 
     /// Forgetting the broker's trust takes the contest with it, and is safe
@@ -611,7 +821,7 @@ mod tests {
                 download_reported: false,
                 resolution_note: None,
                 image_sha256: String::new(),
-                build: None,
+                build: String::new(),
                 stock_reported: false,
                 answered_at: None,
                 restored_at: None,

@@ -21,6 +21,15 @@ enum Connection {
   offline,
 }
 
+/// Why a running feed went lost, which decides what the sheet may claim.
+enum FeedLost {
+  /// The session ended while the feed ran.
+  link,
+
+  /// The session is up, and no end has come past the longest a feed can take.
+  overdue,
+}
+
 enum FeedPhase {
   idle,
 
@@ -39,8 +48,9 @@ enum FeedPhase {
   /// The session ended before the request went out: nothing was fed.
   notSent,
 
-  /// The session dropped while the feed ran; the feeder finishes it on its
-  /// own and its history keeps the result.
+  /// The link went while the feed ran, or its end is overdue. If the feeder
+  /// stayed on it finishes on its own and its history keeps the result, which
+  /// replaces this when it arrives. A power cut may leave only the bowl to say.
   lost,
 }
 
@@ -52,6 +62,8 @@ class FeedState {
     this.feed,
     this.result,
     this.refusal,
+    this.lostBy = FeedLost.link,
+    this.cancelAsked = false,
     this.cancelUnconfirmed = false,
     this.sentAt,
     this.endedAt,
@@ -64,6 +76,13 @@ class FeedState {
   final int? feed;
   final FeedResult? result;
   final FeedRefusal? refusal;
+
+  /// In [FeedPhase.lost], why.
+  final FeedLost lostBy;
+
+  /// "Stop feeding" went out and nothing has come of it yet. Only the feed's
+  /// end says it stopped.
+  final bool cancelAsked;
 
   /// "Stop feeding" was refused or went unanswered; the feed may still run
   /// to its end.
@@ -121,6 +140,9 @@ class FeederController extends ChangeNotifier {
   FeederSession? _session;
   bool _disposed = false;
 
+  /// Runs out when a running feed's result is overdue.
+  Timer? _feedDue;
+
   /// The card was read in the session now open, not an earlier one.
   bool _fresh = false;
 
@@ -152,14 +174,28 @@ class FeederController extends ChangeNotifier {
     }
   }
 
+  /// Ask the feeder to stop the running feed. This never says it stopped: only
+  /// the feed's end does, and a request that can't go out says so.
   void cancelFeed() {
     final running = feed.feed;
-    if (running == null) return;
+    if (running == null || feed.phase != FeedPhase.running) return;
+    final session = _session;
+    var sent = session != null;
     try {
-      _session?.cancelFeed(feed: running);
+      session?.cancelFeed(feed: running);
     } on BridgeError {
-      // The session ended; the feed result comes from the history.
+      sent = false;
     }
+    _setFeed(
+      FeedState(
+        FeedPhase.running,
+        portions: feed.portions,
+        feed: running,
+        cancelAsked: sent,
+        cancelUnconfirmed: !sent,
+        sentAt: feed.sentAt,
+      ),
+    );
   }
 
   void dismissFeed() => _setFeed(FeedState.idle);
@@ -274,7 +310,13 @@ class FeederController extends ChangeNotifier {
           cardAt = DateTime.now();
           _fresh = true;
           _notify();
-        case SessionUpdate_FeedStarted(:final feed, :final portions):
+        case SessionUpdate_FeedStarted(
+          :final feed,
+          :final portions,
+          :final dueSeconds,
+        ):
+          _feedDue?.cancel();
+          _feedDue = Timer(Duration(seconds: dueSeconds), _feedOverdue);
           _setFeed(
             FeedState(
               FeedPhase.running,
@@ -301,20 +343,7 @@ class FeederController extends ChangeNotifier {
             ),
           );
         case SessionUpdate_FeedEnded(:final result):
-          // Ours only when it carries our number: an unanswered feed has
-          // none, and the next end may be a meal or another phone's.
-          if (feed.phase == FeedPhase.running && feed.feed == result.feed) {
-            _setFeed(
-              FeedState(
-                FeedPhase.ended,
-                portions: result.requested,
-                feed: result.feed,
-                result: result,
-                sentAt: feed.sentAt,
-                endedAt: DateTime.now(),
-              ),
-            );
-          }
+          _feedEnded(result);
         case SessionUpdate_CancelUnconfirmed():
           if (feed.phase == FeedPhase.running) {
             _setFeed(
@@ -335,6 +364,13 @@ class FeederController extends ChangeNotifier {
         case SessionUpdate_History(:final entries, :final caughtUp):
           history = [...history, ...entries];
           historyRead = historyRead || caughtUp;
+          // A feed that ended while the link was down, or before this
+          // session's history was read, only ever arrives here.
+          for (final entry in entries) {
+            if (entry.body case HistoryBody_Fed(:final result)) {
+              _feedEnded(result);
+            }
+          }
           _notify();
         case SessionUpdate_Log(:final dropped, :final lines):
           onLog?.call(dropped, lines);
@@ -370,7 +406,52 @@ class FeederController extends ChangeNotifier {
     return opened;
   }
 
+  /// A feed's end, which settles ours only when it carries our number: an
+  /// unanswered feed has none, and the next end may be a meal or another
+  /// phone's. It replaces a lost feed too, since it is what really happened.
+  void _feedEnded(FeedResult result) {
+    final open =
+        feed.phase == FeedPhase.running || feed.phase == FeedPhase.lost;
+    if (!open || feed.feed != result.feed) return;
+
+    // The feeder's record says when, if its clock can be trusted. A lost feed's
+    // end may be old, so the phone's clock can't stand in for that one.
+    final recorded = (card?.clockSet ?? false) ? result.atMs : null;
+    _setFeed(
+      FeedState(
+        FeedPhase.ended,
+        portions: result.requested,
+        feed: result.feed,
+        result: result,
+        sentAt: feed.sentAt,
+        endedAt: recorded != null
+            ? DateTime.fromMillisecondsSinceEpoch(recorded)
+            : feed.phase == FeedPhase.running
+            ? DateTime.now()
+            : null,
+      ),
+    );
+  }
+
+  /// Nothing has come of a running feed past the longest the feeder can take.
+  void _feedOverdue() {
+    if (feed.phase != FeedPhase.running) return;
+    _setFeed(
+      FeedState(
+        FeedPhase.lost,
+        lostBy: FeedLost.overdue,
+        portions: feed.portions,
+        feed: feed.feed,
+        sentAt: feed.sentAt,
+      ),
+    );
+  }
+
   void _setFeed(FeedState next) {
+    if (next.phase != FeedPhase.running) {
+      _feedDue?.cancel();
+      _feedDue = null;
+    }
     feed = next;
     _notify();
   }
@@ -387,6 +468,7 @@ class FeederController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _feedDue?.cancel();
     _session?.close();
     _update?.dispose();
     super.dispose();

@@ -38,6 +38,7 @@ async fn a_refused_resolution_asks_stock_for_its_attributes_and_nothing_else() {
                 "created_at": sent, "updated_at": sent,
                 "phase": "reported_error", "download_reported": true,
                 "resolution_note": null, "image_sha256": "ab".repeat(32),
+                "build": "cd", "stock_reported": false,
             }
         },
     });

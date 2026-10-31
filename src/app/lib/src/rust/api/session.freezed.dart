@@ -2415,12 +2415,12 @@ return closed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String build,  ClientRole role)?  opened,TResult Function( Card card)?  status,TResult Function( int feed,  int portions)?  feedStarted,TResult Function( FeedRefusal refusal)?  feedRefused,TResult Function()?  feedUnanswered,TResult Function( FeedResult result)?  feedEnded,TResult Function( FeedRefusal? refusal)?  cancelUnconfirmed,TResult Function()?  clockSynced,TResult Function()?  clockNotSynced,TResult Function( List<HistoryEntry> entries,  bool caughtUp)?  history,TResult Function( int seq,  int dropped,  List<String> lines)?  log,TResult Function( BridgeError? error)?  closed,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String build,  ClientRole role)?  opened,TResult Function( Card card)?  status,TResult Function( int feed,  int portions,  int dueSeconds)?  feedStarted,TResult Function( FeedRefusal refusal)?  feedRefused,TResult Function()?  feedUnanswered,TResult Function( FeedResult result)?  feedEnded,TResult Function( FeedRefusal? refusal)?  cancelUnconfirmed,TResult Function()?  clockSynced,TResult Function()?  clockNotSynced,TResult Function( List<HistoryEntry> entries,  bool caughtUp)?  history,TResult Function( int seq,  int dropped,  List<String> lines)?  log,TResult Function( BridgeError? error)?  closed,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case SessionUpdate_Opened() when opened != null:
 return opened(_that.build,_that.role);case SessionUpdate_Status() when status != null:
 return status(_that.card);case SessionUpdate_FeedStarted() when feedStarted != null:
-return feedStarted(_that.feed,_that.portions);case SessionUpdate_FeedRefused() when feedRefused != null:
+return feedStarted(_that.feed,_that.portions,_that.dueSeconds);case SessionUpdate_FeedRefused() when feedRefused != null:
 return feedRefused(_that.refusal);case SessionUpdate_FeedUnanswered() when feedUnanswered != null:
 return feedUnanswered();case SessionUpdate_FeedEnded() when feedEnded != null:
 return feedEnded(_that.result);case SessionUpdate_CancelUnconfirmed() when cancelUnconfirmed != null:
@@ -2447,12 +2447,12 @@ return closed(_that.error);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String build,  ClientRole role)  opened,required TResult Function( Card card)  status,required TResult Function( int feed,  int portions)  feedStarted,required TResult Function( FeedRefusal refusal)  feedRefused,required TResult Function()  feedUnanswered,required TResult Function( FeedResult result)  feedEnded,required TResult Function( FeedRefusal? refusal)  cancelUnconfirmed,required TResult Function()  clockSynced,required TResult Function()  clockNotSynced,required TResult Function( List<HistoryEntry> entries,  bool caughtUp)  history,required TResult Function( int seq,  int dropped,  List<String> lines)  log,required TResult Function( BridgeError? error)  closed,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String build,  ClientRole role)  opened,required TResult Function( Card card)  status,required TResult Function( int feed,  int portions,  int dueSeconds)  feedStarted,required TResult Function( FeedRefusal refusal)  feedRefused,required TResult Function()  feedUnanswered,required TResult Function( FeedResult result)  feedEnded,required TResult Function( FeedRefusal? refusal)  cancelUnconfirmed,required TResult Function()  clockSynced,required TResult Function()  clockNotSynced,required TResult Function( List<HistoryEntry> entries,  bool caughtUp)  history,required TResult Function( int seq,  int dropped,  List<String> lines)  log,required TResult Function( BridgeError? error)  closed,}) {final _that = this;
 switch (_that) {
 case SessionUpdate_Opened():
 return opened(_that.build,_that.role);case SessionUpdate_Status():
 return status(_that.card);case SessionUpdate_FeedStarted():
-return feedStarted(_that.feed,_that.portions);case SessionUpdate_FeedRefused():
+return feedStarted(_that.feed,_that.portions,_that.dueSeconds);case SessionUpdate_FeedRefused():
 return feedRefused(_that.refusal);case SessionUpdate_FeedUnanswered():
 return feedUnanswered();case SessionUpdate_FeedEnded():
 return feedEnded(_that.result);case SessionUpdate_CancelUnconfirmed():
@@ -2475,12 +2475,12 @@ return closed(_that.error);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String build,  ClientRole role)?  opened,TResult? Function( Card card)?  status,TResult? Function( int feed,  int portions)?  feedStarted,TResult? Function( FeedRefusal refusal)?  feedRefused,TResult? Function()?  feedUnanswered,TResult? Function( FeedResult result)?  feedEnded,TResult? Function( FeedRefusal? refusal)?  cancelUnconfirmed,TResult? Function()?  clockSynced,TResult? Function()?  clockNotSynced,TResult? Function( List<HistoryEntry> entries,  bool caughtUp)?  history,TResult? Function( int seq,  int dropped,  List<String> lines)?  log,TResult? Function( BridgeError? error)?  closed,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String build,  ClientRole role)?  opened,TResult? Function( Card card)?  status,TResult? Function( int feed,  int portions,  int dueSeconds)?  feedStarted,TResult? Function( FeedRefusal refusal)?  feedRefused,TResult? Function()?  feedUnanswered,TResult? Function( FeedResult result)?  feedEnded,TResult? Function( FeedRefusal? refusal)?  cancelUnconfirmed,TResult? Function()?  clockSynced,TResult? Function()?  clockNotSynced,TResult? Function( List<HistoryEntry> entries,  bool caughtUp)?  history,TResult? Function( int seq,  int dropped,  List<String> lines)?  log,TResult? Function( BridgeError? error)?  closed,}) {final _that = this;
 switch (_that) {
 case SessionUpdate_Opened() when opened != null:
 return opened(_that.build,_that.role);case SessionUpdate_Status() when status != null:
 return status(_that.card);case SessionUpdate_FeedStarted() when feedStarted != null:
-return feedStarted(_that.feed,_that.portions);case SessionUpdate_FeedRefused() when feedRefused != null:
+return feedStarted(_that.feed,_that.portions,_that.dueSeconds);case SessionUpdate_FeedRefused() when feedRefused != null:
 return feedRefused(_that.refusal);case SessionUpdate_FeedUnanswered() when feedUnanswered != null:
 return feedUnanswered();case SessionUpdate_FeedEnded() when feedEnded != null:
 return feedEnded(_that.result);case SessionUpdate_CancelUnconfirmed() when cancelUnconfirmed != null:
@@ -2639,11 +2639,12 @@ as Card,
 
 
 class SessionUpdate_FeedStarted extends SessionUpdate {
-  const SessionUpdate_FeedStarted({required this.feed, required this.portions}): super._();
+  const SessionUpdate_FeedStarted({required this.feed, required this.portions, required this.dueSeconds}): super._();
   
 
  final  int feed;
  final  int portions;
+ final  int dueSeconds;
 
 /// Create a copy of SessionUpdate
 /// with the given fields replaced by the non-null parameter values.
@@ -2655,18 +2656,18 @@ $SessionUpdate_FeedStartedCopyWith<SessionUpdate_FeedStarted> get copyWith => _$
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is SessionUpdate_FeedStarted&&(identical(other.feed, feed) || other.feed == feed)&&(identical(other.portions, portions) || other.portions == portions));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is SessionUpdate_FeedStarted&&(identical(other.feed, feed) || other.feed == feed)&&(identical(other.portions, portions) || other.portions == portions)&&(identical(other.dueSeconds, dueSeconds) || other.dueSeconds == dueSeconds));
 }
 
 
 @override
 int get hashCode {
-    return Object.hash(runtimeType,feed,portions);
+    return Object.hash(runtimeType,feed,portions,dueSeconds);
 }
 
 @override
 String toString() {
-    return 'SessionUpdate.feedStarted(feed: $feed, portions: $portions)';
+    return 'SessionUpdate.feedStarted(feed: $feed, portions: $portions, dueSeconds: $dueSeconds)';
 }
 
 
@@ -2677,7 +2678,7 @@ abstract mixin class $SessionUpdate_FeedStartedCopyWith<$Res> implements $Sessio
   factory $SessionUpdate_FeedStartedCopyWith(SessionUpdate_FeedStarted value, $Res Function(SessionUpdate_FeedStarted) _then) = _$SessionUpdate_FeedStartedCopyWithImpl;
 @useResult
 $Res call({
- int feed, int portions
+ int feed, int portions, int dueSeconds
 });
 
 
@@ -2694,10 +2695,11 @@ class _$SessionUpdate_FeedStartedCopyWithImpl<$Res>
 
 /// Create a copy of SessionUpdate
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? feed = null,Object? portions = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? feed = null,Object? portions = null,Object? dueSeconds = null,}) {
   return _then(SessionUpdate_FeedStarted(
 feed: null == feed ? _self.feed : feed // ignore: cast_nullable_to_non_nullable
 as int,portions: null == portions ? _self.portions : portions // ignore: cast_nullable_to_non_nullable
+as int,dueSeconds: null == dueSeconds ? _self.dueSeconds : dueSeconds // ignore: cast_nullable_to_non_nullable
 as int,
   ));
 }

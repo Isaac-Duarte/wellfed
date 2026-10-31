@@ -20,7 +20,9 @@ use wellfed_app_bridge::api::install::{
 use wellfed_app_bridge::api::model::SetupRefusal;
 use wellfed_app_bridge::api::setup::WifiCredentials;
 use wellfed_app_bridge::api::store::KnownFeeder;
-use wellfed_app_bridge::install::{Listener, Pin, Run, check_image, pending};
+use wellfed_app_bridge::install::{
+    Listener, Pin, Run, check_image, forget_install, pending, request_open, set_aside_ledgers,
+};
 use wellfed_client::setup::{Deframer, frame};
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness::{Running, SetupFeeder};
@@ -611,6 +613,7 @@ fn what_an_earlier_run_left_is_read_from_its_records() {
                 "created_at": at, "updated_at": at,
                 "phase": "uncertain", "download_reported": false,
                 "resolution_note": null, "image_sha256": "ab".repeat(32),
+                "build": "cd", "stock_reported": false,
             }
         },
     });
@@ -1189,6 +1192,143 @@ fn setup_again_on_another_feeder_stops_and_keeps_the_record() {
             recorded_identity(&record),
             wellfed_formats::hex::encode(ours.public())
         );
+    });
+}
+
+/// A damaged `installer.json` stops a run before anything starts, and forgetting
+/// the install clears it, with the backup and the ledger as they were.
+#[test]
+fn a_damaged_record_stops_the_run_and_forgetting_keeps_the_backup() {
+    local(async {
+        let fixture = Fixture::new(Provisioning::Consumer);
+        let spec = fixture.spec(InstallStart::Bank0, "127.41.8.36");
+        let data = Path::new(&spec.data_dir).to_path_buf();
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::write(data.join("installer.json"), "not json").unwrap();
+        let backup = wellfed_install::storage::backup_path(&data.join("backups"), &[0xab; 32]);
+        std::fs::create_dir_all(backup.parent().unwrap()).unwrap();
+        std::fs::write(&backup, "the backup").unwrap();
+        open_trial(&data, "AF_A", "ab");
+        assert_eq!(pending(&data), PendingInstall::Damaged);
+        assert!(request_open(&data));
+
+        let (_run, mut heard) = started(&fixture, spec);
+        let end = loop {
+            if let InstallUpdate::Ended { end } = next(&mut heard).await {
+                break end;
+            }
+        };
+        let InstallEnd::Stopped { case, resume, .. } = end else {
+            panic!("{end:?}");
+        };
+        assert_eq!(case, StopCase::DamagedRecord);
+        assert_eq!(resume, Resume::Nothing);
+
+        forget_install(&data).unwrap();
+
+        assert_eq!(pending(&data), PendingInstall::Nothing);
+        assert_eq!(std::fs::read(&backup).unwrap(), b"the backup");
+        // The no-retry guard outlives it.
+        assert!(request_open(&data));
+    });
+}
+
+/// Forgetting leaves no record, and a feeder this phone knows on bank 0 is still
+/// finished from there: asked of nothing on stock, by what it answers.
+#[test]
+fn a_known_feeder_goes_on_from_bank_0_after_forgetting() {
+    local(async {
+        let fixture = Fixture::new(Provisioning::Consumer);
+        let keys = Keypair::from_secret([0x51; 32]);
+        let sim = Running::start(&Flash::memory(), Some(*keys.public())).await;
+        let mut spec = fixture.spec(InstallStart::Bank0, "127.41.8.53");
+        spec.known_feeders = vec![KnownFeeder {
+            identity: wellfed_formats::hex::encode(&sim.identity),
+            name: "Kitchen".into(),
+            address: Some(sim.address.to_string()),
+        }];
+        let data = Path::new(&spec.data_dir).to_path_buf();
+        std::fs::create_dir_all(&data).unwrap();
+        with_enrolled(&data, "AF_TEST");
+        paired(&data, "AF_TEST", &sim.identity);
+
+        forget_install(&data).unwrap();
+        assert_eq!(pending(&data), PendingInstall::Nothing);
+
+        let (run, mut heard) = started(&fixture, spec);
+        let mut answered = false;
+        let end = loop {
+            match next(&mut heard).await {
+                InstallUpdate::Ask { ask, .. } => panic!("{ask:?}"),
+                InstallUpdate::Event {
+                    event: InstallEvent::ReplacementAnswers { .. },
+                } => {
+                    answered = true;
+                    run.stop();
+                }
+                InstallUpdate::Event { .. } => {}
+                InstallUpdate::Ended { end } => break end,
+            }
+        };
+        assert!(answered, "{end:?}");
+        sim.stop().await;
+    });
+}
+
+/// With no record and no known feeder, the same way in takes setup over Bluetooth,
+/// and a new identity is no other feeder: this is the factory-reset feeder.
+#[test]
+fn an_unknown_feeder_is_set_up_from_bank_0_after_forgetting() {
+    local(async {
+        let fixture = Fixture::new(Provisioning::Consumer);
+        let feeder = Keypair::from_secret([0x73; 32]);
+        let spec = fixture.spec(InstallStart::Bank0, "127.41.8.54");
+        let data = Path::new(&spec.data_dir).to_path_buf();
+        std::fs::create_dir_all(&data).unwrap();
+        with_enrolled(&data, "AF_TEST");
+        paired(&data, "AF_TEST", &[0x74; 32]);
+
+        forget_install(&data).unwrap();
+
+        let (run, mut heard) = started(&fixture, spec);
+        let end = set_up_by(&feeder, &run, &mut heard).await;
+        let InstallEnd::Stopped { case, .. } = end else {
+            panic!("{end:?}");
+        };
+        assert_ne!(case, StopCase::OtherFeeder);
+    });
+}
+
+/// A ledger that does not parse stays open until the owner accepts, stops a run
+/// and the listener before anything starts, and is renamed, not deleted.
+#[test]
+fn a_damaged_ledger_stops_the_run_until_the_owner_sets_it_aside() {
+    local(async {
+        let fixture = Fixture::new(Provisioning::Consumer);
+        let spec = fixture.spec(InstallStart::Reset, "127.41.8.55");
+        let data = Path::new(&spec.data_dir).to_path_buf();
+        std::fs::create_dir_all(&data).unwrap();
+        with_enrolled(&data, "AF_A");
+        let ledger = wellfed_install::stock::ledger_path(&data.join("installer.json"), "AF_A");
+        let ledger = ledger.unwrap();
+        std::fs::write(&ledger, "not json").unwrap();
+
+        assert_eq!(pending(&data), PendingInstall::LedgerDamaged);
+        assert!(request_open(&data));
+
+        let (_run, mut heard) = started(&fixture, spec);
+        let InstallEnd::Stopped { case, resume, .. } = ended(&mut heard).await else {
+            panic!("a damaged ledger must stop the run");
+        };
+        assert_eq!(case, StopCase::LedgerDamaged);
+        assert_eq!(resume, Resume::Nothing);
+        assert_eq!(std::fs::read(&ledger).unwrap(), b"not json");
+
+        set_aside_ledgers(&data).unwrap();
+        assert_eq!(pending(&data), PendingInstall::Nothing);
+        assert!(!request_open(&data));
+        let aside = format!("{}.damaged-1", ledger.display());
+        assert_eq!(std::fs::read(aside).unwrap(), b"not json");
     });
 }
 

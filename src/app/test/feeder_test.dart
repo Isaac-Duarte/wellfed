@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/app.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/home.dart';
+import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -690,7 +691,7 @@ void main() {
       final session = await sheet(tester);
       await _tap(tester, find.text('Feed 1 portion'));
       session.updates.add(
-        const SessionUpdate.feedStarted(feed: 7, portions: 2),
+        const SessionUpdate.feedStarted(feed: 7, portions: 2, dueSeconds: 49),
       );
       await settle(tester);
       session.updates.add(
@@ -709,6 +710,175 @@ void main() {
       expect(find.text('See history'), findsOneWidget);
       expect(find.text('Start over'), findsNothing);
       expect(session.feeds, [1]);
+    });
+
+    group('when the feeder goes away', () {
+      /// The sheet following a running feed of 2 portions, numbered 7.
+      Future<FakeFeederPorts> running(WidgetTester tester) async {
+        final book = FakeBook()..feeders = [_kitchen];
+        final ports = FakeFeederPorts();
+        final fleet = FeederFleet(book, ports);
+        addTearDown(fleet.dispose);
+        await tester.pump();
+        ports.session.opened();
+        await tester.pump();
+        await _showShell(tester, fleet);
+        ports.session.status(fakeCard());
+        await settle(tester);
+        await _tap(tester, find.widgetWithText(FilledButton, 'Feed now'));
+        await _tap(tester, find.byTooltip('One more portion'));
+        await _tap(tester, find.text('Feed 2 portions'));
+        ports.session.updates.add(
+          const SessionUpdate.feedStarted(feed: 7, portions: 2, dueSeconds: 60),
+        );
+        // One pump delivers it, so the due time counts from here exactly.
+        await tester.pump();
+        expect(find.text('Feeding Kitchen'), findsOneWidget);
+        return ports;
+      }
+
+      const didFeed = 'Did Kitchen feed?';
+      const justBefore = Duration(seconds: 59);
+
+      testWidgets('a healthy slow feed reaches its result without going lost', (
+        tester,
+      ) async {
+        final ports = await running(tester);
+        await tester.pump(justBefore);
+        expect(find.text('Feeding Kitchen'), findsOneWidget);
+
+        ports.session.updates.add(
+          SessionUpdate.feedEnded(result: fakeFed(feed: 7)),
+        );
+        await settle(tester);
+        expect(find.text('Fed 2 of 2 portions'), findsOneWidget);
+      });
+
+      testWidgets(
+        'an overdue feed goes lost, and its late result replaces it',
+        (tester) async {
+          final ports = await running(tester);
+          await tester.pump(justBefore + const Duration(seconds: 2));
+          await settle(tester);
+          expect(find.text(didFeed), findsOneWidget);
+          expect(find.text('Stop feeding'), findsNothing);
+          expect(
+            find.textContaining(
+              "hasn't said how it ended, past the longest a feed can take.",
+            ),
+            findsOneWidget,
+          );
+          expect(find.textContaining('connection dropped'), findsNothing);
+          expect(
+            find.text(
+              "Wellfed won't send it again on its own. Look at the bowl before "
+              'you feed again.',
+            ),
+            findsOneWidget,
+          );
+
+          // Another feed's end says nothing about this one.
+          ports.session.updates.add(
+            SessionUpdate.feedEnded(result: fakeFed(feed: 8)),
+          );
+          await settle(tester);
+          expect(find.text(didFeed), findsOneWidget);
+
+          ports.session.updates.add(
+            SessionUpdate.feedEnded(result: fakeFed(feed: 7)),
+          );
+          await settle(tester);
+          expect(find.text('Fed 2 of 2 portions'), findsOneWidget);
+        },
+      );
+
+      testWidgets('one feed goes out across going lost and reconnecting', (
+        tester,
+      ) async {
+        final ports = await running(tester);
+        final first = ports.session;
+
+        // The session ends on the link's silence.
+        first.updates.add(
+          const SessionUpdate.closed(
+            error: BridgeError(kind: ErrorKind.closed, message: 'silent'),
+          ),
+        );
+        await first.updates.close();
+        await settle(tester);
+        expect(find.text(didFeed), findsOneWidget);
+        expect(
+          find.textContaining(
+            'then the connection dropped. If the feeder stayed on, it '
+            'finishes on its own and keeps the result in its history.',
+          ),
+          findsOneWidget,
+        );
+
+        // Long enough for the controller to try again.
+        await tester.pump(const Duration(seconds: 10));
+        expect(ports.sessions.length, greaterThan(1));
+        ports.session.opened();
+        await settle(tester);
+        ports.session.status(fakeCard());
+        await settle(tester);
+
+        // Still lost, and nothing asks the new session for a feed: only the
+        // owner, from the start of the sheet, can.
+        await tester.pump(const Duration(minutes: 5));
+        expect(find.text(didFeed), findsOneWidget);
+        expect(find.text('Start over'), findsNothing);
+        expect(ports.sessions.expand((session) => session.feeds), [2]);
+
+        // The restarted feeder's record of it settles what the bowl was to say.
+        ports.session.history([
+          HistoryEntry(
+            seq: BigInt.from(9),
+            body: HistoryBody.fed(
+              result: fakeFed(
+                feed: 7,
+                confirmed: 0,
+                atMost: 2,
+                outcome: FeedOutcome.uncertain,
+                reason: FeedReason.power,
+              ),
+            ),
+          ),
+        ]);
+        await settle(tester);
+        expect(find.text('Fed between 0 and 2 portions'), findsOneWidget);
+        expect(ports.sessions.expand((session) => session.feeds), [2]);
+      });
+
+      testWidgets(
+        'stop never says it stopped, and says when it could not ask',
+        (tester) async {
+          final ports = await running(tester);
+          await _tap(tester, find.text('Stop feeding'));
+          expect(ports.session.cancels, [7]);
+          expect(find.text('Feeding Kitchen'), findsOneWidget);
+          expect(
+            find.text('Asked the feeder to stop. Waiting for it to answer.'),
+            findsOneWidget,
+          );
+
+          ports.session.cancelFails = const BridgeError(
+            kind: ErrorKind.closed,
+            message: 'the session ended',
+          );
+          await _tap(tester, find.text('Stop feeding'));
+          expect(find.text('Feeding Kitchen'), findsOneWidget);
+          expect(
+            find.textContaining('The feeder did not confirm the stop'),
+            findsOneWidget,
+          );
+
+          ports.session.updates.add(
+            SessionUpdate.feedEnded(result: fakeFed(feed: 7)),
+          );
+          await settle(tester);
+        },
+      );
     });
   });
 

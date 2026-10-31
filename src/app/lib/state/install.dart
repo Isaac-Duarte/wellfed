@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../platform/install_ports.dart';
+import '../src/rust/api/error.dart';
 import '../src/rust/api/install.dart';
 import '../src/rust/api/setup.dart';
 import '../src/rust/api/store.dart';
@@ -169,6 +170,10 @@ class InstallFlow extends ChangeNotifier {
   Listening listening = Listening.idle;
   Duration listened = Duration.zero;
   bool stockSeen = false;
+
+  /// A feeder nearby advertises setup while this listens. It says nothing about
+  /// which feeder, so only the owner can say it is this one.
+  bool setupSeen = false;
   String? listenerDetail;
 
   WifiCredentials? _home;
@@ -820,6 +825,7 @@ class InstallFlow extends ChangeNotifier {
         unawaited(_release());
       case final InstallEnd_Stopped stopped:
         stop = stopped;
+        _readPending();
         stage = InstallStage.stopped;
         _windowAsk = null;
         _recognizeAsk = null;
@@ -880,6 +886,7 @@ class InstallFlow extends ChangeNotifier {
     listening = Listening.running;
     listened = Duration.zero;
     stockSeen = false;
+    setupSeen = false;
     _notify();
     await _hold('Listening for the feeder. Leave it plugged in.');
     if (_disposed || listening != Listening.running) return;
@@ -901,11 +908,12 @@ class InstallFlow extends ChangeNotifier {
       },
     );
     // A consumer image has no network until setup gives it one, so it is
-    // only heard advertising setup. Hearing it means it installed.
-    _heard = _ports.setupHeard().listen(
-      (_) => unawaited(resume()),
-      onError: (Object _) {},
-    );
+    // only heard advertising setup. Any feeder in setup mode sounds the same,
+    // so this keeps listening until the owner says it is this one.
+    _heard = _ports.setupHeard().listen((_) {
+      setupSeen = true;
+      _notify();
+    }, onError: (Object _) {});
     _notify();
   }
 
@@ -938,6 +946,7 @@ class InstallFlow extends ChangeNotifier {
     listening = end;
     unawaited(_heard?.cancel());
     _heard = null;
+    _readPending();
     unawaited(_release());
     _notify();
   }
@@ -949,6 +958,100 @@ class InstallFlow extends ChangeNotifier {
     _listenUpdates = null;
     unawaited(_heard?.cancel());
     _heard = null;
+  }
+
+  void _readPending() {
+    final paths = _paths;
+    if (paths != null) pending = _ports.pending(paths);
+  }
+
+  /// The way out of a stuck or damaged record is open: nothing is using it.
+  bool get mayForget =>
+      _paths != null && _run == null && listening != Listening.running;
+
+  /// A stop that leaves a record behind, or one no pick-up gets past. Never on
+  /// an uncertain write: the feeder may be mid-way, and only a pick-up reads where
+  /// it got to. A damaged ledger has an action of its own, which this cannot do.
+  bool get forgetOffered {
+    if (!mayForget) return false;
+    final case_ = stop?.case_;
+    if (case_ is StopCase_UncertainWrite) return false;
+    if (pending == PendingInstall.ledgerDamaged) return false;
+    return pending != PendingInstall.nothing ||
+        case_ is StopCase_OtherFeeder ||
+        case_ is StopCase_DamagedRecord;
+  }
+
+  /// Forgetting takes away a working "Pick up where it stopped", so its words
+  /// say how to come back.
+  bool get forgetEndsPickUp =>
+      pending == PendingInstall.paired || stop?.resume == Resume.fromBank0;
+
+  /// Some feeder's install request has no known outcome, so forgetting needs
+  /// words of its own.
+  bool get requestStillOpen {
+    final paths = _paths;
+    return paths != null && _ports.requestOpen(paths);
+  }
+
+  /// Why the last repair of a record failed, when it did.
+  String? repairFailed;
+
+  /// Whether `repair` ran; a failure is kept for the screen.
+  bool _repair(void Function(InstallPaths) repair) {
+    final paths = _paths;
+    if (paths == null || !mayForget) return false;
+    try {
+      repair(paths);
+    } on BridgeError catch (failed) {
+      repairFailed = failed.message;
+      _notify();
+      return false;
+    }
+    repairFailed = null;
+    return true;
+  }
+
+  /// Back to the first screen, knowing nothing of any run.
+  void _startClean() {
+    stop = null;
+    _frameTaken = false;
+    _frameAddress = null;
+    _feederReset = false;
+    _identity = null;
+    _identityBytes = null;
+    _address = null;
+    backupPath = null;
+    settingUpAgain = false;
+    waitReason = null;
+    restartAgain = false;
+    listening = Listening.idle;
+    listeningForEarlier = false;
+    _resetProgress();
+    _readPending();
+    _go(InstallStage.before);
+  }
+
+  /// Clear the install in progress and go back to the first screen. The backups
+  /// stay, and the ledger keeps a request with no known outcome from going to
+  /// that feeder a second time.
+  void forgetInstall() {
+    if (_repair(_ports.forgetInstall)) _startClean();
+  }
+
+  /// The owner accepted that this phone no longer knows whether a request to the
+  /// feeder a damaged ledger was about is open.
+  void setAsideLedgers() {
+    if (_repair(_ports.setAsideLedgers)) _startClean();
+  }
+
+  /// The owner accepted that the backup at `path` is no longer one to go back
+  /// with. A pick-up then reads a fresh one if the feeder still holds stock.
+  Future<void> setAsideBackup(String path, BackupProblem problem) async {
+    final done = _repair(
+      (paths) => _ports.setAsideBackup(paths, path, problem),
+    );
+    if (done) await again();
   }
 
   /// End the run through its cleanup; the end says what it left.
