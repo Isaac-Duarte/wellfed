@@ -33,11 +33,18 @@ export const NAV: NavGroup[] = [
       { file: "guide/README.md", label: "Overview" },
       { file: "guide/before-you-start.md", label: "Before you start" },
       { file: "guide/install.md", label: "Install" },
+      { file: "guide/everyday-use.md", label: "Everyday use" },
+      { file: "guide/going-back.md", label: "Going back to stock" },
     ],
   },
   {
     label: "How it works",
-    entries: [{ file: "guide/how-it-works/install-and-rollback.md", label: "Install and rollback" }],
+    entries: [
+      { file: "guide/how-it-works/system.md", label: "The system at a glance" },
+      { file: "guide/how-it-works/install-and-rollback.md", label: "Install and rollback" },
+      { file: "guide/how-it-works/feeding-safety.md", label: "How feeding stays safe" },
+      { file: "guide/how-it-works/access.md", label: "Who can talk to your feeder" },
+    ],
   },
   {
     label: "Reference",

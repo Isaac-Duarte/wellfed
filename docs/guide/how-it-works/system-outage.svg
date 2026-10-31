@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300" role="img" aria-labelledby="system-outage-title system-outage-desc">
+  <title id="system-outage-title">What keeps working when Wi-Fi drops</title>
+  <desc id="system-outage-desc">A timeline from Wi-Fi dropping to its return. Scheduled meals keep running from the running clock until its error passes 2 minutes, any time up to about 6.6 hours after the drop, then hold. The Dispense button keeps working on an unlocked panel throughout, though it can refuse a press while the feeder rejoins. The app and the CLI can't reach the feeder throughout. When time returns, a meal under 15 minutes late runs and an older one is skipped.</desc>
+
+  <line class="d-wire d-dashed" x1="176" y1="40" x2="176" y2="232"/>
+  <text x="176" y="30" text-anchor="middle" class="d-title">Wi-Fi drops</text>
+  <line class="d-wire d-dashed" x1="440" y1="40" x2="440" y2="232"/>
+  <text x="440" y="30" text-anchor="middle" class="d-title">Clock's error passes 2 minutes</text>
+  <line class="d-wire d-dashed" x1="660" y1="40" x2="660" y2="232"/>
+  <text x="660" y="30" text-anchor="middle" class="d-title">Wi-Fi back</text>
+
+  <text x="24" y="78" class="d-title">Meals</text>
+  <rect class="d-ok" x="176" y="52" width="264" height="44" rx="6"/>
+  <text x="308" y="79" text-anchor="middle">run from the running clock</text>
+  <rect class="d-warn" x="440" y="52" width="220" height="44" rx="6"/>
+  <text x="550" y="79" text-anchor="middle">hold</text>
+
+  <text x="24" y="134" class="d-title">Dispense button</text>
+  <rect class="d-ok" x="176" y="108" width="484" height="44" rx="6"/>
+  <text x="418" y="135" text-anchor="middle">feeds on an unlocked panel, but can refuse a press while rejoining</text>
+
+  <text x="24" y="190" class="d-title">App and CLI</text>
+  <rect class="d-panel" x="176" y="164" width="484" height="44" rx="6"/>
+  <text x="418" y="191" text-anchor="middle">can't reach the feeder</text>
+
+  <text x="696" y="252" text-anchor="end" class="d-muted">The 2 minutes can pass any time up to about 6.6 hours after the drop.</text>
+  <text x="696" y="272" text-anchor="end" class="d-muted">When time returns, a meal under 15 minutes late runs, and an older one is skipped.</text>
+</svg>

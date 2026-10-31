@@ -140,11 +140,12 @@ Follow what the stop screen offers, since the right move depends on where it sto
 
 ## Next steps
 
-- Set up your meals again in Wellfed.
+- Set up your meals again, and learn the buttons and lights: [Everyday use](everyday-use.md).
 - Read [how the install protects your feeder, and where it can't](how-it-works/install-and-rollback.md).
 
 ## Evidence
 
 - **Observed, October 30, 2026.** The app ran these steps on one research feeder from a real Reset hold, including a retry after a wrong password.
 - **Observed, October 31, 2026.** The CLI ran them from stock on the same feeder and was resumed once after a setup code timed out. Its own hop onto the feeder's network hasn't run; the network was joined by hand.
+- **Recovered.** The Lock and Reset sequence for disabled buttons comes from analysis of the vendor's firmware, and hasn't been pressed on the feeder.
 - The screenshots are from an October 30 run. Device details are painted over. The setup code shown had expired.

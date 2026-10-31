@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" role="img" aria-labelledby="feed-journey-title feed-journey-desc">
+  <title id="feed-journey-title">One feed, from the press to the history</title>
+  <desc id="feed-journey-desc">Eight steps. A Dispense press is queued, then the loop checks the lock and whether a feed can start now; the app, the CLI and scheduled meals join at this step. The feed is reserved in the journal before the motor may start. The motor drives on a short renewed lease. A mark counts a portion. The motor stops and the stop is read back. The result is saved to the journal, and it becomes an entry in the history.</desc>
+  <defs>
+    <marker id="feed-journey-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="d-panel" x="196" y="14" width="168" height="48" rx="8"/>
+  <text x="280" y="34" text-anchor="middle" class="d-muted">The app, the CLI and</text>
+  <text x="280" y="50" text-anchor="middle" class="d-muted">meals join here</text>
+  <line class="d-wire" x1="280" y1="62" x2="280" y2="90" marker-end="url(#feed-journey-arrow)"/>
+
+  <rect class="d-box" x="20" y="94" width="150" height="96" rx="8"/>
+  <text x="95" y="124" text-anchor="middle" class="d-title">1. Press</text>
+  <text x="95" y="146" text-anchor="middle" class="d-muted">Dispense, queued</text>
+  <text x="95" y="162" text-anchor="middle" class="d-muted">for the main loop</text>
+
+  <rect class="d-box" x="196" y="94" width="168" height="96" rx="8"/>
+  <text x="280" y="124" text-anchor="middle" class="d-title">2. Checks</text>
+  <text x="280" y="146" text-anchor="middle" class="d-muted">The lock, then one</text>
+  <text x="280" y="162" text-anchor="middle" class="d-muted">"can it feed now?"</text>
+
+  <rect class="d-accent" x="390" y="94" width="150" height="96" rx="8"/>
+  <text x="465" y="124" text-anchor="middle" class="d-title">3. Reserve</text>
+  <text x="465" y="146" text-anchor="middle" class="d-muted">Written to flash</text>
+  <text x="465" y="162" text-anchor="middle" class="d-muted">before any motion</text>
+
+  <rect class="d-box" x="566" y="94" width="134" height="96" rx="8"/>
+  <text x="633" y="124" text-anchor="middle" class="d-title">4. Drive</text>
+  <text x="633" y="146" text-anchor="middle" class="d-muted">On a 200 ms</text>
+  <text x="633" y="162" text-anchor="middle" class="d-muted">renewed lease</text>
+
+  <line class="d-wire" x1="170" y1="142" x2="192" y2="142" marker-end="url(#feed-journey-arrow)"/>
+  <line class="d-wire" x1="364" y1="142" x2="386" y2="142" marker-end="url(#feed-journey-arrow)"/>
+  <line class="d-wire" x1="540" y1="142" x2="562" y2="142" marker-end="url(#feed-journey-arrow)"/>
+  <path class="d-wire" d="M633,190 L633,240" marker-end="url(#feed-journey-arrow)"/>
+
+  <rect class="d-box" x="566" y="244" width="134" height="96" rx="8"/>
+  <text x="633" y="274" text-anchor="middle" class="d-title">5. Mark</text>
+  <text x="633" y="296" text-anchor="middle" class="d-muted">Counts a portion,</text>
+  <text x="633" y="312" text-anchor="middle" class="d-muted">per compartment</text>
+
+  <rect class="d-box" x="390" y="244" width="150" height="96" rx="8"/>
+  <text x="465" y="274" text-anchor="middle" class="d-title">6. Stop</text>
+  <text x="465" y="296" text-anchor="middle" class="d-muted">About 20 ms later,</text>
+  <text x="465" y="312" text-anchor="middle" class="d-muted">and read back</text>
+
+  <rect class="d-accent" x="196" y="244" width="168" height="96" rx="8"/>
+  <text x="280" y="274" text-anchor="middle" class="d-title">7. Result</text>
+  <text x="280" y="296" text-anchor="middle" class="d-muted">Saved once the stop</text>
+  <text x="280" y="312" text-anchor="middle" class="d-muted">is verified</text>
+
+  <rect class="d-ok" x="20" y="244" width="150" height="96" rx="8"/>
+  <text x="95" y="274" text-anchor="middle" class="d-title">8. History</text>
+  <text x="95" y="296" text-anchor="middle" class="d-muted">Who asked, what was</text>
+  <text x="95" y="312" text-anchor="middle" class="d-muted">counted, how it ended</text>
+
+  <line class="d-wire" x1="566" y1="292" x2="544" y2="292" marker-end="url(#feed-journey-arrow)"/>
+  <line class="d-wire" x1="390" y1="292" x2="368" y2="292" marker-end="url(#feed-journey-arrow)"/>
+  <line class="d-wire" x1="196" y1="292" x2="174" y2="292" marker-end="url(#feed-journey-arrow)"/>
+
+  <text x="360" y="376" text-anchor="middle" class="d-muted">Steps 3 and 7 are the two writes that make a power cut safe.</text>
+</svg>

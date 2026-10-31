@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 430" role="img" aria-labelledby="feed-inside-title feed-inside-desc">
+  <title id="feed-inside-title">What a feed passes through, schematic, not to scale</title>
+  <desc id="feed-inside-desc">A schematic, not to scale. Food sits in the hopper, with the food beam across it near the bottom. Below it, the rotor has three compartments, turned by the motor and watched by the mark sensor. Food falls down the outlet, through the outlet beam, into the bowl, which has no sensor.</desc>
+
+  <path class="d-box" d="M50,30 L280,30 L280,140 L230,180 L100,180 L50,140 z"/>
+  <path class="d-food" d="M52,76 L278,76 L278,139 L229,178 L101,178 L52,139 z"/>
+  <text x="165" y="58" text-anchor="middle" class="d-title">Hopper</text>
+  <line class="d-beam" x1="30" y1="150" x2="300" y2="150"/>
+
+  <ellipse class="d-accent" cx="165" cy="222" rx="92" ry="34"/>
+  <line class="d-line" x1="165" y1="222" x2="165" y2="188"/>
+  <line class="d-line" x1="165" y1="222" x2="94" y2="243"/>
+  <line class="d-line" x1="165" y1="222" x2="236" y2="243"/>
+
+  <rect class="d-box" x="278" y="206" width="58" height="34" rx="4"/>
+  <text x="307" y="228" text-anchor="middle" class="d-muted">motor</text>
+  <rect class="d-box" x="22" y="210" width="40" height="26" rx="4"/>
+  <text x="42" y="228" text-anchor="middle" class="d-muted">mark</text>
+  <line class="d-wire" x1="62" y1="223" x2="73" y2="223"/>
+  <line class="d-wire" x1="257" y1="223" x2="278" y2="223"/>
+
+  <path class="d-box" d="M140,256 L190,256 L190,332 L140,332 z"/>
+  <line class="d-beam" x1="104" y1="294" x2="226" y2="294"/>
+
+  <path class="d-box" d="M70,352 L260,352 L240,402 L90,402 z"/>
+  <path class="d-food" d="M138,374 L192,374 L200,398 L130,398 z"/>
+
+  <text x="360" y="28" class="d-title">The food beam</text>
+  <text x="360" y="46" class="d-muted">Above the rotor: reads low with about five portions left.</text>
+  <text x="360" y="62" class="d-muted">A low warning, not a gauge.</text>
+  <line class="d-wire d-dashed" x1="350" y1="60" x2="300" y2="148"/>
+
+  <text x="360" y="104" class="d-title">The rotor</text>
+  <text x="360" y="122" class="d-muted">Three compartments over one drop hole.</text>
+  <text x="360" y="138" class="d-muted">One portion is one compartment, a third of a turn.</text>
+  <line class="d-wire d-dashed" x1="350" y1="130" x2="240" y2="198"/>
+
+  <text x="360" y="180" class="d-title">The mark sensor and the motor</text>
+  <text x="360" y="198" class="d-muted">One mark per portion, which is how portions are counted.</text>
+  <text x="360" y="214" class="d-muted">Only the feeding owner may drive the motor.</text>
+
+  <text x="360" y="266" class="d-title">The outlet beam</text>
+  <text x="360" y="284" class="d-muted">Blocked for 1 s, it ends the feed. It doesn't count food:</text>
+  <text x="360" y="300" class="d-muted">kibble falls as a stream, between its samples.</text>
+  <line class="d-wire d-dashed" x1="350" y1="288" x2="228" y2="294"/>
+
+  <text x="360" y="352" class="d-title">The bowl</text>
+  <text x="360" y="370" class="d-muted">No scale and no sensor. The feeder never sees</text>
+  <text x="360" y="386" class="d-muted">what fell, or what your pet ate.</text>
+  <line class="d-wire d-dashed" x1="350" y1="374" x2="262" y2="374"/>
+
+  <text x="360" y="420" class="d-muted">Schematic, not to scale.</text>
+</svg>

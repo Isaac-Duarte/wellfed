@@ -28,7 +28,7 @@ Most new docs don't go on the site. A page belongs here only if an owner needs i
 
 1. Write the page and link it from its folder's README, as usual.
 2. To publish it, add it to `src/web/apps/docs/src/lib/nav.ts` in its group. Give it a `label` if its heading is long.
-3. Run the build (below). It fails if a link or anchor is broken, and the nav test fails if a page under `docs/guide/` is missing from the sidebar.
+3. Run the build (below). It fails if a link or anchor is broken, and the nav test fails if a page under `docs/guide/` is missing from the sidebar. If Vitest says a new doc doesn't exist, delete Vitest's cache folder (`.vitest-cache`, under the workspace's `node_modules`), since it doesn't notice new files.
 
 ## Develop
 

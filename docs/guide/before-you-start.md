@@ -38,18 +38,15 @@ If you stop after the Reset, the feeder has no meals until you finish the instal
 | Someone nearby reads your Wi-Fi password | The feeder's setup network is open, and the vendor's setup protocol sends the password unencrypted. The exposure lasts a few seconds. Change the password afterward if that matters to you |
 | The feeder never connects | Usually a wrong password or a network without 2.4 GHz. Nothing has been installed, and you can send the details again |
 | The app closes or your phone drops out partway | The install can usually continue, and [Install](install.md#if-the-install-stops) says how. Don't unplug the feeder during an install unless the app asks you to restart it |
-| Your feeder's firmware doesn't match the known 1.1.15 | The install stops before overwriting it, and the feeder stays on Wellfed. There's then no over-the-air way back to the vendor's firmware, only UART |
+| Your feeder's firmware doesn't match the known 1.1.15 | The install stops before overwriting it, and the feeder stays on Wellfed. There's then no over-the-air way back to the vendor's firmware. UART is the only route left, and our UART tools are pinned to our one test feeder, so we have no way back to offer you |
 | Wellfed has a bug that affects feeding | It's possible. It has run on one feeder and hasn't finished a long unattended run. Don't rely on it alone to feed a pet yet |
-| The feeder won't boot at all | The update path is built so that this shouldn't happen. The last resort is [recovery over UART](../devices/plaf103/recovery.md), which means opening the feeder and using a USB serial adapter |
+| The feeder won't boot at all | The update path is built so that this shouldn't happen. The last resort is [recovery over UART](../devices/plaf103/recovery.md), which means opening the feeder and using a USB serial adapter. Our tools for it are pinned to our one test feeder, so you'd have to adapt them |
 
 [Install and rollback](how-it-works/install-and-rollback.md) explains how the install avoids the worst of these, and where it can't.
 
 ## Going back
 
-You can put your feeder's own copy of the vendor's firmware back over the air from the app or the CLI, then set it up again in the vendor's app. [Consumer installation](../firmware/consumer-installation.md#rollback) has the details. That needs the backup: after the install, the feeder no longer holds a copy.
-
-> [!WARNING]
-> Don't hold Reset on a feeder running Wellfed unless you mean to wipe it. It draws a new identity, and the phone's backup stays filed under the old one, so you'd need the copy you saved.
+You can put your feeder's own copy of the vendor's firmware back over the air, then set it up again in the vendor's app. That needs the backup: after the install, the feeder no longer holds a copy. [Going back to stock](going-back.md) has the steps. Don't hold Reset to go back: on a feeder running Wellfed, that wipes it.
 
 ## Next steps
 

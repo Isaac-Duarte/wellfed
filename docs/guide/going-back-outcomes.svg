@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 510" role="img" aria-labelledby="going-back-outcomes-title going-back-outcomes-desc">
+  <title id="going-back-outcomes-title">The three ways a restore ends</title>
+  <desc id="going-back-outcomes-desc">If the restore reports success, unlock the panel if its lock light is on, hold Reset and set the feeder up in the vendor's app. If it stopped with a reason, the feeder is still on Wellfed: don't hold Reset, and do what the screen says. If the app can't tell whether it went through, it looks for the feeder. Still on Wellfed means nothing is lost and you can restore again. If it shows up but never answers as idle, close it and check again in a few minutes. A feeder waiting for setup means don't hold Reset and check the vendor's app. If it finds neither, the feeder is probably on stock, so check the vendor's app first.</desc>
+  <defs>
+    <marker id="going-back-outcomes-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+    <marker id="going-back-outcomes-arrow-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head-ok" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="d-box" x="16" y="178" width="110" height="64" rx="8"/>
+  <text x="71" y="206" text-anchor="middle" class="d-title">The restore</text>
+  <text x="71" y="225" text-anchor="middle" class="d-title">ends</text>
+
+  <path class="d-wire-ok" d="M126,196 L146,196 L146,56 L166,56" marker-end="url(#going-back-outcomes-arrow-ok)"/>
+  <path class="d-wire" d="M126,210 L136,210 L136,150 L166,150" marker-end="url(#going-back-outcomes-arrow)"/>
+  <path class="d-wire" d="M126,224 L146,224 L146,300 L166,300" marker-end="url(#going-back-outcomes-arrow)"/>
+
+  <rect class="d-ok" x="170" y="24" width="190" height="64" rx="8"/>
+  <text x="265" y="52" text-anchor="middle" class="d-title">It reports success</text>
+  <text x="265" y="71" text-anchor="middle" class="d-muted">the vendor's firmware restarts</text>
+
+  <rect class="d-box" x="170" y="118" width="190" height="64" rx="8"/>
+  <text x="265" y="146" text-anchor="middle" class="d-title">It stopped</text>
+  <text x="265" y="165" text-anchor="middle" class="d-muted">with a reason on screen</text>
+
+  <rect class="d-warn" x="170" y="268" width="190" height="64" rx="8"/>
+  <text x="265" y="296" text-anchor="middle" class="d-title">We can't tell</text>
+  <text x="265" y="315" text-anchor="middle" class="d-muted">the app looks for the feeder</text>
+
+  <line class="d-wire-ok" x1="360" y1="56" x2="402" y2="56" marker-end="url(#going-back-outcomes-arrow-ok)"/>
+  <line class="d-wire" x1="360" y1="150" x2="402" y2="150" marker-end="url(#going-back-outcomes-arrow)"/>
+  <path class="d-wire" d="M360,300 L380,300 L380,240 L402,240" marker-end="url(#going-back-outcomes-arrow)"/>
+  <line class="d-wire" x1="360" y1="300" x2="380" y2="300"/>
+  <line class="d-wire" x1="380" y1="314" x2="402" y2="314" marker-end="url(#going-back-outcomes-arrow)"/>
+  <path class="d-wire" d="M380,300 L380,390 L402,390" marker-end="url(#going-back-outcomes-arrow)"/>
+  <path class="d-wire" d="M380,390 L380,466 L402,466" marker-end="url(#going-back-outcomes-arrow)"/>
+
+  <rect class="d-panel" x="406" y="16" width="298" height="80" rx="8"/>
+  <text x="420" y="42" class="d-title">Now hold Reset</text>
+  <text x="420" y="61" class="d-muted">Unlock first if the lock light is on, then hold</text>
+  <text x="420" y="78" class="d-muted">Reset and set it up in the vendor's app</text>
+
+  <rect class="d-panel" x="406" y="110" width="298" height="80" rx="8"/>
+  <text x="420" y="136" class="d-title">Still on Wellfed</text>
+  <text x="420" y="155" class="d-muted">Don't hold Reset. Do what the screen says.</text>
+  <text x="420" y="172" class="d-muted">It may ask you to unplug the feeder first.</text>
+
+  <rect class="d-panel" x="406" y="204" width="298" height="68" rx="8"/>
+  <text x="420" y="230" class="d-title">It answers as Wellfed</text>
+  <text x="420" y="250" class="d-muted">Nothing is lost, and you can restore again</text>
+
+  <rect class="d-panel" x="406" y="280" width="298" height="68" rx="8"/>
+  <text x="420" y="306" class="d-title">It shows up, but won't answer</text>
+  <text x="420" y="326" class="d-muted">Close it, and check again in a few minutes</text>
+
+  <rect class="d-fault" x="406" y="356" width="298" height="68" rx="8"/>
+  <text x="420" y="382" class="d-title">A feeder waits for setup</text>
+  <text x="420" y="402" class="d-muted">Don't hold Reset. Check the vendor's app.</text>
+
+  <rect class="d-panel" x="406" y="432" width="298" height="68" rx="8"/>
+  <text x="420" y="458" class="d-title">It finds neither</text>
+  <text x="420" y="478" class="d-muted">Probably stock. Check the vendor's app first.</text>
+</svg>

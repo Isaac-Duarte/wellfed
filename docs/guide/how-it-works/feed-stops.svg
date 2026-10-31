@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 370" role="img" aria-labelledby="feed-stops-title feed-stops-desc">
+  <title id="feed-stops-title">The layers that stop the motor</title>
+  <desc id="feed-stops-desc">Four layers. First, the feed's own limits on marks, time, current and the outlet. If the main loop stalls, a timer's motor lease stops the motor 200 ms after the last renewal. If a stop doesn't take, the timer retries it every 10 ms. If the owner's beat is more than 1 second old while driving, the watchdog is not fed and resets the board about 4 seconds later, which puts the motor pins in standby.</desc>
+  <defs>
+    <marker id="feed-stops-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="d-ok" x="24" y="16" width="672" height="64" rx="8"/>
+  <text x="40" y="42" class="d-title">The feed's own limits</text>
+  <text x="40" y="62" class="d-muted">Marks, time, current and the outlet. A stop here ends the feed with a named reason.</text>
+
+  <line class="d-wire" x1="360" y1="80" x2="360" y2="104" marker-end="url(#feed-stops-arrow)"/>
+  <text x="372" y="97" class="d-muted">the main loop stalls</text>
+
+  <rect class="d-box" x="24" y="108" width="672" height="64" rx="8"/>
+  <text x="40" y="134" class="d-title">The motor lease</text>
+  <text x="40" y="154" class="d-muted">A timer interrupt stops the motor 200 ms after the owner's last renewal. Measured: 0.18 to 0.2 s.</text>
+
+  <line class="d-wire" x1="360" y1="172" x2="360" y2="196" marker-end="url(#feed-stops-arrow)"/>
+  <text x="372" y="189" class="d-muted">the stop doesn't take</text>
+
+  <rect class="d-box" x="24" y="200" width="672" height="64" rx="8"/>
+  <text x="40" y="226" class="d-title">The stop retry</text>
+  <text x="40" y="246" class="d-muted">The timer tries the stop again every 10 ms, even if the loop isn't running.</text>
+
+  <line class="d-wire" x1="360" y1="264" x2="360" y2="288" marker-end="url(#feed-stops-arrow)"/>
+  <text x="372" y="281" class="d-muted">the owner's beat is over 1 s old</text>
+
+  <rect class="d-fault" x="24" y="292" width="672" height="64" rx="8"/>
+  <text x="40" y="318" class="d-title">The watchdog</text>
+  <text x="40" y="338" class="d-muted">It resets the board about 4 s later, and the motor pins go to the driver's standby.</text>
+</svg>

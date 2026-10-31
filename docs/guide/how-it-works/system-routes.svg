@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" role="img" aria-labelledby="system-routes-title system-routes-desc">
+  <title id="system-routes-title">Who can install what</title>
+  <desc id="system-routes-desc">The app or the CLI installs from stock onto a feeder on the vendor's firmware. The app or the CLI also offers updates to, and restores stock from, a feeder running Wellfed. The server can only install releases on a feeder already running Wellfed, tested in simulation only. The server never installs on a feeder on the vendor's firmware.</desc>
+  <defs>
+    <marker id="system-routes-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+    <marker id="system-routes-arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head-accent" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+    <marker id="system-routes-arrow-fault" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head-fault" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="d-box" x="24" y="40" width="150" height="76" rx="8"/>
+  <text x="99" y="72" text-anchor="middle" class="d-title">Feeder on stock</text>
+  <text x="99" y="91" text-anchor="middle" class="d-muted">the vendor's firmware</text>
+
+  <rect class="d-accent" x="285" y="40" width="150" height="76" rx="8"/>
+  <text x="360" y="83" text-anchor="middle" class="d-title">The app or the CLI</text>
+
+  <rect class="d-box" x="546" y="40" width="150" height="76" rx="8"/>
+  <text x="621" y="83" text-anchor="middle" class="d-title">Feeder on Wellfed</text>
+
+  <rect class="d-unknown" x="285" y="176" width="150" height="76" rx="8"/>
+  <text x="360" y="210" text-anchor="middle" class="d-title">The server</text>
+  <text x="360" y="229" text-anchor="middle" class="d-muted">optional</text>
+
+  <line class="d-wire-accent" x1="285" y1="78" x2="178" y2="78" marker-end="url(#system-routes-arrow-accent)"/>
+  <text x="230" y="52" text-anchor="middle" class="d-muted">installs</text>
+  <text x="230" y="68" text-anchor="middle" class="d-muted">from stock</text>
+
+  <line class="d-wire-accent" x1="435" y1="78" x2="542" y2="78" marker-end="url(#system-routes-arrow-accent)"/>
+  <text x="490" y="52" text-anchor="middle" class="d-muted">updates, and</text>
+  <text x="490" y="68" text-anchor="middle" class="d-muted">restoring stock</text>
+
+  <path class="d-wire d-dashed" d="M435,214 L621,214 L621,120" marker-end="url(#system-routes-arrow)"/>
+  <text x="444" y="204" class="d-muted">release installs,</text>
+  <text x="444" y="234" class="d-muted">in simulation only</text>
+
+  <path class="d-wire-fault d-dashed" d="M285,214 L99,214 L99,120" marker-end="url(#system-routes-arrow-fault)"/>
+  <text x="192" y="204" text-anchor="middle" class="d-text-fault">never</text>
+</svg>

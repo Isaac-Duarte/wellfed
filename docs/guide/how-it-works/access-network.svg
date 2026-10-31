@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 370" role="img" aria-labelledby="access-network-title access-network-desc">
+  <title id="access-network-title">What crosses your network, and what stays</title>
+  <desc id="access-network-desc">From the feeder, encrypted sessions on TCP port 4747 go to your phones, computers and any server. In the clear, its mDNS announcement, with its public key and port, reaches anyone on your network, as do DHCP and ARP. Also in the clear, a time request holding only a random number and a ping every 5 seconds go to your router by default. By design, nothing goes to the vendor's cloud or the internet.</desc>
+  <defs>
+    <marker id="access-network-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+    <marker id="access-network-arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head-accent" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="d-accent" x="24" y="24" width="150" height="322" rx="10"/>
+  <text x="99" y="178" text-anchor="middle" class="d-title">The feeder</text>
+  <text x="99" y="198" text-anchor="middle" class="d-muted">keeps its own data</text>
+
+  <rect class="d-box" x="500" y="24" width="196" height="70" rx="8"/>
+  <text x="598" y="54" text-anchor="middle" class="d-title">Phones, computers</text>
+  <text x="598" y="73" text-anchor="middle" class="d-muted">and a server, if any</text>
+  <line class="d-wire-accent" x1="174" y1="59" x2="496" y2="59" marker-end="url(#access-network-arrow-accent)" marker-start="url(#access-network-arrow-accent)"/>
+  <text x="335" y="49" text-anchor="middle">encrypted sessions, TCP 4747</text>
+
+  <rect class="d-panel" x="500" y="112" width="196" height="70" rx="8"/>
+  <text x="598" y="152" text-anchor="middle" class="d-title">Anyone on your network</text>
+  <line class="d-wire" x1="174" y1="147" x2="496" y2="147" marker-end="url(#access-network-arrow)"/>
+  <text x="335" y="137" text-anchor="middle">in the clear: mDNS, DHCP, ARP</text>
+  <text x="335" y="166" text-anchor="middle" class="d-muted">mDNS holds its public key and its port</text>
+
+  <rect class="d-panel" x="500" y="200" width="196" height="70" rx="8"/>
+  <text x="598" y="240" text-anchor="middle" class="d-title">Your router, by default</text>
+  <line class="d-wire" x1="174" y1="235" x2="496" y2="235" marker-end="url(#access-network-arrow)"/>
+  <text x="335" y="225" text-anchor="middle">in the clear: a time request, a ping</text>
+  <text x="335" y="254" text-anchor="middle" class="d-muted">a random number, and a ping every 5 seconds</text>
+
+  <rect class="d-unknown" x="500" y="288" width="196" height="58" rx="8"/>
+  <text x="598" y="312" text-anchor="middle" class="d-title">The internet</text>
+  <text x="598" y="331" text-anchor="middle" class="d-muted">and the vendor's cloud</text>
+  <line class="d-wire d-dashed" x1="174" y1="317" x2="496" y2="317"/>
+  <text x="335" y="307" text-anchor="middle" class="d-text-ok">nothing, by design</text>
+</svg>

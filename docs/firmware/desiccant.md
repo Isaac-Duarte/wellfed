@@ -58,7 +58,7 @@ A reset is answered `Done` with the settings' new generation, and records a `Set
 | Works with the app alone | No | Yes |
 | Period | 14 days observed; range unknown | 1 to 90 days, 14 by default |
 | Below zero | Keeps counting | Keeps counting |
-| Notification | Phone push from the cloud | Due state in the status. No notification, and none is planned ([deferred](product-architecture.md#deferred)) |
+| Notification | Phone push from the cloud | Due state in the status. Alerts are planned ([deferred](product-architecture.md#deferred)) |
 
 ## Storage
 

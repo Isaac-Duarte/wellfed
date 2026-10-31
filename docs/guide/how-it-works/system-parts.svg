@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 470" role="img" aria-labelledby="system-parts-title system-parts-desc">
+  <title id="system-parts-title">The feeder, and what talks to it</title>
+  <desc id="system-parts-desc">The feeder holds its meals, settings, who may connect and recent history. The Android app and the CLI each talk to it directly over an encrypted session on your Wi-Fi, and the app also uses Bluetooth in setup mode only. Your router gives it the time by default. An optional server, a proof of concept, also holds an encrypted session, and the CLI can reach the server over HTTP. Home Assistant is paused, and would go through the server's API.</desc>
+  <defs>
+    <marker id="system-parts-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+    <marker id="system-parts-arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head-accent" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="d-accent" x="480" y="24" width="216" height="290" rx="10"/>
+  <text x="588" y="56" text-anchor="middle" class="d-title">The feeder</text>
+  <text x="588" y="74" text-anchor="middle" class="d-muted">owns its own state</text>
+  <text x="588" y="120" text-anchor="middle">Meals and settings</text>
+  <text x="588" y="150" text-anchor="middle">Who may connect</text>
+  <text x="588" y="180" text-anchor="middle">Recent history</text>
+  <text x="588" y="210" text-anchor="middle">The one motor owner</text>
+  <text x="588" y="240" text-anchor="middle">Its own clock</text>
+
+  <rect class="d-box" x="24" y="24" width="170" height="84" rx="8"/>
+  <text x="109" y="58" text-anchor="middle" class="d-title">The app</text>
+  <text x="109" y="78" text-anchor="middle" class="d-muted">Android</text>
+
+  <rect class="d-box" x="24" y="150" width="170" height="70" rx="8"/>
+  <text x="109" y="180" text-anchor="middle" class="d-title">The CLI</text>
+  <text x="109" y="199" text-anchor="middle" class="d-muted">Linux</text>
+
+  <rect class="d-unknown" x="24" y="270" width="170" height="76" rx="8"/>
+  <text x="109" y="302" text-anchor="middle" class="d-title">The server</text>
+  <text x="109" y="321" text-anchor="middle" class="d-muted">optional, proof of concept</text>
+
+  <rect class="d-unknown" x="24" y="394" width="170" height="60" rx="8"/>
+  <text x="109" y="420" text-anchor="middle" class="d-title">Home Assistant</text>
+  <text x="109" y="438" text-anchor="middle" class="d-muted">paused</text>
+
+  <rect class="d-panel" x="480" y="356" width="216" height="70" rx="8"/>
+  <text x="588" y="386" text-anchor="middle" class="d-title">Your router</text>
+  <text x="588" y="405" text-anchor="middle" class="d-muted">the time, by default</text>
+
+  <line class="d-wire-accent" x1="194" y1="52" x2="476" y2="52" marker-end="url(#system-parts-arrow-accent)"/>
+  <text x="335" y="42" text-anchor="middle" class="d-muted">encrypted session over Wi-Fi</text>
+  <line class="d-wire d-dashed" x1="194" y1="88" x2="476" y2="88" marker-end="url(#system-parts-arrow)"/>
+  <text x="335" y="108" text-anchor="middle" class="d-muted">Bluetooth, in setup mode only</text>
+
+  <line class="d-wire-accent" x1="194" y1="184" x2="476" y2="184" marker-end="url(#system-parts-arrow-accent)"/>
+  <text x="335" y="174" text-anchor="middle" class="d-muted">encrypted session over Wi-Fi</text>
+
+  <line class="d-wire d-dashed" x1="194" y1="300" x2="476" y2="300" marker-end="url(#system-parts-arrow)"/>
+  <text x="335" y="290" text-anchor="middle" class="d-muted">encrypted session, if you run one</text>
+
+  <line class="d-wire d-dashed" x1="109" y1="220" x2="109" y2="266" marker-end="url(#system-parts-arrow)"/>
+  <text x="118" y="248" class="d-muted">HTTP</text>
+  <line class="d-wire d-dashed" x1="109" y1="394" x2="109" y2="350" marker-end="url(#system-parts-arrow)"/>
+  <text x="118" y="376" class="d-muted">the server's HTTP API</text>
+
+  <line class="d-wire" x1="588" y1="356" x2="588" y2="318" marker-end="url(#system-parts-arrow)"/>
+</svg>

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 440" role="img" aria-labelledby="access-pairing-title access-pairing-desc">
+  <title id="access-pairing-title">How a phone becomes the first owner</title>
+  <desc id="access-pairing-desc">The feeder enters setup mode, from a button hold or from having no Wi-Fi saved and no meal enabled. The phone runs an encrypted handshake with it over Bluetooth. The phone shows six button presses, and you key them in on the feeder within 60 seconds. Both sides prove the code, one press at a time. Only then does the phone send the Wi-Fi password and its key becomes an owner. The feeder saves that and restarts without Bluetooth.</desc>
+  <defs>
+    <marker id="access-pairing-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head-accent" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="d-box" x="30" y="24" width="150" height="396" rx="10"/>
+  <text x="105" y="54" text-anchor="middle" class="d-title">Your phone</text>
+  <rect class="d-box" x="540" y="24" width="150" height="396" rx="10"/>
+  <text x="615" y="54" text-anchor="middle" class="d-title">The feeder</text>
+
+  <text x="360" y="62" text-anchor="middle" class="d-title">1. Setup mode</text>
+  <text x="360" y="80" text-anchor="middle" class="d-muted">from a button hold, or with no Wi-Fi saved and no meal on</text>
+
+  <text x="360" y="118" text-anchor="middle" class="d-title">2. An encrypted handshake</text>
+  <text x="360" y="136" text-anchor="middle" class="d-muted">over Bluetooth, and not yet trusted by either side</text>
+  <line class="d-wire-accent" x1="184" y1="148" x2="536" y2="148" marker-end="url(#access-pairing-arrow)" marker-start="url(#access-pairing-arrow)"/>
+
+  <text x="360" y="184" text-anchor="middle" class="d-title">3. Six presses, from screen to fingers</text>
+  <text x="360" y="202" text-anchor="middle" class="d-muted">the phone shows them, and you key them in within 60 s</text>
+  <path class="d-beam" d="M184,214 C280,244 440,244 536,214" marker-end="url(#access-pairing-arrow)"/>
+
+  <text x="360" y="274" text-anchor="middle" class="d-title">4. Both sides prove the code</text>
+  <text x="360" y="292" text-anchor="middle" class="d-muted">one press at a time, tied to this handshake</text>
+  <line class="d-wire-accent" x1="184" y1="304" x2="536" y2="304" marker-end="url(#access-pairing-arrow)" marker-start="url(#access-pairing-arrow)"/>
+
+  <text x="360" y="338" text-anchor="middle" class="d-title">5. Only then: the Wi-Fi password</text>
+  <text x="360" y="356" text-anchor="middle" class="d-muted">and this phone's key becomes an owner</text>
+  <line class="d-wire-accent" x1="184" y1="368" x2="536" y2="368" marker-end="url(#access-pairing-arrow)"/>
+
+  <text x="360" y="402" text-anchor="middle" class="d-muted">6. The feeder saves it and restarts without Bluetooth</text>
+</svg>

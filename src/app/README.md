@@ -19,7 +19,7 @@ So far it does:
 - **App settings:** appearance, this phone's name, kept backups and About.
 - **Restore:** the vendor's firmware back on the feeder, from the backup the install kept or a copy you saved. You press Dispense on the feeder, and it goes across as an update. Then stock runs, which this app cannot talk to.
 
-Servers come later ([roadmap](../../docs/roadmap.md)). Meal reminders are a setting on the feeder. The app sends no notifications, and none are planned ([deferred](../../docs/firmware/product-architecture.md#deferred)).
+Servers come later ([roadmap](../../docs/roadmap.md)). Meal reminders are a setting on the feeder. The app has no alerts yet, and they are planned ([deferred](../../docs/firmware/product-architecture.md#deferred)).
 
 `cargo xtask check-repository` fails when an `Op` has no client in the app, or a request the bridge offers has no screen.
 

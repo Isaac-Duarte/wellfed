@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300" role="img" aria-labelledby="feed-power-cut-title feed-power-cut-desc">
+  <title id="feed-power-cut-title">What a power cut leaves behind, by when it hits</title>
+  <desc id="feed-power-cut-desc">A scheduled feed goes through a claim, a reservation, the motor running and a saved result. A cut after the claim means the meal is recorded as skipped: no food, and not run again. A cut while the reservation is being written is recorded as uncertain, and the motor most likely never ran. A cut while the motor runs is recorded as uncertain, as a range, and never run again. A cut after the result is saved changes nothing: the result stands.</desc>
+  <defs>
+    <marker id="feed-power-cut-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="d-head-fault" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="d-box" x="24" y="24" width="150" height="52" rx="8"/>
+  <text x="99" y="55" text-anchor="middle" class="d-title">Meal claimed</text>
+  <rect class="d-accent" x="198" y="24" width="150" height="52" rx="8"/>
+  <text x="273" y="55" text-anchor="middle" class="d-title">Feed reserved</text>
+  <rect class="d-box" x="372" y="24" width="150" height="52" rx="8"/>
+  <text x="447" y="55" text-anchor="middle" class="d-title">Motor runs</text>
+  <rect class="d-accent" x="546" y="24" width="150" height="52" rx="8"/>
+  <text x="621" y="55" text-anchor="middle" class="d-title">Result saved</text>
+
+  <line class="d-wire" x1="174" y1="50" x2="198" y2="50"/>
+  <line class="d-wire" x1="348" y1="50" x2="372" y2="50"/>
+  <line class="d-wire" x1="522" y1="50" x2="546" y2="50"/>
+
+  <line class="d-wire-fault d-dashed" x1="99" y1="76" x2="99" y2="126" marker-end="url(#feed-power-cut-arrow)"/>
+  <line class="d-wire-fault d-dashed" x1="273" y1="76" x2="273" y2="126" marker-end="url(#feed-power-cut-arrow)"/>
+  <line class="d-wire-fault d-dashed" x1="447" y1="76" x2="447" y2="126" marker-end="url(#feed-power-cut-arrow)"/>
+  <line class="d-wire-fault d-dashed" x1="621" y1="76" x2="621" y2="126" marker-end="url(#feed-power-cut-arrow)"/>
+  <text x="360" y="108" text-anchor="middle" class="d-muted">a power cut, and what the next boot records</text>
+
+  <rect class="d-warn" x="24" y="130" width="150" height="140" rx="8"/>
+  <text x="99" y="158" text-anchor="middle" class="d-title">Meal skipped</text>
+  <text x="99" y="182" text-anchor="middle" class="d-muted">No food.</text>
+  <text x="99" y="200" text-anchor="middle" class="d-muted">Not run again.</text>
+
+  <rect class="d-warn" x="198" y="130" width="150" height="140" rx="8"/>
+  <text x="273" y="158" text-anchor="middle" class="d-title">Uncertain</text>
+  <text x="273" y="182" text-anchor="middle" class="d-muted">Cut while writing it.</text>
+  <text x="273" y="200" text-anchor="middle" class="d-muted">The motor most</text>
+  <text x="273" y="218" text-anchor="middle" class="d-muted">likely never ran.</text>
+
+  <rect class="d-warn" x="372" y="130" width="150" height="140" rx="8"/>
+  <text x="447" y="158" text-anchor="middle" class="d-title">Uncertain</text>
+  <text x="447" y="182" text-anchor="middle" class="d-muted">A range, 0 to all</text>
+  <text x="447" y="200" text-anchor="middle" class="d-muted">the portions asked.</text>
+  <text x="447" y="218" text-anchor="middle" class="d-muted">Never run again.</text>
+
+  <rect class="d-ok" x="546" y="130" width="150" height="140" rx="8"/>
+  <text x="621" y="158" text-anchor="middle" class="d-title">It stands</text>
+  <text x="621" y="182" text-anchor="middle" class="d-muted">The next boot reads</text>
+  <text x="621" y="200" text-anchor="middle" class="d-muted">it and moves on.</text>
+</svg>

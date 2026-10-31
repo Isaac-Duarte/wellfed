@@ -41,7 +41,7 @@ flowchart LR
 
 Stage 3 is the safeguard. The installer refuses to go on to stage 4 until it holds a copy of bank 1 that matches a known hash of the vendor's 1.1.15 firmware. If the copy doesn't match, the run stops, and bank 1 still holds the vendor's firmware. **On this route, the feeder's copy of stock isn't overwritten until you hold a good one.**
 
-That doesn't mean the feeder could simply go back at stage 3. Stage 2 already changed a marker on bank 1, so the vendor's firmware won't start again until it's restored from a good copy. If your feeder's bytes never match, the feeder stays on Wellfed in bank 0, and only UART gets back to the vendor's firmware.
+That doesn't mean the feeder could simply go back at stage 3. Stage 2 already changed a marker on bank 1, so the vendor's firmware won't start again until it's restored from a good copy. If your feeder's bytes never match, the feeder stays on Wellfed in bank 0, and only UART gets back to the vendor's firmware. Our UART tools are pinned to our one test feeder, so that isn't a route we can offer you.
 
 The copy normally comes from your own feeder, which is why we don't need to distribute the vendor's firmware.
 
@@ -61,7 +61,7 @@ A build confirms itself only after it has started cleanly. If it keeps failing o
 
 ## Going back to the vendor's firmware
 
-You send the backup back as a signed update from the phone or computer that owns the feeder, on the same Wi-Fi. It's written through bank 0 like any other update. You press Dispense on the feeder first, to approve the key that signs it.
+[Going back to stock](../going-back.md) has the steps. You send the backup back as a signed update from the phone or computer that owns the feeder, on the same Wi-Fi. It's written through bank 0 like any other update. You press Dispense on the feeder first, to approve the key that signs it.
 
 The vendor's firmware then runs, and it keeps trying to reach the server it knew. Once it's running, unlock the panel if the lock light is on, hold Reset for about 5 seconds, and set the feeder up in the vendor's app.
 
@@ -71,7 +71,7 @@ The vendor's firmware then runs, and it keeps trying to reach the server it knew
 ## What this doesn't protect against
 
 - **A bug that doesn't stop Wellfed starting.** A build can pass its trial and still misbehave later. Feeding has its own supervision, but this page's safeguards are about booting.
-- **Both banks going bad.** With neither bank valid, the feeder waits forever, and only [UART recovery](../../devices/plaf103/recovery.md) brings it back. A broken low-level core or factory configuration needs UART too. We've built the update path so that this shouldn't happen.
+- **Both banks going bad.** With neither bank valid, the feeder waits forever, and only [UART recovery](../../devices/plaf103/recovery.md) could bring it back, with tools you'd have to adapt from our one test feeder. A broken low-level core or factory configuration needs UART too. We've built the update path so that this shouldn't happen.
 - **A first boot that fails.** Between stages 2 and 4 there's no working second bank to fall back to, since the vendor's firmware can't start.
 - **A restore that goes wrong.** The vendor's firmware doesn't run on trial, so if it's valid but won't boot, nothing falls back and only UART recovers it. A restore that's interrupted can leave Wellfed with its Wi-Fi, phones and meals already cleared.
 - **Losing your backup.** After the install, the feeder holds no copy of the vendor's firmware. Uninstalling the app or clearing its data deletes the app's copy, so save one elsewhere.
