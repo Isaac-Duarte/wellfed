@@ -37,7 +37,8 @@ fn lost_sensors_at_rest_are_held_with_the_outputs_stopped() {
     let mut f = boot();
     hw(|h| h.stuck = true);
 
-    f.step();
+    // The next battery conversion finds it, a rest period away at most.
+    f.advance(CONFIG.rest_capture_ms);
     let s = f.status();
     assert!(s.state == OwnerState::Fault && s.fault == OwnerFault::Sensor);
     assert!(s.stopped && s.optics_off && motor_pins() == MOTOR_MASK);
@@ -241,6 +242,213 @@ fn an_owner_that_resolved_a_feed_and_lost_its_sensors_holds_the_result() {
     assert!(s.result.id == 7 && s.result_durable && f.resolve_calls == 1);
     assert!(beats_over_the_gap(&mut f) > 0);
     f.stop();
+}
+
+/// At rest the converters run far less often than the owner polls, and nothing
+/// that keeps the feeder safe waits for them.
+mod at_rest {
+    use super::*;
+    use wellfed_core::adc_scale::SAMPLES;
+    use wellfed_hal::plaf103::pins::{ADAPTER, ADC_BATTERY};
+    use wellfed_hal::power;
+    use wellfed_hal::sdk;
+
+    const PERIOD_MS: u32 = 10;
+    /// One channel's conversions, as the fake counts its reads.
+    const CHANNEL: u32 = SAMPLES as u32;
+    /// About 1619 scaled: under the floor, above the cutoff.
+    const UNDER_FLOOR_RAW: u16 = 2200;
+
+    /// An owner whose rest period is long enough to poll between conversions.
+    fn spaced() -> Box<Fixture> {
+        boot_with(|c| {
+            c.sensors.max_age_ms = PERIOD_MS;
+            c.rest_capture_ms = PERIOD_MS;
+        })
+    }
+
+    fn conversions() -> u32 {
+        hw(|h| h.reads)
+    }
+
+    /// `spaced`, settled on the pack alone.
+    fn on_the_pack() -> Box<Fixture> {
+        let mut f = spaced();
+        hw(|h| h.input[0] &= !bit(ADAPTER));
+        f.advance(2 * PERIOD_MS);
+        assert!(!f.status().on_adapter && !f.status().supply_low);
+        f
+    }
+
+    #[test]
+    fn only_the_battery_converts_and_only_at_its_period() {
+        let mut f = spaced();
+        let before = conversions();
+
+        f.advance(3 * PERIOD_MS);
+        assert_eq!(conversions() - before, 3 * CHANNEL);
+        assert_eq!(hw(|h| h.adc_channel), ADC_BATTERY);
+        f.stop();
+    }
+
+    #[test]
+    fn the_owner_beats_on_every_poll_between_conversions() {
+        let mut f = spaced();
+        f.advance(PERIOD_MS);
+        let before = beats();
+
+        f.advance(PERIOD_MS - 1);
+        assert_eq!(beats() - before, PERIOD_MS - 1);
+        f.stop();
+    }
+
+    /// The lease is what lets a food reading's emitters stay lit: a poll with
+    /// no conversion must renew it just as one with a conversion does.
+    #[test]
+    fn the_owner_lease_is_renewed_between_conversions() {
+        let mut f = spaced();
+        for _ in 0..3 * CONFIG.motor_lease_ms {
+            f.advance(1);
+            let now = f.owner.events().now_ms().expect("the clock reads");
+            assert_eq!(f.owner.events().view().owner_at, now);
+        }
+        assert_eq!(f.status().fault, OwnerFault::Ok);
+        f.stop();
+    }
+
+    #[test]
+    fn the_inputs_are_read_on_every_poll() {
+        let mut f = spaced();
+        f.advance(PERIOD_MS);
+        assert!(f.status().on_adapter);
+
+        // Right after a conversion, so the next is a whole period away.
+        hw(|h| h.input[0] &= !bit(ADAPTER));
+        let before = conversions();
+        f.advance(1);
+        assert!(!f.status().on_adapter);
+        assert_eq!(conversions(), before, "with nothing converted");
+        f.stop();
+    }
+
+    #[test]
+    fn a_feed_converts_both_channels_from_its_first_poll_to_its_last() {
+        let mut f = spaced();
+        f.advance(1);
+        let before = conversions();
+
+        assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+        f.step();
+        assert_eq!(f.status().state, OwnerState::Preparing);
+        assert_eq!(conversions() - before, 2 * CHANNEL);
+
+        for _ in 0..5 {
+            let before = conversions();
+            f.advance(1);
+            assert_eq!(conversions() - before, 2 * CHANNEL);
+        }
+        assert_eq!(f.status().state, OwnerState::Feeding);
+        let before = conversions();
+        f.advance(1);
+        assert_eq!(conversions() - before, 2 * CHANNEL);
+
+        f.complete();
+        assert!(f.owner.acknowledge(1));
+        f.advance(1);
+        let before = conversions();
+        f.advance(PERIOD_MS);
+        assert_eq!(conversions() - before, CHANNEL, "back to resting");
+        f.stop();
+    }
+
+    /// A feed a poll after a conversion starts on the same readings as any:
+    /// the current it checks at the start is converted, not left out.
+    #[test]
+    fn a_motor_current_over_the_limit_still_refuses_a_feed_from_rest() {
+        let mut f = spaced();
+        hw(|h| h.current_adc = 700);
+        f.advance(PERIOD_MS);
+        assert_eq!(f.status().state, OwnerState::Idle, "not judged at rest");
+
+        assert_eq!(f.owner.submit(1, 1), SubmitResult::Enqueued);
+        f.advance(CONFIG.prepare_timeout_ms + 1);
+        let s = f.status();
+        assert_eq!(
+            (s.result.outcome, s.result.reason),
+            (OwnerOutcome::Failed, FeedReason::Sensor)
+        );
+        assert_eq!(motor_pins(), MOTOR_MASK, "never driven");
+        f.stop();
+    }
+
+    #[test]
+    fn the_pack_keeps_its_verdict_and_its_sample_between_conversions() {
+        let mut f = on_the_pack();
+        for _ in 0..3 * PERIOD_MS {
+            f.advance(1);
+            let s = f.status();
+            assert!(!s.supply_low && s.below_floor == Some(false));
+            let sample = power::latest(sdk::uptime_ms()).expect("a published sample");
+            assert!(
+                sample.pin_mv > 0,
+                "a poll with no conversion publishes none"
+            );
+        }
+        f.stop();
+    }
+
+    /// The floor's hold is timed: at rest two conversions a rest period apart
+    /// span a hold shorter than it, where a count of polls would have seen one
+    /// reading.
+    #[test]
+    fn a_sag_at_rest_is_judged_on_the_time_it_lasted() {
+        const { assert!(PERIOD_MS >= CONFIG.sensors.battery.hold_ms) };
+        let mut f = on_the_pack();
+
+        hw(|h| h.battery_adc = UNDER_FLOOR_RAW);
+        f.advance(PERIOD_MS);
+        assert_eq!(f.status().below_floor, Some(false), "one reading under");
+        f.advance(PERIOD_MS);
+        let s = f.status();
+        assert!(s.below_floor == Some(true) && s.supply_low);
+        f.stop();
+    }
+
+    /// A gap past the observation limit loses the battery's reading, and the
+    /// next poll converts again whatever its period says, before anything can
+    /// read the pack as low for want of one.
+    #[test]
+    fn a_held_off_owner_converts_again_at_once() {
+        let mut f = on_the_pack();
+        f.advance(PERIOD_MS);
+
+        fake::advance((CONFIG.sensors.max_observation_gap_ms + 1) * 32, true);
+        f.step();
+        assert!(!f.status().supply_low, "the supply is unknown, not low");
+
+        let before = conversions();
+        f.advance(1);
+        assert_eq!(conversions() - before, CHANNEL);
+        assert!(!f.status().supply_low);
+        f.stop();
+    }
+
+    #[test]
+    fn the_rest_period_stays_inside_the_limits_it_answers_to() {
+        let valid = |change: fn(&mut OwnerConfig)| {
+            let mut config = CONFIG;
+            change(&mut config);
+            config.valid()
+        };
+
+        assert!(valid(|_| {}));
+        assert!(!valid(|c| c.rest_capture_ms = c.sample_period_ms - 1));
+        assert!(!valid(|c| c.rest_capture_ms = c.sensors.max_age_ms + 1));
+        assert!(!valid(|c| {
+            c.sensors.max_age_ms = c.motor_lease_ms;
+            c.rest_capture_ms = c.motor_lease_ms;
+        }));
+    }
 }
 
 mod food_reads {

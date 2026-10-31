@@ -121,6 +121,20 @@ During a feed, only IK session handshakes go on, one operation a pass, and the o
 
 The motor's stop guarantees never depend on loop timing. They stay with the supervision and hardware timers.
 
+**The owner at rest.** The owner polls every 20 ms in every state, but in `Idle` it converts only the battery, and only every 100 ms (`rest_capture_ms`); `Terminal` never converted. Preparing and Feeding convert both channels on every poll. A capture of both channels takes up to 10.1 ms ([bring-up probes](bring-up-probes.md)), so at rest about one poll in five spends about 5 ms where every poll spent about 10 ms. That is an estimate: the before and after pass times have not been measured.
+
+Nothing that protects the feeder waits for a conversion:
+
+| What | Why it holds at rest |
+| --- | --- |
+| The owner's 200 ms lease, and its beat | Renewed by the poll, conversion or not |
+| The sensors' `max_age_ms` and observation gap | Timed from the poll's GPIO read |
+| The pack's `hold_ms` | Timed on the clock, not counted. A sag takes up to one conversion longer to judge at rest, and a poll with no conversion is not a failed one |
+| Motor current | Judged only while a feed runs (`input_refusal`, `update_captured`), and a feed's every poll converts it. There is no check at rest: a feed's first polls catch a bad reading, before any motion |
+| A converter that stopped | Found by the next battery conversion, within 100 ms, and held as lost sensors |
+
+A gap past the observation limit loses the battery's last reading, so the next poll converts it again whatever its period says.
+
 ## Logging
 
 A record line takes up to 16 ms to send at 115200 baud, and `sdk::log` used to hold the scheduler for it. It now copies the line into a RAM ring (`wellfed_core::log_ring`) and returns. The figures below are static analysis, or modeled from captures, until the bench measures them.

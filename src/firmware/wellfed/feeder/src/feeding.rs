@@ -179,6 +179,9 @@ pub const CONFIG: OwnerConfig = OwnerConfig {
     bowl_mode: BOWL,
     // The loop's own pass; a whole flash lease fits between two beats.
     sample_period_ms: 20,
+    // A third of the pack's floor hold, at the sensors' age limit and well
+    // inside the motor lease.
+    rest_capture_ms: 100,
     prepare_timeout_ms: 2000,
     optics_max_on_ms: 12_000 * MAX_PORTIONS as u32 + 2000,
     motor_deadtime_ms: 50,
@@ -351,22 +354,22 @@ pub fn may_release(in_flight: InFlight, status: &OwnerStatus) -> bool {
 }
 
 /// How long the owner rests Idle with every check passing before it has
-/// proved it can feed: a hundred of its 20 ms samples, each reading the
-/// sensors and the motor current and verifying motor STOP and the emitters
-/// off.
+/// proved it can feed: a hundred of its 20 ms polls, each reading the sensor
+/// inputs and verifying motor STOP and the emitters off, and about twenty
+/// battery conversions among them. The motor current's channel, on the same
+/// converter, is first converted when a feed prepares.
 pub const PROOF_MS: u32 = 2_000;
 
 /// When the loop next steps the owner: once the wait the owner asked for
 /// has passed, timed from the start of its last step.
 ///
-/// Every step at rest is a full sensor capture (two ADC channels, 12
-/// polled conversions each, about 11 ms on hardware), and the loop passes
-/// every millisecond while the device API has work. Stepping the owner on
-/// each of those passes captured more often than its period asks, and made
-/// each pass, so each event a subscriber reads, cost the capture. Its
-/// configuration bounds the period below every lease and age limit
-/// (`OwnerConfig`), so stepping at the period is the supervision it was
-/// designed for; an idle loop steps it at this cadence too.
+/// A step can hold a sensor capture (up to two ADC channels, about 11 ms for
+/// both on hardware), and the loop passes every millisecond while the device
+/// API has work. Stepping the owner on each of those passes polled more often
+/// than its period asks, and made each pass, so each event a subscriber reads,
+/// cost the step. Its configuration bounds the period below every lease and
+/// age limit (`OwnerConfig`), so stepping at the period is the supervision it
+/// was designed for; an idle loop steps it at this cadence too.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Cadence {
     due: Option<u32>,

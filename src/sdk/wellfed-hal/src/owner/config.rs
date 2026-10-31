@@ -32,6 +32,11 @@ pub struct OwnerConfig {
     pub bowl_mode: BowlMode,
 
     pub sample_period_ms: u32,
+    /// At rest the owner still polls the GPIO, renews its lease and beats every
+    /// `sample_period_ms`, but converts the battery only this often, and the
+    /// motor current not at all. Inside the sensors' age limit and the motor
+    /// lease, though neither depends on it: both are renewed by the poll.
+    pub rest_capture_ms: u32,
     pub prepare_timeout_ms: u32,
     pub optics_max_on_ms: u32,
     pub motor_deadtime_ms: u32,
@@ -54,6 +59,7 @@ impl Default for OwnerConfig {
             idle_gap_ms: 0,
             bowl_mode: BowlMode::default(),
             sample_period_ms: 0,
+            rest_capture_ms: 0,
             prepare_timeout_ms: 0,
             optics_max_on_ms: 0,
             motor_deadtime_ms: 0,
@@ -84,6 +90,9 @@ impl OwnerConfig {
             || c.sample_period_ms > c.sensors.max_observation_gap_ms
             || c.sample_period_ms > c.feed.max_observation_gap_ms
             || c.sample_period_ms > c.events.max_feedback_age_ms
+            || c.rest_capture_ms < c.sample_period_ms
+            || c.rest_capture_ms > c.sensors.max_age_ms
+            || c.rest_capture_ms >= c.motor_lease_ms
             || c.events.max_feedback_age_ms >= c.feed.feedback_inhibit_ms
             || c.sensors.optical_settle_ms >= c.prepare_timeout_ms
             || c.sensors.power_settle_ms >= c.prepare_timeout_ms
