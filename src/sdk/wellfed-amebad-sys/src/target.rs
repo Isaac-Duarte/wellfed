@@ -1498,12 +1498,27 @@ pub fn log(message: &CStr) {
         crate::LOG_TAIL.push(line);
     }
 
-    if !wellfed_core::log_ring::may_drop(line) && ipsr() == 0 && primask() == 0 {
-        send_until(|| crate::LOG_RING.room(line.len()) != Room::Full);
-    }
-    {
-        let _guard = crate::IrqGuard::lock();
-        crate::LOG_RING.push(line);
+    // Room is checked and taken in one masked section: a logger above this
+    // one may fill what a send here just freed, and that is another wait, not
+    // a dropped line.
+    let may_wait = !wellfed_core::log_ring::may_drop(line) && ipsr() == 0 && primask() == 0;
+    let mut stuck = 0;
+    loop {
+        {
+            let _guard = crate::IrqGuard::lock();
+            let room = crate::LOG_RING.try_push(line);
+            if room == Room::Fits {
+                break;
+            }
+            if room == Room::Never || !may_wait || stuck >= LOG_STUCK_READS {
+                crate::LOG_RING.count_dropped();
+                break;
+            }
+        }
+        match log_burst() {
+            Burst::Sent => stuck = 0,
+            Burst::NoRoom => stuck += 1,
+        }
     }
 
     if !LOG_DRAINING.load(Ordering::Acquire) {
@@ -1514,8 +1529,9 @@ pub fn log(message: &CStr) {
 /// The drain has started: from here on [`log`] only queues.
 static LOG_DRAINING: AtomicBool = AtomicBool::new(false);
 
-/// Bytes put in the UART FIFO at a time, once it reads empty. Below its 16
-/// bytes, for what can land there as well: a line end's added `\r`, and the
+/// Bytes put in the UART FIFO at a time, once it reads empty: the one setting
+/// that assumes the FIFO's depth, and 1 would assume nothing, at about 1 B/ms.
+/// Below its 16 bytes, for what can land there as well: a line end's added `\r`, and the
 /// one or two bytes of a vendor print preempted between its own empty check
 /// and its write. At 115200 baud 8 bytes last 0.7 ms, so the FIFO reads empty
 /// again by the next 1 ms tick.
@@ -1616,9 +1632,14 @@ pub static wellfed_log_mid_line: AtomicBool = AtomicBool::new(false);
 
 /// Called by a vendor print before it starts: the line partly on the wire
 /// finishes first, as otherwise the print lands inside it and neither parses.
-/// The lines queued behind it stay queued, and come after the print.
+/// The lines queued behind it stay queued, and come after the print. From an
+/// interrupt or with interrupts masked it does nothing: the wait would be up
+/// to a line's 16 ms with them masked, and a rare split line costs less.
 #[unsafe(no_mangle)]
 pub extern "C" fn wellfed_log_settle() {
+    if ipsr() != 0 || primask() != 0 {
+        return;
+    }
     send_until(|| !crate::LOG_RING.mid_line());
 }
 

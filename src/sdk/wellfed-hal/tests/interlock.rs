@@ -423,9 +423,13 @@ mod writes {
         supervision::reset();
 
         supervision::supervised(false, 1000);
+        assert!(!supervision::reset_certain(false, false), "a stop may end");
+        assert!(supervision::reset_certain(true, false));
+        assert!(supervision::reset_certain(false, true));
         assert_eq!(turn.begin(&interlock, 1000, || true), WriteStep::Wait);
         // Feeding again before the progress gap: the write goes.
         supervision::supervised(true, 1500);
+        assert!(!supervision::reset_certain(false, false));
         assert_eq!(
             turn.begin(&interlock, 1500, || true),
             WriteStep::Go(WriteStart::Free)
@@ -436,7 +440,9 @@ mod writes {
         // even once `feed` would say yes.
         supervision::supervised(false, 2000);
         supervision::supervised(false, 2000 + WATCHDOG.max_progress_gap_ms);
+        assert!(supervision::reset_certain(false, false));
         supervision::supervised(true, 9000);
+        assert!(supervision::reset_certain(false, false), "it stays certain");
         assert_eq!(turn.begin(&interlock, 9000, || true), WriteStep::Wait);
         assert!(!interlock.writing());
         supervision::reset();

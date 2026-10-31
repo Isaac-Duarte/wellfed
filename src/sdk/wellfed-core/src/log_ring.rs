@@ -87,16 +87,28 @@ impl<const N: usize> LogRing<N> {
         }
     }
 
+    /// Queue one whole line and answer [`Room::Fits`], or leave the ring as it
+    /// was and say why not, for a caller to wait or to [`Self::count_dropped`].
+    pub fn try_push(&self, line: &[u8]) -> Room {
+        let room = self.room(line.len());
+        if room == Room::Fits {
+            self.report_dropped();
+            self.write(line);
+        }
+        room
+    }
+
+    /// Count a line that did not go in, for the next report.
+    pub fn count_dropped(&self) {
+        let dropped = self.dropped.load(Relaxed);
+        self.dropped.store(dropped.saturating_add(1), Relaxed);
+    }
+
     /// Queue one whole line, or count it dropped if it does not fit.
     pub fn push(&self, line: &[u8]) {
-        if self.room(line.len()) != Room::Fits {
-            let dropped = self.dropped.load(Relaxed);
-            self.dropped.store(dropped.saturating_add(1), Relaxed);
-            return;
+        if self.try_push(line) != Room::Fits {
+            self.count_dropped();
         }
-
-        self.report_dropped();
-        self.write(line);
     }
 
     /// Send up to `max` bytes through `send`, stopping after a line's end,
@@ -354,6 +366,30 @@ mod tests {
         ring.dropped.store(u32::MAX, Relaxed);
         ring.push(&[b'y'; RING]);
         assert_eq!(drain(&ring), "PLLOG1 dropped=4294967295\r\n");
+    }
+
+    /// A line that waits for room is not a dropped one, even when another
+    /// logger takes the room that had opened before the line's turn came.
+    #[test]
+    fn a_refused_try_push_counts_nothing_and_goes_in_once_there_is_room() {
+        let ring = LogRing::<RING>::new();
+        let filler = [b'x'; RING - REPORT_MAX];
+        assert_eq!(ring.try_push(&filler), Room::Fits);
+
+        let line = [b'w'; 60];
+        assert_eq!(ring.try_push(&line), Room::Full);
+        assert_eq!(ring.try_push(&[b'y'; RING]), Room::Never);
+        ring.pop(RING, |_| {});
+        // A logger above this one takes the room first.
+        assert_eq!(ring.try_push(&filler), Room::Fits);
+        assert_eq!(ring.try_push(&line), Room::Full);
+        ring.pop(RING, |_| {});
+        assert_eq!(ring.try_push(&line), Room::Fits);
+
+        let text = drain(&ring);
+        assert!(text.starts_with("www"), "no report ahead of it: {text}");
+        assert_eq!(text.len(), line.len());
+        assert!(!ring.pending(), "nothing was counted");
     }
 
     #[test]

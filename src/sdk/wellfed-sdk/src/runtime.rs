@@ -402,6 +402,8 @@ fn storm_step(feeding: bool, now: u32) {
 unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
     static PROGRESS: AtomicU32 = AtomicU32::new(0);
     static STOPPED: AtomicBool = AtomicBool::new(false);
+    // A checkpoint was refused, which latches.
+    static REFUSED: AtomicBool = AtomicBool::new(false);
     // Uptime of the last checkpoint. Each one refreshes the hardware (the
     // feed period exceeds the refresh rate limit), so a reset's host
     // timestamp, less this, times the watchdog's expiry.
@@ -483,9 +485,7 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
                 sdk::log(line);
             }
         }
-        // The reset is coming and a hung task may be why: the drain may
-        // never run again, so this task sends what is left.
-        sdk::log_flush();
+        flush_before_reset(&REFUSED);
         return FEED_MS;
     }
     {
@@ -494,30 +494,45 @@ unsafe extern "C" fn feeder_task(_: *mut c_void) -> u32 {
             let gap = feed_gap();
             if watchdog.checkpoint(u64::from(progress)) {
                 FED_MS.store(now, Ordering::Relaxed);
-            } else if !STOPPED.swap(true, Ordering::Relaxed) {
-                supervision::stopping();
-                // A refused checkpoint latches (a gap past the progress
-                // limit, an altered register, a clock fault): the hardware
-                // is never refreshed again and resets the platform within
-                // its expiry. Say so once, with the gap that led to it.
-                let mut report = startup::Report::new();
-                if let Ok(line) = report.record(format_args!(
-                    "PLSUP1 stop watchdog_fault={} gap_ms={} fed_ms={} ms={}\r\n",
-                    watchdog.fault.code(),
-                    gap,
-                    FED_MS.load(Ordering::Relaxed),
-                    now
-                )) {
-                    sdk::log(line);
+            } else {
+                REFUSED.store(true, Ordering::Relaxed);
+                if !STOPPED.swap(true, Ordering::Relaxed) {
+                    supervision::stopping();
+                    // A refused checkpoint latches (a gap past the progress
+                    // limit, an altered register, a clock fault): the hardware
+                    // is never refreshed again and resets the platform within
+                    // its expiry. Say so once, with the gap that led to it.
+                    let mut report = startup::Report::new();
+                    if let Ok(line) = report.record(format_args!(
+                        "PLSUP1 stop watchdog_fault={} gap_ms={} fed_ms={} ms={}\r\n",
+                        watchdog.fault.code(),
+                        gap,
+                        FED_MS.load(Ordering::Relaxed),
+                        now
+                    )) {
+                        sdk::log(line);
+                    }
                 }
             }
         }
     }
-    // A refused checkpoint latches, so the reset is coming, as above.
-    if STOPPED.load(Ordering::Relaxed) {
+    flush_before_reset(&REFUSED);
+    FEED_MS
+}
+
+/// The watchdog feeder's share of a crash's last words: with the reset certain
+/// a hung task may be why, and the drain may never run again, so this task
+/// sends what is left. Only then. It runs above Wi-Fi and the loop, so on a
+/// transient stop, which feeding survives, a flush would hold them all for as
+/// long as the ring takes, and its time would count towards the very
+/// checkpoint gap that decides whether the board resets.
+fn flush_before_reset(refused: &AtomicBool) {
+    if supervision::reset_certain(
+        RESTART.load(Ordering::Acquire),
+        refused.load(Ordering::Relaxed),
+    ) {
         sdk::log_flush();
     }
-    FEED_MS
 }
 
 /// The feeder task's last checkpoint attempt and the longest gap between

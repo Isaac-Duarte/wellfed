@@ -133,7 +133,7 @@ The worst figures are a hang's call trail, which goes out before the scheduler s
 **A full ring.** A line goes in whole or not at all, so lines stay whole and in order, and what is dropped is the new line.
 
 - `PLAPI1` lines drop, being the one record a client's request rate can drive. So does any line logged from an interrupt or with interrupts masked, or one too long for the ring. The next line, or an empty ring, brings `PLLOG1 dropped=N` first, where the hole is. The log tail has them all the same.
-- Every other line waits for room in its caller, sending as it goes: at most one line's time, with other tasks still running. That is a line of evidence's price for a full ring: its own task's time, never the system's.
+- Every other line waits for room in its caller, sending as it goes: at most one line's time, with other tasks still running, and longer only if a logger above it takes the room again. That is a line of evidence's price for a full ring: its own task's time, never the system's.
 
 A `call-chunk` or `update-chunk` refused `Busy` logs no line, since a client sends it again at once.
 
@@ -143,9 +143,11 @@ A `call-chunk` or `update-chunk` refused `Busy` logs no line, since a client sen
 | --- | --- |
 | Hard, bus, usage or memory fault | The vendor handler, patched to flush before its first print |
 | Panic | The panic handler, after it stops the outputs and before `PLPNC1` |
-| Supervision stops feeding, or a refused checkpoint | The watchdog feeder (priority 7), every pass until the reset |
+| A certain reset: the runtime restarting, a stop that outlasted the progress gap, or a refused checkpoint | The watchdog feeder (priority 7), every pass until the reset |
 
-A send is one masked burst that leaves the ring consistent, so these can take over from one another with no lock to find held. The whole ring takes about 0.36 s, inside the watchdog's shortest expiry of over 2 s. An interrupted copy has not been published, so a fault in one loses only that line.
+A supervision stop shorter than the progress gap is none of these, as feeding resumes and the board stays up, so it leaves its lines to the drain. A flush there would hold every task, and its time would count towards the checkpoint gap. A certain reset still has the time: certain at about 1 s, 0.36 s for a full ring, and an expiry of at least 2,426 ms.
+
+A send is one masked burst that leaves the ring consistent, so these can take over from one another with no lock to find held. An interrupted copy has not been published, so a fault in one loses only that line.
 
 These can still lose lines: a hang with interrupts masked, or above priority 7, which stops the feeder too; and a power cut or brownout. Each loses what was queued, where it once lost at most the line being printed. That is usually under 25 ms of lines, and the ring is not kept across a reset. A hang's crumb and call trail do not go through the ring ([startup diagnostics](startup-diagnostics.md)).
 
@@ -153,7 +155,13 @@ These can still lose lines: a hang with interrupts masked, or above priority 7, 
 
 **Vendor prints stay outside the ring.** The Wi-Fi driver and the SDK print from their own tasks, about 34 lines per join, spinning on the UART themselves. The firmware's own C ports print nothing on KM4. At priorities above the drain, such a print could land inside a line partly sent, and neither would parse: about once per join, by a model of the same captures.
 
-So the KM4 link wraps `DiagPrintf` and `_rtl_printf`. A wrapped print first lets the line partly on the wire finish, at worst one line's time, spinning at its own priority. Lines still queued behind that one stay queued, so a vendor line can come out ahead of a logged line that happened before it. A print from inside the ROM, or from the object that defines the print, is not wrapped and can still split a line. KM0 prints only at boot, before KM4 logs through the ring.
+So the KM4 link wraps `DiagPrintf` and `_rtl_printf`. A wrapped print first lets the line partly on the wire finish, at worst one line's time, spinning at its own priority. Lines still queued behind that one stay queued, so a vendor line can come out ahead of a logged line that happened before it. Some prints can still split a line:
+
+- A print from inside the ROM, or from the object that defines the print, is not wrapped.
+- A print from an interrupt, or with interrupts masked, does not wait: that would be up to 16 ms masked, and a rare split line costs less.
+- A task at the drain's own priority, idle+1, shares time slices with it, so a tick can switch to the drain in the middle of that task's print and splice our bytes into it. The BLE task (`wellfed_ble.c`, setup mode) is one.
+
+KM0 prints only at boot, before KM4 logs through the ring.
 
 **Stack.** No task's bound rose except `wellfed-halt`'s, by 8 B of a 2 KiB stack, as its deepest path now runs through `log`'s frame. The audit charges a panic's depth under each nested formatting call, four times over, so the send is inlined into `log_flush`, and the panic line calls the ROM's print directly.
 

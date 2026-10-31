@@ -129,6 +129,14 @@ pub fn writes_held() -> bool {
     STOP_OPEN.load(Ordering::Acquire) || STOPPING.load(Ordering::Acquire)
 }
 
+/// The reset is coming whatever happens now, so what is left to say goes out
+/// at any cost: the runtime is restarting, a checkpoint was refused (it
+/// latches), or a stop outlasted the progress gap ([`stopping`]). A transient
+/// stop is none of these: feeding resumes and the board stays up.
+pub fn reset_certain(restarting: bool, checkpoint_refused: bool) -> bool {
+    restarting || checkpoint_refused || STOPPING.load(Ordering::Acquire)
+}
+
 /// Host tests only: no stop open, none certain.
 #[cfg(not(target_os = "none"))]
 pub fn reset() {

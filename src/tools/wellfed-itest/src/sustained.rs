@@ -495,7 +495,7 @@ impl Run {
 
     /// Take on the feeds another scenario asked for since `mark`.
     fn adopt(&mut self, ctx: &mut Ctx, mark: usize) -> Result<()> {
-        ctx.mark()?;
+        ctx.quiet_mark()?;
         let ids = ctx.log.records(mark, |e| feeds::submitted(&e));
         for (_, id) in ids {
             let feed = u32::try_from(id).unwrap_or(u32::MAX);
@@ -883,7 +883,7 @@ impl Run {
     /// no result belongs to a feed it did not ask for, and nothing
     /// panicked.
     fn journal(&mut self, ctx: &mut Ctx) -> Result<()> {
-        ctx.mark()?;
+        ctx.quiet_mark()?;
         let submitted = ctx.log.records(self.since, |e| feeds::submitted(&e));
         let results = ctx.log.records(self.since, |e| match e {
             Event::Owner(Owner::Fed { id, .. }) => Some(id),
@@ -971,7 +971,7 @@ fn install(ctx: &mut Ctx, staged: &Staged) -> Result<()> {
 
 /// No start, panic, reset storm or give-way since `since`.
 fn no_restart(ctx: &mut Ctx, since: usize, during: &'static str) -> Result<()> {
-    ctx.mark()?;
+    ctx.quiet_mark()?;
     let lines = ctx.log.between(since, usize::MAX, |e| {
         matches!(
             e,
@@ -987,7 +987,7 @@ fn no_restart(ctx: &mut Ctx, since: usize, during: &'static str) -> Result<()> {
 
 /// The motor not driving since `since`.
 fn no_drive(ctx: &mut Ctx, since: usize, during: &'static str) -> Result<()> {
-    ctx.mark()?;
+    ctx.quiet_mark()?;
     let lines = ctx.log.between(since, usize::MAX, |e| {
         feeds::owner_state(e, OwnerState::Feeding)
     });
@@ -999,7 +999,7 @@ fn no_drive(ctx: &mut Ctx, since: usize, during: &'static str) -> Result<()> {
 /// The UART line of the last start record since `since`: the running
 /// boot's, or `None` when it began before.
 fn last_start(ctx: &mut Ctx, since: usize) -> Result<Option<usize>> {
-    ctx.mark()?;
+    ctx.quiet_mark()?;
     let starts = ctx
         .log
         .records(since, |e| scenarios::is_start(&e).then_some(()));
@@ -1008,7 +1008,7 @@ fn last_start(ctx: &mut Ctx, since: usize) -> Result<Option<usize>> {
 
 /// Exactly one start record since `since`, and no panic.
 fn one_start(ctx: &mut Ctx, since: usize, during: &'static str) -> Result<()> {
-    ctx.mark()?;
+    ctx.quiet_mark()?;
     let lines = ctx.log.between(since, usize::MAX, |e| {
         matches!(e, Event::Start { .. } | Event::Panic { .. })
     });
