@@ -78,7 +78,7 @@ A firmware gets four tasks (`FIRMWARE_TASKS`). The product uses two:
   | `Serve::step` moves its work into `before_server` and `after_server` | Its frame falls from 384 B to 304 B |
   | `answer` hands off to `seal_answer` | The client list and the request's line no longer sit under the 1,272 B frame that holds a wire message |
 
-- **`Stats` requests.** Below `Server::request`, `Device::stats` costs 912 B, down from 1,368 B. Lifetime erases add the two arrays directly, with no `Totals` sum, and the Memory, Flash and Counters sections each have a function of their own. Flash is the deepest of them, and still holds the stored `Totals`.
+- **`Stats` requests.** Below `Server::request`, `Device::stats` costs 948 B, down from 1,368 B. Lifetime erases add the two arrays directly, with no `Totals` sum, and the Memory, Flash and Counters sections each have a function of their own. Memory is the deepest at 892 B, through its panic path; Flash, 856 B, still holds the stored `Totals`.
 - Test variants add a third task: `gap-probe` adds `wellfed-gap` (256 words at priority 4) for the [scheduling-gap measurement](#scheduling-gaps-across-wi-fi-rejoins), and `held-stall` adds `wellfed-hld` (256 words at priority 3) for the reset-storm drill.
 
 **Outside the audit.** The stack audit takes its roots from the firmware's `spawn` calls, so C-created tasks are outside it:
