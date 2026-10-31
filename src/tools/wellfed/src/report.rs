@@ -34,14 +34,20 @@ pub(crate) fn line(event: &Event) -> String {
             "Started the stock server (its broker trusts the first feeder that connects)."
                 .to_string()
         }
+        // Only `--ssid` sends a frame, which `--prompts lines` refuses: these
+        // are a person's words, not a job's evidence.
         Event::FrameSent {
             answer: Some(answer),
         } => format!(
-            "Sent the setup frame once; the feeder answered {}",
+            "Sent your Wi-Fi details to the feeder, once; it answered {}. It now joins your Wi-Fi \
+             and connects here, within about 2 minutes.",
             wellfed_formats::hex::encode(answer)
         ),
         Event::FrameSent { answer: None } => {
-            "Sent the setup frame once; no answer within 5 s (not resent)".to_string()
+            "Sent your Wi-Fi details to the feeder, once. It did not answer, which is normal, and \
+             they are never sent twice. It now joins your Wi-Fi and connects here, within about \
+             2 minutes."
+                .to_string()
         }
         Event::Waiting(wait) => match wait {
             Wait::NoFeeder => {

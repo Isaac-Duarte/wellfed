@@ -24,6 +24,7 @@ use wellfed_client::update_key::{EnrollError, Enrolled};
 use wellfed_formats::bench::prompt::Prompt;
 use wellfed_formats::manifest::Provisioning;
 use wellfed_formats::stock::TrialPhase;
+use wellfed_model::setup::Refusal as SetupRefusal;
 use wellfed_model::{Answer, Op};
 use wellfed_proto::api::PORT;
 use wellfed_signing::{Frozen, Key, Motion, highest_signed};
@@ -364,6 +365,21 @@ async fn restart_feeder(prompter: &mut impl Prompter, report: &impl Report) -> R
         .map_err(Error::Platform)?;
     report.event(Event::AwaitingStock);
     Ok(())
+}
+
+/// Whether to pair again after `paired`: only when the feeder's window for the
+/// code closed with nothing keyed in, and the platform says so. Pairing is only
+/// an owner enrollment, and the feeder's setup mode stays open for another try.
+/// A wrong code is no such case: it may be a relay, so it ends the run.
+async fn go_again<T>(
+    prompter: &mut impl Prompter,
+    route: PairRoute,
+    paired: &Result<T, Error>,
+) -> Result<bool, Error> {
+    if !matches!(paired, Err(Error::SetupRefused(SetupRefusal::Unconfirmed))) {
+        return Ok(false);
+    }
+    prompter.code_lapsed(route).await.map_err(Error::Platform)
 }
 
 /// The run's IO state beside the steps.
@@ -824,13 +840,17 @@ where
             }
             tokio::time::sleep(POLL).await;
         }
-        self.io
-            .prompter
-            .done(Prompt::OpenRecoveryWindow)
-            .await
-            .map_err(Error::Platform)?;
-        let (identity, outcome) =
-            pairing::recover(&mut self.io.keys, address, &mut self.io.prompter).await?;
+        let (identity, outcome) = loop {
+            self.io
+                .prompter
+                .done(Prompt::OpenRecoveryWindow)
+                .await
+                .map_err(Error::Platform)?;
+            let paired = pairing::recover(&mut self.io.keys, address, &mut self.io.prompter).await;
+            if !go_again(&mut self.io.prompter, PairRoute::Recovery, &paired).await? {
+                break paired?;
+            }
+        };
         self.io.report.event(Event::Recovered { identity, outcome });
         self.identity = Some(identity);
         self.record_paired(identity, Some(address))?;
@@ -882,24 +902,23 @@ where
             return Err(Error::NoHomeNetwork);
         };
         self.io.report.event(Event::SetupStarting);
-        let deadline = Instant::now() + REPLACEMENT_WAIT;
-        let link = loop {
-            match self.io.bluetooth.open().await {
-                Ok(link) => break link,
-                Err(error) if Instant::now() >= deadline => {
-                    self.io.report.event(Event::NoSetupFeeder {
-                        error: crate::text(&*error),
-                    });
-                    install.gave_up();
-                    return Ok(());
-                }
-                Err(_) => tokio::time::sleep(POLL).await,
+        let (identity, outcome) = loop {
+            let Some(link) = self.setup_link().await else {
+                install.gave_up();
+                return Ok(());
+            };
+            // Each session makes its own code, so a second try shows a new one.
+            let paired = pairing::over_link(
+                &mut self.io.keys,
+                Some(wifi.clone()),
+                link,
+                &mut self.io.prompter,
+            )
+            .await;
+            if !go_again(&mut self.io.prompter, PairRoute::Setup, &paired).await? {
+                break paired.map_err(|error| Error::Setup(Box::new(error)))?;
             }
         };
-        let (identity, outcome) =
-            pairing::over_link(&mut self.io.keys, Some(wifi), link, &mut self.io.prompter)
-                .await
-                .map_err(|error| Error::Setup(Box::new(error)))?;
         // Whichever feeder advertises first takes setup, and the code only proves
         // the owner is at its panel. Setting this install's feeder up again must
         // not move the install, and its backup and promotion, onto another.
@@ -918,6 +937,24 @@ where
         self.record_paired(identity, None)?;
         install.set_up();
         Ok(())
+    }
+
+    /// A link to a feeder advertising setup, looked for until
+    /// [`REPLACEMENT_WAIT`] runs out; reported and `None` if none turned up.
+    async fn setup_link(&mut self) -> Option<B::Link> {
+        let deadline = Instant::now() + REPLACEMENT_WAIT;
+        loop {
+            match self.io.bluetooth.open().await {
+                Ok(link) => return Some(link),
+                Err(error) if Instant::now() >= deadline => {
+                    self.io.report.event(Event::NoSetupFeeder {
+                        error: crate::text(&*error),
+                    });
+                    return None;
+                }
+                Err(_) => tokio::time::sleep(POLL).await,
+            }
+        }
     }
 
     /// Until the feeder, rebooted after setup, answers on the owner's
@@ -1413,6 +1450,54 @@ mod tests {
         let read = again_while_lost(&report, async || -> Result<(), Error> { Err(lost()) });
         assert!(read.await.unwrap_err().is_connection_lost());
         assert!(began.elapsed() >= BACKUP_RECONNECT);
+    }
+
+    /// Only a window that closed with nothing keyed in may go again, and only
+    /// if the platform says so. By default it does not: the app's and the
+    /// bench's runs end there as before.
+    #[tokio::test]
+    async fn only_a_lapsed_code_goes_again_and_only_if_the_platform_asks() {
+        struct Again;
+
+        impl Prompter for Again {
+            async fn done(&mut self, _: Prompt) -> Result<(), crate::PlatformError> {
+                unreachable!("nothing is asked")
+            }
+
+            async fn yes(&mut self, _: Prompt) -> Result<bool, crate::PlatformError> {
+                unreachable!("nothing is asked")
+            }
+
+            async fn announce(
+                &mut self,
+                _: crate::Announcement,
+            ) -> Result<(), crate::PlatformError> {
+                unreachable!("nothing is announced")
+            }
+
+            async fn settle(&mut self) -> Result<(), crate::PlatformError> {
+                Ok(())
+            }
+
+            async fn code_lapsed(&mut self, _: PairRoute) -> Result<bool, crate::PlatformError> {
+                Ok(true)
+            }
+        }
+
+        let lapsed = || Err::<(), _>(Error::SetupRefused(SetupRefusal::Unconfirmed));
+        let route = PairRoute::Setup;
+
+        assert!(go_again(&mut Again, route, &lapsed()).await.unwrap());
+        assert!(
+            !go_again(&mut Scripted::default(), route, &lapsed())
+                .await
+                .unwrap(),
+            "the default ends the run"
+        );
+
+        let wrong = Err::<(), _>(Error::SetupRefused(SetupRefusal::WrongCode));
+        assert!(!go_again(&mut Again, route, &wrong).await.unwrap());
+        assert!(!go_again(&mut Again, route, &Ok(())).await.unwrap());
     }
 
     /// An expected device answers the feeder check ahead: the pinned

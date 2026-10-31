@@ -365,9 +365,17 @@ mod tests {
         // Resuming on bank 0 sends no frame.
         let resumed = [&install[..8], &["--from-bank0", "--ssid", "Home"]].concat();
         assert!(Cli::try_parse_from(resumed).is_err());
-        // The stock config is always named: the bench's captured one is no
-        // default.
-        assert!(Cli::try_parse_from(&install[..6]).is_err());
+        // The stock config defaults to an installer's: the bench's captured
+        // one, which holds a plan snapshot, is never the default.
+        let Ok(Cli {
+            command: Command::Install(_),
+        }) = Cli::try_parse_from(&install[..6])
+        else {
+            panic!("the stock config has a default");
+        };
+        // The review is what gets installed, so it is always named.
+        assert!(Cli::try_parse_from(["wellfed", "install", "--ssid", "Home"]).is_err());
+        assert!(Cli::try_parse_from(["wellfed", "install", "--review", "r", "-v"]).is_ok());
         // Prompts go to a terminal or, for the bench server, as lines.
         for prompts in ["terminal", "lines"] {
             let asked = [&install[..8], &["--prompts", prompts]].concat();

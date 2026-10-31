@@ -68,7 +68,7 @@ pub use backup::{
     RestoreOffer, STOCK_OTA_SHA256, STOCK_PAYLOAD_LEN, STOCK_PAYLOAD_SHA256, STOCK_VERSION,
     StockBackup, StockPins, VerifiedBackup,
 };
-pub use frame::{FrameError, SETUP_ADDRESS, SetupFrame};
+pub use frame::{FrameError, SETUP_ADDRESS, SETUP_SSID_PREFIX, SetupFrame};
 
 use wellfed_model::{Client, ClientRole, Readiness};
 

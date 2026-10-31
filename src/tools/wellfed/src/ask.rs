@@ -42,6 +42,8 @@ pub(crate) enum Prompts {
 pub(crate) enum AskError {
     #[error("standard input closed with the {} prompt unanswered", prompt.name())]
     Closed { prompt: Prompt },
+    #[error("standard input closed with a question unanswered")]
+    ClosedOnQuestion,
     #[error("the answer to the {} prompt is not an answer: {line:?}", prompt.name())]
     Unreadable {
         prompt: Prompt,
@@ -180,6 +182,17 @@ impl<W: Write> Asker<W> {
         // A job's reader sees the line only once it is flushed.
         self.output.flush().map_err(AskError::Write)?;
         self.read(prompt).await
+    }
+
+    /// Show `words` and read back the line a person types, as it stands: a
+    /// terminal's own question, which the bench's JSON lines never carry.
+    pub(crate) async fn typed(&mut self, words: &str) -> Result<String, AskError> {
+        writeln!(self.output, "{words}").map_err(AskError::Write)?;
+        self.output.flush().map_err(AskError::Write)?;
+        match self.lines.recv().await {
+            Some(line) => line.map_err(AskError::Read),
+            None => Err(AskError::ClosedOnQuestion),
+        }
     }
 
     /// Read one answer to `prompt`, of the kind it takes.
@@ -459,6 +472,19 @@ mod tests {
             written(&asker),
             ["Press Dispense on the feeder within 60 s to enroll update key abababababababab."]
         );
+    }
+
+    /// A lapsed code asks a job nothing: no line goes out and none is read, so
+    /// the one-answer-per-prompt alternation holds and the run ends as before.
+    #[tokio::test]
+    async fn a_lapsed_code_writes_no_line_for_a_job() {
+        let mut asker = scripted(Prompts::Lines, &[r#""done""#]);
+        let again = Prompter::code_lapsed(&mut asker, wellfed_client::install::PairRoute::Setup)
+            .await
+            .unwrap();
+        assert!(!again);
+        assert!(written(&asker).is_empty());
+        assert_eq!(asker.lines.len(), 1, "nothing read");
     }
 
     /// The terminal keeps its words: Enter goes on, and only `y` is yes.

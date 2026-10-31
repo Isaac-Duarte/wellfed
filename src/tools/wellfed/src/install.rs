@@ -7,17 +7,20 @@
 //! and checks the review, the keys, the manifest and the networks before
 //! the feeder is touched, holds the bench lease beside the stock config for
 //! the whole run, and gives the run this computer's platform:
-//! - the person at the feeder is one [`Asker`], at a terminal or, with
-//!   `--prompts lines`, as JSON lines for the bench server that runs it as
-//!   a job. The setup code and the enrollment's Dispense press are only
-//!   announced: the feeder times their windows and judges the presses. A
-//!   job needs nothing read at a terminal, so its home network comes from a
-//!   file (`--home-network`), and the owner may answer the feeder check
-//!   ahead (`--expect-device`);
+//! - the person at the feeder is a [`Guide`] at a terminal, which also holds
+//!   back the setup frame until this computer is on the feeder's network
+//!   ([`network`]). With `--prompts lines` it is an [`Asker`] speaking JSON
+//!   lines to the bench server that runs it as a job. The setup code and the
+//!   enrollment's Dispense press are only announced: the feeder times their
+//!   windows and judges the presses. A job needs nothing read at a terminal,
+//!   so its home network comes from a file (`--home-network`), and the owner
+//!   may answer the feeder check ahead (`--expect-device`);
 //! - Bluetooth is BlueZ ([`crate::ble`]), discovery is mDNS, and the client
 //!   key is the key file;
-//! - progress prints on standard error ([`crate::report`]), with the stock
-//!   server's own log, so standard output carries prompts alone.
+//! - progress goes to standard error, so standard output carries prompts
+//!   alone. A job prints every event with the stock server's own log, which
+//!   are its evidence ([`crate::report`]). A person reads numbered steps and
+//!   milestones ([`Screen`]), and the log only with `--verbose` or `RUST_LOG`.
 //!
 //! SIGTERM (a job's cancel) and SIGINT end the run through the same stop as
 //! its end. The report names the step it stopped in and any write whose
@@ -25,12 +28,21 @@
 //!
 //! [consumer installation]: ../../../../docs/firmware/consumer-installation.md
 
+mod guide;
+mod network;
+mod screen;
+
+use std::ffi::OsString;
+use std::io::IsTerminal;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
+use guide::Guide;
+use network::{FrameRefused, Host, Nmcli};
+use screen::{Detail, Screen, Style};
 use tokio::signal::unix::{SignalKind, signal};
 use wellfed_client::install::{InstallError, Provision, SetupFrame, StockBackup, manifest_version};
 use wellfed_client::setup::Credentials;
@@ -48,6 +60,14 @@ use crate::ask::{Asker, Prompts};
 use crate::ble::Bluez;
 use crate::keys::{OwnerKey, fingerprint};
 use crate::report::{Printer, short};
+
+/// The installer's config when `--stock-config` names none.
+const STOCK_CONFIG: &str = "private/installer.json";
+/// The update key a consumer run at a terminal makes and signs with, when it
+/// is given neither a key nor a manifest.
+const UPDATE_KEY: &str = "private/update-key.json";
+/// Stock reads four port digits; this is the port it knows brokers on.
+const MQTT_PORT: u16 = 1883;
 
 #[derive(Args)]
 pub(crate) struct InstallArgs {
@@ -67,7 +87,8 @@ pub(crate) struct InstallArgs {
     /// the run enrolls it after pairing, confirmed by a Dispense press.
     /// Without it, a bench review signs with the bench key
     /// (private/ota-key.json), and a consumer review needs --manifest.
-    /// Refused with --manifest, which is promoted as signed.
+    /// Refused with --manifest, which is promoted as signed. At a terminal, a
+    /// consumer review with neither uses private/update-key.json.
     #[arg(long)]
     update_key: Option<PathBuf>,
     /// The network a consumer image is given over Bluetooth setup
@@ -120,8 +141,10 @@ pub(crate) struct InstallArgs {
     from_bank0: bool,
     /// `wellfed-stock`'s config: an installer's (`init-installer`). One
     /// with a plan snapshot, as the bench's captured config has, is
-    /// refused. The run serves stock from this process with it.
-    #[arg(long)]
+    /// refused. The run serves stock from this process with it. At a terminal,
+    /// with --ssid, it is created if missing, naming this computer's address
+    /// on that network (or --broker).
+    #[arg(long, default_value = STOCK_CONFIG)]
     stock_config: PathBuf,
     /// How long the broker trusts the first stock feeder that connects.
     #[arg(long, default_value_t = 15)]
@@ -142,6 +165,10 @@ pub(crate) struct InstallArgs {
     /// since it reads the passphrase there.
     #[arg(long, value_enum, default_value_t)]
     prompts: Prompts,
+    /// At a terminal, show every event and the stock server's log (`RUST_LOG`
+    /// shows that log too). A run with --prompts lines always does.
+    #[arg(long, short)]
+    verbose: bool,
 }
 
 /// A run that cannot ask the way it was told to.
@@ -219,6 +246,182 @@ enum Refused {
     NotAnswering { feeder: String },
     #[error("pass --address: no image lease names where the feeder connected from")]
     NoAddress,
+    /// Only the frame's network says where the broker must listen.
+    #[error(
+        "{} does not exist, and without --ssid nothing says where its broker listens: write it with wellfed-stock init-installer --mqtt-listen <this computer's address>:1883 --output {}",
+        path.display(),
+        path.display()
+    )]
+    NoConfig { path: PathBuf },
+    #[error(
+        "this computer has no address on {ssid:?}, so it cannot say where the feeder finds its broker: join that network first, or pass --broker <this computer's address>:1883"
+    )]
+    NoBrokerAddress { ssid: String },
+}
+
+/// How a run's progress reaches the person.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Presentation {
+    /// The stock server's log goes to standard error.
+    stock_log: bool,
+    style: Style,
+    detail: Detail,
+}
+
+impl Presentation {
+    /// A job always gets the log, its evidence. Anyone else asks for it, and
+    /// then nothing is drawn in place, since the log writes over it.
+    fn of(prompts: Prompts, verbose: bool, rust_log: bool, terminal: bool) -> Self {
+        let stock_log = prompts == Prompts::Lines || verbose || rust_log;
+        Self {
+            stock_log,
+            style: if terminal && !stock_log {
+                Style::Live
+            } else {
+                Style::Plain
+            },
+            detail: if verbose {
+                Detail::Everything
+            } else {
+                Detail::Milestones
+            },
+        }
+    }
+}
+
+/// Standard error has a person's terminal behind it, able to draw in place.
+fn drawable_terminal() -> bool {
+    std::io::stderr().is_terminal() && std::env::var_os("TERM").is_some_and(|term| term != "dumb")
+}
+
+/// What a run says before it starts about going without `--stock-backup`.
+const fn backup_notice(prompts: Prompts) -> &'static str {
+    match prompts {
+        // A job's evidence keeps its words.
+        Prompts::Lines => {
+            "No --stock-backup: bank 1 is read from the replacement before promotion, which \
+             would overwrite the feeder's only copy of stock."
+        }
+        Prompts::Terminal => {
+            "Your stock is safe: before anything overwrites the feeder's copy, this run reads it \
+             and keeps it on this computer, and it stops there if that copy does not check out."
+        }
+    }
+}
+
+/// The installer's config for a run at a terminal, if it has none yet. The
+/// frame's network says where the broker must listen. A job's config stays its
+/// owner's to write, so a run there goes on to refuse the missing file.
+fn ensure_config(args: &InstallArgs, host: &impl Host, path: &Path) -> Result<()> {
+    if args.prompts == Prompts::Lines || path.exists() {
+        return Ok(());
+    }
+    let Some(ssid) = &args.ssid else {
+        return Err(Refused::NoConfig {
+            path: path.to_path_buf(),
+        }
+        .into());
+    };
+    let listen = match args.broker {
+        Some(broker) => broker,
+        None => {
+            let address = host
+                .address_on(ssid)
+                .ok_or_else(|| Refused::NoBrokerAddress { ssid: ssid.clone() })?;
+            SocketAddr::from((address, MQTT_PORT))
+        }
+    };
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    let zone = jiff::tz::TimeZone::system();
+    wellfed_install::stock::installer_config(path, listen, zone.iana_name())
+        .with_context(|| format!("write {}", path.display()))?;
+    eprintln!(
+        "Wrote the installer's settings to {}: the feeder finds this computer at {listen}.",
+        path.display()
+    );
+    Ok(())
+}
+
+/// The command that picks a stopped run up where it stopped: this one's
+/// arguments, from bank 0. The frame's flags go, since it asks stock nothing,
+/// and the frame's network stays as the one a consumer image is given.
+fn resume_command(arguments: &[OsString], provisioning: Provisioning) -> String {
+    let mut words = Vec::new();
+    let mut arguments = arguments.iter().map(|word| word.to_string_lossy());
+    while let Some(word) = arguments.next() {
+        let (flag, attached) = match word.split_once('=') {
+            Some((flag, value)) if flag.starts_with("--") => (flag, Some(value.to_string())),
+            _ => (word.as_ref(), None),
+        };
+        let mut value = || {
+            attached
+                .clone()
+                .or_else(|| arguments.next().map(|next| next.into_owned()))
+        };
+        match (flag, provisioning) {
+            ("--broker" | "--account", _) | ("--ssid", Provisioning::Bench) => {
+                value();
+            }
+            ("--ssid", Provisioning::Consumer) => {
+                words.push("--home-ssid".to_string());
+                words.extend(value());
+            }
+            ("--from-bank0", _) => {}
+            _ => words.push(word.to_string()),
+        }
+    }
+    words.push("--from-bank0".to_string());
+    words
+        .iter()
+        .map(|word| network::quoted(word))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A run at a terminal that stopped with the replacement on bank 0: its error,
+/// headed by what was kept and the one command that resumes it. A run stopped
+/// anywhere else keeps its own words.
+fn with_resume(error: wellfed_install::Error, resume: &str) -> anyhow::Error {
+    use wellfed_install::Error;
+    use wellfed_model::setup::Refusal;
+
+    let lapsed = match &error {
+        Error::SetupRefused(refusal) => *refusal == Refusal::Unconfirmed,
+        Error::Setup(inner) => matches!(**inner, Error::SetupRefused(Refusal::Unconfirmed)),
+        _ => false,
+    };
+    let resumable = lapsed
+        || matches!(
+            error,
+            Error::Setup(_)
+                | Error::SetupRefused(_)
+                | Error::RecoveryClosed
+                | Error::RecoveryTimeout
+                | Error::Backup(_)
+                | Error::KeepGiven(_)
+                | Error::Steps(
+                    InstallError::UpdateKey(_)
+                        | InstallError::UpdateKeyUncertain
+                        | InstallError::NotAboveFloor { .. }
+                        | InstallError::NoVersionAbove { .. }
+                )
+        );
+    let explained = explain(error);
+    if !resumable {
+        return explained;
+    }
+    let opening = if lapsed {
+        "Time ran out for the code, and nothing was lost."
+    } else {
+        "The install stopped, and nothing was lost."
+    };
+    explained.context(format!(
+        "{opening} Stock is still safe in bank 1, with Wellfed on bank 0. To pick up where this \
+         stopped, once anything below is fixed, run:\n\n    {resume}\n"
+    ))
 }
 
 pub(crate) async fn run(args: InstallArgs) -> Result<()> {
@@ -229,6 +432,7 @@ pub(crate) async fn run(args: InstallArgs) -> Result<()> {
         return Err(PromptsRefused::HomeNetwork.into());
     }
     let config_path = std::path::absolute(&args.stock_config).context("--stock-config")?;
+    ensure_config(&args, &Nmcli, &config_path)?;
     let config: ServerConfig = wellfed_formats::load(&config_path)
         .with_context(|| format!("read {}", config_path.display()))?;
     if config.has_plan_snapshot() {
@@ -241,6 +445,9 @@ pub(crate) async fn run(args: InstallArgs) -> Result<()> {
     // touched: a bad backup, a missing manifest or key, or a consumer run
     // with no network to give stops it here.
     let review = Review::open(&args.review)?;
+    if args.prompts == Prompts::Terminal {
+        eprintln!("{INTRODUCTION}");
+    }
     let backup = match &args.stock_backup {
         Some(path) => {
             let image = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
@@ -251,10 +458,7 @@ pub(crate) async fn run(args: InstallArgs) -> Result<()> {
             Some(backup)
         }
         None => {
-            eprintln!(
-                "No --stock-backup: bank 1 is read from the replacement before promotion, \
-                 which would overwrite the feeder's only copy of stock."
-            );
+            eprintln!("{}", backup_notice(args.prompts));
             None
         }
     };
@@ -287,15 +491,10 @@ pub(crate) async fn run(args: InstallArgs) -> Result<()> {
         build_info::BUILD.require_reviewed()?;
     }
 
-    let platform = Platform {
-        prompter: Asker::standard(args.prompts),
-        bluetooth: Bluez {
-            address: args.ble_address,
-        },
-        discovery: Mdns,
-        keys: OwnerKey::open(&args.keys, None, OwnerKey::system())?,
-        report: Printer,
+    let bluetooth = Bluez {
+        address: args.ble_address,
     };
+    let keys = OwnerKey::open(&args.keys, None, OwnerKey::system())?;
     // After the Reset hold no plan is left to come due in the jump.
     let plan = Plan {
         review,
@@ -318,22 +517,64 @@ pub(crate) async fn run(args: InstallArgs) -> Result<()> {
         },
     };
 
+    let presentation = Presentation::of(
+        args.prompts,
+        args.verbose,
+        std::env::var_os("RUST_LOG").is_some(),
+        drawable_terminal(),
+    );
     // The stock server's log, as `wellfed-stock serve` writes it: what it
     // heard from stock, and why it held stock's clock.
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "wellfed_stock=info,mqtt5=warn".into()),
-        )
-        .with_writer(std::io::stderr)
-        .try_init();
+    if presentation.stock_log {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "wellfed_stock=info,mqtt5=warn".into()),
+            )
+            .with_writer(std::io::stderr)
+            .try_init();
+    }
 
     // From here on a signal ends the run through its stop, so the stock
     // server's broker is never left on the MQTT port.
-    wellfed_install::run(plan, platform, signalled()?)
-        .await
-        .map_err(explain)
+    match args.prompts {
+        Prompts::Lines => {
+            let platform = Platform {
+                prompter: Asker::standard(Prompts::Lines),
+                bluetooth,
+                discovery: Mdns,
+                keys,
+                report: Printer,
+            };
+            wellfed_install::run(plan, platform, signalled()?)
+                .await
+                .map_err(explain)
+        }
+        Prompts::Terminal => {
+            let screen = Screen::new(
+                Box::new(std::io::stderr()),
+                presentation.style,
+                presentation.detail,
+            );
+            let platform = Platform {
+                prompter: Guide::new(Asker::standard(Prompts::Terminal), screen.clone(), Nmcli),
+                bluetooth,
+                discovery: Mdns,
+                keys,
+                report: screen,
+            };
+            let arguments: Vec<OsString> = std::env::args_os().collect();
+            wellfed_install::run(plan, platform, signalled()?)
+                .await
+                .map_err(|error| with_resume(error, &resume_command(&arguments, provisioning)))
+        }
+    }
 }
+
+/// What a person reads as the run starts.
+const INTRODUCTION: &str = "\nInstalling Wellfed, in five steps. Stay near the feeder: steps 1, 3 \
+                            and 4 need you there, and this run says when. If it stops, it says \
+                            what was kept and how to go on. Ctrl-C stops it safely.";
 
 /// Resolves on SIGTERM or SIGINT. Once seen, the handlers stay installed but
 /// nothing listens, so a second Ctrl-C does not cut the stop short; the stop
@@ -394,6 +635,14 @@ fn explain(error: wellfed_install::Error) -> anyhow::Error {
             "Promotion refused: the --stock-backup copy could not be kept; the feeder runs the \
              replacement from bank 0 and still holds stock in bank 1",
         ),
+        // Only a refusal from the check before the frame says nothing went out:
+        // a handover can fail on the way back too, with the frame already sent.
+        Error::Handover(ref source) if source.is::<FrameRefused>() => anyhow::Error::from(error)
+            .context(
+                "The setup frame was refused before it went: your Wi-Fi password was not sent. \
+                 The feeder stays in setup mode, so run this again from the feeder's network, \
+                 with no second Reset hold",
+            ),
         Error::Setup(_) => anyhow::Error::from(error).context(
             "Bluetooth setup failed: the feeder runs the replacement from bank 0 and still holds \
              stock in bank 1. Run again with --from-bank0; with no Wi-Fi stored, the \
@@ -419,11 +668,24 @@ fn explain(error: wellfed_install::Error) -> anyhow::Error {
     }
 }
 
+/// The update key file a consumer run with neither `--update-key` nor
+/// `--manifest` uses: at a terminal, one kept for it. A job names its own.
+fn default_update_key(prompts: Prompts) -> Option<&'static Path> {
+    (prompts == Prompts::Terminal).then(|| Path::new(UPDATE_KEY))
+}
+
 /// The update key the run signs with: `--update-key` (created if
 /// missing), or the bench key, never created here, for a bench review.
 /// `None` with `--manifest`, which is promoted as signed; the two together
 /// are refused.
 fn update_key(args: &InstallArgs, provisioning: Provisioning) -> Result<Option<Key>> {
+    let default = match (&args.update_key, &args.manifest, provisioning) {
+        (None, None, Provisioning::Consumer) => default_update_key(args.prompts),
+        _ => None,
+    };
+    if let Some(path) = default {
+        return open_update_key(path).map(Some);
+    }
     match (&args.update_key, &args.manifest, provisioning) {
         (Some(_), Some(_), _) => Err(Refused::KeyWithManifest.into()),
         (Some(path), None, _) => open_update_key(path).map(Some),
@@ -455,12 +717,14 @@ fn signer(args: &InstallArgs, review: &Review, key: Option<Key>) -> Result<Signe
             let (frozen, root) = frozen_review(&args.review, review.build())?;
             let backups = std::path::absolute(&args.backups).context("--backups")?;
             let above = signed_so_far(&root, &backups).map_or(0, |(version, _)| version);
-            eprintln!(
-                "The run signs build {} with update key {} once it has read the feeder's \
-                 floor, above version {above}.",
-                short(review.build()),
-                wellfed_formats::hex::encode(&key.id())
-            );
+            if args.prompts == Prompts::Lines || args.verbose {
+                eprintln!(
+                    "The run signs build {} with update key {} once it has read the feeder's \
+                     floor, above version {above}.",
+                    short(review.build()),
+                    wellfed_formats::hex::encode(&key.id())
+                );
+            }
             Ok(Signer::Key {
                 key: Box::new(key),
                 frozen: Box::new(frozen),
@@ -716,10 +980,18 @@ mod tests {
         }
 
         let bare = args(&[]);
+        // A job names what it signs with, and is refused otherwise. A person
+        // at a terminal gets the kept key (not made here: this reads the path).
+        let job = args(&["--prompts", "lines"]);
         assert!(matches!(
-            refused(update_key(&bare, Provisioning::Consumer)),
+            refused(update_key(&job, Provisioning::Consumer)),
             Some(Refused::NoSigner)
         ));
+        assert_eq!(default_update_key(job.prompts), None);
+        assert_eq!(
+            default_update_key(bare.prompts),
+            Some(Path::new("private/update-key.json"))
+        );
         let given = args(&["--manifest", "private/v9.manifest"]);
         assert!(
             update_key(&given, Provisioning::Consumer)
@@ -817,6 +1089,263 @@ mod tests {
             );
             assert!(line.is_err(), "{other:?}");
         }
+    }
+
+    /// The log is quiet unless asked for, and a job always gets it: its output
+    /// is its evidence. Anything sharing the terminal with it stops drawing in
+    /// place, as does anything that is not a terminal.
+    #[test]
+    fn the_stock_log_is_a_job_s_or_asked_for() {
+        let of = Presentation::of;
+
+        let quiet = of(Prompts::Terminal, false, false, true);
+        assert!(!quiet.stock_log);
+        assert_eq!(quiet.style, Style::Live);
+        assert_eq!(quiet.detail, Detail::Milestones);
+
+        let piped = of(Prompts::Terminal, false, false, false);
+        assert!(!piped.stock_log);
+        assert_eq!(piped.style, Style::Plain);
+
+        let verbose = of(Prompts::Terminal, true, false, true);
+        assert!(verbose.stock_log);
+        assert_eq!(verbose.style, Style::Plain);
+        assert_eq!(verbose.detail, Detail::Everything);
+
+        let rust_log = of(Prompts::Terminal, false, true, true);
+        assert!(rust_log.stock_log);
+        assert_eq!(rust_log.style, Style::Plain);
+        assert_eq!(rust_log.detail, Detail::Milestones);
+
+        for terminal in [false, true] {
+            assert!(of(Prompts::Lines, false, false, terminal).stock_log);
+        }
+    }
+
+    /// A bench job's standard error is its evidence, so these words and the
+    /// JSON lines beside them stay as they are. A person's words may change.
+    #[test]
+    fn a_job_s_output_is_unchanged() {
+        use crate::report::line;
+        use wellfed_install::event::Wait;
+
+        assert_eq!(
+            backup_notice(Prompts::Lines),
+            "No --stock-backup: bank 1 is read from the replacement before promotion, which \
+             would overwrite the feeder's only copy of stock."
+        );
+        for (event, words) in [
+            (
+                wellfed_install::Event::StockServerStarted,
+                "Started the stock server (its broker trusts the first feeder that connects).",
+            ),
+            (
+                wellfed_install::Event::Waiting(Wait::NoFeeder),
+                "Waiting: no stock feeder has connected to the broker yet",
+            ),
+            (
+                wellfed_install::Event::StockProgress(42),
+                "Stock: 42% downloaded",
+            ),
+            (
+                wellfed_install::Event::Written {
+                    written: 512,
+                    length: 1024,
+                },
+                "  512 of 1024 bytes written",
+            ),
+            (
+                wellfed_install::Event::Promoting,
+                "Promoting: bank 0 writes the replacement into bank 1.",
+            ),
+            (
+                wellfed_install::Event::Floor(7),
+                "The feeder's floor is version 7.",
+            ),
+        ] {
+            assert_eq!(line(&event), words);
+        }
+    }
+
+    /// Stock's silence after the frame is normal, and the words say so: they
+    /// never suggest sending it again.
+    #[test]
+    fn an_unanswered_frame_reads_as_normal() {
+        let words = crate::report::line(&wellfed_install::Event::FrameSent { answer: None });
+        assert!(words.contains("which is normal"), "{words}");
+        assert!(words.contains("never sent twice"), "{words}");
+        assert!(words.contains("within about 2 minutes"), "{words}");
+    }
+
+    #[test]
+    fn a_person_is_told_stock_is_kept_before_anything_overwrites_it() {
+        let words = backup_notice(Prompts::Terminal);
+        assert!(words.contains("before anything overwrites"), "{words}");
+        assert!(words.contains("keeps it on this computer"), "{words}");
+    }
+
+    /// The config is made only for a person, only where the frame's network
+    /// says where its broker listens, and is never replaced.
+    #[test]
+    fn a_missing_config_is_made_from_the_frame_s_network() {
+        use network::tests::FakeHost;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deep/installer.json");
+        let on_network = FakeHost {
+            address: Some("10.42.103.1".parse().unwrap()),
+            ..FakeHost::default()
+        };
+
+        let no_frame = args(&[]);
+        let error = ensure_config(&no_frame, &on_network, &path).unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Refused>(),
+            Some(Refused::NoConfig { .. })
+        ));
+        assert!(!path.exists());
+
+        let frame = args(&["--ssid", "Lab"]);
+        let error = ensure_config(&frame, &FakeHost::default(), &path).unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<Refused>(),
+            Some(Refused::NoBrokerAddress { ssid }) if ssid == "Lab"
+        ));
+        assert!(!path.exists());
+
+        // A job's config stays its owner's: nothing is made for it.
+        let job = args(&["--prompts", "lines"]);
+        ensure_config(&job, &on_network, &path).unwrap();
+        assert!(!path.exists());
+
+        ensure_config(&frame, &on_network, &path).unwrap();
+        let config: ServerConfig = wellfed_formats::load(&path).unwrap();
+        assert_eq!(config.mqtt_listen, "10.42.103.1:1883".parse().unwrap());
+        assert!(!config.has_plan_snapshot());
+
+        // Kept, whatever the network says now.
+        let before = std::fs::read(&path).unwrap();
+        let elsewhere = FakeHost {
+            address: Some("10.42.103.9".parse().unwrap()),
+            ..FakeHost::default()
+        };
+        ensure_config(&frame, &elsewhere, &path).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+
+        // --broker names it outright.
+        let named = dir.path().join("named.json");
+        let broker = args(&["--ssid", "Lab", "--broker", "10.0.0.5:1883"]);
+        ensure_config(&broker, &FakeHost::default(), &named).unwrap();
+        let config: ServerConfig = wellfed_formats::load(&named).unwrap();
+        assert_eq!(config.mqtt_listen, "10.0.0.5:1883".parse().unwrap());
+    }
+
+    fn command(line: &[&str]) -> Vec<OsString> {
+        line.iter().map(OsString::from).collect()
+    }
+
+    /// The owner's real command becomes the one that resumes it: nothing asks
+    /// stock again, and a consumer image still gets its network.
+    #[test]
+    fn the_resume_command_keeps_this_run_s_arguments() {
+        let owner = command(&[
+            "target/release/wellfed",
+            "install",
+            "--stock-config",
+            "private/installer.json",
+            "--review",
+            "private/verification/review",
+            "--manifest",
+            "private/v384.manifest",
+            "--ssid",
+            "Maple St",
+            "--account",
+            "7",
+            "--broker=10.0.0.5:1883",
+        ]);
+        assert_eq!(
+            resume_command(&owner, Provisioning::Consumer),
+            "target/release/wellfed install --stock-config private/installer.json --review \
+             private/verification/review --manifest private/v384.manifest --home-ssid 'Maple St' \
+             --from-bank0"
+        );
+        // A bench image joins its build network and takes no home network.
+        assert_eq!(
+            resume_command(&owner, Provisioning::Bench),
+            "target/release/wellfed install --stock-config private/installer.json --review \
+             private/verification/review --manifest private/v384.manifest --from-bank0"
+        );
+        // A resumed run resumes the same way, once.
+        let resumed = command(&["wellfed", "install", "--from-bank0", "--ssid=Lab"]);
+        assert_eq!(
+            resume_command(&resumed, Provisioning::Consumer),
+            "wellfed install --home-ssid Lab --from-bank0"
+        );
+    }
+
+    /// The command that comes out parses as what it says.
+    #[test]
+    fn the_resume_command_is_a_valid_run() {
+        use clap::Parser;
+
+        let line = resume_command(
+            &command(&["install", "--review", "r", "--ssid", "Lab"]),
+            Provisioning::Consumer,
+        );
+        let parsed = Line::try_parse_from(line.split(' ')).unwrap();
+        assert!(parsed.args.from_bank0);
+        assert_eq!(parsed.args.home_ssid.as_deref(), Some("Lab"));
+        assert_eq!(parsed.args.ssid, None);
+    }
+
+    /// A run that ran out of time on the code ends with what is safe, and the
+    /// one command; so do the promotion's other stops. Others keep their words.
+    #[test]
+    fn a_stopped_run_ends_with_the_command_that_resumes_it() {
+        use wellfed_install::Error;
+        use wellfed_model::setup::Refusal;
+
+        let lapsed = Error::Setup(Box::new(Error::SetupRefused(Refusal::Unconfirmed)));
+        let text = format!("{:#}", with_resume(lapsed, "wellfed install --from-bank0"));
+        assert!(text.starts_with("Time ran out for the code"), "{text}");
+        assert!(text.contains("nothing was lost"), "{text}");
+        assert!(text.contains("safe in bank 1"), "{text}");
+        assert!(text.contains("    wellfed install --from-bank0"), "{text}");
+
+        let wrong = Error::Setup(Box::new(Error::SetupRefused(Refusal::WrongCode)));
+        let text = format!("{:#}", with_resume(wrong, "resume"));
+        assert!(text.starts_with("The install stopped"), "{text}");
+        assert!(text.contains("resume"), "{text}");
+
+        // Bank 0 is not known to hold anything here: no such words.
+        let other = Error::OtherDevice {
+            expected: "AF_A".into(),
+            enrolled: "AF_B".into(),
+            address: "10.0.0.2".into(),
+        };
+        let text = format!("{:#}", with_resume(other, "resume"));
+        assert!(!text.contains("resume"), "{text}");
+        assert!(!text.contains("safe in bank 1"), "{text}");
+    }
+
+    /// The frame's refusal reaches the owner saying the password did not go.
+    #[test]
+    fn a_refused_frame_says_the_password_was_not_sent() {
+        use wellfed_install::Error;
+
+        let refused = FrameRefused::OtherNetwork {
+            interface: "wlan0".into(),
+            ssid: "Maple St".into(),
+        };
+        let error = explain(Error::Handover(Box::new(refused)));
+        let text = format!("{error:#}");
+        assert!(text.contains("password was not sent"), "{text}");
+        assert!(text.contains("Maple St"), "{text}");
+
+        // Coming back from the feeder's network happens after the frame, so
+        // nothing there claims it did not go.
+        let error = explain(Error::Handover("no way back".into()));
+        assert!(!format!("{error:#}").contains("not sent"));
     }
 
     /// `--update-key` names a file the run creates once and reuses.

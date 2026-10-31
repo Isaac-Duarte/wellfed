@@ -12,6 +12,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use wellfed_client::install::PairRoute;
 use wellfed_formats::bench::prompt::{CodePresses, DispensePurpose, Prompt};
 use wellfed_session::noise::Keypair;
 use wellfed_session::setup_code::Code;
@@ -68,6 +69,15 @@ pub trait Prompter {
     /// Take whatever answer an earlier announcement left unread, before a
     /// request whose window a wait would spend.
     async fn settle(&mut self) -> Result<(), PlatformError>;
+
+    /// The feeder's window for the code closed with nothing keyed in, on
+    /// pairing `route`. Nothing was lost: stock is intact in bank 1, and only
+    /// an owner enrollment, safe to repeat, was asked for. Whether to go again
+    /// now with a new code. By default no, and the run ends as for any other
+    /// refusal, where the platform says how to resume.
+    async fn code_lapsed(&mut self, _route: PairRoute) -> Result<bool, PlatformError> {
+        Ok(false)
+    }
 }
 
 /// A connected feeder's Bluetooth setup characteristic: whole messages

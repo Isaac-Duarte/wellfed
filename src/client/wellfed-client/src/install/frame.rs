@@ -16,6 +16,12 @@ use core::net::{Ipv4Addr, SocketAddrV4};
 /// port `0x444C`, "DL").
 pub const SETUP_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 1), 17484);
 
+/// How the feeder's setup network's name starts; the last two bytes of its MAC
+/// follow (observed). The frame carries the Wi-Fi password in the clear, and
+/// many home routers are 192.168.1.1 too, so a sender checks it is on such a
+/// network before it sends.
+pub const SETUP_SSID_PREFIX: &str = "PL-AF103-";
+
 /// Wi-Fi and server together, what the app sends for PLAF103.
 const TYPE_BOTH: u8 = 3;
 const END: u8 = 0xff;
