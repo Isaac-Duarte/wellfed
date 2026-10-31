@@ -23,7 +23,7 @@ use wellfed_device_api::pairing::{Config, Pairing};
 use wellfed_device_api::setup::{Received, Responder};
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_api::{
-    Device, EventRead, KeyChange, KeyOutcome, Pass, Reader, Record, SESSIONS, Server,
+    Device, EventRead, KeyChange, KeyOutcome, Pass, Reader, Reason, Record, SESSIONS, Server,
 };
 use wellfed_proto::api::{
     self as proto, Capabilities, EventBody, FRAME_MAX, FeederMessage, FoodLevel, Hello,
@@ -58,6 +58,10 @@ struct Fake {
     clock: WallClock,
     /// A line every pass, so a tailing session always has more to read.
     log: LogTail<1024>,
+    /// A settings write stays queued for the writer.
+    writes_held: bool,
+    /// A settings write is queued.
+    write_queued: bool,
 }
 
 /// Every section at its widest, so a frame that holds these holds any.
@@ -226,10 +230,13 @@ impl Device for Fake {
     fn settings(&mut self, change: SettingsFields) -> SettingsResult {
         if change.changes() {
             self.settings.generation += 1;
+            self.write_queued = true;
+        } else if !self.writes_held {
+            self.write_queued = false;
         }
         SettingsResult::Current {
             view: self.settings,
-            pending: false,
+            pending: self.write_queued,
         }
     }
 
@@ -426,7 +433,8 @@ impl Rig {
         self.server.accept(self.now, |r| records.push(r))
     }
 
-    pub fn pass(&mut self) {
+    /// One pass, 20 ms after the last: whether it reports work waiting.
+    pub fn pass(&mut self) -> bool {
         self.now += 20;
         let line = format!(
             "PLTST1 pass now={} {}\r\n",
@@ -446,7 +454,47 @@ impl Rig {
                 signer: None,
             },
             |r| records.push(r),
-        );
+        )
+    }
+
+    /// Hold each settings write as the writer not having reached it yet, or
+    /// let it finish.
+    pub fn hold_writes(&mut self, held: bool) {
+        self.device.writes_held = held;
+    }
+
+    /// Empty the client table, as the writer would publish it: every session
+    /// ends.
+    pub fn revoke_everyone(&mut self) {
+        *self.server.clients_table().0 = [None; CLIENTS];
+        let records = &mut self.records;
+        self.server.clients_changed(2, |r| records.push(r));
+    }
+
+    /// The slots not free.
+    pub fn sessions(&self) -> usize {
+        self.server.sessions()
+    }
+
+    /// The bytes waiting to go out on `slot`.
+    pub fn queued(&self, slot: usize) -> usize {
+        self.server.tx(slot).len()
+    }
+
+    /// Send `len` of the bytes waiting on `slot`, to no one.
+    pub fn send_some(&mut self, slot: usize, len: usize) {
+        self.server.sent(slot, len);
+    }
+
+    /// The reasons recorded for connections ended so far.
+    pub fn ended_for(&self) -> Vec<Reason> {
+        self.records
+            .iter()
+            .filter_map(|record| match record {
+                Record::Ended { reason, .. } => Some(*reason),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Hold each queued feed before its reservation, or let them through.

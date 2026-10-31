@@ -11,11 +11,13 @@ use wellfed_connect::{Connection, Error as ConnectError, join};
 use wellfed_core::clock::ntp;
 use wellfed_device_api::mailbox::KeyResult;
 use wellfed_device_api::mailbox::Lock;
-use wellfed_feeder::feeder::{self, owner};
+use wellfed_device_api::{Reason, Record as ApiRecord};
+
+use wellfed_feeder::feeder::{self, owner, serve};
 use wellfed_feeder::panel::{Action, Event as PanelEvent, Source as PanelSource};
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
-use wellfed_feeder_sim::serve::Event;
+use wellfed_feeder_sim::serve::{Control, Event};
 use wellfed_feeder_sim::sim::Record;
 use wellfed_model::{
     Answer, Bowl, Calibration, CalibrationView, ClientRole, Desiccant, EventBody, Generation,
@@ -1570,6 +1572,65 @@ fn the_desiccant_reminder_counts_from_its_reset_across_a_restart() {
                 due: true
             }
         );
+        sim.stop().await;
+    });
+}
+
+/// What the simulator logged since the last look: the delays the loop asked
+/// for, in order, and whether a session was dropped as stalled.
+fn logged(sim: &mut Running) -> (Vec<u32>, bool) {
+    let (mut delays, mut stalled) = (Vec::new(), false);
+    while let Ok(event) = sim.events.try_recv() {
+        match event {
+            Event::Pace { delay_ms } => delays.push(delay_ms),
+            Event::Sim(Record::Feeder(feeder::Record::Serve(serve::Record::Server(
+                ApiRecord::Ended {
+                    reason: Reason::Stalled,
+                    ..
+                },
+            )))) => stalled = true,
+            _ => {}
+        }
+    }
+    (delays, stalled)
+}
+
+/// The whole path, driver included: an answer a client will not take leaves the
+/// loop at its poll, its socket is closed at the limit, and the slot serves the
+/// next connection.
+#[test]
+fn a_client_that_stops_reading_rests_the_loop_and_loses_its_slot() {
+    paused(async {
+        let mut sim = Running::start(&Flash::memory(), true).await;
+        let mut stuck = sim.open(OWNER).await.unwrap();
+
+        sim.control(Control::BlockSends(true));
+        let id = sim.id();
+        let asked = tokio::time::timeout(Duration::from_secs(1), stuck.ask(id, &Op::Status));
+        assert!(asked.await.is_err(), "the answer cannot reach it");
+        let (delays, stalled) = logged(&mut sim);
+        assert_eq!(delays.last(), Some(&owner::POLL_MS), "{delays:?}");
+        assert!(!stalled);
+
+        // Most of the limit, with the answer still queued: not a single pass
+        // asks to come back sooner than the poll.
+        let limit = Duration::from_millis(wellfed_device_api::STALL_MS.into());
+        tokio::time::sleep(limit - Duration::from_secs(2)).await;
+        let (delays, stalled) = logged(&mut sim);
+        assert!(delays.is_empty(), "{delays:?}");
+        assert!(!stalled);
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let (_, stalled) = logged(&mut sim);
+        assert!(stalled);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let (delays, _) = logged(&mut sim);
+        assert_eq!(delays.last().unwrap_or(&owner::POLL_MS), &owner::POLL_MS);
+
+        sim.control(Control::BlockSends(false));
+        assert!(stuck.next(WAIT).await.is_err(), "its socket is closed");
+        let mut next = sim.open(OWNER).await.unwrap();
+        assert!(matches!(status(&mut sim, &mut next).await, Status { .. }));
         sim.stop().await;
     });
 }

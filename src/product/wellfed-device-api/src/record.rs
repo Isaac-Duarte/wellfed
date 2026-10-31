@@ -26,6 +26,8 @@ named_enum! {
         /// The recovery window is closed (or not served here yet).
         Recovery = "recovery",
         Timeout = "timeout",
+        /// The client stopped reading: nothing it was sent moved for `STALL_MS`.
+        Stalled = "stalled",
         Revoked = "revoked",
         /// The identity is not loaded, or the generator has no output.
         NotReady = "not-ready",

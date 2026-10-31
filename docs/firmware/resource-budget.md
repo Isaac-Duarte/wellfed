@@ -135,6 +135,8 @@ Nothing that protects the feeder waits for a conversion:
 
 A gap past the observation limit loses the battery's last reading, so the next poll converts it again whatever its period says.
 
+**Waiting is not work.** The server reports work only when the next pass has some to do, and the loop then passes after 1 ms instead of 20 ms. A session waiting for its client to read, for the writer to reach a store write or for a Dispense press reports none, so the 20 ms poll looks at it. Bytes that stop moving do not hold a slot: a connection whose queued bytes have not moved for 30 s (`STALL_MS`) is dropped, a connection already ending included, and its client hears what any lost connection means ([device API](device-api.md#sessions-that-stop-reading)). These figures are static analysis until the bench measures passes per second with a paused client.
+
 ## Logging
 
 A record line takes up to 16 ms to send at 115200 baud, and `sdk::log` used to hold the scheduler for it. It now copies the line into a RAM ring (`wellfed_core::log_ring`) and returns. The figures below are static analysis, or modeled from captures, until the bench measures them.

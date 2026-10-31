@@ -89,6 +89,12 @@ How the protocol may change is under [Evolution](#evolution).
 - **One frame per pass.** A slot reads one frame per pass, and writes again only once its last frame is out. So a flooding client costs only its own turn. That is why events go in batches: a subscriber catching up gets a frame of them a pass, not one event.
 - **Sockets:** one listener, four sessions, the mDNS socket and the NTP socket.
 
+### Sessions that stop reading
+
+A connection whose queued bytes have not moved for 30 s (`STALL_MS`) is dropped and its slot freed, recorded as `stalled`. A client that reads at all keeps it, however slowly. So does one with nothing queued: that is the 90 s idle limit's business. A slot already ending gets the same 30 s to send its last bytes, then closes with them unsent.
+
+To the client this is a lost connection, and it loses nothing a lost connection would keep. A session sends nothing while a write is pending, so a feed waiting for its reservation, a settings write or a minute's wait for a Dispense press is never what closes it. A write it has answered is in the feeder's memory under its id, so a retry on a new session gets that first answer, and no second feed runs. As after any lost connection, a client that cannot tell whether its feed ran does not resend it on its own.
+
 ### Handshakes, and handshakes during a feed
 
 The loop runs one handshake operation per pass, across all slots. A Noise operation costs one or two X25519s, 25–28 ms each on the KM4 ([resource budget](resource-budget.md#handshakes-and-loop-latency)).

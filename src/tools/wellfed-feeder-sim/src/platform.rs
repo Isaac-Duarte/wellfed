@@ -160,6 +160,8 @@ pub enum Socket {
 
 pub struct SimPlatform {
     random: Random,
+    /// Every client's window is shut: a send takes nothing.
+    sends_blocked: bool,
     flash: Rc<Flash>,
     /// The image's erases when this boot opened it: the statistics count
     /// this boot's.
@@ -332,6 +334,7 @@ impl SimPlatform {
 
         let platform = Self {
             random,
+            sends_blocked: false,
             flash: Rc::clone(flash),
             erases_before: flash.erases(),
             settings,
@@ -399,6 +402,11 @@ impl SimPlatform {
     }
 
     /// What the supply reads from now on.
+    /// Every client's window shut (`true`), so no send takes a byte, or open.
+    pub fn block_sends(&mut self, blocked: bool) {
+        self.sends_blocked = blocked;
+    }
+
     pub fn set_supply(&mut self, supply: SimSupply) {
         self.supply = supply;
     }
@@ -1232,6 +1240,9 @@ impl Platform for SimPlatform {
         let Socket::Stream(id) = socket else {
             return None;
         };
+        if self.sends_blocked {
+            return Some(0);
+        }
         match self.stream(id)?.try_write(bytes) {
             Ok(n) => Some(n),
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => Some(0),

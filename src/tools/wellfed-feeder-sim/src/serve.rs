@@ -60,6 +60,9 @@ pub enum Control {
     /// The battery channel's pin millivolts from now on and across
     /// restarts; `None` takes the cells out.
     Pack(Option<u32>),
+    /// Shut every client's window (`true`), as a client that stopped reading
+    /// does once the socket's buffers fill, or open them. A restart keeps it.
+    BlockSends(bool),
     /// Fill the hopper (`true`) or empty it, as the food beam next reads it.
     /// A restart fills it again.
     Hopper(bool),
@@ -106,6 +109,10 @@ pub enum Event {
     Prepare(DeviceError),
     /// Accepting a connection failed; the listener pauses.
     Accept(io::ErrorKind),
+    /// The loop's delay until its next pass changed.
+    Pace {
+        delay_ms: u32,
+    },
 }
 
 /// Run on each boot's feeder before its first pass.
@@ -140,9 +147,11 @@ pub async fn serve(
 
     let mut boots = 1;
     let mut supply = SimSupply::MAINS;
+    let mut sends_blocked = false;
     let mut booted = Booted::start(&feeder, boots, advertise, &mut log)?;
     let mut control = Some(control);
     let mut delay = Duration::ZERO;
+    let mut paced = 0;
 
     loop {
         let mut reboot = false;
@@ -164,6 +173,10 @@ pub async fn serve(
                 Some(Control::Pack(pin_mv)) => {
                     supply.pin_mv = pin_mv;
                     booted.sim.platform().set_supply(supply);
+                }
+                Some(Control::BlockSends(blocked)) => {
+                    sends_blocked = blocked;
+                    booted.sim.platform().block_sends(blocked);
                 }
                 Some(Control::Hopper(food)) => booted.sim.fill_hopper(food),
                 Some(Control::FaultFeed(fault)) => booted.sim.fault_feed(fault.reason()),
@@ -190,6 +203,10 @@ pub async fn serve(
             let now = booted.now();
             let next = booted.sim.pass(now, |r| log(Event::Sim(r)));
             booted.identity_changed(&mut log);
+            if next != paced {
+                log(Event::Pace { delay_ms: next });
+                paced = next;
+            }
             delay = Duration::from_millis(u64::from(next));
             reboot = booted.sim.take_reboot();
         }
@@ -198,6 +215,7 @@ pub async fn serve(
             boots += 1;
             booted = Booted::start(&feeder, boots, advertise, &mut log)?;
             booted.sim.platform().set_supply(supply);
+            booted.sim.platform().block_sends(sends_blocked);
             delay = Duration::ZERO;
         }
     }
