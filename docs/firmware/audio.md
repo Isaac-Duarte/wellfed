@@ -58,7 +58,7 @@ A tune is queued only through `audio::request`. It answers:
 
 The meal call is queued through `audio::request_call(plays)`, with the same answers; `Busy` too while no clip is stored. The `feeder` firmware's loop asks for it ahead of a plan's meal and steps the speaker while it plays.
 
-The device API's `Play` request carries a tune. The `feeder` firmware does not serve it yet, since it steps the speaker for its own sounds only.
+The device API's `Play` request carries a tune, which the `feeder` firmware's loop queues and steps the same way. A tune needs more than a free speaker there: a feed queued or running, outputs claimed, a plan's meal being claimed, BLE setup mode, an install or a restart answers `Busy`, and so does a tune that would still sound when a meal call's lead begins. Sound settings bind a test sound like any other, so `sound` off, volume 0 or a closed sound window answers `Muted`. A store write holds nothing back: a tune writes no flash and reads no sector a writer changes. Setup mode silences whatever is playing as it starts.
 
 To build the speaker firmware, run `wellfed-build build --profile firstboot --firmware bringup --variant speaker`, or `wellfed-bench ota NAME --build --firmware speaker` to install it. It runs the tune task and plays the startup chime. It does not touch motion, and OTA, recovery and confirmation work as in every firmware.
 

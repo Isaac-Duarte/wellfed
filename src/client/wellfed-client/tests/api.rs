@@ -352,8 +352,8 @@ impl Device for Fake {
         }
     }
 
-    fn play(&mut self, _tune: Tune) -> Option<PlayResult> {
-        Some(PlayResult::Started)
+    fn play(&mut self, _tune: Tune) -> PlayResult {
+        PlayResult::Started
     }
 
     fn time_sync(&mut self, _fields: TimeFields, _origin: Origin) -> TimeResult {

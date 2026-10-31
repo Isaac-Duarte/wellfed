@@ -27,6 +27,8 @@ use wellfed_core::ota::offer::ImageKind;
 use wellfed_core::ota::{self, CONFIRM_LEN};
 use wellfed_core::store::slot::SlotIo;
 use wellfed_core::store::update::{State, UpdateStore};
+use wellfed_core::tone::{PlayResult, Tune};
+use wellfed_device_api::Device;
 use wellfed_device_api::mailbox::KeyResult;
 use wellfed_feeder::feeder::{self, Feeder};
 use wellfed_feeder::panel;
@@ -190,6 +192,13 @@ impl Sim {
 
     pub fn platform(&mut self) -> &mut SimPlatform {
         self.feeder.platform_mut()
+    }
+
+    /// A client's `play`, as the device API asks it at `now_ms`. The
+    /// simulator has no speaker, so one that reaches it answers `Muted`, and
+    /// `Busy` means the loop refused it first.
+    pub fn play(&mut self, now_ms: u32, tune: Tune) -> PlayResult {
+        self.feeder.device(now_ms, &mut self.feeds).play(tune)
     }
 
     /// Whether the feeder asked for a restart, taken once: the driver drops

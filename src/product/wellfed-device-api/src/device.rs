@@ -33,8 +33,8 @@ pub trait Device {
     /// The Wi-Fi store; with `Some`, one change (`Some(None)` clears) queued.
     fn wifi(&mut self, change: Option<Option<Credentials>>) -> WifiResult;
     fn lock(&mut self, locked: bool) -> LockResult;
-    /// `None` when this firmware does not play tunes outside setup mode.
-    fn play(&mut self, tune: CoreTune) -> Option<PlayResult>;
+    /// Queue a tune for the speaker, or say why it will not sound now.
+    fn play(&mut self, tune: CoreTune) -> PlayResult;
     /// A client's sync; `origin` says whether it may step the clock.
     fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult;
     /// Queue a client store change; its ticket, or `None` while the mailbox

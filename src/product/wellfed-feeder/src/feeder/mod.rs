@@ -19,8 +19,8 @@
 //!    knows ([`lights`]), and a press's beep ([`beep`]);
 //! 4. the device API: its sockets, the server's step and the live samples
 //!    ([`serve`]), with the time settings and the NTP exchange ([`time`]);
-//! 5. the speaker, while a tune or a plan's meal call plays (setup mode
-//!    steps it itself). A feed plays none.
+//! 5. the speaker, while a client's tune or a plan's meal call plays (setup
+//!    mode steps it itself). A feed plays none.
 //!
 //! The feeding owner is the platform's: the firmware steps it before the
 //! pass and hands it in as [`Feeds`], and records its `Fed` events through
@@ -456,6 +456,7 @@ impl<P: Platform> Feeder<P> {
             meal: self.schedule.holds(),
             reset,
             claim: self.schedule.claim_in_flight(),
+            call_lead: self.call.lead_at(),
             feeds,
         };
         let serve_delay = self
@@ -566,6 +567,7 @@ impl<P: Platform> Feeder<P> {
             meal: self.schedule.holds(),
             reset: self.owner.reset_pending(),
             claim: self.schedule.claim_in_flight(),
+            call_lead: self.call.lead_at(),
         }
     }
 }

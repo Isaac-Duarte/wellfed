@@ -3,14 +3,16 @@
 //! through the path a client's feed takes; readiness refuses a press and
 //! records its lasting reasons; a feed plays no tune; and a tune a client
 //! asked for (the real speaker on the fake codec) never holds up a feed,
-//! its cancel or its result, whether it plays, fails to open or stalls.
+//! its cancel or its result, whether it plays, fails to open or stalls. A
+//! client's `play` sounds through the loop at rest, and is refused with a
+//! feed in flight or the sound settings against it.
 
 use std::sync::{Mutex, MutexGuard};
 
 use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_core::tone::{PlayResult, Tune};
 use wellfed_device_api::Device;
-use wellfed_device_api::mailbox::SettingsView;
+use wellfed_device_api::mailbox::{SettingsFields, SettingsResult, SettingsView};
 use wellfed_feeder::feeder::owner::POLL_MS;
 use wellfed_feeder::feeder::{Feeder, Feeds, Record};
 use wellfed_feeder_runtime::events;
@@ -19,6 +21,7 @@ use wellfed_proto::api::{
     Battery, Blocked, EventBody, FeedOutcome, FeedReason, FoodLevel, Readiness, Refusal, Source,
     Supply,
 };
+use wellfed_sdk::hal::interlock::INTERLOCK;
 use wellfed_sdk::hal::power::{self, Monitor};
 use wellfed_sdk::hal::sdk::fake;
 use wellfed_sdk::hal::{audio, buttons, settings};
@@ -33,6 +36,8 @@ struct Owner {
     submitted: Vec<(u8, Source)>,
     blocked: Option<Blocked>,
     below_floor: Option<bool>,
+    /// A feed is queued or runs.
+    busy: bool,
 }
 
 impl Feeds for Owner {
@@ -41,7 +46,7 @@ impl Feeds for Owner {
     }
 
     fn busy(&self) -> bool {
-        false
+        self.busy
     }
 
     fn blocked(&self) -> Option<Blocked> {
@@ -339,6 +344,152 @@ fn a_client_feed_plays_no_tune() {
         rig.lines
     );
     assert_eq!(audio::request(Tune::Coin), PlayResult::Started);
+}
+
+/// A client's `play`, as the device API asks it.
+fn play(rig: &mut Rig, tune: Tune) -> PlayResult {
+    rig.feeder.device(rig.now, &mut rig.owner).play(tune)
+}
+
+fn publish_sound(sound: bool, volume: u8) {
+    settings::publish(SettingsView {
+        lights: true,
+        sound,
+        volume,
+        generation: 2,
+        writable: true,
+        ..Default::default()
+    });
+}
+
+fn audio_lines(rig: &Rig) -> Vec<&str> {
+    rig.lines
+        .iter()
+        .filter(|l| l.starts_with("PLAUD1"))
+        .map(String::as_str)
+        .collect()
+}
+
+#[test]
+fn a_client_s_tune_plays_through_the_loop_and_a_second_waits_its_turn() {
+    let mut rig = Rig::new();
+
+    assert_eq!(play(&mut rig, Tune::Test), PlayResult::Started);
+    assert_eq!(
+        play(&mut rig, Tune::Coin),
+        PlayResult::Busy,
+        "one at a time"
+    );
+    rig.pass();
+    assert_eq!(audio_lines(&rig), ["PLAUD1 play tune=test volume=50"]);
+    assert_eq!(play(&mut rig, Tune::Coin), PlayResult::Busy, "it plays");
+
+    for _ in 0..200 {
+        rig.pass();
+        fake::play_audio(2);
+    }
+    let lines = audio_lines(&rig);
+    assert!(
+        lines
+            .last()
+            .is_some_and(|l| l.starts_with("PLAUD1 done tune=test")),
+        "{lines:?}"
+    );
+    assert_eq!(play(&mut rig, Tune::Coin), PlayResult::Started, "it ended");
+}
+
+/// The owner's sound settings bind a test sound like any other: nothing
+/// opens, and the client hears why.
+#[test]
+fn sound_off_or_volume_zero_answers_muted_and_stays_quiet() {
+    for (sound, volume) in [(false, 50), (true, 0)] {
+        let mut rig = Rig::new();
+        publish_sound(sound, volume);
+
+        assert_eq!(play(&mut rig, Tune::Test), PlayResult::Muted);
+        for _ in 0..10 {
+            rig.pass();
+        }
+        assert_eq!(audio_lines(&rig), Vec::<&str>::new());
+        assert_eq!(fake::with(|h| h.audio_opens), 0);
+    }
+}
+
+#[test]
+fn a_tune_waits_for_the_settings_to_load() {
+    let mut rig = Rig::new();
+    settings::reset();
+    assert_eq!(play(&mut rig, Tune::Test), PlayResult::Busy);
+}
+
+/// A feed queued or running is silent: the request changes nothing, and the
+/// speaker stays closed. It plays again once the feed has ended.
+#[test]
+fn a_feed_in_flight_refuses_a_tune() {
+    let mut rig = Rig::new();
+    rig.owner.busy = true;
+
+    assert_eq!(play(&mut rig, Tune::Test), PlayResult::Busy);
+    rig.pass();
+    assert_eq!(audio_lines(&rig), Vec::<&str>::new());
+    assert_eq!(fake::with(|h| h.audio_opens), 0);
+
+    rig.owner.busy = false;
+    assert_eq!(play(&mut rig, Tune::Test), PlayResult::Started);
+}
+
+/// A feed's outputs may be claimed before the owner says it is busy.
+#[test]
+fn claimed_outputs_refuse_a_tune() {
+    let mut rig = Rig::new();
+    INTERLOCK.reset();
+    INTERLOCK.claim_feed(u32::MAX).unwrap();
+
+    assert_eq!(play(&mut rig, Tune::Test), PlayResult::Busy);
+
+    INTERLOCK.release_feed();
+    assert_eq!(play(&mut rig, Tune::Test), PlayResult::Started);
+}
+
+/// Setup mode owns the speaker for its own tunes. Starting it silences a tune
+/// mid-play, so the codec is closed for setup's first; a client's tune then
+/// waits for setup mode to end.
+#[test]
+fn setup_mode_takes_the_speaker_from_a_tune_and_refuses_another() {
+    let mut rig = Rig::new();
+    assert_eq!(play(&mut rig, Tune::Test), PlayResult::Started);
+    rig.pass();
+    assert!(fake::with(|h| h.audio_open));
+
+    rig.unlock();
+    let hold = Gesture::Hold {
+        chord: Buttons::of(Button::Lock).with(Button::Mic),
+        level: 1,
+    };
+    rig.pass_with(&[hold]);
+    assert!(rig.feeder.setup_on());
+    assert!(!fake::with(|h| h.audio_open), "the tune was cut off");
+
+    assert_eq!(play(&mut rig, Tune::Test), PlayResult::Busy);
+}
+
+/// A flash write holds no tune back: the speaker writes nothing and reads
+/// no sector the writer changes. A settings change queued for the writer
+/// and a tune go together.
+#[test]
+fn a_queued_store_write_does_not_hold_a_tune() {
+    let mut rig = Rig::new();
+    let queued = settings::request(SettingsFields {
+        volume: Some(60),
+        ..Default::default()
+    });
+    assert!(
+        matches!(queued, SettingsResult::Current { .. }),
+        "{queued:?}"
+    );
+    assert!(settings::pending().is_some());
+
+    assert_eq!(play(&mut rig, Tune::Test), PlayResult::Started);
 }
 
 /// A feed's path while the speaker is busy with a requested tune: queued,

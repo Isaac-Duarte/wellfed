@@ -121,10 +121,9 @@ impl Server {
                 LockResult::Unserved => Reply::Refused(Refusal::Unavailable),
             },
             Action::Play { tune } => match device.play(tune) {
-                Some(PlayResult::Started) => Reply::Done(None),
-                Some(PlayResult::Muted) => Reply::Refused(Refusal::Muted),
-                Some(PlayResult::Busy) => Reply::Refused(Refusal::Busy),
-                None => Reply::Refused(Refusal::Unavailable),
+                PlayResult::Started => Reply::Done(None),
+                PlayResult::Muted => Reply::Refused(Refusal::Muted),
+                PlayResult::Busy => Reply::Refused(Refusal::Busy),
             },
             Action::TimeSync(fields) => match device.time_sync(fields, origin(role)) {
                 TimeResult::Synced { jump_ms } => {

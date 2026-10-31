@@ -18,7 +18,8 @@
 //! rewritten.
 //!
 //! Nothing here touches the motor or the emitters or writes flash, and the
-//! device API only reaches [`request`].
+//! device API only reaches [`request`], through the loop's own refusals
+//! (`wellfed-feeder`'s `FeederDevice::play`).
 
 use core::fmt;
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
@@ -348,6 +349,20 @@ impl Speaker {
     /// Nothing queued or playing: stepping can wait.
     pub fn is_idle(&self) -> bool {
         matches!(self.stage, Stage::Idle) && SLOT.load(Ordering::Acquire) == EMPTY
+    }
+
+    /// Stop what plays and forget what waits. Setup mode takes the speaker
+    /// whatever it was doing: a stage dropped mid-sound would leave the
+    /// codec open and the amplifier on, and every later open would fail. The
+    /// `done` record goes unsaid, since a cut sound has no length to report.
+    pub fn silence(&mut self) {
+        if let Stage::Warm { sound, .. } | Stage::Play { sound, .. } | Stage::Drain { sound, .. } =
+            self.stage
+        {
+            let _ = self.finish(sound, false);
+        }
+        SLOT.store(EMPTY, Ordering::Release);
+        self.stage = Stage::Idle;
     }
 
     fn finish(&mut self, sound: Sound, drained: bool) -> Record {

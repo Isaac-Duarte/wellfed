@@ -12,6 +12,7 @@ use wellfed_core::clock::wall::{Origin, Sync};
 use wellfed_core::clock::zone::Zone;
 use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_core::store::slot::crc32;
+use wellfed_core::tone::{PlayResult, Tune};
 use wellfed_device_api::Reader;
 use wellfed_device_api::mailbox::{
     CallChange, CallClip, CallResult, MealReminder, PlansChange, PlansResult, PlansView,
@@ -164,6 +165,12 @@ impl Feeder {
             panic!("the simulator keeps a meal call");
         };
         assert_eq!(view.clip, CallClip::Stored { bytes, crc });
+    }
+
+    /// A client's `play` now.
+    fn play(&mut self, tune: Tune) -> PlayResult {
+        let now = self.now;
+        self.sim.play(now, tune)
     }
 
     /// Every event the ring holds, oldest first.
@@ -1018,6 +1025,41 @@ fn no_clip_or_a_plan_that_will_not_run_plays_no_call() {
     feeder.run(5 * MINUTE_MS);
     assert!(feeder.calls.is_empty());
     assert_eq!(feeder.fed().len(), 1);
+}
+
+/// A client's tune gives way to the call: refused once it would still sound
+/// as the lead begins, through the lead, and not after the meal. Asking does
+/// not move the call or the meal.
+#[test]
+fn a_client_s_tune_never_crowds_a_meal_call() {
+    let mut feeder = called_breakfast();
+    // The lead is 2 s and the test tune holds the speaker for 2 s with its
+    // spare, so it fits only until 4 s ahead of the meal.
+    feeder.run_until(BREAKFAST - 4_100);
+    assert_eq!(
+        feeder.play(Tune::Test),
+        PlayResult::Muted,
+        "it ends in time"
+    );
+    assert_eq!(
+        feeder.play(Tune::Twinkle),
+        PlayResult::Busy,
+        "a longer tune would not"
+    );
+
+    feeder.run_until(BREAKFAST - 3_900);
+    assert_eq!(feeder.play(Tune::Test), PlayResult::Busy, "it would not");
+    feeder.run_until(BREAKFAST - 2_500);
+    assert_eq!(feeder.play(Tune::Test), PlayResult::Busy);
+
+    feeder.run_until(BREAKFAST + 15 * MINUTE_MS);
+    assert_eq!(feeder.calls.len(), 1, "the call played");
+    assert_eq!(
+        feeder.fed()[0],
+        (1, 2, FeedOutcome::Done, Source::Schedule(0)),
+        "the meal ran"
+    );
+    assert_eq!(feeder.play(Tune::Test), PlayResult::Muted, "after the meal");
 }
 
 /// A feeder whose journal will not open runs no meal this boot, so it

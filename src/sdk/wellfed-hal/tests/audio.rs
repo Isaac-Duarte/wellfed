@@ -346,3 +346,55 @@ fn the_sound_window_mutes_outside_it_and_opens_without_a_clock() {
     });
     assert_eq!(audio::request(Tune::Coin), PlayResult::Started);
 }
+
+/// Setup mode takes the speaker from a tune mid-play: everything closes, and
+/// the next tune opens the codec as usual.
+#[test]
+fn silencing_a_tune_mid_play_closes_everything_for_the_next() {
+    let _guard = start(true);
+    let mut speaker = Speaker::quiet();
+    assert_eq!(audio::request(Tune::Test), PlayResult::Started);
+    speaker.step();
+    assert!(amp() && fake::with(|h| h.audio_open));
+
+    speaker.silence();
+    assert!(!amp());
+    assert!(!fake::with(|h| h.audio_open));
+    assert!(speaker.is_idle());
+
+    assert_eq!(audio::request(Tune::Coin), PlayResult::Started);
+    let records = run(&mut speaker, 200, done);
+    assert!(
+        matches!(records.last(), Some(Record::Done { .. })),
+        "{records:?}"
+    );
+    assert!(!amp());
+}
+
+/// A call cut off gives its clip back, so the writer's next change can go.
+#[test]
+fn silencing_a_call_frees_the_clip_for_the_writer() {
+    let _guard = start(true);
+    let mut speaker = Speaker::quiet();
+    store_call(400);
+    assert_eq!(audio::request_call(1), PlayResult::Started);
+    speaker.step();
+    assert!(audio::call_playing());
+
+    speaker.silence();
+    assert!(!audio::call_playing());
+    assert!(audio::call_write_begin());
+    audio::call_write_end();
+}
+
+/// A tune queued and not yet opened is forgotten too.
+#[test]
+fn silencing_forgets_a_queued_tune() {
+    let _guard = start(true);
+    let mut speaker = Speaker::quiet();
+    assert_eq!(audio::request(Tune::Test), PlayResult::Started);
+
+    speaker.silence();
+    assert!(speaker.is_idle());
+    assert_eq!(fake::with(|h| h.audio_opens), 0);
+}

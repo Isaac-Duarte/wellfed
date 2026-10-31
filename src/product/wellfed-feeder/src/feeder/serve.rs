@@ -38,6 +38,7 @@ use wellfed_proto::trace::PAGE_MAX;
 use wellfed_session::noise::Keypair;
 
 use super::Feeds;
+use super::call;
 use super::events;
 use super::feeding;
 use super::lock::LockBox;
@@ -182,6 +183,8 @@ pub struct Inputs<'a, F> {
     pub reset: bool,
     /// A plan's claim is in flight: its meal is the next feed.
     pub claim: bool,
+    /// When the next meal call's lead begins (Unix ms), if one is to come.
+    pub call_lead: Option<u64>,
     pub feeds: &'a mut F,
 }
 
@@ -299,6 +302,7 @@ impl<S: Copy> Serve<S> {
             meal,
             reset,
             claim,
+            call_lead,
             feeds,
         } = inputs;
         let boot = self.boot(platform, now_ms);
@@ -368,6 +372,7 @@ impl<S: Copy> Serve<S> {
             meal,
             reset,
             claim,
+            call_lead,
         };
         let busy = self.server.step(
             Pass {
@@ -683,6 +688,8 @@ pub struct FeederDevice<'a, P, F> {
     /// reboot (and an install) is refused `Busy` rather than cutting the
     /// meal before its feed is queued.
     pub(super) claim: bool,
+    /// When the next meal call's lead begins (Unix ms), if one is to come.
+    pub(super) call_lead: Option<u64>,
 }
 
 /// How long a walk of the task stacks answers memory requests: the walk
@@ -796,9 +803,27 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
         })
     }
 
-    fn play(&mut self, _tune: Tune) -> Option<PlayResult> {
-        // Only setup mode steps the speaker in the loop.
-        None
+    /// A client's tune, played only when nothing else has a claim on the
+    /// moment. The loop steps it after the owner and the device API, so it
+    /// could not delay a feed in any case; a feed is silent by the owner's
+    /// choice, and a client gets `Busy` rather than a sound that overlaps
+    /// one. Setup mode owns the speaker for its own tunes, and an install or
+    /// a restart has the feeder's attention. A flash write is no reason to
+    /// wait: a tune writes nothing and reads no sector a writer changes, and
+    /// the meal call plays through writes the same way, at worst with
+    /// underruns the speaker's `done` record counts.
+    ///
+    /// `Muted` stays the speaker's answer: a test sound means what the
+    /// owner's sound settings let through, so the `sound` switch, a volume
+    /// of 0 and the sound window all silence it.
+    fn play(&mut self, tune: Tune) -> PlayResult {
+        let feed = self.feed_active() || self.platform.outputs_claimed();
+        let elsewhere = self.setup || self.platform.installing() || self.platform.restarting();
+        let wall_ms = self.platform.wall_ms(self.now_ms);
+        if feed || elsewhere || call::crowds(self.call_lead, wall_ms, tune) {
+            return PlayResult::Busy;
+        }
+        self.platform.play(tune)
     }
 
     fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult {

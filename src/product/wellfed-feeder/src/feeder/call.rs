@@ -24,10 +24,16 @@
 //! due; after that the call is dropped for that meal. A restart inside the
 //! lead plays it again, which costs nothing but a repeat.
 //!
+//! **A client's tune gives way.** A tune still sounding as a lead begins
+//! would push the call past its meal, so the device API refuses one that
+//! would ([`crowds`]). The call's own speaker request has no such check: it
+//! comes first, and only waits for a tune already under way.
+//!
 //! [schedules]: ../../../../../docs/firmware/schedules.md
 
 use wellfed_core::clip;
 use wellfed_core::schedule::next_due;
+use wellfed_core::tone::Tune;
 use wellfed_device_api::mailbox::{
     CallClip, CallResult, PLANS, PlansResult, PlansView, PlayResult,
 };
@@ -53,6 +59,17 @@ pub const fn lead_ms(bytes: u32, plays: u8) -> u32 {
 /// meal's next occurrence, worked out once a minute, is the one to call.
 const _: () = assert!((lead_ms(clip::BYTES_MAX, clip::PLAYS_MAX) as u64) < MINUTE_MS);
 
+/// Whether `tune`, asked for at `wall_ms`, would still hold the speaker when
+/// the next call's lead begins at `lead_at`. [`SPARE_MS`] covers a tune's
+/// settle and drain as it does a clip's. With no valid clock no call plays,
+/// so nothing is crowded.
+pub fn crowds(lead_at: Option<u64>, wall_ms: Option<u64>, tune: Tune) -> bool {
+    let held = u64::from(tune.duration_ms().saturating_add(SPARE_MS));
+    lead_at
+        .zip(wall_ms)
+        .is_some_and(|(lead_at, wall_ms)| wall_ms.saturating_add(held) >= lead_at)
+}
+
 /// The call's state in the loop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Call {
@@ -66,6 +83,9 @@ pub struct Call {
     /// The occurrence each slot's call last found the speaker busy for,
     /// so the retries record nothing more.
     busy: [Option<u32>; PLANS],
+    /// When the soonest call not yet started has its lead begin (Unix ms),
+    /// as of the last pass.
+    lead_at: Option<u64>,
 }
 
 impl Default for Call {
@@ -81,7 +101,15 @@ impl Call {
             computed: None,
             called: [None; PLANS],
             busy: [None; PLANS],
+            lead_at: None,
         }
+    }
+
+    /// When the soonest call not yet started has its lead begin (Unix ms);
+    /// `None` with no call to come. It may already be past, while a busy
+    /// speaker holds the call back.
+    pub const fn lead_at(&self) -> Option<u64> {
+        self.lead_at
     }
 
     /// One pass at `now_ms`: start the call of every occurrence whose lead
@@ -96,6 +124,7 @@ impl Call {
         quiet: bool,
         mut record: impl FnMut(Record),
     ) {
+        self.lead_at = None;
         if quiet {
             return;
         }
@@ -133,7 +162,14 @@ impl Call {
             let runs = view.mark(slot).is_some_and(|mark| mark < due_s);
             let lead = u64::from(lead_ms(bytes, plan.call));
             let within = wall_ms < due && wall_ms.saturating_add(lead) >= due;
-            if !runs || !within || self.called[slot] == Some(due_s) {
+            if !runs || self.called[slot] == Some(due_s) {
+                continue;
+            }
+            if wall_ms < due {
+                let at = due.saturating_sub(lead);
+                self.lead_at = Some(self.lead_at.map_or(at, |soonest| soonest.min(at)));
+            }
+            if !within {
                 continue;
             }
 
@@ -166,5 +202,37 @@ impl Call {
                 .and_then(|plan| next_due(&plan, wall_ms, |ms| platform.offset_at(ms)));
         }
         self.computed = Some(key);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LEAD_AT: u64 = 100_000;
+    /// The test tune is a second long, and the spare a second more.
+    const HELD: u64 = 2_000;
+
+    #[test]
+    fn a_tune_must_end_before_a_call_s_lead_begins() {
+        let crowds = |wall| crowds(Some(LEAD_AT), Some(wall), Tune::Test);
+
+        assert!(!crowds(LEAD_AT - HELD - 1), "it ends in time");
+        assert!(crowds(LEAD_AT - HELD), "it would reach the lead");
+        assert!(crowds(LEAD_AT + 1), "the lead is under way");
+    }
+
+    #[test]
+    fn with_no_call_to_come_or_no_clock_nothing_is_crowded() {
+        assert!(!crowds(None, Some(LEAD_AT), Tune::Test));
+        assert!(!crowds(Some(LEAD_AT), None, Tune::Test));
+    }
+
+    #[test]
+    fn a_longer_tune_gives_way_sooner() {
+        let wall = Some(LEAD_AT - HELD - 1);
+
+        assert!(!crowds(Some(LEAD_AT), wall, Tune::Test));
+        assert!(crowds(Some(LEAD_AT), wall, Tune::Twinkle));
     }
 }

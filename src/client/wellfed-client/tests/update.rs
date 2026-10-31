@@ -412,8 +412,8 @@ impl Device for Feeder {
         }
     }
 
-    fn play(&mut self, _tune: Tune) -> Option<PlayResult> {
-        None
+    fn play(&mut self, _tune: Tune) -> PlayResult {
+        PlayResult::Busy
     }
 
     fn time_sync(&mut self, _fields: TimeFields, _origin: Origin) -> TimeResult {

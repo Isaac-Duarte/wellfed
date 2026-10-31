@@ -629,7 +629,7 @@ impl Platform for Plaf103 {
     }
 
     fn speaker_restart(&mut self) {
-        self.speaker = Speaker::quiet();
+        self.speaker.silence();
     }
 
     fn speaker_idle(&self) -> bool {

@@ -21,7 +21,7 @@ use wellfed_model::{
     Answer, Bowl, Calibration, CalibrationView, ClientRole, Desiccant, EventBody, Generation,
     Joined, MealReminder, MetricKind, NtpResult, NtpServer, Op, PLANS, Plan, Plans, Pushed,
     Refusal, SampleValue, SettingsPatch, Source, Stats, StatsSection, Status, TimeChanges,
-    TimeSource, TimeSync, Weekdays, Wifi,
+    TimeSource, TimeSync, Tune, Weekdays, Wifi,
 };
 use wellfed_proto::api::RequestId;
 use wellfed_session::noise::Keypair;
@@ -202,6 +202,29 @@ fn an_owner_reads_and_writes_the_feeder() {
             Answer::Feeding { feed: 1 },
             "the first feed the journal reserves"
         );
+        sim.stop().await;
+    });
+}
+
+/// `Play` is served outside setup mode, and answered in words a client can
+/// act on. The simulator has no speaker, so a request the loop lets through
+/// comes back `Muted`, as with `sound` off; with a feed in flight the loop
+/// refuses it first.
+#[test]
+fn a_play_request_is_answered_and_gives_way_to_a_feed() {
+    local(async {
+        let mut sim = Running::start(&Flash::memory(), true).await;
+        let mut owner = sim.open(OWNER).await.unwrap();
+        let play = Op::Play { tune: Tune::Test };
+
+        let played = owner.ask(sim.id(), &play).await.unwrap();
+        assert_eq!(played, Answer::Refused(Refusal::Muted));
+
+        let feed = Op::Feed { portions: 48 };
+        let feed = owner.ask(sim.id(), &feed).await.unwrap();
+        assert_eq!(feed, Answer::Feeding { feed: 1 });
+        let played = owner.ask(sim.id(), &play).await.unwrap();
+        assert_eq!(played, Answer::Refused(Refusal::Busy));
         sim.stop().await;
     });
 }

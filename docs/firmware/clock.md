@@ -61,7 +61,7 @@ The bounds were set when the tick-counted clock seemed to drift by up to 2,060 p
 
 ## Time without a source
 
-No valid clock means the feeder needs the time, and the device API says so: `Status.clock_ms` is `None`, and the time view's `clock_ms` and `error_ms` are `None`. Scheduled meals hold: there is no scheduler yet, and when there is, it runs nothing while the clock is invalid, by the [missed-meal rule](#missed-meal-rule). The Dispense button and client feeds still work, since no feed path reads the wall clock. Showing the missing time on the panel is light policy.
+No valid clock means the feeder needs the time, and the device API says so: `Status.clock_ms` is `None`, and the time view's `clock_ms` and `error_ms` are `None`. Scheduled meals hold: the schedule runs nothing while the clock is invalid, by the [missed-meal rule](#missed-meal-rule). The Dispense button and client feeds still work, since no feed path reads the wall clock. Showing the missing time on the panel is light policy.
 
 ## Time zone
 
