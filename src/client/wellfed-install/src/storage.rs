@@ -186,9 +186,12 @@ impl Paired {
             .map_err(|source| Error::Write { path, source })
     }
 
-    /// Remove the record when it is `device`'s: that install is done.
-    pub(crate) fn clear(backups: &Path, device: &str) -> Result<(), Error> {
-        if Self::load(backups)?.is_some_and(|record| record.device == device) {
+    /// Remove the record when it is `device`'s and names `identity`: that
+    /// install is done.
+    pub(crate) fn clear(backups: &Path, device: &str, identity: &[u8; 32]) -> Result<(), Error> {
+        if Self::load(backups)?
+            .is_some_and(|record| record.device == device && record.identity.0 == *identity)
+        {
             let path = backups.join(Self::FILE);
             std::fs::remove_file(&path).map_err(|source| Error::Remove { path, source })?;
         }
@@ -299,9 +302,11 @@ mod tests {
         recorded.keep(&backups).unwrap();
         assert_eq!(Paired::load(&backups).unwrap(), Some(recorded.clone()));
 
-        Paired::clear(&backups, "AF_B").unwrap();
+        Paired::clear(&backups, "AF_B", &[0xab; 32]).unwrap();
+        assert_eq!(Paired::load(&backups).unwrap(), Some(recorded.clone()));
+        Paired::clear(&backups, "AF_A", &[0xcd; 32]).unwrap();
         assert_eq!(Paired::load(&backups).unwrap(), Some(recorded));
-        Paired::clear(&backups, "AF_A").unwrap();
+        Paired::clear(&backups, "AF_A", &[0xab; 32]).unwrap();
         assert_eq!(Paired::load(&backups).unwrap(), None);
     }
 }

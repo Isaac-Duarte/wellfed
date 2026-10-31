@@ -277,6 +277,35 @@ void main() {
         expect(ports.specs.single.start, InstallStart.bank0);
       });
 
+      testWidgets('a picked feeder is held for the pick-up', (tester) async {
+        final (ports, flow) = await asked(tester);
+        await flow.pickFeeder('aa');
+        ports.run.stopped(const StopCase.other(), resume: Resume.fromBank0);
+        await tester.pump();
+
+        await flow.again();
+        expect(ports.specs, hasLength(2));
+        expect(ports.specs.last.feeder, 'aa');
+      });
+
+      testWidgets('another feeder after a paired one still means Bluetooth', (
+        tester,
+      ) async {
+        final (ports, flow) = await asked(tester);
+        await flow.pickFeeder('aa');
+        ports.run.event(
+          InstallEvent.paired(
+            identity: Uint8List.fromList(const [0xaa]),
+            rebooting: false,
+          ),
+        );
+        ports.run.stopped(const StopCase.other(), resume: Resume.fromBank0);
+        await tester.pump();
+
+        await flow.pickFeeder(null);
+        expect(flow.stage, InstallStage.wifi);
+      });
+
       testWidgets('another feeder names none, and asks for the Wi-Fi', (
         tester,
       ) async {
@@ -1428,6 +1457,55 @@ void main() {
 
         expect(find.text('Wellfed is running. Now claim it.'), findsOneWidget);
         expect(find.textContaining('Mic', findRichText: true), findsOneWidget);
+      });
+
+      testWidgets('a feeder paired with no record is picked up by identity', (
+        tester,
+      ) async {
+        final ports = FakeInstallPorts();
+        final run = await _toRun(tester, ports);
+        run.event(
+          InstallEvent.paired(
+            identity: Uint8List.fromList(const [0xab, 0xcd]),
+            rebooting: false,
+          ),
+        );
+        run.stopped(const StopCase.other(), resume: Resume.fromBank0);
+        await settle(tester);
+
+        await _tap(tester, 'Pick up where it stopped');
+        expect(ports.specs.last.start, InstallStart.bank0);
+        expect(ports.specs.last.feeder, 'abcd');
+        expect(ports.specs.last.setupAgain, isFalse);
+      });
+
+      testWidgets('a new Wi-Fi drops the pick, and setup runs again', (
+        tester,
+      ) async {
+        final ports = FakeInstallPorts();
+        final run = await _toRun(tester, ports);
+        run.event(
+          InstallEvent.paired(
+            identity: Uint8List.fromList(const [0xab, 0xcd]),
+            rebooting: true,
+          ),
+        );
+        run.stopped(const StopCase.notJoined(), resume: Resume.fromBank0);
+        await settle(tester);
+
+        await _tap(tester, 'Keep waiting for it');
+        expect(ports.specs.last.feeder, 'abcd');
+        ports.run.stopped(const StopCase.notJoined(), resume: Resume.fromBank0);
+        await settle(tester);
+
+        await _tap(tester, 'Enter the Wi-Fi again');
+        await tester.enterText(find.byType(TextField).at(0), 'Maple St');
+        await tester.enterText(find.byType(TextField).at(1), 'rightpassword');
+        await tester.pump();
+        await _tap(tester, 'Continue');
+
+        expect(ports.specs.last.feeder, isNull);
+        expect(ports.specs.last.setupAgain, isTrue);
       });
 
       testWidgets('a pick-up that finds no feeder keeps going through setup', (
