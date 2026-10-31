@@ -192,6 +192,8 @@ pub enum Error {
     },
     #[error("{} already holds another copy of stock; it is never replaced", path.display())]
     BackupExists { path: PathBuf },
+    #[error("{} is not a damaged backup this can set aside", path.display())]
+    BackupNotSetAside { path: PathBuf },
     #[error("the stock backup is not stock's pinned image")]
     Unverified,
     /// No verified backup could be had: the promotion, which overwrites

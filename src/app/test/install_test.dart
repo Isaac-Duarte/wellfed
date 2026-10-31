@@ -218,6 +218,132 @@ void main() {
       );
     });
 
+    testWidgets('after it, a feeder on bank 0 goes on from the first screen', (
+      tester,
+    ) async {
+      final ports = FakeInstallPorts(pendingInstall: PendingInstall.paired);
+      await _open(tester, ports);
+
+      await tapForget(tester);
+      expect(find.textContaining('ends here'), findsOneWidget);
+      await tester.tap(find.text('Forget'));
+      await settle(tester);
+      expect(find.text('Pick up where it stopped'), findsNothing);
+
+      await tester.tap(find.text('This feeder already runs Wellfed'));
+      await settle(tester);
+      // No record says the Wi-Fi was given, so a consumer image asks for it.
+      expect(ports.runs, isEmpty);
+      await tester.enterText(find.byType(TextField).first, 'Maple St');
+      await tester.enterText(find.byType(TextField).last, 'correcthorse');
+      await settle(tester);
+      await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+      await settle(tester);
+
+      expect(ports.specs.single.start, InstallStart.bank0);
+      expect(ports.specs.single.home?.ssid, 'Maple St');
+    });
+
+    testWidgets('an uncertain write never offers it', (tester) async {
+      final ports = FakeInstallPorts(pendingInstall: PendingInstall.paired);
+      await _stopped(
+        tester,
+        ports,
+        const StopCase.uncertainWrite(write: UncertainWrite.promotion),
+        resume: Resume.fromBank0,
+      );
+      expect(find.text('Forget this install'), findsNothing);
+    });
+
+    testWidgets('a working pick-up says it ends, and how to come back', (
+      tester,
+    ) async {
+      for (final stop in const [
+        StopCase.notAnswering(),
+        StopCase.promotionFailed(),
+        StopCase.fellBack(),
+        StopCase.notConfirmed(),
+      ]) {
+        final ports = FakeInstallPorts(pendingInstall: PendingInstall.paired);
+        await _stopped(tester, ports, stop, resume: Resume.fromBank0);
+        await tapForget(tester);
+        expect(
+          find.textContaining('This feeder already runs Wellfed'),
+          findsOneWidget,
+          reason: '$stop',
+        );
+        await tester.tap(find.text('Cancel'));
+        await settle(tester);
+        await tester.pumpWidget(const SizedBox());
+      }
+    });
+
+    testWidgets('a damaged ledger takes the owner\'s word, in its own words', (
+      tester,
+    ) async {
+      final ports = FakeInstallPorts(
+        pendingInstall: PendingInstall.ledgerDamaged,
+      );
+      await _open(tester, ports);
+      expect(find.text('Forget this install'), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Continue'))
+            .onPressed,
+        isNull,
+      );
+
+      await tester.ensureVisible(find.text('Set the damaged record aside'));
+      await settle(tester);
+      await tester.tap(find.text('Set the damaged record aside'));
+      await settle(tester);
+      expect(
+        find.textContaining('no longer knows whether an install'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Check that feeder first'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await settle(tester);
+      expect(ports.ledgersSetAside, 0);
+
+      await tester.tap(find.text('Set the damaged record aside'));
+      await settle(tester);
+      await tester.tap(find.text('Set it aside'));
+      await settle(tester);
+      expect(ports.ledgersSetAside, 1);
+      expect(find.text('Set the damaged record aside'), findsNothing);
+    });
+
+    testWidgets('a damaged backup is set aside only by the owner', (
+      tester,
+    ) async {
+      final ports = FakeInstallPorts();
+      await _stopped(
+        tester,
+        ports,
+        const StopCase.backupDamaged(path: 'kept.bin'),
+        resume: Resume.fromBank0,
+      );
+      expect(ports.backupsSetAside, isEmpty);
+
+      await tester.ensureVisible(find.text('Set this backup aside'));
+      await settle(tester);
+      await tester.tap(find.text('Set this backup aside'));
+      await settle(tester);
+      expect(
+        find.textContaining('can no longer be used to go back'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('reads a fresh copy only if the feeder still'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Set it aside'));
+      await settle(tester);
+      expect(ports.backupsSetAside, [('kept.bin', BackupProblem.damaged)]);
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('it is not offered while listening', (tester) async {
       final ports = FakeInstallPorts()..pendingInstall = PendingInstall.paired;
       await _stopped(tester, ports, const StopCase.uncertain());

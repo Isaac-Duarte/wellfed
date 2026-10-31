@@ -507,7 +507,7 @@ void main() {
       final session = await sheet(tester);
       await _tap(tester, find.text('Feed 1 portion'));
       session.updates.add(
-        const SessionUpdate.feedStarted(feed: 7, portions: 2),
+        const SessionUpdate.feedStarted(feed: 7, portions: 2, dueSeconds: 49),
       );
       await settle(tester);
       session.updates.add(
@@ -545,17 +545,16 @@ void main() {
         await _tap(tester, find.byTooltip('One more portion'));
         await _tap(tester, find.text('Feed 2 portions'));
         ports.session.updates.add(
-          const SessionUpdate.feedStarted(feed: 7, portions: 2),
+          const SessionUpdate.feedStarted(feed: 7, portions: 2, dueSeconds: 60),
         );
-        await settle(tester);
+        // One pump delivers it, so the due time counts from here exactly.
+        await tester.pump();
         expect(find.text('Feeding Kitchen'), findsOneWidget);
         return ports;
       }
 
       const didFeed = 'Did Kitchen feed?';
-      // The longest a healthy feed of 2 portions can take to report: its two
-      // 12 s portions and 25 s to spare, less what settling already spent.
-      const justBefore = Duration(seconds: 48);
+      const justBefore = Duration(seconds: 59);
 
       testWidgets('a healthy slow feed reaches its result without going lost', (
         tester,
@@ -581,11 +580,11 @@ void main() {
           expect(find.text('Stop feeding'), findsNothing);
           expect(
             find.textContaining(
-              'then the connection dropped. If the feeder stayed on, it '
-              'finishes on its own and keeps the result in its history.',
+              "hasn't said how it ended, past the longest a feed can take.",
             ),
             findsOneWidget,
           );
+          expect(find.textContaining('connection dropped'), findsNothing);
           expect(
             find.text(
               "Wellfed won't send it again on its own. Look at the bowl before "
@@ -624,6 +623,13 @@ void main() {
         await first.updates.close();
         await settle(tester);
         expect(find.text(didFeed), findsOneWidget);
+        expect(
+          find.textContaining(
+            'then the connection dropped. If the feeder stayed on, it '
+            'finishes on its own and keeps the result in its history.',
+          ),
+          findsOneWidget,
+        );
 
         // Long enough for the controller to try again.
         await tester.pump(const Duration(seconds: 10));

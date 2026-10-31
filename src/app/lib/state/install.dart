@@ -969,15 +969,23 @@ class InstallFlow extends ChangeNotifier {
   bool get mayForget =>
       _paths != null && _run == null && listening != Listening.running;
 
-  /// A stop that leaves a record behind, or one no pick-up gets past.
+  /// A stop that leaves a record behind, or one no pick-up gets past. Never on
+  /// an uncertain write: the feeder may be mid-way, and only a pick-up reads where
+  /// it got to. A damaged ledger has an action of its own, which this cannot do.
   bool get forgetOffered {
     if (!mayForget) return false;
+    final case_ = stop?.case_;
+    if (case_ is StopCase_UncertainWrite) return false;
+    if (pending == PendingInstall.ledgerDamaged) return false;
     return pending != PendingInstall.nothing ||
-        switch (stop?.case_) {
-          StopCase_OtherFeeder() || StopCase_DamagedRecord() => true,
-          _ => false,
-        };
+        case_ is StopCase_OtherFeeder ||
+        case_ is StopCase_DamagedRecord;
   }
+
+  /// Forgetting takes away a working "Pick up where it stopped", so its words
+  /// say how to come back.
+  bool get forgetEndsPickUp =>
+      pending == PendingInstall.paired || stop?.resume == Resume.fromBank0;
 
   /// Some feeder's install request has no known outcome, so forgetting needs
   /// words of its own.
@@ -986,23 +994,26 @@ class InstallFlow extends ChangeNotifier {
     return paths != null && _ports.requestOpen(paths);
   }
 
-  /// Why forgetting failed, when it did.
-  String? forgetFailed;
+  /// Why the last repair of a record failed, when it did.
+  String? repairFailed;
 
-  /// Clear the install in progress and go back to the first screen. The backups
-  /// stay, and the ledger keeps a request with no known outcome from going to
-  /// that feeder a second time.
-  void forgetInstall() {
+  /// Whether `repair` ran; a failure is kept for the screen.
+  bool _repair(void Function(InstallPaths) repair) {
     final paths = _paths;
-    if (paths == null || !mayForget) return;
+    if (paths == null || !mayForget) return false;
     try {
-      _ports.forgetInstall(paths);
+      repair(paths);
     } on BridgeError catch (failed) {
-      forgetFailed = failed.message;
+      repairFailed = failed.message;
       _notify();
-      return;
+      return false;
     }
-    forgetFailed = null;
+    repairFailed = null;
+    return true;
+  }
+
+  /// Back to the first screen, knowing nothing of any run.
+  void _startClean() {
     stop = null;
     _frameTaken = false;
     _frameAddress = null;
@@ -1012,11 +1023,35 @@ class InstallFlow extends ChangeNotifier {
     _address = null;
     backupPath = null;
     settingUpAgain = false;
+    waitReason = null;
+    restartAgain = false;
     listening = Listening.idle;
     listeningForEarlier = false;
     _resetProgress();
     _readPending();
     _go(InstallStage.before);
+  }
+
+  /// Clear the install in progress and go back to the first screen. The backups
+  /// stay, and the ledger keeps a request with no known outcome from going to
+  /// that feeder a second time.
+  void forgetInstall() {
+    if (_repair(_ports.forgetInstall)) _startClean();
+  }
+
+  /// The owner accepted that this phone no longer knows whether a request to the
+  /// feeder a damaged ledger was about is open.
+  void setAsideLedgers() {
+    if (_repair(_ports.setAsideLedgers)) _startClean();
+  }
+
+  /// The owner accepted that the backup at `path` is no longer one to go back
+  /// with. A pick-up then reads a fresh one if the feeder still holds stock.
+  Future<void> setAsideBackup(String path, BackupProblem problem) async {
+    final done = _repair(
+      (paths) => _ports.setAsideBackup(paths, path, problem),
+    );
+    if (done) await again();
   }
 
   /// End the run through its cleanup; the end says what it left.

@@ -10,8 +10,8 @@
 //! install, and the replacement's device API answering where stock
 //! connected from means it did. A consumer image has no network until
 //! Bluetooth setup gives it one, so it never answers here: the platform
-//! also looks for it advertising setup, and stops the listener when it
-//! hears it.
+//! also looks for it advertising setup. Any feeder in setup mode looks the
+//! same, so that only offers the owner a pick-up, and this keeps listening.
 
 use std::future::Future;
 use std::net::SocketAddr;

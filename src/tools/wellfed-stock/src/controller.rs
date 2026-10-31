@@ -149,21 +149,7 @@ pub fn open_request(config_path: &Path) -> Result<bool> {
 /// ledger counts as open: only a readable one can rule a request out. Reads the
 /// ledgers only.
 pub fn any_open_request(config_path: &Path) -> Result<bool> {
-    let directory = config_path.parent().context("config directory missing")?;
-    let entries = match fs::read_dir(directory) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.into()),
-    };
-    for entry in entries {
-        let path = entry?.path();
-        let is_ledger = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with("stock-ledger.") && name.ends_with(".json"));
-        if !is_ledger {
-            continue;
-        }
+    for path in ledger_files(config_path)? {
         let ledger = fs::read(&path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Ledger>(&bytes).ok());
@@ -172,6 +158,43 @@ pub fn any_open_request(config_path: &Path) -> Result<bool> {
         }
     }
     Ok(false)
+}
+
+/// The ledgers beside the config that were read and do not parse. One that could
+/// not be read at all is not here: that says nothing about the file.
+pub fn unreadable_ledgers(config_path: &Path) -> Result<Vec<PathBuf>> {
+    let mut unreadable = Vec::new();
+    for path in ledger_files(config_path)? {
+        let parses = fs::read(&path)
+            .map(|bytes| serde_json::from_slice::<Ledger>(&bytes).is_ok())
+            .unwrap_or(true);
+        if !parses {
+            unreadable.push(path);
+        }
+    }
+    Ok(unreadable)
+}
+
+/// Every device's ledger beside the config.
+fn ledger_files(config_path: &Path) -> Result<Vec<PathBuf>> {
+    let directory = config_path.parent().context("config directory missing")?;
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.into()),
+    };
+    let mut files = Vec::new();
+    for entry in entries {
+        let path = entry?.path();
+        let is_ledger = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("stock-ledger.") && name.ends_with(".json"));
+        if is_ledger {
+            files.push(path);
+        }
+    }
+    Ok(files)
 }
 
 /// The ledger's latest trial is submitted (the server that sent it is gone),

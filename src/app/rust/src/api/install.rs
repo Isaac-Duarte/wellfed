@@ -302,11 +302,23 @@ pub enum StopCase {
     },
     /// Bluetooth setup went through on a feeder with another identity than this
     /// install's: another feeder, or this one after a factory reset. It accepted
-    /// this phone; this install stays with the identity it recorded.
+    /// this phone, may hold the Wi-Fi, and stays in the app's list of feeders;
+    /// this install stays with the identity it recorded.
     OtherFeeder,
     /// This phone's own record of the install cannot be read. Only forgetting
     /// the install clears it.
     DamagedRecord,
+    /// A stock ledger does not parse. It counts as an open request until the
+    /// owner accepts setting it aside.
+    LedgerDamaged,
+    /// The kept backup at `path` does not open.
+    BackupDamaged {
+        path: String,
+    },
+    /// The feeder's read differs from the kept backup at `path`.
+    BackupDiffers {
+        path: String,
+    },
     /// The feeder this install paired with does not answer.
     NotAnswering,
     /// The feeder took the Wi-Fi over Bluetooth and never joined it: a wrong
@@ -541,6 +553,9 @@ pub enum PendingInstall {
     /// A record it left cannot be read, so no run can start until it is
     /// forgotten.
     Damaged,
+    /// A stock ledger does not parse, so no run can start until the owner sets
+    /// it aside.
+    LedgerDamaged,
     /// It paired with this phone and did not reach the end: pick up from
     /// bank 0.
     Paired,
@@ -562,6 +577,43 @@ pub fn pending_install(data_dir: String) -> PendingInstall {
 pub fn forget_install(data_dir: String) -> Result<(), BridgeError> {
     install::forget_install(std::path::Path::new(&data_dir))
         .map_err(|error| BridgeError::new(ErrorKind::Store, install::text(&error)))
+}
+
+/// The owner accepted that this phone no longer knows whether an install request
+/// to the feeder a damaged ledger was about is open. Renames it; never deletes.
+#[frb(sync)]
+pub fn set_aside_ledgers(data_dir: String) -> Result<(), BridgeError> {
+    install::set_aside_ledgers(std::path::Path::new(&data_dir))
+        .map_err(|error| BridgeError::new(ErrorKind::Store, install::text(&error)))
+}
+
+/// Why an owner gives up a kept backup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackupProblem {
+    /// It does not open.
+    Damaged,
+    /// A run stopped because the feeder's read differs from it.
+    Differs,
+}
+
+/// The owner accepted that the backup at `path` is no longer one to go back with.
+/// Renames it; never deletes.
+#[frb(sync)]
+pub fn set_aside_backup(
+    data_dir: String,
+    path: String,
+    problem: BackupProblem,
+) -> Result<(), BridgeError> {
+    let fault = match problem {
+        BackupProblem::Damaged => wellfed_install::storage::BackupFault::Damaged,
+        BackupProblem::Differs => wellfed_install::storage::BackupFault::Differs,
+    };
+    install::set_aside_backup(
+        std::path::Path::new(&data_dir),
+        std::path::Path::new(&path),
+        fault,
+    )
+    .map_err(|error| BridgeError::new(ErrorKind::Store, install::text(&error)))
 }
 
 /// Whether any feeder has an install request with no known outcome.

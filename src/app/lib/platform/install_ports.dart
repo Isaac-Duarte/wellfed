@@ -62,6 +62,13 @@ abstract interface class InstallPorts {
   /// Any feeder has an install request with no known outcome.
   bool requestOpen(InstallPaths paths);
 
+  /// Rename the stock ledgers that do not parse. The owner accepted what that
+  /// gives up.
+  void setAsideLedgers(InstallPaths paths);
+
+  /// Rename the kept backup at `path`. The owner accepted what that gives up.
+  void setAsideBackup(InstallPaths paths, String path, BackupProblem problem);
+
   /// The checked copy of stock kept for the feeder with `identity`.
   String? keptBackup(InstallPaths paths, List<int> identity);
 
@@ -175,6 +182,14 @@ class AppInstallPorts implements InstallPorts {
   @override
   bool requestOpen(InstallPaths paths) =>
       installRequestOpen(dataDir: paths.data);
+
+  @override
+  void setAsideLedgers(InstallPaths paths) =>
+      rust.setAsideLedgers(dataDir: paths.data);
+
+  @override
+  void setAsideBackup(InstallPaths paths, String path, BackupProblem problem) =>
+      rust.setAsideBackup(dataDir: paths.data, path: path, problem: problem);
 
   @override
   String? keptBackup(InstallPaths paths, List<int> identity) =>

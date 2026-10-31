@@ -21,6 +21,15 @@ enum Connection {
   offline,
 }
 
+/// Why a running feed went lost, which decides what the sheet may claim.
+enum FeedLost {
+  /// The session ended while the feed ran.
+  link,
+
+  /// The session is up, and no end has come past the longest a feed can take.
+  overdue,
+}
+
 enum FeedPhase {
   idle,
 
@@ -53,6 +62,7 @@ class FeedState {
     this.feed,
     this.result,
     this.refusal,
+    this.lostBy = FeedLost.link,
     this.cancelAsked = false,
     this.cancelUnconfirmed = false,
     this.sentAt,
@@ -66,6 +76,9 @@ class FeedState {
   final int? feed;
   final FeedResult? result;
   final FeedRefusal? refusal;
+
+  /// In [FeedPhase.lost], why.
+  final FeedLost lostBy;
 
   /// "Stop feeding" went out and nothing has come of it yet. Only the feed's
   /// end says it stopped.
@@ -96,18 +109,6 @@ class FeederController extends ChangeNotifier {
   static const _locateWait = Duration(seconds: 8);
   static const _retryFirst = Duration(seconds: 3);
   static const _retryMost = Duration(seconds: 30);
-
-  /// A feed's deadline per portion on the feeder (`portion_ms`), past the
-  /// about 9 s a portion usually takes.
-  static const _feedPortion = Duration(seconds: 12);
-
-  /// What the feeder may add to [_feedPortion]s before a healthy feed's `Fed`
-  /// event is out: 2 s to prepare, 5 s to home, 7.5 s for three jam reversals,
-  /// 2 s to stop, and 8.5 s to write and push the event. Past this the feeder
-  /// has ended the feed itself, so a live feeder never goes lost by this
-  /// clock, and if one somehow did, its late result still replaces the lost
-  /// state.
-  static const _feedSpare = Duration(seconds: 25);
 
   final FeederBook _book;
   final FeederPorts _ports;
@@ -309,7 +310,13 @@ class FeederController extends ChangeNotifier {
           cardAt = DateTime.now();
           _fresh = true;
           _notify();
-        case SessionUpdate_FeedStarted(:final feed, :final portions):
+        case SessionUpdate_FeedStarted(
+          :final feed,
+          :final portions,
+          :final dueSeconds,
+        ):
+          _feedDue?.cancel();
+          _feedDue = Timer(Duration(seconds: dueSeconds), _feedOverdue);
           _setFeed(
             FeedState(
               FeedPhase.running,
@@ -407,7 +414,9 @@ class FeederController extends ChangeNotifier {
         feed.phase == FeedPhase.running || feed.phase == FeedPhase.lost;
     if (!open || feed.feed != result.feed) return;
 
-    final recorded = result.atMs;
+    // The feeder's record says when, if its clock can be trusted. A lost feed's
+    // end may be old, so the phone's clock can't stand in for that one.
+    final recorded = (card?.clockSet ?? false) ? result.atMs : null;
     _setFeed(
       FeedState(
         FeedPhase.ended,
@@ -415,8 +424,6 @@ class FeederController extends ChangeNotifier {
         feed: result.feed,
         result: result,
         sentAt: feed.sentAt,
-        // A running feed's end is news. A lost one's may be old, and only the
-        // feeder's record can say when it was.
         endedAt: recorded != null
             ? DateTime.fromMillisecondsSinceEpoch(recorded)
             : feed.phase == FeedPhase.running
@@ -432,6 +439,7 @@ class FeederController extends ChangeNotifier {
     _setFeed(
       FeedState(
         FeedPhase.lost,
+        lostBy: FeedLost.overdue,
         portions: feed.portions,
         feed: feed.feed,
         sentAt: feed.sentAt,
@@ -443,9 +451,6 @@ class FeederController extends ChangeNotifier {
     if (next.phase != FeedPhase.running) {
       _feedDue?.cancel();
       _feedDue = null;
-    } else if (feed.phase != FeedPhase.running) {
-      _feedDue?.cancel();
-      _feedDue = Timer(_feedPortion * next.portions + _feedSpare, _feedOverdue);
     }
     feed = next;
     _notify();

@@ -263,7 +263,7 @@ fn a_session_shows_the_card_and_runs_a_feed_to_its_end() {
 
         commands.send(Command::Feed { portions: 2 }).unwrap();
         let (feed, portions) = next(&mut heard, |update| match update {
-            SessionUpdate::FeedStarted { feed, portions } => Some((feed, portions)),
+            SessionUpdate::FeedStarted { feed, portions, .. } => Some((feed, portions)),
             _ => None,
         })
         .await;
@@ -392,6 +392,33 @@ fn a_feeder_answering_keeps_a_stalled_feeds_session_open() {
             _ => None,
         })
         .await;
+        relay.pause();
+        let silent = tokio::time::timeout(
+            Duration::from_secs(30),
+            next_forever(&mut heard, |update| match update {
+                SessionUpdate::Closed { error } => panic!("it closed: {error:?}"),
+                _ => None::<()>,
+            }),
+        )
+        .await;
+        assert!(silent.is_err());
+
+        commands.send(Command::Close).unwrap();
+        sim.stop().await;
+    });
+}
+
+/// A feed whose `Fed` never comes does not keep the short limit for good.
+#[test]
+fn a_stalled_feed_past_its_due_time_goes_back_to_the_usual_limit() {
+    paused(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let relay = Relay::start(sim.address).await;
+        let (commands, mut heard) = feed_in_flight(&sim, &relay).await;
+
+        // Two portions are due after 49 s, and the next turn sees it.
+        tokio::time::sleep(Duration::from_secs(56)).await;
         relay.pause();
         let silent = tokio::time::timeout(
             Duration::from_secs(30),

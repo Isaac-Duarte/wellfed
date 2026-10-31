@@ -257,6 +257,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BackupCheck dco_decode_backup_check(dynamic raw);
 
   @protected
+  BackupProblem dco_decode_backup_problem(dynamic raw);
+
+  @protected
   Blocked dco_decode_blocked(dynamic raw);
 
   @protected
@@ -1101,6 +1104,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BackupCheck sse_decode_backup_check(SseDeserializer deserializer);
+
+  @protected
+  BackupProblem sse_decode_backup_problem(SseDeserializer deserializer);
 
   @protected
   Blocked sse_decode_blocked(SseDeserializer deserializer);
@@ -2043,6 +2049,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_backup_check(BackupCheck self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_backup_problem(BackupProblem self, SseSerializer serializer);
 
   @protected
   void sse_encode_blocked(Blocked self, SseSerializer serializer);

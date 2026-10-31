@@ -103,6 +103,42 @@ pub fn forget_paired(backups: &Path) -> Result<(), Error> {
     }
 }
 
+/// Why an owner gives up a kept backup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupFault {
+    /// The file there does not open as a backup.
+    Damaged,
+    /// A run stopped because the feeder's read differs from it, and the owner
+    /// accepted that it may be the wrong one.
+    Differs,
+}
+
+/// Rename the backup at `path`, never deleting or replacing one. A read error
+/// is not damage, and a good backup goes only on the `Differs` a run stopped on.
+/// That comparison itself stays in [`keep_backup`], which this does not loosen.
+pub fn set_aside_backup(backups: &Path, path: &Path, fault: BackupFault) -> Result<(), Error> {
+    let refused = || Error::BackupNotSetAside {
+        path: path.to_path_buf(),
+    };
+    let named = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("stock-") && name.ends_with(".bin"));
+    let beside = path.parent().and_then(Path::parent) == Some(backups);
+    wellfed_formats::require(named && beside, refused)?;
+
+    match (load_backup(path), fault) {
+        (Err(Error::BackupDamaged { .. }), _) | (Ok(Some(_)), BackupFault::Differs) => {}
+        (Err(error), _) => return Err(error),
+        (Ok(_), _) => return Err(refused()),
+    }
+    wellfed_formats::private::set_aside(path).map_err(|source| Error::Remove {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Ok(())
+}
+
 /// The checked copy of stock kept for `identity`, if there is one.
 pub fn kept_backup(backups: &Path, identity: &[u8; 32]) -> Option<PathBuf> {
     let path = backup_path(backups, identity);
@@ -219,6 +255,33 @@ mod tests {
         std::fs::create_dir_all(at.parent().unwrap()).unwrap();
         std::fs::write(&at, b"not stock").unwrap();
         assert!(matches!(load_backup(&at), Err(Error::BackupDamaged { .. })));
+    }
+
+    /// Only a file that does not open, or a difference a run stopped on, goes;
+    /// a file elsewhere never does, and nothing is deleted.
+    #[test]
+    fn setting_a_backup_aside_refuses_what_it_should() {
+        let dir = tempfile::tempdir().unwrap();
+        let backups = dir.path();
+        let at = backup_path(backups, &[0xab; 32]);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+
+        let outside = dir.path().join("stock-1.1.15.bin");
+        std::fs::write(&outside, b"not stock").unwrap();
+        assert!(matches!(
+            set_aside_backup(backups, &outside, BackupFault::Damaged),
+            Err(Error::BackupNotSetAside { .. })
+        ));
+        assert!(matches!(
+            set_aside_backup(backups, &at, BackupFault::Damaged),
+            Err(Error::BackupNotSetAside { .. })
+        ));
+
+        std::fs::write(&at, b"not stock").unwrap();
+        set_aside_backup(backups, &at, BackupFault::Damaged).unwrap();
+        assert!(!at.exists());
+        let aside = at.with_file_name("stock-1.1.15.bin.damaged-1");
+        assert_eq!(std::fs::read(aside).unwrap(), b"not stock");
     }
 
     /// The record round-trips, and only its own install's end clears it.

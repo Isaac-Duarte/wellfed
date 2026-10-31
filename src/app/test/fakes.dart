@@ -248,6 +248,19 @@ class FakeInstallPorts implements InstallPorts {
   @override
   bool requestOpen(InstallPaths paths) => openRequest;
 
+  int ledgersSetAside = 0;
+  final backupsSetAside = <(String, BackupProblem)>[];
+
+  @override
+  void setAsideLedgers(InstallPaths paths) {
+    ledgersSetAside++;
+    pendingInstall = PendingInstall.nothing;
+  }
+
+  @override
+  void setAsideBackup(InstallPaths paths, String path, BackupProblem problem) =>
+      backupsSetAside.add((path, problem));
+
   @override
   String? keptBackup(InstallPaths paths, List<int> identity) => kept;
 

@@ -417,12 +417,19 @@ class _Progress extends StatelessWidget {
     final c = context.colors;
     final feed = feeder.feed;
     final sent = _time(context, feed.sentAt);
-    final lead = feed.phase == FeedPhase.lost
-        ? 'The feed started${sent.isEmpty ? '' : ' at $sent'}, then the '
-              'connection dropped. If the feeder stayed on, it finishes on '
-              'its own and keeps the result in its history.'
-        : 'We sent the feed${sent.isEmpty ? '' : ' at $sent'}, then lost the '
-              'connection before the feeder answered.';
+    final lead = switch (feed) {
+      FeedState(phase: FeedPhase.lost, lostBy: FeedLost.overdue) =>
+        'The feed started${sent.isEmpty ? '' : ' at $sent'}, and the feeder '
+            "hasn't said how it ended, past the longest a feed can take. Its "
+            'history keeps the result if it recorded one.',
+      FeedState(phase: FeedPhase.lost) =>
+        'The feed started${sent.isEmpty ? '' : ' at $sent'}, then the '
+            'connection dropped. If the feeder stayed on, it finishes on '
+            'its own and keeps the result in its history.',
+      _ =>
+        'We sent the feed${sent.isEmpty ? '' : ' at $sent'}, then lost the '
+            'connection before the feeder answered.',
+    };
     return _sheet(
       context,
       glyph: Glyph.wifiOff,

@@ -85,6 +85,38 @@ fn move_new(from: &Path, to: &Path) -> std::io::Result<()> {
     fs::hard_link(from, to)
 }
 
+/// Rename a file an owner agreed to give up, to a numbered name beside it. It is
+/// never deleted, and never replaces an earlier one set aside. The new path.
+pub fn set_aside(path: &Path) -> std::io::Result<std::path::PathBuf> {
+    const MOST: u32 = 1000;
+
+    let name = path
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("the path names no file"))?;
+    for number in 1..=MOST {
+        let mut aside = name.to_owned();
+        aside.push(format!(".damaged-{number}"));
+        let aside = path.with_file_name(aside);
+        match move_new(path, &aside) {
+            Ok(()) => {
+                // A hard link leaves the old name behind; a rename does not.
+                match fs::remove_file(path) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error),
+                }
+                if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                    fs::File::open(parent)?.sync_all()?;
+                }
+                return Ok(aside);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Err(std::io::Error::other("too many files already set aside"))
+}
+
 /// Fsync a directory, so the entries just created in it are durable.
 pub fn sync_directory(path: &Path) -> Result<()> {
     fs::File::open(path)?.sync_all()?;
@@ -127,6 +159,23 @@ pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn setting_aside_numbers_the_file_and_replaces_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.json");
+
+        std::fs::write(&path, "one").unwrap();
+        let first = super::set_aside(&path).unwrap();
+        std::fs::write(&path, "two").unwrap();
+        let second = super::set_aside(&path).unwrap();
+
+        assert!(!path.exists());
+        assert_eq!(first, dir.path().join("a.json.damaged-1"));
+        assert_eq!(second, dir.path().join("a.json.damaged-2"));
+        assert_eq!(std::fs::read(first).unwrap(), b"one");
+        assert_eq!(std::fs::read(second).unwrap(), b"two");
+    }
+
     use super::*;
 
     #[test]

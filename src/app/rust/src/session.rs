@@ -59,6 +59,19 @@ const FEED_PROBE: Duration = Duration::from_secs(5);
 /// reconnect: its `Fed` event still arrives in the history, and replaces what
 /// the screen says.
 const FEED_SILENCE: Duration = Duration::from_secs(20);
+/// A feed's deadline per portion on the feeder (`portion_ms`), past the about
+/// 9 s a portion usually takes.
+const FEED_PORTION: Duration = Duration::from_secs(12);
+/// What the feeder may add to its portions before a healthy feed's `Fed` is out:
+/// 2 s to prepare, 5 s to home, 7.5 s for three jam reversals, 2 s to stop, and
+/// 8.5 s to write and push the event.
+const FEED_SPARE: Duration = Duration::from_secs(25);
+
+/// When a feed of `portions` is overdue: a feeder that stayed on has ended it by
+/// then.
+fn feed_due(portions: u8) -> Duration {
+    FEED_PORTION * u32::from(portions) + FEED_SPARE
+}
 
 /// The device API's request id.
 type RequestId = [u8; 16];
@@ -142,8 +155,9 @@ struct Serving<'a, U> {
     /// Until it ends, events only fill `batch`; after it they are news.
     backlog: Option<Backlog>,
     batch: Vec<HistoryEntry>,
-    /// This session's own feed, from the feeder's `Feeding` until its `Fed`.
-    running: Option<u32>,
+    /// This session's own feed and when it is overdue, from the feeder's
+    /// `Feeding` until its `Fed` or that time: a `Fed` lost with a gap never comes.
+    running: Option<(u32, tokio::time::Instant)>,
 }
 
 async fn serve(
@@ -276,6 +290,13 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
 
     /// Nothing came for a whole wait.
     fn turn(&mut self) -> Result<bool, BridgeError> {
+        if self
+            .running
+            .is_some_and(|(_, due)| due <= tokio::time::Instant::now())
+        {
+            self.running = None;
+            self.connection.set_silence(wellfed_connect::SILENCE);
+        }
         if self.backlog.is_some() && !self.end_backlog() {
             return Ok(false);
         }
@@ -323,8 +344,12 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             (Asked::Clock, _) => Ok((self.update)(SessionUpdate::ClockNotSynced)),
             (what, answer) => {
                 let message = feed_answered(what, answer);
-                if let Some(SessionUpdate::FeedStarted { feed, .. }) = &message {
-                    self.running = Some(*feed);
+                if let Some(SessionUpdate::FeedStarted {
+                    feed, due_seconds, ..
+                }) = &message
+                {
+                    let due = Duration::from_secs(u64::from(*due_seconds));
+                    self.running = Some((*feed, tokio::time::Instant::now() + due));
                     self.connection.set_silence(FEED_SILENCE);
                 }
                 Ok(message.is_none_or(|message| (self.update)(message)))
@@ -347,7 +372,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         };
         if let Some(feed) = fed {
             self.facts.feeds.push(feed);
-            if self.running == Some(feed.feed) {
+            if self.running.is_some_and(|(ours, _)| ours == feed.feed) {
                 self.running = None;
                 self.connection.set_silence(wellfed_connect::SILENCE);
             }
@@ -396,7 +421,11 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
 fn feed_answered(what: Asked, answer: Option<Answer>) -> Option<SessionUpdate> {
     match (what, answer) {
         (Asked::Feed { portions }, Some(Answer::Feeding { feed })) => {
-            Some(SessionUpdate::FeedStarted { feed, portions })
+            Some(SessionUpdate::FeedStarted {
+                feed,
+                portions,
+                due_seconds: u32::try_from(feed_due(portions).as_secs()).unwrap_or(u32::MAX),
+            })
         }
         (Asked::Feed { .. }, Some(Answer::Refused(refusal))) => Some(SessionUpdate::FeedRefused {
             refusal: FeedRefusal::from(refusal),
@@ -427,6 +456,14 @@ mod tests {
     use wellfed_model::{FeedOutcome, FeedReason, FoodLevel, Generation, MissedReason, Source};
 
     use super::*;
+
+    /// Past this a feeder that stayed on ended the feed itself: its largest
+    /// request, with every reversal and homing, still fits.
+    #[test]
+    fn a_feed_s_due_time_covers_what_the_feeder_can_take() {
+        assert_eq!(feed_due(2), Duration::from_secs(49));
+        assert_eq!(feed_due(48), Duration::from_secs(601));
+    }
 
     #[test]
     fn a_feed_or_a_missed_meal_reads_the_plans_again() {
