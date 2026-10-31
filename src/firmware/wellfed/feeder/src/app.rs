@@ -56,9 +56,9 @@ fn restart() -> Restart {
 }
 
 /// The feeding owner's step, then the pass with a Noise operation and one
-/// formatted record; the build's stack audit checks the bound. A handshake
-/// operation's X25519 is the deepest path, about 5 KiB with the device API
-/// above it, inside 6 KiB's margin, so the loop has 8 KiB.
+/// formatted record; the build's stack audit checks the bound, and the
+/// resource budget names the deepest path. The bound sits inside 6 KiB's
+/// margin, so the loop has 8 KiB.
 const LOOP_STACK_WORDS: u16 = 2048;
 
 /// The loop task's: the product's loop on this board. Built at compile
