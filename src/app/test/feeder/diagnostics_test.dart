@@ -12,6 +12,7 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/settings/backups.dart';
 
 import '../support/fakes.dart';
 import '../support/harness.dart';
@@ -200,7 +201,7 @@ void main() {
         ..label = 'My phone'
         ..feeders = [kitchen];
       final backups = _FakeBackups();
-      await showTab(tester, AppSettingsScreen(book: book, backups: backups));
+      await showTab(tester, AppSettingsScreen(book: book, newBackups: () => BackupsFlow(book, backups)));
       return (book, backups);
     }
 

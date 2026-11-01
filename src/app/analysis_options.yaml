@@ -22,6 +22,7 @@ analyzer:
 linter:
   rules:
     # Flutter's list, without always_put_control_body_on_new_line, which dart format undoes.
+    - avoid_catches_without_on_clauses
     - always_declare_return_types
     - always_use_package_imports
     - annotate_overrides
@@ -209,7 +210,3 @@ plugins:
       file_length: false
       no_widget_helper: false
       no_bang: false
-      ui_no_platform: false
-      catch_in_controllers: false
-      timers_in_state_or_platform: false
-      ui_no_bridge_calls: false

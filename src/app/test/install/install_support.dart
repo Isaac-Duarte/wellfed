@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/install/install_screen.dart';
 import 'package:wellfed/src/rust/api/install.dart';
+import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/theme/theme.dart';
 
 import '../support/fake_install.dart';
@@ -18,7 +19,7 @@ Widget installApp(FakeBook book, FakeInstallPorts ports, {Brightness? brightness
       GoRoute(path: '/', builder: (_, _) => const Text('Home')),
       GoRoute(
         path: '/install',
-        builder: (_, _) => InstallScreen(book: book, ports: ports),
+        builder: (_, _) => InstallScreen(newFlow: () => InstallFlow(book, ports)),
       ),
     ],
   );

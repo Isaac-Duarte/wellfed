@@ -453,11 +453,8 @@ class _DoneState extends State<InstallDonePage> {
   }
 
   Future<void> _save() async {
-    try {
-      await widget.flow.saveBackup();
-    } catch (error) {
-      if (mounted) setState(() => _shareFailed = '$error');
-    }
+    final String? failed = await widget.flow.saveBackup();
+    if (failed != null && mounted) setState(() => _shareFailed = failed);
   }
 
   @override

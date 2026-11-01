@@ -14,6 +14,9 @@ import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/restore/restore.dart';
 import 'package:wellfed/state/update/update.dart';
 
+/// Where a recording comes from.
+typedef PickRecording = Future<Uint8List?> Function();
+
 /// One known feeder for the Home card: keeps a session open while the app
 /// runs, reconnecting with backoff, and runs feeds through it. Every feed
 /// goes through the device API like any other client's; this holds no
@@ -55,6 +58,21 @@ class FeederController extends ChangeNotifier {
       feederName: known.name,
       address: known.address,
     );
+  }
+
+  /// Hand `text` to Android's share sheet.
+  Future<void> share(String text) => _ports.share(text);
+
+  /// Ask the owner for a recording; null when they back out.
+  Future<Uint8List?> pickRecording() => _ports.pickRecording();
+
+  /// Run `pick`: what it gave, and whether the file could be read.
+  Future<(Uint8List?, bool)> readRecording(PickRecording pick) async {
+    try {
+      return (await pick(), true);
+    } on Exception {
+      return (null, false);
+    }
   }
 
   /// The image this app carries, for the firmware screen to offer.

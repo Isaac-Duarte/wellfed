@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/state/clock/clock.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -12,20 +12,11 @@ import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
 
-/// Picking a recording off the phone, behind this so tests need no platform.
-typedef PickRecording = Future<Uint8List?> Function();
-
-Future<Uint8List?> _pickWav() async {
-  const wav = XTypeGroup(label: 'WAV', extensions: ['wav']);
-  final XFile? picked = await openFile(acceptedTypeGroups: const [wav]);
-  return picked?.readAsBytes();
-}
-
 /// The meal call's clip: a plain screen, as no board draws one. Rust converts
 /// the recording and sends it, and the feeder keeps one clip; a new one
 /// erases the old as soon as it starts.
 class MealCallScreen extends StatefulWidget {
-  const MealCallScreen({super.key, required this.feeder, this.pick = _pickWav});
+  const MealCallScreen({super.key, required this.feeder, required this.pick});
 
   /// How long this screen waits for the session to come back, in all: the picker
   /// can sit open long enough for it to end behind it. A reconnect can take
@@ -38,25 +29,6 @@ class MealCallScreen extends StatefulWidget {
 
   @override
   State<MealCallScreen> createState() => _MealCallScreenState();
-}
-
-/// When the wait for a session ends. A timer, not a count of pauses: one read
-/// on a dead session can take as long as the session takes to notice.
-class _Deadline {
-  _Deadline(Duration wait) {
-    _timer = Timer(wait, () {
-      over = true;
-      _done.complete();
-    });
-  }
-
-  late final Timer _timer;
-  final _done = Completer<void>();
-  bool over = false;
-
-  Future<void> get done => _done.future;
-
-  void cancel() => _timer.cancel();
 }
 
 class _MealCallScreenState extends State<MealCallScreen> {
@@ -122,7 +94,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
       _reaching = true;
       _reading = true;
     });
-    final deadline = _Deadline(MealCallScreen.reachWait);
+    final deadline = Deadline(MealCallScreen.reachWait);
     final FeederReply? read = await _answeredRead(deadline);
     deadline.cancel();
     if (!mounted) return;
@@ -173,15 +145,9 @@ class _MealCallScreenState extends State<MealCallScreen> {
       _problem = null;
     });
 
-    Uint8List? wav;
-    var unreadable = false;
-    try {
-      wav = await widget.pick();
-    } on Exception {
-      unreadable = true;
-    }
+    final (Uint8List? picked, bool readable) = await widget.feeder.readRecording(widget.pick);
     if (!mounted) return;
-    final picked = wav;
+    final bool unreadable = !readable;
     setState(() {
       _picking = false;
       if (unreadable) _problem = notAskedWords(NotAsked.badRecording);
@@ -213,7 +179,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
   /// may have started is never sent again.
   Future<FeederReply?> _sendOnce(Uint8List wav) async {
     final FeederController feeder = widget.feeder;
-    final deadline = _Deadline(MealCallScreen.reachWait);
+    final deadline = Deadline(MealCallScreen.reachWait);
     try {
       while (true) {
         final FeederReply? read = await _answeredRead(deadline);
@@ -240,7 +206,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
 
   /// The first read the feeder answers, waiting out a lost session; `null` once
   /// `deadline` passes or the screen goes.
-  Future<FeederReply?> _answeredRead(_Deadline deadline) async {
+  Future<FeederReply?> _answeredRead(Deadline deadline) async {
     final FeederController feeder = widget.feeder;
     while (!deadline.over) {
       if (feeder.state.connection == Connection.online) {
@@ -253,7 +219,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
           return read;
         }
       }
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await deadline.beat();
       if (!mounted) return null;
     }
     return null;

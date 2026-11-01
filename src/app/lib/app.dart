@@ -4,6 +4,7 @@ import 'package:wellfed/platform/feeder_ports.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/join_ports.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
+import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
@@ -16,6 +17,10 @@ import 'package:wellfed/screens/setup/setup_screen.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
+import 'package:wellfed/state/install/install.dart';
+import 'package:wellfed/state/join/join.dart';
+import 'package:wellfed/state/settings/backups.dart';
+import 'package:wellfed/state/setup/setup.dart';
 import 'package:wellfed/theme/theme.dart';
 
 /// The app's routes. `root` is one route whatever the feeders: it follows
@@ -57,6 +62,7 @@ class WellfedApp extends StatefulWidget {
 
 class _WellfedAppState extends State<WellfedApp> {
   late final _pairing = AppPairingPorts(widget.app.key);
+  static const _phone = AppPhonePorts();
 
   late final _fleet = FeederFleet(widget.app, AppFeederPorts(widget.app.key));
 
@@ -74,11 +80,14 @@ class _WellfedAppState extends State<WellfedApp> {
     feeder: (context, identity, tab) => FeederShell.of(_fleet, identity, initialTab: tab),
     pages: {
       '/add': (context) => const AddFeederScreen(),
-      '/setup': (context) => SetupScreen(app: widget.app, ports: _pairing),
-      '/settings': (context) => AppSettingsScreen(book: widget.app, backups: AppBackupPorts(widget.app.key)),
-      '/join': (context) => JoinScreen(book: widget.app, ports: AppJoinPorts(widget.app.key)),
-      '/recover': (context) => RecoverScreen(app: widget.app, ports: _pairing),
-      '/install': (context) => InstallScreen(book: widget.app, ports: AppInstallPorts(widget.app.key)),
+      '/setup': (context) => SetupScreen(newFlow: () => SetupFlow(widget.app, _pairing, _phone)),
+      '/settings': (context) => AppSettingsScreen(
+        book: widget.app,
+        newBackups: () => BackupsFlow(widget.app, AppBackupPorts(widget.app.key)),
+      ),
+      '/join': (context) => JoinScreen(newFlow: () => JoinFlow(widget.app, AppJoinPorts(widget.app.key))),
+      '/recover': (context) => RecoverScreen(newFlow: () => RecoverFlow(widget.app, _pairing, _phone)),
+      '/install': (context) => InstallScreen(newFlow: () => InstallFlow(widget.app, AppInstallPorts(widget.app.key))),
     },
   );
 

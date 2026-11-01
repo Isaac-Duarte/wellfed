@@ -136,7 +136,7 @@ class PairingFlow extends ChangeNotifier {
     } on BridgeError catch (error) {
       _stop(_failureOf(error), error.message);
       return;
-    } catch (error) {
+    } on Object catch (error) {
       _stop(PairingFailure.link, '$error');
       return;
     } finally {
@@ -191,7 +191,7 @@ class PairingFlow extends ChangeNotifier {
     } on BridgeError catch (error) {
       _stop(_failureOf(error), error.message);
       return;
-    } catch (error) {
+    } on Object catch (error) {
       _stop(PairingFailure.other, '$error');
       return;
     } finally {
@@ -269,7 +269,7 @@ class PairingFlow extends ChangeNotifier {
       }
     } on BridgeError catch (error) {
       _fail(_failureOf(error), error.message);
-    } catch (error) {
+    } on Object catch (error) {
       _fail(PairingFailure.link, '$error');
     }
   }

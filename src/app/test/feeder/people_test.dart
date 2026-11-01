@@ -11,6 +11,7 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/join.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/join/join.dart';
 
 import '../support/fakes.dart';
 import '../support/harness.dart';
@@ -157,8 +158,7 @@ void main() {
       await showTab(
         tester,
         JoinScreen(
-          book: book,
-          ports: ports,
+          newFlow: () => JoinFlow(book, ports),
           scanner: (found) {
             seen = found;
             return const SizedBox();

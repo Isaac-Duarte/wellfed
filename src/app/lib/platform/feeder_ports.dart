@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'package:file_selector/file_selector.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/restore_ports.dart';
@@ -42,10 +46,28 @@ abstract interface class FeederPorts {
 
   /// What the restore screen reaches outside Dart.
   RestorePorts get restore;
+
+  /// Hand `text` to Android's share sheet.
+  Future<void> share(String text);
+
+  /// Ask the owner for a WAV; null when they back out.
+  Future<Uint8List?> pickRecording();
 }
 
 class AppFeederPorts implements FeederPorts {
   AppFeederPorts(this._key);
+
+  @override
+  Future<void> share(String text) async {
+    await SharePlus.instance.share(ShareParams(text: text));
+  }
+
+  @override
+  Future<Uint8List?> pickRecording() async {
+    const wav = XTypeGroup(label: 'WAV', extensions: ['wav']);
+    final XFile? picked = await openFile(acceptedTypeGroups: const [wav]);
+    return picked?.readAsBytes();
+  }
 
   final ClientKey _key;
 

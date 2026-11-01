@@ -4,10 +4,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/screens/setup/name_step.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/settings/backups.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
 import 'package:wellfed/widgets/cards.dart';
@@ -38,33 +38,30 @@ class MainNav extends StatelessWidget {
 
 /// The app's own settings (15.1).
 class AppSettingsScreen extends StatefulWidget {
-  const AppSettingsScreen({super.key, required this.book, required this.backups});
+  const AppSettingsScreen({super.key, required this.book, required this.newBackups});
 
   final FeederBook book;
-  final BackupPorts backups;
+
+  /// The controller of the backups this phone keeps.
+  final BackupsFlow Function() newBackups;
 
   @override
   State<AppSettingsScreen> createState() => _AppSettingsScreenState();
 }
 
 class _AppSettingsScreenState extends State<AppSettingsScreen> {
-  /// Each feeder with a backup here.
-  List<(KnownFeeder, String)> _backups = const [];
+  late final BackupsFlow _backups = widget.newBackups();
 
   @override
   void initState() {
     super.initState();
-    unawaited(_readBackups());
+    unawaited(_backups.load());
   }
 
-  Future<void> _readBackups() async {
-    final kept = <(KnownFeeder, String)>[];
-    for (final KnownFeeder feeder in widget.book.feeders) {
-      if (await widget.backups.kept(feeder.identity) case final path?) {
-        kept.add((feeder, path));
-      }
-    }
-    if (mounted) setState(() => _backups = kept);
+  @override
+  void dispose() {
+    _backups.dispose();
+    super.dispose();
   }
 
   Future<void> _rename() async {
@@ -86,8 +83,10 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      ListenableBuilder(listenable: widget.book, builder: (context, _) => _build(context));
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([widget.book, _backups]),
+    builder: (context, _) => _build(context),
+  );
 
   Widget _build(BuildContext context) {
     final ThemeTokens c = context.colors;
@@ -134,15 +133,15 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                 ),
                 ListTile(
                   title: const Text('Firmware backups'),
-                  trailing: Text('${_backups.length}', style: TextStyle(fontSize: 15, color: c.text)),
+                  trailing: Text('${_backups.state.length}', style: TextStyle(fontSize: 15, color: c.text)),
                 ),
-                for (final (feeder, path) in _backups)
+                for (final (feeder, path) in _backups.state)
                   ListTile(
                     title: Text(feeder.name),
                     trailing: IconButton(
                       tooltip: "Share ${feeder.name}'s backup",
                       icon: const Icon(Icons.share_outlined),
-                      onPressed: () => unawaited(widget.backups.share(path)),
+                      onPressed: () => unawaited(_backups.share(path)),
                     ),
                   ),
                 ListTile(

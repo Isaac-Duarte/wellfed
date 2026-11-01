@@ -1,10 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show MissingPluginException;
-import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -23,7 +20,7 @@ class NameStep extends StatefulWidget {
     this.stepLabel,
     this.progress,
     this.onBack,
-    this.suggest = _phoneModel,
+    required this.suggest,
   });
 
   /// The phone's name so far; empty until the owner names it.
@@ -37,15 +34,13 @@ class NameStep extends StatefulWidget {
   final VoidCallback? onBack;
 
   /// A name for a phone that has none yet.
-  final Future<String> Function() suggest;
+  final Future<String?> Function() suggest;
 
-  /// The phone's name, then the feeder's when it was asked. A failed save
-  /// keeps the owner on this step.
-  final FutureOr<void> Function(String label, String? feeder) onDone;
+  /// The phone's name, then the feeder's when it was asked; why it failed, which
+  /// keeps the owner on this step, or null.
+  final Future<String?> Function(String label, String? feeder) onDone;
 
   static const maxBytes = 16;
-
-  static Future<String> _phoneModel() async => (await DeviceInfoPlugin().androidInfo).model;
 
   @override
   State<NameStep> createState() => _NameStepState();
@@ -67,14 +62,9 @@ class _NameStepState extends State<NameStep> {
 
   /// The phone's model, cut to fit.
   Future<void> _suggest() async {
-    final String suggested;
-    try {
-      suggested = await widget.suggest();
-    } on MissingPluginException {
-      return;
-    }
-    if (!mounted || _name.text.isNotEmpty) return;
-    var model = suggested;
+    final String? suggested = await widget.suggest();
+    if (suggested == null || !mounted || _name.text.isNotEmpty) return;
+    String model = suggested;
     while (utf8.encode(model).length > NameStep.maxBytes) {
       model = model.substring(0, model.length - 1);
     }
@@ -92,11 +82,8 @@ class _NameStepState extends State<NameStep> {
 
   Future<void> _done() async {
     final asksFeeder = widget.feeder != null;
-    try {
-      await widget.onDone(_name.text.trim(), asksFeeder ? _feeder.text.trim() : null);
-    } on BridgeError catch (error) {
-      if (mounted) setState(() => _failed = error.message);
-    }
+    final String? failed = await widget.onDone(_name.text.trim(), asksFeeder ? _feeder.text.trim() : null);
+    if (failed != null && mounted) setState(() => _failed = failed);
   }
 
   bool get _valid =>

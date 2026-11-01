@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -13,15 +12,12 @@ import 'package:wellfed/widgets/replies.dart';
 /// way to stop a tail, so the feeder goes on pushing until the session ends,
 /// and the controller drops what no screen is listening for.
 class LiveLogScreen extends StatefulWidget {
-  const LiveLogScreen({super.key, required this.feeder, this.share = _share});
+  const LiveLogScreen({super.key, required this.feeder, this.share});
 
   final FeederController feeder;
-  final Future<void> Function(String text) share;
 
-  static Future<void> _share(String text) async {
-    await SharePlus.instance.share(ShareParams(text: text));
-  }
-
+  /// Where sharing goes, in place of the feeder's own.
+  final Future<void> Function(String text)? share;
   @override
   State<LiveLogScreen> createState() => _LiveLogScreenState();
 }
@@ -79,7 +75,9 @@ class _LiveLogScreenState extends State<LiveLogScreen> {
         actions: [
           IconButton(
             tooltip: 'Share the log',
-            onPressed: _lines.isEmpty ? null : () => unawaited(widget.share(_lines.join('\n'))),
+            onPressed: _lines.isEmpty
+                ? null
+                : () => unawaited((widget.share ?? widget.feeder.share)(_lines.join('\n'))),
             icon: Icon(Icons.share_outlined, color: c.text),
           ),
         ],

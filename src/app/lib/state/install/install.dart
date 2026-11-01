@@ -247,15 +247,29 @@ class InstallFlow extends ChangeNotifier {
     return _permitted;
   }
 
-  Future<void> setLabel(String label) async {
-    await _book.setLabel(label);
+  Future<String?> setLabel(String label) async {
+    try {
+      await _book.setLabel(label);
+    } on BridgeError catch (error) {
+      return error.message;
+    }
     if (_resumeAfterWifi) {
       _resumeAfterWifi = false;
       unawaited(resume(address: _resumeAddress));
-      return;
+      return null;
     }
     _nextAfter(InstallStage.naming);
+    return null;
   }
+
+  /// How feeders list this phone so far.
+  String get label => _book.label;
+
+  /// The phone's model, for a name.
+  Future<String?> phoneModel() => _ports.phoneModel();
+
+  /// The Wi-Fi this phone is on, when Android will say.
+  Future<String?> currentNetwork() => _ports.currentNetwork();
 
   void setHome(WifiCredentials? home) {
     _home = home;
@@ -330,7 +344,7 @@ class InstallFlow extends ChangeNotifier {
     _notify();
     try {
       await _ports.joinFeederNetwork();
-    } catch (_) {
+    } on Object catch (_) {
       _handover = Handover.join;
       _joinFailed = true;
       _notify();
@@ -621,20 +635,20 @@ class InstallFlow extends ChangeNotifier {
             onLost: run.linkLost,
           );
           answer(const InstallAnswer.done());
-        } catch (error) {
+        } on Object catch (error) {
           answer(InstallAnswer.failed(reason: '$error'));
         }
       case InstallAsk_WriteLink(:final pieces):
         try {
           await _link?.write(pieces);
           answer(const InstallAnswer.done());
-        } catch (error) {
+        } on Object catch (error) {
           answer(InstallAnswer.failed(reason: '$error'));
         }
       case InstallAsk_CloseLink():
         try {
           await _link?.close();
-        } catch (_) {
+        } on Object catch (_) {
           // A link the feeder dropped has nothing left to close.
         }
         _link = null;
@@ -1000,9 +1014,15 @@ class InstallFlow extends ChangeNotifier {
     await _book.remember(KnownFeeder(identity: identity, name: name, address: _address));
   }
 
-  Future<void> saveBackup() async {
+  Future<String?> saveBackup() async {
     final String? path = _backupPath;
-    if (path != null) await _ports.shareBackup(path);
+    if (path == null) return null;
+    try {
+      await _ports.shareBackup(path);
+      return null;
+    } on Object catch (error) {
+      return '$error';
+    }
   }
 
   void _go(InstallStage next) {

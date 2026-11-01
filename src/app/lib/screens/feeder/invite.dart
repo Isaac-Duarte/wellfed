@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/state/clock/clock.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -24,7 +24,11 @@ Future<void> inviteSomeone(BuildContext context, FeederController feeder) async 
   final FeederReply reply = await feeder.ask(FeederRequest.createInvite(role: role));
   if (!context.mounted) return;
   if (reply is FeederReply_Invite) {
-    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => InviteScreen(invite: reply.invite)));
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => InviteScreen(share: feeder.share, invite: reply.invite),
+      ),
+    );
     // Whoever scanned it joined while it was on screen.
     await feeder.loadClients();
   } else {
@@ -99,14 +103,10 @@ class _RoleSheetState extends State<_RoleSheet> {
 /// One invite, shown once (11.3). It holds a secret, so it leaves this screen
 /// only when the owner shares it, and it is never kept.
 class InviteScreen extends StatefulWidget {
-  const InviteScreen({super.key, required this.invite, this.share = _share});
+  const InviteScreen({super.key, required this.invite, required this.share});
 
   final InviteView invite;
   final Future<void> Function(String text) share;
-
-  static Future<void> _share(String text) async {
-    await SharePlus.instance.share(ShareParams(text: text));
-  }
 
   @override
   State<InviteScreen> createState() => _InviteScreenState();
@@ -114,20 +114,21 @@ class InviteScreen extends StatefulWidget {
 
 class _InviteScreenState extends State<InviteScreen> {
   late int _left = widget.invite.seconds;
-  late final Timer _tick;
+  final _tick = SecondTicker();
 
   @override
   void initState() {
     super.initState();
-    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_left <= 1) _tick.cancel();
-      setState(() => _left -= 1);
-    });
+    _tick.addListener(_ticked);
+  }
+
+  void _ticked() {
+    if (_left > 0) setState(() => _left -= 1);
   }
 
   @override
   void dispose() {
-    _tick.cancel();
+    _tick.dispose();
     super.dispose();
   }
 

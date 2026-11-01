@@ -12,6 +12,7 @@ import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
+import 'package:wellfed/state/setup/setup.dart';
 
 import '../support/fakes.dart';
 
@@ -65,7 +66,7 @@ void main() {
       _tall(tester);
       final book = FakeBook();
       final ports = FakePairingPorts();
-      await tester.pumpWidget(themed(SetupScreen(app: book, ports: ports, askPermissions: false)));
+      await tester.pumpWidget(themed(SetupScreen(newFlow: () => SetupFlow(book, ports, FakePhonePorts()))));
 
       await tester.tap(find.text('The Wi-Fi light is blinking'));
       await settle(tester);
@@ -115,9 +116,11 @@ void main() {
             initial: 'Pixel',
             feeder: 'Feeder',
             action: 'Find the feeder',
-            onDone: (l, f) {
+            suggest: () async => null,
+            onDone: (l, f) async {
               label = l;
               feeder = f;
+              return null;
             },
           ),
         ),
@@ -145,7 +148,8 @@ void main() {
           NameStep(
             initial: 'Pixel',
             action: 'Continue',
-            onDone: (_, _) => throw const BridgeError(kind: ErrorKind.store, message: 'the disk is full'),
+            suggest: () async => null,
+            onDone: (_, _) async => 'the disk is full',
           ),
         ),
       );
@@ -161,7 +165,7 @@ void main() {
             initial: '',
             action: 'Continue',
             suggest: () async => 'A phone model far too long',
-            onDone: (_, _) {},
+            onDone: (_, _) async => null,
           ),
         ),
       );

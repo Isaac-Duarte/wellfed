@@ -52,7 +52,7 @@ class Discovery {
               out.add(found);
             }
           });
-        } catch (error) {
+        } on Object catch (error) {
           if (!out.isClosed) out.addError(error);
         }
       },

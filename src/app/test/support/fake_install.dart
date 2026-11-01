@@ -166,6 +166,12 @@ class FakeInstallPorts implements InstallPorts {
   }
 
   @override
+  Future<String?> phoneModel() async => null;
+
+  @override
+  Future<String?> currentNetwork() async => null;
+
+  @override
   Future<bool> askPermissions({required bool bluetooth}) async {
     asked++;
     return allowed;

@@ -5,8 +5,10 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart' show DiscoveredDevice, Uuid;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show RustOpaqueInterface;
 import 'package:flutter_test/flutter_test.dart' show WidgetTester;
+import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/feeder_ports.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
+import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
@@ -157,6 +159,9 @@ DiscoveredDevice feederNearby(String id, {int rssi = -50}) => DiscoveredDevice(
 
 /// Pairing's outside world, with no Rust and no radio.
 class FakePairingPorts implements PairingPorts {
+  @override
+  Stream<FoundFeeder> browse() => const Stream.empty();
+
   final drivers = <FakeDriver>[];
   final recoveries = <FakeRecovery>[];
   // ignore: the test ends with it
@@ -260,8 +265,38 @@ class FakeSession with FakeOpaque implements FeederSession {
   void history(List<HistoryEntry> entries) => updates.add(SessionUpdate.history(entries: entries, caughtUp: true));
 }
 
+/// A phone with everything granted, and no plugins to ask.
+class FakePhonePorts implements PhonePorts {
+  @override
+  Future<bool> setupGranted() async => true;
+
+  @override
+  Future<bool> askForSetup() async => true;
+
+  @override
+  Future<bool> askForBluetooth() async => true;
+
+  @override
+  Future<void> openSettings() async {}
+
+  @override
+  Future<String?> currentNetwork() async => null;
+
+  @override
+  Future<String?> model() async => null;
+}
+
 class FakeFeederPorts implements FeederPorts {
   final sessions = <FakeSession>[];
+
+  /// What went to the share sheet.
+  final shared = <String>[];
+
+  @override
+  Future<void> share(String text) async => shared.add(text);
+
+  @override
+  Future<Uint8List?> pickRecording() async => null;
   final answers = <(String, String)>[];
 
   @override

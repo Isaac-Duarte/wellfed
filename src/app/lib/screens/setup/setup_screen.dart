@@ -1,86 +1,45 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show MissingPluginException;
-import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
-import 'package:network_info_plus/network_info_plus.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:wellfed/platform/pairing_ports.dart';
 import 'package:wellfed/screens/setup/name_step.dart';
 import 'package:wellfed/screens/setup/pairing_view.dart';
-import 'package:wellfed/src/rust/api/setup.dart';
-import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
+import 'package:wellfed/state/setup/setup.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/code_tiles.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 
-enum _Step { permissions, setupMode, wifi, names, pairing }
-
-/// What setup asks Android for: Bluetooth to reach the feeder, and
-/// location only because Android needs it to read the Wi-Fi's name.
-const List<Permission> _permissions = [
-  Permission.bluetoothScan,
-  Permission.bluetoothConnect,
-  Permission.locationWhenInUse,
-];
-
-/// BLE setup: put the feeder in setup mode, give it its Wi-Fi, name it and
-/// this phone, then pick it and key in the code. The name and Wi-Fi come
-/// first because the setup session carries them with the code.
+/// BLE setup, from the panel to the code. [SetupFlow] holds its steps.
 class SetupScreen extends StatefulWidget {
-  const SetupScreen({super.key, required this.app, required this.ports, this.askPermissions = true});
+  const SetupScreen({super.key, required this.newFlow});
 
-  final FeederBook app;
-  final PairingPorts ports;
-
-  /// Android's permissions, which have no answer in a widget test.
-  final bool askPermissions;
+  /// The controller of this screen's one setup.
+  final SetupFlow Function() newFlow;
 
   @override
   State<SetupScreen> createState() => _SetupScreenState();
 }
 
 class _SetupScreenState extends State<SetupScreen> {
-  _Step _step = _Step.setupMode;
-  WifiCredentials? _wifi;
-  String _feederName = PairingFlow.defaultFeederName;
-  PairingFlow? _flow;
+  late final SetupFlow _flow = widget.newFlow();
 
   @override
   void initState() {
     super.initState();
-    unawaited(_askFirst());
-  }
-
-  /// The permissions screen only when something is still to grant.
-  Future<void> _askFirst() async {
-    if (!widget.askPermissions) return;
-    for (final Permission permission in _permissions) {
-      if (!await permission.isGranted) {
-        if (mounted) setState(() => _step = _Step.permissions);
-        return;
-      }
-    }
+    unawaited(_flow.load());
   }
 
   @override
   void dispose() {
-    _flow?.dispose();
+    _flow.dispose();
     super.dispose();
   }
 
   Future<void> _grant() async {
-    final Map<Permission, PermissionStatus> granted = await _permissions.request();
-    if (!mounted) return;
-    final List<PermissionStatus?> bluetooth = [granted[Permission.bluetoothScan], granted[Permission.bluetoothConnect]];
-    if (bluetooth.any((status) => status?.isGranted != true)) {
-      await _bluetoothOff();
-      return;
-    }
-    setState(() => _step = _Step.setupMode);
+    final bool granted = await _flow.grant();
+    if (!granted && mounted) await _bluetoothOff();
   }
 
   Future<void> _bluetoothOff() => showDialog<void>(
@@ -92,88 +51,68 @@ class _SetupScreenState extends State<SetupScreen> {
         'devices" for Wellfed in Android settings, then try again.',
       ),
       actions: [
-        TextButton(onPressed: () => unawaited(openAppSettings()), child: const Text('Open settings')),
+        TextButton(onPressed: () => unawaited(_flow.openSettings()), child: const Text('Open settings')),
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
       ],
     ),
   );
 
-  /// Pair, with a fresh code. With `again`, at the feeder the last try
-  /// connected to: it stays in setup mode, so nobody has to pick it twice.
   Future<void> _pair({bool again = false}) async {
-    if (widget.askPermissions) {
-      final Map<Permission, PermissionStatus> granted = await [
-        Permission.bluetoothScan,
-        Permission.bluetoothConnect,
-      ].request();
-      if (!mounted) return;
-      if (granted.values.any((status) => !status.isGranted)) {
-        await _bluetoothOff();
-        return;
-      }
-    }
-
-    final DiscoveredDevice? device = again ? _flow?.chosen : null;
-    _flow?.dispose();
-    final flow = PairingFlow(widget.app, widget.ports);
-    setState(() {
-      _flow = flow;
-      _step = _Step.pairing;
-    });
-    await flow.runSetup(wifi: _wifi, name: _feederName, device: device);
+    final bool paired = await _flow.pair(again: again);
+    if (!paired && mounted) await _bluetoothOff();
   }
 
-  void _to(_Step step) => setState(() => _step = step);
-
   @override
-  Widget build(BuildContext context) => switch (_step) {
-    _Step.permissions => _Permissions(onContinue: () => unawaited(_grant())),
-    _Step.setupMode => StepScaffold(
-      stepLabel: 'Step 1 of 4',
-      progress: 0.25,
-      leading: Leading.close,
-      title: 'Put the feeder in setup mode',
-      content: const [
-        PanelPhoto(held: [1, 3]),
-        SizedBox(height: Space.s4),
-        NumberedSteps([
-          'Plug the feeder in. If the lock light is on, hold **Lock** for 5 seconds to unlock the panel.',
-          'Hold **Lock** and **Mic** together for 5 seconds.',
-          'The Wi-Fi light blinks slowly, about once a second. Setup mode lasts 15 minutes.',
-        ]),
-      ],
-      actions: [FilledButton(onPressed: () => _to(_Step.wifi), child: const Text('The Wi-Fi light is blinking'))],
-    ),
-    _Step.wifi => WifiStep(
-      initial: _wifi,
-      stepLabel: 'Step 2 of 4',
-      progress: 0.5,
-      onBack: () => _to(_Step.setupMode),
-      onDone: (wifi) {
-        _wifi = wifi;
-        _to(_Step.names);
-      },
-    ),
-    _Step.names => NameStep(
-      initial: widget.app.label,
-      feeder: _feederName,
-      stepLabel: 'Step 3 of 4',
-      progress: 0.75,
-      onBack: () => _to(_Step.wifi),
-      action: 'Find the feeder',
-      onDone: (label, feeder) async {
-        _feederName = feeder ?? PairingFlow.defaultFeederName;
-        await widget.app.setLabel(label);
-        unawaited(_pair());
-      },
-    ),
-    _Step.pairing => PairingView(
-      flow: _flow!,
-      ble: true,
-      onRetry: () => unawaited(_pair(again: true)),
-      onNewCode: () => unawaited(_pair(again: true)),
-    ),
-  };
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _flow,
+    builder: (context, _) => switch (_flow.state) {
+      SetupPermissions() => _Permissions(onContinue: () => unawaited(_grant())),
+      SetupMode() => StepScaffold(
+        stepLabel: 'Step 1 of 4',
+        progress: 0.25,
+        leading: Leading.close,
+        title: 'Put the feeder in setup mode',
+        content: const [
+          PanelPhoto(held: [1, 3]),
+          SizedBox(height: Space.s4),
+          NumberedSteps([
+            'Plug the feeder in. If the lock light is on, hold **Lock** for 5 seconds to unlock the panel.',
+            'Hold **Lock** and **Mic** together for 5 seconds.',
+            'The Wi-Fi light blinks slowly, about once a second. Setup mode lasts 15 minutes.',
+          ]),
+        ],
+        actions: [FilledButton(onPressed: _flow.toWifi, child: const Text('The Wi-Fi light is blinking'))],
+      ),
+      SetupWifi(:final WifiCredentials? wifi) => WifiStep(
+        initial: wifi,
+        currentNetwork: _flow.currentNetwork,
+        stepLabel: 'Step 2 of 4',
+        progress: 0.5,
+        onBack: _flow.toSetupMode,
+        onDone: _flow.wifiGiven,
+      ),
+      SetupNames(:final String feederName) => NameStep(
+        initial: _flow.label,
+        feeder: feederName,
+        suggest: _flow.phoneModel,
+        stepLabel: 'Step 3 of 4',
+        progress: 0.75,
+        onBack: _flow.toWifi,
+        action: 'Find the feeder',
+        onDone: (label, feeder) async {
+          final String? failed = await _flow.named(label, feeder);
+          if (failed == null) unawaited(_pair());
+          return failed;
+        },
+      ),
+      SetupPairing(:final PairingFlow pairing) => PairingView(
+        flow: pairing,
+        ble: true,
+        onRetry: () => unawaited(_pair(again: true)),
+        onNewCode: () => unawaited(_pair(again: true)),
+      ),
+    },
+  );
 }
 
 /// What setup will ask Android for, before it asks.
@@ -245,6 +184,7 @@ class WifiStep extends StatefulWidget {
   const WifiStep({
     super.key,
     required this.initial,
+    required this.currentNetwork,
     required this.onBack,
     required this.onDone,
     this.stepLabel,
@@ -253,6 +193,9 @@ class WifiStep extends StatefulWidget {
   });
 
   final WifiCredentials? initial;
+
+  /// The Wi-Fi this phone is on, when Android will say.
+  final Future<String?> Function() currentNetwork;
   final VoidCallback onBack;
   final ValueChanged<WifiCredentials?> onDone;
   final String? stepLabel;
@@ -280,7 +223,7 @@ class _WifiStepState extends State<WifiStep> {
   }
 
   Future<void> _prefill() async {
-    final String? name = await _currentNetwork();
+    final String? name = await widget.currentNetwork();
     if (!mounted) return;
     if (name == null) {
       setState(() => _typing = true);
@@ -289,16 +232,6 @@ class _WifiStepState extends State<WifiStep> {
     if (_ssid.text.isNotEmpty) return;
     // Android quotes the name.
     setState(() => _ssid.text = name.replaceAll(RegExp(r'^"|"$'), ''));
-  }
-
-  /// The plugins only answer on a phone; typing the name always works.
-  Future<String?> _currentNetwork() async {
-    try {
-      if (!await Permission.locationWhenInUse.isGranted) return null;
-      return await NetworkInfo().getWifiName();
-    } on MissingPluginException {
-      return null;
-    }
   }
 
   @override

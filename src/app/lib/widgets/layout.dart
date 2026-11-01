@@ -1,6 +1,5 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
+import 'package:wellfed/state/clock/clock.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
 
@@ -358,37 +357,32 @@ class WaitWords extends StatefulWidget {
 }
 
 class _WaitWordsState extends State<WaitWords> {
-  Timer? _timer;
-  bool _long = false;
+  final _patience = Patience(WaitWords.after);
 
   @override
   void initState() {
     super.initState();
-    _watch();
+    _patience.addListener(_changed);
   }
+
+  void _changed() => setState(() {});
 
   @override
   void didUpdateWidget(WaitWords old) {
     super.didUpdateWidget(old);
-    if (old.words != widget.words || old.progress != widget.progress) _watch();
-  }
-
-  void _watch() {
-    _long = false;
-    _timer?.cancel();
-    _timer = Timer(WaitWords.after, () => setState(() => _long = true));
+    if (old.words != widget.words || old.progress != widget.progress) _patience.restart();
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _patience.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final String? words = widget.words;
-    if (!_long || words == null) return const SizedBox.shrink();
+    if (!_patience.long || words == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: Space.s3),
       child: Notice(tone: Tone.neutral, text: words),

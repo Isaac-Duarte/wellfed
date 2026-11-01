@@ -1,7 +1,6 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:wellfed/state/clock/clock.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/layout.dart';
 
@@ -106,7 +105,7 @@ class CodeWindow extends StatefulWidget {
 }
 
 class _CodeWindowState extends State<CodeWindow> {
-  late final Timer _tick;
+  final _tick = SecondTicker();
 
   /// The whole window, for the bar's fill.
   late final int _window = _left();
@@ -114,7 +113,7 @@ class _CodeWindowState extends State<CodeWindow> {
   @override
   void initState() {
     super.initState();
-    _tick = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+    _tick.addListener(_ticked);
   }
 
   int _left() {
@@ -122,9 +121,11 @@ class _CodeWindowState extends State<CodeWindow> {
     return deadline == null ? 0 : deadline.difference(DateTime.now()).inSeconds.clamp(0, 999);
   }
 
+  void _ticked() => setState(() {});
+
   @override
   void dispose() {
-    _tick.cancel();
+    _tick.dispose();
     super.dispose();
   }
 

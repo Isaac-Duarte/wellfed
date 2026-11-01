@@ -340,8 +340,11 @@ class _MealEditorState extends State<MealEditor> {
           Text('Meal call', style: label),
           CallLink(
             onTap: () => unawaited(
-              Navigator.of(context)
-                  .push(MaterialPageRoute<void>(builder: (_) => MealCallScreen(feeder: widget.feeder))),
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => MealCallScreen(feeder: widget.feeder, pick: widget.feeder.pickRecording),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: Space.s2),

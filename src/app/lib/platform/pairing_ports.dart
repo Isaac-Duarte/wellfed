@@ -25,6 +25,9 @@ abstract interface class PairingPorts {
 
   /// A key as the store and NSD's `id` spell it.
   String hexOf(List<int> identity);
+
+  /// Each feeder answering on this network, until cancelled.
+  Stream<FoundFeeder> browse();
 }
 
 class AppPairingPorts implements PairingPorts {
@@ -49,4 +52,7 @@ class AppPairingPorts implements PairingPorts {
 
   @override
   String hexOf(List<int> identity) => identityHex(identity: identity);
+
+  @override
+  Stream<FoundFeeder> browse() => Discovery.browse();
 }

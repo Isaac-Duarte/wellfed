@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wellfed/platform/discovery.dart';
+import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/install.dart' as rust;
 import 'package:wellfed/src/rust/api/install.dart';
@@ -83,6 +84,12 @@ abstract interface class InstallPorts {
   /// Ask Android for what the install needs; whether Bluetooth was allowed.
   /// `bluetooth` is `false` for a bench image, which pairs over the LAN.
   Future<bool> askPermissions({required bool bluetooth});
+
+  /// The phone's model, for a name.
+  Future<String?> phoneModel();
+
+  /// The Wi-Fi this phone is on, when Android will say.
+  Future<String?> currentNetwork();
 
   InstallRun newRun(InstallSpec spec);
 
@@ -184,6 +191,12 @@ class AppInstallPorts implements InstallPorts {
 
   @override
   Future<String?> leaveFeederNetwork() => _wifi.invokeMethod<String>('leaveFeeder');
+
+  @override
+  Future<String?> phoneModel() => const AppPhonePorts().model();
+
+  @override
+  Future<String?> currentNetwork() => const AppPhonePorts().currentNetwork();
 
   @override
   Future<bool> askPermissions({required bool bluetooth}) async {

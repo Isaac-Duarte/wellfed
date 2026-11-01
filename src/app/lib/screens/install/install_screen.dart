@@ -2,13 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/screens/install/install_before.dart';
 import 'package:wellfed/screens/install/install_progress.dart';
 import 'package:wellfed/screens/install/install_stopped.dart';
 import 'package:wellfed/screens/setup/name_step.dart';
 import 'package:wellfed/screens/setup/setup_screen.dart';
-import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -16,17 +14,17 @@ import 'package:wellfed/widgets/icons.dart';
 /// Installing Wellfed on a feeder that runs stock, one screen per stage of
 /// its [InstallFlow].
 class InstallScreen extends StatefulWidget {
-  const InstallScreen({super.key, required this.book, required this.ports});
+  const InstallScreen({super.key, required this.newFlow});
 
-  final FeederBook book;
-  final InstallPorts ports;
+  /// The controller of this screen's one install.
+  final InstallFlow Function() newFlow;
 
   @override
   State<InstallScreen> createState() => _InstallScreenState();
 }
 
 class _InstallScreenState extends State<InstallScreen> {
-  late final InstallFlow _flow = InstallFlow(widget.book, widget.ports);
+  late final InstallFlow _flow = widget.newFlow();
 
   @override
   void initState() {
@@ -76,13 +74,15 @@ class _InstallScreenState extends State<InstallScreen> {
         InstallLoading() => const Scaffold(body: Center(child: CircularProgressIndicator())),
         final InstallBefore state => InstallBeforePage(flow: _flow, state: state),
         InstallNaming() => NameStep(
-          initial: widget.book.label,
+          initial: _flow.label,
           action: 'Continue',
+          suggest: _flow.phoneModel,
           onBack: () => _flow.back(InstallStage.before),
           onDone: (label, _) => _flow.setLabel(label),
         ),
         InstallWifi() => WifiStep(
           initial: null,
+          currentNetwork: _flow.currentNetwork,
           stepLabel: 'Steps 1–2 of 5',
           progress: 0.1,
           mayKeep: false,
