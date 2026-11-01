@@ -22,9 +22,11 @@
 //! since it came up, and every event that status counts delivered.
 //!
 //! A new engine does not replay history, whatever the caller subscribes to:
-//! until a status gives it a baseline every event is ignored, and then those
-//! at or below the baseline are. The caller subscribes after
-//! [`Engine::subscribe_after`].
+//! until the session's welcome and a status give it a baseline every event is
+//! ignored, and then those at or below the baseline are. The caller feeds it
+//! [`Observation::Welcome`] and a status, then passes
+//! [`Engine::subscribe_after`] to `Connection::subscribe`, whose epoch check
+//! stays in force. It reads the plans whenever [`Engine::needs_plans`] says.
 //!
 //! Food has no empty reading. The beam sits about five portions above the
 //! rotor, so [`AlertKind::FoodEmpty`] means likely out: that many confirmed
@@ -37,14 +39,15 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use wellfed_model::{
-    Battery, Blocked, ClientRole, Desiccant, EnrollPath, Event, EventBody, FeedOutcome, FoodLevel,
-    Gap, Generation, Hex, MissedReason, PLANS, Plan, Plans, Readiness, Source, Status, Supply,
-    UpdateStop, UpdateView,
+    Battery, Blocked, ClientRole, Desiccant, EnrollPath, Event, EventBody, FeedFault, FeedOutcome,
+    FoodLevel, Gap, Generation, Hex, MissedReason, PLANS, Plan, Plans, Readiness, Source, Status,
+    Supply, UpdateStop, UpdateView,
 };
 
+use crate::connection::Cursor;
 use crate::history::Feed;
 use crate::plans::{MealState, today};
-use crate::time::latest_due;
+use crate::time::{following_due, latest_due};
 
 /// How long a feed is kept: long enough for a meal late on one local day to
 /// be judged on the next.
@@ -54,8 +57,12 @@ const FEEDS_KEPT: SignedDuration = SignedDuration::from_hours(48);
 const MARKS_KEPT: SignedDuration = SignedDuration::from_hours(8 * 24);
 /// How long an alert that reports something finished stays open unread.
 const NEWS_LIFE: SignedDuration = SignedDuration::from_hours(24);
-/// How far past its occurrence a feed can still be that occurrence's record.
+/// How far past its occurrence a feed can still be that occurrence's record,
+/// with the plan's next occurrence as the nearer limit where it is known.
 const RECORD_WINDOW: SignedDuration = SignedDuration::from_hours(24);
+/// How far the feeder's clock may lead the watcher's before a feed's time
+/// is plainly wrong. Past this it could answer for every later meal.
+const CLOCKS_APART: SignedDuration = SignedDuration::from_mins(5);
 /// How long the adapter stays back before an outage is over with.
 const POWER_BACK: SignedDuration = SignedDuration::from_hours(24);
 /// How long without one before restarts are no longer repeating.
@@ -133,17 +140,19 @@ impl AlertKind {
         }
     }
 
-    /// Whether the next scheduled feed that finishes closes it: meals are
-    /// running again, whatever this one was about.
-    const fn ends_with_a_good_meal(self) -> bool {
+    /// Whether the next scheduled feed that finishes replaces it as news.
+    const fn superseded_by_a_good_meal(self) -> bool {
+        matches!(self, Self::MealFed | Self::ManualFeed)
+    }
+
+    /// Whether it reports a meal that went wrong. That is a past fact with
+    /// no ending condition: a later good meal does not undo it, and in a
+    /// catch-up read would hide it before the owner saw it. It stays until
+    /// it is read, or its own record arrives, or the marks lapse.
+    const fn meal_problem(self) -> bool {
         matches!(
             self,
-            Self::MealFailed
-                | Self::MealUncertain
-                | Self::MealMissed
-                | Self::MealNoRecord
-                | Self::MealFed
-                | Self::ManualFeed
+            Self::MealFailed | Self::MealUncertain | Self::MealMissed | Self::MealNoRecord
         )
     }
 
@@ -155,6 +164,7 @@ impl AlertKind {
             Self::MealFailed
                 | Self::MealUncertain
                 | Self::MealMissed
+                | Self::MealNoRecord
                 | Self::MealFed
                 | Self::ManualFeed
                 | Self::ClientJoined
@@ -188,6 +198,8 @@ pub enum Occurrence {
     Meal { plan: u8, due: Timestamp },
     /// One event, or the end of a gap.
     Event { epoch: u32, seq: u64 },
+    /// The history this epoch replaced.
+    Epoch { epoch: u32 },
     /// A condition that held from `at`, when it became an alert.
     Since { at: Timestamp },
     /// One local day's digest.
@@ -216,6 +228,10 @@ pub enum Detail {
     },
     /// Nothing beyond the kind.
     None,
+    /// A status's word on a feed whose event this watcher never read.
+    Fault(FeedFault),
+    /// The feeder's history was re-created.
+    Wiped,
     /// What keeps the feeder from feeding, as the alert opened.
     Blocked {
         reason: Blocked,
@@ -310,6 +326,11 @@ pub enum Link {
 /// What the watcher saw.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Observation<'a> {
+    /// The session's welcome, `Connection::opened`: the feeder's current
+    /// epoch, which a status does not name. Send it first on every session.
+    Welcome {
+        epoch: u32,
+    },
     Event(Event),
     Gap(Gap),
     Status(&'a Status),
@@ -392,13 +413,6 @@ impl Preferences {
     }
 }
 
-/// How far the events have been read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct Cursor {
-    epoch: u32,
-    seq: u64,
-}
-
 /// An open alert, and whether a [`Change`] announced it: one that did not
 /// must not be announced as cleared.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -432,17 +446,26 @@ struct Seen {
 pub struct State {
     preferences: Preferences,
     cursor: Option<Cursor>,
-    /// The newest event when the first status came, with no cursor yet. A
-    /// status names no epoch, so this cannot tell a ring wiped since.
-    baseline: Option<u64>,
+    /// The feeder's newest event when the first status came, with no cursor
+    /// yet, in the epoch the welcome named.
+    baseline: Option<Cursor>,
+    /// The epoch the last welcome named.
+    epoch: Option<u32>,
+    /// A status already reported a wipe, ahead of the epoch that names it.
+    wipe_reported: bool,
     open: Vec<Open>,
     seen: Vec<Seen>,
     /// Recent feeds, oldest first, each with an `at`.
     feeds: Vec<Feed>,
     /// The plans as last read.
     plans: Option<Plans>,
-    /// An event said the plans changed, and they have not been read since.
+    /// Something said the plans may have changed, or that an event saying
+    /// so may be gone, and they have not been read since.
     plans_stale: bool,
+    /// A once plan was taken, by slot: the feeder disabled it with no event.
+    /// The held table cannot say so itself, as a replayed feed may be older
+    /// than a table that re-armed it, so the slot waits for the next read.
+    slots_stale: [bool; PLANS],
     /// By slot, only occurrences after this count as having no record:
     /// earlier ones fell under a plan or a history this watcher never saw.
     counted_from: [Option<Timestamp>; PLANS],
@@ -451,6 +474,8 @@ pub struct State {
     failing_since: Option<Timestamp>,
     /// When a status last arrived since the link came up.
     status_at: Option<Timestamp>,
+    /// When a status last arrived at all, for the timers it runs.
+    last_status: Option<Timestamp>,
     /// The newest event that status counted.
     newest_event: Option<u64>,
     /// When a status first read no valid clock, of those in a row.
@@ -483,15 +508,19 @@ impl Default for State {
             preferences: Preferences::default(),
             cursor: None,
             baseline: None,
+            epoch: None,
+            wipe_reported: false,
             open: Vec::new(),
             seen: Vec::new(),
             feeds: Vec::new(),
             plans: None,
             plans_stale: false,
+            slots_stale: [false; PLANS],
             counted_from: [None; PLANS],
             link: Link::Away,
             failing_since: None,
             status_at: None,
+            last_status: None,
             newest_event: None,
             no_clock_since: None,
             blocked_since: None,
@@ -524,8 +553,10 @@ impl Engine {
         }
     }
 
-    /// An engine going on from a stored `state`.
-    pub const fn resume(state: State, thresholds: Thresholds) -> Self {
+    /// An engine going on from a stored `state`. What was recorded while
+    /// it was stopped is unknown, so it takes a new status to judge a meal.
+    pub fn resume(mut state: State, thresholds: Thresholds) -> Self {
+        state.status_at = None;
         Self { state, thresholds }
     }
 
@@ -547,11 +578,18 @@ impl Engine {
         self.state.cursor.map(|cursor| (cursor.epoch, cursor.seq))
     }
 
-    /// The event to subscribe after: the cursor, or with none yet the
-    /// baseline. `None` until a status has been read, and before that the
-    /// engine ignores any event it is given.
-    pub fn subscribe_after(&self) -> Option<u64> {
+    /// What to pass `Connection::subscribe`: the cursor, or with none yet
+    /// the baseline. `None` until a welcome and a status have been seen, and
+    /// before that the engine ignores any event it is given.
+    pub fn subscribe_after(&self) -> Option<Cursor> {
         self.state.read_to()
+    }
+
+    /// Whether the plans must be read before meals can be judged: they never
+    /// were, or something since may have changed them.
+    pub fn needs_plans(&self) -> bool {
+        let state = &self.state;
+        state.plans.is_none() || state.plans_stale || state.slots_stale.contains(&true)
     }
 
     /// The alerts [`Change`]s have opened and not cleared.
@@ -574,10 +612,12 @@ impl Engine {
     ) -> Vec<Change> {
         let mut changes = Vec::new();
         let state = &mut self.state;
+        state.pull_back(now, zone);
 
         match observation {
+            Observation::Welcome { epoch } => state.welcome(epoch, now, &mut changes),
             Observation::Event(event) => {
-                state.event(&event, &self.thresholds, now, &mut changes);
+                state.event(&event, &self.thresholds, now, zone, &mut changes);
             }
             Observation::Gap(gap) => state.gap(gap, now, &mut changes),
             Observation::Status(status) => {
@@ -589,10 +629,11 @@ impl Engine {
             Observation::Tick => state.digest(&self.thresholds, now, zone, &mut changes),
         }
 
+        state.prune(now);
         state.fail_link(&self.thresholds, now, &mut changes);
         state.reach_meals(&self.thresholds, now, zone, &mut changes);
         state.lapse(now, &mut changes);
-        state.prune(now);
+        state.announce_conditions(&mut changes);
         changes
     }
 
@@ -622,16 +663,17 @@ impl State {
         event: &Event,
         thresholds: &Thresholds,
         now: Timestamp,
+        zone: &TimeZone,
         changes: &mut Vec<Change>,
     ) {
-        if !self.advance(event.epoch, event.seq, now) {
+        if !self.advance(event.epoch, event.seq, now, changes) {
             return;
         }
 
         match event.body {
             EventBody::Fed { .. } => {
                 if let Some(feed) = Feed::from_event(event) {
-                    self.fed(feed, now, changes);
+                    self.fed(feed, now, zone, changes);
                 }
             }
             EventBody::Missed { plan, due, reason } => self.missed(plan, due, reason, now, changes),
@@ -643,8 +685,8 @@ impl State {
             } => self.meal_soon(plan, due, portions, now, changes),
             EventBody::Plans { generation, .. } => self.plans_changed(generation),
             EventBody::Lost { count } => {
-                // Anything may have been among them, feeds too.
-                self.count_from(now);
+                // Anything may have been among them, feeds and plans too.
+                self.lose_history(now);
                 let occurrence = Occurrence::Event {
                     epoch: event.epoch,
                     seq: event.seq,
@@ -703,24 +745,68 @@ impl State {
     }
 
     /// The newest event this engine has accounted for.
-    fn read_to(&self) -> Option<u64> {
-        self.cursor.map(|cursor| cursor.seq).or(self.baseline)
+    fn read_to(&self) -> Option<Cursor> {
+        self.cursor.or(self.baseline)
     }
 
-    /// Moves the cursor to `seq`, or refuses a duplicate. A new epoch is a
-    /// new history: its numbers start again, and what the old one held is
-    /// gone, but what is open stays open.
-    fn advance(&mut self, epoch: u32, seq: u64, now: Timestamp) -> bool {
-        match self.cursor {
-            Some(cursor) if cursor.epoch == epoch && seq <= cursor.seq => return false,
-            Some(cursor) if cursor.epoch != epoch => {
-                self.newest_event = None;
-                self.count_from(now);
-            }
-            // Before any cursor only what follows the baseline is news, and
-            // with no baseline yet nothing can be told from history.
-            None if self.baseline.is_none_or(|baseline| seq <= baseline) => return false,
-            Some(_) | None => {}
+    fn welcome(&mut self, epoch: u32, now: Timestamp, changes: &mut Vec<Change>) {
+        match self.read_to() {
+            Some(read) if read.epoch != epoch => self.new_epoch(epoch, now, changes),
+            Some(_) | None => self.epoch = Some(epoch),
+        }
+    }
+
+    /// A new epoch is a new history: its numbers start again, and what the
+    /// old one held is gone, but what is open stays open.
+    fn new_epoch(&mut self, epoch: u32, now: Timestamp, changes: &mut Vec<Change>) {
+        self.epoch = Some(epoch);
+        self.cursor = Some(Cursor { epoch, seq: 0 });
+        self.newest_event = None;
+        self.lose_history(now);
+
+        if !std::mem::take(&mut self.wipe_reported) {
+            let key = Key {
+                kind: AlertKind::HistoryLost,
+                occurrence: Occurrence::Epoch { epoch },
+            };
+            self.raise_once(key, Detail::Wiped, now, changes);
+        }
+    }
+
+    /// A feeder that counts fewer events than were read lost its ring, even
+    /// with no new epoch seen. The old epoch stays in the cursor, so the
+    /// session's check still restarts the subscription if the epoch moved;
+    /// the seq is the feeder's, so anything newer is read.
+    fn wiped(&mut self, read: Cursor, newest: u64, now: Timestamp, changes: &mut Vec<Change>) {
+        self.cursor = Some(Cursor {
+            epoch: read.epoch,
+            seq: newest,
+        });
+        self.lose_history(now);
+        self.wipe_reported = true;
+
+        let key = Key {
+            kind: AlertKind::HistoryLost,
+            occurrence: Occurrence::Event {
+                epoch: read.epoch,
+                seq: newest,
+            },
+        };
+        self.raise_once(key, Detail::Wiped, now, changes);
+    }
+
+    /// Moves the cursor to `seq`, or refuses a duplicate. Before any cursor
+    /// only what follows the baseline is news, and with no baseline nothing
+    /// can be told from history.
+    fn advance(&mut self, epoch: u32, seq: u64, now: Timestamp, changes: &mut Vec<Change>) -> bool {
+        let Some(read) = self.read_to() else {
+            return false;
+        };
+
+        if read.epoch != epoch {
+            self.new_epoch(epoch, now, changes);
+        } else if seq <= read.seq {
+            return false;
         }
 
         self.cursor = Some(Cursor { epoch, seq });
@@ -728,13 +814,14 @@ impl State {
     }
 
     fn gap(&mut self, gap: Gap, now: Timestamp, changes: &mut Vec<Change>) {
-        if !self.advance(gap.epoch, gap.to, now) {
+        if !self.advance(gap.epoch, gap.to, now, changes) {
             return;
         }
 
         // A feed may have left with those events, so no record says nothing
-        // about any occurrence so far.
-        self.count_from(now);
+        // about any occurrence so far. The gap's numbers do not say when it
+        // fell, so it rules out every meal up to now, even if it is old.
+        self.lose_history(now);
         let occurrence = Occurrence::Event {
             epoch: gap.epoch,
             seq: gap.to,
@@ -747,7 +834,9 @@ impl State {
     }
 
     /// Timers on a status judge only a status: with no status coming there
-    /// is nothing to say about the feeder but that it is unreachable.
+    /// is nothing to say about the feeder but that it is unreachable. A long
+    /// silence between two statuses says nothing of what held between them,
+    /// so those timers start again.
     fn status(
         &mut self,
         status: &Status,
@@ -756,13 +845,31 @@ impl State {
         changes: &mut Vec<Change>,
     ) {
         self.connected(changes);
+        if self
+            .last_status
+            .is_some_and(|at| elapsed(at, now) > thresholds.status_fresh)
+        {
+            self.no_clock_since = None;
+            self.blocked_since = None;
+            self.fell_back_at = self.fell_back_at.map(|_| now);
+        }
+        self.last_status = Some(now);
         self.status_at = Some(now);
         self.newest_event = status.last_event;
-        if self.cursor.is_none() && self.baseline.is_none() {
-            // Events count from 1, so a feeder with none has no history.
-            self.baseline = Some(status.last_event.unwrap_or(0));
+
+        // Events count from 1, so a feeder with none has no history.
+        let newest = status.last_event.unwrap_or(0);
+        match (self.read_to(), self.epoch) {
+            (Some(read), _) if newest < read.seq => self.wiped(read, newest, now, changes),
+            (None, Some(epoch)) => {
+                self.baseline = Some(Cursor { epoch, seq: newest });
+                // What fell before the first look was never this watcher's.
+                self.count_from(now);
+            }
+            (Some(_) | None, _) => {}
         }
 
+        self.feed_fault(status, now, changes);
         self.clock(status, thresholds, now, changes);
         self.readiness(status, thresholds, now, changes);
         self.food(status.food, now, changes);
@@ -777,6 +884,30 @@ impl State {
             .is_some_and(|at| elapsed(at, now) >= thresholds.rolled_back)
         {
             self.raise_condition(AlertKind::RolledBack, Detail::None, now, changes);
+        }
+    }
+
+    /// A fault feed whose event never arrived: it fell in a gap, or before
+    /// the baseline, and the status is what is left of it. Waits for the
+    /// backlog, so a `Fed` still on its way is the one that counts.
+    fn feed_fault(&mut self, status: &Status, now: Timestamp, changes: &mut Vec<Change>) {
+        let (Some(fault), Some(read)) = (status.feed_fault, self.read_to()) else {
+            return;
+        };
+        if !self.caught_up() {
+            return;
+        }
+
+        let kind = match fault.outcome {
+            FeedOutcome::Failed | FeedOutcome::Expired => AlertKind::MealFailed,
+            FeedOutcome::Uncertain => AlertKind::MealUncertain,
+            FeedOutcome::Done | FeedOutcome::Cancelled => return,
+        };
+        let (epoch, feed) = (read.epoch, fault.feed);
+        if self.mark(Mark::Feed { epoch, feed }, now) {
+            let occurrence = Occurrence::Feed { epoch, feed };
+            let detail = Detail::Fault(fault);
+            self.raise(Alert::new(Key { kind, occurrence }, detail, now), changes);
         }
     }
 
@@ -855,10 +986,8 @@ impl State {
     }
 
     /// The feeder drops Wi-Fi on its batteries, so an outage is usually read
-    /// after it ended. `below_floor` is `None` with no pack, but an older
-    /// build judged the empty holder's near-zero channel: on the adapter it
-    /// counts only with a pack that reads, and off the adapter it always
-    /// does, as the feeder is then running on whatever is there.
+    /// after it ended. `below_floor` is the feeder's verdict, `None` with
+    /// no pack or none yet, which leaves an open alert as it stands.
     fn supply(&mut self, supply: Supply, now: Timestamp, changes: &mut Vec<Change>) {
         match supply.adapter {
             Some(false) => {
@@ -875,13 +1004,14 @@ impl State {
             Some(true) | None => {}
         }
 
-        let pack = matches!(supply.battery, Battery::Reading { .. });
         match supply.below_floor {
-            Some(true) if pack || supply.adapter == Some(false) => {
+            Some(true) => {
                 let detail = Detail::Battery(supply.battery);
                 self.raise_condition(AlertKind::BatteryBelowFloor, detail, now, changes);
             }
-            Some(_) => self.clear(|alert| alert.kind == AlertKind::BatteryBelowFloor, changes),
+            Some(false) => {
+                self.clear(|alert| alert.kind == AlertKind::BatteryBelowFloor, changes);
+            }
             None => {}
         }
     }
@@ -971,8 +1101,7 @@ impl State {
         }
     }
 
-    /// Once a local day from the digest hour. A clock stepping back to an
-    /// earlier day does not send it again.
+    /// Once a local day from the digest hour.
     fn digest(
         &mut self,
         thresholds: &Thresholds,
@@ -1008,6 +1137,10 @@ impl State {
     /// a once plan disables it with no event at all. So a slot starts afresh
     /// only by the feeder's own rule, when its times changed or it came back
     /// on, and a change to one plan leaves the others' occurrences counted.
+    ///
+    /// The change is dated by this read, not by the save, which the table
+    /// does not carry. So an edit read late rules out a new occurrence that
+    /// fell in between: it errs towards silence.
     fn read_plans(&mut self, plans: Plans, now: Timestamp) {
         let held = self.plans.map(|held| held.plans);
 
@@ -1026,6 +1159,7 @@ impl State {
 
         self.plans = Some(plans);
         self.plans_stale = false;
+        self.slots_stale = [false; PLANS];
     }
 
     /// An event can be replayed from behind the table already read: only a
@@ -1036,14 +1170,18 @@ impl State {
         }
     }
 
-    /// The feeder disables a once plan as it takes it, unannounced. Until
-    /// the table is next read this keeps it from reading as tomorrow's meal.
+    /// The feeder disables a once plan as it takes it, unannounced, so the
+    /// held table would read it as tomorrow's meal. Holds that slot until
+    /// the next read, which says what it really is.
     fn spend_once(&mut self, slot: u8) {
-        if let Some(plans) = &mut self.plans
-            && let Some(Some(plan)) = plans.plans.get_mut(usize::from(slot))
-            && plan.days.once()
-        {
-            plan.enabled = false;
+        let slot = usize::from(slot);
+        let once = self
+            .plans
+            .and_then(|plans| plans.plans.get(slot).copied().flatten())
+            .is_some_and(|plan| plan.days.once());
+
+        if once && let Some(stale) = self.slots_stale.get_mut(slot) {
+            *stale = true;
         }
     }
 
@@ -1054,7 +1192,43 @@ impl State {
         }
     }
 
-    fn fed(&mut self, feed: Feed, now: Timestamp, changes: &mut Vec<Change>) {
+    /// Events are gone: any feed may have been among them, and any `Plans`
+    /// event, which is the only word of a table replaced.
+    fn lose_history(&mut self, now: Timestamp) {
+        self.count_from(now);
+        self.plans_stale = true;
+    }
+
+    /// One bad clock must not stop meals or digests for good: what lies
+    /// ahead of `now` comes back to it.
+    fn pull_back(&mut self, now: Timestamp, zone: &TimeZone) {
+        for from in self.counted_from.iter_mut().flatten() {
+            *from = (*from).min(now);
+        }
+
+        let date = now.to_zoned(zone.clone()).date();
+        self.digest_day = self.digest_day.map(|day| day.min(date));
+    }
+
+    /// When a feed stops being the record of plan `plan`'s occurrence at
+    /// `due`: its next occurrence by the held table, within the window.
+    fn record_ends(&self, plan: u8, due: Timestamp, zone: &TimeZone) -> Timestamp {
+        let window = due.checked_add(RECORD_WINDOW).unwrap_or(due);
+        let next = self
+            .plans
+            .and_then(|plans| plans.plans.get(usize::from(plan)).copied().flatten())
+            .and_then(|plan| following_due(&plan, due, zone));
+
+        next.map_or(window, |next| next.min(window))
+    }
+
+    /// Whether a feed of plan `plan` stamped `stamp` answers for its
+    /// occurrence at `due`.
+    fn answers(&self, plan: u8, due: Timestamp, stamp: Timestamp, zone: &TimeZone) -> bool {
+        due <= stamp && stamp < self.record_ends(plan, due, zone)
+    }
+
+    fn fed(&mut self, feed: Feed, now: Timestamp, zone: &TimeZone, changes: &mut Vec<Change>) {
         let (epoch, id) = (feed.epoch, feed.feed);
         if !self.mark(Mark::Feed { epoch, feed: id }, now) {
             return;
@@ -1071,7 +1245,18 @@ impl State {
 
         if let Some(Source::Schedule { plan }) = feed.by {
             self.spend_once(plan);
-            self.clear(|alert| no_record_of(alert, plan, stamp), changes);
+            let answered: Vec<Key> = self
+                .open
+                .iter()
+                .map(|open| open.alert.key)
+                .filter(|key| match (key.kind, key.occurrence) {
+                    (AlertKind::MealNoRecord, Occurrence::Meal { plan: slot, due }) => {
+                        slot == plan && self.answers(plan, due, stamp, zone)
+                    }
+                    _ => false,
+                })
+                .collect();
+            self.clear(|alert| answered.contains(&alert.key), changes);
         }
         if feed.outcome == FeedOutcome::Done {
             self.fed_since_digest = self.fed_since_digest.saturating_add(1);
@@ -1089,7 +1274,7 @@ impl State {
             (FeedOutcome::Failed | FeedOutcome::Expired, _) => Some(AlertKind::MealFailed),
             (FeedOutcome::Uncertain, _) => Some(AlertKind::MealUncertain),
             (FeedOutcome::Done, Some(Source::Schedule { .. })) => {
-                self.clear(|alert| alert.kind.ends_with_a_good_meal(), changes);
+                self.clear(|alert| alert.kind.superseded_by_a_good_meal(), changes);
                 Some(AlertKind::MealFed)
             }
             (FeedOutcome::Done, Some(Source::Client { .. } | Source::Panel)) => {
@@ -1154,22 +1339,24 @@ impl State {
         self.raise_once(key, detail, now, changes);
     }
 
-    /// Whether a missing record means anything yet. The cursor against the
-    /// status catches the moment after a reconnect, before the backlog
-    /// holding the meal's feed has arrived. A ring wiped since the status
-    /// can pass this for a moment, as a status names no epoch: the first
-    /// event of the new epoch rules those meals out, and until it arrives a
-    /// meal can read as having no record.
+    /// Whether every event the last status counted has arrived. It catches
+    /// the moment after a reconnect, before the backlog holding a meal's
+    /// feed. A ring wiped since that status can pass it for a moment, if the
+    /// new ring has already counted past the cursor and no welcome said so:
+    /// until the new epoch's first event a meal can read as having no record.
+    fn caught_up(&self) -> bool {
+        let read_to = self.read_to();
+        self.newest_event
+            .is_none_or(|newest| read_to.is_some_and(|read| read.seq >= newest))
+    }
+
+    /// Whether a missing record means anything yet.
     fn knows_the_record(&self, thresholds: &Thresholds, now: Timestamp) -> bool {
         let fresh = self
             .status_at
             .is_some_and(|at| elapsed(at, now) <= thresholds.status_fresh);
-        let read_to = self.read_to();
-        let caught_up = self
-            .newest_event
-            .is_none_or(|newest| read_to.is_some_and(|read_to| read_to >= newest));
 
-        self.link == Link::Connected && fresh && caught_up
+        self.link == Link::Connected && fresh && self.caught_up()
     }
 
     /// Opens an alert for each occurrence that has reached its grace with
@@ -1177,6 +1364,8 @@ impl State {
     /// reached exactly at due plus grace, on either side of midnight. The
     /// end of the day before is judged too, since a hold or a stopped
     /// watcher can run past midnight; the marks keep that from repeating.
+    /// Only those two local days are: a watcher stopped for longer says
+    /// nothing of the days between, as its feeds are kept for no longer.
     fn reach_meals(
         &mut self,
         thresholds: &Thresholds,
@@ -1206,7 +1395,12 @@ impl State {
             });
         for moment in day_before.into_iter().chain([reached]) {
             for meal in today(&plans, &self.feeds, moment, zone) {
-                if meal.state != MealState::Passed {
+                let held = self
+                    .slots_stale
+                    .get(usize::from(meal.slot))
+                    .copied()
+                    .unwrap_or(false);
+                if meal.state != MealState::Passed || held {
                     continue;
                 }
 
@@ -1223,7 +1417,7 @@ impl State {
                     .copied()
                     .flatten()
                     .is_some_and(|from| due > from);
-                if counted && !self.recorded(meal.slot, due) {
+                if counted && !self.recorded(meal.slot, due, zone) {
                     let key = Key {
                         kind: AlertKind::MealNoRecord,
                         occurrence: Occurrence::Meal {
@@ -1244,13 +1438,14 @@ impl State {
 
     /// Whether the feeder recorded anything of this occurrence. `today`
     /// looks only within a local day, and a feed can end past midnight.
-    fn recorded(&self, plan: u8, due: Timestamp) -> bool {
+    fn recorded(&self, plan: u8, due: Timestamp, zone: &TimeZone) -> bool {
         let missed = Mark::Alert(Key {
             kind: AlertKind::MealMissed,
             occurrence: Occurrence::Meal { plan, due },
         });
         let fed = self.feeds.iter().any(|feed| {
-            feed.by == Some(Source::Schedule { plan }) && feed.at.is_some_and(|at| at >= due)
+            feed.by == Some(Source::Schedule { plan })
+                && feed.at.is_some_and(|at| self.answers(plan, due, at, zone))
         });
 
         fed || self.seen.iter().any(|seen| seen.mark == missed)
@@ -1265,7 +1460,7 @@ impl State {
                 match (alert.kind, alert.key.occurrence) {
                     (AlertKind::MealSoon, Occurrence::Meal { due, .. }) => due <= now,
                     (kind, _) if kind.lapses() => age >= NEWS_LIFE,
-                    (kind, _) => kind.ends_with_a_good_meal() && age >= MARKS_KEPT,
+                    (kind, _) => kind.meal_problem() && age >= MARKS_KEPT,
                 }
             },
             changes,
@@ -1288,9 +1483,24 @@ impl State {
         }
     }
 
+    /// A condition is still true when its kind is turned back on, so the
+    /// owner hears of it. What is over stays silent: it is old news.
+    fn announce_conditions(&mut self, changes: &mut Vec<Change>) {
+        for open in &mut self.open {
+            let condition = matches!(open.alert.key.occurrence, Occurrence::Since { .. });
+            if condition && !open.announced && self.preferences.enabled(open.alert.kind) {
+                open.announced = true;
+                changes.push(Change::Opened(open.alert));
+            }
+        }
+    }
+
     fn prune(&mut self, now: Timestamp) {
-        self.feeds
-            .retain(|feed| feed.at.is_some_and(|at| elapsed(at, now) <= FEEDS_KEPT));
+        self.feeds.retain(|feed| {
+            feed.at.is_some_and(|at| {
+                elapsed(at, now) <= FEEDS_KEPT && elapsed(now, at) <= CLOCKS_APART
+            })
+        });
         self.seen.retain(|seen| elapsed(seen.at, now) <= MARKS_KEPT);
     }
 
@@ -1367,19 +1577,6 @@ impl State {
 /// but turning back on starts afresh.
 const fn keeps_occurrences(new: &Plan, old: &Plan) -> bool {
     new.minute == old.minute && new.days.bits() == old.days.bits() && (old.enabled || !new.enabled)
-}
-
-/// Whether `alert` says plan `plan` has no record of an occurrence a feed
-/// stamped `stamp` can be the record of. A later day's feed is not.
-fn no_record_of(alert: &Alert, plan: u8, stamp: Timestamp) -> bool {
-    let Occurrence::Meal { plan: slot, due } = alert.key.occurrence else {
-        return false;
-    };
-
-    alert.kind == AlertKind::MealNoRecord
-        && slot == plan
-        && due <= stamp
-        && elapsed(due, stamp) < RECORD_WINDOW
 }
 
 /// The time from `from` to `now`, never negative: a clock can step back.

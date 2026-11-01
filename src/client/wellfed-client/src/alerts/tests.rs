@@ -93,11 +93,13 @@ struct Watch {
 }
 
 impl Watch {
-    /// With the digest silenced, as a tick past its hour would open one;
-    /// its own tests turn it back on.
+    /// Past the session's welcome, with the digest silenced, as a tick past
+    /// its hour would open one; its own tests turn it back on.
     fn new() -> Self {
         let mut engine = Engine::default();
         engine.preferences_mut().disable(AlertKind::DailyDigest);
+        let welcome = Observation::Welcome { epoch: EPOCH };
+        engine.observe(welcome, t(START), &TimeZone::UTC);
         Self {
             engine,
             zone: TimeZone::UTC,
@@ -185,14 +187,35 @@ fn no_record() -> Watch {
 
 #[test]
 fn every_kind_has_its_level() {
-    assert_eq!(AlertKind::MealFailed.level(), Level::Urgent);
-    assert_eq!(AlertKind::MealNoRecord.level(), Level::Urgent);
-    assert_eq!(AlertKind::Unreachable.level(), Level::Urgent);
-    assert_eq!(AlertKind::FoodLow.level(), Level::Soon);
-    assert_eq!(AlertKind::HistoryLost.level(), Level::Soon);
-    assert_eq!(AlertKind::ClientJoined.level(), Level::Security);
-    assert_eq!(AlertKind::DailyDigest.level(), Level::Optional);
-    assert_eq!(AlertKind::ManualFeed.level(), Level::Optional);
+    let levels = [
+        (AlertKind::MealFailed, Level::Urgent),
+        (AlertKind::MealUncertain, Level::Urgent),
+        (AlertKind::MealMissed, Level::Urgent),
+        (AlertKind::MealNoRecord, Level::Urgent),
+        (AlertKind::NoClock, Level::Urgent),
+        (AlertKind::CannotFeed, Level::Urgent),
+        (AlertKind::FoodEmpty, Level::Urgent),
+        (AlertKind::Unreachable, Level::Urgent),
+        (AlertKind::FoodLow, Level::Soon),
+        (AlertKind::DesiccantDue, Level::Soon),
+        (AlertKind::PowerWasOut, Level::Soon),
+        (AlertKind::BatteryBelowFloor, Level::Soon),
+        (AlertKind::UpdateFailed, Level::Soon),
+        (AlertKind::RolledBack, Level::Soon),
+        (AlertKind::RepeatedRestarts, Level::Soon),
+        (AlertKind::HistoryLost, Level::Soon),
+        (AlertKind::ClientJoined, Level::Security),
+        (AlertKind::ClientRevoked, Level::Security),
+        (AlertKind::DailyDigest, Level::Optional),
+        (AlertKind::MealFed, Level::Optional),
+        (AlertKind::MealSoon, Level::Optional),
+        (AlertKind::ManualFeed, Level::Optional),
+    ];
+
+    assert_eq!(levels.len(), 22);
+    for (kind, level) in levels {
+        assert_eq!(kind.level(), level, "{kind:?}");
+    }
 }
 
 #[test]
@@ -238,22 +261,25 @@ fn an_uncertain_feed_opens_once_though_it_records_a_second_fed() {
 }
 
 #[test]
-fn a_scheduled_feed_that_finished_is_optional_and_clears_the_last_meals_alerts() {
+fn a_scheduled_feed_that_finished_replaces_the_news_and_leaves_a_failure_open() {
     let mut watch = breakfast();
     watch.engine.preferences_mut().enable(AlertKind::MealFed);
+    watch.engine.preferences_mut().enable(AlertKind::ManualFeed);
     let at = t("2026-10-30T07:00:00Z");
-    watch.event(
-        Some(at),
-        fed_body(1, FeedOutcome::Failed, FeedReason::Jammed, CLIENT),
-        at,
-    );
+    let manual = fed_body(1, FeedOutcome::Done, FeedReason::Done, CLIENT);
+    let failed = fed_body(2, FeedOutcome::Failed, FeedReason::Jammed, CLIENT);
+    watch.event(Some(at), manual, at);
+    watch.event(Some(at), failed, at);
 
     let now = t(DUE);
-    let changes = watch.event(Some(now), done_by_plan(2, 0), now);
+    let changes = watch.event(Some(now), done_by_plan(3, 0), now);
 
-    assert_eq!(cleared(&changes), [AlertKind::MealFailed]);
+    assert_eq!(cleared(&changes), [AlertKind::ManualFeed]);
     assert_eq!(opened(&changes), [AlertKind::MealFed]);
-    assert_eq!(watch.open_kinds(), [AlertKind::MealFed]);
+    assert_eq!(
+        watch.open_kinds(),
+        [AlertKind::MealFailed, AlertKind::MealFed]
+    );
 }
 
 #[test]
@@ -276,15 +302,41 @@ fn a_manual_feed_is_optional_and_lapses_after_a_day() {
 }
 
 #[test]
-fn a_meal_alert_holds_past_a_day_until_a_meal_goes_right() {
-    let mut watch = breakfast();
-    let now = t("2026-10-30T07:00:00Z");
-    let failed = fed_body(1, FeedOutcome::Failed, FeedReason::Jammed, CLIENT);
-    watch.event(Some(now), failed, now);
+fn a_meal_problem_is_a_past_fact_no_feed_clears() {
+    for (outcome, reason, kind) in [
+        (
+            FeedOutcome::Failed,
+            FeedReason::Jammed,
+            AlertKind::MealFailed,
+        ),
+        (
+            FeedOutcome::Uncertain,
+            FeedReason::Interrupted,
+            AlertKind::MealUncertain,
+        ),
+    ] {
+        let mut watch = breakfast();
+        let now = t("2026-10-30T07:00:00Z");
+        watch.event(Some(now), fed_body(1, outcome, reason, CLIENT), now);
 
-    let later = now + SignedDuration::from_hours(72);
-    assert!(cleared(&watch.see(Observation::Tick, later)).is_empty());
-    assert_eq!(watch.open_kinds(), [AlertKind::MealFailed]);
+        let later = now + SignedDuration::from_hours(72);
+        assert!(cleared(&watch.see(Observation::Tick, later)).is_empty());
+        let good = watch.event(Some(later), done_by_plan(2, 0), later);
+        assert!(cleared(&good).is_empty());
+        assert_eq!(watch.open_kinds(), [kind]);
+    }
+
+    let mut watch = breakfast();
+    let now = t("2026-10-30T08:16:00Z");
+    let missed = EventBody::Missed {
+        plan: 0,
+        due: t(DUE),
+        reason: MissedReason::Late,
+    };
+    watch.event(Some(now), missed, now);
+    let good = t("2026-10-31T08:00:30Z");
+    assert!(cleared(&watch.event(Some(good), done_by_plan(1, 0), good)).is_empty());
+    assert_eq!(watch.open_kinds(), [AlertKind::MealMissed]);
 }
 
 #[test]
@@ -423,13 +475,61 @@ fn another_plans_feed_does_not_answer_for_this_one() {
 }
 
 #[test]
-fn the_next_good_meal_closes_a_no_record_nothing_else_will() {
-    let mut watch = no_record();
-    let now = t("2026-10-31T08:00:30Z");
+fn no_later_or_other_good_meal_closes_a_no_record() {
+    let lunch = Plan {
+        minute: 12 * 60,
+        ..BREAKFAST
+    };
+    let mut watch = Watch::with_plans(plans(1, &[(0, BREAKFAST), (1, lunch)]), t(START));
+    assert_eq!(
+        opened(&watch.read_status(t(DUE) + GRACE)),
+        [AlertKind::MealNoRecord]
+    );
 
-    let changes = watch.event(Some(now), done_by_plan(1, 0), now);
-    assert_eq!(cleared(&changes), [AlertKind::MealNoRecord]);
-    assert!(watch.open_kinds().is_empty());
+    let noon = t("2026-10-30T12:00:30Z");
+    assert!(cleared(&watch.event(Some(noon), done_by_plan(2, 1), noon)).is_empty());
+    let tomorrow = t("2026-10-31T08:00:30Z");
+    assert!(cleared(&watch.event(Some(tomorrow), done_by_plan(3, 0), tomorrow)).is_empty());
+    assert_eq!(watch.open_kinds(), [AlertKind::MealNoRecord]);
+}
+
+#[test]
+fn the_next_days_failed_feed_is_not_yesterdays_record() {
+    let mut watch = no_record();
+    let tomorrow = t("2026-10-31T08:00:30Z");
+    let failed = fed_body(
+        1,
+        FeedOutcome::Failed,
+        FeedReason::Jammed,
+        Source::Schedule { plan: 0 },
+    );
+
+    let changes = watch.event(Some(tomorrow), failed, tomorrow);
+
+    assert!(cleared(&changes).is_empty());
+    assert_eq!(opened(&changes), [AlertKind::MealFailed]);
+}
+
+#[test]
+fn past_a_day_a_feed_answers_for_no_occurrence_even_with_no_plans_to_ask() {
+    // A plan deleted since: the window alone bounds the record.
+    let mut watch = no_record();
+    let gone = Plan {
+        days: Weekdays::from_bits(1),
+        ..BREAKFAST
+    };
+    let read = t("2026-10-30T09:00:00Z");
+    watch.see(Observation::Plans(plans(2, &[(0, gone)])), read);
+    let late = t("2026-10-31T08:30:00Z");
+    let failed = fed_body(
+        1,
+        FeedOutcome::Failed,
+        FeedReason::Jammed,
+        Source::Schedule { plan: 0 },
+    );
+
+    assert!(cleared(&watch.event(Some(late), failed, late)).is_empty());
+    assert!(watch.open_kinds().contains(&AlertKind::MealNoRecord));
 }
 
 #[test]
@@ -523,15 +623,32 @@ fn no_record_holds_while_the_link_is_down_and_opens_when_it_is_known() {
 }
 
 #[test]
-fn no_record_holds_on_a_status_gone_stale() {
+fn no_record_judges_on_a_status_exactly_as_old_as_fresh_and_no_older() {
     let mut watch = breakfast();
-    watch.read_status(t("2026-10-30T08:09:00Z"));
+    watch.read_status(t("2026-10-30T08:09:59Z"));
+    assert_eq!(watch.see(Observation::Tick, t(DUE) + GRACE), []);
+
+    let mut watch = breakfast();
+    watch.read_status(t("2026-10-30T08:10:00Z"));
+    assert_eq!(
+        opened(&watch.see(Observation::Tick, t(DUE) + GRACE)),
+        [AlertKind::MealNoRecord]
+    );
+}
+
+#[test]
+fn a_status_from_before_a_drop_does_not_judge_after_the_reconnect() {
+    let mut watch = breakfast();
+    let fresh = t("2026-10-30T08:24:00Z");
+    watch.read_status(fresh);
+
+    watch.see(Observation::Link(Link::Failed), t("2026-10-30T08:24:20Z"));
+    watch.see(
+        Observation::Link(Link::Connected),
+        t("2026-10-30T08:24:40Z"),
+    );
 
     assert_eq!(watch.see(Observation::Tick, t(DUE) + GRACE), []);
-    assert_eq!(
-        opened(&watch.see(Observation::Tick, t("2026-10-30T08:24:30Z"))),
-        []
-    );
     assert_eq!(
         opened(&watch.read_status(t(DUE) + GRACE)),
         [AlertKind::MealNoRecord]
@@ -750,34 +867,57 @@ fn a_new_epoch_starts_the_cursor_again_and_keeps_what_is_open() {
     let changes = watch.see(Observation::Event(new), now);
 
     // The same feed number is another feed in another history.
-    assert_eq!(opened(&changes), [AlertKind::MealFailed]);
+    assert_eq!(
+        opened(&changes),
+        [AlertKind::HistoryLost, AlertKind::MealFailed]
+    );
     assert_eq!(watch.engine.cursor(), Some((EPOCH + 1, 1)));
     assert_eq!(
         watch.open_kinds(),
-        [AlertKind::MealFailed, AlertKind::MealFailed]
+        [
+            AlertKind::MealFailed,
+            AlertKind::HistoryLost,
+            AlertKind::MealFailed
+        ]
     );
 }
 
 #[test]
-fn a_new_epoch_rules_out_meals_its_ring_no_longer_holds() {
+fn a_new_epoch_rules_out_meals_its_ring_no_longer_holds_and_says_so() {
     let mut watch = breakfast();
     let now = t("2026-10-30T07:00:00Z");
+    let boot = EventBody::Boot {
+        bank: 1,
+        reset_flags: 0,
+    };
     let seen = Event {
         epoch: EPOCH,
         seq: 1,
         at: Some(now),
-        body: EventBody::Lost { count: 0 },
+        body: boot,
     };
     watch.see(Observation::Event(seen), now);
+
+    let after_meal = t("2026-10-30T09:00:00Z");
     let wiped = Event {
         epoch: EPOCH + 1,
+        at: Some(after_meal),
         ..seen
     };
-    let after = t("2026-10-30T08:10:00Z");
-    watch.see(Observation::Event(wiped), after);
+    let changes = watch.see(Observation::Event(wiped), after_meal);
 
-    let status = status(Some(1));
-    assert_eq!(watch.see(Observation::Status(&status), t(DUE) + GRACE), []);
+    let [Change::Opened(alert)] = changes[..] else {
+        panic!("{changes:?}");
+    };
+    assert_eq!(alert.kind, AlertKind::HistoryLost);
+    assert_eq!(alert.detail, Detail::Wiped);
+    assert_eq!(alert.key.occurrence, Occurrence::Epoch { epoch: EPOCH + 1 });
+    assert!(watch.engine.needs_plans());
+
+    assert_eq!(see_status(&mut watch, &status(Some(1)), after_meal), []);
+    let table = plans(1, &[(0, BREAKFAST)]);
+    assert_eq!(watch.see(Observation::Plans(table), after_meal), []);
+    assert_eq!(watch.open_kinds(), [AlertKind::HistoryLost]);
 }
 
 #[test]
@@ -809,7 +949,12 @@ fn lost_events_rule_out_what_may_have_been_among_them() {
     let mut watch = breakfast();
     let now = t("2026-10-30T09:00:00Z");
 
+    assert!(!watch.engine.needs_plans());
     watch.event(Some(now), EventBody::Lost { count: 3 }, now);
+    assert!(watch.engine.needs_plans());
+
+    watch.see(Observation::Plans(plans(1, &[(0, BREAKFAST)])), now);
+    assert!(!watch.engine.needs_plans());
     assert_eq!(watch.read_status(now), []);
 }
 
@@ -837,18 +982,16 @@ fn acknowledging_what_is_over_clears_it_for_good() {
 }
 
 #[test]
-fn acknowledging_a_no_record_keeps_it_open_and_it_never_reopens() {
+fn acknowledging_a_no_record_closes_it_and_it_never_reopens() {
     let mut watch = no_record();
     let key = no_record_key(0, t(DUE));
 
-    assert_eq!(watch.engine.acknowledge(key), None);
-    let alert = watch.engine.open().next().unwrap();
-    assert!(alert.acknowledged);
+    assert_eq!(watch.engine.acknowledge(key), Some(Change::Cleared(key)));
+    assert_eq!(watch.engine.open().count(), 0);
 
     assert_eq!(watch.read_status(t("2026-10-30T08:40:00Z")), []);
     let now = t("2026-10-30T08:50:00Z");
-    let changes = watch.event(Some(now), done_by_plan(1, 0), now);
-    assert_eq!(cleared(&changes), [AlertKind::MealNoRecord]);
+    assert_eq!(watch.event(Some(now), done_by_plan(1, 0), now), []);
     assert_eq!(watch.read_status(now), []);
 }
 
@@ -870,16 +1013,9 @@ fn a_disabled_kind_is_tracked_but_says_nothing() {
     assert_eq!(watch.engine.open().count(), 0);
     assert_eq!(watch.engine.state().open.len(), 1);
 
-    let now = t(DUE);
-    assert_eq!(watch.event(Some(now), done_by_plan(2, 0), now), []);
-    let tracked: Vec<_> = watch
-        .engine
-        .state()
-        .open
-        .iter()
-        .map(|open| open.alert.kind)
-        .collect();
-    assert_eq!(tracked, [AlertKind::MealFed]);
+    let tracked = watch.engine.state().open[0].alert.key;
+    assert_eq!(watch.engine.acknowledge(tracked), None);
+    assert!(watch.engine.state().open.is_empty());
 }
 
 #[test]
@@ -920,14 +1056,22 @@ fn a_watcher_resumes_from_its_stored_state_mid_timer() {
     assert_eq!(resumed.engine.cursor(), watch.engine.cursor());
     assert!(!resumed.engine.preferences().enabled(AlertKind::MealFailed));
 
-    // The grace and the lapse both go on from where they were, and what
-    // opened before the restart does not open again.
+    // What the feeder recorded while it was stopped is unknown, so the
+    // status from before does not judge a meal. A new one does, the grace
+    // and the lapse go on from where they were, and what opened before the
+    // restart does not open again.
+    assert_eq!(resumed.see(Observation::Tick, t(DUE) + GRACE), []);
     assert_eq!(
-        opened(&resumed.see(Observation::Tick, t(DUE) + GRACE)),
+        opened(&resumed.read_status(t(DUE) + GRACE)),
         [AlertKind::MealNoRecord]
     );
-    let replay = fed_body(1, FeedOutcome::Done, FeedReason::Done, CLIENT);
-    assert_eq!(resumed.event(Some(now), replay, now + GRACE), []);
+    let replay = Event {
+        epoch: EPOCH,
+        seq: 1,
+        at: Some(now),
+        body: manual,
+    };
+    assert_eq!(resumed.see(Observation::Event(replay), now + GRACE), []);
     let lapsed = resumed.see(Observation::Tick, now + SignedDuration::from_hours(24));
     assert_eq!(cleared(&lapsed), [AlertKind::ManualFeed]);
 }
@@ -947,20 +1091,40 @@ fn a_clock_stepping_back_neither_lapses_nor_reopens_anything() {
     let mut watch = no_record();
     assert_eq!(watch.read_status(t("2026-10-30T08:10:00Z")), []);
     assert_eq!(watch.read_status(t(DUE) + GRACE), []);
+}
 
-    // A table read while the clock is back counts nothing before the
-    // last point already ruled out.
+#[test]
+fn a_clock_once_far_ahead_does_not_stop_no_record_for_good() {
     let mut watch = breakfast();
-    let moved = Plan {
-        minute: 7 * 60,
-        ..BREAKFAST
+    let gap = Gap {
+        epoch: EPOCH,
+        from: 1,
+        to: 40,
     };
-    watch.see(Observation::Plans(plans(2, &[(0, moved)])), t(DUE) + GRACE);
-    watch.see(
-        Observation::Plans(plans(3, &[(0, BREAKFAST)])),
-        t("2026-10-30T07:00:00Z"),
+    watch.see(Observation::Gap(gap), t("2036-01-01T00:00:00Z"));
+    watch.seq = 40;
+
+    let read = t("2026-10-30T07:00:00Z");
+    watch.see(Observation::Plans(plans(1, &[(0, BREAKFAST)])), read);
+
+    assert_eq!(
+        opened(&watch.read_status(t(DUE) + GRACE)),
+        [AlertKind::MealNoRecord]
     );
-    assert_eq!(watch.read_status(t(DUE) + GRACE + GRACE), []);
+}
+
+#[test]
+fn a_clock_once_far_ahead_does_not_stop_the_digest_for_good() {
+    let mut watch = quiet();
+    watch
+        .engine
+        .preferences_mut()
+        .enable(AlertKind::DailyDigest);
+    watch.see(Observation::Tick, t("2036-01-01T09:00:00Z"));
+
+    assert_eq!(watch.see(Observation::Tick, t("2026-10-30T09:00:00Z")), []);
+    let changes = watch.see(Observation::Tick, t("2026-10-31T09:00:00Z"));
+    assert!(opened(&changes).contains(&AlertKind::DailyDigest));
 }
 
 #[test]
@@ -996,6 +1160,14 @@ fn see_status(watch: &mut Watch, status: &Status, now: Timestamp) -> Vec<Change>
     watch.see(Observation::Status(status), now)
 }
 
+/// `status` every ten minutes through `minutes`, as a live watcher reads it.
+fn hold(watch: &mut Watch, status: &Status, minutes: std::ops::Range<i64>) -> Vec<Change> {
+    minutes
+        .step_by(10)
+        .flat_map(|minute| see_status(watch, status, after(minute)))
+        .collect()
+}
+
 #[test]
 fn a_new_engine_ignores_everything_until_a_status_and_then_only_what_follows_it() {
     let mut watch = Watch::new();
@@ -1013,7 +1185,11 @@ fn a_new_engine_ignores_everything_until_a_status_and_then_only_what_follows_it(
     assert_eq!(watch.engine.cursor(), None);
 
     see_status(&mut watch, &status(Some(50)), now);
-    assert_eq!(watch.engine.subscribe_after(), Some(50));
+    let baseline = Cursor {
+        epoch: EPOCH,
+        seq: 50,
+    };
+    assert_eq!(watch.engine.subscribe_after(), Some(baseline));
     assert_eq!(watch.engine.cursor(), None);
 
     assert_eq!(watch.see(Observation::Event(event(49, failed(2))), now), []);
@@ -1027,18 +1203,163 @@ fn a_new_engine_ignores_everything_until_a_status_and_then_only_what_follows_it(
 
     let changes = watch.see(Observation::Event(event(51, failed(4))), now);
     assert_eq!(opened(&changes), [AlertKind::MealFailed]);
-    assert_eq!(watch.engine.subscribe_after(), Some(51));
+    assert_eq!(
+        watch.engine.subscribe_after(),
+        Some(Cursor {
+            epoch: EPOCH,
+            seq: 51
+        })
+    );
     assert_eq!(watch.engine.cursor(), Some((EPOCH, 51)));
 
     // A later status moves nothing: the cursor has taken over.
     see_status(&mut watch, &status(Some(90)), now);
-    assert_eq!(watch.engine.subscribe_after(), Some(51));
+    assert_eq!(watch.engine.cursor(), Some((EPOCH, 51)));
+}
+
+#[test]
+fn a_status_takes_no_baseline_until_a_welcome_names_the_epoch() {
+    let mut engine = Engine::default();
+    let now = t(AFTER);
+    let zone = TimeZone::UTC;
+
+    engine.observe(Observation::Status(&status(Some(50))), now, &zone);
+    assert_eq!(engine.subscribe_after(), None);
+
+    engine.observe(Observation::Welcome { epoch: EPOCH }, now, &zone);
+    assert_eq!(engine.subscribe_after(), None);
+
+    engine.observe(Observation::Status(&status(Some(50))), now, &zone);
+    assert_eq!(
+        engine.subscribe_after(),
+        Some(Cursor {
+            epoch: EPOCH,
+            seq: 50
+        })
+    );
+}
+
+#[test]
+fn a_welcome_with_a_new_epoch_starts_the_read_over_in_that_epoch() {
+    let mut watch = quiet();
+    let welcome = Observation::Welcome { epoch: EPOCH + 1 };
+
+    let changes = watch.see(welcome, after(0));
+    assert_eq!(opened(&changes), [AlertKind::HistoryLost]);
+    assert_eq!(watch.see(welcome, after(1)), []);
+    assert_eq!(
+        watch.engine.subscribe_after(),
+        Some(Cursor {
+            epoch: EPOCH + 1,
+            seq: 0
+        })
+    );
+
+    // Its events are read, and the same epoch raises nothing further.
+    let event = Event {
+        epoch: EPOCH + 1,
+        seq: 1,
+        at: None,
+        body: fed_body(1, FeedOutcome::Failed, FeedReason::Jammed, CLIENT),
+    };
+    assert_eq!(
+        opened(&watch.see(Observation::Event(event), after(2))),
+        [AlertKind::MealFailed]
+    );
+}
+
+#[test]
+fn a_baseline_in_a_ring_wiped_since_does_not_swallow_the_new_rings_feeds() {
+    let mut watch = Watch::new();
+    let now = t(AFTER);
+    see_status(&mut watch, &status(Some(50)), now);
+    let failed = |feed| {
+        fed_body(
+            feed,
+            FeedOutcome::Failed,
+            FeedReason::Jammed,
+            Source::Schedule { plan: 0 },
+        )
+    };
+    let event = Event {
+        epoch: EPOCH + 1,
+        seq: 3,
+        at: Some(now),
+        body: failed(1),
+    };
+
+    let changes = watch.see(Observation::Event(event), now);
+    assert_eq!(
+        opened(&changes),
+        [AlertKind::HistoryLost, AlertKind::MealFailed]
+    );
+
+    see_status(&mut watch, &status(Some(3)), now);
+    let next = Event {
+        seq: 4,
+        body: failed(2),
+        ..event
+    };
+    assert_eq!(
+        opened(&watch.see(Observation::Event(next), now)),
+        [AlertKind::MealFailed]
+    );
+    assert_eq!(
+        watch.engine.subscribe_after(),
+        Some(Cursor {
+            epoch: EPOCH + 1,
+            seq: 4
+        })
+    );
+}
+
+#[test]
+fn a_status_counting_fewer_events_than_were_read_is_a_wipe() {
+    let mut watch = quiet();
+    let now = t(AFTER);
+    let boot = EventBody::Boot {
+        bank: 1,
+        reset_flags: 0,
+    };
+    let event = Event {
+        epoch: EPOCH,
+        seq: 90,
+        at: Some(now),
+        body: boot,
+    };
+    watch.see(Observation::Event(event), now);
+
+    let changes = see_status(&mut watch, &status(Some(3)), now);
+    assert_eq!(opened(&changes), [AlertKind::HistoryLost]);
+    assert!(watch.engine.needs_plans());
+    assert_eq!(
+        watch.engine.subscribe_after(),
+        Some(Cursor {
+            epoch: EPOCH,
+            seq: 3
+        })
+    );
+
+    // The new epoch, when it shows, is the same loss.
+    let next = Event {
+        epoch: EPOCH + 1,
+        seq: 4,
+        ..event
+    };
+    assert_eq!(watch.see(Observation::Event(next), now), []);
+    assert_eq!(watch.engine.cursor(), Some((EPOCH + 1, 4)));
 }
 
 #[test]
 fn a_feeder_with_no_events_has_no_history_to_skip() {
     let mut watch = quiet();
-    assert_eq!(watch.engine.subscribe_after(), Some(0));
+    assert_eq!(
+        watch.engine.subscribe_after(),
+        Some(Cursor {
+            epoch: EPOCH,
+            seq: 0
+        })
+    );
 
     let now = t(AFTER);
     let body = fed_body(1, FeedOutcome::Failed, FeedReason::Jammed, CLIENT);
@@ -1049,13 +1370,25 @@ fn a_feeder_with_no_events_has_no_history_to_skip() {
 }
 
 #[test]
-fn a_meal_is_judged_at_once_on_a_first_status_that_baselines_the_history() {
+fn a_first_status_rules_out_what_fell_before_it() {
     let plans = plans(1, &[(0, BREAKFAST)]);
     let mut watch = Watch::new();
     watch.see(Observation::Plans(plans), t(START));
 
-    let changes = see_status(&mut watch, &status(Some(50)), t(DUE) + GRACE);
-    assert_eq!(opened(&changes), [AlertKind::MealNoRecord]);
+    assert_eq!(
+        see_status(&mut watch, &status(Some(50)), t(DUE) + GRACE),
+        []
+    );
+
+    // Its first look was 08:25, so tomorrow's is the first it can judge.
+    assert_eq!(
+        opened(&see_status(
+            &mut watch,
+            &status(Some(50)),
+            t("2026-10-31T08:25:00Z")
+        )),
+        [AlertKind::MealNoRecord]
+    );
 }
 
 #[test]
@@ -1129,7 +1462,74 @@ fn a_once_plan_taken_is_not_tomorrows_meal_before_the_table_is_read() {
     let ran = t("2026-10-30T08:00:30Z");
     watch.event(Some(ran), done_by_plan(1, 0), ran);
 
+    assert!(watch.engine.needs_plans());
     assert_eq!(watch.read_status(t("2026-10-31T08:25:00Z")), []);
+}
+
+#[test]
+fn a_once_plan_the_feeder_gave_up_on_waits_for_the_table_too() {
+    let once = Plan {
+        days: Weekdays::ONCE,
+        ..BREAKFAST
+    };
+    let mut watch = Watch::with_plans(plans(1, &[(0, once)]), t(START));
+    let now = t("2026-10-30T08:16:00Z");
+    let missed = EventBody::Missed {
+        plan: 0,
+        due: t(DUE),
+        reason: MissedReason::Late,
+    };
+    watch.event(Some(now), missed, now);
+
+    assert!(watch.engine.needs_plans());
+    assert_eq!(watch.read_status(t("2026-10-31T08:25:00Z")), []);
+}
+
+#[test]
+fn a_held_once_plan_holds_only_its_own_slot() {
+    let once = Plan {
+        days: Weekdays::ONCE,
+        minute: 7 * 60,
+        ..BREAKFAST
+    };
+    let mut watch = Watch::with_plans(plans(1, &[(0, BREAKFAST), (1, once)]), t(START));
+    let ran = t("2026-10-30T07:00:30Z");
+    watch.event(Some(ran), done_by_plan(1, 1), ran);
+
+    assert_eq!(
+        opened(&watch.read_status(t(DUE) + GRACE)),
+        [AlertKind::MealNoRecord]
+    );
+}
+
+#[test]
+fn a_replayed_feed_does_not_spend_a_once_plan_armed_again_since() {
+    let once = Plan {
+        days: Weekdays::ONCE,
+        ..BREAKFAST
+    };
+    let mut watch = Watch::with_plans(plans(1, &[(0, once)]), t(START));
+
+    // The watcher was away: it ran on the 30th and was armed again.
+    let back = t("2026-10-30T16:00:00Z");
+    watch.see(Observation::Link(Link::Connected), back);
+    watch.see(Observation::Plans(plans(6, &[(0, once)])), back);
+    see_status(&mut watch, &status(Some(2)), back);
+    watch.event(Some(t("2026-10-30T08:00:30Z")), done_by_plan(1, 0), back);
+    let rearm = EventBody::Plans {
+        generation: Generation(6),
+        by: CLIENT,
+    };
+    watch.event(Some(back), rearm, back);
+
+    // Held for a read rather than taken as spent; the read says it is not.
+    assert!(watch.engine.needs_plans());
+    let read = t("2026-10-30T16:10:00Z");
+    watch.see(Observation::Plans(plans(6, &[(0, once)])), read);
+    assert_eq!(
+        opened(&watch.read_status(t("2026-10-31T08:25:00Z"))),
+        [AlertKind::MealNoRecord]
+    );
 }
 
 #[test]
@@ -1170,17 +1570,42 @@ fn no_clock_opens_past_its_threshold_and_clears_when_valid() {
         ..status(None)
     };
 
-    assert_eq!(see_status(&mut watch, &none, after(0)), []);
-    assert_eq!(see_status(&mut watch, &none, after(59)), []);
+    assert_eq!(hold(&mut watch, &none, 0..60), []);
     assert_eq!(
         opened(&see_status(&mut watch, &none, after(60))),
         [AlertKind::NoClock]
     );
-    assert_eq!(see_status(&mut watch, &none, after(90)), []);
+    assert_eq!(see_status(&mut watch, &none, after(70)), []);
 
-    let changes = see_status(&mut watch, &status(None), after(91));
+    let changes = see_status(&mut watch, &status(None), after(71));
     assert_eq!(cleared(&changes), [AlertKind::NoClock]);
-    assert_eq!(see_status(&mut watch, &none, after(92)), []);
+    assert_eq!(see_status(&mut watch, &none, after(72)), []);
+}
+
+#[test]
+fn a_silence_between_statuses_starts_their_timers_again() {
+    let mut watch = quiet();
+    let none = Status {
+        clock: None,
+        readiness: Some(Readiness::Blocked(Blocked::Fault)),
+        ..on_bank(1)
+    };
+    see_status(&mut watch, &none, after(0));
+    let fallen = Status { bank: 0, ..none };
+    see_status(&mut watch, &fallen, after(1));
+
+    // Each would have passed its threshold by now, but nothing was read.
+    assert_eq!(see_status(&mut watch, &fallen, after(120)), []);
+
+    let changes = hold(&mut watch, &fallen, 130..190);
+    assert_eq!(
+        opened(&changes),
+        [
+            AlertKind::CannotFeed,
+            AlertKind::RolledBack,
+            AlertKind::NoClock
+        ]
+    );
 }
 
 #[test]
@@ -1191,8 +1616,7 @@ fn cannot_feed_opens_past_its_threshold_with_the_reason_and_clears_on_ready() {
         ..status(None)
     };
 
-    assert_eq!(see_status(&mut watch, &blocked, after(0)), []);
-    assert_eq!(see_status(&mut watch, &blocked, after(29)), []);
+    assert_eq!(hold(&mut watch, &blocked, 0..30), []);
     let changes = see_status(&mut watch, &blocked, after(30));
     let [Change::Opened(alert)] = changes[..] else {
         panic!("{changes:?}");
@@ -1377,35 +1801,37 @@ fn acknowledging_power_was_out_ends_it_and_only_a_new_outage_reopens() {
 }
 
 #[test]
-fn battery_below_floor_needs_a_pack_or_no_adapter_and_clears_on_false() {
+fn battery_below_floor_follows_the_feeders_verdict() {
     let mut watch = quiet();
 
-    // An empty holder on the adapter, as an older build judged it.
-    let holder = supply(Some(true), Battery::Absent, Some(true));
-    assert_eq!(watch.event(None, holder, after(0)), []);
-    let unread = supply(Some(true), Battery::Unread, Some(true));
-    assert_eq!(watch.event(None, unread, after(1)), []);
-
     let flat = supply(Some(true), PACK, Some(true));
-    let changes = watch.event(None, flat, after(2));
-    assert_eq!(opened(&changes), [AlertKind::BatteryBelowFloor]);
+    assert_eq!(
+        opened(&watch.event(None, flat, after(0))),
+        [AlertKind::BatteryBelowFloor]
+    );
+
+    // No verdict is no verdict: it holds.
+    let unjudged = supply(Some(true), Battery::Absent, None);
+    assert!(cleared(&watch.event(None, unjudged, after(1))).is_empty());
+
     let good = supply(Some(true), PACK, Some(false));
     assert_eq!(
-        cleared(&watch.event(None, good, after(3))),
+        cleared(&watch.event(None, good, after(2))),
         [AlertKind::BatteryBelowFloor]
     );
+}
 
-    let unplugged = supply(Some(false), Battery::Unread, Some(true));
-    let changes = watch.event(None, unplugged, after(4));
-    assert!(opened(&changes).contains(&AlertKind::BatteryBelowFloor));
+#[test]
+fn a_pack_gone_stale_or_unread_does_not_clear_below_floor() {
+    for battery in [Battery::Unread, Battery::Stale { age_ms: 90_000 }] {
+        let mut watch = quiet();
+        let flat = supply(Some(true), PACK, Some(true));
+        watch.event(None, flat, after(0));
 
-    // The verdict gone is no verdict: it holds.
-    let unjudged = supply(Some(true), PACK, None);
-    assert!(cleared(&watch.event(None, unjudged, after(5))).is_empty());
-    assert_eq!(
-        cleared(&watch.event(None, holder, after(6))),
-        [AlertKind::BatteryBelowFloor]
-    );
+        let unsure = supply(Some(true), battery, Some(true));
+        assert_eq!(watch.event(None, unsure, after(1)), []);
+        assert_eq!(watch.open_kinds(), [AlertKind::BatteryBelowFloor]);
+    }
 }
 
 #[test]
@@ -1483,8 +1909,7 @@ fn on_bank(bank: u8) -> Status {
 fn rolled_back_opens_after_bank_0_has_held_and_clears_on_bank_1() {
     let mut watch = quiet();
 
-    assert_eq!(see_status(&mut watch, &on_bank(0), after(0)), []);
-    assert_eq!(see_status(&mut watch, &on_bank(0), after(29)), []);
+    assert_eq!(hold(&mut watch, &on_bank(0), 0..30), []);
     assert_eq!(
         opened(&see_status(&mut watch, &on_bank(0), after(30))),
         [AlertKind::RolledBack]
@@ -1504,12 +1929,16 @@ fn an_install_passing_through_bank_0_is_not_a_rollback() {
 
     watch.event(None, boot(0), after(0));
     watch.event(None, boot(1), after(20));
-    assert_eq!(see_status(&mut watch, &on_bank(1), after(40)), []);
+    let back = Status {
+        last_event: Some(2),
+        ..on_bank(1)
+    };
+    assert_eq!(see_status(&mut watch, &back, after(40)), []);
 
     // A feeder first seen on bank 0 fell from nowhere.
     let mut watch = Watch::new();
     see_status(&mut watch, &on_bank(0), after(0));
-    assert_eq!(see_status(&mut watch, &on_bank(0), after(60)), []);
+    assert_eq!(hold(&mut watch, &on_bank(0), 10..70), []);
 }
 
 const WATCHDOG: u32 = 1 << 17;
@@ -1767,7 +2196,6 @@ fn only_a_tick_brings_the_digest() {
 #[test]
 fn timers_resume_from_stored_state() {
     let mut watch = quiet();
-    watch.see(Observation::Link(Link::Failed), after(0));
     let none = Status {
         clock: None,
         ..status(None)
@@ -1788,10 +2216,8 @@ fn timers_resume_from_stored_state() {
         opened(&resumed.see(Observation::Tick, after(12))),
         [AlertKind::Unreachable]
     );
-    assert_eq!(
-        opened(&see_status(&mut resumed, &none, after(61))),
-        [AlertKind::NoClock]
-    );
+    let opened_later = opened(&hold(&mut resumed, &none, 13..64));
+    assert_eq!(opened_later, [AlertKind::NoClock]);
 }
 
 #[test]
@@ -1816,4 +2242,220 @@ fn restarts_stay_bounded() {
 
     assert_eq!(watch.engine.state().restarts.len(), 3);
     assert_eq!(watch.open_kinds(), [AlertKind::RepeatedRestarts]);
+}
+
+#[test]
+fn a_meal_with_no_record_a_day_later_is_not_answered_by_the_next_days_feed() {
+    let mut watch = breakfast();
+    watch.see(Observation::Link(Link::Away), t("2026-10-30T07:00:00Z"));
+    let back = t("2026-10-31T09:00:00Z");
+    watch.see(Observation::Link(Link::Connected), back);
+    assert_eq!(see_status(&mut watch, &status(Some(1)), back), []);
+
+    // The last event of the backlog is what makes the meal judged.
+    let fed = t("2026-10-31T08:10:00Z");
+    let changes = watch.event(Some(fed), done_by_plan(1, 0), back);
+
+    let [Change::Opened(alert)] = changes[..] else {
+        panic!("{changes:?}");
+    };
+    assert_eq!(alert.key, no_record_key(0, t(DUE)));
+}
+
+#[test]
+fn a_catch_up_read_leaves_a_failed_meal_open_past_the_good_one_after_it() {
+    let lunch = Plan {
+        minute: 12 * 60,
+        ..BREAKFAST
+    };
+    for (outcome, reason, kind) in [
+        (
+            FeedOutcome::Uncertain,
+            FeedReason::Interrupted,
+            AlertKind::MealUncertain,
+        ),
+        (
+            FeedOutcome::Failed,
+            FeedReason::Jammed,
+            AlertKind::MealFailed,
+        ),
+    ] {
+        let mut watch = Watch::with_plans(plans(1, &[(0, BREAKFAST), (1, lunch)]), t(START));
+        let back = t("2026-10-30T20:00:00Z");
+        let by = Source::Schedule { plan: 0 };
+
+        let mut all = watch.event(Some(t(DUE)), fed_body(1, outcome, reason, by), back);
+        let noon = t("2026-10-30T12:00:30Z");
+        all.extend(watch.event(Some(noon), done_by_plan(2, 1), back));
+
+        assert_eq!(opened(&all), [kind]);
+        assert_eq!(cleared(&all), []);
+        assert_eq!(watch.open_kinds(), [kind]);
+    }
+}
+
+#[test]
+fn a_feed_stamped_in_the_future_answers_for_no_meal() {
+    let mut watch = breakfast();
+    let wrong = t("2027-10-30T08:00:30Z");
+    watch.event(Some(wrong), done_by_plan(1, 0), t("2026-10-29T13:00:00Z"));
+
+    assert!(watch.engine.state().feeds.is_empty());
+    for day in [
+        "2026-10-30T08:25:00Z",
+        "2026-10-31T08:25:00Z",
+        "2026-11-05T08:25:00Z",
+    ] {
+        let changes = watch.read_status(t(day));
+        assert!(opened(&changes).contains(&AlertKind::MealNoRecord), "{day}");
+    }
+}
+
+#[test]
+fn a_feed_a_little_ahead_of_the_watcher_still_counts() {
+    let mut watch = breakfast();
+    let ahead = t("2026-10-30T08:02:00Z");
+    watch.event(Some(ahead), done_by_plan(1, 0), t(DUE));
+
+    assert_eq!(watch.read_status(t(DUE) + GRACE), []);
+}
+
+#[test]
+fn a_gap_says_the_plans_must_be_read() {
+    let mut watch = breakfast();
+    let gap = Gap {
+        epoch: EPOCH,
+        from: 1,
+        to: 40,
+    };
+    watch.see(Observation::Gap(gap), t("2026-10-30T07:00:00Z"));
+    assert!(watch.engine.needs_plans());
+}
+
+/// A gap carries numbers, not times, so it rules out everything up to now.
+/// This loses a meal the gap had no part in, which `HistoryLost` reports.
+#[test]
+fn a_gap_rules_out_todays_meal_though_it_cannot_say_when_it_fell() {
+    let mut watch = breakfast();
+    let back = t("2026-10-30T09:00:00Z");
+    let gap = Gap {
+        epoch: EPOCH,
+        from: 1,
+        to: 2,
+    };
+    watch.see(Observation::Link(Link::Connected), back);
+
+    let changes = watch.see(Observation::Gap(gap), back);
+    assert_eq!(opened(&changes), [AlertKind::HistoryLost]);
+
+    watch.seq = 2;
+    watch.see(Observation::Plans(plans(1, &[(0, BREAKFAST)])), back);
+    assert_eq!(opened(&watch.read_status(back)), []);
+}
+
+#[test]
+fn a_kind_turned_back_on_announces_a_condition_still_open() {
+    let mut watch = quiet();
+    watch.engine.preferences_mut().disable(AlertKind::FoodLow);
+    let low = Status {
+        food: FoodLevel::Low,
+        ..status(None)
+    };
+    assert_eq!(see_status(&mut watch, &low, after(0)), []);
+
+    watch.engine.preferences_mut().enable(AlertKind::FoodLow);
+    assert_eq!(
+        opened(&watch.see(Observation::Tick, after(1))),
+        [AlertKind::FoodLow]
+    );
+    assert_eq!(watch.open_kinds(), [AlertKind::FoodLow]);
+    assert_eq!(watch.see(Observation::Tick, after(2)), []);
+}
+
+#[test]
+fn a_kind_turned_back_on_stays_silent_about_what_is_over() {
+    let mut watch = quiet();
+    watch
+        .engine
+        .preferences_mut()
+        .disable(AlertKind::MealFailed);
+    let now = t(AFTER);
+    let failed = fed_body(1, FeedOutcome::Failed, FeedReason::Jammed, CLIENT);
+    watch.event(Some(now), failed, now);
+
+    watch.engine.preferences_mut().enable(AlertKind::MealFailed);
+    assert_eq!(watch.see(Observation::Tick, after(1)), []);
+}
+
+fn with_fault(feed: u32, outcome: FeedOutcome, last_event: Option<u64>) -> Status {
+    Status {
+        feed_fault: Some(FeedFault {
+            feed,
+            outcome,
+            reason: FeedReason::Jammed,
+        }),
+        ..status(last_event)
+    }
+}
+
+#[test]
+fn a_status_reports_a_fault_feed_whose_event_was_never_seen() {
+    for (outcome, kind) in [
+        (FeedOutcome::Failed, AlertKind::MealFailed),
+        (FeedOutcome::Uncertain, AlertKind::MealUncertain),
+    ] {
+        let mut watch = quiet();
+        let fault = with_fault(9, outcome, None);
+
+        let changes = see_status(&mut watch, &fault, after(0));
+        let [Change::Opened(alert)] = changes[..] else {
+            panic!("{changes:?}");
+        };
+        assert_eq!(alert.kind, kind);
+        assert!(matches!(alert.detail, Detail::Fault(_)));
+        assert_eq!(
+            alert.key.occurrence,
+            Occurrence::Feed {
+                epoch: EPOCH,
+                feed: 9
+            }
+        );
+
+        assert_eq!(see_status(&mut watch, &fault, after(1)), []);
+    }
+}
+
+#[test]
+fn a_fault_feed_already_read_opens_nothing_more() {
+    let mut watch = quiet();
+    let body = fed_body(9, FeedOutcome::Failed, FeedReason::Jammed, CLIENT);
+    let now = t(AFTER);
+    watch.event(Some(now), body, now);
+
+    let fault = with_fault(9, FeedOutcome::Failed, Some(1));
+    assert_eq!(see_status(&mut watch, &fault, after(1)), []);
+}
+
+#[test]
+fn a_fault_feed_waits_for_the_backlog_so_its_fed_event_counts() {
+    let mut watch = quiet();
+    let now = t(AFTER);
+    let behind = with_fault(9, FeedOutcome::Failed, Some(1));
+    assert_eq!(see_status(&mut watch, &behind, now), []);
+
+    let body = fed_body(9, FeedOutcome::Failed, FeedReason::Jammed, CLIENT);
+    let changes = watch.event(Some(now), body, now);
+    let [Change::Opened(alert)] = changes[..] else {
+        panic!("{changes:?}");
+    };
+    assert!(matches!(alert.detail, Detail::Feed(_)));
+}
+
+#[test]
+fn needs_plans_starts_true_and_a_read_answers_it() {
+    let mut watch = Watch::new();
+    assert!(watch.engine.needs_plans());
+
+    watch.see(Observation::Plans(plans(1, &[])), t(AFTER));
+    assert!(!watch.engine.needs_plans());
 }

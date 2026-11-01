@@ -89,6 +89,14 @@ pub(crate) fn latest_due(plan: &Plan, now: Timestamp, zone: &TimeZone) -> Option
     Timestamp::from_millisecond(i64::try_from(due).ok()?).ok()
 }
 
+/// The first occurrence of `plan` after `now`, in `zone`, whether or not the
+/// plan is enabled.
+pub(crate) fn following_due(plan: &Plan, now: Timestamp, zone: &TimeZone) -> Option<Timestamp> {
+    let now_ms = u64::try_from(now.as_millisecond()).ok()?;
+    let due = schedule::next_due(&core_plan(plan), now_ms, offsets(zone))?;
+    Timestamp::from_millisecond(i64::try_from(due).ok()?).ok()
+}
+
 /// `zone`'s offsets as the schedule asks for them.
 fn offsets(zone: &TimeZone) -> impl Fn(u64) -> Option<i32> + '_ {
     |ms| {
