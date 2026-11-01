@@ -266,10 +266,11 @@ ssh -t HOST wellfed-bench console --root /path/to/checkout
 ```
 
 - **It only reads.** It holds no way to post anything. `q` and Ctrl+C leave, and the server and its job run on, whatever the job is doing. The footer says so. It touches no hardware.
-- **Its log holds job output only.** It follows the running job, or else the last to finish, from its first kept line, with a separator at each new job and a line at each end. The lines only the server's own console prints, such as its start-up line and what it says while stopping, are not on the socket. A job's log is still complete: see [what the server keeps](#the-bench-server).
+- **Its log holds job output only.** It follows the running job, or else the last to finish, from its first kept line, with a separator at each new job and a line at each end. The lines only the server's own console prints, such as its start-up line and what it says while stopping, are not on the socket. A job's log is still complete: see [what the server keeps](#the-bench-server). If more than one job starts while the console is still reading an earlier one, it goes on to the newest, and the ones between never show here.
 - **A question shows, read-only.** Answer it with the `wellfed-bench answer` line the panel shows, or with `job_answer`.
 - **If the server goes away,** the last state stays on screen with a notice in the footer, and the console tries again every 2 s. It picks up whichever server answers next, and starts its log over if that is a new one. `q` still leaves.
 - **During a UART write** it redraws and polls the job's output at most twice a second, as the server's own console does. Over ssh it still runs on the bench host, so leave it if you want that host idle for a write.
+- **If its terminal goes away,** a dropped `ssh -t` say, it exits. The server and its job run on.
 
 With no terminal or no server at the start, it exits with an error and says which. When it leaves, it prints the log's last 30 lines.
 

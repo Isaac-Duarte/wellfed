@@ -9,7 +9,7 @@
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tokio::runtime::Runtime;
 use wellfed_bench_server::{Client, Watched};
@@ -23,6 +23,14 @@ pub(super) const KEYS: &str =
 /// The footer while the server does not answer, over its last state.
 pub(super) const NOT_ANSWERING: &str =
     "server not answering, retrying (last state shown); q leaves";
+
+/// How long a signal gives the screen loop to give the terminal back.
+const RESTORING: Duration = Duration::from_secs(1);
+/// The exit codes when a signal ended the process rather than the screen
+/// loop: 128 and the signal's number, as a shell reports one.
+const HUNG_UP: i32 = 129;
+const INTERRUPTED: i32 = 130;
+const TERMINATED: i32 = 143;
 
 /// Run the console until `q`, Ctrl+C or a signal, or refuse with no terminal
 /// or no server.
@@ -41,9 +49,15 @@ pub(crate) fn run(root: &Path, runtime: &Runtime) -> anyhow::Result<u8> {
     Ok(0)
 }
 
-/// Leave on a signal too, so the terminal gets out of raw mode and the
-/// alternate screen rather than being left in them. These only end this
-/// process: its server is another one.
+/// Leave on a signal, and end the process from here whatever the screen is
+/// doing: with its terminal gone, crossterm's `event::poll` spins on the
+/// failing read and never returns, whatever its timeout, so the screen loop
+/// never looks at `left`. Left to that, a dropped `ssh -t` would burn a core
+/// on the bench host until someone sent SIGKILL.
+///
+/// A hangup exits at once, as there is no terminal left to restore. Any
+/// other signal gives the loop [`RESTORING`] to give the terminal back first.
+/// These only end this process: its server is another one.
 async fn leave_on_signals(left: &Arc<AtomicBool>) -> std::io::Result<()> {
     use tokio::signal::unix::{SignalKind, signal};
 
@@ -52,12 +66,17 @@ async fn leave_on_signals(left: &Arc<AtomicBool>) -> std::io::Result<()> {
     let mut hangup = signal(SignalKind::hangup())?;
     let left = Arc::clone(left);
     tokio::spawn(async move {
-        tokio::select! {
-            _ = interrupt.recv() => {}
-            _ = terminate.recv() => {}
-            _ = hangup.recv() => {}
-        }
+        let code = tokio::select! {
+            _ = hangup.recv() => std::process::exit(HUNG_UP),
+            _ = interrupt.recv() => INTERRUPTED,
+            _ = terminate.recv() => TERMINATED,
+        };
         left.store(true, Ordering::SeqCst);
+
+        tokio::select! {
+            () = tokio::time::sleep(RESTORING) => std::process::exit(code),
+            _ = hangup.recv() => std::process::exit(HUNG_UP),
+        }
     });
     Ok(())
 }

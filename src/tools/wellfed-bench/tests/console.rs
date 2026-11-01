@@ -11,9 +11,10 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use rustix::process::{Pid, Signal, kill_process};
 use wellfed_bench_server::api::DuringWrite;
 use wellfed_bench_server::{Client, Console, Followed, Options, Server, ToolPaths};
-use wellfed_formats::bench::live::Phase;
+use wellfed_formats::bench::live::{BenchState, CancelState, Phase};
 use wellfed_relay::{AtBoard, FakeBoard};
 
 /// A stand-in flash client whose capture runs until it is signalled.
@@ -28,6 +29,9 @@ case "$3 $4" in
 esac
 "#;
 
+/// Before this on its terminal, the shell that becomes `console` says its pid.
+const PID_MARK: &str = "console-pid=";
+
 /// `console` on a terminal of its own, with its screen collected as it comes.
 struct Screen {
     child: Child,
@@ -37,7 +41,7 @@ struct Screen {
 impl Screen {
     fn start(root: &Path) -> Self {
         let line = format!(
-            "stty cols 130 rows 46; exec '{}' --root '{}' console",
+            "stty cols 130 rows 46; echo {PID_MARK}$$; exec '{}' --root '{}' console",
             env!("CARGO_BIN_EXE_wellfed-bench"),
             root.display()
         );
@@ -87,6 +91,15 @@ impl Screen {
         stdin.flush().unwrap();
     }
 
+    /// The pid of `console` itself, which `script` only started.
+    fn console_pid(&self) -> Pid {
+        self.until_shown(PID_MARK);
+        let text = self.text();
+        let (_, after) = text.split_once(PID_MARK).unwrap();
+        let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+        Pid::from_raw(digits.parse().unwrap()).unwrap()
+    }
+
     /// Its exit code, which it must reach soon.
     fn exit(&mut self) -> Option<i32> {
         let deadline = Instant::now() + Duration::from_secs(20);
@@ -97,6 +110,34 @@ impl Screen {
             assert!(Instant::now() < deadline, "still running:\n{}", self.text());
             std::thread::sleep(Duration::from_millis(20));
         }
+    }
+}
+
+/// Whether `pid` is still running. A process that has ended and waits for
+/// its new parent to reap it is not.
+fn running(pid: Pid) -> bool {
+    std::fs::read_to_string(format!("/proc/{}/stat", pid.as_raw_nonzero()))
+        .ok()
+        .and_then(|stat| {
+            let (_, after_name) = stat.rsplit_once(')')?;
+            after_name
+                .split_whitespace()
+                .next()
+                .map(|state| state != "Z")
+        })
+        .unwrap_or(false)
+}
+
+/// Fail unless `pid` ends soon, taking it down first so that a failure here
+/// leaves nothing spinning on the host.
+fn assert_ends(pid: Pid, what: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while running(pid) {
+        if Instant::now() >= deadline {
+            let _ = kill_process(pid, Signal::KILL);
+            panic!("{what}: console pid {pid:?} still running after 5 s");
+        }
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
 
@@ -177,12 +218,48 @@ fn the_console_refuses_without_a_terminal_or_server_and_q_leaves_the_job_running
     screen.press("q");
     assert_eq!(screen.exit(), Some(0), "{}", screen.text());
 
+    // The job's thread sets its activity a moment after the job is accepted.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let state: BenchState = loop {
+        let state = runtime.block_on(client.state()).unwrap();
+        if !state.activity.is_empty() {
+            break state;
+        }
+        assert!(Instant::now() < deadline, "no activity: {state:?}");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(state.server.phase, Phase::Serving);
+    let held = state.job.unwrap();
+    assert_eq!(held.id, job);
+    assert!(held.end.is_none(), "{held:?}");
+    assert_eq!(held.cancel, CancelState::None, "{held:?}");
+
+    // A signal closes the screen and gives the terminal back.
+    for signal in [Signal::TERM, Signal::INT] {
+        let mut screen = Screen::start(&root);
+        let pid = screen.console_pid();
+        screen.until_shown("the server keeps running");
+        kill_process(pid, signal).unwrap();
+        assert_eq!(screen.exit(), Some(0), "{signal:?}: {}", screen.text());
+        assert!(
+            screen.text().contains("\x1b[?1049l"),
+            "{signal:?} left the alternate screen on: {}",
+            screen.text()
+        );
+    }
+
+    // A dropped `ssh -t`: the terminal goes from under the console, which
+    // must not outlive it.
+    let mut screen = Screen::start(&root);
+    let pid = screen.console_pid();
+    screen.until_shown("the server keeps running");
+    screen.child.kill().unwrap();
+    screen.child.wait().unwrap();
+    assert_ends(pid, "with its terminal gone");
+
     let state = runtime.block_on(client.state()).unwrap();
     assert_eq!(state.server.phase, Phase::Serving);
-    let running = state.job.unwrap();
-    assert_eq!(running.id, job);
-    assert!(running.end.is_none(), "{running:?}");
-    assert!(!state.activity.is_empty(), "{:?}", state.activity);
+    assert!(state.job.unwrap().end.is_none());
 
     runtime
         .block_on(client.cancel(job, DuringWrite::Refuse))

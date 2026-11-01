@@ -10,13 +10,14 @@
 //! answering, and is tried again every 2 s until one answers. While the
 //! flash client writes, the output is polled no faster than twice a second,
 //! so a watcher keeps the bench host as quiet as the server's own console
-//! does.
+//! does. A watcher may stay up for days, so a reader that stops taking lines
+//! (a stalled terminal) pauses the fetching rather than growing memory; the
+//! server keeps the job's output meanwhile.
 
 use std::sync::Arc;
-use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use wellfed_formats::bench::live::{BenchState, JobEnd, JobId, Phase, Uart};
 use wellfed_formats::bench::now;
@@ -33,6 +34,9 @@ const ANSWER: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(250);
 /// Between polls during a write: about 2 Hz, the server's console's rate.
 const WRITING_POLL: Duration = Duration::from_millis(500);
+/// The lines waiting for a reader: two pages, so a screen that drains them
+/// a few times a second still catches up at full speed.
+const WAITING_LINES: usize = 2 * OUTPUT_PAGE;
 
 /// What the watcher knows of the server.
 struct View {
@@ -43,7 +47,7 @@ struct View {
 /// A running server, watched by two tasks until this is dropped.
 pub struct Watched {
     view: watch::Receiver<View>,
-    lines: Receiver<String>,
+    lines: mpsc::Receiver<String>,
     tasks: [JoinHandle<()>; 2],
 }
 
@@ -61,7 +65,7 @@ impl Watched {
             state,
             answering: true,
         });
-        let (send_lines, lines) = mpsc::channel();
+        let (send_lines, lines) = mpsc::channel(WAITING_LINES);
         let tasks = [
             tokio::spawn(follow_state(Arc::clone(&client), send_view)),
             tokio::spawn(follow_output(client, view.clone(), send_lines)),
@@ -83,7 +87,7 @@ impl Watched {
     }
 
     /// The next line for the log, if one is waiting.
-    pub fn line(&self) -> Option<String> {
+    pub fn line(&mut self) -> Option<String> {
         self.lines.try_recv().ok()
     }
 }
@@ -130,7 +134,7 @@ async fn read_states(client: &Client, view: &watch::Sender<View>) -> Result<(), 
 async fn follow_output(
     client: Arc<Client>,
     mut view: watch::Receiver<View>,
-    lines: Sender<String>,
+    lines: mpsc::Sender<String>,
 ) {
     let mut follower = Follower::default();
     loop {
@@ -144,14 +148,14 @@ async fn follow_output(
 
         // Nothing to read until the state names another job.
         let Some(read) = read else {
-            if !send(&lines, out) || view.changed().await.is_err() {
+            if !send(&lines, out).await || view.changed().await.is_err() {
                 return;
             }
             continue;
         };
 
-        let wait = match client.output(read.job, read.after).await {
-            Ok(page) => {
+        let wait = match tokio::time::timeout(ANSWER, client.output(read.job, read.after)).await {
+            Ok(Ok(page)) => {
                 // Catching up, the next page follows at once, but for a write.
                 let full = page.lines.len() >= OUTPUT_PAGE;
                 follower.page(read.job, page, &mut out);
@@ -161,22 +165,28 @@ async fn follow_output(
                     pace
                 }
             }
-            Err(ClientError::Refused(Refusal::NoSuchJob { .. })) => {
+            Ok(Err(ClientError::Refused(Refusal::NoSuchJob { .. }))) => {
                 follower.lost(read.job, &mut out);
                 pace
             }
-            Err(_) => RETRY,
+            Ok(Err(_)) | Err(_) => RETRY,
         };
-        if !send(&lines, out) {
+        if !send(&lines, out).await {
             return;
         }
         tokio::time::sleep(wait).await;
     }
 }
 
-/// Whether the watcher still takes lines.
-fn send(lines: &Sender<String>, out: Vec<String>) -> bool {
-    out.into_iter().all(|line| lines.send(line).is_ok())
+/// Hand over `out`, waiting while the reader's queue is full, which holds
+/// the next fetch back too. False once the watcher is gone.
+async fn send(lines: &mpsc::Sender<String>, out: Vec<String>) -> bool {
+    for line in out {
+        if lines.send(line).await.is_err() {
+            return false;
+        }
+    }
+    true
 }
 
 /// What the follower needs of the state.

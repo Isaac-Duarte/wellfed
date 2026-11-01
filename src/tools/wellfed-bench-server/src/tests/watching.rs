@@ -37,7 +37,7 @@ fn recorded(server: &Running, dir: &Path) -> (PathBuf, Seen) {
 }
 
 /// Take the lines `watched` has until one is `line`.
-async fn read_until(watched: &Watched, kept: &mut Vec<String>, line: &str) {
+async fn read_until(watched: &mut Watched, kept: &mut Vec<String>, line: &str) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while !kept.iter().any(|kept| kept == line) {
         match watched.line() {
@@ -97,26 +97,26 @@ async fn a_watcher_follows_a_job_with_gets_alone_and_leaving_lets_it_run_on() {
     let separator = format!("── job {id}: capture c1 ──");
 
     // Leave in the middle of the job.
-    let watched = Watched::start(Client::at(socket.clone())).await.unwrap();
+    let mut watched = Watched::start(Client::at(socket.clone())).await.unwrap();
     let mut kept = Vec::new();
-    read_until(&watched, &mut kept, &separator).await;
+    read_until(&mut watched, &mut kept, &separator).await;
     assert!(watched.answering());
     assert_eq!(watched.state().job.map(|job| job.id), Some(id));
     drop(watched);
 
-    let state = server.state().await;
+    // The job's thread sets its activity a moment after the job is accepted.
+    let state = state_until(&server, "the capture", |state| !state.activity.is_empty()).await;
     assert_eq!(state.server.phase, Phase::Serving);
     let job = state.job.as_ref().unwrap();
     assert!(
         job.end.is_none() && job.cancel == CancelState::None,
         "{job:?}"
     );
-    assert!(!state.activity.is_empty(), "{:?}", state.activity);
 
     // Another attaches, and reads the job to its end.
-    let watched = Watched::start(Client::at(socket)).await.unwrap();
+    let mut watched = Watched::start(Client::at(socket)).await.unwrap();
     let mut kept = Vec::new();
-    read_until(&watched, &mut kept, &format!("── job {id} complete ──")).await;
+    read_until(&mut watched, &mut kept, &format!("── job {id} complete ──")).await;
     assert_eq!(kept.iter().filter(|line| **line == separator).count(), 1);
     assert!(
         kept.contains(&"Captured 7 bytes in private/captures/c1".to_string()),
@@ -149,11 +149,16 @@ async fn a_watcher_keeps_the_last_state_of_a_server_gone_and_resyncs_with_the_ne
     let _one = ONE_SERVER.lock().await;
     let checkout = Checkout::new(0.2);
     let server = Running::start(checkout.open());
-    let watched = Watched::start(Client::new(&server.root)).await.unwrap();
+    let mut watched = Watched::start(Client::new(&server.root)).await.unwrap();
 
     let first = server.submit(&["capture", "c1"]).await.unwrap();
     let mut kept = Vec::new();
-    read_until(&watched, &mut kept, &format!("── job {first} complete ──")).await;
+    read_until(
+        &mut watched,
+        &mut kept,
+        &format!("── job {first} complete ──"),
+    )
+    .await;
 
     server.quit().await;
     until("the server to stop answering", || !watched.answering()).await;
@@ -166,7 +171,54 @@ async fn a_watcher_keeps_the_last_state_of_a_server_gone_and_resyncs_with_the_ne
     assert_eq!(watched.state().server.phase, Phase::Serving);
 
     let second = server.submit(&["capture", "c2"]).await.unwrap();
-    read_until(&watched, &mut kept, &format!("── job {second} complete ──")).await;
+    read_until(
+        &mut watched,
+        &mut kept,
+        &format!("── job {second} complete ──"),
+    )
+    .await;
+
+    drop(watched);
+    server.quit().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_watcher_nobody_reads_stops_fetching_and_loses_nothing_once_read_again() {
+    if crate::tests::run_alone() {
+        return;
+    }
+    let _one = ONE_SERVER.lock().await;
+    let checkout = Checkout::new(8.0);
+    let server = Running::start(checkout.open());
+    let (socket, seen) = recorded(&server, &checkout.root());
+    let mut watched = Watched::start(Client::at(socket)).await.unwrap();
+
+    // 3000 lines against a queue of 1000, with nothing taking them.
+    let id = server.submit(&["capture", "burst"]).await.unwrap();
+    let output = format!("/jobs/{id}/output");
+    let polls = || {
+        let seen = seen.lock().unwrap();
+        seen.iter().filter(|(_, path)| *path == output).count()
+    };
+
+    // The job runs on, so a follower that was not held back would keep
+    // polling four times a second.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let before = polls();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        if polls() == before && before > 0 {
+            break;
+        }
+        assert!(Instant::now() < deadline, "still polling: {before}");
+    }
+    let job = server.state().await.job.unwrap();
+    assert!(job.id == id && job.end.is_none(), "{job:?}");
+
+    let mut kept = Vec::new();
+    read_until(&mut watched, &mut kept, &format!("── job {id} complete ──")).await;
+    let burst = kept.iter().filter(|line| line.starts_with("burst line"));
+    assert_eq!(burst.count(), 3000);
 
     drop(watched);
     server.quit().await;
