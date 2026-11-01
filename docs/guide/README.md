@@ -45,6 +45,7 @@ Not yet, as an owner: there's nothing public to install. Follow the [roadmap](..
 | Know how an install avoids stranding your feeder | [Install and rollback](how-it-works/install-and-rollback.md) |
 | Know why a feed can't run twice, and its limits | [How feeding stays safe](how-it-works/feeding-safety.md) |
 | Know who can reach your feeder | [Who can talk to your feeder](how-it-works/access.md) |
+| See what we did to the feeder, and what broke | [The test log](how-it-works/testing.md) |
 | See what works and what doesn't | [Roadmap](../roadmap.md) |
 | Run the optional server | [Running the server](../server/running.md) |
 | Help build it | [Development guide](../development/README.md) |

@@ -77,7 +77,7 @@ This page tracks what works today and what comes next. It covers the replacement
 ## What's next
 
 1. A long unattended run with injected faults, to prove the feeder stays safe over hours.
-2. Checking the battery floor and a brownout on a bench supply, and a feed's peak current with a full hopper and on batteries.
+2. Checking the battery floor and a brownout on a bench supply, and a feed on a tired pack.
 3. Finishing the Android app: its next install from stock on the research unit, then alerts.
 4. Running feeds through the server on a real feeder, including a lost answer and its retry, then connecting the app to it.
 5. A first research release.

@@ -25,7 +25,7 @@ Notes:
 - **Units.** Milliamps need a reference. R36 (1.00 Ω) is the current sense, so the scaled values are about milliamps if the scale is pin millivolts. That is still to be confirmed.
 - **Reversal length.** Stock's reversal length is not recovered, so 1 s stays provisional until a real jam shows what frees it. A turn is about 27 s of drive.
 
-**Threshold risk.** The 300 and 1000 come from empty and light-food drives on the adapter. A full hopper's peaks, peaks on batteries and a real stall's current are not measured. Peaks near 300 would make sound feeds back off, and end them after three reversals. A stall reading over 1000 would stop every jam at once with no reversal: safe, but never freeing one.
+**Threshold risk.** The 300 and 1000 come from empty and light-food drives on the adapter. On November 1, four full-hopper feeds peaked at 236 to 283, one feed on batteries at 268, and empty feeds at 259 and 273. Older feeds went higher: 289 on food, and 324 on an empty feed that still finished. A real stall's current is not measured. Peaks near 300 would make sound feeds back off, and end them after three reversals. A stall reading over 1000 would stop every jam at once with no reversal: safe, but never freeing one.
 
 Rules the controller keeps (host-tested in `wellfed-core`'s `feed_controller`):
 
@@ -148,12 +148,13 @@ Unattended, hopper empty, D cells out, at most 3 portions a feed, the logic anal
 
 - **A real jam.** A kibble or a wedge in the rotor, with food. Kibble pressed into the rotor by hand did not jam it ([Evidence](#evidence)). The stall current the 300 limit is meant to catch is not measured (the simulator's 1000 raw is a guess), nor whether a 1 s reversal frees a real jam.
 - **Taped sensors.** PA18 covered (lost marks), and a stuck mark.
-- **The rotor on D cells.** A feed on batteries alone with the analyzer and UART. The gap between marks (8.5 s at most on the adapter) must stay well under the 11 s `mark_gap_ms`, and the drive current under the 300 limit, or both limits need a battery case.
+- **The rotor on a tired pack.** One feed on fresh D cells has run: 10,189 ms of drive and a peak of 268, inside both the 11 s `mark_gap_ms` and the 300 limit ([Evidence](#evidence)). A low pack hasn't, and it could need a battery case for both limits.
 - **A current reference.** A USB power meter in series, or a confirmed sense-resistor scaling, to put 300, 1000 and the surge in milliamps.
 - **Food readings.** The food beam's reading across a refill, so the statistics' low and refilled counts have a physical check.
 
 ## Evidence
 
+- **A full hopper and batteries.** Observed (November 1, the same day and food). Feeds of 3, 2, 5 and 5 portions, none reversing, peaked at 236, 239, 283 and 275. A feed on three fresh D cells peaked at 268. A taped outlet again ended a feed `outlet_blocked` with no drive, and readiness read ready before it.
 - **A taped outlet, and kibble by hand.** Observed (October 29, owner present, hopper empty). The outlet beam taped before a feed ended it `outlet_blocked` with no drive, and the rotor stayed still. Covered mid-feed, a 3-portion feed ended `outlet_blocked` at 1 of 3, with the motor stopped 1.0 s after the beam was blocked and no resume. Kibbles pressed into the rotor gap did not jam it: the feed finished 1 of 1 with no reversal, at a peak current of 260 against 281–289 on normal food feeds.
 - **The renamed reasons.** Observed (October 28, unattended, hopper empty, `feed-jam` variant): 1 portion done after a reversal, 2 portions `jammed`, 3 portions `mark_stuck`, and the status named the last fault.
 - **The variants on hardware.** Observed (October 26, `feed-jam` v233 and `sensor-fault` v234, hopper empty, feeds 48–53, UART captures `fw19-{jam,sensor}-20261026-feed{1,2,3}-uart`):

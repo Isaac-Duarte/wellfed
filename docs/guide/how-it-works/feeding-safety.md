@@ -120,7 +120,7 @@ Once time returns, a meal up to 15 minutes late runs once, and a later one is re
 ## What this doesn't protect against
 
 - **A pet going hungry.** Meals can be skipped by a long outage, a power cut, a fault or an empty hopper, and no alert reaches you. Alerts are planned for the app, but they haven't been designed or built.
-- **A real jam.** Kibble pressed into the rotor by hand didn't jam it, so the jam handling has run only on simulated current readings. Whether 1 second of reversing frees a real jam is unknown. The current limits come from empty and lightly filled drives, and a full hopper or batteries haven't been measured.
+- **A real jam.** Kibble pressed into the rotor by hand didn't jam it, so the jam handling has run only on simulated current readings. Whether 1 second of reversing frees a real jam is unknown. The limit of 300 came from empty and lightly filled drives. Four full-hopper feeds later peaked at 236 to 283 and one feed on batteries at 268, on the feeder's own scale, but a real stall's current hasn't been measured, so the margin to a real jam is unknown.
 - **Food stuck above the rotor.** Food bridging in the hopper still counts as portions.
 - **A stuck-clear outlet beam.** The feeder doesn't check that the beam really responds, so a blocked outlet could read as clear. A jam would still end the drive.
 - **A bug past the supervision.** These stops bound how long the motor runs. They don't check that a meal's time or size is what you meant.
@@ -135,5 +135,6 @@ Don't rely on Wellfed alone to feed a pet yet.
 - **Observed, October 26, 2026, hopper empty, once per case.** Injected stalls ended the drive by the lease 0.18 to 0.2 s later. A failed stop held 300 ms ended at the first retry. One held 8 s ended at the watchdog reset, after about 7 s of drive.
 - **Observed, October 26 to 28, 2026, hopper empty.** Injected jams, lost marks, a stuck mark and a lost sensor each ended as named, with every feed stopped and recorded.
 - **Observed, October 29, 2026.** A beam taped before a feed ended it with no drive. Covered mid-feed, the motor stopped 1.0 s later. Hand-pressed kibble didn't jam the rotor. Feeds from a near-empty hopper dropped as described above.
+- **Observed, November 1, 2026, once per case.** Four full-hopper feeds and one feed on three fresh D cells, with the peaks above ([the test log](testing.md#feeding-sensors-and-faults)).
 - **Observed, October 28, 2026, hopper empty.** A daily plan fed once, and a reboot within its minute ran nothing again.
 - **Modeled, October 26 to 28, 2026.** Cuts between a claim and its feed, and through each journal write, ran in simulation and host tests. Every jam position was swept in simulation. [Motor and feeds](../../firmware/motor-pulse.md#evidence), [jams and sensor faults](../../firmware/jams-and-sensor-faults.md#evidence) and [schedules](../../firmware/schedules.md#evidence) hold the record.
