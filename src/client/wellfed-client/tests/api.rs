@@ -2043,6 +2043,56 @@ fn open_recovery(rig: &mut Rig) {
     );
 }
 
+/// A recovery client that stops reading its `EnterCode` loses the offer with
+/// its slot, as one that hangs up does: the owner's next presses work the
+/// panel again, rather than keying a code for no one.
+#[test]
+fn a_recovery_client_that_stops_reading_gives_up_its_offer() {
+    use wellfed_client::setup::{Ask, Session as Setup};
+    use wellfed_device_api::STALL_MS;
+    use wellfed_model::setup::Reply;
+
+    let mut rig = Rig::new();
+    open_recovery(&mut rig);
+    let slot = rig.accept().unwrap();
+    let ask = Ask {
+        label: "laptop".into(),
+        wifi: None,
+    };
+    let keys = Keypair::from_secret(STRANGER);
+    let code = Code::from_bits(0x0abc);
+    let setup = Setup::new(&keys, [0x61; 32], ask, code, [0x62; 32]).unwrap();
+    let mut recovery = Recovery::new(setup).unwrap();
+    let mut outbox = Vec::new();
+
+    // Up to the offer, stopping as soon as the feeder has answered it.
+    while rig.pairing.awaiting().is_none() {
+        while let Some(bytes) = recovery.poll_transmit() {
+            outbox.extend(bytes);
+        }
+        rig.deliver(slot, &mut outbox);
+        rig.pass();
+        if rig.pairing.awaiting().is_none() {
+            let received = rig.collect(slot);
+            recovery.handle_input(&received).unwrap();
+            assert!(!matches!(recovery.poll_reply(), Some(Reply::Done { .. })));
+        }
+    }
+    assert!(!rig.server.tx(slot).is_empty(), "the EnterCode, unread");
+
+    for _ in 0..STALL_MS / 20 + 2 {
+        rig.pass();
+    }
+    assert!(rig.ended(Reason::Stalled));
+    assert!(rig.server.closing(slot));
+    let records = &mut rig.records;
+    rig.server.closed(slot, |r| records.push(r));
+    assert_eq!(rig.server.sessions(), 0);
+
+    rig.pass();
+    assert_eq!(rig.pairing.awaiting(), None, "the offer went with it");
+}
+
 #[test]
 fn the_recovery_window_admits_one_owner_who_proves_the_code() {
     use wellfed_model::setup::{Enrolled, Reply, WifiSaved};
@@ -3298,6 +3348,28 @@ fn press_dispense(rig: &mut Rig) -> Option<PairingEvent> {
         chord: Buttons::of(Button::Dispense),
     };
     rig.pairing.gesture(rig.now, press, Lock::Unlocked)
+}
+
+/// An update key waits up to a minute for its press. The owner's session stays
+/// open past the stall limit, since nothing is queued for it, and the loop does
+/// not spin for it.
+#[test]
+fn a_dispense_wait_rests_the_loop_and_keeps_its_session() {
+    let mut rig = update_rig();
+    let mut owner = open(&mut rig, OWNER);
+    assert_eq!(
+        ask_within(&mut rig, &mut owner, 1, enroll_laptop(), 5),
+        None
+    );
+
+    for _ in 0..wellfed_device_api::STALL_MS / 20 + 2 {
+        assert!(!rig.pass(), "waiting for a press is not work");
+    }
+    assert!(!rig.ended(Reason::Stalled));
+
+    rig.signer = press_dispense(&mut rig);
+    let done = poll_answer(&mut rig, &mut owner, 1, 50).unwrap();
+    assert_eq!(done, Answer::Done { generation: None });
 }
 
 #[test]

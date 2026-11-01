@@ -11,7 +11,7 @@
 //!
 //! The faults are read where the product reads its inputs: the GPIO word in
 //! `Board::capture_gpio`, the ADC conversions and the current channel's
-//! samples in `Board::capture`, and the feedback interrupt in the
+//! samples in `Board::capture_channels`, and the feedback interrupt in the
 //! supervisor. One fault at a time, one static in RAM, disarmed at every
 //! boot.
 
@@ -45,7 +45,8 @@ pub enum Injected {
     MarkStuckLow = 4,
     /// The outlet receiver reads LOW, as a blocked beam does.
     OutletBlocked = 5,
-    /// The current channel's conversion never completes: the ADC lost.
+    /// No conversion completes, on whichever channels a capture converts: the
+    /// ADC lost.
     AdcFails = 6,
 }
 
@@ -116,7 +117,7 @@ pub(crate) fn gpio(pins: u32) -> u32 {
     shown
 }
 
-/// Whether the current channel's conversion fails.
+/// Whether the conversions of a capture that makes any fail.
 pub(crate) fn adc_fails() -> bool {
     let fails = armed() == Injected::AdcFails;
     if fails {

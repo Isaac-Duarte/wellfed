@@ -89,6 +89,12 @@ How the protocol may change is under [Evolution](#evolution).
 - **One frame per pass.** A slot reads one frame per pass, and writes again only once its last frame is out. So a flooding client costs only its own turn. That is why events go in batches: a subscriber catching up gets a frame of them a pass, not one event.
 - **Sockets:** one listener, four sessions, the mDNS socket and the NTP socket.
 
+### Sessions that stop reading
+
+A connection whose queued bytes have not moved for 30 s (`STALL_MS`) is dropped and its slot freed, recorded as `stalled`. A client that reads at all keeps it, however slowly. So does one with nothing queued: that is the 90 s idle limit's business. A slot already ending gets the same 30 s to send its last bytes, then closes with them unsent.
+
+To the client this is a lost connection, and it loses nothing a lost connection would keep. A session sends nothing while a write is pending, so a feed waiting for its reservation, a settings write or a minute's wait for a Dispense press is never what closes it. A write it has answered is in the feeder's memory under its id, so a retry on a new session gets that first answer, and no second feed runs. As after any lost connection, a client that cannot tell whether its feed ran does not resend it on its own.
+
 ### Handshakes, and handshakes during a feed
 
 The loop runs one handshake operation per pass, across all slots. A Noise operation costs one or two X25519s, 25–28 ms each on the KM4 ([resource budget](resource-budget.md#handshakes-and-loop-latency)).
@@ -183,7 +189,8 @@ A press while a feed cannot start, a feed running among the reasons, starts noth
 
 Every flash lease checks that the outputs are stopped, and fails closed when they are not: the lease hook halts and the watchdog resets the board mid-feed. So every store write outside the feed journal first takes the write turn in `wellfed_hal::interlock`. That covers the event ring, settings, the client and key stores, the Wi-Fi store, the seed, the build confirmation, and the update stage's records and bank-1 writes. The turn is granted only while the loop holds no claim on the outputs.
 
-- **A write that comes during a feed waits.** The settings writer leaves it queued and asks again every 200 ms, still answering event reads. It counts itself among the waiting writers, so the next claim lets it go first. It runs once the owner is at rest with its outputs stopped.
+- **A write starts when it is queued.** Queuing a change notifies the service task, so a writer at rest starts on it without waiting out its 200 ms poll, and a writer that just wrote keeps its delay. During an upload it polls every 5 ms for about 1 s after each chunk. The notification is only a shortcut: one that is lost or comes for nothing leaves the poll to take the change, as before. Static and host-tested; not yet measured on hardware.
+- **A write that comes during a feed waits.** A notification changes nothing here. The settings writer leaves it queued and asks again every 200 ms, still answering event reads. It counts itself among the waiting writers, so the next claim lets it go first. It runs once the owner is at rest with its outputs stopped.
 - **The forced path.** Only a claim that outlives `FEED_BOUND_MS` lets a write go ahead with the outputs claimed. The bound is timed from when the writer first saw that same claim; a writer that misses the gap between two feeds starts again on the second. Forced writes are counted (`PLOWN1 interlock … writes_forced=`), and run only while the outputs read stopped. A write never starts into moving outputs.
 - **The update stage never takes the forced path.** An update request waits in its mailbox, unanswered, until the outputs are free. An install holds the turn from its first write until it stops, so every feed meanwhile is refused (`held=3`). A give-way or an activation keeps the turn until the restart.
 - **Marker order.** The confirmation takes the turn before arming the hooks, and the update stage before it sets the attempt marker. So the marker is never left set through a wait.

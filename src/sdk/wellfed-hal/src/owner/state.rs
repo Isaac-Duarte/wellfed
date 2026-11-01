@@ -12,7 +12,7 @@ use wellfed_core::feed::sensor_inputs::{SensorInputs, SensorReading};
 use wellfed_core::feed::storage::{OwnerOutcome, OwnerResult, OwnerStorage, RotorPhase};
 use wellfed_core::flash_coord::{FlashCoord, FlashFault, FlashPhase};
 
-use crate::board::{self, Board, CaptureFault};
+use crate::board::{self, Board, CaptureFault, Channels};
 use crate::power;
 use crate::sdk::{self, IrqGuard};
 use crate::stopped;
@@ -555,15 +555,44 @@ impl<S: OwnerStorage> OwnerTask<S> {
         }
     }
 
+    /// What this poll converts. Everything while outputs may move. At rest a
+    /// capture is most of the loop's work and no check needs one on every
+    /// poll: the owner's lease, its beat and the sensors' freshness come from
+    /// the poll itself, and the current is judged only in a feed, whose polls
+    /// all convert it. So only the battery, and only when it is due, or when a
+    /// gap lost its last reading.
+    fn channels_due(&self, now_ms: u32) -> Channels {
+        if self.active_phase() {
+            return Channels::Both;
+        }
+        let due = !self.sensors.battery_valid
+            || self
+                .battery_at
+                .is_none_or(|at| now_ms.wrapping_sub(at) >= self.config.rest_capture_ms);
+        if due {
+            Channels::Battery
+        } else {
+            Channels::Neither
+        }
+    }
+
     fn acquire(&mut self) -> Result<(), Lost> {
         let Some(started) = self.events().now_ms() else {
             return Err(Lost::Supervision);
         };
         let uptime = sdk::uptime_ms();
+        let channels = self.channels_due(started);
         let mut raw = SensorReading::default();
-        let captured = self.board().capture(&mut raw);
+        let captured = self.board().capture_channels(&mut raw, channels);
         let valid = captured.is_ok();
-        self.sensors.update(started, valid.then_some(&raw));
+        if valid && channels == Channels::Neither {
+            self.sensors.update_between(started, &raw);
+        } else {
+            self.sensors.update(started, valid.then_some(&raw));
+        }
+        if valid && raw.battery_adc_valid {
+            self.battery_at = Some(started);
+        }
         // A food reading's level is judged at its window's end, so a flicker
         // inside it changes nothing; the beam qualifies otherwise only while
         // a feed's emitters are on, so the reading belongs to the feed the
@@ -583,7 +612,7 @@ impl<S: OwnerStorage> OwnerTask<S> {
 
         // The owner holds the ADC, so its captures stand in for the
         // runtime's power monitor.
-        let pin_mv = valid
+        let pin_mv = (valid && raw.battery_adc_valid)
             .then(|| self.board().view().calibration.scale_16(&raw.battery))
             .flatten();
         if let Some(pin_mv) = pin_mv {

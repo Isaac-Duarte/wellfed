@@ -11,6 +11,12 @@
 //! the cutoff does, and a pack once below must read the floor's clear level
 //! before a feed starts again. An adapter change still unsettles power for
 //! `power_settle_ms`, so a feed that sees one stops.
+//!
+//! At rest the converters run less often than the GPIO polls
+//! ([`SensorInputs::update_between`]). The pack's verdict and its last reading
+//! then stand between two conversions, and the current reads invalid: no feed
+//! starts on either, since preparing a feed converts both on every poll for at
+//! least the optical settling time before it can start.
 
 use crate::adc_scale::{AdcCalibration, SAMPLES};
 use crate::feed::controller::FeedSample;
@@ -134,8 +140,9 @@ impl SensorInputs {
         self.power_settled = false;
     }
 
-    /// Invalid timing/acquisition resets qualification; it does not preserve good data.
-    pub fn update(&mut self, now_ms: u32, reading: Option<&SensorReading>) {
+    /// The start of any poll: its timing, and what every poll reads afresh,
+    /// cleared.
+    fn begin(&mut self, now_ms: u32) {
         let gap = now_ms.wrapping_sub(self.last_update_at);
         self.timing_valid =
             !self.have_time || (gap < HALF_RANGE && gap <= self.limits.max_observation_gap_ms);
@@ -143,11 +150,20 @@ impl SensorInputs {
         self.last_update_at = now_ms;
 
         self.current_valid = false;
-        self.battery_valid = false;
         self.gpio_valid = false;
         self.feedback_low = false;
         self.current_scaled = 0;
+    }
+
+    fn lose_battery(&mut self) {
+        self.battery_valid = false;
         self.battery_scaled = 0;
+    }
+
+    /// Invalid timing/acquisition resets qualification; it does not preserve good data.
+    pub fn update(&mut self, now_ms: u32, reading: Option<&SensorReading>) {
+        self.begin(now_ms);
+        self.lose_battery();
 
         let Some(reading) = reading.filter(|_| self.timing_valid) else {
             self.reset_power();
@@ -169,6 +185,29 @@ impl SensorInputs {
         let battery = self.battery_valid.then_some(self.battery_scaled);
         self.floor.update(now_ms, battery, &self.limits.battery);
 
+        self.update_inputs(now_ms, reading);
+    }
+
+    /// A poll at rest between two battery conversions: only `reading`'s GPIO
+    /// counts. Nothing was converted, so this is no failed conversion for the
+    /// floor, whose hold is timed from the readings it does get.
+    ///
+    /// A gap past the limit loses the battery as well as the inputs; the next
+    /// conversion brings it back.
+    pub fn update_between(&mut self, now_ms: u32, reading: &SensorReading) {
+        self.begin(now_ms);
+        if !self.timing_valid {
+            self.lose_battery();
+            self.reset_power();
+            return;
+        }
+
+        self.update_inputs(now_ms, reading);
+    }
+
+    /// The GPIO half of a poll, past its timing check: power, the emitters
+    /// and the optical filters.
+    fn update_inputs(&mut self, now_ms: u32, reading: &SensorReading) {
         self.gpio_valid = reading.gpio_valid;
         if !reading.gpio_valid {
             self.reset_power();

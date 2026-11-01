@@ -121,6 +121,22 @@ During a feed, only IK session handshakes go on, one operation a pass, and the o
 
 The motor's stop guarantees never depend on loop timing. They stay with the supervision and hardware timers.
 
+**The owner at rest.** The owner polls every 20 ms in every state, but in `Idle` it converts only the battery, and only every 100 ms (`rest_capture_ms`); `Terminal` never converted. Preparing and Feeding convert both channels on every poll. A capture of both channels takes up to 10.1 ms ([bring-up probes](bring-up-probes.md)), so at rest about one poll in five spends about 5 ms where every poll spent about 10 ms. That is an estimate: the before and after pass times have not been measured.
+
+Nothing that protects the feeder waits for a conversion:
+
+| What | Why it holds at rest |
+| --- | --- |
+| The owner's 200 ms lease, and its beat | Renewed by the poll, conversion or not |
+| The sensors' `max_age_ms` and observation gap | Timed from the poll's GPIO read |
+| The pack's `hold_ms` | Timed on the clock, not counted. A sag takes up to one conversion longer to judge at rest, and a poll with no conversion is not a failed one |
+| Motor current | Judged only while a feed runs (`input_refusal`, `update_captured`), and a feed's every poll converts it. There is no check at rest: a feed's first polls catch a bad reading, before any motion |
+| A converter that stopped | Found by the next battery conversion, within 100 ms, and held as lost sensors |
+
+A gap past the observation limit loses the battery's last reading, so the next poll converts it again whatever its period says.
+
+**Waiting is not work.** The server reports work only when the next pass has some to do, and the loop then passes after 1 ms instead of 20 ms. A session waiting for its client to read, for the writer to reach a store write or for a Dispense press reports none, so the 20 ms poll looks at it. Bytes that stop moving do not hold a slot: a connection whose queued bytes have not moved for 30 s (`STALL_MS`) is dropped, a connection already ending included, and its client hears what any lost connection means ([device API](device-api.md#sessions-that-stop-reading)). These figures are static analysis until the bench measures passes per second with a paused client.
+
 ## Logging
 
 A record line takes up to 16 ms to send at 115200 baud, and `sdk::log` used to hold the scheduler for it. It now copies the line into a RAM ring (`wellfed_core::log_ring`) and returns. In quiet windows that took the probe's `p4 max` from 12–19 ms to 10–13 ms against its 10 ms period (physical, [evidence](#evidence)). The other figures below are static analysis, or modeled from captures.
@@ -328,6 +344,7 @@ The vendor responder is 33.5 KB of code and 2.3 KB of BSS, and it creates its ow
 - **Observed** (October 25): the WPA3 SAE handshake holding the loop past 1 s, in `fw16-stall-01`.
 - **Modeled** (October 31): the log ring's whole lines, wrap, drop count and report are host-tested; its bounds and sections come from the image audits, and its backlog from replaying captures.
 - **Observed** (October 31): the log ring and the shallower feed claim on hardware, hopper empty, on the adapter. `gap-probe` before and after the ring, about 5 minutes of 10 s windows each: `p4 max` 12–19 ms to 10–13 ms, and the boot's worst gap 845 ms to 720 ms. A settings write with a feed 0.1 s behind it, five times each, before and after the ring and the claim together: the longest pass in those 30 s windows went from 76–129 ms to 48–53 ms, and every feed gave its portion. The cold boot's first 70 log lines match the earlier image's apart from values, with no line dropped.
+- **Observed** (October 31): the owner at rest, a session that only waits and a writer that wakes for work, before and after on the same procedure, hopper empty, on the adapter, no phone session, one run of about 10 minutes each. At rest, 917 to about 1,266 passes per 30 s, the longest pass 16–18 ms to 10–11 ms, and its 99th percentile 15.4 ms to 10.2 ms. A Dispense wait, up to 5,874 to about 1,439 passes per 30 s. A meal call upload, five times each, 4.8–5.6 s to 0.8–1.3 s. A settings write, eight times each, 230–450 ms to 173–270 ms. A full history read, three times each, 465–583 ms to 360–493 ms. A feed's step gap stayed 35 ms, and the loop's stack bound 5,008 B. A client that stops reading has not been closed on hardware yet, so what `lwip_close` does with its unsent data is still open.
 - **Modeled:** the interlock, including storage writes' turn, is host-tested. A feed with the hotspot cycling, showing that no association overlaps a feed, has not yet run on hardware.
 - **Modeled:** the `gap-probe` variant was built and host-tested before its run.
 - **Recovered:** the storage region's safety, from a static pass over stock 1.1.15 and the research unit's 15 full dumps. The owner chose 32 sectors on October 23 and 48 on October 26.

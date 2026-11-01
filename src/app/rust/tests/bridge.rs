@@ -394,7 +394,7 @@ fn a_feeder_answering_keeps_a_stalled_feeds_session_open() {
         .await;
         relay.pause();
         let silent = tokio::time::timeout(
-            Duration::from_secs(30),
+            Duration::from_secs(25),
             next_forever(&mut heard, |update| match update {
                 SessionUpdate::Closed { error } => panic!("it closed: {error:?}"),
                 _ => None::<()>,
@@ -421,7 +421,7 @@ fn a_stalled_feed_past_its_due_time_goes_back_to_the_usual_limit() {
         tokio::time::sleep(Duration::from_secs(56)).await;
         relay.pause();
         let silent = tokio::time::timeout(
-            Duration::from_secs(30),
+            Duration::from_secs(20),
             next_forever(&mut heard, |update| match update {
                 SessionUpdate::Closed { error } => panic!("it closed: {error:?}"),
                 _ => None::<()>,
@@ -431,6 +431,88 @@ fn a_stalled_feed_past_its_due_time_goes_back_to_the_usual_limit() {
         assert!(silent.is_err());
 
         commands.send(Command::Close).unwrap();
+        sim.stop().await;
+    });
+}
+
+/// A session's first status, past the backlog's quiet moment.
+async fn quiet_session(
+    sim: &Running,
+    relay: &Relay,
+) -> (
+    mpsc::UnboundedSender<Command>,
+    mpsc::UnboundedReceiver<SessionUpdate>,
+) {
+    let (commands, mut heard) = start_session(sim.identity, relay.address, false);
+    next(&mut heard, |update| match update {
+        SessionUpdate::Status { .. } => Some(()),
+        _ => None,
+    })
+    .await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    (commands, heard)
+}
+
+/// Whether the session closes within `wait`.
+async fn closes_within(heard: &mut mpsc::UnboundedReceiver<SessionUpdate>, wait: Duration) -> bool {
+    tokio::time::timeout(
+        wait,
+        next_forever(heard, |update| match update {
+            SessionUpdate::Closed { .. } => Some(()),
+            _ => None,
+        }),
+    )
+    .await
+    .is_ok()
+}
+
+/// A healthy quiet session outlasts the limit on its reads alone, and a feeder
+/// that goes silent is given up on within it: a power cut closes nothing.
+#[test]
+fn a_quiet_session_gives_up_on_a_silent_feeder_within_thirty_seconds() {
+    paused(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let relay = Relay::start(sim.address).await;
+        let (commands, mut heard) = quiet_session(&sim, &relay).await;
+
+        assert!(!closes_within(&mut heard, Duration::from_secs(60)).await);
+
+        relay.pause();
+        // The last read answered at most one turn before the pause.
+        assert!(!closes_within(&mut heard, Duration::from_secs(19)).await);
+        assert!(closes_within(&mut heard, Duration::from_secs(12)).await);
+
+        drop(commands);
+        sim.stop().await;
+    });
+}
+
+/// A slot reads nothing while its write waits, and a write waits behind a
+/// running feed: a request keeps the usual limit, so saving during another
+/// client's long feed doesn't read as a lost feeder. It still ends, at the
+/// usual limit.
+#[test]
+fn a_request_keeps_the_usual_limit_while_it_may_be_waiting() {
+    paused(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let relay = Relay::start(sim.address).await;
+        let (commands, mut heard) = quiet_session(&sim, &relay).await;
+
+        relay.pause();
+        let (reply, _answer) = tokio::sync::oneshot::channel();
+        commands
+            .send(Command::Ask {
+                op: wellfed_model::Op::GetSettings,
+                reply,
+            })
+            .unwrap();
+
+        assert!(!closes_within(&mut heard, Duration::from_secs(60)).await);
+        assert!(closes_within(&mut heard, Duration::from_secs(35)).await);
+
+        drop(commands);
         sim.stop().await;
     });
 }

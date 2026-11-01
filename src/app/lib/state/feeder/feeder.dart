@@ -29,7 +29,7 @@ class FeederController extends ChangeNotifier {
 
   static const _locateWait = Duration(seconds: 8);
   static const _retryFirst = Duration(seconds: 3);
-  static const _retryMost = Duration(seconds: 30);
+  static const _retryMost = Duration(seconds: 15);
 
   final FeederBook _book;
   final FeederPorts _ports;

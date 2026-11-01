@@ -62,6 +62,7 @@ pub const CONFIG: OwnerConfig = OwnerConfig {
     idle_gap_ms: 50,
     bowl_mode: BowlMode::Single,
     sample_period_ms: 1,
+    rest_capture_ms: 2,
     prepare_timeout_ms: 20,
     optics_max_on_ms: 140,
     motor_deadtime_ms: 2,

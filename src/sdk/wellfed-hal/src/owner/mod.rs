@@ -241,6 +241,8 @@ pub struct OwnerTask<S> {
     pub drive_at: Option<u32>,
     /// What the last poll of a feed saw, until the stepping task takes it.
     pub observation: Option<Observation>,
+    /// The supervisor's clock at the last battery conversion.
+    pub battery_at: Option<u32>,
 
     pub state: OwnerState,
     pub fault: OwnerFault,
@@ -291,6 +293,7 @@ impl<S> Default for OwnerTask<S> {
             trace: FeedTrace::default(),
             drive_at: None,
             observation: None,
+            battery_at: None,
             state: OwnerState::default(),
             fault: OwnerFault::default(),
             beat_raw: 0,

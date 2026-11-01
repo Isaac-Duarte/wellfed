@@ -321,8 +321,7 @@ impl Server {
     }
 
     pub fn sent(&mut self, slot: usize, len: usize) {
-        let slot = &mut self.slots[slot].wire;
-        slot.tx_sent = (slot.tx_sent + len).min(slot.tx_len);
+        self.slots[slot].wire.sent(len);
     }
 
     /// The driver should close `slot` now: it ended and its last bytes are
@@ -459,8 +458,12 @@ impl Server {
         self.handshook
     }
 
-    /// One pass. Returns true while work is waiting, so the loop should
-    /// step again soon.
+    /// One pass. Returns true while the next pass has work to do, so the loop
+    /// should step again soon. Waiting is not work: for a client to read, for
+    /// a write the writer has not reached, or for a press. The loop's own poll
+    /// looks at those, and a loop kept spinning on them would spend its time
+    /// on nothing, behind a client that has stopped reading for as long as it
+    /// stays connected.
     pub fn step<D: Device>(&mut self, pass: Pass<'_, D>, mut record: impl FnMut(Record)) -> bool {
         let Pass {
             now_ms,
@@ -525,6 +528,31 @@ impl Server {
             .seal(&self.plain[..len], &mut self.out)
             .map_err(|_| Reason::Noise)?;
         slot.wire.send(&self.out[..sealed])
+    }
+
+    /// Drop a slot whose client stopped reading: what is queued goes with it,
+    /// and the driver closes it. True if it did.
+    ///
+    /// No answer is lost that a lost connection would have kept. A session
+    /// sends only while it waits for nothing (`Self::session`'s pending write
+    /// holds back its pushes and any next request), so a write in flight is
+    /// never what ends it, and a write it has answered is in the memory under
+    /// its id for the retry. Whether a feed ran is in its event either way.
+    fn drop_stalled(&mut self, index: usize, now_ms: u32, record: &mut impl FnMut(Record)) -> bool {
+        let slot = &mut self.slots[index];
+        if !slot.wire.stalled(now_ms) {
+            return false;
+        }
+        slot.wire.discard();
+
+        // Ending by the driver's `closed` would see to this; the slot reaches
+        // that call already closing.
+        if matches!(slot.phase, Phase::Recovery(_)) {
+            self.cancel_rescue = true;
+            self.rescue.stop();
+        }
+        self.end(index, Reason::Stalled, record);
+        true
     }
 
     /// End `index` with `reason`: anything queued still goes out, then the

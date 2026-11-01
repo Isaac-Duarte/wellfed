@@ -11,7 +11,7 @@ The inputs and battery mode are observed on our unit. The charge, the floor and 
 - **Motor current.** ADC channel 4 ([jams and sensor faults](jams-and-sensor-faults.md)).
 - **Chip supply.** Internal ADC channel 10, in millivolts with stock's scaling ([bring-up probes](bring-up-probes.md#power-input-probe)).
 
-The runtime's power monitor samples every 5 s. In the `feeder` firmware the feeding owner holds the ADC and samples on each of its 20 ms polls instead. Both publish the same sample (`wellfed_hal::power`).
+The runtime's power monitor samples every 5 s. In the `feeder` firmware the feeding owner holds the ADC and samples instead: on each of its 20 ms polls during a feed, and every 100 ms at rest. Both publish the same sample (`wellfed_hal::power`).
 
 **Charge.** A plausible pack reading carries a percentage on stock's curve, in the channel's scaled unit. 1650 mV at the pin (the floor, a pack of about 3.40 V) is 0 %, and each 60 mV above it is a 10 % step, up to 2250 mV (about 4.64 V) at 100 %. A reading reports the first step at or above it, so 1651 to 1710 read 10 %, and anything from 2191 up reads 100 %. Fresh cells read about 2306 at rest: 100 %. The curve is `power::PACK.curve` (`wellfed_core::supply::Curve`).
 
@@ -87,9 +87,9 @@ The pack's floor is `wellfed_hal::power::FLOOR`, in the battery channel's scaled
 | `floor` | 1650 | 3.40 V (1.13 V a cell) | Stock's 0 % point, below which stock stops its outputs on battery ([stock firmware](../devices/plaf103/stock/README.md)) |
 | `clear` | 1710 | 3.53 V | Stock's 10 % step: once below, a pack must recover by a step before feeding again |
 | `cutoff` | 1550 | 3.20 V | A sag this deep leaves the 3.3 V regulator little headroom, so stop at once rather than risk a brownout mid-drive |
-| `hold_ms` | 300 | | Fifteen 20 ms polls. The start-up surge lasted one poll (on the adapter); a sag that outlasts the hold is the pack failing under load |
+| `hold_ms` | 300 | | Timed from the first reading under `floor`: fifteen 20 ms polls in a feed, three 100 ms conversions at rest. The start-up surge lasted one poll (on the adapter); a sag that outlasts the hold is the pack failing under load |
 
-`wellfed_core::supply::Floor` applies them on every acquisition the owner takes, on the adapter too, so the verdict is current when the adapter is pulled:
+`wellfed_core::supply::Floor` applies them on every battery conversion the owner takes, on the adapter too, so the verdict is current when the adapter is pulled:
 
 - a reading at or above `clear` is above the floor;
 - between `floor` and `clear` a pack keeps its verdict, and a first reading there counts as above;

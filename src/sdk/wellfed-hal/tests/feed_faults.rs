@@ -172,3 +172,25 @@ fn a_lost_adc_fails_the_feed_and_the_owner_holds_it() {
     assert_eq!(f.owner.submit(2, 1), SubmitResult::RejectStopped);
     f.stop();
 }
+
+/// At rest the fault shows at the next battery conversion, and a poll that
+/// converts nothing neither shows it nor counts as a reading it changed.
+#[test]
+fn a_lost_adc_shows_at_rest_on_the_next_battery_conversion() {
+    let mut f = boot();
+    f.advance(CONFIG.rest_capture_ms);
+    feed_faults::arm(Injected::AdcFails);
+    let before = feed_faults::counts().readings;
+
+    f.advance(1);
+    assert_eq!(f.status().state, OwnerState::Idle, "nothing converted");
+    assert_eq!(feed_faults::counts().readings, before);
+
+    f.advance(1);
+    let s = f.status();
+    assert!(s.state == OwnerState::Fault && s.fault == OwnerFault::Sensor);
+    assert_eq!(feed_faults::counts().readings, before + 1);
+
+    feed_faults::arm(Injected::None);
+    f.stop();
+}

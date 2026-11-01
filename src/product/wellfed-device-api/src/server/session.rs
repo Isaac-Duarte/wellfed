@@ -56,6 +56,10 @@ impl Server {
         pairing: &mut Pairing,
         record: &mut impl FnMut(Record),
     ) -> bool {
+        if self.drop_stalled(index, now_ms, record) {
+            return true;
+        }
+
         let result = self.session_step(index, now_ms, device, pairing, record);
         match result {
             Ok(busy) => busy,
@@ -144,10 +148,10 @@ impl Server {
                 label: *label,
                 role: *role,
             });
-            return Ok(true);
+            return Ok(false);
         };
         let Some(outcome) = device.keys_outcome(ticket_id) else {
-            return Ok(true);
+            return Ok(false);
         };
 
         let joined = match outcome {
@@ -189,7 +193,7 @@ impl Server {
         record: &mut impl FnMut(Record),
     ) -> Result<bool, Reason> {
         if !self.slots[index].wire.tx_idle() {
-            return Ok(true);
+            return Ok(false);
         }
         if let Some((id, op, reply)) = self.poll_pending(index, now_ms, device, record)? {
             return self
@@ -200,7 +204,7 @@ impl Server {
             pending: Some(_), ..
         } = self.slots[index].phase
         {
-            return Ok(true);
+            return Ok(false);
         }
 
         let slot = &mut self.slots[index];

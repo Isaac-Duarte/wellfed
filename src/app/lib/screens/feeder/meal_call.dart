@@ -20,7 +20,7 @@ class MealCallScreen extends StatefulWidget {
 
   /// How long this screen waits for the session to come back, in all: the picker
   /// can sit open long enough for it to end behind it. A reconnect can take
-  /// about 53 s: the longest retry (30 s), a look on the network (8 s), a connect
+  /// about 38 s: the longest retry (15 s), a look on the network (8 s), a connect
   /// (5 s) and the feeder's welcome (10 s).
   static const reachWait = Duration(seconds: 60);
 

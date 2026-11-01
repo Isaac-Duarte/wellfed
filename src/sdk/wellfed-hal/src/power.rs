@@ -41,9 +41,11 @@ pub const NO_PACK_PIN_MV: u32 = 500;
 /// - `cutoff` 1550 (about 3.20 V): a sag this deep stops a feed at once;
 ///   it leaves the 3.3 V rail's regulator little headroom, and a brownout
 ///   mid-drive would leave the feed uncertain.
-/// - `hold_ms` 300: fifteen of the owner's 20 ms polls. The motor's
-///   start-up surge lasted one poll on the bench (on the adapter); a sag
-///   under the floor that outlasts the hold is the pack failing under load.
+/// - `hold_ms` 300, timed from the first reading under the floor: fifteen of
+///   the owner's 20 ms polls in a feed, three of its 100 ms battery
+///   conversions at rest. The motor's start-up surge lasted one poll on the
+///   bench (on the adapter); a sag under the floor that outlasts the hold is
+///   the pack failing under load.
 pub const FLOOR: FloorLimits = FloorLimits {
     floor: 1650,
     clear: 1710,

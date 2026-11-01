@@ -889,6 +889,21 @@ pub fn delay_ms(ms: u32) {
     with(|h| h.uptime_ms = h.uptime_ms.wrapping_add(ms));
 }
 
+/// The calling thread stands for the task.
+pub fn task_handle() -> usize {
+    current_task()
+}
+
+/// Counted for tests: nothing here sleeps to be woken.
+pub fn task_notify(_handle: usize) {
+    with(|h| h.task_notifies += 1);
+}
+
+/// The whole wait passes on the fake clock.
+pub fn task_wait_notified(ms: u32) {
+    delay_ms(ms);
+}
+
 /// Starts once; tests push `Hardware::wifi_events` as the shim would.
 pub fn wifi_start() -> bool {
     with(|h| {

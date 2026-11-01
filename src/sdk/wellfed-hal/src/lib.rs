@@ -35,6 +35,7 @@ pub mod entropy;
 pub mod link;
 pub mod rng;
 pub mod settings;
+pub mod writer_wake;
 
 // The `stop-fail` bench variant's STOP that does not take; never in a
 // product image.

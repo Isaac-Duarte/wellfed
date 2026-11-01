@@ -88,6 +88,11 @@ pub const HANDSHAKE_MS: u32 = 10_000;
 /// A session that sends nothing for this long is dropped; clients send a
 /// `Status` as a keepalive.
 pub const IDLE_MS: u32 = 90_000;
+/// A connection whose queued bytes do not move for this long is dropped, and
+/// its slot freed: its client has stopped reading, and is no longer listening
+/// for whatever it would be told next. It reconnects as after any lost
+/// connection, and a retried write id gets its first answer.
+pub const STALL_MS: u32 = 30_000;
 /// After `Reboot`, long enough for the answer to leave.
 pub const REBOOT_MS: u32 = 1_000;
 

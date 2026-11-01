@@ -33,7 +33,9 @@ use wellfed_hal::supervision::beat;
 use wellfed_hal::supervision::supervise::{self, Feeding, LIVENESS_MS, Startup};
 use wellfed_hal::supervision::watchdog::Watchdog;
 use wellfed_hal::supervision::{self, config, crumb, trail};
-use wellfed_hal::{cell::TaskCell, leds, net_status, power, rng, sdk, startup, stopped, trial};
+use wellfed_hal::{
+    cell::TaskCell, leds, net_status, power, rng, sdk, startup, stopped, trial, writer_wake,
+};
 
 use crate::slot::Slot;
 use crate::tasks::Task;
@@ -874,9 +876,15 @@ fn stage(
 /// the feeder's liveness window.
 unsafe extern "C" fn service_task(_: *mut c_void) -> u32 {
     let Some(mut due) = DUE.enter_or_init(Due::default) else {
+        writer_wake::unbind();
         SERVICE_RUNNING.store(false, Ordering::Release);
         return 0;
     };
+
+    writer_wake::bind();
+    if writer_wake::take() {
+        due.settings = None;
+    }
 
     let now = sdk::uptime_ms();
     SERVICE_BEAT.store(now, Ordering::Release);
@@ -888,8 +896,14 @@ unsafe extern "C" fn service_task(_: *mut c_void) -> u32 {
     ];
 
     match waits.into_iter().flatten().min() {
-        Some(wait) => wait.max(1),
+        // All but the last millisecond can end early on a wake; the rest is
+        // the delay every task's step returns, which always yields.
+        Some(wait) => {
+            sdk::task_wait_notified(wait.max(1) - 1);
+            1
+        }
         None => {
+            writer_wake::unbind();
             SERVICE_RUNNING.store(false, Ordering::Release);
             0
         }

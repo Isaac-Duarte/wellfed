@@ -95,14 +95,14 @@ impl Server {
     ) -> Result<bool, Reason> {
         let slot = &mut self.slots[index];
         if !slot.wire.tx_idle() {
-            return Ok(true);
+            return Ok(false);
         }
         let Phase::Recovery(stage) = slot.phase else {
             return Ok(false);
         };
 
         match stage {
-            Rescue::Handshake => Ok(true),
+            Rescue::Handshake => Ok(false),
             Rescue::Asked { offer } => {
                 // The client speaks only in the handshake and the proof.
                 if slot.wire.frame()?.is_some() {
@@ -187,10 +187,10 @@ impl Server {
                         };
                         self.slots[index].phase = Phase::Recovery(stage);
                     }
-                    return Ok(true);
+                    return Ok(false);
                 };
                 let Some(outcome) = device.keys_outcome(ticket) else {
-                    return Ok(true);
+                    return Ok(false);
                 };
                 let enrolled = match outcome {
                     KeyOutcome::Done => SetupEnrolled::New,

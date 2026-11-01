@@ -499,3 +499,80 @@ fn a_failed_battery_conversion_on_the_pack_is_not_healthy() {
     f.advance(4);
     assert_eq!(f.inputs.floor.below(), Some(true));
 }
+
+impl Fixture {
+    /// Polls between two battery conversions.
+    fn between(&mut self, elapsed: u32) {
+        for _ in 0..elapsed {
+            self.now = self.now.wrapping_add(1);
+            self.inputs.update_between(self.now, &self.raw);
+        }
+    }
+}
+
+/// Polls with no conversion read the inputs, keep the pack's reading and
+/// verdict, and read the current, which nothing converted, as invalid.
+#[test]
+fn a_poll_between_conversions_reads_only_the_inputs() {
+    let mut f = begin(0);
+    f.raw.dc_present = false;
+    f.advance(3);
+    let scaled = f.inputs.battery_scaled;
+    // What a real poll between conversions holds in its unread channels.
+    f.raw.current_adc_valid = false;
+    f.raw.battery_adc_valid = false;
+    f.raw.battery = [0; SAMPLES];
+
+    f.between(20);
+    assert!(f.inputs.battery_valid && f.inputs.battery_scaled == scaled);
+    assert!(!f.inputs.supply_low() && f.inputs.floor.above());
+    let sample = f.snapshot();
+    assert!(sample.power_healthy && !sample.current_valid);
+
+    f.raw.outlet_high = false;
+    f.between(LIMITS.outlet_block_delay_ms + 1);
+    assert!(!f.snapshot().outlet_clear, "the outlet's filter still runs");
+    f.raw.dc_present = true;
+    f.between(1);
+    assert!(
+        !f.snapshot().power_healthy,
+        "an adapter change still unsettles"
+    );
+}
+
+/// A hold under the floor counts the time between the readings it got. The
+/// polls between them say nothing about the pack: they neither extend a sag
+/// nor count as a failed conversion.
+#[test]
+fn the_floor_is_timed_across_polls_with_no_conversion() {
+    let mut f = begin(0);
+    f.raw.dc_present = false;
+    f.advance(3);
+
+    f.between(50);
+    assert_eq!(f.inputs.floor.below(), Some(false), "no reading, no sag");
+
+    f.raw.battery = [RAW_1619; SAMPLES];
+    f.advance(1);
+    f.between(LIMITS.battery.hold_ms - 1);
+    assert_eq!(f.inputs.floor.below(), Some(false), "inside the hold");
+    f.advance(1);
+    assert_eq!(f.inputs.floor.below(), Some(true));
+    assert!(f.inputs.supply_low());
+}
+
+#[test]
+fn a_gap_between_conversions_loses_the_battery_and_the_power_state() {
+    let mut f = begin(0);
+    f.raw.dc_present = false;
+    f.advance(3);
+
+    f.now += LIMITS.max_observation_gap_ms + 1;
+    f.inputs.update_between(f.now, &f.raw);
+    assert!(!f.inputs.battery_valid && !f.inputs.timing_valid);
+    assert!(!f.inputs.supply_low(), "unknown, not low");
+    assert!(!f.snapshot().power_healthy);
+
+    f.advance(LIMITS.power_settle_ms + 1);
+    assert!(f.inputs.battery_valid && f.snapshot().power_healthy);
+}

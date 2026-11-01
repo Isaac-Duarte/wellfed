@@ -60,6 +60,8 @@ mod sdk {
         "xTaskGetSchedulerState",
         "xTaskGetTickCount",
         "xTaskGetCurrentTaskHandle",
+        "xTaskGenericNotify",
+        "ulTaskNotifyTake",
         "xPortGetFreeHeapSize",
         "xPortGetMinimumEverFreeHeapSize",
         "BOOT_Reason",

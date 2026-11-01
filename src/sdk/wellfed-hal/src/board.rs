@@ -47,6 +47,18 @@ pub struct SensorsOpen {
     pub ok: bool,
 }
 
+/// Which ADC channels a capture converts, besides the GPIO read every capture
+/// makes. A channel left out reads as not converted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Channels {
+    /// The motor current and the battery: while outputs may move.
+    Both,
+    /// The battery alone: at rest no motor runs, so no current is judged.
+    Battery,
+    /// Neither: the sensor inputs alone.
+    Neither,
+}
+
 /// Why [`Board::capture`] read nothing usable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaptureFault {
@@ -510,6 +522,15 @@ impl Board {
     /// readiness checks, not time, so preemption cannot use it up: only a
     /// converter that stopped converting fails it.
     pub fn capture(&self, reading: &mut SensorReading) -> Result<(), CaptureFault> {
+        self.capture_channels(reading, Channels::Both)
+    }
+
+    /// As [`Self::capture`], converting only `channels`.
+    pub fn capture_channels(
+        &self,
+        reading: &mut SensorReading,
+        channels: Channels,
+    ) -> Result<(), CaptureFault> {
         let state = self.with(|state| {
             state.capture_gpio(reading)?;
             Some((state.adc_poll_limit, state.motor.applied))
@@ -518,22 +539,30 @@ impl Board {
             return Err(CaptureFault::Board);
         };
 
+        // Asked only of a capture that converts: a poll with no conversion
+        // has nothing for the fault to show.
         #[cfg(feature = "feed-faults")]
-        let converts = !crate::feed_faults::adc_fails();
+        let converts = channels == Channels::Neither || !crate::feed_faults::adc_fails();
         #[cfg(not(feature = "feed-faults"))]
         let converts = true;
-        reading.current_adc_valid =
-            converts && adc::convert(ADC_CURRENT, limit, &mut reading.current);
-        if reading.current_adc_valid {
-            reading.battery_adc_valid = adc::convert(ADC_BATTERY, limit, &mut reading.battery);
+        if channels == Channels::Both {
+            reading.current_adc_valid =
+                converts && adc::convert(ADC_CURRENT, limit, &mut reading.current);
         }
-        if !reading.current_adc_valid || !reading.battery_adc_valid {
+        let current_failed = channels == Channels::Both && !reading.current_adc_valid;
+        if channels != Channels::Neither && !current_failed {
+            reading.battery_adc_valid =
+                converts && adc::convert(ADC_BATTERY, limit, &mut reading.battery);
+        }
+        if current_failed || (channels != Channels::Neither && !reading.battery_adc_valid) {
             let _ = self.with(BoardState::trip_now);
             return Err(CaptureFault::Adc);
         }
 
         #[cfg(feature = "feed-faults")]
-        crate::feed_faults::current(applied, &mut reading.current);
+        if channels == Channels::Both {
+            crate::feed_faults::current(applied, &mut reading.current);
+        }
         #[cfg(not(feature = "feed-faults"))]
         let _ = applied;
         Ok(())
