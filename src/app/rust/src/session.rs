@@ -11,7 +11,7 @@
 //!
 //! While this session's own feed runs it reads the status every
 //! [`FEED_PROBE`] and gives a silent feeder [`FEED_SILENCE`], not the usual
-//! 90 s: a feeder that lost power sends no reset, so nothing else tells the
+//! [`QUIET_SILENCE`]: a feeder that lost power sends no reset, so nothing else tells the
 //! screen that the feed it is following may have stopped. That only ends the
 //! session. The reads are reads, and the feed itself is not sent again.
 //!
@@ -50,8 +50,9 @@ use crate::today::{Facts, event_entry, gap_entry, result};
 const TURN: Duration = Duration::from_secs(10);
 /// How long a feeder may stay silent before the app says it is unreachable. A
 /// power cut or a lost network closes nothing, so silence is the only sign.
-/// This is room for two unanswered reads, and for a write's answer behind a
-/// running feed; the session asks for nothing a press would answer.
+/// This is room for two unanswered reads. A slot reads nothing while its write
+/// waits, and a write waits behind a running feed, so for a while after asking
+/// anything the session keeps the usual limit: see [`Serving::keep_limit`].
 const QUIET_SILENCE: Duration = Duration::from_secs(30);
 /// While the history comes in: a backlog whose newest event this session
 /// skips never reaches its end, so a quiet moment ends it instead.
@@ -171,6 +172,8 @@ struct Serving<'a, U> {
     /// This session's own feed and when it is overdue, from the feeder's
     /// `Feeding` until its `Fed` or that time: a `Fed` lost with a gap never comes.
     running: Option<(u32, tokio::time::Instant)>,
+    /// When Dart last asked for something, which may be waiting behind a feed.
+    asked_at: Option<tokio::time::Instant>,
 }
 
 async fn serve(
@@ -209,6 +212,7 @@ async fn serve(
         batch: Vec::new(),
         time_asked: Instant::now(),
         running: None,
+        asked_at: None,
     };
     if sync_clock || status.clock.is_none() {
         let sync = wellfed_client::time::sync(Timestamp::now(), &TimeZone::system());
@@ -239,6 +243,8 @@ async fn serve(
                     Command::Ask { op, reply } => (op, Asked::Ask(reply)),
                 };
                 serving.request(&op, what)?;
+                serving.asked_at = Some(tokio::time::Instant::now());
+                serving.keep_limit();
             }
             received = serving.connection.receive(wait) => {
                 let more = match received {
@@ -322,6 +328,20 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         }) && self.card()
     }
 
+    /// Set how long a silent feeder is given: a running feed's limit, the usual
+    /// one while something asked may still be waiting behind a feed, or the
+    /// quiet session's.
+    fn keep_limit(&mut self) {
+        let waiting = self
+            .asked_at
+            .is_some_and(|at| at.elapsed() < wellfed_connect::SILENCE);
+        self.connection.set_silence(match (self.running, waiting) {
+            (Some(_), _) => FEED_SILENCE,
+            (None, true) => wellfed_connect::SILENCE,
+            (None, false) => QUIET_SILENCE,
+        });
+    }
+
     /// Nothing came for a whole wait.
     fn turn(&mut self) -> Result<bool, BridgeError> {
         if self
@@ -329,8 +349,8 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             .is_some_and(|(_, due)| due <= tokio::time::Instant::now())
         {
             self.running = None;
-            self.connection.set_silence(QUIET_SILENCE);
         }
+        self.keep_limit();
         if self.backlog.is_some() && !self.end_backlog() {
             return Ok(false);
         }
@@ -417,7 +437,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             self.facts.feeds.push(feed);
             if self.running.is_some_and(|(ours, _)| ours == feed.feed) {
                 self.running = None;
-                self.connection.set_silence(QUIET_SILENCE);
+                self.keep_limit();
             }
         }
         let entry = match pushed {
@@ -517,7 +537,7 @@ mod tests {
 
     #[test]
     fn the_time_is_read_again_about_once_a_minute_and_never_twice_at_once() {
-        // A turn comes at least 30 s after the last, so the second is due.
+        // A minute after the last read, and not before.
         assert!(!time_read_due(Duration::from_secs(30), false, false));
         assert!(time_read_due(Duration::from_secs(60), false, false));
         assert!(!time_read_due(Duration::from_secs(60), true, false));
