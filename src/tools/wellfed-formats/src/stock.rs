@@ -244,6 +244,10 @@ pub enum TrialPhase {
 /// with it.
 pub const SERVER_CONFIG: &str = "private/server.json";
 
+/// An installer's config, root-relative: what `wellfed install` and
+/// `wellfed-stock` use unless told otherwise. It holds no plan snapshot.
+pub const INSTALLER_CONFIG: &str = "private/installer.json";
+
 /// The parts of `wellfed-stock`'s config the bench tools use.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {

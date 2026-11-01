@@ -9,8 +9,8 @@
 //! bench can move onto that crate once it runs on tokio.
 //!
 //! The feeder is found by its identity over mDNS (`_wellfed._tcp`, TXT
-//! `id=`), and otherwise by its MAC in the hotspot's neighbour table: the
-//! bench host's firewall drops inbound UDP 5353, so mDNS answers may never
+//! `id=`), and otherwise by its MAC in the hotspot's neighbour table, since
+//! a host firewall that drops inbound UDP 5353 means mDNS answers never
 //! arrive. The address and the session are kept between requests; a request
 //! on a kept session that fails is sent once more on a fresh one under the
 //! same id, which the feeder answers without running a write twice.

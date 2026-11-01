@@ -1,6 +1,7 @@
-//! The stock server's private configuration (`private/server.json`, format
-//! version 1): stock's captured device credentials and plans, and the
-//! server's own secrets and addresses.
+//! The stock server's private configuration (`private/installer.json`, or a
+//! captured file named by `--config`; format version 1): stock's captured
+//! device credentials and plans, if any, and the server's own secrets and
+//! addresses.
 //!
 //! It holds working device credentials, so it is written mode 0600 and has
 //! no `Debug`. Edit it only while the service is

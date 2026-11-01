@@ -505,7 +505,7 @@ Feeds and cancels are sent once, never resent on a fresh session: the feeder rem
 2. with `--power`, records relay 1 and switches the supply on;
 3. starts the UART capture;
 
-Updates go over the device API, pushed on a thread of their own while the scenario reads the UART. The suite talks to the feeder as the key in `--keys` (default `private/wellfed-owner.json`). It finds the feeder over mDNS or, while the bench host's firewall drops UDP 5353, through the hotspot's neighbour table and `target_mac`.
+Updates go over the device API, pushed on a thread of their own while the scenario reads the UART. The suite talks to the feeder as the key in `--keys` (default `private/wellfed-owner.json`). It finds the feeder over mDNS or, when no answer comes, through the hotspot's neighbour table and `target_mac`.
 
 At the end, or on an error or Ctrl+C, the suite stops its capture and any push, and puts the hotspot and the supply back as it found them, except after a `sustained` halt, which leaves the supply off. Without `--power` the relay board is never opened. The suite never flashes over UART and never changes the firewall or routing. Startup-motion builds are not offered. Only `feed-writes` and `sustained`, under `--feeds`, ask the feeder to feed, within the owner's limits: hopper empty, D cells out, at most 3 portions a feed. `sustained` also installs the `feed-jam`, `sensor-fault` and `feed-stall` variants, which move the motor only for a feed request.
 

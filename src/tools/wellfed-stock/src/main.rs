@@ -18,7 +18,10 @@ use reqwest::Method;
 use serde::Serialize;
 use tracing::info;
 use wellfed_client::install::{SETUP_ADDRESS, SETUP_SSID_PREFIX, SetupFrame};
-use wellfed_formats::{bench::lease::Lease, stock::ServerConfig};
+use wellfed_formats::{
+    bench::lease::Lease,
+    stock::{INSTALLER_CONFIG, ServerConfig},
+};
 use wellfed_stock::{
     clock,
     config::{self, State},
@@ -49,13 +52,13 @@ enum Action {
         /// IANA timezone used for device clock replies.
         #[arg(long, default_value = "UTC")]
         timezone: chrono_tz::Tz,
-        #[arg(long, default_value = "private/server.json")]
+        #[arg(long, default_value = INSTALLER_CONFIG)]
         output: PathBuf,
     },
 
     /// Start the Rust broker, device protocol service and loopback HTTP API.
     Serve {
-        #[arg(long, default_value = "private/server.json")]
+        #[arg(long, default_value = INSTALLER_CONFIG)]
         config: PathBuf,
         /// With an installer's config and no feeder enrolled yet: trust the
         /// first stock feeder that connects within this many minutes.
@@ -65,14 +68,14 @@ enum Action {
 
     /// Inspect authenticated local status without printing credentials.
     Status {
-        #[arg(long, default_value = "private/server.json")]
+        #[arg(long, default_value = INSTALLER_CONFIG)]
         config: PathBuf,
     },
 
     /// Close the latest uncertain/failed trial from fresh version evidence after
     /// the documented waiting periods; never sends a device command.
     OtaTrialResolve {
-        #[arg(long, default_value = "private/server.json")]
+        #[arg(long, default_value = INSTALLER_CONFIG)]
         config: PathBuf,
         #[arg(long)]
         request_id: uuid::Uuid,
@@ -85,7 +88,7 @@ enum Action {
     /// note of what answered, and when. Refused while stock still reports,
     /// or for another build or bank. Never sends a device command.
     OtaTrialAnswered {
-        #[arg(long, default_value = "private/server.json")]
+        #[arg(long, default_value = INSTALLER_CONFIG)]
         config: PathBuf,
         #[arg(long)]
         request_id: uuid::Uuid,
@@ -104,7 +107,7 @@ enum Action {
     /// access point (join that network first). The passphrase is read from
     /// stdin, never the command line.
     SetupSend {
-        #[arg(long, default_value = "private/server.json")]
+        #[arg(long, default_value = INSTALLER_CONFIG)]
         config: PathBuf,
         /// The network stock should join; its passphrase comes from stdin.
         #[arg(long)]
@@ -257,7 +260,7 @@ async fn terminated() -> std::io::Result<()> {
 /// only answers, beside the bench command that drives the feeder.
 fn bench_lease(config: &std::path::Path) -> Result<Lease> {
     // The directory the config is named in, not where a symlinked config
-    // points: a worktree whose `private/server.json` links to the main
+    // points: a worktree whose `private/installer.json` links to the main
     // checkout's keeps its lease in its own `private/`, beside the bench
     // that runs from it.
     let absolute = std::path::absolute(config).with_context(|| format!("{}", config.display()))?;
@@ -342,12 +345,62 @@ async fn api_request(
 
 #[cfg(test)]
 mod tests {
-    use clap::CommandFactory;
+    use std::path::PathBuf;
 
-    use super::Cli;
+    use clap::{CommandFactory, Parser};
+
+    use super::{Action, Cli, INSTALLER_CONFIG};
 
     #[test]
     fn the_command_line_is_well_formed() {
         Cli::command().debug_assert();
+    }
+
+    /// `wellfed install` uses this config too, so a hand-run command reads
+    /// the same ledger, and never a captured file with a plan snapshot.
+    #[test]
+    fn every_command_defaults_to_the_installers_config() {
+        let id = "00000000-0000-0000-0000-000000000000";
+        let commands: [&[&str]; 6] = [
+            &["x", "init-installer", "--mqtt-listen", "10.42.103.1:1883"],
+            &["x", "serve"],
+            &["x", "status"],
+            &["x", "ota-trial-resolve", "--request-id", id, "--note", "n"],
+            &[
+                "x",
+                "ota-trial-answered",
+                "--request-id",
+                id,
+                "--build",
+                "b",
+                "--bank",
+                "0",
+                "--note",
+                "n",
+            ],
+            &[
+                "x",
+                "setup-send",
+                "--ssid",
+                "s",
+                "--id",
+                "1",
+                "--on-feeder-network",
+                "n",
+            ],
+        ];
+
+        for command in commands {
+            let path = match Cli::try_parse_from(command).unwrap().command {
+                Action::InitInstaller { output, .. } => output,
+                Action::Serve { config, .. }
+                | Action::Status { config }
+                | Action::OtaTrialResolve { config, .. }
+                | Action::OtaTrialAnswered { config, .. }
+                | Action::SetupSend { config, .. } => config,
+            };
+
+            assert_eq!(path, PathBuf::from(INSTALLER_CONFIG), "{command:?}");
+        }
     }
 }

@@ -26,7 +26,13 @@ iifname "wlan1" ip daddr 10.42.103.1 tcp dport { 1883, 8088 } accept
 > [!WARNING]
 > Without TCP 8088, an install spends its one `OTA_UPGRADE`. Stock connects for about 25 s and reports `OTA_INFORM` error 2003, and a refused precheck can erase stock's OTA status sector. Add this rule before you remove any older rule.
 
-An older build of this tool admitted those two ports with temporary rules. After you add the permanent rule, load it and check it with `sudo nft list chain inet computer_security input`. Then look for what that build left: the table `inet wellfed_local`, and rules tagged `wellfed-local-broker` in `inet computer_security`.
+A bench that finds the feeder over mDNS must also admit UDP 5353 from the hotspot, or the answers never arrive:
+
+```text
+iifname "wlan1" udp dport 5353 accept
+```
+
+An older build of this tool admitted the two TCP ports with temporary rules. After you add the permanent rule, load it and check it with `sudo nft list chain inet computer_security input`. Then look for what that build left: the table `inet wellfed_local`, and rules tagged `wellfed-local-broker` in `inet computer_security`.
 
 - Remove the table with `sudo nft delete table inet wellfed_local`. It redirected the feeder's TCP 1883 and blocked its forwarded WAN traffic, so stock can reach the vendor's cloud again once it is gone.
 - Remove each tagged rule with `sudo nft delete rule inet computer_security <chain> handle <handle>`.
@@ -69,7 +75,8 @@ Install trials are recorded beside the configuration, under an exclusive lock, i
   ./target/debug/wellfed-stock ota-trial-resolve --config private/installer.json --request-id <id> --note <what you saw>
   ```
 
-- A replacement install closes instead on `ota-trial-answered`, once the operator's client saw the served build answer its device API from bank 0 and stock has gone quiet ([below](#install-the-replacement)).
+  With no feeder enrolled in `private/installer.json`, `status` and `ota-trial-resolve` stop with an error. Write the config if it is missing (`wellfed-stock init-installer --mqtt-listen 10.42.103.1:1883 --output private/installer.json`) and add `--enroll-minutes 15` to `serve`, so that stock enrolls when it reports. The ledger is named by device ID, so it finds the trial.
+- A replacement install closes instead on `ota-trial-answered`, once the operator's client saw the served build answer its device API from bank 0 and stock has gone quiet ([below](#install-the-replacement)). A replacement speaks no MQTT, so it cannot enroll. With no feeder enrolled in `private/installer.json`, run `serve` and `ota-trial-answered` on a copy of the captured config in the same directory, without its `plans` key and still mode 0600, as `serve`'s refusal says: `wellfed-stock ota-trial-answered --config private/captured.json --request-id <id> --build <identity> --bank 0 --note <what answered>`.
 
 `setup-send` takes the [bench lease](../devices/plaf103/bench.md#bench-lease) for its one frame, and needs `--on-feeder-network <name>`: it refuses a name not starting `PL-AF103-`, but takes your word for it, unlike `wellfed install`, which checks. `serve` takes none: it only answers, beside the command that drives the feeder.
 
@@ -118,7 +125,7 @@ Operation with a nonempty plan, and stock's time-recovery behavior, are unvalida
 
 ## A fresh bench's `private/server.json`
 
-The bench tools read `private/server.json`: its `hotspot_interface` and `target_mac` find the feeder when mDNS does not, and its `timezone` goes into a clock sync. No tool writes those two fields. The research bench's existing file holds them, edited by hand. On a fresh bench, `wellfed-stock init-installer --output private/server.json` writes a usable file with neither, so the feeder must answer over mDNS.
+The bench tools read `private/server.json`: its `hotspot_interface` and `target_mac` find the feeder when mDNS does not, and its `timezone` goes into a clock sync. No tool writes those two fields. The research bench's existing file holds them, edited by hand. On a fresh bench, `wellfed-stock init-installer --output private/server.json` writes a usable file with neither, so the feeder must answer over mDNS, and the host must admit UDP 5353 ([the bench host's firewall](#the-bench-hosts-firewall)).
 
 ## The replacement firmware (deleted roles)
 

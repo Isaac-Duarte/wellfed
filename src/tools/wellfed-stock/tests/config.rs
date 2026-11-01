@@ -1,11 +1,17 @@
-//! `init-installer`: what it writes, and what it refuses to write.
+//! `init-installer`: what it writes, and what it refuses to write. And what
+//! a config read back may name.
+
+mod common;
 
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
 use tempfile::TempDir;
-use wellfed_stock::config::{self, State};
+use wellfed_stock::{
+    config::{self, State},
+    storage,
+};
 
 fn init(listen: &str, output: &Path, zone: Option<&str>) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_wellfed-stock"));
@@ -71,5 +77,30 @@ fn a_wildcard_or_ipv6_broker_bind_writes_nothing() {
 
         assert!(!init(listen, &path, None).status.success(), "{listen}");
         assert!(!path.exists(), "{listen}");
+    }
+}
+
+/// A config may name only what an interface can be called.
+#[test]
+fn a_hotspot_interface_with_other_characters_is_refused() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("server.json");
+    let mut written = common::config();
+
+    written.hotspot_interface = Some("wlan-1_a".to_owned());
+    storage::write_json(&path, &written).unwrap();
+    assert!(config::state(&path).is_ok());
+
+    for name in ["", "wlan 1", "wlan1;reboot", "../wlan1"] {
+        written.hotspot_interface = Some(name.to_owned());
+        storage::write_json(&path, &written).unwrap();
+
+        let Err(error) = config::state(&path) else {
+            panic!("{name:?} was accepted");
+        };
+        assert!(
+            format!("{error:#}").contains("invalid hotspot interface"),
+            "{name:?}: {error:#}"
+        );
     }
 }

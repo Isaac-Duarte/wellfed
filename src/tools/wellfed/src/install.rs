@@ -61,8 +61,6 @@ use crate::ble::Bluez;
 use crate::keys::{OwnerKey, fingerprint};
 use crate::report::{Printer, short};
 
-/// The installer's config when `--stock-config` names none.
-const STOCK_CONFIG: &str = "private/installer.json";
 /// The update key a consumer run at a terminal makes and signs with, when it
 /// is given neither a key nor a manifest.
 const UPDATE_KEY: &str = "private/update-key.json";
@@ -144,7 +142,7 @@ pub(crate) struct InstallArgs {
     /// refused. The run serves stock from this process with it. At a terminal,
     /// with --ssid, it is created if missing, naming this computer's address
     /// on that network (or --broker).
-    #[arg(long, default_value = STOCK_CONFIG)]
+    #[arg(long, default_value = wellfed_formats::stock::INSTALLER_CONFIG)]
     stock_config: PathBuf,
     /// How long the broker trusts the first stock feeder that connects.
     #[arg(long, default_value_t = 15)]
