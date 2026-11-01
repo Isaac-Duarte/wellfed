@@ -42,6 +42,20 @@ fn console(root: &Path) -> Screen {
     Screen::start(&line, root)
 }
 
+/// The running `console` of the checkout at `root`, found by its command line
+/// because a shell stands between it and the test.
+fn console_under(root: &Path) -> Pid {
+    let root = root.display().to_string();
+    let pid = fs::read_dir("/proc").unwrap().flatten().find_map(|entry| {
+        let pid = entry.file_name().to_str()?.parse::<i32>().ok()?;
+        let line = fs::read_to_string(entry.path().join("cmdline")).ok()?;
+        let mut words = line.split('\0');
+        let this = words.next()? == BENCH && words.any(|word| word == root);
+        this.then(|| Pid::from_raw(pid)).flatten()
+    });
+    pid.expect("no console running")
+}
+
 /// The pid of `console` itself, which `script` only started.
 fn console_pid(screen: &Screen) -> Pid {
     screen.until_shown(PID_MARK);
@@ -149,6 +163,26 @@ fn the_console_refuses_without_a_terminal_or_server_and_q_leaves_the_job_running
     screen.until_shown("the server keeps running");
     screen.hang_up();
     assert_ends(pid, Duration::from_secs(5), "with its terminal gone");
+
+    // A shell that outlives the hangup leads the session, so no signal comes,
+    // only the terminal goes: it still leaves, and cleanly.
+    let exit = root.join("console-exit");
+    let line = format!(
+        "trap '' HUP; '{BENCH}' --root '{root}' console; echo $? > '{exit}'",
+        root = root.display(),
+        exit = exit.display(),
+    );
+    let mut screen = Screen::start(&line, &root);
+    screen.until_shown("the server keeps running");
+    let pid = console_under(&root);
+    screen.hang_up();
+    assert_ends(pid, Duration::from_secs(5), "with no signal");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !exit.exists() {
+        assert!(Instant::now() < deadline, "its shell recorded no exit");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(fs::read_to_string(&exit).unwrap().trim(), "0");
 
     let state = runtime.block_on(client.state()).unwrap();
     assert_eq!(state.server.phase, Phase::Serving);

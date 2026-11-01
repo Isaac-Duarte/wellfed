@@ -164,33 +164,71 @@ enum Escape {
 /// The sequence `bytes` starts with, ESC first: `ESC [ … final` or `ESC O
 /// final`. A bare ESC before anything else is dropped alone, so what follows
 /// still counts: Alt+q is a `q`, as it was under crossterm.
+///
+/// A control byte is never part of a sequence, so it ends one early and is
+/// read for itself: Ctrl+C after a stray `ESC [` still quits.
 fn escape(bytes: &[u8]) -> Escape {
+    const fn control(byte: u8) -> bool {
+        byte < 0x20
+    }
+    const fn abandoned(length: usize) -> Escape {
+        Escape::Ended { length, key: None }
+    }
+
     match bytes.get(1) {
         None => Escape::Incomplete,
         Some(b'[') => {
             let Some(end) = bytes[2..]
                 .iter()
-                .position(|byte| (0x40..=0x7e).contains(byte))
+                .position(|byte| control(*byte) || (0x40..=0x7e).contains(byte))
+                .map(|end| 2 + end)
             else {
                 return Escape::Incomplete;
             };
-            let (parameters, last) = (&bytes[2..2 + end], bytes[2 + end]);
+            if control(bytes[end]) {
+                return abandoned(end);
+            }
+
+            let (parameters, last) = (&bytes[2..end], bytes[end]);
+            let length = end + 1;
+            if last == b'M' && parameters.is_empty() {
+                return mouse_report(bytes, length);
+            }
             Escape::Ended {
-                length: 2 + end + 1,
+                length,
                 key: csi(parameters, last),
             }
         }
         Some(b'O') => match bytes.get(2) {
             None => Escape::Incomplete,
+            Some(last) if control(*last) => abandoned(2),
             Some(last) => Escape::Ended {
                 length: 3,
                 key: letter(*last),
             },
         },
-        Some(_) => Escape::Ended {
-            length: 1,
+        Some(_) => abandoned(1),
+    }
+}
+
+/// `ESC [ M` and three raw bytes, a legacy mouse report, with its header
+/// `length` long. Those bytes must not read as keys: a click at column or row
+/// 81 sends `q`, which outside a write stops the server. Each is at least
+/// 0x20, so a control byte among them is no report.
+fn mouse_report(bytes: &[u8], length: usize) -> Escape {
+    let report = &bytes[length..];
+    if let Some(control) = report.iter().take(3).position(|byte| *byte < 0x20) {
+        return Escape::Ended {
+            length: length + control,
             key: None,
-        },
+        };
+    }
+    if report.len() < 3 {
+        return Escape::Incomplete;
+    }
+    Escape::Ended {
+        length: length + 3,
+        key: None,
     }
 }
 
@@ -288,6 +326,45 @@ mod tests {
         assert_eq!(parse(&mut bytes), []);
 
         assert!(bytes.len() <= LONGEST_ESCAPE, "{bytes:?}");
+    }
+
+    #[test]
+    fn a_mouse_report_is_no_key_even_where_it_spells_a_q() {
+        assert_eq!(keys_of(b"\x1b[M\x20\x71\x71"), []);
+        assert_eq!(keys_of(b"\x1b[<0;81;81M"), []);
+        assert_eq!(keys_of(b"\x1b[M\x20\x71\x71\x1b[A"), [Key::Up]);
+
+        // Split across reads, it still waits for its last byte.
+        let mut bytes = b"\x1b[M\x20\x71".to_vec();
+        assert_eq!(parse(&mut bytes), []);
+        assert_eq!(bytes, b"\x1b[M\x20\x71");
+        bytes.push(0x71);
+        assert_eq!(parse(&mut bytes), []);
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn a_control_byte_ends_a_sequence_and_ctrl_c_still_quits() {
+        for stray in [
+            &b"\x1b[\x03"[..],
+            b"\x1b[1;\x03",
+            b"\x1bO\x03",
+            b"\x1b\x03",
+            b"\x1b[M\x03",
+            b"\x1b[M\x20\x03",
+        ] {
+            assert_eq!(keys_of(stray), [Key::Quit], "{stray:?}");
+        }
+
+        // Another escape starts afresh.
+        assert_eq!(keys_of(b"\x1b[5;\x1b[A"), [Key::Up]);
+        assert_eq!(keys_of(b"\x1bO\x1b[B"), [Key::Down]);
+    }
+
+    #[test]
+    fn a_q_that_ends_a_sequence_is_no_key() {
+        assert_eq!(keys_of(b"\x1b[0q"), []);
+        assert_eq!(keys_of(b"\x1bOq"), []);
     }
 
     /// The two ends of a pseudo-terminal in raw enough use: bytes from the

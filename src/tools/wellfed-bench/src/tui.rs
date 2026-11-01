@@ -195,6 +195,15 @@ impl Drop for Screenful {
     }
 }
 
+/// End on a terminal that has hung up. `Terminal`'s drop would try to show the
+/// cursor on it and `eprintln!` the failure: into the running job's log under
+/// `serve`, and on a dead stderr, which panics, under `console`. It happens
+/// once in a process, so what the screen holds is simply left behind.
+fn abandon(terminal: Terminal<CrosstermBackend<File>>) -> io::Result<()> {
+    std::mem::forget(terminal);
+    Ok(())
+}
+
 /// Where a screen's state and lines come from, and what its keys do.
 trait Feed {
     /// The footer's keys.
@@ -281,23 +290,25 @@ fn run(tty: File, feed: &mut impl Feed) -> io::Result<()> {
             noticed = notice.is_some();
         }
         if drawn.is_none_or(|at| at.elapsed() >= frame) {
-            let draw = terminal.draw(|frame| {
-                view::draw(
-                    frame,
-                    &Screen {
-                        state: &state,
-                        log: &log,
-                        scroll,
-                        notice,
-                        keys: feed.keys(),
-                    },
-                );
-            });
+            let draw = terminal
+                .draw(|frame| {
+                    view::draw(
+                        frame,
+                        &Screen {
+                            state: &state,
+                            log: &log,
+                            scroll,
+                            notice,
+                            keys: feed.keys(),
+                        },
+                    );
+                })
+                .map(|_| ());
             // A hangup between frames fails the draw before the wait below
             // would see it, and is no more an error here than there.
             match draw {
-                Ok(_) => {}
-                Err(_) if keys.hung_up() => return Ok(()),
+                Ok(()) => {}
+                Err(_) if keys.hung_up() => return abandon(terminal),
                 Err(error) => return Err(error),
             }
             drawn = Some(Instant::now());
@@ -311,7 +322,7 @@ fn run(tty: File, feed: &mut impl Feed) -> io::Result<()> {
             Input::Keys(pressed) => pressed,
             Input::Nothing => continue,
             // Nothing can be drawn or printed any more: no tail either.
-            Input::HungUp => return Ok(()),
+            Input::HungUp => return abandon(terminal),
         };
 
         let page = usize::from(terminal.size()?.height / 2).max(1);

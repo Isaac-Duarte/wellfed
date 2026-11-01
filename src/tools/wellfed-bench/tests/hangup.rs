@@ -13,6 +13,7 @@ use rustix::process::{Pid, Signal, kill_process};
 use rustix::pty::{OpenptFlags, grantpt, openpt, ptsname, unlockpt};
 use tokio::runtime::Runtime;
 use wellfed_bench_server::Client;
+use wellfed_bench_server::stopping::CONFIRM_PROMPT;
 use wellfed_formats::bench::live::{BenchState, CancelState, Phase, Uart};
 use wellfed_relay::{FakeBoard, Link};
 
@@ -128,7 +129,7 @@ impl Serving {
         let absent = root.join("absent");
         let serve = format!(
             "'{BENCH}' --root '{root}' serve --flash-bin '{flash}' \
-             --stock-bin '{absent}' --build-bin '{absent}' --wellfed-bin '{absent}' \
+             --build-bin '{absent}' --wellfed-bin '{absent}' \
              --feeder-address 127.0.0.1:9 --no-clock-sync",
             root = root.display(),
             flash = flash.display(),
@@ -367,8 +368,36 @@ fn a_hangup_with_no_signal_ends_the_console_and_the_server_serves_until_sigterm(
     }
     assert_eq!(serving.state().server.phase, Phase::Serving);
 
+    // The screen's end left nothing of its own in the job's log.
+    let log = serving.root().join("private/bench-status/jobs/1-u1.log");
+    let log = fs::read_to_string(log).unwrap();
+    assert!(!log.contains("cursor"), "{log}");
+
     kill_process(serving.pid, Signal::TERM).unwrap();
 
     serving.assert_released(Duration::from_secs(15));
     assert_eq!(serving.exit_code(), "0");
+}
+
+#[test]
+fn a_first_q_during_a_write_shows_the_prompt_and_touches_nothing() {
+    let mut serving = Serving::start(Under::Leading);
+    serving.start_write();
+
+    serving.screen.press("q");
+
+    serving.screen.until_shown(CONFIRM_PROMPT);
+    let state = serving.assert_write_untouched();
+    assert!(state.server.stopping.is_none(), "{:?}", state.server);
+
+    fs::write(serving.root().join("finish"), "").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while serving.state().job.unwrap().end.is_none() {
+        assert!(Instant::now() < deadline, "the job did not end");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    kill_process(serving.pid, Signal::TERM).unwrap();
+
+    serving.assert_released(Duration::from_secs(15));
 }
