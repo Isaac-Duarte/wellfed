@@ -109,7 +109,7 @@ pub(crate) struct InstallArgs {
     /// The feeder's Bluetooth address for setup; otherwise the first in
     /// setup mode.
     #[arg(long)]
-    ble_address: Option<bluer::Address>,
+    ble_address: Option<crate::ble::Address>,
     /// A copy of stock 1.1.15's OTA image that matches the pinned digest.
     /// Without one, the run reads bank 1 from the replacement on bank 0
     /// and keeps it under --backups; promotion overwrites the feeder's
@@ -195,6 +195,11 @@ enum ConfigRefused {
         "{path} holds a plan snapshot, which the stock server would send stock in place of its own plans; nothing was started. Use an installer's config (wellfed-stock init-installer), or remove the `plans` key"
     )]
     PlanSnapshot { path: PathBuf },
+    /// A consumer image needs Bluetooth for its setup right after the install.
+    #[error(
+        "this review is a consumer image, which is paired over Bluetooth, and this build of wellfed has none; nothing was started. Run the install from Linux, or from the Android app"
+    )]
+    NoBluetooth,
 }
 
 /// What a run refuses before anything starts, beyond a file it cannot read,
@@ -574,6 +579,7 @@ pub(crate) async fn run(args: InstallArgs) -> Result<()> {
         Provisioning::Consumer => Route::Setup,
         Provisioning::Bench => Route::Recovery,
     };
+    require_bluetooth(route, crate::ble::AVAILABLE)?;
     let signer = signer(&args, &review, update_key(&args, provisioning)?)?;
     let passphrase = match (&args.ssid, &args.home_ssid) {
         (None, None) => None,
@@ -688,7 +694,8 @@ const INTRODUCTION: &str = "\nInstalling Wellfed, in five steps. Stay near the f
 /// seen, the handlers stay installed but nothing listens, so a second Ctrl-C
 /// does not cut the stop short; the stop is itself bounded. A SIGHUP this
 /// process was started ignoring (`nohup`) stays ignored: whoever started it
-/// asked for the run to outlive the terminal.
+/// asked for the run to outlive the terminal. Only Linux shows that, in
+/// /proc: on macOS a hangup always stops the run, the same bounded stop.
 pub(crate) fn signalled() -> Result<impl Future<Output = Stop>> {
     let mut terminate = signal(SignalKind::terminate()).context("handle SIGTERM")?;
     let mut interrupt = signal(SignalKind::interrupt()).context("handle SIGINT")?;
@@ -721,6 +728,15 @@ fn hangup_ignored(status: &str) -> bool {
         .find_map(|line| line.strip_prefix("SigIgn:"))
         .and_then(|mask| u64::from_str_radix(mask.trim(), 16).ok())
         .is_some_and(|mask| mask & 1 == 1)
+}
+
+/// A consumer image is paired over Bluetooth once it is installed, so a host
+/// without it must stop before the feeder is touched, not after.
+fn require_bluetooth(route: Route, available: bool) -> Result<()> {
+    if route == Route::Setup && !available {
+        return Err(ConfigRefused::NoBluetooth.into());
+    }
+    Ok(())
 }
 
 /// How the replacement is paired, by the review's provisioning.
@@ -1651,5 +1667,19 @@ mod tests {
         let error = explain(Error::NotAnswering { feeder: [0xab; 32] });
         assert!(error.to_string().contains("feeder abababababababab"));
         assert!(error.to_string().contains("pass --address <ip> to resume"));
+    }
+
+    /// Pairing comes after the install, so a host without Bluetooth has to
+    /// find that out before anything reaches the feeder.
+    #[test]
+    fn a_consumer_install_needs_bluetooth_before_it_starts() {
+        let refusal = require_bluetooth(Route::Setup, false).unwrap_err();
+        assert!(matches!(
+            refusal.downcast_ref(),
+            Some(ConfigRefused::NoBluetooth)
+        ));
+
+        require_bluetooth(Route::Setup, true).unwrap();
+        require_bluetooth(Route::Recovery, false).unwrap();
     }
 }

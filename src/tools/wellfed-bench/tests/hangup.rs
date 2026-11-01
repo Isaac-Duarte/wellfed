@@ -2,6 +2,11 @@
 //! pseudo-terminal: a closed `ssh -t` or terminal window. The relay board is
 //! a second pseudo-terminal speaking the board's lines, and the flash client
 //! a stand-in, so nothing here reaches hardware.
+//!
+//! Linux only: what these prove is which threads are left and that they sit
+//! idle, read from `/proc/<pid>/task`, which macOS has no counterpart for.
+
+#![cfg(target_os = "linux")]
 
 use std::fs::{self, File};
 use std::io::{ErrorKind, Read, Write};

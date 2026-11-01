@@ -646,7 +646,9 @@ fn check_anchors(
                     continue;
                 };
                 let joined = normalize(&page.parent().unwrap_or(root).join(local));
-                let Ok(relative) = joined.strip_prefix(root) else {
+                // `joined` has its symlinks resolved, so `root` needs its own
+                // resolved too: a checkout or temp directory can sit under one.
+                let Ok(relative) = joined.strip_prefix(normalize(root)) else {
                     continue;
                 };
                 relative.to_string_lossy().into_owned()

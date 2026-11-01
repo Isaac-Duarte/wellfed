@@ -14,7 +14,6 @@ bytes = "1"
 http-body-util.workspace = true
 hyper = { version = "1.12.0", features = ["client", "http1"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
-bluer = { version = "0.17.4", features = ["bluetoothd"] }
 clap.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 jiff = "0.2.38"
@@ -38,6 +37,10 @@ tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "rt-mu
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 uuid = { workspace = true, features = ["v4"] }
 rpassword = "7"
+
+# BlueZ is Linux's; elsewhere `crate::ble` refuses and says so.
+[target.'cfg(target_os = "linux")'.dependencies]
+bluer = { version = "0.17.4", features = ["bluetoothd"] }
 
 [dev-dependencies]
 wellfed-server-testkit.workspace = true

@@ -32,6 +32,10 @@ mod access;
 mod ask;
 mod backup;
 mod bench;
+#[cfg(target_os = "linux")]
+mod ble;
+#[cfg(not(target_os = "linux"))]
+#[path = "ble_unsupported.rs"]
 mod ble;
 mod call;
 mod configure;

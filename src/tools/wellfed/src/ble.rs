@@ -12,9 +12,10 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
+pub(crate) use bluer::Address;
+use bluer::Uuid;
 use bluer::gatt::WriteOp;
 use bluer::gatt::remote::{Characteristic, CharacteristicWriteRequest};
-use bluer::{Address, Uuid};
 use futures_util::{Stream, StreamExt};
 use tokio::time::timeout;
 use wellfed_client::setup::{CONTROL, Deframer, SERVICE, frame};
@@ -26,6 +27,9 @@ const CLOSE_TIMEOUT: Duration = Duration::from_secs(3);
 /// Control writes fit the smallest ATT payload, so they never depend on the
 /// MTU exchange having happened.
 const CONTROL_CHUNK: usize = 20;
+
+/// Whether this build can reach a feeder over Bluetooth.
+pub(crate) const AVAILABLE: bool = true;
 
 fn uuid(value: u128) -> Uuid {
     Uuid::from_u128(value)

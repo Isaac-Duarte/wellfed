@@ -198,6 +198,22 @@ fn an_unreadable_lease_is_refused_not_overwritten() {
     assert_eq!(fs::read(root.path().join(LEASE)).unwrap(), b"{\"pid\": 1");
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn a_start_time_from_ps_reads_as_seconds_since_the_epoch() {
+    assert_eq!(
+        Stat::parse("  48403 Ss   Sun Nov  1 11:00:56 2026\n"),
+        Some(Stat {
+            state: 'S',
+            ppid: 48403,
+            start_ticks: 1_793_530_856,
+        })
+    );
+    assert_eq!(Stat::parse("48403 Ss"), None);
+    assert_eq!(Stat::parse(""), None);
+}
+
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn stat_fields_count_from_the_last_parenthesis() {
     let line = "4242 (a (b) c) S 17 4242 4242 0 -1 4194560 120 0 0 0 1 2 0 0 20 0 1 0 987654 \

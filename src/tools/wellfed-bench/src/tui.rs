@@ -61,13 +61,34 @@ const SERVE_KEYS: &str =
     "q or Ctrl+C stops the server (cancel, cleanup, release) · PgUp/PgDn scroll · End follows";
 
 /// Whether the full-screen console can run: a terminal on stdout and a
-/// `/dev/tty` to draw on, unless `--plain` asked for lines.
+/// controlling terminal to draw on, unless `--plain` asked for lines.
 pub(crate) fn available(plain: bool) -> bool {
     !plain && io::stdout().is_terminal() && tty().is_ok()
 }
 
+/// The controlling terminal. Not `/dev/tty` on macOS, whose `poll` refuses
+/// that device (`POLLNVAL`, which [`keys`] would read as a hangup): there the
+/// terminal's own device, as stdin, stdout or stderr names it.
+#[cfg(not(target_os = "macos"))]
+fn terminal_path() -> std::io::Result<std::path::PathBuf> {
+    Ok("/dev/tty".into())
+}
+
+#[cfg(target_os = "macos")]
+fn terminal_path() -> std::io::Result<std::path::PathBuf> {
+    use std::os::unix::ffi::OsStringExt;
+
+    let name = rustix::termios::ttyname(std::io::stdin(), Vec::new())
+        .or_else(|_| rustix::termios::ttyname(std::io::stdout(), Vec::new()))
+        .or_else(|_| rustix::termios::ttyname(std::io::stderr(), Vec::new()))?;
+    Ok(std::ffi::OsString::from_vec(name.into_bytes()).into())
+}
+
 fn tty() -> io::Result<File> {
-    File::options().read(true).write(true).open("/dev/tty")
+    File::options()
+        .read(true)
+        .write(true)
+        .open(terminal_path()?)
 }
 
 /// The running console. Dropped without [`Self::finish`], as when the

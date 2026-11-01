@@ -512,6 +512,10 @@ mod tests {
         worker.abort();
     }
 
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+    )]
     #[tokio::test]
     async fn lease_requires_a_parseable_file_and_a_live_listener_on_the_trial_port() {
         let host = std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 250));

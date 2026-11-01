@@ -28,10 +28,16 @@ pub(crate) struct SetupArgs {
     keys: PathBuf,
     /// The feeder's Bluetooth address; otherwise the first in setup mode.
     #[arg(long)]
-    address: Option<bluer::Address>,
+    address: Option<crate::ble::Address>,
 }
 
 pub(crate) async fn setup(args: SetupArgs) -> Result<()> {
+    // Before the passphrase is asked for and a client key is made for nothing.
+    anyhow::ensure!(
+        crate::ble::AVAILABLE,
+        "`wellfed setup` reaches a feeder over Bluetooth, and this build of wellfed has none: it uses BlueZ, which only Linux has"
+    );
+
     let wifi = match args.ssid {
         Some(ssid) => Some(Credentials::new(ssid.into_bytes(), passphrase()?)?),
         None => None,

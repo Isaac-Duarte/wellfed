@@ -26,8 +26,14 @@ impl Screen {
     /// one with none when its own input is no terminal.
     pub fn start(line: &str, home: &std::path::Path) -> Self {
         let line = format!("stty cols 130 rows 46; {line}");
+        // util-linux's and BSD's `script` differ in everything but the name.
+        #[cfg(not(target_os = "macos"))]
+        let args = ["-qfec", &line, "/dev/null"];
+        #[cfg(target_os = "macos")]
+        let args = ["-qF", "/dev/null", "/bin/sh", "-c", &line];
+
         let mut child = Command::new("script")
-            .args(["-qfec", &line, "/dev/null"])
+            .args(args)
             .env("SHELL", "/bin/sh")
             // A bench server finds its clients through these: never the
             // real one's, on a host that has one.
@@ -37,7 +43,7 @@ impl Screen {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .expect("this test needs util-linux's `script`");
+            .expect("this test needs `script`");
 
         let mut stdout = child.stdout.take().unwrap();
         let seen = Arc::new(Mutex::new(Vec::new()));
@@ -100,16 +106,14 @@ impl Screen {
 /// Whether `pid` is still running. A process that has ended and waits for
 /// its new parent to reap it is not.
 pub fn running(pid: Pid) -> bool {
-    std::fs::read_to_string(format!("/proc/{}/stat", pid.as_raw_nonzero()))
-        .ok()
-        .and_then(|stat| {
-            let (_, after_name) = stat.rsplit_once(')')?;
-            after_name
-                .split_whitespace()
-                .next()
-                .map(|state| state != "Z")
+    Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.as_raw_nonzero().to_string()])
+        .output()
+        .is_ok_and(|output| {
+            let state = String::from_utf8_lossy(&output.stdout);
+            let state = state.trim();
+            !state.is_empty() && !state.starts_with('Z')
         })
-        .unwrap_or(false)
 }
 
 /// Fail unless `pid` ends within `limit`, taking it down first so that a
