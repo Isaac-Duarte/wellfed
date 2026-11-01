@@ -104,7 +104,7 @@ class _PickState extends State<_Pick> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return StepScaffold(
       appBarTitle: 'Recover a feeder',
       body:
@@ -116,10 +116,8 @@ class _PickState extends State<_Pick> {
         const SizedBox(height: 18),
         const NumberedSteps([
           'Unlock the panel if the lock light is on.',
-          'Hold **Lock**, then also **Dispense**, for 5 seconds. The lock '
-              'light blinks fast.',
-          'Within 2 minutes, pick the feeder below and press the code it '
-              'shows, just like setup.',
+          'Hold **Lock**, then also **Dispense**, for 5 seconds. The lock light blinks fast.',
+          'Within 2 minutes, pick the feeder below and press the code it shows, just like setup.',
         ]),
         const SizedBox(height: Space.s5),
         if (_found.isEmpty) const Searching('Looking for feeders on this network…'),

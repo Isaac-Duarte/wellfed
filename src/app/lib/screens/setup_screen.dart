@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MissingPluginException;
+import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
-
 import 'package:wellfed/platform/pairing_ports.dart';
 import 'package:wellfed/screens/name_step.dart';
 import 'package:wellfed/screens/pairing_view.dart';
@@ -20,7 +20,11 @@ enum _Step { permissions, setupMode, wifi, names, pairing }
 
 /// What setup asks Android for: Bluetooth to reach the feeder, and
 /// location only because Android needs it to read the Wi-Fi's name.
-const _permissions = [Permission.bluetoothScan, Permission.bluetoothConnect, Permission.locationWhenInUse];
+const List<Permission> _permissions = [
+  Permission.bluetoothScan,
+  Permission.bluetoothConnect,
+  Permission.locationWhenInUse,
+];
 
 /// BLE setup: put the feeder in setup mode, give it its Wi-Fi, name it and
 /// this phone, then pick it and key in the code. The name and Wi-Fi come
@@ -53,7 +57,7 @@ class _SetupScreenState extends State<SetupScreen> {
   /// The permissions screen only when something is still to grant.
   Future<void> _askFirst() async {
     if (!widget.askPermissions) return;
-    for (final permission in _permissions) {
+    for (final Permission permission in _permissions) {
       if (!await permission.isGranted) {
         if (mounted) setState(() => _step = _Step.permissions);
         return;
@@ -68,9 +72,9 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   Future<void> _grant() async {
-    final granted = await _permissions.request();
+    final Map<Permission, PermissionStatus> granted = await _permissions.request();
     if (!mounted) return;
-    final bluetooth = [granted[Permission.bluetoothScan], granted[Permission.bluetoothConnect]];
+    final List<PermissionStatus?> bluetooth = [granted[Permission.bluetoothScan], granted[Permission.bluetoothConnect]];
     if (bluetooth.any((status) => status?.isGranted != true)) {
       await _bluetoothOff();
       return;
@@ -97,7 +101,10 @@ class _SetupScreenState extends State<SetupScreen> {
   /// connected to: it stays in setup mode, so nobody has to pick it twice.
   Future<void> _pair({bool again = false}) async {
     if (widget.askPermissions) {
-      final granted = await [Permission.bluetoothScan, Permission.bluetoothConnect].request();
+      final Map<Permission, PermissionStatus> granted = await [
+        Permission.bluetoothScan,
+        Permission.bluetoothConnect,
+      ].request();
       if (!mounted) return;
       if (granted.values.any((status) => !status.isGranted)) {
         await _bluetoothOff();
@@ -105,7 +112,7 @@ class _SetupScreenState extends State<SetupScreen> {
       }
     }
 
-    final device = again ? _flow?.chosen : null;
+    final DiscoveredDevice? device = again ? _flow?.chosen : null;
     _flow?.dispose();
     final flow = PairingFlow(widget.app, widget.ports);
     setState(() {
@@ -129,11 +136,9 @@ class _SetupScreenState extends State<SetupScreen> {
         PanelPhoto(held: [1, 3]),
         SizedBox(height: Space.s4),
         NumberedSteps([
-          'Plug the feeder in. If the lock light is on, hold **Lock** for '
-              '5 seconds to unlock the panel.',
+          'Plug the feeder in. If the lock light is on, hold **Lock** for 5 seconds to unlock the panel.',
           'Hold **Lock** and **Mic** together for 5 seconds.',
-          'The Wi-Fi light blinks slowly, about once a second. Setup mode '
-              'lasts 15 minutes.',
+          'The Wi-Fi light blinks slowly, about once a second. Setup mode lasts 15 minutes.',
         ]),
       ],
       actions: [FilledButton(onPressed: () => _to(_Step.wifi), child: const Text('The Wi-Fi light is blinking'))],
@@ -178,7 +183,7 @@ class _Permissions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     Widget row(Glyph glyph, String title, String body) => Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -274,7 +279,7 @@ class _WifiStepState extends State<WifiStep> {
   }
 
   Future<void> _prefill() async {
-    final name = await _currentNetwork();
+    final String? name = await _currentNetwork();
     if (!mounted) return;
     if (name == null) {
       setState(() => _typing = true);
@@ -306,7 +311,7 @@ class _WifiStepState extends State<WifiStep> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return StepScaffold(
       stepLabel: widget.stepLabel,
       progress: widget.progress,

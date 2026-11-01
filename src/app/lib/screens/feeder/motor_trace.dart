@@ -14,7 +14,7 @@ import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/when.dart';
 
 AppBar _bar(BuildContext context, String title) {
-  final c = context.colors;
+  final ThemeTokens c = context.colors;
   return AppBar(
     toolbarHeight: 64,
     automaticallyImplyLeading: false,
@@ -42,7 +42,7 @@ class MotorTracesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final feeds = [
+    final List<(HistoryEntry, FeedResult)> feeds = [
       for (final entry in feeder.history.reversed)
         if (entry.body case HistoryBody_Fed(:final result)) (entry, result),
     ].take(_most).toList();
@@ -87,7 +87,7 @@ class MotorTraceScreen extends StatefulWidget {
 }
 
 class _MotorTraceScreenState extends State<MotorTraceScreen> {
-  late final _read = widget.feeder.ask(FeederRequest.readTrace(feed: widget.feed));
+  late final Future<FeederReply> _read = widget.feeder.ask(FeederRequest.readTrace(feed: widget.feed));
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -96,11 +96,11 @@ class _MotorTraceScreenState extends State<MotorTraceScreen> {
       future: _read,
       builder: (context, snapshot) => switch (snapshot.data) {
         null => const Center(child: CircularProgressIndicator()),
-        FeederReply_Trace(:final trace) => _Trace(trace),
+        FeederReply_Trace(:final TraceView trace) => _Trace(trace),
         FeederReply_Refused(refusal: FeederRefusal_NotFound()) => const Center(
           child: Text('The feeder kept no trace of this feed.'),
         ),
-        final reply => Center(child: Text(replyProblem(reply) ?? '')),
+        final FeederReply reply => Center(child: Text(replyProblem(reply) ?? '')),
       },
     ),
   );
@@ -115,9 +115,9 @@ class _Trace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final summary = trace.summary;
-    final seconds = summary.driveMs / 1000;
+    final ThemeTokens c = context.colors;
+    final TraceSummary summary = trace.summary;
+    final double seconds = summary.driveMs / 1000;
     Widget axis(String name, TraceSeries series) => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -220,16 +220,16 @@ class _TracePainter extends CustomPainter {
 
     switch (series) {
       case TraceSeries.current:
-        final points = [
+        final List<(int, int)> points = [
           for (final entry in entries)
-            if (entry case TraceEntry_Current(:final atMs, :final value)) (atMs, value),
+            if (entry case TraceEntry_Current(:final int atMs, :final int value)) (atMs, value),
         ];
         if (points.isEmpty) return;
-        final top = points.map((p) => p.$2).reduce((a, b) => a > b ? a : b);
+        final int top = points.map((p) => p.$2).reduce((a, b) => a > b ? a : b);
         if (top == 0) return;
         final path = Path();
-        for (final (i, (atMs, value)) in points.indexed) {
-          final y = size.height * (1 - value / top);
+        for (final (int i, (int atMs, int value)) in points.indexed) {
+          final double y = size.height * (1 - value / top);
           if (i == 0) {
             path.moveTo(x(atMs), y);
           } else {
@@ -238,14 +238,14 @@ class _TracePainter extends CustomPainter {
         }
         canvas.drawPath(path, ink);
       case TraceSeries.marks:
-        for (final entry in entries) {
-          if (entry case TraceEntry_Mark(:final atMs, high: true)) {
+        for (final TraceEntry entry in entries) {
+          if (entry case TraceEntry_Mark(:final int atMs, high: true)) {
             canvas.drawLine(Offset(x(atMs), 0), Offset(x(atMs), size.height), ink);
           }
         }
       case TraceSeries.beams:
-        for (final entry in entries) {
-          if (entry case TraceEntry_Beams(:final atMs, outletClear: false)) {
+        for (final TraceEntry entry in entries) {
+          if (entry case TraceEntry_Beams(:final int atMs, outletClear: false)) {
             canvas.drawLine(Offset(x(atMs), 0), Offset(x(atMs), size.height), ink);
           }
         }

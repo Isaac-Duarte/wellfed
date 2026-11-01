@@ -1,11 +1,12 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Card;
 
 import 'package:wellfed/screens/feeder/meal_editor.dart';
 import 'package:wellfed/screens/feeder/no_time.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -20,8 +21,8 @@ int mealsMost(PlansView plans) => plans.plans.length;
 String daysText(List<Weekday> days) {
   if (days.isEmpty) return 'once';
   if (days.length == 7) return 'every day';
-  const week = [Weekday.mon, Weekday.tue, Weekday.wed, Weekday.thu, Weekday.fri];
-  const weekend = [Weekday.sat, Weekday.sun];
+  const List<Weekday> week = [Weekday.mon, Weekday.tue, Weekday.wed, Weekday.thu, Weekday.fri];
+  const List<Weekday> weekend = [Weekday.sat, Weekday.sun];
   if (days.length == 5 && week.every(days.contains)) return 'Mon to Fri';
   if (days.length == 2 && weekend.every(days.contains)) return 'weekends';
   return [
@@ -59,7 +60,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final first = !_opened;
+    final bool first = !_opened;
     _opened = true;
     _tabs?.removeListener(_tabChanged);
     _tabs = DefaultTabController.maybeOf(context)?..addListener(_tabChanged);
@@ -73,7 +74,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
   }
 
   void _tabChanged() {
-    final tabs = _tabs;
+    final TabController? tabs = _tabs;
     if (tabs != null && tabs.index == _thisTab && !tabs.indexIsChanging) {
       _read();
     }
@@ -91,9 +92,9 @@ class _ScheduleTabState extends State<ScheduleTab> {
   Widget build(BuildContext context) => ListenableBuilder(listenable: feeder, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
-    final c = context.colors;
-    final card = feeder.card;
-    final plans = card?.plans;
+    final ThemeTokens c = context.colors;
+    final Card? card = feeder.card;
+    final PlansView? plans = card?.plans;
     if (plans == null) {
       return Center(
         child: Text(
@@ -103,14 +104,14 @@ class _ScheduleTabState extends State<ScheduleTab> {
       );
     }
 
-    final meals = [
+    final List<(int, PlanView)> meals = [
       for (final (slot, plan) in plans.plans.indexed)
         if (plan != null) (slot, plan),
     ]..sort((a, b) => a.$2.minute.compareTo(b.$2.minute));
-    final most = mealsMost(plans);
-    final full = meals.length >= most;
+    final int most = mealsMost(plans);
+    final bool full = meals.length >= most;
     final online = feeder.connection == Connection.online;
-    final next = card?.nextMeal;
+    final NextMealView? next = card?.nextMeal;
     final muted = TextStyle(fontSize: Sizes.base, color: c.textMuted);
 
     return Padding(
@@ -176,7 +177,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
   }
 
   static String _day(int atMs) {
-    final day = dayText(DateTime.fromMillisecondsSinceEpoch(atMs));
+    final String day = dayText(DateTime.fromMillisecondsSinceEpoch(atMs));
     return day == 'Today' || day == 'Tomorrow' ? day.toLowerCase() : day;
   }
 }
@@ -207,7 +208,7 @@ class _MealRowState extends State<_MealRow> {
 
   Future<void> _set(bool enabled) async {
     setState(() => _asking = true);
-    final reply = await widget.feeder.ask(
+    final FeederReply reply = await widget.feeder.ask(
       FeederRequest.editPlans(
         plans: widget.plans,
         edit: PlanEdit.enabled(slot: widget.slot, enabled: enabled),
@@ -226,10 +227,14 @@ class _MealRowState extends State<_MealRow> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final plan = widget.plan;
-    final time = minuteText(context, plan.minute);
-    final parts = [portionsText(plan.portions), daysText(plan.days), if (plan.call > 0) _calls(plan.call)].join(' · ');
+    final ThemeTokens c = context.colors;
+    final PlanView plan = widget.plan;
+    final String time = minuteText(context, plan.minute);
+    final String parts = [
+      portionsText(plan.portions),
+      daysText(plan.days),
+      if (plan.call > 0) _calls(plan.call),
+    ].join(' · ');
 
     // A node of its own: with no tap to tell them apart, as offline, every meal
     // on the panel would merge into one.
@@ -290,7 +295,7 @@ class CallLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return InkWell(
       onTap: onTap,
       child: Padding(

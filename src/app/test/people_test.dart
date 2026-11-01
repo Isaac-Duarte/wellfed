@@ -19,7 +19,7 @@ ClientView _client(int id, String label, ClientRole role, {bool you = false}) =>
     ClientView(key: Uint8List.fromList([id]), fingerprint: '0$id', label: label, role: role, you: you);
 
 Future<(FeederController, FakeSession)> _people(WidgetTester tester) async {
-  final (feeder, session) = await oneFeeder(tester);
+  final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
   session.status(fakeCard());
   session.replies.add(
     FeederReply.clients(
@@ -42,7 +42,7 @@ class _FakeJoin implements JoinPorts {
   @override
   Future<JoinAnswer> join(String invite, String label, String address) async {
     joins.add(invite);
-    final answer = answers.removeAt(0);
+    final Object answer = answers.removeAt(0);
     if (answer is BridgeError) throw answer;
     return answer as JoinAnswer;
   }
@@ -63,7 +63,7 @@ void main() {
     });
 
     testWidgets('removing confirms, then revokes the key once', (tester) async {
-      final (_, session) = await _people(tester);
+      final (_, FakeSession session) = await _people(tester);
 
       await tapIn(tester, find.byTooltip("Remove Ana's phone"));
       await tapIn(tester, find.widgetWithText(FilledButton, 'Remove'));
@@ -74,7 +74,7 @@ void main() {
     });
 
     testWidgets('a refused or unanswered removal says so', (tester) async {
-      final (_, session) = await _people(tester);
+      final (_, FakeSession session) = await _people(tester);
       session.replies.add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
       await tapIn(tester, find.byTooltip("Remove Ana's phone"));
       await tapIn(tester, find.widgetWithText(FilledButton, 'Remove'));
@@ -90,7 +90,7 @@ void main() {
     });
 
     testWidgets('an invite is created once for the role chosen', (tester) async {
-      final (_, session) = await _people(tester);
+      final (_, FakeSession session) = await _people(tester);
       session.replies.add(
         const FeederReply.invite(
           invite: InviteView(text: 'wellfed-invite:1:x', seconds: 600, role: ClientRole.owner),
@@ -115,7 +115,7 @@ void main() {
     });
 
     testWidgets('a create refused or unanswered shows no invite', (tester) async {
-      final (_, session) = await _people(tester);
+      final (_, FakeSession session) = await _people(tester);
       session.replies
         ..add(const FeederReply.refused(refusal: FeederRefusal.full()))
         ..add(const FeederReply.unanswered());
@@ -169,7 +169,7 @@ void main() {
     }
 
     testWidgets('a code that is no invite stays on the scanner', (tester) async {
-      final (_, _, seen) = await join(tester);
+      final (_, _, void Function(String) seen) = await join(tester);
 
       seen('https://example.com');
       await settle(tester);
@@ -177,7 +177,7 @@ void main() {
     });
 
     testWidgets('an invite joins, and the phone keeps the feeder', (tester) async {
-      final (ports, book, seen) = await join(tester);
+      final (_FakeJoin ports, FakeBook book, void Function(String) seen) = await join(tester);
       ports.answers.add(const JoinAnswer.joined(role: ClientRole.member));
 
       seen('wellfed-invite:1:x');
@@ -194,18 +194,18 @@ void main() {
     });
 
     testWidgets('a feeder not found cannot be joined yet', (tester) async {
-      final (ports, _, seen) = await join(tester);
+      final (_FakeJoin ports, _, void Function(String) seen) = await join(tester);
       ports.found = null;
 
       seen('wellfed-invite:1:x');
       await settle(tester);
       expect(find.text('Not found'), findsOneWidget);
-      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      final FilledButton button = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(button.onPressed, isNull);
     });
 
     testWidgets('a refusal says so, and the invite is not sent again', (tester) async {
-      final (ports, book, seen) = await join(tester);
+      final (_FakeJoin ports, FakeBook book, void Function(String) seen) = await join(tester);
       ports.answers.add(const JoinAnswer.refused(refusal: FeederRefusal.full()));
 
       seen('wellfed-invite:1:x');
@@ -214,12 +214,12 @@ void main() {
 
       expect(find.textContaining('Every slot'), findsOneWidget);
       expect(book.feeders, isEmpty);
-      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      final FilledButton button = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(button.onPressed, isNull);
     });
 
     testWidgets('a broken connection is uncertain, not a turned-down invite', (tester) async {
-      final (ports, _, seen) = await join(tester);
+      final (_FakeJoin ports, _, void Function(String) seen) = await join(tester);
       ports.answers.add(const BridgeError(kind: ErrorKind.interrupted, message: 'reset'));
 
       seen('wellfed-invite:1:x');
@@ -228,12 +228,12 @@ void main() {
 
       expect(find.textContaining('may or may not have joined'), findsOneWidget);
       expect(find.textContaining('turned this invite down'), findsNothing);
-      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      final FilledButton button = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(button.onPressed, isNull);
     });
 
     testWidgets('no answer is uncertain, and the invite is not sent again', (tester) async {
-      final (ports, book, seen) = await join(tester);
+      final (_FakeJoin ports, FakeBook book, void Function(String) seen) = await join(tester);
       ports.answers.add(const BridgeError(kind: ErrorKind.timeout, message: 'late'));
 
       seen('wellfed-invite:1:x');
@@ -242,7 +242,7 @@ void main() {
 
       expect(find.textContaining('may or may not have joined'), findsOneWidget);
       expect(book.feeders, isEmpty);
-      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      final FilledButton button = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(button.onPressed, isNull);
     });
   });

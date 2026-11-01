@@ -27,9 +27,9 @@ Future<void> openMealEditor(
   ),
 );
 
-const _everyDay = Weekday.values;
-const _weekdays = [Weekday.mon, Weekday.tue, Weekday.wed, Weekday.thu, Weekday.fri];
-const _weekend = [Weekday.sat, Weekday.sun];
+const List<Weekday> _everyDay = Weekday.values;
+const List<Weekday> _weekdays = [Weekday.mon, Weekday.tue, Weekday.wed, Weekday.thu, Weekday.fri];
+const List<Weekday> _weekend = [Weekday.sat, Weekday.sun];
 
 /// Edit one meal (8.2). A save goes back against the table this opened on, so a
 /// change meanwhile (another client's, or a one-off meal disabling itself as it
@@ -57,14 +57,14 @@ class _MealEditorState extends State<MealEditor> {
   late PlansView _held = widget.held;
 
   PlanView? get _original {
-    final slot = widget.slot;
+    final int? slot = widget.slot;
     return slot == null ? null : widget.held.plans[slot];
   }
 
   @override
   void initState() {
     super.initState();
-    final plan = _original;
+    final PlanView? plan = _original;
     _minute = plan?.minute ?? 8 * 60;
     _portions = plan?.portions ?? 1;
     _days = (plan?.days ?? _everyDay).toSet();
@@ -84,8 +84,8 @@ class _MealEditorState extends State<MealEditor> {
   );
 
   PlanEdit _edit(PlansView against) {
-    final slot = widget.slot;
-    final plan = _plan;
+    final int? slot = widget.slot;
+    final PlanView plan = _plan;
     // The slot emptied meanwhile: "Save mine" brings the meal back.
     return slot == null || against.plans[slot] == null
         ? PlanEdit.add(plan: plan)
@@ -101,7 +101,7 @@ class _MealEditorState extends State<MealEditor> {
 
   Future<void> _save() async {
     setState(() => _asking = true);
-    final reply = await widget.feeder.ask(FeederRequest.editPlans(plans: _held, edit: _edit(_held)));
+    final FeederReply reply = await widget.feeder.ask(FeederRequest.editPlans(plans: _held, edit: _edit(_held)));
     if (!mounted) return;
     setState(() => _asking = false);
 
@@ -128,16 +128,16 @@ class _MealEditorState extends State<MealEditor> {
     required String go,
     required Future<void> Function() again,
   }) async {
-    final reply = await widget.feeder.ask(const FeederRequest.getPlans());
+    final FeederReply reply = await widget.feeder.ask(const FeederRequest.getPlans());
     if (!mounted) return;
     if (reply is! FeederReply_Plans) {
       showProblem(context, reply);
       return;
     }
 
-    final slot = widget.slot;
-    final theirs = slot == null ? null : reply.plans.plans[slot];
-    final mine = await showDialog<bool>(
+    final int? slot = widget.slot;
+    final PlanView? theirs = slot == null ? null : reply.plans.plans[slot];
+    final bool? mine = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         scrollable: true,
@@ -180,8 +180,8 @@ class _MealEditorState extends State<MealEditor> {
   /// Ask first: one tap would take the meal off the schedule. A delete chosen
   /// again after a stale refusal has been asked already, so it skips this.
   Future<void> _confirmDelete() async {
-    final time = minuteText(context, _original?.minute ?? _minute);
-    final sure = await showDialog<bool>(
+    final String time = minuteText(context, _original?.minute ?? _minute);
+    final bool? sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete this meal?'),
@@ -196,10 +196,10 @@ class _MealEditorState extends State<MealEditor> {
   }
 
   Future<void> _delete() async {
-    final slot = widget.slot;
+    final int? slot = widget.slot;
     if (slot == null) return;
     setState(() => _asking = true);
-    final reply = await widget.feeder.ask(
+    final FeederReply reply = await widget.feeder.ask(
       FeederRequest.editPlans(
         plans: _held,
         edit: PlanEdit.delete(slot: slot),
@@ -225,7 +225,7 @@ class _MealEditorState extends State<MealEditor> {
   }
 
   Future<void> _pickTime() async {
-    final picked = await showTimePicker(
+    final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay(hour: _minute ~/ 60, minute: _minute % 60),
     );
@@ -236,8 +236,8 @@ class _MealEditorState extends State<MealEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final time = minuteText(context, _minute);
+    final ThemeTokens c = context.colors;
+    final String time = minuteText(context, _minute);
     final label = TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: c.text);
     final muted = TextStyle(fontSize: Sizes.sm, color: c.textMuted);
     bool same(List<Weekday> days) => _days.length == days.length && days.every(_days.contains);
@@ -395,8 +395,8 @@ class _DayToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final letter = day.name[0].toUpperCase();
+    final ThemeTokens c = context.colors;
+    final String letter = day.name[0].toUpperCase();
     return Semantics(
       button: true,
       selected: on,

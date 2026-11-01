@@ -1,17 +1,18 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show FlutterError;
 import 'package:flutter/services.dart' show ByteData, MethodChannel, rootBundle;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
-
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/setup_link.dart';
-import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/install.dart' as rust;
+import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 
@@ -112,10 +113,9 @@ abstract interface class InstallPorts {
 }
 
 class AppInstallPorts implements InstallPorts {
+  const AppInstallPorts(this._key);
   static const _wifi = MethodChannel('io.github.isaacduarte.wellfed/wifi');
   static const _screen = MethodChannel('io.github.isaacduarte.wellfed/screen');
-
-  const AppInstallPorts(this._key);
 
   final ClientKey _key;
 
@@ -126,7 +126,7 @@ class AppInstallPorts implements InstallPorts {
 
   @override
   Future<InstallPaths> paths() async {
-    final support = await getApplicationSupportDirectory();
+    final Directory support = await getApplicationSupportDirectory();
     return InstallPaths(
       store: '${support.path}/wellfed.json',
       image: '${support.path}/install/image',
@@ -140,14 +140,14 @@ class AppInstallPorts implements InstallPorts {
     // Whatever an earlier build unpacked is not this build's.
     if (folder.existsSync()) folder.deleteSync(recursive: true);
     folder.createSync(recursive: true);
-    for (final name in _imageAssets) {
+    for (final String name in _imageAssets) {
       final ByteData data;
       try {
         data = await rootBundle.load('assets/installer/$name');
       } on FlutterError {
         return const ImageCheck.absent();
       }
-      final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      final Uint8List bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
       await File('${paths.image}/$name').writeAsBytes(bytes);
     }
     return checkImage(dir: paths.image);
@@ -187,7 +187,7 @@ class AppInstallPorts implements InstallPorts {
 
   @override
   Future<bool> askPermissions({required bool bluetooth}) async {
-    final granted = await [
+    final Map<Permission, PermissionStatus> granted = await [
       if (bluetooth) ...[Permission.bluetoothScan, Permission.bluetoothConnect],
       // Only to read the Wi-Fi's name for the prefill, and to show the
       // install's notification; the install goes on without either.
@@ -213,8 +213,8 @@ class AppInstallPorts implements InstallPorts {
     required void Function(List<int> bytes) onBytes,
     required void Function() onLost,
   }) async {
-    final device = await SetupLink.scan().first.timeout(SetupLink.findTimeout);
-    final link = await SetupLink.open(device);
+    final DiscoveredDevice device = await SetupLink.scan().first.timeout(SetupLink.findTimeout);
+    final SetupLink link = await SetupLink.open(device);
     return _Link(link, link.notifications.listen(onBytes, onError: (Object _) => onLost(), onDone: onLost));
   }
 
@@ -230,7 +230,7 @@ class AppInstallPorts implements InstallPorts {
     // and discovery stall until someone wakes it.
     await _screen.invokeMethod<void>('keepOn', true);
     if (await FlutterForegroundTask.isRunningService) {
-      final updated = await FlutterForegroundTask.updateService(
+      final ServiceRequestResult updated = await FlutterForegroundTask.updateService(
         notificationTitle: _notificationTitle,
         notificationText: text,
       );
@@ -246,7 +246,6 @@ class AppInstallPorts implements InstallPorts {
       iosNotificationOptions: const IOSNotificationOptions(),
       foregroundTaskOptions: ForegroundTaskOptions(
         eventAction: ForegroundTaskEventAction.nothing(),
-        allowWakeLock: true,
         allowWifiLock: true,
         allowAutoRestart: false,
         // A run lives in this process, so swiping the app away ends it, which
@@ -256,7 +255,7 @@ class AppInstallPorts implements InstallPorts {
         // its wake and Wi-Fi locks in the middle of a run.
       ),
     );
-    final started = await FlutterForegroundTask.startService(
+    final ServiceRequestResult started = await FlutterForegroundTask.startService(
       notificationTitle: _notificationTitle,
       notificationText: text,
     );

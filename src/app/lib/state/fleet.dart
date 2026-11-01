@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:wellfed/platform/feeder_ports.dart';
+import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/app_state.dart';
 import 'package:wellfed/state/feeder.dart';
 
@@ -21,11 +22,11 @@ class FeederFleet extends ChangeNotifier {
   FeederController? operator [](String identity) => _feeders[identity];
 
   void _sync() {
-    final known = {for (final f in _book.feeders) f.identity: f};
-    for (final gone in _feeders.keys.where((id) => !known.containsKey(id)).toList()) {
+    final Map<String, KnownFeeder> known = {for (final f in _book.feeders) f.identity: f};
+    for (final String gone in _feeders.keys.where((id) => !known.containsKey(id)).toList()) {
       _feeders.remove(gone)?.dispose();
     }
-    for (final feeder in known.values) {
+    for (final KnownFeeder feeder in known.values) {
       _feeders.putIfAbsent(feeder.identity, () => FeederController(_book, _ports, feeder));
     }
     notifyListeners();
@@ -34,7 +35,7 @@ class FeederFleet extends ChangeNotifier {
   @override
   void dispose() {
     _book.removeListener(_sync);
-    for (final controller in _feeders.values) {
+    for (final FeederController controller in _feeders.values) {
       controller.dispose();
     }
     super.dispose();

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'package:wellfed/screens/feeder/feed_detail.dart';
 import 'package:wellfed/screens/feeder/today.dart' show faultTitle;
@@ -85,18 +86,18 @@ class _HistoryTabState extends State<HistoryTab> {
       ListenableBuilder(listenable: widget.feeder, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
-    final c = context.colors;
-    final feeder = widget.feeder;
-    final entries = [
+    final ThemeTokens c = context.colors;
+    final FeederController feeder = widget.feeder;
+    final List<HistoryEntry> entries = [
       for (final entry in feeder.history.reversed)
         if (_shown(_filter, entry.body)) entry,
     ];
     final rows = <Widget>[];
     String? day;
     for (final (i, entry) in entries.indexed) {
-      final at = entry.atMs;
+      final PlatformInt64? at = entry.atMs;
       if (at != null) {
-        final heading = dayText(DateTime.fromMillisecondsSinceEpoch(at));
+        final String heading = dayText(DateTime.fromMillisecondsSinceEpoch(at));
         if (heading != day) {
           day = heading;
           rows.add(_DayHeading(heading, first: i == 0));
@@ -166,10 +167,10 @@ class _EntryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final (glyph, color, title, note) = _words(context, c);
-    final at = entry.atMs;
-    final body = entry.body;
+    final ThemeTokens c = context.colors;
+    final (Glyph glyph, Color color, String title, String note) = _words(context, c);
+    final PlatformInt64? at = entry.atMs;
+    final HistoryBody body = entry.body;
 
     return InkWell(
       onTap: body is HistoryBody_Fed
@@ -220,62 +221,63 @@ class _EntryRow extends StatelessWidget {
   (Glyph, Color, String, String) _words(BuildContext context, ThemeTokens c) {
     String who(FedBy by) => whoText(feeder, by);
     return switch (entry.body) {
-      HistoryBody_Fed(:final result) when result.uncertain => (
+      HistoryBody_Fed(:final FeedResult result) when result.uncertain => (
         Glyph.warning,
         c.warning,
         'Fed between ${result.confirmed} and ${result.atMost}',
         result.by is FedBy_Unknown ? 'Interrupted · not repeated' : '${_asker(context, result.by)} · not repeated',
       ),
-      HistoryBody_Fed(:final result) when result.outcome == FeedOutcome.done && result.confirmed == result.requested =>
+      HistoryBody_Fed(:final FeedResult result)
+          when result.outcome == FeedOutcome.done && result.confirmed == result.requested =>
         (Glyph.check, c.ok, 'Fed ${deliveredText(result)}', _asker(context, result.by)),
-      HistoryBody_Fed(:final result) => (
+      HistoryBody_Fed(:final FeedResult result) => (
         Glyph.warning,
         c.warning,
         'Fed ${deliveredText(result)}',
         '${_asker(context, result.by)} · '
             '${faultTitle(context, result.reason, null)}',
       ),
-      HistoryBody_Missed(:final slot, :final dueMs, :final reason) => (
+      HistoryBody_Missed(:final int slot, :final PlatformInt64 dueMs, :final MissedReason reason) => (
         Glyph.warning,
         c.warning,
         'Meal skipped',
         '${_meal(context, slot, dueMs)} · ${_missed(reason)}',
       ),
       HistoryBody_Restarted() => (Glyph.power, c.textMuted, 'Started up', ''),
-      HistoryBody_Lock(:final locked, :final by) => (
+      HistoryBody_Lock(:final bool locked, :final FedBy by) => (
         Glyph.lock,
         c.textMuted,
         locked ? 'Buttons locked' : 'Buttons unlocked',
         who(by),
       ),
-      HistoryBody_SettingsChanged(:final by) => (Glyph.check, c.textMuted, 'Settings changed', who(by)),
-      HistoryBody_WifiChanged(:final by) => (Glyph.wifi, c.textMuted, 'Wi-Fi changed', who(by)),
-      HistoryBody_PlansChanged(:final by) => (Glyph.clock, c.textMuted, 'Meals changed', who(by)),
-      HistoryBody_Joined(:final fingerprint) => (
+      HistoryBody_SettingsChanged(:final FedBy by) => (Glyph.check, c.textMuted, 'Settings changed', who(by)),
+      HistoryBody_WifiChanged(:final FedBy by) => (Glyph.wifi, c.textMuted, 'Wi-Fi changed', who(by)),
+      HistoryBody_PlansChanged(:final FedBy by) => (Glyph.clock, c.textMuted, 'Meals changed', who(by)),
+      HistoryBody_Joined(:final String fingerprint) => (
         Glyph.add,
         c.textMuted,
         'Someone joined',
         feeder.clientName(fingerprint),
       ),
-      HistoryBody_UpdateKeyAdded(:final fingerprint) => (
+      HistoryBody_UpdateKeyAdded(:final String fingerprint) => (
         Glyph.add,
         c.textMuted,
         'Update key added',
         feeder.clientName(fingerprint),
       ),
-      HistoryBody_Revoked(:final fingerprint, :final by) => (
+      HistoryBody_Revoked(:final String fingerprint, :final FedBy by) => (
         Glyph.minus,
         c.textMuted,
         '${feeder.clientName(fingerprint)} removed',
         who(by),
       ),
-      HistoryBody_ClockSet(:final by) => (
+      HistoryBody_ClockSet(:final FedBy by) => (
         Glyph.clock,
         c.textMuted,
         'Clock set',
         by is FedBy_Feeder ? 'From its time server' : who(by),
       ),
-      HistoryBody_Lost(:final count) => (
+      HistoryBody_Lost(:final int count) => (
         Glyph.warning,
         c.warning,
         "Some events weren't kept",
@@ -288,20 +290,20 @@ class _EntryRow extends StatelessWidget {
         'Not ready to feed',
         blockedWords(Blocked.setup),
       ),
-      HistoryBody_FeedingBlocked(reason: final reason?) => (
+      HistoryBody_FeedingBlocked(reason: final Blocked reason?) => (
         Glyph.warning,
         c.warning,
         'Not ready to feed',
         blockedWords(reason),
       ),
       HistoryBody_FeedingBlocked(reason: null) => (Glyph.check, c.ok, 'Ready to feed again', ''),
-      HistoryBody_MealSoon(:final minute, :final portions) => (
+      HistoryBody_MealSoon(:final int minute, :final int portions) => (
         Glyph.clock,
         c.textMuted,
         'Meal coming',
         '${minuteText(context, minute)} · ${portionsText(portions)}',
       ),
-      HistoryBody_Supply(:final adapter) => (
+      HistoryBody_Supply(:final bool? adapter) => (
         Glyph.power,
         c.textMuted,
         switch (adapter) {
@@ -311,13 +313,13 @@ class _EntryRow extends StatelessWidget {
         },
         '',
       ),
-      HistoryBody_DispenseRefused(:final reason) => (
+      HistoryBody_DispenseRefused(:final Blocked reason) => (
         Glyph.warning,
         c.textMuted,
         'A press was refused',
         blockedWords(reason),
       ),
-      HistoryBody_Food(:final level) => (
+      HistoryBody_Food(:final FoodLevel level) => (
         Glyph.food,
         level == FoodLevel.low ? c.fault : c.textMuted,
         switch (level) {
@@ -340,8 +342,8 @@ class _EntryRow extends StatelessWidget {
   /// `18:30 meal`, from when it was due or the slot's meal today, as an event
   /// names only the slot.
   String _meal(BuildContext context, int slot, int? dueMs) {
-    final plans = feeder.card?.plans?.plans ?? const <PlanView?>[];
-    final minute = slot < plans.length ? plans[slot]?.minute : null;
+    final List<PlanView?> plans = feeder.card?.plans?.plans ?? const <PlanView?>[];
+    final int? minute = slot < plans.length ? plans[slot]?.minute : null;
     if (dueMs != null) return '${clockTextMs(context, dueMs)} meal';
     return minute == null ? 'A meal' : '${minuteText(context, minute)} meal';
   }

@@ -27,7 +27,7 @@ class LightsHelp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
@@ -46,11 +46,11 @@ class LightsHelp extends StatelessWidget {
       body: ListView(
         children: [
           _photo(context),
-          Padding(
-            padding: const EdgeInsets.all(Space.s4),
+          const Padding(
+            padding: EdgeInsets.all(Space.s4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 _Heading('Lights'),
                 _Key('1', 'Food.', 'Blinks while it feeds.'),
                 _Key(
@@ -102,7 +102,7 @@ class LightsHelp extends StatelessWidget {
     child: ExcludeSemantics(
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final scale = constraints.maxWidth / _width;
+          final double scale = constraints.maxWidth / _width;
           // The photo is always dark, so its marks use the dark theme's.
           final mark = TextStyle(
             fontSize: 12,
@@ -165,7 +165,7 @@ class _Key extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Padding(
       padding: const EdgeInsets.only(bottom: Space.s2),
       child: Row(

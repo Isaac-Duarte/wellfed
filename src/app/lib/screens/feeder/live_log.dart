@@ -47,7 +47,7 @@ class _LiveLogScreenState extends State<LiveLogScreen> {
   }
 
   Future<void> _start() async {
-    final reply = await widget.feeder.ask(const FeederRequest.tailLog(after: null));
+    final FeederReply reply = await widget.feeder.ask(const FeederRequest.tailLog());
     if (mounted) setState(() => _problem = replyProblem(reply));
   }
 
@@ -61,7 +61,7 @@ class _LiveLogScreenState extends State<LiveLogScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,

@@ -69,7 +69,7 @@ class AppRestorePorts implements RestorePorts {
   @override
   Future<DateTime?> backupDate(String path) async {
     final file = File(path);
-    return file.existsSync() ? file.lastModified() : null;
+    return file.existsSync() ? file.lastModifiedSync() : null;
   }
 
   @override

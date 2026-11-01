@@ -1,12 +1,14 @@
 import 'dart:async';
+import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Card;
 
 import 'package:wellfed/screens/feeder/clock_portion.dart';
 import 'package:wellfed/screens/feeder/live_log.dart';
 import 'package:wellfed/screens/feeder/motor_trace.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -37,8 +39,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   }
 
   Future<void> _read() async {
-    for (final section in const [StatsSection.counters, StatsSection.memory, StatsSection.flash]) {
-      final reply = await widget.feeder.ask(FeederRequest.stats(section: section));
+    for (final StatsSection section in const [StatsSection.counters, StatsSection.memory, StatsSection.flash]) {
+      final FeederReply reply = await widget.feeder.ask(FeederRequest.stats(section: section));
       if (!mounted) return;
       setState(() {
         switch (reply) {
@@ -59,9 +61,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
   /// `3 d 4 h`, `4 h 12 min` or `12 min`.
   static String upText(int seconds) {
-    final minutes = seconds ~/ 60;
-    final hours = minutes ~/ 60;
-    final days = hours ~/ 24;
+    final int minutes = seconds ~/ 60;
+    final int hours = minutes ~/ 60;
+    final int days = hours ~/ 24;
     if (days > 0) return '$days d ${hours % 24} h';
     if (hours > 0) return '$hours h ${minutes % 60} min';
     return '$minutes min';
@@ -69,18 +71,18 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final feeder = widget.feeder;
-    final counters = _counters;
-    final boot = counters?.boot;
-    final lifetime = counters?.lifetime;
-    final resets = counters?.resets;
-    final restarts = resets == null
+    final ThemeTokens c = context.colors;
+    final FeederController feeder = widget.feeder;
+    final Counters? counters = _counters;
+    final Counts? boot = counters?.boot;
+    final Counts? lifetime = counters?.lifetime;
+    final Resets? resets = counters?.resets;
+    final int? restarts = resets == null
         ? null
         : resets.powerOn + resets.watchdog + resets.software + resets.brownout + resets.other;
-    final storage = (_flash?.lifetime ?? _flash?.boot)?.storage;
-    final worst = storage == null || storage.isEmpty ? null : storage.reduce((a, b) => a > b ? a : b);
-    final card = feeder.card;
+    final Uint32List? storage = (_flash?.lifetime ?? _flash?.boot)?.storage;
+    final int? worst = storage == null || storage.isEmpty ? null : storage.reduce((a, b) => a > b ? a : b);
+    final Card? card = feeder.card;
 
     Widget tile(String name, String value) => Expanded(
       child: Panel(

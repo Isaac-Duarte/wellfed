@@ -73,7 +73,7 @@ class _Find extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final found = flow.found.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi));
+    final List<DiscoveredDevice> found = flow.found.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi));
     return StepScaffold(
       stepLabel: 'Step 4 of 4',
       progress: 1,
@@ -110,7 +110,7 @@ class _Found extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     const small = Size(0, 40);
     return Panel(
       highlight: closest,
@@ -174,7 +174,7 @@ class _Code extends StatefulWidget {
 class _CodeState extends State<_Code> {
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return StepScaffold(
       stepLabel: widget.ble ? 'Step 4 of 4' : null,
       progress: widget.ble ? 1 : null,
@@ -211,8 +211,8 @@ class _Joining extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final network = flow.network;
+    final ThemeTokens c = context.colors;
+    final String? network = flow.network;
     Widget done(String text) => Row(
       children: [
         SizedBox.square(
@@ -283,12 +283,12 @@ class _Ready extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final name = flow.feederName;
-    final network = flow.network;
-    final body = switch ((flow.enrolled, network)) {
+    final ThemeTokens c = context.colors;
+    final String name = flow.feederName;
+    final String? network = flow.network;
+    final String body = switch ((flow.enrolled, network)) {
       (Enrolled.already, _) => 'This phone was already one of its owners; nothing changed.',
-      (_, final network?) =>
+      (_, final String network?) =>
         "It's on $network and you're its owner. You can feed it now from "
             'this phone.',
       _ => "You're its owner. You can feed it now from this phone.",
@@ -413,8 +413,8 @@ class _Failed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final (title, body) = _words();
+    final ThemeTokens c = context.colors;
+    final (String title, String body) = _words();
     final saved = flow.failure == PairingFailure.notOnLan;
     return StepScaffold(
       leading: Leading.close,

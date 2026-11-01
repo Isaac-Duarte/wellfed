@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Card;
 
 import 'package:wellfed/screens/feeder/clock_portion.dart';
 import 'package:wellfed/screens/feeder/diagnostics.dart';
@@ -10,6 +10,7 @@ import 'package:wellfed/screens/feeder/updates.dart';
 import 'package:wellfed/screens/feeder/wifi.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -25,7 +26,7 @@ String windowText(BuildContext context, Window window) => switch (window) {
 
 /// Change one setting, against the generation the screen shows.
 Future<void> _put(BuildContext context, FeederController feeder, SettingsView settings, SettingsChanges changes) async {
-  final reply = await feeder.ask(FeederRequest.putSettings(base: settings.generation, changes: changes));
+  final FeederReply reply = await feeder.ask(FeederRequest.putSettings(base: settings.generation, changes: changes));
   if (context.mounted) showProblem(context, reply);
 }
 
@@ -41,8 +42,8 @@ class SettingsTab extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(listenable: feeder, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
-    final c = context.colors;
-    final settings = feeder.card?.settings;
+    final ThemeTokens c = context.colors;
+    final SettingsView? settings = feeder.card?.settings;
     final owner = feeder.role == ClientRole.owner;
     if (settings == null) {
       return Center(
@@ -148,8 +149,8 @@ class SettingsTab extends StatelessWidget {
   /// This phone forgets the feeder. The feeder's list stays as it is, so an
   /// owner removes the key from People; a member cannot remove itself.
   static Future<void> _forget(BuildContext context, FeederController feeder) async {
-    final name = feeder.known.name;
-    final sure = await showDialog<bool>(
+    final String name = feeder.known.name;
+    final bool? sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Remove $name from this phone?'),
@@ -204,7 +205,7 @@ class _Words extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -250,7 +251,7 @@ class _WindowRow extends StatelessWidget {
     first: first,
     onTap: online
         ? () async {
-            final chosen = await showDialog<Window>(
+            final Window? chosen = await showDialog<Window>(
               context: context,
               builder: (_) => _WindowDialog(question: question, window: window),
             );
@@ -289,16 +290,16 @@ class _WindowDialog extends StatefulWidget {
 class _WindowDialogState extends State<_WindowDialog> {
   late bool _between = widget.window is Window_Between;
   late int _start = switch (widget.window) {
-    Window_Between(:final start) => start,
+    Window_Between(:final int start) => start,
     _ => 7 * 60,
   };
   late int _end = switch (widget.window) {
-    Window_Between(:final end) => end,
+    Window_Between(:final int end) => end,
     _ => 22 * 60,
   };
 
   Future<void> _pick(int minute, void Function(int) chosen) async {
-    final picked = await showTimePicker(
+    final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay(hour: minute ~/ 60, minute: minute % 60),
     );
@@ -381,14 +382,14 @@ class _VolumeRowState extends State<_VolumeRow> {
   double? _dragging;
 
   Future<void> _play() async {
-    final reply = await widget.feeder.ask(const FeederRequest.play(tune: Tune.test));
+    final FeederReply reply = await widget.feeder.ask(const FeederRequest.play(tune: Tune.test));
     if (mounted) showProblem(context, reply);
   }
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final volume = _dragging ?? widget.settings.volume.toDouble();
+    final ThemeTokens c = context.colors;
+    final double volume = _dragging ?? widget.settings.volume.toDouble();
     return _Tile(
       first: false,
       child: Row(
@@ -433,12 +434,12 @@ class _ReminderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final reminder = settings.mealReminder;
+    final MealReminder reminder = settings.mealReminder;
     return _Tile(
       first: true,
       onTap: online
           ? () async {
-              final chosen = await showDialog<MealReminder>(
+              final MealReminder? chosen = await showDialog<MealReminder>(
                 context: context,
                 builder: (context) => SimpleDialog(
                   title: const Text('Before each meal'),
@@ -490,14 +491,14 @@ class _DesiccantRowState extends State<_DesiccantRow> {
 
   Future<void> _changed() async {
     setState(() => _asking = true);
-    final reply = await widget.feeder.ask(const FeederRequest.resetDesiccant());
+    final FeederReply reply = await widget.feeder.ask(const FeederRequest.resetDesiccant());
     if (!mounted) return;
     setState(() => _asking = false);
     showProblem(context, reply);
   }
 
   Future<void> _period() async {
-    final days = await showDialog<int>(
+    final int? days = await showDialog<int>(
       context: context,
       builder: (context) => SimpleDialog(
         title: const Text('Change the desiccant every'),
@@ -514,8 +515,8 @@ class _DesiccantRowState extends State<_DesiccantRow> {
 
   @override
   Widget build(BuildContext context) {
-    final desiccant = widget.feeder.card?.desiccant;
-    final note = switch (desiccant) {
+    final Desiccant? desiccant = widget.feeder.card?.desiccant;
+    final String? note = switch (desiccant) {
       Desiccant_Remaining(days: 0) => 'Change today',
       Desiccant_Remaining(days: 1) => 'Next change in 1 day',
       Desiccant_Remaining(:final days) when days > 1 => 'Next change in $days days',
@@ -567,15 +568,15 @@ class _OwnerSectionState extends State<_OwnerSection> {
 
   @override
   Widget build(BuildContext context) {
-    final card = feeder.card;
-    final zone = card?.time?.zone;
-    final signal = switch (card?.rssi) {
+    final Card? card = feeder.card;
+    final String? zone = card?.time?.zone;
+    final String? signal = switch (card?.rssi) {
       null => null,
       >= -60 => 'Strong signal',
       >= -72 => 'Fair signal',
       _ => 'Weak signal',
     };
-    final people = feeder.clients.isEmpty ? null : '${feeder.clients.length} of $clientsMost';
+    final String? people = feeder.clients.isEmpty ? null : '${feeder.clients.length} of $clientsMost';
 
     Widget link(String name, String? note, Widget screen, {bool first = false}) => _Tile(
       first: first,
@@ -617,7 +618,7 @@ class _OwnerOnly extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

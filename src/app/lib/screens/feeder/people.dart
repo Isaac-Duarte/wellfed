@@ -42,7 +42,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   }
 
   Future<void> _remove(ClientView client) async {
-    final sure = await showDialog<bool>(
+    final bool? sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Remove ${client.label}?'),
@@ -59,7 +59,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     if (sure != true || !mounted) return;
 
     setState(() => _asking = true);
-    final reply = await widget.feeder.ask(FeederRequest.revokeClient(key: client.key));
+    final FeederReply reply = await widget.feeder.ask(FeederRequest.revokeClient(key: client.key));
     if (!mounted) return;
     setState(() => _asking = false);
     showProblem(context, reply);
@@ -68,8 +68,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final feeder = widget.feeder;
+    final ThemeTokens c = context.colors;
+    final FeederController feeder = widget.feeder;
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
@@ -132,8 +132,8 @@ class _Person extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final name = client.you ? '${client.label} (this phone)' : client.label;
+    final ThemeTokens c = context.colors;
+    final String name = client.you ? '${client.label} (this phone)' : client.label;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: Space.s3),
       decoration: BoxDecoration(

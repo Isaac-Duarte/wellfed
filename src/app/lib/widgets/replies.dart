@@ -50,7 +50,7 @@ String notAskedWords(NotAsked reason) => switch (reason) {
 
 /// Say why `reply` came to nothing, if it did; whether it worked.
 bool showProblem(BuildContext context, FeederReply reply) {
-  final problem = replyProblem(reply);
+  final String? problem = replyProblem(reply);
   if (problem == null) return true;
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()

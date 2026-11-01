@@ -49,7 +49,7 @@ class _InstallScreenState extends State<InstallScreen> {
       if (mounted) context.pop();
       return;
     }
-    final stop = await showDialog<bool>(
+    final bool? stop = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Stop the install?'),
@@ -113,7 +113,7 @@ class _Fact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
@@ -148,8 +148,8 @@ class _Before extends StatelessWidget {
         'This build pins no firmware.',
         'It holds an image it has no pin for, so it will not install it.',
       ),
-      (ImageCheck_Mismatch(:final detail), _) => ("This build's firmware doesn't check out.", detail),
-      (_, BuildCheck_Unreviewed(:final commit)) => (
+      (ImageCheck_Mismatch(:final String detail), _) => ("This build's firmware doesn't check out.", detail),
+      (_, BuildCheck_Unreviewed(:final String commit)) => (
         'This build cannot send an install.',
         'Only a build of a clean commit can, so its sources can be '
             'reviewed. This one is $commit, with changes.',
@@ -157,12 +157,12 @@ class _Before extends StatelessWidget {
       _ => null,
     };
     if (refusal == null) return null;
-    final (lead, text) = refusal;
+    final (String lead, String text) = refusal;
     return Notice(tone: Tone.fault, lead: lead, text: text);
   }
 
   Future<void> _begin(BuildContext context) async {
-    final allowed = await flow.begin();
+    final bool allowed = await flow.begin();
     if (allowed || !context.mounted) return;
     await showDialog<void>(
       context: context,
@@ -179,8 +179,8 @@ class _Before extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final refusal = _refusal();
-    final damaged = flow.pending == PendingInstall.damaged || flow.pending == PendingInstall.ledgerDamaged;
+    final Widget? refusal = _refusal();
+    final bool damaged = flow.pending == PendingInstall.damaged || flow.pending == PendingInstall.ledgerDamaged;
     return StepScaffold(
       leading: Leading.close,
       appBarTitle: 'Install Wellfed',
@@ -271,7 +271,6 @@ class _WhichFeeder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => StepScaffold(
-    leading: Leading.back,
     onLeading: () => flow.back(InstallStage.before),
     appBarTitle: 'Install Wellfed',
     title: 'Which feeder?',
@@ -303,7 +302,7 @@ Future<bool> _agreed(
   required String confirm,
   required List<String> words,
 }) async {
-  final sure = await showDialog<bool>(
+  final bool? sure = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title),
@@ -333,23 +332,15 @@ class _ForgetInstall extends StatelessWidget {
   final InstallFlow flow;
 
   Future<void> _confirm(BuildContext context) async {
-    final sure = await _agreed(
+    final bool sure = await _agreed(
       context,
       title: 'Forget this install?',
       confirm: 'Forget',
       words: [
-        'This clears what this phone kept for the install in progress: which '
-            'feeder it was installing on, and which feeder it trusted. It changes '
-            'nothing on the feeder.',
+        'This clears what this phone kept for the install in progress: which feeder it was installing on, and which feeder it trusted. It changes nothing on the feeder.',
         'Every backup of the original firmware stays on this phone.',
-        if (flow.forgetEndsPickUp)
-          '"Pick up where it stopped" ends here. To finish this feeder later, '
-              'choose "This feeder already runs Wellfed" on the first screen.',
-        if (flow.requestStillOpen)
-          'An install sent to a feeder has no known result. Wellfed stops '
-              'listening for it, but keeps the record, so that feeder is never '
-              'sent it a second time. If that feeder comes back, starting again '
-              'waits until its result is known.',
+        if (flow.forgetEndsPickUp) '"Pick up where it stopped" ends here. To finish this feeder later, choose "This feeder already runs Wellfed" on the first screen.',
+        if (flow.requestStillOpen) 'An install sent to a feeder has no known result. Wellfed stops listening for it, but keeps the record, so that feeder is never sent it a second time. If that feeder comes back, starting again waits until its result is known.',
       ],
     );
     if (sure) flow.forgetInstall();
@@ -368,18 +359,14 @@ class _SetAsideLedger extends StatelessWidget {
   final InstallFlow flow;
 
   Future<void> _confirm(BuildContext context) async {
-    final sure = await _agreed(
+    final bool sure = await _agreed(
       context,
       title: 'Set the damaged record aside?',
       confirm: 'Set it aside',
       words: const [
-        'This phone no longer knows whether an install it sent to a feeder is '
-            'still open. If you go on, it could send that feeder the install '
-            'again.',
-        'Check that feeder first. Wait until it has finished anything it '
-            'started, and see whether it runs Wellfed or its original firmware.',
-        'The record is renamed and kept on this phone, not deleted. Every backup '
-            'stays.',
+        'This phone no longer knows whether an install it sent to a feeder is still open. If you go on, it could send that feeder the install again.',
+        'Check that feeder first. Wait until it has finished anything it started, and see whether it runs Wellfed or its original firmware.',
+        'The record is renamed and kept on this phone, not deleted. Every backup stays.',
       ],
     );
     if (sure) flow.setAsideLedgers();
@@ -400,16 +387,13 @@ class _SetAsideBackup extends StatelessWidget {
   final BackupProblem problem;
 
   Future<void> _confirm(BuildContext context) async {
-    final sure = await _agreed(
+    final bool sure = await _agreed(
       context,
       title: 'Set this backup aside?',
       confirm: 'Set it aside',
       words: const [
-        'That copy of the original firmware can no longer be used to go back to '
-            'it.',
-        'Wellfed reads a fresh copy only if the feeder still holds its original '
-            "firmware. If it doesn't, this phone has no copy left to go back "
-            'with.',
+        'That copy of the original firmware can no longer be used to go back to it.',
+        "Wellfed reads a fresh copy only if the feeder still holds its original firmware. If it doesn't, this phone has no copy left to go back with.",
         'The file is renamed and kept on this phone, not deleted.',
       ],
     );
@@ -451,12 +435,11 @@ class _ResetState extends State<_Reset> {
 
   @override
   Widget build(BuildContext context) {
-    final flow = widget.flow;
+    final InstallFlow flow = widget.flow;
     final offWifi = flow.phoneIp == null;
     return StepScaffold(
       stepLabel: 'Step 1 of 5',
       progress: 0.2,
-      leading: Leading.back,
       onLeading: () => flow.back(InstallStage.wifi),
       title: 'Reset the feeder',
       content: [
@@ -508,7 +491,7 @@ class _Handover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stateText = switch (flow.handover) {
+    final String? stateText = switch (flow.handover) {
       Handover.starting => 'Getting ready…',
       Handover.join || Handover.joining => null,
       Handover.sending => 'Sending your Wi-Fi to the feeder…',
@@ -571,7 +554,7 @@ class _StillWaiting extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = switch (flow.waitReason) {
+    final String text = switch (flow.waitReason) {
       WaitReason.notOnAdapter => 'A feeder connected, but it is on batteries. Plug it in.',
       WaitReason.noVersion || WaitReason.offline => 'A feeder is connecting…',
       _ => 'Waiting for the feeder to connect…',
@@ -605,7 +588,7 @@ class _Confirm extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     final mono = TextStyle(fontFamily: Fonts.mono, fontSize: 15, color: c.text);
     return StepScaffold(
       stepLabel: 'Step 3 of 5',
@@ -648,7 +631,7 @@ class _FeederPage extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(28, 56, 28, 28),
         children: [
-          Center(child: const FeederImage(size: 180)),
+          const Center(child: FeederImage(size: 180)),
           const SizedBox(height: 28),
           Headline(title, size: 24, align: TextAlign.center),
           const SizedBox(height: 28),
@@ -667,14 +650,14 @@ class _Sending extends StatelessWidget {
 
   String _status() {
     if (flow.restarting) return 'Restarting into Wellfed';
-    final left = flow.timeLeft;
+    final Duration? left = flow.timeLeft;
     if (left == null) return '${flow.percent}%';
     return '${flow.percent}% · about ${left.inSeconds + 1} s left';
   }
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return _FeederPage(
       title: 'Installing Wellfed',
       children: [
@@ -735,17 +718,14 @@ class _Claim extends StatelessWidget {
     content: [
       if (flow.windowAsked)
         const NumberedSteps([
-          'Hold the **Lock** button, then also the **Dispense** button, for '
-              '5 seconds. The lock light blinks fast.',
+          'Hold the **Lock** button, then also the **Dispense** button, for 5 seconds. The lock light blinks fast.',
         ])
       else if (flow.code.isEmpty) ...[
         if (flow.settingUpAgain) ...[
           const NumberedSteps([
-            'If the lock light is on, hold **Lock** for 5 seconds to unlock '
-                'the panel.',
+            'If the lock light is on, hold **Lock** for 5 seconds to unlock the panel.',
             'Hold **Lock** and **Mic** together for 5 seconds.',
-            'The Wi-Fi light blinks slowly, about once a second. Setup mode '
-                'lasts 15 minutes.',
+            'The Wi-Fi light blinks slowly, about once a second. Setup mode lasts 15 minutes.',
           ]),
           const SizedBox(height: Space.s4),
         ],
@@ -781,7 +761,7 @@ class _Claim extends StatelessWidget {
         const Notice(
           tone: Tone.warning,
           lead: 'Press Dispense once.',
-          text: 'The feeder takes the install\'s update key with that press.',
+          text: "The feeder takes the install's update key with that press.",
         ),
       ],
     ],
@@ -804,9 +784,9 @@ class _Step extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     final running = state == CheckState.running;
-    final percent = fraction == null ? null : (fraction! * 100).round();
+    final int? percent = fraction == null ? null : (fraction! * 100).round();
     return Padding(
       padding: const EdgeInsets.only(bottom: Space.s3),
       child: Column(
@@ -865,7 +845,7 @@ class _Finishing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final title = switch (flow.promoting) {
+    final String title = switch (flow.promoting) {
       CheckState.waiting => 'Backing up the original firmware',
       _ => 'Making Wellfed permanent',
     };
@@ -931,7 +911,7 @@ class _DoneState extends State<_Done> {
   }
 
   Future<void> _go() async {
-    final name = _name.text.trim();
+    final String name = _name.text.trim();
     await widget.flow.finish(name.isEmpty ? InstallFlow.defaultFeederName : name);
     if (mounted) context.go('/');
   }
@@ -946,8 +926,8 @@ class _DoneState extends State<_Done> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final flow = widget.flow;
+    final ThemeTokens c = context.colors;
+    final InstallFlow flow = widget.flow;
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -1018,7 +998,7 @@ class _Stopped extends StatelessWidget {
       Listening.stockStayed => (
         'A new install has to wait',
         'The feeder is on its original firmware, but it has not stayed connected '
-            'long enough to rule out the earlier install. A new one isn\'t '
+            "long enough to rule out the earlier install. A new one isn't "
             'possible until it has stayed connected to this phone for 10 minutes '
             'without a break. Leave it plugged in, keep Wellfed open and listen '
             'again.',
@@ -1232,14 +1212,14 @@ class _Stopped extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final stop = flow.stop;
+    final ThemeTokens c = context.colors;
+    final InstallEnd_Stopped? stop = flow.stop;
     if (stop == null) return const SizedBox.shrink();
     final uncertain = stop.case_ is StopCase_Uncertain;
-    final (title, body) = _words(stop.case_);
-    final listening = uncertain && flow.listening == Listening.running;
-    final minutes = flow.listened.inMinutes;
-    final others = [
+    final (String title, String body) = _words(stop.case_);
+    final bool listening = uncertain && flow.listening == Listening.running;
+    final int minutes = flow.listened.inMinutes;
+    final List<(String, String)> others = [
       for (final other in _others)
         if (other.$1 != title) other,
     ];
@@ -1343,12 +1323,12 @@ class _Stopped extends StatelessWidget {
         ],
       },
       StopCase_LedgerDamaged() => [_SetAsideLedger(flow: flow), home()],
-      StopCase_BackupDamaged(:final path) => [
+      StopCase_BackupDamaged(:final String path) => [
         _SetAsideBackup(flow: flow, path: path, problem: BackupProblem.damaged),
         const SizedBox(height: Space.s2),
         home(),
       ],
-      StopCase_BackupDiffers(:final path) => [
+      StopCase_BackupDiffers(:final String path) => [
         _SetAsideBackup(flow: flow, path: path, problem: BackupProblem.differs),
         const SizedBox(height: Space.s2),
         home(),

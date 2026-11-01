@@ -154,7 +154,7 @@ class PairingFlow extends ChangeNotifier {
     final SetupStep end;
     try {
       _set(PairingPhase.connecting);
-      final link = await _ports.open(target);
+      final BleLink link = await _ports.open(target);
       _link = link;
       if (_disposed) return;
 
@@ -254,7 +254,7 @@ class PairingFlow extends ChangeNotifier {
   Future<DiscoveredDevice> _pick() async {
     final chosen = Completer<DiscoveredDevice>();
     _chosen = chosen;
-    final scanning = _ports.scan().listen(
+    final StreamSubscription<DiscoveredDevice> scanning = _ports.scan().listen(
       (device) {
         found[device.id] = device;
         if (!_disposed) notifyListeners();
@@ -281,22 +281,22 @@ class PairingFlow extends ChangeNotifier {
 
   /// Connect to `device`, one of [found].
   void choose(DiscoveredDevice device) {
-    final chosen = _chosen;
+    final Completer<DiscoveredDevice>? chosen = _chosen;
     if (chosen != null && !chosen.isCompleted) chosen.complete(device);
   }
 
   /// One notification: hand it to the session and act on what it says.
   Future<void> _received(SetupDriver driver, List<int> bytes) async {
-    final ended = _ended;
+    final Completer<SetupStep>? ended = _ended;
     if (ended == null || ended.isCompleted) return;
     try {
-      for (final step in driver.notified(bytes: bytes)) {
+      for (final SetupStep step in driver.notified(bytes: bytes)) {
         switch (step) {
           case SetupStep_Write(:final pieces):
             _arm(handshakeWait);
             // Notifications can arrive while an earlier answer is still
             // being written; each answer goes out whole, in order.
-            final link = _link;
+            final BleLink? link = _link;
             if (link != null) {
               _writing = _writing.then((_) => link.write(pieces));
               await _writing;
@@ -333,11 +333,11 @@ class PairingFlow extends ChangeNotifier {
       case SetupStep_Done(enrolled: final how, :final wifi, feeder: final identity):
         enrolled = how;
         wifiSaved = wifi;
-        final hex = _ports.hexOf(identity);
+        final String hex = _ports.hexOf(identity);
         _set(PairingPhase.joining);
 
         // After BLE setup the feeder restarts onto its new Wi-Fi first.
-        final address = knownAddress ?? await _ports.locate(hex, rejoinWait);
+        final String? address = knownAddress ?? await _ports.locate(hex, rejoinWait);
         final known = KnownFeeder(identity: hex, name: feederName, address: address);
         // The feeder enrolled this phone whatever happens here; a failed
         // save is said so, not left on "joining".
@@ -367,7 +367,7 @@ class PairingFlow extends ChangeNotifier {
   }
 
   void _fail(PairingFailure why, String? detail) {
-    final ended = _ended;
+    final Completer<SetupStep>? ended = _ended;
     if (ended != null && !ended.isCompleted) {
       ended.completeError(_Failed(why, detail));
     }
@@ -376,7 +376,7 @@ class PairingFlow extends ChangeNotifier {
   Future<void> _closeLink() async {
     _timer?.cancel();
     // Taken first: the screen closing and setup ending may both get here.
-    final link = _link;
+    final BleLink? link = _link;
     _link = null;
     unawaited(_notifications?.cancel());
     _notifications = null;
@@ -405,15 +405,15 @@ class PairingFlow extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    final choosing = _chosen;
+    final Completer<DiscoveredDevice>? choosing = _chosen;
     if (choosing != null && !choosing.isCompleted) {
-      choosing.completeError(_Failed(PairingFailure.other, 'the screen closed'));
+      choosing.completeError(const _Failed(PairingFailure.other, 'the screen closed'));
     }
     _fail(PairingFailure.other, 'the screen closed');
     // Hang up in Rust too, so the feeder's window is free for a retry.
     _recovery?.close();
     unawaited(_recovering?.cancel());
-    final recovering = _recoveryDone;
+    final Completer<void>? recovering = _recoveryDone;
     if (recovering != null && !recovering.isCompleted) recovering.complete();
     unawaited(_closeLink());
     super.dispose();

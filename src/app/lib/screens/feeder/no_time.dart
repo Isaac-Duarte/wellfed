@@ -21,7 +21,7 @@ class _NoTimeNoticeState extends State<NoTimeNotice> {
 
   Future<void> _sync() async {
     setState(() => _asking = true);
-    final reply = await widget.feeder.ask(const FeederRequest.syncClock());
+    final FeederReply reply = await widget.feeder.ask(const FeederRequest.syncClock());
     if (!mounted) return;
     setState(() => _asking = false);
     showProblem(context, reply);

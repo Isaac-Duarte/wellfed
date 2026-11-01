@@ -54,7 +54,7 @@ class AppFeederPorts implements FeederPorts {
 
   @override
   Future<void> answered(String identity, String build) async {
-    final paths = await _install.paths();
+    final InstallPaths paths = await _install.paths();
     feederAnswered(
       dataDir: paths.data,
       identity: identityBytes(hex: identity),
@@ -100,7 +100,7 @@ class _AppPush implements UpdatePush {
 
   @override
   Stream<UpdateProgress> get progress async* {
-    final paths = await _install.paths();
+    final InstallPaths paths = await _install.paths();
     final run = FirmwareUpdate(
       key: _key,
       feeder: identityBytes(hex: _identity),

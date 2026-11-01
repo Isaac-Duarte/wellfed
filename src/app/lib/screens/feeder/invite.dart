@@ -14,14 +14,14 @@ import 'package:wellfed/widgets/replies.dart';
 /// Choose a role (11.2), create one invite, and show it. An unanswered create
 /// is not sent again: at worst an unseen invite runs out by itself.
 Future<void> inviteSomeone(BuildContext context, FeederController feeder) async {
-  final role = await showModalBottomSheet<ClientRole>(
+  final ClientRole? role = await showModalBottomSheet<ClientRole>(
     context: context,
     isScrollControlled: true,
     builder: (_) => _RoleSheet(name: feeder.known.name),
   );
   if (role == null || !context.mounted) return;
 
-  final reply = await feeder.ask(FeederRequest.createInvite(role: role));
+  final FeederReply reply = await feeder.ask(FeederRequest.createInvite(role: role));
   if (!context.mounted) return;
   if (reply is FeederReply_Invite) {
     await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => InviteScreen(invite: reply.invite)));
@@ -46,7 +46,7 @@ class _RoleSheetState extends State<_RoleSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(Space.s5),
@@ -133,10 +133,10 @@ class _InviteScreenState extends State<InviteScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final invite = widget.invite;
+    final ThemeTokens c = context.colors;
+    final InviteView invite = widget.invite;
     final clock = '${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')}';
-    final expired = _left <= 0;
+    final bool expired = _left <= 0;
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,

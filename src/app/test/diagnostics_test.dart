@@ -11,6 +11,7 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/feeder.dart';
 
 import 'fakes.dart';
 import 'harness.dart';
@@ -59,7 +60,7 @@ class _FakeBackups implements BackupPorts {
 void main() {
   group('Diagnostics', () {
     testWidgets('shows what the feeder counts', (tester) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard());
       session.replies
         ..add(
@@ -119,7 +120,7 @@ void main() {
     });
 
     testWidgets('what it refuses is said, not invented', (tester) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard());
       session.replies.add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
 
@@ -132,7 +133,7 @@ void main() {
 
   group('Motor trace', () {
     testWidgets('shows one feed, with each portion', (tester) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.replies.add(
         FeederReply.trace(
           trace: TraceView(
@@ -155,7 +156,7 @@ void main() {
     });
 
     testWidgets('a feed with no trace says so', (tester) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.replies.add(const FeederReply.refused(refusal: FeederRefusal.notFound()));
 
       await showTab(tester, MotorTraceScreen(feeder: feeder, feed: 3));
@@ -166,10 +167,10 @@ void main() {
 
   group('Live log', () {
     testWidgets('streams what it hears and stops listening when closed', (tester) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       final shared = <String>[];
       await showTab(tester, LiveLogScreen(feeder: feeder, share: (text) async => shared.add(text)));
-      expect(session.requests.single, const FeederRequest.tailLog(after: null));
+      expect(session.requests.single, const FeederRequest.tailLog());
 
       session.updates.add(const SessionUpdate.log(seq: 1, dropped: 2, lines: ['PLNET1 rssi=-58']));
       await settle(tester);
@@ -184,7 +185,7 @@ void main() {
     });
 
     testWidgets('a refused tail says so', (tester) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.replies.add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
 
       await showTab(tester, LiveLogScreen(feeder: feeder));
@@ -204,14 +205,14 @@ void main() {
     }
 
     testWidgets('appearance is kept', (tester) async {
-      final (book, _) = await settings(tester);
+      final (FakeBook book, _) = await settings(tester);
 
       await tapIn(tester, find.text('Dark'));
       expect(book.appearance, Appearance.dark);
     });
 
     testWidgets('the name is checked against what a feeder keeps', (tester) async {
-      final (book, _) = await settings(tester);
+      final (FakeBook book, _) = await settings(tester);
 
       await tapIn(tester, find.text('Name on feeders'));
       await tester.enterText(find.byType(TextField), 'a' * 17);
@@ -221,7 +222,7 @@ void main() {
     });
 
     testWidgets('a backup can be handed on', (tester) async {
-      final (_, backups) = await settings(tester);
+      final (_, _FakeBackups backups) = await settings(tester);
 
       expect(find.text('1'), findsOneWidget);
       await tapIn(tester, find.byTooltip("Share Kitchen's backup"));

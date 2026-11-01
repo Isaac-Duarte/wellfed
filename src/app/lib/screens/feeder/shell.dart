@@ -20,7 +20,7 @@ class FeederShell extends StatelessWidget {
   /// The feeder `identity` of `fleet`, or a plain way back if it is gone: a
   /// link can outlive a feeder this phone has forgotten.
   static Widget of(FeederFleet fleet, String identity, {int initialTab = 0}) {
-    final feeder = fleet[identity];
+    final FeederController? feeder = fleet[identity];
     return feeder == null ? const _Gone() : FeederShell(feeder: feeder, initialTab: initialTab);
   }
 
@@ -29,7 +29,7 @@ class FeederShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return DefaultTabController(
       length: 4,
       initialIndex: initialTab,
@@ -90,7 +90,7 @@ class FeederShell extends StatelessWidget {
 /// Ask, then restart. The feeder refuses a restart while a feed runs; one
 /// that goes unanswered may have gone through, and is not sent again.
 Future<void> confirmRestart(BuildContext context, FeederController feeder) async {
-  final sure = await showDialog<bool>(
+  final bool? sure = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text('Restart ${feeder.known.name}?'),
@@ -103,7 +103,7 @@ Future<void> confirmRestart(BuildContext context, FeederController feeder) async
   );
   if (sure != true) return;
 
-  final reply = await feeder.ask(const FeederRequest.reboot());
+  final FeederReply reply = await feeder.ask(const FeederRequest.reboot());
   if (context.mounted && showProblem(context, reply)) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${feeder.known.name} is restarting.')));
   }

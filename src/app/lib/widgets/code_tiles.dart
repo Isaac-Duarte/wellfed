@@ -10,14 +10,11 @@ import 'package:wellfed/widgets/layout.dart';
 /// the left (positions 1-4), so the code reads like the panel itself.
 const _symbols = [
   // 1 Lock
-  '<rect x="5" y="11" width="14" height="10" rx="2"/>'
-      '<path d="M8 11V7a4 4 0 0 1 8 0v4M12 15v2"/>',
+  '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4M12 15v2"/>',
   // 2 Dispense: a bowl with one portion
-  '<ellipse cx="12" cy="12" rx="9" ry="7"/>'
-      '<path d="M8 9.5l3.5 5M11.5 9.5l-3.5 5M15.5 9v6"/>',
+  '<ellipse cx="12" cy="12" rx="9" ry="7"/><path d="M8 9.5l3.5 5M11.5 9.5l-3.5 5M15.5 9v6"/>',
   // 3 Mic
-  '<rect x="9" y="3" width="6" height="11" rx="3"/>'
-      '<path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
   // 4 Reset
   '<path d="M19 9a8 8 0 0 0-14-2M5 3v4h4M5 15a8 8 0 0 0 14 2M19 21v-4h-4"/>',
 ];
@@ -57,7 +54,7 @@ class CodeTiles extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Semantics(
       label: 'Press ${code.map((p) => buttonNames[p - 1]).join(', ')}',
       child: ExcludeSemantics(
@@ -122,7 +119,7 @@ class _CodeWindowState extends State<CodeWindow> {
   }
 
   int _left() {
-    final deadline = widget.deadline;
+    final DateTime? deadline = widget.deadline;
     return deadline == null ? 0 : deadline.difference(DateTime.now()).inSeconds.clamp(0, 999);
   }
 
@@ -134,8 +131,8 @@ class _CodeWindowState extends State<CodeWindow> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final left = _left();
+    final ThemeTokens c = context.colors;
+    final int left = _left();
     final clock = '${left ~/ 60}:${(left % 60).toString().padLeft(2, '0')}';
     return Row(
       children: [
@@ -164,7 +161,7 @@ class RingLegend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     Widget light() => Container(
       width: 6,
       height: 6,
@@ -228,14 +225,14 @@ class PanelPhoto extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // The photo is always dark, so its marks use the dark theme's roles.
-    final ring = darkTokens.accent;
+    final Color ring = darkTokens.accent;
     final label = TextStyle(
       color: darkTokens.text,
       fontSize: Sizes.xs,
       fontWeight: Fonts.semibold,
       shadows: const [Shadow(blurRadius: 3)],
     );
-    final names = held.map((p) => buttonNames[p - 1]).join(', then ');
+    final String names = held.map((p) => buttonNames[p - 1]).join(', then ');
 
     return Semantics(
       image: true,
@@ -243,9 +240,9 @@ class PanelPhoto extends StatelessWidget {
       child: ExcludeSemantics(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final scale = constraints.maxWidth / _width;
+            final double scale = constraints.maxWidth / _width;
             Offset at(int position, double dy) {
-              final ring = _rings[position]!;
+              final Offset ring = _rings[position]!;
               return Offset(ring.dx * scale, (ring.dy + _top + dy) * scale);
             }
 
@@ -255,7 +252,6 @@ class PanelPhoto extends StatelessWidget {
                 height: _height * scale,
                 color: lightTokens.scrim,
                 child: Stack(
-                  clipBehavior: Clip.hardEdge,
                   children: [
                     Positioned(
                       left: 0,

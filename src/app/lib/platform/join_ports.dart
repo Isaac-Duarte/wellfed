@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/src/rust/api/join.dart' as rust show inviteFeeder;
 import 'package:wellfed/src/rust/api/join.dart' show JoinAnswer, joinFeeder;
@@ -23,7 +25,7 @@ class AppJoinPorts implements JoinPorts {
 
   @override
   String? inviteFeeder(String text) {
-    final feeder = rust.inviteFeeder(text: text);
+    final Uint8List? feeder = rust.inviteFeeder(text: text);
     return feeder == null ? null : identityHex(identity: feeder);
   }
 

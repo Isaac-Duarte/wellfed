@@ -1,0 +1,6 @@
+# The plugin's own rules are the app's, not this package's, and its tests are
+# named `test_…` because the test loader finds them by that prefix.
+linter:
+  rules:
+    - prefer_single_quotes
+    - unawaited_futures

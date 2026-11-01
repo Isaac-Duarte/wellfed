@@ -225,7 +225,7 @@ class InstallFlow extends ChangeNotifier {
 
   /// How the APK's image pairs, once it is known to be ready.
   ImageProvisioning? get provisioning => switch (image) {
-    ImageCheck_Ready(:final provisioning) => provisioning,
+    ImageCheck_Ready(:final ImageProvisioning provisioning) => provisioning,
     _ => null,
   };
 
@@ -267,9 +267,9 @@ class InstallFlow extends ChangeNotifier {
 
   /// A rough time left in stock's download, from how fast it has gone.
   Duration? get timeLeft {
-    final since = _sendingSince;
+    final DateTime? since = _sendingSince;
     if (since == null || percent < 5 || percent >= 100) return null;
-    final elapsed = DateTime.now().difference(since);
+    final Duration elapsed = DateTime.now().difference(since);
     return elapsed * ((100 - percent) / percent);
   }
 
@@ -290,7 +290,7 @@ class InstallFlow extends ChangeNotifier {
 
   /// Read what decides whether this phone can install at all.
   Future<void> load() async {
-    final paths = await _ports.paths();
+    final InstallPaths paths = await _ports.paths();
     _paths = paths;
     image = await _ports.prepareImage(paths);
     build = _ports.checkBuild();
@@ -349,7 +349,7 @@ class InstallFlow extends ChangeNotifier {
     _pickedFeeder = null;
     _resumeAddress = null;
     settingUpAgain = false;
-    final paths = _paths;
+    final InstallPaths? paths = _paths;
     if (to == InstallStage.before && paths != null) {
       pending = _ports.pending(paths);
     }
@@ -357,7 +357,7 @@ class InstallFlow extends ChangeNotifier {
   }
 
   void _nextAfter(InstallStage from) {
-    final next = switch (from) {
+    final InstallStage next = switch (from) {
       InstallStage.before when _book.label.isEmpty => InstallStage.naming,
       InstallStage.before || InstallStage.naming => InstallStage.wifi,
       _ => InstallStage.reset,
@@ -370,7 +370,7 @@ class InstallFlow extends ChangeNotifier {
   Future<void> startHandover() async {
     if (_run != null) return;
     phoneIp = await _ports.phoneAddress();
-    final ip = phoneIp;
+    final String? ip = phoneIp;
     if (ip == null) {
       _notify();
       return;
@@ -393,8 +393,8 @@ class InstallFlow extends ChangeNotifier {
   /// Join the feeder's network. The owner may try again: the picker comes up
   /// empty until the feeder's network is up.
   Future<void> joinFeeder() async {
-    final ask = _joinAsk;
-    final run = _run;
+    final int? ask = _joinAsk;
+    final InstallRun? run = _run;
     if (ask == null || run == null || handover == Handover.joining) return;
     handover = Handover.joining;
     joinFailed = false;
@@ -422,7 +422,7 @@ class InstallFlow extends ChangeNotifier {
   /// Back on the Wi-Fi: the frame named this phone's address, so another one
   /// would leave the feeder looking in the wrong place.
   Future<void> _leaveFeeder(void Function(InstallAnswer) answer) async {
-    final address = await _ports.leaveFeederNetwork();
+    final String? address = await _ports.leaveFeederNetwork();
     _onFeederNetwork = false;
     if (address == phoneIp && address != null) {
       handover = Handover.waiting;
@@ -485,7 +485,7 @@ class InstallFlow extends ChangeNotifier {
       _go(InstallStage.wifi);
       return;
     }
-    final ip = phoneIp ?? await _ports.phoneAddress() ?? '';
+    final String ip = phoneIp ?? await _ports.phoneAddress() ?? '';
     stop = null;
     _resetProgress();
     _go(InstallStage.claim);
@@ -556,7 +556,7 @@ class InstallFlow extends ChangeNotifier {
   /// The stop's way on: from the start, or from bank 0, as the run said.
   Future<void> again({bool forget = false}) async {
     _forget = forget;
-    final resumeFrom = stop?.resume;
+    final Resume? resumeFrom = stop?.resume;
     if (resumeFrom == Resume.fromBank0) {
       // No enrollment leaves no record, but this flow knows the feeder it
       // paired. Setup would send the owner to a factory reset, and lose the
@@ -592,13 +592,13 @@ class InstallFlow extends ChangeNotifier {
   }
 
   Future<void> _start(InstallStart start, String ip, {String? address}) async {
-    final paths = _paths;
+    final InstallPaths? paths = _paths;
     // One run at a time: a second would orphan the first, with no way left
     // to stop it and the broker's port still held.
     if (paths == null || _run != null) return;
-    final forget = _forget;
+    final bool forget = _forget;
     _forget = false;
-    final run = _ports.newRun(
+    final InstallRun run = _ports.newRun(
       InstallSpec(
         start: start,
         address: address,
@@ -712,7 +712,7 @@ class InstallFlow extends ChangeNotifier {
         _link = null;
         answer(const InstallAnswer.done());
       case InstallAsk_Locate(:final identity):
-        final address = await _ports.locate(identity);
+        final String? address = await _ports.locate(identity);
         answer(InstallAnswer.located(address: address));
     }
   }
@@ -801,7 +801,7 @@ class InstallFlow extends ChangeNotifier {
   /// before going on. Home hears of it only here, as the run ends: a session
   /// of its own would only get in the install's way.
   Future<void> _settle() async {
-    final identity = _identity;
+    final String? identity = _identity;
     if (identity == null) return;
     await _book.remember(
       KnownFeeder(identity: identity, name: defaultFeederName, address: _address),
@@ -830,7 +830,7 @@ class InstallFlow extends ChangeNotifier {
       case InstallEnd_Done():
         stage = InstallStage.done;
         // A pick-up past the backup never read it again.
-        final (identity, paths) = (_identityBytes, _paths);
+        final (List<int>? identity, InstallPaths? paths) = (_identityBytes, _paths);
         if (backupPath == null && identity != null && paths != null) {
           backupPath = _ports.keptBackup(paths, identity);
         }
@@ -853,7 +853,7 @@ class InstallFlow extends ChangeNotifier {
   /// A feeder still linked does not advertise, so a pick-up would never find
   /// it. The run asks for this itself, unless it stopped first.
   void _closeLink() {
-    final link = _link;
+    final InstallLink? link = _link;
     _link = null;
     unawaited(
       link?.close().catchError((Object _) {
@@ -864,7 +864,7 @@ class InstallFlow extends ChangeNotifier {
 
   /// The owner's word on the feeder that connected.
   void recognize({required bool yes}) {
-    final id = _recognizeAsk;
+    final int? id = _recognizeAsk;
     if (id == null) return;
     _recognizeAsk = null;
     // Somebody else's client: the feeder may still be waiting for its frame.
@@ -882,7 +882,7 @@ class InstallFlow extends ChangeNotifier {
 
   /// A bench image's recovery window is open.
   void windowOpened() {
-    final id = _windowAsk;
+    final int? id = _windowAsk;
     if (id == null) return;
     _windowAsk = null;
     _run?.answer(id: id, answer: const InstallAnswer.done());
@@ -892,7 +892,7 @@ class InstallFlow extends ChangeNotifier {
   /// Listen for what became of an uncertain request. Sends the feeder
   /// nothing: only what it does next can say.
   Future<void> listen() async {
-    final paths = _paths;
+    final InstallPaths? paths = _paths;
     if (paths == null) return;
     _stopListening();
     listening = Listening.running;
@@ -902,7 +902,7 @@ class InstallFlow extends ChangeNotifier {
     _notify();
     await _hold('Listening for the feeder. Leave it plugged in.');
     if (_disposed || listening != Listening.running) return;
-    final listener = _ports.newListener(paths);
+    final InstallListener listener = _ports.newListener(paths);
     _listener = listener;
     _listenUpdates = listener.run().listen(
       _heardFromListener,
@@ -973,7 +973,7 @@ class InstallFlow extends ChangeNotifier {
   }
 
   void _readPending() {
-    final paths = _paths;
+    final InstallPaths? paths = _paths;
     if (paths != null) pending = _ports.pending(paths);
   }
 
@@ -987,7 +987,7 @@ class InstallFlow extends ChangeNotifier {
   /// sends nothing. A damaged ledger has an action of its own, which this cannot do.
   bool get forgetOffered {
     if (!mayForget) return false;
-    final case_ = stop?.case_;
+    final StopCase? case_ = stop?.case_;
     if (case_ is StopCase_UncertainWrite) return false;
     if (pending == PendingInstall.ledgerDamaged) return false;
     return pending != PendingInstall.nothing || case_ is StopCase_OtherFeeder || case_ is StopCase_DamagedRecord;
@@ -1000,7 +1000,7 @@ class InstallFlow extends ChangeNotifier {
   /// Some feeder's install request has no known outcome, so forgetting needs
   /// words of its own.
   bool get requestStillOpen {
-    final paths = _paths;
+    final InstallPaths? paths = _paths;
     return paths != null && _ports.requestOpen(paths);
   }
 
@@ -1009,7 +1009,7 @@ class InstallFlow extends ChangeNotifier {
 
   /// Whether `repair` ran; a failure is kept for the screen.
   bool _repair(void Function(InstallPaths) repair) {
-    final paths = _paths;
+    final InstallPaths? paths = _paths;
     if (paths == null || !mayForget) return false;
     try {
       repair(paths);
@@ -1059,7 +1059,7 @@ class InstallFlow extends ChangeNotifier {
   /// The owner accepted that the backup at `path` is no longer one to go back
   /// with. A pick-up then reads a fresh one if the feeder still holds stock.
   Future<void> setAsideBackup(String path, BackupProblem problem) async {
-    final done = _repair((paths) => _ports.setAsideBackup(paths, path, problem));
+    final bool done = _repair((paths) => _ports.setAsideBackup(paths, path, problem));
     if (done) await again();
   }
 
@@ -1068,13 +1068,13 @@ class InstallFlow extends ChangeNotifier {
 
   /// The feeder's name on this phone, and where it last answered.
   Future<void> finish(String name) async {
-    final identity = _identity;
+    final String? identity = _identity;
     if (identity == null) return;
     await _book.remember(KnownFeeder(identity: identity, name: name, address: _address));
   }
 
   Future<void> saveBackup() async {
-    final path = backupPath;
+    final String? path = backupPath;
     if (path != null) await _ports.shareBackup(path);
   }
 

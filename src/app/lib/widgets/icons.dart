@@ -15,23 +15,13 @@ enum Glyph {
   info('<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/>'),
   clock('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   battery('<rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 11v2"/>'),
-  wifi(
-    '<path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0'
-    'M9 15.5a5 5 0 0 1 6 0M12 19h.01"/>',
-  ),
-  wifiOff(
-    '<path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0'
-    'M9 15.5a5 5 0 0 1 6 0M12 19h.01M3 3l18 18"/>',
-  ),
+  wifi('<path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0M9 15.5a5 5 0 0 1 6 0M12 19h.01"/>'),
+  wifiOff('<path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0M9 15.5a5 5 0 0 1 6 0M12 19h.01M3 3l18 18"/>'),
   bluetooth('<path d="M7 7l10 10-5 5V2l5 5L7 17"/>'),
   key('<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>'),
-  eye(
-    '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/>'
-    '<circle cx="12" cy="12" r="3"/>',
-  ),
+  eye('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
   eyeOff(
-    '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/>'
-    '<circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/>',
+    '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/>',
   ),
   failed('<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>'),
   warning('<path d="M12 3L2 21h20L12 3zM12 10v5M12 18h.01"/>'),
@@ -56,9 +46,7 @@ class StrokeIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SvgPicture.string(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
-    'fill="none" stroke="#000" stroke-width="$weight" '
-    'stroke-linecap="round" stroke-linejoin="round">${glyph.paths}</svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="$weight" stroke-linecap="round" stroke-linejoin="round">${glyph.paths}</svg>',
     width: size,
     height: size,
     colorFilter: ColorFilter.mode(color ?? IconTheme.of(context).color ?? context.colors.text, BlendMode.srcIn),

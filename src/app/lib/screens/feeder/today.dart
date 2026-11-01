@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'package:wellfed/screens/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/lights_help.dart';
@@ -29,8 +30,8 @@ class TodayTab extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(listenable: feeder, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
-    final card = feeder.card;
-    final live = feeder.connection == Connection.online ? card : null;
+    final api.Card? card = feeder.card;
+    final api.Card? live = feeder.connection == Connection.online ? card : null;
     final stopped = live?.blocked == Blocked.fault;
 
     return Padding(
@@ -83,9 +84,9 @@ class _Summary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final card = feeder.connection == Connection.online ? feeder.card : null;
-    final (dot, title) = switch (feeder.connection) {
+    final ThemeTokens c = context.colors;
+    final api.Card? card = feeder.connection == Connection.online ? feeder.card : null;
+    final (Color dot, String title) = switch (feeder.connection) {
       Connection.looking => (c.textMuted, 'Looking…'),
       Connection.connecting => (c.textMuted, 'Connecting…'),
       Connection.offline => (c.textMuted, "Can't reach it"),
@@ -96,9 +97,9 @@ class _Summary extends StatelessWidget {
       Connection.online => (c.warning, "Can't feed now"),
     };
     final small = TextStyle(fontSize: Sizes.base, color: c.textMuted);
-    final next = feeder.card?.nextMeal;
-    final last = feeder.card?.lastFed;
-    final blocked = card?.blocked;
+    final api.NextMealView? next = feeder.card?.nextMeal;
+    final api.FeedResult? last = feeder.card?.lastFed;
+    final Blocked? blocked = card?.blocked;
 
     return Row(
       children: [
@@ -144,7 +145,7 @@ class _Summary extends StatelessWidget {
   }
 
   static String _lastFed(BuildContext context, api.FeedResult last) {
-    final at = last.atMs;
+    final PlatformInt64? at = last.atMs;
     final when = at == null ? '' : ' ${momentTextMs(context, at)} ·';
     return 'Last fed$when ${deliveredText(last)}';
   }
@@ -158,12 +159,12 @@ class _Facts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     // A time only when the last feed took this reading: one at rest has none.
-    final fed = card.lastFed;
-    final last = fed?.hopper == card.food ? fed?.atMs : null;
+    final api.FeedResult? fed = card.lastFed;
+    final PlatformInt64? last = fed?.hopper == card.food ? fed?.atMs : null;
     final at = last == null ? '' : ' ${atMomentTextMs(context, last)}';
-    final (food, foodColor) = switch (card.food) {
+    final (String food, Color foodColor) = switch (card.food) {
       FoodLevel.present => ('In the hopper$at', c.food),
       FoodLevel.low => ('Low$at', c.fault),
       FoodLevel.unread => ('Not read yet', c.textMuted),
@@ -211,9 +212,9 @@ class _Facts extends StatelessWidget {
   );
 
   static String _power(api.Card card) => switch ((card.adapter, card.batteryPercent)) {
-    (true, final percent?) => 'Mains · batteries $percent%',
+    (true, final int percent?) => 'Mains · batteries $percent%',
     (true, null) => 'Mains',
-    (false, final percent?) => 'Batteries $percent%',
+    (false, final int percent?) => 'Batteries $percent%',
     (false, null) => 'Batteries',
     (null, _) => 'Not read yet',
   };
@@ -228,15 +229,15 @@ class _Facts extends StatelessWidget {
 /// Who last set the feeder's clock, and when.
 String clockWords(BuildContext context, api.Card card) {
   if (!card.clockSet) return 'Not set';
-  final time = card.time;
+  final TimeInfo? time = card.time;
   if (time == null) return 'Set';
-  final by = switch ((time.last, time.ntp)) {
+  final String by = switch ((time.last, time.ntp)) {
     (TimeSource.ntp, NtpView_Gateway()) => 'Set by your router',
     (TimeSource.ntp, _) => 'Set by a time server',
     (TimeSource.owner || TimeSource.client, _) => 'Set by a paired device',
     (null, _) => 'Set',
   };
-  final at = time.lastAtMs;
+  final PlatformInt64? at = time.lastAtMs;
   return at == null ? by : '$by ${atMomentTextMs(context, at)}';
 }
 
@@ -256,7 +257,7 @@ class _Row extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Semantics(
       container: true,
       child: Container(
@@ -300,7 +301,7 @@ class _DesiccantValueState extends State<_DesiccantValue> {
 
   Future<void> _changed() async {
     setState(() => _asking = true);
-    final reply = await widget.feeder.ask(const FeederRequest.resetDesiccant());
+    final FeederReply reply = await widget.feeder.ask(const FeederRequest.resetDesiccant());
     if (!mounted) return;
     setState(() => _asking = false);
     showProblem(context, reply);
@@ -308,9 +309,9 @@ class _DesiccantValueState extends State<_DesiccantValue> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final desiccant = widget.card.desiccant;
-    final (words, color) = switch (desiccant) {
+    final ThemeTokens c = context.colors;
+    final Desiccant desiccant = widget.card.desiccant;
+    final (String words, Color color) = switch (desiccant) {
       Desiccant_Unset() => ('Not started', c.textMuted),
       Desiccant_Unknown() => ('Unknown until the clock is set', c.textMuted),
       Desiccant_Remaining(days: 0) => ('Change today', c.warning),
@@ -320,7 +321,7 @@ class _DesiccantValueState extends State<_DesiccantValue> {
       ),
       Desiccant_Remaining(:final days) => (days == -1 ? '1 day overdue' : '${-days} days overdue', c.warning),
     };
-    final offer = switch (desiccant) {
+    final bool offer = switch (desiccant) {
       Desiccant_Unset() => true,
       Desiccant_Remaining(:final due) => due,
       Desiccant_Unknown() => false,
@@ -358,7 +359,7 @@ class _LockRowState extends State<_LockRow> {
 
   Future<void> _set(bool locked) async {
     setState(() => _asking = true);
-    final reply = await widget.feeder.ask(FeederRequest.setLock(locked: locked));
+    final FeederReply reply = await widget.feeder.ask(FeederRequest.setLock(locked: locked));
     if (!mounted) return;
     setState(() => _asking = false);
     showProblem(context, reply);
@@ -366,7 +367,7 @@ class _LockRowState extends State<_LockRow> {
 
   @override
   Widget build(BuildContext context) {
-    final locked = widget.card.locked;
+    final bool? locked = widget.card.locked;
     const name = 'Lock the buttons';
     return _Row(
       Glyph.lock,
@@ -388,7 +389,7 @@ class _LockRowState extends State<_LockRow> {
 class _LightsLink extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return InkWell(
       onTap: () => unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LightsHelp()))),
       child: Padding(
@@ -412,7 +413,7 @@ class _LightsLink extends StatelessWidget {
 
 /// What a feed's reason comes to for an owner, with the time when known.
 String faultTitle(BuildContext context, FeedReason reason, int? atMs) {
-  final what = switch (reason) {
+  final String what = switch (reason) {
     FeedReason.jammed => 'The wheel jammed',
     FeedReason.outletBlocked => 'The outlet is blocked',
     FeedReason.overcurrent => 'The motor drew too much current',
@@ -433,7 +434,7 @@ String faultTitle(BuildContext context, FeedReason reason, int? atMs) {
 
 /// How far the fault's feed got, when its history has come in.
 String? _stoppedAfter(api.FaultView fault) {
-  final fed = fault.result;
+  final api.FeedResult? fed = fault.result;
   if (fed == null) return null;
   return fed.uncertain
       ? 'It stopped somewhere between ${fed.confirmed} and ${fed.atMost} of '
@@ -449,12 +450,14 @@ class _Stopped extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final fault = feeder.card?.fault;
-    final after = fault == null ? null : _stoppedAfter(fault);
-    final title = fault == null ? 'A fault stopped feeding' : faultTitle(context, fault.reason, fault.result?.atMs);
+    final ThemeTokens c = context.colors;
+    final api.FaultView? fault = feeder.card?.fault;
+    final String? after = fault == null ? null : _stoppedAfter(fault);
+    final String title = fault == null
+        ? 'A fault stopped feeding'
+        : faultTitle(context, fault.reason, fault.result?.atMs);
     final stuck = fault?.reason == FeedReason.jammed;
-    final detail = [?after, if (stuck) 'Something may be stuck in the chute.'].join(' ');
+    final String detail = [?after, if (stuck) 'Something may be stuck in the chute.'].join(' ');
     final muted = TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted);
     final step = TextStyle(fontSize: Sizes.base, height: 1.6, color: c.text);
 

@@ -14,7 +14,7 @@ import 'fakes.dart';
 
 /// A run the test drives.
 class FakeRestoreRun implements RestoreRun, RustOpaqueInterface {
-  // ignore: close_sinks, the test ends with it
+  // ignore: the test ends with it
   final updates = StreamController<RestoreUpdate>();
   final answers = <int, InstallAnswer>{};
   int stops = 0;
@@ -135,7 +135,7 @@ Future<RestoreFlow> _open(
   tester.view.physicalSize = const Size(1236, 2745);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
-  final flow = _flow(ports);
+  final RestoreFlow flow = _flow(ports);
   await flow.load();
   await tester.pumpWidget(_Harness(flow, brightness: brightness));
   await settle(tester);
@@ -165,7 +165,7 @@ void main() {
     await settle(tester);
     expect(ports.runs, isEmpty, reason: 'nothing goes before the checkbox');
 
-    final run = await _started(tester, ports);
+    final FakeRestoreRun run = await _started(tester, ports);
     expect(ports.specs.single.backup, '/kept/stock-1.1.15.bin');
     expect(ports.specs.single.address, '10.0.0.5:7700');
     expect(ports.specs.single.dataDir, '/data');
@@ -176,8 +176,8 @@ void main() {
 
   testWidgets('the steps follow the run: press, percent, restart, done', (tester) async {
     final ports = FakeRestorePorts();
-    final flow = await _open(tester, ports);
-    final run = await _started(tester, ports);
+    final RestoreFlow flow = await _open(tester, ports);
+    final FakeRestoreRun run = await _started(tester, ports);
 
     run.event(const InstallEvent.pressDispense());
     await settle(tester);
@@ -201,8 +201,8 @@ void main() {
 
   testWidgets('an uncertain end offers no retry', (tester) async {
     final ports = FakeRestorePorts();
-    final flow = await _open(tester, ports);
-    final run = await _started(tester, ports);
+    final RestoreFlow flow = await _open(tester, ports);
+    final FakeRestoreRun run = await _started(tester, ports);
 
     run.event(const InstallEvent.promoting());
     run.end(const RestoreEnd.uncertain(why: UncertainWhy.gone, detail: 'gone'));
@@ -218,7 +218,7 @@ void main() {
   testWidgets('a refusal offers no retry; a missed press asks for the word again', (tester) async {
     final ports = FakeRestorePorts();
     await _open(tester, ports);
-    var run = await _started(tester, ports);
+    FakeRestoreRun run = await _started(tester, ports);
     run.stopped(RestoreStop.refused);
     await settle(tester);
     expect(find.text('Kitchen said no'), findsOneWidget);
@@ -237,7 +237,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Restore original firmware'));
     await settle(tester);
     expect(again.runs, hasLength(1), reason: 'not without the checkbox again');
-    final second = await _started(tester, again);
+    final FakeRestoreRun second = await _started(tester, again);
     expect(again.runs, hasLength(2));
     second.stopped(RestoreStop.cancelled);
     await settle(tester);
@@ -245,8 +245,8 @@ void main() {
 
   testWidgets('a stream that closes with no end is uncertain once offering', (tester) async {
     final ports = FakeRestorePorts();
-    final flow = await _open(tester, ports);
-    final run = await _started(tester, ports);
+    final RestoreFlow flow = await _open(tester, ports);
+    final FakeRestoreRun run = await _started(tester, ports);
     run.event(const InstallEvent.promoting());
     await settle(tester);
 
@@ -259,7 +259,7 @@ void main() {
   testWidgets('the run asks only where the feeder is', (tester) async {
     final ports = FakeRestorePorts()..located = '10.0.0.9:7700';
     await _open(tester, ports);
-    final run = await _started(tester, ports);
+    final FakeRestoreRun run = await _started(tester, ports);
 
     run.updates.add(RestoreUpdate.ask(id: 3, ask: InstallAsk.locate(identity: 'ab' * 32)));
     await settle(tester);
@@ -277,7 +277,7 @@ void main() {
       ..kept = null
       ..checks['/picked/good.bin'] = const BackupCheck.ready(version: '1.1.15')
       ..checks['/picked/bad.bin'] = const BackupCheck.notStock(detail: 'no');
-    final flow = await _open(tester, ports);
+    final RestoreFlow flow = await _open(tester, ports);
     expect(find.text('No backup on this phone'), findsOneWidget);
 
     // Nothing picked changes nothing.
@@ -296,7 +296,7 @@ void main() {
     await settle(tester);
     expect(find.text('From a picked file'), findsOneWidget);
 
-    final run = await _started(tester, ports);
+    final FakeRestoreRun run = await _started(tester, ports);
     expect(ports.specs.single.backup, '/picked/good.bin');
     run.stopped(RestoreStop.cancelled);
     await settle(tester);
@@ -304,8 +304,8 @@ void main() {
 
   testWidgets('leaving stops the run, and lets the process go', (tester) async {
     final ports = FakeRestorePorts();
-    final flow = await _open(tester, ports);
-    final run = await _started(tester, ports);
+    final RestoreFlow flow = await _open(tester, ports);
+    final FakeRestoreRun run = await _started(tester, ports);
 
     await tester.pumpWidget(const SizedBox.shrink());
     flow.dispose();
@@ -320,8 +320,8 @@ void main() {
 
   testWidgets('a stop after the offer words itself as a stop', (tester) async {
     final ports = FakeRestorePorts();
-    final flow = await _open(tester, ports);
-    final run = await _started(tester, ports);
+    final RestoreFlow flow = await _open(tester, ports);
+    final FakeRestoreRun run = await _started(tester, ports);
 
     run.event(const InstallEvent.promoting());
     run.end(const RestoreEnd.uncertain(why: UncertainWhy.stopped, detail: 'stopped'));
@@ -335,7 +335,7 @@ void main() {
   testWidgets('a key this phone could not keep does not blame the backup', (tester) async {
     final ports = FakeRestorePorts();
     await _open(tester, ports);
-    final run = await _started(tester, ports);
+    final FakeRestoreRun run = await _started(tester, ports);
 
     run.stopped(RestoreStop.keyFailed);
     await settle(tester);
@@ -347,7 +347,7 @@ void main() {
   testWidgets('a key gone before the offer has its own words and a retry', (tester) async {
     final ports = FakeRestorePorts();
     await _open(tester, ports);
-    final run = await _started(tester, ports);
+    final FakeRestoreRun run = await _started(tester, ports);
 
     run.stopped(RestoreStop.keyGone);
     await settle(tester);
@@ -360,7 +360,7 @@ void main() {
   testWidgets('a long wait says what it waits for, but not during the press', (tester) async {
     final ports = FakeRestorePorts();
     await _open(tester, ports);
-    final run = await _started(tester, ports);
+    final FakeRestoreRun run = await _started(tester, ports);
     await tester.pump(WaitWords.after);
     await tester.pump();
     Finder words() => find.textContaining('answer on your Wi-Fi', findRichText: true);
@@ -376,7 +376,7 @@ void main() {
   group('after an uncertain end', () {
     Future<void> uncertain(WidgetTester tester, FakeRestorePorts ports) async {
       await _open(tester, ports);
-      final run = await _started(tester, ports);
+      final FakeRestoreRun run = await _started(tester, ports);
       run.end(const RestoreEnd.uncertain(why: UncertainWhy.gone, detail: 'gone'));
       await tester.pump();
     }
@@ -434,8 +434,8 @@ void main() {
 
   testWidgets('leaving after a stopped run forgets the key', (tester) async {
     final ports = FakeRestorePorts();
-    final flow = await _open(tester, ports);
-    final run = await _started(tester, ports);
+    final RestoreFlow flow = await _open(tester, ports);
+    final FakeRestoreRun run = await _started(tester, ports);
     run.stopped(RestoreStop.notAnswering);
     await settle(tester);
     expect(ports.forgotten, 0, reason: 'Try again still wants it');
@@ -447,7 +447,7 @@ void main() {
 
   testWidgets('a second tap during the hold starts nothing more', (tester) async {
     final ports = FakeRestorePorts()..holding = Completer<void>();
-    final flow = await _open(tester, ports);
+    final RestoreFlow flow = await _open(tester, ports);
     flow.setUnderstood(true);
 
     unawaited(flow.start());
@@ -464,14 +464,14 @@ void main() {
 
   testWidgets('leaving during the hold lets the process go once it takes', (tester) async {
     final ports = FakeRestorePorts()..holding = Completer<void>();
-    final flow = await _open(tester, ports);
+    final RestoreFlow flow = await _open(tester, ports);
     flow.setUnderstood(true);
     unawaited(flow.start());
     await tester.pump();
 
     await tester.pumpWidget(const SizedBox.shrink());
     flow.dispose();
-    final before = ports.released;
+    final int before = ports.released;
     ports.holding!.complete();
     await tester.pump();
 
@@ -479,13 +479,13 @@ void main() {
     expect(ports.runs, isEmpty);
   });
 
-  for (final brightness in Brightness.values) {
+  for (final Brightness brightness in Brightness.values) {
     testWidgets('every stage draws in $brightness', (tester) async {
       final ports = FakeRestorePorts();
       await _open(tester, ports, brightness: brightness);
       expect(tester.takeException(), isNull);
 
-      final run = await _started(tester, ports);
+      final FakeRestoreRun run = await _started(tester, ports);
       run.event(const InstallEvent.pressDispense());
       await settle(tester);
       expect(tester.takeException(), isNull);

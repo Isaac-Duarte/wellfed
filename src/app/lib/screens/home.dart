@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:wellfed/screens/app_settings.dart';
@@ -43,7 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _readEarlier() async {
-    final earlier = await widget.earlierInstall();
+    final PendingInstall earlier = await widget.earlierInstall();
     if (mounted) setState(() => _earlier = earlier);
   }
 
@@ -57,8 +58,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ListenableBuilder(listenable: widget.fleet, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
-    final c = context.colors;
-    final feeders = widget.fleet.all.toList();
+    final ThemeTokens c = context.colors;
+    final List<FeederController> feeders = widget.fleet.all.toList();
     final one = feeders.length == 1;
     return Scaffold(
       bottomNavigationBar: const MainNav(selected: 0),
@@ -117,9 +118,9 @@ class FeederCard extends StatelessWidget {
       ListenableBuilder(listenable: controller, builder: (context, _) => compact ? _compact(context) : _full(context));
 
   Widget _full(BuildContext context) {
-    final c = context.colors;
-    final card = controller.card;
-    final notices = _notices(context);
+    final ThemeTokens c = context.colors;
+    final api.Card? card = controller.card;
+    final List<Widget> notices = _notices(context);
     return Panel(
       padding: const EdgeInsets.all(Space.s4),
       child: Column(
@@ -168,9 +169,9 @@ class FeederCard extends StatelessWidget {
       unawaited(context.push('/feeder/${controller.known.identity}?tab=$tab'));
 
   Widget _compact(BuildContext context) {
-    final c = context.colors;
-    final line = _line(context);
-    final why = _why();
+    final ThemeTokens c = context.colors;
+    final String? line = _line(context);
+    final String? why = _why();
     return Panel(
       padding: const EdgeInsets.fromLTRB(10, 14, 14, 14),
       onTap: controller.feed.phase == FeedPhase.idle ? () => _open(context) : () => showFeedSheet(context, controller),
@@ -234,12 +235,12 @@ class FeederCard extends StatelessWidget {
   api.Card? get _live => controller.connection == Connection.online ? controller.card : null;
 
   Widget _chips(BuildContext context) {
-    final c = context.colors;
-    final card = controller.card;
-    final live = _live;
-    final feed = controller.feed;
+    final ThemeTokens c = context.colors;
+    final api.Card? card = controller.card;
+    final api.Card? live = _live;
+    final FeedState feed = controller.feed;
 
-    final status = switch (controller.connection) {
+    final StatusChip status = switch (controller.connection) {
       Connection.looking => StatusChip('Looking…', color: c.textMuted),
       Connection.connecting => StatusChip('Connecting…', color: c.textMuted),
       Connection.offline => StatusChip("Can't reach it", color: c.textMuted),
@@ -265,8 +266,8 @@ class FeederCard extends StatelessWidget {
   }
 
   Widget _food(BuildContext context, FoodLevel food) {
-    final c = context.colors;
-    final (text, color) = switch (food) {
+    final ThemeTokens c = context.colors;
+    final (String text, Color color) = switch (food) {
       FoodLevel.present => ('Food in', c.text),
       FoodLevel.low => ('Food low', c.fault),
       FoodLevel.unread => ('Food not read', c.textMuted),
@@ -291,16 +292,16 @@ class FeederCard extends StatelessWidget {
   }
 
   Widget _tiles(BuildContext context, api.Card card) {
-    final (power, battery) = switch ((card.adapter, card.batteryPercent)) {
-      (true, final percent?) => ('Mains', 'Battery $percent%'),
+    final (String power, String battery) = switch ((card.adapter, card.batteryPercent)) {
+      (true, final int percent?) => ('Mains', 'Battery $percent%'),
       (true, null) => ('Mains', 'Plugged in'),
-      (false, final percent?) => ('Battery', '$percent%, Wi-Fi off'),
+      (false, final int percent?) => ('Battery', '$percent%, Wi-Fi off'),
       (false, null) => ('Battery', 'Wi-Fi off'),
       (null, _) => ('Unknown', 'Not read yet'),
     };
-    final next = card.nextMeal;
-    final last = card.lastFed;
-    final lastAt = last?.atMs;
+    final api.NextMealView? next = card.nextMeal;
+    final api.FeedResult? last = card.lastFed;
+    final PlatformInt64? lastAt = last?.atMs;
     // Equal heights, as a day or "Time unknown" takes the last-fed tile's value
     // onto a second line.
     return IntrinsicHeight(
@@ -330,9 +331,9 @@ class FeederCard extends StatelessWidget {
   }
 
   List<Widget> _notices(BuildContext context) {
-    final card = controller.card;
-    final live = _live;
-    final why = _why();
+    final api.Card? card = controller.card;
+    final api.Card? live = _live;
+    final String? why = _why();
     return [
       if (live != null && !live.clockSet) NoTimeNotice(feeder: controller),
       if (live?.blocked case final blocked? when blocked != Blocked.feeding)
@@ -361,25 +362,25 @@ class FeederCard extends StatelessWidget {
   /// it. A reading at rest carries no time, and the last feed may have read
   /// food long before it.
   static String _lowLead(BuildContext context, api.Card? card) {
-    final last = card?.lastFed;
-    final at = last?.hopper == FoodLevel.low ? last?.atMs : null;
+    final api.FeedResult? last = card?.lastFed;
+    final PlatformInt64? at = last?.hopper == FoodLevel.low ? last?.atMs : null;
     return at == null ? 'Food is low.' : 'Food read low ${atMomentTextMs(context, at)}.';
   }
 
   /// The compact card's second line.
   String? _line(BuildContext context) {
-    final feed = controller.feed;
+    final FeedState feed = controller.feed;
     if (feed.phase == FeedPhase.running) return 'Started from this phone';
     if (controller.connection != Connection.offline) {
-      final next = controller.card?.nextMeal;
+      final api.NextMealView? next = controller.card?.nextMeal;
       return next == null
           ? null
           : 'Next ${minuteText(context, next.minute)} · '
                 '${portionsText(next.portions)}';
     }
-    final at = controller.cardAt;
+    final DateTime? at = controller.cardAt;
     if (at == null) return 'Not heard from yet';
-    final minutes = DateTime.now().difference(at).inMinutes;
+    final int minutes = DateTime.now().difference(at).inMinutes;
     return minutes < 1 ? 'Last heard just now' : 'Last heard $minutes min ago';
   }
 
@@ -433,8 +434,8 @@ class TodaysMeals extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: controller,
     builder: (context, _) {
-      final c = context.colors;
-      final meals = controller.card?.meals ?? const <api.MealView>[];
+      final ThemeTokens c = context.colors;
+      final List<api.MealView> meals = controller.card?.meals ?? const <api.MealView>[];
       if (meals.isEmpty) return const SizedBox.shrink();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -471,8 +472,8 @@ class _MealRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final portions = portionsText(meal.portions);
+    final ThemeTokens c = context.colors;
+    final String portions = portionsText(meal.portions);
     final what = meal.call > 0 ? '$portions · meal call' : portions;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: 12),
@@ -501,14 +502,14 @@ class _MealRow extends StatelessWidget {
   }
 
   Widget _standing(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     Text words(String text, Color color) => Text(
       text,
       style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.medium, color: color),
     );
     return switch (meal.standing) {
-      api.MealStanding_Fed(:final result) when result.uncertain => words('Uncertain', c.warning),
-      api.MealStanding_Fed(:final result) when result.confirmed == result.requested => Row(
+      api.MealStanding_Fed(:final api.FeedResult result) when result.uncertain => words('Uncertain', c.warning),
+      api.MealStanding_Fed(:final api.FeedResult result) when result.confirmed == result.requested => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           StrokeIcon(Glyph.check, size: 16, color: c.ok, weight: 2),
@@ -516,9 +517,12 @@ class _MealRow extends StatelessWidget {
           words('Fed', c.ok),
         ],
       ),
-      api.MealStanding_Fed(:final result) => words('Fed ${result.confirmed} of ${result.requested}', c.warning),
+      api.MealStanding_Fed(:final api.FeedResult result) => words(
+        'Fed ${result.confirmed} of ${result.requested}',
+        c.warning,
+      ),
       api.MealStanding_Passed() => words('No feed recorded', c.textMuted),
-      api.MealStanding_Next(:final atMs) => words(untilText(DateTime.now(), atMs), c.accent),
+      api.MealStanding_Next(:final PlatformInt64 atMs) => words(untilText(DateTime.now(), atMs), c.accent),
       api.MealStanding_Later() => words('Later', c.textMuted),
     };
   }
@@ -534,7 +538,7 @@ class _Tile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     final small = TextStyle(fontSize: Sizes.xs, color: c.textMuted);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

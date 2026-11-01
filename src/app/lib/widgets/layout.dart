@@ -49,10 +49,10 @@ class StepScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final canPop = Navigator.canPop(context);
-    final showLeading = leading != Leading.none && (onLeading != null || canPop);
-    final header = appBarTitle ?? stepLabel;
+    final ThemeTokens c = context.colors;
+    final bool canPop = Navigator.canPop(context);
+    final bool showLeading = leading != Leading.none && (onLeading != null || canPop);
+    final String? header = appBarTitle ?? stepLabel;
 
     return Scaffold(
       appBar: AppBar(
@@ -149,7 +149,7 @@ class Bar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return ClipRRect(
       borderRadius: BorderRadius.circular(Radii.pill),
       child: LinearProgressIndicator(
@@ -171,7 +171,7 @@ class Searching extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Row(
       children: [
         SizedBox.square(
@@ -208,7 +208,7 @@ class NumberedSteps extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     final style = TextStyle(fontSize: 15, height: 1.5, color: c.text);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -277,7 +277,7 @@ class FoodDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Container(
       width: 8,
       height: 8,
@@ -305,13 +305,13 @@ class Notice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final background = switch (tone) {
+    final ThemeTokens c = context.colors;
+    final Color background = switch (tone) {
       Tone.warning => c.warningSoft,
       Tone.fault => c.faultSoft,
       Tone.neutral => c.sunken,
     };
-    final words = tone == Tone.neutral ? c.textMuted : c.text;
+    final Color words = tone == Tone.neutral ? c.textMuted : c.text;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(radius)),
@@ -353,7 +353,7 @@ class Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(Radii.card),
       side: highlight ? BorderSide(color: c.accent, width: 2) : BorderSide(color: c.line),
@@ -383,7 +383,7 @@ class RouteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Panel(
       onTap: onTap,
       padding: const EdgeInsets.all(Space.s4),
@@ -424,7 +424,7 @@ class IconTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Container(
       width: size,
       height: size,
@@ -447,7 +447,7 @@ class FactList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Container(
       decoration: BoxDecoration(
         color: sunken ? c.sunken : c.surface,
@@ -491,7 +491,7 @@ class ReasonList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -552,7 +552,7 @@ class LabeledField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     final small = TextStyle(fontSize: Sizes.sm, color: c.textMuted);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -644,7 +644,7 @@ class _WaitWordsState extends State<WaitWords> {
 
   @override
   Widget build(BuildContext context) {
-    final words = widget.words;
+    final String? words = widget.words;
     if (!_long || words == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: Space.s3),

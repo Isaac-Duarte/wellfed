@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide Card;
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/clock_portion.dart';
 import 'package:wellfed/screens/feeder/settings_tab.dart';
@@ -26,7 +27,7 @@ const _settings = SettingsView(
 );
 
 Future<(FeederController, FakeSession)> _settingsTab(WidgetTester tester, {ClientRole role = ClientRole.owner}) async {
-  final (feeder, session) = await oneFeeder(tester);
+  final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
   session.updates.add(SessionUpdate.opened(build: 'test', role: role));
   session.status(fakeCard(settings: _settings));
   await showTab(tester, SettingsTab(feeder: feeder));
@@ -51,23 +52,23 @@ void main() {
     // Offline is the hard case: with no tap on the row or the switch, nothing
     // else keeps them from merging into one node.
     testWidgets('each row is its own node, and each switch its own switch', (tester) async {
-      final semantics = tester.ensureSemantics();
-      final (_, session) = await _settingsTab(tester);
+      final SemanticsHandle semantics = tester.ensureSemantics();
+      final (_, FakeSession session) = await _settingsTab(tester);
       unawaited(session.updates.close());
       await tester.pump();
       await tester.pump(const Duration(seconds: 3));
       await settle(tester);
 
-      final switches = find.byType(Switch);
+      final Finder switches = find.byType(Switch);
       expect(switches, findsNWidgets(2));
-      final lights = tester.getSemantics(switches.first);
-      final sounds = tester.getSemantics(switches.last);
+      final SemanticsNode lights = tester.getSemantics(switches.first);
+      final SemanticsNode sounds = tester.getSemantics(switches.last);
       expect(lights.label, isNot(contains('Any time')));
       expect(sounds.label, isNot(contains('7:00 AM')));
       expect(lights, isNot(same(sounds)));
       expect(lights.rect.width, lessThanOrEqualTo(tester.getSize(switches.first).width));
 
-      final hours = tester.getSemantics(find.text('7:00 AM to 10:00 PM'));
+      final SemanticsNode hours = tester.getSemantics(find.text('7:00 AM to 10:00 PM'));
       expect(hours.label, isNot(contains('Any time')));
 
       semantics.dispose();
@@ -98,17 +99,17 @@ void main() {
     });
 
     testWidgets('a toggle goes against the generation it read', (tester) async {
-      final (_, session) = await _settingsTab(tester);
+      final (_, FakeSession session) = await _settingsTab(tester);
 
       await tapIn(tester, find.byType(Switch).first);
-      final put = _put(session);
+      final FeederRequest_PutSettings put = _put(session);
       expect(put.base, 5);
       expect(put.changes.lights, isFalse);
       expect(put.changes.sound, isNull);
     });
 
     testWidgets('a change refused as stale, or unanswered, says so', (tester) async {
-      final (_, session) = await _settingsTab(tester);
+      final (_, FakeSession session) = await _settingsTab(tester);
       session.replies
         ..add(const FeederReply.refused(refusal: FeederRefusal.stale(current: 6)))
         ..add(const FeederReply.unanswered());
@@ -121,7 +122,7 @@ void main() {
     });
 
     testWidgets('a window is chosen in its dialog', (tester) async {
-      final (_, session) = await _settingsTab(tester);
+      final (_, FakeSession session) = await _settingsTab(tester);
 
       await tapIn(tester, find.text('Lights'));
       expect(find.text('When can the lights be on?'), findsOneWidget);
@@ -132,7 +133,7 @@ void main() {
     });
 
     testWidgets('a muted test sound says why', (tester) async {
-      final (_, session) = await _settingsTab(tester);
+      final (_, FakeSession session) = await _settingsTab(tester);
       session.replies.add(const FeederReply.refused(refusal: FeederRefusal.muted()));
 
       await tapIn(tester, find.byTooltip('Play a test sound'));
@@ -141,7 +142,7 @@ void main() {
     });
 
     testWidgets('removing asks first, and goes back', (tester) async {
-      final (feeder, session) = await _settingsTab(tester);
+      final (FeederController feeder, FakeSession session) = await _settingsTab(tester);
 
       await tapIn(tester, find.text('Remove from this phone'));
       expect(find.textContaining('stays on its People list'), findsOneWidget);
@@ -153,7 +154,7 @@ void main() {
 
   group('Wi-Fi', () {
     Future<FakeSession> wifi(WidgetTester tester) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard());
       await showTab(tester, WifiScreen(feeder: feeder));
       await tester.enterText(find.byType(TextField).first, 'Maple St 5G');
@@ -163,7 +164,7 @@ void main() {
     }
 
     testWidgets('saves once, then restarts to join', (tester) async {
-      final session = await wifi(tester);
+      final FakeSession session = await wifi(tester);
 
       await tapIn(tester, find.text('Switch network'));
       expect(session.requests, hasLength(2));
@@ -174,7 +175,7 @@ void main() {
     });
 
     testWidgets('what Rust or the feeder refuses restarts nothing', (tester) async {
-      final session = await wifi(tester);
+      final FakeSession session = await wifi(tester);
       session.replies
         ..add(const FeederReply.notAsked(reason: NotAsked.credentials))
         ..add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
@@ -190,7 +191,7 @@ void main() {
     });
 
     testWidgets('an unanswered save restarts nothing and is not sent again', (tester) async {
-      final session = await wifi(tester);
+      final FakeSession session = await wifi(tester);
       session.replies.add(const FeederReply.unanswered());
 
       await tapIn(tester, find.text('Switch network'));
@@ -199,7 +200,7 @@ void main() {
     });
 
     testWidgets('forgetting asks first, goes once, and says if unanswered', (tester) async {
-      final session = await wifi(tester);
+      final FakeSession session = await wifi(tester);
       session.replies.add(const FeederReply.unanswered());
 
       await tapIn(tester, find.text('Forget this network'));
@@ -211,7 +212,7 @@ void main() {
     });
 
     testWidgets('a restart that fails says the network is saved', (tester) async {
-      final session = await wifi(tester);
+      final FakeSession session = await wifi(tester);
       session.replies
         ..add(const FeederReply.done(generation: 2))
         ..add(const FeederReply.refused(refusal: FeederRefusal.busy()));
@@ -234,7 +235,7 @@ void main() {
     const calibration = CalibrationInfo(generation: 2, writable: true, portionMg: 11000, bowl: Bowl.single);
 
     Future<FakeSession> show(WidgetTester tester) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard(time: time));
       session.replies.add(const FeederReply.calibration(calibration: calibration));
       await showTab(tester, ClockPortionScreen(feeder: feeder));
@@ -251,7 +252,7 @@ void main() {
     });
 
     testWidgets('coming to the screen reads the time again', (tester) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard(time: time));
       await showTab(tester, ClockPortionScreen(feeder: feeder));
 
@@ -259,7 +260,7 @@ void main() {
     });
 
     testWidgets('offline it does not pass off an old reading as the time', (tester) async {
-      final session = await show(tester);
+      final FakeSession session = await show(tester);
       expect(find.text('under 1 s'), findsOneWidget);
 
       unawaited(session.updates.close());
@@ -275,7 +276,7 @@ void main() {
     });
 
     testWidgets('where the time comes from goes against its generation', (tester) async {
-      final session = await show(tester);
+      final FakeSession session = await show(tester);
 
       await tapIn(tester, find.widgetWithText(ChoiceChip, 'Phones only'));
       final put = session.requests.first as FeederRequest_PutTime;
@@ -286,7 +287,7 @@ void main() {
 
     testWidgets('a time change reads the time again, so the next goes against '
         'the new generation', (tester) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard(time: time));
       session.replies.add(const FeederReply.calibration(calibration: calibration));
       await showTab(tester, ClockPortionScreen(feeder: feeder));
@@ -309,11 +310,11 @@ void main() {
     });
 
     testWidgets('a bad address and an unanswered change say so', (tester) async {
-      final session = await show(tester);
+      final FakeSession session = await show(tester);
       session.replies
         ..add(const FeederReply.notAsked(reason: NotAsked.badNtp))
         // The read after that change.
-        ..add(const FeederReply.done(generation: null))
+        ..add(const FeederReply.done())
         ..add(const FeederReply.unanswered());
 
       await tapIn(tester, find.widgetWithText(ChoiceChip, 'Address'));
@@ -326,7 +327,7 @@ void main() {
     });
 
     testWidgets('a portion steps, or comes from what 10 weighed', (tester) async {
-      final session = await show(tester);
+      final FakeSession session = await show(tester);
 
       await tapIn(tester, find.byTooltip('More'));
       var put = session.requests.first as FeederRequest_PutCalibration;
@@ -345,7 +346,7 @@ void main() {
     });
 
     testWidgets('a portion refused says so', (tester) async {
-      final session = await show(tester);
+      final FakeSession session = await show(tester);
       session.replies.add(const FeederReply.refused(refusal: FeederRefusal.invalid()));
 
       await tapIn(tester, find.byTooltip('More'));

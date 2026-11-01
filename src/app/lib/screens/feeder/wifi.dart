@@ -34,23 +34,25 @@ class _WifiScreenState extends State<WifiScreen> {
   }
 
   Future<void> _switch() async {
-    final feeder = widget.feeder;
-    final base = feeder.card?.wifiGeneration;
+    final FeederController feeder = widget.feeder;
+    final int? base = feeder.card?.wifiGeneration;
     if (base == null) return;
 
     setState(() => _asking = true);
-    final saved = await feeder.ask(FeederRequest.putWifi(base: base, ssid: _network.text, passphrase: _password.text));
+    final FeederReply saved = await feeder.ask(
+      FeederRequest.putWifi(base: base, ssid: _network.text, passphrase: _password.text),
+    );
     if (!mounted) return;
     if (!showProblem(context, saved)) {
       setState(() => _asking = false);
       return;
     }
 
-    final restart = await feeder.ask(const FeederRequest.reboot());
+    final FeederReply restart = await feeder.ask(const FeederRequest.reboot());
     if (!mounted) return;
     setState(() => _asking = false);
-    final problem = replyProblem(restart);
-    final messenger = ScaffoldMessenger.of(context);
+    final String? problem = replyProblem(restart);
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     if (problem != null) {
       messenger.showSnackBar(
         SnackBar(
@@ -69,11 +71,11 @@ class _WifiScreenState extends State<WifiScreen> {
   /// Forget the network, once. It stays on the network it has until a restart,
   /// and after one only Bluetooth setup brings it back.
   Future<void> _forget() async {
-    final feeder = widget.feeder;
-    final base = feeder.card?.wifiGeneration;
+    final FeederController feeder = widget.feeder;
+    final int? base = feeder.card?.wifiGeneration;
     if (base == null) return;
 
-    final sure = await showDialog<bool>(
+    final bool? sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Forget this network?'),
@@ -90,7 +92,7 @@ class _WifiScreenState extends State<WifiScreen> {
     if (sure != true || !mounted) return;
 
     setState(() => _asking = true);
-    final reply = await feeder.ask(FeederRequest.forgetWifi(base: base));
+    final FeederReply reply = await feeder.ask(FeederRequest.forgetWifi(base: base));
     if (!mounted) return;
     setState(() => _asking = false);
     showProblem(context, reply);
@@ -98,10 +100,10 @@ class _WifiScreenState extends State<WifiScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final feeder = widget.feeder;
-    final rssi = feeder.card?.rssi;
-    final signal = switch (rssi) {
+    final ThemeTokens c = context.colors;
+    final FeederController feeder = widget.feeder;
+    final int? rssi = feeder.card?.rssi;
+    final String? signal = switch (rssi) {
       null => null,
       >= -60 => 'a strong signal',
       >= -72 => 'a fair signal',

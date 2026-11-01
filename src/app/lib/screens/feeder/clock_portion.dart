@@ -1,9 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Card;
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'package:wellfed/screens/feeder/today.dart' show clockWords;
 import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
@@ -38,7 +40,7 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
   }
 
   Future<void> _read() async {
-    final reply = await widget.feeder.ask(const FeederRequest.getCalibration());
+    final FeederReply reply = await widget.feeder.ask(const FeederRequest.getCalibration());
     if (!mounted) return;
     if (reply is FeederReply_Calibration) {
       setState(() => _calibration = reply.calibration);
@@ -50,21 +52,21 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
   /// One write, then a fresh reading of the portion.
   Future<void> _write(FeederRequest request) async {
     setState(() => _asking = true);
-    final reply = await widget.feeder.ask(request);
+    final FeederReply reply = await widget.feeder.ask(request);
     if (!mounted) return;
     setState(() => _asking = false);
     showProblem(context, reply);
   }
 
   Future<void> _portion(PortionChange change) async {
-    final calibration = _calibration;
+    final CalibrationInfo? calibration = _calibration;
     if (calibration == null) return;
     await _write(FeederRequest.putCalibration(base: calibration.generation, portion: change, bowl: calibration.bowl));
     if (mounted) await _read();
   }
 
   Future<void> _time({ZoneChange? zone, String? ntp}) async {
-    final time = widget.feeder.card?.time;
+    final TimeInfo? time = widget.feeder.card?.time;
     if (time == null) return;
     await _write(FeederRequest.putTime(base: time.generation, zone: zone, ntp: ntp));
 
@@ -77,7 +79,7 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
   }
 
   Future<void> _address() async {
-    final address = await askText(
+    final String? address = await askText(
       context,
       title: 'Ask which address?',
       label: 'IPv4 address',
@@ -87,7 +89,7 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
   }
 
   Future<void> _weighed() async {
-    final grams = await askText(
+    final String? grams = await askText(
       context,
       title: 'What did 10 portions weigh?',
       label: 'Grams',
@@ -103,14 +105,14 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
       ListenableBuilder(listenable: widget.feeder, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
-    final c = context.colors;
-    final card = widget.feeder.card;
-    final time = card?.time;
+    final ThemeTokens c = context.colors;
+    final Card? card = widget.feeder.card;
+    final TimeInfo? time = card?.time;
     // An offline card's clock is an old reading, not the feeder's time now.
-    final current = widget.feeder.cardIsCurrent;
-    final clock = current ? time?.clockMs : null;
-    final error = current ? time?.errorMs : null;
-    final zone = time?.zone;
+    final bool current = widget.feeder.cardIsCurrent;
+    final PlatformInt64? clock = current ? time?.clockMs : null;
+    final int? error = current ? time?.errorMs : null;
+    final String? zone = time?.zone;
     final label = TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: c.text);
 
     return Scaffold(
@@ -220,10 +222,10 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
   }
 
   Widget _portionRow(BuildContext context) {
-    final c = context.colors;
-    final mg = _calibration?.portionMg;
-    final grams = mg == null ? null : (mg / 1000).round();
-    final can = !_asking && _calibration != null;
+    final ThemeTokens c = context.colors;
+    final int? mg = _calibration?.portionMg;
+    final int? grams = mg == null ? null : (mg / 1000).round();
+    final bool can = !_asking && _calibration != null;
     void step(int next) => unawaited(_portion(PortionChange.milligrams(mg: next * 1000)));
     return Row(
       children: [

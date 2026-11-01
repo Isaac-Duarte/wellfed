@@ -1,11 +1,13 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Card;
 
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/update.dart';
 import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/state/update.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
@@ -108,9 +110,9 @@ class UpdateEndScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final flow = feeder.update;
-    final (title, body) = updateEndWords(feeder.known.name, end);
-    final card = feeder.card;
+    final UpdateFlow flow = feeder.update;
+    final (String title, String body) = updateEndWords(feeder.known.name, end);
+    final Card? card = feeder.card;
     return StepScaffold(
       title: title,
       body: body,
@@ -143,7 +145,7 @@ class UpdateEndScreen extends StatelessWidget {
             onPressed: flow.cancelling
                 ? null
                 : () async {
-                    final reply = await flow.cancel();
+                    final FeederReply reply = await flow.cancel();
                     if (!context.mounted) return;
                     if (showProblem(context, reply)) flow.acknowledge();
                   },

@@ -132,9 +132,9 @@ class RestoreFlow extends ChangeNotifier {
             'minutes.';
 
   Future<void> load() async {
-    final dataDir = await _ports.dataDir();
+    final String dataDir = await _ports.dataDir();
     _dataDir = dataDir;
-    final kept = _ports.keptBackup(dataDir, identity);
+    final String? kept = _ports.keptBackup(dataDir, identity);
     if (kept == null) {
       stage = RestoreStage.noBackup;
     } else {
@@ -145,7 +145,7 @@ class RestoreFlow extends ChangeNotifier {
 
   /// Look at a file the owner picks, through the same checks as a kept copy.
   Future<void> pickFile() async {
-    final path = await _ports.pickBackup();
+    final String? path = await _ports.pickBackup();
     if (path == null) return;
     await _look(path, isPicked: true);
     _changed();
@@ -153,7 +153,7 @@ class RestoreFlow extends ChangeNotifier {
 
   Future<void> _look(String path, {required bool isPicked}) async {
     switch (_ports.checkBackup(path)) {
-      case BackupCheck_Ready(version: final ready):
+      case BackupCheck_Ready(version: final String ready):
         _backup = path;
         version = ready;
         backupDate = await _ports.backupDate(path);
@@ -163,7 +163,7 @@ class RestoreFlow extends ChangeNotifier {
       case BackupCheck_Missing():
         notStock = null;
         stage = RestoreStage.noBackup;
-      case BackupCheck_NotStock(detail: final why):
+      case BackupCheck_NotStock(detail: final String why):
         notStock = why;
         stage = RestoreStage.noBackup;
     }
@@ -176,7 +176,7 @@ class RestoreFlow extends ChangeNotifier {
 
   /// The owner's word is what starts it, each time.
   Future<void> start() async {
-    final (dataDir, backup) = (_dataDir, _backup);
+    final (String? dataDir, String? backup) = (_dataDir, _backup);
     // `_run` is set only after the hold below, so the stage guards a second tap.
     if (!understood || stage != RestoreStage.before || dataDir == null || backup == null) {
       return;
@@ -202,7 +202,7 @@ class RestoreFlow extends ChangeNotifier {
       return;
     }
 
-    final run = _ports.newRun(
+    final RestoreRun run = _ports.newRun(
       RestoreSpec(identity: Uint8List.fromList(identity), address: address, dataDir: dataDir, backup: backup),
     );
     _run = run;
@@ -223,7 +223,7 @@ class RestoreFlow extends ChangeNotifier {
       case RestoreUpdate_Event(:final event):
         _event(event);
       case RestoreUpdate_Ask(:final id, :final ask):
-        _ask(id, ask);
+        unawaited(_ask(id, ask));
       case RestoreUpdate_Ended(:final end):
         _ended(end);
     }
@@ -318,12 +318,12 @@ class RestoreFlow extends ChangeNotifier {
   }
 
   Future<void> _locate() async {
-    final hex = identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
-    final found = await _ports.locate(hex);
+    final String hex = identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+    final String? found = await _ports.locate(hex);
     if (look != RestoreLook.looking || _lookEnd == null) return;
     if (found != null) {
       _sighted = true;
-      final seen = await _ports.readFeeder(identity, found);
+      final RestoreSeen seen = await _ports.readFeeder(identity, found);
       if (look != RestoreLook.looking || _lookEnd == null) return;
       if (seen == RestoreSeen.idle) {
         _looked(RestoreLook.wellfed);

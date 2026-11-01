@@ -16,8 +16,8 @@ import 'package:wellfed/widgets/when.dart';
 /// from gives way to the portions. One that isn't known stays until it is
 /// closed, as the owner should look at the bowl before feeding again.
 Future<void> feedNow(BuildContext context, FeederController feeder) {
-  final feed = feeder.feed;
-  final known = switch (feed.phase) {
+  final FeedState feed = feeder.feed;
+  final bool known = switch (feed.phase) {
     FeedPhase.ended => !(feed.result?.uncertain ?? true),
     FeedPhase.refused || FeedPhase.notSent => true,
     _ => false,
@@ -68,7 +68,7 @@ class _ConfirmState extends State<_Confirm> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     Widget step(Glyph glyph, String tooltip, VoidCallback? onPressed) => IconButton.outlined(
       tooltip: tooltip,
       constraints: const BoxConstraints.tightFor(width: 56, height: 56),
@@ -150,8 +150,8 @@ class _Progress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final feed = feeder.feed;
-    final result = feed.result;
+    final FeedState feed = feeder.feed;
+    final FeedResult? result = feed.result;
     return switch (feed.phase) {
       FeedPhase.sending || FeedPhase.running => _running(context),
       FeedPhase.ended when result != null && result.uncertain => _uncertain(context, result),
@@ -201,8 +201,8 @@ class _Progress extends StatelessWidget {
   );
 
   Widget _running(BuildContext context) {
-    final c = context.colors;
-    final feed = feeder.feed;
+    final ThemeTokens c = context.colors;
+    final FeedState feed = feeder.feed;
     final running = feed.phase == FeedPhase.running;
     return _sheet(
       context,
@@ -247,9 +247,9 @@ class _Progress extends StatelessWidget {
   }
 
   Widget _ended(BuildContext context, FeedResult result) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     final all = result.confirmed == result.requested;
-    final food = feeder.card?.food;
+    final FoodLevel? food = feeder.card?.food;
     return _sheet(
       context,
       glyph: all ? Glyph.check : Glyph.warning,
@@ -281,7 +281,7 @@ class _Progress extends StatelessWidget {
   }
 
   Widget _uncertain(BuildContext context, FeedResult result) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return _sheet(
       context,
       glyph: Glyph.warning,
@@ -324,9 +324,9 @@ class _Progress extends StatelessWidget {
   }
 
   Widget _notFed(BuildContext context) {
-    final c = context.colors;
-    final feed = feeder.feed;
-    final why = feed.phase == FeedPhase.notSent
+    final ThemeTokens c = context.colors;
+    final FeedState feed = feeder.feed;
+    final String why = feed.phase == FeedPhase.notSent
         ? 'The connection dropped before the request went out. Try again '
               'once the feeder is online.'
         : _refusal(feed.refusal);
@@ -359,10 +359,10 @@ class _Progress extends StatelessWidget {
   }
 
   Widget _unknown(BuildContext context) {
-    final c = context.colors;
-    final feed = feeder.feed;
-    final sent = _time(context, feed.sentAt);
-    final lead = switch (feed) {
+    final ThemeTokens c = context.colors;
+    final FeedState feed = feeder.feed;
+    final String sent = _time(context, feed.sentAt);
+    final String lead = switch (feed) {
       FeedState(phase: FeedPhase.lost, lostBy: FeedLost.overdue) =>
         'The feed started${sent.isEmpty ? '' : ' at $sent'}, and the feeder '
             "hasn't said how it ended, past the longest a feed can take. Its "

@@ -116,7 +116,8 @@ check-app:
 	@test -z "$$(git status --porcelain -- $(APP_GENERATED))" || \
 		{ git status --short -- $(APP_GENERATED); echo "generated app files are stale: commit the regenerated ones"; exit 1; }
 	cd $(APP) && find lib test -name '*.dart' -not -path 'lib/src/rust/*' -exec dart format --set-exit-if-changed {} +
-	cd $(APP) && flutter analyze
+	cd $(APP)/tools/wellfed_lints && dart pub get && dart test
+	cd $(APP) && dart analyze --fatal-infos
 	cd $(APP) && TZ=America/Denver flutter test
 	cd $(APP) && flutter build apk --debug --target-platform android-arm64,android-x64
 

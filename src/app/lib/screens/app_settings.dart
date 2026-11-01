@@ -60,7 +60,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
 
   Future<void> _readBackups() async {
     final kept = <(KnownFeeder, String)>[];
-    for (final feeder in widget.book.feeders) {
+    for (final KnownFeeder feeder in widget.book.feeders) {
       if (await widget.backups.kept(feeder.identity) case final path?) {
         kept.add((feeder, path));
       }
@@ -69,11 +69,16 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
   }
 
   Future<void> _rename() async {
-    final name = await askText(context, title: 'Name on feeders', label: 'This phone', initial: widget.book.label);
+    final String? name = await askText(
+      context,
+      title: 'Name on feeders',
+      label: 'This phone',
+      initial: widget.book.label,
+    );
     if (name == null || !mounted) return;
 
-    final trimmed = name.trim();
-    final bytes = utf8.encode(trimmed).length;
+    final String trimmed = name.trim();
+    final int bytes = utf8.encode(trimmed).length;
     if (bytes < 1 || bytes > NameStep.maxBytes) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A phone name is 1 to 16 bytes.')));
       return;
@@ -86,8 +91,8 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
       ListenableBuilder(listenable: widget.book, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
-    final c = context.colors;
-    final book = widget.book;
+    final ThemeTokens c = context.colors;
+    final FeederBook book = widget.book;
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
@@ -136,7 +141,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                   ListTile(
                     title: Text(feeder.name),
                     trailing: IconButton(
-                      tooltip: 'Share ${feeder.name}\'s backup',
+                      tooltip: "Share ${feeder.name}'s backup",
                       icon: const Icon(Icons.share_outlined),
                       onPressed: () => unawaited(widget.backups.share(path)),
                     ),
@@ -170,7 +175,7 @@ class AboutScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     final muted = TextStyle(fontSize: Sizes.sm, height: 1.5, color: c.textMuted);
     return Scaffold(
       appBar: AppBar(

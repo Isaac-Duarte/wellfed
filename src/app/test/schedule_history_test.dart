@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:flutter/material.dart' hide Card;
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/feed_detail.dart';
 import 'package:wellfed/screens/feeder/history.dart';
@@ -33,8 +34,8 @@ const _noRecording = FeederReply.call(call: CallInfo(writable: true, clip: CallC
 void main() {
   group('Schedule', () {
     testWidgets('each meal is its own node, with its switch its own switch', (tester) async {
-      final semantics = tester.ensureSemantics();
-      final (feeder, session) = await oneFeeder(tester);
+      final SemanticsHandle semantics = tester.ensureSemantics();
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard(plans: _plans([_plan(60), _plan(120)])));
       await showTab(tester, ScheduleTab(feeder: feeder));
 
@@ -45,20 +46,20 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
       await settle(tester);
 
-      final switches = find.byType(Switch);
+      final Finder switches = find.byType(Switch);
       expect(switches, findsNWidgets(2));
-      final first = tester.getSemantics(switches.first);
+      final SemanticsNode first = tester.getSemantics(switches.first);
       expect(first.label, '1:00 AM on');
       expect(first.rect.width, lessThanOrEqualTo(tester.getSize(switches.first).width));
 
-      final row = tester.getSemantics(find.text('1:00 AM'));
+      final SemanticsNode row = tester.getSemantics(find.text('1:00 AM'));
       expect(row.label, isNot(contains('2:00 AM')));
 
       semantics.dispose();
     });
 
     testWidgets('coming to the tab reads the plans again, and only when online', (tester) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard());
       await settle(tester);
       session.requests.clear();
@@ -69,7 +70,7 @@ void main() {
     });
 
     Future<FakeSession> show(WidgetTester tester, PlansView plans, {bool clockSet = true}) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.status(fakeCard(plans: plans, clockSet: clockSet));
       await showTab(tester, ScheduleTab(feeder: feeder));
       session.requests.clear();
@@ -92,8 +93,8 @@ void main() {
       expect(find.text('2 portions · Mon to Fri'), findsOneWidget);
       expect(find.text('3 portions · every day · meal call twice'), findsOneWidget);
       expect(find.text('1 portion · once'), findsOneWidget);
-      final first = tester.getTopLeft(find.text('7:30 AM')).dy;
-      final last = tester.getTopLeft(find.text('10:00 PM')).dy;
+      final double first = tester.getTopLeft(find.text('7:30 AM')).dy;
+      final double last = tester.getTopLeft(find.text('10:00 PM')).dy;
       expect(first, lessThan(last));
     });
 
@@ -101,7 +102,7 @@ void main() {
       await show(tester, _plans([for (var i = 0; i < 10; i++) _plan(i * 60)]));
 
       expect(find.textContaining('10 of 10 meals'), findsOneWidget);
-      final add = find.widgetWithText(FilledButton, 'Add meal · delete one first');
+      final Finder add = find.widgetWithText(FilledButton, 'Add meal · delete one first');
       expect(tester.widget<FilledButton>(add).onPressed, isNull);
     });
 
@@ -112,8 +113,8 @@ void main() {
     });
 
     testWidgets('a meal is switched once, against what the feeder said', (tester) async {
-      final plans = _plans([_plan(60)]);
-      final session = await show(tester, plans);
+      final PlansView plans = _plans([_plan(60)]);
+      final FakeSession session = await show(tester, plans);
 
       await tapIn(tester, find.byType(Switch));
       expect(session.requests, [
@@ -123,7 +124,7 @@ void main() {
     });
 
     testWidgets('switching says why it was refused or may have run', (tester) async {
-      final session = await show(tester, _plans([_plan(60)]));
+      final FakeSession session = await show(tester, _plans([_plan(60)]));
       session.replies
         ..add(const FeederReply.refused(refusal: FeederRefusal.busy()))
         ..add(const FeederReply.unanswered());
@@ -136,8 +137,8 @@ void main() {
     });
 
     testWidgets('a new meal goes in as an add', (tester) async {
-      final plans = _plans([_plan(60)]);
-      final session = await show(tester, plans);
+      final PlansView plans = _plans([_plan(60)]);
+      final FakeSession session = await show(tester, plans);
 
       await tapIn(tester, find.text('Add meal'));
       await tapIn(tester, find.byTooltip('One more'));
@@ -147,7 +148,7 @@ void main() {
 
       final added = session.requests.single as FeederRequest_EditPlans;
       expect(added.plans, plans);
-      final plan = (added.edit as PlanEdit_Add).plan;
+      final PlanView plan = (added.edit as PlanEdit_Add).plan;
       expect(plan.minute, 8 * 60);
       expect(plan.portions, 2);
       expect(plan.days, [Weekday.sat, Weekday.sun]);
@@ -157,8 +158,8 @@ void main() {
     });
 
     testWidgets('an edit changes its slot, or deletes it', (tester) async {
-      final plans = _plans([_plan(60, portions: 3)]);
-      final session = await show(tester, plans);
+      final PlansView plans = _plans([_plan(60, portions: 3)]);
+      final FakeSession session = await show(tester, plans);
 
       await tapIn(tester, find.text('1:00 AM'));
       await tapIn(tester, find.byTooltip('One fewer'));
@@ -179,15 +180,15 @@ void main() {
     });
 
     testWidgets("the editor's switch is its own node, named On", (tester) async {
-      final semantics = tester.ensureSemantics();
+      final SemanticsHandle semantics = tester.ensureSemantics();
       await show(tester, _plans([_plan(60)]));
 
       await tapIn(tester, find.text('1:00 AM'));
-      final toggle = find.descendant(of: find.byType(MealEditor), matching: find.byType(Switch));
+      final Finder toggle = find.descendant(of: find.byType(MealEditor), matching: find.byType(Switch));
       await tester.ensureVisible(toggle);
       await tester.pump();
 
-      final node = tester.getSemantics(toggle);
+      final SemanticsNode node = tester.getSemantics(toggle);
       expect(node.label, 'On');
       expect(node.rect.width, lessThanOrEqualTo(tester.getSize(toggle).width));
 
@@ -195,7 +196,7 @@ void main() {
     });
 
     testWidgets('deleting a meal asks first, naming its time', (tester) async {
-      final session = await show(tester, _plans([_plan(60)]));
+      final FakeSession session = await show(tester, _plans([_plan(60)]));
       session.requests.clear();
 
       await tapIn(tester, find.text('1:00 AM'));
@@ -212,7 +213,7 @@ void main() {
     });
 
     testWidgets('a refused or unanswered save keeps the editor open', (tester) async {
-      final session = await show(tester, _plans([_plan(60)]));
+      final FakeSession session = await show(tester, _plans([_plan(60)]));
       session.replies
         ..add(const FeederReply.refused(refusal: FeederRefusal.forbidden()))
         ..add(const FeederReply.unanswered());
@@ -230,8 +231,8 @@ void main() {
 
     testWidgets("someone else's change is shown, and only overwritten on a "
         'choice, against what the feeder now holds', (tester) async {
-      final session = await show(tester, _plans([_plan(60)]));
-      final theirs = _plans([_plan(120)], generation: 4);
+      final FakeSession session = await show(tester, _plans([_plan(60)]));
+      final PlansView theirs = _plans([_plan(120)], generation: 4);
 
       await tapIn(tester, find.text('1:00 AM'));
       session.replies
@@ -252,8 +253,8 @@ void main() {
 
     testWidgets('a delete refused as stale shows the meal now, sends nothing more, '
         'and goes only on a choice, against the fresh read', (tester) async {
-      final session = await show(tester, _plans([_plan(60)]));
-      final fresh = _plans([_plan(60)], generation: 4);
+      final FakeSession session = await show(tester, _plans([_plan(60)]));
+      final PlansView fresh = _plans([_plan(60)], generation: 4);
 
       await tapIn(tester, find.text('1:00 AM'));
       session.replies
@@ -276,7 +277,7 @@ void main() {
     });
 
     testWidgets('a stale switch reads the plans and does not switch again', (tester) async {
-      final session = await show(tester, _plans([_plan(60)]));
+      final FakeSession session = await show(tester, _plans([_plan(60)]));
       session.replies.add(const FeederReply.refused(refusal: FeederRefusal.stale(current: 4)));
 
       await tapIn(tester, find.byType(Switch).first);
@@ -288,7 +289,7 @@ void main() {
     });
 
     testWidgets('keeping theirs sends nothing more', (tester) async {
-      final session = await show(tester, _plans([_plan(60)]));
+      final FakeSession session = await show(tester, _plans([_plan(60)]));
 
       await tapIn(tester, find.text('1:00 AM'));
       session.replies
@@ -304,7 +305,7 @@ void main() {
 
   group('the meal call', () {
     Future<FakeSession> show(WidgetTester tester, CallClip clip, {PickRecording? pick}) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.replies.add(
         FeederReply.call(
           call: CallInfo(writable: true, clip: clip, ms: clip is CallClip_Stored ? 3500 : null),
@@ -315,7 +316,11 @@ void main() {
     }
 
     testWidgets('uploads what was picked, once', (tester) async {
-      final session = await show(tester, const CallClip.none(), pick: () async => Uint8List.fromList([1, 2, 3]));
+      final FakeSession session = await show(
+        tester,
+        const CallClip.none(),
+        pick: () async => Uint8List.fromList([1, 2, 3]),
+      );
       expect(find.text('No recording stored'), findsOneWidget);
       session.replies
         ..add(_noRecording)
@@ -337,7 +342,7 @@ void main() {
       await tester.pump();
       ports.session.opened();
       await tester.pump();
-      final session = ports.session;
+      final FakeSession session = ports.session;
       session.replies.add(first);
       await showTab(tester, MealCallScreen(feeder: feeder, pick: () async => Uint8List.fromList([1])));
       session.requests.clear();
@@ -346,7 +351,7 @@ void main() {
 
     /// The screen, a recording ready to pick, its session just ended.
     Future<(FakeFeederPorts, FakeSession)> dropped(WidgetTester tester) async {
-      final (ports, first) = await onScreen(tester, _noRecording);
+      final (FakeFeederPorts ports, FakeSession first) = await onScreen(tester, _noRecording);
       unawaited(first.updates.close());
       await tester.pump();
       return (ports, first);
@@ -355,7 +360,7 @@ void main() {
     const noReach = "Couldn't reach the feeder. Choose the recording again.";
 
     testWidgets('a recording waits for the session, then goes once', (tester) async {
-      final (ports, first) = await dropped(tester);
+      final (FakeFeederPorts ports, FakeSession first) = await dropped(tester);
 
       await tester.tap(find.text('Choose a recording'));
       await settle(tester);
@@ -363,7 +368,7 @@ void main() {
 
       // The controller's first retry comes after 3 s.
       await tester.pump(const Duration(seconds: 3));
-      final second = ports.session;
+      final FakeSession second = ports.session;
       expect(second, isNot(same(first)));
       second.replies
         ..add(_noRecording)
@@ -381,7 +386,7 @@ void main() {
     });
 
     testWidgets('a dead session loses the read, never the upload', (tester) async {
-      final session = await show(tester, const CallClip.none(), pick: () async => Uint8List.fromList([1]));
+      final FakeSession session = await show(tester, const CallClip.none(), pick: () async => Uint8List.fromList([1]));
       session.answering = (_) async => const FeederReply.unanswered();
       session.requests.clear();
 
@@ -395,7 +400,7 @@ void main() {
 
     testWidgets('no session in time leaves a lasting message, and sends '
         'nothing', (tester) async {
-      final (ports, first) = await dropped(tester);
+      final (FakeFeederPorts ports, FakeSession first) = await dropped(tester);
 
       await tester.tap(find.text('Choose a recording'));
       for (var second = 0; second < 70; second++) {
@@ -413,7 +418,7 @@ void main() {
     const stored = FeederReply.call(call: CallInfo(writable: true, clip: CallClip.stored(bytes: 9, crc: 1), ms: 3500));
 
     testWidgets('a read that never answers counts against the wait', (tester) async {
-      final session = await show(tester, const CallClip.none(), pick: () async => Uint8List.fromList([1]));
+      final FakeSession session = await show(tester, const CallClip.none(), pick: () async => Uint8List.fromList([1]));
       session.answering = (_) => Completer<FeederReply>().future;
       session.requests.clear();
 
@@ -439,7 +444,7 @@ void main() {
 
     testWidgets('an upload lost with its session drops the old clip and says '
         'only what it knows', (tester) async {
-      final (ports, first) = await onScreen(tester, stored);
+      final (FakeFeederPorts ports, FakeSession first) = await onScreen(tester, stored);
       expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
       dyingOn<FeederRequest_UploadCall>(first);
 
@@ -452,7 +457,7 @@ void main() {
       expect(find.text('Reading…'), findsOneWidget);
 
       await tester.pump(const Duration(seconds: 3));
-      final second = ports.session;
+      final FakeSession second = ports.session;
       second.replies.add(_noRecording);
       second.opened();
       await settle(tester);
@@ -464,7 +469,7 @@ void main() {
     });
 
     testWidgets('an upload lost for good cannot say what the feeder holds', (tester) async {
-      final (_, first) = await onScreen(tester, stored);
+      final (_, FakeSession first) = await onScreen(tester, stored);
       dyingOn<FeederRequest_UploadCall>(first);
 
       await tester.tap(find.text('Replace the recording'));
@@ -479,7 +484,7 @@ void main() {
     });
 
     testWidgets('a delete lost with its session says the same', (tester) async {
-      final (ports, first) = await onScreen(tester, stored);
+      final (FakeFeederPorts ports, FakeSession first) = await onScreen(tester, stored);
       dyingOn<FeederRequest_DeleteCall>(first);
 
       await tester.tap(find.text('Delete the recording'));
@@ -515,14 +520,14 @@ void main() {
 
       picking.complete(null);
       await settle(tester);
-      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      final FilledButton button = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(button.onPressed, isNotNull);
     });
 
     /// A screen opened while an upload an earlier one started is on its way;
     /// what ends the upload, and what the read after it gets.
     Future<void> reopenedUntil(WidgetTester tester, FeederReply end, FeederReply read) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       final uploading = Completer<FeederReply>();
       session.answering = (request) =>
           request is FeederRequest_UploadCall ? uploading.future : Future.value(_noRecording);
@@ -564,7 +569,7 @@ void main() {
     });
 
     testWidgets('a screen opened during an upload does not start another', (tester) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       final uploading = Completer<FeederReply>();
       session.answering = (request) =>
           request is FeederRequest_UploadCall ? uploading.future : Future.value(_noRecording);
@@ -576,7 +581,7 @@ void main() {
 
       await tester.pumpWidget(themed(const SizedBox()));
       await showTab(tester, screen());
-      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      final FilledButton button = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(button.onPressed, isNull);
       expect(find.text('Working… keep this screen open.'), findsOneWidget);
 
@@ -590,7 +595,7 @@ void main() {
     });
 
     testWidgets('a recording refused or unanswered says so, then reads', (tester) async {
-      final session = await show(tester, const CallClip.none(), pick: () async => Uint8List.fromList([1]));
+      final FakeSession session = await show(tester, const CallClip.none(), pick: () async => Uint8List.fromList([1]));
       session.replies
         ..add(_noRecording)
         ..add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
@@ -608,7 +613,7 @@ void main() {
     });
 
     testWidgets('a stored clip can be deleted', (tester) async {
-      final session = await show(tester, const CallClip.stored(bytes: 9, crc: 1));
+      final FakeSession session = await show(tester, const CallClip.stored(bytes: 9, crc: 1));
 
       await tapIn(tester, find.text('Delete the recording'));
       expect(session.requests, contains(const FeederRequest.deleteCall()));
@@ -620,7 +625,7 @@ void main() {
         HistoryEntry(seq: BigInt.from(seq), atMs: at?.millisecondsSinceEpoch, body: body);
 
     Future<(FeederController, FakeSession)> show(WidgetTester tester, List<HistoryEntry> entries) async {
-      final (feeder, session) = await oneFeeder(tester);
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.replies.add(
         FeederReply.clients(
           clients: [
@@ -664,8 +669,8 @@ void main() {
       expect(find.text('Started up'), findsOneWidget);
       expect(find.textContaining('the batteries were too low'), findsOneWidget);
       expect(find.text("Some events here weren't kept"), findsOneWidget);
-      final fed = tester.getTopLeft(find.text('Fed 2 of 2')).dy;
-      final started = tester.getTopLeft(find.text('Started up')).dy;
+      final double fed = tester.getTopLeft(find.text('Fed 2 of 2')).dy;
+      final double started = tester.getTopLeft(find.text('Started up')).dy;
       expect(fed, lessThan(started));
     });
 
@@ -692,8 +697,8 @@ void main() {
 
       expect(find.text('In setup mode'), findsOneWidget);
       expect(find.text('Installing an update'), findsOneWidget);
-      final setup = find.ancestor(of: find.text('In setup mode'), matching: find.byType(Row));
-      final other = find.ancestor(of: find.text('Installing an update'), matching: find.byType(Row));
+      final Finder setup = find.ancestor(of: find.text('In setup mode'), matching: find.byType(Row));
+      final Finder other = find.ancestor(of: find.text('Installing an update'), matching: find.byType(Row));
       Glyph glyph(Finder row) =>
           tester.widget<StrokeIcon>(find.descendant(of: row, matching: find.byType(StrokeIcon))).glyph;
       expect(glyph(setup), Glyph.info);
@@ -705,7 +710,7 @@ void main() {
     });
 
     testWidgets('an uncertain feed of no known source says interrupted', (tester) async {
-      final uncertain = fakeFed(
+      final FeedResult uncertain = fakeFed(
         confirmed: 0,
         atMost: 2,
         outcome: FeedOutcome.uncertain,
@@ -720,7 +725,7 @@ void main() {
     });
 
     testWidgets('an uncertain feed is a range, also in its detail', (tester) async {
-      final uncertain = fakeFed(
+      final FeedResult uncertain = fakeFed(
         confirmed: 0,
         atMost: 3,
         requested: 3,

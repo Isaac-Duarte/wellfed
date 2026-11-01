@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'package:wellfed/screens/feeder/history.dart' show whoText;
 import 'package:wellfed/screens/feeder/motor_trace.dart';
@@ -22,13 +23,13 @@ class FeedDetail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final at = result.atMs;
+    final ThemeTokens c = context.colors;
+    final PlatformInt64? at = result.atMs;
     final when = at == null
         ? 'Time unknown'
         : '${dayText(DateTime.fromMillisecondsSinceEpoch(at))}, '
               '${clockTextMs(context, at)}';
-    final all = result.outcome == FeedOutcome.done && result.confirmed == result.requested;
+    final bool all = result.outcome == FeedOutcome.done && result.confirmed == result.requested;
     final title = result.uncertain
         ? 'Fed between ${result.confirmed} and ${result.atMost} portions'
         : 'Fed ${deliveredText(result)} ${portionWord(result.requested)}';
@@ -85,7 +86,7 @@ class FeedDetail extends StatelessWidget {
             const SizedBox(height: Space.s4),
             Text(
               'When a feed is cut short, the feeder records the range it '
-              'might have dropped and never runs it again, so your pet can\'t '
+              "might have dropped and never runs it again, so your pet can't "
               'be double-fed.',
               style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
             ),

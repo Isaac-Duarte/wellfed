@@ -46,7 +46,7 @@ class SetupLink implements BleLink {
   static Future<SetupLink> open(DiscoveredDevice device) async {
     final ble = FlutterReactiveBle();
     final connected = Completer<void>();
-    final connection = ble
+    final StreamSubscription<ConnectionStateUpdate> connection = ble
         .connectToDevice(
           id: device.id,
           servicesWithCharacteristicsToDiscover: {
@@ -82,7 +82,7 @@ class SetupLink implements BleLink {
       characteristicId: Uuid.parse(setupControl()),
       deviceId: device.id,
     );
-    final notifications = ble.subscribeToCharacteristic(control).asBroadcastStream();
+    final Stream<List<int>> notifications = ble.subscribeToCharacteristic(control).asBroadcastStream();
     return SetupLink._(ble, connection, control, notifications);
   }
 

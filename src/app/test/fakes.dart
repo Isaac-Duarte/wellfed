@@ -42,6 +42,7 @@ mixin _FakeOpaque implements RustOpaqueInterface {
 
 /// The feeders the app knows, in memory.
 class FakeBook extends ChangeNotifier implements FeederBook {
+  FakeBook({this.label = 'Pixel'});
   @override
   Appearance appearance = Appearance.system;
 
@@ -50,8 +51,6 @@ class FakeBook extends ChangeNotifier implements FeederBook {
     appearance = next;
     notifyListeners();
   }
-
-  FakeBook({this.label = 'Pixel'});
 
   @override
   String label;
@@ -66,6 +65,7 @@ class FakeBook extends ChangeNotifier implements FeederBook {
 
   @override
   Future<void> setLabel(String label) async {
+    // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (saveFails case final error?) throw error;
     this.label = label;
     notifyListeners();
@@ -73,9 +73,10 @@ class FakeBook extends ChangeNotifier implements FeederBook {
 
   @override
   Future<void> remember(KnownFeeder feeder, {bool paired = false, bool keepName = false}) async {
+    // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (saveFails case final error?) throw error;
     remembered.add((feeder, paired));
-    final known = feeders.where((f) => f.identity == feeder.identity);
+    final Iterable<KnownFeeder> known = feeders.where((f) => f.identity == feeder.identity);
     feeders = [
       for (final other in feeders)
         if (other.identity != feeder.identity) other,
@@ -113,7 +114,7 @@ class FakeBook extends ChangeNotifier implements FeederBook {
 
 /// A run the test drives: its updates are the test's, its answers recorded.
 class FakeRun with _FakeOpaque implements InstallRun {
-  // ignore: close_sinks, the test ends with it
+  // ignore: the test ends with it
   final updates = StreamController<InstallUpdate>();
   final answers = <int, InstallAnswer>{};
   final notifications = <List<int>>[];
@@ -221,6 +222,7 @@ class FakeInstallPorts implements InstallPorts {
 
   @override
   void forgetInstall(InstallPaths paths) {
+    // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (forgetFails case final error?) throw error;
     forgets++;
     pendingInstall = PendingInstall.nothing;
@@ -257,6 +259,7 @@ class FakeInstallPorts implements InstallPorts {
 
   @override
   Future<void> joinFeederNetwork() async {
+    // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (joinFails case final error?) throw error;
     joined++;
   }
@@ -296,6 +299,7 @@ class FakeInstallPorts implements InstallPorts {
     required void Function(List<int> bytes) onBytes,
     required void Function() onLost,
   }) async {
+    // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (linkFails case final error?) throw error;
     this.onBytes = onBytes;
     this.onLost = onLost;
@@ -359,7 +363,7 @@ class FakeRecovery with _FakeOpaque implements Recovery {
 }
 
 class FakeBleLink implements BleLink {
-  // ignore: close_sinks, the test ends with it
+  // ignore: the test ends with it
   // ignore: close_sinks, the test ends with it
   final bytes = StreamController<List<int>>(onCancel: () async {});
   final written = <List<List<int>>>[];
@@ -381,14 +385,14 @@ DiscoveredDevice feederNearby(String id, {int rssi = -50}) => DiscoveredDevice(
   serviceData: const {},
   manufacturerData: Uint8List(0),
   rssi: rssi,
-  serviceUuids: <Uuid>[],
+  serviceUuids: const <Uuid>[],
 );
 
 /// Pairing's outside world, with no Rust and no radio.
 class FakePairingPorts implements PairingPorts {
   final drivers = <FakeDriver>[];
   final recoveries = <FakeRecovery>[];
-  // ignore: close_sinks, the test ends with it
+  // ignore: the test ends with it
   // ignore: close_sinks, the test ends with it
   final scans = StreamController<DiscoveredDevice>(onCancel: () async {});
   final opened = <DiscoveredDevice>[];
@@ -398,7 +402,7 @@ class FakePairingPorts implements PairingPorts {
 
   @override
   SetupDriver newDriver(String label, WifiCredentials? wifi) {
-    final code = [nextCode, 2, 3, 4, 1, 2];
+    final List<int> code = [nextCode, 2, 3, 4, 1, 2];
     nextCode++;
     final driver = FakeDriver(code);
     drivers.add(driver);
@@ -438,7 +442,7 @@ final doneStep = SetupStep.done(
 /// A device API session the test drives: its updates are the test's, and each
 /// request is recorded and answered from [replies].
 class FakeSession with _FakeOpaque implements FeederSession {
-  // ignore: close_sinks, the test ends with it
+  // ignore: the test ends with it
   final updates = StreamController<SessionUpdate>();
   final requests = <FeederRequest>[];
   final feeds = <int>[];
@@ -456,10 +460,10 @@ class FakeSession with _FakeOpaque implements FeederSession {
   @override
   Future<FeederReply> ask({required FeederRequest request}) async {
     requests.add(request);
-    final answer = answering;
+    final Future<FeederReply> Function(FeederRequest)? answer = answering;
     if (answer != null) return answer(request);
     if (updates.isClosed) return const FeederReply.notSent();
-    return replies.isEmpty ? const FeederReply.done(generation: null) : replies.removeAt(0);
+    return replies.isEmpty ? const FeederReply.done() : replies.removeAt(0);
   }
 
   @override
@@ -471,6 +475,7 @@ class FakeSession with _FakeOpaque implements FeederSession {
 
   @override
   void cancelFeed({required int feed}) {
+    // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (cancelFails case final error?) throw error;
     cancels.add(feed);
   }

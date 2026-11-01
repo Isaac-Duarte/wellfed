@@ -7,7 +7,7 @@ export 'package:wellfed/theme/tokens.g.dart';
 /// Material's theme from the brand tokens: blue is the only signal color,
 /// amber only for food, and the status colors only for status.
 ThemeData wellfedTheme(Brightness brightness) {
-  final t = brightness == Brightness.dark ? darkTokens : lightTokens;
+  final ThemeTokens t = brightness == Brightness.dark ? darkTokens : lightTokens;
   final scheme = ColorScheme(
     brightness: brightness,
     primary: t.accent,

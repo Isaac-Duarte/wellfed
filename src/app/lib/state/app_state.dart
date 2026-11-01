@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
@@ -61,7 +63,7 @@ class AppState extends ChangeNotifier implements FeederBook {
 
   static Future<AppState> load() async {
     const storage = FlutterSecureStorage();
-    final saved = await storage.read(key: _secretName);
+    final String? saved = await storage.read(key: _secretName);
     final ClientKey key;
     if (saved == null) {
       key = ClientKey.generate();
@@ -74,7 +76,7 @@ class AppState extends ChangeNotifier implements FeederBook {
       key = ClientKey.restore(secret: identityBytes(hex: saved));
     }
 
-    final dir = await getApplicationSupportDirectory();
+    final Directory dir = await getApplicationSupportDirectory();
     final path = '${dir.path}/wellfed.json';
     return AppState._(key, await loadStore(path: path), path);
   }
@@ -106,7 +108,7 @@ class AppState extends ChangeNotifier implements FeederBook {
   Future<void> remember(KnownFeeder feeder, {bool paired = false, bool keepName = false}) {
     if (paired) _clockDue.add(feeder.identity);
     return _update((store) {
-      final known = store.feeders.where((f) => f.identity == feeder.identity);
+      final Iterable<KnownFeeder> known = store.feeders.where((f) => f.identity == feeder.identity);
       return AppStore(
         label: store.label,
         feeders: [
@@ -137,7 +139,7 @@ class AppState extends ChangeNotifier implements FeederBook {
 
   @override
   Future<void> answeredAt(String identity, String address) async {
-    final known = _store.feeders.where((f) => f.identity == identity);
+    final Iterable<KnownFeeder> known = _store.feeders.where((f) => f.identity == identity);
     if (known.isEmpty || known.first.address == address) {
       return;
     }
@@ -148,8 +150,8 @@ class AppState extends ChangeNotifier implements FeederBook {
   /// install's run saves a feeder there from Rust, before Dart hears of it.
   /// One at a time, so two changes do not read the same file.
   Future<void> _update(AppStore Function(AppStore) change) {
-    final done = _writing.then((_) async {
-      final store = change(await loadStore(path: _path));
+    final Future<void> done = _writing.then((_) async {
+      final AppStore store = change(await loadStore(path: _path));
       await saveStore(path: _path, store: store);
       _store = store;
       notifyListeners();

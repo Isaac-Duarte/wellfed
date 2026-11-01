@@ -12,7 +12,7 @@ String clockTextMs(BuildContext context, int ms) => clockText(context, DateTime.
 /// `Fri 30 Oct 9:00 PM`. A bare time the next morning would read as today's.
 String momentTextMs(BuildContext context, int ms, {DateTime? now}) {
   final at = DateTime.fromMillisecondsSinceEpoch(ms);
-  final clock = clockText(context, at);
+  final String clock = clockText(context, at);
   return DateUtils.isSameDay(at, now ?? DateTime.now()) ? clock : '${dayText(at, now: now)} $clock';
 }
 
@@ -20,12 +20,12 @@ String momentTextMs(BuildContext context, int ms, {DateTime? now}) {
 /// `yesterday at 9:00 PM`, or `on Fri 30 Oct at 9:00 PM`.
 String atMomentTextMs(BuildContext context, int ms, {DateTime? now}) {
   final at = DateTime.fromMillisecondsSinceEpoch(ms);
-  final clock = clockText(context, at);
+  final String clock = clockText(context, at);
   return switch (dayText(at, now: now)) {
     'Today' => 'at $clock',
     'Yesterday' => 'yesterday at $clock',
     'Tomorrow' => 'tomorrow at $clock',
-    final day => 'on $day at $clock',
+    final String day => 'on $day at $clock',
   };
 }
 
@@ -35,10 +35,10 @@ String minuteText(BuildContext context, int minute) =>
 
 /// `in 26 min`, `in 2 h 5 min`, or `now` once it is due.
 String untilText(DateTime now, int atMs) {
-  final minutes = (atMs - now.millisecondsSinceEpoch) ~/ 60000;
+  final int minutes = (atMs - now.millisecondsSinceEpoch) ~/ 60000;
   if (minutes < 1) return 'now';
   if (minutes < 60) return 'in $minutes min';
-  final rest = minutes % 60;
+  final int rest = minutes % 60;
   return rest == 0 ? 'in ${minutes ~/ 60} h' : 'in ${minutes ~/ 60} h $rest min';
 }
 
@@ -60,10 +60,10 @@ const _monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 
 /// `Today`, `Yesterday`, or `Fri 30 Oct`, by this phone's calendar.
 String dayText(DateTime at, {DateTime? now}) {
-  final today = now ?? DateTime.now();
+  final DateTime today = now ?? DateTime.now();
   // Calendar days, in UTC: two local midnights across a spring-forward day are
   // 23 hours apart, which is 0 whole days.
-  final days = DateTime.utc(
+  final int days = DateTime.utc(
     today.year,
     today.month,
     today.day,

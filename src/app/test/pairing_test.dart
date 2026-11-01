@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show AnyhowException;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:wellfed/app.dart';
 import 'package:wellfed/screens/name_step.dart';
 import 'package:wellfed/screens/pairing_view.dart';
@@ -82,7 +83,7 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(find.text('Show a new code'), findsOneWidget);
-      final first = ports.link;
+      final FakeBleLink first = ports.link;
 
       await tester.tap(find.text('Show a new code'));
       await tester.pump();
@@ -98,7 +99,7 @@ void main() {
   });
 
   group('3.5 names', () {
-    testWidgets('both names are asked, and the phone\'s fits the feeder\'s 16 bytes', (tester) async {
+    testWidgets("both names are asked, and the phone's fits the feeder's 16 bytes", (tester) async {
       String? label;
       String? feeder;
       await tester.pumpWidget(
@@ -171,7 +172,7 @@ void main() {
 
       // Under the router, as the app has it: a saved feeder redraws the root
       // beneath the flow, and the flow's own screen stays on top.
-      final router = wellfedRouter(
+      final GoRouter router = wellfedRouter(
         book: book,
         root: (context) => Text(book.feeders.isEmpty ? 'Welcome' : 'Home'),
         pages: {'/setup': (context) => _view(flow)},
@@ -292,7 +293,7 @@ void main() {
 
     test('a shut window comes back as its own failure, not an exception', () async {
       final ports = FakePairingPorts();
-      final flow = await started(ports);
+      final PairingFlow flow = await started(ports);
 
       // Rust sends a failed recovery as a step: frb decodes a stream's error
       // as AnyhowException whatever Rust encoded.
@@ -311,7 +312,7 @@ void main() {
 
     test('an error on the stream is still a screen, not an exception', () async {
       final ports = FakePairingPorts();
-      final flow = await started(ports);
+      final PairingFlow flow = await started(ports);
 
       ports.recoveries.single.steps.addError(AnyhowException('garbled'));
       await Future<void>.delayed(Duration.zero);
@@ -325,7 +326,7 @@ void main() {
 
     test('closing the screen hangs up in Rust too', () async {
       final ports = FakePairingPorts();
-      final flow = await started(ports);
+      final PairingFlow flow = await started(ports);
       flow.dispose();
       expect(ports.recoveries.single.closes, 1);
     });
@@ -334,7 +335,7 @@ void main() {
   testWidgets('a saved feeder does not take the flow off the screen', (tester) async {
     final book = FakeBook();
     var builds = 0;
-    final router = wellfedRouter(
+    final GoRouter router = wellfedRouter(
       book: book,
       root: (context) => Text(book.feeders.isEmpty ? 'Welcome' : 'Home'),
       pages: {

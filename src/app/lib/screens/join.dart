@@ -31,7 +31,7 @@ class JoinScreen extends StatefulWidget {
 
   static Widget _camera(void Function(String) seen) => MobileScanner(
     onDetect: (capture) {
-      for (final code in capture.barcodes) {
+      for (final Barcode code in capture.barcodes) {
         if (code.rawValue case final text?) seen(text);
       }
     },
@@ -70,7 +70,7 @@ class _JoinScreenState extends State<JoinScreen> {
 
   void _seen(String text) {
     if (_step != _Step.scan) return;
-    final identity = widget.ports.inviteFeeder(text);
+    final String? identity = widget.ports.inviteFeeder(text);
     if (identity == null) {
       setState(() => _badText = "That isn't a Wellfed invite.");
       return;
@@ -86,7 +86,7 @@ class _JoinScreenState extends State<JoinScreen> {
 
   Future<void> _find() async {
     setState(() => _finding = true);
-    final address = await widget.ports.locate(_identity, _findWait);
+    final String? address = await widget.ports.locate(_identity, _findWait);
     if (!mounted) return;
     setState(() {
       _address = address;
@@ -95,22 +95,22 @@ class _JoinScreenState extends State<JoinScreen> {
   }
 
   Future<void> _paste() async {
-    final text = await askText(context, title: 'Paste an invite link', label: 'Invite', action: 'Use it');
+    final String? text = await askText(context, title: 'Paste an invite link', label: 'Invite', action: 'Use it');
     if (text != null && mounted) _seen(text);
   }
 
   Future<void> _join() async {
-    final invite = _invite;
-    final address = _address;
+    final String? invite = _invite;
+    final String? address = _address;
     if (invite == null || address == null) return;
 
     setState(() {
       _step = _Step.joining;
       _problem = null;
     });
-    final label = _phoneName.text.trim();
+    final String label = _phoneName.text.trim();
     try {
-      final answer = await widget.ports.join(invite, label, address);
+      final JoinAnswer answer = await widget.ports.join(invite, label, address);
       switch (answer) {
         case JoinAnswer_Joined(:final role):
           await widget.book.setLabel(label);
@@ -160,7 +160,7 @@ class _JoinScreenState extends State<JoinScreen> {
   };
 
   Widget _scan(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return StepScaffold(
       appBarTitle: 'Join with an invite',
       body:
@@ -232,7 +232,7 @@ class _JoinScreenState extends State<JoinScreen> {
   }
 
   Widget _joined(BuildContext context) {
-    final name = _feederName.text.trim();
+    final String name = _feederName.text.trim();
     final owner = _role == ClientRole.owner;
     return StepScaffold(
       leading: Leading.none,

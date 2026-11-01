@@ -18,7 +18,7 @@ class AddFeederScreen extends StatelessWidget {
         glyph: Glyph.install,
         title: 'Install Wellfed',
         body:
-            'It still runs the vendor\'s firmware. Replace it from this '
+            "It still runs the vendor's firmware. Replace it from this "
             'phone, with a backup of the original.',
         onTap: () => context.push('/install'),
       ),
@@ -27,7 +27,7 @@ class AddFeederScreen extends StatelessWidget {
         glyph: Glyph.bluetooth,
         title: 'Set up a reset feeder',
         body:
-            'It already runs Wellfed but was reset, or can\'t reach your '
+            "It already runs Wellfed but was reset, or can't reach your "
             'Wi-Fi. Set up over Bluetooth.',
         onTap: () => context.push('/setup'),
       ),

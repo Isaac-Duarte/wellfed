@@ -7,6 +7,6 @@ import 'package:wellfed/state/app_state.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
-  final app = await AppState.load();
+  final AppState app = await AppState.load();
   runApp(WellfedApp(app: app));
 }

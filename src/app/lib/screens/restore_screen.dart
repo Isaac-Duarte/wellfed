@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -32,7 +34,7 @@ class _RestoreScreenState extends State<RestoreScreen> {
   @override
   void initState() {
     super.initState();
-    _flow.load();
+    unawaited(_flow.load());
   }
 
   @override
@@ -85,7 +87,7 @@ class _NoBackup extends StatelessWidget {
         'phone. If you saved a copy when the install ended, pick that file.',
     content: [
       if (flow.notStock != null)
-        Notice(
+        const Notice(
           tone: Tone.fault,
           lead: "That isn't the original firmware.",
           text:
@@ -104,8 +106,8 @@ class _Before extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final name = flow.feederName;
+    final ThemeTokens c = context.colors;
+    final String name = flow.feederName;
     return StepScaffold(
       appBarTitle: _title,
       body:
@@ -118,7 +120,7 @@ class _Before extends StatelessWidget {
           ('Checked', Text('Matches the original', style: TextStyle(color: c.ok))),
         ]),
         const SizedBox(height: Space.s4),
-        _Warning(
+        const _Warning(
           "Meals and people set up in Wellfed don't carry over. Set the "
           "feeder up again in the vendor's app.",
         ),
@@ -147,7 +149,7 @@ class _Before extends StatelessWidget {
 
   static String _backupWords(RestoreFlow flow) {
     if (flow.picked) return 'From a picked file';
-    final at = flow.backupDate;
+    final DateTime? at = flow.backupDate;
     if (at == null) return 'On this phone';
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return '${at.day} ${months[at.month - 1]}, on this phone';
@@ -161,7 +163,7 @@ class _Warning extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -243,7 +245,7 @@ class _Line extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     final running = state == CheckState.running;
     return Padding(
       padding: const EdgeInsets.only(bottom: Space.s3),
@@ -309,8 +311,7 @@ class _Done extends StatelessWidget {
         "Wellfed can't talk to it any more. It still looks for this phone, and "
         'keeps trying forever. Hold Reset for about 5 seconds, then set it up '
         "in the vendor's app.",
-    content: const [],
-    actions: [_Close()],
+    actions: const [_Close()],
   );
 }
 
@@ -340,8 +341,8 @@ class _UncertainState extends State<_Uncertain> {
 
   @override
   Widget build(BuildContext context) {
-    final name = flow.feederName;
-    final (title, body) = switch (flow.look) {
+    final String name = flow.feederName;
+    final (String title, String body) = switch (flow.look) {
       RestoreLook.looking => ("We can't tell if it went through", _why()),
       RestoreLook.wellfed => (
         '$name is still running Wellfed',
@@ -352,7 +353,7 @@ class _UncertainState extends State<_Uncertain> {
         "We still can't tell",
         '$name showed up on your Wi-Fi, but it never answered this phone as '
             'idle. It may be finishing or restarting. Close this and check '
-            'again in a few minutes, here or in the vendor\'s app.',
+            "again in a few minutes, here or in the vendor's app.",
       ),
       RestoreLook.setup => (
         'A feeder nearby is waiting to be set up',
@@ -424,7 +425,7 @@ class _Stopped extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (title, body) = _words(flow.stop, flow.feederName);
+    final (String title, String body) = _words(flow.stop, flow.feederName);
     return StepScaffold(
       leading: Leading.none,
       title: title,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart' hide Card;
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:wellfed/app.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/home.dart';
@@ -62,10 +64,10 @@ Future<void> _tap(WidgetTester tester, Finder target) async {
 
 void main() {
   testWidgets('Today says how the feeder stands, as the feeder said it', (tester) async {
-    final (fleet, session) = await _fleet(tester);
+    final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
     await _showShell(tester, fleet);
 
-    final fedAt = _todayAt(7, 30);
+    final int fedAt = _todayAt(7, 30);
     session.status(
       fakeCard(
         nextMeal: NextMealView(atMs: _todayAt(12, 30), minute: 12 * 60 + 30, portions: 2),
@@ -97,11 +99,11 @@ void main() {
   });
 
   testWidgets('a moment from an earlier day says which day', (tester) async {
-    final (fleet, session) = await _fleet(tester);
+    final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
     await _showShell(tester, fleet);
 
-    final yesterday = DateTime.now().subtract(const Duration(days: 1));
-    final at = DateTime(yesterday.year, yesterday.month, yesterday.day, 21).millisecondsSinceEpoch;
+    final DateTime yesterday = DateTime.now().subtract(const Duration(days: 1));
+    final int at = DateTime(yesterday.year, yesterday.month, yesterday.day, 21).millisecondsSinceEpoch;
     session.status(
       fakeCard(
         lastFed: fakeFed(atMs: at),
@@ -123,19 +125,19 @@ void main() {
   });
 
   testWidgets('each fact is its own node, and the lock its own switch', (tester) async {
-    final semantics = tester.ensureSemantics();
-    final (fleet, session) = await _fleet(tester);
+    final SemanticsHandle semantics = tester.ensureSemantics();
+    final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
     await _showShell(tester, fleet);
-    session.status(fakeCard(locked: false));
+    session.status(fakeCard());
     await settle(tester);
 
-    final food = tester.getSemantics(find.text('Food'));
+    final SemanticsNode food = tester.getSemantics(find.text('Food'));
     expect(food.label, contains('Food'));
     expect(food.label, isNot(contains('Wi-Fi')));
     expect(food.label, isNot(contains('Lock the buttons')));
     expect(tester.getSemantics(find.text('Wi-Fi')), isNot(same(food)));
 
-    final lock = tester.getSemantics(find.byType(Switch));
+    final SemanticsNode lock = tester.getSemantics(find.byType(Switch));
     expect(
       lock,
       matchesSemantics(
@@ -148,14 +150,14 @@ void main() {
         hasFocusAction: true,
       ),
     );
-    final bounds = tester.getSize(find.byType(Switch));
+    final Size bounds = tester.getSize(find.byType(Switch));
     expect(lock.rect.width, lessThanOrEqualTo(bounds.width));
 
     semantics.dispose();
   });
 
   testWidgets('a low reading says low, and never that the hopper is empty', (tester) async {
-    final (fleet, session) = await _fleet(tester);
+    final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
     await _showShell(tester, fleet);
 
     session.status(fakeCard(food: FoodLevel.low));
@@ -167,11 +169,11 @@ void main() {
   });
 
   testWidgets('a low reading at rest borrows no time from the last feed', (tester) async {
-    final (fleet, session) = await _fleet(tester);
+    final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
     await _showShell(tester, fleet);
 
     // The last feed read food; the level has gone low since, with no event.
-    final fedAt = _todayAt(7, 30);
+    final int fedAt = _todayAt(7, 30);
     session.status(
       fakeCard(
         food: FoodLevel.low,
@@ -186,7 +188,7 @@ void main() {
   });
 
   testWidgets('an uncertain last feed is a range, never one number', (tester) async {
-    final (fleet, session) = await _fleet(tester);
+    final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
     await _showShell(tester, fleet);
 
     session.status(
@@ -200,7 +202,7 @@ void main() {
   });
 
   testWidgets('a one-portion feed that stopped says portion, not portions', (tester) async {
-    final (fleet, session) = await _fleet(tester);
+    final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
     await _showShell(tester, fleet);
 
     session.status(
@@ -225,7 +227,7 @@ void main() {
   });
 
   testWidgets('a feed that stopped unsure says the range in words', (tester) async {
-    final (fleet, session) = await _fleet(tester);
+    final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
     await _showShell(tester, fleet);
 
     session.status(
@@ -244,7 +246,7 @@ void main() {
   });
 
   testWidgets("History's filter survives a tab away while the screen is open", (tester) async {
-    final (fleet, session) = await _fleet(tester);
+    final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
     await _showShell(tester, fleet);
     session.status(fakeCard());
     await settle(tester);
@@ -266,15 +268,15 @@ void main() {
 
   group('the lock', () {
     Future<FakeSession> locked(WidgetTester tester) async {
-      final (fleet, session) = await _fleet(tester);
+      final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
       await _showShell(tester, fleet);
-      session.status(fakeCard(locked: false));
+      session.status(fakeCard());
       await settle(tester);
       return session;
     }
 
     testWidgets('goes out once and follows what the feeder says', (tester) async {
-      final session = await locked(tester);
+      final FakeSession session = await locked(tester);
 
       await _tap(tester, find.byType(Switch));
       expect(session.requests, [const FeederRequest.setLock(locked: true)]);
@@ -287,7 +289,7 @@ void main() {
     });
 
     testWidgets('says why it was refused', (tester) async {
-      final session = await locked(tester);
+      final FakeSession session = await locked(tester);
       session.replies.add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
 
       await _tap(tester, find.byType(Switch));
@@ -295,7 +297,7 @@ void main() {
     });
 
     testWidgets('says an unanswered change is unknown, and sends it once', (tester) async {
-      final session = await locked(tester);
+      final FakeSession session = await locked(tester);
       session.replies.add(const FeederReply.unanswered());
 
       await _tap(tester, find.byType(Switch));
@@ -307,7 +309,7 @@ void main() {
 
   group('the desiccant', () {
     Future<FakeSession> due(WidgetTester tester) async {
-      final (fleet, session) = await _fleet(tester);
+      final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
       await _showShell(tester, fleet);
       session.status(fakeCard(desiccant: const Desiccant.remaining(days: -3, due: true)));
       await settle(tester);
@@ -315,7 +317,7 @@ void main() {
     }
 
     testWidgets('records a change when it is due', (tester) async {
-      final session = await due(tester);
+      final FakeSession session = await due(tester);
 
       expect(find.text('3 days overdue'), findsOneWidget);
       await _tap(tester, find.text('Changed today'));
@@ -323,7 +325,7 @@ void main() {
     });
 
     testWidgets('says why the feeder refused it, or that it may have run', (tester) async {
-      final session = await due(tester);
+      final FakeSession session = await due(tester);
       session.replies
         ..add(const FeederReply.refused(refusal: FeederRefusal.noClock()))
         ..add(const FeederReply.unanswered());
@@ -339,7 +341,7 @@ void main() {
 
   group('a fault', () {
     Future<FakeSession> stopped(WidgetTester tester) async {
-      final (fleet, session) = await _fleet(tester);
+      final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
       await _showShell(tester, fleet);
       session.status(
         fakeCard(
@@ -363,13 +365,13 @@ void main() {
     }
 
     testWidgets('holds feeding, says what stopped it, and offers a restart', (tester) async {
-      final session = await stopped(tester);
+      final FakeSession session = await stopped(tester);
 
       expect(find.text("Can't feed"), findsOneWidget);
       expect(find.text('Meals are held until it restarts'), findsOneWidget);
       expect(find.text('The wheel jammed at 7:30 AM'), findsOneWidget);
       expect(find.textContaining('It stopped after 1 of 2 portions.'), findsOneWidget);
-      final feed = find.widgetWithText(FilledButton, 'Feed now · unavailable until restart');
+      final Finder feed = find.widgetWithText(FilledButton, 'Feed now · unavailable until restart');
       expect(tester.widget<FilledButton>(feed).onPressed, isNull);
 
       await _tap(tester, find.text('Restart it from here'));
@@ -380,7 +382,7 @@ void main() {
     });
 
     testWidgets('a restart refused or unanswered says so', (tester) async {
-      final session = await stopped(tester);
+      final FakeSession session = await stopped(tester);
       session.replies
         ..add(const FeederReply.refused(refusal: FeederRefusal.busy()))
         ..add(const FeederReply.unanswered());
@@ -398,7 +400,7 @@ void main() {
   });
 
   testWidgets('the lights help names every light and button', (tester) async {
-    final (fleet, session) = await _fleet(tester);
+    final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
     await _showShell(tester, fleet);
     session.status(fakeCard());
     await settle(tester);
@@ -412,7 +414,7 @@ void main() {
   });
 
   testWidgets('the restart is in the menu too', (tester) async {
-    final (fleet, session) = await _fleet(tester);
+    final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
     await _showShell(tester, fleet);
     session.status(fakeCard());
     await settle(tester);
@@ -429,8 +431,8 @@ void main() {
       PendingInstall earlier = PendingInstall.nothing,
     }) async {
       _phone(tester);
-      final (fleet, session) = await _fleet(tester);
-      final router = wellfedRouter(
+      final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
+      final GoRouter router = wellfedRouter(
         book: FakeBook(),
         root: (context) => HomeScreen(fleet: fleet, earlierInstall: () async => earlier),
         pages: const {},
@@ -451,7 +453,7 @@ void main() {
     });
 
     testWidgets('a last feed with no time says so', (tester) async {
-      final (_, session) = await home(tester);
+      final (_, FakeSession session) = await home(tester);
       session.status(
         fakeCard(
           lastFed: fakeFed(confirmed: 0, atMost: 2, outcome: FeedOutcome.uncertain, reason: FeedReason.interrupted),
@@ -465,7 +467,7 @@ void main() {
     });
 
     testWidgets("shows the next meal, the last feed and today's meals", (tester) async {
-      final (_, session) = await home(tester);
+      final (_, FakeSession session) = await home(tester);
       final now = DateTime.now();
       session.status(
         fakeCard(
@@ -509,7 +511,7 @@ void main() {
     });
 
     testWidgets('the card opens the feeder, and Schedule its tab', (tester) async {
-      final (_, session) = await home(tester);
+      final (_, FakeSession session) = await home(tester);
       session.status(
         fakeCard(
           meals: const [MealView(slot: 2, minute: 18 * 60 + 30, portions: 3, call: 0, standing: MealStanding.later())],
@@ -518,12 +520,12 @@ void main() {
       await settle(tester);
 
       await _tap(tester, find.widgetWithText(TextButton, 'Schedule'));
-      final tabs = DefaultTabController.of(tester.element(find.byType(TabBar)));
+      final TabController tabs = DefaultTabController.of(tester.element(find.byType(TabBar)));
       expect(tabs.index, 1);
     });
 
     testWidgets("a feeder with no clock offers this phone's", (tester) async {
-      final (_, session) = await home(tester);
+      final (_, FakeSession session) = await home(tester);
       session.status(fakeCard(clockSet: false));
       await settle(tester);
 
@@ -535,7 +537,7 @@ void main() {
 
   group('Feed now', () {
     Future<FakeSession> sheet(WidgetTester tester) async {
-      final (fleet, session) = await _fleet(tester);
+      final (FeederFleet fleet, FakeSession session) = await _fleet(tester);
       await _showShell(tester, fleet);
       session.status(fakeCard());
       await settle(tester);
@@ -544,7 +546,7 @@ void main() {
     }
 
     testWidgets('goes out once, and a refusal offers a new start', (tester) async {
-      final session = await sheet(tester);
+      final FakeSession session = await sheet(tester);
       expect(find.textContaining("Today's meals still run."), findsOneWidget);
 
       await _tap(tester, find.text('Feed 1 portion'));
@@ -557,7 +559,7 @@ void main() {
     });
 
     testWidgets('an unanswered feed is never offered again', (tester) async {
-      final session = await sheet(tester);
+      final FakeSession session = await sheet(tester);
       await _tap(tester, find.text('Feed 1 portion'));
 
       session.updates.add(const SessionUpdate.feedUnanswered());
@@ -568,11 +570,11 @@ void main() {
     });
 
     testWidgets('Feed now after a known result, tapped away, asks portions', (tester) async {
-      final session = await sheet(tester);
+      final FakeSession session = await sheet(tester);
       await _tap(tester, find.text('Feed 1 portion'));
       session.updates.add(const SessionUpdate.feedStarted(feed: 7, portions: 2, dueSeconds: 49));
       await settle(tester);
-      session.updates.add(SessionUpdate.feedEnded(result: fakeFed(feed: 7)));
+      session.updates.add(SessionUpdate.feedEnded(result: fakeFed()));
       await settle(tester);
       expect(find.text('Fed 2 of 2 portions'), findsOneWidget);
 
@@ -586,7 +588,7 @@ void main() {
     });
 
     testWidgets('Feed now after an unknown result, tapped away, still says so', (tester) async {
-      final session = await sheet(tester);
+      final FakeSession session = await sheet(tester);
       await _tap(tester, find.text('Feed 1 portion'));
       session.updates.add(const SessionUpdate.feedUnanswered());
       await settle(tester);
@@ -602,7 +604,7 @@ void main() {
     });
 
     testWidgets('an uncertain feed shows a range, and the history', (tester) async {
-      final session = await sheet(tester);
+      final FakeSession session = await sheet(tester);
       await _tap(tester, find.text('Feed 1 portion'));
       session.updates.add(const SessionUpdate.feedStarted(feed: 7, portions: 2, dueSeconds: 49));
       await settle(tester);
@@ -646,17 +648,17 @@ void main() {
       const justBefore = Duration(seconds: 59);
 
       testWidgets('a healthy slow feed reaches its result without going lost', (tester) async {
-        final ports = await running(tester);
+        final FakeFeederPorts ports = await running(tester);
         await tester.pump(justBefore);
         expect(find.text('Feeding Kitchen'), findsOneWidget);
 
-        ports.session.updates.add(SessionUpdate.feedEnded(result: fakeFed(feed: 7)));
+        ports.session.updates.add(SessionUpdate.feedEnded(result: fakeFed()));
         await settle(tester);
         expect(find.text('Fed 2 of 2 portions'), findsOneWidget);
       });
 
       testWidgets('an overdue feed goes lost, and its late result replaces it', (tester) async {
-        final ports = await running(tester);
+        final FakeFeederPorts ports = await running(tester);
         await tester.pump(justBefore + const Duration(seconds: 2));
         await settle(tester);
         expect(find.text(didFeed), findsOneWidget);
@@ -676,14 +678,14 @@ void main() {
         await settle(tester);
         expect(find.text(didFeed), findsOneWidget);
 
-        ports.session.updates.add(SessionUpdate.feedEnded(result: fakeFed(feed: 7)));
+        ports.session.updates.add(SessionUpdate.feedEnded(result: fakeFed()));
         await settle(tester);
         expect(find.text('Fed 2 of 2 portions'), findsOneWidget);
       });
 
       testWidgets('one feed goes out across going lost and reconnecting', (tester) async {
-        final ports = await running(tester);
-        final first = ports.session;
+        final FakeFeederPorts ports = await running(tester);
+        final FakeSession first = ports.session;
 
         // The session ends on the link's silence.
         first.updates.add(
@@ -722,13 +724,7 @@ void main() {
           HistoryEntry(
             seq: BigInt.from(9),
             body: HistoryBody.fed(
-              result: fakeFed(
-                feed: 7,
-                confirmed: 0,
-                atMost: 2,
-                outcome: FeedOutcome.uncertain,
-                reason: FeedReason.power,
-              ),
+              result: fakeFed(confirmed: 0, atMost: 2, outcome: FeedOutcome.uncertain, reason: FeedReason.power),
             ),
           ),
         ]);
@@ -738,7 +734,7 @@ void main() {
       });
 
       testWidgets('stop never says it stopped, and says when it could not ask', (tester) async {
-        final ports = await running(tester);
+        final FakeFeederPorts ports = await running(tester);
         await _tap(tester, find.text('Stop feeding'));
         expect(ports.session.cancels, [7]);
         expect(find.text('Feeding Kitchen'), findsOneWidget);
@@ -749,7 +745,7 @@ void main() {
         expect(find.text('Feeding Kitchen'), findsOneWidget);
         expect(find.textContaining('The feeder did not confirm the stop'), findsOneWidget);
 
-        ports.session.updates.add(SessionUpdate.feedEnded(result: fakeFed(feed: 7)));
+        ports.session.updates.add(SessionUpdate.feedEnded(result: fakeFed()));
         await settle(tester);
       });
     });
@@ -760,7 +756,7 @@ void main() {
     final ports = FakeFeederPorts();
     // Not opened yet in the first microtask: no session, nothing sent.
     final controller = FeederController(book, ports, _kitchen);
-    final reply = await controller.ask(const FeederRequest.reboot());
+    final FeederReply reply = await controller.ask(const FeederRequest.reboot());
     expect(reply, const FeederReply.notSent());
     controller.dispose();
   });

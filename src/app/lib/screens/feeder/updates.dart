@@ -1,11 +1,12 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Card;
 
 import 'package:wellfed/screens/feeder/update_end.dart';
 import 'package:wellfed/screens/restore_screen.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart';
+import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder.dart';
 import 'package:wellfed/state/update.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -55,8 +56,8 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
   }
 
   Future<void> _read() async {
-    final image = await _feeder.ports.updateImage();
-    final reply = await _feeder.ask(const FeederRequest.updateState());
+    final ImageCheck image = await _feeder.ports.updateImage();
+    final FeederReply reply = await _feeder.ask(const FeederRequest.updateState());
     if (!mounted) return;
     setState(() {
       _image = image;
@@ -65,7 +66,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
   }
 
   Future<void> _cancel() async {
-    final reply = await _flow.cancel();
+    final FeederReply reply = await _flow.cancel();
     if (mounted) showProblem(context, reply);
   }
 
@@ -98,17 +99,17 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
   }
 
   Widget _offer(BuildContext context) {
-    final c = context.colors;
-    final name = _feeder.known.name;
-    final card = _feeder.card;
-    final build = card?.build;
-    final state = _state;
-    final offered = switch (_image) {
-      ImageCheck_Ready(:final build, :final version) => (build, version),
+    final ThemeTokens c = context.colors;
+    final String name = _feeder.known.name;
+    final Card? card = _feeder.card;
+    final String? build = card?.build;
+    final UpdateInfo? state = _state;
+    final (String, int)? offered = switch (_image) {
+      ImageCheck_Ready(:final String build, :final int version) => (build, version),
       _ => null,
     };
-    final current = offered != null && build != null && offered.$1 == build;
-    final can = offered != null && !current && _feeder.cardIsCurrent;
+    final bool current = offered != null && build != null && offered.$1 == build;
+    final bool can = offered != null && !current && _feeder.cardIsCurrent;
 
     return ListView(
       padding: const EdgeInsets.all(Space.s4),
@@ -172,12 +173,12 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
   }
 
   Widget _progress(BuildContext context) {
-    final c = context.colors;
-    final flow = _flow;
-    final name = _feeder.known.name;
+    final ThemeTokens c = context.colors;
+    final UpdateFlow flow = _flow;
+    final String name = _feeder.known.name;
     final sending = flow.stage == UpdateStage.sending;
-    final accepted = flow.length > 0;
-    final percent = accepted ? (flow.written * 100 ~/ flow.length) : 0;
+    final bool accepted = flow.length > 0;
+    final int percent = accepted ? (flow.written * 100 ~/ flow.length) : 0;
     return ListView(
       padding: const EdgeInsets.all(Space.s4),
       children: [
@@ -223,7 +224,7 @@ class _Line extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
+    final ThemeTokens c = context.colors;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: Space.s2),
       child: Row(

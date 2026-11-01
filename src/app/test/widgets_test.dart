@@ -58,7 +58,7 @@ void main() {
     await tester.pumpWidget(_themed(const CodeTiles([1, 2, 3, 4, 2, 1])));
 
     expect(find.byType(PanelSymbol), findsNWidgets(6));
-    final names = tester.widgetList<Text>(find.byType(Text)).map((text) => text.data).toList();
+    final List<String?> names = tester.widgetList<Text>(find.byType(Text)).map((text) => text.data).toList();
     expect(names, ['Lock', 'Dispense', 'Mic', 'Reset', 'Dispense', 'Lock']);
     expect(find.bySemanticsLabel('Press Lock, Dispense, Mic, Reset, Dispense, Lock'), findsOneWidget);
   });
@@ -80,7 +80,7 @@ void main() {
       // MaterialApp animates from the previous theme.
       await tester.pumpAndSettle();
       expect(seen, same(tokens));
-      final theme = wellfedTheme(brightness);
+      final ThemeData theme = wellfedTheme(brightness);
       expect(theme.colorScheme.primary, tokens.accent);
       expect(theme.scaffoldBackgroundColor, tokens.background);
     }
@@ -99,8 +99,8 @@ void main() {
       ),
     );
 
-    final content = tester.getTopLeft(find.text('Content'));
-    final action = tester.getTopLeft(find.text('Go'));
+    final Offset content = tester.getTopLeft(find.text('Content'));
+    final Offset action = tester.getTopLeft(find.text('Go'));
     expect(action.dy, greaterThan(content.dy));
   });
 
@@ -113,7 +113,7 @@ void main() {
     );
 
     expect(find.text('Step 2 of 4'), findsOneWidget);
-    final bar = tester.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+    final LinearProgressIndicator bar = tester.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
     expect(bar.value, 0.5);
   });
 
@@ -132,7 +132,7 @@ void main() {
   });
 
   test('every reason a feed cannot start has words', () {
-    for (final reason in Blocked.values) {
+    for (final Blocked reason in Blocked.values) {
       expect(blockedWords(reason), isNotEmpty);
     }
   });

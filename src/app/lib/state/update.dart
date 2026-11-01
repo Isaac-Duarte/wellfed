@@ -2,10 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import 'package:wellfed/platform/feeder_ports.dart' show UpdatePush;
+import 'package:wellfed/platform/feeder_ports.dart' show FeederPorts, UpdatePush;
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart' show InstallAsk, InstallAsk_Locate;
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/update.dart';
 import 'package:wellfed/state/feeder.dart';
 
@@ -58,8 +59,8 @@ class UpdateFlow extends ChangeNotifier {
     end = null;
     _changed();
 
-    final ports = _feeder.ports;
-    final name = _feeder.known.name;
+    final FeederPorts ports = _feeder.ports;
+    final String name = _feeder.known.name;
     _holding = true;
     holdRefused = !await ports.holdProcess('Updating $name');
     if (_disposed) {
@@ -67,7 +68,7 @@ class UpdateFlow extends ChangeNotifier {
       return;
     }
 
-    final push = ports.pushUpdate(_feeder.known.identity, _feeder.known.address);
+    final UpdatePush push = ports.pushUpdate(_feeder.known.identity, _feeder.known.address);
     _push = push;
     _run = push.progress.listen(
       _heard,
@@ -105,7 +106,7 @@ class UpdateFlow extends ChangeNotifier {
       _push?.located(id, null);
       return;
     }
-    final found = await _feeder.ports.locate(ask.identity, _locateWait);
+    final String? found = await _feeder.ports.locate(ask.identity, _locateWait);
     _push?.located(id, found);
   }
 
@@ -133,7 +134,7 @@ class UpdateFlow extends ChangeNotifier {
   Future<FeederReply> cancel() async {
     cancelling = true;
     _changed();
-    final reply = await _feeder.ask(const FeederRequest.cancelUpdate());
+    final FeederReply reply = await _feeder.ask(const FeederRequest.cancelUpdate());
     cancelling = false;
     _changed();
     return reply;
@@ -155,11 +156,11 @@ class UpdateFlow extends ChangeNotifier {
   /// often as the owner looks; the end stays until then.
   Future<void> lookAgain() async {
     if (!endUnknown) return;
-    final reply = await _feeder.ask(const FeederRequest.updateState());
-    final idle = reply is FeederReply_Update && reply.update.phase == UpdatePhase.idle;
-    final state = reply is FeederReply_Update ? reply.update : null;
-    final served = _served;
-    final card = _feeder.card;
+    final FeederReply reply = await _feeder.ask(const FeederRequest.updateState());
+    final bool idle = reply is FeederReply_Update && reply.update.phase == UpdatePhase.idle;
+    final UpdateInfo? state = reply is FeederReply_Update ? reply.update : null;
+    final (String, int)? served = _served;
+    final Card? card = _feeder.card;
 
     stillUnknown = true;
     if (idle && state != null && state.bank == 0) {

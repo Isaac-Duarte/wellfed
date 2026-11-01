@@ -56,7 +56,7 @@ void main() {
   });
 
   testWidgets('one press sends once and shows its progress', (tester) async {
-    final (ports, _) = await _show(tester);
+    final (FakeFeederPorts ports, _) = await _show(tester);
 
     await tapIn(tester, find.text('Install on Kitchen'));
     expect(ports.pushes, ['lan:4747']);
@@ -77,7 +77,7 @@ void main() {
   });
 
   testWidgets('cancel goes once; refused or unanswered, it says so', (tester) async {
-    final (ports, session) = await _show(tester);
+    final (FakeFeederPorts ports, FakeSession session) = await _show(tester);
     await tapIn(tester, find.text('Install on Kitchen'));
     ports.progress.add(const UpdateProgress.sending(written: 1, length: 100));
     await settle(tester);
@@ -89,8 +89,8 @@ void main() {
   });
 
   testWidgets('leaving mid-send and coming back shows the run, not an offer', (tester) async {
-    final (ports, _) = await _show(tester);
-    final feeder = ports.controller;
+    final (FakeFeederPorts ports, _) = await _show(tester);
+    final FeederController feeder = ports.controller;
     await tapIn(tester, find.text('Install on Kitchen'));
     ports.progress.add(const UpdateProgress.sending(written: 62, length: 100));
     await settle(tester);
@@ -104,8 +104,8 @@ void main() {
   });
 
   testWidgets('an uncertain end stays on coming back, until the feeder settles it', (tester) async {
-    final (ports, session) = await _show(tester);
-    final feeder = ports.controller;
+    final (FakeFeederPorts ports, FakeSession session) = await _show(tester);
+    final FeederController feeder = ports.controller;
     await tapIn(tester, find.text('Install on Kitchen'));
     ports.progress.add(const UpdateProgress.ended(end: UpdateEnd.uncertain()));
     await settle(tester);
@@ -130,7 +130,7 @@ void main() {
   });
 
   testWidgets('the served build past its version has kept the update', (tester) async {
-    final (ports, session) = await _show(tester);
+    final (FakeFeederPorts ports, FakeSession session) = await _show(tester);
     await tapIn(tester, find.text('Install on Kitchen'));
     ports.progress.add(const UpdateProgress.ended(end: UpdateEnd.unconfirmed()));
     await settle(tester);
@@ -155,7 +155,7 @@ void main() {
   });
 
   testWidgets('an offer held by an earlier stop offers its cancel, once', (tester) async {
-    final (ports, session) = await _show(tester);
+    final (FakeFeederPorts ports, FakeSession session) = await _show(tester);
     await tapIn(tester, find.text('Install on Kitchen'));
     ports.progress.add(
       const UpdateProgress.ended(
@@ -175,7 +175,7 @@ void main() {
   });
 
   testWidgets('holds the process for the run, and says if refused', (tester) async {
-    final (ports, _) = await _show(tester);
+    final (FakeFeederPorts ports, _) = await _show(tester);
     ports.holdGranted = false;
 
     await tapIn(tester, find.text('Install on Kitchen'));
@@ -189,7 +189,7 @@ void main() {
   });
 
   testWidgets('a run that asks where the feeder is hears what NSD says', (tester) async {
-    final (ports, _) = await _show(tester);
+    final (FakeFeederPorts ports, _) = await _show(tester);
     await tapIn(tester, find.text('Install on Kitchen'));
 
     ports.progress.add(const UpdateProgress.ask(id: 4, ask: InstallAsk.locate(identity: 'aa')));
@@ -199,7 +199,7 @@ void main() {
 
   group('how it ends', () {
     Future<void> end(WidgetTester tester, UpdateEnd end) async {
-      final (ports, _) = await _show(tester);
+      final (FakeFeederPorts ports, _) = await _show(tester);
       await tapIn(tester, find.text('Install on Kitchen'));
       ports.progress.add(UpdateProgress.ended(end: end));
       await settle(tester);
@@ -233,7 +233,7 @@ void main() {
     });
 
     testWidgets('a run that loses its stream is uncertain', (tester) async {
-      final (ports, _) = await _show(tester);
+      final (FakeFeederPorts ports, _) = await _show(tester);
       await tapIn(tester, find.text('Install on Kitchen'));
       await ports.progress.close();
       await settle(tester);

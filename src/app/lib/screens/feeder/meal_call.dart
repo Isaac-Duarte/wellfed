@@ -17,7 +17,7 @@ typedef PickRecording = Future<Uint8List?> Function();
 
 Future<Uint8List?> _pickWav() async {
   const wav = XTypeGroup(label: 'WAV', extensions: ['wav']);
-  final picked = await openFile(acceptedTypeGroups: const [wav]);
+  final XFile? picked = await openFile(acceptedTypeGroups: const [wav]);
   return picked?.readAsBytes();
 }
 
@@ -81,7 +81,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
   @override
   void initState() {
     super.initState();
-    final sending = _sending[widget.feeder];
+    final Future<FeederReply>? sending = _sending[widget.feeder];
     if (sending == null) {
       unawaited(_read());
     } else {
@@ -103,7 +103,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
   }
 
   Future<void> _read() async {
-    final reply = await widget.feeder.ask(const FeederRequest.getCall());
+    final FeederReply reply = await widget.feeder.ask(const FeederRequest.getCall());
     if (!mounted) return;
     setState(() {
       _reading = false;
@@ -123,7 +123,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
       _reading = true;
     });
     final deadline = _Deadline(MealCallScreen.reachWait);
-    final read = await _answeredRead(deadline);
+    final FeederReply? read = await _answeredRead(deadline);
     deadline.cancel();
     if (!mounted) return;
 
@@ -143,7 +143,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
       _busy = true;
       _problem = null;
     });
-    final reply = await widget.feeder.ask(request);
+    final FeederReply reply = await widget.feeder.ask(request);
     if (!mounted) return;
     await _settle(reply);
   }
@@ -192,7 +192,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
     });
     if (picked == null) return;
 
-    final reply = await _sendOnce(picked);
+    final FeederReply? reply = await _sendOnce(picked);
     if (!mounted) return;
     if (reply == null) {
       setState(() {
@@ -212,20 +212,20 @@ class _MealCallScreenState extends State<MealCallScreen> {
   /// belongs to this screen only. A feed's path never waits, and an upload that
   /// may have started is never sent again.
   Future<FeederReply?> _sendOnce(Uint8List wav) async {
-    final feeder = widget.feeder;
+    final FeederController feeder = widget.feeder;
     final deadline = _Deadline(MealCallScreen.reachWait);
     try {
       while (true) {
-        final read = await _answeredRead(deadline);
+        final FeederReply? read = await _answeredRead(deadline);
         if (read == null || !mounted) return null;
         setState(() {
           _reaching = false;
           if (read is FeederReply_Call) _call = read.call;
         });
 
-        final sending = feeder.ask(FeederRequest.uploadCall(wav: wav));
+        final Future<FeederReply> sending = feeder.ask(FeederRequest.uploadCall(wav: wav));
         _sending[feeder] = sending;
-        final reply = await sending;
+        final FeederReply reply = await sending;
         _sending[feeder] = null;
 
         // Only "not sent" means none of it went out, so only that waits.
@@ -241,10 +241,10 @@ class _MealCallScreenState extends State<MealCallScreen> {
   /// The first read the feeder answers, waiting out a lost session; `null` once
   /// `deadline` passes or the screen goes.
   Future<FeederReply?> _answeredRead(_Deadline deadline) async {
-    final feeder = widget.feeder;
+    final FeederController feeder = widget.feeder;
     while (!deadline.over) {
       if (feeder.connection == Connection.online) {
-        final read = await Future.any<FeederReply?>([
+        final FeederReply? read = await Future.any<FeederReply?>([
           feeder.ask(const FeederRequest.getCall()),
           deadline.done.then((_) => null),
         ]);
@@ -261,8 +261,8 @@ class _MealCallScreenState extends State<MealCallScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-    final (words, stored) = switch (_call?.clip) {
+    final ThemeTokens c = context.colors;
+    final (String words, bool stored) = switch (_call?.clip) {
       CallClip_Stored() => ('Stored: ${((_call?.ms ?? 0) / 1000).toStringAsFixed(1)} s a play', true),
       CallClip_Receiving() => ('An upload did not finish', false),
       CallClip_None() => ('No recording stored', false),

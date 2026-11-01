@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'package:wellfed/platform/feeder_ports.dart';
 import 'package:wellfed/src/rust/api/error.dart';
@@ -155,7 +156,7 @@ class FeederController extends ChangeNotifier {
   /// Feed `portions` once. The feeder's answer and the feed's end arrive
   /// through the session.
   void feedNow(int portions) {
-    final session = _session;
+    final FeederSession? session = _session;
     if (session == null || feed.active) return;
     _setFeed(FeedState(FeedPhase.sending, portions: portions, sentAt: DateTime.now()));
     try {
@@ -169,9 +170,9 @@ class FeederController extends ChangeNotifier {
   /// Ask the feeder to stop the running feed. This never says it stopped: only
   /// the feed's end does, and a request that can't go out says so.
   void cancelFeed() {
-    final running = feed.feed;
+    final int? running = feed.feed;
     if (running == null || feed.phase != FeedPhase.running) return;
-    final session = _session;
+    final FeederSession? session = _session;
     var sent = session != null;
     try {
       session?.cancelFeed(feed: running);
@@ -200,7 +201,7 @@ class FeederController extends ChangeNotifier {
 
   /// A client by its fingerprint, as events name it.
   String clientName(String fingerprint) {
-    for (final client in clients) {
+    for (final ClientView client in clients) {
       if (client.fingerprint == fingerprint) {
         return client.you ? 'This phone' : client.label;
       }
@@ -210,7 +211,7 @@ class FeederController extends ChangeNotifier {
 
   /// Read who the feeder lists.
   Future<void> loadClients() async {
-    final reply = await ask(const FeederRequest.listClients());
+    final FeederReply reply = await ask(const FeederRequest.listClients());
     if (reply is FeederReply_Clients) {
       clients = reply.clients;
       _notify();
@@ -223,22 +224,22 @@ class FeederController extends ChangeNotifier {
   /// One request to the feeder. A write goes out once and is never sent
   /// again; the reply says how it ended, an unknown end included.
   Future<FeederReply> ask(FeederRequest request) async {
-    final session = _session;
+    final FeederSession? session = _session;
     if (session == null) return const FeederReply.notSent();
     return session.ask(request: request);
   }
 
   Future<void> _serve() async {
-    var retry = _retryFirst;
+    Duration retry = _retryFirst;
     while (!_disposed) {
-      final address = await _address();
+      final String? address = await _address();
       if (_disposed) return;
       if (address == null) {
         error = ErrorKind.connect;
         _set(Connection.offline);
       } else {
         _set(Connection.connecting);
-        final opened = await _run(address);
+        final bool opened = await _run(address);
         if (opened) retry = _retryFirst;
       }
       if (_disposed) return;
@@ -270,7 +271,7 @@ class FeederController extends ChangeNotifier {
     _fresh = false;
 
     var opened = false;
-    await for (final update in session.run()) {
+    await for (final SessionUpdate update in session.run()) {
       if (_disposed) {
         session.close();
         break;
@@ -358,12 +359,12 @@ class FeederController extends ChangeNotifier {
   /// unanswered feed has none, and the next end may be a meal or another
   /// phone's. It replaces a lost feed too, since it is what really happened.
   void _feedEnded(FeedResult result) {
-    final open = feed.phase == FeedPhase.running || feed.phase == FeedPhase.lost;
+    final bool open = feed.phase == FeedPhase.running || feed.phase == FeedPhase.lost;
     if (!open || feed.feed != result.feed) return;
 
     // The feeder's record says when, if its clock can be trusted. A lost feed's
     // end may be old, so the phone's clock can't stand in for that one.
-    final recorded = (card?.clockSet ?? false) ? result.atMs : null;
+    final PlatformInt64? recorded = (card?.clockSet ?? false) ? result.atMs : null;
     _setFeed(
       FeedState(
         FeedPhase.ended,
