@@ -16,7 +16,7 @@ src/web/
   eslint.config.js     the lint rules below
 ```
 
-The bench keeps its own stack: it is a dev tool that never ships to owners, and shares only the tokens and components. The tokens come from one file, `assets/brand/tokens.json`, which the Flutter theme reads too, so the app and the web can't drift apart.
+The tokens come from one file, `assets/brand/tokens.json`, which the Flutter theme reads too, so the app and the web can't drift apart.
 
 ## Rules
 

@@ -81,7 +81,7 @@ Run the bench from the repository root, or pass `--root`. A job reads the paths 
 
 ### The crates
 
-The bench is six crates with one-way dependencies:
+The bench is five crates with one-way dependencies:
 
 | Crate | What it does |
 | --- | --- |

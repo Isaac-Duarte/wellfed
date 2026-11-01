@@ -157,9 +157,10 @@ Procedure, with the owner present:
 1. Check the prerequisites: the transient check passes (`wellfed-bench transients`), and the current channel reads apart from the battery channel.
 2. Empty the hopper, clear the outlet, keep hands away. The owner can cut USB power at any moment.
 3. Install the frozen review with `--attended-motion` and a short `--boot-seconds` (10). Power off right after the install.
-4. Load a dashboard script anchored on `PLMOT1 armed`, with a countdown to the pulse at 60 s.
-5. Cold boot with a 120 s capture. Observe the motion and record its direction and size.
-6. Reinstall a non-motion image before anything else.
+4. Cold boot with a 120 s capture.
+5. When `PLMOT1 armed` appears on the console, the pulse is 60 s away. Start a countdown at once with `wellfed-bench note timer pulse --in 60s --expect "PLMOT1 pulse"`. It starts when you run it, so the pulse comes slightly before it ends.
+6. Observe the motion and record its direction and size.
+7. Reinstall a non-motion image before anything else.
 
 You should see one `pulse` record with `on_ms` about 100 and `stopped=1` after it, the motor moving only once, and no `error`.
 
