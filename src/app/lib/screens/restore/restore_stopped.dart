@@ -6,17 +6,19 @@ import 'package:wellfed/state/restore/restore.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/layout.dart';
 
-class RestoreUncertain extends StatefulWidget {
-  const RestoreUncertain(this.flow, {super.key});
+class RestoreUncertainPage extends StatefulWidget {
+  const RestoreUncertainPage(this.flow, this.state, {super.key});
 
   final RestoreFlow flow;
+  final RestoreUncertain state;
 
   @override
-  State<RestoreUncertain> createState() => _UncertainState();
+  State<RestoreUncertainPage> createState() => _UncertainState();
 }
 
-class _UncertainState extends State<RestoreUncertain> {
+class _UncertainState extends State<RestoreUncertainPage> {
   RestoreFlow get flow => widget.flow;
+  RestoreUncertain get state => widget.state;
 
   @override
   void initState() {
@@ -33,7 +35,7 @@ class _UncertainState extends State<RestoreUncertain> {
   @override
   Widget build(BuildContext context) {
     final String name = flow.feederName;
-    final (String title, String body) = switch (flow.look) {
+    final (String title, String body) = switch (state.look) {
       RestoreLook.looking => ("We can't tell if it went through", _why()),
       RestoreLook.wellfed => (
         '$name is still running Wellfed',
@@ -66,7 +68,7 @@ class _UncertainState extends State<RestoreUncertain> {
       title: title,
       body: body,
       content: [
-        switch (flow.look) {
+        switch (state.look) {
           RestoreLook.looking => const Searching('Looking for it on your Wi-Fi and over Bluetooth…'),
           RestoreLook.wellfed || RestoreLook.sighted => const SizedBox.shrink(),
           RestoreLook.setup => const Notice(
@@ -85,18 +87,18 @@ class _UncertainState extends State<RestoreUncertain> {
                 'hold erases the identity your backup is filed under.',
           ),
         },
-        if (flow.detail case final detail?) ...[const SizedBox(height: Space.s3), RestoreSmall(detail)],
+        if (state.detail case final detail?) ...[const SizedBox(height: Space.s3), RestoreSmall(detail)],
       ],
       actions: [
-        if (flow.look == RestoreLook.wellfed) FilledButton(onPressed: flow.again, child: const Text('Restore again')),
-        if (flow.look == RestoreLook.setup)
+        if (state.look == RestoreLook.wellfed) FilledButton(onPressed: flow.again, child: const Text('Restore again')),
+        if (state.look == RestoreLook.setup)
           FilledButton(onPressed: () => context.push('/setup'), child: const Text('Set it up')),
-        RestoreClose(outlined: flow.look == RestoreLook.wellfed || flow.look == RestoreLook.setup),
+        RestoreClose(outlined: state.look == RestoreLook.wellfed || state.look == RestoreLook.setup),
       ],
     );
   }
 
-  String _why() => switch (flow.uncertain) {
+  String _why() => switch (state.why) {
     UncertainWhy.stopped =>
       'This was stopped as the firmware was starting to go across, or after it '
           'had. Nothing more is sent.',
@@ -109,22 +111,23 @@ class _UncertainState extends State<RestoreUncertain> {
   };
 }
 
-class RestoreStopped extends StatelessWidget {
-  const RestoreStopped(this.flow, {super.key});
+class RestoreStoppedPage extends StatelessWidget {
+  const RestoreStoppedPage(this.flow, this.state, {super.key});
 
   final RestoreFlow flow;
+  final RestoreStopped state;
 
   @override
   Widget build(BuildContext context) {
-    final (String title, String body) = _words(flow.stop, flow.feederName);
+    final (String title, String body) = _words(state.stop, flow.feederName);
     return StepScaffold(
       leading: Leading.none,
       title: title,
       body: body,
-      content: [if (flow.detail case final detail?) RestoreSmall(detail)],
+      content: [if (state.detail case final detail?) RestoreSmall(detail)],
       actions: [
-        if (flow.mayRetry) FilledButton(onPressed: flow.again, child: const Text('Try again')),
-        RestoreClose(outlined: flow.mayRetry),
+        if (state.mayRetry) FilledButton(onPressed: flow.again, child: const Text('Try again')),
+        RestoreClose(outlined: state.mayRetry),
       ],
     );
   }

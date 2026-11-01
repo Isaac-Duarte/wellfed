@@ -13,10 +13,11 @@ import 'package:wellfed/widgets/layout.dart';
 
 /// 2.9: why it stopped, what the feeder is left with, and what next. An
 /// uncertain install is listened for and never sent again.
-class InstallStopped extends StatelessWidget {
-  const InstallStopped({super.key, required this.flow});
+class InstallStoppedPage extends StatelessWidget {
+  const InstallStoppedPage({super.key, required this.flow, required this.state});
 
   final InstallFlow flow;
+  final InstallStopped state;
 
   /// The design's other ways an install stops, for the owner who meets one
   /// later. The one on the screen is not listed again.
@@ -35,8 +36,8 @@ class InstallStopped extends StatelessWidget {
   ];
 
   (String, String) _words(StopCase stop) => switch (stop) {
-    StopCase_Uncertain() => switch (flow.listening) {
-      Listening.stockStayed when flow.stop?.resume == Resume.fromStart => (
+    StopCase_Uncertain() => switch (state.listening) {
+      Listening.stockStayed when state.stop?.resume == Resume.fromStart => (
         "It didn't install",
         'The feeder came back on its original firmware, and nothing changed '
             'on it. You can start again.',
@@ -57,9 +58,9 @@ class InstallStopped extends StatelessWidget {
       ),
       Listening.failed => (
         "We can't listen for the feeder",
-        flow.listenerDetail ?? 'Something on this phone stopped it.',
+        state.listenerDetail ?? 'Something on this phone stopped it.',
       ),
-      _ when flow.listeningForEarlier => (
+      _ when state.listeningForEarlier => (
         'Waiting to hear from the feeder',
         'This phone never heard how an earlier install ended, even if you have '
             'put the original firmware back since. Leave the feeder plugged in. '
@@ -259,12 +260,12 @@ class InstallStopped extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final InstallEnd_Stopped? stop = flow.stop;
+    final InstallEnd_Stopped? stop = state.stop;
     if (stop == null) return const SizedBox.shrink();
     final uncertain = stop.case_ is StopCase_Uncertain;
     final (String title, String body) = _words(stop.case_);
-    final bool listening = uncertain && flow.listening == Listening.running;
-    final int minutes = flow.listened.inMinutes;
+    final bool listening = uncertain && state.listening == Listening.running;
+    final int minutes = state.listened.inMinutes;
     final List<(String, String)> others = [
       for (final other in _others)
         if (other.$1 != title) other,
@@ -291,8 +292,8 @@ class InstallStopped extends StatelessWidget {
             '${flow.listenWait.inMinutes} min',
           ),
           const SizedBox(height: Space.s2),
-          Bar(value: flow.listenWait.inSeconds == 0 ? 0 : flow.listened.inSeconds / flow.listenWait.inSeconds),
-          if (flow.stockSeen) ...[
+          Bar(value: flow.listenWait.inSeconds == 0 ? 0 : state.listened.inSeconds / flow.listenWait.inSeconds),
+          if (state.stockSeen) ...[
             const SizedBox(height: Space.s3),
             const Notice(
               tone: Tone.neutral,
@@ -300,7 +301,7 @@ class InstallStopped extends StatelessWidget {
               text: 'Wellfed is making sure before it asks again.',
             ),
           ],
-          if (flow.setupSeen) ...[
+          if (state.setupSeen) ...[
             const SizedBox(height: Space.s3),
             const Notice(
               tone: Tone.neutral,
@@ -314,16 +315,16 @@ class InstallStopped extends StatelessWidget {
           ],
           const SizedBox(height: Space.s5),
         ],
-        if (flow.bluetoothRefused) ...[const InstallBluetoothRefused(), const SizedBox(height: Space.s4)],
+        if (state.bluetoothRefused) ...[const InstallBluetoothRefused(), const SizedBox(height: Space.s4)],
         ..._nextSteps(context, stop),
         if (flow.mayForget &&
-            flow.pending == PendingInstall.ledgerDamaged &&
+            state.pending == PendingInstall.ledgerDamaged &&
             stop.case_ is! StopCase_LedgerDamaged) ...[
           const SizedBox(height: Space.s2),
           InstallSetAsideLedger(flow: flow),
         ],
-        if (flow.forgetOffered) ...[const SizedBox(height: Space.s2), InstallForgetInstall(flow: flow)],
-        if (flow.repairFailed case final failed?) ...[
+        if (flow.forgetOffered) ...[const SizedBox(height: Space.s2), InstallForgetInstallPage(flow: flow)],
+        if (state.repairFailed case final failed?) ...[
           const SizedBox(height: Space.s2),
           Notice(tone: Tone.fault, lead: "That didn't work.", text: failed),
         ],
@@ -351,7 +352,7 @@ class InstallStopped extends StatelessWidget {
     Widget home() => TextButton(onPressed: () => context.go('/'), child: const Text('Go to Home'));
 
     return switch (stop.case_) {
-      StopCase_Uncertain() => switch (flow.listening) {
+      StopCase_Uncertain() => switch (state.listening) {
         Listening.running => const [],
         Listening.stockStayed when stop.resume == Resume.fromStart => [
           primary('Start again', () => unawaited(flow.again())),

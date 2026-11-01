@@ -35,7 +35,9 @@ class PairingView extends StatelessWidget {
       ),
       final PairingCode code => _Code(state: code, ble: ble, onNewCode: onNewCode),
       final PairingJoining joining =>
-        ble ? _Joining(state: joining) : const _Waiting(title: 'Code accepted', body: 'Saving the feeder on this phone.'),
+        ble
+            ? _Joining(state: joining)
+            : const _Waiting(title: 'Code accepted', body: 'Saving the feeder on this phone.'),
       final PairingDone done => _Ready(state: done),
       final PairingFailed failed => _Failed(state: failed, ble: ble, onRetry: onRetry),
     },

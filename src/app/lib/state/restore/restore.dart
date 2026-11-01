@@ -5,48 +5,12 @@ import 'package:flutter/foundation.dart';
 import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/restore.dart';
-import 'package:wellfed/state/install/install.dart' show CheckState;
+import 'package:wellfed/state/install/install_state.dart' show CheckState;
+import 'package:wellfed/state/restore/restore_state.dart';
 
-/// Which screen a restore shows. The steps themselves are Rust's: this follows
-/// what the run reports.
-enum RestoreStage {
-  loading,
+export 'package:wellfed/state/restore/restore_state.dart';
 
-  /// No copy of stock to put back: pick one from a file.
-  noBackup,
-
-  /// The facts, the warnings and the owner's word.
-  before,
-
-  /// The press, the sending, the restart.
-  running,
-
-  /// Bank 1 is activated: the feeder restarts into the vendor's firmware.
-  done,
-
-  /// The feeder stopped answering once the offer was out.
-  uncertain,
-  stopped,
-}
-
-/// What became of a feeder after an uncertain end.
-enum RestoreLook {
-  looking,
-
-  /// A session read it idle: Wellfed runs, as it did.
-  wellfed,
-
-  /// Seen on the network, but never read idle: it may be mid-install, about
-  /// to restart, or a stale sighting.
-  sighted,
-
-  /// A feeder nearby advertises Bluetooth setup. Nothing says which: it may
-  /// be this one with its people cleared, or another.
-  setup,
-
-  /// Neither in time: probably on the original firmware.
-  nothing,
-}
+enum _Stage { loading, noBackup, before, running, done, uncertain, stopped }
 
 /// One restore of a feeder's original firmware.
 class RestoreFlow extends ChangeNotifier {
@@ -57,43 +21,30 @@ class RestoreFlow extends ChangeNotifier {
   final String feederName;
   final String? address;
 
-  RestoreStage stage = RestoreStage.loading;
+  /// How the restore stands.
+  RestoreState get state => _state;
+  RestoreState _state = const RestoreLoading();
+
+  // The working fields of the run, which [_changed] publishes as [state].
+  _Stage _stage = _Stage.loading;
   String? _dataDir;
-
-  // The copy of stock.
   String? _backup;
-  String? version;
-  DateTime? backupDate;
-
-  /// The owner picked this copy; it was not kept during the install.
-  bool picked = false;
-
-  /// Why the last copy looked at is not stock.
-  String? notStock;
-
-  bool understood = false;
-
-  // The run.
-  /// Waiting on the owner at the panel: Dispense enrolls the restore's key.
-  bool pressDispense = false;
-  CheckState pressing = CheckState.running;
-  CheckState sending = CheckState.waiting;
-  double written = 0;
-  CheckState restarting = CheckState.waiting;
-  bool sessionDropped = false;
-
-  /// Android refused the foreground service, so only staying on screen keeps
-  /// the run alive.
-  bool holdRefused = false;
-
-  RestoreStop? stop;
-
-  /// Why the end is not known, at [RestoreStage.uncertain].
-  UncertainWhy? uncertain;
-  String? detail;
-
-  /// What the look after an uncertain end has found.
-  RestoreLook look = RestoreLook.looking;
+  String? _version;
+  DateTime? _backupDate;
+  bool _picked = false;
+  String? _notStock;
+  bool _understood = false;
+  bool _pressDispense = false;
+  CheckState _pressing = CheckState.running;
+  CheckState _sending = CheckState.waiting;
+  double _written = 0;
+  CheckState _restarting = CheckState.waiting;
+  bool _sessionDropped = false;
+  bool _holdRefused = false;
+  RestoreStop? _stop;
+  UncertainWhy? _uncertain;
+  String? _detail;
+  RestoreLook _look = RestoreLook.looking;
   Timer? _lookEnd;
   Timer? _lookAgain;
   StreamSubscription<void>? _setup;
@@ -101,6 +52,8 @@ class RestoreFlow extends ChangeNotifier {
 
   /// How long a feeder has to come back: a restart, then its join.
   static const lookFor = Duration(minutes: 3);
+
+  /// Between looks while a feeder may still be restarting.
   static const _lookEvery = Duration(seconds: 5);
 
   RestoreRun? _run;
@@ -108,37 +61,14 @@ class RestoreFlow extends ChangeNotifier {
   bool _holding = false;
   bool _disposed = false;
 
-  /// The offer may be out: leaving would end the run at nothing the owner
-  /// could act on, so the screen offers no way back until it ends.
-  bool get committed => stage == RestoreStage.running && sending != CheckState.waiting;
-
-  /// A new run may go again: nothing was offered.
-  bool get mayRetry => switch (stop) {
-    RestoreStop.noPress ||
-    RestoreStop.enrollmentUnknown ||
-    RestoreStop.keyRefused ||
-    RestoreStop.keyGone ||
-    RestoreStop.installRunning ||
-    RestoreStop.cancelUnknown ||
-    RestoreStop.notAnswering ||
-    RestoreStop.cancelled => true,
-    _ => false,
-  };
-
-  /// What the run waits for now, for a long wait.
-  String get waitWords => sending == CheckState.waiting
-      ? 'Waiting for the feeder to answer on your Wi-Fi.'
-      : 'Waiting for the feeder. It restarts on the way, which can take a few '
-            'minutes.';
-
   Future<void> load() async {
     final String dataDir = await _ports.dataDir();
     _dataDir = dataDir;
     final String? kept = _ports.keptBackup(dataDir, identity);
     if (kept == null) {
-      stage = RestoreStage.noBackup;
+      _stage = _Stage.noBackup;
     } else {
-      await _look(kept, isPicked: false);
+      await _lookAt(kept, isPicked: false);
     }
     _changed();
   }
@@ -147,30 +77,30 @@ class RestoreFlow extends ChangeNotifier {
   Future<void> pickFile() async {
     final String? path = await _ports.pickBackup();
     if (path == null) return;
-    await _look(path, isPicked: true);
+    await _lookAt(path, isPicked: true);
     _changed();
   }
 
-  Future<void> _look(String path, {required bool isPicked}) async {
+  Future<void> _lookAt(String path, {required bool isPicked}) async {
     switch (_ports.checkBackup(path)) {
       case BackupCheck_Ready(version: final String ready):
         _backup = path;
-        version = ready;
-        backupDate = await _ports.backupDate(path);
-        picked = isPicked;
-        notStock = null;
-        stage = RestoreStage.before;
+        _version = ready;
+        _backupDate = await _ports.backupDate(path);
+        _picked = isPicked;
+        _notStock = null;
+        _stage = _Stage.before;
       case BackupCheck_Missing():
-        notStock = null;
-        stage = RestoreStage.noBackup;
+        _notStock = null;
+        _stage = _Stage.noBackup;
       case BackupCheck_NotStock(detail: final String why):
-        notStock = why;
-        stage = RestoreStage.noBackup;
+        _notStock = why;
+        _stage = _Stage.noBackup;
     }
   }
 
   void setUnderstood(bool value) {
-    understood = value;
+    _understood = value;
     _changed();
   }
 
@@ -178,23 +108,23 @@ class RestoreFlow extends ChangeNotifier {
   Future<void> start() async {
     final (String? dataDir, String? backup) = (_dataDir, _backup);
     // `_run` is set only after the hold below, so the stage guards a second tap.
-    if (!understood || stage != RestoreStage.before || dataDir == null || backup == null) {
+    if (!_understood || _stage != _Stage.before || dataDir == null || backup == null) {
       return;
     }
-    pressDispense = false;
-    pressing = CheckState.running;
-    sending = CheckState.waiting;
-    restarting = CheckState.waiting;
-    written = 0;
-    sessionDropped = false;
-    stop = null;
-    uncertain = null;
-    detail = null;
-    stage = RestoreStage.running;
+    _pressDispense = false;
+    _pressing = CheckState.running;
+    _sending = CheckState.waiting;
+    _restarting = CheckState.waiting;
+    _written = 0;
+    _sessionDropped = false;
+    _stop = null;
+    _uncertain = null;
+    _detail = null;
+    _stage = _Stage.running;
     _changed();
 
     _holding = true;
-    holdRefused = !await _ports.holdProcess('Putting the original firmware back on $feederName');
+    _holdRefused = !await _ports.holdProcess('Putting the original firmware back on $feederName');
     if (_disposed) {
       // The screen went away during the wait, and its release ran before this
       // hold took effect.
@@ -213,8 +143,8 @@ class RestoreFlow extends ChangeNotifier {
   /// Back at the facts after a stop that left the way open. The owner gives
   /// their word again.
   void again() {
-    understood = false;
-    stage = RestoreStage.before;
+    _understood = false;
+    _stage = _Stage.before;
     _changed();
   }
 
@@ -233,19 +163,19 @@ class RestoreFlow extends ChangeNotifier {
   void _event(InstallEvent event) {
     switch (event) {
       case InstallEvent_PressDispense():
-        pressDispense = true;
+        _pressDispense = true;
       case InstallEvent_Promoting():
-        pressDispense = false;
-        pressing = CheckState.done;
-        sending = CheckState.running;
+        _pressDispense = false;
+        _pressing = CheckState.done;
+        _sending = CheckState.running;
       case InstallEvent_Written(:final written, :final length):
-        this.written = length == 0 ? 0 : written / length;
-        sessionDropped = false;
+        _written = length == 0 ? 0 : written / length;
+        _sessionDropped = false;
       case InstallEvent_SessionDropped():
-        sessionDropped = true;
+        _sessionDropped = true;
       case InstallEvent_Activated():
-        sending = CheckState.done;
-        restarting = CheckState.running;
+        _sending = CheckState.done;
+        _restarting = CheckState.running;
       default:
         break;
     }
@@ -264,15 +194,15 @@ class RestoreFlow extends ChangeNotifier {
   void _ended(RestoreEnd end) {
     switch (end) {
       case RestoreEnd_Activated():
-        stage = RestoreStage.done;
+        _stage = _Stage.done;
       case RestoreEnd_Uncertain(:final why, detail: final words):
-        uncertain = why;
-        detail = words;
-        stage = RestoreStage.uncertain;
+        _uncertain = why;
+        _detail = words;
+        _stage = _Stage.uncertain;
       case RestoreEnd_Stopped(:final case_, detail: final words):
-        stop = case_;
-        detail = words;
-        stage = RestoreStage.stopped;
+        _stop = case_;
+        _detail = words;
+        _stage = _Stage.stopped;
     }
     _finish();
   }
@@ -280,10 +210,10 @@ class RestoreFlow extends ChangeNotifier {
   /// The stream closed with no end: a run that says nothing more has not
   /// said how it ended, so after an offer it is uncertain.
   void _closed() {
-    if (stage != RestoreStage.running) return;
-    stage = sending == CheckState.waiting ? RestoreStage.stopped : RestoreStage.uncertain;
-    if (stage == RestoreStage.stopped) stop = RestoreStop.other;
-    if (stage == RestoreStage.uncertain) uncertain = UncertainWhy.failed;
+    if (_stage != _Stage.running) return;
+    _stage = _sending == CheckState.waiting ? _Stage.stopped : _Stage.uncertain;
+    if (_stage == _Stage.stopped) _stop = RestoreStop.other;
+    if (_stage == _Stage.uncertain) _uncertain = UncertainWhy.failed;
     _finish();
     _changed();
   }
@@ -310,7 +240,7 @@ class RestoreFlow extends ChangeNotifier {
   /// setup with them cleared; stock does neither. This reads and listens, and
   /// offers the feeder nothing.
   void startLook() {
-    look = RestoreLook.looking;
+    _look = RestoreLook.looking;
     _sighted = false;
     _lookEnd = Timer(lookFor, () => _looked(_sighted ? RestoreLook.sighted : RestoreLook.nothing));
     _setup = _ports.setupHeard().listen((_) => _looked(RestoreLook.setup), onError: (Object _) {});
@@ -320,11 +250,11 @@ class RestoreFlow extends ChangeNotifier {
   Future<void> _locate() async {
     final String hex = identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
     final String? found = await _ports.locate(hex);
-    if (look != RestoreLook.looking || _lookEnd == null) return;
+    if (_look != RestoreLook.looking || _lookEnd == null) return;
     if (found != null) {
       _sighted = true;
       final RestoreSeen seen = await _ports.readFeeder(identity, found);
-      if (look != RestoreLook.looking || _lookEnd == null) return;
+      if (_look != RestoreLook.looking || _lookEnd == null) return;
       if (seen == RestoreSeen.idle) {
         _looked(RestoreLook.wellfed);
         return;
@@ -335,7 +265,7 @@ class RestoreFlow extends ChangeNotifier {
 
   void _looked(RestoreLook found) {
     stopLook();
-    look = found;
+    _look = found;
     _changed();
   }
 
@@ -349,8 +279,32 @@ class RestoreFlow extends ChangeNotifier {
   }
 
   void _changed() {
+    _state = _snapshot();
     if (!_disposed) notifyListeners();
   }
+
+  RestoreState _snapshot() => switch (_stage) {
+    _Stage.loading => const RestoreLoading(),
+    _Stage.noBackup => RestoreNoBackup(notStock: _notStock),
+    _Stage.before => RestoreBefore(
+      version: _version,
+      backupDate: _backupDate,
+      picked: _picked,
+      understood: _understood,
+    ),
+    _Stage.running => RestoreRunning(
+      pressDispense: _pressDispense,
+      pressing: _pressing,
+      sending: _sending,
+      written: _written,
+      restarting: _restarting,
+      sessionDropped: _sessionDropped,
+      holdRefused: _holdRefused,
+    ),
+    _Stage.done => RestoreDone(version: _version),
+    _Stage.uncertain => RestoreUncertain(why: _uncertain ?? UncertainWhy.failed, detail: _detail, look: _look),
+    _Stage.stopped => RestoreStopped(stop: _stop ?? RestoreStop.other, detail: _detail),
+  };
 
   @override
   void dispose() {

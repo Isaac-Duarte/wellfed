@@ -72,16 +72,16 @@ class _InstallScreenState extends State<InstallScreen> {
       onPopInvokedWithResult: (popped, _) {
         if (!popped) unawaited(_leave());
       },
-      child: switch (_flow.stage) {
-        InstallStage.loading => const Scaffold(body: Center(child: CircularProgressIndicator())),
-        InstallStage.before => InstallBefore(flow: _flow),
-        InstallStage.naming => NameStep(
+      child: switch (_flow.state) {
+        InstallLoading() => const Scaffold(body: Center(child: CircularProgressIndicator())),
+        final InstallBefore state => InstallBeforePage(flow: _flow, state: state),
+        InstallNaming() => NameStep(
           initial: widget.book.label,
           action: 'Continue',
           onBack: () => _flow.back(InstallStage.before),
           onDone: (label, _) => _flow.setLabel(label),
         ),
-        InstallStage.wifi => WifiStep(
+        InstallWifi() => WifiStep(
           initial: null,
           stepLabel: 'Steps 1–2 of 5',
           progress: 0.1,
@@ -89,15 +89,15 @@ class _InstallScreenState extends State<InstallScreen> {
           onBack: () => _flow.back(InstallStage.before),
           onDone: _flow.setHome,
         ),
-        InstallStage.reset => InstallReset(flow: _flow),
-        InstallStage.handover => InstallHandover(flow: _flow, onLeave: _leave),
-        InstallStage.confirm => InstallConfirm(flow: _flow, onLeave: _leave),
-        InstallStage.which => InstallWhichFeeder(flow: _flow),
-        InstallStage.sending => InstallSending(flow: _flow),
-        InstallStage.claim => InstallClaim(flow: _flow),
-        InstallStage.finishing => InstallFinishing(flow: _flow),
-        InstallStage.done => InstallDone(flow: _flow),
-        InstallStage.stopped => InstallStopped(flow: _flow),
+        final InstallReset state => InstallResetPage(flow: _flow, state: state),
+        final InstallHandover state => InstallHandoverPage(flow: _flow, state: state, onLeave: _leave),
+        final InstallConfirm state => InstallConfirmPage(flow: _flow, state: state, onLeave: _leave),
+        InstallWhich() => InstallWhichFeederPage(flow: _flow),
+        final InstallSending state => InstallSendingPage(flow: _flow, state: state),
+        final InstallClaim state => InstallClaimPage(flow: _flow, state: state),
+        final InstallFinishing state => InstallFinishingPage(flow: _flow, state: state),
+        final InstallDone state => InstallDonePage(flow: _flow, state: state),
+        final InstallStopped state => InstallStoppedPage(flow: _flow, state: state),
       },
     ),
   );

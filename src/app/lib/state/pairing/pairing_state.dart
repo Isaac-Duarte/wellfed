@@ -97,13 +97,7 @@ final class PairingDone extends PairingState {
 /// It stopped, as [failure] says.
 final class PairingFailed extends PairingState {
   /// A pairing that stopped.
-  const PairingFailed({
-    required this.failure,
-    required super.feederName,
-    super.network,
-    this.message,
-    this.refusal,
-  });
+  const PairingFailed({required this.failure, required super.feederName, super.network, this.message, this.refusal});
 
   /// Why it stopped.
   final PairingFailure failure;

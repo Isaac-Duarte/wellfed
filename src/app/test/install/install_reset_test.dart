@@ -101,10 +101,10 @@ void main() {
     final ports = FakeInstallPorts(pendingInstall: PendingInstall.paired);
     final flow = InstallFlow(FakeBook(), ports);
     await flow.load();
-    expect(flow.stage, InstallStage.before);
+    expect(flow.state, isA<InstallBefore>());
     expect(flow.mayStart, isTrue);
-    expect(flow.pending, PendingInstall.paired);
-    expect(flow.phoneIp, '192.168.1.23');
+    expect(flow.state.pending, PendingInstall.paired);
+    expect(flow.state.phoneIp, '192.168.1.23');
     flow.dispose();
   });
 
@@ -117,7 +117,7 @@ void main() {
     flow.dispose();
     expect(run.stops, 1);
     expect(ports.releases, 1);
-    expect(flow.stage, InstallStage.handover);
+    expect(flow.state, isA<InstallHandover>());
   });
 
   group('2.2 and 2.3 the reset route', () {

@@ -117,7 +117,7 @@ void main() {
 
       testWidgets('nothing starts until the owner says', (tester) async {
         final (FakeInstallPorts ports, InstallFlow flow) = await asked(tester);
-        expect(flow.stage, InstallStage.which);
+        expect(flow.state, isA<InstallWhich>());
         expect(ports.runs, isEmpty);
       });
 
@@ -147,13 +147,13 @@ void main() {
         await tester.pump();
 
         await flow.pickFeeder(null);
-        expect(flow.stage, InstallStage.wifi);
+        expect(flow.state, isA<InstallWifi>());
       });
 
       testWidgets('another feeder names none, and asks for the Wi-Fi', (tester) async {
         final (FakeInstallPorts ports, InstallFlow flow) = await asked(tester);
         await flow.pickFeeder(null);
-        expect(flow.stage, InstallStage.wifi);
+        expect(flow.state, isA<InstallWifi>());
         expect(ports.runs, isEmpty);
 
         flow.setHome(const WifiCredentials(ssid: 'Maple St', passphrase: 'correcthorse'));

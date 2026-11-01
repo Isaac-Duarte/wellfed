@@ -49,15 +49,15 @@ class RestoreView extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: flow,
     builder: (context, _) => PopScope(
-      canPop: !flow.committed,
-      child: switch (flow.stage) {
-        RestoreStage.loading => const Scaffold(body: SizedBox.shrink()),
-        RestoreStage.noBackup => _NoBackup(flow),
-        RestoreStage.before => _Before(flow),
-        RestoreStage.running => _Running(flow),
-        RestoreStage.done => _Done(flow),
-        RestoreStage.uncertain => RestoreUncertain(flow),
-        RestoreStage.stopped => RestoreStopped(flow),
+      canPop: !flow.state.committed,
+      child: switch (flow.state) {
+        RestoreLoading() => const Scaffold(body: SizedBox.shrink()),
+        final RestoreNoBackup state => _NoBackup(flow, state),
+        final RestoreBefore state => _Before(flow, state),
+        final RestoreRunning state => _Running(flow, state),
+        final RestoreDone state => _Done(flow, state),
+        final RestoreUncertain state => RestoreUncertainPage(flow, state),
+        final RestoreStopped state => RestoreStoppedPage(flow, state),
       },
     ),
   );
@@ -66,9 +66,10 @@ class RestoreView extends StatelessWidget {
 const _title = 'Restore original firmware';
 
 class _NoBackup extends StatelessWidget {
-  const _NoBackup(this.flow);
+  const _NoBackup(this.flow, this.state);
 
   final RestoreFlow flow;
+  final RestoreNoBackup state;
 
   @override
   Widget build(BuildContext context) => StepScaffold(
@@ -78,7 +79,7 @@ class _NoBackup extends StatelessWidget {
         "The copy of the vendor firmware made during install isn't on this "
         'phone. If you saved a copy when the install ended, pick that file.',
     content: [
-      if (flow.notStock != null)
+      if (state.notStock != null)
         const Notice(
           tone: Tone.fault,
           lead: "That isn't the original firmware.",
@@ -92,9 +93,10 @@ class _NoBackup extends StatelessWidget {
 }
 
 class _Before extends StatelessWidget {
-  const _Before(this.flow);
+  const _Before(this.flow, this.state);
 
   final RestoreFlow flow;
+  final RestoreBefore state;
 
   @override
   Widget build(BuildContext context) {
@@ -107,8 +109,8 @@ class _Before extends StatelessWidget {
           'from the backup made during install.',
       content: [
         FactList([
-          ('Backup', Text(_backupWords(flow))),
-          ('Version', Text('Vendor ${flow.version ?? ''}')),
+          ('Backup', Text(_backupWords(state))),
+          ('Version', Text('Vendor ${state.version ?? ''}')),
           ('Checked', Text('Matches the original', style: TextStyle(color: c.ok))),
         ]),
         const SizedBox(height: Space.s4),
@@ -124,7 +126,7 @@ class _Before extends StatelessWidget {
       ],
       actions: [
         CheckboxListTile(
-          value: flow.understood,
+          value: state.understood,
           onChanged: (value) => flow.setUnderstood(value ?? false),
           contentPadding: EdgeInsets.zero,
           controlAffinity: ListTileControlAffinity.leading,
@@ -132,16 +134,16 @@ class _Before extends StatelessWidget {
         ),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: c.fault, foregroundColor: c.background),
-          onPressed: flow.understood ? flow.start : null,
+          onPressed: state.understood ? flow.start : null,
           child: const Text(_title),
         ),
       ],
     );
   }
 
-  static String _backupWords(RestoreFlow flow) {
-    if (flow.picked) return 'From a picked file';
-    final DateTime? at = flow.backupDate;
+  static String _backupWords(RestoreBefore state) {
+    if (state.picked) return 'From a picked file';
+    final DateTime? at = state.backupDate;
     if (at == null) return 'On this phone';
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return '${at.day} ${months[at.month - 1]}, on this phone';
@@ -174,16 +176,17 @@ class _Warning extends StatelessWidget {
 
 /// 12.2's steps, for the way back.
 class _Running extends StatelessWidget {
-  const _Running(this.flow);
+  const _Running(this.flow, this.state);
 
   final RestoreFlow flow;
+  final RestoreRunning state;
 
   @override
   Widget build(BuildContext context) => StepScaffold(
     appBarTitle: 'Restoring ${flow.feederName}',
-    leading: flow.committed ? Leading.none : Leading.back,
+    leading: state.committed ? Leading.none : Leading.back,
     content: [
-      if (flow.pressDispense) ...[
+      if (state.pressDispense) ...[
         const Notice(
           tone: Tone.warning,
           lead: 'Press Dispense on the feeder, once.',
@@ -197,29 +200,29 @@ class _Running extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Line('Press Dispense on the feeder', flow.pressing),
-              _Line('Sending', flow.sending, fraction: flow.written),
-              _Line('Restart on the original firmware', flow.restarting),
+              _Line('Press Dispense on the feeder', state.pressing),
+              _Line('Sending', state.sending, fraction: state.written),
+              _Line('Restart on the original firmware', state.restarting),
             ],
           ),
         ),
       ),
       const SizedBox(height: Space.s4),
       Text(
-        flow.sessionDropped
+        state.sessionDropped
             ? 'The connection dropped. Trying to get it back. Keep the feeder '
                   'plugged in.'
             : 'Keep the feeder plugged in, and this phone on the same Wi-Fi. '
                   "Once this has started, there's no stopping it from here.",
         style: bodyStyle(context),
       ),
-      if (flow.holdRefused) ...[
+      if (state.holdRefused) ...[
         const SizedBox(height: Space.s4),
         const Notice(tone: Tone.warning, text: 'Keep this screen open: Android would not let this run behind.'),
       ],
       WaitWords(
-        flow.pressDispense ? null : flow.waitWords,
-        progress: (flow.pressing, flow.sending, flow.written, flow.restarting),
+        state.pressDispense ? null : state.waitWords,
+        progress: (state.pressing, state.sending, state.written, state.restarting),
       ),
     ],
   );
@@ -290,16 +293,17 @@ class _Line extends StatelessWidget {
 }
 
 class _Done extends StatelessWidget {
-  const _Done(this.flow);
+  const _Done(this.flow, this.state);
 
   final RestoreFlow flow;
+  final RestoreDone state;
 
   @override
   Widget build(BuildContext context) => StepScaffold(
     leading: Leading.none,
     title: 'The original firmware is going back',
     body:
-        '${flow.feederName} is restarting on vendor ${flow.version ?? ''}. '
+        '${flow.feederName} is restarting on vendor ${state.version ?? ''}. '
         "Wellfed can't talk to it any more. It still looks for this phone, and "
         'keeps trying forever. Hold Reset for about 5 seconds, then set it up '
         "in the vendor's app.",

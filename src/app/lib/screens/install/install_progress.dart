@@ -13,15 +13,16 @@ import 'package:wellfed/widgets/layout.dart';
 
 /// 2.3: this phone joins the feeder's network, sends the Wi-Fi once and comes
 /// back, then waits for the feeder to reach it.
-class InstallHandover extends StatelessWidget {
-  const InstallHandover({super.key, required this.flow, required this.onLeave});
+class InstallHandoverPage extends StatelessWidget {
+  const InstallHandoverPage({super.key, required this.flow, required this.state, required this.onLeave});
 
   final InstallFlow flow;
+  final InstallHandover state;
   final Future<void> Function() onLeave;
 
   @override
   Widget build(BuildContext context) {
-    final String? stateText = switch (flow.handover) {
+    final String? stateText = switch (state.handover) {
       Handover.starting => 'Getting ready…',
       Handover.join || Handover.joining => null,
       Handover.sending => 'Sending your Wi-Fi to the feeder…',
@@ -45,7 +46,7 @@ class InstallHandover extends StatelessWidget {
               'by could read it during those few seconds. The feeder also '
               'needs a 2.4 GHz Wi-Fi.',
         ),
-        if (flow.joinFailed) ...[
+        if (state.joinFailed) ...[
           const SizedBox(height: Space.s3),
           const Notice(
             tone: Tone.warning,
@@ -57,18 +58,18 @@ class InstallHandover extends StatelessWidget {
                 'again. If it never appears, hold Reset again.',
           ),
         ],
-        if (flow.restartAgain || flow.waitReason != null) ...[
+        if (state.restartAgain || state.waitReason != null) ...[
           const SizedBox(height: Space.s4),
-          _StillWaiting(flow: flow),
+          _StillWaiting(state: state),
         ] else if (stateText != null) ...[
           const SizedBox(height: Space.s4),
           Searching(stateText),
         ],
       ],
       actions: [
-        if (flow.handover == Handover.join || flow.handover == Handover.joining)
+        if (state.handover == Handover.join || state.handover == Handover.joining)
           FilledButton(
-            onPressed: flow.handover == Handover.join ? () => unawaited(flow.joinFeeder()) : null,
+            onPressed: state.handover == Handover.join ? () => unawaited(flow.joinFeeder()) : null,
             child: const Text("Join the feeder's network"),
           ),
       ],
@@ -78,13 +79,13 @@ class InstallHandover extends StatelessWidget {
 
 /// Why stock has not moved on, and the restart its lost reports need.
 class _StillWaiting extends StatelessWidget {
-  const _StillWaiting({required this.flow});
+  const _StillWaiting({required this.state});
 
-  final InstallFlow flow;
+  final InstallHandover state;
 
   @override
   Widget build(BuildContext context) {
-    final String text = switch (flow.waitReason) {
+    final String text = switch (state.waitReason) {
       WaitReason.notOnAdapter => 'A feeder connected, but it is on batteries. Plug it in.',
       WaitReason.noVersion || WaitReason.offline => 'A feeder is connecting…',
       _ => 'Waiting for the feeder to connect…',
@@ -92,7 +93,7 @@ class _StillWaiting extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (flow.restartAgain) ...[
+        if (state.restartAgain) ...[
           const Notice(
             tone: Tone.warning,
             lead: 'Restart the feeder once more:',
@@ -110,10 +111,11 @@ class _StillWaiting extends StatelessWidget {
 
 /// 2.4: trust on first use. The owner compares what connected with the
 /// label and the router's list before anything is sent to it.
-class InstallConfirm extends StatelessWidget {
-  const InstallConfirm({super.key, required this.flow, required this.onLeave});
+class InstallConfirmPage extends StatelessWidget {
+  const InstallConfirmPage({super.key, required this.flow, required this.state, required this.onLeave});
 
   final InstallFlow flow;
+  final InstallConfirm state;
   final Future<void> Function() onLeave;
 
   @override
@@ -131,8 +133,8 @@ class InstallConfirm extends StatelessWidget {
           "address with your router's list of devices.",
       content: [
         FactList([
-          ('Device ID', Text(flow.device ?? '', style: mono)),
-          ('Address', Text(flow.deviceAddress ?? '', style: mono)),
+          ('Device ID', Text(state.device ?? '', style: mono)),
+          ('Address', Text(state.deviceAddress ?? '', style: mono)),
         ]),
         const SizedBox(height: Space.s4),
         const InstallFact('PLAF103'),
@@ -173,16 +175,17 @@ class _FeederPage extends StatelessWidget {
 }
 
 /// 2.5: stock downloads the replacement from this phone.
-class InstallSending extends StatelessWidget {
-  const InstallSending({super.key, required this.flow});
+class InstallSendingPage extends StatelessWidget {
+  const InstallSendingPage({super.key, required this.flow, required this.state});
 
   final InstallFlow flow;
+  final InstallSending state;
 
   String _status() {
-    if (flow.restarting) return 'Restarting into Wellfed';
+    if (state.restarting) return 'Restarting into Wellfed';
     final Duration? left = flow.timeLeft;
-    if (left == null) return '${flow.percent}%';
-    return '${flow.percent}% · about ${left.inSeconds + 1} s left';
+    if (left == null) return '${state.percent}%';
+    return '${state.percent}% · about ${left.inSeconds + 1} s left';
   }
 
   @override
@@ -195,7 +198,7 @@ class InstallSending extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                flow.restarting ? 'The feeder is restarting' : 'Sending firmware',
+                state.restarting ? 'The feeder is restarting' : 'Sending firmware',
                 style: TextStyle(fontSize: 15, fontWeight: Fonts.semibold, color: c.text),
               ),
             ),
@@ -208,9 +211,9 @@ class InstallSending extends StatelessWidget {
           ],
         ),
         const SizedBox(height: Space.s2),
-        Bar(value: flow.restarting ? 1 : flow.percent / 100),
+        Bar(value: state.restarting ? 1 : state.percent / 100),
         const SizedBox(height: Space.s5),
-        if (flow.holdRefused) ...[
+        if (state.holdRefused) ...[
           const Notice(
             tone: Tone.fault,
             lead: "Android won't keep Wellfed running in the background.",
@@ -225,7 +228,7 @@ class InstallSending extends StatelessWidget {
               'This phone is serving the firmware, and closing the app stops '
               "it. Don't unplug the feeder.",
         ),
-        WaitWords(flow.waitWords, progress: flow.percent),
+        WaitWords(flow.waitWords, progress: state.percent),
       ],
     );
   }
@@ -234,10 +237,11 @@ class InstallSending extends StatelessWidget {
 /// 2.6: this phone becomes the replacement's owner. A consumer image waits
 /// on Bluetooth by itself; a bench image needs its recovery window opened.
 /// Either way the code is the feeder's proof, as in setup.
-class InstallClaim extends StatelessWidget {
-  const InstallClaim({super.key, required this.flow});
+class InstallClaimPage extends StatelessWidget {
+  const InstallClaimPage({super.key, required this.flow, required this.state});
 
   final InstallFlow flow;
+  final InstallClaim state;
 
   @override
   Widget build(BuildContext context) => StepScaffold(
@@ -246,12 +250,12 @@ class InstallClaim extends StatelessWidget {
     leading: Leading.none,
     title: 'Wellfed is running. Now claim it.',
     content: [
-      if (flow.windowAsked)
+      if (state.windowAsked)
         const NumberedSteps([
           'Hold the **Lock** button, then also the **Dispense** button, for 5 seconds. The lock light blinks fast.',
         ])
-      else if (flow.code.isEmpty) ...[
-        if (flow.settingUpAgain) ...[
+      else if (state.code.isEmpty) ...[
+        if (state.settingUpAgain) ...[
           const NumberedSteps([
             'If the lock light is on, hold **Lock** for 5 seconds to unlock the panel.',
             'Hold **Lock** and **Mic** together for 5 seconds.',
@@ -259,7 +263,7 @@ class InstallClaim extends StatelessWidget {
           ]),
           const SizedBox(height: Space.s4),
         ],
-        if (flow.setupHint && !flow.settingUpAgain) ...[
+        if (state.setupHint && !state.settingUpAgain) ...[
           const Notice(
             tone: Tone.warning,
             lead: 'Hold Lock + Mic for 5 s on the feeder.',
@@ -270,7 +274,7 @@ class InstallClaim extends StatelessWidget {
           const SizedBox(height: Space.s4),
         ],
         Searching(
-          flow.searchingBluetooth || flow.settingUpAgain
+          state.searchingBluetooth || state.settingUpAgain
               ? 'Looking for the feeder over Bluetooth…'
               : 'Looking for the feeder on your Wi-Fi…',
         ),
@@ -278,15 +282,15 @@ class InstallClaim extends StatelessWidget {
       ] else ...[
         Text('Press these buttons once each, in order:', style: bodyStyle(context)),
         const SizedBox(height: Space.s3),
-        CodeTiles(flow.code),
+        CodeTiles(state.code),
         const SizedBox(height: 18),
         const RingLegend(),
         const SizedBox(height: 18),
-        CodeWindow(deadline: flow.deadline),
+        CodeWindow(deadline: state.deadline),
         const SizedBox(height: Space.s4),
         const Searching('Waiting for the feeder to confirm…'),
       ],
-      if (flow.pressDispense) ...[
+      if (state.pressDispense) ...[
         const SizedBox(height: Space.s4),
         const Notice(
           tone: Tone.warning,
@@ -296,7 +300,7 @@ class InstallClaim extends StatelessWidget {
       ],
     ],
     actions: [
-      if (flow.windowAsked)
+      if (state.windowAsked)
         FilledButton(onPressed: flow.windowOpened, child: const Text('The lock light is blinking fast')),
     ],
   );
@@ -368,14 +372,15 @@ class _Step extends StatelessWidget {
 }
 
 /// 2.7: the backup, the promotion and the confirmation, one line each.
-class InstallFinishing extends StatelessWidget {
-  const InstallFinishing({super.key, required this.flow});
+class InstallFinishingPage extends StatelessWidget {
+  const InstallFinishingPage({super.key, required this.flow, required this.state});
 
   final InstallFlow flow;
+  final InstallFinishing state;
 
   @override
   Widget build(BuildContext context) {
-    final String title = switch (flow.promoting) {
+    final String title = switch (state.promoting) {
       CheckState.waiting => 'Backing up the original firmware',
       _ => 'Making Wellfed permanent',
     };
@@ -386,11 +391,11 @@ class InstallFinishing extends StatelessWidget {
       title: title,
       content: [
         const _Step('This phone is its owner', CheckState.done),
-        if (flow.joining != CheckState.waiting) _Step('Finding it on your network', flow.joining),
-        _Step('Copying the original firmware', flow.copying, fraction: flow.copied),
-        _Step('Check the copy matches', flow.checked),
-        _Step('Make Wellfed permanent · about 4 min', flow.promoting, fraction: flow.written),
-        _Step('Restart and confirm', flow.confirming),
+        if (state.joining != CheckState.waiting) _Step('Finding it on your network', state.joining),
+        _Step('Copying the original firmware', state.copying, fraction: state.copied),
+        _Step('Check the copy matches', state.checked),
+        _Step('Make Wellfed permanent · about 4 min', state.promoting, fraction: state.written),
+        _Step('Restart and confirm', state.confirming),
         const SizedBox(height: Space.s2),
         Text(
           'Wellfed only becomes permanent once the backup checks out. Until '
@@ -406,13 +411,13 @@ class InstallFinishing extends StatelessWidget {
         WaitWords(
           flow.waitWords,
           progress: (
-            flow.joining,
-            flow.copied,
-            flow.copying,
-            flow.checked,
-            flow.written,
-            flow.promoting,
-            flow.confirming,
+            state.joining,
+            state.copied,
+            state.copying,
+            state.checked,
+            state.written,
+            state.promoting,
+            state.confirming,
           ),
         ),
       ],
@@ -421,16 +426,17 @@ class InstallFinishing extends StatelessWidget {
 }
 
 /// 2.8: done. Names the feeder.
-class InstallDone extends StatefulWidget {
-  const InstallDone({super.key, required this.flow});
+class InstallDonePage extends StatefulWidget {
+  const InstallDonePage({super.key, required this.flow, required this.state});
 
   final InstallFlow flow;
+  final InstallDone state;
 
   @override
-  State<InstallDone> createState() => _DoneState();
+  State<InstallDonePage> createState() => _DoneState();
 }
 
-class _DoneState extends State<InstallDone> {
+class _DoneState extends State<InstallDonePage> {
   final _name = TextEditingController(text: InstallFlow.defaultFeederName);
   String? _shareFailed;
 
@@ -457,7 +463,6 @@ class _DoneState extends State<InstallDone> {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final InstallFlow flow = widget.flow;
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -482,7 +487,7 @@ class _DoneState extends State<InstallDone> {
             const SizedBox(height: Space.s4),
             const SizedBox(height: Space.s5),
             FilledButton(onPressed: () => unawaited(_go()), child: const Text('Go to the feeder')),
-            if (flow.backupPath != null) ...[
+            if (widget.state.backupPath != null) ...[
               const SizedBox(height: Space.s2),
               TextButton(onPressed: () => unawaited(_save()), child: const Text('Save the backup somewhere else')),
             ],

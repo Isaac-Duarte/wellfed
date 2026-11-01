@@ -206,7 +206,6 @@ plugins:
   wellfed_lints:
     path: tools/wellfed_lints
     diagnostics:
-      single_state: false
       file_length: false
       no_widget_helper: false
       no_bang: false

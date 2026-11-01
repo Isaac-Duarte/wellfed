@@ -40,14 +40,14 @@ void main() {
     run.event(const InstallEvent.pressDispense());
     await settle(tester);
     expect(find.textContaining('Press Dispense on the feeder, once.', findRichText: true), findsOneWidget);
-    expect(flow.committed, isFalse, reason: 'leaving is still a clean stop');
+    expect(flow.state.committed, isFalse, reason: 'leaving is still a clean stop');
 
     run.event(const InstallEvent.promoting());
     run.event(const InstallEvent.written(written: 31, length: 50));
     await settle(tester);
     expect(find.textContaining('Press Dispense on the feeder, once.', findRichText: true), findsNothing);
     expect(find.text('62%'), findsOneWidget);
-    expect(flow.committed, isTrue, reason: 'no way back once an offer may be out');
+    expect(flow.state.committed, isTrue, reason: 'no way back once an offer may be out');
 
     run.event(const InstallEvent.activated());
     run.end(const RestoreEnd.activated());
@@ -70,7 +70,7 @@ void main() {
     expect(find.textContaining('stopped answering'), findsWidgets);
     expect(find.text('Try again'), findsNothing);
     expect(ports.runs, hasLength(1));
-    expect(flow.mayRetry, isFalse);
+    expect(flow.state.mayRetry, isFalse);
   });
 
   testWidgets('a refusal offers no retry; a missed press asks for the word again', (tester) async {
@@ -111,7 +111,7 @@ void main() {
     await run.updates.close();
     await settle(tester);
 
-    expect(flow.stage, RestoreStage.uncertain);
+    expect(flow.state, isA<RestoreUncertain>());
   });
 
   testWidgets('the run asks only where the feeder is', (tester) async {
@@ -147,7 +147,7 @@ void main() {
     await tester.tap(find.text('Pick the file'));
     await settle(tester);
     expect(find.textContaining("That isn't the original firmware.", findRichText: true), findsOneWidget);
-    expect(flow.stage, RestoreStage.noBackup);
+    expect(flow.state, isA<RestoreNoBackup>());
 
     ports.picks = '/picked/good.bin';
     await tester.tap(find.text('Pick the file'));
@@ -185,7 +185,7 @@ void main() {
     run.end(const RestoreEnd.uncertain(why: UncertainWhy.stopped, detail: 'stopped'));
     await settle(tester);
 
-    expect(flow.stage, RestoreStage.uncertain);
+    expect(flow.state, isA<RestoreUncertain>());
     expect(find.textContaining('This was stopped'), findsOneWidget);
     expect(find.textContaining('stopped answering'), findsNothing);
   });

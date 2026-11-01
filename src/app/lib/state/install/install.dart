@@ -8,83 +8,9 @@ import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/install/install_state.dart';
 
-/// Which screen an install shows. The steps themselves are Rust's: this
-/// follows what the run reports and carries the owner's answers back.
-enum InstallStage {
-  /// Reading the APK's image and this build's identity.
-  loading,
-
-  /// What it takes, and how the feeder finds this phone.
-  before,
-
-  /// How feeders list this phone, when it has no name yet.
-  naming,
-
-  /// The Wi-Fi Bluetooth setup gives the replacement.
-  wifi,
-
-  /// The reset route: hold Reset, which erases the feeder's settings.
-  reset,
-
-  /// The reset route: join the feeder's network, send the Wi-Fi, come back.
-  handover,
-
-  /// A feeder connected: is it the owner's?
-  confirm,
-
-  /// With no record to go by: which feeder already runs Wellfed?
-  which,
-
-  /// Stock downloads the replacement from this phone.
-  sending,
-
-  /// This phone becomes the replacement's owner.
-  claim,
-
-  /// The backup, the promotion and the confirmation.
-  finishing,
-  done,
-  stopped,
-}
-
-/// Where the handover is.
-enum Handover {
-  /// The broker starts; nothing to press yet.
-  starting,
-
-  /// Waiting for the owner to join the feeder's network.
-  join,
-
-  /// Android's picker is up.
-  joining,
-
-  /// The frame goes out, and this phone comes back.
-  sending,
-
-  /// Waiting for the feeder to reach this phone.
-  waiting,
-}
-
-/// Where the checklist is.
-enum CheckState { waiting, running, done }
-
-/// What the listener after an uncertain request has heard.
-enum Listening {
-  /// Not started: the stop is not an uncertain one.
-  idle,
-  running,
-
-  /// Stock came back: it did not install. A new run may ask again only once
-  /// the request is closed.
-  stockStayed,
-
-  /// Nothing, for the whole wait.
-  silent,
-
-  /// The listener could not run.
-  failed,
-}
+export 'package:wellfed/state/install/install_state.dart';
 
 /// One install, from the first screen to its end.
 class InstallFlow extends ChangeNotifier {
@@ -96,25 +22,29 @@ class InstallFlow extends ChangeNotifier {
   final FeederBook _book;
   final InstallPorts _ports;
 
-  InstallStage stage = InstallStage.loading;
+  /// How the install stands.
+  InstallState get state => _state;
+  InstallState _state = const InstallLoading(InstallFacts());
 
-  ImageCheck? image;
-  BuildCheck? build;
+  InstallStage _stage = InstallStage.loading;
+
+  ImageCheck? _image;
+  BuildCheck? _build;
 
   /// This listen is for a request an earlier run left, not one this run sent.
-  bool listeningForEarlier = false;
+  bool _listeningForEarlier = false;
 
   /// What an earlier run left on the feeder.
-  PendingInstall pending = PendingInstall.nothing;
+  PendingInstall _pending = PendingInstall.nothing;
   InstallPaths? _paths;
 
   // The handover.
-  Handover handover = Handover.starting;
+  Handover _handover = Handover.starting;
   int? _joinAsk;
 
   /// Android's picker ended with no network: the feeder's network is not up
   /// yet, or the owner cancelled.
-  bool joinFailed = false;
+  bool _joinFailed = false;
 
   /// The owner said they held Reset, so the feeder needs no second hold.
   bool _feederReset = false;
@@ -124,60 +54,59 @@ class InstallFlow extends ChangeNotifier {
   bool _frameTaken = false;
   String? _frameAddress;
 
-  String? phoneIp;
+  String? _phoneIp;
 
-  WaitReason? waitReason;
+  WaitReason? _waitReason;
 
   /// Stock connected but its reports were lost: restart it once more.
-  bool restartAgain = false;
+  bool _restartAgain = false;
 
   // The feeder check.
-  String? device;
-  String? deviceAddress;
+  String? _device;
+  String? _deviceAddress;
   int? _recognizeAsk;
 
   // Sending.
-  int percent = 0;
-  bool restarting = false;
+  int _percent = 0;
+  bool _restarting = false;
   DateTime? _sendingSince;
 
   // The claim.
   /// A bench image's recovery window, waiting for the owner.
   int? _windowAsk;
   bool get windowAsked => _windowAsk != null;
-  List<int> code = const [];
-  DateTime? deadline;
-  bool pressDispense = false;
+  List<int> _code = const [];
+  DateTime? _deadline;
+  bool _pressDispense = false;
 
   // The checklist.
   /// The feeder restarting onto the owner's Wi-Fi, after Bluetooth setup.
-  CheckState joining = CheckState.waiting;
-  CheckState copying = CheckState.waiting;
-  double copied = 0;
-  CheckState checked = CheckState.waiting;
-  CheckState promoting = CheckState.waiting;
-  double written = 0;
-  CheckState confirming = CheckState.waiting;
-  bool sessionDropped = false;
+  CheckState _joining = CheckState.waiting;
+  CheckState _copying = CheckState.waiting;
+  double _copied = 0;
+  CheckState _checked = CheckState.waiting;
+  CheckState _promoting = CheckState.waiting;
+  double _written = 0;
+  CheckState _confirming = CheckState.waiting;
 
   /// A checked copy of stock.
-  String? backupPath;
+  String? _backupPath;
 
   // The end.
   String? _identity;
   List<int>? _identityBytes;
   String? _address;
-  InstallEnd_Stopped? stop;
+  InstallEnd_Stopped? _stop;
 
   // After an uncertain request.
-  Listening listening = Listening.idle;
-  Duration listened = Duration.zero;
-  bool stockSeen = false;
+  Listening _listening = Listening.idle;
+  Duration _listened = Duration.zero;
+  bool _stockSeen = false;
 
   /// A feeder nearby advertises setup while this listens. It says nothing about
   /// which feeder, so only the owner can say it is this one.
-  bool setupSeen = false;
-  String? listenerDetail;
+  bool _setupSeen = false;
+  String? _listenerDetail;
 
   WifiCredentials? _home;
   bool _forget = false;
@@ -192,10 +121,10 @@ class InstallFlow extends ChangeNotifier {
   /// The owner gave a new Wi-Fi for a feeder that never joined: the run goes
   /// through Bluetooth setup again, and the claim screen says how to get the
   /// feeder there.
-  bool settingUpAgain = false;
+  bool _settingUpAgain = false;
 
   /// Android refused Bluetooth to a pick-up that may need it.
-  bool bluetoothRefused = false;
+  bool _bluetoothRefused = false;
   bool _permitted = false;
 
   InstallRun? _run;
@@ -212,7 +141,7 @@ class InstallFlow extends ChangeNotifier {
 
   /// Android refused the foreground service, so only staying on screen keeps
   /// the broker alive.
-  bool holdRefused = false;
+  bool _holdRefused = false;
 
   /// A pick-up asked for the phone's name or the Wi-Fi first: it goes on once
   /// it has them.
@@ -224,7 +153,7 @@ class InstallFlow extends ChangeNotifier {
   Duration get listenWait => _ports.listenWait;
 
   /// How the APK's image pairs, once it is known to be ready.
-  ImageProvisioning? get provisioning => switch (image) {
+  ImageProvisioning? get provisioning => switch (_image) {
     ImageCheck_Ready(:final ImageProvisioning provisioning) => provisioning,
     _ => null,
   };
@@ -233,51 +162,51 @@ class InstallFlow extends ChangeNotifier {
   bool get running => _run != null;
 
   /// Why this install cannot start, in the order the owner can act on.
-  bool get mayStart => image is ImageCheck_Ready && build is BuildCheck_Reviewable;
+  bool get mayStart => _image is ImageCheck_Ready && _build is BuildCheck_Reviewable;
 
   /// The run looks for a feeder advertising Bluetooth setup, rather than for
   /// one already on the owner's Wi-Fi.
-  bool searchingBluetooth = false;
+  bool _searchingBluetooth = false;
 
   /// Bluetooth has found nothing for [setupHintAfter]: a feeder that is not
   /// advertising by itself takes the owner's hold.
-  bool setupHint = false;
+  bool _setupHint = false;
 
   static const setupHintAfter = Duration(seconds: 20);
 
   /// What the run waits for now, when nothing on the screen says so already:
   /// for a long wait, so a screen is never just still.
-  String? get waitWords => switch (stage) {
-    InstallStage.claim when !searchingBluetooth && code.isEmpty && !windowAsked =>
+  String? get waitWords => switch (_stage) {
+    InstallStage.claim when !_searchingBluetooth && _code.isEmpty && !windowAsked =>
       "Still looking for the feeder on your Wi-Fi. It's found once it has "
           'restarted and joined, which can take a few minutes.',
-    InstallStage.sending when restarting =>
+    InstallStage.sending when _restarting =>
       'Waiting for the feeder to restart into Wellfed and come back. This can '
           'take a few minutes.',
-    InstallStage.sending when percent >= 100 =>
+    InstallStage.sending when _percent >= 100 =>
       'The feeder has the firmware and is installing it. It restarts on its '
           'own, which can take a few minutes.',
     InstallStage.sending => 'Waiting for the feeder to ask for the next part of the firmware.',
-    InstallStage.finishing when joining == CheckState.running =>
+    InstallStage.finishing when _joining == CheckState.running =>
       'Waiting for the feeder to restart and join your Wi-Fi. This can take a '
           'few minutes.',
-    InstallStage.finishing when !pressDispense => 'Waiting for the feeder to answer on your Wi-Fi.',
+    InstallStage.finishing when !_pressDispense => 'Waiting for the feeder to answer on your Wi-Fi.',
     _ => null,
   };
 
   /// A rough time left in stock's download, from how fast it has gone.
   Duration? get timeLeft {
     final DateTime? since = _sendingSince;
-    if (since == null || percent < 5 || percent >= 100) return null;
+    if (since == null || _percent < 5 || _percent >= 100) return null;
     final Duration elapsed = DateTime.now().difference(since);
-    return elapsed * ((100 - percent) / percent);
+    return elapsed * ((100 - _percent) / _percent);
   }
 
   void _searchBluetooth() {
-    searchingBluetooth = true;
-    if (setupHint || _holdHintTimer != null) return;
+    _searchingBluetooth = true;
+    if (_setupHint || _holdHintTimer != null) return;
     _holdHintTimer = Timer(setupHintAfter, () {
-      setupHint = true;
+      _setupHint = true;
       _notify();
     });
   }
@@ -285,17 +214,17 @@ class InstallFlow extends ChangeNotifier {
   void _foundOverBluetooth() {
     _holdHintTimer?.cancel();
     _holdHintTimer = null;
-    setupHint = false;
+    _setupHint = false;
   }
 
   /// Read what decides whether this phone can install at all.
   Future<void> load() async {
     final InstallPaths paths = await _ports.paths();
     _paths = paths;
-    image = await _ports.prepareImage(paths);
-    build = _ports.checkBuild();
-    pending = _ports.pending(paths);
-    phoneIp = await _ports.phoneAddress();
+    _image = await _ports.prepareImage(paths);
+    _build = _ports.checkBuild();
+    _pending = _ports.pending(paths);
+    _phoneIp = await _ports.phoneAddress();
     _go(InstallStage.before);
   }
 
@@ -303,7 +232,7 @@ class InstallFlow extends ChangeNotifier {
   /// Wi-Fi, then the Reset hold.
   Future<bool> begin() async {
     if (!await _permissions()) return false;
-    phoneIp = await _ports.phoneAddress();
+    _phoneIp = await _ports.phoneAddress();
     _nextAfter(InstallStage.before);
     return true;
   }
@@ -314,7 +243,7 @@ class InstallFlow extends ChangeNotifier {
     if (_permitted) return true;
     final bluetooth = provisioning == ImageProvisioning.consumer;
     _permitted = await _ports.askPermissions(bluetooth: bluetooth);
-    bluetoothRefused = !_permitted;
+    _bluetoothRefused = !_permitted;
     return _permitted;
   }
 
@@ -348,10 +277,10 @@ class InstallFlow extends ChangeNotifier {
     _resumeAfterWifi = false;
     _pickedFeeder = null;
     _resumeAddress = null;
-    settingUpAgain = false;
+    _settingUpAgain = false;
     final InstallPaths? paths = _paths;
     if (to == InstallStage.before && paths != null) {
-      pending = _ports.pending(paths);
+      _pending = _ports.pending(paths);
     }
     _go(to);
   }
@@ -369,8 +298,8 @@ class InstallFlow extends ChangeNotifier {
   /// kept an earlier run's frame only has to reach this phone again.
   Future<void> startHandover() async {
     if (_run != null) return;
-    phoneIp = await _ports.phoneAddress();
-    final String? ip = phoneIp;
+    _phoneIp = await _ports.phoneAddress();
+    final String? ip = _phoneIp;
     if (ip == null) {
       _notify();
       return;
@@ -384,8 +313,8 @@ class InstallFlow extends ChangeNotifier {
       return;
     }
     _feederReset = true;
-    joinFailed = false;
-    handover = _frameTaken ? Handover.waiting : Handover.starting;
+    _joinFailed = false;
+    _handover = _frameTaken ? Handover.waiting : Handover.starting;
     _go(InstallStage.handover);
     await _start(_frameTaken ? InstallStart.frameTaken : InstallStart.reset, ip);
   }
@@ -395,15 +324,15 @@ class InstallFlow extends ChangeNotifier {
   Future<void> joinFeeder() async {
     final int? ask = _joinAsk;
     final InstallRun? run = _run;
-    if (ask == null || run == null || handover == Handover.joining) return;
-    handover = Handover.joining;
-    joinFailed = false;
+    if (ask == null || run == null || _handover == Handover.joining) return;
+    _handover = Handover.joining;
+    _joinFailed = false;
     _notify();
     try {
       await _ports.joinFeederNetwork();
     } catch (_) {
-      handover = Handover.join;
-      joinFailed = true;
+      _handover = Handover.join;
+      _joinFailed = true;
       _notify();
       return;
     }
@@ -414,7 +343,7 @@ class InstallFlow extends ChangeNotifier {
     }
     _joinAsk = null;
     _onFeederNetwork = true;
-    handover = Handover.sending;
+    _handover = Handover.sending;
     _notify();
     run.answer(id: ask, answer: const InstallAnswer.done());
   }
@@ -424,8 +353,8 @@ class InstallFlow extends ChangeNotifier {
   Future<void> _leaveFeeder(void Function(InstallAnswer) answer) async {
     final String? address = await _ports.leaveFeederNetwork();
     _onFeederNetwork = false;
-    if (address == phoneIp && address != null) {
-      handover = Handover.waiting;
+    if (address == _phoneIp && address != null) {
+      _handover = Handover.waiting;
       answer(const InstallAnswer.done());
       return;
     }
@@ -433,7 +362,7 @@ class InstallFlow extends ChangeNotifier {
       InstallAnswer.failed(
         reason:
             'This phone came back to its Wi-Fi at ${address ?? "no address"}, '
-            'but told the feeder $phoneIp.',
+            'but told the feeder $_phoneIp.',
       ),
     );
   }
@@ -466,27 +395,27 @@ class InstallFlow extends ChangeNotifier {
       return;
     }
     _stopListening();
-    listening = Listening.idle;
+    _listening = Listening.idle;
     if (_book.label.isEmpty) {
       _resumeAfterWifi = true;
       _resumeAddress = address;
-      stop = null;
+      _stop = null;
       _go(InstallStage.naming);
       return;
     }
     if (provisioning == ImageProvisioning.consumer &&
-        pending != PendingInstall.paired &&
+        _pending != PendingInstall.paired &&
         _pickedFeeder == null &&
         address == null &&
         _home == null) {
       _resumeAfterWifi = true;
       _resumeAddress = address;
-      stop = null;
+      _stop = null;
       _go(InstallStage.wifi);
       return;
     }
-    final String ip = phoneIp ?? await _ports.phoneAddress() ?? '';
-    stop = null;
+    final String ip = _phoneIp ?? await _ports.phoneAddress() ?? '';
+    _stop = null;
     _resetProgress();
     _go(InstallStage.claim);
     await _start(InstallStart.bank0, ip, address: address);
@@ -499,28 +428,27 @@ class InstallFlow extends ChangeNotifier {
       _notify();
       return;
     }
-    stop = InstallEnd_Stopped(case_: const StopCase.uncertain(), resume: Resume.nothing, detail: stop?.detail ?? '');
-    listeningForEarlier = true;
+    _stop = InstallEnd_Stopped(case_: const StopCase.uncertain(), resume: Resume.nothing, detail: _stop?.detail ?? '');
+    _listeningForEarlier = true;
     _go(InstallStage.stopped);
     await listen();
   }
 
   void _resetProgress() {
-    code = const [];
-    deadline = null;
+    _code = const [];
+    _deadline = null;
     _windowAsk = null;
-    pressDispense = false;
-    percent = 0;
-    restarting = false;
-    joining = CheckState.waiting;
-    copying = CheckState.waiting;
-    copied = 0;
-    checked = CheckState.waiting;
-    promoting = CheckState.waiting;
-    written = 0;
-    confirming = CheckState.waiting;
-    sessionDropped = false;
-    searchingBluetooth = false;
+    _pressDispense = false;
+    _percent = 0;
+    _restarting = false;
+    _joining = CheckState.waiting;
+    _copying = CheckState.waiting;
+    _copied = 0;
+    _checked = CheckState.waiting;
+    _promoting = CheckState.waiting;
+    _written = 0;
+    _confirming = CheckState.waiting;
+    _searchingBluetooth = false;
     _foundOverBluetooth();
   }
 
@@ -528,12 +456,12 @@ class InstallFlow extends ChangeNotifier {
   /// setup again. Only stock's request cannot be sent twice, and this asks stock
   /// nothing.
   void newWifiForSetup() {
-    settingUpAgain = true;
+    _settingUpAgain = true;
     _pickedFeeder = null;
     _home = null;
     _resumeAfterWifi = true;
     _resumeAddress = null;
-    stop = null;
+    _stop = null;
     _go(InstallStage.wifi);
   }
 
@@ -541,28 +469,28 @@ class InstallFlow extends ChangeNotifier {
   /// route that stopped.
   void changeWifi() {
     _home = null;
-    _resumeAfterWifi = stop?.resume == Resume.fromBank0;
+    _resumeAfterWifi = _stop?.resume == Resume.fromBank0;
     _resumeAddress = null;
-    stop = null;
+    _stop = null;
     _go(InstallStage.wifi);
   }
 
   /// A feeder that never joined may still be restarting: look again.
   Future<void> keepWaiting() async {
-    settingUpAgain = false;
+    _settingUpAgain = false;
     await again();
   }
 
   /// The stop's way on: from the start, or from bank 0, as the run said.
   Future<void> again({bool forget = false}) async {
     _forget = forget;
-    final Resume? resumeFrom = stop?.resume;
+    final Resume? resumeFrom = _stop?.resume;
     if (resumeFrom == Resume.fromBank0) {
       // No enrollment leaves no record, but this flow knows the feeder it
       // paired. Setup would send the owner to a factory reset, and lose the
       // identity its backup belongs to. Only a new Wi-Fi needs setup again, and
       // the other ways into resume are the owner asking for Bluetooth.
-      if (pending != PendingInstall.paired && !settingUpAgain) {
+      if (_pending != PendingInstall.paired && !_settingUpAgain) {
         _pickedFeeder ??= _identity;
       }
       await resume();
@@ -572,13 +500,13 @@ class InstallFlow extends ChangeNotifier {
       _notify();
       return;
     }
-    phoneIp = await _ports.phoneAddress();
-    stop = null;
+    _phoneIp = await _ports.phoneAddress();
+    _stop = null;
     _resetProgress();
-    listening = Listening.idle;
-    listeningForEarlier = false;
-    waitReason = null;
-    restartAgain = false;
+    _listening = Listening.idle;
+    _listeningForEarlier = false;
+    _waitReason = null;
+    _restartAgain = false;
     // A fresh launch can get here from an open request, with neither asked yet.
     if (_book.label.isEmpty) {
       _go(InstallStage.naming);
@@ -612,7 +540,7 @@ class InstallFlow extends ChangeNotifier {
         dataDir: paths.data,
         forgetEnrollment: forget,
         feeder: _pickedFeeder,
-        setupAgain: settingUpAgain,
+        setupAgain: _settingUpAgain,
       ),
     );
     _run = run;
@@ -635,7 +563,7 @@ class InstallFlow extends ChangeNotifier {
 
   Future<void> _hold(String text) async {
     _holding = true;
-    holdRefused = !await _ports.holdProcess(text);
+    _holdRefused = !await _ports.holdProcess(text);
     // The screen went away during the wait, and its release ran before this
     // hold took effect.
     if (_disposed) await _ports.releaseProcess();
@@ -669,23 +597,23 @@ class InstallFlow extends ChangeNotifier {
         answer(const InstallAnswer.done());
       case InstallAsk_JoinFeederNetwork():
         _joinAsk = id;
-        handover = Handover.join;
+        _handover = Handover.join;
       case InstallAsk_LeaveFeederNetwork():
         await _leaveFeeder(answer);
-      case InstallAsk_RecognizeFeeder(:final device, :final address):
+      case InstallAsk_RecognizeFeeder(device: final heard, :final address):
         // Whatever reached the broker took the frame, and has no setup network
         // to take another.
         _frameTaken = true;
-        _frameAddress = phoneIp;
-        this.device = device;
-        deviceAddress = address;
+        _frameAddress = _phoneIp;
+        _device = heard;
+        _deviceAddress = address;
         _recognizeAsk = id;
-        stage = InstallStage.confirm;
+        _stage = InstallStage.confirm;
       case InstallAsk_OpenRecoveryWindow():
         _windowAsk = id;
-        stage = InstallStage.claim;
+        _stage = InstallStage.claim;
       case InstallAsk_OpenLink():
-        stage = InstallStage.claim;
+        _stage = InstallStage.claim;
         _searchBluetooth();
         try {
           _link = await _ports.openLink(
@@ -720,73 +648,72 @@ class InstallFlow extends ChangeNotifier {
   Future<void> _event(InstallEvent event) async {
     switch (event) {
       case InstallEvent_Waiting(:final why):
-        waitReason = why;
+        _waitReason = why;
       case InstallEvent_VersionLost():
-        restartAgain = true;
+        _restartAgain = true;
       case InstallEvent_Requesting():
-        stage = InstallStage.sending;
+        _stage = InstallStage.sending;
         _sendingSince = DateTime.now();
         await _hold('This phone is serving the firmware.');
-      case InstallEvent_StockProgress(:final percent):
-        stage = InstallStage.sending;
-        this.percent = percent;
+      case InstallEvent_StockProgress(percent: final sent):
+        _stage = InstallStage.sending;
+        _percent = sent;
       case InstallEvent_StockRestarting():
-        stage = InstallStage.sending;
-        restarting = true;
+        _stage = InstallStage.sending;
+        _restarting = true;
       case InstallEvent_SetupStarting():
-        stage = InstallStage.claim;
+        _stage = InstallStage.claim;
         _searchBluetooth();
         await _hold('The feeder is waiting for its owner.');
-      case InstallEvent_Code(:final code, :final seconds):
-        stage = InstallStage.claim;
-        this.code = code;
+      case InstallEvent_Code(code: final shown, :final seconds):
+        _stage = InstallStage.claim;
+        _code = shown;
         _foundOverBluetooth();
-        deadline = DateTime.now().add(Duration(seconds: seconds));
+        _deadline = DateTime.now().add(Duration(seconds: seconds));
         _windowAsk = null;
       case InstallEvent_PressDispense():
-        pressDispense = true;
+        _pressDispense = true;
       case InstallEvent_KeyKnown():
-        stage = InstallStage.finishing;
+        _stage = InstallStage.finishing;
       case InstallEvent_Paired(:final identity, :final address, :final rebooting):
-        stage = InstallStage.finishing;
+        _stage = InstallStage.finishing;
         _identityBytes = identity;
         _identity = identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
         _address = address ?? _address;
-        joining = rebooting ? CheckState.running : CheckState.waiting;
+        _joining = rebooting ? CheckState.running : CheckState.waiting;
       case InstallEvent_Joined(:final address):
-        stage = InstallStage.finishing;
-        settingUpAgain = false;
+        _stage = InstallStage.finishing;
+        _settingUpAgain = false;
         _address = address;
-        joining = CheckState.done;
+        _joining = CheckState.done;
       case InstallEvent_ReplacementAnswers():
-        stage = InstallStage.finishing;
-        pressDispense = false;
+        _stage = InstallStage.finishing;
+        _pressDispense = false;
       case InstallEvent_ReadingBackup():
-        copying = CheckState.running;
+        _copying = CheckState.running;
         await _hold('Copying the original firmware.');
       case InstallEvent_BackupRead(:final bytes, :final total):
-        copying = CheckState.running;
-        copied = total == 0 ? 0 : bytes.toDouble() / total;
+        _copying = CheckState.running;
+        _copied = total == 0 ? 0 : bytes.toDouble() / total;
       case InstallEvent_BackupKept(:final path):
-        backupPath = path;
-        copying = CheckState.done;
-        checked = CheckState.done;
+        _backupPath = path;
+        _copying = CheckState.done;
+        _checked = CheckState.done;
       case InstallEvent_Promoting():
-        copying = CheckState.done;
-        checked = CheckState.done;
-        promoting = CheckState.running;
+        _copying = CheckState.done;
+        _checked = CheckState.done;
+        _promoting = CheckState.running;
         await _hold('Making Wellfed permanent.');
       case InstallEvent_Written(written: final done, :final length):
-        written = length == 0 ? 0 : done / length;
+        _written = length == 0 ? 0 : done / length;
       case InstallEvent_Activated():
-        copying = CheckState.done;
-        checked = CheckState.done;
-        promoting = CheckState.done;
-        confirming = CheckState.running;
+        _copying = CheckState.done;
+        _checked = CheckState.done;
+        _promoting = CheckState.done;
+        _confirming = CheckState.running;
       case InstallEvent_Installed():
-        confirming = CheckState.done;
+        _confirming = CheckState.done;
       case InstallEvent_SessionDropped():
-        sessionDropped = true;
       case InstallEvent_StockServerStarted() ||
           InstallEvent_AwaitingStock() ||
           InstallEvent_StockServerEnded() ||
@@ -828,17 +755,17 @@ class InstallFlow extends ChangeNotifier {
     }
     switch (end) {
       case InstallEnd_Done():
-        stage = InstallStage.done;
+        _stage = InstallStage.done;
         // A pick-up past the backup never read it again.
         final (List<int>? identity, InstallPaths? paths) = (_identityBytes, _paths);
-        if (backupPath == null && identity != null && paths != null) {
-          backupPath = _ports.keptBackup(paths, identity);
+        if (_backupPath == null && identity != null && paths != null) {
+          _backupPath = _ports.keptBackup(paths, identity);
         }
         unawaited(_release());
       case final InstallEnd_Stopped stopped:
-        stop = stopped;
+        _stop = stopped;
         _readPending();
-        stage = InstallStage.stopped;
+        _stage = InstallStage.stopped;
         _windowAsk = null;
         _recognizeAsk = null;
         if (stopped.case_ is StopCase_Uncertain) {
@@ -874,7 +801,7 @@ class InstallFlow extends ChangeNotifier {
       answer: InstallAnswer.yes(yes: yes),
     );
     if (yes) {
-      stage = InstallStage.sending;
+      _stage = InstallStage.sending;
       _sendingSince = DateTime.now();
     }
     _notify();
@@ -895,26 +822,26 @@ class InstallFlow extends ChangeNotifier {
     final InstallPaths? paths = _paths;
     if (paths == null) return;
     _stopListening();
-    listening = Listening.running;
-    listened = Duration.zero;
-    stockSeen = false;
-    setupSeen = false;
+    _listening = Listening.running;
+    _listened = Duration.zero;
+    _stockSeen = false;
+    _setupSeen = false;
     _notify();
     await _hold('Listening for the feeder. Leave it plugged in.');
-    if (_disposed || listening != Listening.running) return;
+    if (_disposed || _listening != Listening.running) return;
     final InstallListener listener = _ports.newListener(paths);
     _listener = listener;
     _listenUpdates = listener.run().listen(
       _heardFromListener,
       onError: (Object error) {
-        listenerDetail = '$error';
+        _listenerDetail = '$error';
         _listenEnded(Listening.failed);
       },
       // Its last update ends the listening; a stream that closes before one
       // lost its thread.
       onDone: () {
-        if (identical(_listener, listener) && listening == Listening.running) {
-          listenerDetail = 'the listener stopped answering';
+        if (identical(_listener, listener) && _listening == Listening.running) {
+          _listenerDetail = 'the listener stopped answering';
           _listenEnded(Listening.failed);
         }
       },
@@ -923,7 +850,7 @@ class InstallFlow extends ChangeNotifier {
     // only heard advertising setup. Any feeder in setup mode sounds the same,
     // so this keeps listening until the owner says it is this one.
     _heard = _ports.setupHeard().listen((_) {
-      setupSeen = true;
+      _setupSeen = true;
       _notify();
     }, onError: (Object _) {});
     _notify();
@@ -932,22 +859,22 @@ class InstallFlow extends ChangeNotifier {
   void _heardFromListener(ListenUpdate update) {
     switch (update) {
       case ListenUpdate_Tick(:final seconds, :final stock):
-        listened = Duration(seconds: seconds);
-        stockSeen = stock;
+        _listened = Duration(seconds: seconds);
+        _stockSeen = stock;
         _notify();
       case ListenUpdate_Replacement(:final address):
         unawaited(resume(address: address));
       case ListenUpdate_StockStayed(:final resolved):
-        stop = InstallEnd_Stopped(
+        _stop = InstallEnd_Stopped(
           case_: const StopCase.uncertain(),
           resume: resolved ? Resume.fromStart : Resume.nothing,
-          detail: stop?.detail ?? '',
+          detail: _stop?.detail ?? '',
         );
         _listenEnded(Listening.stockStayed);
       case ListenUpdate_Silent():
         _listenEnded(Listening.silent);
       case ListenUpdate_Failed(:final detail):
-        listenerDetail = detail;
+        _listenerDetail = detail;
         _listenEnded(Listening.failed);
       case ListenUpdate_Stopped():
         break;
@@ -955,7 +882,7 @@ class InstallFlow extends ChangeNotifier {
   }
 
   void _listenEnded(Listening end) {
-    listening = end;
+    _listening = end;
     unawaited(_heard?.cancel());
     _heard = null;
     _readPending();
@@ -974,11 +901,11 @@ class InstallFlow extends ChangeNotifier {
 
   void _readPending() {
     final InstallPaths? paths = _paths;
-    if (paths != null) pending = _ports.pending(paths);
+    if (paths != null) _pending = _ports.pending(paths);
   }
 
   /// The way out of a stuck or damaged record is open: nothing is using it.
-  bool get mayForget => _paths != null && _run == null && listening != Listening.running;
+  bool get mayForget => _paths != null && _run == null && _listening != Listening.running;
 
   /// A stop that leaves a record behind, or one no pick-up gets past. Not offered
   /// on an uncertain write's stop: the feeder may be mid-way, and a pick-up reads
@@ -987,15 +914,15 @@ class InstallFlow extends ChangeNotifier {
   /// sends nothing. A damaged ledger has an action of its own, which this cannot do.
   bool get forgetOffered {
     if (!mayForget) return false;
-    final StopCase? case_ = stop?.case_;
+    final StopCase? case_ = _stop?.case_;
     if (case_ is StopCase_UncertainWrite) return false;
-    if (pending == PendingInstall.ledgerDamaged) return false;
-    return pending != PendingInstall.nothing || case_ is StopCase_OtherFeeder || case_ is StopCase_DamagedRecord;
+    if (_pending == PendingInstall.ledgerDamaged) return false;
+    return _pending != PendingInstall.nothing || case_ is StopCase_OtherFeeder || case_ is StopCase_DamagedRecord;
   }
 
   /// Forgetting takes away a working "Pick up where it stopped", so its words
   /// say how to come back.
-  bool get forgetEndsPickUp => pending == PendingInstall.paired || stop?.resume == Resume.fromBank0;
+  bool get forgetEndsPickUp => _pending == PendingInstall.paired || _stop?.resume == Resume.fromBank0;
 
   /// Some feeder's install request has no known outcome, so forgetting needs
   /// words of its own.
@@ -1005,7 +932,7 @@ class InstallFlow extends ChangeNotifier {
   }
 
   /// Why the last repair of a record failed, when it did.
-  String? repairFailed;
+  String? _repairFailed;
 
   /// Whether `repair` ran; a failure is kept for the screen.
   bool _repair(void Function(InstallPaths) repair) {
@@ -1014,30 +941,30 @@ class InstallFlow extends ChangeNotifier {
     try {
       repair(paths);
     } on BridgeError catch (failed) {
-      repairFailed = failed.message;
+      _repairFailed = failed.message;
       _notify();
       return false;
     }
-    repairFailed = null;
+    _repairFailed = null;
     return true;
   }
 
   /// Back to the first screen, knowing nothing of any run.
   void _startClean() {
-    stop = null;
+    _stop = null;
     _frameTaken = false;
     _frameAddress = null;
     _feederReset = false;
     _identity = null;
     _identityBytes = null;
     _address = null;
-    backupPath = null;
-    settingUpAgain = false;
-    waitReason = null;
-    restartAgain = false;
+    _backupPath = null;
+    _settingUpAgain = false;
+    _waitReason = null;
+    _restartAgain = false;
     _pickedFeeder = null;
-    listening = Listening.idle;
-    listeningForEarlier = false;
+    _listening = Listening.idle;
+    _listeningForEarlier = false;
     _resetProgress();
     _readPending();
     _go(InstallStage.before);
@@ -1074,17 +1001,80 @@ class InstallFlow extends ChangeNotifier {
   }
 
   Future<void> saveBackup() async {
-    final String? path = backupPath;
+    final String? path = _backupPath;
     if (path != null) await _ports.shareBackup(path);
   }
 
   void _go(InstallStage next) {
-    stage = next;
+    _stage = next;
     _notify();
   }
 
   void _notify() {
+    _state = _snapshot();
     if (!_disposed) notifyListeners();
+  }
+
+  InstallState _snapshot() {
+    final facts = InstallFacts(
+      pending: _pending,
+      bluetoothRefused: _bluetoothRefused,
+      repairFailed: _repairFailed,
+      phoneIp: _phoneIp,
+    );
+    return switch (_stage) {
+      InstallStage.loading => InstallLoading(facts),
+      InstallStage.before => InstallBefore(facts, image: _image, build: _build),
+      InstallStage.naming => InstallNaming(facts),
+      InstallStage.wifi => InstallWifi(facts),
+      InstallStage.reset => InstallReset(facts),
+      InstallStage.handover => InstallHandover(
+        facts,
+        handover: _handover,
+        joinFailed: _joinFailed,
+        restartAgain: _restartAgain,
+        waitReason: _waitReason,
+      ),
+      InstallStage.confirm => InstallConfirm(facts, device: _device, deviceAddress: _deviceAddress),
+      InstallStage.which => InstallWhich(facts),
+      InstallStage.sending => InstallSending(
+        facts,
+        holdRefused: _holdRefused,
+        percent: _percent,
+        restarting: _restarting,
+      ),
+      InstallStage.claim => InstallClaim(
+        facts,
+        code: List.unmodifiable(_code),
+        deadline: _deadline,
+        pressDispense: _pressDispense,
+        searchingBluetooth: _searchingBluetooth,
+        settingUpAgain: _settingUpAgain,
+        setupHint: _setupHint,
+        windowAsked: windowAsked,
+      ),
+      InstallStage.finishing => InstallFinishing(
+        facts,
+        joining: _joining,
+        copying: _copying,
+        copied: _copied,
+        checked: _checked,
+        promoting: _promoting,
+        written: _written,
+        confirming: _confirming,
+      ),
+      InstallStage.done => InstallDone(facts, backupPath: _backupPath),
+      InstallStage.stopped => InstallStopped(
+        facts,
+        stop: _stop,
+        listening: _listening,
+        listened: _listened,
+        listeningForEarlier: _listeningForEarlier,
+        stockSeen: _stockSeen,
+        setupSeen: _setupSeen,
+        listenerDetail: _listenerDetail,
+      ),
+    };
   }
 
   @override

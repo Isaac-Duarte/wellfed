@@ -10,15 +10,16 @@ import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 
 /// 2.1: what it takes.
-class InstallBefore extends StatelessWidget {
-  const InstallBefore({super.key, required this.flow});
+class InstallBeforePage extends StatelessWidget {
+  const InstallBeforePage({super.key, required this.flow, required this.state});
 
   final InstallFlow flow;
+  final InstallBefore state;
 
   /// Why this phone cannot install: an APK with no image, or one whose
   /// sources cannot be reviewed. Refused here, before the feeder is touched.
   Widget? _refusal() {
-    final (String lead, String text)? refusal = switch ((flow.image, flow.build)) {
+    final (String lead, String text)? refusal = switch ((state.image, state.build)) {
       (ImageCheck_Absent(), _) => (
         'This build has no firmware to install.',
         'Install a release of the app, or build it with its image.',
@@ -59,7 +60,7 @@ class InstallBefore extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget? refusal = _refusal();
-    final bool damaged = flow.pending == PendingInstall.damaged || flow.pending == PendingInstall.ledgerDamaged;
+    final bool damaged = state.pending == PendingInstall.damaged || state.pending == PendingInstall.ledgerDamaged;
     return StepScaffold(
       leading: Leading.close,
       appBarTitle: 'Install Wellfed',
@@ -81,8 +82,8 @@ class InstallBefore extends StatelessWidget {
               'in Wellfed afterwards.',
         ),
         if (refusal != null) ...[const SizedBox(height: Space.s4), refusal],
-        if (flow.bluetoothRefused) ...[const SizedBox(height: Space.s4), const InstallBluetoothRefused()],
-        if (flow.mayStart && flow.pending == PendingInstall.requestOpen) ...[
+        if (state.bluetoothRefused) ...[const SizedBox(height: Space.s4), const InstallBluetoothRefused()],
+        if (flow.mayStart && state.pending == PendingInstall.requestOpen) ...[
           const SizedBox(height: Space.s4),
           const Notice(
             tone: Tone.warning,
@@ -93,7 +94,7 @@ class InstallBefore extends StatelessWidget {
                 'to it a second time.',
           ),
         ],
-        if (flow.pending == PendingInstall.damaged) ...[
+        if (state.pending == PendingInstall.damaged) ...[
           const SizedBox(height: Space.s4),
           const Notice(
             tone: Tone.warning,
@@ -101,7 +102,7 @@ class InstallBefore extends StatelessWidget {
             text: 'Forget that install to go on. Its backups stay.',
           ),
         ],
-        if (flow.pending == PendingInstall.ledgerDamaged) ...[
+        if (state.pending == PendingInstall.ledgerDamaged) ...[
           const SizedBox(height: Space.s4),
           const Notice(
             tone: Tone.warning,
@@ -109,22 +110,22 @@ class InstallBefore extends StatelessWidget {
             text: 'It treats that request as still open until you say otherwise.',
           ),
         ],
-        if (flow.repairFailed case final failed?) ...[
+        if (state.repairFailed case final failed?) ...[
           const SizedBox(height: Space.s4),
           Notice(tone: Tone.fault, lead: "That didn't work.", text: failed),
         ],
       ],
       actions: [
-        if (flow.mayStart && flow.pending == PendingInstall.paired)
+        if (flow.mayStart && state.pending == PendingInstall.paired)
           OutlinedButton(onPressed: () => unawaited(flow.resume()), child: const Text('Pick up where it stopped')),
-        if (flow.mayStart && flow.pending == PendingInstall.requestOpen) ...[
+        if (flow.mayStart && state.pending == PendingInstall.requestOpen) ...[
           OutlinedButton(
             onPressed: () => unawaited(flow.listenForOpenRequest()),
             child: const Text('Listen for the feeder'),
           ),
           OutlinedButton(onPressed: () => unawaited(flow.resume()), child: const Text('Look for it over Bluetooth')),
         ],
-        if (flow.pending == PendingInstall.ledgerDamaged) InstallSetAsideLedger(flow: flow),
+        if (state.pending == PendingInstall.ledgerDamaged) InstallSetAsideLedger(flow: flow),
         // For a feeder past stock with no record to pick up from: Continue is
         // the Reset route, which is stock's.
         OutlinedButton(
@@ -135,7 +136,7 @@ class InstallBefore extends StatelessWidget {
           onPressed: flow.mayStart && !damaged ? () => unawaited(_begin(context)) : null,
           child: const Text('Continue'),
         ),
-        if (flow.forgetOffered) InstallForgetInstall(flow: flow),
+        if (flow.forgetOffered) InstallForgetInstallPage(flow: flow),
       ],
     );
   }
@@ -143,8 +144,8 @@ class InstallBefore extends StatelessWidget {
 
 /// With no record of the install, only the owner can say which feeder this is: a
 /// known feeder answering says nothing about it.
-class InstallWhichFeeder extends StatelessWidget {
-  const InstallWhichFeeder({super.key, required this.flow});
+class InstallWhichFeederPage extends StatelessWidget {
+  const InstallWhichFeederPage({super.key, required this.flow});
 
   final InstallFlow flow;
 
@@ -205,8 +206,8 @@ Future<bool> _agreed(
 
 /// The way out of a stuck or damaged install record, which keeps every backup and
 /// never touches the stock ledger.
-class InstallForgetInstall extends StatelessWidget {
-  const InstallForgetInstall({super.key, required this.flow});
+class InstallForgetInstallPage extends StatelessWidget {
+  const InstallForgetInstallPage({super.key, required this.flow});
 
   final InstallFlow flow;
 
@@ -300,22 +301,23 @@ class InstallBluetoothRefused extends StatelessWidget {
 
 /// 2.2: hold Reset. It erases the feeder's settings, so the owner says they
 /// understand first.
-class InstallReset extends StatefulWidget {
-  const InstallReset({super.key, required this.flow});
+class InstallResetPage extends StatefulWidget {
+  const InstallResetPage({super.key, required this.flow, required this.state});
 
   final InstallFlow flow;
+  final InstallReset state;
 
   @override
-  State<InstallReset> createState() => _ResetState();
+  State<InstallResetPage> createState() => _ResetState();
 }
 
-class _ResetState extends State<InstallReset> {
+class _ResetState extends State<InstallResetPage> {
   bool _understood = false;
 
   @override
   Widget build(BuildContext context) {
     final InstallFlow flow = widget.flow;
-    final offWifi = flow.phoneIp == null;
+    final offWifi = widget.state.phoneIp == null;
     return StepScaffold(
       stepLabel: 'Step 1 of 5',
       progress: 0.2,
