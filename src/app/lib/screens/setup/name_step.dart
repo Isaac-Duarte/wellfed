@@ -131,9 +131,9 @@ class _NameStepState extends State<NameStep> {
               "You'll be this feeder's **owner**. Its key stays on this "
               "phone; there's no account to sign in to.",
         ),
-        if (_failed != null) ...[
+        if (_failed case final failed?) ...[
           const SizedBox(height: Space.s3),
-          Notice(tone: Tone.fault, lead: "This phone couldn't save that.", text: _failed!),
+          Notice(tone: Tone.fault, lead: "This phone couldn't save that.", text: failed),
         ],
       ],
       actions: [FilledButton(onPressed: _valid ? () => unawaited(_done()) : null, child: Text(widget.action))],

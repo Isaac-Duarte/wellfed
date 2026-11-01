@@ -241,15 +241,6 @@ class _MealEditorState extends State<MealEditor> {
     final muted = TextStyle(fontSize: Sizes.sm, color: c.textMuted);
     bool same(List<Weekday> days) => _days.length == days.length && days.every(_days.contains);
 
-    Widget choice<T>(List<(String, T)> options, bool Function(T) selected, void Function(T) choose) => Wrap(
-      spacing: Space.s2,
-      runSpacing: Space.s2,
-      children: [
-        for (final (name, value) in options)
-          ChoiceChip(label: Text(name), selected: selected(value), onSelected: (_) => setState(() => choose(value))),
-      ],
-    );
-
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
@@ -263,7 +254,10 @@ class _MealEditorState extends State<MealEditor> {
         title: Text(
           widget.slot == null
               ? 'New meal'
-              : 'Meal at ${_original == null ? time : minuteText(context, _original!.minute)}',
+              : 'Meal at ${switch (_original) {
+                  final PlanView original? => minuteText(context, original.minute),
+                  null => time,
+                }}',
           style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
         ),
         actions: [
@@ -317,10 +311,11 @@ class _MealEditorState extends State<MealEditor> {
           const SizedBox(height: Space.s4),
           Text('Repeat', style: label),
           const SizedBox(height: Space.s2),
-          choice<List<Weekday>>(
+          _Choice<List<Weekday>>(
             const [('Daily', _everyDay), ('Weekdays', _weekdays), ('Weekends', _weekend), ('Once', <Weekday>[])],
             same,
             (days) => _days = days.toSet(),
+            onChanged: () => setState(() {}),
           ),
           const SizedBox(height: Space.s2),
           Row(
@@ -348,10 +343,11 @@ class _MealEditorState extends State<MealEditor> {
             ),
           ),
           const SizedBox(height: Space.s2),
-          choice<int>(
+          _Choice<int>(
             const [('Off', 0), ('1', 1), ('2', 2), ('3', 3), ('4', 4), ('5', 5)],
             (plays) => plays == _call,
             (plays) => _call = plays,
+            onChanged: () => setState(() {}),
           ),
           const SizedBox(height: Space.s3),
           Row(
@@ -425,4 +421,30 @@ class _DayToggle extends StatelessWidget {
       ),
     );
   }
+}
+
+class _Choice<T> extends StatelessWidget {
+  const _Choice(this.options, this.selected, this.choose, {required this.onChanged});
+
+  final List<(String, T)> options;
+  final bool Function(T) selected;
+  final void Function(T) choose;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: Space.s2,
+    runSpacing: Space.s2,
+    children: [
+      for (final (name, value) in options)
+        ChoiceChip(
+          label: Text(name),
+          selected: selected(value),
+          onSelected: (_) {
+            choose(value);
+            onChanged();
+          },
+        ),
+    ],
+  );
 }

@@ -85,17 +85,18 @@ class _LiveLogScreenState extends State<LiveLogScreen> {
       body: Column(
         children: [
           Expanded(
-            child: _problem != null
-                ? Center(child: Text(_problem!))
-                : ListView.builder(
-                    reverse: true,
-                    padding: const EdgeInsets.all(Space.s3),
-                    itemCount: _lines.length,
-                    itemBuilder: (context, i) => Text(
-                      _lines[_lines.length - 1 - i],
-                      style: TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.5, color: c.text),
-                    ),
-                  ),
+            child: switch (_problem) {
+              final String problem? => Center(child: Text(problem)),
+              null => ListView.builder(
+                reverse: true,
+                padding: const EdgeInsets.all(Space.s3),
+                itemCount: _lines.length,
+                itemBuilder: (context, i) => Text(
+                  _lines[_lines.length - 1 - i],
+                  style: TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.5, color: c.text),
+                ),
+              ),
+            },
           ),
           Padding(
             padding: const EdgeInsets.all(Space.s3),

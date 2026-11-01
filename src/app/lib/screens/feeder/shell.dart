@@ -19,11 +19,6 @@ class FeederShell extends StatelessWidget {
 
   /// The feeder `identity` of `fleet`, or a plain way back if it is gone: a
   /// link can outlive a feeder this phone has forgotten.
-  static Widget of(FeederFleet fleet, String identity, {int initialTab = 0}) {
-    final FeederController? feeder = fleet[identity];
-    return feeder == null ? const _Gone() : FeederShell(feeder: feeder, initialTab: initialTab);
-  }
-
   final FeederController feeder;
   final int initialTab;
 
@@ -117,4 +112,19 @@ class _Gone extends StatelessWidget {
     appBar: AppBar(),
     body: const Center(child: Text('This phone no longer knows that feeder.')),
   );
+}
+
+/// The feeder a route names, or a screen that says it is gone.
+class FeederRoute extends StatelessWidget {
+  const FeederRoute({super.key, required this.fleet, required this.identity, this.initialTab = 0});
+
+  final FeederFleet fleet;
+  final String identity;
+  final int initialTab;
+
+  @override
+  Widget build(BuildContext context) {
+    final FeederController? feeder = fleet[identity];
+    return feeder == null ? const _Gone() : FeederShell(feeder: feeder, initialTab: initialTab);
+  }
 }

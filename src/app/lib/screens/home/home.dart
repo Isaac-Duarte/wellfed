@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
+import 'package:wellfed/screens/home/todays_meals.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/src/rust/api/install.dart' show PendingInstall;
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -47,53 +48,53 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      ListenableBuilder(listenable: widget.fleet, builder: (context, _) => _build(context));
-
-  Widget _build(BuildContext context) {
-    final ThemeTokens c = context.colors;
-    final List<FeederController> feeders = widget.fleet.all.toList();
-    final one = feeders.length == 1;
-    return Scaffold(
-      bottomNavigationBar: const MainNav(selected: 0),
-      appBar: AppBar(
-        toolbarHeight: 64,
-        titleSpacing: 20,
-        title: Text(
-          'Feeders',
-          style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Add a feeder',
-            icon: StrokeIcon(Glyph.add, color: c.text),
-            onPressed: () => context.push('/add'),
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: widget.fleet,
+    builder: (context, _) {
+      final ThemeTokens c = context.colors;
+      final List<FeederController> feeders = widget.fleet.all.toList();
+      final one = feeders.length == 1;
+      return Scaffold(
+        bottomNavigationBar: const MainNav(selected: 0),
+        appBar: AppBar(
+          toolbarHeight: 64,
+          titleSpacing: 20,
+          title: Text(
+            'Feeders',
+            style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
           ),
-          const SizedBox(width: Space.s2),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-        children: [
-          if (_earlier != PendingInstall.nothing) ...[
-            const Notice(
-              tone: Tone.warning,
-              lead: "An install didn't finish.",
-              text:
-                  'Its last steps may not have run, and the original firmware '
-                  'may not be saved. Finish it before you rely on this feeder.',
+          actions: [
+            IconButton(
+              tooltip: 'Add a feeder',
+              icon: StrokeIcon(Glyph.add, color: c.text),
+              onPressed: () => context.push('/add'),
             ),
-            const SizedBox(height: Space.s2),
-            FilledButton(onPressed: () => unawaited(_openInstall()), child: const Text('Finish installing')),
-            const SizedBox(height: Space.s4),
+            const SizedBox(width: Space.s2),
           ],
-          for (final (i, controller) in feeders.indexed) ...[
-            if (i > 0) const SizedBox(height: Space.s3),
-            FeederCard(controller: controller, compact: !one),
+        ),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          children: [
+            if (_earlier != PendingInstall.nothing) ...[
+              const Notice(
+                tone: Tone.warning,
+                lead: "An install didn't finish.",
+                text:
+                    'Its last steps may not have run, and the original firmware '
+                    'may not be saved. Finish it before you rely on this feeder.',
+              ),
+              const SizedBox(height: Space.s2),
+              FilledButton(onPressed: () => unawaited(_openInstall()), child: const Text('Finish installing')),
+              const SizedBox(height: Space.s4),
+            ],
+            for (final (i, controller) in feeders.indexed) ...[
+              if (i > 0) const SizedBox(height: Space.s3),
+              FeederCard(controller: controller, compact: !one),
+            ],
+            if (one) TodaysMeals(controller: feeders.first),
           ],
-          if (one) TodaysMeals(controller: feeders.first),
-        ],
-      ),
-    );
-  }
+        ),
+      );
+    },
+  );
 }

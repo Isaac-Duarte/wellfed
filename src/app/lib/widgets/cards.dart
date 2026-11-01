@@ -229,8 +229,8 @@ class LabeledField extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(child: Text(hint ?? '', style: small)),
-              if (counter != null)
-                Text(counter!, style: small.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
+              if (counter case final counter?)
+                Text(counter, style: small.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
             ],
           ),
         ],

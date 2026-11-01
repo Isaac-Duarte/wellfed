@@ -89,92 +89,100 @@ class _ScheduleTabState extends State<ScheduleTab> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(listenable: feeder, builder: (context, _) => _build(context));
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: feeder,
+    builder: (context, _) {
+      final ThemeTokens c = context.colors;
+      final Card? card = feeder.state.card;
+      final PlansView? plans = card?.plans;
+      if (plans == null) {
+        return Center(
+          child: Text(
+            feeder.state.connection == Connection.online ? 'Reading the meals…' : "Can't read the meals right now.",
+            style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
+          ),
+        );
+      }
 
-  Widget _build(BuildContext context) {
-    final ThemeTokens c = context.colors;
-    final Card? card = feeder.state.card;
-    final PlansView? plans = card?.plans;
-    if (plans == null) {
-      return Center(
-        child: Text(
-          feeder.state.connection == Connection.online ? 'Reading the meals…' : "Can't read the meals right now.",
-          style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
+      final List<(int, PlanView)> meals = [
+        for (final (slot, plan) in plans.plans.indexed)
+          if (plan != null) (slot, plan),
+      ]..sort((a, b) => a.$2.minute.compareTo(b.$2.minute));
+      final int most = mealsMost(plans);
+      final bool full = meals.length >= most;
+      final online = feeder.state.connection == Connection.online;
+      final NextMealView? next = card?.nextMeal;
+      final muted = TextStyle(fontSize: Sizes.base, color: c.textMuted);
+
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: ListView(
+                children: [
+                  if (online && !(card?.clockSet ?? true)) ...[
+                    NoTimeNotice(feeder: feeder),
+                    const SizedBox(height: Space.s3),
+                  ],
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          next == null
+                              ? 'No meal is coming'
+                              : 'Next: ${_day(next.atMs)} at '
+                                    '${minuteText(context, next.minute)}',
+                          style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: c.text),
+                        ),
+                      ),
+                      Flexible(
+                        child: Text(
+                          full ? "$most of $most meals · the feeder's limit" : '${meals.length} of $most meals',
+                          textAlign: TextAlign.end,
+                          style: muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: Space.s3),
+                  if (meals.isNotEmpty)
+                    Panel(
+                      child: Column(
+                        children: [
+                          for (final (i, (slot, plan)) in meals.indexed)
+                            _MealRow(
+                              feeder: feeder,
+                              plans: plans,
+                              slot: slot,
+                              plan: plan,
+                              first: i == 0,
+                              online: online,
+                            ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: Space.s3),
+                  Text(
+                    'The feeder keeps these itself and feeds on time even when '
+                    'no phone is around. A meal more than 15 minutes late is '
+                    'skipped and shows in History.',
+                    style: muted.copyWith(height: 1.5),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: Space.s3),
+            FilledButton(
+              onPressed: online && !full ? () => unawaited(openMealEditor(context, feeder: feeder, held: plans)) : null,
+              child: Text(full ? 'Add meal · delete one first' : 'Add meal'),
+            ),
+          ],
         ),
       );
-    }
-
-    final List<(int, PlanView)> meals = [
-      for (final (slot, plan) in plans.plans.indexed)
-        if (plan != null) (slot, plan),
-    ]..sort((a, b) => a.$2.minute.compareTo(b.$2.minute));
-    final int most = mealsMost(plans);
-    final bool full = meals.length >= most;
-    final online = feeder.state.connection == Connection.online;
-    final NextMealView? next = card?.nextMeal;
-    final muted = TextStyle(fontSize: Sizes.base, color: c.textMuted);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: ListView(
-              children: [
-                if (online && !(card?.clockSet ?? true)) ...[
-                  NoTimeNotice(feeder: feeder),
-                  const SizedBox(height: Space.s3),
-                ],
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        next == null
-                            ? 'No meal is coming'
-                            : 'Next: ${_day(next.atMs)} at '
-                                  '${minuteText(context, next.minute)}',
-                        style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: c.text),
-                      ),
-                    ),
-                    Flexible(
-                      child: Text(
-                        full ? "$most of $most meals · the feeder's limit" : '${meals.length} of $most meals',
-                        textAlign: TextAlign.end,
-                        style: muted,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: Space.s3),
-                if (meals.isNotEmpty)
-                  Panel(
-                    child: Column(
-                      children: [
-                        for (final (i, (slot, plan)) in meals.indexed)
-                          _MealRow(feeder: feeder, plans: plans, slot: slot, plan: plan, first: i == 0, online: online),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: Space.s3),
-                Text(
-                  'The feeder keeps these itself and feeds on time even when '
-                  'no phone is around. A meal more than 15 minutes late is '
-                  'skipped and shows in History.',
-                  style: muted.copyWith(height: 1.5),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: Space.s3),
-          FilledButton(
-            onPressed: online && !full ? () => unawaited(openMealEditor(context, feeder: feeder, held: plans)) : null,
-            child: Text(full ? 'Add meal · delete one first' : 'Add meal'),
-          ),
-        ],
-      ),
-    );
-  }
+    },
+  );
 
   static String _day(int atMs) {
     final String day = dayText(DateTime.fromMillisecondsSinceEpoch(atMs));

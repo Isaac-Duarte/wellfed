@@ -77,7 +77,7 @@ class _WellfedAppState extends State<WellfedApp> {
               return ports.pending(await ports.paths());
             },
           ),
-    feeder: (context, identity, tab) => FeederShell.of(_fleet, identity, initialTab: tab),
+    feeder: (context, identity, tab) => FeederRoute(fleet: _fleet, identity: identity, initialTab: tab),
     pages: {
       '/add': (context) => const AddFeederScreen(),
       '/setup': (context) => SetupScreen(newFlow: () => SetupFlow(widget.app, _pairing, _phone)),

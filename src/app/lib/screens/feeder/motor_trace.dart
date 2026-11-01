@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/screens/feeder/today_faults.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -11,24 +12,6 @@ import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/when.dart';
-
-AppBar _bar(BuildContext context, String title) {
-  final ThemeTokens c = context.colors;
-  return AppBar(
-    toolbarHeight: 64,
-    automaticallyImplyLeading: false,
-    titleSpacing: 4,
-    leading: IconButton(
-      tooltip: 'Back',
-      onPressed: () => Navigator.pop(context),
-      icon: StrokeIcon(Glyph.back, color: c.text),
-    ),
-    title: Text(
-      title,
-      style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
-    ),
-  );
-}
 
 /// The newest feeds this session has read from the history; a feed the feeder
 /// kept no trace of says so when opened.
@@ -46,7 +29,7 @@ class MotorTracesScreen extends StatelessWidget {
         if (entry.body case HistoryBody_Fed(:final result)) (entry, result),
     ].take(_most).toList();
     return Scaffold(
-      appBar: _bar(context, 'Motor traces'),
+      appBar: const _Bar('Motor traces'),
       body: feeds.isEmpty
           ? const Center(child: Text('No feeds yet.'))
           : ListView(
@@ -54,12 +37,10 @@ class MotorTracesScreen extends StatelessWidget {
                 for (final (entry, result) in feeds)
                   ListTile(
                     title: Text('Feed ${result.feed}'),
-                    subtitle: Text(
-                      entry.atMs == null
-                          ? deliveredText(result)
-                          : '${momentTextMs(context, entry.atMs!)} · '
-                                '${deliveredText(result)}',
-                    ),
+                    subtitle: Text(switch (entry.atMs) {
+                      final PlatformInt64 at? => '${momentTextMs(context, at)} · ${deliveredText(result)}',
+                      null => deliveredText(result),
+                    }),
                     onTap: () => unawaited(
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
@@ -90,7 +71,7 @@ class _MotorTraceScreenState extends State<MotorTraceScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: _bar(context, 'Feed ${widget.feed}'),
+    appBar: _Bar('Feed ${widget.feed}'),
     body: FutureBuilder<FeederReply>(
       future: _read,
       builder: (context, snapshot) => switch (snapshot.data) {
@@ -117,31 +98,6 @@ class _Trace extends StatelessWidget {
     final ThemeTokens c = context.colors;
     final TraceSummary summary = trace.summary;
     final double seconds = summary.driveMs / 1000;
-    Widget axis(String name, TraceSeries series) => Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          name,
-          style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
-        ),
-        const SizedBox(height: Space.s1),
-        SizedBox(
-          height: series == TraceSeries.current ? 96 : 24,
-          width: double.infinity,
-          child: CustomPaint(
-            painter: _TracePainter(
-              entries: trace.entries,
-              series: series,
-              spanMs: summary.driveMs,
-              color: c.accent,
-              line: c.line,
-            ),
-          ),
-        ),
-        const SizedBox(height: Space.s3),
-      ],
-    );
-
     return ListView(
       padding: const EdgeInsets.all(Space.s4),
       children: [
@@ -151,9 +107,9 @@ class _Trace extends StatelessWidget {
           style: TextStyle(fontSize: 15, color: c.text),
         ),
         const SizedBox(height: Space.s4),
-        axis('Motor current', TraceSeries.current),
-        axis('Wheel marks', TraceSeries.marks),
-        axis('Food falling past the outlet', TraceSeries.beams),
+        _Axis('Motor current', TraceSeries.current, entries: trace.entries, spanMs: summary.driveMs),
+        _Axis('Wheel marks', TraceSeries.marks, entries: trace.entries, spanMs: summary.driveMs),
+        _Axis('Food falling past the outlet', TraceSeries.beams, entries: trace.entries, spanMs: summary.driveMs),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -253,4 +209,64 @@ class _TracePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_TracePainter old) => old.entries != entries;
+}
+
+class _Bar extends StatelessWidget implements PreferredSizeWidget {
+  const _Bar(this.title);
+
+  final String title;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(64);
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeTokens c = context.colors;
+    return AppBar(
+      toolbarHeight: 64,
+      automaticallyImplyLeading: false,
+      titleSpacing: 4,
+      leading: IconButton(
+        tooltip: 'Back',
+        onPressed: () => Navigator.pop(context),
+        icon: StrokeIcon(Glyph.back, color: c.text),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
+      ),
+    );
+  }
+}
+
+class _Axis extends StatelessWidget {
+  const _Axis(this.name, this.series, {required this.entries, required this.spanMs});
+
+  final String name;
+  final TraceSeries series;
+  final List<TraceEntry> entries;
+  final int spanMs;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeTokens c = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          name,
+          style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+        ),
+        const SizedBox(height: Space.s1),
+        SizedBox(
+          height: series == TraceSeries.current ? 96 : 24,
+          width: double.infinity,
+          child: CustomPaint(
+            painter: _TracePainter(entries: entries, series: series, spanMs: spanMs, color: c.accent, line: c.line),
+          ),
+        ),
+        const SizedBox(height: Space.s3),
+      ],
+    );
+  }
 }

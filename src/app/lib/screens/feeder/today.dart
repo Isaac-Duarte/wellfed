@@ -27,54 +27,58 @@ class TodayTab extends StatelessWidget {
   final FeederController feeder;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(listenable: feeder, builder: (context, _) => _build(context));
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: feeder,
+    builder: (context, _) {
+      final api.Card? card = feeder.state.card;
+      final api.Card? live = feeder.state.connection == Connection.online ? card : null;
+      final stopped = live?.blocked == Blocked.fault;
 
-  Widget _build(BuildContext context) {
-    final api.Card? card = feeder.state.card;
-    final api.Card? live = feeder.state.connection == Connection.online ? card : null;
-    final stopped = live?.blocked == Blocked.fault;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: ListView(
-              children: [
-                _Summary(feeder: feeder),
-                const SizedBox(height: Space.s3),
-                if (live != null && !live.clockSet) ...[NoTimeNotice(feeder: feeder), const SizedBox(height: Space.s3)],
-                if (stopped) ...[
-                  TodayStopped(feeder: feeder),
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: ListView(
+                children: [
+                  _Summary(feeder: feeder),
                   const SizedBox(height: Space.s3),
-                ] else if (card?.fault case final fault?) ...[
-                  TodayLastFeedFailed(fault: fault),
-                  const SizedBox(height: Space.s3),
+                  if (live != null && !live.clockSet) ...[
+                    NoTimeNotice(feeder: feeder),
+                    const SizedBox(height: Space.s3),
+                  ],
+                  if (stopped) ...[
+                    TodayStopped(feeder: feeder),
+                    const SizedBox(height: Space.s3),
+                  ] else if (card?.fault case final fault?) ...[
+                    TodayLastFeedFailed(fault: fault),
+                    const SizedBox(height: Space.s3),
+                  ],
+                  if (card != null) ...[_Facts(feeder: feeder, card: card), const SizedBox(height: Space.s3)],
+                  _LightsLink(),
+                  if (stopped) ...[
+                    const SizedBox(height: Space.s3),
+                    Text(
+                      'Other faults that show here: the bowl sensor stopped '
+                      'answering, the outlet is blocked, the motor drew too '
+                      'much current.',
+                      style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: context.colors.textMuted),
+                    ),
+                  ],
                 ],
-                if (card != null) ...[_Facts(feeder: feeder, card: card), const SizedBox(height: Space.s3)],
-                _LightsLink(),
-                if (stopped) ...[
-                  const SizedBox(height: Space.s3),
-                  Text(
-                    'Other faults that show here: the bowl sensor stopped '
-                    'answering, the outlet is blocked, the motor drew too '
-                    'much current.',
-                    style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: context.colors.textMuted),
-                  ),
-                ],
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: Space.s3),
-          FilledButton(
-            onPressed: feeder.state.canFeed ? () => feedNow(context, feeder) : null,
-            child: Text(stopped ? 'Feed now · unavailable until restart' : 'Feed now'),
-          ),
-        ],
-      ),
-    );
-  }
+            const SizedBox(height: Space.s3),
+            FilledButton(
+              onPressed: feeder.state.canFeed ? () => feedNow(context, feeder) : null,
+              child: Text(stopped ? 'Feed now · unavailable until restart' : 'Feed now'),
+            ),
+          ],
+        ),
+      );
+    },
+  );
 }
 
 class _Summary extends StatelessWidget {
@@ -187,13 +191,13 @@ class _Facts extends StatelessWidget {
                   decoration: BoxDecoration(color: foodColor, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 6),
-                Flexible(child: _value(context, food)),
+                Flexible(child: _Value(food)),
               ],
             ),
           ),
-          _Row(Glyph.power, 'Power', value: _value(context, _power(card))),
-          _Row(Glyph.wifi, 'Wi-Fi', value: _value(context, _signal(card.rssi))),
-          _Row(Glyph.clock, 'Clock', value: _value(context, clockWords(context, card))),
+          _Row(Glyph.power, 'Power', value: _Value(_power(card))),
+          _Row(Glyph.wifi, 'Wi-Fi', value: _Value(_signal(card.rssi))),
+          _Row(Glyph.clock, 'Clock', value: _Value(clockWords(context, card))),
           _Row(
             Glyph.droplet,
             'Desiccant',
@@ -204,12 +208,6 @@ class _Facts extends StatelessWidget {
       ),
     );
   }
-
-  Widget _value(BuildContext context, String text) => Text(
-    text,
-    textAlign: TextAlign.end,
-    style: TextStyle(fontSize: Sizes.base, color: context.colors.text),
-  );
 
   static String _power(api.Card card) => switch ((card.adapter, card.batteryPercent)) {
     (true, final int percent?) => 'Mains · batteries $percent%',
@@ -409,4 +407,17 @@ class _LightsLink extends StatelessWidget {
       ),
     );
   }
+}
+
+class _Value extends StatelessWidget {
+  const _Value(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    textAlign: TextAlign.end,
+    style: TextStyle(fontSize: Sizes.base, color: context.colors.text),
+  );
 }

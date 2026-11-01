@@ -78,18 +78,21 @@ class StepScaffold extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (progress != null)
+            if (progress case final progress?)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: Space.s5),
-                child: Bar(value: progress!, height: 4),
+                child: Bar(value: progress, height: 4),
               ),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(Space.s5, 20, Space.s5, Space.s5),
                 children: [
-                  if (top != null) ...[top!, const SizedBox(height: Space.s4)],
-                  if (title != null) Headline(title!),
-                  if (body != null) ...[const SizedBox(height: Space.s3), Text(body!, style: bodyStyle(context))],
+                  if (top case final top?) ...[top, const SizedBox(height: Space.s4)],
+                  if (title case final title?) Headline(title),
+                  if (body case final body?) ...[
+                    const SizedBox(height: Space.s3),
+                    Text(body, style: bodyStyle(context)),
+                  ],
                   if (title != null || body != null) const SizedBox(height: 20),
                   ...content,
                 ],
@@ -247,8 +250,8 @@ class StatusChip extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      if (glyph != null)
-        StrokeIcon(glyph!, size: 14, color: color, weight: 2)
+      if (glyph case final glyph?)
+        StrokeIcon(glyph, size: 14, color: color, weight: 2)
       else
         Container(
           width: 6,
@@ -316,7 +319,7 @@ class Notice extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (glyph != null) ...[StrokeIcon(glyph!, size: 18, color: c.accent), const SizedBox(width: 10)],
+          if (glyph case final glyph?) ...[StrokeIcon(glyph, size: 18, color: c.accent), const SizedBox(width: 10)],
           Expanded(
             child: Text.rich(
               TextSpan(

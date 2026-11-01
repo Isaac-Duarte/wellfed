@@ -16,21 +16,13 @@ import 'package:wellfed/widgets/replies.dart';
 /// a join whose answer never came is not sent again: the screen says so and
 /// asks for a new one.
 class JoinScreen extends StatefulWidget {
-  const JoinScreen({super.key, required this.newFlow, this.scanner = _camera});
+  const JoinScreen({super.key, required this.newFlow, this.scanner});
 
   /// The controller of this screen's one join.
   final JoinFlow Function() newFlow;
 
-  /// What reads a code, handing on each text it sees.
-  final Widget Function(void Function(String)) scanner;
-
-  static Widget _camera(void Function(String) seen) => MobileScanner(
-    onDetect: (capture) {
-      for (final Barcode code in capture.barcodes) {
-        if (code.rawValue case final text?) seen(text);
-      }
-    },
-  );
+  /// What reads a code in place of the camera, handing on each text it sees.
+  final Widget Function(void Function(String))? scanner;
 
   @override
   State<JoinScreen> createState() => _JoinScreenState();
@@ -58,107 +50,122 @@ class _JoinScreenState extends State<JoinScreen> {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: _flow,
     builder: (context, _) => switch (_flow.state) {
-      final JoinScanning state => _scan(context, state),
-      final JoinReview state => _review(context, state),
-      final JoinJoined state => _joined(context, state),
+      final JoinScanning state => Builder(
+        builder: (context) {
+          final ThemeTokens c = context.colors;
+          return StepScaffold(
+            appBarTitle: 'Join with an invite',
+            body:
+                'Ask an owner to open People › Invite someone on their phone, then '
+                'point this camera at the code.',
+            content: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: SizedBox(height: 300, child: widget.scanner?.call(_flow.seen) ?? _Camera(_flow.seen)),
+              ),
+              if (state.badText case final String bad?)
+                Padding(
+                  padding: const EdgeInsets.only(top: Space.s3),
+                  child: Text(bad, style: TextStyle(color: c.fault)),
+                ),
+            ],
+            actions: [OutlinedButton(onPressed: () => unawaited(_paste()), child: const Text('Paste an invite link'))],
+          );
+        },
+      ),
+      final JoinReview state => Builder(
+        builder: (context) {
+          final bool joining = state.joining;
+          final FeederRefusal? refusal = state.refusal;
+          final String? problem = refusal == null ? state.problem : refusalWords(refusal);
+          final where = state.finding
+              ? 'Looking…'
+              : state.address == null
+              ? 'Not found'
+              : 'Found';
+          return StepScaffold(
+            title: "You're invited to a feeder",
+            content: [
+              FactList([('On your Wi-Fi', Text(where))]),
+              if (state.address == null && !state.finding) ...[
+                const SizedBox(height: Space.s3),
+                const Notice(
+                  tone: Tone.neutral,
+                  glyph: Glyph.wifi,
+                  text: 'Join the same Wi-Fi as the feeder, then look again.',
+                ),
+                const SizedBox(height: Space.s2),
+                OutlinedButton(onPressed: () => unawaited(_flow.find()), child: const Text('Look again')),
+              ],
+              const SizedBox(height: Space.s4),
+              LabeledField(
+                label: 'This feeder',
+                hint: 'Only this phone uses it.',
+                child: TextField(controller: _feederName, onChanged: (_) => setState(() {})),
+              ),
+              const SizedBox(height: Space.s4),
+              LabeledField(
+                label: 'This phone',
+                hint: 'The feeder lists you by this.',
+                child: TextField(controller: _phoneName, onChanged: (_) => setState(() {})),
+              ),
+              if (problem != null) ...[
+                const SizedBox(height: Space.s4),
+                Notice(tone: Tone.fault, glyph: Glyph.warning, text: problem),
+              ],
+            ],
+            actions: [
+              FilledButton(
+                onPressed:
+                    joining ||
+                        state.spent ||
+                        state.address == null ||
+                        _feederName.text.trim().isEmpty ||
+                        _phoneName.text.trim().isEmpty
+                    ? null
+                    : () => unawaited(_flow.join(label: _phoneName.text.trim(), feederName: _feederName.text.trim())),
+                child: Text(joining ? 'Joining…' : 'Join ${_feederName.text.trim()}'),
+              ),
+            ],
+          );
+        },
+      ),
+      final JoinJoined state => Builder(
+        builder: (context) {
+          final String name = _feederName.text.trim();
+          final owner = state.role == ClientRole.owner;
+          return StepScaffold(
+            leading: Leading.none,
+            title: 'You can use $name',
+            body: owner
+                ? 'You can do everything here, including Wi-Fi, updates and '
+                      'removing people.'
+                : 'You can feed, edit meals and settings, and lock the buttons. '
+                      'Wi-Fi, updates and removing people stay with its owners.',
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+                child: const Text('Done'),
+              ),
+            ],
+          );
+        },
+      ),
     },
   );
+}
 
-  Widget _scan(BuildContext context, JoinScanning state) {
-    final ThemeTokens c = context.colors;
-    return StepScaffold(
-      appBarTitle: 'Join with an invite',
-      body:
-          'Ask an owner to open People › Invite someone on their phone, then '
-          'point this camera at the code.',
-      content: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: SizedBox(height: 300, child: widget.scanner(_flow.seen)),
-        ),
-        if (state.badText case final bad?)
-          Padding(
-            padding: const EdgeInsets.only(top: Space.s3),
-            child: Text(bad, style: TextStyle(color: c.fault)),
-          ),
-      ],
-      actions: [OutlinedButton(onPressed: () => unawaited(_paste()), child: const Text('Paste an invite link'))],
-    );
-  }
+class _Camera extends StatelessWidget {
+  const _Camera(this.seen);
 
-  Widget _review(BuildContext context, JoinReview state) {
-    final bool joining = state.joining;
-    final FeederRefusal? refusal = state.refusal;
-    final String? problem = refusal == null ? state.problem : refusalWords(refusal);
-    final where = state.finding
-        ? 'Looking…'
-        : state.address == null
-        ? 'Not found'
-        : 'Found';
-    return StepScaffold(
-      title: "You're invited to a feeder",
-      content: [
-        FactList([('On your Wi-Fi', Text(where))]),
-        if (state.address == null && !state.finding) ...[
-          const SizedBox(height: Space.s3),
-          const Notice(
-            tone: Tone.neutral,
-            glyph: Glyph.wifi,
-            text: 'Join the same Wi-Fi as the feeder, then look again.',
-          ),
-          const SizedBox(height: Space.s2),
-          OutlinedButton(onPressed: () => unawaited(_flow.find()), child: const Text('Look again')),
-        ],
-        const SizedBox(height: Space.s4),
-        LabeledField(
-          label: 'This feeder',
-          hint: 'Only this phone uses it.',
-          child: TextField(controller: _feederName, onChanged: (_) => setState(() {})),
-        ),
-        const SizedBox(height: Space.s4),
-        LabeledField(
-          label: 'This phone',
-          hint: 'The feeder lists you by this.',
-          child: TextField(controller: _phoneName, onChanged: (_) => setState(() {})),
-        ),
-        if (problem != null) ...[
-          const SizedBox(height: Space.s4),
-          Notice(tone: Tone.fault, glyph: Glyph.warning, text: problem),
-        ],
-      ],
-      actions: [
-        FilledButton(
-          onPressed:
-              joining ||
-                  state.spent ||
-                  state.address == null ||
-                  _feederName.text.trim().isEmpty ||
-                  _phoneName.text.trim().isEmpty
-              ? null
-              : () => unawaited(_flow.join(label: _phoneName.text.trim(), feederName: _feederName.text.trim())),
-          child: Text(joining ? 'Joining…' : 'Join ${_feederName.text.trim()}'),
-        ),
-      ],
-    );
-  }
+  final void Function(String) seen;
 
-  Widget _joined(BuildContext context, JoinJoined state) {
-    final String name = _feederName.text.trim();
-    final owner = state.role == ClientRole.owner;
-    return StepScaffold(
-      leading: Leading.none,
-      title: 'You can use $name',
-      body: owner
-          ? 'You can do everything here, including Wi-Fi, updates and '
-                'removing people.'
-          : 'You can feed, edit meals and settings, and lock the buttons. '
-                'Wi-Fi, updates and removing people stay with its owners.',
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
-          child: const Text('Done'),
-        ),
-      ],
-    );
-  }
+  @override
+  Widget build(BuildContext context) => MobileScanner(
+    onDetect: (capture) {
+      for (final Barcode code in capture.barcodes) {
+        if (code.rawValue case final text?) seen(text);
+      }
+    },
+  );
 }

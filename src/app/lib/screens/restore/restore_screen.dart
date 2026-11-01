@@ -242,6 +242,7 @@ class _Line extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
     final running = state == CheckState.running;
+    final double? part = fraction;
     return Padding(
       padding: const EdgeInsets.only(bottom: Space.s3),
       child: Column(
@@ -278,14 +279,14 @@ class _Line extends StatelessWidget {
                   ),
                 ),
               ),
-              if (running && fraction != null)
+              if (running && part != null)
                 Text(
-                  '${(fraction! * 100).round()}%',
+                  '${(part * 100).round()}%',
                   style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
                 ),
             ],
           ),
-          if (running && fraction != null) ...[const SizedBox(height: Space.s2), Bar(value: fraction!)],
+          if (running && part != null) ...[const SizedBox(height: Space.s2), Bar(value: part)],
         ],
       ),
     );

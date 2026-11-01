@@ -206,7 +206,3 @@ linter:
 plugins:
   wellfed_lints:
     path: tools/wellfed_lints
-    diagnostics:
-      file_length: false
-      no_widget_helper: false
-      no_bang: false

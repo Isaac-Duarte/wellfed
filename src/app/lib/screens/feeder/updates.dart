@@ -72,144 +72,160 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      ListenableBuilder(listenable: Listenable.merge([_flow, _feeder]), builder: (context, _) => _build(context));
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([_flow, _feeder]),
+    builder: (context, _) {
+      final UpdateState update = _flow.state;
+      if (update is UpdateEnded) return UpdateEndScreen(feeder: _feeder, ended: update);
+      final offering = update is UpdateIdle;
+      return Scaffold(
+        appBar: AppBar(
+          toolbarHeight: 64,
+          automaticallyImplyLeading: false,
+          titleSpacing: 4,
+          leading: IconButton(
+            tooltip: 'Back',
+            onPressed: () => Navigator.pop(context),
+            icon: StrokeIcon(Glyph.back, color: context.colors.text),
+          ),
+          title: Text(
+            offering ? 'Firmware' : 'Updating ${_feeder.state.known.name}',
+            style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: context.colors.text),
+          ),
+        ),
+        body: offering
+            ? Builder(
+                builder: (context) {
+                  final ThemeTokens c = context.colors;
+                  final String name = _feeder.state.known.name;
+                  final Card? card = _feeder.state.card;
+                  final String? build = card?.build;
+                  final UpdateInfo? state = _state;
+                  final (String, int)? offered = switch (_image) {
+                    ImageCheck_Ready(:final String build, :final int version) => (build, version),
+                    _ => null,
+                  };
+                  final bool current = offered != null && build != null && offered.$1 == build;
+                  final bool can = offered != null && !current && _feeder.state.cardIsCurrent;
 
-  Widget _build(BuildContext context) {
-    final UpdateState update = _flow.state;
-    if (update is UpdateEnded) return UpdateEndScreen(feeder: _feeder, ended: update);
-    final offering = update is UpdateIdle;
-    return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: 64,
-        automaticallyImplyLeading: false,
-        titleSpacing: 4,
-        leading: IconButton(
-          tooltip: 'Back',
-          onPressed: () => Navigator.pop(context),
-          icon: StrokeIcon(Glyph.back, color: context.colors.text),
-        ),
-        title: Text(
-          offering ? 'Firmware' : 'Updating ${_feeder.state.known.name}',
-          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: context.colors.text),
-        ),
-      ),
-      body: offering ? _offer(context) : _progress(context),
-    );
-  }
-
-  Widget _offer(BuildContext context) {
-    final ThemeTokens c = context.colors;
-    final String name = _feeder.state.known.name;
-    final Card? card = _feeder.state.card;
-    final String? build = card?.build;
-    final UpdateInfo? state = _state;
-    final (String, int)? offered = switch (_image) {
-      ImageCheck_Ready(:final String build, :final int version) => (build, version),
-      _ => null,
-    };
-    final bool current = offered != null && build != null && offered.$1 == build;
-    final bool can = offered != null && !current && _feeder.state.cardIsCurrent;
-
-    return ListView(
-      padding: const EdgeInsets.all(Space.s4),
-      children: [
-        const SectionLabel('Firmware'),
-        const SizedBox(height: Space.s2),
-        FactList([
-          // The floor, not what runs: a feeder on bank 0 may run older.
-          if (state != null && state.minVersion > 0) ('Newest confirmed version', Text('${state.minVersion}')),
-          if (build != null) ('Build', Text(_short(build))),
-          if (card != null) ('Running from', Text('Bank ${card.bank}')),
-        ]),
-        const SizedBox(height: Space.s4),
-        if (_image == null)
-          Text(
-            'Looking at what this app carries…',
-            style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
-          )
-        else if (current)
-          Notice(tone: Tone.neutral, glyph: Glyph.check, text: '$name runs the version this app carries.')
-        else if (offered == null)
-          const Notice(tone: Tone.neutral, glyph: Glyph.info, text: 'This app carries no update it can install.')
-        else ...[
-          const SectionLabel('New'),
-          const SizedBox(height: Space.s2),
-          FactList([('Version', Text('${offered.$2}')), ('Build', Text(_short(offered.$1)))]),
-          const SizedBox(height: Space.s3),
-          Text(
-            'Takes a few minutes. Feeding waits while it installs, and meals '
-            "due meanwhile run when it's done.",
-            style: TextStyle(fontSize: 15, height: 1.5, color: c.text),
-          ),
-          const SizedBox(height: Space.s2),
-          Text(
-            "If the new version doesn't start properly, $name goes to its "
-            'other copy of Wellfed by itself. That copy can feed, and may be '
-            'older than the one it runs now.',
-            style: TextStyle(fontSize: 15, height: 1.5, color: c.text),
-          ),
-          const SizedBox(height: Space.s4),
-          FilledButton(
-            onPressed: can ? () => unawaited(_flow.start(build: offered.$1, version: offered.$2)) : null,
-            child: Text('Install on $name'),
-          ),
-        ],
-        const SizedBox(height: Space.s5),
-        const SectionLabel('Original firmware'),
-        const SizedBox(height: Space.s2),
-        OutlinedButton(
-          onPressed: () => unawaited(
-            Navigator.of(context)
-                .push(MaterialPageRoute<void>(builder: (_) => RestoreScreen(newFlow: _feeder.newRestore))),
-          ),
-          child: const Text('Restore original firmware'),
-        ),
-      ],
-    );
-  }
-
-  Widget _progress(BuildContext context) {
-    final ThemeTokens c = context.colors;
-    final UpdateState update = _flow.state;
-    final UpdateRun? run = update is UpdateRun ? update : null;
-    final String name = _feeder.state.known.name;
-    final sending = update is UpdateSending;
-    final int length = run?.length ?? 0;
-    final bool accepted = length > 0;
-    final int percent = accepted ? ((run?.written ?? 0) * 100 ~/ length) : 0;
-    return ListView(
-      padding: const EdgeInsets.all(Space.s4),
-      children: [
-        _Line(done: accepted || !sending, active: !accepted && sending, text: '$name accepted the update'),
-        _Line(
-          done: !sending,
-          active: accepted && sending,
-          text: sending ? ((run?.reconnecting ?? false) ? 'Reconnecting…' : 'Sending $percent%') : 'Sent',
-        ),
-        _Line(done: false, active: !sending, text: 'Restart on the new version'),
-        const _Line(done: false, active: false, text: 'Check it started properly, then keep it'),
-        const SizedBox(height: Space.s4),
-        Text(
-          'Keep the feeder plugged in. If this phone loses the connection, the '
-          'feeder runs its other copy of Wellfed, which can feed and may be '
-          'older than the one it ran.',
-          style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: c.textMuted),
-        ),
-        if (run?.holdRefused ?? false) ...[
-          const SizedBox(height: Space.s3),
-          const Notice(tone: Tone.warning, glyph: Glyph.warning, text: 'Keep this app open until it finishes.'),
-        ],
-        if (sending) ...[
-          const SizedBox(height: Space.s4),
-          OutlinedButton(
-            onPressed: (run?.cancelling ?? false) ? null : () => unawaited(_cancel()),
-            child: const Text('Cancel update'),
-          ),
-        ],
-      ],
-    );
-  }
+                  return ListView(
+                    padding: const EdgeInsets.all(Space.s4),
+                    children: [
+                      const SectionLabel('Firmware'),
+                      const SizedBox(height: Space.s2),
+                      FactList([
+                        // The floor, not what runs: a feeder on bank 0 may run older.
+                        if (state != null && state.minVersion > 0)
+                          ('Newest confirmed version', Text('${state.minVersion}')),
+                        if (build != null) ('Build', Text(_short(build))),
+                        if (card != null) ('Running from', Text('Bank ${card.bank}')),
+                      ]),
+                      const SizedBox(height: Space.s4),
+                      if (_image == null)
+                        Text(
+                          'Looking at what this app carries…',
+                          style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
+                        )
+                      else if (current)
+                        Notice(tone: Tone.neutral, glyph: Glyph.check, text: '$name runs the version this app carries.')
+                      else if (offered == null)
+                        const Notice(
+                          tone: Tone.neutral,
+                          glyph: Glyph.info,
+                          text: 'This app carries no update it can install.',
+                        )
+                      else ...[
+                        const SectionLabel('New'),
+                        const SizedBox(height: Space.s2),
+                        FactList([('Version', Text('${offered.$2}')), ('Build', Text(_short(offered.$1)))]),
+                        const SizedBox(height: Space.s3),
+                        Text(
+                          'Takes a few minutes. Feeding waits while it installs, and meals '
+                          "due meanwhile run when it's done.",
+                          style: TextStyle(fontSize: 15, height: 1.5, color: c.text),
+                        ),
+                        const SizedBox(height: Space.s2),
+                        Text(
+                          "If the new version doesn't start properly, $name goes to its "
+                          'other copy of Wellfed by itself. That copy can feed, and may be '
+                          'older than the one it runs now.',
+                          style: TextStyle(fontSize: 15, height: 1.5, color: c.text),
+                        ),
+                        const SizedBox(height: Space.s4),
+                        FilledButton(
+                          onPressed: can ? () => unawaited(_flow.start(build: offered.$1, version: offered.$2)) : null,
+                          child: Text('Install on $name'),
+                        ),
+                      ],
+                      const SizedBox(height: Space.s5),
+                      const SectionLabel('Original firmware'),
+                      const SizedBox(height: Space.s2),
+                      OutlinedButton(
+                        onPressed: () => unawaited(
+                          Navigator.of(
+                            context,
+                          ).push(MaterialPageRoute<void>(builder: (_) => RestoreScreen(newFlow: _feeder.newRestore))),
+                        ),
+                        child: const Text('Restore original firmware'),
+                      ),
+                    ],
+                  );
+                },
+              )
+            : Builder(
+                builder: (context) {
+                  final ThemeTokens c = context.colors;
+                  final UpdateState update = _flow.state;
+                  final UpdateRun? run = update is UpdateRun ? update : null;
+                  final String name = _feeder.state.known.name;
+                  final sending = update is UpdateSending;
+                  final int length = run?.length ?? 0;
+                  final bool accepted = length > 0;
+                  final int percent = accepted ? ((run?.written ?? 0) * 100 ~/ length) : 0;
+                  return ListView(
+                    padding: const EdgeInsets.all(Space.s4),
+                    children: [
+                      _Line(
+                        done: accepted || !sending,
+                        active: !accepted && sending,
+                        text: '$name accepted the update',
+                      ),
+                      _Line(
+                        done: !sending,
+                        active: accepted && sending,
+                        text: sending ? ((run?.reconnecting ?? false) ? 'Reconnecting…' : 'Sending $percent%') : 'Sent',
+                      ),
+                      _Line(done: false, active: !sending, text: 'Restart on the new version'),
+                      const _Line(done: false, active: false, text: 'Check it started properly, then keep it'),
+                      const SizedBox(height: Space.s4),
+                      Text(
+                        'Keep the feeder plugged in. If this phone loses the connection, the '
+                        'feeder runs its other copy of Wellfed, which can feed and may be '
+                        'older than the one it ran.',
+                        style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: c.textMuted),
+                      ),
+                      if (run?.holdRefused ?? false) ...[
+                        const SizedBox(height: Space.s3),
+                        const Notice(
+                          tone: Tone.warning,
+                          glyph: Glyph.warning,
+                          text: 'Keep this app open until it finishes.',
+                        ),
+                      ],
+                      if (sending) ...[
+                        const SizedBox(height: Space.s4),
+                        OutlinedButton(
+                          onPressed: (run?.cancelling ?? false) ? null : () => unawaited(_cancel()),
+                          child: const Text('Cancel update'),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              ),
+      );
+    },
+  );
 
   static String _short(String build) => build.length > 12 ? build.substring(0, 12) : build;
 }

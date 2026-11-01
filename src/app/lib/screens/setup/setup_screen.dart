@@ -124,41 +124,17 @@ class _Permissions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    Widget row(Glyph glyph, String title, String body) => Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        IconTile(glyph, size: 44),
-        const SizedBox(width: Space.s4),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text),
-              ),
-              const SizedBox(height: Space.s1),
-              Text(
-                body,
-                style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-
     return StepScaffold(
       title: 'Two permissions, used only on your network',
-      content: [
-        row(
+      content: const [
+        _PermissionRow(
           Glyph.bluetooth,
           'Nearby devices',
           'Bluetooth, only while you set a feeder up. A feeder turns '
               'Bluetooth off once setup finishes.',
         ),
-        const SizedBox(height: 20),
-        row(
+        SizedBox(height: 20),
+        _PermissionRow(
           Glyph.wifi,
           'Wi-Fi network',
           'To find your feeders on the network and to fill in your Wi-Fi '
@@ -313,6 +289,42 @@ class _WifiStepState extends State<WifiStep> {
         // A feeder already on the network only needs a new owner.
         if (widget.mayKeep)
           TextButton(onPressed: () => widget.onDone(null), child: const Text("Keep the feeder's Wi-Fi")),
+      ],
+    );
+  }
+}
+
+class _PermissionRow extends StatelessWidget {
+  const _PermissionRow(this.glyph, this.title, this.body);
+
+  final Glyph glyph;
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeTokens c = context.colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        IconTile(glyph, size: 44),
+        const SizedBox(width: Space.s4),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text),
+              ),
+              const SizedBox(height: Space.s1),
+              Text(
+                body,
+                style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }

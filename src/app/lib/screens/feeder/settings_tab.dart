@@ -28,112 +28,115 @@ class SettingsTab extends StatelessWidget {
   final FeederController feeder;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(listenable: feeder, builder: (context, _) => _build(context));
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: feeder,
+    builder: (context, _) {
+      final ThemeTokens c = context.colors;
+      final SettingsView? settings = feeder.state.card?.settings;
+      final owner = feeder.state.role == ClientRole.owner;
+      if (settings == null) {
+        return Center(
+          child: Text(
+            feeder.state.connection == Connection.online
+                ? 'Reading the settings…'
+                : "Can't read the settings right now.",
+            style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
+          ),
+        );
+      }
+      final online = feeder.state.connection == Connection.online;
 
-  Widget _build(BuildContext context) {
-    final ThemeTokens c = context.colors;
-    final SettingsView? settings = feeder.state.card?.settings;
-    final owner = feeder.state.role == ClientRole.owner;
-    if (settings == null) {
-      return Center(
-        child: Text(
-          feeder.state.connection == Connection.online ? 'Reading the settings…' : "Can't read the settings right now.",
-          style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
-        ),
-      );
-    }
-    final online = feeder.state.connection == Connection.online;
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      children: [
-        if (!owner) ...[
-          Text.rich(
-            TextSpan(
-              style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        children: [
+          if (!owner) ...[
+            Text.rich(
+              TextSpan(
+                style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
+                children: [
+                  const TextSpan(text: "You're a "),
+                  TextSpan(
+                    text: 'member',
+                    style: TextStyle(fontWeight: Fonts.semibold, color: c.text),
+                  ),
+                  TextSpan(
+                    text:
+                        ' of ${feeder.state.known.name}. You can change lights, '
+                        'sounds and reminders.',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: Space.s3),
+          ],
+          const SectionLabel('Lights and sound'),
+          Panel(
+            child: Column(
               children: [
-                const TextSpan(text: "You're a "),
-                TextSpan(
-                  text: 'member',
-                  style: TextStyle(fontWeight: Fonts.semibold, color: c.text),
+                SettingsWindowRow(
+                  feeder: feeder,
+                  settings: settings,
+                  online: online,
+                  name: 'Lights',
+                  on: settings.lights,
+                  window: settings.lightsWindow,
+                  question: 'When can the lights be on?',
+                  toggle: (on) => SettingsChanges(lights: on),
+                  windowed: (window) => SettingsChanges(lightsWindow: window),
+                  first: true,
                 ),
-                TextSpan(
-                  text:
-                      ' of ${feeder.state.known.name}. You can change lights, '
-                      'sounds and reminders.',
+                SettingsWindowRow(
+                  feeder: feeder,
+                  settings: settings,
+                  online: online,
+                  name: 'Sounds',
+                  on: settings.sound,
+                  window: settings.soundWindow,
+                  question: 'When can sounds play?',
+                  toggle: (on) => SettingsChanges(sound: on),
+                  windowed: (window) => SettingsChanges(soundWindow: window),
                 ),
+                SettingsVolumeRow(feeder: feeder, settings: settings, online: online),
               ],
             ),
           ),
-          const SizedBox(height: Space.s3),
-        ],
-        const SectionLabel('Lights and sound'),
-        Panel(
-          child: Column(
-            children: [
-              SettingsWindowRow(
-                feeder: feeder,
-                settings: settings,
-                online: online,
-                name: 'Lights',
-                on: settings.lights,
-                window: settings.lightsWindow,
-                question: 'When can the lights be on?',
-                toggle: (on) => SettingsChanges(lights: on),
-                windowed: (window) => SettingsChanges(lightsWindow: window),
-                first: true,
-              ),
-              SettingsWindowRow(
-                feeder: feeder,
-                settings: settings,
-                online: online,
-                name: 'Sounds',
-                on: settings.sound,
-                window: settings.soundWindow,
-                question: 'When can sounds play?',
-                toggle: (on) => SettingsChanges(sound: on),
-                windowed: (window) => SettingsChanges(soundWindow: window),
-              ),
-              SettingsVolumeRow(feeder: feeder, settings: settings, online: online),
-            ],
+          const SizedBox(height: Space.s4),
+          const SectionLabel('Reminders'),
+          Panel(
+            child: Column(
+              children: [
+                SettingsReminderRow(feeder: feeder, settings: settings, online: online),
+                SettingsDesiccantRow(feeder: feeder, settings: settings, online: online),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: Space.s4),
-        const SectionLabel('Reminders'),
-        Panel(
-          child: Column(
+          const SizedBox(height: Space.s4),
+          if (owner) SettingsOwnerSection(feeder: feeder) else const SettingsOwnerOnly(),
+          const SizedBox(height: Space.s4),
+          Row(
             children: [
-              SettingsReminderRow(feeder: feeder, settings: settings, online: online),
-              SettingsDesiccantRow(feeder: feeder, settings: settings, online: online),
-            ],
-          ),
-        ),
-        const SizedBox(height: Space.s4),
-        if (owner) SettingsOwnerSection(feeder: feeder) else const SettingsOwnerOnly(),
-        const SizedBox(height: Space.s4),
-        Row(
-          children: [
-            if (owner) ...[
+              if (owner) ...[
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: online ? () => unawaited(confirmRestart(context, feeder)) : null,
+                    child: const Text('Restart'),
+                  ),
+                ),
+                const SizedBox(width: Space.s3),
+              ],
               Expanded(
                 child: OutlinedButton(
-                  onPressed: online ? () => unawaited(confirmRestart(context, feeder)) : null,
-                  child: const Text('Restart'),
+                  style: OutlinedButton.styleFrom(foregroundColor: c.fault),
+                  onPressed: () => unawaited(_forget(context, feeder)),
+                  child: const Text('Remove from this phone'),
                 ),
               ),
-              const SizedBox(width: Space.s3),
             ],
-            Expanded(
-              child: OutlinedButton(
-                style: OutlinedButton.styleFrom(foregroundColor: c.fault),
-                onPressed: () => unawaited(_forget(context, feeder)),
-                child: const Text('Remove from this phone'),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
+          ),
+        ],
+      );
+    },
+  );
 
   /// This phone forgets the feeder. The feeder's list stays as it is, so an
   /// owner removes the key from People; a member cannot remove itself.

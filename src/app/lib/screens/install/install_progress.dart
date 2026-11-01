@@ -320,7 +320,8 @@ class _Step extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
     final running = state == CheckState.running;
-    final int? percent = fraction == null ? null : (fraction! * 100).round();
+    final double? part = fraction;
+    final int? percent = part == null ? null : (part * 100).round();
     return Padding(
       padding: const EdgeInsets.only(bottom: Space.s3),
       child: Column(
@@ -364,7 +365,7 @@ class _Step extends StatelessWidget {
                 ),
             ],
           ),
-          if (running && fraction != null) ...[const SizedBox(height: Space.s2), Bar(value: fraction!)],
+          if (running && part != null) ...[const SizedBox(height: Space.s2), Bar(value: part)],
         ],
       ),
     );
@@ -488,8 +489,8 @@ class _DoneState extends State<InstallDonePage> {
               const SizedBox(height: Space.s2),
               TextButton(onPressed: () => unawaited(_save()), child: const Text('Save the backup somewhere else')),
             ],
-            if (_shareFailed != null)
-              Notice(tone: Tone.fault, lead: "The backup wasn't saved elsewhere.", text: _shareFailed!),
+            if (_shareFailed case final failed?)
+              Notice(tone: Tone.fault, lead: "The backup wasn't saved elsewhere.", text: failed),
           ],
         ),
       ),

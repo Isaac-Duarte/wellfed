@@ -162,11 +162,6 @@ class RingLegend extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    Widget light() => Container(
-      width: 6,
-      height: 6,
-      decoration: BoxDecoration(color: c.lineStrong, shape: BoxShape.circle),
-    );
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
       decoration: BoxDecoration(color: c.sunken, borderRadius: BorderRadius.circular(Radii.card)),
@@ -185,7 +180,12 @@ class RingLegend extends StatelessWidget {
               children: [
                 const PanelSymbol(1, size: 22),
                 const PanelSymbol(2, size: 22),
-                for (var i = 0; i < 4; i++) light(),
+                for (var i = 0; i < 4; i++)
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(color: c.lineStrong, shape: BoxShape.circle),
+                  ),
                 const PanelSymbol(3, size: 22),
                 const PanelSymbol(4, size: 22),
               ],
@@ -242,6 +242,7 @@ class PanelPhoto extends StatelessWidget {
           builder: (context, constraints) {
             final double scale = constraints.maxWidth / _width;
             Offset at(int position, double dy) {
+              // ignore: wellfed_lints/no_bang, positions are 1 to 4, the panel's four buttons, and _rings has each.
               final Offset ring = _rings[position]!;
               return Offset(ring.dx * scale, (ring.dy + _top + dy) * scale);
             }
@@ -273,11 +274,11 @@ class PanelPhoto extends StatelessWidget {
                           ),
                         ),
                       ),
-                    if (caption != null)
+                    if (caption case final caption?)
                       Positioned(
                         left: at(held.first, 53).dx,
                         top: at(held.first, 53).dy,
-                        child: Text(caption!, style: label),
+                        child: Text(caption, style: label),
                       )
                     else
                       for (final position in held)

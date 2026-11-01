@@ -216,19 +216,6 @@ class _Joining extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
     final String? network = state.network;
-    Widget done(String text) => Row(
-      children: [
-        SizedBox.square(
-          dimension: 28,
-          child: Center(child: StrokeIcon(Glyph.check, size: 22, color: c.ok, weight: 2.2)),
-        ),
-        const SizedBox(width: Space.s3),
-        Expanded(
-          child: Text(text, style: TextStyle(fontSize: 15, color: c.text)),
-        ),
-      ],
-    );
-
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -240,11 +227,13 @@ class _Joining extends StatelessWidget {
               const SizedBox(height: 28),
               Headline('${state.feederName} is joining your Wi-Fi', size: 24, align: TextAlign.center),
               const SizedBox(height: 28),
-              done('This phone added as owner'),
+              const _DoneLine('This phone added as owner'),
               const SizedBox(height: Space.s4),
-              done(state.wifiSaved == WifiSaved.unchanged ? 'The feeder keeps its Wi-Fi' : 'Wi-Fi saved on the feeder'),
+              _DoneLine(
+                state.wifiSaved == WifiSaved.unchanged ? 'The feeder keeps its Wi-Fi' : 'Wi-Fi saved on the feeder',
+              ),
               const SizedBox(height: Space.s4),
-              done('Feeder restarting without Bluetooth'),
+              const _DoneLine('Feeder restarting without Bluetooth'),
               const SizedBox(height: Space.s4),
               Row(
                 children: [
@@ -447,6 +436,29 @@ class _Failed extends StatelessWidget {
               if (reason.$1 != title) reason,
           ]),
         ],
+      ],
+    );
+  }
+}
+
+class _DoneLine extends StatelessWidget {
+  const _DoneLine(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeTokens c = context.colors;
+    return Row(
+      children: [
+        SizedBox.square(
+          dimension: 28,
+          child: Center(child: StrokeIcon(Glyph.check, size: 22, color: c.ok, weight: 2.2)),
+        ),
+        const SizedBox(width: Space.s3),
+        Expanded(
+          child: Text(text, style: TextStyle(fontSize: 15, color: c.text)),
+        ),
       ],
     );
   }

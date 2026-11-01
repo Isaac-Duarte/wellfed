@@ -46,17 +46,6 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
     };
     final String? people = feeder.state.clients.isEmpty ? null : '${feeder.state.clients.length} of $clientsMost';
 
-    Widget link(String name, String? note, Widget screen, {bool first = false}) => SettingsTile(
-      first: first,
-      onTap: () => _open(context, screen),
-      child: Row(
-        children: [
-          Expanded(child: SettingsWords(name, note)),
-          StrokeIcon(Glyph.chevron, size: 20, color: context.colors.textMuted),
-        ],
-      ),
-    );
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -64,15 +53,16 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
         Panel(
           child: Column(
             children: [
-              link('Wi-Fi', signal, WifiScreen(feeder: feeder), first: true),
-              link(
+              _Link('Wi-Fi', signal, WifiScreen(feeder: feeder), first: true, open: (screen) => _open(context, screen)),
+              _Link(
                 'Time zone',
                 zone == null || zone.isEmpty ? 'Follows the phones' : zone,
                 ClockPortionScreen(feeder: feeder),
+                open: (screen) => _open(context, screen),
               ),
-              link('People', people, PeopleScreen(feeder: feeder)),
-              link('Firmware', null, UpdatesScreen(feeder: feeder)),
-              link('Diagnostics', null, DiagnosticsScreen(feeder: feeder)),
+              _Link('People', people, PeopleScreen(feeder: feeder), open: (screen) => _open(context, screen)),
+              _Link('Firmware', null, UpdatesScreen(feeder: feeder), open: (screen) => _open(context, screen)),
+              _Link('Diagnostics', null, DiagnosticsScreen(feeder: feeder), open: (screen) => _open(context, screen)),
             ],
           ),
         ),
@@ -119,4 +109,26 @@ class SettingsOwnerOnly extends StatelessWidget {
       ],
     );
   }
+}
+
+class _Link extends StatelessWidget {
+  const _Link(this.name, this.note, this.screen, {required this.open, this.first = false});
+
+  final String name;
+  final String? note;
+  final Widget screen;
+  final void Function(Widget) open;
+  final bool first;
+
+  @override
+  Widget build(BuildContext context) => SettingsTile(
+    first: first,
+    onTap: () => open(screen),
+    child: Row(
+      children: [
+        Expanded(child: SettingsWords(name, note)),
+        StrokeIcon(Glyph.chevron, size: 20, color: context.colors.textMuted),
+      ],
+    ),
+  );
 }

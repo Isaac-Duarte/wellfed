@@ -85,79 +85,77 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([widget.book, _backups]),
-    builder: (context, _) => _build(context),
-  );
-
-  Widget _build(BuildContext context) {
-    final ThemeTokens c = context.colors;
-    final FeederBook book = widget.book;
-    return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: 64,
-        titleSpacing: 20,
-        automaticallyImplyLeading: false,
-        title: Text(
-          'Settings',
-          style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
-        ),
-      ),
-      bottomNavigationBar: const MainNav(selected: 1),
-      body: ListView(
-        padding: const EdgeInsets.all(Space.s4),
-        children: [
-          const SectionLabel('Appearance'),
-          const SizedBox(height: Space.s2),
-          SegmentedButton<Appearance>(
-            segments: const [
-              ButtonSegment(value: Appearance.system, label: Text('System')),
-              ButtonSegment(value: Appearance.light, label: Text('Light')),
-              ButtonSegment(value: Appearance.dark, label: Text('Dark')),
-            ],
-            selected: {book.appearance},
-            onSelectionChanged: (chosen) => unawaited(book.setAppearance(chosen.first)),
+    builder: (context, _) {
+      final ThemeTokens c = context.colors;
+      final FeederBook book = widget.book;
+      return Scaffold(
+        appBar: AppBar(
+          toolbarHeight: 64,
+          titleSpacing: 20,
+          automaticallyImplyLeading: false,
+          title: Text(
+            'Settings',
+            style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
           ),
-          const SizedBox(height: Space.s4),
-          const SectionLabel('This phone'),
-          const SizedBox(height: Space.s2),
-          Panel(
-            child: Column(
-              children: [
-                ListTile(
-                  title: const Text('Name on feeders'),
-                  subtitle: Text(
-                    '${book.label}\nFeeders keep the name they were joined '
-                    'with.',
-                  ),
-                  isThreeLine: true,
-                  onTap: () => unawaited(_rename()),
-                ),
-                ListTile(
-                  title: const Text('Firmware backups'),
-                  trailing: Text('${_backups.state.length}', style: TextStyle(fontSize: 15, color: c.text)),
-                ),
-                for (final (feeder, path) in _backups.state)
+        ),
+        bottomNavigationBar: const MainNav(selected: 1),
+        body: ListView(
+          padding: const EdgeInsets.all(Space.s4),
+          children: [
+            const SectionLabel('Appearance'),
+            const SizedBox(height: Space.s2),
+            SegmentedButton<Appearance>(
+              segments: const [
+                ButtonSegment(value: Appearance.system, label: Text('System')),
+                ButtonSegment(value: Appearance.light, label: Text('Light')),
+                ButtonSegment(value: Appearance.dark, label: Text('Dark')),
+              ],
+              selected: {book.appearance},
+              onSelectionChanged: (chosen) => unawaited(book.setAppearance(chosen.first)),
+            ),
+            const SizedBox(height: Space.s4),
+            const SectionLabel('This phone'),
+            const SizedBox(height: Space.s2),
+            Panel(
+              child: Column(
+                children: [
                   ListTile(
-                    title: Text(feeder.name),
-                    trailing: IconButton(
-                      tooltip: "Share ${feeder.name}'s backup",
-                      icon: const Icon(Icons.share_outlined),
-                      onPressed: () => unawaited(_backups.share(path)),
+                    title: const Text('Name on feeders'),
+                    subtitle: Text(
+                      '${book.label}\nFeeders keep the name they were joined '
+                      'with.',
+                    ),
+                    isThreeLine: true,
+                    onTap: () => unawaited(_rename()),
+                  ),
+                  ListTile(
+                    title: const Text('Firmware backups'),
+                    trailing: Text('${_backups.state.length}', style: TextStyle(fontSize: 15, color: c.text)),
+                  ),
+                  for (final (feeder, path) in _backups.state)
+                    ListTile(
+                      title: Text(feeder.name),
+                      trailing: IconButton(
+                        tooltip: "Share ${feeder.name}'s backup",
+                        icon: const Icon(Icons.share_outlined),
+                        onPressed: () => unawaited(_backups.share(path)),
+                      ),
+                    ),
+                  ListTile(
+                    title: const Text('About Wellfed'),
+                    trailing: StrokeIcon(Glyph.chevron, size: 20, color: c.textMuted),
+                    onTap: () => unawaited(
+                      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const AboutScreen())),
                     ),
                   ),
-                ListTile(
-                  title: const Text('About Wellfed'),
-                  trailing: StrokeIcon(Glyph.chevron, size: 20, color: c.textMuted),
-                  onTap: () => unawaited(
-                    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const AboutScreen())),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
+          ],
+        ),
+      );
+    },
+  );
 }
 
 /// What this app is (15.2).

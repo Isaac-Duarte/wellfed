@@ -84,33 +84,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     final int? worst = storage == null || storage.isEmpty ? null : storage.reduce((a, b) => a > b ? a : b);
     final Card? card = feeder.state.card;
 
-    Widget tile(String name, String value) => Expanded(
-      child: Panel(
-        padding: const EdgeInsets.all(Space.s3),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              value,
-              style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
-            ),
-            Text(
-              name,
-              style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    Widget link(String name, String? note, Widget screen) => ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: Space.s4),
-      title: Text(name),
-      subtitle: note == null ? null : Text(note),
-      trailing: StrokeIcon(Glyph.chevron, size: 20, color: c.textMuted),
-      onTap: () => _open(screen),
-    );
-
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
@@ -137,9 +110,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           const SizedBox(height: Space.s2),
           Row(
             children: [
-              tile('feeds', '${boot?.feeds ?? '–'}'),
+              _Tile('feeds', '${boot?.feeds ?? '–'}'),
               const SizedBox(width: Space.s2),
-              tile("didn't finish", '${boot?.feedsFailed ?? '–'}'),
+              _Tile("didn't finish", '${boot?.feedsFailed ?? '–'}'),
             ],
           ),
           const SizedBox(height: Space.s2),
@@ -174,9 +147,9 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           Panel(
             child: Column(
               children: [
-                link('Motor traces', 'Recent feeds', MotorTracesScreen(feeder: feeder)),
-                link('Live log', null, LiveLogScreen(feeder: feeder)),
-                link('Clock and portion size', null, ClockPortionScreen(feeder: feeder)),
+                _Link('Motor traces', 'Recent feeds', MotorTracesScreen(feeder: feeder), _open),
+                _Link('Live log', null, LiveLogScreen(feeder: feeder), _open),
+                _Link('Clock and portion size', null, ClockPortionScreen(feeder: feeder), _open),
               ],
             ),
           ),
@@ -184,4 +157,55 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       ),
     );
   }
+}
+
+class _Tile extends StatelessWidget {
+  const _Tile(this.name, this.value);
+
+  final String name;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeTokens c = context.colors;
+    return Expanded(
+      child: Panel(
+        padding: const EdgeInsets.all(Space.s3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
+            ),
+            Text(
+              name,
+              style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Link extends StatelessWidget {
+  const _Link(this.name, this.note, this.screen, this.open);
+
+  final String name;
+  final String? note;
+  final Widget screen;
+  final void Function(Widget) open;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    contentPadding: const EdgeInsets.symmetric(horizontal: Space.s4),
+    title: Text(name),
+    subtitle: switch (note) {
+      final String note? => Text(note),
+      null => null,
+    },
+    trailing: StrokeIcon(Glyph.chevron, size: 20, color: context.colors.textMuted),
+    onTap: () => open(screen),
+  );
 }

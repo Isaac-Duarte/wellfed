@@ -18,8 +18,8 @@ class InstallBeforePage extends StatelessWidget {
 
   /// Why this phone cannot install: an APK with no image, or one whose
   /// sources cannot be reviewed. Refused here, before the feeder is touched.
-  Widget? _refusal() {
-    final (String lead, String text)? refusal = switch ((state.image, state.build)) {
+  (String, String)? _refusal() {
+    return switch ((state.image, state.build)) {
       (ImageCheck_Absent(), _) => (
         'This build has no firmware to install.',
         'Install a release of the app, or build it with its image.',
@@ -36,9 +36,6 @@ class InstallBeforePage extends StatelessWidget {
       ),
       _ => null,
     };
-    if (refusal == null) return null;
-    final (String lead, String text) = refusal;
-    return Notice(tone: Tone.fault, lead: lead, text: text);
   }
 
   Future<void> _begin(BuildContext context) async {
@@ -59,7 +56,8 @@ class InstallBeforePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget? refusal = _refusal();
+    final (String, String)? refused = _refusal();
+    final Widget? refusal = refused == null ? null : Notice(tone: Tone.fault, lead: refused.$1, text: refused.$2);
     final bool damaged = state.pending == PendingInstall.damaged || state.pending == PendingInstall.ledgerDamaged;
     return StepScaffold(
       leading: Leading.close,

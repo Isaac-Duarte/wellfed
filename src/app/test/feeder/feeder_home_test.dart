@@ -28,7 +28,7 @@ void main() {
         book: FakeBook(),
         root: (context) => HomeScreen(fleet: fleet, earlierInstall: () async => earlier),
         pages: const {},
-        feeder: (context, identity, tab) => FeederShell.of(fleet, identity, initialTab: tab),
+        feeder: (context, identity, tab) => FeederRoute(fleet: fleet, identity: identity, initialTab: tab),
       );
       addTearDown(router.dispose);
       await tester.pumpWidget(MaterialApp.router(theme: wellfedTheme(Brightness.light), routerConfig: router));

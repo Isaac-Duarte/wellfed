@@ -45,7 +45,53 @@ class LightsHelp extends StatelessWidget {
       ),
       body: ListView(
         children: [
-          _photo(context),
+          Builder(
+            builder: (context) {
+              return Semantics(
+                image: true,
+                label: "The feeder's control ring, with its lights and buttons marked",
+                child: ExcludeSemantics(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final double scale = constraints.maxWidth / _width;
+                      // The photo is always dark, so its marks use the dark theme's.
+                      final mark = TextStyle(
+                        fontSize: 12,
+                        fontWeight: Fonts.display,
+                        color: darkTokens.text,
+                        shadows: const [Shadow(blurRadius: 3, offset: Offset(0, 1))],
+                      );
+                      return SizedBox(
+                        height: _height * scale,
+                        child: ClipRect(
+                          child: ColoredBox(
+                            color: darkTokens.background,
+                            child: Stack(
+                              children: [
+                                Positioned(
+                                  left: 0,
+                                  top: _top * scale,
+                                  width: constraints.maxWidth,
+                                  height: constraints.maxWidth,
+                                  child: Image.asset('assets/renders/panel.png'),
+                                ),
+                                for (final MapEntry(key: name, value: at) in _marks.entries)
+                                  Positioned(
+                                    left: at.dx * scale,
+                                    top: at.dy * scale,
+                                    child: Text(name, style: mark),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
           const Padding(
             padding: EdgeInsets.all(Space.s4),
             child: Column(
@@ -95,50 +141,6 @@ class LightsHelp extends StatelessWidget {
       ),
     );
   }
-
-  Widget _photo(BuildContext context) => Semantics(
-    image: true,
-    label: "The feeder's control ring, with its lights and buttons marked",
-    child: ExcludeSemantics(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final double scale = constraints.maxWidth / _width;
-          // The photo is always dark, so its marks use the dark theme's.
-          final mark = TextStyle(
-            fontSize: 12,
-            fontWeight: Fonts.display,
-            color: darkTokens.text,
-            shadows: const [Shadow(blurRadius: 3, offset: Offset(0, 1))],
-          );
-          return SizedBox(
-            height: _height * scale,
-            child: ClipRect(
-              child: ColoredBox(
-                color: darkTokens.background,
-                child: Stack(
-                  children: [
-                    Positioned(
-                      left: 0,
-                      top: _top * scale,
-                      width: constraints.maxWidth,
-                      height: constraints.maxWidth,
-                      child: Image.asset('assets/renders/panel.png'),
-                    ),
-                    for (final MapEntry(key: name, value: at) in _marks.entries)
-                      Positioned(
-                        left: at.dx * scale,
-                        top: at.dy * scale,
-                        child: Text(name, style: mark),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    ),
-  );
 }
 
 class _Heading extends StatelessWidget {

@@ -82,65 +82,65 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      ListenableBuilder(listenable: widget.feeder, builder: (context, _) => _build(context));
-
-  Widget _build(BuildContext context) {
-    final ThemeTokens c = context.colors;
-    final FeederController feeder = widget.feeder;
-    final List<HistoryEntry> entries = [
-      for (final entry in feeder.state.history.reversed)
-        if (_shown(_filter, entry.body)) entry,
-    ];
-    final rows = <Widget>[];
-    String? day;
-    for (final (i, entry) in entries.indexed) {
-      final PlatformInt64? at = entry.atMs;
-      if (at != null) {
-        final String heading = dayText(DateTime.fromMillisecondsSinceEpoch(at));
-        if (heading != day) {
-          day = heading;
-          rows.add(_DayHeading(heading, first: i == 0));
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: widget.feeder,
+    builder: (context, _) {
+      final ThemeTokens c = context.colors;
+      final FeederController feeder = widget.feeder;
+      final List<HistoryEntry> entries = [
+        for (final entry in feeder.state.history.reversed)
+          if (_shown(_filter, entry.body)) entry,
+      ];
+      final rows = <Widget>[];
+      String? day;
+      for (final (i, entry) in entries.indexed) {
+        final PlatformInt64? at = entry.atMs;
+        if (at != null) {
+          final String heading = dayText(DateTime.fromMillisecondsSinceEpoch(at));
+          if (heading != day) {
+            day = heading;
+            rows.add(_DayHeading(heading, first: i == 0));
+          }
         }
+        rows.add(_EntryRow(feeder: feeder, entry: entry));
       }
-      rows.add(_EntryRow(feeder: feeder, entry: entry));
-    }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Wrap(
-            spacing: Space.s2,
-            children: [
-              for (final (name, filter) in const [
-                ('All', _Filter.all),
-                ('Feeds', _Filter.feeds),
-                ('Problems', _Filter.problems),
-                ('Changes', _Filter.changes),
-              ])
-                ChoiceChip(label: Text(name), selected: _filter == filter, onSelected: (_) => _choose(filter)),
-            ],
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Wrap(
+              spacing: Space.s2,
+              children: [
+                for (final (name, filter) in const [
+                  ('All', _Filter.all),
+                  ('Feeds', _Filter.feeds),
+                  ('Problems', _Filter.problems),
+                  ('Changes', _Filter.changes),
+                ])
+                  ChoiceChip(label: Text(name), selected: _filter == filter, onSelected: (_) => _choose(filter)),
+              ],
+            ),
           ),
-        ),
-        Expanded(
-          child: rows.isEmpty
-              ? Center(
-                  child: Text(
-                    feeder.state.historyRead
-                        ? 'Nothing here yet.'
-                        : feeder.state.connection == Connection.online
-                        ? 'Reading the history…'
-                        : "Can't read the history right now.",
-                    style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
-                  ),
-                )
-              : ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 16), children: rows),
-        ),
-      ],
-    );
-  }
+          Expanded(
+            child: rows.isEmpty
+                ? Center(
+                    child: Text(
+                      feeder.state.historyRead
+                          ? 'Nothing here yet.'
+                          : feeder.state.connection == Connection.online
+                          ? 'Reading the history…'
+                          : "Can't read the history right now.",
+                      style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
+                    ),
+                  )
+                : ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 16), children: rows),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 class _DayHeading extends StatelessWidget {

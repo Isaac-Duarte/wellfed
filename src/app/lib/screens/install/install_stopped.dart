@@ -347,58 +347,81 @@ class InstallStoppedPage extends StatelessWidget {
   /// marked uncertain: a pick-up reads where the feeder got to, and a new
   /// request goes only after the ledger closed the old one.
   List<Widget> _nextSteps(BuildContext context, InstallEnd_Stopped stop) {
-    Widget primary(String label, VoidCallback onPressed) => FilledButton(onPressed: onPressed, child: Text(label));
-    Widget secondary(String label, VoidCallback onPressed) => OutlinedButton(onPressed: onPressed, child: Text(label));
-    Widget home() => TextButton(onPressed: () => context.go('/'), child: const Text('Go to Home'));
-
     return switch (stop.case_) {
       StopCase_Uncertain() => switch (state.listening) {
         Listening.running => const [],
         Listening.stockStayed when stop.resume == Resume.fromStart => [
-          primary('Start again', () => unawaited(flow.again())),
+          _Primary('Start again', () => unawaited(flow.again())),
         ],
         Listening.stockStayed => [
-          primary('Listen again', () => unawaited(flow.listen())),
+          _Primary('Listen again', () => unawaited(flow.listen())),
           const SizedBox(height: Space.s2),
-          home(),
+          const _Home(),
         ],
         _ => [
-          primary('Listen again', () => unawaited(flow.listen())),
+          _Primary('Listen again', () => unawaited(flow.listen())),
           const SizedBox(height: Space.s2),
-          secondary('Look for it over Bluetooth', () => unawaited(flow.resume())),
-          home(),
+          _Secondary('Look for it over Bluetooth', () => unawaited(flow.resume())),
+          const _Home(),
         ],
       },
-      StopCase_LedgerDamaged() => [InstallSetAsideLedger(flow: flow), home()],
+      StopCase_LedgerDamaged() => [InstallSetAsideLedger(flow: flow), const _Home()],
       StopCase_BackupDamaged(:final String path) => [
         InstallSetAsideBackup(flow: flow, path: path, problem: BackupProblem.damaged),
         const SizedBox(height: Space.s2),
-        home(),
+        const _Home(),
       ],
       StopCase_BackupDiffers(:final String path) => [
         InstallSetAsideBackup(flow: flow, path: path, problem: BackupProblem.differs),
         const SizedBox(height: Space.s2),
-        home(),
+        const _Home(),
       ],
-      StopCase_EarlierRequestOpen() => [primary('Listen for it', () => unawaited(flow.listenForOpenRequest()))],
-      StopCase_ClockUnset() => [primary('Start again', () => unawaited(flow.again()))],
+      StopCase_EarlierRequestOpen() => [_Primary('Listen for it', () => unawaited(flow.listenForOpenRequest()))],
+      StopCase_ClockUnset() => [_Primary('Start again', () => unawaited(flow.again()))],
       StopCase_TwoFeeders() ||
-      StopCase_NotYourFeeder() => [primary('Start again', () => unawaited(flow.again(forget: true)))],
+      StopCase_NotYourFeeder() => [_Primary('Start again', () => unawaited(flow.again(forget: true)))],
       StopCase_NotJoined() => [
-        primary('Enter the Wi-Fi again', flow.newWifiForSetup),
+        _Primary('Enter the Wi-Fi again', flow.newWifiForSetup),
         const SizedBox(height: Space.s2),
-        secondary('Keep waiting for it', () => unawaited(flow.keepWaiting())),
+        _Secondary('Keep waiting for it', () => unawaited(flow.keepWaiting())),
       ],
       StopCase_FrameNotTaken() => [
-        primary('Enter the Wi-Fi again', flow.changeWifi),
-        secondary('Try again', () => unawaited(flow.again())),
+        _Primary('Enter the Wi-Fi again', flow.changeWifi),
+        _Secondary('Try again', () => unawaited(flow.again())),
       ],
-      StopCase_WifiRefused() || StopCase_NoWifiGiven() => [primary('Enter the Wi-Fi again', flow.changeWifi)],
+      StopCase_WifiRefused() || StopCase_NoWifiGiven() => [_Primary('Enter the Wi-Fi again', flow.changeWifi)],
       _ => switch (stop.resume) {
-        Resume.fromStart => [primary('Start again', () => unawaited(flow.again()))],
-        Resume.fromBank0 => [primary('Pick up where it stopped', () => unawaited(flow.again()))],
-        Resume.nothing => [home()],
+        Resume.fromStart => [_Primary('Start again', () => unawaited(flow.again()))],
+        Resume.fromBank0 => [_Primary('Pick up where it stopped', () => unawaited(flow.again()))],
+        Resume.nothing => [const _Home()],
       },
     };
   }
+}
+
+class _Primary extends StatelessWidget {
+  const _Primary(this.label, this.onPressed);
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => FilledButton(onPressed: onPressed, child: Text(label));
+}
+
+class _Secondary extends StatelessWidget {
+  const _Secondary(this.label, this.onPressed);
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton(onPressed: onPressed, child: Text(label));
+}
+
+class _Home extends StatelessWidget {
+  const _Home();
+
+  @override
+  Widget build(BuildContext context) => TextButton(onPressed: () => context.go('/'), child: const Text('Go to Home'));
 }

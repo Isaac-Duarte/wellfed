@@ -131,6 +131,7 @@ class WellfedColors extends ThemeExtension<WellfedColors> {
 }
 
 extension WellfedContext on BuildContext {
+  // ignore: wellfed_lints/no_bang, wellfedTheme installs this extension in every theme the app has.
   ThemeTokens get colors => Theme.of(this).extension<WellfedColors>()!.tokens;
 
   bool get isDark => Theme.of(this).brightness == Brightness.dark;
