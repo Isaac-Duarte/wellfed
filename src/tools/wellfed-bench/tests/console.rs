@@ -4,11 +4,9 @@
 //! for its output pipe, which no other test in this process may share.
 
 use std::fs;
-use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use rustix::process::{Pid, Signal, kill_process};
@@ -16,6 +14,9 @@ use wellfed_bench_server::api::DuringWrite;
 use wellfed_bench_server::{Client, Console, Followed, Options, Server, ToolPaths};
 use wellfed_formats::bench::live::{BenchState, CancelState, Phase};
 use wellfed_relay::{AtBoard, FakeBoard};
+
+mod support;
+use support::{BENCH, Screen, assert_ends};
 
 /// A stand-in flash client whose capture runs until it is signalled.
 const FLASH: &str = r#"#!/bin/sh
@@ -32,128 +33,22 @@ esac
 /// Before this on its terminal, the shell that becomes `console` says its pid.
 const PID_MARK: &str = "console-pid=";
 
-/// `console` on a terminal of its own, with its screen collected as it comes.
-struct Screen {
-    child: Child,
-    seen: Arc<Mutex<Vec<u8>>>,
+/// `console` on a terminal of its own.
+fn console(root: &Path) -> Screen {
+    let line = format!(
+        "echo {PID_MARK}$$; exec '{BENCH}' --root '{}' console",
+        root.display()
+    );
+    Screen::start(&line, root)
 }
 
-impl Screen {
-    fn start(root: &Path) -> Self {
-        let line = format!(
-            "stty cols 130 rows 46; echo {PID_MARK}$$; exec '{}' --root '{}' console",
-            env!("CARGO_BIN_EXE_wellfed-bench"),
-            root.display()
-        );
-        let mut child = Command::new("script")
-            .args(["-qfec", &line, "/dev/null"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("this test needs util-linux's `script`");
-
-        let mut stdout = child.stdout.take().unwrap();
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let collecting = Arc::clone(&seen);
-        std::thread::spawn(move || {
-            let mut chunk = [0; 4096];
-            while let Ok(read @ 1..) = stdout.read(&mut chunk) {
-                collecting.lock().unwrap().extend_from_slice(&chunk[..read]);
-            }
-        });
-        Self { child, seen }
-    }
-
-    fn text(&self) -> String {
-        String::from_utf8_lossy(&self.seen.lock().unwrap()).into_owned()
-    }
-
-    /// Wait for `text` on the screen. The terminal is sent only the cells
-    /// that change, with cursor moves over the blanks, so the two are
-    /// compared with no escape sequences or spaces.
-    fn until_shown(&self, text: &str) {
-        let text = plain(text);
-        let deadline = Instant::now() + Duration::from_secs(20);
-        while !plain(&self.text()).contains(&text) {
-            assert!(
-                Instant::now() < deadline,
-                "{text:?} not shown:\n{}",
-                self.text()
-            );
-            std::thread::sleep(Duration::from_millis(20));
-        }
-    }
-
-    fn press(&mut self, key: &str) {
-        let stdin = self.child.stdin.as_mut().unwrap();
-        stdin.write_all(key.as_bytes()).unwrap();
-        stdin.flush().unwrap();
-    }
-
-    /// The pid of `console` itself, which `script` only started.
-    fn console_pid(&self) -> Pid {
-        self.until_shown(PID_MARK);
-        let text = self.text();
-        let (_, after) = text.split_once(PID_MARK).unwrap();
-        let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
-        Pid::from_raw(digits.parse().unwrap()).unwrap()
-    }
-
-    /// Its exit code, which it must reach soon.
-    fn exit(&mut self) -> Option<i32> {
-        let deadline = Instant::now() + Duration::from_secs(20);
-        loop {
-            if let Some(status) = self.child.try_wait().unwrap() {
-                return status.code();
-            }
-            assert!(Instant::now() < deadline, "still running:\n{}", self.text());
-            std::thread::sleep(Duration::from_millis(20));
-        }
-    }
-}
-
-/// Whether `pid` is still running. A process that has ended and waits for
-/// its new parent to reap it is not.
-fn running(pid: Pid) -> bool {
-    std::fs::read_to_string(format!("/proc/{}/stat", pid.as_raw_nonzero()))
-        .ok()
-        .and_then(|stat| {
-            let (_, after_name) = stat.rsplit_once(')')?;
-            after_name
-                .split_whitespace()
-                .next()
-                .map(|state| state != "Z")
-        })
-        .unwrap_or(false)
-}
-
-/// Fail unless `pid` ends soon, taking it down first so that a failure here
-/// leaves nothing spinning on the host.
-fn assert_ends(pid: Pid, what: &str) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while running(pid) {
-        if Instant::now() >= deadline {
-            let _ = kill_process(pid, Signal::KILL);
-            panic!("{what}: console pid {pid:?} still running after 5 s");
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-}
-
-fn plain(raw: &str) -> String {
-    let mut kept = String::new();
-    let mut chars = raw.chars();
-    while let Some(c) = chars.next() {
-        match c {
-            '\x1b' => {
-                let _ = chars.find(char::is_ascii_alphabetic);
-            }
-            ' ' => {}
-            c => kept.push(c),
-        }
-    }
-    kept
+/// The pid of `console` itself, which `script` only started.
+fn console_pid(screen: &Screen) -> Pid {
+    screen.until_shown(PID_MARK);
+    let text = screen.text();
+    let (_, after) = text.split_once(PID_MARK).unwrap();
+    let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+    Pid::from_raw(digits.parse().unwrap()).unwrap()
 }
 
 #[test]
@@ -171,7 +66,7 @@ fn the_console_refuses_without_a_terminal_or_server_and_q_leaves_the_job_running
     fs::set_permissions(&flash, fs::Permissions::from_mode(0o755)).unwrap();
 
     // No terminal: a pipe on stdout.
-    let piped = Command::new(env!("CARGO_BIN_EXE_wellfed-bench"))
+    let piped = Command::new(BENCH)
         .arg("--root")
         .arg(&root)
         .arg("console")
@@ -182,7 +77,7 @@ fn the_console_refuses_without_a_terminal_or_server_and_q_leaves_the_job_running
     assert!(said.contains("ssh -t"), "{said}");
 
     // A terminal, but no server.
-    let mut screen = Screen::start(&root);
+    let mut screen = console(&root);
     assert_eq!(screen.exit(), Some(1), "{}", screen.text());
     screen.until_shown("No bench server answers");
 
@@ -211,7 +106,7 @@ fn the_console_refuses_without_a_terminal_or_server_and_q_leaves_the_job_running
         .unwrap();
 
     // It draws the job, then `q` leaves it running on the server.
-    let mut screen = Screen::start(&root);
+    let mut screen = console(&root);
     screen.until_shown("the server keeps running");
     screen.until_shown(&format!("job {job}: capture held"));
     screen.press("q");
@@ -235,8 +130,8 @@ fn the_console_refuses_without_a_terminal_or_server_and_q_leaves_the_job_running
 
     // A signal closes the screen and gives the terminal back.
     for signal in [Signal::TERM, Signal::INT] {
-        let mut screen = Screen::start(&root);
-        let pid = screen.console_pid();
+        let mut screen = console(&root);
+        let pid = console_pid(&screen);
         screen.until_shown("the server keeps running");
         kill_process(pid, signal).unwrap();
         assert_eq!(screen.exit(), Some(0), "{signal:?}: {}", screen.text());
@@ -249,12 +144,11 @@ fn the_console_refuses_without_a_terminal_or_server_and_q_leaves_the_job_running
 
     // A dropped `ssh -t`: the terminal goes from under the console, which
     // must not outlive it.
-    let mut screen = Screen::start(&root);
-    let pid = screen.console_pid();
+    let mut screen = console(&root);
+    let pid = console_pid(&screen);
     screen.until_shown("the server keeps running");
-    screen.child.kill().unwrap();
-    screen.child.wait().unwrap();
-    assert_ends(pid, "with its terminal gone");
+    screen.hang_up();
+    assert_ends(pid, Duration::from_secs(5), "with its terminal gone");
 
     let state = runtime.block_on(client.state()).unwrap();
     assert_eq!(state.server.phase, Phase::Serving);

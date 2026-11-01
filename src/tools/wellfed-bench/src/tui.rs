@@ -14,14 +14,18 @@
 //! While the flash client holds the UART, the first press only shows the
 //! confirmation in the footer, and a second within 5 s stops.
 //!
-//! Should the console end on its own (a terminal error, a panic), it tells
-//! the server, which puts its lines back on the terminal and keeps serving.
+//! Should the console end on its own (a terminal error, its terminal hanging
+//! up, a panic), it tells the server, which puts its lines back on the
+//! terminal and keeps serving. A hangup also reaches the server as SIGHUP,
+//! which `stopping` holds back during a write; the console's end hurries
+//! nothing, and leaves nothing for [`Tui::finish`] to wait on.
 //!
 //! `console` draws the same screen from another process ([`attached`]): the
 //! raw mode, the scrolling, the pacing and the drawing here are shared, and
 //! a [`Feed`] says where the state and the lines come from and what `q` does.
 
 pub(crate) mod attached;
+mod keys;
 mod view;
 
 use std::collections::VecDeque;
@@ -33,7 +37,6 @@ use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -42,6 +45,7 @@ use wellfed_bench_server::Store;
 use wellfed_bench_server::stopping::{Ask, CONFIRM_PROMPT, Confirm, Held, Press};
 use wellfed_formats::bench::live::{BenchState, Uart};
 
+use keys::{Input, Key, Keys};
 use view::Screen;
 
 /// The console lines kept for scrolling.
@@ -248,6 +252,7 @@ impl Feed for Served<'_> {
 
 fn run(tty: File, feed: &mut impl Feed) -> io::Result<()> {
     let mut after = tty.try_clone()?;
+    let mut keys = Keys::new(tty.try_clone()?);
     let screen = Screenful::enter(tty.try_clone()?)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(tty))?;
     let mut log = VecDeque::new();
@@ -276,7 +281,7 @@ fn run(tty: File, feed: &mut impl Feed) -> io::Result<()> {
             noticed = notice.is_some();
         }
         if drawn.is_none_or(|at| at.elapsed() >= frame) {
-            terminal.draw(|frame| {
+            let draw = terminal.draw(|frame| {
                 view::draw(
                     frame,
                     &Screen {
@@ -287,7 +292,14 @@ fn run(tty: File, feed: &mut impl Feed) -> io::Result<()> {
                         keys: feed.keys(),
                     },
                 );
-            })?;
+            });
+            // A hangup between frames fails the draw before the wait below
+            // would see it, and is no more an error here than there.
+            match draw {
+                Ok(_) => {}
+                Err(_) if keys.hung_up() => return Ok(()),
+                Err(error) => return Err(error),
+            }
             drawn = Some(Instant::now());
         }
         if feed.finished() {
@@ -295,33 +307,27 @@ fn run(tty: File, feed: &mut impl Feed) -> io::Result<()> {
         }
 
         let wait = drawn.map_or(frame, |at| frame.saturating_sub(at.elapsed()));
-        if !event::poll(wait)? {
-            continue;
-        }
+        let pressed = match keys.wait(wait)? {
+            Input::Keys(pressed) => pressed,
+            Input::Nothing => continue,
+            // Nothing can be drawn or printed any more: no tail either.
+            Input::HungUp => return Ok(()),
+        };
+
         let page = usize::from(terminal.size()?.height / 2).max(1);
-        match event::read()? {
-            Event::Key(key)
-                if key.kind == KeyEventKind::Press && quits(key.code, key.modifiers) =>
-            {
-                feed.quit_pressed(Instant::now());
-                drawn = None;
+        for key in pressed {
+            match key {
+                Key::Quit => {
+                    feed.quit_pressed(Instant::now());
+                    drawn = None;
+                }
+                Key::Up => scroll = (scroll + 1).min(log.len()),
+                Key::PageUp => scroll = (scroll + page).min(log.len()),
+                Key::Down => scroll = scroll.saturating_sub(1),
+                Key::PageDown => scroll = scroll.saturating_sub(page),
+                Key::End => scroll = 0,
+                Key::Home => scroll = log.len(),
             }
-            Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                KeyCode::PageUp | KeyCode::Up => {
-                    let step = if key.code == KeyCode::Up { 1 } else { page };
-                    scroll = (scroll + step).min(log.len());
-                }
-                KeyCode::PageDown | KeyCode::Down => {
-                    let step = if key.code == KeyCode::Down { 1 } else { page };
-                    scroll = scroll.saturating_sub(step);
-                }
-                KeyCode::End => scroll = 0,
-                KeyCode::Home => scroll = log.len(),
-                _ => {}
-            },
-            // Redrawn at once at the new size.
-            Event::Resize(..) => drawn = None,
-            _ => {}
         }
     }
 
@@ -332,12 +338,6 @@ fn run(tty: File, feed: &mut impl Feed) -> io::Result<()> {
         writeln!(after, "{line}")?;
     }
     Ok(())
-}
-
-/// `q`, or Ctrl+C, which raw mode delivers as a key.
-fn quits(code: KeyCode, modifiers: KeyModifiers) -> bool {
-    code == KeyCode::Char('q')
-        || (code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL))
 }
 
 fn push(log: &mut VecDeque<String>, line: String) {

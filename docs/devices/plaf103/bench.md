@@ -167,7 +167,7 @@ A cancelled write stops terminally and leaves its bank half-written until anothe
 - **Ctrl+C or `q`** during a write or a loader session only says "A UART write is under way; press again within 5 s to cancel it". A second press within 5 s stops the server, cancelling the write.
 - **SIGTERM or a hangup** during a write is deferred, however many arrive. The server says it is stopping once the write ends, shows the stop it holds in its state (`server.stopping`, on the console's header and `bench_status`), refuses every new job meanwhile, lets the job finish, then stops as usual. A signal outside a write stops it at once.
 - **To stop a deferred server sooner**, send SIGINT twice within 5 s (`kill -INT PID` twice, which needs no terminal): that cancels the write, which then stops for good. SIGKILL remains the last resort: the [lease](#bench-lease) and the orphan checks handle a killed server.
-- **The full-screen console ending on its own** (a terminal error, a panic) stops nothing. The server prints its lines on the terminal again, says the console ended, and Ctrl+C or SIGTERM stops it from then on.
+- **The full-screen console ending on its own** (a terminal error, its terminal hanging up, a panic) stops nothing by itself. The server prints its lines on the terminal again, says the console ended, and Ctrl+C or SIGTERM stops it from then on.
 
 The socket's routes:
 

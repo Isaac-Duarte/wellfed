@@ -50,10 +50,8 @@ pub(crate) fn run(root: &Path, runtime: &Runtime) -> anyhow::Result<u8> {
 }
 
 /// Leave on a signal, and end the process from here whatever the screen is
-/// doing: with its terminal gone, crossterm's `event::poll` spins on the
-/// failing read and never returns, whatever its timeout, so the screen loop
-/// never looks at `left`. Left to that, a dropped `ssh -t` would burn a core
-/// on the bench host until someone sent SIGKILL.
+/// doing: a draw on a stalled terminal blocks the screen loop, and a watcher
+/// has nothing to finish, so nothing is worth waiting on for long.
 ///
 /// A hangup exits at once, as there is no terminal left to restore. Any
 /// other signal gives the loop [`RESTORING`] to give the terminal back first.
