@@ -145,19 +145,18 @@ async fn the_session_reads_status_sets_the_clock_and_resumes_after_its_cursor() 
     assert_eq!(&status.build, build);
     assert!(state.feeder.status_at.is_some());
 
-    // The subscription replays the history from its start: the boot.
-    let first = state_until(&server, "the boot event", |state| {
-        state
-            .feeder
-            .journal
-            .is_some_and(|journal| journal.epoch.is_some())
+    // The subscription replays the history from its start: the boot. The state
+    // and the file are read apart and more events may follow, so this waits
+    // for them to agree rather than comparing one read of each.
+    let first = state_until(&server, "the boot event, and the cursor on disk", |state| {
+        state.feeder.journal.is_some_and(|journal| {
+            journal.epoch.is_some() && cursor(&root).is_some_and(|cursor| cursor.seq == journal.seq)
+        })
     })
     .await
     .feeder
     .journal
     .unwrap();
-    until("the cursor on disk", || cursor(&root).is_some()).await;
-    assert_eq!(cursor(&root).unwrap().seq, first.seq);
     assert!(events(&server).await.contains(&first.seq));
 
     // A restart drops the session; the server reopens it and takes the new
