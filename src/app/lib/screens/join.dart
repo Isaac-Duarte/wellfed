@@ -3,17 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import '../platform/join_ports.dart';
-import '../src/rust/api/error.dart';
-import '../src/rust/api/join.dart';
-import '../src/rust/api/model.dart';
-import '../src/rust/api/store.dart';
-import '../state/app_state.dart';
-import '../theme/theme.dart';
-import '../widgets/ask_text.dart';
-import '../widgets/icons.dart';
-import '../widgets/layout.dart';
-import '../widgets/replies.dart';
+import 'package:wellfed/platform/join_ports.dart';
+import 'package:wellfed/src/rust/api/error.dart';
+import 'package:wellfed/src/rust/api/join.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/app_state.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/ask_text.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
 
 enum _Step { scan, review, joining, joined }
 
@@ -21,12 +21,7 @@ enum _Step { scan, review, joining, joined }
 /// a join whose answer never came is not sent again: the screen says so and
 /// asks for a new one.
 class JoinScreen extends StatefulWidget {
-  const JoinScreen({
-    super.key,
-    required this.book,
-    required this.ports,
-    this.scanner = _camera,
-  });
+  const JoinScreen({super.key, required this.book, required this.ports, this.scanner = _camera});
 
   final FeederBook book;
   final JoinPorts ports;
@@ -100,12 +95,7 @@ class _JoinScreenState extends State<JoinScreen> {
   }
 
   Future<void> _paste() async {
-    final text = await askText(
-      context,
-      title: 'Paste an invite link',
-      label: 'Invite',
-      action: 'Use it',
-    );
+    final text = await askText(context, title: 'Paste an invite link', label: 'Invite', action: 'Use it');
     if (text != null && mounted) _seen(text);
   }
 
@@ -124,13 +114,7 @@ class _JoinScreenState extends State<JoinScreen> {
       switch (answer) {
         case JoinAnswer_Joined(:final role):
           await widget.book.setLabel(label);
-          await widget.book.remember(
-            KnownFeeder(
-              identity: _identity,
-              name: _feederName.text.trim(),
-              address: address,
-            ),
-          );
+          await widget.book.remember(KnownFeeder(identity: _identity, name: _feederName.text.trim(), address: address));
           if (mounted) {
             setState(() {
               _role = role;
@@ -141,24 +125,21 @@ class _JoinScreenState extends State<JoinScreen> {
           _stop(refusalWords(refusal), spent: true);
       }
     } on BridgeError catch (error) {
-      _stop(
-        switch (error.kind) {
-          ErrorKind.connect => "Couldn't reach the feeder. Nothing was sent.",
-          ErrorKind.closed =>
-            'The feeder turned this invite down: it has expired or been used. '
-                'Ask for a new one.',
-          ErrorKind.label => 'A phone name is 1 to 16 bytes.',
-          ErrorKind.store => 'Joined, but this phone could not save it.',
-          ErrorKind.interrupted =>
-            'The connection broke, so you may or may not have joined. Wellfed '
-                "won't send this invite again. Ask for a new one.",
-          ErrorKind.timeout =>
-            "No answer came, so you may or may not have joined. Wellfed won't "
-                'send this invite again. Ask for a new one.',
-          _ => 'That did not work: ${error.message}',
-        },
-        spent: error.kind != ErrorKind.connect && error.kind != ErrorKind.label,
-      );
+      _stop(switch (error.kind) {
+        ErrorKind.connect => "Couldn't reach the feeder. Nothing was sent.",
+        ErrorKind.closed =>
+          'The feeder turned this invite down: it has expired or been used. '
+              'Ask for a new one.',
+        ErrorKind.label => 'A phone name is 1 to 16 bytes.',
+        ErrorKind.store => 'Joined, but this phone could not save it.',
+        ErrorKind.interrupted =>
+          'The connection broke, so you may or may not have joined. Wellfed '
+              "won't send this invite again. Ask for a new one.",
+        ErrorKind.timeout =>
+          "No answer came, so you may or may not have joined. Wellfed won't "
+              'send this invite again. Ask for a new one.',
+        _ => 'That did not work: ${error.message}',
+      }, spent: error.kind != ErrorKind.connect && error.kind != ErrorKind.label);
     }
   }
 
@@ -196,12 +177,7 @@ class _JoinScreenState extends State<JoinScreen> {
             child: Text(bad, style: TextStyle(color: c.fault)),
           ),
       ],
-      actions: [
-        OutlinedButton(
-          onPressed: () => unawaited(_paste()),
-          child: const Text('Paste an invite link'),
-        ),
-      ],
+      actions: [OutlinedButton(onPressed: () => unawaited(_paste()), child: const Text('Paste an invite link'))],
     );
   }
 
@@ -224,28 +200,19 @@ class _JoinScreenState extends State<JoinScreen> {
             text: 'Join the same Wi-Fi as the feeder, then look again.',
           ),
           const SizedBox(height: Space.s2),
-          OutlinedButton(
-            onPressed: () => unawaited(_find()),
-            child: const Text('Look again'),
-          ),
+          OutlinedButton(onPressed: () => unawaited(_find()), child: const Text('Look again')),
         ],
         const SizedBox(height: Space.s4),
         LabeledField(
           label: 'This feeder',
           hint: 'Only this phone uses it.',
-          child: TextField(
-            controller: _feederName,
-            onChanged: (_) => setState(() {}),
-          ),
+          child: TextField(controller: _feederName, onChanged: (_) => setState(() {})),
         ),
         const SizedBox(height: Space.s4),
         LabeledField(
           label: 'This phone',
           hint: 'The feeder lists you by this.',
-          child: TextField(
-            controller: _phoneName,
-            onChanged: (_) => setState(() {}),
-          ),
+          child: TextField(controller: _phoneName, onChanged: (_) => setState(() {})),
         ),
         if (_problem case final problem?) ...[
           const SizedBox(height: Space.s4),
@@ -255,11 +222,7 @@ class _JoinScreenState extends State<JoinScreen> {
       actions: [
         FilledButton(
           onPressed:
-              joining ||
-                  _spent ||
-                  _address == null ||
-                  _feederName.text.trim().isEmpty ||
-                  _phoneName.text.trim().isEmpty
+              joining || _spent || _address == null || _feederName.text.trim().isEmpty || _phoneName.text.trim().isEmpty
               ? null
               : () => unawaited(_join()),
           child: Text(joining ? 'Joining…' : 'Join ${_feederName.text.trim()}'),
@@ -281,8 +244,7 @@ class _JoinScreenState extends State<JoinScreen> {
                 'Wi-Fi, updates and removing people stay with its owners.',
       actions: [
         FilledButton(
-          onPressed: () =>
-              Navigator.of(context).popUntil((route) => route.isFirst),
+          onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
           child: const Text('Done'),
         ),
       ],

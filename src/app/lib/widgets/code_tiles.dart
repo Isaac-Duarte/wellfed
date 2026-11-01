@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import '../theme/theme.dart';
-import 'layout.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/layout.dart';
 
 /// The symbols printed on the feeder's four buttons, in panel order from
 /// the left (positions 1-4), so the code reads like the panel itself.
@@ -43,10 +43,7 @@ class PanelSymbol extends StatelessWidget {
       svg,
       width: size,
       height: size,
-      colorFilter: ColorFilter.mode(
-        color ?? context.colors.text,
-        BlendMode.srcIn,
-      ),
+      colorFilter: ColorFilter.mode(color ?? context.colors.text, BlendMode.srcIn),
       semanticsLabel: buttonNames[position - 1],
     );
   }
@@ -86,11 +83,7 @@ class CodeTiles extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.fade,
                         softWrap: false,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: Fonts.medium,
-                          color: c.textMuted,
-                        ),
+                        style: TextStyle(fontSize: 11, fontWeight: Fonts.medium, color: c.textMuted),
                       ),
                     ],
                   ),
@@ -130,9 +123,7 @@ class _CodeWindowState extends State<CodeWindow> {
 
   int _left() {
     final deadline = widget.deadline;
-    return deadline == null
-        ? 0
-        : deadline.difference(DateTime.now()).inSeconds.clamp(0, 999);
+    return deadline == null ? 0 : deadline.difference(DateTime.now()).inSeconds.clamp(0, 999);
   }
 
   @override
@@ -149,10 +140,7 @@ class _CodeWindowState extends State<CodeWindow> {
     return Row(
       children: [
         Expanded(
-          child: Bar(
-            value: _window == 0 ? 0 : left / _window,
-            color: left > 10 ? c.accent : c.warning,
-          ),
+          child: Bar(value: _window == 0 ? 0 : left / _window, color: left > 10 ? c.accent : c.warning),
         ),
         const SizedBox(width: Space.s3),
         Text(
@@ -184,10 +172,7 @@ class RingLegend extends StatelessWidget {
     );
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-      decoration: BoxDecoration(
-        color: c.sunken,
-        borderRadius: BorderRadius.circular(Radii.card),
-      ),
+      decoration: BoxDecoration(color: c.sunken, borderRadius: BorderRadius.circular(Radii.card)),
       child: Column(
         children: [
           Container(
@@ -214,11 +199,7 @@ class RingLegend extends StatelessWidget {
             "The symbols are the ones printed on the feeder's ring. The "
             'four dots between them are lights, not buttons.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: Sizes.xs,
-              height: 1.5,
-              color: c.textMuted,
-            ),
+            style: TextStyle(fontSize: Sizes.xs, height: 1.5, color: c.textMuted),
           ),
         ],
       ),
@@ -242,12 +223,7 @@ class PanelPhoto extends StatelessWidget {
   static const _top = -88.0;
 
   /// Each button's ring on the uncropped render.
-  static const _rings = {
-    1: Offset(12, 157),
-    2: Offset(50, 163),
-    3: Offset(270, 164),
-    4: Offset(308, 157),
-  };
+  static const _rings = {1: Offset(12, 157), 2: Offset(50, 163), 3: Offset(270, 164), 4: Offset(308, 157)};
 
   @override
   Widget build(BuildContext context) {

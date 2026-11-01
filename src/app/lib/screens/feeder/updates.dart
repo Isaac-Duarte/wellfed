@@ -2,16 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../src/rust/api/install.dart';
-import '../../state/feeder.dart';
-import '../../state/update.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/replies.dart';
-import '../restore_screen.dart';
-import 'update_end.dart';
+import 'package:wellfed/screens/feeder/update_end.dart';
+import 'package:wellfed/screens/restore_screen.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/install.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/state/update.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
 
 /// The firmware on this feeder and the update this app carries (12.1, 12.2).
 /// One press offers it once. The run belongs to the feeder's controller, so
@@ -70,10 +70,8 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([_flow, _feeder]),
-    builder: (context, _) => _build(context),
-  );
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: Listenable.merge([_flow, _feeder]), builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
     if (_flow.end case final end? when _flow.stage == UpdateStage.ended) {
@@ -92,11 +90,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
         ),
         title: Text(
           offering ? 'Firmware' : 'Updating ${_feeder.known.name}',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: Fonts.semibold,
-            color: context.colors.text,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: context.colors.text),
         ),
       ),
       body: offering ? _offer(context) : _progress(context),
@@ -123,8 +117,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
         const SizedBox(height: Space.s2),
         FactList([
           // The floor, not what runs: a feeder on bank 0 may run older.
-          if (state != null && state.minVersion > 0)
-            ('Newest confirmed version', Text('${state.minVersion}')),
+          if (state != null && state.minVersion > 0) ('Newest confirmed version', Text('${state.minVersion}')),
           if (build != null) ('Build', Text(_short(build))),
           if (card != null) ('Running from', Text('Bank ${card.bank}')),
         ]),
@@ -135,24 +128,13 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
             style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
           )
         else if (current)
-          Notice(
-            tone: Tone.neutral,
-            glyph: Glyph.check,
-            text: '$name runs the version this app carries.',
-          )
+          Notice(tone: Tone.neutral, glyph: Glyph.check, text: '$name runs the version this app carries.')
         else if (offered == null)
-          const Notice(
-            tone: Tone.neutral,
-            glyph: Glyph.info,
-            text: 'This app carries no update it can install.',
-          )
+          const Notice(tone: Tone.neutral, glyph: Glyph.info, text: 'This app carries no update it can install.')
         else ...[
           const SectionLabel('New'),
           const SizedBox(height: Space.s2),
-          FactList([
-            ('Version', Text('${offered.$2}')),
-            ('Build', Text(_short(offered.$1))),
-          ]),
+          FactList([('Version', Text('${offered.$2}')), ('Build', Text(_short(offered.$1)))]),
           const SizedBox(height: Space.s3),
           Text(
             'Takes a few minutes. Feeding waits while it installs, and meals '
@@ -168,11 +150,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
           ),
           const SizedBox(height: Space.s4),
           FilledButton(
-            onPressed: can
-                ? () => unawaited(
-                    _flow.start(build: offered.$1, version: offered.$2),
-                  )
-                : null,
+            onPressed: can ? () => unawaited(_flow.start(build: offered.$1, version: offered.$2)) : null,
             child: Text('Install on $name'),
           ),
         ],
@@ -183,10 +161,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
           onPressed: () => unawaited(
             Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => RestoreScreen(
-                  feeder: _feeder.known,
-                  ports: _feeder.ports.restore,
-                ),
+                builder: (_) => RestoreScreen(feeder: _feeder.known, ports: _feeder.ports.restore),
               ),
             ),
           ),
@@ -206,28 +181,14 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
     return ListView(
       padding: const EdgeInsets.all(Space.s4),
       children: [
-        _Line(
-          done: accepted || !sending,
-          active: !accepted && sending,
-          text: '$name accepted the update',
-        ),
+        _Line(done: accepted || !sending, active: !accepted && sending, text: '$name accepted the update'),
         _Line(
           done: !sending,
           active: accepted && sending,
-          text: sending
-              ? (flow.reconnecting ? 'Reconnecting…' : 'Sending $percent%')
-              : 'Sent',
+          text: sending ? (flow.reconnecting ? 'Reconnecting…' : 'Sending $percent%') : 'Sent',
         ),
-        _Line(
-          done: false,
-          active: !sending,
-          text: 'Restart on the new version',
-        ),
-        const _Line(
-          done: false,
-          active: false,
-          text: 'Check it started properly, then keep it',
-        ),
+        _Line(done: false, active: !sending, text: 'Restart on the new version'),
+        const _Line(done: false, active: false, text: 'Check it started properly, then keep it'),
         const SizedBox(height: Space.s4),
         Text(
           'Keep the feeder plugged in. If this phone loses the connection, the '
@@ -237,11 +198,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
         ),
         if (flow.holdRefused) ...[
           const SizedBox(height: Space.s3),
-          const Notice(
-            tone: Tone.warning,
-            glyph: Glyph.warning,
-            text: 'Keep this app open until it finishes.',
-          ),
+          const Notice(tone: Tone.warning, glyph: Glyph.warning, text: 'Keep this app open until it finishes.'),
         ],
         if (sending) ...[
           const SizedBox(height: Space.s4),
@@ -254,8 +211,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
     );
   }
 
-  static String _short(String build) =>
-      build.length > 12 ? build.substring(0, 12) : build;
+  static String _short(String build) => build.length > 12 ? build.substring(0, 12) : build;
 }
 
 class _Line extends StatelessWidget {
@@ -283,13 +239,7 @@ class _Line extends StatelessWidget {
           ),
           const SizedBox(width: Space.s3),
           Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: 15,
-                color: done || active ? c.text : c.textMuted,
-              ),
-            ),
+            child: Text(text, style: TextStyle(fontSize: 15, color: done || active ? c.text : c.textMuted)),
           ),
         ],
       ),

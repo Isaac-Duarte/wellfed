@@ -104,15 +104,18 @@ check-web: ui
 # unchanged. The bridge crate's own tests run in `check-rust`. The APK is
 # built for arm64 phones and x86_64 emulators only.
 APP = src/app
+FLUTTER_VERSION = 3.47.8
 APP_GENERATED = $(APP)/lib/src/rust $(APP)/rust/src/frb_generated.rs $(APP)/lib/theme/tokens.g.dart
 # The tests run in a zone with DST on any builder: the day-count test only proves
 # anything across a DST day, and Dart's local time cannot be faked.
 check-app:
+	@test "$$(cd $(APP) && flutter --version --machine | sed -n 's/.*"frameworkVersion": "\(.*\)".*/\1/p')" = "$(FLUTTER_VERSION)" || \
+		{ echo "check-app needs Flutter $(FLUTTER_VERSION)"; exit 1; }
 	cd $(APP) && flutter_rust_bridge_codegen generate
 	cargo test --locked -p wellfed-app-bridge --test tokens
 	@test -z "$$(git status --porcelain -- $(APP_GENERATED))" || \
 		{ git status --short -- $(APP_GENERATED); echo "generated app files are stale: commit the regenerated ones"; exit 1; }
-	cd $(APP) && dart format --set-exit-if-changed lib test
+	cd $(APP) && find lib test -name '*.dart' -not -path 'lib/src/rust/*' -exec dart format --set-exit-if-changed {} +
 	cd $(APP) && flutter analyze
 	cd $(APP) && TZ=America/Denver flutter test
 	cd $(APP) && flutter build apk --debug --target-platform android-arm64,android-x64

@@ -1,8 +1,8 @@
-import '../src/rust/api/join.dart' as rust show inviteFeeder;
-import '../src/rust/api/join.dart' show JoinAnswer, joinFeeder;
-import '../src/rust/api/keys.dart';
-import '../src/rust/api/store.dart';
-import 'discovery.dart';
+import 'package:wellfed/platform/discovery.dart';
+import 'package:wellfed/src/rust/api/join.dart' as rust show inviteFeeder;
+import 'package:wellfed/src/rust/api/join.dart' show JoinAnswer, joinFeeder;
+import 'package:wellfed/src/rust/api/keys.dart';
+import 'package:wellfed/src/rust/api/store.dart';
 
 /// What joining reaches outside Dart: Rust reads and redeems the invite, and
 /// NSD finds the feeder. Behind this, so the screen is tested with neither.
@@ -32,6 +32,5 @@ class AppJoinPorts implements JoinPorts {
       joinFeeder(key: _key, invite: invite, label: label, address: address);
 
   @override
-  Future<String?> locate(String identity, Duration wait) =>
-      Discovery.locate(identity, wait);
+  Future<String?> locate(String identity, Duration wait) => Discovery.locate(identity, wait);
 }

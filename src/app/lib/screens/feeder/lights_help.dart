@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
 
 /// What the feeder's lights and buttons mean (7.2): a key over the panel
 /// photo, in the firmware's own meanings.
@@ -40,11 +40,7 @@ class LightsHelp extends StatelessWidget {
         ),
         title: Text(
           'Lights and buttons',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: Fonts.semibold,
-            color: c.text,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
         ),
       ),
       body: ListView(
@@ -85,11 +81,7 @@ class LightsHelp extends StatelessWidget {
                       '30 s.',
                 ),
                 _Key('B', 'Bowl.', 'Press for one portion.'),
-                _Key(
-                  'C',
-                  'Mic.',
-                  'Hold with Lock for 5 s to start Bluetooth setup.',
-                ),
+                _Key('C', 'Mic.', 'Hold with Lock for 5 s to start Bluetooth setup.'),
                 _Key(
                   'D',
                   'Reset.',
@@ -159,11 +151,7 @@ class _Heading extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: Space.s2),
     child: Text(
       text,
-      style: TextStyle(
-        fontSize: Sizes.sm,
-        fontWeight: Fonts.semibold,
-        color: context.colors.textMuted,
-      ),
+      style: TextStyle(fontSize: Sizes.sm, fontWeight: Fonts.semibold, color: context.colors.textMuted),
     ),
   );
 }
@@ -187,22 +175,13 @@ class _Key extends StatelessWidget {
             width: 22,
             child: Text(
               mark,
-              style: TextStyle(
-                fontSize: Sizes.base,
-                height: 1.5,
-                fontWeight: Fonts.semibold,
-                color: c.text,
-              ),
+              style: TextStyle(fontSize: Sizes.base, height: 1.5, fontWeight: Fonts.semibold, color: c.text),
             ),
           ),
           Expanded(
             child: Text.rich(
               TextSpan(
-                style: TextStyle(
-                  fontSize: Sizes.base,
-                  height: 1.5,
-                  color: c.text,
-                ),
+                style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.text),
                 children: [
                   TextSpan(
                     text: '$name ',

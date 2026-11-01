@@ -2,20 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../src/rust/api/model.dart';
-import '../../src/rust/api/session.dart' as api;
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/replies.dart';
-import '../../widgets/when.dart';
-import '../feed_sheet.dart';
-import '../home.dart' show blockedWords;
-import 'lights_help.dart';
-import 'no_time.dart';
-import 'shell.dart' show confirmRestart;
+import 'package:wellfed/screens/feed_sheet.dart';
+import 'package:wellfed/screens/feeder/lights_help.dart';
+import 'package:wellfed/screens/feeder/no_time.dart';
+import 'package:wellfed/screens/feeder/shell.dart' show confirmRestart;
+import 'package:wellfed/screens/home.dart' show blockedWords;
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/session.dart' as api;
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/when.dart';
 
 /// How the feeder stands today, its facts and the lock (7.1), or what
 /// stopped it (7.3). It shows only what the session has read; a fact not read
@@ -26,10 +26,7 @@ class TodayTab extends StatelessWidget {
   final FeederController feeder;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: feeder,
-    builder: (context, _) => _build(context),
-  );
+  Widget build(BuildContext context) => ListenableBuilder(listenable: feeder, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
     final card = feeder.card;
@@ -46,10 +43,7 @@ class TodayTab extends StatelessWidget {
               children: [
                 _Summary(feeder: feeder),
                 const SizedBox(height: Space.s3),
-                if (live != null && !live.clockSet) ...[
-                  NoTimeNotice(feeder: feeder),
-                  const SizedBox(height: Space.s3),
-                ],
+                if (live != null && !live.clockSet) ...[NoTimeNotice(feeder: feeder), const SizedBox(height: Space.s3)],
                 if (stopped) ...[
                   _Stopped(feeder: feeder),
                   const SizedBox(height: Space.s3),
@@ -57,10 +51,7 @@ class TodayTab extends StatelessWidget {
                   _LastFeedFailed(fault: fault),
                   const SizedBox(height: Space.s3),
                 ],
-                if (card != null) ...[
-                  _Facts(feeder: feeder, card: card),
-                  const SizedBox(height: Space.s3),
-                ],
+                if (card != null) ...[_Facts(feeder: feeder, card: card), const SizedBox(height: Space.s3)],
                 _LightsLink(),
                 if (stopped) ...[
                   const SizedBox(height: Space.s3),
@@ -68,11 +59,7 @@ class TodayTab extends StatelessWidget {
                     'Other faults that show here: the bowl sensor stopped '
                     'answering, the outlet is blocked, the motor drew too '
                     'much current.',
-                    style: TextStyle(
-                      fontSize: Sizes.sm,
-                      height: 1.5,
-                      color: context.colors.textMuted,
-                    ),
+                    style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: context.colors.textMuted),
                   ),
                 ],
               ],
@@ -81,9 +68,7 @@ class TodayTab extends StatelessWidget {
           const SizedBox(height: Space.s3),
           FilledButton(
             onPressed: feeder.canFeed ? () => feedNow(context, feeder) : null,
-            child: Text(
-              stopped ? 'Feed now · unavailable until restart' : 'Feed now',
-            ),
+            child: Text(stopped ? 'Feed now · unavailable until restart' : 'Feed now'),
           ),
         ],
       ),
@@ -106,14 +91,8 @@ class _Summary extends StatelessWidget {
       Connection.offline => (c.textMuted, "Can't reach it"),
       Connection.online when feeder.feed.active => (c.accent, 'Feeding'),
       Connection.online when card?.ready ?? false => (c.ok, 'Ready to feed'),
-      Connection.online when card?.blocked == Blocked.feeding => (
-        c.accent,
-        'Feeding',
-      ),
-      Connection.online when card?.blocked == Blocked.fault => (
-        c.fault,
-        "Can't feed",
-      ),
+      Connection.online when card?.blocked == Blocked.feeding => (c.accent, 'Feeding'),
+      Connection.online when card?.blocked == Blocked.fault => (c.fault, "Can't feed"),
       Connection.online => (c.warning, "Can't feed now"),
     };
     final small = TextStyle(fontSize: Sizes.base, color: c.textMuted);
@@ -134,20 +113,13 @@ class _Summary extends StatelessWidget {
                   Container(
                     width: 10,
                     height: 10,
-                    decoration: BoxDecoration(
-                      color: dot,
-                      shape: BoxShape.circle,
-                    ),
+                    decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
                   ),
                   const SizedBox(width: Space.s2),
                   Flexible(
                     child: Text(
                       title,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: Fonts.semibold,
-                        color: c.text,
-                      ),
+                      style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
                     ),
                   ),
                 ],
@@ -211,10 +183,7 @@ class _Facts extends StatelessWidget {
                 Container(
                   width: 8,
                   height: 8,
-                  decoration: BoxDecoration(
-                    color: foodColor,
-                    shape: BoxShape.circle,
-                  ),
+                  decoration: BoxDecoration(color: foodColor, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 6),
                 Flexible(child: _value(context, food)),
@@ -223,11 +192,7 @@ class _Facts extends StatelessWidget {
           ),
           _Row(Glyph.power, 'Power', value: _value(context, _power(card))),
           _Row(Glyph.wifi, 'Wi-Fi', value: _value(context, _signal(card.rssi))),
-          _Row(
-            Glyph.clock,
-            'Clock',
-            value: _value(context, clockWords(context, card)),
-          ),
+          _Row(Glyph.clock, 'Clock', value: _value(context, clockWords(context, card))),
           _Row(
             Glyph.droplet,
             'Desiccant',
@@ -245,14 +210,13 @@ class _Facts extends StatelessWidget {
     style: TextStyle(fontSize: Sizes.base, color: context.colors.text),
   );
 
-  static String _power(api.Card card) =>
-      switch ((card.adapter, card.batteryPercent)) {
-        (true, final percent?) => 'Mains · batteries $percent%',
-        (true, null) => 'Mains',
-        (false, final percent?) => 'Batteries $percent%',
-        (false, null) => 'Batteries',
-        (null, _) => 'Not read yet',
-      };
+  static String _power(api.Card card) => switch ((card.adapter, card.batteryPercent)) {
+    (true, final percent?) => 'Mains · batteries $percent%',
+    (true, null) => 'Mains',
+    (false, final percent?) => 'Batteries $percent%',
+    (false, null) => 'Batteries',
+    (null, _) => 'Not read yet',
+  };
 
   static String _signal(int rssi) => switch (rssi) {
     >= -60 => 'Strong',
@@ -280,13 +244,7 @@ String clockWords(BuildContext context, api.Card card) {
 /// and the lock's switch merge into the list item, as one switch that reads
 /// out the whole panel.
 class _Row extends StatelessWidget {
-  const _Row(
-    this.glyph,
-    this.label, {
-    required this.value,
-    this.first = false,
-    this.valueNamed = false,
-  });
+  const _Row(this.glyph, this.label, {required this.value, this.first = false, this.valueNamed = false});
 
   final Glyph glyph;
   final String label;
@@ -327,11 +285,7 @@ class _Row extends StatelessWidget {
 }
 
 class _DesiccantValue extends StatefulWidget {
-  const _DesiccantValue({
-    required this.feeder,
-    required this.card,
-    required this.online,
-  });
+  const _DesiccantValue({required this.feeder, required this.card, required this.online});
 
   final FeederController feeder;
   final api.Card card;
@@ -364,10 +318,7 @@ class _DesiccantValueState extends State<_DesiccantValue> {
         days == 1 ? 'Change in 1 day' : 'Change in $days days',
         c.text,
       ),
-      Desiccant_Remaining(:final days) => (
-        days == -1 ? '1 day overdue' : '${-days} days overdue',
-        c.warning,
-      ),
+      Desiccant_Remaining(:final days) => (days == -1 ? '1 day overdue' : '${-days} days overdue', c.warning),
     };
     final offer = switch (desiccant) {
       Desiccant_Unset() => true,
@@ -385,21 +336,14 @@ class _DesiccantValueState extends State<_DesiccantValue> {
           style: TextStyle(fontSize: Sizes.base, color: color),
         ),
         if (offer)
-          TextButton(
-            onPressed: widget.online && !_asking ? _changed : null,
-            child: const Text('Changed today'),
-          ),
+          TextButton(onPressed: widget.online && !_asking ? _changed : null, child: const Text('Changed today')),
       ],
     );
   }
 }
 
 class _LockRow extends StatefulWidget {
-  const _LockRow({
-    required this.feeder,
-    required this.card,
-    required this.online,
-  });
+  const _LockRow({required this.feeder, required this.card, required this.online});
 
   final FeederController feeder;
   final api.Card card;
@@ -414,9 +358,7 @@ class _LockRowState extends State<_LockRow> {
 
   Future<void> _set(bool locked) async {
     setState(() => _asking = true);
-    final reply = await widget.feeder.ask(
-      FeederRequest.setLock(locked: locked),
-    );
+    final reply = await widget.feeder.ask(FeederRequest.setLock(locked: locked));
     if (!mounted) return;
     setState(() => _asking = false);
     showProblem(context, reply);
@@ -448,10 +390,7 @@ class _LightsLink extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return InkWell(
-      onTap: () => unawaited(
-        Navigator.of(context)
-            .push(MaterialPageRoute<void>(builder: (_) => const LightsHelp())),
-      ),
+      onTap: () => unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LightsHelp()))),
       child: Padding(
         padding: const EdgeInsets.all(Space.s1),
         child: Row(
@@ -461,11 +400,7 @@ class _LightsLink extends StatelessWidget {
             Flexible(
               child: Text(
                 'What do the lights on the feeder mean?',
-                style: TextStyle(
-                  fontSize: Sizes.base,
-                  fontWeight: Fonts.semibold,
-                  color: c.accent,
-                ),
+                style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: c.accent),
               ),
             ),
           ],
@@ -482,8 +417,7 @@ String faultTitle(BuildContext context, FeedReason reason, int? atMs) {
     FeedReason.outletBlocked => 'The outlet is blocked',
     FeedReason.overcurrent => 'The motor drew too much current',
     FeedReason.sensor => 'A sensor stopped answering',
-    FeedReason.noFeedback ||
-    FeedReason.feedbackStream => 'The feeder lost track of its wheel',
+    FeedReason.noFeedback || FeedReason.feedbackStream => 'The feeder lost track of its wheel',
     FeedReason.markStuck => 'The wheel sensor stuck',
     FeedReason.power => 'The power went out during a feed',
     FeedReason.interrupted => 'The feeder restarted during a feed',
@@ -518,42 +452,23 @@ class _Stopped extends StatelessWidget {
     final c = context.colors;
     final fault = feeder.card?.fault;
     final after = fault == null ? null : _stoppedAfter(fault);
-    final title = fault == null
-        ? 'A fault stopped feeding'
-        : faultTitle(context, fault.reason, fault.result?.atMs);
+    final title = fault == null ? 'A fault stopped feeding' : faultTitle(context, fault.reason, fault.result?.atMs);
     final stuck = fault?.reason == FeedReason.jammed;
-    final detail = [
-      ?after,
-      if (stuck) 'Something may be stuck in the chute.',
-    ].join(' ');
-    final muted = TextStyle(
-      fontSize: Sizes.base,
-      height: 1.5,
-      color: c.textMuted,
-    );
+    final detail = [?after, if (stuck) 'Something may be stuck in the chute.'].join(' ');
+    final muted = TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted);
     final step = TextStyle(fontSize: Sizes.base, height: 1.6, color: c.text);
 
     return Container(
       padding: const EdgeInsets.all(Space.s4),
-      decoration: BoxDecoration(
-        color: c.faultSoft,
-        borderRadius: BorderRadius.circular(Radii.card),
-      ),
+      decoration: BoxDecoration(color: c.faultSoft, borderRadius: BorderRadius.circular(Radii.card)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             title,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: Fonts.semibold,
-              color: c.text,
-            ),
+            style: TextStyle(fontSize: 17, fontWeight: Fonts.semibold, color: c.text),
           ),
-          if (detail.isNotEmpty) ...[
-            const SizedBox(height: Space.s2),
-            Text(detail, style: muted),
-          ],
+          if (detail.isNotEmpty) ...[const SizedBox(height: Space.s2), Text(detail, style: muted)],
           const SizedBox(height: Space.s2),
           for (final (i, line) in const [
             'Unplug the feeder and take out the batteries.',

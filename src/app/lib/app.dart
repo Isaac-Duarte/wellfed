@@ -1,23 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'platform/feeder_ports.dart';
-import 'platform/install_ports.dart';
-import 'platform/join_ports.dart';
-import 'platform/pairing_ports.dart';
-import 'screens/add_feeder.dart';
-import 'screens/app_settings.dart';
-import 'screens/feeder/shell.dart';
-import 'screens/home.dart';
-import 'screens/install_screen.dart';
-import 'screens/join.dart';
-import 'screens/recover_screen.dart';
-import 'screens/setup_screen.dart';
-import 'screens/welcome.dart';
-import 'src/rust/api/store.dart';
-import 'state/app_state.dart';
-import 'state/fleet.dart';
-import 'theme/theme.dart';
+import 'package:wellfed/platform/feeder_ports.dart';
+import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/platform/join_ports.dart';
+import 'package:wellfed/platform/pairing_ports.dart';
+import 'package:wellfed/screens/add_feeder.dart';
+import 'package:wellfed/screens/app_settings.dart';
+import 'package:wellfed/screens/feeder/shell.dart';
+import 'package:wellfed/screens/home.dart';
+import 'package:wellfed/screens/install_screen.dart';
+import 'package:wellfed/screens/join.dart';
+import 'package:wellfed/screens/recover_screen.dart';
+import 'package:wellfed/screens/setup_screen.dart';
+import 'package:wellfed/screens/welcome.dart';
+import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/app_state.dart';
+import 'package:wellfed/state/fleet.dart';
+import 'package:wellfed/theme/theme.dart';
 
 /// The app's routes. `root` is one route whatever the feeders: it follows
 /// `book` by itself, because refreshing the router when a feeder is saved
@@ -31,10 +31,7 @@ GoRouter wellfedRouter({
   routes: [
     GoRoute(
       path: '/',
-      builder: (context, _) => ListenableBuilder(
-        listenable: book,
-        builder: (context, _) => root(context),
-      ),
+      builder: (context, _) => ListenableBuilder(listenable: book, builder: (context, _) => root(context)),
     ),
     for (final MapEntry(key: path, value: page) in pages.entries)
       GoRoute(path: path, builder: (context, _) => page(context)),
@@ -75,22 +72,14 @@ class _WellfedAppState extends State<WellfedApp> {
               return ports.pending(await ports.paths());
             },
           ),
-    feeder: (context, identity, tab) =>
-        FeederShell.of(_fleet, identity, initialTab: tab),
+    feeder: (context, identity, tab) => FeederShell.of(_fleet, identity, initialTab: tab),
     pages: {
       '/add': (context) => const AddFeederScreen(),
       '/setup': (context) => SetupScreen(app: widget.app, ports: _pairing),
-      '/settings': (context) => AppSettingsScreen(
-        book: widget.app,
-        backups: AppBackupPorts(widget.app.key),
-      ),
-      '/join': (context) =>
-          JoinScreen(book: widget.app, ports: AppJoinPorts(widget.app.key)),
+      '/settings': (context) => AppSettingsScreen(book: widget.app, backups: AppBackupPorts(widget.app.key)),
+      '/join': (context) => JoinScreen(book: widget.app, ports: AppJoinPorts(widget.app.key)),
       '/recover': (context) => RecoverScreen(app: widget.app, ports: _pairing),
-      '/install': (context) => InstallScreen(
-        book: widget.app,
-        ports: AppInstallPorts(widget.app.key),
-      ),
+      '/install': (context) => InstallScreen(book: widget.app, ports: AppInstallPorts(widget.app.key)),
     },
   );
 

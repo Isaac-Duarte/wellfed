@@ -32,7 +32,7 @@ Everything first-party is under `src/`. The Rust workspace is `src/sdk/` (the SD
 
 ## App conventions
 
-The Android app in `src/app/` is the only Dart in the repository. Its protocol logic lives in Rust, so the app, the server and the CLI cannot disagree about what goes over the wire.
+The Android app in `src/app/` is the only Dart in the repository. Its protocol logic lives in Rust, so the app, the server and the CLI cannot disagree about what goes over the wire. The [Dart standard](docs/development/dart.md) is the full rule set, with what enforces each rule.
 
 - **Dart is the UI and platform IO.** Screens, state, Android permissions, BLE, NSD discovery and joining a Wi-Fi network belong in Dart, through maintained plugins under a permissive license. Device API sessions over TCP run in Rust through `wellfed-connect`, the driver the CLI and the server use.
 - **Rust is everything the feeder checks.** Noise handshakes, pairing, invites, request building, event-cursor sync, validation and the installer's steps live in the sans-IO `wellfed-client` crate, which takes bytes in and returns bytes out. Dart moves those bytes and never reimplements them: no Dart crypto, signing or wire codec.

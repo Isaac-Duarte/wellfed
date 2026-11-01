@@ -3,17 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../platform/install_ports.dart';
-import '../src/rust/api/install.dart';
-import '../src/rust/api/model.dart';
-import '../state/app_state.dart';
-import '../state/install.dart';
-import '../theme/theme.dart';
-import '../widgets/code_tiles.dart';
-import '../widgets/icons.dart';
-import '../widgets/layout.dart';
-import 'name_step.dart';
-import 'setup_screen.dart';
+import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/screens/name_step.dart';
+import 'package:wellfed/screens/setup_screen.dart';
+import 'package:wellfed/src/rust/api/install.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/state/app_state.dart';
+import 'package:wellfed/state/install.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/code_tiles.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
 
 /// Installing Wellfed on a feeder that runs stock, one screen per stage of
 /// its [InstallFlow].
@@ -58,14 +58,8 @@ class _InstallScreenState extends State<InstallScreen> {
           'never sent a second time.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Keep going'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Stop'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep going')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Stop')),
         ],
       ),
     );
@@ -81,9 +75,7 @@ class _InstallScreenState extends State<InstallScreen> {
         if (!popped) unawaited(_leave());
       },
       child: switch (_flow.stage) {
-        InstallStage.loading => const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        ),
+        InstallStage.loading => const Scaffold(body: Center(child: CircularProgressIndicator())),
         InstallStage.before => _Before(flow: _flow),
         InstallStage.naming => NameStep(
           initial: widget.book.label,
@@ -130,10 +122,7 @@ class _Fact extends StatelessWidget {
           StrokeIcon(Glyph.check, size: 20, color: c.ok, weight: 2.2),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              text,
-              style: TextStyle(fontSize: 15, height: 1.45, color: c.text),
-            ),
+            child: Text(text, style: TextStyle(fontSize: 15, height: 1.45, color: c.text)),
           ),
         ],
       ),
@@ -150,10 +139,7 @@ class _Before extends StatelessWidget {
   /// Why this phone cannot install: an APK with no image, or one whose
   /// sources cannot be reviewed. Refused here, before the feeder is touched.
   Widget? _refusal() {
-    final (String lead, String text)? refusal = switch ((
-      flow.image,
-      flow.build,
-    )) {
+    final (String lead, String text)? refusal = switch ((flow.image, flow.build)) {
       (ImageCheck_Absent(), _) => (
         'This build has no firmware to install.',
         'Install a release of the app, or build it with its image.',
@@ -162,10 +148,7 @@ class _Before extends StatelessWidget {
         'This build pins no firmware.',
         'It holds an image it has no pin for, so it will not install it.',
       ),
-      (ImageCheck_Mismatch(:final detail), _) => (
-        "This build's firmware doesn't check out.",
-        detail,
-      ),
+      (ImageCheck_Mismatch(:final detail), _) => ("This build's firmware doesn't check out.", detail),
       (_, BuildCheck_Unreviewed(:final commit)) => (
         'This build cannot send an install.',
         'Only a build of a clean commit can, so its sources can be '
@@ -189,12 +172,7 @@ class _Before extends StatelessWidget {
           'The install claims the feeder over Bluetooth. Allow "Nearby '
           'devices" for Wellfed in Android settings, then try again.',
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
       ),
     );
   }
@@ -202,9 +180,7 @@ class _Before extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final refusal = _refusal();
-    final damaged =
-        flow.pending == PendingInstall.damaged ||
-        flow.pending == PendingInstall.ledgerDamaged;
+    final damaged = flow.pending == PendingInstall.damaged || flow.pending == PendingInstall.ledgerDamaged;
     return StepScaffold(
       leading: Leading.close,
       appBarTitle: 'Install Wellfed',
@@ -216,9 +192,7 @@ class _Before extends StatelessWidget {
         const SizedBox(height: Space.s3),
         const _Fact('The feeder plugged in, no food being dispensed'),
         const _Fact('This phone on your home Wi-Fi, and its password'),
-        const _Fact(
-          'About 10 minutes with Wellfed open: this phone serves the firmware',
-        ),
+        const _Fact('About 10 minutes with Wellfed open: this phone serves the firmware'),
         const SizedBox(height: Space.s4),
         const Notice(
           tone: Tone.warning,
@@ -228,10 +202,7 @@ class _Before extends StatelessWidget {
               'in Wellfed afterwards.',
         ),
         if (refusal != null) ...[const SizedBox(height: Space.s4), refusal],
-        if (flow.bluetoothRefused) ...[
-          const SizedBox(height: Space.s4),
-          const _BluetoothRefused(),
-        ],
+        if (flow.bluetoothRefused) ...[const SizedBox(height: Space.s4), const _BluetoothRefused()],
         if (flow.mayStart && flow.pending == PendingInstall.requestOpen) ...[
           const SizedBox(height: Space.s4),
           const Notice(
@@ -256,8 +227,7 @@ class _Before extends StatelessWidget {
           const Notice(
             tone: Tone.warning,
             lead: "This phone can't read its record of an install request.",
-            text:
-                'It treats that request as still open until you say otherwise.',
+            text: 'It treats that request as still open until you say otherwise.',
           ),
         ],
         if (flow.repairFailed case final failed?) ...[
@@ -267,22 +237,15 @@ class _Before extends StatelessWidget {
       ],
       actions: [
         if (flow.mayStart && flow.pending == PendingInstall.paired)
-          OutlinedButton(
-            onPressed: () => unawaited(flow.resume()),
-            child: const Text('Pick up where it stopped'),
-          ),
+          OutlinedButton(onPressed: () => unawaited(flow.resume()), child: const Text('Pick up where it stopped')),
         if (flow.mayStart && flow.pending == PendingInstall.requestOpen) ...[
           OutlinedButton(
             onPressed: () => unawaited(flow.listenForOpenRequest()),
             child: const Text('Listen for the feeder'),
           ),
-          OutlinedButton(
-            onPressed: () => unawaited(flow.resume()),
-            child: const Text('Look for it over Bluetooth'),
-          ),
+          OutlinedButton(onPressed: () => unawaited(flow.resume()), child: const Text('Look for it over Bluetooth')),
         ],
-        if (flow.pending == PendingInstall.ledgerDamaged)
-          _SetAsideLedger(flow: flow),
+        if (flow.pending == PendingInstall.ledgerDamaged) _SetAsideLedger(flow: flow),
         // For a feeder past stock with no record to pick up from: Continue is
         // the Reset route, which is stock's.
         OutlinedButton(
@@ -290,9 +253,7 @@ class _Before extends StatelessWidget {
           child: const Text('This feeder already runs Wellfed'),
         ),
         FilledButton(
-          onPressed: flow.mayStart && !damaged
-              ? () => unawaited(_begin(context))
-              : null,
+          onPressed: flow.mayStart && !damaged ? () => unawaited(_begin(context)) : null,
           child: const Text('Continue'),
         ),
         if (flow.forgetOffered) _ForgetInstall(flow: flow),
@@ -351,22 +312,13 @@ Future<bool> _agreed(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final (i, line) in words.indexed) ...[
-              if (i > 0) const SizedBox(height: Space.s3),
-              Text(line),
-            ],
+            for (final (i, line) in words.indexed) ...[if (i > 0) const SizedBox(height: Space.s3), Text(line)],
           ],
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: Text(confirm),
-        ),
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(confirm)),
       ],
     ),
   );
@@ -404,10 +356,8 @@ class _ForgetInstall extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => TextButton(
-    onPressed: () => unawaited(_confirm(context)),
-    child: const Text('Forget this install'),
-  );
+  Widget build(BuildContext context) =>
+      TextButton(onPressed: () => unawaited(_confirm(context)), child: const Text('Forget this install'));
 }
 
 /// The owner's way past a stock ledger that does not parse. It gives up the guard
@@ -436,20 +386,14 @@ class _SetAsideLedger extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => OutlinedButton(
-    onPressed: () => unawaited(_confirm(context)),
-    child: const Text('Set the damaged record aside'),
-  );
+  Widget build(BuildContext context) =>
+      OutlinedButton(onPressed: () => unawaited(_confirm(context)), child: const Text('Set the damaged record aside'));
 }
 
 /// The owner's way past a kept backup a run stopped on. The comparison that
 /// stopped it is not loosened: the file goes only by this choice.
 class _SetAsideBackup extends StatelessWidget {
-  const _SetAsideBackup({
-    required this.flow,
-    required this.path,
-    required this.problem,
-  });
+  const _SetAsideBackup({required this.flow, required this.path, required this.problem});
 
   final InstallFlow flow;
   final String path;
@@ -473,10 +417,8 @@ class _SetAsideBackup extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => OutlinedButton(
-    onPressed: () => unawaited(_confirm(context)),
-    child: const Text('Set this backup aside'),
-  );
+  Widget build(BuildContext context) =>
+      OutlinedButton(onPressed: () => unawaited(_confirm(context)), child: const Text('Set this backup aside'));
 }
 
 /// Android refused what a pick-up may need.
@@ -518,9 +460,7 @@ class _ResetState extends State<_Reset> {
       onLeading: () => flow.back(InstallStage.wifi),
       title: 'Reset the feeder',
       content: [
-        const _Fact(
-          'If the lock light is on, hold the lock button for 5 seconds.',
-        ),
+        const _Fact('If the lock light is on, hold the lock button for 5 seconds.'),
         const _Fact('Hold the rightmost button, Reset, for 5 seconds.'),
         const _Fact('It restarts and opens its own Wi-Fi network for setup.'),
         const SizedBox(height: Space.s4),
@@ -615,9 +555,7 @@ class _Handover extends StatelessWidget {
       actions: [
         if (flow.handover == Handover.join || flow.handover == Handover.joining)
           FilledButton(
-            onPressed: flow.handover == Handover.join
-                ? () => unawaited(flow.joinFeeder())
-                : null,
+            onPressed: flow.handover == Handover.join ? () => unawaited(flow.joinFeeder()) : null,
             child: const Text("Join the feeder's network"),
           ),
       ],
@@ -634,8 +572,7 @@ class _StillWaiting extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = switch (flow.waitReason) {
-      WaitReason.notOnAdapter =>
-        'A feeder connected, but it is on batteries. Plug it in.',
+      WaitReason.notOnAdapter => 'A feeder connected, but it is on batteries. Plug it in.',
       WaitReason.noVersion || WaitReason.offline => 'A feeder is connecting…',
       _ => 'Waiting for the feeder to connect…',
     };
@@ -690,14 +627,8 @@ class _Confirm extends StatelessWidget {
         const _Fact('On its mains adapter'),
       ],
       actions: [
-        FilledButton(
-          onPressed: () => flow.recognize(yes: true),
-          child: const Text('Yes, install Wellfed'),
-        ),
-        TextButton(
-          onPressed: () => flow.recognize(yes: false),
-          child: const Text("That's not my feeder"),
-        ),
+        FilledButton(onPressed: () => flow.recognize(yes: true), child: const Text('Yes, install Wellfed')),
+        TextButton(onPressed: () => flow.recognize(yes: false), child: const Text("That's not my feeder")),
       ],
     );
   }
@@ -751,14 +682,8 @@ class _Sending extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                flow.restarting
-                    ? 'The feeder is restarting'
-                    : 'Sending firmware',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: Fonts.semibold,
-                  color: c.text,
-                ),
+                flow.restarting ? 'The feeder is restarting' : 'Sending firmware',
+                style: TextStyle(fontSize: 15, fontWeight: Fonts.semibold, color: c.text),
               ),
             ),
             Flexible(
@@ -841,10 +766,7 @@ class _Claim extends StatelessWidget {
         ),
         WaitWords(flow.waitWords),
       ] else ...[
-        Text(
-          'Press these buttons once each, in order:',
-          style: bodyStyle(context),
-        ),
+        Text('Press these buttons once each, in order:', style: bodyStyle(context)),
         const SizedBox(height: Space.s3),
         CodeTiles(flow.code),
         const SizedBox(height: 18),
@@ -865,10 +787,7 @@ class _Claim extends StatelessWidget {
     ],
     actions: [
       if (flow.windowAsked)
-        FilledButton(
-          onPressed: flow.windowOpened,
-          child: const Text('The lock light is blinking fast'),
-        ),
+        FilledButton(onPressed: flow.windowOpened, child: const Text('The lock light is blinking fast')),
     ],
   );
 }
@@ -898,12 +817,7 @@ class _Step extends StatelessWidget {
               SizedBox.square(
                 dimension: 22,
                 child: switch (state) {
-                  CheckState.done => StrokeIcon(
-                    Glyph.check,
-                    size: 20,
-                    color: c.ok,
-                    weight: 2.2,
-                  ),
+                  CheckState.done => StrokeIcon(Glyph.check, size: 20, color: c.ok, weight: 2.2),
                   CheckState.running => CircularProgressIndicator(
                     strokeWidth: 2.5,
                     color: c.accent,
@@ -913,10 +827,7 @@ class _Step extends StatelessWidget {
                     child: Container(
                       width: 8,
                       height: 8,
-                      decoration: BoxDecoration(
-                        color: c.lineStrong,
-                        shape: BoxShape.circle,
-                      ),
+                      decoration: BoxDecoration(color: c.lineStrong, shape: BoxShape.circle),
                     ),
                   ),
                 },
@@ -939,10 +850,7 @@ class _Step extends StatelessWidget {
                 ),
             ],
           ),
-          if (running && fraction != null) ...[
-            const SizedBox(height: Space.s2),
-            Bar(value: fraction!),
-          ],
+          if (running && fraction != null) ...[const SizedBox(height: Space.s2), Bar(value: fraction!)],
         ],
       ),
     );
@@ -968,19 +876,10 @@ class _Finishing extends StatelessWidget {
       title: title,
       content: [
         const _Step('This phone is its owner', CheckState.done),
-        if (flow.joining != CheckState.waiting)
-          _Step('Finding it on your network', flow.joining),
-        _Step(
-          'Copying the original firmware',
-          flow.copying,
-          fraction: flow.copied,
-        ),
+        if (flow.joining != CheckState.waiting) _Step('Finding it on your network', flow.joining),
+        _Step('Copying the original firmware', flow.copying, fraction: flow.copied),
         _Step('Check the copy matches', flow.checked),
-        _Step(
-          'Make Wellfed permanent · about 4 min',
-          flow.promoting,
-          fraction: flow.written,
-        ),
+        _Step('Make Wellfed permanent · about 4 min', flow.promoting, fraction: flow.written),
         _Step('Restart and confirm', flow.confirming),
         const SizedBox(height: Space.s2),
         Text(
@@ -1033,9 +932,7 @@ class _DoneState extends State<_Done> {
 
   Future<void> _go() async {
     final name = _name.text.trim();
-    await widget.flow.finish(
-      name.isEmpty ? InstallFlow.defaultFeederName : name,
-    );
+    await widget.flow.finish(name.isEmpty ? InstallFlow.defaultFeederName : name);
     if (mounted) context.go('/');
   }
 
@@ -1060,16 +957,7 @@ class _DoneState extends State<_Done> {
               child: Stack(
                 children: [
                   const FeederImage(size: 250),
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: StrokeIcon(
-                      Glyph.check,
-                      size: 56,
-                      color: c.ok,
-                      weight: 2.2,
-                    ),
-                  ),
+                  Positioned(right: 0, top: 0, child: StrokeIcon(Glyph.check, size: 56, color: c.ok, weight: 2.2)),
                 ],
               ),
             ),
@@ -1079,30 +967,17 @@ class _DoneState extends State<_Done> {
             const SizedBox(height: Space.s5),
             LabeledField(
               label: 'Name it',
-              child: TextField(
-                controller: _name,
-                textCapitalization: TextCapitalization.words,
-              ),
+              child: TextField(controller: _name, textCapitalization: TextCapitalization.words),
             ),
             const SizedBox(height: Space.s4),
             const SizedBox(height: Space.s5),
-            FilledButton(
-              onPressed: () => unawaited(_go()),
-              child: const Text('Go to the feeder'),
-            ),
+            FilledButton(onPressed: () => unawaited(_go()), child: const Text('Go to the feeder')),
             if (flow.backupPath != null) ...[
               const SizedBox(height: Space.s2),
-              TextButton(
-                onPressed: () => unawaited(_save()),
-                child: const Text('Save the backup somewhere else'),
-              ),
+              TextButton(onPressed: () => unawaited(_save()), child: const Text('Save the backup somewhere else')),
             ],
             if (_shareFailed != null)
-              Notice(
-                tone: Tone.fault,
-                lead: "The backup wasn't saved elsewhere.",
-                text: _shareFailed!,
-              ),
+              Notice(tone: Tone.fault, lead: "The backup wasn't saved elsewhere.", text: _shareFailed!),
           ],
         ),
       ),
@@ -1125,10 +1000,7 @@ class _Stopped extends StatelessWidget {
       'Wellfed installs over 1.1.15 only, for now. Nothing on the feeder '
           'changed.',
     ),
-    (
-      'Two feeders answered',
-      "We can't tell which one is yours. Unplug the others and start again.",
-    ),
+    ('Two feeders answered', "We can't tell which one is yours. Unplug the others and start again."),
     (
       "The backup didn't match",
       "Wellfed won't make itself permanent without a good backup, so this "
@@ -1245,10 +1117,7 @@ class _Stopped extends StatelessWidget {
         'It left this phone before the install went out, and nothing was '
             'sent. Check that it is plugged in, then start again.',
       ),
-      RequestRefusal.imageServer => (
-        "This phone wasn't ready to serve the firmware",
-        'Nothing was sent. Start again.',
-      ),
+      RequestRefusal.imageServer => ("This phone wasn't ready to serve the firmware", 'Nothing was sent. Start again.'),
       RequestRefusal.other => (
         "The install wasn't sent",
         'Nothing reached the feeder. See below for what this phone said.',
@@ -1278,12 +1147,9 @@ class _Stopped extends StatelessWidget {
         SetupRefusal.unconfirmed =>
           'The code works for 60 seconds, and the time ran out. Try again with '
               'a new code.',
-        SetupRefusal.busy =>
-          'Another phone is setting it up. Wait, then try again.',
-        SetupRefusal.full =>
-          'It holds 8 phones and servers. An owner removes one first.',
-        SetupRefusal.notWritable =>
-          "It can't save right now. Try again in a minute.",
+        SetupRefusal.busy => 'Another phone is setting it up. Wait, then try again.',
+        SetupRefusal.full => 'It holds 8 phones and servers. An owner removes one first.',
+        SetupRefusal.notWritable => "It can't save right now. Try again in a minute.",
         SetupRefusal.invalid => 'It rejected the phone name or the Wi-Fi. Check them and start again.',
         null =>
           'The Bluetooth exchange broke off. Move closer and try again. It '
@@ -1360,10 +1226,7 @@ class _Stopped extends StatelessWidget {
       "This phone couldn't serve the feeder",
       'Another app may hold the port it needs. Nothing was sent.',
     ),
-    StopCase_Cancelled() => (
-      'You stopped the install',
-      'Nothing is waiting on it.',
-    ),
+    StopCase_Cancelled() => ('You stopped the install', 'Nothing is waiting on it.'),
     StopCase_Other() => ('The install stopped', 'See below for what it said.'),
   };
 
@@ -1402,11 +1265,7 @@ class _Stopped extends StatelessWidget {
             '${flow.listenWait.inMinutes} min',
           ),
           const SizedBox(height: Space.s2),
-          Bar(
-            value: flow.listenWait.inSeconds == 0
-                ? 0
-                : flow.listened.inSeconds / flow.listenWait.inSeconds,
-          ),
+          Bar(value: flow.listenWait.inSeconds == 0 ? 0 : flow.listened.inSeconds / flow.listenWait.inSeconds),
           if (flow.stockSeen) ...[
             const SizedBox(height: Space.s3),
             const Notice(
@@ -1425,17 +1284,11 @@ class _Stopped extends StatelessWidget {
                   'keep listening.',
             ),
             const SizedBox(height: Space.s2),
-            OutlinedButton(
-              onPressed: () => unawaited(flow.resume()),
-              child: const Text('Set up this feeder'),
-            ),
+            OutlinedButton(onPressed: () => unawaited(flow.resume()), child: const Text('Set up this feeder')),
           ],
           const SizedBox(height: Space.s5),
         ],
-        if (flow.bluetoothRefused) ...[
-          const _BluetoothRefused(),
-          const SizedBox(height: Space.s4),
-        ],
+        if (flow.bluetoothRefused) ...[const _BluetoothRefused(), const SizedBox(height: Space.s4)],
         ..._nextSteps(context, stop),
         if (flow.mayForget &&
             flow.pending == PendingInstall.ledgerDamaged &&
@@ -1443,10 +1296,7 @@ class _Stopped extends StatelessWidget {
           const SizedBox(height: Space.s2),
           _SetAsideLedger(flow: flow),
         ],
-        if (flow.forgetOffered) ...[
-          const SizedBox(height: Space.s2),
-          _ForgetInstall(flow: flow),
-        ],
+        if (flow.forgetOffered) ...[const SizedBox(height: Space.s2), _ForgetInstall(flow: flow)],
         if (flow.repairFailed case final failed?) ...[
           const SizedBox(height: Space.s2),
           Notice(tone: Tone.fault, lead: "That didn't work.", text: failed),
@@ -1455,12 +1305,7 @@ class _Stopped extends StatelessWidget {
           const SizedBox(height: Space.s4),
           Text(
             stop.detail,
-            style: TextStyle(
-              fontFamily: Fonts.mono,
-              fontSize: Sizes.xs,
-              height: 1.4,
-              color: c.textMuted,
-            ),
+            style: TextStyle(fontFamily: Fonts.mono, fontSize: Sizes.xs, height: 1.4, color: c.textMuted),
           ),
         ],
         const SizedBox(height: Space.s6),
@@ -1475,14 +1320,9 @@ class _Stopped extends StatelessWidget {
   /// marked uncertain: a pick-up reads where the feeder got to, and a new
   /// request goes only after the ledger closed the old one.
   List<Widget> _nextSteps(BuildContext context, InstallEnd_Stopped stop) {
-    Widget primary(String label, VoidCallback onPressed) =>
-        FilledButton(onPressed: onPressed, child: Text(label));
-    Widget secondary(String label, VoidCallback onPressed) =>
-        OutlinedButton(onPressed: onPressed, child: Text(label));
-    Widget home() => TextButton(
-      onPressed: () => context.go('/'),
-      child: const Text('Go to Home'),
-    );
+    Widget primary(String label, VoidCallback onPressed) => FilledButton(onPressed: onPressed, child: Text(label));
+    Widget secondary(String label, VoidCallback onPressed) => OutlinedButton(onPressed: onPressed, child: Text(label));
+    Widget home() => TextButton(onPressed: () => context.go('/'), child: const Text('Go to Home'));
 
     return switch (stop.case_) {
       StopCase_Uncertain() => switch (flow.listening) {
@@ -1498,10 +1338,7 @@ class _Stopped extends StatelessWidget {
         _ => [
           primary('Listen again', () => unawaited(flow.listen())),
           const SizedBox(height: Space.s2),
-          secondary(
-            'Look for it over Bluetooth',
-            () => unawaited(flow.resume()),
-          ),
+          secondary('Look for it over Bluetooth', () => unawaited(flow.resume())),
           home(),
         ],
       },
@@ -1516,15 +1353,10 @@ class _Stopped extends StatelessWidget {
         const SizedBox(height: Space.s2),
         home(),
       ],
-      StopCase_EarlierRequestOpen() => [
-        primary('Listen for it', () => unawaited(flow.listenForOpenRequest())),
-      ],
-      StopCase_ClockUnset() => [
-        primary('Start again', () => unawaited(flow.again())),
-      ],
-      StopCase_TwoFeeders() || StopCase_NotYourFeeder() => [
-        primary('Start again', () => unawaited(flow.again(forget: true))),
-      ],
+      StopCase_EarlierRequestOpen() => [primary('Listen for it', () => unawaited(flow.listenForOpenRequest()))],
+      StopCase_ClockUnset() => [primary('Start again', () => unawaited(flow.again()))],
+      StopCase_TwoFeeders() ||
+      StopCase_NotYourFeeder() => [primary('Start again', () => unawaited(flow.again(forget: true)))],
       StopCase_NotJoined() => [
         primary('Enter the Wi-Fi again', flow.newWifiForSetup),
         const SizedBox(height: Space.s2),
@@ -1534,16 +1366,10 @@ class _Stopped extends StatelessWidget {
         primary('Enter the Wi-Fi again', flow.changeWifi),
         secondary('Try again', () => unawaited(flow.again())),
       ],
-      StopCase_WifiRefused() || StopCase_NoWifiGiven() => [
-        primary('Enter the Wi-Fi again', flow.changeWifi),
-      ],
+      StopCase_WifiRefused() || StopCase_NoWifiGiven() => [primary('Enter the Wi-Fi again', flow.changeWifi)],
       _ => switch (stop.resume) {
-        Resume.fromStart => [
-          primary('Start again', () => unawaited(flow.again())),
-        ],
-        Resume.fromBank0 => [
-          primary('Pick up where it stopped', () => unawaited(flow.again())),
-        ],
+        Resume.fromStart => [primary('Start again', () => unawaited(flow.again()))],
+        Resume.fromBank0 => [primary('Pick up where it stopped', () => unawaited(flow.again()))],
         Resume.nothing => [home()],
       },
     };

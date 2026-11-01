@@ -2,7 +2,7 @@
 
 This guide takes you from a fresh checkout to a passing `make check`. It then shows which tool does what, how to work on one component, and how to run the simulator and the fuzzers. Nothing here needs a feeder, and nothing here touches one.
 
-These docs follow the [writing guide](writing.md). The code follows the [Rust standard](rust.md) and the [TypeScript standard](typescript.md).
+These docs follow the [writing guide](writing.md). The code follows the [Rust standard](rust.md), the [TypeScript standard](typescript.md) and the [Dart standard](dart.md).
 
 ## Prerequisites
 
@@ -72,7 +72,7 @@ The repository is self-contained. SDK and toolchain copies and fixtures resolve 
 | `check-docs` | Local Markdown links and anchors, the commands, make targets and paths the docs name, status words and time-bound wording ([rules](writing.md#what-the-checks-refuse)), portability checks, no Python under `src/`, and the source rules (raw output writers, card ids). It builds only `xtask`, and runs no tool |
 | `check-fixtures` | The optional binary and SDK evidence suite. Missing inputs or skips fail ([fixtures](fixtures.md)) |
 | `check-web` | The web frontends: ESLint, Prettier, licenses, types, unit tests, the build and Playwright. Needs Node and pnpm ([TypeScript standard](typescript.md)) |
-| `check-app` | The Android app: its generated bindings and theme tokens unchanged, `dart format`, `flutter analyze`, widget tests and a debug APK. Needs Flutter and the Android SDK ([the app](../../src/app/README.md)) |
+| `check-app` | The Android app: its generated bindings and theme tokens unchanged, `dart format`, analysis, widget tests and a debug APK. Needs the pinned Flutter and the Android SDK ([Dart standard](dart.md)) |
 | `check` | Every contributor check except `check-fixtures`, `check-web` and `check-app` |
 
 Notes:

@@ -3,28 +3,24 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../src/rust/api/install.dart' show PendingInstall;
-import '../src/rust/api/model.dart';
-import '../src/rust/api/session.dart' as api;
-import '../state/feeder.dart';
-import '../state/fleet.dart';
-import '../theme/theme.dart';
-import '../widgets/icons.dart';
-import '../widgets/layout.dart';
-import '../widgets/when.dart';
-import 'app_settings.dart';
-import 'feed_sheet.dart';
-import 'feeder/no_time.dart';
-import 'feeder/tabs.dart';
+import 'package:wellfed/screens/app_settings.dart';
+import 'package:wellfed/screens/feed_sheet.dart';
+import 'package:wellfed/screens/feeder/no_time.dart';
+import 'package:wellfed/screens/feeder/tabs.dart';
+import 'package:wellfed/src/rust/api/install.dart' show PendingInstall;
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/session.dart' as api;
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/state/fleet.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/when.dart';
 
 /// Feeder-first Home: one card per feeder this phone knows, large for one
 /// feeder and compact for several.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({
-    super.key,
-    required this.fleet,
-    required this.earlierInstall,
-  });
+  const HomeScreen({super.key, required this.fleet, required this.earlierInstall});
 
   final FeederFleet fleet;
 
@@ -57,10 +53,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: widget.fleet,
-    builder: (context, _) => _build(context),
-  );
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: widget.fleet, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
     final c = context.colors;
@@ -73,11 +67,7 @@ class _HomeScreenState extends State<HomeScreen> {
         titleSpacing: 20,
         title: Text(
           'Feeders',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: Fonts.semibold,
-            color: c.text,
-          ),
+          style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
         ),
         actions: [
           IconButton(
@@ -100,10 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   'may not be saved. Finish it before you rely on this feeder.',
             ),
             const SizedBox(height: Space.s2),
-            FilledButton(
-              onPressed: () => unawaited(_openInstall()),
-              child: const Text('Finish installing'),
-            ),
+            FilledButton(onPressed: () => unawaited(_openInstall()), child: const Text('Finish installing')),
             const SizedBox(height: Space.s4),
           ],
           for (final (i, controller) in feeders.indexed) ...[
@@ -126,10 +113,8 @@ class FeederCard extends StatelessWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: controller,
-    builder: (context, _) => compact ? _compact(context) : _full(context),
-  );
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: controller, builder: (context, _) => compact ? _compact(context) : _full(context));
 
   Widget _full(BuildContext context) {
     final c = context.colors;
@@ -152,11 +137,7 @@ class FeederCard extends StatelessWidget {
                     children: [
                       Text(
                         controller.known.name,
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: Fonts.semibold,
-                          color: c.text,
-                        ),
+                        style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
                       ),
                       const SizedBox(height: Space.s2),
                       _chips(context),
@@ -167,24 +148,16 @@ class FeederCard extends StatelessWidget {
               ],
             ),
           ),
-          if (card != null) ...[
-            const SizedBox(height: Space.s4),
-            _tiles(context, card),
-          ],
+          if (card != null) ...[const SizedBox(height: Space.s4), _tiles(context, card)],
           for (final notice in notices) ...[const SizedBox(height: 14), notice],
           const SizedBox(height: Space.s4),
           FilledButton(
-            onPressed: controller.canFeed
-                ? () => feedNow(context, controller)
-                : null,
+            onPressed: controller.canFeed ? () => feedNow(context, controller) : null,
             child: const Text('Feed now'),
           ),
           if (controller.feed.phase != FeedPhase.idle) ...[
             const SizedBox(height: Space.s1),
-            TextButton(
-              onPressed: () => showFeedSheet(context, controller),
-              child: Text(_feedLink(controller.feed)),
-            ),
+            TextButton(onPressed: () => showFeedSheet(context, controller), child: Text(_feedLink(controller.feed))),
           ],
         ],
       ),
@@ -200,9 +173,7 @@ class FeederCard extends StatelessWidget {
     final why = _why();
     return Panel(
       padding: const EdgeInsets.fromLTRB(10, 14, 14, 14),
-      onTap: controller.feed.phase == FeedPhase.idle
-          ? () => _open(context)
-          : () => showFeedSheet(context, controller),
+      onTap: controller.feed.phase == FeedPhase.idle ? () => _open(context) : () => showFeedSheet(context, controller),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -216,11 +187,7 @@ class FeederCard extends StatelessWidget {
                   children: [
                     Text(
                       controller.known.name,
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: Fonts.semibold,
-                        color: c.text,
-                      ),
+                      style: TextStyle(fontSize: 17, fontWeight: Fonts.semibold, color: c.text),
                     ),
                     const SizedBox(height: 6),
                     _chips(context),
@@ -228,10 +195,7 @@ class FeederCard extends StatelessWidget {
                       const SizedBox(height: 6),
                       Text(
                         line,
-                        style: TextStyle(
-                          fontSize: Sizes.sm,
-                          color: c.textMuted,
-                        ),
+                        style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
                       ),
                     ],
                   ],
@@ -242,14 +206,9 @@ class FeederCard extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(0, 44),
                   padding: const EdgeInsets.symmetric(horizontal: 14),
-                  textStyle: const TextStyle(
-                    fontSize: Sizes.base,
-                    fontWeight: Fonts.semibold,
-                  ),
+                  textStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold),
                 ),
-                onPressed: controller.canFeed
-                    ? () => feedNow(context, controller)
-                    : null,
+                onPressed: controller.canFeed ? () => feedNow(context, controller) : null,
                 child: const Text('Feed'),
               ),
             ],
@@ -260,11 +219,7 @@ class FeederCard extends StatelessWidget {
               padding: const EdgeInsets.only(left: 6),
               child: Text(
                 why,
-                style: TextStyle(
-                  fontSize: Sizes.sm,
-                  height: 1.45,
-                  color: c.textMuted,
-                ),
+                style: TextStyle(fontSize: Sizes.sm, height: 1.45, color: c.textMuted),
               ),
             ),
           ],
@@ -276,8 +231,7 @@ class FeederCard extends StatelessWidget {
   bool get _unreachable => controller.connection == Connection.offline;
 
   /// The live card: the status read in the session now open.
-  api.Card? get _live =>
-      controller.connection == Connection.online ? controller.card : null;
+  api.Card? get _live => controller.connection == Connection.online ? controller.card : null;
 
   Widget _chips(BuildContext context) {
     final c = context.colors;
@@ -293,14 +247,8 @@ class FeederCard extends StatelessWidget {
         'Feeding ${_portions(feed.portions)}',
         color: c.accent,
       ),
-      Connection.online when live?.ready ?? false => StatusChip(
-        'Ready',
-        color: c.ok,
-      ),
-      Connection.online when live?.blocked == Blocked.feeding => StatusChip(
-        'Feeding',
-        color: c.accent,
-      ),
+      Connection.online when live?.ready ?? false => StatusChip('Ready', color: c.ok),
+      Connection.online when live?.blocked == Blocked.feeding => StatusChip('Feeding', color: c.accent),
       Connection.online => StatusChip("Can't feed now", color: c.warning),
     };
 
@@ -310,10 +258,8 @@ class FeederCard extends StatelessWidget {
       children: [
         status,
         if (card != null) _food(context, card.food),
-        if (card?.adapter == false)
-          StatusChip('On battery', color: c.warning, glyph: Glyph.battery),
-        if (live != null && !live.clockSet)
-          StatusChip('No time', color: c.warning, glyph: Glyph.clock),
+        if (card?.adapter == false) StatusChip('On battery', color: c.warning, glyph: Glyph.battery),
+        if (live != null && !live.clockSet) StatusChip('No time', color: c.warning, glyph: Glyph.clock),
       ],
     );
   }
@@ -338,11 +284,7 @@ class FeederCard extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           text,
-          style: TextStyle(
-            fontSize: Sizes.sm,
-            fontWeight: Fonts.semibold,
-            color: color,
-          ),
+          style: TextStyle(fontSize: Sizes.sm, fontWeight: Fonts.semibold, color: color),
         ),
       ],
     );
@@ -368,11 +310,7 @@ class FeederCard extends StatelessWidget {
           Expanded(
             child: next == null
                 ? const _Tile('Next meal', 'None', 'No meal set')
-                : _Tile(
-                    'Next meal',
-                    minuteText(context, next.minute),
-                    portionsText(next.portions),
-                  ),
+                : _Tile('Next meal', minuteText(context, next.minute), portionsText(next.portions)),
           ),
           const SizedBox(width: Space.s2),
           Expanded(
@@ -380,9 +318,7 @@ class FeederCard extends StatelessWidget {
                 ? const _Tile('Last fed', 'None', 'Not read yet')
                 : _Tile(
                     'Last fed',
-                    lastAt == null
-                        ? 'Time unknown'
-                        : momentTextMs(context, lastAt),
+                    lastAt == null ? 'Time unknown' : momentTextMs(context, lastAt),
                     deliveredText(last),
                   ),
           ),
@@ -404,9 +340,7 @@ class FeederCard extends StatelessWidget {
       if (card?.fault case final fault?)
         Notice(
           tone: Tone.fault,
-          lead: fault.outcome == FeedOutcome.uncertain
-              ? "The last feed didn't finish."
-              : 'The last feed failed.',
+          lead: fault.outcome == FeedOutcome.uncertain ? "The last feed didn't finish." : 'The last feed failed.',
           text:
               'The feeder stopped without recording how much came out. Look '
               'at the bowl before you feed again.',
@@ -429,9 +363,7 @@ class FeederCard extends StatelessWidget {
   static String _lowLead(BuildContext context, api.Card? card) {
     final last = card?.lastFed;
     final at = last?.hopper == FoodLevel.low ? last?.atMs : null;
-    return at == null
-        ? 'Food is low.'
-        : 'Food read low ${atMomentTextMs(context, at)}.';
+    return at == null ? 'Food is low.' : 'Food read low ${atMomentTextMs(context, at)}.';
   }
 
   /// The compact card's second line.
@@ -513,30 +445,17 @@ class TodaysMeals extends StatelessWidget {
               Expanded(
                 child: Text(
                   "Today's meals",
-                  style: TextStyle(
-                    fontSize: Sizes.md,
-                    fontWeight: Fonts.semibold,
-                    color: c.text,
-                  ),
+                  style: TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text),
                 ),
               ),
               TextButton(
-                onPressed: () => unawaited(
-                  context.push(
-                    '/feeder/${controller.known.identity}?tab=$scheduleTab',
-                  ),
-                ),
+                onPressed: () => unawaited(context.push('/feeder/${controller.known.identity}?tab=$scheduleTab')),
                 child: const Text('Schedule'),
               ),
             ],
           ),
           Panel(
-            child: Column(
-              children: [
-                for (final (i, meal) in meals.indexed)
-                  _MealRow(meal, first: i == 0),
-              ],
-            ),
+            child: Column(children: [for (final (i, meal) in meals.indexed) _MealRow(meal, first: i == 0)]),
           ),
         ],
       );
@@ -566,11 +485,7 @@ class _MealRow extends StatelessWidget {
             width: 64,
             child: Text(
               minuteText(context, meal.minute),
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: Fonts.semibold,
-                color: c.text,
-              ),
+              style: TextStyle(fontSize: 15, fontWeight: Fonts.semibold, color: c.text),
             ),
           ),
           Expanded(
@@ -589,36 +504,21 @@ class _MealRow extends StatelessWidget {
     final c = context.colors;
     Text words(String text, Color color) => Text(
       text,
-      style: TextStyle(
-        fontSize: Sizes.base,
-        fontWeight: Fonts.medium,
-        color: color,
-      ),
+      style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.medium, color: color),
     );
     return switch (meal.standing) {
-      api.MealStanding_Fed(:final result) when result.uncertain => words(
-        'Uncertain',
-        c.warning,
+      api.MealStanding_Fed(:final result) when result.uncertain => words('Uncertain', c.warning),
+      api.MealStanding_Fed(:final result) when result.confirmed == result.requested => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          StrokeIcon(Glyph.check, size: 16, color: c.ok, weight: 2),
+          const SizedBox(width: Space.s1),
+          words('Fed', c.ok),
+        ],
       ),
-      api.MealStanding_Fed(:final result)
-          when result.confirmed == result.requested =>
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            StrokeIcon(Glyph.check, size: 16, color: c.ok, weight: 2),
-            const SizedBox(width: Space.s1),
-            words('Fed', c.ok),
-          ],
-        ),
-      api.MealStanding_Fed(:final result) => words(
-        'Fed ${result.confirmed} of ${result.requested}',
-        c.warning,
-      ),
+      api.MealStanding_Fed(:final result) => words('Fed ${result.confirmed} of ${result.requested}', c.warning),
       api.MealStanding_Passed() => words('No feed recorded', c.textMuted),
-      api.MealStanding_Next(:final atMs) => words(
-        untilText(DateTime.now(), atMs),
-        c.accent,
-      ),
+      api.MealStanding_Next(:final atMs) => words(untilText(DateTime.now(), atMs), c.accent),
       api.MealStanding_Later() => words('Later', c.textMuted),
     };
   }
@@ -638,10 +538,7 @@ class _Tile extends StatelessWidget {
     final small = TextStyle(fontSize: Sizes.xs, color: c.textMuted);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: c.sunken,
-        borderRadius: BorderRadius.circular(Radii.icon),
-      ),
+      decoration: BoxDecoration(color: c.sunken, borderRadius: BorderRadius.circular(Radii.icon)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -651,18 +548,9 @@ class _Tile extends StatelessWidget {
             value,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: Sizes.md,
-              fontWeight: Fonts.semibold,
-              color: c.text,
-            ),
+            style: TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text),
           ),
-          Text(
-            note,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: small,
-          ),
+          Text(note, maxLines: 1, overflow: TextOverflow.ellipsis, style: small),
         ],
       ),
     );

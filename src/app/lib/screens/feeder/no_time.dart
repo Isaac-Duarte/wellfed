@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/replies.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
 
 /// The feeder has no clock, so its meals wait: say so, and offer this phone's.
 class NoTimeNotice extends StatefulWidget {
@@ -39,10 +39,7 @@ class _NoTimeNoticeState extends State<NoTimeNotice> {
             'feed. Feed now still works.',
       ),
       const SizedBox(height: Space.s2),
-      OutlinedButton(
-        onPressed: _asking ? null : _sync,
-        child: const Text('Set the time from this phone'),
-      ),
+      OutlinedButton(onPressed: _asking ? null : _sync, child: const Text('Set the time from this phone')),
     ],
   );
 }

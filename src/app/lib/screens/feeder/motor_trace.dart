@@ -2,16 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../src/rust/api/model.dart';
-import '../../src/rust/api/session.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/replies.dart';
-import '../../widgets/when.dart';
-import 'today.dart' show faultTitle;
+import 'package:wellfed/screens/feeder/today.dart' show faultTitle;
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/session.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/when.dart';
 
 AppBar _bar(BuildContext context, String title) {
   final c = context.colors;
@@ -64,10 +64,7 @@ class MotorTracesScreen extends StatelessWidget {
                     onTap: () => unawaited(
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(
-                          builder: (_) => MotorTraceScreen(
-                            feeder: feeder,
-                            feed: result.feed,
-                          ),
+                          builder: (_) => MotorTraceScreen(feeder: feeder, feed: result.feed),
                         ),
                       ),
                     ),
@@ -90,9 +87,7 @@ class MotorTraceScreen extends StatefulWidget {
 }
 
 class _MotorTraceScreenState extends State<MotorTraceScreen> {
-  late final _read = widget.feeder.ask(
-    FeederRequest.readTrace(feed: widget.feed),
-  );
+  late final _read = widget.feeder.ask(FeederRequest.readTrace(feed: widget.feed));
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -173,22 +168,12 @@ class _Trace extends StatelessWidget {
         const SizedBox(height: Space.s4),
         FactList([
           if (trace.portionMs.isNotEmpty)
-            (
-              'Per portion',
-              Flexible(
-                child: Text(
-                  trace.portionMs.map(_seconds).join(', '),
-                  textAlign: TextAlign.end,
-                ),
-              ),
-            ),
+            ('Per portion', Flexible(child: Text(trace.portionMs.map(_seconds).join(', '), textAlign: TextAlign.end))),
           (
             'Stopped because',
             Flexible(
               child: Text(
-                summary.reason == FeedReason.done
-                    ? 'All portions counted'
-                    : faultTitle(context, summary.reason, null),
+                summary.reason == FeedReason.done ? 'All portions counted' : faultTitle(context, summary.reason, null),
                 textAlign: TextAlign.end,
               ),
             ),
@@ -229,11 +214,7 @@ class _TracePainter extends CustomPainter {
       ..color = color
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
-    canvas.drawLine(
-      Offset(0, size.height),
-      Offset(size.width, size.height),
-      Paint()..color = line,
-    );
+    canvas.drawLine(Offset(0, size.height), Offset(size.width, size.height), Paint()..color = line);
     if (spanMs <= 0) return;
     double x(int atMs) => atMs / spanMs * size.width;
 
@@ -241,8 +222,7 @@ class _TracePainter extends CustomPainter {
       case TraceSeries.current:
         final points = [
           for (final entry in entries)
-            if (entry case TraceEntry_Current(:final atMs, :final value))
-              (atMs, value),
+            if (entry case TraceEntry_Current(:final atMs, :final value)) (atMs, value),
         ];
         if (points.isEmpty) return;
         final top = points.map((p) => p.$2).reduce((a, b) => a > b ? a : b);
@@ -260,21 +240,13 @@ class _TracePainter extends CustomPainter {
       case TraceSeries.marks:
         for (final entry in entries) {
           if (entry case TraceEntry_Mark(:final atMs, high: true)) {
-            canvas.drawLine(
-              Offset(x(atMs), 0),
-              Offset(x(atMs), size.height),
-              ink,
-            );
+            canvas.drawLine(Offset(x(atMs), 0), Offset(x(atMs), size.height), ink);
           }
         }
       case TraceSeries.beams:
         for (final entry in entries) {
           if (entry case TraceEntry_Beams(:final atMs, outletClear: false)) {
-            canvas.drawLine(
-              Offset(x(atMs), 0),
-              Offset(x(atMs), size.height),
-              ink,
-            );
+            canvas.drawLine(Offset(x(atMs), 0), Offset(x(atMs), size.height), ink);
           }
         }
     }

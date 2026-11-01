@@ -3,11 +3,11 @@ import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 
-import '../src/rust/api/install.dart' as install;
-import '../src/rust/api/keys.dart';
-import '../src/rust/api/restore.dart';
-import '../src/rust/api/restore.dart' as rust;
-import 'install_ports.dart';
+import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/src/rust/api/install.dart' as install;
+import 'package:wellfed/src/rust/api/keys.dart';
+import 'package:wellfed/src/rust/api/restore.dart';
+import 'package:wellfed/src/rust/api/restore.dart' as rust;
 
 /// What a restore reaches outside Dart: the Rust run, NSD, the foreground
 /// service, the kept backup and the file picker. Behind this, so every screen
@@ -61,8 +61,7 @@ class AppRestorePorts implements RestorePorts {
   Future<String> dataDir() async => (await _install.paths()).data;
 
   @override
-  String? keptBackup(String dataDir, List<int> identity) =>
-      install.keptBackup(dataDir: dataDir, identity: identity);
+  String? keptBackup(String dataDir, List<int> identity) => install.keptBackup(dataDir: dataDir, identity: identity);
 
   @override
   BackupCheck checkBackup(String path) => rust.checkBackup(path: path);
@@ -90,10 +89,8 @@ class AppRestorePorts implements RestorePorts {
   Stream<void> setupHeard() => _install.setupHeard();
 
   @override
-  void forgetKey(String dataDir, List<int> identity) => rust.forgetRestoreKey(
-    dataDir: dataDir,
-    identity: Uint8List.fromList(identity),
-  );
+  void forgetKey(String dataDir, List<int> identity) =>
+      rust.forgetRestoreKey(dataDir: dataDir, identity: Uint8List.fromList(identity));
 
   @override
   Future<bool> holdProcess(String text) => _install.holdProcess(text);

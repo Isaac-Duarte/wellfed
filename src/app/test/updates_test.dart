@@ -10,16 +10,11 @@ import 'package:wellfed/state/feeder.dart';
 import 'fakes.dart';
 import 'harness.dart';
 
-const _newBuild =
-    'cd00000000000000000000000000000000000000000000000000000000000000';
+const _newBuild = 'cd00000000000000000000000000000000000000000000000000000000000000';
 
 Future<(FakeFeederPorts, FakeSession)> _show(
   WidgetTester tester, {
-  ImageCheck image = const ImageCheck.ready(
-    provisioning: ImageProvisioning.consumer,
-    build: _newBuild,
-    version: 7,
-  ),
+  ImageCheck image = const ImageCheck.ready(provisioning: ImageProvisioning.consumer, build: _newBuild, version: 7),
   String build = 'ab',
 }) async {
   final book = FakeBook()..feeders = [kitchen];
@@ -33,14 +28,7 @@ Future<(FakeFeederPorts, FakeSession)> _show(
   await tester.pump();
   ports.session.replies.add(
     const FeederReply.update(
-      update: UpdateInfo(
-        phase: UpdatePhase.idle,
-        bank: 1,
-        minVersion: 6,
-        version: 0,
-        imageLen: 0,
-        written: 0,
-      ),
+      update: UpdateInfo(phase: UpdatePhase.idle, bank: 1, minVersion: 6, version: 0, imageLen: 0, written: 0),
     ),
   );
   await showTab(tester, UpdatesScreen(feeder: feeder));
@@ -49,9 +37,7 @@ Future<(FakeFeederPorts, FakeSession)> _show(
 }
 
 void main() {
-  testWidgets('offers what the app carries, and nothing it does not', (
-    tester,
-  ) async {
+  testWidgets('offers what the app carries, and nothing it does not', (tester) async {
     await _show(tester);
     expect(find.text('7'), findsOneWidget);
     expect(find.text('Install on Kitchen'), findsOneWidget);
@@ -90,9 +76,7 @@ void main() {
     expect(ports.pushes, hasLength(1));
   });
 
-  testWidgets('cancel goes once; refused or unanswered, it says so', (
-    tester,
-  ) async {
+  testWidgets('cancel goes once; refused or unanswered, it says so', (tester) async {
     final (ports, session) = await _show(tester);
     await tapIn(tester, find.text('Install on Kitchen'));
     ports.progress.add(const UpdateProgress.sending(written: 1, length: 100));
@@ -104,9 +88,7 @@ void main() {
     expect(find.textContaining('may or may not have'), findsOneWidget);
   });
 
-  testWidgets('leaving mid-send and coming back shows the run, not an offer', (
-    tester,
-  ) async {
+  testWidgets('leaving mid-send and coming back shows the run, not an offer', (tester) async {
     final (ports, _) = await _show(tester);
     final feeder = ports.controller;
     await tapIn(tester, find.text('Install on Kitchen'));
@@ -121,66 +103,43 @@ void main() {
     expect(ports.pushes, hasLength(1));
   });
 
-  testWidgets(
-    'an uncertain end stays on coming back, until the feeder settles it',
-    (tester) async {
-      final (ports, session) = await _show(tester);
-      final feeder = ports.controller;
-      await tapIn(tester, find.text('Install on Kitchen'));
-      ports.progress.add(
-        const UpdateProgress.ended(end: UpdateEnd.uncertain()),
-      );
-      await settle(tester);
+  testWidgets('an uncertain end stays on coming back, until the feeder settles it', (tester) async {
+    final (ports, session) = await _show(tester);
+    final feeder = ports.controller;
+    await tapIn(tester, find.text('Install on Kitchen'));
+    ports.progress.add(const UpdateProgress.ended(end: UpdateEnd.uncertain()));
+    await settle(tester);
 
-      await showTab(tester, const SizedBox());
-      await showTab(tester, UpdatesScreen(feeder: feeder));
-      expect(find.text('Install on Kitchen'), findsNothing);
-      expect(find.textContaining('may or may not have'), findsOneWidget);
+    await showTab(tester, const SizedBox());
+    await showTab(tester, UpdatesScreen(feeder: feeder));
+    expect(find.text('Install on Kitchen'), findsNothing);
+    expect(find.textContaining('may or may not have'), findsOneWidget);
 
-      session.replies.add(const FeederReply.unanswered());
-      await tapIn(tester, find.text('Look again'));
-      expect(find.textContaining("hasn't settled"), findsOneWidget);
+    session.replies.add(const FeederReply.unanswered());
+    await tapIn(tester, find.text('Look again'));
+    expect(find.textContaining("hasn't settled"), findsOneWidget);
 
-      session.replies.add(
-        const FeederReply.update(
-          update: UpdateInfo(
-            phase: UpdatePhase.idle,
-            bank: 0,
-            minVersion: 6,
-            version: 0,
-            imageLen: 0,
-            written: 0,
-          ),
-        ),
-      );
-      await tapIn(tester, find.text('Look again'));
-      expect(find.text('Install on Kitchen'), findsOneWidget);
-      expect(ports.pushes, hasLength(1));
-    },
-  );
+    session.replies.add(
+      const FeederReply.update(
+        update: UpdateInfo(phase: UpdatePhase.idle, bank: 0, minVersion: 6, version: 0, imageLen: 0, written: 0),
+      ),
+    );
+    await tapIn(tester, find.text('Look again'));
+    expect(find.text('Install on Kitchen'), findsOneWidget);
+    expect(ports.pushes, hasLength(1));
+  });
 
-  testWidgets('the served build past its version has kept the update', (
-    tester,
-  ) async {
+  testWidgets('the served build past its version has kept the update', (tester) async {
     final (ports, session) = await _show(tester);
     await tapIn(tester, find.text('Install on Kitchen'));
-    ports.progress.add(
-      const UpdateProgress.ended(end: UpdateEnd.unconfirmed()),
-    );
+    ports.progress.add(const UpdateProgress.ended(end: UpdateEnd.unconfirmed()));
     await settle(tester);
 
     session.status(fakeCard(build: _newBuild));
     await settle(tester);
     session.replies.add(
       const FeederReply.update(
-        update: UpdateInfo(
-          phase: UpdatePhase.idle,
-          bank: 1,
-          minVersion: 7,
-          version: 0,
-          imageLen: 0,
-          written: 0,
-        ),
+        update: UpdateInfo(phase: UpdatePhase.idle, bank: 1, minVersion: 7, version: 0, imageLen: 0, written: 0),
       ),
     );
     await tapIn(tester, find.text('Look again'));
@@ -188,38 +147,25 @@ void main() {
 
     session.replies.add(
       const FeederReply.update(
-        update: UpdateInfo(
-          phase: UpdatePhase.idle,
-          bank: 1,
-          minVersion: 7,
-          version: 0,
-          imageLen: 0,
-          written: 0,
-        ),
+        update: UpdateInfo(phase: UpdatePhase.idle, bank: 1, minVersion: 7, version: 0, imageLen: 0, written: 0),
       ),
     );
     await tapIn(tester, find.text('Done'));
     expect(find.text('7'), findsOneWidget, reason: 'the floor, read again');
   });
 
-  testWidgets('an offer held by an earlier stop offers its cancel, once', (
-    tester,
-  ) async {
+  testWidgets('an offer held by an earlier stop offers its cancel, once', (tester) async {
     final (ports, session) = await _show(tester);
     await tapIn(tester, find.text('Install on Kitchen'));
     ports.progress.add(
       const UpdateProgress.ended(
-        end: UpdateEnd.refused(
-          refusal: FeederRefusal.update(reason: UpdateRefusal.pending),
-        ),
+        end: UpdateEnd.refused(refusal: FeederRefusal.update(reason: UpdateRefusal.pending)),
       ),
     );
     await settle(tester);
     expect(find.textContaining('Let it finish'), findsNothing);
 
-    session.replies.add(
-      const FeederReply.refused(refusal: FeederRefusal.busy()),
-    );
+    session.replies.add(const FeederReply.refused(refusal: FeederRefusal.busy()));
     await tapIn(tester, find.text('Cancel the earlier update'));
     expect(session.requests.single, const FeederRequest.cancelUpdate());
     expect(find.textContaining('busy'), findsOneWidget);
@@ -228,9 +174,7 @@ void main() {
     expect(find.text('Install on Kitchen'), findsOneWidget);
   });
 
-  testWidgets('holds the process for the run, and says if refused', (
-    tester,
-  ) async {
+  testWidgets('holds the process for the run, and says if refused', (tester) async {
     final (ports, _) = await _show(tester);
     ports.holdGranted = false;
 
@@ -244,15 +188,11 @@ void main() {
     expect(ports.releases, 1);
   });
 
-  testWidgets('a run that asks where the feeder is hears what NSD says', (
-    tester,
-  ) async {
+  testWidgets('a run that asks where the feeder is hears what NSD says', (tester) async {
     final (ports, _) = await _show(tester);
     await tapIn(tester, find.text('Install on Kitchen'));
 
-    ports.progress.add(
-      const UpdateProgress.ask(id: 4, ask: InstallAsk.locate(identity: 'aa')),
-    );
+    ports.progress.add(const UpdateProgress.ask(id: 4, ask: InstallAsk.locate(identity: 'aa')));
     await settle(tester);
     expect(ports.located, [(4, 'lan:4747')]);
   });
@@ -266,41 +206,27 @@ void main() {
     }
 
     testWidgets('on batteries', (tester) async {
-      await end(
-        tester,
-        const UpdateEnd.refused(
-          refusal: FeederRefusal.update(reason: UpdateRefusal.battery),
-        ),
-      );
+      await end(tester, const UpdateEnd.refused(refusal: FeederRefusal.update(reason: UpdateRefusal.battery)));
       expect(find.text('Plug Kitchen in first'), findsOneWidget);
       expect(find.text('Try again'), findsNothing);
     });
 
-    testWidgets('an uncertain one is said, and offers nothing again', (
-      tester,
-    ) async {
+    testWidgets('an uncertain one is said, and offers nothing again', (tester) async {
       await end(tester, const UpdateEnd.uncertain());
       expect(find.textContaining('may or may not have'), findsOneWidget);
       expect(find.text('Try again'), findsNothing);
     });
 
-    testWidgets('an end it can say may be offered again after Done', (
-      tester,
-    ) async {
+    testWidgets('an end it can say may be offered again after Done', (tester) async {
       await end(tester, const UpdateEnd.notOffered());
       expect(find.textContaining('Nothing was sent'), findsOneWidget);
       await tapIn(tester, find.text('Done'));
       expect(find.text('Install on Kitchen'), findsOneWidget);
     });
 
-    testWidgets('a cancel and a lost run say which copy it runs', (
-      tester,
-    ) async {
+    testWidgets('a cancel and a lost run say which copy it runs', (tester) async {
       await end(tester, const UpdateEnd.stopped(stop: UpdateStop.cancelled));
-      expect(
-        find.textContaining('Kitchen runs its other copy'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('Kitchen runs its other copy'), findsOneWidget);
       expect(find.textContaining('other copy of Wellfed'), findsOneWidget);
       expect(find.textContaining('still runs'), findsNothing);
       expect(find.text('Running now'), findsOneWidget);

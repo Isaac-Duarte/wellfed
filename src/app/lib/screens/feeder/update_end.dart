@@ -2,25 +2,19 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../src/rust/api/model.dart';
-import '../../src/rust/api/update.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/replies.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/update.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
 
 /// What an update's end comes to: a title and what it means (12.3).
 (String, String) updateEndWords(String name, UpdateEnd end) => switch (end) {
-  UpdateEnd_Confirmed() => (
-    'Updated',
-    '$name runs the new version and has kept it.',
-  ),
-  UpdateEnd_AlreadyRunning() => (
-    'Nothing to do',
-    '$name already runs this version. Nothing was sent.',
-  ),
+  UpdateEnd_Confirmed() => ('Updated', '$name runs the new version and has kept it.'),
+  UpdateEnd_AlreadyRunning() => ('Nothing to do', '$name already runs this version. Nothing was sent.'),
   UpdateEnd_Refused(:final refusal) => _refused(name, refusal),
   UpdateEnd_Stopped(stop: UpdateStop.cancelled) => (
     'Update cancelled',
@@ -42,10 +36,7 @@ import '../../widgets/replies.dart';
     "The update went out, so it may or may not have installed. Wellfed won't "
         'send it again. Look at the firmware once the feeder is back.',
   ),
-  UpdateEnd_NotOffered() => (
-    "Couldn't reach $name",
-    'Nothing was sent, and nothing changed.',
-  ),
+  UpdateEnd_NotOffered() => ("Couldn't reach $name", 'Nothing was sent, and nothing changed.'),
   UpdateEnd_Unconfirmed() => (
     'Not confirmed yet',
     "$name took the update, but hasn't confirmed the new version. If it "
@@ -56,16 +47,10 @@ import '../../widgets/replies.dart';
     "The new version didn't start properly, so it runs its other copy of "
         'Wellfed. That copy can feed, and may be older than the one it ran.',
   ),
-  UpdateEnd_Failed(:final detail) => (
-    "This phone couldn't send it",
-    'Nothing was installed. $detail',
-  ),
+  UpdateEnd_Failed(:final detail) => ("This phone couldn't send it", 'Nothing was installed. $detail'),
 };
 
-(String, String) _refused(
-  String name,
-  FeederRefusal refusal,
-) => switch (refusal) {
+(String, String) _refused(String name, FeederRefusal refusal) => switch (refusal) {
   FeederRefusal_Update(reason: UpdateRefusal.battery) => (
     'Plug $name in first',
     "It's running on batteries, and it won't install an update unless it's on "
@@ -88,10 +73,7 @@ import '../../widgets/replies.dart';
       'The image may be damaged, or it was not signed for this feeder. Nothing '
           'was installed.',
     ),
-  FeederRefusal_Update(reason: UpdateRefusal.same) => (
-    'Nothing to do',
-    '$name already runs this version.',
-  ),
+  FeederRefusal_Update(reason: UpdateRefusal.same) => ('Nothing to do', '$name already runs this version.'),
   FeederRefusal_Update(reason: UpdateRefusal.failed) => (
     'This version failed on $name',
     'It was tried before and did not start properly, so it will not try again.',
@@ -109,15 +91,9 @@ import '../../widgets/replies.dart';
     "One stopped partway, and $name won't take another until it's cancelled. "
         'Nothing is installing now.',
   ),
-  FeederRefusal_Update() => (
-    '$name said no',
-    "It can't install an update right now. Nothing changed.",
-  ),
+  FeederRefusal_Update() => ('$name said no', "It can't install an update right now. Nothing changed."),
   FeederRefusal_Busy() => ("It's feeding", 'Try again when the feed finishes.'),
-  FeederRefusal_Forbidden() => (
-    'Owner only',
-    'Only an owner can update $name. Nothing changed.',
-  ),
+  FeederRefusal_Forbidden() => ('Owner only', 'Only an owner can update $name. Nothing changed.'),
   _ => ('$name said no', 'Nothing changed.'),
 };
 
@@ -174,10 +150,7 @@ class UpdateEndScreen extends StatelessWidget {
             child: const Text('Cancel the earlier update'),
           ),
         if (flow.endUnknown)
-          FilledButton(
-            onPressed: () => unawaited(flow.lookAgain()),
-            child: const Text('Look again'),
-          ),
+          FilledButton(onPressed: () => unawaited(flow.lookAgain()), child: const Text('Look again')),
         OutlinedButton(
           onPressed: () {
             flow.acknowledge();
@@ -191,13 +164,9 @@ class UpdateEndScreen extends StatelessWidget {
 
   /// A stop left its candidate recorded, and only a cancel forgets it.
   bool get _heldEarlier => switch (end) {
-    UpdateEnd_Refused(
-      refusal: FeederRefusal_Update(reason: UpdateRefusal.pending),
-    ) =>
-      true,
+    UpdateEnd_Refused(refusal: FeederRefusal_Update(reason: UpdateRefusal.pending)) => true,
     _ => false,
   };
 
-  static String _short(String build) =>
-      build.length > 12 ? build.substring(0, 12) : build;
+  static String _short(String build) => build.length > 12 ? build.substring(0, 12) : build;
 }

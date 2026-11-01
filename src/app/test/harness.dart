@@ -5,11 +5,7 @@ import 'package:wellfed/state/feeder.dart';
 
 import 'fakes.dart';
 
-const kitchen = KnownFeeder(
-  identity: 'aa',
-  name: 'Kitchen',
-  address: 'lan:4747',
-);
+const kitchen = KnownFeeder(identity: 'aa', name: 'Kitchen', address: 'lan:4747');
 
 /// One feeder's controller, its session opened.
 Future<(FeederController, FakeSession)> oneFeeder(WidgetTester tester) async {

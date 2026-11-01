@@ -5,10 +5,10 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MissingPluginException;
 
-import '../src/rust/api/error.dart';
-import '../theme/theme.dart';
-import '../widgets/icons.dart';
-import '../widgets/layout.dart';
+import 'package:wellfed/src/rust/api/error.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
 
 /// Name things: what this phone calls the feeder (only this phone keeps
 /// it) and how the feeder lists this phone among its clients, which it
@@ -45,8 +45,7 @@ class NameStep extends StatefulWidget {
 
   static const maxBytes = 16;
 
-  static Future<String> _phoneModel() async =>
-      (await DeviceInfoPlugin().androidInfo).model;
+  static Future<String> _phoneModel() async => (await DeviceInfoPlugin().androidInfo).model;
 
   @override
   State<NameStep> createState() => _NameStepState();
@@ -94,19 +93,14 @@ class _NameStepState extends State<NameStep> {
   Future<void> _done() async {
     final asksFeeder = widget.feeder != null;
     try {
-      await widget.onDone(
-        _name.text.trim(),
-        asksFeeder ? _feeder.text.trim() : null,
-      );
+      await widget.onDone(_name.text.trim(), asksFeeder ? _feeder.text.trim() : null);
     } on BridgeError catch (error) {
       if (mounted) setState(() => _failed = error.message);
     }
   }
 
   bool get _valid =>
-      _bytes >= 1 &&
-      _bytes <= NameStep.maxBytes &&
-      (widget.feeder == null || _feeder.text.trim().isNotEmpty);
+      _bytes >= 1 && _bytes <= NameStep.maxBytes && (widget.feeder == null || _feeder.text.trim().isNotEmpty);
 
   @override
   Widget build(BuildContext context) {
@@ -152,19 +146,10 @@ class _NameStepState extends State<NameStep> {
         ),
         if (_failed != null) ...[
           const SizedBox(height: Space.s3),
-          Notice(
-            tone: Tone.fault,
-            lead: "This phone couldn't save that.",
-            text: _failed!,
-          ),
+          Notice(tone: Tone.fault, lead: "This phone couldn't save that.", text: _failed!),
         ],
       ],
-      actions: [
-        FilledButton(
-          onPressed: _valid ? () => unawaited(_done()) : null,
-          child: Text(widget.action),
-        ),
-      ],
+      actions: [FilledButton(onPressed: _valid ? () => unawaited(_done()) : null, child: Text(widget.action))],
     );
   }
 }

@@ -2,15 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/ask_text.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/replies.dart';
-import '../../widgets/when.dart';
-import 'today.dart' show clockWords;
+import 'package:wellfed/screens/feeder/today.dart' show clockWords;
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/ask_text.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/when.dart';
 
 /// The clock, its zone and where it asks for the time, and what a portion
 /// weighs (13.4).
@@ -59,22 +59,14 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
   Future<void> _portion(PortionChange change) async {
     final calibration = _calibration;
     if (calibration == null) return;
-    await _write(
-      FeederRequest.putCalibration(
-        base: calibration.generation,
-        portion: change,
-        bowl: calibration.bowl,
-      ),
-    );
+    await _write(FeederRequest.putCalibration(base: calibration.generation, portion: change, bowl: calibration.bowl));
     if (mounted) await _read();
   }
 
   Future<void> _time({ZoneChange? zone, String? ntp}) async {
     final time = widget.feeder.card?.time;
     if (time == null) return;
-    await _write(
-      FeederRequest.putTime(base: time.generation, zone: zone, ntp: ntp),
-    );
+    await _write(FeederRequest.putTime(base: time.generation, zone: zone, ntp: ntp));
 
     // The feeder writes no event for a time setting, so nothing else would
     // tell the card: its chips would stay as they were, and its old generation
@@ -107,10 +99,8 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: widget.feeder,
-    builder: (context, _) => _build(context),
-  );
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: widget.feeder, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
     final c = context.colors;
@@ -121,11 +111,7 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
     final clock = current ? time?.clockMs : null;
     final error = current ? time?.errorMs : null;
     final zone = time?.zone;
-    final label = TextStyle(
-      fontSize: Sizes.base,
-      fontWeight: Fonts.semibold,
-      color: c.text,
-    );
+    final label = TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: c.text);
 
     return Scaffold(
       appBar: AppBar(
@@ -139,11 +125,7 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
         ),
         title: Text(
           'Clock and portion size',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: Fonts.semibold,
-            color: c.text,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
         ),
       ),
       body: ListView(
@@ -160,24 +142,13 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
               }),
             ),
             if (error != null) ('Could be off by', Text(_errorText(error))),
-            if (card != null)
-              (
-                'Last set',
-                Flexible(
-                  child: Text(
-                    clockWords(context, card),
-                    textAlign: TextAlign.end,
-                  ),
-                ),
-              ),
+            if (card != null) ('Last set', Flexible(child: Text(clockWords(context, card), textAlign: TextAlign.end))),
           ]),
           const SizedBox(height: Space.s4),
           Text('Time zone', style: label),
           const SizedBox(height: Space.s1),
           Text(
-            zone == null || zone.isEmpty
-                ? 'None set: it follows the offset the last phone gave it.'
-                : zone,
+            zone == null || zone.isEmpty ? 'None set: it follows the offset the last phone gave it.' : zone,
             style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
           ),
           const SizedBox(height: Space.s2),
@@ -185,18 +156,14 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _asking || time == null
-                      ? null
-                      : () => unawaited(_time(zone: const ZoneChange.phone())),
+                  onPressed: _asking || time == null ? null : () => unawaited(_time(zone: const ZoneChange.phone())),
                   child: const Text("This phone's zone"),
                 ),
               ),
               const SizedBox(width: Space.s2),
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _asking || time == null
-                      ? null
-                      : () => unawaited(_time(zone: const ZoneChange.clear())),
+                  onPressed: _asking || time == null ? null : () => unawaited(_time(zone: const ZoneChange.clear())),
                   child: const Text('Clear it'),
                 ),
               ),
@@ -211,23 +178,17 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
               ChoiceChip(
                 label: const Text('Router'),
                 selected: time?.ntp is NtpView_Gateway,
-                onSelected: _asking || time == null
-                    ? null
-                    : (_) => unawaited(_time(ntp: 'gateway')),
+                onSelected: _asking || time == null ? null : (_) => unawaited(_time(ntp: 'gateway')),
               ),
               ChoiceChip(
                 label: const Text('Address'),
                 selected: time?.ntp is NtpView_Address,
-                onSelected: _asking || time == null
-                    ? null
-                    : (_) => unawaited(_address()),
+                onSelected: _asking || time == null ? null : (_) => unawaited(_address()),
               ),
               ChoiceChip(
                 label: const Text('Phones only'),
                 selected: time?.ntp is NtpView_Off,
-                onSelected: _asking || time == null
-                    ? null
-                    : (_) => unawaited(_time(ntp: 'off')),
+                onSelected: _asking || time == null ? null : (_) => unawaited(_time(ntp: 'off')),
               ),
             ],
           ),
@@ -246,17 +207,11 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
           Text(
             'Feed 10 portions into an empty bowl, weigh it, and divide by 10. '
             'Depends on your food.',
-            style: TextStyle(
-              fontSize: Sizes.sm,
-              height: 1.5,
-              color: c.textMuted,
-            ),
+            style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: c.textMuted),
           ),
           const SizedBox(height: Space.s2),
           TextButton(
-            onPressed: _asking || _calibration == null
-                ? null
-                : () => unawaited(_weighed()),
+            onPressed: _asking || _calibration == null ? null : () => unawaited(_weighed()),
             child: const Text('I weighed 10 portions'),
           ),
         ],
@@ -269,21 +224,15 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
     final mg = _calibration?.portionMg;
     final grams = mg == null ? null : (mg / 1000).round();
     final can = !_asking && _calibration != null;
-    void step(int next) =>
-        unawaited(_portion(PortionChange.milligrams(mg: next * 1000)));
+    void step(int next) => unawaited(_portion(PortionChange.milligrams(mg: next * 1000)));
     return Row(
       children: [
         Expanded(
-          child: Text(
-            'One portion weighs',
-            style: TextStyle(fontSize: 15, color: c.text),
-          ),
+          child: Text('One portion weighs', style: TextStyle(fontSize: 15, color: c.text)),
         ),
         IconButton.outlined(
           tooltip: 'Less',
-          onPressed: can && grams != null && grams > 1
-              ? () => step(grams - 1)
-              : null,
+          onPressed: can && grams != null && grams > 1 ? () => step(grams - 1) : null,
           icon: const StrokeIcon(Glyph.minus),
         ),
         SizedBox(
@@ -291,18 +240,12 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
           child: Text(
             mg == null ? 'Not set' : '${_gramsText(mg)} g',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: Sizes.md,
-              fontWeight: Fonts.semibold,
-              color: c.text,
-            ),
+            style: TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text),
           ),
         ),
         IconButton.outlined(
           tooltip: 'More',
-          onPressed: can && (grams ?? 0) < _gramsMost
-              ? () => step((grams ?? 9) + 1)
-              : null,
+          onPressed: can && (grams ?? 0) < _gramsMost ? () => step((grams ?? 9) + 1) : null,
           icon: const StrokeIcon(Glyph.add),
         ),
       ],
@@ -310,8 +253,7 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
   }
 
   /// 9.8, or 11 when it is whole.
-  static String _gramsText(int mg) =>
-      mg % 1000 == 0 ? '${mg ~/ 1000}' : (mg / 1000).toStringAsFixed(1);
+  static String _gramsText(int mg) => mg % 1000 == 0 ? '${mg ~/ 1000}' : (mg / 1000).toStringAsFixed(1);
 
   static String _errorText(int errorMs) => errorMs < 1000
       ? 'under 1 s'

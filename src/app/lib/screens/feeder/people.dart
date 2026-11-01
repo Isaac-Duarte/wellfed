@@ -2,14 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../src/rust/api/model.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/replies.dart';
-import 'invite.dart';
+import 'package:wellfed/screens/feeder/invite.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
 
 /// How many keys a feeder lists.
 const clientsMost = 8;
@@ -51,23 +51,15 @@ class _PeopleScreenState extends State<PeopleScreen> {
           'stays.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remove')),
         ],
       ),
     );
     if (sure != true || !mounted) return;
 
     setState(() => _asking = true);
-    final reply = await widget.feeder.ask(
-      FeederRequest.revokeClient(key: client.key),
-    );
+    final reply = await widget.feeder.ask(FeederRequest.revokeClient(key: client.key));
     if (!mounted) return;
     setState(() => _asking = false);
     showProblem(context, reply);
@@ -90,11 +82,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
         ),
         title: Text(
           'People',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: Fonts.semibold,
-            color: c.text,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
         ),
       ),
       body: ListenableBuilder(
@@ -110,9 +98,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                       _Person(
                         client: client,
                         first: i == 0,
-                        onRemove: _asking || client.you
-                            ? null
-                            : () => unawaited(_remove(client)),
+                        onRemove: _asking || client.you ? null : () => unawaited(_remove(client)),
                       ),
                   ],
                 ),
@@ -138,11 +124,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
 }
 
 class _Person extends StatelessWidget {
-  const _Person({
-    required this.client,
-    required this.first,
-    required this.onRemove,
-  });
+  const _Person({required this.client, required this.first, required this.onRemove});
 
   final ClientView client;
   final bool first;
@@ -153,10 +135,7 @@ class _Person extends StatelessWidget {
     final c = context.colors;
     final name = client.you ? '${client.label} (this phone)' : client.label;
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: Space.s4,
-        vertical: Space.s3,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: Space.s3),
       decoration: BoxDecoration(
         border: first ? null : Border(top: BorderSide(color: c.line)),
       ),

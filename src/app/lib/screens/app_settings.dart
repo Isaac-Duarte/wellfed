@@ -5,14 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
-import '../platform/install_ports.dart';
-import '../src/rust/api/store.dart';
-import '../state/app_state.dart';
-import '../theme/theme.dart';
-import '../widgets/ask_text.dart';
-import '../widgets/icons.dart';
-import '../widgets/layout.dart';
-import 'name_step.dart';
+import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/screens/name_step.dart';
+import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/app_state.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/ask_text.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
 
 const sourceUrl = 'https://github.com/Isaac-Duarte/wellfed';
 const issuesUrl = '$sourceUrl/issues';
@@ -32,21 +32,14 @@ class MainNav extends StatelessWidget {
     },
     destinations: const [
       NavigationDestination(icon: StrokeIcon(Glyph.food), label: 'Feeders'),
-      NavigationDestination(
-        icon: Icon(Icons.settings_outlined),
-        label: 'Settings',
-      ),
+      NavigationDestination(icon: Icon(Icons.settings_outlined), label: 'Settings'),
     ],
   );
 }
 
 /// The app's own settings (15.1).
 class AppSettingsScreen extends StatefulWidget {
-  const AppSettingsScreen({
-    super.key,
-    required this.book,
-    required this.backups,
-  });
+  const AppSettingsScreen({super.key, required this.book, required this.backups});
 
   final FeederBook book;
   final BackupPorts backups;
@@ -76,30 +69,21 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
   }
 
   Future<void> _rename() async {
-    final name = await askText(
-      context,
-      title: 'Name on feeders',
-      label: 'This phone',
-      initial: widget.book.label,
-    );
+    final name = await askText(context, title: 'Name on feeders', label: 'This phone', initial: widget.book.label);
     if (name == null || !mounted) return;
 
     final trimmed = name.trim();
     final bytes = utf8.encode(trimmed).length;
     if (bytes < 1 || bytes > NameStep.maxBytes) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('A phone name is 1 to 16 bytes.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A phone name is 1 to 16 bytes.')));
       return;
     }
     await widget.book.setLabel(trimmed);
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: widget.book,
-    builder: (context, _) => _build(context),
-  );
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: widget.book, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
     final c = context.colors;
@@ -111,11 +95,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
         automaticallyImplyLeading: false,
         title: Text(
           'Settings',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: Fonts.semibold,
-            color: c.text,
-          ),
+          style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
         ),
       ),
       bottomNavigationBar: const MainNav(selected: 1),
@@ -131,8 +111,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
               ButtonSegment(value: Appearance.dark, label: Text('Dark')),
             ],
             selected: {book.appearance},
-            onSelectionChanged: (chosen) =>
-                unawaited(book.setAppearance(chosen.first)),
+            onSelectionChanged: (chosen) => unawaited(book.setAppearance(chosen.first)),
           ),
           const SizedBox(height: Space.s4),
           const SectionLabel('This phone'),
@@ -151,10 +130,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                 ),
                 ListTile(
                   title: const Text('Firmware backups'),
-                  trailing: Text(
-                    '${_backups.length}',
-                    style: TextStyle(fontSize: 15, color: c.text),
-                  ),
+                  trailing: Text('${_backups.length}', style: TextStyle(fontSize: 15, color: c.text)),
                 ),
                 for (final (feeder, path) in _backups)
                   ListTile(
@@ -167,17 +143,9 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                   ),
                 ListTile(
                   title: const Text('About Wellfed'),
-                  trailing: StrokeIcon(
-                    Glyph.chevron,
-                    size: 20,
-                    color: c.textMuted,
-                  ),
+                  trailing: StrokeIcon(Glyph.chevron, size: 20, color: c.textMuted),
                   onTap: () => unawaited(
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const AboutScreen(),
-                      ),
-                    ),
+                    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const AboutScreen())),
                   ),
                 ),
               ],
@@ -197,18 +165,13 @@ class AboutScreen extends StatelessWidget {
 
   void _copy(BuildContext context, String url) {
     unawaited(Clipboard.setData(ClipboardData(text: url)));
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Link copied.')));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied.')));
   }
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final muted = TextStyle(
-      fontSize: Sizes.sm,
-      height: 1.5,
-      color: c.textMuted,
-    );
+    final muted = TextStyle(fontSize: Sizes.sm, height: 1.5, color: c.textMuted);
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
@@ -221,11 +184,7 @@ class AboutScreen extends StatelessWidget {
         ),
         title: Text(
           'About',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: Fonts.semibold,
-            color: c.text,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
         ),
       ),
       body: ListView(
@@ -233,11 +192,7 @@ class AboutScreen extends StatelessWidget {
         children: [
           Text(
             'Wellfed',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: Fonts.semibold,
-              color: c.text,
-            ),
+            style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
           ),
           Text('App ${version()}', style: muted),
           const SizedBox(height: Space.s3),
@@ -257,11 +212,8 @@ class AboutScreen extends StatelessWidget {
                 ),
                 ListTile(
                   title: const Text('Open-source licenses'),
-                  onTap: () => showLicensePage(
-                    context: context,
-                    applicationName: 'Wellfed',
-                    applicationVersion: version(),
-                  ),
+                  onTap: () =>
+                      showLicensePage(context: context, applicationName: 'Wellfed', applicationVersion: version()),
                 ),
                 ListTile(
                   title: const Text('Report a problem'),

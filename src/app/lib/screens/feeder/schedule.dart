@@ -2,16 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../src/rust/api/model.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/replies.dart';
-import '../../widgets/when.dart';
-import 'meal_editor.dart';
-import 'no_time.dart';
+import 'package:wellfed/screens/feeder/meal_editor.dart';
+import 'package:wellfed/screens/feeder/no_time.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/when.dart';
 
 /// The most meals a feeder keeps: what Rust reads back, all ten slots.
 int mealsMost(PlansView plans) => plans.plans.length;
@@ -20,20 +20,13 @@ int mealsMost(PlansView plans) => plans.plans.length;
 String daysText(List<Weekday> days) {
   if (days.isEmpty) return 'once';
   if (days.length == 7) return 'every day';
-  const week = [
-    Weekday.mon,
-    Weekday.tue,
-    Weekday.wed,
-    Weekday.thu,
-    Weekday.fri,
-  ];
+  const week = [Weekday.mon, Weekday.tue, Weekday.wed, Weekday.thu, Weekday.fri];
   const weekend = [Weekday.sat, Weekday.sun];
   if (days.length == 5 && week.every(days.contains)) return 'Mon to Fri';
   if (days.length == 2 && weekend.every(days.contains)) return 'weekends';
   return [
     for (final day in Weekday.values)
-      if (days.contains(day))
-        '${day.name[0].toUpperCase()}${day.name.substring(1)}',
+      if (days.contains(day)) '${day.name[0].toUpperCase()}${day.name.substring(1)}',
   ].join(', ');
 }
 
@@ -95,10 +88,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: feeder,
-    builder: (context, _) => _build(context),
-  );
+  Widget build(BuildContext context) => ListenableBuilder(listenable: feeder, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
     final c = context.colors;
@@ -107,9 +97,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
     if (plans == null) {
       return Center(
         child: Text(
-          feeder.connection == Connection.online
-              ? 'Reading the meals…'
-              : "Can't read the meals right now.",
+          feeder.connection == Connection.online ? 'Reading the meals…' : "Can't read the meals right now.",
           style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
         ),
       );
@@ -145,18 +133,12 @@ class _ScheduleTabState extends State<ScheduleTab> {
                             ? 'No meal is coming'
                             : 'Next: ${_day(next.atMs)} at '
                                   '${minuteText(context, next.minute)}',
-                        style: TextStyle(
-                          fontSize: Sizes.base,
-                          fontWeight: Fonts.semibold,
-                          color: c.text,
-                        ),
+                        style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: c.text),
                       ),
                     ),
                     Flexible(
                       child: Text(
-                        full
-                            ? "$most of $most meals · the feeder's limit"
-                            : '${meals.length} of $most meals',
+                        full ? "$most of $most meals · the feeder's limit" : '${meals.length} of $most meals',
                         textAlign: TextAlign.end,
                         style: muted,
                       ),
@@ -169,14 +151,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                     child: Column(
                       children: [
                         for (final (i, (slot, plan)) in meals.indexed)
-                          _MealRow(
-                            feeder: feeder,
-                            plans: plans,
-                            slot: slot,
-                            plan: plan,
-                            first: i == 0,
-                            online: online,
-                          ),
+                          _MealRow(feeder: feeder, plans: plans, slot: slot, plan: plan, first: i == 0, online: online),
                       ],
                     ),
                   ),
@@ -192,11 +167,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
           ),
           const SizedBox(height: Space.s3),
           FilledButton(
-            onPressed: online && !full
-                ? () => unawaited(
-                    openMealEditor(context, feeder: feeder, held: plans),
-                  )
-                : null,
+            onPressed: online && !full ? () => unawaited(openMealEditor(context, feeder: feeder, held: plans)) : null,
             child: Text(full ? 'Add meal · delete one first' : 'Add meal'),
           ),
         ],
@@ -258,11 +229,7 @@ class _MealRowState extends State<_MealRow> {
     final c = context.colors;
     final plan = widget.plan;
     final time = minuteText(context, plan.minute);
-    final parts = [
-      portionsText(plan.portions),
-      daysText(plan.days),
-      if (plan.call > 0) _calls(plan.call),
-    ].join(' · ');
+    final parts = [portionsText(plan.portions), daysText(plan.days), if (plan.call > 0) _calls(plan.call)].join(' · ');
 
     // A node of its own: with no tap to tell them apart, as offline, every meal
     // on the panel would merge into one.
@@ -270,24 +237,12 @@ class _MealRowState extends State<_MealRow> {
       container: true,
       child: InkWell(
         onTap: widget.online
-            ? () => unawaited(
-                openMealEditor(
-                  context,
-                  feeder: widget.feeder,
-                  held: widget.plans,
-                  slot: widget.slot,
-                ),
-              )
+            ? () => unawaited(openMealEditor(context, feeder: widget.feeder, held: widget.plans, slot: widget.slot))
             : null,
         child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: Space.s4,
-            vertical: Space.s2,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: Space.s2),
           decoration: BoxDecoration(
-            border: widget.first
-                ? null
-                : Border(top: BorderSide(color: c.line)),
+            border: widget.first ? null : Border(top: BorderSide(color: c.line)),
           ),
           child: Row(
             children: [

@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../platform/restore_ports.dart';
-import '../src/rust/api/install.dart';
-import '../src/rust/api/restore.dart';
-import 'install.dart' show CheckState;
+import 'package:wellfed/platform/restore_ports.dart';
+import 'package:wellfed/src/rust/api/install.dart';
+import 'package:wellfed/src/rust/api/restore.dart';
+import 'package:wellfed/state/install.dart' show CheckState;
 
 /// Which screen a restore shows. The steps themselves are Rust's: this follows
 /// what the run reports.
@@ -50,12 +50,7 @@ enum RestoreLook {
 
 /// One restore of a feeder's original firmware.
 class RestoreFlow extends ChangeNotifier {
-  RestoreFlow(
-    this._ports, {
-    required this.identity,
-    required this.feederName,
-    this.address,
-  });
+  RestoreFlow(this._ports, {required this.identity, required this.feederName, this.address});
 
   final RestorePorts _ports;
   final List<int> identity;
@@ -115,8 +110,7 @@ class RestoreFlow extends ChangeNotifier {
 
   /// The offer may be out: leaving would end the run at nothing the owner
   /// could act on, so the screen offers no way back until it ends.
-  bool get committed =>
-      stage == RestoreStage.running && sending != CheckState.waiting;
+  bool get committed => stage == RestoreStage.running && sending != CheckState.waiting;
 
   /// A new run may go again: nothing was offered.
   bool get mayRetry => switch (stop) {
@@ -184,10 +178,7 @@ class RestoreFlow extends ChangeNotifier {
   Future<void> start() async {
     final (dataDir, backup) = (_dataDir, _backup);
     // `_run` is set only after the hold below, so the stage guards a second tap.
-    if (!understood ||
-        stage != RestoreStage.before ||
-        dataDir == null ||
-        backup == null) {
+    if (!understood || stage != RestoreStage.before || dataDir == null || backup == null) {
       return;
     }
     pressDispense = false;
@@ -203,9 +194,7 @@ class RestoreFlow extends ChangeNotifier {
     _changed();
 
     _holding = true;
-    holdRefused = !await _ports.holdProcess(
-      'Putting the original firmware back on $feederName',
-    );
+    holdRefused = !await _ports.holdProcess('Putting the original firmware back on $feederName');
     if (_disposed) {
       // The screen went away during the wait, and its release ran before this
       // hold took effect.
@@ -214,12 +203,7 @@ class RestoreFlow extends ChangeNotifier {
     }
 
     final run = _ports.newRun(
-      RestoreSpec(
-        identity: Uint8List.fromList(identity),
-        address: address,
-        dataDir: dataDir,
-        backup: backup,
-      ),
+      RestoreSpec(identity: Uint8List.fromList(identity), address: address, dataDir: dataDir, backup: backup),
     );
     _run = run;
     _updates = run.run().listen(_heard, onDone: _closed);
@@ -272,9 +256,7 @@ class RestoreFlow extends ChangeNotifier {
     if (ask case InstallAsk_Locate(:final identity)) {
       answer = InstallAnswer.located(address: await _ports.locate(identity));
     } else {
-      answer = const InstallAnswer.failed(
-        reason: 'A restore asks only where the feeder is',
-      );
+      answer = const InstallAnswer.failed(reason: 'A restore asks only where the feeder is');
     }
     _run?.answer(id: id, answer: answer);
   }
@@ -299,9 +281,7 @@ class RestoreFlow extends ChangeNotifier {
   /// said how it ended, so after an offer it is uncertain.
   void _closed() {
     if (stage != RestoreStage.running) return;
-    stage = sending == CheckState.waiting
-        ? RestoreStage.stopped
-        : RestoreStage.uncertain;
+    stage = sending == CheckState.waiting ? RestoreStage.stopped : RestoreStage.uncertain;
     if (stage == RestoreStage.stopped) stop = RestoreStop.other;
     if (stage == RestoreStage.uncertain) uncertain = UncertainWhy.failed;
     _finish();
@@ -332,21 +312,13 @@ class RestoreFlow extends ChangeNotifier {
   void startLook() {
     look = RestoreLook.looking;
     _sighted = false;
-    _lookEnd = Timer(
-      lookFor,
-      () => _looked(_sighted ? RestoreLook.sighted : RestoreLook.nothing),
-    );
-    _setup = _ports.setupHeard().listen(
-      (_) => _looked(RestoreLook.setup),
-      onError: (Object _) {},
-    );
+    _lookEnd = Timer(lookFor, () => _looked(_sighted ? RestoreLook.sighted : RestoreLook.nothing));
+    _setup = _ports.setupHeard().listen((_) => _looked(RestoreLook.setup), onError: (Object _) {});
     unawaited(_locate());
   }
 
   Future<void> _locate() async {
-    final hex = identity
-        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-        .join();
+    final hex = identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
     final found = await _ports.locate(hex);
     if (look != RestoreLook.looking || _lookEnd == null) return;
     if (found != null) {

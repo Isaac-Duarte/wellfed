@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 
-import '../src/rust/api/setup.dart';
+import 'package:wellfed/src/rust/api/setup.dart';
 
 /// A connected feeder's control characteristic.
 abstract interface class BleLink {
@@ -56,15 +56,11 @@ class SetupLink implements BleLink {
         )
         .listen(
           (update) {
-            if (update.connectionState == DeviceConnectionState.connected &&
-                !connected.isCompleted) {
+            if (update.connectionState == DeviceConnectionState.connected && !connected.isCompleted) {
               connected.complete();
             }
-            if (update.connectionState == DeviceConnectionState.disconnected &&
-                !connected.isCompleted) {
-              connected.completeError(
-                update.failure?.message ?? 'the feeder did not connect',
-              );
+            if (update.connectionState == DeviceConnectionState.disconnected && !connected.isCompleted) {
+              connected.completeError(update.failure?.message ?? 'the feeder did not connect');
             }
           },
           onError: (Object error) {
@@ -86,18 +82,14 @@ class SetupLink implements BleLink {
       characteristicId: Uuid.parse(setupControl()),
       deviceId: device.id,
     );
-    final notifications = ble
-        .subscribeToCharacteristic(control)
-        .asBroadcastStream();
+    final notifications = ble.subscribeToCharacteristic(control).asBroadcastStream();
     return SetupLink._(ble, connection, control, notifications);
   }
 
   @override
   Future<void> write(List<List<int>> pieces) async {
     for (final piece in pieces) {
-      await _ble
-          .writeCharacteristicWithResponse(_control, value: piece)
-          .timeout(connectTimeout);
+      await _ble.writeCharacteristicWithResponse(_control, value: piece).timeout(connectTimeout);
     }
   }
 

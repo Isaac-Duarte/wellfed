@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../src/rust/api/keys.dart';
-import '../src/rust/api/store.dart';
+import 'package:wellfed/src/rust/api/keys.dart';
+import 'package:wellfed/src/rust/api/store.dart';
 
 /// The feeders this phone knows, and what the flows that add one need of
 /// the app's file.
@@ -24,11 +24,7 @@ abstract interface class FeederBook implements Listenable {
   /// phone just became its owner, so its next session gives it this phone's
   /// clock. With `keepName`, a feeder already known keeps the name the owner
   /// gave it.
-  Future<void> remember(
-    KnownFeeder feeder, {
-    bool paired = false,
-    bool keepName = false,
-  });
+  Future<void> remember(KnownFeeder feeder, {bool paired = false, bool keepName = false});
 
   /// Keep where `identity` last answered, so the next start tries it before
   /// NSD has looked.
@@ -99,29 +95,15 @@ class AppState extends ChangeNotifier implements FeederBook {
   Appearance get appearance => _store.appearance;
 
   @override
-  Future<void> setAppearance(Appearance appearance) => _update(
-    (store) => AppStore(
-      label: store.label,
-      feeders: store.feeders,
-      appearance: appearance,
-    ),
-  );
+  Future<void> setAppearance(Appearance appearance) =>
+      _update((store) => AppStore(label: store.label, feeders: store.feeders, appearance: appearance));
 
   @override
-  Future<void> setLabel(String label) => _update(
-    (store) => AppStore(
-      label: label,
-      feeders: store.feeders,
-      appearance: store.appearance,
-    ),
-  );
+  Future<void> setLabel(String label) =>
+      _update((store) => AppStore(label: label, feeders: store.feeders, appearance: store.appearance));
 
   @override
-  Future<void> remember(
-    KnownFeeder feeder, {
-    bool paired = false,
-    bool keepName = false,
-  }) {
+  Future<void> remember(KnownFeeder feeder, {bool paired = false, bool keepName = false}) {
     if (paired) _clockDue.add(feeder.identity);
     return _update((store) {
       final known = store.feeders.where((f) => f.identity == feeder.identity);
@@ -159,10 +141,7 @@ class AppState extends ChangeNotifier implements FeederBook {
     if (known.isEmpty || known.first.address == address) {
       return;
     }
-    await remember(
-      KnownFeeder(identity: identity, name: known.first.name, address: address),
-      keepName: true,
-    );
+    await remember(KnownFeeder(identity: identity, name: known.first.name, address: address), keepName: true);
   }
 
   /// Change the file from what it holds now, not from this copy of it: an

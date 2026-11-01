@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../platform/feeder_ports.dart' show UpdatePush;
-import '../src/rust/api/feeder.dart';
-import '../src/rust/api/install.dart' show InstallAsk, InstallAsk_Locate;
-import '../src/rust/api/model.dart';
-import '../src/rust/api/update.dart';
-import 'feeder.dart';
+import 'package:wellfed/platform/feeder_ports.dart' show UpdatePush;
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/install.dart' show InstallAsk, InstallAsk_Locate;
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/update.dart';
+import 'package:wellfed/state/feeder.dart';
 
 enum UpdateStage { idle, sending, restarting, ended }
 
@@ -41,12 +41,10 @@ class UpdateFlow extends ChangeNotifier {
   bool _holding = false;
   bool _disposed = false;
 
-  bool get running =>
-      stage == UpdateStage.sending || stage == UpdateStage.restarting;
+  bool get running => stage == UpdateStage.sending || stage == UpdateStage.restarting;
 
   /// Only the feeder can tell how it went, so this stays until it has.
-  bool get endUnknown =>
-      end is UpdateEnd_Uncertain || end is UpdateEnd_Unconfirmed;
+  bool get endUnknown => end is UpdateEnd_Uncertain || end is UpdateEnd_Unconfirmed;
 
   /// Offer the image with this `build` and `version`.
   Future<void> start({required String build, required int version}) async {
@@ -69,10 +67,7 @@ class UpdateFlow extends ChangeNotifier {
       return;
     }
 
-    final push = ports.pushUpdate(
-      _feeder.known.identity,
-      _feeder.known.address,
-    );
+    final push = ports.pushUpdate(_feeder.known.identity, _feeder.known.address);
     _push = push;
     _run = push.progress.listen(
       _heard,
@@ -161,8 +156,7 @@ class UpdateFlow extends ChangeNotifier {
   Future<void> lookAgain() async {
     if (!endUnknown) return;
     final reply = await _feeder.ask(const FeederRequest.updateState());
-    final idle =
-        reply is FeederReply_Update && reply.update.phase == UpdatePhase.idle;
+    final idle = reply is FeederReply_Update && reply.update.phase == UpdatePhase.idle;
     final state = reply is FeederReply_Update ? reply.update : null;
     final served = _served;
     final card = _feeder.card;

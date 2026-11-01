@@ -2,18 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import 'package:flutter_reactive_ble/flutter_reactive_ble.dart'
-    show DiscoveredDevice;
+import 'package:flutter_reactive_ble/flutter_reactive_ble.dart' show DiscoveredDevice;
 
-import '../platform/pairing_ports.dart';
-import '../platform/setup_link.dart';
-import '../src/rust/api/error.dart';
-import '../src/rust/api/model.dart';
-import '../src/rust/api/setup.dart';
-import '../src/rust/api/store.dart';
-import 'app_state.dart';
+import 'package:wellfed/platform/pairing_ports.dart';
+import 'package:wellfed/platform/setup_link.dart';
+import 'package:wellfed/src/rust/api/error.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/setup.dart';
+import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/app_state.dart';
 
-export '../src/rust/api/store.dart' show KnownFeeder;
+export 'package:wellfed/src/rust/api/store.dart' show KnownFeeder;
 
 enum PairingPhase {
   /// Looking for a feeder in setup mode.
@@ -121,11 +120,7 @@ class PairingFlow extends ChangeNotifier {
   /// BLE setup: `wifi` for the feeder's next join, or `null` to keep its
   /// own; `name` is what this phone calls the feeder. With `device`, the
   /// feeder an earlier try connected to, the search is skipped.
-  Future<void> runSetup({
-    required WifiCredentials? wifi,
-    required String name,
-    DiscoveredDevice? device,
-  }) async {
+  Future<void> runSetup({required WifiCredentials? wifi, required String name, DiscoveredDevice? device}) async {
     final SetupDriver driver;
     try {
       driver = _ports.newDriver(_app.label, wifi);
@@ -194,10 +189,7 @@ class PairingFlow extends ChangeNotifier {
   }
 
   /// LAN recovery with the feeder at `address`, whose window is open.
-  Future<void> runRecovery({
-    required String address,
-    required String name,
-  }) async {
+  Future<void> runRecovery({required String address, required String name}) async {
     feederName = name;
     final Recovery recovery;
     try {
@@ -338,11 +330,7 @@ class PairingFlow extends ChangeNotifier {
         refusal = why;
         _stop(PairingFailure.refused, null);
         return;
-      case SetupStep_Done(
-        enrolled: final how,
-        :final wifi,
-        feeder: final identity,
-      ):
+      case SetupStep_Done(enrolled: final how, :final wifi, feeder: final identity):
         enrolled = how;
         wifiSaved = wifi;
         final hex = _ports.hexOf(identity);
@@ -350,20 +338,13 @@ class PairingFlow extends ChangeNotifier {
 
         // After BLE setup the feeder restarts onto its new Wi-Fi first.
         final address = knownAddress ?? await _ports.locate(hex, rejoinWait);
-        final known = KnownFeeder(
-          identity: hex,
-          name: feederName,
-          address: address,
-        );
+        final known = KnownFeeder(identity: hex, name: feederName, address: address);
         // The feeder enrolled this phone whatever happens here; a failed
         // save is said so, not left on "joining".
         try {
           await _app.remember(known, paired: true);
         } on BridgeError catch (error) {
-          _stop(
-            PairingFailure.other,
-            'paired, but not saved: ${error.message}',
-          );
+          _stop(PairingFailure.other, 'paired, but not saved: ${error.message}');
           return;
         }
         feeder = known;
@@ -426,9 +407,7 @@ class PairingFlow extends ChangeNotifier {
     _disposed = true;
     final choosing = _chosen;
     if (choosing != null && !choosing.isCompleted) {
-      choosing.completeError(
-        _Failed(PairingFailure.other, 'the screen closed'),
-      );
+      choosing.completeError(_Failed(PairingFailure.other, 'the screen closed'));
     }
     _fail(PairingFailure.other, 'the screen closed');
     // Hang up in Rust too, so the feeder's window is free for a retry.

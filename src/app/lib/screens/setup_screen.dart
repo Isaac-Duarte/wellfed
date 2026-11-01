@@ -5,37 +5,28 @@ import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-import '../platform/pairing_ports.dart';
-import '../src/rust/api/setup.dart';
-import '../state/app_state.dart';
-import '../state/pairing.dart';
-import '../theme/theme.dart';
-import '../widgets/code_tiles.dart';
-import '../widgets/icons.dart';
-import '../widgets/layout.dart';
-import 'name_step.dart';
-import 'pairing_view.dart';
+import 'package:wellfed/platform/pairing_ports.dart';
+import 'package:wellfed/screens/name_step.dart';
+import 'package:wellfed/screens/pairing_view.dart';
+import 'package:wellfed/src/rust/api/setup.dart';
+import 'package:wellfed/state/app_state.dart';
+import 'package:wellfed/state/pairing.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/code_tiles.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
 
 enum _Step { permissions, setupMode, wifi, names, pairing }
 
 /// What setup asks Android for: Bluetooth to reach the feeder, and
 /// location only because Android needs it to read the Wi-Fi's name.
-const _permissions = [
-  Permission.bluetoothScan,
-  Permission.bluetoothConnect,
-  Permission.locationWhenInUse,
-];
+const _permissions = [Permission.bluetoothScan, Permission.bluetoothConnect, Permission.locationWhenInUse];
 
 /// BLE setup: put the feeder in setup mode, give it its Wi-Fi, name it and
 /// this phone, then pick it and key in the code. The name and Wi-Fi come
 /// first because the setup session carries them with the code.
 class SetupScreen extends StatefulWidget {
-  const SetupScreen({
-    super.key,
-    required this.app,
-    required this.ports,
-    this.askPermissions = true,
-  });
+  const SetupScreen({super.key, required this.app, required this.ports, this.askPermissions = true});
 
   final FeederBook app;
   final PairingPorts ports;
@@ -79,10 +70,7 @@ class _SetupScreenState extends State<SetupScreen> {
   Future<void> _grant() async {
     final granted = await _permissions.request();
     if (!mounted) return;
-    final bluetooth = [
-      granted[Permission.bluetoothScan],
-      granted[Permission.bluetoothConnect],
-    ];
+    final bluetooth = [granted[Permission.bluetoothScan], granted[Permission.bluetoothConnect]];
     if (bluetooth.any((status) => status?.isGranted != true)) {
       await _bluetoothOff();
       return;
@@ -99,14 +87,8 @@ class _SetupScreenState extends State<SetupScreen> {
         'devices" for Wellfed in Android settings, then try again.',
       ),
       actions: [
-        TextButton(
-          onPressed: () => unawaited(openAppSettings()),
-          child: const Text('Open settings'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('OK'),
-        ),
+        TextButton(onPressed: () => unawaited(openAppSettings()), child: const Text('Open settings')),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
       ],
     ),
   );
@@ -115,10 +97,7 @@ class _SetupScreenState extends State<SetupScreen> {
   /// connected to: it stays in setup mode, so nobody has to pick it twice.
   Future<void> _pair({bool again = false}) async {
     if (widget.askPermissions) {
-      final granted = await [
-        Permission.bluetoothScan,
-        Permission.bluetoothConnect,
-      ].request();
+      final granted = await [Permission.bluetoothScan, Permission.bluetoothConnect].request();
       if (!mounted) return;
       if (granted.values.any((status) => !status.isGranted)) {
         await _bluetoothOff();
@@ -157,12 +136,7 @@ class _SetupScreenState extends State<SetupScreen> {
               'lasts 15 minutes.',
         ]),
       ],
-      actions: [
-        FilledButton(
-          onPressed: () => _to(_Step.wifi),
-          child: const Text('The Wi-Fi light is blinking'),
-        ),
-      ],
+      actions: [FilledButton(onPressed: () => _to(_Step.wifi), child: const Text('The Wi-Fi light is blinking'))],
     ),
     _Step.wifi => WifiStep(
       initial: _wifi,
@@ -216,20 +190,12 @@ class _Permissions extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: TextStyle(
-                  fontSize: Sizes.md,
-                  fontWeight: Fonts.semibold,
-                  color: c.text,
-                ),
+                style: TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text),
               ),
               const SizedBox(height: Space.s1),
               Text(
                 body,
-                style: TextStyle(
-                  fontSize: Sizes.base,
-                  height: 1.5,
-                  color: c.textMuted,
-                ),
+                style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
               ),
             ],
           ),
@@ -295,9 +261,7 @@ class WifiStep extends StatefulWidget {
 
 class _WifiStepState extends State<WifiStep> {
   late final _ssid = TextEditingController(text: widget.initial?.ssid);
-  late final _password = TextEditingController(
-    text: widget.initial?.passphrase,
-  );
+  late final _password = TextEditingController(text: widget.initial?.passphrase);
   bool _hidden = true;
 
   /// The name is typed, not the phone's current network.
@@ -338,10 +302,7 @@ class _WifiStepState extends State<WifiStep> {
     super.dispose();
   }
 
-  bool get _valid =>
-      _ssid.text.isNotEmpty &&
-      _password.text.length >= 8 &&
-      _password.text.length <= 63;
+  bool get _valid => _ssid.text.isNotEmpty && _password.text.length >= 8 && _password.text.length <= 63;
 
   @override
   Widget build(BuildContext context) {
@@ -386,11 +347,7 @@ class _WifiStepState extends State<WifiStep> {
             decoration: InputDecoration(
               suffixIcon: IconButton(
                 tooltip: _hidden ? 'Show password' : 'Hide password',
-                icon: StrokeIcon(
-                  _hidden ? Glyph.eye : Glyph.eyeOff,
-                  size: 20,
-                  color: c.textMuted,
-                ),
+                icon: StrokeIcon(_hidden ? Glyph.eye : Glyph.eyeOff, size: 20, color: c.textMuted),
                 onPressed: () => setState(() => _hidden = !_hidden),
               ),
             ),
@@ -411,19 +368,12 @@ class _WifiStepState extends State<WifiStep> {
       ],
       actions: [
         FilledButton(
-          onPressed: _valid
-              ? () => widget.onDone(
-                  WifiCredentials(ssid: _ssid.text, passphrase: _password.text),
-                )
-              : null,
+          onPressed: _valid ? () => widget.onDone(WifiCredentials(ssid: _ssid.text, passphrase: _password.text)) : null,
           child: const Text('Continue'),
         ),
         // A feeder already on the network only needs a new owner.
         if (widget.mayKeep)
-          TextButton(
-            onPressed: () => widget.onDone(null),
-            child: const Text("Keep the feeder's Wi-Fi"),
-          ),
+          TextButton(onPressed: () => widget.onDone(null), child: const Text("Keep the feeder's Wi-Fi")),
       ],
     );
   }

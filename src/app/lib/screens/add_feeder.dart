@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../theme/theme.dart';
-import '../widgets/icons.dart';
-import '../widgets/layout.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
 
 /// The ways in.
 class AddFeederScreen extends StatelessWidget {

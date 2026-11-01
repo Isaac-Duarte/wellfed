@@ -8,20 +8,16 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../src/rust/api/install.dart';
-import '../src/rust/api/install.dart' as rust;
-import '../src/rust/api/keys.dart';
-import '../src/rust/api/store.dart';
-import 'discovery.dart';
-import 'setup_link.dart';
+import 'package:wellfed/platform/discovery.dart';
+import 'package:wellfed/platform/setup_link.dart';
+import 'package:wellfed/src/rust/api/install.dart';
+import 'package:wellfed/src/rust/api/install.dart' as rust;
+import 'package:wellfed/src/rust/api/keys.dart';
+import 'package:wellfed/src/rust/api/store.dart';
 
 /// Where the installer's files live on this phone.
 class InstallPaths {
-  const InstallPaths({
-    required this.store,
-    required this.image,
-    required this.data,
-  });
+  const InstallPaths({required this.store, required this.image, required this.data});
 
   /// The app's own file.
   final String store;
@@ -96,10 +92,7 @@ abstract interface class InstallPorts {
 
   /// Find the first feeder advertising Bluetooth setup and connect to it,
   /// notifications on. Throws when none is heard in time.
-  Future<InstallLink> openLink({
-    required void Function(List<int> bytes) onBytes,
-    required void Function() onLost,
-  });
+  Future<InstallLink> openLink({required void Function(List<int> bytes) onBytes, required void Function() onLost});
 
   /// Whether a feeder is advertising Bluetooth setup: the replacement is
   /// running, and waiting for its owner. Each sighting is an event.
@@ -127,12 +120,7 @@ class AppInstallPorts implements InstallPorts {
   final ClientKey _key;
 
   /// The image's files, as `make app-installer-input` fills them in.
-  static const _imageAssets = [
-    'review.json',
-    'build-manifest.json',
-    'image.bin',
-    'update.manifest',
-  ];
+  static const _imageAssets = ['review.json', 'build-manifest.json', 'image.bin', 'update.manifest'];
 
   static const _locateWait = Duration(seconds: 12);
 
@@ -159,10 +147,7 @@ class AppInstallPorts implements InstallPorts {
       } on FlutterError {
         return const ImageCheck.absent();
       }
-      final bytes = data.buffer.asUint8List(
-        data.offsetInBytes,
-        data.lengthInBytes,
-      );
+      final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
       await File('${paths.image}/$name').writeAsBytes(bytes);
     }
     return checkImage(dir: paths.image);
@@ -172,20 +157,16 @@ class AppInstallPorts implements InstallPorts {
   BuildCheck checkBuild() => rust.checkBuild();
 
   @override
-  PendingInstall pending(InstallPaths paths) =>
-      pendingInstall(dataDir: paths.data);
+  PendingInstall pending(InstallPaths paths) => pendingInstall(dataDir: paths.data);
 
   @override
-  void forgetInstall(InstallPaths paths) =>
-      rust.forgetInstall(dataDir: paths.data);
+  void forgetInstall(InstallPaths paths) => rust.forgetInstall(dataDir: paths.data);
 
   @override
-  bool requestOpen(InstallPaths paths) =>
-      installRequestOpen(dataDir: paths.data);
+  bool requestOpen(InstallPaths paths) => installRequestOpen(dataDir: paths.data);
 
   @override
-  void setAsideLedgers(InstallPaths paths) =>
-      rust.setAsideLedgers(dataDir: paths.data);
+  void setAsideLedgers(InstallPaths paths) => rust.setAsideLedgers(dataDir: paths.data);
 
   @override
   void setAsideBackup(InstallPaths paths, String path, BackupProblem problem) =>
@@ -202,8 +183,7 @@ class AppInstallPorts implements InstallPorts {
   Future<void> joinFeederNetwork() => _wifi.invokeMethod<void>('joinFeeder');
 
   @override
-  Future<String?> leaveFeederNetwork() =>
-      _wifi.invokeMethod<String>('leaveFeeder');
+  Future<String?> leaveFeederNetwork() => _wifi.invokeMethod<String>('leaveFeeder');
 
   @override
   Future<bool> askPermissions({required bool bluetooth}) async {
@@ -223,8 +203,7 @@ class AppInstallPorts implements InstallPorts {
   InstallRun newRun(InstallSpec spec) => InstallRun(key: _key, spec: spec);
 
   @override
-  InstallListener newListener(InstallPaths paths) =>
-      InstallListener(dataDir: paths.data);
+  InstallListener newListener(InstallPaths paths) => InstallListener(dataDir: paths.data);
 
   @override
   Duration get listenWait => Duration(seconds: InstallListener.waitSeconds());
@@ -236,22 +215,14 @@ class AppInstallPorts implements InstallPorts {
   }) async {
     final device = await SetupLink.scan().first.timeout(SetupLink.findTimeout);
     final link = await SetupLink.open(device);
-    return _Link(
-      link,
-      link.notifications.listen(
-        onBytes,
-        onError: (Object _) => onLost(),
-        onDone: onLost,
-      ),
-    );
+    return _Link(link, link.notifications.listen(onBytes, onError: (Object _) => onLost(), onDone: onLost));
   }
 
   @override
   Stream<void> setupHeard() => SetupLink.scan().map((_) {});
 
   @override
-  Future<String?> locate(String identity) =>
-      Discovery.locate(identity, _locateWait);
+  Future<String?> locate(String identity) => Discovery.locate(identity, _locateWait);
 
   @override
   Future<bool> holdProcess(String text) async {
@@ -269,8 +240,7 @@ class AppInstallPorts implements InstallPorts {
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'install',
         channelName: 'Installing Wellfed',
-        channelDescription:
-            'Shown while this phone serves a feeder its firmware.',
+        channelDescription: 'Shown while this phone serves a feeder its firmware.',
         onlyAlertOnce: true,
       ),
       iosNotificationOptions: const IOSNotificationOptions(),

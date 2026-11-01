@@ -2,38 +2,30 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../src/rust/api/model.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/replies.dart';
-import '../../widgets/when.dart';
-import 'clock_portion.dart';
-import 'diagnostics.dart';
-import 'people.dart';
-import 'shell.dart' show confirmRestart;
-import 'updates.dart';
-import 'wifi.dart';
+import 'package:wellfed/screens/feeder/clock_portion.dart';
+import 'package:wellfed/screens/feeder/diagnostics.dart';
+import 'package:wellfed/screens/feeder/people.dart';
+import 'package:wellfed/screens/feeder/shell.dart' show confirmRestart;
+import 'package:wellfed/screens/feeder/updates.dart';
+import 'package:wellfed/screens/feeder/wifi.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/when.dart';
 
 /// What a window comes to, in words.
 String windowText(BuildContext context, Window window) => switch (window) {
   Window_Always() => 'Any time',
-  Window_Between(:final start, :final end) =>
-    '${minuteText(context, start)} to ${minuteText(context, end)}',
+  Window_Between(:final start, :final end) => '${minuteText(context, start)} to ${minuteText(context, end)}',
 };
 
 /// Change one setting, against the generation the screen shows.
-Future<void> _put(
-  BuildContext context,
-  FeederController feeder,
-  SettingsView settings,
-  SettingsChanges changes,
-) async {
-  final reply = await feeder.ask(
-    FeederRequest.putSettings(base: settings.generation, changes: changes),
-  );
+Future<void> _put(BuildContext context, FeederController feeder, SettingsView settings, SettingsChanges changes) async {
+  final reply = await feeder.ask(FeederRequest.putSettings(base: settings.generation, changes: changes));
   if (context.mounted) showProblem(context, reply);
 }
 
@@ -46,10 +38,7 @@ class SettingsTab extends StatelessWidget {
   final FeederController feeder;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: feeder,
-    builder: (context, _) => _build(context),
-  );
+  Widget build(BuildContext context) => ListenableBuilder(listenable: feeder, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
     final c = context.colors;
@@ -58,9 +47,7 @@ class SettingsTab extends StatelessWidget {
     if (settings == null) {
       return Center(
         child: Text(
-          feeder.connection == Connection.online
-              ? 'Reading the settings…'
-              : "Can't read the settings right now.",
+          feeder.connection == Connection.online ? 'Reading the settings…' : "Can't read the settings right now.",
           style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
         ),
       );
@@ -73,11 +60,7 @@ class SettingsTab extends StatelessWidget {
         if (!owner) ...[
           Text.rich(
             TextSpan(
-              style: TextStyle(
-                fontSize: Sizes.base,
-                height: 1.5,
-                color: c.textMuted,
-              ),
+              style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
               children: [
                 const TextSpan(text: "You're a "),
                 TextSpan(
@@ -143,9 +126,7 @@ class SettingsTab extends StatelessWidget {
             if (owner) ...[
               Expanded(
                 child: OutlinedButton(
-                  onPressed: online
-                      ? () => unawaited(confirmRestart(context, feeder))
-                      : null,
+                  onPressed: online ? () => unawaited(confirmRestart(context, feeder)) : null,
                   child: const Text('Restart'),
                 ),
               ),
@@ -166,10 +147,7 @@ class SettingsTab extends StatelessWidget {
 
   /// This phone forgets the feeder. The feeder's list stays as it is, so an
   /// owner removes the key from People; a member cannot remove itself.
-  static Future<void> _forget(
-    BuildContext context,
-    FeederController feeder,
-  ) async {
+  static Future<void> _forget(BuildContext context, FeederController feeder) async {
     final name = feeder.known.name;
     final sure = await showDialog<bool>(
       context: context,
@@ -180,14 +158,8 @@ class SettingsTab extends StatelessWidget {
           'list until an owner removes it.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remove')),
         ],
       ),
     );
@@ -213,14 +185,9 @@ class _Tile extends StatelessWidget {
       onTap: onTap,
       child: Container(
         constraints: const BoxConstraints(minHeight: 52),
-        padding: const EdgeInsets.symmetric(
-          horizontal: Space.s4,
-          vertical: Space.s2,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: Space.s2),
         decoration: BoxDecoration(
-          border: first
-              ? null
-              : Border(top: BorderSide(color: context.colors.line)),
+          border: first ? null : Border(top: BorderSide(color: context.colors.line)),
         ),
         child: child,
       ),
@@ -300,10 +267,7 @@ class _WindowRow extends StatelessWidget {
           label: name,
           child: Switch(
             value: on,
-            onChanged: online
-                ? (next) =>
-                      unawaited(_put(context, feeder, settings, toggle(next)))
-                : null,
+            onChanged: online ? (next) => unawaited(_put(context, feeder, settings, toggle(next))) : null,
           ),
         ),
       ],
@@ -356,16 +320,8 @@ class _WindowDialogState extends State<_WindowDialog> {
           onChanged: (between) => setState(() => _between = between ?? false),
           child: const Column(
             children: [
-              RadioListTile<bool>(
-                value: false,
-                contentPadding: EdgeInsets.zero,
-                title: Text('Any time'),
-              ),
-              RadioListTile<bool>(
-                value: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text('Only between'),
-              ),
+              RadioListTile<bool>(value: false, contentPadding: EdgeInsets.zero, title: Text('Any time')),
+              RadioListTile<bool>(value: true, contentPadding: EdgeInsets.zero, title: Text('Only between')),
             ],
           ),
         ),
@@ -374,8 +330,7 @@ class _WindowDialogState extends State<_WindowDialog> {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () =>
-                      unawaited(_pick(_start, (minute) => _start = minute)),
+                  onPressed: () => unawaited(_pick(_start, (minute) => _start = minute)),
                   child: Text(minuteText(context, _start)),
                 ),
               ),
@@ -385,8 +340,7 @@ class _WindowDialogState extends State<_WindowDialog> {
               ),
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () =>
-                      unawaited(_pick(_end, (minute) => _end = minute)),
+                  onPressed: () => unawaited(_pick(_end, (minute) => _end = minute)),
                   child: Text(minuteText(context, _end)),
                 ),
               ),
@@ -396,26 +350,15 @@ class _WindowDialogState extends State<_WindowDialog> {
         Text(
           'A window can cross midnight. Until the feeder knows the time, it '
           'treats every window as open.',
-          style: TextStyle(
-            fontSize: Sizes.sm,
-            height: 1.5,
-            color: context.colors.textMuted,
-          ),
+          style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: context.colors.textMuted),
         ),
       ],
     ),
     actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Cancel'),
-      ),
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
       FilledButton(
-        onPressed: () => Navigator.pop(
-          context,
-          _between
-              ? Window.between(start: _start, end: _end)
-              : const Window.always(),
-        ),
+        onPressed: () =>
+            Navigator.pop(context, _between ? Window.between(start: _start, end: _end) : const Window.always()),
         child: const Text('Save'),
       ),
     ],
@@ -423,11 +366,7 @@ class _WindowDialogState extends State<_WindowDialog> {
 }
 
 class _VolumeRow extends StatefulWidget {
-  const _VolumeRow({
-    required this.feeder,
-    required this.settings,
-    required this.online,
-  });
+  const _VolumeRow({required this.feeder, required this.settings, required this.online});
 
   final FeederController feeder;
   final SettingsView settings;
@@ -442,9 +381,7 @@ class _VolumeRowState extends State<_VolumeRow> {
   double? _dragging;
 
   Future<void> _play() async {
-    final reply = await widget.feeder.ask(
-      const FeederRequest.play(tune: Tune.test),
-    );
+    final reply = await widget.feeder.ask(const FeederRequest.play(tune: Tune.test));
     if (mounted) showProblem(context, reply);
   }
 
@@ -461,16 +398,9 @@ class _VolumeRowState extends State<_VolumeRow> {
             child: Slider(
               value: volume,
               max: 100,
-              onChanged: widget.online
-                  ? (next) => setState(() => _dragging = next)
-                  : null,
+              onChanged: widget.online ? (next) => setState(() => _dragging = next) : null,
               onChangeEnd: (end) async {
-                await _put(
-                  context,
-                  widget.feeder,
-                  widget.settings,
-                  SettingsChanges(volume: end.round()),
-                );
+                await _put(context, widget.feeder, widget.settings, SettingsChanges(volume: end.round()));
                 if (mounted) setState(() => _dragging = null);
               },
             ),
@@ -495,11 +425,7 @@ class _VolumeRowState extends State<_VolumeRow> {
 }
 
 class _ReminderRow extends StatelessWidget {
-  const _ReminderRow({
-    required this.feeder,
-    required this.settings,
-    required this.online,
-  });
+  const _ReminderRow({required this.feeder, required this.settings, required this.online});
 
   final FeederController feeder;
   final SettingsView settings;
@@ -524,20 +450,12 @@ class _ReminderRow extends StatelessWidget {
                       ('30 minutes ahead', MealReminder.before(minutes: 30)),
                       ('60 minutes ahead', MealReminder.before(minutes: 60)),
                     ])
-                      SimpleDialogOption(
-                        onPressed: () => Navigator.pop(context, value),
-                        child: Text(name),
-                      ),
+                      SimpleDialogOption(onPressed: () => Navigator.pop(context, value), child: Text(name)),
                   ],
                 ),
               );
               if (chosen != null && context.mounted) {
-                await _put(
-                  context,
-                  feeder,
-                  settings,
-                  SettingsChanges(mealReminder: chosen),
-                );
+                await _put(context, feeder, settings, SettingsChanges(mealReminder: chosen));
               }
             }
           : null,
@@ -557,11 +475,7 @@ class _ReminderRow extends StatelessWidget {
 }
 
 class _DesiccantRow extends StatefulWidget {
-  const _DesiccantRow({
-    required this.feeder,
-    required this.settings,
-    required this.online,
-  });
+  const _DesiccantRow({required this.feeder, required this.settings, required this.online});
 
   final FeederController feeder;
   final SettingsView settings;
@@ -589,20 +503,12 @@ class _DesiccantRowState extends State<_DesiccantRow> {
         title: const Text('Change the desiccant every'),
         children: [
           for (final days in const [7, 14, 30, 60, 90])
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, days),
-              child: Text('$days days'),
-            ),
+            SimpleDialogOption(onPressed: () => Navigator.pop(context, days), child: Text('$days days')),
         ],
       ),
     );
     if (days != null && mounted) {
-      await _put(
-        context,
-        widget.feeder,
-        widget.settings,
-        SettingsChanges(desiccantDays: days),
-      );
+      await _put(context, widget.feeder, widget.settings, SettingsChanges(desiccantDays: days));
     }
   }
 
@@ -612,8 +518,7 @@ class _DesiccantRowState extends State<_DesiccantRow> {
     final note = switch (desiccant) {
       Desiccant_Remaining(days: 0) => 'Change today',
       Desiccant_Remaining(days: 1) => 'Next change in 1 day',
-      Desiccant_Remaining(:final days) when days > 1 =>
-        'Next change in $days days',
+      Desiccant_Remaining(:final days) when days > 1 => 'Next change in $days days',
       Desiccant_Remaining(:final days) => '${-days} days overdue',
       Desiccant_Unset() => 'Not started',
       Desiccant_Unknown() => 'Unknown until the clock is set',
@@ -624,12 +529,7 @@ class _DesiccantRowState extends State<_DesiccantRow> {
       onTap: widget.online ? () => unawaited(_period()) : null,
       child: Row(
         children: [
-          Expanded(
-            child: _Words(
-              'Desiccant every ${widget.settings.desiccantDays} days',
-              note,
-            ),
-          ),
+          Expanded(child: _Words('Desiccant every ${widget.settings.desiccantDays} days', note)),
           OutlinedButton(
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(0, 40),
@@ -662,9 +562,8 @@ class _OwnerSectionState extends State<_OwnerSection> {
     if (feeder.clients.isEmpty) unawaited(feeder.loadClients());
   }
 
-  void _open(BuildContext context, Widget screen) => unawaited(
-    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen)),
-  );
+  void _open(BuildContext context, Widget screen) =>
+      unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen)));
 
   @override
   Widget build(BuildContext context) {
@@ -676,16 +575,9 @@ class _OwnerSectionState extends State<_OwnerSection> {
       >= -72 => 'Fair signal',
       _ => 'Weak signal',
     };
-    final people = feeder.clients.isEmpty
-        ? null
-        : '${feeder.clients.length} of $clientsMost';
+    final people = feeder.clients.isEmpty ? null : '${feeder.clients.length} of $clientsMost';
 
-    Widget link(
-      String name,
-      String? note,
-      Widget screen, {
-      bool first = false,
-    }) => _Tile(
+    Widget link(String name, String? note, Widget screen, {bool first = false}) => _Tile(
       first: first,
       onTap: () => _open(context, screen),
       child: Row(
@@ -747,10 +639,7 @@ class _OwnerOnly extends StatelessWidget {
                       const SizedBox(width: Space.s3),
                       Text(
                         name,
-                        style: TextStyle(
-                          fontSize: Sizes.base,
-                          color: c.textMuted,
-                        ),
+                        style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
                       ),
                     ],
                   ),

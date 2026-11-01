@@ -1,11 +1,11 @@
-import '../src/rust/api/install.dart';
-import '../src/rust/api/keys.dart';
-import '../src/rust/api/session.dart';
-import '../src/rust/api/store.dart';
-import '../src/rust/api/update.dart';
-import 'discovery.dart';
-import 'install_ports.dart';
-import 'restore_ports.dart';
+import 'package:wellfed/platform/discovery.dart';
+import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/platform/restore_ports.dart';
+import 'package:wellfed/src/rust/api/install.dart';
+import 'package:wellfed/src/rust/api/keys.dart';
+import 'package:wellfed/src/rust/api/session.dart';
+import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/src/rust/api/update.dart';
 
 /// One running update: what it reports, and where it is told the feeder is.
 abstract interface class UpdatePush {
@@ -19,11 +19,7 @@ abstract interface class UpdatePush {
 /// NSD. Behind this, so its screens are tested with no Rust and no network.
 abstract interface class FeederPorts {
   /// A session with the feeder `identity` (hex) at `address`, not yet run.
-  FeederSession open(
-    String identity,
-    String address, {
-    required bool syncClock,
-  });
+  FeederSession open(String identity, String address, {required bool syncClock});
 
   /// A session with this feeder read `build`, which settles the stock trial
   /// that installed it, if one is open.
@@ -67,11 +63,7 @@ class AppFeederPorts implements FeederPorts {
   }
 
   @override
-  FeederSession open(
-    String identity,
-    String address, {
-    required bool syncClock,
-  }) => FeederSession(
+  FeederSession open(String identity, String address, {required bool syncClock}) => FeederSession(
     key: _key,
     feeder: identityBytes(hex: identity),
     address: address,
@@ -79,16 +71,13 @@ class AppFeederPorts implements FeederPorts {
   );
 
   @override
-  Future<String?> locate(String identity, Duration wait) =>
-      Discovery.locate(identity, wait);
+  Future<String?> locate(String identity, Duration wait) => Discovery.locate(identity, wait);
 
   @override
-  Future<ImageCheck> updateImage() async =>
-      _install.prepareImage(await _install.paths());
+  Future<ImageCheck> updateImage() async => _install.prepareImage(await _install.paths());
 
   @override
-  UpdatePush pushUpdate(String identity, String? address) =>
-      _AppPush(_key, _install, identity, address);
+  UpdatePush pushUpdate(String identity, String? address) => _AppPush(_key, _install, identity, address);
 
   @override
   Future<bool> holdProcess(String text) => _install.holdProcess(text);

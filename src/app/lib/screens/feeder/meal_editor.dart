@@ -2,16 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../src/rust/api/model.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/replies.dart';
-import '../../widgets/when.dart';
-import 'meal_call.dart';
-import 'schedule.dart' show CallLink;
+import 'package:wellfed/screens/feeder/meal_call.dart';
+import 'package:wellfed/screens/feeder/schedule.dart' show CallLink;
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/when.dart';
 
 /// Open the editor over the plans the owner sees; `slot` for an existing
 /// meal, none for a new one.
@@ -28,25 +28,14 @@ Future<void> openMealEditor(
 );
 
 const _everyDay = Weekday.values;
-const _weekdays = [
-  Weekday.mon,
-  Weekday.tue,
-  Weekday.wed,
-  Weekday.thu,
-  Weekday.fri,
-];
+const _weekdays = [Weekday.mon, Weekday.tue, Weekday.wed, Weekday.thu, Weekday.fri];
 const _weekend = [Weekday.sat, Weekday.sun];
 
 /// Edit one meal (8.2). A save goes back against the table this opened on, so a
 /// change meanwhile (another client's, or a one-off meal disabling itself as it
 /// runs) is refused and asked about (8.4), never overwritten unseen.
 class MealEditor extends StatefulWidget {
-  const MealEditor({
-    super.key,
-    required this.feeder,
-    required this.held,
-    this.slot,
-  });
+  const MealEditor({super.key, required this.feeder, required this.held, this.slot});
 
   final FeederController feeder;
   final PlansView held;
@@ -112,9 +101,7 @@ class _MealEditorState extends State<MealEditor> {
 
   Future<void> _save() async {
     setState(() => _asking = true);
-    final reply = await widget.feeder.ask(
-      FeederRequest.editPlans(plans: _held, edit: _edit(_held)),
-    );
+    final reply = await widget.feeder.ask(FeederRequest.editPlans(plans: _held, edit: _edit(_held)));
     if (!mounted) return;
     setState(() => _asking = false);
 
@@ -165,27 +152,15 @@ class _MealEditorState extends State<MealEditor> {
               if (slot != null)
                 (
                   'Now on the feeder',
-                  Flexible(
-                    child: Text(
-                      theirs == null ? 'Deleted' : _line(context, theirs),
-                      textAlign: TextAlign.end,
-                    ),
-                  ),
+                  Flexible(child: Text(theirs == null ? 'Deleted' : _line(context, theirs), textAlign: TextAlign.end)),
                 ),
-              for (final (name, line) in yours(context))
-                (name, Flexible(child: Text(line, textAlign: TextAlign.end))),
+              for (final (name, line) in yours(context)) (name, Flexible(child: Text(line, textAlign: TextAlign.end))),
             ]),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(keep),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(go),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(keep)),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(go)),
         ],
       ),
     );
@@ -212,14 +187,8 @@ class _MealEditorState extends State<MealEditor> {
         title: const Text('Delete this meal?'),
         content: Text('The $time meal comes off the schedule.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
         ],
       ),
     );
@@ -247,8 +216,7 @@ class _MealEditorState extends State<MealEditor> {
         go: 'Delete it',
         again: _delete,
       );
-    } else if (reply is FeederReply_NotAsked &&
-        reply.reason == NotAsked.emptySlot) {
+    } else if (reply is FeederReply_NotAsked && reply.reason == NotAsked.emptySlot) {
       // Gone already, which is what the owner asked for.
       Navigator.pop(context);
     } else if (showProblem(context, reply)) {
@@ -270,29 +238,16 @@ class _MealEditorState extends State<MealEditor> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final time = minuteText(context, _minute);
-    final label = TextStyle(
-      fontSize: Sizes.base,
-      fontWeight: Fonts.semibold,
-      color: c.text,
-    );
+    final label = TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: c.text);
     final muted = TextStyle(fontSize: Sizes.sm, color: c.textMuted);
-    bool same(List<Weekday> days) =>
-        _days.length == days.length && days.every(_days.contains);
+    bool same(List<Weekday> days) => _days.length == days.length && days.every(_days.contains);
 
-    Widget choice<T>(
-      List<(String, T)> options,
-      bool Function(T) selected,
-      void Function(T) choose,
-    ) => Wrap(
+    Widget choice<T>(List<(String, T)> options, bool Function(T) selected, void Function(T) choose) => Wrap(
       spacing: Space.s2,
       runSpacing: Space.s2,
       children: [
         for (final (name, value) in options)
-          ChoiceChip(
-            label: Text(name),
-            selected: selected(value),
-            onSelected: (_) => setState(() => choose(value)),
-          ),
+          ChoiceChip(label: Text(name), selected: selected(value), onSelected: (_) => setState(() => choose(value))),
       ],
     );
 
@@ -310,17 +265,10 @@ class _MealEditorState extends State<MealEditor> {
           widget.slot == null
               ? 'New meal'
               : 'Meal at ${_original == null ? time : minuteText(context, _original!.minute)}',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: Fonts.semibold,
-            color: c.text,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
         ),
         actions: [
-          TextButton(
-            onPressed: _asking ? null : _save,
-            child: const Text('Save'),
-          ),
+          TextButton(onPressed: _asking ? null : _save, child: const Text('Save')),
           const SizedBox(width: Space.s2),
         ],
       ),
@@ -332,11 +280,7 @@ class _MealEditorState extends State<MealEditor> {
             style: OutlinedButton.styleFrom(minimumSize: const Size(0, 72)),
             child: Text(
               time,
-              style: TextStyle(
-                fontSize: Sizes.xl,
-                fontWeight: Fonts.semibold,
-                color: c.text,
-              ),
+              style: TextStyle(fontSize: Sizes.xl, fontWeight: Fonts.semibold, color: c.text),
             ),
           ),
           const SizedBox(height: Space.s4),
@@ -353,9 +297,7 @@ class _MealEditorState extends State<MealEditor> {
               ),
               IconButton.outlined(
                 tooltip: 'One fewer',
-                onPressed: _portions > 1
-                    ? () => setState(() => _portions--)
-                    : null,
+                onPressed: _portions > 1 ? () => setState(() => _portions--) : null,
                 icon: const StrokeIcon(Glyph.minus),
               ),
               SizedBox(
@@ -363,18 +305,12 @@ class _MealEditorState extends State<MealEditor> {
                 child: Text(
                   '$_portions',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: Sizes.lg,
-                    fontWeight: Fonts.semibold,
-                    color: c.text,
-                  ),
+                  style: TextStyle(fontSize: Sizes.lg, fontWeight: Fonts.semibold, color: c.text),
                 ),
               ),
               IconButton.outlined(
                 tooltip: 'One more',
-                onPressed: _portions < 48
-                    ? () => setState(() => _portions++)
-                    : null,
+                onPressed: _portions < 48 ? () => setState(() => _portions++) : null,
                 icon: const StrokeIcon(Glyph.add),
               ),
             ],
@@ -383,12 +319,7 @@ class _MealEditorState extends State<MealEditor> {
           Text('Repeat', style: label),
           const SizedBox(height: Space.s2),
           choice<List<Weekday>>(
-            const [
-              ('Daily', _everyDay),
-              ('Weekdays', _weekdays),
-              ('Weekends', _weekend),
-              ('Once', <Weekday>[]),
-            ],
+            const [('Daily', _everyDay), ('Weekdays', _weekdays), ('Weekends', _weekend), ('Once', <Weekday>[])],
             same,
             (days) => _days = days.toSet(),
           ),
@@ -410,23 +341,13 @@ class _MealEditorState extends State<MealEditor> {
           Text('Meal call', style: label),
           CallLink(
             onTap: () => unawaited(
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => MealCallScreen(feeder: widget.feeder),
-                ),
-              ),
+              Navigator.of(context)
+                  .push(MaterialPageRoute<void>(builder: (_) => MealCallScreen(feeder: widget.feeder))),
             ),
           ),
           const SizedBox(height: Space.s2),
           choice<int>(
-            const [
-              ('Off', 0),
-              ('1', 1),
-              ('2', 2),
-              ('3', 3),
-              ('4', 4),
-              ('5', 5),
-            ],
+            const [('Off', 0), ('1', 1), ('2', 2), ('3', 3), ('4', 4), ('5', 5)],
             (plays) => plays == _call,
             (plays) => _call = plays,
           ),
@@ -441,10 +362,7 @@ class _MealEditorState extends State<MealEditor> {
               Semantics(
                 container: true,
                 label: 'On',
-                child: Switch(
-                  value: _enabled,
-                  onChanged: (on) => setState(() => _enabled = on),
-                ),
+                child: Switch(value: _enabled, onChanged: (on) => setState(() => _enabled = on)),
               ),
             ],
           ),
@@ -498,11 +416,7 @@ class _DayToggle extends StatelessWidget {
           child: ExcludeSemantics(
             child: Text(
               letter,
-              style: TextStyle(
-                fontSize: Sizes.base,
-                fontWeight: Fonts.semibold,
-                color: on ? c.accentText : c.text,
-              ),
+              style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: on ? c.accentText : c.text),
             ),
           ),
         ),

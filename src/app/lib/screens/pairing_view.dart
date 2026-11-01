@@ -1,25 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_reactive_ble/flutter_reactive_ble.dart'
-    show DiscoveredDevice;
+import 'package:flutter_reactive_ble/flutter_reactive_ble.dart' show DiscoveredDevice;
 import 'package:go_router/go_router.dart';
 
-import '../src/rust/api/model.dart';
-import '../state/pairing.dart';
-import '../theme/theme.dart';
-import '../widgets/code_tiles.dart';
-import '../widgets/icons.dart';
-import '../widgets/layout.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/state/pairing.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/code_tiles.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
 
 /// What a pairing shows, phase by phase: the search, the code with its
 /// countdown, the feeder rejoining, then success or why it stopped.
 class PairingView extends StatelessWidget {
-  const PairingView({
-    super.key,
-    required this.flow,
-    required this.ble,
-    required this.onRetry,
-    required this.onNewCode,
-  });
+  const PairingView({super.key, required this.flow, required this.ble, required this.onRetry, required this.onNewCode});
 
   final PairingFlow flow;
 
@@ -42,12 +35,7 @@ class PairingView extends StatelessWidget {
       ),
       PairingPhase.code => _Code(flow: flow, ble: ble, onNewCode: onNewCode),
       PairingPhase.joining =>
-        ble
-            ? _Joining(flow: flow)
-            : const _Waiting(
-                title: 'Code accepted',
-                body: 'Saving the feeder on this phone.',
-              ),
+        ble ? _Joining(flow: flow) : const _Waiting(title: 'Code accepted', body: 'Saving the feeder on this phone.'),
       PairingPhase.done => _Ready(flow: flow),
       PairingPhase.failed => _Failed(flow: flow, ble: ble, onRetry: onRetry),
     },
@@ -85,8 +73,7 @@ class _Find extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final found = flow.found.values.toList()
-      ..sort((a, b) => b.rssi.compareTo(a.rssi));
+    final found = flow.found.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi));
     return StepScaffold(
       stepLabel: 'Step 4 of 4',
       progress: 1,
@@ -95,12 +82,7 @@ class _Find extends StatelessWidget {
         const Searching('Searching nearby…'),
         for (final (i, device) in found.indexed) ...[
           const SizedBox(height: Space.s4),
-          _Found(
-            device: device,
-            closest: i == 0,
-            weak: device.rssi < _weak,
-            onConnect: () => flow.choose(device),
-          ),
+          _Found(device: device, closest: i == 0, weak: device.rssi < _weak, onConnect: () => flow.choose(device)),
         ],
       ],
       actions: [
@@ -119,12 +101,7 @@ class _Find extends StatelessWidget {
 }
 
 class _Found extends StatelessWidget {
-  const _Found({
-    required this.device,
-    required this.closest,
-    required this.weak,
-    required this.onConnect,
-  });
+  const _Found({required this.device, required this.closest, required this.weak, required this.onConnect});
 
   final DiscoveredDevice device;
   final bool closest;
@@ -148,17 +125,11 @@ class _Found extends StatelessWidget {
               children: [
                 Text(
                   'Wellfed feeder',
-                  style: TextStyle(
-                    fontSize: Sizes.md,
-                    fontWeight: Fonts.semibold,
-                    color: c.text,
-                  ),
+                  style: TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  weak
-                      ? 'In setup mode · weak signal, move closer'
-                      : 'In setup mode · close by',
+                  weak ? 'In setup mode · weak signal, move closer' : 'In setup mode · close by',
                   style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
                 ),
               ],
@@ -169,10 +140,7 @@ class _Found extends StatelessWidget {
             FilledButton(
               style: FilledButton.styleFrom(
                 minimumSize: small,
-                textStyle: const TextStyle(
-                  fontSize: Sizes.base,
-                  fontWeight: Fonts.semibold,
-                ),
+                textStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold),
               ),
               onPressed: onConnect,
               child: const Text('Connect'),
@@ -181,10 +149,7 @@ class _Found extends StatelessWidget {
             OutlinedButton(
               style: OutlinedButton.styleFrom(
                 minimumSize: small,
-                textStyle: const TextStyle(
-                  fontSize: Sizes.base,
-                  fontWeight: Fonts.semibold,
-                ),
+                textStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold),
               ),
               onPressed: onConnect,
               child: const Text('Connect'),
@@ -228,17 +193,10 @@ class _CodeState extends State<_Code> {
         Text(
           'Waiting for the feeder to confirm…',
           textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: Sizes.base,
-            height: 1.5,
-            color: c.textMuted,
-          ),
+          style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
         ),
         // A wrong press is not undone: a new code starts the proof over.
-        OutlinedButton(
-          onPressed: widget.onNewCode,
-          child: const Text('Show a new code'),
-        ),
+        OutlinedButton(onPressed: widget.onNewCode, child: const Text('Show a new code')),
       ],
     );
   }
@@ -259,9 +217,7 @@ class _Joining extends StatelessWidget {
       children: [
         SizedBox.square(
           dimension: 28,
-          child: Center(
-            child: StrokeIcon(Glyph.check, size: 22, color: c.ok, weight: 2.2),
-          ),
+          child: Center(child: StrokeIcon(Glyph.check, size: 22, color: c.ok, weight: 2.2)),
         ),
         const SizedBox(width: Space.s3),
         Expanded(
@@ -279,19 +235,11 @@ class _Joining extends StatelessWidget {
             children: [
               const Center(child: FeederImage(size: 180)),
               const SizedBox(height: 28),
-              Headline(
-                '${flow.feederName} is joining your Wi-Fi',
-                size: 24,
-                align: TextAlign.center,
-              ),
+              Headline('${flow.feederName} is joining your Wi-Fi', size: 24, align: TextAlign.center),
               const SizedBox(height: 28),
               done('This phone added as owner'),
               const SizedBox(height: Space.s4),
-              done(
-                flow.wifiSaved == WifiSaved.unchanged
-                    ? 'The feeder keeps its Wi-Fi'
-                    : 'Wi-Fi saved on the feeder',
-              ),
+              done(flow.wifiSaved == WifiSaved.unchanged ? 'The feeder keeps its Wi-Fi' : 'Wi-Fi saved on the feeder'),
               const SizedBox(height: Space.s4),
               done('Feeder restarting without Bluetooth'),
               const SizedBox(height: Space.s4),
@@ -299,21 +247,13 @@ class _Joining extends StatelessWidget {
                 children: [
                   SizedBox.square(
                     dimension: 28,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      color: c.accent,
-                      backgroundColor: c.sunken,
-                    ),
+                    child: CircularProgressIndicator(strokeWidth: 3, color: c.accent, backgroundColor: c.sunken),
                   ),
                   const SizedBox(width: Space.s3),
                   Expanded(
                     child: Text(
                       'Finding it on your network',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: Fonts.semibold,
-                        color: c.text,
-                      ),
+                      style: TextStyle(fontSize: 15, fontWeight: Fonts.semibold, color: c.text),
                     ),
                   ),
                 ],
@@ -326,11 +266,7 @@ class _Joining extends StatelessWidget {
                     : 'Keep this phone on $network. This usually takes '
                           'under a minute.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: Sizes.base,
-                  height: 1.5,
-                  color: c.textMuted,
-                ),
+                style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
               ),
             ],
           ),
@@ -351,8 +287,7 @@ class _Ready extends StatelessWidget {
     final name = flow.feederName;
     final network = flow.network;
     final body = switch ((flow.enrolled, network)) {
-      (Enrolled.already, _) =>
-        'This phone was already one of its owners; nothing changed.',
+      (Enrolled.already, _) => 'This phone was already one of its owners; nothing changed.',
       (_, final network?) =>
         "It's on $network and you're its owner. You can feed it now from "
             'this phone.',
@@ -371,16 +306,7 @@ class _Ready extends StatelessWidget {
                   child: Stack(
                     children: [
                       const FeederImage(size: 290),
-                      Positioned(
-                        right: 0,
-                        top: 0,
-                        child: StrokeIcon(
-                          Glyph.check,
-                          size: 56,
-                          color: c.ok,
-                          weight: 2.2,
-                        ),
-                      ),
+                      Positioned(right: 0, top: 0, child: StrokeIcon(Glyph.check, size: 56, color: c.ok, weight: 2.2)),
                     ],
                   ),
                 ),
@@ -389,17 +315,10 @@ class _Ready extends StatelessWidget {
               const SizedBox(height: Space.s4),
               Text(
                 body,
-                style: TextStyle(
-                  fontSize: Sizes.md,
-                  height: 1.5,
-                  color: c.textMuted,
-                ),
+                style: TextStyle(fontSize: Sizes.md, height: 1.5, color: c.textMuted),
               ),
               const SizedBox(height: Space.s5),
-              FilledButton(
-                onPressed: () => context.go('/'),
-                child: Text('Go to $name'),
-              ),
+              FilledButton(onPressed: () => context.go('/'), child: Text('Go to $name')),
             ],
           ),
         ),
@@ -419,10 +338,7 @@ class _Failed extends StatelessWidget {
   /// does then.
   static const _otherReasons = [
     ('Time ran out', 'The code works for 60 seconds. Ask for a new one.'),
-    (
-      'The feeder is full',
-      'It holds 8 phones and servers. Remove one in its People list.',
-    ),
+    ('The feeder is full', 'It holds 8 phones and servers. Remove one in its People list.'),
     (
       'Setup mode ended',
       'After 15 idle minutes the feeder leaves setup mode. Hold Lock and Mic '
@@ -469,8 +385,7 @@ class _Failed extends StatelessWidget {
       'The phone name is 1 to 16 characters. A Wi-Fi password is 8 to 63 '
           'characters.',
     ),
-    PairingFailure.other ||
-    null => ("Setup didn't finish", flow.message ?? 'Try again.'),
+    PairingFailure.other || null => ("Setup didn't finish", flow.message ?? 'Try again.'),
   };
 
   static (String, String) _refusal(SetupRefusal? refusal) => switch (refusal) {
@@ -479,10 +394,7 @@ class _Failed extends StatelessWidget {
       'Only one phone sets it up at a time. Wait for it to finish, then try '
           'again.',
     ),
-    SetupRefusal.unconfirmed => (
-      'Time ran out',
-      'The code works for 60 seconds. Try again with a new code.',
-    ),
+    SetupRefusal.unconfirmed => ('Time ran out', 'The code works for 60 seconds. Try again with a new code.'),
     SetupRefusal.wrongCode => (
       "That code didn't match",
       'The feeder heard a different order of presses and played its alert '
@@ -494,14 +406,9 @@ class _Failed extends StatelessWidget {
       'It holds 8 phones and servers. An owner removes one in its People '
           'list first.',
     ),
-    SetupRefusal.notWritable => (
-      "The feeder can't save right now",
-      'Try again in a minute.',
-    ),
-    SetupRefusal.invalid || null => (
-      'The feeder rejected the name or Wi-Fi',
-      'Check the phone name and the Wi-Fi password.',
-    ),
+    SetupRefusal.notWritable => ("The feeder can't save right now", 'Try again in a minute.'),
+    SetupRefusal.invalid ||
+    null => ('The feeder rejected the name or Wi-Fi', 'Check the phone name and the Wi-Fi password.'),
   };
 
   @override
@@ -525,15 +432,9 @@ class _Failed extends StatelessWidget {
       body: body,
       content: [
         if (saved)
-          FilledButton(
-            onPressed: () => context.go('/'),
-            child: const Text('Go to Home'),
-          )
+          FilledButton(onPressed: () => context.go('/'), child: const Text('Go to Home'))
         else
-          FilledButton(
-            onPressed: onRetry,
-            child: const Text('Try again with a new code'),
-          ),
+          FilledButton(onPressed: onRetry, child: const Text('Try again with a new code')),
         if (ble && !saved) ...[
           const SizedBox(height: Space.s6),
           const SectionLabel('Other reasons setup stops'),

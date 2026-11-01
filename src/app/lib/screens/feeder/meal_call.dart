@@ -4,13 +4,13 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../src/rust/api/model.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/replies.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
 
 /// Picking a recording off the phone, behind this so tests need no platform.
 typedef PickRecording = Future<Uint8List?> Function();
@@ -263,10 +263,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final (words, stored) = switch (_call?.clip) {
-      CallClip_Stored() => (
-        'Stored: ${((_call?.ms ?? 0) / 1000).toStringAsFixed(1)} s a play',
-        true,
-      ),
+      CallClip_Stored() => ('Stored: ${((_call?.ms ?? 0) / 1000).toStringAsFixed(1)} s a play', true),
       CallClip_Receiving() => ('An upload did not finish', false),
       CallClip_None() => ('No recording stored', false),
       null => (_reading ? 'Reading…' : "Can't read it right now", false),
@@ -283,11 +280,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
         ),
         title: Text(
           'Meal call',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: Fonts.semibold,
-            color: c.text,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
         ),
       ),
       body: ListView(
@@ -295,30 +288,20 @@ class _MealCallScreenState extends State<MealCallScreen> {
         children: [
           Text(
             words,
-            style: TextStyle(
-              fontSize: Sizes.md,
-              fontWeight: Fonts.semibold,
-              color: c.text,
-            ),
+            style: TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text),
           ),
           const SizedBox(height: Space.s2),
           Text(
             'A WAV recording of about 8 seconds at most, which a meal plays '
             'before the food drops. It only ever plays when sound is on, and '
             'never delays a meal.',
-            style: TextStyle(
-              fontSize: Sizes.base,
-              height: 1.5,
-              color: c.textMuted,
-            ),
+            style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
           ),
           const SizedBox(height: Space.s4),
           if (_busy) ...[
             Notice(
               tone: Tone.neutral,
-              text: _reaching
-                  ? 'Reaching the feeder… keep this screen open.'
-                  : 'Working… keep this screen open.',
+              text: _reaching ? 'Reaching the feeder… keep this screen open.' : 'Working… keep this screen open.',
             ),
             const SizedBox(height: Space.s3),
           ],
@@ -328,17 +311,13 @@ class _MealCallScreenState extends State<MealCallScreen> {
           ],
           FilledButton(
             onPressed: _busy || _picking ? null : _upload,
-            child: Text(
-              stored ? 'Replace the recording' : 'Choose a recording',
-            ),
+            child: Text(stored ? 'Replace the recording' : 'Choose a recording'),
           ),
           if (stored) ...[
             const SizedBox(height: Space.s2),
             OutlinedButton(
               style: OutlinedButton.styleFrom(foregroundColor: c.fault),
-              onPressed: _busy || _picking
-                  ? null
-                  : () => unawaited(_write(const FeederRequest.deleteCall())),
+              onPressed: _busy || _picking ? null : () => unawaited(_write(const FeederRequest.deleteCall())),
               child: const Text('Delete the recording'),
             ),
           ],

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'tokens.g.dart';
+import 'package:wellfed/theme/tokens.g.dart';
 
-export 'tokens.g.dart';
+export 'package:wellfed/theme/tokens.g.dart';
 
 /// Material's theme from the brand tokens: blue is the only signal color,
 /// amber only for food, and the status colors only for status.
@@ -32,9 +32,7 @@ ThemeData wellfedTheme(Brightness brightness) {
     outlineVariant: t.line,
     scrim: t.scrim,
   );
-  final controlShape = RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(Radii.control),
-  );
+  final controlShape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.control));
   const buttonSize = Size(64, 52);
 
   return ThemeData(
@@ -71,10 +69,7 @@ ThemeData wellfedTheme(Brightness brightness) {
         disabledBackgroundColor: t.sunken,
         disabledForegroundColor: t.textMuted,
         shape: controlShape,
-        textStyle: const TextStyle(
-          fontSize: Sizes.md,
-          fontWeight: Fonts.semibold,
-        ),
+        textStyle: const TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
@@ -83,10 +78,7 @@ ThemeData wellfedTheme(Brightness brightness) {
         shape: controlShape,
         side: BorderSide(color: t.lineStrong),
         foregroundColor: t.text,
-        textStyle: const TextStyle(
-          fontSize: Sizes.md,
-          fontWeight: Fonts.semibold,
-        ),
+        textStyle: const TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
@@ -118,9 +110,7 @@ ThemeData wellfedTheme(Brightness brightness) {
       showDragHandle: true,
       dragHandleColor: t.lineStrong,
       dragHandleSize: const Size(36, 4),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
     ),
     dividerTheme: DividerThemeData(color: t.line, space: 1),
   );
@@ -134,12 +124,10 @@ class WellfedColors extends ThemeExtension<WellfedColors> {
   final ThemeTokens tokens;
 
   @override
-  WellfedColors copyWith({ThemeTokens? tokens}) =>
-      WellfedColors(tokens ?? this.tokens);
+  WellfedColors copyWith({ThemeTokens? tokens}) => WellfedColors(tokens ?? this.tokens);
 
   @override
-  WellfedColors lerp(WellfedColors? other, double t) =>
-      t < 0.5 || other == null ? this : other;
+  WellfedColors lerp(WellfedColors? other, double t) => t < 0.5 || other == null ? this : other;
 }
 
 extension WellfedContext on BuildContext {

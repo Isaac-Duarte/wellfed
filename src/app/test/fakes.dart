@@ -2,10 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Card;
-import 'package:flutter_reactive_ble/flutter_reactive_ble.dart'
-    show DiscoveredDevice, Uuid;
-import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
-    show RustOpaqueInterface;
+import 'package:flutter_reactive_ble/flutter_reactive_ble.dart' show DiscoveredDevice, Uuid;
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show RustOpaqueInterface;
 import 'package:flutter_test/flutter_test.dart' show WidgetTester;
 import 'package:wellfed/platform/feeder_ports.dart';
 import 'package:wellfed/platform/install_ports.dart';
@@ -74,11 +72,7 @@ class FakeBook extends ChangeNotifier implements FeederBook {
   }
 
   @override
-  Future<void> remember(
-    KnownFeeder feeder, {
-    bool paired = false,
-    bool keepName = false,
-  }) async {
+  Future<void> remember(KnownFeeder feeder, {bool paired = false, bool keepName = false}) async {
     if (saveFails case final error?) throw error;
     remembered.add((feeder, paired));
     final known = feeders.where((f) => f.identity == feeder.identity);
@@ -130,8 +124,7 @@ class FakeRun with _FakeOpaque implements InstallRun {
   Stream<InstallUpdate> run() => updates.stream;
 
   @override
-  void answer({required int id, required InstallAnswer answer}) =>
-      answers[id] = answer;
+  void answer({required int id, required InstallAnswer answer}) => answers[id] = answer;
 
   @override
   void linkLost() => lost++;
@@ -142,21 +135,14 @@ class FakeRun with _FakeOpaque implements InstallRun {
   @override
   void stop() => stops++;
 
-  void event(InstallEvent event) =>
-      updates.add(InstallUpdate.event(event: event));
+  void event(InstallEvent event) => updates.add(InstallUpdate.event(event: event));
 
-  void ask(int id, InstallAsk ask) =>
-      updates.add(InstallUpdate.ask(id: id, ask: ask));
+  void ask(int id, InstallAsk ask) => updates.add(InstallUpdate.ask(id: id, ask: ask));
 
   void end(InstallEnd end) => updates.add(InstallUpdate.ended(end: end));
 
-  void stopped(
-    StopCase stop, {
-    Resume resume = Resume.nothing,
-    String? detail,
-  }) => end(
-    InstallEnd.stopped(case_: stop, resume: resume, detail: detail ?? ''),
-  );
+  void stopped(StopCase stop, {Resume resume = Resume.nothing, String? detail}) =>
+      end(InstallEnd.stopped(case_: stop, resume: resume, detail: detail ?? ''));
 }
 
 class FakeListener with _FakeOpaque implements InstallListener {
@@ -185,11 +171,7 @@ class FakeLink implements InstallLink {
 /// The install's outside world, with no Rust and no phone.
 class FakeInstallPorts implements InstallPorts {
   FakeInstallPorts({
-    this.image = const ImageCheck.ready(
-      provisioning: ImageProvisioning.consumer,
-      build: 'ab',
-      version: 7,
-    ),
+    this.image = const ImageCheck.ready(provisioning: ImageProvisioning.consumer, build: 'ab', version: 7),
     this.build = const BuildCheck.reviewable(),
     this.ip = '192.168.1.23',
     this.pendingInstall = PendingInstall.nothing,
@@ -222,8 +204,7 @@ class FakeInstallPorts implements InstallPorts {
   FakeRun get run => runs.last;
 
   @override
-  Future<InstallPaths> paths() async =>
-      const InstallPaths(store: 'store', image: 'image', data: 'data');
+  Future<InstallPaths> paths() async => const InstallPaths(store: 'store', image: 'image', data: 'data');
 
   @override
   Future<ImageCheck> prepareImage(InstallPaths paths) async => image;
@@ -258,8 +239,7 @@ class FakeInstallPorts implements InstallPorts {
   }
 
   @override
-  void setAsideBackup(InstallPaths paths, String path, BackupProblem problem) =>
-      backupsSetAside.add((path, problem));
+  void setAsideBackup(InstallPaths paths, String path, BackupProblem problem) => backupsSetAside.add((path, problem));
 
   @override
   String? keptBackup(InstallPaths paths, List<int> identity) => kept;
@@ -446,8 +426,7 @@ class FakePairingPorts implements PairingPorts {
   Future<String?> locate(String identity, Duration wait) async => located;
 
   @override
-  String hexOf(List<int> identity) =>
-      identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+  String hexOf(List<int> identity) => identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
 }
 
 final doneStep = SetupStep.done(
@@ -480,9 +459,7 @@ class FakeSession with _FakeOpaque implements FeederSession {
     final answer = answering;
     if (answer != null) return answer(request);
     if (updates.isClosed) return const FeederReply.notSent();
-    return replies.isEmpty
-        ? const FeederReply.done(generation: null)
-        : replies.removeAt(0);
+    return replies.isEmpty ? const FeederReply.done(generation: null) : replies.removeAt(0);
   }
 
   @override
@@ -504,14 +481,11 @@ class FakeSession with _FakeOpaque implements FeederSession {
   @override
   void close() => closes++;
 
-  void opened() => updates.add(
-    const SessionUpdate.opened(build: 'test', role: ClientRole.owner),
-  );
+  void opened() => updates.add(const SessionUpdate.opened(build: 'test', role: ClientRole.owner));
 
   void status(Card card) => updates.add(SessionUpdate.status(card: card));
 
-  void history(List<HistoryEntry> entries) =>
-      updates.add(SessionUpdate.history(entries: entries, caughtUp: true));
+  void history(List<HistoryEntry> entries) => updates.add(SessionUpdate.history(entries: entries, caughtUp: true));
 }
 
 class FakeFeederPorts implements FeederPorts {
@@ -519,17 +493,12 @@ class FakeFeederPorts implements FeederPorts {
   final answers = <(String, String)>[];
 
   @override
-  Future<void> answered(String identity, String build) async =>
-      answers.add((identity, build));
+  Future<void> answered(String identity, String build) async => answers.add((identity, build));
 
   FakeSession get session => sessions.last;
 
   @override
-  FeederSession open(
-    String identity,
-    String address, {
-    required bool syncClock,
-  }) {
+  FeederSession open(String identity, String address, {required bool syncClock}) {
     final session = FakeSession();
     sessions.add(session);
     return session;

@@ -23,29 +23,16 @@ PlanView _plan(
   List<Weekday> days = Weekday.values,
   bool enabled = true,
   int call = 0,
-}) => PlanView(
-  minute: minute,
-  portions: portions,
-  days: days,
-  enabled: enabled,
-  call: call,
-);
+}) => PlanView(minute: minute, portions: portions, days: days, enabled: enabled, call: call);
 
-PlansView _plans(List<PlanView?> filled, {int generation = 3}) => PlansView(
-  generation: generation,
-  writable: true,
-  plans: [...filled, ...List.filled(10 - filled.length, null)],
-);
+PlansView _plans(List<PlanView?> filled, {int generation = 3}) =>
+    PlansView(generation: generation, writable: true, plans: [...filled, ...List.filled(10 - filled.length, null)]);
 
-const _noRecording = FeederReply.call(
-  call: CallInfo(writable: true, clip: CallClip.none()),
-);
+const _noRecording = FeederReply.call(call: CallInfo(writable: true, clip: CallClip.none()));
 
 void main() {
   group('Schedule', () {
-    testWidgets('each meal is its own node, with its switch its own switch', (
-      tester,
-    ) async {
+    testWidgets('each meal is its own node, with its switch its own switch', (tester) async {
       final semantics = tester.ensureSemantics();
       final (feeder, session) = await oneFeeder(tester);
       session.status(fakeCard(plans: _plans([_plan(60), _plan(120)])));
@@ -62,10 +49,7 @@ void main() {
       expect(switches, findsNWidgets(2));
       final first = tester.getSemantics(switches.first);
       expect(first.label, '1:00 AM on');
-      expect(
-        first.rect.width,
-        lessThanOrEqualTo(tester.getSize(switches.first).width),
-      );
+      expect(first.rect.width, lessThanOrEqualTo(tester.getSize(switches.first).width));
 
       final row = tester.getSemantics(find.text('1:00 AM'));
       expect(row.label, isNot(contains('2:00 AM')));
@@ -73,25 +57,18 @@ void main() {
       semantics.dispose();
     });
 
-    testWidgets(
-      'coming to the tab reads the plans again, and only when online',
-      (tester) async {
-        final (feeder, session) = await oneFeeder(tester);
-        session.status(fakeCard());
-        await settle(tester);
-        session.requests.clear();
+    testWidgets('coming to the tab reads the plans again, and only when online', (tester) async {
+      final (feeder, session) = await oneFeeder(tester);
+      session.status(fakeCard());
+      await settle(tester);
+      session.requests.clear();
 
-        await showTab(tester, ScheduleTab(feeder: feeder));
+      await showTab(tester, ScheduleTab(feeder: feeder));
 
-        expect(session.requests.single, const FeederRequest.getPlans());
-      },
-    );
+      expect(session.requests.single, const FeederRequest.getPlans());
+    });
 
-    Future<FakeSession> show(
-      WidgetTester tester,
-      PlansView plans, {
-      bool clockSet = true,
-    }) async {
+    Future<FakeSession> show(WidgetTester tester, PlansView plans, {bool clockSet = true}) async {
       final (feeder, session) = await oneFeeder(tester);
       session.status(fakeCard(plans: plans, clockSet: clockSet));
       await showTab(tester, ScheduleTab(feeder: feeder));
@@ -99,24 +76,13 @@ void main() {
       return session;
     }
 
-    testWidgets('lists the meals by time, with their days and calls', (
-      tester,
-    ) async {
+    testWidgets('lists the meals by time, with their days and calls', (tester) async {
       await show(
         tester,
         _plans([
           _plan(18 * 60 + 30, portions: 3, call: 2),
           _plan(7 * 60 + 30),
-          _plan(
-            12 * 60 + 30,
-            days: const [
-              Weekday.mon,
-              Weekday.tue,
-              Weekday.wed,
-              Weekday.thu,
-              Weekday.fri,
-            ],
-          ),
+          _plan(12 * 60 + 30, days: const [Weekday.mon, Weekday.tue, Weekday.wed, Weekday.thu, Weekday.fri]),
           _plan(22 * 60, portions: 1, days: const [], enabled: false),
         ]),
       );
@@ -124,10 +90,7 @@ void main() {
       expect(find.text('4 of 10 meals'), findsOneWidget);
       expect(find.text('2 portions · every day'), findsOneWidget);
       expect(find.text('2 portions · Mon to Fri'), findsOneWidget);
-      expect(
-        find.text('3 portions · every day · meal call twice'),
-        findsOneWidget,
-      );
+      expect(find.text('3 portions · every day · meal call twice'), findsOneWidget);
       expect(find.text('1 portion · once'), findsOneWidget);
       final first = tester.getTopLeft(find.text('7:30 AM')).dy;
       final last = tester.getTopLeft(find.text('10:00 PM')).dy;
@@ -138,10 +101,7 @@ void main() {
       await show(tester, _plans([for (var i = 0; i < 10; i++) _plan(i * 60)]));
 
       expect(find.textContaining('10 of 10 meals'), findsOneWidget);
-      final add = find.widgetWithText(
-        FilledButton,
-        'Add meal · delete one first',
-      );
+      final add = find.widgetWithText(FilledButton, 'Add meal · delete one first');
       expect(tester.widget<FilledButton>(add).onPressed, isNull);
     });
 
@@ -151,25 +111,18 @@ void main() {
       expect(find.text('Set the time from this phone'), findsOneWidget);
     });
 
-    testWidgets('a meal is switched once, against what the feeder said', (
-      tester,
-    ) async {
+    testWidgets('a meal is switched once, against what the feeder said', (tester) async {
       final plans = _plans([_plan(60)]);
       final session = await show(tester, plans);
 
       await tapIn(tester, find.byType(Switch));
       expect(session.requests, [
-        FeederRequest.editPlans(
-          plans: plans,
-          edit: const PlanEdit.enabled(slot: 0, enabled: false),
-        ),
+        FeederRequest.editPlans(plans: plans, edit: const PlanEdit.enabled(slot: 0, enabled: false)),
       ]);
       expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
     });
 
-    testWidgets('switching says why it was refused or may have run', (
-      tester,
-    ) async {
+    testWidgets('switching says why it was refused or may have run', (tester) async {
       final session = await show(tester, _plans([_plan(60)]));
       session.replies
         ..add(const FeederReply.refused(refusal: FeederRefusal.busy()))
@@ -222,23 +175,15 @@ void main() {
       await tapIn(tester, find.text('1:00 AM'));
       await tapIn(tester, find.text('Delete meal'));
       await tapIn(tester, find.widgetWithText(FilledButton, 'Delete'));
-      expect(
-        (session.requests.single as FeederRequest_EditPlans).edit,
-        const PlanEdit.delete(slot: 0),
-      );
+      expect((session.requests.single as FeederRequest_EditPlans).edit, const PlanEdit.delete(slot: 0));
     });
 
-    testWidgets("the editor's switch is its own node, named On", (
-      tester,
-    ) async {
+    testWidgets("the editor's switch is its own node, named On", (tester) async {
       final semantics = tester.ensureSemantics();
       await show(tester, _plans([_plan(60)]));
 
       await tapIn(tester, find.text('1:00 AM'));
-      final toggle = find.descendant(
-        of: find.byType(MealEditor),
-        matching: find.byType(Switch),
-      );
+      final toggle = find.descendant(of: find.byType(MealEditor), matching: find.byType(Switch));
       await tester.ensureVisible(toggle);
       await tester.pump();
 
@@ -266,9 +211,7 @@ void main() {
       expect(session.requests, isEmpty);
     });
 
-    testWidgets('a refused or unanswered save keeps the editor open', (
-      tester,
-    ) async {
+    testWidgets('a refused or unanswered save keeps the editor open', (tester) async {
       final session = await show(tester, _plans([_plan(60)]));
       session.replies
         ..add(const FeederReply.refused(refusal: FeederRefusal.forbidden()))
@@ -292,16 +235,11 @@ void main() {
 
       await tapIn(tester, find.text('1:00 AM'));
       session.replies
-        ..add(
-          const FeederReply.refused(refusal: FeederRefusal.stale(current: 4)),
-        )
+        ..add(const FeederReply.refused(refusal: FeederRefusal.stale(current: 4)))
         ..add(FeederReply.plans(plans: theirs));
       await tapIn(tester, find.text('Save'));
 
-      expect(
-        find.text('The meals changed while you were editing'),
-        findsOneWidget,
-      );
+      expect(find.text('The meals changed while you were editing'), findsOneWidget);
       expect(find.text('2:00 AM · 2 portions'), findsOneWidget);
       expect(find.text('1:00 AM · 2 portions'), findsOneWidget);
       expect(session.requests, hasLength(2), reason: 'the save, then a read');
@@ -312,50 +250,34 @@ void main() {
       expect(session.requests, hasLength(3));
     });
 
-    testWidgets(
-      'a delete refused as stale shows the meal now, sends nothing more, '
-      'and goes only on a choice, against the fresh read',
-      (tester) async {
-        final session = await show(tester, _plans([_plan(60)]));
-        final fresh = _plans([_plan(60)], generation: 4);
-
-        await tapIn(tester, find.text('1:00 AM'));
-        session.replies
-          ..add(
-            const FeederReply.refused(refusal: FeederRefusal.stale(current: 4)),
-          )
-          ..add(FeederReply.plans(plans: fresh));
-        await tapIn(tester, find.text('Delete meal'));
-        await tapIn(tester, find.widgetWithText(FilledButton, 'Delete'));
-
-        expect(
-          find.text('The meals changed while you were editing'),
-          findsOneWidget,
-        );
-        expect(find.textContaining('a one-off meal ran'), findsOneWidget);
-        expect(find.text('1:00 AM · 2 portions'), findsOneWidget);
-        expect(
-          session.requests,
-          hasLength(2),
-          reason: 'the delete, then a read',
-        );
-        expect(session.requests.last, const FeederRequest.getPlans());
-
-        await tapIn(tester, find.text('Delete it'));
-        final again = session.requests.last as FeederRequest_EditPlans;
-        expect(again.plans, fresh);
-        expect(session.requests, hasLength(3));
-        expect(find.text('Delete meal'), findsNothing);
-      },
-    );
-
-    testWidgets('a stale switch reads the plans and does not switch again', (
-      tester,
-    ) async {
+    testWidgets('a delete refused as stale shows the meal now, sends nothing more, '
+        'and goes only on a choice, against the fresh read', (tester) async {
       final session = await show(tester, _plans([_plan(60)]));
-      session.replies.add(
-        const FeederReply.refused(refusal: FeederRefusal.stale(current: 4)),
-      );
+      final fresh = _plans([_plan(60)], generation: 4);
+
+      await tapIn(tester, find.text('1:00 AM'));
+      session.replies
+        ..add(const FeederReply.refused(refusal: FeederRefusal.stale(current: 4)))
+        ..add(FeederReply.plans(plans: fresh));
+      await tapIn(tester, find.text('Delete meal'));
+      await tapIn(tester, find.widgetWithText(FilledButton, 'Delete'));
+
+      expect(find.text('The meals changed while you were editing'), findsOneWidget);
+      expect(find.textContaining('a one-off meal ran'), findsOneWidget);
+      expect(find.text('1:00 AM · 2 portions'), findsOneWidget);
+      expect(session.requests, hasLength(2), reason: 'the delete, then a read');
+      expect(session.requests.last, const FeederRequest.getPlans());
+
+      await tapIn(tester, find.text('Delete it'));
+      final again = session.requests.last as FeederRequest_EditPlans;
+      expect(again.plans, fresh);
+      expect(session.requests, hasLength(3));
+      expect(find.text('Delete meal'), findsNothing);
+    });
+
+    testWidgets('a stale switch reads the plans and does not switch again', (tester) async {
+      final session = await show(tester, _plans([_plan(60)]));
+      session.replies.add(const FeederReply.refused(refusal: FeederRefusal.stale(current: 4)));
 
       await tapIn(tester, find.byType(Switch).first);
 
@@ -370,9 +292,7 @@ void main() {
 
       await tapIn(tester, find.text('1:00 AM'));
       session.replies
-        ..add(
-          const FeederReply.refused(refusal: FeederRefusal.stale(current: 4)),
-        )
+        ..add(const FeederReply.refused(refusal: FeederRefusal.stale(current: 4)))
         ..add(FeederReply.plans(plans: _plans([_plan(120)])));
       await tapIn(tester, find.text('Save'));
       await tapIn(tester, find.text("Keep what's there"));
@@ -383,45 +303,24 @@ void main() {
   });
 
   group('the meal call', () {
-    Future<FakeSession> show(
-      WidgetTester tester,
-      CallClip clip, {
-      PickRecording? pick,
-    }) async {
+    Future<FakeSession> show(WidgetTester tester, CallClip clip, {PickRecording? pick}) async {
       final (feeder, session) = await oneFeeder(tester);
       session.replies.add(
         FeederReply.call(
-          call: CallInfo(
-            writable: true,
-            clip: clip,
-            ms: clip is CallClip_Stored ? 3500 : null,
-          ),
+          call: CallInfo(writable: true, clip: clip, ms: clip is CallClip_Stored ? 3500 : null),
         ),
       );
-      await showTab(
-        tester,
-        MealCallScreen(feeder: feeder, pick: pick ?? () async => null),
-      );
+      await showTab(tester, MealCallScreen(feeder: feeder, pick: pick ?? () async => null));
       return session;
     }
 
     testWidgets('uploads what was picked, once', (tester) async {
-      final session = await show(
-        tester,
-        const CallClip.none(),
-        pick: () async => Uint8List.fromList([1, 2, 3]),
-      );
+      final session = await show(tester, const CallClip.none(), pick: () async => Uint8List.fromList([1, 2, 3]));
       expect(find.text('No recording stored'), findsOneWidget);
       session.replies
         ..add(_noRecording)
         ..add(
-          const FeederReply.call(
-            call: CallInfo(
-              writable: true,
-              clip: CallClip.stored(bytes: 9, crc: 1),
-              ms: 3500,
-            ),
-          ),
+          const FeederReply.call(call: CallInfo(writable: true, clip: CallClip.stored(bytes: 9, crc: 1), ms: 3500)),
         );
 
       await tapIn(tester, find.text('Choose a recording'));
@@ -430,10 +329,7 @@ void main() {
     });
 
     /// The screen on an open session, holding what `first` answers.
-    Future<(FakeFeederPorts, FakeSession)> onScreen(
-      WidgetTester tester,
-      FeederReply first,
-    ) async {
+    Future<(FakeFeederPorts, FakeSession)> onScreen(WidgetTester tester, FeederReply first) async {
       final book = FakeBook()..feeders = [kitchen];
       final ports = FakeFeederPorts();
       final feeder = FeederController(book, ports, kitchen);
@@ -443,13 +339,7 @@ void main() {
       await tester.pump();
       final session = ports.session;
       session.replies.add(first);
-      await showTab(
-        tester,
-        MealCallScreen(
-          feeder: feeder,
-          pick: () async => Uint8List.fromList([1]),
-        ),
-      );
+      await showTab(tester, MealCallScreen(feeder: feeder, pick: () async => Uint8List.fromList([1])));
       session.requests.clear();
       return (ports, session);
     }
@@ -464,17 +354,12 @@ void main() {
 
     const noReach = "Couldn't reach the feeder. Choose the recording again.";
 
-    testWidgets('a recording waits for the session, then goes once', (
-      tester,
-    ) async {
+    testWidgets('a recording waits for the session, then goes once', (tester) async {
       final (ports, first) = await dropped(tester);
 
       await tester.tap(find.text('Choose a recording'));
       await settle(tester);
-      expect(
-        find.text('Reaching the feeder… keep this screen open.'),
-        findsOneWidget,
-      );
+      expect(find.text('Reaching the feeder… keep this screen open.'), findsOneWidget);
 
       // The controller's first retry comes after 3 s.
       await tester.pump(const Duration(seconds: 3));
@@ -483,35 +368,20 @@ void main() {
       second.replies
         ..add(_noRecording)
         ..add(
-          const FeederReply.call(
-            call: CallInfo(
-              writable: true,
-              clip: CallClip.stored(bytes: 9, crc: 1),
-              ms: 3500,
-            ),
-          ),
+          const FeederReply.call(call: CallInfo(writable: true, clip: CallClip.stored(bytes: 9, crc: 1), ms: 3500)),
         );
       second.opened();
       await settle(tester);
 
       expect(first.requests, isEmpty);
       expect(second.requests.first, const FeederRequest.getCall());
-      expect(
-        second.requests.whereType<FeederRequest_UploadCall>(),
-        hasLength(1),
-      );
+      expect(second.requests.whereType<FeederRequest_UploadCall>(), hasLength(1));
       expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
       expect(find.textContaining('Reaching'), findsNothing);
     });
 
-    testWidgets('a dead session loses the read, never the upload', (
-      tester,
-    ) async {
-      final session = await show(
-        tester,
-        const CallClip.none(),
-        pick: () async => Uint8List.fromList([1]),
-      );
+    testWidgets('a dead session loses the read, never the upload', (tester) async {
+      final session = await show(tester, const CallClip.none(), pick: () async => Uint8List.fromList([1]));
       session.answering = (_) async => const FeederReply.unanswered();
       session.requests.clear();
 
@@ -540,22 +410,10 @@ void main() {
       expect(find.text('Choose a recording'), findsOneWidget);
     });
 
-    const stored = FeederReply.call(
-      call: CallInfo(
-        writable: true,
-        clip: CallClip.stored(bytes: 9, crc: 1),
-        ms: 3500,
-      ),
-    );
+    const stored = FeederReply.call(call: CallInfo(writable: true, clip: CallClip.stored(bytes: 9, crc: 1), ms: 3500));
 
-    testWidgets('a read that never answers counts against the wait', (
-      tester,
-    ) async {
-      final session = await show(
-        tester,
-        const CallClip.none(),
-        pick: () async => Uint8List.fromList([1]),
-      );
+    testWidgets('a read that never answers counts against the wait', (tester) async {
+      final session = await show(tester, const CallClip.none(), pick: () async => Uint8List.fromList([1]));
       session.answering = (_) => Completer<FeederReply>().future;
       session.requests.clear();
 
@@ -605,9 +463,7 @@ void main() {
       expect(second.requests.whereType<FeederRequest_UploadCall>(), isEmpty);
     });
 
-    testWidgets('an upload lost for good cannot say what the feeder holds', (
-      tester,
-    ) async {
+    testWidgets('an upload lost for good cannot say what the feeder holds', (tester) async {
       final (_, first) = await onScreen(tester, stored);
       dyingOn<FeederRequest_UploadCall>(first);
 
@@ -665,20 +521,12 @@ void main() {
 
     /// A screen opened while an upload an earlier one started is on its way;
     /// what ends the upload, and what the read after it gets.
-    Future<void> reopenedUntil(
-      WidgetTester tester,
-      FeederReply end,
-      FeederReply read,
-    ) async {
+    Future<void> reopenedUntil(WidgetTester tester, FeederReply end, FeederReply read) async {
       final (feeder, session) = await oneFeeder(tester);
       final uploading = Completer<FeederReply>();
-      session.answering = (request) => request is FeederRequest_UploadCall
-          ? uploading.future
-          : Future.value(_noRecording);
-      Widget screen() => MealCallScreen(
-        feeder: feeder,
-        pick: () async => Uint8List.fromList([1]),
-      );
+      session.answering = (request) =>
+          request is FeederRequest_UploadCall ? uploading.future : Future.value(_noRecording);
+      Widget screen() => MealCallScreen(feeder: feeder, pick: () async => Uint8List.fromList([1]));
 
       await showTab(tester, screen());
       await tester.tap(find.text('Choose a recording'));
@@ -691,53 +539,36 @@ void main() {
       await settle(tester);
 
       expect(find.text('Reading…'), findsNothing);
-      expect(
-        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
-        isNotNull,
-      );
+      expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed, isNotNull);
     }
 
     testWidgets('a reopened screen says an upload was refused', (tester) async {
-      await reopenedUntil(
-        tester,
-        const FeederReply.refused(refusal: FeederRefusal.forbidden()),
-        _noRecording,
-      );
+      await reopenedUntil(tester, const FeederReply.refused(refusal: FeederRefusal.forbidden()), _noRecording);
 
       expect(find.textContaining("isn't allowed"), findsOneWidget);
       expect(find.text('No recording stored'), findsOneWidget);
     });
 
-    testWidgets('a reopened screen says an upload went unanswered', (
-      tester,
-    ) async {
+    testWidgets('a reopened screen says an upload went unanswered', (tester) async {
       await reopenedUntil(tester, const FeederReply.unanswered(), _noRecording);
 
       expect(find.textContaining('may or may not have'), findsOneWidget);
       expect(find.text('No recording stored'), findsOneWidget);
     });
 
-    testWidgets('a reopened screen reads even after an upload not sent', (
-      tester,
-    ) async {
+    testWidgets('a reopened screen reads even after an upload not sent', (tester) async {
       await reopenedUntil(tester, const FeederReply.notSent(), stored);
 
       expect(find.textContaining('before this went out'), findsOneWidget);
       expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
     });
 
-    testWidgets('a screen opened during an upload does not start another', (
-      tester,
-    ) async {
+    testWidgets('a screen opened during an upload does not start another', (tester) async {
       final (feeder, session) = await oneFeeder(tester);
       final uploading = Completer<FeederReply>();
-      session.answering = (request) => request is FeederRequest_UploadCall
-          ? uploading.future
-          : Future.value(_noRecording);
-      Widget screen() => MealCallScreen(
-        feeder: feeder,
-        pick: () async => Uint8List.fromList([1]),
-      );
+      session.answering = (request) =>
+          request is FeederRequest_UploadCall ? uploading.future : Future.value(_noRecording);
+      Widget screen() => MealCallScreen(feeder: feeder, pick: () async => Uint8List.fromList([1]));
 
       await showTab(tester, screen());
       await tester.tap(find.text('Choose a recording'));
@@ -754,24 +585,12 @@ void main() {
       await settle(tester);
 
       expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
-      expect(
-        session.requests.whereType<FeederRequest_UploadCall>(),
-        hasLength(1),
-      );
-      expect(
-        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
-        isNotNull,
-      );
+      expect(session.requests.whereType<FeederRequest_UploadCall>(), hasLength(1));
+      expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed, isNotNull);
     });
 
-    testWidgets('a recording refused or unanswered says so, then reads', (
-      tester,
-    ) async {
-      final session = await show(
-        tester,
-        const CallClip.none(),
-        pick: () async => Uint8List.fromList([1]),
-      );
+    testWidgets('a recording refused or unanswered says so, then reads', (tester) async {
+      final session = await show(tester, const CallClip.none(), pick: () async => Uint8List.fromList([1]));
       session.replies
         ..add(_noRecording)
         ..add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
@@ -784,18 +603,12 @@ void main() {
         ..add(const FeederReply.unanswered());
       await tapIn(tester, find.text('Choose a recording'));
       expect(find.textContaining('may or may not have'), findsOneWidget);
-      expect(
-        session.requests.whereType<FeederRequest_UploadCall>(),
-        hasLength(1),
-      );
+      expect(session.requests.whereType<FeederRequest_UploadCall>(), hasLength(1));
       expect(session.requests.last, const FeederRequest.getCall());
     });
 
     testWidgets('a stored clip can be deleted', (tester) async {
-      final session = await show(
-        tester,
-        const CallClip.stored(bytes: 9, crc: 1),
-      );
+      final session = await show(tester, const CallClip.stored(bytes: 9, crc: 1));
 
       await tapIn(tester, find.text('Delete the recording'));
       expect(session.requests, contains(const FeederRequest.deleteCall()));
@@ -804,16 +617,9 @@ void main() {
 
   group('History', () {
     HistoryEntry entry(int seq, HistoryBody body, {DateTime? at}) =>
-        HistoryEntry(
-          seq: BigInt.from(seq),
-          atMs: at?.millisecondsSinceEpoch,
-          body: body,
-        );
+        HistoryEntry(seq: BigInt.from(seq), atMs: at?.millisecondsSinceEpoch, body: body);
 
-    Future<(FeederController, FakeSession)> show(
-      WidgetTester tester,
-      List<HistoryEntry> entries,
-    ) async {
+    Future<(FeederController, FakeSession)> show(WidgetTester tester, List<HistoryEntry> entries) async {
       final (feeder, session) = await oneFeeder(tester);
       session.replies.add(
         FeederReply.clients(
@@ -835,27 +641,18 @@ void main() {
 
     final now = DateTime.now();
 
-    testWidgets('shows what happened, newest first, under its day', (
-      tester,
-    ) async {
+    testWidgets('shows what happened, newest first, under its day', (tester) async {
       await show(tester, [
         entry(
           1,
-          const HistoryBody.missed(
-            slot: 1,
-            dueMs: 0,
-            reason: MissedReason.blocked(reason: Blocked.battery),
-          ),
+          const HistoryBody.missed(slot: 1, dueMs: 0, reason: MissedReason.blocked(reason: Blocked.battery)),
           at: now.subtract(const Duration(days: 1)),
         ),
         entry(2, HistoryBody.gap(from: BigInt.from(3), to: BigInt.from(5))),
         entry(3, const HistoryBody.restarted(), at: now),
         entry(
           4,
-          HistoryBody.fed(
-            result: fakeFed(atMs: now.millisecondsSinceEpoch)
-                .copyByClient('beef'),
-          ),
+          HistoryBody.fed(result: fakeFed(atMs: now.millisecondsSinceEpoch).copyByClient('beef')),
           at: now,
         ),
       ]);
@@ -872,21 +669,11 @@ void main() {
       expect(fed, lessThan(started));
     });
 
-    testWidgets('a readiness change reads as one, not a refused feed', (
-      tester,
-    ) async {
+    testWidgets('a readiness change reads as one, not a refused feed', (tester) async {
       await show(tester, [
-        entry(
-          1,
-          const HistoryBody.feedingBlocked(reason: Blocked.setup),
-          at: now,
-        ),
+        entry(1, const HistoryBody.feedingBlocked(reason: Blocked.setup), at: now),
         entry(2, const HistoryBody.feedingBlocked(), at: now),
-        entry(
-          3,
-          const HistoryBody.dispenseRefused(reason: Blocked.fault),
-          at: now,
-        ),
+        entry(3, const HistoryBody.dispenseRefused(reason: Blocked.fault), at: now),
       ]);
 
       expect(find.text('Not ready to feed'), findsOneWidget);
@@ -897,37 +684,18 @@ void main() {
       expect(find.text('A press was refused'), findsOneWidget);
     });
 
-    testWidgets('setup mode is not a problem, and shows under All', (
-      tester,
-    ) async {
+    testWidgets('setup mode is not a problem, and shows under All', (tester) async {
       await show(tester, [
-        entry(
-          1,
-          const HistoryBody.feedingBlocked(reason: Blocked.setup),
-          at: now,
-        ),
-        entry(
-          2,
-          const HistoryBody.feedingBlocked(reason: Blocked.updating),
-          at: now,
-        ),
+        entry(1, const HistoryBody.feedingBlocked(reason: Blocked.setup), at: now),
+        entry(2, const HistoryBody.feedingBlocked(reason: Blocked.updating), at: now),
       ]);
 
       expect(find.text('In setup mode'), findsOneWidget);
       expect(find.text('Installing an update'), findsOneWidget);
-      final setup = find.ancestor(
-        of: find.text('In setup mode'),
-        matching: find.byType(Row),
-      );
-      final other = find.ancestor(
-        of: find.text('Installing an update'),
-        matching: find.byType(Row),
-      );
-      Glyph glyph(Finder row) => tester
-          .widget<StrokeIcon>(
-            find.descendant(of: row, matching: find.byType(StrokeIcon)),
-          )
-          .glyph;
+      final setup = find.ancestor(of: find.text('In setup mode'), matching: find.byType(Row));
+      final other = find.ancestor(of: find.text('Installing an update'), matching: find.byType(Row));
+      Glyph glyph(Finder row) =>
+          tester.widget<StrokeIcon>(find.descendant(of: row, matching: find.byType(StrokeIcon))).glyph;
       expect(glyph(setup), Glyph.info);
       expect(glyph(other), Glyph.warning);
 
@@ -936,9 +704,7 @@ void main() {
       expect(find.text('Installing an update'), findsOneWidget);
     });
 
-    testWidgets('an uncertain feed of no known source says interrupted', (
-      tester,
-    ) async {
+    testWidgets('an uncertain feed of no known source says interrupted', (tester) async {
       final uncertain = fakeFed(
         confirmed: 0,
         atMost: 2,
@@ -946,18 +712,14 @@ void main() {
         reason: FeedReason.interrupted,
         by: const FedBy.unknown(),
       );
-      await show(tester, [
-        entry(1, HistoryBody.fed(result: uncertain), at: now),
-      ]);
+      await show(tester, [entry(1, HistoryBody.fed(result: uncertain), at: now)]);
 
       expect(find.text('Fed between 0 and 2'), findsOneWidget);
       expect(find.text('Interrupted · not repeated'), findsOneWidget);
       expect(find.textContaining('Unknown'), findsNothing);
     });
 
-    testWidgets('an uncertain feed is a range, also in its detail', (
-      tester,
-    ) async {
+    testWidgets('an uncertain feed is a range, also in its detail', (tester) async {
       final uncertain = fakeFed(
         confirmed: 0,
         atMost: 3,
@@ -966,18 +728,13 @@ void main() {
         reason: FeedReason.power,
         atMs: now.millisecondsSinceEpoch,
       );
-      await show(tester, [
-        entry(1, HistoryBody.fed(result: uncertain), at: now),
-      ]);
+      await show(tester, [entry(1, HistoryBody.fed(result: uncertain), at: now)]);
 
       expect(find.text('Fed between 0 and 3'), findsOneWidget);
       await tapIn(tester, find.text('Fed between 0 and 3'));
       expect(find.byType(FeedDetail), findsOneWidget);
       expect(find.text('Fed between 0 and 3 portions'), findsOneWidget);
-      expect(
-        find.text('3 asked for · none confirmed · each could have dropped'),
-        findsOneWidget,
-      );
+      expect(find.text('3 asked for · none confirmed · each could have dropped'), findsOneWidget);
       expect(find.text('Motor trace for this feed'), findsOneWidget);
     });
 

@@ -2,16 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/model.dart';
-import '../../src/rust/api/session.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/when.dart';
-import 'history.dart' show whoText;
-import 'motor_trace.dart';
-import 'today.dart' show faultTitle;
+import 'package:wellfed/screens/feeder/history.dart' show whoText;
+import 'package:wellfed/screens/feeder/motor_trace.dart';
+import 'package:wellfed/screens/feeder/today.dart' show faultTitle;
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/session.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/when.dart';
 
 /// One feed, in detail (9.2). An uncertain feed stays a range.
 class FeedDetail extends StatelessWidget {
@@ -28,9 +28,7 @@ class FeedDetail extends StatelessWidget {
         ? 'Time unknown'
         : '${dayText(DateTime.fromMillisecondsSinceEpoch(at))}, '
               '${clockTextMs(context, at)}';
-    final all =
-        result.outcome == FeedOutcome.done &&
-        result.confirmed == result.requested;
+    final all = result.outcome == FeedOutcome.done && result.confirmed == result.requested;
     final title = result.uncertain
         ? 'Fed between ${result.confirmed} and ${result.atMost} portions'
         : 'Fed ${deliveredText(result)} ${portionWord(result.requested)}';
@@ -52,11 +50,7 @@ class FeedDetail extends StatelessWidget {
         ),
         title: Text(
           when,
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: Fonts.semibold,
-            color: c.text,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
         ),
       ),
       body: ListView(
@@ -64,21 +58,12 @@ class FeedDetail extends StatelessWidget {
         children: [
           Align(
             alignment: Alignment.centerLeft,
-            child: StrokeIcon(
-              all ? Glyph.check : Glyph.warning,
-              size: 40,
-              weight: 2,
-              color: all ? c.ok : c.warning,
-            ),
+            child: StrokeIcon(all ? Glyph.check : Glyph.warning, size: 40, weight: 2, color: all ? c.ok : c.warning),
           ),
           const SizedBox(height: Space.s3),
           Text(
             title,
-            style: TextStyle(
-              fontSize: Sizes.lg,
-              fontWeight: Fonts.semibold,
-              color: c.text,
-            ),
+            style: TextStyle(fontSize: Sizes.lg, fontWeight: Fonts.semibold, color: c.text),
           ),
           const SizedBox(height: Space.s1),
           Text(
@@ -90,12 +75,7 @@ class FeedDetail extends StatelessWidget {
             if (!all)
               (
                 result.uncertain ? "Why it's unsure" : 'Why it stopped',
-                Flexible(
-                  child: Text(
-                    faultTitle(context, result.reason, null),
-                    textAlign: TextAlign.end,
-                  ),
-                ),
+                Flexible(child: Text(faultTitle(context, result.reason, null), textAlign: TextAlign.end)),
               ),
             ('Started by', Text(whoText(feeder, result.by))),
             ('Food level', Text(_hopper(result.hopper))),
@@ -107,11 +87,7 @@ class FeedDetail extends StatelessWidget {
               'When a feed is cut short, the feeder records the range it '
               'might have dropped and never runs it again, so your pet can\'t '
               'be double-fed.',
-              style: TextStyle(
-                fontSize: Sizes.base,
-                height: 1.5,
-                color: c.textMuted,
-              ),
+              style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
             ),
           ],
           const SizedBox(height: Space.s4),
@@ -119,8 +95,7 @@ class FeedDetail extends StatelessWidget {
             onPressed: () => unawaited(
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) =>
-                      MotorTraceScreen(feeder: feeder, feed: result.feed),
+                  builder: (_) => MotorTraceScreen(feeder: feeder, feed: result.feed),
                 ),
               ),
             ),

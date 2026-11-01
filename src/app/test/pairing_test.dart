@@ -1,8 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
-    show AnyhowException;
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show AnyhowException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/app.dart';
 import 'package:wellfed/screens/name_step.dart';
@@ -16,14 +15,7 @@ import 'package:wellfed/state/pairing.dart';
 import 'fakes.dart';
 
 Widget _view(PairingFlow flow, {bool ble = true, VoidCallback? onNewCode}) =>
-    themed(
-      PairingView(
-        flow: flow,
-        ble: ble,
-        onRetry: () {},
-        onNewCode: onNewCode ?? () {},
-      ),
-    );
+    themed(PairingView(flow: flow, ble: ble, onRetry: () {}, onNewCode: onNewCode ?? () {}));
 
 void _tall(WidgetTester tester) {
   tester.view.physicalSize = const Size(1080, 3000);
@@ -32,12 +24,7 @@ void _tall(WidgetTester tester) {
 }
 
 /// The flow at a failure, with the screen on it.
-Future<void> _failed(
-  WidgetTester tester, {
-  PairingFailure? failure,
-  SetupRefusal? refusal,
-  bool ble = true,
-}) async {
+Future<void> _failed(WidgetTester tester, {PairingFailure? failure, SetupRefusal? refusal, bool ble = true}) async {
   _tall(tester);
   final flow = PairingFlow(FakeBook(), FakePairingPorts())
     ..phase = PairingPhase.failed
@@ -48,9 +35,7 @@ Future<void> _failed(
 
 void main() {
   group('3.3 the code', () {
-    testWidgets('it shows the tiles, the time left and how to start over', (
-      tester,
-    ) async {
+    testWidgets('it shows the tiles, the time left and how to start over', (tester) async {
       _tall(tester);
       var newCodes = 0;
       final flow = PairingFlow(FakeBook(), FakePairingPorts())
@@ -59,10 +44,7 @@ void main() {
         ..deadline = DateTime.now().add(const Duration(seconds: 47));
       await tester.pumpWidget(_view(flow, onNewCode: () => newCodes++));
 
-      expect(
-        find.bySemanticsLabel('Press Mic, Lock, Reset, Reset, Dispense, Lock'),
-        findsOneWidget,
-      );
+      expect(find.bySemanticsLabel('Press Mic, Lock, Reset, Reset, Dispense, Lock'), findsOneWidget);
       expect(find.text('Waiting for the feeder to confirm…'), findsOneWidget);
       expect(find.textContaining('0:4'), findsOneWidget);
 
@@ -71,127 +53,100 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-      'Show a new code goes back to the same feeder with another code',
-      (tester) async {
-        _tall(tester);
-        final book = FakeBook();
-        final ports = FakePairingPorts();
-        await tester.pumpWidget(
-          themed(SetupScreen(app: book, ports: ports, askPermissions: false)),
-        );
+    testWidgets('Show a new code goes back to the same feeder with another code', (tester) async {
+      _tall(tester);
+      final book = FakeBook();
+      final ports = FakePairingPorts();
+      await tester.pumpWidget(themed(SetupScreen(app: book, ports: ports, askPermissions: false)));
 
-        await tester.tap(find.text('The Wi-Fi light is blinking'));
-        await settle(tester);
-        await tester.enterText(find.byType(TextField).at(0), 'Maple St');
-        await tester.enterText(find.byType(TextField).at(1), 'correcthorse');
-        await tester.pump();
-        await tester.tap(find.text('Continue'));
-        await settle(tester);
-        await tester.tap(find.text('Find the feeder'));
-        await settle(tester);
+      await tester.tap(find.text('The Wi-Fi light is blinking'));
+      await settle(tester);
+      await tester.enterText(find.byType(TextField).at(0), 'Maple St');
+      await tester.enterText(find.byType(TextField).at(1), 'correcthorse');
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
+      await settle(tester);
+      await tester.tap(find.text('Find the feeder'));
+      await settle(tester);
 
-        // The search, one feeder close by, and connecting to it.
-        ports.scans.add(feederNearby('feeder-1'));
-        await settle(tester);
-        expect(find.text('In setup mode · close by'), findsOneWidget);
-        await tester.tap(find.text('Connect'));
-        await settle(tester);
-        expect(ports.opened.single.id, 'feeder-1');
+      // The search, one feeder close by, and connecting to it.
+      ports.scans.add(feederNearby('feeder-1'));
+      await settle(tester);
+      expect(find.text('In setup mode · close by'), findsOneWidget);
+      await tester.tap(find.text('Connect'));
+      await settle(tester);
+      expect(ports.opened.single.id, 'feeder-1');
 
-        ports.drivers.single.script = const [SetupStep.enterCode(seconds: 60)];
-        ports.link.bytes.add(const [1]);
-        await tester.pump();
-        await tester.pump();
-        expect(find.text('Show a new code'), findsOneWidget);
-        final first = ports.link;
+      ports.drivers.single.script = const [SetupStep.enterCode(seconds: 60)];
+      ports.link.bytes.add(const [1]);
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Show a new code'), findsOneWidget);
+      final first = ports.link;
 
-        await tester.tap(find.text('Show a new code'));
-        await tester.pump();
-        await tester.pump();
+      await tester.tap(find.text('Show a new code'));
+      await tester.pump();
+      await tester.pump();
 
-        // The old link hung up, and a new session started at the same feeder.
-        expect(first.closes, 1);
-        expect(ports.drivers, hasLength(2));
-        expect(ports.opened.map((device) => device.id), [
-          'feeder-1',
-          'feeder-1',
-        ]);
-        expect(ports.drivers[1].positions, isNot(ports.drivers[0].positions));
-        await tester.pumpWidget(const SizedBox());
-      },
-    );
+      // The old link hung up, and a new session started at the same feeder.
+      expect(first.closes, 1);
+      expect(ports.drivers, hasLength(2));
+      expect(ports.opened.map((device) => device.id), ['feeder-1', 'feeder-1']);
+      expect(ports.drivers[1].positions, isNot(ports.drivers[0].positions));
+      await tester.pumpWidget(const SizedBox());
+    });
   });
 
   group('3.5 names', () {
-    testWidgets(
-      'both names are asked, and the phone\'s fits the feeder\'s 16 bytes',
-      (tester) async {
-        String? label;
-        String? feeder;
-        await tester.pumpWidget(
-          themed(
-            NameStep(
-              initial: 'Pixel',
-              feeder: 'Feeder',
-              action: 'Find the feeder',
-              onDone: (l, f) {
-                label = l;
-                feeder = f;
-              },
-            ),
+    testWidgets('both names are asked, and the phone\'s fits the feeder\'s 16 bytes', (tester) async {
+      String? label;
+      String? feeder;
+      await tester.pumpWidget(
+        themed(
+          NameStep(
+            initial: 'Pixel',
+            feeder: 'Feeder',
+            action: 'Find the feeder',
+            onDone: (l, f) {
+              label = l;
+              feeder = f;
+            },
           ),
-        );
+        ),
+      );
 
-        expect(find.text('Name things'), findsOneWidget);
-        expect(find.text('5/16'), findsOneWidget);
+      expect(find.text('Name things'), findsOneWidget);
+      expect(find.text('5/16'), findsOneWidget);
 
-        await tester.enterText(
-          find.byType(TextField).at(1),
-          'A name far too long to fit',
-        );
-        await tester.pump();
-        expect(
-          tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
-          isNull,
-        );
+      await tester.enterText(find.byType(TextField).at(1), 'A name far too long to fit');
+      await tester.pump();
+      expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed, isNull);
 
-        await tester.enterText(find.byType(TextField).at(0), 'Kitchen');
-        await tester.enterText(find.byType(TextField).at(1), "Sam's Pixel");
-        await tester.pump();
-        await tester.tap(find.text('Find the feeder'));
-        await tester.pump();
-        expect(label, "Sam's Pixel");
-        expect(feeder, 'Kitchen');
-      },
-    );
+      await tester.enterText(find.byType(TextField).at(0), 'Kitchen');
+      await tester.enterText(find.byType(TextField).at(1), "Sam's Pixel");
+      await tester.pump();
+      await tester.tap(find.text('Find the feeder'));
+      await tester.pump();
+      expect(label, "Sam's Pixel");
+      expect(feeder, 'Kitchen');
+    });
 
-    testWidgets('a name it cannot save is said so, on this step', (
-      tester,
-    ) async {
+    testWidgets('a name it cannot save is said so, on this step', (tester) async {
       await tester.pumpWidget(
         themed(
           NameStep(
             initial: 'Pixel',
             action: 'Continue',
-            onDone: (_, _) => throw const BridgeError(
-              kind: ErrorKind.store,
-              message: 'the disk is full',
-            ),
+            onDone: (_, _) => throw const BridgeError(kind: ErrorKind.store, message: 'the disk is full'),
           ),
         ),
       );
       await tester.tap(find.text('Continue'));
       await settle(tester);
-      expect(
-        find.textContaining('the disk is full', findRichText: true),
-        findsOneWidget,
-      );
+      expect(find.textContaining('the disk is full', findRichText: true), findsOneWidget);
     });
 
-    testWidgets('an unnamed phone is offered its own model, cut to fit', (
-      tester,
-    ) async {
+    testWidgets('an unnamed phone is offered its own model, cut to fit', (tester) async {
       await tester.pumpWidget(
         themed(
           NameStep(
@@ -208,48 +163,45 @@ void main() {
   });
 
   group('3.6 joining and 3.7 ready', () {
-    testWidgets(
-      'after the code, the feeder is saved and the success screen stays',
-      (tester) async {
-        _tall(tester);
-        final book = FakeBook();
-        final ports = FakePairingPorts();
-        final flow = PairingFlow(book, ports);
+    testWidgets('after the code, the feeder is saved and the success screen stays', (tester) async {
+      _tall(tester);
+      final book = FakeBook();
+      final ports = FakePairingPorts();
+      final flow = PairingFlow(book, ports);
 
-        // Under the router, as the app has it: a saved feeder redraws the root
-        // beneath the flow, and the flow's own screen stays on top.
-        final router = wellfedRouter(
-          book: book,
-          root: (context) => Text(book.feeders.isEmpty ? 'Welcome' : 'Home'),
-          pages: {'/setup': (context) => _view(flow)},
-        );
-        await tester.pumpWidget(MaterialApp.router(routerConfig: router));
-        unawaited(router.push('/setup'));
-        await settle(tester);
+      // Under the router, as the app has it: a saved feeder redraws the root
+      // beneath the flow, and the flow's own screen stays on top.
+      final router = wellfedRouter(
+        book: book,
+        root: (context) => Text(book.feeders.isEmpty ? 'Welcome' : 'Home'),
+        pages: {'/setup': (context) => _view(flow)},
+      );
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      unawaited(router.push('/setup'));
+      await settle(tester);
 
-        unawaited(
-          flow.runSetup(
-            wifi: const WifiCredentials(ssid: 'Maple St', passphrase: 'x'),
-            name: 'Kitchen',
-            device: feederNearby('feeder-1'),
-          ),
-        );
-        await tester.pump();
-        await tester.pump();
-        ports.drivers.single.script = [doneStep];
-        ports.link.bytes.add(const [1]);
-        await settle(tester);
+      unawaited(
+        flow.runSetup(
+          wifi: const WifiCredentials(ssid: 'Maple St', passphrase: 'x'),
+          name: 'Kitchen',
+          device: feederNearby('feeder-1'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      ports.drivers.single.script = [doneStep];
+      ports.link.bytes.add(const [1]);
+      await settle(tester);
 
-        expect(book.feeders.single.name, 'Kitchen');
-        expect(book.remembered.single.$2, isTrue, reason: 'its clock is due');
-        expect(find.text('Kitchen is ready.'), findsOneWidget);
-        expect(find.textContaining('on Maple St'), findsOneWidget);
+      expect(book.feeders.single.name, 'Kitchen');
+      expect(book.remembered.single.$2, isTrue, reason: 'its clock is due');
+      expect(find.text('Kitchen is ready.'), findsOneWidget);
+      expect(find.textContaining('on Maple St'), findsOneWidget);
 
-        await tester.tap(find.text('Go to Kitchen'));
-        await settle(tester);
-        expect(find.text('Home'), findsOneWidget);
-      },
-    );
+      await tester.tap(find.text('Go to Kitchen'));
+      await settle(tester);
+      expect(find.text('Home'), findsOneWidget);
+    });
 
     testWidgets('a feeder already owned says nothing changed', (tester) async {
       _tall(tester);
@@ -272,10 +224,7 @@ void main() {
       await tester.pump();
       expect(find.text('Kitchen is joining your Wi-Fi'), findsOneWidget);
       expect(find.text('Wi-Fi saved on the feeder'), findsOneWidget);
-      expect(
-        find.textContaining('Keep this phone on Maple St'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('Keep this phone on Maple St'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
   });
@@ -290,27 +239,16 @@ void main() {
       (SetupRefusal.invalid, 'The feeder rejected the name or Wi-Fi'),
     ]) {
       testWidgets('the feeder refused: $title', (tester) async {
-        await _failed(
-          tester,
-          failure: PairingFailure.refused,
-          refusal: refusal,
-        );
+        await _failed(tester, failure: PairingFailure.refused, refusal: refusal);
         expect(find.text(title), findsOneWidget);
         expect(find.text('Try again with a new code'), findsOneWidget);
         // Listed once, not again among the other reasons.
-        expect(
-          find.text('Other reasons setup stops'.toUpperCase()),
-          findsOneWidget,
-        );
+        expect(find.text('Other reasons setup stops'.toUpperCase()), findsOneWidget);
       });
     }
 
     testWidgets('a wrong code is still in setup mode', (tester) async {
-      await _failed(
-        tester,
-        failure: PairingFailure.refused,
-        refusal: SetupRefusal.wrongCode,
-      );
+      await _failed(tester, failure: PairingFailure.refused, refusal: SetupRefusal.wrongCode);
       expect(find.textContaining("It's still in setup mode"), findsOneWidget);
       expect(find.text('Setup mode ended'), findsOneWidget);
     });
@@ -331,15 +269,12 @@ void main() {
       });
     }
 
-    testWidgets(
-      'paired but not on this network goes Home, which keeps looking',
-      (tester) async {
-        await _failed(tester, failure: PairingFailure.notOnLan);
-        expect(find.text('Paired, but not on this network'), findsOneWidget);
-        expect(find.text('Go to Home'), findsOneWidget);
-        expect(find.text('Try again with a new code'), findsNothing);
-      },
-    );
+    testWidgets('paired but not on this network goes Home, which keeps looking', (tester) async {
+      await _failed(tester, failure: PairingFailure.notOnLan);
+      expect(find.text('Paired, but not on this network'), findsOneWidget);
+      expect(find.text('Go to Home'), findsOneWidget);
+      expect(find.text('Try again with a new code'), findsNothing);
+    });
 
     testWidgets('recovery lists no setup reasons', (tester) async {
       await _failed(tester, failure: PairingFailure.windowClosed, ble: false);
@@ -350,51 +285,43 @@ void main() {
   group('recovery', () {
     Future<PairingFlow> started(FakePairingPorts ports) async {
       final flow = PairingFlow(FakeBook(), ports);
-      unawaited(
-        flow.runRecovery(address: '192.168.1.40:4747', name: 'Kitchen'),
-      );
+      unawaited(flow.runRecovery(address: '192.168.1.40:4747', name: 'Kitchen'));
       await Future<void>.delayed(Duration.zero);
       return flow;
     }
 
-    test(
-      'a shut window comes back as its own failure, not an exception',
-      () async {
-        final ports = FakePairingPorts();
-        final flow = await started(ports);
+    test('a shut window comes back as its own failure, not an exception', () async {
+      final ports = FakePairingPorts();
+      final flow = await started(ports);
 
-        // Rust sends a failed recovery as a step: frb decodes a stream's error
-        // as AnyhowException whatever Rust encoded.
-        ports.recoveries.single.steps.add(
-          const SetupStep.failed(
-            error: BridgeError(kind: ErrorKind.closed, message: 'closed'),
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
+      // Rust sends a failed recovery as a step: frb decodes a stream's error
+      // as AnyhowException whatever Rust encoded.
+      ports.recoveries.single.steps.add(
+        const SetupStep.failed(
+          error: BridgeError(kind: ErrorKind.closed, message: 'closed'),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
 
-        expect(flow.phase, PairingPhase.failed);
-        expect(flow.failure, PairingFailure.windowClosed);
-        flow.dispose();
-      },
-    );
+      expect(flow.phase, PairingPhase.failed);
+      expect(flow.failure, PairingFailure.windowClosed);
+      flow.dispose();
+    });
 
-    test(
-      'an error on the stream is still a screen, not an exception',
-      () async {
-        final ports = FakePairingPorts();
-        final flow = await started(ports);
+    test('an error on the stream is still a screen, not an exception', () async {
+      final ports = FakePairingPorts();
+      final flow = await started(ports);
 
-        ports.recoveries.single.steps.addError(AnyhowException('garbled'));
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
+      ports.recoveries.single.steps.addError(AnyhowException('garbled'));
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
 
-        expect(flow.phase, PairingPhase.failed);
-        expect(flow.failure, PairingFailure.other);
-        expect(flow.message, contains('garbled'));
-        flow.dispose();
-      },
-    );
+      expect(flow.phase, PairingPhase.failed);
+      expect(flow.failure, PairingFailure.other);
+      expect(flow.message, contains('garbled'));
+      flow.dispose();
+    });
 
     test('closing the screen hangs up in Rust too', () async {
       final ports = FakePairingPorts();
@@ -404,9 +331,7 @@ void main() {
     });
   });
 
-  testWidgets('a saved feeder does not take the flow off the screen', (
-    tester,
-  ) async {
+  testWidgets('a saved feeder does not take the flow off the screen', (tester) async {
     final book = FakeBook();
     var builds = 0;
     final router = wellfedRouter(

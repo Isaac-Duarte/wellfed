@@ -2,16 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../platform/discovery.dart';
-import '../platform/pairing_ports.dart';
-import '../state/app_state.dart';
-import '../state/pairing.dart';
-import '../theme/theme.dart';
-import '../widgets/code_tiles.dart';
-import '../widgets/icons.dart';
-import '../widgets/layout.dart';
-import 'name_step.dart';
-import 'pairing_view.dart';
+import 'package:wellfed/platform/discovery.dart';
+import 'package:wellfed/platform/pairing_ports.dart';
+import 'package:wellfed/screens/name_step.dart';
+import 'package:wellfed/screens/pairing_view.dart';
+import 'package:wellfed/state/app_state.dart';
+import 'package:wellfed/state/pairing.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/code_tiles.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
 
 enum _Step { name, pick, pairing }
 
@@ -60,9 +60,7 @@ class _RecoverScreenState extends State<RecoverScreen> {
         if (mounted) setState(() => _step = _Step.pick);
       },
     ),
-    _Step.pick => _Pick(
-      onPicked: (address, name) => unawaited(_pair(address, name)),
-    ),
+    _Step.pick => _Pick(onPicked: (address, name) => unawaited(_pair(address, name))),
     _Step.pairing => PairingView(
       flow: _flow!,
       ble: false,
@@ -124,8 +122,7 @@ class _PickState extends State<_Pick> {
               'shows, just like setup.',
         ]),
         const SizedBox(height: Space.s5),
-        if (_found.isEmpty)
-          const Searching('Looking for feeders on this network…'),
+        if (_found.isEmpty) const Searching('Looking for feeders on this network…'),
         for (final feeder in _found.values) ...[
           Panel(
             onTap: () => widget.onPicked(feeder.address, feeder.name),
@@ -140,20 +137,12 @@ class _PickState extends State<_Pick> {
                     children: [
                       Text(
                         feeder.name,
-                        style: TextStyle(
-                          fontSize: Sizes.md,
-                          fontWeight: Fonts.semibold,
-                          color: c.text,
-                        ),
+                        style: TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         feeder.address,
-                        style: TextStyle(
-                          fontFamily: Fonts.mono,
-                          fontSize: Sizes.sm,
-                          color: c.textMuted,
-                        ),
+                        style: TextStyle(fontFamily: Fonts.mono, fontSize: Sizes.sm, color: c.textMuted),
                       ),
                     ],
                   ),
@@ -179,10 +168,7 @@ class _PickState extends State<_Pick> {
         OutlinedButton(
           onPressed: _typed.text.trim().isEmpty
               ? null
-              : () => widget.onPicked(
-                  _typed.text.trim(),
-                  PairingFlow.defaultFeederName,
-                ),
+              : () => widget.onPicked(_typed.text.trim(), PairingFlow.defaultFeederName),
           child: const Text('Use this address'),
         ),
       ],

@@ -4,19 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../src/rust/api/model.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/replies.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/replies.dart';
 
 /// Choose a role (11.2), create one invite, and show it. An unanswered create
 /// is not sent again: at worst an unseen invite runs out by itself.
-Future<void> inviteSomeone(
-  BuildContext context,
-  FeederController feeder,
-) async {
+Future<void> inviteSomeone(BuildContext context, FeederController feeder) async {
   final role = await showModalBottomSheet<ClientRole>(
     context: context,
     isScrollControlled: true,
@@ -27,11 +24,7 @@ Future<void> inviteSomeone(
   final reply = await feeder.ask(FeederRequest.createInvite(role: role));
   if (!context.mounted) return;
   if (reply is FeederReply_Invite) {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => InviteScreen(invite: reply.invite),
-      ),
-    );
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => InviteScreen(invite: reply.invite)));
     // Whoever scanned it joined while it was on screen.
     await feeder.loadClients();
   } else {
@@ -63,26 +56,19 @@ class _RoleSheetState extends State<_RoleSheet> {
           children: [
             Text(
               'Invite someone to ${widget.name}',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: Fonts.semibold,
-                color: c.text,
-              ),
+              style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
             ),
             const SizedBox(height: Space.s3),
             RadioGroup<ClientRole>(
               groupValue: _role,
-              onChanged: (role) =>
-                  setState(() => _role = role ?? ClientRole.member),
+              onChanged: (role) => setState(() => _role = role ?? ClientRole.member),
               child: const Column(
                 children: [
                   RadioListTile<ClientRole>(
                     value: ClientRole.member,
                     contentPadding: EdgeInsets.zero,
                     title: Text('Member'),
-                    subtitle: Text(
-                      'Feeds, edits meals and settings, locks the buttons.',
-                    ),
+                    subtitle: Text('Feeds, edits meals and settings, locks the buttons.'),
                   ),
                   RadioListTile<ClientRole>(
                     value: ClientRole.owner,
@@ -102,10 +88,7 @@ class _RoleSheetState extends State<_RoleSheet> {
               style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
             ),
             const SizedBox(height: Space.s4),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, _role),
-              child: const Text('Create invite'),
-            ),
+            FilledButton(onPressed: () => Navigator.pop(context, _role), child: const Text('Create invite')),
           ],
         ),
       ),
@@ -166,11 +149,7 @@ class _InviteScreenState extends State<InviteScreen> {
         ),
         title: Text(
           invite.role == ClientRole.owner ? 'Owner invite' : 'Member invite',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: Fonts.semibold,
-            color: c.text,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
         ),
       ),
       body: ListView(
@@ -198,11 +177,7 @@ class _InviteScreenState extends State<InviteScreen> {
                 ? 'This invite has expired. Close this and create a new one.'
                 : '$clock until it expires · works once',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: Fonts.semibold,
-              color: c.text,
-            ),
+            style: TextStyle(fontSize: 15, fontWeight: Fonts.semibold, color: c.text),
           ),
           const SizedBox(height: Space.s4),
           Text(
@@ -212,9 +187,7 @@ class _InviteScreenState extends State<InviteScreen> {
           ),
           const SizedBox(height: Space.s4),
           OutlinedButton(
-            onPressed: expired
-                ? null
-                : () => unawaited(widget.share(invite.text)),
+            onPressed: expired ? null : () => unawaited(widget.share(invite.text)),
             child: const Text('Share link instead'),
           ),
         ],

@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 
-import '../platform/feeder_ports.dart';
-import 'app_state.dart';
-import 'feeder.dart';
+import 'package:wellfed/platform/feeder_ports.dart';
+import 'package:wellfed/state/app_state.dart';
+import 'package:wellfed/state/feeder.dart';
 
 /// One controller per feeder this phone knows, kept while the app runs, so
 /// every screen of a feeder shows the one session.
@@ -22,15 +22,11 @@ class FeederFleet extends ChangeNotifier {
 
   void _sync() {
     final known = {for (final f in _book.feeders) f.identity: f};
-    for (final gone
-        in _feeders.keys.where((id) => !known.containsKey(id)).toList()) {
+    for (final gone in _feeders.keys.where((id) => !known.containsKey(id)).toList()) {
       _feeders.remove(gone)?.dispose();
     }
     for (final feeder in known.values) {
-      _feeders.putIfAbsent(
-        feeder.identity,
-        () => FeederController(_book, _ports, feeder),
-      );
+      _feeders.putIfAbsent(feeder.identity, () => FeederController(_book, _ports, feeder));
     }
     notifyListeners();
   }

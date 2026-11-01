@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/layout.dart';
-import '../../widgets/replies.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/replies.dart';
 
 /// Change the feeder's Wi-Fi (10.4). The credentials are stored for its next
 /// join, and it rejoins only on a restart, so saving them is followed by one.
@@ -39,13 +39,7 @@ class _WifiScreenState extends State<WifiScreen> {
     if (base == null) return;
 
     setState(() => _asking = true);
-    final saved = await feeder.ask(
-      FeederRequest.putWifi(
-        base: base,
-        ssid: _network.text,
-        passphrase: _password.text,
-      ),
-    );
+    final saved = await feeder.ask(FeederRequest.putWifi(base: base, ssid: _network.text, passphrase: _password.text));
     if (!mounted) return;
     if (!showProblem(context, saved)) {
       setState(() => _asking = false);
@@ -68,9 +62,7 @@ class _WifiScreenState extends State<WifiScreen> {
       );
       return;
     }
-    messenger.showSnackBar(
-      SnackBar(content: Text('${feeder.known.name} is restarting to join.')),
-    );
+    messenger.showSnackBar(SnackBar(content: Text('${feeder.known.name} is restarting to join.')));
     Navigator.pop(context);
   }
 
@@ -90,14 +82,8 @@ class _WifiScreenState extends State<WifiScreen> {
           'up again over Bluetooth. Meals keep running either way.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Forget'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Forget')),
         ],
       ),
     );
@@ -133,11 +119,7 @@ class _WifiScreenState extends State<WifiScreen> {
         ),
         title: Text(
           'Wi-Fi',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: Fonts.semibold,
-            color: c.text,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
         ),
       ),
       body: ListView(
@@ -172,15 +154,9 @@ class _WifiScreenState extends State<WifiScreen> {
                 'running either way.',
           ),
           const SizedBox(height: Space.s4),
-          FilledButton(
-            onPressed: _asking ? null : _switch,
-            child: const Text('Switch network'),
-          ),
+          FilledButton(onPressed: _asking ? null : _switch, child: const Text('Switch network')),
           const SizedBox(height: Space.s2),
-          TextButton(
-            onPressed: _asking ? null : _forget,
-            child: const Text('Forget this network'),
-          ),
+          TextButton(onPressed: _asking ? null : _forget, child: const Text('Forget this network')),
         ],
       ),
     );

@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../platform/install_ports.dart';
-import '../src/rust/api/error.dart';
-import '../src/rust/api/install.dart';
-import '../src/rust/api/setup.dart';
-import '../src/rust/api/store.dart';
-import 'app_state.dart';
+import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/src/rust/api/error.dart';
+import 'package:wellfed/src/rust/api/install.dart';
+import 'package:wellfed/src/rust/api/setup.dart';
+import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/app_state.dart';
 
 /// Which screen an install shows. The steps themselves are Rust's: this
 /// follows what the run reports and carries the owner's answers back.
@@ -233,8 +233,7 @@ class InstallFlow extends ChangeNotifier {
   bool get running => _run != null;
 
   /// Why this install cannot start, in the order the owner can act on.
-  bool get mayStart =>
-      image is ImageCheck_Ready && build is BuildCheck_Reviewable;
+  bool get mayStart => image is ImageCheck_Ready && build is BuildCheck_Reviewable;
 
   /// The run looks for a feeder advertising Bluetooth setup, rather than for
   /// one already on the owner's Wi-Fi.
@@ -249,8 +248,7 @@ class InstallFlow extends ChangeNotifier {
   /// What the run waits for now, when nothing on the screen says so already:
   /// for a long wait, so a screen is never just still.
   String? get waitWords => switch (stage) {
-    InstallStage.claim
-        when !searchingBluetooth && code.isEmpty && !windowAsked =>
+    InstallStage.claim when !searchingBluetooth && code.isEmpty && !windowAsked =>
       "Still looking for the feeder on your Wi-Fi. It's found once it has "
           'restarted and joined, which can take a few minutes.',
     InstallStage.sending when restarting =>
@@ -259,13 +257,11 @@ class InstallFlow extends ChangeNotifier {
     InstallStage.sending when percent >= 100 =>
       'The feeder has the firmware and is installing it. It restarts on its '
           'own, which can take a few minutes.',
-    InstallStage.sending =>
-      'Waiting for the feeder to ask for the next part of the firmware.',
+    InstallStage.sending => 'Waiting for the feeder to ask for the next part of the firmware.',
     InstallStage.finishing when joining == CheckState.running =>
       'Waiting for the feeder to restart and join your Wi-Fi. This can take a '
           'few minutes.',
-    InstallStage.finishing when !pressDispense =>
-      'Waiting for the feeder to answer on your Wi-Fi.',
+    InstallStage.finishing when !pressDispense => 'Waiting for the feeder to answer on your Wi-Fi.',
     _ => null,
   };
 
@@ -391,10 +387,7 @@ class InstallFlow extends ChangeNotifier {
     joinFailed = false;
     handover = _frameTaken ? Handover.waiting : Handover.starting;
     _go(InstallStage.handover);
-    await _start(
-      _frameTaken ? InstallStart.frameTaken : InstallStart.reset,
-      ip,
-    );
+    await _start(_frameTaken ? InstallStart.frameTaken : InstallStart.reset, ip);
   }
 
   /// Join the feeder's network. The owner may try again: the picker comes up
@@ -506,11 +499,7 @@ class InstallFlow extends ChangeNotifier {
       _notify();
       return;
     }
-    stop = InstallEnd_Stopped(
-      case_: const StopCase.uncertain(),
-      resume: Resume.nothing,
-      detail: stop?.detail ?? '',
-    );
+    stop = InstallEnd_Stopped(case_: const StopCase.uncertain(), resume: Resume.nothing, detail: stop?.detail ?? '');
     listeningForEarlier = true;
     _go(InstallStage.stopped);
     await listen();
@@ -630,11 +619,8 @@ class InstallFlow extends ChangeNotifier {
     _notify();
     await _hold('Keep the feeder plugged in.');
     if (_disposed) return;
-    InstallEnd lost(String detail) => InstallEnd.stopped(
-      case_: const StopCase.other(),
-      resume: Resume.nothing,
-      detail: detail,
-    );
+    InstallEnd lost(String detail) =>
+        InstallEnd.stopped(case_: const StopCase.other(), resume: Resume.nothing, detail: detail);
     _updates = run.run().listen(
       (update) => unawaited(_update(run, update)),
       onError: (Object error) => _ended(lost('$error')),
@@ -761,16 +747,10 @@ class InstallFlow extends ChangeNotifier {
         pressDispense = true;
       case InstallEvent_KeyKnown():
         stage = InstallStage.finishing;
-      case InstallEvent_Paired(
-        :final identity,
-        :final address,
-        :final rebooting,
-      ):
+      case InstallEvent_Paired(:final identity, :final address, :final rebooting):
         stage = InstallStage.finishing;
         _identityBytes = identity;
-        _identity = identity
-            .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
-            .join();
+        _identity = identity.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
         _address = address ?? _address;
         joining = rebooting ? CheckState.running : CheckState.waiting;
       case InstallEvent_Joined(:final address):
@@ -824,11 +804,7 @@ class InstallFlow extends ChangeNotifier {
     final identity = _identity;
     if (identity == null) return;
     await _book.remember(
-      KnownFeeder(
-        identity: identity,
-        name: defaultFeederName,
-        address: _address,
-      ),
+      KnownFeeder(identity: identity, name: defaultFeederName, address: _address),
       paired: true,
       // A pick-up of a feeder the owner already named.
       keepName: true,
@@ -847,9 +823,7 @@ class InstallFlow extends ChangeNotifier {
     unawaited(_settle());
     _closeLink();
     _foundOverBluetooth();
-    if (end case InstallEnd_Stopped(
-      case_: StopCase_NoFeederCame() || StopCase_TwoFeeders(),
-    )) {
+    if (end case InstallEnd_Stopped(case_: StopCase_NoFeederCame() || StopCase_TwoFeeders())) {
       _frameTaken = false;
     }
     switch (end) {
@@ -1004,8 +978,7 @@ class InstallFlow extends ChangeNotifier {
   }
 
   /// The way out of a stuck or damaged record is open: nothing is using it.
-  bool get mayForget =>
-      _paths != null && _run == null && listening != Listening.running;
+  bool get mayForget => _paths != null && _run == null && listening != Listening.running;
 
   /// A stop that leaves a record behind, or one no pick-up gets past. Not offered
   /// on an uncertain write's stop: the feeder may be mid-way, and a pick-up reads
@@ -1017,15 +990,12 @@ class InstallFlow extends ChangeNotifier {
     final case_ = stop?.case_;
     if (case_ is StopCase_UncertainWrite) return false;
     if (pending == PendingInstall.ledgerDamaged) return false;
-    return pending != PendingInstall.nothing ||
-        case_ is StopCase_OtherFeeder ||
-        case_ is StopCase_DamagedRecord;
+    return pending != PendingInstall.nothing || case_ is StopCase_OtherFeeder || case_ is StopCase_DamagedRecord;
   }
 
   /// Forgetting takes away a working "Pick up where it stopped", so its words
   /// say how to come back.
-  bool get forgetEndsPickUp =>
-      pending == PendingInstall.paired || stop?.resume == Resume.fromBank0;
+  bool get forgetEndsPickUp => pending == PendingInstall.paired || stop?.resume == Resume.fromBank0;
 
   /// Some feeder's install request has no known outcome, so forgetting needs
   /// words of its own.
@@ -1089,9 +1059,7 @@ class InstallFlow extends ChangeNotifier {
   /// The owner accepted that the backup at `path` is no longer one to go back
   /// with. A pick-up then reads a fresh one if the feeder still holds stock.
   Future<void> setAsideBackup(String path, BackupProblem problem) async {
-    final done = _repair(
-      (paths) => _ports.setAsideBackup(paths, path, problem),
-    );
+    final done = _repair((paths) => _ports.setAsideBackup(paths, path, problem));
     if (done) await again();
   }
 
@@ -1102,9 +1070,7 @@ class InstallFlow extends ChangeNotifier {
   Future<void> finish(String name) async {
     final identity = _identity;
     if (identity == null) return;
-    await _book.remember(
-      KnownFeeder(identity: identity, name: name, address: _address),
-    );
+    await _book.remember(KnownFeeder(identity: identity, name: name, address: _address));
   }
 
   Future<void> saveBackup() async {

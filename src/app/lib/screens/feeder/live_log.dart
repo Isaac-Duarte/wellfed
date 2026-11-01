@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/replies.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/replies.dart';
 
 /// The feeder's record lines as they come (13.3). Owner only: the API has no
 /// way to stop a tail, so the feeder goes on pushing until the session ends,
@@ -47,9 +47,7 @@ class _LiveLogScreenState extends State<LiveLogScreen> {
   }
 
   Future<void> _start() async {
-    final reply = await widget.feeder.ask(
-      const FeederRequest.tailLog(after: null),
-    );
+    final reply = await widget.feeder.ask(const FeederRequest.tailLog(after: null));
     if (mounted) setState(() => _problem = replyProblem(reply));
   }
 
@@ -76,18 +74,12 @@ class _LiveLogScreenState extends State<LiveLogScreen> {
         ),
         title: Text(
           'Live log',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: Fonts.semibold,
-            color: c.text,
-          ),
+          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
         ),
         actions: [
           IconButton(
             tooltip: 'Share the log',
-            onPressed: _lines.isEmpty
-                ? null
-                : () => unawaited(widget.share(_lines.join('\n'))),
+            onPressed: _lines.isEmpty ? null : () => unawaited(widget.share(_lines.join('\n'))),
             icon: Icon(Icons.share_outlined, color: c.text),
           ),
         ],
@@ -103,12 +95,7 @@ class _LiveLogScreenState extends State<LiveLogScreen> {
                     itemCount: _lines.length,
                     itemBuilder: (context, i) => Text(
                       _lines[_lines.length - 1 - i],
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                        height: 1.5,
-                        color: c.text,
-                      ),
+                      style: TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.5, color: c.text),
                     ),
                   ),
           ),

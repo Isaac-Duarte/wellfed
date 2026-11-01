@@ -7,11 +7,7 @@ import 'package:nsd/nsd.dart' as nsd;
 /// A feeder answering on the LAN: its identity (hex, from the TXT `id`)
 /// and where its device API listens.
 class FoundFeeder {
-  const FoundFeeder({
-    required this.identity,
-    required this.address,
-    required this.name,
-  });
+  const FoundFeeder({required this.identity, required this.address, required this.name});
 
   final String identity;
 
@@ -42,10 +38,7 @@ class Discovery {
     out = StreamController<FoundFeeder>(
       onListen: () async {
         try {
-          final started = await nsd.startDiscovery(
-            serviceType,
-            ipLookupType: nsd.IpLookupType.v4,
-          );
+          final started = await nsd.startDiscovery(serviceType, ipLookupType: nsd.IpLookupType.v4);
           // Cancelled while starting: stop what just started.
           if (cancelled) {
             await nsd.stopDiscovery(started);
@@ -54,9 +47,7 @@ class Discovery {
           discovery = started;
           started.addServiceListener((service, status) {
             final found = _feeder(service);
-            if (status == nsd.ServiceStatus.found &&
-                found != null &&
-                !out.isClosed) {
+            if (status == nsd.ServiceStatus.found && found != null && !out.isClosed) {
               out.add(found);
             }
           });
@@ -102,15 +93,9 @@ class Discovery {
 
   static FoundFeeder? _feeder(nsd.Service service) {
     final id = service.txt?['id'];
-    final ip = service.addresses
-        ?.where((a) => a.type == InternetAddressType.IPv4)
-        .firstOrNull;
+    final ip = service.addresses?.where((a) => a.type == InternetAddressType.IPv4).firstOrNull;
     final port = service.port;
     if (id == null || ip == null || port == null) return null;
-    return FoundFeeder(
-      identity: utf8.decode(id),
-      address: '${ip.address}:$port',
-      name: service.name ?? 'Wellfed',
-    );
+    return FoundFeeder(identity: utf8.decode(id), address: '${ip.address}:$port', name: service.name ?? 'Wellfed');
   }
 }

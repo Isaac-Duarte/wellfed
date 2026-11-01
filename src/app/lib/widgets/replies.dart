@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
 
 /// Why a request came to nothing, or may have: `null` once it worked. An
 /// uncertain write says so, and nothing sends it again.
@@ -10,16 +10,14 @@ String? replyProblem(FeederReply reply) => switch (reply) {
   FeederReply_Unanswered() =>
     "No answer came, so it may or may not have gone through. Wellfed won't "
         'send it again.',
-  FeederReply_NotSent() =>
-    'The connection dropped before this went out. Nothing changed.',
+  FeederReply_NotSent() => 'The connection dropped before this went out. Nothing changed.',
   FeederReply_Unexpected() => 'The feeder answered something unexpected.',
   _ => null,
 };
 
 String refusalWords(FeederRefusal refusal) => switch (refusal) {
   FeederRefusal_Forbidden() => "This phone isn't allowed to do that here.",
-  FeederRefusal_Stale() =>
-    'This changed just now. Look again and decide again.',
+  FeederRefusal_Stale() => 'This changed just now. Look again and decide again.',
   FeederRefusal_Busy() => "It's busy. Try again in a moment.",
   FeederRefusal_Unavailable() => "This feeder's firmware doesn't do that yet.",
   FeederRefusal_Invalid() => 'The feeder refused that value.',
@@ -31,10 +29,8 @@ String refusalWords(FeederRefusal refusal) => switch (refusal) {
   FeederRefusal_Fault() => 'It stopped on a fault and needs a restart.',
   FeederRefusal_Update() => 'The feeder refused the update.',
   FeederRefusal_Unverified() => 'This feeder has not verified that mode.',
-  FeederRefusal_Portions(:final asked) =>
-    'A feed is 1 to 48 portions, not $asked.',
-  FeederRefusal_NoClock() =>
-    "The feeder doesn't know the date. Set its time first.",
+  FeederRefusal_Portions(:final asked) => 'A feed is 1 to 48 portions, not $asked.',
+  FeederRefusal_NoClock() => "The feeder doesn't know the date. Set its time first.",
 };
 
 String notAskedWords(NotAsked reason) => switch (reason) {

@@ -1,5 +1,8 @@
 include: package:flutter_lints/flutter.yaml
 
+formatter:
+  page_width: 120
+
 analyzer:
   language:
     strict-casts: true
@@ -19,6 +22,7 @@ analyzer:
 linter:
   rules:
     - always_declare_return_types
+    - always_use_package_imports
     - avoid_dynamic_calls
     - avoid_print
     - cancel_subscriptions

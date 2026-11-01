@@ -2,14 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../platform/feeder_ports.dart';
-import '../src/rust/api/error.dart';
-import '../src/rust/api/feeder.dart';
-import '../src/rust/api/model.dart';
-import '../src/rust/api/session.dart';
-import '../src/rust/api/store.dart';
-import 'app_state.dart';
-import 'update.dart';
+import 'package:wellfed/platform/feeder_ports.dart';
+import 'package:wellfed/src/rust/api/error.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/session.dart';
+import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/app_state.dart';
+import 'package:wellfed/state/update.dart';
 
 enum Connection {
   /// Looking for the feeder's address on the LAN.
@@ -150,27 +150,19 @@ class FeederController extends ChangeNotifier {
   bool get cardIsCurrent => connection == Connection.online && _fresh;
 
   bool get canFeed =>
-      connection == Connection.online &&
-      _fresh &&
-      !feed.active &&
-      role != ClientRole.server &&
-      (card?.ready ?? false);
+      connection == Connection.online && _fresh && !feed.active && role != ClientRole.server && (card?.ready ?? false);
 
   /// Feed `portions` once. The feeder's answer and the feed's end arrive
   /// through the session.
   void feedNow(int portions) {
     final session = _session;
     if (session == null || feed.active) return;
-    _setFeed(
-      FeedState(FeedPhase.sending, portions: portions, sentAt: DateTime.now()),
-    );
+    _setFeed(FeedState(FeedPhase.sending, portions: portions, sentAt: DateTime.now()));
     try {
       session.feed(portions: portions);
     } on BridgeError {
       // The session had already ended; the request never went out.
-      _setFeed(
-        FeedState(FeedPhase.notSent, portions: portions, sentAt: feed.sentAt),
-      );
+      _setFeed(FeedState(FeedPhase.notSent, portions: portions, sentAt: feed.sentAt));
     }
   }
 
@@ -268,11 +260,7 @@ class FeederController extends ChangeNotifier {
   Future<bool> _run(String address) async {
     final FeederSession session;
     try {
-      session = _ports.open(
-        known.identity,
-        address,
-        syncClock: _book.clockDue(known.identity),
-      );
+      session = _ports.open(known.identity, address, syncClock: _book.clockDue(known.identity));
     } on BridgeError catch (failed) {
       error = failed.kind;
       _set(Connection.offline);
@@ -298,10 +286,7 @@ class FeederController extends ChangeNotifier {
           _set(Connection.online);
           try {
             await _book.answeredAt(known.identity, address);
-            known = _book.feeders.firstWhere(
-              (f) => f.identity == known.identity,
-              orElse: () => known,
-            );
+            known = _book.feeders.firstWhere((f) => f.identity == known.identity, orElse: () => known);
           } on BridgeError {
             // Only a hint for the next start; NSD finds the feeder anyway.
           }
@@ -310,38 +295,14 @@ class FeederController extends ChangeNotifier {
           cardAt = DateTime.now();
           _fresh = true;
           _notify();
-        case SessionUpdate_FeedStarted(
-          :final feed,
-          :final portions,
-          :final dueSeconds,
-        ):
+        case SessionUpdate_FeedStarted(:final feed, :final portions, :final dueSeconds):
           _feedDue?.cancel();
           _feedDue = Timer(Duration(seconds: dueSeconds), _feedOverdue);
-          _setFeed(
-            FeedState(
-              FeedPhase.running,
-              portions: portions,
-              feed: feed,
-              sentAt: this.feed.sentAt,
-            ),
-          );
+          _setFeed(FeedState(FeedPhase.running, portions: portions, feed: feed, sentAt: this.feed.sentAt));
         case SessionUpdate_FeedRefused(:final refusal):
-          _setFeed(
-            FeedState(
-              FeedPhase.refused,
-              portions: feed.portions,
-              refusal: refusal,
-              sentAt: feed.sentAt,
-            ),
-          );
+          _setFeed(FeedState(FeedPhase.refused, portions: feed.portions, refusal: refusal, sentAt: feed.sentAt));
         case SessionUpdate_FeedUnanswered():
-          _setFeed(
-            FeedState(
-              FeedPhase.unanswered,
-              portions: feed.portions,
-              sentAt: feed.sentAt,
-            ),
-          );
+          _setFeed(FeedState(FeedPhase.unanswered, portions: feed.portions, sentAt: feed.sentAt));
         case SessionUpdate_FeedEnded(:final result):
           _feedEnded(result);
         case SessionUpdate_CancelUnconfirmed():
@@ -384,23 +345,10 @@ class FeederController extends ChangeNotifier {
     // The session reports every feed it sent as started, refused or
     // unanswered before it closes, so one still sending never went out.
     if (feed.phase == FeedPhase.sending) {
-      _setFeed(
-        FeedState(
-          FeedPhase.notSent,
-          portions: feed.portions,
-          sentAt: feed.sentAt,
-        ),
-      );
+      _setFeed(FeedState(FeedPhase.notSent, portions: feed.portions, sentAt: feed.sentAt));
     }
     if (feed.phase == FeedPhase.running) {
-      _setFeed(
-        FeedState(
-          FeedPhase.lost,
-          portions: feed.portions,
-          feed: feed.feed,
-          sentAt: feed.sentAt,
-        ),
-      );
+      _setFeed(FeedState(FeedPhase.lost, portions: feed.portions, feed: feed.feed, sentAt: feed.sentAt));
     }
     if (!_disposed) _set(Connection.offline);
     return opened;
@@ -410,8 +358,7 @@ class FeederController extends ChangeNotifier {
   /// unanswered feed has none, and the next end may be a meal or another
   /// phone's. It replaces a lost feed too, since it is what really happened.
   void _feedEnded(FeedResult result) {
-    final open =
-        feed.phase == FeedPhase.running || feed.phase == FeedPhase.lost;
+    final open = feed.phase == FeedPhase.running || feed.phase == FeedPhase.lost;
     if (!open || feed.feed != result.feed) return;
 
     // The feeder's record says when, if its clock can be trusted. A lost feed's

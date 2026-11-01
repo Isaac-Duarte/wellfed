@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../platform/restore_ports.dart';
-import '../src/rust/api/restore.dart';
-import '../src/rust/api/store.dart';
-import '../state/install.dart' show CheckState;
-import '../state/restore.dart';
-import '../theme/theme.dart';
-import '../widgets/icons.dart';
-import '../widgets/layout.dart';
+import 'package:wellfed/platform/restore_ports.dart';
+import 'package:wellfed/src/rust/api/restore.dart';
+import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/install.dart' show CheckState;
+import 'package:wellfed/state/restore.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
 
 /// 12.4: putting the vendor's firmware back from the backup the install kept.
 class RestoreScreen extends StatefulWidget {
@@ -93,12 +93,7 @@ class _NoBackup extends StatelessWidget {
               'back on the feeder. It may be damaged or partial.',
         ),
     ],
-    actions: [
-      FilledButton(
-        onPressed: flow.pickFile,
-        child: const Text('Pick the file'),
-      ),
-    ],
+    actions: [FilledButton(onPressed: flow.pickFile, child: const Text('Pick the file'))],
   );
 }
 
@@ -120,10 +115,7 @@ class _Before extends StatelessWidget {
         FactList([
           ('Backup', Text(_backupWords(flow))),
           ('Version', Text('Vendor ${flow.version ?? ''}')),
-          (
-            'Checked',
-            Text('Matches the original', style: TextStyle(color: c.ok)),
-          ),
+          ('Checked', Text('Matches the original', style: TextStyle(color: c.ok))),
         ]),
         const SizedBox(height: Space.s4),
         _Warning(
@@ -145,10 +137,7 @@ class _Before extends StatelessWidget {
           title: const Text('I understand'),
         ),
         FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: c.fault,
-            foregroundColor: c.background,
-          ),
+          style: FilledButton.styleFrom(backgroundColor: c.fault, foregroundColor: c.background),
           onPressed: flow.understood ? flow.start : null,
           child: const Text(_title),
         ),
@@ -160,20 +149,7 @@ class _Before extends StatelessWidget {
     if (flow.picked) return 'From a picked file';
     final at = flow.backupDate;
     if (at == null) return 'On this phone';
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return '${at.day} ${months[at.month - 1]}, on this phone';
   }
 }
@@ -245,10 +221,7 @@ class _Running extends StatelessWidget {
       ),
       if (flow.holdRefused) ...[
         const SizedBox(height: Space.s4),
-        const Notice(
-          tone: Tone.warning,
-          text: 'Keep this screen open: Android would not let this run behind.',
-        ),
+        const Notice(tone: Tone.warning, text: 'Keep this screen open: Android would not let this run behind.'),
       ],
       WaitWords(
         flow.pressDispense ? null : flow.waitWords,
@@ -282,12 +255,7 @@ class _Line extends StatelessWidget {
               SizedBox.square(
                 dimension: 22,
                 child: switch (state) {
-                  CheckState.done => StrokeIcon(
-                    Glyph.check,
-                    size: 20,
-                    color: c.ok,
-                    weight: 2.2,
-                  ),
+                  CheckState.done => StrokeIcon(Glyph.check, size: 20, color: c.ok, weight: 2.2),
                   CheckState.running => CircularProgressIndicator(
                     strokeWidth: 2.5,
                     color: c.accent,
@@ -297,10 +265,7 @@ class _Line extends StatelessWidget {
                     child: Container(
                       width: 8,
                       height: 8,
-                      decoration: BoxDecoration(
-                        color: c.lineStrong,
-                        shape: BoxShape.circle,
-                      ),
+                      decoration: BoxDecoration(color: c.lineStrong, shape: BoxShape.circle),
                     ),
                   ),
                 },
@@ -323,10 +288,7 @@ class _Line extends StatelessWidget {
                 ),
             ],
           ),
-          if (running && fraction != null) ...[
-            const SizedBox(height: Space.s2),
-            Bar(value: fraction!),
-          ],
+          if (running && fraction != null) ...[const SizedBox(height: Space.s2), Bar(value: fraction!)],
         ],
       ),
     );
@@ -413,9 +375,7 @@ class _UncertainState extends State<_Uncertain> {
       body: body,
       content: [
         switch (flow.look) {
-          RestoreLook.looking => const Searching(
-            'Looking for it on your Wi-Fi and over Bluetooth…',
-          ),
+          RestoreLook.looking => const Searching('Looking for it on your Wi-Fi and over Bluetooth…'),
           RestoreLook.wellfed || RestoreLook.sighted => const SizedBox.shrink(),
           RestoreLook.setup => const Notice(
             tone: Tone.warning,
@@ -433,27 +393,13 @@ class _UncertainState extends State<_Uncertain> {
                 'hold erases the identity your backup is filed under.',
           ),
         },
-        if (flow.detail case final detail?) ...[
-          const SizedBox(height: Space.s3),
-          _Small(detail),
-        ],
+        if (flow.detail case final detail?) ...[const SizedBox(height: Space.s3), _Small(detail)],
       ],
       actions: [
-        if (flow.look == RestoreLook.wellfed)
-          FilledButton(
-            onPressed: flow.again,
-            child: const Text('Restore again'),
-          ),
+        if (flow.look == RestoreLook.wellfed) FilledButton(onPressed: flow.again, child: const Text('Restore again')),
         if (flow.look == RestoreLook.setup)
-          FilledButton(
-            onPressed: () => context.push('/setup'),
-            child: const Text('Set it up'),
-          ),
-        _Close(
-          outlined:
-              flow.look == RestoreLook.wellfed ||
-              flow.look == RestoreLook.setup,
-        ),
+          FilledButton(onPressed: () => context.push('/setup'), child: const Text('Set it up')),
+        _Close(outlined: flow.look == RestoreLook.wellfed || flow.look == RestoreLook.setup),
       ],
     );
   }
@@ -485,21 +431,14 @@ class _Stopped extends StatelessWidget {
       body: body,
       content: [if (flow.detail case final detail?) _Small(detail)],
       actions: [
-        if (flow.mayRetry)
-          FilledButton(onPressed: flow.again, child: const Text('Try again')),
+        if (flow.mayRetry) FilledButton(onPressed: flow.again, child: const Text('Try again')),
         _Close(outlined: flow.mayRetry),
       ],
     );
   }
 
-  static (String, String) _words(
-    RestoreStop? stop,
-    String name,
-  ) => switch (stop) {
-    RestoreStop.noPress => (
-      'Dispense was not pressed in time',
-      '$name keeps running Wellfed, and nothing was sent.',
-    ),
+  static (String, String) _words(RestoreStop? stop, String name) => switch (stop) {
+    RestoreStop.noPress => ('Dispense was not pressed in time', '$name keeps running Wellfed, and nothing was sent.'),
     RestoreStop.enrollmentUnknown => (
       "We don't know if the press got through",
       '$name stopped answering just then. It keeps running Wellfed, and '
@@ -559,12 +498,8 @@ class _Stopped extends StatelessWidget {
           'unplug the feeder for a few seconds first, since it can refuse '
           'until its power has been off, then start a new restore.',
     ),
-    RestoreStop.cancelled => (
-      'Stopped',
-      '$name keeps running Wellfed, and nothing was sent.',
-    ),
-    RestoreStop.other ||
-    null => ('The restore stopped', '$name most likely keeps running Wellfed.'),
+    RestoreStop.cancelled => ('Stopped', '$name keeps running Wellfed, and nothing was sent.'),
+    RestoreStop.other || null => ('The restore stopped', '$name most likely keeps running Wellfed.'),
   };
 }
 

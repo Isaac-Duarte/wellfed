@@ -2,16 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../src/rust/api/model.dart';
-import '../../src/rust/api/session.dart';
-import '../../state/feeder.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/when.dart';
-import '../home.dart' show blockedWords;
-import 'feed_detail.dart';
-import 'today.dart' show faultTitle;
+import 'package:wellfed/screens/feeder/feed_detail.dart';
+import 'package:wellfed/screens/feeder/today.dart' show faultTitle;
+import 'package:wellfed/screens/home.dart' show blockedWords;
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/session.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/when.dart';
 
 enum _Filter { all, feeds, problems, changes }
 
@@ -19,17 +19,11 @@ bool _shown(_Filter filter, HistoryBody body) => switch (filter) {
   _Filter.all => body is! HistoryBody_Other,
   _Filter.feeds => body is HistoryBody_Fed || body is HistoryBody_Missed,
   _Filter.problems => switch (body) {
-    HistoryBody_Fed(:final result) =>
-      result.outcome != FeedOutcome.done ||
-          result.confirmed != result.requested,
+    HistoryBody_Fed(:final result) => result.outcome != FeedOutcome.done || result.confirmed != result.requested,
     HistoryBody_Food(:final level) => level == FoodLevel.low,
     // Setup mode is the owner's own choice, not something gone wrong.
-    HistoryBody_FeedingBlocked(:final reason) =>
-      reason != null && reason != Blocked.setup,
-    HistoryBody_Missed() ||
-    HistoryBody_DispenseRefused() ||
-    HistoryBody_Lost() ||
-    HistoryBody_Gap() => true,
+    HistoryBody_FeedingBlocked(:final reason) => reason != null && reason != Blocked.setup,
+    HistoryBody_Missed() || HistoryBody_DispenseRefused() || HistoryBody_Lost() || HistoryBody_Gap() => true,
     _ => false,
   },
   _Filter.changes => switch (body) {
@@ -73,13 +67,10 @@ class _HistoryTabState extends State<HistoryTab> {
   static const _filterKey = 'history-filter';
 
   late _Filter _filter =
-      PageStorage.maybeOf(context)?.readState(context, identifier: _filterKey)
-          as _Filter? ??
-      _Filter.all;
+      PageStorage.maybeOf(context)?.readState(context, identifier: _filterKey) as _Filter? ?? _Filter.all;
 
   void _choose(_Filter filter) {
-    PageStorage.maybeOf(context)
-        ?.writeState(context, filter, identifier: _filterKey);
+    PageStorage.maybeOf(context)?.writeState(context, filter, identifier: _filterKey);
     setState(() => _filter = filter);
   }
 
@@ -90,10 +81,8 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: widget.feeder,
-    builder: (context, _) => _build(context),
-  );
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: widget.feeder, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
     final c = context.colors;
@@ -130,11 +119,7 @@ class _HistoryTabState extends State<HistoryTab> {
                 ('Problems', _Filter.problems),
                 ('Changes', _Filter.changes),
               ])
-                ChoiceChip(
-                  label: Text(name),
-                  selected: _filter == filter,
-                  onSelected: (_) => _choose(filter),
-                ),
+                ChoiceChip(label: Text(name), selected: _filter == filter, onSelected: (_) => _choose(filter)),
             ],
           ),
         ),
@@ -150,10 +135,7 @@ class _HistoryTabState extends State<HistoryTab> {
                     style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
                   ),
                 )
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                  children: rows,
-                ),
+              : ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 16), children: rows),
         ),
       ],
     );
@@ -171,11 +153,7 @@ class _DayHeading extends StatelessWidget {
     padding: EdgeInsets.only(top: first ? 4 : Space.s4, bottom: Space.s1),
     child: Text(
       text,
-      style: TextStyle(
-        fontSize: Sizes.sm,
-        fontWeight: Fonts.semibold,
-        color: context.colors.textMuted,
-      ),
+      style: TextStyle(fontSize: Sizes.sm, fontWeight: Fonts.semibold, color: context.colors.textMuted),
     ),
   );
 }
@@ -198,8 +176,7 @@ class _EntryRow extends StatelessWidget {
           ? () => unawaited(
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) =>
-                      FeedDetail(feeder: feeder, result: body.result),
+                  builder: (_) => FeedDetail(feeder: feeder, result: body.result),
                 ),
               ),
             )
@@ -224,11 +201,7 @@ class _EntryRow extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: TextStyle(
-                      fontSize: Sizes.base,
-                      fontWeight: Fonts.semibold,
-                      color: c.text,
-                    ),
+                    style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: c.text),
                   ),
                   if (note.isNotEmpty)
                     Text(
@@ -251,19 +224,10 @@ class _EntryRow extends StatelessWidget {
         Glyph.warning,
         c.warning,
         'Fed between ${result.confirmed} and ${result.atMost}',
-        result.by is FedBy_Unknown
-            ? 'Interrupted · not repeated'
-            : '${_asker(context, result.by)} · not repeated',
+        result.by is FedBy_Unknown ? 'Interrupted · not repeated' : '${_asker(context, result.by)} · not repeated',
       ),
-      HistoryBody_Fed(:final result)
-          when result.outcome == FeedOutcome.done &&
-              result.confirmed == result.requested =>
-        (
-          Glyph.check,
-          c.ok,
-          'Fed ${deliveredText(result)}',
-          _asker(context, result.by),
-        ),
+      HistoryBody_Fed(:final result) when result.outcome == FeedOutcome.done && result.confirmed == result.requested =>
+        (Glyph.check, c.ok, 'Fed ${deliveredText(result)}', _asker(context, result.by)),
       HistoryBody_Fed(:final result) => (
         Glyph.warning,
         c.warning,
@@ -284,24 +248,9 @@ class _EntryRow extends StatelessWidget {
         locked ? 'Buttons locked' : 'Buttons unlocked',
         who(by),
       ),
-      HistoryBody_SettingsChanged(:final by) => (
-        Glyph.check,
-        c.textMuted,
-        'Settings changed',
-        who(by),
-      ),
-      HistoryBody_WifiChanged(:final by) => (
-        Glyph.wifi,
-        c.textMuted,
-        'Wi-Fi changed',
-        who(by),
-      ),
-      HistoryBody_PlansChanged(:final by) => (
-        Glyph.clock,
-        c.textMuted,
-        'Meals changed',
-        who(by),
-      ),
+      HistoryBody_SettingsChanged(:final by) => (Glyph.check, c.textMuted, 'Settings changed', who(by)),
+      HistoryBody_WifiChanged(:final by) => (Glyph.wifi, c.textMuted, 'Wi-Fi changed', who(by)),
+      HistoryBody_PlansChanged(:final by) => (Glyph.clock, c.textMuted, 'Meals changed', who(by)),
       HistoryBody_Joined(:final fingerprint) => (
         Glyph.add,
         c.textMuted,
@@ -332,12 +281,7 @@ class _EntryRow extends StatelessWidget {
         "Some events weren't kept",
         '$count could not be recorded',
       ),
-      HistoryBody_Gap() => (
-        Glyph.info,
-        c.textMuted,
-        "Some events here weren't kept",
-        '',
-      ),
+      HistoryBody_Gap() => (Glyph.info, c.textMuted, "Some events here weren't kept", ''),
       HistoryBody_FeedingBlocked(reason: Blocked.setup) => (
         Glyph.info,
         c.textMuted,
@@ -350,12 +294,7 @@ class _EntryRow extends StatelessWidget {
         'Not ready to feed',
         blockedWords(reason),
       ),
-      HistoryBody_FeedingBlocked(reason: null) => (
-        Glyph.check,
-        c.ok,
-        'Ready to feed again',
-        '',
-      ),
+      HistoryBody_FeedingBlocked(reason: null) => (Glyph.check, c.ok, 'Ready to feed again', ''),
       HistoryBody_MealSoon(:final minute, :final portions) => (
         Glyph.clock,
         c.textMuted,

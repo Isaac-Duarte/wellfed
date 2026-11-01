@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'app.dart';
-import 'src/rust/frb_generated.dart';
-import 'state/app_state.dart';
+import 'package:wellfed/app.dart';
+import 'package:wellfed/src/rust/frb_generated.dart';
+import 'package:wellfed/state/app_state.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

@@ -2,16 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../src/rust/api/feeder.dart';
-import '../../state/feeder.dart';
-import '../../state/fleet.dart';
-import '../../theme/theme.dart';
-import '../../widgets/icons.dart';
-import '../../widgets/replies.dart';
-import 'history.dart';
-import 'schedule.dart';
-import 'settings_tab.dart';
-import 'today.dart';
+import 'package:wellfed/screens/feeder/history.dart';
+import 'package:wellfed/screens/feeder/schedule.dart';
+import 'package:wellfed/screens/feeder/settings_tab.dart';
+import 'package:wellfed/screens/feeder/today.dart';
+import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/state/fleet.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/replies.dart';
 
 /// One feeder: its name, the menu, and the tabs (board 7).
 class FeederShell extends StatelessWidget {
@@ -21,9 +21,7 @@ class FeederShell extends StatelessWidget {
   /// link can outlive a feeder this phone has forgotten.
   static Widget of(FeederFleet fleet, String identity, {int initialTab = 0}) {
     final feeder = fleet[identity];
-    return feeder == null
-        ? const _Gone()
-        : FeederShell(feeder: feeder, initialTab: initialTab);
+    return feeder == null ? const _Gone() : FeederShell(feeder: feeder, initialTab: initialTab);
   }
 
   final FeederController feeder;
@@ -47,21 +45,14 @@ class FeederShell extends StatelessWidget {
           ),
           title: Text(
             feeder.known.name,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: Fonts.semibold,
-              color: c.text,
-            ),
+            style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
           ),
           actions: [
             PopupMenuButton<void>(
               tooltip: 'More',
               icon: Icon(Icons.more_vert, color: c.text),
               itemBuilder: (context) => [
-                PopupMenuItem(
-                  onTap: () => unawaited(confirmRestart(context, feeder)),
-                  child: const Text('Restart'),
-                ),
+                PopupMenuItem(onTap: () => unawaited(confirmRestart(context, feeder)), child: const Text('Restart')),
               ],
             ),
             const SizedBox(width: Space.s1),
@@ -73,14 +64,8 @@ class FeederShell extends StatelessWidget {
             indicatorWeight: 3,
             indicatorSize: TabBarIndicatorSize.tab,
             dividerColor: c.line,
-            labelStyle: const TextStyle(
-              fontSize: Sizes.base,
-              fontWeight: Fonts.semibold,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontSize: Sizes.base,
-              fontWeight: Fonts.medium,
-            ),
+            labelStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold),
+            unselectedLabelStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.medium),
             tabs: const [
               Tab(text: 'Today'),
               Tab(text: 'Schedule'),
@@ -104,26 +89,15 @@ class FeederShell extends StatelessWidget {
 
 /// Ask, then restart. The feeder refuses a restart while a feed runs; one
 /// that goes unanswered may have gone through, and is not sent again.
-Future<void> confirmRestart(
-  BuildContext context,
-  FeederController feeder,
-) async {
+Future<void> confirmRestart(BuildContext context, FeederController feeder) async {
   final sure = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text('Restart ${feeder.known.name}?'),
-      content: const Text(
-        "It's back in about a minute. It can't feed during the restart.",
-      ),
+      content: const Text("It's back in about a minute. It can't feed during the restart."),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text('Restart'),
-        ),
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Restart')),
       ],
     ),
   );
@@ -131,9 +105,7 @@ Future<void> confirmRestart(
 
   final reply = await feeder.ask(const FeederRequest.reboot());
   if (context.mounted && showProblem(context, reply)) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${feeder.known.name} is restarting.')),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${feeder.known.name} is restarting.')));
   }
 }
 
