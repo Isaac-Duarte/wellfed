@@ -16,7 +16,6 @@ serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.11"
 thiserror.workspace = true
-ts-rs = { version = "12", features = ["serde-json-impl"], optional = true }
 uuid = { workspace = true, features = ["serde"] }
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
@@ -25,8 +24,6 @@ rustix = { version = "1.1.5", default-features = false, features = ["fs", "std"]
 [features]
 # The suite's tier as a command-line option (the bench's `--tier`).
 clap = ["dep:clap"]
-# TypeScript declarations of the types the bench page reads.
-ts = ["dep:ts-rs"]
 # The bench server's /device/* routes, which carry device API values.
 device = ["dep:wellfed-model"]
 

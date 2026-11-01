@@ -45,7 +45,7 @@ If your environment forbids local sockets, give the network tests permission to 
 | `src/firmware/devices/` | Per-device descriptions and layouts |
 | `src/firmware/bench/` | The bench board's RP2040 firmware and its relay protocol crate ([bench firmware](../../src/firmware/bench/README.md)) |
 | `src/hardware/bench/` | The Wellfed Bench board: KiCad project, fab outputs and enclosure ([bench board](../../src/hardware/bench/README.md)) |
-| `src/web/` | Web frontends (a pnpm workspace): the bench page, the [well-fed.dev](../web/site.md) site, the [docs site](../web/docs-site.md), shared tokens and components, and API types generated from Rust. `make ui` builds them |
+| `src/web/` | Web frontends (a pnpm workspace): the [well-fed.dev](../web/site.md) site, the [docs site](../web/docs-site.md), and shared tokens and components |
 | `src/fuzz/` | Fuzz targets ([fuzzing](#fuzzing)) |
 | `assets/` | Brand marks, design tokens, the feeder's 3D model and its renders ([assets](../../assets/README.md)) |
 | `docs/` | Hardware findings, firmware design and contributor guides |
@@ -71,7 +71,7 @@ The repository is self-contained. SDK and toolchain copies and fixtures resolve 
 | `check-virtual-feeder` | The simulator; see [the simulator](#the-simulator). Also part of `check-rust` |
 | `check-docs` | Local Markdown links and anchors, the commands, make targets and paths the docs name, status words and time-bound wording ([rules](writing.md#what-the-checks-refuse)), portability checks, no Python under `src/`, and the source rules (raw output writers, card ids). It builds only `xtask`, and runs no tool |
 | `check-fixtures` | The optional binary and SDK evidence suite. Missing inputs or skips fail ([fixtures](fixtures.md)) |
-| `check-web` | The web frontends: ESLint, Prettier, licenses, types, unit tests, the build and Playwright. Needs Node and pnpm ([TypeScript standard](typescript.md)) |
+| `check-web` | The site and the docs site: ESLint, Prettier, licenses, types, unit tests, the build and Playwright. Needs Node and pnpm, and runs no Rust ([TypeScript standard](typescript.md)) |
 | `check-app` | The Android app: its generated bindings and theme tokens unchanged, `dart format`, the lint plugin's tests, analysis, widget, accessibility, golden and smoke tests, and a debug APK. Needs the pinned Flutter and the Android SDK ([Dart standard](dart.md)) |
 | `check` | Every contributor check except `check-fixtures`, `check-web` and `check-app` |
 

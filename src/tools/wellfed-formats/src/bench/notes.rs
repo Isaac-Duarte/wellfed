@@ -5,7 +5,7 @@
 //! expectation is seen, or its window passes without it.
 //!
 //! The file is append-only; [`Operator::fold`] replays it into what the
-//! page and the console show now.
+//! console shows now.
 
 use serde::{Deserialize, Serialize};
 
@@ -18,14 +18,12 @@ pub const WINDOW: f64 = 120.0;
 
 /// One line of the notes file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Note {
     pub at: f64,
     pub body: Body,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Body {
     /// The step under way, replacing the last.
@@ -59,7 +57,6 @@ pub enum Body {
 
 /// What a timer waits for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "on", rename_all = "lowercase")]
 pub enum Expect {
     /// A UART line or a device log line that contains `text`, such as
@@ -80,7 +77,6 @@ impl std::fmt::Display for Expect {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum Verdict {
     Pass,
@@ -89,7 +85,6 @@ pub enum Verdict {
 
 /// A timer still running or run out, as the notes leave it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Timer {
     pub label: String,
     pub started: f64,
@@ -128,7 +123,6 @@ pub enum Seen<'a> {
 
 /// Whether a timer's expectation has been settled.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum TimerState {
     /// Running, or a timer that expects nothing.
@@ -144,7 +138,6 @@ pub enum TimerState {
 
 /// One card's evidence, in the order it was noted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CardEvidence {
     pub at: f64,
     pub verdict: Verdict,
@@ -154,7 +147,6 @@ pub struct CardEvidence {
 
 /// What the notes say now.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Operator {
     pub step: Option<String>,
     pub next: Vec<String>,

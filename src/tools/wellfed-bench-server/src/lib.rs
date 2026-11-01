@@ -53,8 +53,8 @@ pub use client::{Client, ClientError, Followed, Interrupt, StateEvents};
 pub use feeder::{ClockSync, DeviceOptions};
 pub use jobs::{JobCommand, JobOptions, ToolPaths};
 pub use output::{CONSOLE_QUEUE, Console};
-pub use server::{Answers, Options, Outputs, ServeError, Server, restore_output};
-pub use state::{JobOutput, Store};
+pub use server::{Options, ServeError, Server, restore_output};
+pub use state::Store;
 pub use tool_jobs::{InstallArgs, RestoreStockArgs};
 pub use watching::Watched;
 

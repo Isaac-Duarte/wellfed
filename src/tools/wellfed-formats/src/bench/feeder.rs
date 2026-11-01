@@ -64,7 +64,7 @@ pub struct Opened {
     pub capabilities: Capabilities,
 }
 
-/// Which of the session's pushed messages a page reads: the history
+/// Which of the session's pushed messages a read takes: the history
 /// (events and gaps) or the debug log, each kept to its own bound.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

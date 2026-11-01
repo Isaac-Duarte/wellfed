@@ -29,7 +29,7 @@ const PRODUCT_CRATES: &str = "src/product/";
 /// Bring-up code, which may take the raw writers, but only as `bringup::…`,
 /// so the one door stays visible at every call.
 const BRINGUP: [&str; 2] = ["src/firmware/wellfed/", "src/sdk/wellfed-probes/src/"];
-/// The stock server's crate. The bench, its suite and the page run it as
+/// The stock server's crate. The bench and its suite run it as
 /// its own process and speak its loopback API through `wellfed-stock-api`;
 /// only the shared install driver runs it in-process, since an app cannot
 /// spawn the binary. cargo-deny cannot ban every dependent without banning

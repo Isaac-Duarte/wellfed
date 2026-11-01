@@ -2,15 +2,13 @@
 //! it checks, its tier and the session flags it needs.
 //!
 //! The suite pairs each entry with the code that runs it, `--list` prints it,
-//! and the page lists it beside the run records, so the three cannot drift
-//! apart. The page links no suite code, which is why the table lives here.
+//! so the two cannot drift apart.
 
 use serde::Serialize;
 
 /// How much of the suite a run takes on; each tier includes the cheaper ones.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum Tier {
     /// Minutes, no cold boots or installs beyond the build under test.
@@ -151,54 +149,12 @@ pub const SCENARIOS: [Scenario; 11] = [
     },
 ];
 
-/// One scenario as the page lists it: what it checks and what it needs.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct CatalogEntry {
-    pub name: &'static str,
-    pub about: &'static str,
-    /// The cheapest tier that runs it.
-    pub tier: Tier,
-    pub needs: Vec<Requirement>,
-    /// Installs the build under test; every other scenario needs it.
-    pub baseline: bool,
-}
-
-/// A session flag a scenario needs, and why.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct Requirement {
-    pub flag: &'static str,
-    pub why: &'static str,
-}
-
-/// The whole suite, in run order, as the page lists it.
-pub fn catalog() -> Vec<CatalogEntry> {
-    SCENARIOS
-        .iter()
-        .map(|s| CatalogEntry {
-            name: s.name,
-            about: s.about,
-            tier: s.tier,
-            needs: s
-                .needs
-                .iter()
-                .map(|need| Requirement {
-                    flag: need.flag(),
-                    why: need.why(),
-                })
-                .collect(),
-            baseline: s.baseline,
-        })
-        .collect()
-}
-
 /// `--list`: each scenario with what it needs.
 pub fn listing() -> Vec<String> {
-    catalog()
+    SCENARIOS
         .iter()
         .map(|s| {
-            let mut needs: Vec<&str> = s.needs.iter().map(|need| need.flag).collect();
+            let mut needs: Vec<&str> = s.needs.iter().map(|need| need.flag()).collect();
             match s.tier {
                 Tier::Smoke => {}
                 Tier::Standard => needs.insert(0, "standard"),

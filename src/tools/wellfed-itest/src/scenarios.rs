@@ -112,7 +112,7 @@ impl Deref for Scenario {
 
 impl Scenario {
     /// The catalog's entry for `name`: a name the catalog lacks fails the
-    /// build, so every scenario here is one the page and `--list` show.
+    /// build, so every scenario here is one `--list` shows.
     const fn new(name: &str, run: fn(&mut Ctx) -> Result<()>) -> Self {
         let mut i = 0;
         while i < catalog::SCENARIOS.len() {

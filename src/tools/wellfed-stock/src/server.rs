@@ -54,7 +54,7 @@ pub enum OtaTrial {
 }
 
 /// Whether the server also answers its loopback HTTP API. The bench's
-/// tools and page read it; an app, which reaches the server through its
+/// tools read it; an app, which reaches the server through its
 /// [`Handle`], leaves it off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Api {

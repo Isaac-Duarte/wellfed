@@ -1,10 +1,10 @@
 //! `wellfed-stock serve`'s loopback HTTP API as the bench tools speak it:
-//! the integration suite drives it, and the bench page reads its status.
+//! the integration suite drives it.
 //!
 //! Both clients make the same exchange, so it lives here once; the server
 //! config it reads (`private/server.json`) is a shared file, typed in
 //! `wellfed-formats`. The crate links nothing that can switch a relay or
-//! write flash, so the read-only page can use it. One plain HTTP/1.1
+//! write flash. One plain HTTP/1.1
 //! exchange per call over a fresh connection; the server answers JSON and
 //! closes, so no client library is needed.
 

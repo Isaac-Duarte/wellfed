@@ -6,7 +6,7 @@
  */
 @import "@wellfed/tokens/tokens.css";
 
-/* Latin only: the page is embedded in a binary, and its text is English and hex. */
+/* Latin only: the sites' text is English and hex. */
 @font-face {
   font-family: "Inter Variable";
   font-style: normal;

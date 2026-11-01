@@ -1,5 +1,5 @@
 //! The lifecycle of a flash client session's `report.json`: what the flash
-//! client writes and the bench, the audit and the page read back. The rest
+//! client writes and the bench and the audit read back. The rest
 //! of a report is the flash client's own.
 
 use std::fmt;

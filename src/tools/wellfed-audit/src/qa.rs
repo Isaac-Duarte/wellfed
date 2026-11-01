@@ -12,8 +12,10 @@
 use std::path::Path;
 
 use serde::Serialize;
-pub use wellfed_formats::qa::Verdict;
-use wellfed_formats::qa::{Check, Record};
+pub mod record;
+
+pub use record::Verdict;
+use record::{Check, Record};
 
 use wellfed_formats::require;
 

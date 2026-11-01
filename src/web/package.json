@@ -2,7 +2,7 @@
   "name": "wellfed-web",
   "private": true,
   "type": "module",
-  "description": "The wellfed web frontends: pages embedded in the tools' binaries, and the well-fed.dev site",
+  "description": "The wellfed web frontends: the well-fed.dev site and the docs site",
   "packageManager": "pnpm@11.28.5",
   "engines": {
     "node": ">=22.18"

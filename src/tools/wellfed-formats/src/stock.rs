@@ -262,8 +262,8 @@ pub struct TrialAnswer {
     pub note: String,
 }
 
-/// `wellfed-stock`'s config, root-relative: the suite serves with it and the
-/// page reads the server's address and token from it.
+/// `wellfed-stock`'s config, root-relative: the suite serves with it and
+/// reads the server's address and token from it.
 pub const SERVER_CONFIG: &str = "private/server.json";
 
 /// The parts of `wellfed-stock`'s config the bench tools use.

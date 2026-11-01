@@ -338,7 +338,7 @@ impl Bench {
 
     pub fn set(&mut self, channel: u8, switch: Switch) -> Result<()> {
         self.relay.set(channel, switch)?;
-        // The page records the state the relay acknowledged.
+        // The state records what the relay acknowledged.
         self.status.relay(channel, switch.is_on());
         Ok(())
     }

@@ -7,8 +7,7 @@
 //! stands in for the board in tests.
 //!
 //! The crate knows the board and the channel wiring, nothing of the bench's
-//! sequences: those belong to `wellfed-bench`, and the read-only page links
-//! none of this.
+//! sequences: those belong to `wellfed-bench`.
 
 #![forbid(unsafe_code)]
 

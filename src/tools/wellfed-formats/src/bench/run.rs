@@ -1,6 +1,6 @@
 //! `NAME-itest.json`: a run's record, per-scenario verdicts beside the
-//! captures they rest on. The suite writes it when a run ends; the page reads
-//! every one back for its run history.
+//! captures they rest on. The suite writes it when a run ends, as evidence
+//! for whoever reads the run afterwards.
 
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 pub const SUFFIX: &str = "-itest.json";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunRecord {
     pub name: String,
     /// Always `physical`: these verdicts come from the feeder on the bench.
@@ -22,14 +21,12 @@ pub struct RunRecord {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum Evidence {
     Physical,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ScenarioRecord {
     pub scenario: String,
     pub verdict: ScenarioVerdict,
@@ -38,7 +35,6 @@ pub struct ScenarioRecord {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ScenarioVerdict {
     Pass,

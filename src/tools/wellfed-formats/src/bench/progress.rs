@@ -3,7 +3,7 @@
 //!
 //! [`Status`] keeps the running command's record ([`Current`]) in memory and
 //! hands each change to a [`ProgressSink`]. The bench server's sink
-//! publishes it as live state, which the page and the clients follow, and
+//! publishes it as live state, which the clients follow, and
 //! keeps each job's output in a file of its own. `private/bench-status/`
 //! keeps the history, `history.jsonl`, one line per command.
 
@@ -23,23 +23,17 @@ const KEPT_LINES: usize = 40;
 
 /// How a command went, as its record and the history keep it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum Outcome {
     #[default]
     Running,
     Pass,
     Stopped,
-    /// Never written: the page's reading of a `running` record whose
-    /// process exited without finishing it.
-    Ended,
 }
 
 /// The bench command a progress record belongs to, by its CLI name. A
-/// history line naming a command this bench no longer has does not read,
-/// and the page skips it.
+/// history line naming a command this bench no longer has does not read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "kebab-case")]
 pub enum BenchCommand {
     Status,
@@ -94,16 +88,14 @@ impl BenchCommand {
 
 /// What a progress count counts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum Unit {
     Bytes,
     Sectors,
 }
 
-/// Where one of a command's steps stands; the page colours its rows by it.
+/// Where one of a command's steps stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum StepState {
     Pending,
@@ -120,7 +112,6 @@ impl StepState {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Current {
     pub pid: u32,
     pub command: BenchCommand,
@@ -146,11 +137,10 @@ pub struct Current {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Step {
     pub label: String,
     pub state: StepState,
-    /// When it began running and when it finished, for the page's timers.
+    /// When it began running and when it finished, for whoever reads the record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -182,7 +172,6 @@ impl Step {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Progress {
     pub done: u64,
     pub total: u64,
@@ -194,7 +183,6 @@ pub struct Progress {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Capture {
     /// Root-relative capture directory.
     pub path: String,
@@ -203,7 +191,6 @@ pub struct Capture {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Transfer {
     /// Root-relative session directory.
     pub path: String,
@@ -213,14 +200,12 @@ pub struct Transfer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FlashTool {
     pub path: String,
     pub sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct HistoryEntry {
     pub command: BenchCommand,
     pub name: Option<String>,
@@ -234,13 +219,12 @@ pub struct HistoryEntry {
 
 /// A relay's state as the board last acknowledged or reported it, and when.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RelayState {
     pub on: bool,
     pub at: f64,
 }
 
-/// When a change reaches the sink: at once, for a change the page must show
+/// When a change reaches the sink: at once, for a change a reader must see
 /// (a step, an outcome), or at most every 0.2 s, for the stream of tool
 /// output lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

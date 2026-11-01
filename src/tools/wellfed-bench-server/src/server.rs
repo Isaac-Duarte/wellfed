@@ -40,7 +40,7 @@ use crate::jobs::{self, Bed, JobError, Ran, Run, ToolPaths};
 use crate::notes::Notes;
 use crate::output::{self, Console, Output};
 use crate::routes;
-use crate::state::{JobLog, JobOutput, Logs, Store};
+use crate::state::{JobLog, Logs, Store};
 use crate::stopping::Stopper;
 use crate::tool_jobs::{self, Answering};
 
@@ -75,7 +75,7 @@ pub enum ServeError {
     #[error("The output pipe: {0}")]
     Output(std::io::Error),
     /// A ledger that does not read is never taken for an empty one: the
-    /// page would show the banks as unknown and the next job's entry would
+    /// console would show the banks as unknown and the next job's entry would
     /// overwrite what the bench knew.
     #[error("{}: {error}; fix it or delete it, then start the server again", path.display())]
     Banks {
@@ -239,20 +239,9 @@ impl Server {
         })
     }
 
-    /// The live state, for a reader in this process (the page).
+    /// The live state, for a reader in this process (the console).
     pub fn store(&self) -> Store {
         self.shared.store.clone()
-    }
-
-    /// The jobs' output, for a reader in this process (the page).
-    pub fn outputs(&self) -> Outputs {
-        Outputs(Arc::clone(&self.shared))
-    }
-
-    /// Where an answer to a job's question goes, for a reader in this
-    /// process (the page, the console).
-    pub fn answers(&self) -> Answers {
-        Answers(Arc::clone(&self.shared))
     }
 
     pub fn socket(&self) -> &Path {
@@ -477,26 +466,6 @@ fn last_job(directory: &Path) -> JobId {
         })
         .max()
         .unwrap_or(0)
-}
-
-/// The output of the running job and of the last few, by id.
-#[derive(Clone)]
-pub struct Outputs(Arc<Shared>);
-
-impl Outputs {
-    pub fn get(&self, id: JobId) -> Option<JobOutput> {
-        self.0.log(id).map(JobOutput)
-    }
-}
-
-/// The answer to a running job's question, as the socket takes it.
-#[derive(Clone)]
-pub struct Answers(Arc<Shared>);
-
-impl Answers {
-    pub fn answer(&self, job: JobId, seq: u32, answer: Answer) -> Result<(), AnswerError> {
-        self.0.answer(job, seq, answer)
-    }
 }
 
 /// What the socket's handlers and the job thread share.

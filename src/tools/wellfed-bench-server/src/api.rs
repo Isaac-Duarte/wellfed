@@ -3,7 +3,7 @@
 //! (`wellfed_formats::bench::feeder`): a new job's command line, the
 //! answer to it, a ledger seed, and the refusals, which a client matches
 //! by variant. An answer to a job's question is
-//! `wellfed_formats::bench::live::AnswerRequest`, which the page posts too.
+//! `wellfed_formats::bench::live::AnswerRequest`.
 
 use std::path::PathBuf;
 

@@ -47,7 +47,7 @@ pnpm -C src/web --filter @wellfed/site build    # writes src/web/apps/site/build
 pnpm -C src/web --filter @wellfed/site e2e
 ```
 
-`make ui` and `make check-web` build, check and test the site with the other apps.
+`make check-web` builds, checks and tests the site with the other app.
 
 ## Deploy
 

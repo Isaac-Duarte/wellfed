@@ -1,6 +1,5 @@
 //! The QA firmware's `PLQA1` UART records (`src/firmware/wellfed/qa`): the
-//! firmware prints them, `wellfed-audit qa` grades a finished run, and the
-//! bench page follows a run while the operator answers its prompts.
+//! firmware prints them, and `wellfed-audit qa` grades a finished run.
 //!
 //! Parsing is exact. A record with an unknown word, a missing field or an
 //! extra one reads as `None`, so the audit can refuse it rather than guess.

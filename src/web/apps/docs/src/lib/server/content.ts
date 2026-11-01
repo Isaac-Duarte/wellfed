@@ -170,8 +170,8 @@ const rewritePictures: Plugin<[string, string[]], Mdast> = (file, routes) => (tr
 // plain `### App` and `### CLI` sections. GitHub hides the comments and shows
 // both in order, and so does the site without JavaScript: only docs.css hides a
 // panel, and only under the root's data-tab, which tabs.ts sets. Pagefind reads
-// the built HTML and not the CSS, so it indexes both. bits-ui's Tabs isn't used
-// because it decides what's visible from its own state, which needs JavaScript.
+// the built HTML and not the CSS, so it indexes both. A tabs widget that decides
+// what's visible from its own state would need JavaScript.
 const TABS_OPEN = "<!-- tabs -->";
 const TABS_CLOSE = "<!-- /tabs -->";
 const NEAR_MARKER = /^<!--.*\btabs?\b.*-->$/is;

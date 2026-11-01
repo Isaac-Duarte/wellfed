@@ -643,7 +643,7 @@ impl fmt::Display for Event {
                 or_q(version),
                 or_q(bytes)
             ),
-            // `Written sectors: N/M` is a progress count the page draws as a bar.
+            // `Written sectors: N/M` is a progress count the job's record carries.
             Self::Progress { done, total } => write!(f, "Written sectors: {done}/{total}"),
             Self::Activated { version } => write!(
                 f,

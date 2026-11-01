@@ -618,7 +618,7 @@ pub(crate) async fn run(args: InstallArgs) -> Result<()> {
         stock: StockOptions {
             config: config_path,
             enroll: Duration::from_secs(args.enroll_minutes * 60),
-            // The bench's page reads the stock server's status.
+            // Anything on this host may read the stock server's status.
             api: Api::Loopback,
             bind: wellfed_install::Bind::Configured,
             stock_plans: stock_plans(&args),

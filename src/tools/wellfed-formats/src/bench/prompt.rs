@@ -32,7 +32,6 @@ use wellfed_session::setup_code::{Button, PRESSES};
 
 /// One question the installer stops at until it is answered.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Prompt {
     /// Stock connected but its reports were lost: a restart sends them again.
@@ -53,13 +52,7 @@ pub enum Prompt {
     /// a time, within the window the feeder opened for it. Answered done
     /// once keyed in; the feeder's proof of the code, not the answer,
     /// decides the pairing.
-    KeySetupCode {
-        #[cfg_attr(
-            feature = "ts",
-            ts(type = r#"Array<"reset" | "mic" | "dispense" | "lock">"#)
-        )]
-        presses: CodePresses,
-    },
+    KeySetupCode { presses: CodePresses },
     /// Press Dispense once on the feeder's panel, within the feeder's 60 s
     /// window, for `purpose`. Answered done once pressed.
     PressDispense { purpose: DispensePurpose },
@@ -67,7 +60,6 @@ pub enum Prompt {
 
 /// What a Dispense press asked for confirms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "kebab-case")]
 pub enum DispensePurpose {
     /// The installer's update-signing key, which the feeder admits only
@@ -130,7 +122,6 @@ impl<'de> Deserialize<'de> for CodePresses {
 
 /// The kind of answer a prompt takes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "kebab-case")]
 pub enum Expects {
     /// The person did what the prompt says: [`Answer::Done`].
@@ -141,7 +132,6 @@ pub enum Expects {
 
 /// The person's answer to one prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "kebab-case")]
 pub enum Answer {
     Done,
@@ -186,7 +176,7 @@ impl Prompt {
     }
 
     /// What the person reads, without how to answer it: a terminal adds
-    /// "Then press Enter." or "[y/N]", a page its buttons.
+    /// "Then press Enter." or "[y/N]".
     pub fn text(&self) -> String {
         match self {
             Self::RestartFeeder => "Restart the feeder so stock reports itself again: unplug \

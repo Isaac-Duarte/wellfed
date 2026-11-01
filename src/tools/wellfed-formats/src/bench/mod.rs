@@ -4,10 +4,8 @@
 //! operator's notes, the installer's prompts and their answers, and the
 //! integration suite's run records and catalog.
 //!
-//! The bench server and the suite write these; the page
-//! (`wellfed-dashboard`) and the clients only read them, and the page links
-//! neither the relay nor the flash client, so the shapes they share live
-//! here.
+//! The bench server and the suite write these and the clients only read
+//! them, so the shapes they share live here.
 
 pub mod banks;
 pub mod cancel;
@@ -91,7 +89,7 @@ pub fn plain_name(name: &str) -> bool {
         && !name.starts_with('-')
 }
 
-/// `path` under `root`, as the progress document and the page record it.
+/// `path` under `root`, as the progress document records it.
 pub fn relative(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)

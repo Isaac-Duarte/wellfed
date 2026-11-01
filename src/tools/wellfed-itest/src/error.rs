@@ -3,7 +3,7 @@
 //! whole.
 //!
 //! A scenario's failure is recorded as this error's `Display` text in the
-//! run record, so the text is what the operator and the bench page read.
+//! run record, so the text is what the operator reads.
 //! The operator's interrupt arrives as the rig's
 //! [`wellfed_rig::Error::Interrupted`]; [`Error::interrupted`] tells it
 //! apart, so a wait that tolerates other failures still stops on it.

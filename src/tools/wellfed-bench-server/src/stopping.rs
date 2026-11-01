@@ -165,7 +165,7 @@ impl Stopper {
                             let running = running(&state);
                             if deferred.is_none() {
                                 deferred = Some(running);
-                                // The page, the console and MCP show it, and
+                                // The console and MCP show it, and
                                 // the server takes no new job meanwhile.
                                 self.store.update(|state| {
                                     state.server.stopping = Some(DeferredStop {

@@ -1,6 +1,6 @@
 //! `wellfed-bench note`: the operator's notes, posted to the server, which
 //! keeps them in `private/bench-status/notes.jsonl` and shows them on the
-//! page and the console. A timer that expects a UART or device log line,
+//! console. A timer that expects a UART or device log line,
 //! or a device event, is settled by the server as it arrives, or marked
 //! missed once its window passes.
 //!

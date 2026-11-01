@@ -6,7 +6,7 @@ The motor never moves. The optics and power checks hold it at STOP, and pressing
 
 ## Before you start
 
-You need the bench set up for UART capture and over-the-air installs, and someone at the feeder to press buttons, look and listen. No screen is needed at the feeder: the startup chime plays at boot, and each button prompt plays a short cue. Every prompt is also a UART line, and the bench page's live log shows it.
+You need the bench set up for UART capture and over-the-air installs, and someone at the feeder to press buttons, look and listen. No screen is needed at the feeder: the startup chime plays at boot, and each button prompt plays a short cue. Every prompt is also a UART line, which the capture records.
 
 ## Steps
 
@@ -90,6 +90,6 @@ Buttons, indicators and the tune are graded by what you answered. A lit light an
 - **Every check passed in one run.** Observed (October 23, 2026, owner answering): `qa-20261023-02-guided`, on `qa` `645c1cd4…` (v92), graded `pass`. This was the first complete passing run.
 - **Two earlier guided runs** of `qa` `ef76b85e…` (v84), each graded by `wellfed-audit qa`, passed every check and item between them:
   - `fw39-qa-03-guided`: optics, power, all four buttons, three indicators and the speaker passed. PA0 failed as `no`: the owner mis-pressed Lock about 0.9 s after the prompt.
-  - `fw39-qa-04-guided`, coached by the bench page's guided-QA panel: optics, power, all four indicators, the speaker and three buttons passed. Reset timed out with no press on the line; the owner missed the prompt.
+  - `fw39-qa-04-guided`: optics, power, all four indicators, the speaker and three buttons passed. Reset timed out with no press on the line; the owner missed the prompt.
 - **Optics fault.** Observed: the starvation figures above (`stall=703`, `stall=702`).
 - **Host.** Modeled: the sequence runs against the SDK fake with a scripted operator.

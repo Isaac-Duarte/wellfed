@@ -1,9 +1,8 @@
 //! The operator's interrupt, as one handle a bench process hands to
 //! everything that waits.
 //!
-//! It lives beside the bench's files rather than in the rig because the
-//! read-only page (`wellfed-dashboard`) stops on the same interrupt and
-//! links neither the rig nor the relay.
+//! It lives beside the bench's files rather than in the rig because tools
+//! that link neither the rig nor the relay stop on the same interrupt.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

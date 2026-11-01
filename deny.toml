@@ -52,8 +52,7 @@ ignore = true
 multiple-versions = "warn"
 wildcards = "deny"
 allow-wildcard-paths = true
-# The bench's hardware edge is linked only where it belongs, so the read-only
-# page (wellfed-dashboard) cannot switch a relay: the relay driver only from
+# The bench's hardware edge is linked only where it belongs: the relay driver only from
 # the bench, its rig and its suite, and the builder (which links the
 # factory-loader emulator) only from the rig's tests; the rig signs through
 # wellfed-signing. No crate links the flash client at all, which

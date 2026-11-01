@@ -19,7 +19,6 @@ pub const BANKS: &str = "private/bench-status/banks.json";
 
 /// A flash bank: 0 is the factory loader's fallback, 1 the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum Bank {
     #[serde(rename = "0")]
     Zero,
@@ -29,14 +28,12 @@ pub enum Bank {
 
 /// The ledger: an entry per bank the bench has evidence for.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Ledger {
     pub banks: BTreeMap<Bank, Entry>,
 }
 
 /// What one bank holds, by whose word, and whether the feeder agrees.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Entry {
     pub content: Content,
     pub source: Source,
@@ -47,7 +44,6 @@ pub struct Entry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Content {
     /// A replacement-firmware build, by its build identity.
@@ -66,7 +62,6 @@ pub enum Content {
 
 /// The job result an entry came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "kebab-case")]
 pub enum Source {
     /// `banks --seed`: a dump's inspection, or the operator's word for it.
@@ -108,7 +103,6 @@ impl Bank {
 
 /// Whether the feeder's own report agrees with the entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum Check {
     /// Nothing has reported on this bank since the entry was written.
@@ -127,7 +121,6 @@ pub enum Check {
 
 /// What reported a bank's build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum Witness {
     /// The `PLFW1 start` banner in a capture.

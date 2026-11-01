@@ -376,7 +376,7 @@ mod tests {
         "wellfed-connect",
         "wellfed-feeder-sim",
         "wellfed-stock",
-        "wellfed-dashboard",
+        "wellfed-bench",
         "wellfed-server-client",
     ];
 
@@ -408,7 +408,6 @@ mod tests {
             ("wellfed", "wellfed-server-client", Links),
             ("wellfed", "wellfed-connect", Links),
             ("wellfed-stock", "axum", Links),
-            ("wellfed-dashboard", "axum", Links),
         ]
     }
 
@@ -430,7 +429,7 @@ mod tests {
             // An upward edge, a skipped layer and an edge in from outside.
             ("wellfed-store", "wellfed-service", Use::Links),
             ("wellfed-server", "wellfed-mirror", Use::Links),
-            ("wellfed-dashboard", "wellfed-api", Use::Links),
+            ("wellfed-bench", "wellfed-api", Use::Links),
             // axum through another crate, below the binary.
             ("wellfed-mirror", "wellfed-store", Use::Links),
             ("wellfed-mirror", "utoipa-axum", Use::Links),
@@ -442,7 +441,7 @@ mod tests {
             rules(&graph(&MEMBERS, &edges)),
             [
                 "dependency rule: wellfed-api → reqwest: not on wellfed-api's allow-list (jiff, wellfed-model, serde, utoipa, uuid); it builds for Android",
-                "dependency rule: wellfed-dashboard → wellfed-api is not an allowed edge into the server's crates",
+                "dependency rule: wellfed-bench → wellfed-api is not an allowed edge into the server's crates",
                 "dependency rule: wellfed-mirror → utoipa-axum → axum: nothing below wellfed-server links axum",
                 "dependency rule: wellfed-server → sqlx: only wellfed-store depends on sqlx",
                 "dependency rule: wellfed-server → wellfed-mirror is not an allowed edge; wellfed-server may depend on wellfed-service, wellfed-api, wellfed-store",

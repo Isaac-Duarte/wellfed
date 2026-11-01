@@ -12,7 +12,7 @@ __pycache__/
 *.pcapng
 .DS_Store
 
-# Web frontends: dependencies, builds (embedded by `--features ui`) and test output
+# Web frontends: dependencies, builds and test output
 node_modules/
 /src/web/**/dist/
 /src/web/**/test-results/

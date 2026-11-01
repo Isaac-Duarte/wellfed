@@ -71,7 +71,6 @@ cargo-deny's `wrappers` keep the bench's hardware edge inside the crates that ne
 
 - `wellfed-relay` may be linked only from `wellfed-bench`, `wellfed-bench-server`, `wellfed-rig` and `wellfed-itest`.
 - `wellfed-build` may be linked only from `wellfed-rig`. Its tests freeze a stock review; the rig signs through `wellfed-signing`.
-- So the read-only page, `wellfed-dashboard`, cannot link either. Adding one to it fails `check-deps`.
 
 Some crates may not be linked at all. cargo-deny cannot ban every dependent without banning the crate itself, so `cargo xtask check-repository` refuses any manifest under `src/` that names them:
 

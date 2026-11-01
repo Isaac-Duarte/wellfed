@@ -1,12 +1,11 @@
-.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures ui check-web check-app app-installer-input sqlx-prepare server-dist server-image check-server-release
+.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app app-installer-input sqlx-prepare server-dist server-image check-server-release
 
 help:
 	@echo "check: formatting, Clippy, Rust tests, cross-builds, simulator, repository checks"
 	@echo "check-rust / check-deps / check-cross / check-virtual-feeder / check-docs: individual checks"
 	@echo "check-bench-board: Clippy and a release build of the bench board's RP2040 firmware (part of check-cross)"
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
-	@echo "ui: build the web page (pnpm in src/web/) that wellfed-bench serve --ui embeds (built with --features ui)"
-	@echo "check-web: web types, unit tests, build, then the page end to end against wellfed-bench serve --ui on a fake relay board"
+	@echo "check-web: the site and docs site: lint, format, licenses, types, unit tests, build, then Playwright (needs Node and pnpm)"
 	@echo "check-app: the Android app's bindings and tokens unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, and a debug APK (needs the pinned Flutter)"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
 	@echo "sqlx-prepare: regenerate the server store's query metadata (.sqlx/) after changing a query or migration"
@@ -73,31 +72,14 @@ check-fixtures:
 	cargo test --locked -p wellfed-build -- --ignored
 	cargo test --locked -p wellfed-rig --lib -- --ignored
 
-# The optional web page. Node and pnpm are needed only here, never by `check`.
-ui:
+# The web frontends: the site and the docs site. Node and pnpm are needed only
+# here, never by `check`, and no Rust runs.
+check-web:
 	pnpm -C src/web install --frozen-lockfile
 	pnpm -C src/web build
-
-# The end-to-end tests run `wellfed-bench serve --ui` on a synthetic private/
-# tree under target/e2e/roots, with a scripted relay board (`fake-board`)
-# and a stand-in flash client; they never read this checkout's evidence or
-# open a port to hardware. The page's crate and the bench, which serves it
-# with `--ui`, are linted and tested with it built in, the production lints
-# included. The binary with the fake board is built into a target directory
-# of its own, so it never replaces the operator's `wellfed-bench`. That is a
-# second debug build of the bench and its dependencies, about 1.5 GB of
-# disk beside target/debug; `rm -rf target/e2e` reclaims it.
-PAGE_CRATES = -p wellfed-dashboard -p wellfed-bench
-PAGE_FEATURES = ui,wellfed-bench/fake-board
-E2E_TARGET = $(CURDIR)/target/e2e
-check-web: ui
 	pnpm -C src/web check
 	pnpm -C src/web test
-	cargo clippy --locked $(PAGE_CRATES) --all-targets --features $(PAGE_FEATURES) -- -D warnings
-	cargo clippy --locked $(PAGE_CRATES) --lib --bins --features $(PAGE_FEATURES) -- -D warnings $(PRODUCTION_LINTS)
-	cargo test --locked $(PAGE_CRATES) --features ui
-	CARGO_TARGET_DIR=$(E2E_TARGET) cargo build --locked -p wellfed-bench --features $(PAGE_FEATURES)
-	BENCH_BIN=$(E2E_TARGET)/debug/wellfed-bench pnpm -C src/web e2e
+	pnpm -C src/web e2e
 
 # The Android app (src/app/). Its Dart bindings and theme tokens are
 # generated from Rust and committed, so a regeneration must leave them

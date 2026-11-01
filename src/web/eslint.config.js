@@ -7,20 +7,15 @@ import svelte from "eslint-plugin-svelte";
 import globals from "globals";
 import ts from "typescript-eslint";
 
-// The network is reached through packages/api (and later an app's lib/api), so
+// The network is reached through an app's lib/api, so
 // a request's retry and idempotency rules live in one place.
 const network = ["fetch", "EventSource", "BroadcastChannel", "WebSocket", "XMLHttpRequest"].map((name) => ({
   name,
-  message: "Only packages/api and an app's lib/api reach the network.",
+  message: "Only an app's lib/api reaches the network.",
 }));
 
-// Apps use @wellfed/ui's wrappers, so a widget's behavior changes in one place.
-const widgets = {
-  paths: [{ name: "bits-ui", message: "Import the @wellfed/ui wrapper instead." }],
-  patterns: [
-    { group: ["bits-ui/*"], message: "Import the @wellfed/ui wrapper instead." },
-    { group: ["svelte/store"], message: "Use runes ($state, $derived) instead of stores." },
-  ],
+const stores = {
+  patterns: [{ group: ["svelte/store"], message: "Use runes ($state, $derived) instead of stores." }],
 };
 
 export default ts.config(
@@ -49,7 +44,7 @@ export default ts.config(
     languageOptions: {
       globals: { ...globals.browser },
       parserOptions: {
-        projectService: { allowDefaultProject: ["*/*/svelte.config.js", "*/*/e2e/*.mjs"] },
+        projectService: { allowDefaultProject: ["*/*/svelte.config.js"] },
         tsconfigRootDir: import.meta.dirname,
         extraFileExtensions: [".svelte"],
       },
@@ -64,7 +59,7 @@ export default ts.config(
       "@eslint-community/eslint-comments/require-description": ["error", { ignore: [] }],
       "@eslint-community/eslint-comments/no-unused-disable": "error",
       "no-restricted-globals": ["error", ...network],
-      "no-restricted-imports": ["error", widgets],
+      "no-restricted-imports": ["error", stores],
       // `x != null` is the one loose comparison: it means "neither null nor undefined".
       eqeqeq: ["error", "always", { null: "ignore" }],
     },
@@ -77,19 +72,11 @@ export default ts.config(
     },
   },
 
-  // The wrappers are the one place bits-ui is imported.
-  {
-    files: ["packages/ui/**"],
-    rules: {
-      "no-restricted-imports": ["error", { patterns: widgets.patterns.filter((p) => p.group[0] === "svelte/store") }],
-    },
-  },
-
   // The API layer is the one place that reaches the network, and the boundary
   // where a response body becomes one of the generated types. Generated files
   // (*.gen.ts) are not linted at all: they are rewritten, never edited.
   {
-    files: ["packages/api/**", "apps/*/src/lib/api/**"],
+    files: ["apps/*/src/lib/api/**"],
     rules: {
       "no-restricted-globals": "off",
       "@typescript-eslint/consistent-type-assertions": "off",

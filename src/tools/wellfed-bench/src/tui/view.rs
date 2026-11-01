@@ -1,6 +1,4 @@
-//! What the console shows, drawn from the server's live state alone: the
-//! same panels as the page, so the operator at the bench reads the same
-//! facts in the same words. Pure: the screen is a function of the state,
+//! What the console shows, drawn from the server's live state alone. Pure: the screen is a function of the state,
 //! the log and the scroll, which the tests draw on ratatui's `TestBackend`.
 
 use std::collections::VecDeque;
@@ -529,7 +527,7 @@ fn timer_line(timer: &Timer, now: f64) -> Line<'static> {
     ])
 }
 
-/// `seconds` as the page writes a length: `42s`, `4m 05s`, `1h 02m`.
+/// `seconds` as a length: `42s`, `4m 05s`, `1h 02m`.
 fn length(seconds: f64) -> String {
     let total = std::time::Duration::try_from_secs_f64(seconds.max(0.0) + 0.5)
         .map_or(u64::MAX, |length| length.as_secs());

@@ -76,7 +76,7 @@ pub(crate) enum ToolError {
     /// agent saying yes or done would stand in for a person who may not
     /// be there.
     #[error(
-        "job_answer: the {name} question is the owner's to answer, at the feeder: answer it on the bench page or with `wellfed-bench answer`"
+        "job_answer: the {name} question is the owner's to answer, at the feeder: answer it with `wellfed-bench answer`"
     )]
     PersonAnswers { name: &'static str },
     /// It would read as a flag on the command line the tool builds.
@@ -616,7 +616,7 @@ const SPECS: &[Spec] = &[
     },
     Spec {
         name: "job_answer",
-        description: "Answer the question the running install asks (bench_status's prompt, by its seq): done for an instruction such as setting the DNS override, yes or no for a question. Sent once, never ahead of a question. Refused for the owner's own questions (is this your feeder, the recovery window at the panel), which a person answers on the page or with the CLI.",
+        description: "Answer the question the running install asks (bench_status's prompt, by its seq): done for an instruction such as setting the DNS override, yes or no for a question. Sent once, never ahead of a question. Refused for the owner's own questions (is this your feeder, the recovery window at the panel), which a person answers with `wellfed-bench answer`.",
         schema: schema::<AnswerArgs>,
     },
     Spec {
@@ -631,12 +631,12 @@ const SPECS: &[Spec] = &[
     },
     Spec {
         name: "note_step",
-        description: "Record the step under way on the bench's console and page (notes.jsonl). Touches no hardware.",
+        description: "Record the step under way on the bench's console (notes.jsonl). Touches no hardware.",
         schema: schema::<StepArgs>,
     },
     Spec {
         name: "note_next",
-        description: "Replace the list of next steps on the console and page. Touches no hardware.",
+        description: "Replace the list of next steps on the console. Touches no hardware.",
         schema: schema::<NextArgs>,
     },
     Spec {

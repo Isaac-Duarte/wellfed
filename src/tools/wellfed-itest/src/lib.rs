@@ -210,9 +210,9 @@ trait Rig {
     fn wait(&mut self, span: Duration) -> Result<()>;
     /// Time since the rig started, on a monotonic clock.
     fn clock(&self) -> Duration;
-    /// One line for the operator and the progress page.
+    /// One line for the operator and the job's output.
     fn note(&mut self, text: &str);
-    /// Show a scenario's state on the bench page.
+    /// Show a scenario's state in the job's steps.
     fn scenario(&mut self, _name: &str, _state: StepState) {}
     /// Start `ota-images` serving `review`'s build to the feeder; the URL
     /// token from its lease. Only `stock-ota` uses it.

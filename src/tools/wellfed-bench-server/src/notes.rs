@@ -65,7 +65,7 @@ struct Inner {
 
 impl Notes {
     /// The notes in the checkout at `root`, replayed from the start; a line
-    /// that does not read is skipped, as the page skips one.
+    /// that does not read is skipped.
     pub(crate) fn open(root: &Path, store: Store) -> Self {
         let path = root.join(NOTES);
         let text = std::fs::read_to_string(&path).unwrap_or_default();

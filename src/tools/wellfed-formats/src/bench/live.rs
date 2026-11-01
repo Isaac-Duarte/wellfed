@@ -4,7 +4,7 @@
 //!
 //! It is held in memory only. The server writes nothing while a job runs
 //! beyond what the job itself writes, so a UART write is never slowed by a
-//! state file. The page and the clients read these shapes; the bench server
+//! state file. The clients read these shapes; the bench server
 //! builds them.
 
 use std::collections::BTreeMap;
@@ -28,7 +28,6 @@ const UPCOMING: usize = 3;
 
 /// Everything a reader shows of the bench right now.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BenchState {
     /// The bench host's clock when the state was read, so a reader's
     /// timers agree with it.
@@ -59,7 +58,6 @@ pub struct BenchState {
 
 /// The server process.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ServerView {
     pub pid: u32,
     pub started: f64,
@@ -76,7 +74,6 @@ pub struct ServerView {
 /// A SIGTERM or hangup that came during a UART write: the server stops
 /// once `job` has ended.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DeferredStop {
     /// The job that was writing.
     pub job: Option<JobId>,
@@ -86,7 +83,6 @@ pub struct DeferredStop {
 
 /// Whether the server takes jobs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum Phase {
     Serving,
@@ -97,7 +93,6 @@ pub enum Phase {
 
 /// One job: what was asked, how far it is, and how it ended.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct JobView {
     pub id: JobId,
     /// The command as the client asked for it, such as `dump unit-01`.
@@ -128,11 +123,10 @@ impl JobView {
 }
 
 /// A question a job waits on: `wellfed install` asks it, and whoever
-/// answers (the page, `wellfed-bench answer`, an agent) names
+/// answers (`wellfed-bench answer`, an agent) names
 /// its `seq`. The number is the job's own count of its questions, from 1,
 /// so an answer meant for one question never lands on the next.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PendingPrompt {
     pub job: JobId,
     pub seq: u32,
@@ -164,7 +158,6 @@ impl PendingPrompt {
 
 /// `POST /jobs/{id}/answer`: the answer to the job's question `seq`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct AnswerRequest {
     pub seq: u32,
     pub answer: Answer,
@@ -175,7 +168,6 @@ pub struct AnswerRequest {
 /// installer reads answers in order, with no number of their own, so one
 /// sent ahead of its question would answer that question unseen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "refused", rename_all = "kebab-case")]
 pub enum AnswerError {
     /// No such job, or it has ended.
@@ -197,7 +189,6 @@ pub enum AnswerError {
 
 /// Whether anyone asked the job to stop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum CancelState {
     None,
@@ -209,7 +200,6 @@ pub enum CancelState {
 /// How a job ended: its exit code (0 complete, 1 stopped, 2 a suite's
 /// silent feeder) and the error it stopped on.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct JobEnd {
     pub code: u8,
     pub error: Option<String>,
@@ -218,7 +208,6 @@ pub struct JobEnd {
 
 /// One child process a job has running.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Activity {
     pub kind: ActivityKind,
     pub pid: u32,
@@ -229,7 +218,6 @@ pub struct Activity {
 
 /// What a child is, which decides how a cancel stops it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum ActivityKind {
     /// `wellfed-flash`, which a cancel only ever interrupts: SIGINT makes
@@ -249,7 +237,6 @@ pub enum ActivityKind {
 /// What the feeder's UART is doing, for the banner that says not to touch
 /// the bench during a write.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum Uart {
     Idle,
@@ -329,7 +316,6 @@ pub const TAIL: usize = 200;
 
 /// The owner's device API session, as the server holds it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FeederView {
     pub session: Session,
     /// The last status read, and when.
@@ -346,13 +332,12 @@ pub struct FeederView {
     pub log: Vec<String>,
     /// Device API sessions open on the feeder besides the server's, at the
     /// last status: anything above 0 is a session the bench did not open
-    /// through the server, which the page and the console warn of.
+    /// through the server, which the console warns of.
     pub other_sessions: u8,
 }
 
 /// Where the session stands.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum Session {
     /// The server has not tried yet.
@@ -378,7 +363,6 @@ pub enum Session {
 
 /// Why the server closed its session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Pause {
     /// A job that holds the UART runs: session traffic has no place beside
@@ -441,7 +425,6 @@ impl std::fmt::Display for Pause {
 
 /// Why the server's session cannot carry a request now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Unavailable {
     #[error("the bench server's feeder session is paused: {pause}")]
@@ -462,9 +445,8 @@ fn not_open(error: Option<&str>) -> String {
     error.map(|error| format!(" ({error})")).unwrap_or_default()
 }
 
-/// The parts of the feeder's status the page shows.
+/// The parts of the feeder's status the console shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FeederStatus {
     /// The startup identity, lowercase hex.
     pub build: String,
@@ -481,7 +463,6 @@ pub struct FeederStatus {
 
 /// The feeder's clock against the bench host's.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ClockView {
     /// The feeder's clock minus the host's at the last status, in
     /// milliseconds; `None` while it is invalid or unread.
@@ -492,7 +473,6 @@ pub struct ClockView {
 
 /// The newest event the feeder holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Journal {
     pub seq: u64,
     /// The history the number counts in, once an event has named it.
@@ -501,7 +481,6 @@ pub struct Journal {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum JournalSource {
     Status,
@@ -518,7 +497,6 @@ pub struct DeviceCursor {
 /// The receive-only capture the server holds while the feeder is idle and
 /// powered.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CaptureView {
     /// Root-relative: the segment being written, while one is.
     pub segment: Option<String>,
@@ -533,14 +511,12 @@ pub struct CaptureView {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct StartRecord {
     pub build: String,
     pub bank: Option<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct UartRecord {
     pub line: String,
     pub at: f64,
@@ -556,7 +532,6 @@ pub fn trim_tail(lines: &mut Vec<String>) {
 /// One line of a job's output stream, as newline-delimited JSON: each
 /// output line as it comes, then one `end`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum JobEvent {
     Line(String),

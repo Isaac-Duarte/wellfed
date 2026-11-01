@@ -2,8 +2,7 @@
 //! foreground, and every hardware command is its client.
 //!
 //! - `serve` takes the bench lease (`private/bench.lease`) and the relay
-//!   board for its life and answers on `private/bench.sock`; `--ui` serves
-//!   the read-only progress page beside it.
+//!   board for its life and answers on `private/bench.sock`.
 //! - A hardware command (`boot`, `flash-execute`, `ota`, `itest`, …) posts
 //!   its job, prints its output as it comes, and exits with its code. Ctrl+C
 //!   asks the server to cancel the job and keeps printing its cleanup;
@@ -11,7 +10,7 @@
 //!   cancel is taken, another Ctrl+C detaches, and `attach ID` follows the
 //!   job again.
 //! - `answer JOB SEQ done|yes|no` answers the question a job (`install`)
-//!   asks, once; the page answers it too.
+//!   asks, once.
 //! - `console` draws the server's full-screen console in another terminal
 //!   or over `ssh -t`. It only reads: `q` leaves, and the server runs on.
 //! - With no server running, only `status` (and `status --break-lease`)
@@ -22,7 +21,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use crate::{mcp, note, orphans, page, tui};
+use crate::{mcp, note, orphans, tui};
 use clap::{Args, Parser, Subcommand};
 use tokio::sync::mpsc;
 use wellfed_bench_server::api::{Seed, SeededFrom};
@@ -38,7 +37,7 @@ use wellfed_formats::bench::live::{BenchState, JobId, Phase, Session, Uart};
 use wellfed_formats::bench::prompt::Answer;
 use wellfed_formats::bench::rendezvous;
 use wellfed_formats::bench::{CONFIG, Config};
-use wellfed_relay::{AtBoard, Board, Relay};
+use wellfed_relay::{AtBoard, Relay};
 use wellfed_rig::Cancel;
 use wellfed_rig::commands::{Bench, UartWhenOff, check_name, seconds_arg};
 use wellfed_rig::tools::{
@@ -99,8 +98,8 @@ enum Command {
     /// reads: `q` or Ctrl+C leaves, and the server and its job run on. It
     /// shows job output, not the lines only the server's own console prints.
     Console,
-    /// Answer the question a running job asks (`install`), as the page
-    /// and the console show it with its number.
+    /// Answer the question a running job asks (`install`), as the console
+    /// shows it with its number.
     Answer {
         /// The job's number.
         job: JobId,
@@ -113,7 +112,7 @@ enum Command {
     /// holds, and whether the feeder's own reports agree.
     Banks(BanksArgs),
     /// Record the operator's step, next steps, timers and evidence on the
-    /// running server, for the page and the console.
+    /// running server, for the console.
     Note(note::NoteArgs),
     /// Serve the bench's tools to an agent over the Model Context Protocol
     /// on stdio, as a client of the running server: status, waits, notes,
@@ -158,14 +157,6 @@ struct ServeArgs {
     #[arg(long)]
     wellfed_bin: Option<PathBuf>,
 
-    /// Serve the read-only progress page beside the server.
-    #[arg(long)]
-    ui: bool,
-    /// Address for the page: loopback, or one named interface such as Tailscale.
-    #[arg(long, default_value = "127.0.0.1", requires = "ui")]
-    listen: String,
-    #[arg(long, default_value_t = 8780, requires = "ui")]
-    ui_port: u16,
     /// The feeder's device API address, rather than finding it over mDNS
     /// or the hotspot's neighbour table (a simulated feeder, say).
     #[arg(long)]
@@ -178,12 +169,6 @@ struct ServeArgs {
     /// which is also what happens without a terminal.
     #[arg(long)]
     plain: bool,
-
-    /// A scripted relay board in place of `relay_port`, for the page's
-    /// end-to-end tests; only a binary built with `fake-board` has it.
-    #[cfg(feature = "fake-board")]
-    #[arg(long, hide = true)]
-    fake_board: bool,
 }
 
 #[derive(Debug, Args)]
@@ -354,9 +339,6 @@ fn serve(root: &Path, args: &ServeArgs, runtime: &tokio::runtime::Runtime) -> an
         build_bin: args.build_bin.clone().unwrap_or_else(default_build_bin),
         wellfed_bin: args.wellfed_bin.clone().unwrap_or_else(default_wellfed_bin),
     };
-    if args.ui {
-        page::available()?;
-    }
     // The full-screen console takes the console's lines from a channel;
     // without a terminal, they go to stdout as they come.
     let screen = tui::available(args.plain);
@@ -389,25 +371,9 @@ fn serve(root: &Path, args: &ServeArgs, runtime: &tokio::runtime::Runtime) -> an
         rendezvous,
         ..DeviceOptions::default()
     };
-    let server = Server::open_with(options, &device, |config| open_board(args, config))?;
-
-    let stop_page = Cancel::new();
-    let page = if args.ui {
-        let page = page::Page {
-            root,
-            flash_bin: &tools.flash_bin,
-            address: &args.listen,
-            port: args.ui_port,
-        };
-        Some(page.start(
-            &stop_page,
-            server.store(),
-            server.outputs(),
-            server.answers(),
-        )?)
-    } else {
-        None
-    };
+    let server = Server::open_with(options, &device, |config| {
+        Ok(Box::new(AtBoard::open(&config.relay_port)?))
+    })?;
 
     let relays: Vec<String> = server
         .store()
@@ -439,30 +405,8 @@ fn serve(root: &Path, args: &ServeArgs, runtime: &tokio::runtime::Runtime) -> an
     if let Some(console) = console {
         console.finish()?;
     }
-    stop_page.cancel();
-    if let Some(page) = page {
-        let _ = page.join();
-    }
     served?;
     Ok(0)
-}
-
-/// The configured relay board, or with `--fake-board` a scripted one that
-/// starts with every relay off.
-#[cfg_attr(
-    not(feature = "fake-board"),
-    expect(
-        unused_variables,
-        reason = "only a binary built with `fake-board` reads its flag"
-    )
-)]
-fn open_board(args: &ServeArgs, config: &Config) -> wellfed_relay::Result<Box<dyn Board>> {
-    #[cfg(feature = "fake-board")]
-    if args.fake_board {
-        let fake = wellfed_relay::FakeBoard::default();
-        return Ok(Box::new(AtBoard::new(Box::new(fake))));
-    }
-    Ok(Box::new(AtBoard::open(&config.relay_port)?))
 }
 
 /// The operator's Ctrl+C, a SIGTERM, or the terminal hanging up, each as

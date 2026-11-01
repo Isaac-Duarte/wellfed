@@ -42,7 +42,7 @@ pnpm -C src/web --filter @wellfed/docs e2e
 
 The dev server reloads when a doc changes. Search needs the index, so it works only in a build. `pnpm -C src/web --filter @wellfed/docs preview` serves `build/` the way the Worker does, from `e2e/serve.ts`; `vite preview` would miss the index.
 
-`make ui` and `make check-web` build, check and test the site with the other apps.
+`make check-web` builds, checks and tests the site with the other app.
 
 ## Deploy
 

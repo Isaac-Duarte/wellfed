@@ -4,7 +4,7 @@ name = "wellfed-bench"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "Relay bench for the PLAF103 research unit: the bench server in the foreground, the command line that is its client, and the read-only progress page beside it"
+description = "Relay bench for the PLAF103 research unit: the bench server in the foreground and the command line that is its client"
 publish.workspace = true
 
 [dependencies]
@@ -22,7 +22,6 @@ schemars = "1.2.3"
 serde.workspace = true
 serde_json.workspace = true
 wellfed-bench-server = { path = "../wellfed-bench-server" }
-wellfed-dashboard = { path = "../wellfed-dashboard", optional = true }
 wellfed-formats.workspace = true
 wellfed-relay = { path = "../wellfed-relay" }
 wellfed-rig = { path = "../wellfed-rig" }
@@ -34,14 +33,6 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "
 tempfile.workspace = true
 # The MCP test runs a real server on a scripted relay board.
 wellfed-relay = { path = "../wellfed-relay", features = ["fake"] }
-
-[features]
-# The read-only page (`serve --ui`), served by wellfed-dashboard. Build
-# src/web/apps/bench/dist first (`make ui`); the page embeds it.
-ui = ["dep:wellfed-dashboard", "wellfed-dashboard/ui"]
-# `serve --fake-board`: a scripted relay board, so the page's end-to-end
-# tests run the real server with no hardware. `make check-web` builds it.
-fake-board = ["wellfed-relay/fake"]
 
 [lints]
 workspace = true

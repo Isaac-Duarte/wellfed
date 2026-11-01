@@ -1,6 +1,6 @@
 # TypeScript standard
 
-These are the rules for the web frontends in `src/web/` (TypeScript and Svelte), why each exists, and what enforces it. [AGENTS.md](../../AGENTS.md#web-conventions) keeps the short form. These apps are the bench page, the landing page and the docs site. The server has no web UI: owners use the [app and the CLI](../firmware/product-architecture.md#frontends).
+These are the rules for the web frontends in `src/web/` (TypeScript and Svelte), why each exists, and what enforces it. [AGENTS.md](../../AGENTS.md#web-conventions) keeps the short form. These apps are the landing page and the docs site. The server and the bench have no web UI: owners use the [app and the CLI](../firmware/product-architecture.md#frontends), and the bench has its [console](../devices/plaf103/bench.md#the-console).
 
 Every rule marked with a tool runs in `make check-web`.
 
@@ -8,12 +8,10 @@ Every rule marked with a tool runs in `make check-web`.
 
 ```text
 src/web/
-  apps/bench/          the bench page (Svelte 5, which wellfed-bench serve --ui embeds with --features ui)
   apps/site/           the project's landing page, prerendered to static files (see docs/web/site.md)
   apps/docs/           the docs/ folder as a searchable site (see docs/web/docs-site.md)
   packages/tokens/     CSS generated from assets/brand/tokens.json, and the contrast check
-  packages/ui/         the page base and components over the tokens and bits-ui
-  packages/api/        typed clients; types generated from Rust
+  packages/ui/         the page base and the components both sites share, over the tokens
   scripts/             workspace checks run by Node (the license check)
   eslint.config.js     the lint rules below
 ```
@@ -26,12 +24,10 @@ The bench keeps its own stack: it is a dev tool that never ships to owners, and 
 | --- | --- | --- |
 | **Strict types.** `strict`, `noUncheckedIndexedAccess`, `noImplicitOverride` and `verbatimModuleSyntax` everywhere. | Index reads and optional fields are handled where they happen. | `tsconfig.base.json`; `tsc` and `svelte-check --fail-on-warnings` |
 | **No `any`, no `!`, no `as`.** Narrow with a check (`instanceof`, `in`, a type guard) instead of asserting. `as const` is fine. | An assertion moves a wrong assumption from where it is made to where it crashes. | ESLint (`no-explicit-any`, `no-non-null-assertion`, `consistent-type-assertions: never`) |
-| **The API layer is the boundary.** `packages/api` is where a response body becomes a generated type. Assertions are allowed there and nowhere else. | One place to audit what the server is trusted to send. | ESLint override for `packages/api/**` |
-| **Generated contracts.** Rust types arrive through ts-rs (`*.gen.ts`). Colors, spacing and type arrive through `@wellfed/tokens`. Never hand-write a copy of a Rust type or a hex value. Generated files are rewritten, never edited, and committed with the change that caused them. | Two copies drift. | `tokens.test.ts` fails when `tokens.gen.css` is stale; ESLint and Prettier skip `*.gen.*` |
-| **Only `packages/ui` imports bits-ui.** Apps use its wrappers. | A widget's behavior and look change in one place. | ESLint (`no-restricted-imports`) |
-| **Only the API layer touches the network.** No `fetch`, `EventSource`, `BroadcastChannel`, `WebSocket` or `XMLHttpRequest` elsewhere. | Retry and idempotency rules live in one place. | ESLint (`no-restricted-globals`) |
+| **The API layer is the boundary.** An app's `src/lib/api` is where a response body becomes a type. Assertions are allowed there and nowhere else. | One place to audit what a response is trusted to hold. | ESLint override for `apps/*/src/lib/api/**` |
+| **Generated contracts.** Colors, spacing and type arrive through `@wellfed/tokens`. Never hand-write a hex value. Generated files are rewritten, never edited, and committed with the change that caused them. | Two copies drift. | `tokens.test.ts` fails when `tokens.gen.css` is stale; ESLint and Prettier skip `*.gen.*` |
+| **Only the API layer touches the network.** No `fetch`, `EventSource`, `BroadcastChannel`, `WebSocket` or `XMLHttpRequest` elsewhere. | Retry rules live in one place. | ESLint (`no-restricted-globals`) |
 | **Runes only.** `$state`, `$derived` and `$props`; no `svelte/store`. Prefer `$derived` to `$effect`. An effect only syncs with something outside Svelte, and says why. | One reactivity model. | ESLint for stores; review for effects |
-| **Feeding safety.** Mutations never retry. A feed keeps one idempotency key from confirm to a terminal result, and an uncertain feed is never retried. | A retried feed can dispense twice. | Review |
 | **Zero warnings.** typescript-eslint `strict-type-checked` and `stylistic-type-checked`, eslint-plugin-svelte, `--max-warnings 0`. | A warning nobody fixes hides the next one. | `pnpm lint` |
 | **Deliberate exceptions.** A disable covers one line and gives its reason after `--`, as `#[expect(…, reason)]` does in Rust. | The next reader knows whether it still applies. | ESLint (`eslint-comments/require-description`, `no-unused-disable`) |
 | **One format.** Prettier with the Svelte plugin, 120 columns. | No formatting in review. | `pnpm format:check` |
@@ -60,4 +56,4 @@ From `src/web/`, with Node 22.18 or later (it runs the TypeScript scripts direct
 | `pnpm check` | ESLint, Prettier, licenses, `tsc` for the scripts, then each package's `svelte-check` or `tsc` |
 | `pnpm test` | Vitest in each package (the contrast and drift tests included) |
 | `pnpm format` | Rewrite formatting |
-| `make check-web` (repository root) | All of the above, the bench build, and Playwright against the real `wellfed-bench serve --ui` on a fake relay board (built with `--features ui,wellfed-bench/fake-board` into `target/e2e`, never over the operator's binary) |
+| `make check-web` (repository root) | Install, build, all of the above, and Playwright of both sites. It runs no Rust |
