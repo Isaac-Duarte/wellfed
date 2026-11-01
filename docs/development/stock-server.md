@@ -15,9 +15,23 @@ The one crate that links the library is the install driver, [`wellfed-install`](
 
 The server does not control feeding on stock. The product uses stock only to install from and roll back to.
 
-## Rules left from an older build
+## The bench host's firewall
 
-An older build of this tool could redirect the feeder's broker traffic with `nft`, and no tool here applies or removes those rules any more. If `sudo nft list ruleset` shows the table `inet wellfed_local`, or rules tagged `wellfed-local-broker` in `inet computer_security`, remove them by hand: `sudo nft delete table inet wellfed_local`, and `sudo nft delete rule inet computer_security <chain> handle <handle>` for each tagged rule. This changes the host's firewall, so it is the owner's to run.
+Stock must reach two ports on this host from the hotspot: the broker on TCP 1883 and the image server on TCP 8088. No tool here changes the firewall, so the bench host needs a permanent rule of the owner's in `/etc/computer-security.nft`, in the input chain of `inet computer_security`:
+
+```text
+iifname "wlan1" ip daddr 10.42.103.1 tcp dport { 1883, 8088 } accept
+```
+
+> [!WARNING]
+> Without TCP 8088, an install spends its one `OTA_UPGRADE`. Stock connects for about 25 s and reports `OTA_INFORM` error 2003, and a refused precheck can erase stock's OTA status sector. Add this rule before you remove any older rule.
+
+An older build of this tool admitted those two ports with temporary rules. After you add the permanent rule, load it and check it with `sudo nft list chain inet computer_security input`. Then look for what that build left: the table `inet wellfed_local`, and rules tagged `wellfed-local-broker` in `inet computer_security`.
+
+- Remove the table with `sudo nft delete table inet wellfed_local`. It redirected the feeder's TCP 1883 and blocked its forwarded WAN traffic, so stock can reach the vendor's cloud again once it is gone.
+- Remove each tagged rule with `sudo nft delete rule inet computer_security <chain> handle <handle>`.
+
+These change the host's firewall, so they are the owner's to run.
 
 ## An installer's server: trust on first use
 
@@ -35,9 +49,9 @@ An install needs no capture. `init-installer` writes a config with fresh secrets
 - **One or the other.** A config that names a captured device and has an enrollment beside it is refused.
 - **The image server** admits the enrolled feeder's address.
 - **Stock's plans are left alone.** An installer's config holds no plan snapshot, so `GET_FEEDING_PLAN_EVENT` goes unanswered. Stock erases and rewrites its plan table on any reply that has a `plans` key, even an empty one. It does not check the code or the message ID, and it takes the message unasked. With no reply it keeps its table; it asks once and does not retry. An empty answer would erase the plans a rollback should find. The server never sends a plan message on its own: the commands it sends unasked are a closed set (`protocol::Sent`). (Static analysis of 1.1.15's KM4 image, with one UART capture of a stock install.)
-- **Stock's clock is set only when no meal can come due.** After the Reset hold and setup frame, which erased its plans, the `NTP` reply sets it (`wellfed install --ssid`, and the app's route). With no frame, stock may still hold plans, so the reply leaves its clock as it reads; so does `wellfed-stock serve` with no captured table. Stock 1.1.15 refused an install with error 1214 while its clock was two days behind, likely for that reason.
+- **Stock's clock is set only when no meal can come due.** After the Reset hold and setup frame, which erased its plans, the `NTP` reply sets it (`wellfed install --ssid`, and the app's route). With no frame, stock may still hold plans, so the reply leaves its clock as it reads; so does `wellfed-stock serve`, which sends no frame. Stock 1.1.15 refused an install with error 1214 while its clock was two days behind, likely for that reason.
   - **The log** says, for every `NTP` request, stock's `ts` (or `unknown`), the skew in seconds, and whether the clock was set.
-  - **A captured nonempty table** holds the clock, with a warning: those plans may run any meals that came due in a jump. An empty one sets it.
+  - **A captured nonempty table** holds the clock, with a warning: those plans may run any meals that came due in a jump. An empty one sets it. This is the library's rule: `serve` and `wellfed install` refuse a config with a table.
 - **No binding from a set-up stock.** A set-up stock sends no `BINDING` when it connects (observed). A stock fresh from the setup frame does, and an installer's config answers it with a generic reply built in the server, since it has no captured one ([saving the frame](../firmware/consumer-installation.md#stocks-setup-protocol)).
 - **Its settings stay.** The server never sends `DEVICE_CONFIG_SYNC`, `WIFI_CHANGE_SERVICE` or the MQTT `RESTORE` (`protocol::Sent` is a closed set).
 
@@ -47,7 +61,14 @@ Install trials are recorded beside the configuration, under an exclusive lock, i
 
 - Each trial is persisted before its one `OTA_UPGRADE` goes out, and is never resent. A repeated request ID returns the stored record.
 - A trial in flight when the server stops or loses the broker becomes uncertain.
-- An uncertain or failed trial blocks the next until `ota-trial-resolve` closes it from fresh evidence. Resolving sends no command.
+- An uncertain or failed trial blocks the next until `ota-trial-resolve` closes it from fresh evidence. Resolving sends no command. Run it against a server with no plan snapshot, since stock replaces its plans with a snapshot as soon as it connects, and `serve` refuses one:
+
+  ```sh
+  ./target/debug/wellfed-stock serve --config private/installer.json
+  ./target/debug/wellfed-stock status --config private/installer.json
+  ./target/debug/wellfed-stock ota-trial-resolve --config private/installer.json --request-id <id> --note <what you saw>
+  ```
+
 - A replacement install closes instead on `ota-trial-answered`, once the operator's client saw the served build answer its device API from bank 0 and stock has gone quiet ([below](#install-the-replacement)).
 
 `setup-send` takes the [bench lease](../devices/plaf103/bench.md#bench-lease) for its one frame, and needs `--on-feeder-network <name>`: it refuses a name not starting `PL-AF103-`, but takes your word for it, unlike `wellfed install`, which checks. `serve` takes none: it only answers, beside the command that drives the feeder.
@@ -74,7 +95,7 @@ Trial dispatch needs a clean, identifiable source commit. Test-only bypasses are
 
 1. Serve the frozen review. The image server serves its `image.bin` as `/ota/<token>/replacement.bin`, and does not command an update. It refuses an image that is not a build's, is larger than the stock footprint (1,376,288 bytes), lacks the loader marker, or does not match the review's `ota_sha256`. The review's layout audit is what establishes the container header and byte-sum stock checks. There is no `original.bin` beside it: the way back is the UART stock recovery. The lease records the served digest and the build's identity: the startup identity of the review's frozen `build-manifest.json`, which must match the review's `manifest_sha256`.
 
-2. Keep the schedule snapshot empty or absent. A captured snapshot is replayed to stock's schedule queries, so a trial needs it empty. With no snapshot (an installer's config), the queries go unanswered and stock keeps its own plans.
+2. Run with no schedule snapshot, as an installer's config has none. The queries then go unanswered and stock keeps its own plans. `serve` and `wellfed install` both refuse a config with a snapshot.
 
 3. Ask once. The trial needs the lease, announces target version `2.0.0` with the lease's digest, and records both in the ledger.
 
@@ -91,8 +112,13 @@ Nothing a replacement reports ties it to stock's device ID, so that session cann
 
 A known limit: the mark trusts that the feeder restored is the feeder the answer came from. If a second feeder in setup answered and was then restored from this installer's records, the trial closes on it, and stock reporting on the first feeder does not reopen it.
 
-The answer through the API is still the client's word. The server checks it against what it served, not against the device API itself. 
+The answer through the API is still the client's word. The server checks it against what it served, not against the device API itself.
+
 Operation with a nonempty plan, and stock's time-recovery behavior, are unvalidated; see [stock behavior](../devices/plaf103/stock/README.md).
+
+## A fresh bench's `private/server.json`
+
+The bench tools read `private/server.json`: its `hotspot_interface` and `target_mac` find the feeder when mDNS does not, and its `timezone` goes into a clock sync. No tool writes those two fields. The research bench's existing file holds them, edited by hand. On a fresh bench, `wellfed-stock init-installer --output private/server.json` writes a usable file with neither, so the feeder must answer over mDNS.
 
 ## The replacement firmware (deleted roles)
 

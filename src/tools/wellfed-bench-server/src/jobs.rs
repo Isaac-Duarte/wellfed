@@ -96,8 +96,8 @@ pub enum JobCommand {
     /// server, watch the UART until it confirms or falls back, then check the
     /// feeder's status over the device API; never touches power.
     Ota(OtaArgs),
-    /// Real-device integration scenarios: runs its own hotspot, server and
-    /// UART capture, installs over the air, restores the bench afterwards.
+    /// Real-device integration scenarios: runs its own hotspot and UART
+    /// capture, installs over the air, restores the bench afterwards.
     /// Cold boots only with --power; never flashes over UART.
     Itest(ItestArgs),
     /// Stock to a replacement with `wellfed install` (stock already

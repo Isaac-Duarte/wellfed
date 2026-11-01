@@ -190,7 +190,6 @@ fn the_console_refuses_without_a_terminal_or_server_and_q_leaves_the_job_running
         root: root.clone(),
         tools: ToolPaths {
             flash_bin: flash,
-            stock_bin: root.join("absent"),
             build_bin: root.join("absent"),
             wellfed_bin: root.join("absent"),
         },

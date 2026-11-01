@@ -138,7 +138,7 @@ Some detail on each:
 
 **Randomness.** Noise needs unpredictable ephemeral keys. The SDK offers no vetted random generator, so the firmware builds its own from measured ADC noise, with health tests ([pairing](pairing.md#no-hardware-rng)).
 
-**Bench shortcuts a consumer never needs:** captured stock credentials and `sudo nft` redirects. The installer ends by handing the feeder to this pairing flow, not to a server.
+The installer ends by handing the feeder to this pairing flow, not to a server.
 
 ## Device API
 

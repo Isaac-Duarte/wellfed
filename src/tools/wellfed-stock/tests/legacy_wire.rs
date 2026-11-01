@@ -72,7 +72,7 @@ async fn captured_legacy_connect_and_both_subscriptions_reach_local_clock_servic
     [config.mqtt_listen, config.http_listen] = common::addresses().unwrap();
     storage::write_json(&path, &config).unwrap();
 
-    let _service = common::start(&path);
+    let _service = common::in_process(&path, wellfed_stock::server::OtaTrial::Disabled);
     let http = reqwest::Client::builder().no_proxy().build().unwrap();
     common::ready(&config, &http).await;
 

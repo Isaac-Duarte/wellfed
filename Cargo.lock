@@ -5604,16 +5604,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wellfed-stock-api"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror",
- "wellfed-formats",
-]
-
-[[package]]
 name = "wellfed-store"
 version = "0.1.0"
 dependencies = [

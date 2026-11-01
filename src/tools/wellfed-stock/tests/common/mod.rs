@@ -52,14 +52,15 @@ pub fn load(path: PathBuf) -> anyhow::Result<Controller> {
     Controller::load(config(), path, BUILD)
 }
 
-/// A server with the trial enabled, in this process, as `wellfed install` and
-/// the app run one, with the loopback API these tests speak. Needs
-/// [`allow_unreviewed`], and a runtime.
-pub fn trial_server(path: &std::path::Path) -> Server {
+/// A server in this process, as `wellfed install` and the app run one, with
+/// the loopback API these tests speak. It alone can enable the trial, which
+/// needs [`allow_unreviewed`], or serve a plan snapshot, which the binary
+/// refuses. Needs a runtime.
+pub fn in_process(path: &std::path::Path, trial: OtaTrial) -> Server {
     Server::start(
         &path.canonicalize().unwrap(),
         Options {
-            trial: OtaTrial::Enabled,
+            trial,
             enroll: None,
             api: Api::Loopback,
             bind: Bind::Configured,
@@ -72,12 +73,12 @@ pub fn trial_server(path: &std::path::Path) -> Server {
 /// Tests run from uncommitted trees, and production refuses such builds.
 /// Call it before any runtime starts.
 pub fn allow_unreviewed() {
-    // SAFETY: nextest runs each test in a process of its own, and the test
-    // calls this first, before it starts another thread.
+    // SAFETY: the one test in this binary calls this first, before it starts
+    // a thread, so nothing else in the process reads the environment.
     unsafe { std::env::set_var(wellfed_stock::build_info::ALLOW_UNREVIEWED_ENV, "1") };
 }
 
-/// The runtime a [`trial_server`] test runs on: it starts after
+/// The runtime an enabled trial's test runs on: it starts after
 /// [`allow_unreviewed`], so it cannot be `#[tokio::test]`'s.
 pub fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_multi_thread()

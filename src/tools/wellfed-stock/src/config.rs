@@ -61,8 +61,7 @@ pub struct Config {
     pub binding_response: Option<Map<String, Value>>,
 
     /// The bench hotspot the feeder joins, and the feeder's MAC on it: what
-    /// the `network` redirect and neighbour discovery need. An installer's
-    /// config has neither.
+    /// neighbour discovery needs. An installer's config has neither.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hotspot_interface: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -18,7 +18,7 @@ use reqwest::Method;
 use serde::Serialize;
 use tracing::info;
 use wellfed_client::install::{SETUP_ADDRESS, SETUP_SSID_PREFIX, SetupFrame};
-use wellfed_formats::bench::lease::Lease;
+use wellfed_formats::{bench::lease::Lease, stock::ServerConfig};
 use wellfed_stock::{
     clock,
     config::{self, State},
@@ -269,6 +269,18 @@ fn bench_lease(config: &std::path::Path) -> Result<Lease> {
 }
 
 async fn serve(path: PathBuf, enroll_minutes: Option<u64>) -> Result<()> {
+    // Stock replaces its stored table with whatever a plan reply carries, an
+    // empty list included, as soon as it connects. The library still replays
+    // a snapshot; this command, like `wellfed install`, never starts on one.
+    let read: ServerConfig =
+        wellfed_formats::load(&path).with_context(|| format!("read {}", path.display()))?;
+    if read.has_plan_snapshot() {
+        bail!(
+            "{} holds a plan snapshot, which this server would send stock in place of its own plans; nothing was started. Use an installer's config (wellfed-stock init-installer), or remove the `plans` key",
+            path.display()
+        );
+    }
+
     let path = path.canonicalize()?;
     let mut server = Server::start(
         &path,

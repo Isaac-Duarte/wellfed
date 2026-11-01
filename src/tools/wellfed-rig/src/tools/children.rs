@@ -104,10 +104,7 @@ impl Children {
                 ActivityKind::Flash => {
                     let _ = kill_process(pid, Signal::INT);
                 }
-                ActivityKind::Build
-                | ActivityKind::Stock
-                | ActivityKind::Install
-                | ActivityKind::Analyzer => {
+                ActivityKind::Build | ActivityKind::Install | ActivityKind::Analyzer => {
                     // The child leads its own group; the pid alone if it
                     // somehow does not.
                     if kill_process_group(pid, Signal::TERM).is_err() {

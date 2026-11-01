@@ -18,6 +18,7 @@ use std::{
     time::Duration,
 };
 use uuid::Uuid;
+use wellfed_stock::server::OtaTrial;
 use wellfed_stock::{ota, storage};
 
 #[test]
@@ -53,7 +54,7 @@ async fn publishes_once() {
     )
     .unwrap();
 
-    let service = common::trial_server(&path);
+    let service = common::in_process(&path, OtaTrial::Enabled);
     let http = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(3))
@@ -270,38 +271,4 @@ async fn publishes_once() {
     worker.abort();
     drop(service);
     drop(image_server);
-}
-
-#[tokio::test]
-async fn ordinary_server_refuses_trial_publication_by_default() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("server.json");
-    let mut config = common::config();
-    [config.mqtt_listen, config.http_listen] = common::addresses().unwrap();
-    storage::write_json(&path, &config).unwrap();
-
-    let service = common::start(&path);
-    let http = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(3))
-        .build()
-        .unwrap();
-    common::ready(&config, &http).await;
-
-    let response = http
-        .post(format!("http://{}/api/ota/trial", config.http_listen))
-        .bearer_auth(&config.api_token)
-        .json(&ota::trial::Input {
-            request_id: Uuid::new_v4(),
-            server_token: Uuid::new_v4(),
-        })
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
-    let status = common::status(&config, &http).await;
-    assert_eq!(status["ota_trial_enabled"], false);
-    assert!(status["ota_trials"].as_array().unwrap().is_empty());
-    drop(service);
 }

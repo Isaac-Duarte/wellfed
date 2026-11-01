@@ -18,16 +18,12 @@ use std::{
 };
 use uuid::Uuid;
 
-#[test]
-fn a_refused_resolution_asks_stock_for_its_attributes_and_nothing_else() {
-    common::allow_unreviewed();
-    common::runtime().block_on(asks_for_attributes());
-}
-
-async fn asks_for_attributes() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_refused_resolution_asks_stock_for_its_attributes_and_nothing_else() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("server.json");
     let mut config = common::config();
+    config.plans = None;
     [config.mqtt_listen, config.http_listen] = common::addresses().unwrap();
     wellfed_stock::storage::write_json(&path, &config).unwrap();
 
@@ -53,7 +49,7 @@ async fn asks_for_attributes() {
     )
     .unwrap();
 
-    let _service = common::trial_server(&path);
+    let _service = common::start(&path);
     let http = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(3))

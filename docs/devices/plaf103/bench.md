@@ -17,7 +17,7 @@ These hold for every command on this page. The sections below give the detail.
 - **Unattended motion follows the owner's rules:** hopper empty, the D cells out so relay 1 is the kill switch, nobody at the bench, the bench lease free, and at most 3 portions a feed. Only `feed-writes` and `sustained`, under `--feeds`, ask the feeder to feed ([sustained run](#sustained-run)).
 - **Motion builds stay manual.** The bench never offers a startup-motion build, refuses the motor pulse under `--build`, and needs `--attended-motion` for any image whose manifest names a motion policy.
 - **A halt cuts relay 1 and leaves it off.** A person looks before power returns.
-- **The bench never changes routing or the firewall.** Stock reaches a broker only where a setup frame named it.
+- **The bench never changes routing or the firewall.** Stock reaches a broker only where a setup frame named it, and an install needs TCP 1883 and 8088 admitted from the hotspot by a permanent rule of the owner's ([the bench host's firewall](../../development/stock-server.md#the-bench-hosts-firewall)).
 - **Don't rebuild `wellfed-flash` between prepare and execute.** A plan binds the SHA-256 of the binary that prepared it.
 - **Keep heavy host work away from updates.** Loader NAKs came while `make check` ran beside an install.
 
@@ -203,7 +203,7 @@ It closes:
 - for the whole of `install`, which meets stock, then pairs with the replacement and promotes it with sessions of its own;
 - while relay 1 is off, and while the server stops.
 
-Otherwise it reopens after a loss, after 1 s and then twice as long each time up to 30 s. `ota` and `itest` ask through it: their status checks, cancels and the suite's requests are the server's session's. Only `itest`'s deliberate second and intruding sessions, the pushes of an install, `stock-ota` and `install` open sessions of their own.
+Otherwise it reopens after a loss, after 1 s and then twice as long each time up to 30 s. `ota` and `itest` ask through it: their status checks, cancels and the suite's requests are the server's session's. Only `itest`'s deliberate second and intruding sessions, the pushes of an install, and `install` open sessions of their own.
 
 A read (status, settings, plans, statistics and the like) that got no answer, or whose session dropped under it, goes once more under the same id. Nothing else is sent again: a write that got no answer is reported uncertain, since it may have run, and it is not sent again on any path. A request while the session is paused or unconfigured is refused with the reason, and nothing is sent; one while it is opening waits for it up to 20 s. A second request under an id still out is refused (409).
 
@@ -211,7 +211,7 @@ A read (status, settings, plans, statistics and the like) that got no answer, or
 
 When the session opens and the feeder counts more sessions than the server's own, the state warns of them (`status` prints it): something reached the feeder without the server.
 
-**The `wellfed` CLI.** Every device command reads that pointer first, whatever its working directory or key file. While the server it names answers, a command whose key file holds the server's key (a copy counts) goes through it, and a direct session is never opened beside it or used as a fallback. Everything else is refused, naming the server: another key, `--address`, and `setup`, `install`, `recover`, `join` and `restore-stock`, which open sessions of their own. The one exception is the server's own job. A command that descends from the process the pointer names passes only while the server's state shows its session paused for that running job's own sessions (`stock-ota`'s or `install`'s pause). Paused for a UART job, for power-off or for the server's own install push, or not paused at all, the job is refused too. A server that does not answer refuses its jobs like any other command.
+**The `wellfed` CLI.** Every device command reads that pointer first, whatever its working directory or key file. While the server it names answers, a command whose key file holds the server's key (a copy counts) goes through it, and a direct session is never opened beside it or used as a fallback. Everything else is refused, naming the server: another key, `--address`, and `setup`, `install`, `recover`, `join` and `restore-stock`, which open sessions of their own. The one exception is the server's own job. A command that descends from the process the pointer names passes only while the server's state shows its session paused for that running job's own sessions (`install`'s pause). Paused for a UART job, for power-off or for the server's own install push, or not paused at all, the job is refused too. A server that does not answer refuses its jobs like any other command.
 
 `events` and `feeds` read the history the server's session kept, and `logs` its log lines, so neither moves the server's own subscription or tail; `--samples` is refused. The server keeps the newest 4096 events and gaps, and 1024 log batches, apart. The held history is one epoch's: after a store reset (a new epoch) it starts again, empty, and numbers from two epochs are never compared.
 
@@ -505,9 +505,9 @@ Feeds and cancels are sent once, never resent on a fresh session: the feeder rem
 2. with `--power`, records relay 1 and switches the supply on;
 3. starts the UART capture;
 
-Updates go over the device API, pushed on a thread of their own while the scenario reads the UART. The suite talks to the feeder as the key in `--keys` (default `private/wellfed-owner.json`). It finds the feeder over mDNS or, while the bench host's firewall drops UDP 5353, through the hotspot's neighbour table and `target_mac`. All server output goes to `private/verification/NAME-servers.log`.
+Updates go over the device API, pushed on a thread of their own while the scenario reads the UART. The suite talks to the feeder as the key in `--keys` (default `private/wellfed-owner.json`). It finds the feeder over mDNS or, while the bench host's firewall drops UDP 5353, through the hotspot's neighbour table and `target_mac`.
 
-At the end, or on an error or Ctrl+C, the suite stops its children and puts the hotspot and the supply back as it found them, except after a `sustained` halt, which leaves the supply off. Without `--power` the relay board is never opened. The suite never flashes over UART and never changes the firewall or routing. Startup-motion builds are not offered. Only `feed-writes` and `sustained`, under `--feeds`, ask the feeder to feed, within the owner's limits: hopper empty, D cells out, at most 3 portions a feed. `sustained` also installs the `feed-jam`, `sensor-fault` and `feed-stall` variants, which move the motor only for a feed request.
+At the end, or on an error or Ctrl+C, the suite stops its capture and any push, and puts the hotspot and the supply back as it found them, except after a `sustained` halt, which leaves the supply off. Without `--power` the relay board is never opened. The suite never flashes over UART and never changes the firewall or routing. Startup-motion builds are not offered. Only `feed-writes` and `sustained`, under `--feeds`, ask the feeder to feed, within the owner's limits: hopper empty, D cells out, at most 3 portions a feed. `sustained` also installs the `feed-jam`, `sensor-fault` and `feed-stall` variants, which move the motor only for a feed request.
 
 **Device state.** Once the baseline confirms, the suite reads the settings, whether Wi-Fi credentials are stored, and the build and bank. It reads them again after every later scenario. A scenario that leaves any of them changed fails, even if its own checks passed. The suite puts back what a request can: settings at once, stored credentials from the next boot.
 
@@ -597,7 +597,7 @@ Three bench routes cover stock 1.1.15:
 
 - to stock over the air (`ota` with a stock review);
 - to stock over UART (`stock-prepare` and `stock-execute`);
-- from stock to Wellfed over stock's own updater (the [`install` job](#install-as-a-job)).
+- from stock to Wellfed over stock's own updater (the [`install` job](#install-as-a-job), which needs [a stock that already holds this host's broker](../../firmware/consumer-installation.md#running-a-consumer-install-on-the-bench): a Reset hold and a setup frame, which erase stock's plans).
 
 The `install` and `restore-stock` jobs are the real path, and the suite does not cover it: [before a release](../../development/dart.md#before-a-release), run both. The design for doing all of this without a bench is in [consumer installation](../../firmware/consumer-installation.md).
 
@@ -646,7 +646,7 @@ The boot capture holds the unit's serial and cloud keys, so keep it private. The
 
 ### Install as a job
 
-`install` runs `wellfed install` ([consumer installation](../../firmware/consumer-installation.md)) as the server's job, so the server never stops for it. It takes the installer's bench flags, `--review`, `--stock-config`, and `--from-bank0` to resume, with `--manifest` or `--update-key`, `--home-network`, `--ble-address`, `--expect-device`, `--enroll-minutes`, `--keys` and `--address` passed through. `--virtual-panel` is the server's own: the installer never sees it. The setup-frame route (`--ssid`) and `--home-ssid` read a passphrase at a terminal and are no job; the bench's stock reaches the broker by its firewall redirect, and a consumer image's network comes from `--home-network private/hotspot.json`.
+`install` runs `wellfed install` ([consumer installation](../../firmware/consumer-installation.md)) as the server's job, so the server never stops for it. It takes the installer's bench flags, `--review`, `--stock-config`, and `--from-bank0` to resume, with `--manifest` or `--update-key`, `--home-network`, `--ble-address`, `--expect-device`, `--enroll-minutes`, `--keys` and `--address` passed through. `--virtual-panel` is the server's own: the installer never sees it. The setup-frame route (`--ssid`) and `--home-ssid` read a passphrase at a terminal and are no job; the job sends no frame, so stock must already hold this host's broker ([consumer installation](../../firmware/consumer-installation.md#running-a-consumer-install-on-the-bench)), and a consumer image's network comes from `--home-network private/hotspot.json`.
 
 ```sh
 target/release/wellfed-bench install --review private/verification/<review> --manifest private/<manifest>.json \

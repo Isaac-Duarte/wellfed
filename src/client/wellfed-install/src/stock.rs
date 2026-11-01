@@ -30,8 +30,8 @@ pub struct StockOptions {
     pub config: PathBuf,
     /// How long the broker trusts the first stock feeder that connects.
     pub enroll: Duration,
-    /// Whether the server also answers its loopback API, for the bench's
-    /// page to read.
+    /// Whether the server also answers its loopback API, for
+    /// `wellfed-stock status` to read during a run.
     pub api: Api,
     /// Which address the broker listens on.
     pub bind: server::Bind,
