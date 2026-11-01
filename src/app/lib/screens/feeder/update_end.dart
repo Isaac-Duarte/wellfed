@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide Card;
-
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
@@ -9,6 +8,7 @@ import 'package:wellfed/src/rust/api/update.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/update/update.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';

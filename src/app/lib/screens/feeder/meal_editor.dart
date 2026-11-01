@@ -1,15 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-
 import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/schedule.dart' show CallLink;
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
-import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/when.dart';
 

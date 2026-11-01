@@ -2,10 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-
 import 'package:wellfed/screens/feeder/feed_detail.dart';
-import 'package:wellfed/screens/feeder/today.dart' show faultTitle;
-import 'package:wellfed/screens/home/home.dart' show blockedWords;
+import 'package:wellfed/screens/feeder/today_faults.dart';
+import 'package:wellfed/screens/home/feeder_card.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';

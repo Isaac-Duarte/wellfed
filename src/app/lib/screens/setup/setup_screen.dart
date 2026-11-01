@@ -12,6 +12,7 @@ import 'package:wellfed/src/rust/api/setup.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/code_tiles.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';

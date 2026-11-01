@@ -4,15 +4,14 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/screens/setup/name_step.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
+import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
-import 'package:wellfed/widgets/layout.dart';
 
 const sourceUrl = 'https://github.com/Isaac-Duarte/wellfed';
 const issuesUrl = '$sourceUrl/issues';

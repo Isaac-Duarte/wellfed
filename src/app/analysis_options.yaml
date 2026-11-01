@@ -207,9 +207,9 @@ plugins:
     path: tools/wellfed_lints
     diagnostics:
       single_state: false
+      file_length: false
       no_widget_helper: false
       no_bang: false
-      file_length: false
       ui_no_platform: false
       catch_in_controllers: false
       timers_in_state_or_platform: false

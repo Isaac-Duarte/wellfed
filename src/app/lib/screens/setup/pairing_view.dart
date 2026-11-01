@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart' show DiscoveredDevice;
 import 'package:go_router/go_router.dart';
-
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/code_tiles.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';

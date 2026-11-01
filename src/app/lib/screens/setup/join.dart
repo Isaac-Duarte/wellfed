@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-
 import 'package:wellfed/platform/join_ports.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/join.dart';
@@ -11,6 +10,7 @@ import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
+import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';

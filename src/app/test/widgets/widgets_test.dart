@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wellfed/screens/home/home.dart';
+import 'package:wellfed/screens/home/feeder_card.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/code_tiles.dart';

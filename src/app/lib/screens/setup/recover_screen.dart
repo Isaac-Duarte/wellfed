@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
 import 'package:wellfed/screens/setup/name_step.dart';
@@ -9,6 +8,7 @@ import 'package:wellfed/screens/setup/pairing_view.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/code_tiles.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';

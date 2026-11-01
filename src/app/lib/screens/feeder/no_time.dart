@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';

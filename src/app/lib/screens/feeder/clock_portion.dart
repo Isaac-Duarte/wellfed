@@ -2,15 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-
 import 'package:wellfed/screens/feeder/today.dart' show clockWords;
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
+import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
-import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/when.dart';
 
