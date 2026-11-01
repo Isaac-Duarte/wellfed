@@ -15,7 +15,7 @@
 //!   windows and judges the presses. A job needs nothing read at a terminal,
 //!   so its home network comes from a file (`--home-network`), and the owner
 //!   may answer the feeder check ahead (`--expect-device`);
-//! - Bluetooth is BlueZ ([`crate::ble`]), discovery is mDNS, and the client
+//! - Bluetooth is the host's stack ([`crate::ble`]), discovery is mDNS, and the client
 //!   key is the key file;
 //! - progress goes to standard error, so standard output carries prompts
 //!   alone. A job prints every event with the stock server's own log, which
@@ -57,7 +57,7 @@ use wellfed_install::{
 use wellfed_signing::{Frozen, Key, signed_so_far};
 
 use crate::ask::{Asker, Prompts};
-use crate::ble::Bluez;
+use crate::ble::Radio;
 use crate::keys::{OwnerKey, fingerprint};
 use crate::report::{Printer, short};
 
@@ -197,7 +197,7 @@ enum ConfigRefused {
     PlanSnapshot { path: PathBuf },
     /// A consumer image needs Bluetooth for its setup right after the install.
     #[error(
-        "this review is a consumer image, which is paired over Bluetooth, and this build of wellfed has none; nothing was started. Run the install from Linux, or from the Android app"
+        "this review is a consumer image, which is paired over Bluetooth, and wellfed's Bluetooth on this computer has not been proven on a feeder; nothing was started. Run the install from Linux, or from the Android app"
     )]
     NoBluetooth,
 }
@@ -579,7 +579,7 @@ pub(crate) async fn run(args: InstallArgs) -> Result<()> {
         Provisioning::Consumer => Route::Setup,
         Provisioning::Bench => Route::Recovery,
     };
-    require_bluetooth(route, crate::ble::AVAILABLE)?;
+    require_bluetooth(route, crate::ble::INSTALL_READY)?;
     let signer = signer(&args, &review, update_key(&args, provisioning)?)?;
     let passphrase = match (&args.ssid, &args.home_ssid) {
         (None, None) => None,
@@ -603,7 +603,7 @@ pub(crate) async fn run(args: InstallArgs) -> Result<()> {
         build_info::BUILD.require_reviewed()?;
     }
 
-    let bluetooth = Bluez {
+    let bluetooth = Radio {
         address: args.ble_address,
     };
     let keys = OwnerKey::open(&args.keys, None, OwnerKey::system())?;
@@ -731,9 +731,10 @@ fn hangup_ignored(status: &str) -> bool {
 }
 
 /// A consumer image is paired over Bluetooth once it is installed, so a host
-/// without it must stop before the feeder is touched, not after.
-fn require_bluetooth(route: Route, available: bool) -> Result<()> {
-    if route == Route::Setup && !available {
+/// whose Bluetooth is not proven on a feeder must stop before the feeder is
+/// touched, not after.
+fn require_bluetooth(route: Route, ready: bool) -> Result<()> {
+    if route == Route::Setup && !ready {
         return Err(ConfigRefused::NoBluetooth.into());
     }
     Ok(())

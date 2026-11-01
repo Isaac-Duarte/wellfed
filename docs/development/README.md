@@ -41,7 +41,7 @@ These are not ported to macOS yet, so they need Linux for now:
 
 | What | Why | On macOS |
 | --- | --- | --- |
-| `wellfed setup`, and `wellfed install` of a consumer image | They use Bluetooth through BlueZ. | `wellfed setup` refuses before it asks for anything, and `wellfed install` refuses before it touches the feeder. Use the Android app. |
+| `wellfed install` of a consumer image | It pairs over Bluetooth after the install has changed the feeder, and the CLI's macOS Bluetooth has not run against a feeder yet. | `wellfed install` refuses before it touches the feeder. Use the Android app. `wellfed setup` is built for macOS, also unproven on a feeder. macOS asks for Bluetooth access for your terminal. |
 | The automatic Wi-Fi hop in `wellfed install` | It uses `nmcli`, `ip` and `iw`. | The route check cannot read the route, so it refuses and sends nothing. |
 | Finding the feeder in the hotspot's neighbour table | It uses `ip neigh`. | Pass `--peer` to `wellfed-stock`. |
 | The bench hotspot | It is a NetworkManager connection. | Not available. |

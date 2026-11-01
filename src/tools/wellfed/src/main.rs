@@ -32,10 +32,6 @@ mod access;
 mod ask;
 mod backup;
 mod bench;
-#[cfg(target_os = "linux")]
-mod ble;
-#[cfg(not(target_os = "linux"))]
-#[path = "ble_unsupported.rs"]
 mod ble;
 mod call;
 mod configure;
@@ -403,7 +399,12 @@ mod tests {
             "--home-ssid",
             "Home",
             "--ble-address",
-            "00:11:22:33:44:55",
+            // macOS names a device by a UUID, and never shows its address.
+            if cfg!(target_os = "macos") {
+                "4c5a2d3e-8f10-4b6a-9c7d-0e1f2a3b4c5d"
+            } else {
+                "00:11:22:33:44:55"
+            },
         ];
         assert!(matches!(
             Cli::try_parse_from(consumer).map(|cli| cli.command),

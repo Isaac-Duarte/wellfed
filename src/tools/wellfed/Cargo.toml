@@ -38,9 +38,13 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 uuid = { workspace = true, features = ["v4"] }
 rpassword = "7"
 
-# BlueZ is Linux's; elsewhere `crate::ble` refuses and says so.
+# BlueZ, for `wellfed setup` on Linux.
 [target.'cfg(target_os = "linux")'.dependencies]
 bluer = { version = "0.17.4", features = ["bluetoothd"] }
+
+# CoreBluetooth, for `wellfed setup` on macOS.
+[target.'cfg(target_os = "macos")'.dependencies]
+btleplug = "0.13.5"
 
 [dev-dependencies]
 wellfed-server-testkit.workspace = true

@@ -23,7 +23,7 @@ Nothing over Bluetooth can feed, play a sound, or change any setting except Wi-F
 - It prints the code with each button's position and name.
 - After `Done` it records the feeder's identity in the same file.
 
-It goes through BlueZ (`bluer`), so it needs Linux. It finds the feeder by its service UUID among devices advertising now, or by `--address`. The protocol is `wellfed-client`'s, which the Android app shares.
+It goes through BlueZ (`bluer`) on Linux and CoreBluetooth (`btleplug`) on macOS. It finds the feeder by its service UUID among devices advertising now, or by `--address`. macOS never shows a device's Bluetooth address, so `--address` there takes the UUID the Mac gives the device, which the CLI prints when it finds one. The macOS path has not run against a feeder yet. The protocol is `wellfed-client`'s, which the Android app shares.
 
 > [!NOTE]
 > The CLI's own search can miss a feeder that is advertising. If it does, run `bluetoothctl scan le`, then pass the feeder's address with `--address`.
