@@ -212,7 +212,7 @@ This needs the owner at the panel. The frame route reads the passphrase at a ter
 A run with no `--ssid` leaves stock's clock as it reads, and nothing checks that clock before asking. If it is behind, the one `OTA_UPGRADE` goes out, stock answers error 1214, and the trial ends as `reported_error`, which blocks the next until it is resolved. A refused precheck can also erase stock's OTA status sector. So read the clock before the run:
 
 1. Run `wellfed-stock serve --config private/installer.json`, with `--enroll-minutes 15` if no feeder is enrolled yet.
-2. Once stock connects, run `wellfed-stock status --config private/installer.json`, which stops with an error until stock enrolls. Read `clock_offset_seconds`, how many seconds stock's clock is behind this host. It stays `null` until stock's first `NTP` request on that connection.
+2. Once stock connects, run `wellfed-stock status --config private/installer.json`, which stops with an error until stock enrolls. Read `clock_offset_seconds`, how many seconds stock's clock is behind this host. It stays `null` until stock's first message that carries a `ts`; its `NTP` request always does.
 3. Stop `serve`, since the run starts its own broker on that port.
 
 If the offset is not near 0, stop and use the [frame route](#running-an-install-on-the-bench), whose Reset hold erases stock's plans so the run can set its clock. The tolerance is not established. The one data point is a clock two days behind, which stock refused (observed once, `fpbatch-20261028n`).
