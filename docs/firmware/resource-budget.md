@@ -139,7 +139,7 @@ A gap past the observation limit loses the battery's last reading, so the next p
 
 ## Logging
 
-A record line takes up to 16 ms to send at 115200 baud, and `sdk::log` used to hold the scheduler for it. It now copies the line into a RAM ring (`wellfed_core::log_ring`) and returns. The figures below are static analysis, or modeled from captures, until the bench measures them.
+A record line takes up to 16 ms to send at 115200 baud, and `sdk::log` used to hold the scheduler for it. It now copies the line into a RAM ring (`wellfed_core::log_ring`) and returns. In quiet windows that took the probe's `p4 max` from 12–19 ms to 10–13 ms against its 10 ms period (physical, [evidence](#evidence)). The other figures below are static analysis, or modeled from captures.
 
 **Who sends.** The diagnostic task (priority 1, 4 KiB stack), between its Wi-Fi probe steps. Each pass puts up to 8 bytes in the LOGUART FIFO if the FIFO reads empty, then sleeps 1 ms while lines wait and up to 10 ms when none do. That sends about 8 B/ms against the wire's 11.5, so a 180-byte line takes about 23 ms from its first byte to its last. The FIFO depth of 16 comes from the vendor's Bluetooth UART driver, which fills the same UART block 16 bytes at a time, and has not been measured on the log UART. The burst stays at 8 to leave room for a vendor print caught between its check and its write.
 
@@ -342,7 +342,8 @@ The vendor responder is 33.5 KB of code and 2.3 KB of BSS, and it creates its ow
 - **Observed** (October 24): the device API's figures, from the `feeder` builds' manifest audits and `PLAPI1` records ([device API](device-api.md#resources)).
 - **Observed** (October 25), the scheduling gaps: `gap-probe` v170 (`2b0806ce…`) on bank 1, six 180 s captures (`ar9-gap-20261025-cap-01`…`06`) while the hotspot was cycled ten times (60 s up, 15 s down). That gave 86 complete windows, 20 with a rejoin, across two boots. The hard fault was in `cap-04`. Bank 1 was then restored to the reviewed `e43324be…` (v171, `ar9-restore-20261025-01`).
 - **Observed** (October 25): the WPA3 SAE handshake holding the loop past 1 s, in `fw16-stall-01`.
-- **Modeled** (October 31): the log ring's whole lines, wrap, drop count and report are host-tested; its bounds and sections come from the image audits, and its backlog from replaying captures. None of it has run on hardware: the probe's `p4 max` before and after is still to measure.
+- **Modeled** (October 31): the log ring's whole lines, wrap, drop count and report are host-tested; its bounds and sections come from the image audits, and its backlog from replaying captures.
+- **Observed** (October 31): the log ring and the shallower feed claim on hardware, hopper empty, on the adapter. `gap-probe` before and after the ring, about 5 minutes of 10 s windows each: `p4 max` 12–19 ms to 10–13 ms, and the boot's worst gap 845 ms to 720 ms. A settings write with a feed 0.1 s behind it, five times each, before and after the ring and the claim together: the longest pass in those 30 s windows went from 76–129 ms to 48–53 ms, and every feed gave its portion. The cold boot's first 70 log lines match the earlier image's apart from values, with no line dropped.
 - **Modeled:** the interlock, including storage writes' turn, is host-tested. A feed with the hotspot cycling, showing that no association overlaps a feed, has not yet run on hardware.
 - **Modeled:** the `gap-probe` variant was built and host-tested before its run.
 - **Recovered:** the storage region's safety, from a static pass over stock 1.1.15 and the research unit's 15 full dumps. The owner chose 32 sectors on October 23 and 48 on October 26.
