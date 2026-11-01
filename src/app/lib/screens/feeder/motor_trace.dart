@@ -42,7 +42,7 @@ class MotorTracesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<(HistoryEntry, FeedResult)> feeds = [
-      for (final entry in feeder.history.reversed)
+      for (final entry in feeder.state.history.reversed)
         if (entry.body case HistoryBody_Fed(:final result)) (entry, result),
     ].take(_most).toList();
     return Scaffold(

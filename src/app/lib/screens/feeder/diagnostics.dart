@@ -82,7 +82,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         : resets.powerOn + resets.watchdog + resets.software + resets.brownout + resets.other;
     final Uint32List? storage = (_flash?.lifetime ?? _flash?.boot)?.storage;
     final int? worst = storage == null || storage.isEmpty ? null : storage.reduce((a, b) => a > b ? a : b);
-    final Card? card = feeder.card;
+    final Card? card = feeder.state.card;
 
     Widget tile(String name, String value) => Expanded(
       child: Panel(

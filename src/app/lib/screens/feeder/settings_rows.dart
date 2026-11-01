@@ -158,7 +158,7 @@ class _DesiccantRowState extends State<SettingsDesiccantRow> {
 
   @override
   Widget build(BuildContext context) {
-    final Desiccant? desiccant = widget.feeder.card?.desiccant;
+    final Desiccant? desiccant = widget.feeder.state.card?.desiccant;
     final String? note = switch (desiccant) {
       Desiccant_Remaining(days: 0) => 'Change today',
       Desiccant_Remaining(days: 1) => 'Next change in 1 day',

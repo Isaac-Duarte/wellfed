@@ -36,13 +36,13 @@ class _LiveLogScreenState extends State<LiveLogScreen> {
   @override
   void initState() {
     super.initState();
-    widget.feeder.onLog = _heard;
+    widget.feeder.hearLog(_heard);
     unawaited(_start());
   }
 
   @override
   void dispose() {
-    widget.feeder.onLog = null;
+    widget.feeder.hearLog(null);
     super.dispose();
   }
 

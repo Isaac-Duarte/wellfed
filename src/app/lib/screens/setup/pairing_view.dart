@@ -26,18 +26,18 @@ class PairingView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: flow,
-    builder: (context, _) => switch (flow.phase) {
-      PairingPhase.finding => _Find(flow: flow),
-      PairingPhase.connecting => _Waiting(
+    builder: (context, _) => switch (flow.state) {
+      final PairingFinding finding => _Find(flow: flow, finding: finding),
+      PairingConnecting() => _Waiting(
         stepLabel: ble ? 'Step 4 of 4' : null,
         title: 'Connecting',
         body: 'Starting a private session with the feeder.',
       ),
-      PairingPhase.code => _Code(flow: flow, ble: ble, onNewCode: onNewCode),
-      PairingPhase.joining =>
-        ble ? _Joining(flow: flow) : const _Waiting(title: 'Code accepted', body: 'Saving the feeder on this phone.'),
-      PairingPhase.done => _Ready(flow: flow),
-      PairingPhase.failed => _Failed(flow: flow, ble: ble, onRetry: onRetry),
+      final PairingCode code => _Code(state: code, ble: ble, onNewCode: onNewCode),
+      final PairingJoining joining =>
+        ble ? _Joining(state: joining) : const _Waiting(title: 'Code accepted', body: 'Saving the feeder on this phone.'),
+      final PairingDone done => _Ready(state: done),
+      final PairingFailed failed => _Failed(state: failed, ble: ble, onRetry: onRetry),
     },
   );
 }
@@ -64,16 +64,17 @@ class _Waiting extends StatelessWidget {
 
 /// Feeders in setup mode nearby; the owner picks one.
 class _Find extends StatelessWidget {
-  const _Find({required this.flow});
+  const _Find({required this.flow, required this.finding});
 
   final PairingFlow flow;
+  final PairingFinding finding;
 
   /// Weaker than this, the owner is asked to move closer.
   static const _weak = -75;
 
   @override
   Widget build(BuildContext context) {
-    final List<DiscoveredDevice> found = flow.found.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi));
+    final List<DiscoveredDevice> found = finding.found.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi));
     return StepScaffold(
       stepLabel: 'Step 4 of 4',
       progress: 1,
@@ -161,9 +162,9 @@ class _Found extends StatelessWidget {
 }
 
 class _Code extends StatefulWidget {
-  const _Code({required this.flow, required this.ble, required this.onNewCode});
+  const _Code({required this.state, required this.ble, required this.onNewCode});
 
-  final PairingFlow flow;
+  final PairingCode state;
   final bool ble;
   final VoidCallback onNewCode;
 
@@ -183,11 +184,11 @@ class _CodeState extends State<_Code> {
           'One press each. The feeder clicks with every press. This proves '
           "you're standing next to it.",
       content: [
-        CodeTiles(widget.flow.code),
+        CodeTiles(widget.state.code),
         const SizedBox(height: 18),
         const RingLegend(),
         const SizedBox(height: 18),
-        CodeWindow(deadline: widget.flow.deadline),
+        CodeWindow(deadline: widget.state.deadline),
       ],
       actions: [
         Text(
@@ -205,14 +206,14 @@ class _CodeState extends State<_Code> {
 /// BLE setup's last stretch: the feeder restarts onto its Wi-Fi and the
 /// phone finds it there.
 class _Joining extends StatelessWidget {
-  const _Joining({required this.flow});
+  const _Joining({required this.state});
 
-  final PairingFlow flow;
+  final PairingJoining state;
 
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final String? network = flow.network;
+    final String? network = state.network;
     Widget done(String text) => Row(
       children: [
         SizedBox.square(
@@ -235,11 +236,11 @@ class _Joining extends StatelessWidget {
             children: [
               const Center(child: FeederImage(size: 180)),
               const SizedBox(height: 28),
-              Headline('${flow.feederName} is joining your Wi-Fi', size: 24, align: TextAlign.center),
+              Headline('${state.feederName} is joining your Wi-Fi', size: 24, align: TextAlign.center),
               const SizedBox(height: 28),
               done('This phone added as owner'),
               const SizedBox(height: Space.s4),
-              done(flow.wifiSaved == WifiSaved.unchanged ? 'The feeder keeps its Wi-Fi' : 'Wi-Fi saved on the feeder'),
+              done(state.wifiSaved == WifiSaved.unchanged ? 'The feeder keeps its Wi-Fi' : 'Wi-Fi saved on the feeder'),
               const SizedBox(height: Space.s4),
               done('Feeder restarting without Bluetooth'),
               const SizedBox(height: Space.s4),
@@ -277,16 +278,16 @@ class _Joining extends StatelessWidget {
 }
 
 class _Ready extends StatelessWidget {
-  const _Ready({required this.flow});
+  const _Ready({required this.state});
 
-  final PairingFlow flow;
+  final PairingDone state;
 
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final String name = flow.feederName;
-    final String? network = flow.network;
-    final String body = switch ((flow.enrolled, network)) {
+    final String name = state.feederName;
+    final String? network = state.network;
+    final String body = switch ((state.enrolled, network)) {
       (Enrolled.already, _) => 'This phone was already one of its owners; nothing changed.',
       (_, final String network?) =>
         "It's on $network and you're its owner. You can feed it now from "
@@ -328,9 +329,9 @@ class _Ready extends StatelessWidget {
 }
 
 class _Failed extends StatelessWidget {
-  const _Failed({required this.flow, required this.ble, required this.onRetry});
+  const _Failed({required this.state, required this.ble, required this.onRetry});
 
-  final PairingFlow flow;
+  final PairingFailed state;
   final bool ble;
   final VoidCallback onRetry;
 
@@ -347,7 +348,7 @@ class _Failed extends StatelessWidget {
     ('Busy with another phone', 'Only one phone sets it up at a time.'),
   ];
 
-  (String, String) _words() => switch (flow.failure) {
+  (String, String) _words() => switch (state.failure) {
     PairingFailure.notFound => (
       'No feeder in setup mode nearby',
       'On an unlocked feeder that is plugged in, hold Lock and Mic together '
@@ -358,7 +359,7 @@ class _Failed extends StatelessWidget {
       'The Bluetooth link dropped',
       'Move closer to the feeder and try again. It stays in setup mode.',
     ),
-    PairingFailure.refused => _refusal(flow.refusal),
+    PairingFailure.refused => _refusal(state.refusal),
     PairingFailure.mismatch => (
       "That code didn't match",
       'The feeder heard a different order of presses. Nothing was changed '
@@ -385,7 +386,7 @@ class _Failed extends StatelessWidget {
       'The phone name is 1 to 16 characters. A Wi-Fi password is 8 to 63 '
           'characters.',
     ),
-    PairingFailure.other || null => ("Setup didn't finish", flow.message ?? 'Try again.'),
+    PairingFailure.other => ("Setup didn't finish", state.message ?? 'Try again.'),
   };
 
   static (String, String) _refusal(SetupRefusal? refusal) => switch (refusal) {
@@ -415,7 +416,7 @@ class _Failed extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
     final (String title, String body) = _words();
-    final saved = flow.failure == PairingFailure.notOnLan;
+    final saved = state.failure == PairingFailure.notOnLan;
     return StepScaffold(
       leading: Leading.close,
       onLeading: () => context.go('/'),

@@ -34,7 +34,7 @@ class _WifiScreenState extends State<WifiScreen> {
 
   Future<void> _switch() async {
     final FeederController feeder = widget.feeder;
-    final int? base = feeder.card?.wifiGeneration;
+    final int? base = feeder.state.card?.wifiGeneration;
     if (base == null) return;
 
     setState(() => _asking = true);
@@ -63,7 +63,7 @@ class _WifiScreenState extends State<WifiScreen> {
       );
       return;
     }
-    messenger.showSnackBar(SnackBar(content: Text('${feeder.known.name} is restarting to join.')));
+    messenger.showSnackBar(SnackBar(content: Text('${feeder.state.known.name} is restarting to join.')));
     Navigator.pop(context);
   }
 
@@ -71,7 +71,7 @@ class _WifiScreenState extends State<WifiScreen> {
   /// and after one only Bluetooth setup brings it back.
   Future<void> _forget() async {
     final FeederController feeder = widget.feeder;
-    final int? base = feeder.card?.wifiGeneration;
+    final int? base = feeder.state.card?.wifiGeneration;
     if (base == null) return;
 
     final bool? sure = await showDialog<bool>(
@@ -101,7 +101,7 @@ class _WifiScreenState extends State<WifiScreen> {
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
     final FeederController feeder = widget.feeder;
-    final int? rssi = feeder.card?.rssi;
+    final int? rssi = feeder.state.card?.rssi;
     final String? signal = switch (rssi) {
       null => null,
       >= -60 => 'a strong signal',
@@ -128,7 +128,7 @@ class _WifiScreenState extends State<WifiScreen> {
         children: [
           if (signal != null)
             Text(
-              '${feeder.known.name} is online with $signal.',
+              '${feeder.state.known.name} is online with $signal.',
               style: TextStyle(fontSize: 15, height: 1.5, color: c.text),
             ),
           const SizedBox(height: Space.s4),

@@ -11,53 +11,10 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/pairing/pairing_state.dart';
 
 export 'package:wellfed/src/rust/api/store.dart' show KnownFeeder;
-
-enum PairingPhase {
-  /// Looking for a feeder in setup mode.
-  finding,
-  connecting,
-
-  /// Showing the code; the feeder takes presses until the deadline.
-  code,
-
-  /// The feeder proved the code and is restarting onto its Wi-Fi; the
-  /// phone looks for it on the LAN.
-  joining,
-  done,
-  failed,
-}
-
-/// Why pairing stopped.
-enum PairingFailure {
-  /// No feeder in setup mode answered the scan.
-  notFound,
-
-  /// The radio link failed or dropped.
-  link,
-
-  /// The feeder said no; see [PairingFlow.refusal].
-  refused,
-
-  /// The feeder did not prove the code: mistyped, or another device.
-  mismatch,
-
-  /// No answer in time.
-  timeout,
-
-  /// The recovery window was not open (the feeder closed the connection).
-  windowClosed,
-
-  /// Paired, but the feeder never showed up on this network.
-  notOnLan,
-
-  /// The phone's name or the Wi-Fi fails the feeder's rules.
-  input,
-
-  /// Anything else; [PairingFlow.message] has the detail.
-  other,
-}
+export 'package:wellfed/state/pairing/pairing_state.dart';
 
 /// One pairing, BLE setup or LAN recovery, from the scan to the feeder
 /// answering on the LAN. The protocol runs in Rust; this moves its bytes
@@ -76,35 +33,35 @@ class PairingFlow extends ChangeNotifier {
   final FeederBook _app;
   final PairingPorts _ports;
 
-  PairingPhase phase = PairingPhase.finding;
+  /// What this phone calls a feeder until the owner names it.
+  static const defaultFeederName = 'Feeder';
 
-  /// The code as panel positions, 1 (Lock) to 4 (Reset) from the left.
-  List<int> code = const [];
+  /// How the pairing stands.
+  PairingState get state => _state;
+  PairingState _state = const PairingFinding(feederName: defaultFeederName);
 
-  /// When the feeder stops taking presses.
-  DateTime? deadline;
-  PairingFailure? failure;
-  SetupRefusal? refusal;
-  String? message;
-  Enrolled? enrolled;
-  WifiSaved? wifiSaved;
-  KnownFeeder? feeder;
-
-  /// What this phone calls the feeder; only this phone uses it.
-  String feederName = defaultFeederName;
-
-  /// The network the feeder was given, for "Keep this phone on …".
-  String? network;
+  /// Show `state` on a screen under test, with no exchange behind it.
+  @visibleForTesting
+  void show(PairingState state) {
+    _state = state;
+    notifyListeners();
+  }
 
   /// The feeder the owner connected to, so a new code goes to it without
   /// asking again.
-  DiscoveredDevice? chosen;
+  DiscoveredDevice? get chosen => _target;
+  DiscoveredDevice? _target;
+
+  /// The code as panel positions, 1 (Lock) to 4 (Reset) from the left.
+  List<int> _code = const [];
+  String _feederName = defaultFeederName;
+
+  /// The network the feeder was given, for "Keep this phone on …".
+  String? _network;
 
   /// Feeders in setup mode heard so far, by radio id; each sighting
   /// replaces the last, so the signal is current.
-  final found = <String, DiscoveredDevice>{};
-
-  static const defaultFeederName = 'Feeder';
+  final _found = <String, DiscoveredDevice>{};
 
   Completer<DiscoveredDevice>? _chosen;
   BleLink? _link;
@@ -128,15 +85,15 @@ class PairingFlow extends ChangeNotifier {
       _stop(_failureOf(error), error.message);
       return;
     }
-    code = driver.code();
-    feederName = name;
-    network = wifi?.ssid;
+    _code = driver.code();
+    _feederName = name;
+    _network = wifi?.ssid;
 
     final DiscoveredDevice target;
     if (device != null) {
       target = device;
     } else {
-      _set(PairingPhase.finding);
+      _showFinding();
       try {
         target = await _pick();
       } on TimeoutException {
@@ -147,13 +104,13 @@ class PairingFlow extends ChangeNotifier {
         return;
       }
     }
-    chosen = target;
+    _target = target;
     // A screen that went away must not then hold the feeder's only link.
     if (_disposed) return;
 
     final SetupStep end;
     try {
-      _set(PairingPhase.connecting);
+      _set(PairingConnecting(feederName: _feederName, network: _network));
       final BleLink link = await _ports.open(target);
       _link = link;
       if (_disposed) return;
@@ -190,7 +147,7 @@ class PairingFlow extends ChangeNotifier {
 
   /// LAN recovery with the feeder at `address`, whose window is open.
   Future<void> runRecovery({required String address, required String name}) async {
-    feederName = name;
+    _feederName = name;
     final Recovery recovery;
     try {
       recovery = _ports.newRecovery(_app.label);
@@ -198,9 +155,9 @@ class PairingFlow extends ChangeNotifier {
       _stop(_failureOf(error), error.message);
       return;
     }
-    code = recovery.code();
+    _code = recovery.code();
     _recovery = recovery;
-    _set(PairingPhase.connecting);
+    _set(PairingConnecting(feederName: _feederName, network: _network));
 
     SetupStep? end;
     final done = Completer<void>();
@@ -256,8 +213,8 @@ class PairingFlow extends ChangeNotifier {
     _chosen = chosen;
     final StreamSubscription<DiscoveredDevice> scanning = _ports.scan().listen(
       (device) {
-        found[device.id] = device;
-        if (!_disposed) notifyListeners();
+        _found[device.id] = device;
+        _showFinding();
       },
       onError: (Object error) {
         if (!chosen.isCompleted) {
@@ -266,7 +223,7 @@ class PairingFlow extends ChangeNotifier {
       },
     );
     final nothing = Timer(SetupLink.findTimeout, () {
-      if (found.isEmpty && !chosen.isCompleted) {
+      if (_found.isEmpty && !chosen.isCompleted) {
         chosen.completeError(TimeoutException(null));
       }
     });
@@ -279,7 +236,7 @@ class PairingFlow extends ChangeNotifier {
     }
   }
 
-  /// Connect to `device`, one of [found].
+  /// Connect to `device`, one of [PairingFinding.found].
   void choose(DiscoveredDevice device) {
     final Completer<DiscoveredDevice>? chosen = _chosen;
     if (chosen != null && !chosen.isCompleted) chosen.complete(device);
@@ -318,27 +275,30 @@ class PairingFlow extends ChangeNotifier {
   }
 
   void _showCode(int seconds) {
-    deadline = DateTime.now().add(Duration(seconds: seconds));
     _arm(Duration(seconds: seconds) + confirmSlack);
-    _set(PairingPhase.code);
+    _set(
+      PairingCode(
+        code: List.unmodifiable(_code),
+        deadline: DateTime.now().add(Duration(seconds: seconds)),
+        feederName: _feederName,
+        network: _network,
+      ),
+    );
   }
 
   /// After the exchange: remember the feeder, then find it on the LAN.
   Future<void> _finish(SetupStep end, {required String? knownAddress}) async {
     switch (end) {
       case SetupStep_Refused(refusal: final why):
-        refusal = why;
-        _stop(PairingFailure.refused, null);
+        _stop(PairingFailure.refused, null, refusal: why);
         return;
       case SetupStep_Done(enrolled: final how, :final wifi, feeder: final identity):
-        enrolled = how;
-        wifiSaved = wifi;
         final String hex = _ports.hexOf(identity);
-        _set(PairingPhase.joining);
+        _set(PairingJoining(wifiSaved: wifi, feederName: _feederName, network: _network));
 
         // After BLE setup the feeder restarts onto its new Wi-Fi first.
         final String? address = knownAddress ?? await _ports.locate(hex, rejoinWait);
-        final known = KnownFeeder(identity: hex, name: feederName, address: address);
+        final known = KnownFeeder(identity: hex, name: _feederName, address: address);
         // The feeder enrolled this phone whatever happens here; a failed
         // save is said so, not left on "joining".
         try {
@@ -347,12 +307,11 @@ class PairingFlow extends ChangeNotifier {
           _stop(PairingFailure.other, 'paired, but not saved: ${error.message}');
           return;
         }
-        feeder = known;
         if (address == null) {
           _stop(PairingFailure.notOnLan, null);
           return;
         }
-        _set(PairingPhase.done);
+        _set(PairingDone(enrolled: how, feeder: known, feederName: _feederName, network: _network));
       case SetupStep_Failed(:final error):
         _stop(_failureOf(error), error.message);
       case SetupStep_Write() || SetupStep_EnterCode():
@@ -391,14 +350,14 @@ class PairingFlow extends ChangeNotifier {
     _ => PairingFailure.other,
   };
 
-  void _stop(PairingFailure why, String? detail) {
-    failure = why;
-    message = detail;
-    _set(PairingPhase.failed);
-  }
+  void _stop(PairingFailure why, String? detail, {SetupRefusal? refusal}) =>
+      _set(PairingFailed(failure: why, message: detail, refusal: refusal, feederName: _feederName, network: _network));
 
-  void _set(PairingPhase next) {
-    phase = next;
+  void _showFinding() =>
+      _set(PairingFinding(found: Map.unmodifiable(_found), feederName: _feederName, network: _network));
+
+  void _set(PairingState next) {
+    _state = next;
     if (!_disposed) notifyListeners();
   }
 

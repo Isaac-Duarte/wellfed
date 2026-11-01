@@ -1,9 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/screens/restore/restore_stopped.dart';
-import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/install/install.dart' show CheckState;
 import 'package:wellfed/state/restore/restore.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -13,22 +11,17 @@ import 'package:wellfed/widgets/layout.dart';
 
 /// 12.4: putting the vendor's firmware back from the backup the install kept.
 class RestoreScreen extends StatefulWidget {
-  const RestoreScreen({super.key, required this.feeder, required this.ports});
+  const RestoreScreen({super.key, required this.newFlow});
 
-  final KnownFeeder feeder;
-  final RestorePorts ports;
+  /// The controller of this screen's one restore.
+  final RestoreFlow Function() newFlow;
 
   @override
   State<RestoreScreen> createState() => _RestoreScreenState();
 }
 
 class _RestoreScreenState extends State<RestoreScreen> {
-  late final RestoreFlow _flow = RestoreFlow(
-    widget.ports,
-    identity: identityBytes(hex: widget.feeder.identity),
-    feederName: widget.feeder.name,
-    address: widget.feeder.address,
-  );
+  late final RestoreFlow _flow = widget.newFlow();
 
   @override
   void initState() {

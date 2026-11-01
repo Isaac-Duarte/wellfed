@@ -11,6 +11,7 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -29,8 +30,8 @@ class TodayTab extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(listenable: feeder, builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
-    final api.Card? card = feeder.card;
-    final api.Card? live = feeder.connection == Connection.online ? card : null;
+    final api.Card? card = feeder.state.card;
+    final api.Card? live = feeder.state.connection == Connection.online ? card : null;
     final stopped = live?.blocked == Blocked.fault;
 
     return Padding(
@@ -67,7 +68,7 @@ class TodayTab extends StatelessWidget {
           ),
           const SizedBox(height: Space.s3),
           FilledButton(
-            onPressed: feeder.canFeed ? () => feedNow(context, feeder) : null,
+            onPressed: feeder.state.canFeed ? () => feedNow(context, feeder) : null,
             child: Text(stopped ? 'Feed now · unavailable until restart' : 'Feed now'),
           ),
         ],
@@ -84,25 +85,25 @@ class _Summary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final api.Card? card = feeder.connection == Connection.online ? feeder.card : null;
-    final (Color dot, String title) = switch (feeder.connection) {
+    final api.Card? card = feeder.state.connection == Connection.online ? feeder.state.card : null;
+    final (Color dot, String title) = switch (feeder.state.connection) {
       Connection.looking => (c.textMuted, 'Looking…'),
       Connection.connecting => (c.textMuted, 'Connecting…'),
       Connection.offline => (c.textMuted, "Can't reach it"),
-      Connection.online when feeder.feed.active => (c.accent, 'Feeding'),
+      Connection.online when feeder.state.feed.active => (c.accent, 'Feeding'),
       Connection.online when card?.ready ?? false => (c.ok, 'Ready to feed'),
       Connection.online when card?.blocked == Blocked.feeding => (c.accent, 'Feeding'),
       Connection.online when card?.blocked == Blocked.fault => (c.fault, "Can't feed"),
       Connection.online => (c.warning, "Can't feed now"),
     };
     final small = TextStyle(fontSize: Sizes.base, color: c.textMuted);
-    final api.NextMealView? next = feeder.card?.nextMeal;
-    final api.FeedResult? last = feeder.card?.lastFed;
+    final api.NextMealView? next = feeder.state.card?.nextMeal;
+    final api.FeedResult? last = feeder.state.card?.lastFed;
     final Blocked? blocked = card?.blocked;
 
     return Row(
       children: [
-        FeederImage(size: 120, dimmed: feeder.connection == Connection.offline),
+        FeederImage(size: 120, dimmed: feeder.state.connection == Connection.offline),
         const SizedBox(width: Space.s4),
         Expanded(
           child: Column(
@@ -168,7 +169,7 @@ class _Facts extends StatelessWidget {
       FoodLevel.low => ('Low$at', c.fault),
       FoodLevel.unread => ('Not read yet', c.textMuted),
     };
-    final online = feeder.connection == Connection.online;
+    final online = feeder.state.connection == Connection.online;
 
     return Panel(
       child: Column(

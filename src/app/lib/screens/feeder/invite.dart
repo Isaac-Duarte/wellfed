@@ -17,7 +17,7 @@ Future<void> inviteSomeone(BuildContext context, FeederController feeder) async 
   final ClientRole? role = await showModalBottomSheet<ClientRole>(
     context: context,
     isScrollControlled: true,
-    builder: (_) => _RoleSheet(name: feeder.known.name),
+    builder: (_) => _RoleSheet(name: feeder.state.known.name),
   );
   if (role == null || !context.mounted) return;
 

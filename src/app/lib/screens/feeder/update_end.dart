@@ -7,6 +7,7 @@ import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/update.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/update/update.dart';
+import 'package:wellfed/state/update/update_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -103,16 +104,20 @@ import 'package:wellfed/widgets/replies.dart';
 /// the feeder can settle stays until it has: Done leaves the screen, and coming
 /// back shows the same end rather than an offer.
 class UpdateEndScreen extends StatelessWidget {
-  const UpdateEndScreen({super.key, required this.feeder, required this.end});
+  const UpdateEndScreen({super.key, required this.feeder, required this.ended});
 
   final FeederController feeder;
-  final UpdateEnd end;
+
+  /// The end this screen tells.
+  final UpdateEnded ended;
+
+  UpdateEnd get end => ended.end;
 
   @override
   Widget build(BuildContext context) {
     final UpdateFlow flow = feeder.update;
-    final (String title, String body) = updateEndWords(feeder.known.name, end);
-    final Card? card = feeder.card;
+    final (String title, String body) = updateEndWords(feeder.state.known.name, end);
+    final Card? card = feeder.state.card;
     return StepScaffold(
       title: title,
       body: body,
@@ -122,7 +127,7 @@ class UpdateEndScreen extends StatelessWidget {
             'Running now',
             Flexible(
               child: Text(
-                card != null && feeder.cardIsCurrent
+                card != null && feeder.state.cardIsCurrent
                     ? 'Bank ${card.bank}, build ${_short(card.build)}'
                     : 'Shown once it answers',
                 textAlign: TextAlign.end,
@@ -130,7 +135,7 @@ class UpdateEndScreen extends StatelessWidget {
             ),
           ),
         ]),
-        if (flow.stillUnknown) ...[
+        if (ended.stillUnknown) ...[
           const SizedBox(height: Space.s3),
           const Notice(
             tone: Tone.neutral,
@@ -142,7 +147,7 @@ class UpdateEndScreen extends StatelessWidget {
       actions: [
         if (_heldEarlier)
           FilledButton(
-            onPressed: flow.cancelling
+            onPressed: ended.cancelling
                 ? null
                 : () async {
                     final FeederReply reply = await flow.cancel();
@@ -151,12 +156,12 @@ class UpdateEndScreen extends StatelessWidget {
                   },
             child: const Text('Cancel the earlier update'),
           ),
-        if (flow.endUnknown)
+        if (ended.endUnknown)
           FilledButton(onPressed: () => unawaited(flow.lookAgain()), child: const Text('Look again')),
         OutlinedButton(
           onPressed: () {
             flow.acknowledge();
-            if (flow.endUnknown) Navigator.pop(context);
+            if (flow.state.endUnknown) Navigator.pop(context);
           },
           child: const Text('Done'),
         ),

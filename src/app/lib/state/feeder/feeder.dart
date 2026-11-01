@@ -2,108 +2,25 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-
 import 'package:wellfed/platform/feeder_ports.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/install.dart' show ImageCheck;
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/restore/restore.dart';
 import 'package:wellfed/state/update/update.dart';
-
-enum Connection {
-  /// Looking for the feeder's address on the LAN.
-  looking,
-  connecting,
-  online,
-
-  /// Not reachable; [FeederController.error] says how the last try ended.
-  offline,
-}
-
-/// Why a running feed went lost, which decides what the sheet may claim.
-enum FeedLost {
-  /// The session ended while the feed ran.
-  link,
-
-  /// The session is up, and no end has come past the longest a feed can take.
-  overdue,
-}
-
-enum FeedPhase {
-  idle,
-
-  /// Sent; waiting for the feeder to reserve it.
-  sending,
-
-  /// The feeder runs it as [FeedState.feed].
-  running,
-  ended,
-  refused,
-
-  /// No answer came: the feed may have run. It is never sent again, and
-  /// no later feed's end is taken for it: the bowl or the history says.
-  unanswered,
-
-  /// The session ended before the request went out: nothing was fed.
-  notSent,
-
-  /// The link went while the feed ran, or its end is overdue. If the feeder
-  /// stayed on it finishes on its own and its history keeps the result, which
-  /// replaces this when it arrives. A power cut may leave only the bowl to say.
-  lost,
-}
-
-@immutable
-class FeedState {
-  const FeedState(
-    this.phase, {
-    this.portions = 0,
-    this.feed,
-    this.result,
-    this.refusal,
-    this.lostBy = FeedLost.link,
-    this.cancelAsked = false,
-    this.cancelUnconfirmed = false,
-    this.sentAt,
-    this.endedAt,
-  });
-
-  static const idle = FeedState(FeedPhase.idle);
-
-  final FeedPhase phase;
-  final int portions;
-  final int? feed;
-  final FeedResult? result;
-  final FeedRefusal? refusal;
-
-  /// In [FeedPhase.lost], why.
-  final FeedLost lostBy;
-
-  /// "Stop feeding" went out and nothing has come of it yet. Only the feed's
-  /// end says it stopped.
-  final bool cancelAsked;
-
-  /// "Stop feeding" was refused or went unanswered; the feed may still run
-  /// to its end.
-  final bool cancelUnconfirmed;
-
-  /// When this phone sent the feed, for "We sent the feed at …".
-  final DateTime? sentAt;
-
-  /// When its end arrived.
-  final DateTime? endedAt;
-
-  bool get active => phase == FeedPhase.sending || phase == FeedPhase.running;
-}
 
 /// One known feeder for the Home card: keeps a session open while the app
 /// runs, reconnecting with backoff, and runs feeds through it. Every feed
 /// goes through the device API like any other client's; this holds no
 /// feeding logic beyond showing what the feeder said.
 class FeederController extends ChangeNotifier {
-  FeederController(this._book, this._ports, this.known) {
+  /// Starts serving `known` at once, and until disposed.
+  FeederController(this._book, this._ports, KnownFeeder known) : _state = FeederState(known: known) {
     unawaited(_serve());
   }
 
@@ -114,29 +31,14 @@ class FeederController extends ChangeNotifier {
   final FeederBook _book;
   final FeederPorts _ports;
 
-  /// What the firmware screen reaches outside Dart.
-  FeederPorts get ports => _ports;
-
   /// This feeder's update: it outlives the firmware screen, so coming back shows
   /// the run as it stands and can never start a second one.
-  UpdateFlow get update => _update ??= UpdateFlow(this);
+  UpdateFlow get update => _update ??= UpdateFlow(this, _ports);
   UpdateFlow? _update;
-  KnownFeeder known;
 
-  Connection connection = Connection.looking;
-  Card? card;
-
-  /// When [card] was read, for an offline card's age.
-  DateTime? cardAt;
-  ClientRole? role;
-  ErrorKind? error;
-  FeedState feed = FeedState.idle;
-
-  /// The feeder's history as this session has read it, oldest first.
-  List<HistoryEntry> history = const [];
-
-  /// [history] holds everything the feeder kept when this session opened.
-  bool historyRead = false;
+  /// All that is known of this feeder.
+  FeederState get state => _state;
+  FeederState _state;
 
   FeederSession? _session;
   bool _disposed = false;
@@ -144,64 +46,74 @@ class FeederController extends ChangeNotifier {
   /// Runs out when a running feed's result is overdue.
   Timer? _feedDue;
 
-  /// The card was read in the session now open, not an earlier one.
-  bool _fresh = false;
+  /// A restore of this feeder to its original firmware.
+  RestoreFlow newRestore() {
+    final KnownFeeder known = _state.known;
+    return RestoreFlow(
+      _ports.restore,
+      identity: identityBytes(hex: known.identity),
+      feederName: known.name,
+      address: known.address,
+    );
+  }
 
-  /// The card is what this session read, not an earlier one.
-  bool get cardIsCurrent => connection == Connection.online && _fresh;
-
-  bool get canFeed =>
-      connection == Connection.online && _fresh && !feed.active && role != ClientRole.server && (card?.ready ?? false);
+  /// The image this app carries, for the firmware screen to offer.
+  Future<ImageCheck> updateImage() => _ports.updateImage();
 
   /// Feed `portions` once. The feeder's answer and the feed's end arrive
   /// through the session.
   void feedNow(int portions) {
     final FeederSession? session = _session;
-    if (session == null || feed.active) return;
-    _setFeed(FeedState(FeedPhase.sending, portions: portions, sentAt: DateTime.now()));
+    if (session == null || _feed.active) return;
+    final sent = DateTime.now();
+    _setFeed(FeedSending(portions: portions, sentAt: sent));
     try {
       session.feed(portions: portions);
     } on BridgeError {
       // The session had already ended; the request never went out.
-      _setFeed(FeedState(FeedPhase.notSent, portions: portions, sentAt: feed.sentAt));
+      _setFeed(FeedNotSent(portions: portions, sentAt: sent));
     }
   }
 
   /// Ask the feeder to stop the running feed. This never says it stopped: only
   /// the feed's end does, and a request that can't go out says so.
   void cancelFeed() {
-    final int? running = feed.feed;
-    if (running == null || feed.phase != FeedPhase.running) return;
+    final FeedState running = _feed;
+    if (running is! FeedRunning) return;
     final FeederSession? session = _session;
     var sent = session != null;
     try {
-      session?.cancelFeed(feed: running);
+      session?.cancelFeed(feed: running.feed);
     } on BridgeError {
       sent = false;
     }
     _setFeed(
-      FeedState(
-        FeedPhase.running,
-        portions: feed.portions,
-        feed: running,
+      FeedRunning(
+        feed: running.feed,
+        portions: running.portions,
+        sentAt: running.sentAt,
         cancelAsked: sent,
         cancelUnconfirmed: !sent,
-        sentAt: feed.sentAt,
       ),
     );
   }
 
-  void dismissFeed() => _setFeed(FeedState.idle);
+  /// Put a finished feed away.
+  void dismissFeed() => _setFeed(const FeedIdle());
 
-  /// Hears the record lines a tail pushes, while a screen is showing them.
-  void Function(int dropped, List<String> lines)? onLog;
+  void Function(int dropped, List<String> lines)? _log;
 
-  /// The clients the feeder lists, once asked for.
-  List<ClientView> clients = const [];
+  /// Hear the record lines a tail pushes, while a screen is showing them; null
+  /// stops.
+  // ignore: use_setters_to_change_properties, it subscribes, and nothing reads it back as a property.
+  void hearLog(void Function(int dropped, List<String> lines)? listener) => _log = listener;
+
+  /// A screen is hearing the record lines.
+  bool get hearingLog => _log != null;
 
   /// A client by its fingerprint, as events name it.
   String clientName(String fingerprint) {
-    for (final ClientView client in clients) {
+    for (final ClientView client in _state.clients) {
       if (client.fingerprint == fingerprint) {
         return client.you ? 'This phone' : client.label;
       }
@@ -212,14 +124,11 @@ class FeederController extends ChangeNotifier {
   /// Read who the feeder lists.
   Future<void> loadClients() async {
     final FeederReply reply = await ask(const FeederRequest.listClients());
-    if (reply is FeederReply_Clients) {
-      clients = reply.clients;
-      _notify();
-    }
+    if (reply is FeederReply_Clients) _setState(_state.copyWith(clients: reply.clients));
   }
 
   /// Take this feeder off this phone.
-  Future<void> forgetHere() => _book.forget(known.identity);
+  Future<void> forgetHere() => _book.forget(_state.known.identity);
 
   /// One request to the feeder. A write goes out once and is never sent
   /// again; the reply says how it ended, an unknown end included.
@@ -235,8 +144,7 @@ class FeederController extends ChangeNotifier {
       final String? address = await _address();
       if (_disposed) return;
       if (address == null) {
-        error = ErrorKind.connect;
-        _set(Connection.offline);
+        _setState(_state.copyWith(connection: Connection.offline, error: () => ErrorKind.connect));
       } else {
         _set(Connection.connecting);
         final bool opened = await _run(address);
@@ -250,25 +158,24 @@ class FeederController extends ChangeNotifier {
 
   /// The last address, or NSD's when there is none or it stopped working.
   Future<String?> _address() async {
-    if (connection != Connection.offline && known.address != null) {
-      return known.address;
+    if (_state.connection != Connection.offline && _state.known.address != null) {
+      return _state.known.address;
     }
     _set(Connection.looking);
-    return await _ports.locate(known.identity, _locateWait) ?? known.address;
+    return await _ports.locate(_state.known.identity, _locateWait) ?? _state.known.address;
   }
 
   /// One session until it closes; whether it opened.
   Future<bool> _run(String address) async {
     final FeederSession session;
     try {
-      session = _ports.open(known.identity, address, syncClock: _book.clockDue(known.identity));
+      session = _ports.open(_state.known.identity, address, syncClock: _book.clockDue(_state.known.identity));
     } on BridgeError catch (failed) {
-      error = failed.kind;
-      _set(Connection.offline);
+      _setState(_state.copyWith(connection: Connection.offline, error: () => failed.kind));
       return false;
     }
     _session = session;
-    _fresh = false;
+    _setState(_state.copyWith(cardFresh: false));
 
     var opened = false;
     await for (final SessionUpdate update in session.run()) {
@@ -277,81 +184,79 @@ class FeederController extends ChangeNotifier {
         break;
       }
       switch (update) {
-        case SessionUpdate_Opened(:final build, role: final r):
-          unawaited(_ports.answered(known.identity, build));
+        case SessionUpdate_Opened(:final String build, role: final ClientRole role):
+          unawaited(_ports.answered(_state.known.identity, build));
           opened = true;
-          role = r;
-          error = null;
-          history = const [];
-          historyRead = false;
-          _set(Connection.online);
+          _setState(
+            _state.copyWith(
+              connection: Connection.online,
+              role: role,
+              error: () => null,
+              history: const [],
+              historyRead: false,
+            ),
+          );
           try {
-            await _book.answeredAt(known.identity, address);
-            known = _book.feeders.firstWhere((f) => f.identity == known.identity, orElse: () => known);
+            await _book.answeredAt(_state.known.identity, address);
+            final KnownFeeder known = _state.known;
+            _setState(
+              _state.copyWith(
+                known: _book.feeders.firstWhere((f) => f.identity == known.identity, orElse: () => known),
+              ),
+            );
           } on BridgeError {
             // Only a hint for the next start; NSD finds the feeder anyway.
           }
-        case SessionUpdate_Status(card: final c):
-          card = c;
-          cardAt = DateTime.now();
-          _fresh = true;
-          _notify();
-        case SessionUpdate_FeedStarted(:final feed, :final portions, :final dueSeconds):
+        case SessionUpdate_Status(card: final Card card):
+          _setState(_state.copyWith(card: card, cardAt: DateTime.now(), cardFresh: true));
+        case SessionUpdate_FeedStarted(:final int feed, :final int portions, :final int dueSeconds):
           _feedDue?.cancel();
           _feedDue = Timer(Duration(seconds: dueSeconds), _feedOverdue);
-          _setFeed(FeedState(FeedPhase.running, portions: portions, feed: feed, sentAt: this.feed.sentAt));
-        case SessionUpdate_FeedRefused(:final refusal):
-          _setFeed(FeedState(FeedPhase.refused, portions: feed.portions, refusal: refusal, sentAt: feed.sentAt));
+          _setFeed(FeedRunning(feed: feed, portions: portions, sentAt: _feed.sentAt));
+        case SessionUpdate_FeedRefused(:final FeedRefusal refusal):
+          _setFeed(FeedRefused(refusal: refusal, portions: _feed.portions, sentAt: _feed.sentAt));
         case SessionUpdate_FeedUnanswered():
-          _setFeed(FeedState(FeedPhase.unanswered, portions: feed.portions, sentAt: feed.sentAt));
-        case SessionUpdate_FeedEnded(:final result):
+          _setFeed(FeedUnanswered(portions: _feed.portions, sentAt: _feed.sentAt));
+        case SessionUpdate_FeedEnded(:final FeedResult result):
           _feedEnded(result);
         case SessionUpdate_CancelUnconfirmed():
-          if (feed.phase == FeedPhase.running) {
-            _setFeed(
-              FeedState(
-                FeedPhase.running,
-                portions: feed.portions,
-                feed: feed.feed,
-                cancelUnconfirmed: true,
-                sentAt: feed.sentAt,
-              ),
-            );
+          if (_feed case FeedRunning(:final int feed, :final int portions, :final DateTime? sentAt)) {
+            _setFeed(FeedRunning(feed: feed, portions: portions, sentAt: sentAt, cancelUnconfirmed: true));
           }
         case SessionUpdate_ClockSynced():
-          _book.clockSynced(known.identity);
+          _book.clockSynced(_state.known.identity);
         case SessionUpdate_ClockNotSynced():
           // Still due: the next session tries again.
           break;
-        case SessionUpdate_History(:final entries, :final caughtUp):
-          history = [...history, ...entries];
-          historyRead = historyRead || caughtUp;
+        case SessionUpdate_History(:final List<HistoryEntry> entries, :final bool caughtUp):
+          _setState(
+            _state.copyWith(history: [..._state.history, ...entries], historyRead: _state.historyRead || caughtUp),
+          );
           // A feed that ended while the link was down, or before this
           // session's history was read, only ever arrives here.
           for (final entry in entries) {
-            if (entry.body case HistoryBody_Fed(:final result)) {
-              _feedEnded(result);
-            }
+            if (entry.body case HistoryBody_Fed(:final FeedResult result)) _feedEnded(result);
           }
-          _notify();
-        case SessionUpdate_Log(:final dropped, :final lines):
-          onLog?.call(dropped, lines);
-        case SessionUpdate_Closed(error: final e):
-          error = e?.kind;
+        case SessionUpdate_Log(:final int dropped, :final List<String> lines):
+          _log?.call(dropped, lines);
+        case SessionUpdate_Closed(error: final BridgeError? error):
+          _setState(_state.copyWith(error: () => error?.kind));
       }
     }
 
     _session = null;
-    _fresh = false;
+    _setState(_state.copyWith(cardFresh: false));
     // The session reports every feed it sent as started, refused or
     // unanswered before it closes, so one still sending never went out.
-    if (feed.phase == FeedPhase.sending) {
-      _setFeed(FeedState(FeedPhase.notSent, portions: feed.portions, sentAt: feed.sentAt));
+    switch (_feed) {
+      case FeedSending(:final int portions, :final DateTime? sentAt):
+        _setFeed(FeedNotSent(portions: portions, sentAt: sentAt));
+      case FeedRunning(:final int feed, :final int portions, :final DateTime? sentAt):
+        _setFeed(FeedAdrift(feed: feed, by: FeedLoss.link, portions: portions, sentAt: sentAt));
+      case _:
+        break;
     }
-    if (feed.phase == FeedPhase.running) {
-      _setFeed(FeedState(FeedPhase.lost, portions: feed.portions, feed: feed.feed, sentAt: feed.sentAt));
-    }
-    if (!_disposed) _set(Connection.offline);
+    if (!_disposed) _setState(_state.copyWith(connection: Connection.offline));
     return opened;
   }
 
@@ -359,22 +264,24 @@ class FeederController extends ChangeNotifier {
   /// unanswered feed has none, and the next end may be a meal or another
   /// phone's. It replaces a lost feed too, since it is what really happened.
   void _feedEnded(FeedResult result) {
-    final bool open = feed.phase == FeedPhase.running || feed.phase == FeedPhase.lost;
-    if (!open || feed.feed != result.feed) return;
+    final FeedState feed = _feed;
+    final int? ours = switch (feed) {
+      FeedRunning(:final int feed) => feed,
+      FeedAdrift(:final int feed) => feed,
+      _ => null,
+    };
+    if (ours != result.feed) return;
 
     // The feeder's record says when, if its clock can be trusted. A lost feed's
     // end may be old, so the phone's clock can't stand in for that one.
-    final PlatformInt64? recorded = (card?.clockSet ?? false) ? result.atMs : null;
+    final PlatformInt64? recorded = (_state.card?.clockSet ?? false) ? result.atMs : null;
     _setFeed(
-      FeedState(
-        FeedPhase.ended,
-        portions: result.requested,
-        feed: result.feed,
+      FeedEnded(
         result: result,
         sentAt: feed.sentAt,
         endedAt: recorded != null
             ? DateTime.fromMillisecondsSinceEpoch(recorded)
-            : feed.phase == FeedPhase.running
+            : feed is FeedRunning
             ? DateTime.now()
             : null,
       ),
@@ -383,33 +290,25 @@ class FeederController extends ChangeNotifier {
 
   /// Nothing has come of a running feed past the longest the feeder can take.
   void _feedOverdue() {
-    if (feed.phase != FeedPhase.running) return;
-    _setFeed(
-      FeedState(
-        FeedPhase.lost,
-        lostBy: FeedLost.overdue,
-        portions: feed.portions,
-        feed: feed.feed,
-        sentAt: feed.sentAt,
-      ),
-    );
+    if (_feed case FeedRunning(:final int feed, :final int portions, :final DateTime? sentAt)) {
+      _setFeed(FeedAdrift(feed: feed, by: FeedLoss.overdue, portions: portions, sentAt: sentAt));
+    }
   }
 
+  FeedState get _feed => _state.feed;
+
   void _setFeed(FeedState next) {
-    if (next.phase != FeedPhase.running) {
+    if (next is! FeedRunning) {
       _feedDue?.cancel();
       _feedDue = null;
     }
-    feed = next;
-    _notify();
+    _setState(_state.copyWith(feed: next));
   }
 
-  void _set(Connection next) {
-    connection = next;
-    _notify();
-  }
+  void _set(Connection next) => _setState(_state.copyWith(connection: next));
 
-  void _notify() {
+  void _setState(FeederState next) {
+    _state = next;
     if (!_disposed) notifyListeners();
   }
 

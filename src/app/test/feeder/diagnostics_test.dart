@@ -181,7 +181,7 @@ void main() {
       expect(shared.single, contains('PLNET1 rssi=-58'));
 
       await tester.pumpWidget(const SizedBox());
-      expect(feeder.onLog, isNull);
+      expect(feeder.hearingLog, isFalse);
     });
 
     testWidgets('a refused tail says so', (tester) async {

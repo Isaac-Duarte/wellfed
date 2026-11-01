@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
@@ -242,7 +243,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
   Future<FeederReply?> _answeredRead(_Deadline deadline) async {
     final FeederController feeder = widget.feeder;
     while (!deadline.over) {
-      if (feeder.connection == Connection.online) {
+      if (feeder.state.connection == Connection.online) {
         final FeederReply? read = await Future.any<FeederReply?>([
           feeder.ask(const FeederRequest.getCall()),
           deadline.done.then((_) => null),

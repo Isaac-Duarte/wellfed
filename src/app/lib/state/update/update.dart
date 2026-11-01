@@ -1,38 +1,30 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-
 import 'package:wellfed/platform/feeder_ports.dart' show FeederPorts, UpdatePush;
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart' show InstallAsk, InstallAsk_Locate;
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
+import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/api/update.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
-
-enum UpdateStage { idle, sending, restarting, ended }
+import 'package:wellfed/state/feeder/feeder_state.dart';
+import 'package:wellfed/state/update/update_state.dart';
 
 /// One feeder's update, for as long as its controller lives. A run goes once:
 /// [start] does nothing while one runs or while its end is unknown, wherever
 /// the owner has been meanwhile.
 class UpdateFlow extends ChangeNotifier {
-  UpdateFlow(this._feeder);
+  /// The update of `_feeder`, reaching outside Dart through `_ports`.
+  UpdateFlow(this._feeder, this._ports);
 
   final FeederController _feeder;
+  final FeederPorts _ports;
 
-  UpdateStage stage = UpdateStage.idle;
-  int written = 0;
-  int length = 0;
-  bool reconnecting = false;
-  bool cancelling = false;
-  UpdateEnd? end;
-
-  /// Android refused the foreground service, so only staying on screen keeps
-  /// the run alive.
-  bool holdRefused = false;
-
-  /// Why a look at an unknown end settled nothing.
-  bool stillUnknown = false;
+  /// How the update stands.
+  UpdateState get state => _state;
+  UpdateState _state = const UpdateIdle();
 
   /// The build and version this run offered.
   (String, int)? _served;
@@ -42,59 +34,53 @@ class UpdateFlow extends ChangeNotifier {
   bool _holding = false;
   bool _disposed = false;
 
-  bool get running => stage == UpdateStage.sending || stage == UpdateStage.restarting;
-
-  /// Only the feeder can tell how it went, so this stays until it has.
-  bool get endUnknown => end is UpdateEnd_Uncertain || end is UpdateEnd_Unconfirmed;
-
   /// Offer the image with this `build` and `version`.
   Future<void> start({required String build, required int version}) async {
-    if (stage != UpdateStage.idle) return;
+    if (_state is! UpdateIdle) return;
     _served = (build, version);
-    stage = UpdateStage.sending;
-    written = 0;
-    length = 0;
-    reconnecting = false;
-    stillUnknown = false;
-    end = null;
-    _changed();
+    _set(const UpdateSending());
 
-    final FeederPorts ports = _feeder.ports;
-    final String name = _feeder.known.name;
+    final KnownFeeder known = _feeder.state.known;
     _holding = true;
-    holdRefused = !await ports.holdProcess('Updating $name');
+    final bool held = await _ports.holdProcess('Updating ${known.name}');
     if (_disposed) {
-      await ports.releaseProcess();
+      await _ports.releaseProcess();
       return;
     }
+    if (_state case final UpdateRun run) _state = run.changed(holdRefused: !held);
 
-    final UpdatePush push = ports.pushUpdate(_feeder.known.identity, _feeder.known.address);
+    final UpdatePush push = _ports.pushUpdate(known.identity, known.address);
     _push = push;
     _run = push.progress.listen(
       _heard,
       // Rust ends every run with a value; a stream that closes without one
       // lost its thread, and what the feeder did is not known here.
       onDone: () {
-        if (running) _ended(const UpdateEnd.uncertain());
+        if (_state is UpdateRun) _ended(const UpdateEnd.uncertain());
       },
     );
     _changed();
   }
 
   void _heard(UpdateProgress progress) {
+    final UpdateState now = _state;
     switch (progress) {
-      case UpdateProgress_Sending(written: final sent, length: final total):
-        written = sent;
-        length = total;
-        reconnecting = false;
+      case UpdateProgress_Sending(written: final int sent, length: final int total):
+        if (now is UpdateRun) _state = now.changed(written: sent, length: total, reconnecting: false);
       case UpdateProgress_Reconnecting():
-        reconnecting = true;
-      case UpdateProgress_Ask(:final id, :final ask):
+        if (now is UpdateRun) _state = now.changed(reconnecting: true);
+      case UpdateProgress_Ask(:final int id, :final InstallAsk ask):
         unawaited(_locate(id, ask));
       case UpdateProgress_Activated():
-        stage = UpdateStage.restarting;
-        reconnecting = false;
-      case UpdateProgress_Ended(end: final last):
+        if (now is UpdateRun) {
+          _state = UpdateRestarting(
+            written: now.written,
+            length: now.length,
+            cancelling: now.cancelling,
+            holdRefused: now.holdRefused,
+          );
+        }
+      case UpdateProgress_Ended(end: final UpdateEnd last):
         _ended(last);
         return;
     }
@@ -106,18 +92,15 @@ class UpdateFlow extends ChangeNotifier {
       _push?.located(id, null);
       return;
     }
-    final String? found = await _feeder.ports.locate(ask.identity, _locateWait);
+    final String? found = await _ports.locate(ask.identity, _locateWait);
     _push?.located(id, found);
   }
 
   static const _locateWait = Duration(seconds: 12);
 
   void _ended(UpdateEnd last) {
-    stage = UpdateStage.ended;
-    end = last;
-    cancelling = false;
     _release();
-    _changed();
+    _set(UpdateEnded(last));
   }
 
   void _release() {
@@ -126,27 +109,27 @@ class UpdateFlow extends ChangeNotifier {
     _run = null;
     if (_holding) {
       _holding = false;
-      unawaited(_feeder.ports.releaseProcess());
+      unawaited(_ports.releaseProcess());
     }
   }
 
   /// Ask to stop, once. The run reports how it ended.
   Future<FeederReply> cancel() async {
-    cancelling = true;
-    _changed();
+    _cancelling(true);
     final FeederReply reply = await _feeder.ask(const FeederRequest.cancelUpdate());
-    cancelling = false;
-    _changed();
+    _cancelling(false);
     return reply;
+  }
+
+  void _cancelling(bool asking) {
+    if (_state case final UpdateRun run) _set(run.changed(cancelling: asking));
+    if (_state case final UpdateEnded ended) _set(ended.changed(cancelling: asking));
   }
 
   /// The owner has read an end that says how it went: the firmware screen may
   /// offer the update again, as their own new decision.
   void acknowledge() {
-    if (stage != UpdateStage.ended || endUnknown) return;
-    stage = UpdateStage.idle;
-    end = null;
-    _changed();
+    if (_state case UpdateEnded(endUnknown: false)) _set(const UpdateIdle());
   }
 
   /// Read what the feeder says of an unknown end. Idle alone settles nothing: a
@@ -155,28 +138,32 @@ class UpdateFlow extends ChangeNotifier {
   /// again. The served build at or past its version has kept it. Reads go as
   /// often as the owner looks; the end stays until then.
   Future<void> lookAgain() async {
-    if (!endUnknown) return;
+    final UpdateState now = _state;
+    if (now is! UpdateEnded || !now.endUnknown) return;
     final FeederReply reply = await _feeder.ask(const FeederRequest.updateState());
     final bool idle = reply is FeederReply_Update && reply.update.phase == UpdatePhase.idle;
     final UpdateInfo? state = reply is FeederReply_Update ? reply.update : null;
     final (String, int)? served = _served;
-    final Card? card = _feeder.card;
+    final FeederState feeder = _feeder.state;
+    final Card? card = feeder.card;
 
-    stillUnknown = true;
     if (idle && state != null && state.bank == 0) {
-      stillUnknown = false;
-      stage = UpdateStage.idle;
-      end = null;
+      _set(const UpdateIdle());
     } else if (idle &&
         state != null &&
         served != null &&
         card != null &&
-        _feeder.cardIsCurrent &&
+        feeder.cardIsCurrent &&
         card.build.toLowerCase() == served.$1.toLowerCase() &&
         state.minVersion >= served.$2) {
-      stillUnknown = false;
-      end = const UpdateEnd.confirmed();
+      _set(const UpdateEnded(UpdateEnd.confirmed()));
+    } else if (_state case final UpdateEnded ended) {
+      _set(ended.changed(stillUnknown: true));
     }
+  }
+
+  void _set(UpdateState next) {
+    _state = next;
     _changed();
   }
 

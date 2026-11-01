@@ -8,6 +8,7 @@ import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/update/update.dart';
+import 'package:wellfed/state/update/update_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -50,13 +51,13 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
   // An update moves the floor this screen shows, so leaving its end reads it
   // again.
   void _flowChanged() {
-    final ended = _flow.stage == UpdateStage.ended;
-    if (_ended && _flow.stage == UpdateStage.idle) unawaited(_read());
+    final ended = _flow.state is UpdateEnded;
+    if (_ended && _flow.state is UpdateIdle) unawaited(_read());
     _ended = ended;
   }
 
   Future<void> _read() async {
-    final ImageCheck image = await _feeder.ports.updateImage();
+    final ImageCheck image = await _feeder.updateImage();
     final FeederReply reply = await _feeder.ask(const FeederRequest.updateState());
     if (!mounted) return;
     setState(() {
@@ -75,10 +76,9 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
       ListenableBuilder(listenable: Listenable.merge([_flow, _feeder]), builder: (context, _) => _build(context));
 
   Widget _build(BuildContext context) {
-    if (_flow.end case final end? when _flow.stage == UpdateStage.ended) {
-      return UpdateEndScreen(feeder: _feeder, end: end);
-    }
-    final offering = _flow.stage == UpdateStage.idle;
+    final UpdateState update = _flow.state;
+    if (update is UpdateEnded) return UpdateEndScreen(feeder: _feeder, ended: update);
+    final offering = update is UpdateIdle;
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
@@ -90,7 +90,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
           icon: StrokeIcon(Glyph.back, color: context.colors.text),
         ),
         title: Text(
-          offering ? 'Firmware' : 'Updating ${_feeder.known.name}',
+          offering ? 'Firmware' : 'Updating ${_feeder.state.known.name}',
           style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: context.colors.text),
         ),
       ),
@@ -100,8 +100,8 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
 
   Widget _offer(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final String name = _feeder.known.name;
-    final Card? card = _feeder.card;
+    final String name = _feeder.state.known.name;
+    final Card? card = _feeder.state.card;
     final String? build = card?.build;
     final UpdateInfo? state = _state;
     final (String, int)? offered = switch (_image) {
@@ -109,7 +109,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
       _ => null,
     };
     final bool current = offered != null && build != null && offered.$1 == build;
-    final bool can = offered != null && !current && _feeder.cardIsCurrent;
+    final bool can = offered != null && !current && _feeder.state.cardIsCurrent;
 
     return ListView(
       padding: const EdgeInsets.all(Space.s4),
@@ -160,11 +160,8 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
         const SizedBox(height: Space.s2),
         OutlinedButton(
           onPressed: () => unawaited(
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => RestoreScreen(feeder: _feeder.known, ports: _feeder.ports.restore),
-              ),
-            ),
+            Navigator.of(context)
+                .push(MaterialPageRoute<void>(builder: (_) => RestoreScreen(newFlow: _feeder.newRestore))),
           ),
           child: const Text('Restore original firmware'),
         ),
@@ -174,11 +171,13 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
 
   Widget _progress(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final UpdateFlow flow = _flow;
-    final String name = _feeder.known.name;
-    final sending = flow.stage == UpdateStage.sending;
-    final bool accepted = flow.length > 0;
-    final int percent = accepted ? (flow.written * 100 ~/ flow.length) : 0;
+    final UpdateState update = _flow.state;
+    final UpdateRun? run = update is UpdateRun ? update : null;
+    final String name = _feeder.state.known.name;
+    final sending = update is UpdateSending;
+    final int length = run?.length ?? 0;
+    final bool accepted = length > 0;
+    final int percent = accepted ? ((run?.written ?? 0) * 100 ~/ length) : 0;
     return ListView(
       padding: const EdgeInsets.all(Space.s4),
       children: [
@@ -186,7 +185,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
         _Line(
           done: !sending,
           active: accepted && sending,
-          text: sending ? (flow.reconnecting ? 'Reconnecting…' : 'Sending $percent%') : 'Sent',
+          text: sending ? ((run?.reconnecting ?? false) ? 'Reconnecting…' : 'Sending $percent%') : 'Sent',
         ),
         _Line(done: false, active: !sending, text: 'Restart on the new version'),
         const _Line(done: false, active: false, text: 'Check it started properly, then keep it'),
@@ -197,14 +196,14 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
           'older than the one it ran.',
           style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: c.textMuted),
         ),
-        if (flow.holdRefused) ...[
+        if (run?.holdRefused ?? false) ...[
           const SizedBox(height: Space.s3),
           const Notice(tone: Tone.warning, glyph: Glyph.warning, text: 'Keep this app open until it finishes.'),
         ],
         if (sending) ...[
           const SizedBox(height: Space.s4),
           OutlinedButton(
-            onPressed: flow.cancelling ? null : () => unawaited(_cancel()),
+            onPressed: (run?.cancelling ?? false) ? null : () => unawaited(_cancel()),
             child: const Text('Cancel update'),
           ),
         ],

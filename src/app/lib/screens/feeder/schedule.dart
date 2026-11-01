@@ -7,6 +7,7 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -82,7 +83,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
   /// Coming here reads the plans again; the session puts them on the card. A
   /// read that fails leaves what the card last showed.
   void _read() {
-    if (feeder.connection == Connection.online) {
+    if (feeder.state.connection == Connection.online) {
       unawaited(feeder.ask(const FeederRequest.getPlans()));
     }
   }
@@ -92,12 +93,12 @@ class _ScheduleTabState extends State<ScheduleTab> {
 
   Widget _build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final Card? card = feeder.card;
+    final Card? card = feeder.state.card;
     final PlansView? plans = card?.plans;
     if (plans == null) {
       return Center(
         child: Text(
-          feeder.connection == Connection.online ? 'Reading the meals…' : "Can't read the meals right now.",
+          feeder.state.connection == Connection.online ? 'Reading the meals…' : "Can't read the meals right now.",
           style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
         ),
       );
@@ -109,7 +110,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
     ]..sort((a, b) => a.$2.minute.compareTo(b.$2.minute));
     final int most = mealsMost(plans);
     final bool full = meals.length >= most;
-    final online = feeder.connection == Connection.online;
+    final online = feeder.state.connection == Connection.online;
     final NextMealView? next = card?.nextMeal;
     final muted = TextStyle(fontSize: Sizes.base, color: c.textMuted);
 

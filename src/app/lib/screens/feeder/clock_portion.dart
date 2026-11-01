@@ -65,7 +65,7 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
   }
 
   Future<void> _time({ZoneChange? zone, String? ntp}) async {
-    final TimeInfo? time = widget.feeder.card?.time;
+    final TimeInfo? time = widget.feeder.state.card?.time;
     if (time == null) return;
     await _write(FeederRequest.putTime(base: time.generation, zone: zone, ntp: ntp));
 
@@ -105,10 +105,10 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
 
   Widget _build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final Card? card = widget.feeder.card;
+    final Card? card = widget.feeder.state.card;
     final TimeInfo? time = card?.time;
     // An offline card's clock is an old reading, not the feeder's time now.
-    final bool current = widget.feeder.cardIsCurrent;
+    final bool current = widget.feeder.state.cardIsCurrent;
     final PlatformInt64? clock = current ? time?.clockMs : null;
     final int? error = current ? time?.errorMs : null;
     final String? zone = time?.zone;

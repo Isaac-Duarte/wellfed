@@ -44,7 +44,7 @@ class FeederShell extends StatelessWidget {
             icon: StrokeIcon(Glyph.back, color: c.text),
           ),
           title: Text(
-            feeder.known.name,
+            feeder.state.known.name,
             style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
           ),
           actions: [
@@ -93,7 +93,7 @@ Future<void> confirmRestart(BuildContext context, FeederController feeder) async
   final bool? sure = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text('Restart ${feeder.known.name}?'),
+      title: Text('Restart ${feeder.state.known.name}?'),
       content: const Text("It's back in about a minute. It can't feed during the restart."),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
@@ -105,7 +105,7 @@ Future<void> confirmRestart(BuildContext context, FeederController feeder) async
 
   final FeederReply reply = await feeder.ask(const FeederRequest.reboot());
   if (context.mounted && showProblem(context, reply)) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${feeder.known.name} is restarting.')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${feeder.state.known.name} is restarting.')));
   }
 }
 

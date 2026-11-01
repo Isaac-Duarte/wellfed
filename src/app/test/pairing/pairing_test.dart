@@ -25,12 +25,15 @@ void _tall(WidgetTester tester) {
 }
 
 /// The flow at a failure, with the screen on it.
-Future<void> _failed(WidgetTester tester, {PairingFailure? failure, SetupRefusal? refusal, bool ble = true}) async {
+Future<void> _failed(
+  WidgetTester tester, {
+  required PairingFailure failure,
+  SetupRefusal? refusal,
+  bool ble = true,
+}) async {
   _tall(tester);
   final flow = PairingFlow(FakeBook(), FakePairingPorts())
-    ..phase = PairingPhase.failed
-    ..failure = failure
-    ..refusal = refusal;
+    ..show(PairingFailed(failure: failure, refusal: refusal, feederName: PairingFlow.defaultFeederName));
   await tester.pumpWidget(_view(flow, ble: ble));
 }
 
@@ -40,9 +43,13 @@ void main() {
       _tall(tester);
       var newCodes = 0;
       final flow = PairingFlow(FakeBook(), FakePairingPorts())
-        ..phase = PairingPhase.code
-        ..code = const [3, 1, 4, 4, 2, 1]
-        ..deadline = DateTime.now().add(const Duration(seconds: 47));
+        ..show(
+          PairingCode(
+            code: const [3, 1, 4, 4, 2, 1],
+            deadline: DateTime.now().add(const Duration(seconds: 47)),
+            feederName: PairingFlow.defaultFeederName,
+          ),
+        );
       await tester.pumpWidget(_view(flow, onNewCode: () => newCodes++));
 
       expect(find.bySemanticsLabel('Press Mic, Lock, Reset, Reset, Dispense, Lock'), findsOneWidget);
@@ -207,9 +214,13 @@ void main() {
     testWidgets('a feeder already owned says nothing changed', (tester) async {
       _tall(tester);
       final flow = PairingFlow(FakeBook(), FakePairingPorts())
-        ..phase = PairingPhase.done
-        ..enrolled = Enrolled.already
-        ..feederName = 'Kitchen';
+        ..show(
+          const PairingDone(
+            enrolled: Enrolled.already,
+            feeder: KnownFeeder(identity: 'aa', name: 'Kitchen'),
+            feederName: 'Kitchen',
+          ),
+        );
       await tester.pumpWidget(_view(flow));
       expect(find.textContaining('already one of its owners'), findsOneWidget);
     });
@@ -217,10 +228,7 @@ void main() {
     testWidgets('the joining steps name the network', (tester) async {
       _tall(tester);
       final flow = PairingFlow(FakeBook(), FakePairingPorts())
-        ..phase = PairingPhase.joining
-        ..network = 'Maple St'
-        ..feederName = 'Kitchen'
-        ..wifiSaved = WifiSaved.saved;
+        ..show(const PairingJoining(wifiSaved: WifiSaved.saved, network: 'Maple St', feederName: 'Kitchen'));
       await tester.pumpWidget(_view(flow));
       await tester.pump();
       expect(find.text('Kitchen is joining your Wi-Fi'), findsOneWidget);
@@ -305,8 +313,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
-      expect(flow.phase, PairingPhase.failed);
-      expect(flow.failure, PairingFailure.windowClosed);
+      expect(flow.state, isA<PairingFailed>().having((s) => s.failure, 'failure', PairingFailure.windowClosed));
       flow.dispose();
     });
 
@@ -318,9 +325,12 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
-      expect(flow.phase, PairingPhase.failed);
-      expect(flow.failure, PairingFailure.other);
-      expect(flow.message, contains('garbled'));
+      expect(
+        flow.state,
+        isA<PairingFailed>()
+            .having((s) => s.failure, 'failure', PairingFailure.other)
+            .having((s) => s.message, 'message', contains('garbled')),
+      );
       flow.dispose();
     });
 

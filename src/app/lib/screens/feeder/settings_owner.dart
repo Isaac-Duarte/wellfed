@@ -28,7 +28,7 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
   @override
   void initState() {
     super.initState();
-    if (feeder.clients.isEmpty) unawaited(feeder.loadClients());
+    if (feeder.state.clients.isEmpty) unawaited(feeder.loadClients());
   }
 
   void _open(BuildContext context, Widget screen) =>
@@ -36,7 +36,7 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
 
   @override
   Widget build(BuildContext context) {
-    final Card? card = feeder.card;
+    final Card? card = feeder.state.card;
     final String? zone = card?.time?.zone;
     final String? signal = switch (card?.rssi) {
       null => null,
@@ -44,7 +44,7 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
       >= -72 => 'Fair signal',
       _ => 'Weak signal',
     };
-    final String? people = feeder.clients.isEmpty ? null : '${feeder.clients.length} of $clientsMost';
+    final String? people = feeder.state.clients.isEmpty ? null : '${feeder.state.clients.length} of $clientsMost';
 
     Widget link(String name, String? note, Widget screen, {bool first = false}) => SettingsTile(
       first: first,

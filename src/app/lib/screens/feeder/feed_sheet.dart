@@ -6,6 +6,7 @@ import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -16,10 +17,9 @@ import 'package:wellfed/widgets/when.dart';
 /// from gives way to the portions. One that isn't known stays until it is
 /// closed, as the owner should look at the bowl before feeding again.
 Future<void> feedNow(BuildContext context, FeederController feeder) {
-  final FeedState feed = feeder.feed;
-  final bool known = switch (feed.phase) {
-    FeedPhase.ended => !(feed.result?.uncertain ?? true),
-    FeedPhase.refused || FeedPhase.notSent => true,
+  final bool known = switch (feeder.state.feed) {
+    FeedEnded(:final FeedResult result) => !result.uncertain,
+    FeedRefused() || FeedNotSent() => true,
     _ => false,
   };
   if (known) feeder.dismissFeed();
@@ -37,8 +37,8 @@ Future<void> showFeedSheet(BuildContext context, FeederController feeder) => sho
     builder: (context, _) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(Space.s5, 0, Space.s5, 28),
-        child: switch (feeder.feed.phase) {
-          FeedPhase.idle => _Confirm(feeder: feeder),
+        child: switch (feeder.state.feed) {
+          FeedIdle() => _Confirm(feeder: feeder),
           _ => _Progress(feeder: feeder),
         },
       ),
@@ -81,7 +81,7 @@ class _ConfirmState extends State<_Confirm> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Feed ${widget.feeder.known.name} now', style: _title(context, size: 22)),
+        Text('Feed ${widget.feeder.state.known.name} now', style: _title(context, size: 22)),
         const SizedBox(height: 20),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -130,7 +130,7 @@ class _ConfirmState extends State<_Confirm> {
             const SizedBox(width: Space.s3),
             Expanded(
               child: FilledButton(
-                onPressed: widget.feeder.canFeed ? () => widget.feeder.feedNow(_portions) : null,
+                onPressed: widget.feeder.state.canFeed ? () => widget.feeder.feedNow(_portions) : null,
                 child: Text('Feed $_portions $_portionsWord'),
               ),
             ),
@@ -150,19 +150,17 @@ class _Progress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FeedState feed = feeder.feed;
-    final FeedResult? result = feed.result;
-    return switch (feed.phase) {
-      FeedPhase.sending || FeedPhase.running => _running(context),
-      FeedPhase.ended when result != null && result.uncertain => _uncertain(context, result),
-      FeedPhase.ended when result != null => _ended(context, result),
-      FeedPhase.refused || FeedPhase.notSent => _notFed(context),
-      FeedPhase.unanswered || FeedPhase.lost => _unknown(context),
-      _ => const SizedBox.shrink(),
+    return switch (feeder.state.feed) {
+      FeedSending() || FeedRunning() => _running(context),
+      FeedEnded(:final FeedResult result) when result.uncertain => _uncertain(context, result),
+      FeedEnded(:final FeedResult result) => _ended(context, result),
+      FeedRefused() || FeedNotSent() => _notFed(context),
+      FeedUnanswered() || FeedAdrift() => _unknown(context),
+      FeedIdle() => const SizedBox.shrink(),
     };
   }
 
-  String get _name => feeder.known.name;
+  String get _name => feeder.state.known.name;
 
   void _close(BuildContext context) {
     feeder.dismissFeed();
@@ -202,8 +200,8 @@ class _Progress extends StatelessWidget {
 
   Widget _running(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final FeedState feed = feeder.feed;
-    final running = feed.phase == FeedPhase.running;
+    final FeedState feed = feeder.state.feed;
+    final running = feed is FeedRunning;
     return _sheet(
       context,
       title: running ? 'Feeding $_name' : 'Sending…',
@@ -249,7 +247,7 @@ class _Progress extends StatelessWidget {
   Widget _ended(BuildContext context, FeedResult result) {
     final ThemeTokens c = context.colors;
     final all = result.confirmed == result.requested;
-    final FoodLevel? food = feeder.card?.food;
+    final FoodLevel? food = feeder.state.card?.food;
     return _sheet(
       context,
       glyph: all ? Glyph.check : Glyph.warning,
@@ -260,7 +258,8 @@ class _Progress extends StatelessWidget {
       children: [
         if (!all) _lead(context, _upper(result.words)),
         FactList(sunken: true, [
-          if (feeder.feed.endedAt case final endedAt?) ('Finished', Text(_time(context, endedAt))),
+          if (feeder.state.feed case FeedEnded(endedAt: final DateTime endedAt))
+            ('Finished', Text(_time(context, endedAt))),
           if (food != null && food != FoodLevel.unread)
             (
               'Food level',
@@ -308,7 +307,7 @@ class _Progress extends StatelessWidget {
               child: OutlinedButton(
                 onPressed: () {
                   _close(context);
-                  unawaited(context.push('/feeder/${feeder.known.identity}?tab=$historyTab'));
+                  unawaited(context.push('/feeder/${feeder.state.known.identity}?tab=$historyTab'));
                 },
                 child: const Text('See history'),
               ),
@@ -325,11 +324,11 @@ class _Progress extends StatelessWidget {
 
   Widget _notFed(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final FeedState feed = feeder.feed;
-    final String why = feed.phase == FeedPhase.notSent
-        ? 'The connection dropped before the request went out. Try again '
-              'once the feeder is online.'
-        : _refusal(feed.refusal);
+    final FeedState feed = feeder.state.feed;
+    final String why = feed is FeedRefused
+        ? _refusal(feed.refusal)
+        : 'The connection dropped before the request went out. Try again '
+              'once the feeder is online.';
     return _sheet(
       context,
       glyph: Glyph.failed,
@@ -360,14 +359,14 @@ class _Progress extends StatelessWidget {
 
   Widget _unknown(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final FeedState feed = feeder.feed;
+    final FeedState feed = feeder.state.feed;
     final String sent = _time(context, feed.sentAt);
     final String lead = switch (feed) {
-      FeedState(phase: FeedPhase.lost, lostBy: FeedLost.overdue) =>
+      FeedAdrift(by: FeedLoss.overdue) =>
         'The feed started${sent.isEmpty ? '' : ' at $sent'}, and the feeder '
             "hasn't said how it ended, past the longest a feed can take. Its "
             'history keeps the result if it recorded one.',
-      FeedState(phase: FeedPhase.lost) =>
+      FeedAdrift() =>
         'The feed started${sent.isEmpty ? '' : ' at $sent'}, then the '
             'connection dropped. If the feeder stayed on, it finishes on '
             'its own and keeps the result in its history.',

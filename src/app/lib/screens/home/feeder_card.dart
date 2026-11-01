@@ -9,6 +9,7 @@ import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -29,7 +30,7 @@ class FeederCard extends StatelessWidget {
 
   Widget _full(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final api.Card? card = controller.card;
+    final api.Card? card = controller.state.card;
     final List<Widget> notices = _notices(context);
     return Panel(
       padding: const EdgeInsets.all(Space.s4),
@@ -47,7 +48,7 @@ class FeederCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        controller.known.name,
+                        controller.state.known.name,
                         style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
                       ),
                       const SizedBox(height: Space.s2),
@@ -63,12 +64,15 @@ class FeederCard extends StatelessWidget {
           for (final notice in notices) ...[const SizedBox(height: 14), notice],
           const SizedBox(height: Space.s4),
           FilledButton(
-            onPressed: controller.canFeed ? () => feedNow(context, controller) : null,
+            onPressed: controller.state.canFeed ? () => feedNow(context, controller) : null,
             child: const Text('Feed now'),
           ),
-          if (controller.feed.phase != FeedPhase.idle) ...[
+          if (controller.state.feed is! FeedIdle) ...[
             const SizedBox(height: Space.s1),
-            TextButton(onPressed: () => showFeedSheet(context, controller), child: Text(_feedLink(controller.feed))),
+            TextButton(
+              onPressed: () => showFeedSheet(context, controller),
+              child: Text(_feedLink(controller.state.feed)),
+            ),
           ],
         ],
       ),
@@ -76,7 +80,7 @@ class FeederCard extends StatelessWidget {
   }
 
   void _open(BuildContext context, [int tab = todayTab]) =>
-      unawaited(context.push('/feeder/${controller.known.identity}?tab=$tab'));
+      unawaited(context.push('/feeder/${controller.state.known.identity}?tab=$tab'));
 
   Widget _compact(BuildContext context) {
     final ThemeTokens c = context.colors;
@@ -84,7 +88,7 @@ class FeederCard extends StatelessWidget {
     final String? why = _why();
     return Panel(
       padding: const EdgeInsets.fromLTRB(10, 14, 14, 14),
-      onTap: controller.feed.phase == FeedPhase.idle ? () => _open(context) : () => showFeedSheet(context, controller),
+      onTap: controller.state.feed is FeedIdle ? () => _open(context) : () => showFeedSheet(context, controller),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -97,7 +101,7 @@ class FeederCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      controller.known.name,
+                      controller.state.known.name,
                       style: TextStyle(fontSize: 17, fontWeight: Fonts.semibold, color: c.text),
                     ),
                     const SizedBox(height: 6),
@@ -119,7 +123,7 @@ class FeederCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   textStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold),
                 ),
-                onPressed: controller.canFeed ? () => feedNow(context, controller) : null,
+                onPressed: controller.state.canFeed ? () => feedNow(context, controller) : null,
                 child: const Text('Feed'),
               ),
             ],
@@ -139,25 +143,22 @@ class FeederCard extends StatelessWidget {
     );
   }
 
-  bool get _unreachable => controller.connection == Connection.offline;
+  bool get _unreachable => controller.state.connection == Connection.offline;
 
   /// The live card: the status read in the session now open.
-  api.Card? get _live => controller.connection == Connection.online ? controller.card : null;
+  api.Card? get _live => controller.state.connection == Connection.online ? controller.state.card : null;
 
   Widget _chips(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final api.Card? card = controller.card;
+    final api.Card? card = controller.state.card;
     final api.Card? live = _live;
-    final FeedState feed = controller.feed;
+    final FeedState feed = controller.state.feed;
 
-    final StatusChip status = switch (controller.connection) {
+    final StatusChip status = switch (controller.state.connection) {
       Connection.looking => StatusChip('Looking…', color: c.textMuted),
       Connection.connecting => StatusChip('Connecting…', color: c.textMuted),
       Connection.offline => StatusChip("Can't reach it", color: c.textMuted),
-      Connection.online when feed.phase == FeedPhase.running => StatusChip(
-        'Feeding ${_portions(feed.portions)}',
-        color: c.accent,
-      ),
+      Connection.online when feed is FeedRunning => StatusChip('Feeding ${_portions(feed.portions)}', color: c.accent),
       Connection.online when live?.ready ?? false => StatusChip('Ready', color: c.ok),
       Connection.online when live?.blocked == Blocked.feeding => StatusChip('Feeding', color: c.accent),
       Connection.online => StatusChip("Can't feed now", color: c.warning),
@@ -241,7 +242,7 @@ class FeederCard extends StatelessWidget {
   }
 
   List<Widget> _notices(BuildContext context) {
-    final api.Card? card = controller.card;
+    final api.Card? card = controller.state.card;
     final api.Card? live = _live;
     final String? why = _why();
     return [
@@ -279,16 +280,16 @@ class FeederCard extends StatelessWidget {
 
   /// The compact card's second line.
   String? _line(BuildContext context) {
-    final FeedState feed = controller.feed;
-    if (feed.phase == FeedPhase.running) return 'Started from this phone';
-    if (controller.connection != Connection.offline) {
-      final api.NextMealView? next = controller.card?.nextMeal;
+    final FeedState feed = controller.state.feed;
+    if (feed is FeedRunning) return 'Started from this phone';
+    if (controller.state.connection != Connection.offline) {
+      final api.NextMealView? next = controller.state.card?.nextMeal;
       return next == null
           ? null
           : 'Next ${minuteText(context, next.minute)} · '
                 '${portionsText(next.portions)}';
     }
-    final DateTime? at = controller.cardAt;
+    final DateTime? at = controller.state.cardAt;
     if (at == null) return 'Not heard from yet';
     final int minutes = DateTime.now().difference(at).inMinutes;
     return minutes < 1 ? 'Last heard just now' : 'Last heard $minutes min ago';
@@ -296,12 +297,12 @@ class FeederCard extends StatelessWidget {
 
   /// Why the feeder is out of reach, when the card can tell.
   String? _why() {
-    if (controller.card?.adapter == false) {
+    if (controller.state.card?.adapter == false) {
       return 'The power adapter is out, so it turned Wi-Fi off to save the '
           "batteries. Meals still run on time. You'll see it again when "
           "it's plugged back in.";
     }
-    if (controller.connection == Connection.offline) {
+    if (controller.state.connection == Connection.offline) {
       return "This phone can't reach it. Check that it's plugged in, the "
           'Wi-Fi light is steady, and this phone is on the same Wi-Fi.';
     }
@@ -310,13 +311,13 @@ class FeederCard extends StatelessWidget {
 
   static String _portions(int n) => n == 1 ? '1 portion' : '$n portions';
 
-  static String _feedLink(FeedState feed) => switch (feed.phase) {
-    FeedPhase.sending || FeedPhase.running => 'Feeding…',
-    FeedPhase.ended => 'Last feed: ${feed.result?.words ?? 'ended'}',
-    FeedPhase.refused => 'The feeder did not feed',
-    FeedPhase.unanswered || FeedPhase.lost => 'A feed may have run',
-    FeedPhase.notSent => 'The last feed was not sent',
-    FeedPhase.idle => '',
+  static String _feedLink(FeedState feed) => switch (feed) {
+    FeedSending() || FeedRunning() => 'Feeding…',
+    FeedEnded(:final api.FeedResult result) => 'Last feed: ${result.words}',
+    FeedRefused() => 'The feeder did not feed',
+    FeedUnanswered() || FeedAdrift() => 'A feed may have run',
+    FeedNotSent() => 'The last feed was not sent',
+    FeedIdle() => '',
   };
 }
 
@@ -345,7 +346,7 @@ class TodaysMeals extends StatelessWidget {
     listenable: controller,
     builder: (context, _) {
       final ThemeTokens c = context.colors;
-      final List<api.MealView> meals = controller.card?.meals ?? const <api.MealView>[];
+      final List<api.MealView> meals = controller.state.card?.meals ?? const <api.MealView>[];
       if (meals.isEmpty) return const SizedBox.shrink();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -360,7 +361,7 @@ class TodaysMeals extends StatelessWidget {
                 ),
               ),
               TextButton(
-                onPressed: () => unawaited(context.push('/feeder/${controller.known.identity}?tab=$scheduleTab')),
+                onPressed: () => unawaited(context.push('/feeder/${controller.state.known.identity}?tab=$scheduleTab')),
                 child: const Text('Schedule'),
               ),
             ],

@@ -148,7 +148,7 @@ void main() {
       expect(find.textContaining('stays on its People list'), findsOneWidget);
       await tapIn(tester, find.text('Cancel'));
       expect(session.requests, isEmpty);
-      expect(feeder.known.name, 'Kitchen');
+      expect(feeder.state.known.name, 'Kitchen');
     });
   });
 

@@ -5,6 +5,7 @@ import 'package:wellfed/screens/feeder/invite.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -89,11 +90,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
         builder: (context, _) => ListView(
           padding: const EdgeInsets.all(Space.s4),
           children: [
-            if (feeder.clients.isNotEmpty)
+            if (feeder.state.clients.isNotEmpty)
               Panel(
                 child: Column(
                   children: [
-                    for (final (i, client) in feeder.clients.indexed)
+                    for (final (i, client) in feeder.state.clients.indexed)
                       _Person(
                         client: client,
                         first: i == 0,
@@ -110,7 +111,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
             ),
             const SizedBox(height: Space.s4),
             FilledButton(
-              onPressed: feeder.connection == Connection.online
+              onPressed: feeder.state.connection == Connection.online
                   ? () => unawaited(inviteSomeone(context, feeder))
                   : null,
               child: const Text('Invite someone'),

@@ -9,6 +9,7 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/when.dart';
@@ -88,7 +89,7 @@ class _HistoryTabState extends State<HistoryTab> {
     final ThemeTokens c = context.colors;
     final FeederController feeder = widget.feeder;
     final List<HistoryEntry> entries = [
-      for (final entry in feeder.history.reversed)
+      for (final entry in feeder.state.history.reversed)
         if (_shown(_filter, entry.body)) entry,
     ];
     final rows = <Widget>[];
@@ -127,9 +128,9 @@ class _HistoryTabState extends State<HistoryTab> {
           child: rows.isEmpty
               ? Center(
                   child: Text(
-                    feeder.historyRead
+                    feeder.state.historyRead
                         ? 'Nothing here yet.'
-                        : feeder.connection == Connection.online
+                        : feeder.state.connection == Connection.online
                         ? 'Reading the history…'
                         : "Can't read the history right now.",
                     style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
@@ -341,7 +342,7 @@ class _EntryRow extends StatelessWidget {
   /// `18:30 meal`, from when it was due or the slot's meal today, as an event
   /// names only the slot.
   String _meal(BuildContext context, int slot, int? dueMs) {
-    final List<PlanView?> plans = feeder.card?.plans?.plans ?? const <PlanView?>[];
+    final List<PlanView?> plans = feeder.state.card?.plans?.plans ?? const <PlanView?>[];
     final int? minute = slot < plans.length ? plans[slot]?.minute : null;
     if (dueMs != null) return '${clockTextMs(context, dueMs)} meal';
     return minute == null ? 'A meal' : '${minuteText(context, minute)} meal';

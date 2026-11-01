@@ -49,7 +49,7 @@ class TodayStopped extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final api.FaultView? fault = feeder.card?.fault;
+    final api.FaultView? fault = feeder.state.card?.fault;
     final String? after = fault == null ? null : _stoppedAfter(fault);
     final String title = fault == null
         ? 'A fault stopped feeding'

@@ -8,6 +8,7 @@ import 'package:wellfed/screens/feeder/shell.dart' show confirmRestart;
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/replies.dart';
@@ -31,17 +32,17 @@ class SettingsTab extends StatelessWidget {
 
   Widget _build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final SettingsView? settings = feeder.card?.settings;
-    final owner = feeder.role == ClientRole.owner;
+    final SettingsView? settings = feeder.state.card?.settings;
+    final owner = feeder.state.role == ClientRole.owner;
     if (settings == null) {
       return Center(
         child: Text(
-          feeder.connection == Connection.online ? 'Reading the settings…' : "Can't read the settings right now.",
+          feeder.state.connection == Connection.online ? 'Reading the settings…' : "Can't read the settings right now.",
           style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
         ),
       );
     }
-    final online = feeder.connection == Connection.online;
+    final online = feeder.state.connection == Connection.online;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -58,7 +59,7 @@ class SettingsTab extends StatelessWidget {
                 ),
                 TextSpan(
                   text:
-                      ' of ${feeder.known.name}. You can change lights, '
+                      ' of ${feeder.state.known.name}. You can change lights, '
                       'sounds and reminders.',
                 ),
               ],
@@ -137,7 +138,7 @@ class SettingsTab extends StatelessWidget {
   /// This phone forgets the feeder. The feeder's list stays as it is, so an
   /// owner removes the key from People; a member cannot remove itself.
   static Future<void> _forget(BuildContext context, FeederController feeder) async {
-    final String name = feeder.known.name;
+    final String name = feeder.state.known.name;
     final bool? sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -186,7 +187,7 @@ class SettingsTile extends StatelessWidget {
 
 /// A name, and what it stands at under it.
 class SettingsWords extends StatelessWidget {
-  const SettingsWords(this.name, [this.note]);
+  const SettingsWords(this.name, [this.note, Key? key]) : super(key: key);
 
   final String name;
   final String? note;
