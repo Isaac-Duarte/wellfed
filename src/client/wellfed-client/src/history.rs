@@ -16,11 +16,11 @@
 //! caller can read it as an exact number.
 
 use jiff::Timestamp;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use wellfed_model::{Event, EventBody, FeedOutcome, FeedReason, FoodLevel, Gap, Pushed, Source};
 
 /// One feed, from its `Fed` event.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Feed {
     pub epoch: u32,
     /// The event's number: where a later read resumes.
@@ -47,7 +47,7 @@ pub struct Feed {
 
 /// The portions a feed delivered: `{"counted": 3}`, or
 /// `{"uncertain": {"confirmed": 0, "requested": 3}}`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Delivered {
     /// The feeder recorded its result: the portions the feedback sensor
