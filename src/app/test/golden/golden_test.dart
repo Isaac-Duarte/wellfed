@@ -12,7 +12,6 @@ import 'package:wellfed/screens/home/welcome.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/screens/setup/pairing_view.dart';
 import 'package:wellfed/screens/setup/setup_screen.dart';
-import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
 import 'package:wellfed/state/settings/backups.dart';
@@ -29,11 +28,11 @@ import '../support/fakes.dart';
 import '../support/harness.dart';
 
 /// Pixels differ between font rasterizers, so one platform owns these files.
-final _skip = !Platform.isLinux;
+final bool _skip = !Platform.isLinux;
 
 /// The app's own fonts: the test default draws every letter as a box.
 Future<void> _loadFonts() async {
-  final families = {
+  final Map<String, List<String>> families = {
     Fonts.family: ['Inter-Regular', 'Inter-Medium', 'Inter-SemiBold', 'Inter-ExtraBold'],
     Fonts.mono: ['JetBrainsMono-Regular'],
   };
