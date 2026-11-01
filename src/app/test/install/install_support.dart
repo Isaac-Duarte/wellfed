@@ -23,7 +23,11 @@ Widget installApp(FakeBook book, FakeInstallPorts ports, {Brightness? brightness
       ),
     ],
   );
-  return MaterialApp.router(theme: wellfedTheme(brightness ?? Brightness.light), routerConfig: router);
+  return MaterialApp.router(
+    theme: wellfedTheme(brightness ?? Brightness.light),
+    debugShowCheckedModeBanner: false,
+    routerConfig: router,
+  );
 }
 
 /// The install's first screen.

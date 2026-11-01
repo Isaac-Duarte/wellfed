@@ -34,7 +34,7 @@ Future<void> settle(WidgetTester tester) async {
 }
 
 Widget themed(Widget child, {Brightness brightness = Brightness.light}) =>
-    MaterialApp(theme: wellfedTheme(brightness), home: child);
+    MaterialApp(theme: wellfedTheme(brightness), debugShowCheckedModeBanner: false, home: child);
 
 mixin FakeOpaque implements RustOpaqueInterface {
   @override

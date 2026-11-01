@@ -143,7 +143,7 @@ class _Found extends StatelessWidget {
             FilledButton(
               style: FilledButton.styleFrom(
                 minimumSize: small,
-                textStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold),
+                textStyle: const TextStyle(fontFamily: Fonts.family, fontSize: Sizes.base, fontWeight: Fonts.semibold),
               ),
               onPressed: onConnect,
               child: const Text('Connect'),
@@ -152,7 +152,7 @@ class _Found extends StatelessWidget {
             OutlinedButton(
               style: OutlinedButton.styleFrom(
                 minimumSize: small,
-                textStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold),
+                textStyle: const TextStyle(fontFamily: Fonts.family, fontSize: Sizes.base, fontWeight: Fonts.semibold),
               ),
               onPressed: onConnect,
               child: const Text('Connect'),

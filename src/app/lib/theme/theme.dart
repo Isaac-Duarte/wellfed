@@ -69,7 +69,7 @@ ThemeData wellfedTheme(Brightness brightness) {
         disabledBackgroundColor: t.sunken,
         disabledForegroundColor: t.textMuted,
         shape: controlShape,
-        textStyle: const TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold),
+        textStyle: const TextStyle(fontFamily: Fonts.family, fontSize: Sizes.md, fontWeight: Fonts.semibold),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
@@ -78,13 +78,13 @@ ThemeData wellfedTheme(Brightness brightness) {
         shape: controlShape,
         side: BorderSide(color: t.lineStrong),
         foregroundColor: t.text,
-        textStyle: const TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold),
+        textStyle: const TextStyle(fontFamily: Fonts.family, fontSize: Sizes.md, fontWeight: Fonts.semibold),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         minimumSize: const Size(48, 44),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: Fonts.semibold),
+        textStyle: const TextStyle(fontFamily: Fonts.family, fontSize: 15, fontWeight: Fonts.semibold),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(

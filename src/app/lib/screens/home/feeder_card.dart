@@ -70,7 +70,11 @@ class FeederCard extends StatelessWidget {
                           style: FilledButton.styleFrom(
                             minimumSize: const Size(0, 44),
                             padding: const EdgeInsets.symmetric(horizontal: 14),
-                            textStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold),
+                            textStyle: const TextStyle(
+                              fontFamily: Fonts.family,
+                              fontSize: Sizes.base,
+                              fontWeight: Fonts.semibold,
+                            ),
                           ),
                           onPressed: controller.state.canFeed ? () => feedNow(context, controller) : null,
                           child: const Text('Feed'),

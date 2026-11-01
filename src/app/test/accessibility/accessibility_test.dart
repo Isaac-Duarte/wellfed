@@ -67,7 +67,7 @@ Future<void> _show(WidgetTester tester, Widget screen, Brightness brightness) as
 
 Future<FeederController> _feeder(WidgetTester tester) async {
   final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
-  session.status(fakeCard());
+  session.status(fullCard());
   await tester.pump();
   return feeder;
 }
@@ -374,7 +374,7 @@ void main() {
 
       testWidgets('home and the feeder shell', (tester) async {
         final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
-        session.status(fakeCard());
+        session.status(fullCard());
         await _show(tester, HomeScreen(fleet: fleet, earlierInstall: () async => PendingInstall.nothing), brightness);
         await expectAccessible(tester);
 
@@ -405,7 +405,7 @@ void main() {
       ]) {
         testWidgets('a feed $name', (tester) async {
           final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
-          session.status(fakeCard());
+          session.status(fullCard());
           await tester.pump();
           feeder.feedNow(2);
           session.updates.add(update());
