@@ -71,6 +71,57 @@ describe("tabs", () => {
   });
 });
 
+describe("verdicts", () => {
+  const LOG = "guide/how-it-works/testing.md";
+
+  test("a verdict becomes a label above its findings, without its full stop", () => {
+    const { html } = render(LOG, "# Log\n\n### A run\n\n**Passed with gaps.** It held.\n");
+
+    expect(html).toContain(
+      '<p class="verdict-line"><strong class="verdict verdict-gaps">Passed with gaps</strong></p>\n<p>It held.</p>',
+    );
+  });
+
+  test("a verdict with nothing after it leaves no empty paragraph", () => {
+    const { html } = render(LOG, "# Log\n\n### A run\n\n**Open.**\n\n- Still running.\n");
+
+    expect(html).toContain('<strong class="verdict verdict-open">Open</strong></p>\n<ul>');
+    expect(html).not.toContain("<p></p>");
+  });
+
+  test("a table cell holding only a verdict is marked, and other bold isn't", () => {
+    const { html } = render(LOG, "# Log\n\n| A | B |\n| --- | --- |\n| **Partly fixed** | **Mostly fine** |\n");
+
+    expect(html).toContain('<td><strong class="verdict verdict-partly">Partly fixed</strong></td>');
+    expect(html).toContain("<td><strong>Mostly fine</strong></td>");
+  });
+
+  test("another page's bold stays bold", () => {
+    expect(render("guide/test.md", "### A run\n\n**Open.** It held.\n").html).not.toContain("verdict");
+  });
+
+  test("every entry in the real log has one", () => {
+    const { html, headings } = rendered(LOG);
+    const entries = headings.filter((heading) => heading.depth === 3);
+
+    expect(entries.length).toBeGreaterThan(0);
+    expect(html.match(/class="verdict-line"/g)).toHaveLength(entries.length);
+  });
+
+  test.each([
+    ["no verdict", "### A run\n\nIt held.\n\n### Another\n\n**Open.**\n", "line 1 has no verdict"],
+    [
+      "the last entry's missing verdict",
+      "### A run\n\n**Open.**\n\n### Another\n\nIt held.\n",
+      "line 5 has no verdict",
+    ],
+    ["a phrase outside the set", "### A run\n\n**Mostly fine.** It held.\n", '"Mostly fine" isn\'t a verdict'],
+    ["two verdicts", "### A run\n\n**Open.**\n\n**Passed.**\n", "has two verdicts"],
+  ])("%s fails the build", (_name, markdown, message) => {
+    expect(() => render(LOG, markdown)).toThrow(message);
+  });
+});
+
 describe("images", () => {
   test("a published page's PNG gets a route without the guide's prefix", () => {
     const { html, images: routes } = rendered("guide/install.md");

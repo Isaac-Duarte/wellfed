@@ -10,14 +10,14 @@ Each row links to its entry, which has the numbers and what the fix did and didn
 
 | Entry | What broke | Result |
 | --- | --- | --- |
-| [Forty power cuts](#forty-power-cuts-to-catch-a-hang) | A rejected Wi-Fi join after a power cut hung the chip, in 9 of 19 rejections. | **Failed, then fixed** |
-| [The app during a power cut](#cut-the-power-mid-feed-with-the-app-watching) | The app showed Feeding and a live Stop button about 2 minutes after the cut. | **Failed, then fixed** |
-| [Motor leads at boot](#watched-the-motor-leads-at-every-boot) | 49 of 49 boots commanded a 105 µs forward pulse. | **Failed, then fixed** |
-| [First feeds](#first-feeds-through-the-feeding-owner) | A start-up surge tripped a feed 17 ms in. | **Failed, then fixed** |
+| [Forty power cuts](#forty-power-cuts-to-catch-a-hang) | A rejected Wi-Fi join after a power cut hung the chip, in 9 of 19 rejections. | **Fixed** |
+| [The app during a power cut](#cut-the-power-mid-feed-with-the-app-watching) | The app showed Feeding and a live Stop button about 2 minutes after the cut. | **Fixed** |
+| [Motor leads at boot](#watched-the-motor-leads-at-every-boot) | 49 of 49 boots commanded a 105 µs forward pulse. | **Fixed** |
+| [First feeds](#first-feeds-through-the-feeding-owner) | A start-up surge tripped a feed 17 ms in. | **Fixed** |
 | [Repeated installs](#installed-over-and-over-through-bank-0) | Crashes during downloads: 5 of 26 installs passed. | **Partly fixed** |
-| [A test build's trial](#installed-a-test-build-which-rolled-itself-back) | A Wi-Fi retry starved the supervising task, and the build rolled itself back. | **Failed, then fixed** |
-| [Installing from stock](#installed-from-stock-on-a-route-weve-since-removed) | Stock refused the install, then our backup check refused a correct copy. | **Failed, then fixed** |
-| [The clock across an install](#compared-the-clock-with-the-bench-computer) | The clock read 12.2 s behind while claiming 5.5 s of error. | **Failed, then fixed** |
+| [A test build's trial](#installed-a-test-build-which-rolled-itself-back) | A Wi-Fi retry starved the supervising task, and the build rolled itself back. | **Fixed** |
+| [Installing from stock](#installed-from-stock-on-a-route-weve-since-removed) | Stock refused the install, then our backup check refused a correct copy. | **Fixed** |
+| [The clock across an install](#compared-the-clock-with-the-bench-computer) | The clock read 12.2 s behind while claiming 5.5 s of error. | **Fixed** |
 | [Two history readers](#two-clients-reading-history-at-once) | With the server's stream open, a second client got one backlog event in 25 s and no live ones. | **Partly fixed** |
 | [Power cuts with no cells](#cut-the-power-with-no-cells-fitted) | The record read a 3,861 mV battery with no batteries fitted. | **Partly fixed** |
 
@@ -44,7 +44,7 @@ Each entry gives its dates and conditions, then opens its result with one of the
 | --- | --- |
 | **Passed** | It met what we set out to check, in the runs the entry names, and no further. |
 | **Passed with gaps** | It met the check, and the entry names what it missed or what went wrong along the way. |
-| **Failed, then fixed** | It failed, and the fix passed in the runs the entry names. |
+| **Fixed** | It failed, and the fix passed in the runs the entry names. |
 | **Partly fixed** | It failed, and the fix is only partly checked or doesn't cover every fault. |
 | **Open** | There's no result yet, the test didn't finish, or we can't explain what we saw. |
 | **Measured** | We took a measurement or found a limit, with nothing to pass. |
@@ -99,7 +99,7 @@ A cut between a meal's claim and its feed is **Modeled** only.
 
 After a cut, the access point still held the old connection and rejected the first join (status 30).
 
-**Failed, then fixed.**
+**Fixed.**
 
 - **The first 20 cuts:** 19 met that rejection, and 9 of those hung the chip until the watchdog reset it. The trail pointed at the Wi-Fi driver powering down under a write, so we turned its idle power save off.
 - **The next 20 cuts:** all 20 met the rejection and none hung.
@@ -108,7 +108,7 @@ After a cut, the access point still held the old connection and rejected the fir
 
 *Oct 31 · Twice · Hopper empty*
 
-**Failed, then fixed.**
+**Fixed.**
 
 - **The first time:** the app still showed Feeding with a live Stop button about 2 minutes on, and said the feeder would finish by itself, which was untrue.
 - **After the fix:** the app asked whether the feeder had fed at about 20 s. Once power returned, History read "Fed between 0 and 3", not re-run.
@@ -119,7 +119,7 @@ After a cut, the access point still held the old connection and rejected the fir
 
 We looked for motion at power-on.
 
-**Failed, then fixed.**
+**Fixed.**
 
 - **Oct 26:** 49 of 49 boots commanded a 105 µs forward pulse about 100 ms in. The analyzer's own bias on the pins probably helped cause it, but the fix holds either way.
 - **Oct 27:** 50 cold boots with the fix showed no drive when the board opened, and all ended in brake.
@@ -140,7 +140,7 @@ Motor current below is in the feeder's own scale, which we haven't confirmed as 
 
 *Oct 25 · Hopper empty*
 
-**Failed, then fixed.** A start-up surge read 333 on one reading and tripped a feed 17 ms in. A limit now needs two readings in a row. The first full portion then took 9,072 ms of drive and stopped 18 ms after the mark.
+**Fixed.** A start-up surge read 333 on one reading and tripped a feed 17 ms in. A limit now needs two readings in a row. The first full portion then took 9,072 ms of drive and stopped 18 ms after the mark.
 
 ### Broke the motor control on purpose
 
@@ -290,7 +290,7 @@ The earlier faults are 3 crashes and a hang in 157 bank-0 boots (Oct 24, none in
 
 Nobody asked it to.
 
-**Failed, then fixed.** Each of its three trial boots stopped at about 10.4 s, when a Wi-Fi retry starved the supervising task past its 1 s limit. The feeder gave way, as designed. The failing boots reached 1,088–1,093 ms. Moving the watchdog's task above the Wi-Fi driver gave a 250 ms trial gap on the one build we ran then, against 797–819 ms at the old priority, and it confirmed.
+**Fixed.** Each of its three trial boots stopped at about 10.4 s, when a Wi-Fi retry starved the supervising task past its 1 s limit. The feeder gave way, as designed. The failing boots reached 1,088–1,093 ms. Moving the watchdog's task above the Wi-Fi driver gave a 250 ms trial gap on the one build we ran then, against 797–819 ms at the old priority, and it confirmed.
 
 ## Resetting and going back to stock
 
@@ -306,7 +306,7 @@ To stock over our updater, then back over stock's, with nobody at the bench. Als
 
 *Oct 28 and 29*
 
-**Failed, then fixed.** Stock refused at once with error 1214, likely because its clock was held back. Set its clock (it was 275,721 s behind) and it accepted. Then our backup check refused a correct copy: stock changes a whole 4-byte word of the marker, and we expected one byte. With that fixed, the backup matched the pinned hash and the build confirmed.
+**Fixed.** Stock refused at once with error 1214, likely because its clock was held back. Set its clock (it was 275,721 s behind) and it accepted. Then our backup check refused a correct copy: stock changes a whole 4-byte word of the marker, and we expected one byte. With that fixed, the backup matched the pinned hash and the build confirmed.
 
 ### A factory reset
 
@@ -348,7 +348,7 @@ With a person at the terminal.
 
 Across an install.
 
-**Failed, then fixed.**
+**Fixed.**
 
 - **Oct 26:** the clock read 12.2 s behind while claiming 5.5 s of error, about 12 s lost over 249 flash erases. It now counts on a timer that runs through erases.
 - **Oct 27:** 121 ms off after the same kind of install, claiming 2.6 s.
