@@ -22,7 +22,6 @@ use wellfed_core::record::{self, Api, Confirm, Event, Trial, Update, Watch};
 use wellfed_formats::bench::catalog;
 use wellfed_formats::require;
 use wellfed_model::Generation;
-use wellfed_rig::commands::minutes_arg;
 use wellfed_rig::commands::ota::Outcome;
 use wellfed_rig::device::{Answer, Ask, Credentials, DeviceStatus, Intruder, Rebuffed};
 use wellfed_rig::server::NotReady;
@@ -94,10 +93,6 @@ pub enum ScenariosError {
     EarlyConfirm,
     #[error("After a cut in the trial KM0 counted boot {boot:?}, not 1 again")]
     TrialCount { boot: Option<u32> },
-    #[error("The feeder restarted {restarts} times")]
-    Restarted { restarts: usize },
-    #[error("The Wi-Fi link was lost ({before} losses, then {after})")]
-    LinkLost { before: u32, after: u32 },
 }
 
 /// One catalog entry and the code that runs it; the entry's fields read
@@ -150,7 +145,7 @@ const fn same(a: &str, b: &str) -> bool {
 }
 
 /// The scenarios in catalog order; a test holds the two orders together.
-pub(super) const SCENARIOS: [Scenario; 12] = [
+pub(super) const SCENARIOS: [Scenario; 11] = [
     Scenario::new("ota-update", ota_update),
     Scenario::new("requests", requests),
     Scenario::new("request-auth", request_auth),
@@ -161,7 +156,6 @@ pub(super) const SCENARIOS: [Scenario; 12] = [
     Scenario::new("ota-recovery", ota_recovery),
     Scenario::new("ota-power-cuts", ota_power_cuts),
     Scenario::new("stock-roundtrip", super::stock::roundtrip),
-    Scenario::new("soak", soak),
     Scenario::new("sustained", super::sustained::sustained),
 ];
 
@@ -754,43 +748,6 @@ fn power_cuts(ctx: &mut Ctx, staged: &super::Staged) -> Result<()> {
     require(boot == Some(1), || ScenariosError::TrialCount { boot })?;
     ctx.expect("PLCNF1 confirmed=1", since, STATUS_WAIT, confirmed)?;
     ctx.confirm(&staged.build)
-}
-
-/// One status request per period.
-const SOAK_PERIOD: Duration = Duration::from_secs(30);
-
-fn soak(ctx: &mut Ctx) -> Result<()> {
-    let since = ctx.mark()?;
-    let before = ctx.reachable(STATUS_WAIT)?;
-    let end = ctx.rig.clock() + minutes_arg("--soak-minutes", ctx.args.soak_minutes)?;
-
-    let (mut asked, mut slowest) = (0u32, Duration::ZERO);
-    while ctx.rig.clock() < end {
-        let at = ctx.rig.clock();
-        ctx.device_status()?;
-        slowest = slowest.max(ctx.rig.clock().saturating_sub(at));
-        asked += 1;
-        ctx.idle(SOAK_PERIOD)?;
-    }
-
-    let restarts = ctx.log.count(since, is_start);
-    let after = ctx.device_status()?;
-    let losses = after.losses.saturating_sub(before.losses);
-    ctx.note(&format!(
-        "  {asked} status requests, slowest answer {:.1} s, {restarts} restarts, {losses} link losses",
-        slowest.as_secs_f64()
-    ));
-    require(
-        restarts == 0 && after.boot_count == before.boot_count,
-        || ScenariosError::Restarted { restarts },
-    )?;
-    require(losses == 0, || {
-        ScenariosError::LinkLost {
-            before: before.losses,
-            after: after.losses,
-        }
-        .into()
-    })
 }
 
 /// What every scenario must leave as it found it: the settings, the Wi-Fi

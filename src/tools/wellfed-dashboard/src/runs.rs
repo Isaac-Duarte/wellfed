@@ -311,13 +311,13 @@ mod tests {
             ]
         );
 
-        let soak = view
+        let unrun = view
             .scenarios
             .iter()
-            .find(|s| s.scenario == "soak")
+            .find(|s| s.scenario == "sustained")
             .unwrap();
-        assert_eq!(soak.history, [None, None, None]);
-        assert_eq!(soak.median_seconds, None);
+        assert_eq!(unrun.history, [None, None, None]);
+        assert_eq!(unrun.median_seconds, None);
     }
 
     #[test]

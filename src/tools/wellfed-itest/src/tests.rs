@@ -1096,8 +1096,6 @@ fn the_full_suite_passes_on_a_well_behaved_feeder() {
         "--feeds",
         "--tier",
         "soak",
-        "--soak-minutes",
-        "5",
         // Every fault of the sustained run once.
         "--sustained-cycles",
         "8",
@@ -1176,8 +1174,7 @@ fn tiers_take_on_more_of_the_suite() {
     };
 
     assert_eq!(names("smoke"), ["ota-update", "requests", "request-auth"]);
-    assert_eq!(names("standard").len(), SCENARIOS.len() - 2);
-    assert!(!names("standard").contains(&"soak"));
+    assert_eq!(names("standard").len(), SCENARIOS.len() - 1);
     assert!(!names("standard").contains(&"sustained"));
     assert_eq!(names("soak").len(), SCENARIOS.len());
 }
@@ -1342,29 +1339,13 @@ fn a_feed_handed_to_the_owner_again_after_a_cut_halts_the_sustained_run() {
 }
 
 #[test]
-fn a_soak_fails_on_a_link_loss() {
+fn a_link_loss_at_rest_halts_the_sustained_run() {
     let mut feeder = Feeder::new(GOOD);
-    feeder.at(200.0, Event::LinkLoss);
-    let (reports, _) = suite(
-        &mut feeder,
-        &[
-            "--review",
-            "private/verification/x-review",
-            "--only",
-            "soak",
-            "--soak-minutes",
-            "10",
-        ],
-    );
+    feeder.at(1200.0, Event::LinkLoss);
+    let report = sustained(&mut feeder, "1");
 
-    assert_eq!(
-        verdicts(&reports),
-        [("ota-update", "pass"), ("soak", "fail")]
-    );
-    let Verdict::Fail(reason) = &reports[1].verdict else {
-        unreachable!()
-    };
-    assert!(reason.contains("link was lost"), "{reason}");
+    let reason = halted(&feeder, &report);
+    assert!(reason.contains("link was lost at rest"), "{reason}");
 }
 
 #[test]
@@ -1722,17 +1703,17 @@ fn a_held_session_lost_mid_feed_restores_only_after_the_feed() {
 fn a_feed_that_never_ends_stops_the_suite_without_restoring() {
     let mut feeder = Feeder::new(GOOD);
     feeder.feed_never_ends = true;
+    // Every flag `sustained` needs, so only the stop can skip it.
     let (reports, _) = suite(
         &mut feeder,
         &[
-            "--review",
-            "r",
+            "--build",
+            "--power",
+            "--destructive",
             "--feeds",
             "--keep-going",
             "--only",
-            "feed-writes,soak",
-            "--soak-minutes",
-            "1",
+            "feed-writes,sustained",
         ],
     );
 
@@ -1741,7 +1722,7 @@ fn a_feed_that_never_ends_stops_the_suite_without_restoring() {
         [
             ("ota-update", "pass"),
             ("feed-writes", "fail"),
-            ("soak", "skip")
+            ("sustained", "skip")
         ]
     );
     let Verdict::Fail(reason) = &reports[1].verdict else {
@@ -1763,17 +1744,17 @@ fn a_feed_that_never_ends_stops_the_suite_without_restoring() {
 fn a_lost_feed_request_with_no_feed_record_stops_the_suite_without_restoring() {
     let mut feeder = Feeder::new(GOOD);
     feeder.drops_feed = true;
+    // Every flag `sustained` needs, so only the stop can skip it.
     let (reports, _) = suite(
         &mut feeder,
         &[
-            "--review",
-            "r",
+            "--build",
+            "--power",
+            "--destructive",
             "--feeds",
             "--keep-going",
             "--only",
-            "feed-writes,soak",
-            "--soak-minutes",
-            "1",
+            "feed-writes,sustained",
         ],
     );
 
@@ -1782,7 +1763,7 @@ fn a_lost_feed_request_with_no_feed_record_stops_the_suite_without_restoring() {
         [
             ("ota-update", "pass"),
             ("feed-writes", "fail"),
-            ("soak", "skip")
+            ("sustained", "skip")
         ]
     );
     let Verdict::Fail(reason) = &reports[1].verdict else {

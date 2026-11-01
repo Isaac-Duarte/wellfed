@@ -31,7 +31,7 @@ use wellfed_formats::bench::progress::StepState;
 use wellfed_formats::bench::run::{Evidence, RunRecord, SUFFIX, ScenarioRecord, ScenarioVerdict};
 use wellfed_formats::require;
 use wellfed_rig::commands::ota::{self, Outcome, Staged, Target, Watch};
-use wellfed_rig::commands::{Bench, Image, OtaArgs, minutes_arg};
+use wellfed_rig::commands::{Bench, Image, OtaArgs};
 use wellfed_rig::device::{Answer, Ask, DeviceStatus, Intruder, Rebuffed};
 use wellfed_rig::say;
 use wellfed_rig::server::{StockStatus, TrialAnswer, TrialRequest};
@@ -948,8 +948,6 @@ pub fn stock_ota(bench: &mut Bench, args: &StockOtaArgs, stock_bin: PathBuf) -> 
 /// Run the selected scenarios on the live bench, restore it, then print
 /// and record the verdicts.
 pub fn itest(bench: &mut Bench, args: &ItestArgs, stock_bin: PathBuf) -> Result<u8> {
-    // Refused here, before the bench changes, rather than when `soak` runs.
-    minutes_arg("--soak-minutes", args.soak_minutes)?;
     let scenarios = select(args)?;
     let name = args.name().to_string();
     let record = bench

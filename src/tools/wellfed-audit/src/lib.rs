@@ -5,7 +5,6 @@
 //! fields, so either version's reports read the same:
 //! - `startup`: a receive-only startup capture against its source-bound build
 //!   (`audit-firmware-startup.py`)
-//! - `adc`: the power-input samples (`audit-firmware-adc.py`)
 //! - `qa`: the QA firmware's guided self-test (new in Rust; no Python auditor)
 //! - `transients`: logic-analyzer captures of the motor driver
 //!   (`audit-driver-transients.py`)
@@ -16,7 +15,6 @@
 
 #![forbid(unsafe_code)]
 
-pub mod adc;
 pub mod backup;
 pub(crate) mod capture;
 pub mod qa;
@@ -48,9 +46,6 @@ pub enum Error {
     Startup(#[from] startup::StartupError),
     #[error(transparent)]
     Policy(#[from] startup::PolicyError),
-    /// The ADC audit runs only on a build that declares an ADC policy.
-    #[error("ADC policy required")]
-    AdcPolicyRequired { declared: Option<String> },
     /// The QA audit runs only on the QA firmware.
     #[error("A QA firmware build required")]
     QaBuildRequired { firmware: Option<String> },

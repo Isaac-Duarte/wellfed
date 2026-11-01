@@ -23,7 +23,6 @@ use wellfed_stock::{
     build_info::BUILD,
     clock,
     config::{self, State},
-    mqtt::{broker, broker::DeviceAuth},
     neighbour, network, ota,
     server::{self, OtaTrial, Server},
 };
@@ -83,15 +82,6 @@ enum Action {
         enable_ota_trial: bool,
         /// With an installer's config and no feeder enrolled yet: trust the
         /// first stock feeder that connects within this many minutes.
-        #[arg(long)]
-        enroll_minutes: Option<u64>,
-    },
-
-    /// Run just the authenticated Rust MQTT broker (normally managed by serve).
-    Broker {
-        #[arg(long, default_value = "private/server.json")]
-        config: PathBuf,
-        /// As `serve --enroll-minutes`.
         #[arg(long)]
         enroll_minutes: Option<u64>,
     },
@@ -257,27 +247,6 @@ async fn main() -> Result<()> {
                 "Wrote an installer's configuration to {}; no feeder is enrolled yet.",
                 output.display()
             );
-        }
-
-        Action::Broker {
-            config,
-            enroll_minutes,
-        } => {
-            let path = config.canonicalize()?;
-            let (listen, auth) = match (config::state(&path)?, enroll_minutes) {
-                (State::Device(config), _) => (config.mqtt_listen, DeviceAuth::device(&config)),
-                (State::Unenrolled(config), Some(minutes)) => (
-                    config.mqtt_listen,
-                    DeviceAuth::enrolling(&config, &path, Duration::from_secs(minutes * 60)),
-                ),
-                (State::Unenrolled(_), None) => {
-                    bail!("no feeder is enrolled; pass --enroll-minutes to admit one")
-                }
-            };
-            let stop = async {
-                let _ = tokio::signal::ctrl_c().await;
-            };
-            broker::run(listen, auth, stop).await?
         }
         Action::Serve {
             config,
@@ -470,7 +439,7 @@ async fn terminated() -> std::io::Result<()> {
 /// The bench lease beside `config` (in a checkout, `private/`), for what
 /// drives the feeder: `setup-send`, and a trial-enabled `serve` for its
 /// whole lifetime, since it dispatches a multi-minute install. A plain
-/// `serve`, `broker` and `ota-images` take none: they only answer, beside
+/// `serve` and `ota-images` take none: they only answer, beside
 /// the bench command that drives the feeder. Run by the bench (`itest`,
 /// `stock-ota`), `serve` descends from the holder and runs on its lease.
 fn bench_lease(config: &std::path::Path) -> Result<Lease> {

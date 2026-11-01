@@ -38,7 +38,7 @@ use super::{Armed, Ctx, Error, Fault, Hotspot, Result, STATUS_WAIT, compact, sho
 const CYCLE: Duration = Duration::from_secs(30 * 60);
 /// From one feed's request to the next one's, within a cycle.
 const FEED_PERIOD: Duration = Duration::from_secs(10 * 60);
-/// A device API status between feeds, as `soak` asks.
+/// A device API status between feeds.
 const POLL_PERIOD: Duration = Duration::from_secs(30);
 /// Into the drive before a cut or an outage: past the start-up surge and
 /// before the first portion's mark, about 7.8 s in on the bench.

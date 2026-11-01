@@ -17,7 +17,7 @@ pub enum Tier {
     Smoke,
     /// The whole functional suite (about half an hour).
     Standard,
-    /// Standard, then long runs (`--soak-minutes`).
+    /// Standard, then the long run (`--sustained-cycles`).
     Soak,
 }
 
@@ -69,7 +69,7 @@ pub struct Scenario {
 }
 
 /// The whole suite, in run order.
-pub const SCENARIOS: [Scenario; 12] = [
+pub const SCENARIOS: [Scenario; 11] = [
     Scenario {
         name: "ota-update",
         about: "install the build under test over the air and see it confirm",
@@ -138,13 +138,6 @@ pub const SCENARIOS: [Scenario; 12] = [
         about: "to stock 1.1.15 over our updater, then back over stock's own and the bank-0 promotion",
         tier: Tier::Standard,
         needs: &[Need::Power, Need::Stock],
-        baseline: false,
-    },
-    Scenario {
-        name: "soak",
-        about: "status every 30 s for --soak-minutes with no restart, link loss or missed answer",
-        tier: Tier::Soak,
-        needs: &[],
         baseline: false,
     },
     Scenario {

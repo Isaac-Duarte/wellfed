@@ -150,7 +150,7 @@ After startup, KM4 opens the board's outputs (motor STOP, emitters OFF, no flash
 - Once a second without end, `PLADC1 sample n=<n> ticks=<n> food=<0|1> outlet=<0|1> dc=<0|1> stopped=<0|1> current=<min,max,mean,scaled> battery=<min,max,mean,scaled>`. v2 appends ` supply=<min,max,mean,scaled>`. `ticks` times the whole capture (32 conversions, 48 under v2) against the SYSTIMER.
 - `PLADC1 error n=<n> ticks=<n> stopped=<0|1>` on a capture timeout or failed stopped readback, which ends the probe with the board tripped.
 
-`wellfed-audit adc` takes the usual arguments. It requires one passing startup, the clock and open records after `PLLED1 done low=all`, a verified enable, and efuse bytes that decode to the reported calibration. It then needs at least 30 samples numbered from 0, about a second apart (mean host spacing 0.8–1.5 s), each with `stopped=1`, `ticks` in 1–3277 (100 ms), `min <= mean <= max <= 4095`, and the scaled value equal to the stock formula on the mean. Under v2 every sample must carry the supply channel, and its mean must differ from both external channels' means by at least 1000 raw, which shows the channel select takes effect. Outcomes are `startup_*`, `adc_sequence`, `adc_clock`, `adc_open`, `adc_samples`, `adc_values`, `adc_channels`, `adc_timing` and `pass`. The report lists the registers, whether startup had already enabled the ADC, the calibration, the levels on each GPIO input and per-channel ranges. What the channels mean is in [power](power.md#inputs).
+No audit reads these samples: `wellfed-audit startup` checks only that the policy and its markers agree. What the channels mean is in [power](power.md#inputs).
 
 ## Wi-Fi scan
 

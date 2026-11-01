@@ -542,7 +542,6 @@ struct ItestArgs {
     confirm_destructive: bool,
     #[serde(default)]
     keep_going: bool,
-    soak_minutes: Option<f64>,
     sustained_cycles: Option<u32>,
 }
 
@@ -1087,7 +1086,6 @@ fn job_words(name: &str, args: JsonObject) -> Result<Vec<String>, ToolError> {
                 .switch("--power", args.power)
                 .switch("--destructive", args.destructive)
                 .switch("--keep-going", args.keep_going)
-                .value("--soak-minutes", args.soak_minutes)
                 .value("--sustained-cycles", args.sustained_cycles)
         }
         "transients" => {

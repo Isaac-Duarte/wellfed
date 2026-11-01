@@ -11,7 +11,7 @@ use std::process::ExitCode;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 
-use wellfed_audit::{adc, backup, qa, startup, transients, write_report};
+use wellfed_audit::{backup, qa, startup, transients, write_report};
 
 #[derive(Parser)]
 #[command(
@@ -57,12 +57,6 @@ enum Command {
         /// Required observation after startup (1-180 seconds).
         #[arg(long, default_value_t = 60.0)]
         minimum_seconds: f64,
-    },
-
-    /// The read-only power-input samples after a passing startup.
-    Adc {
-        #[command(flatten)]
-        args: CaptureArgs,
     },
 
     /// The QA firmware's guided self-test after a passing startup.
@@ -133,13 +127,6 @@ fn run(cli: Cli) -> anyhow::Result<u8> {
 
             let report =
                 startup::verify(&args.capture, &args.manifest, &args.image, minimum_seconds)?;
-            write_report(&root, &args.output, &report, &args.inputs())?;
-            println!("{}", serde_json::to_string(&report)?);
-            Ok(status(report.passed()))
-        }
-
-        Command::Adc { args } => {
-            let report = adc::verify(&args.capture, &args.manifest, &args.image)?;
             write_report(&root, &args.output, &report, &args.inputs())?;
             println!("{}", serde_json::to_string(&report)?);
             Ok(status(report.passed()))

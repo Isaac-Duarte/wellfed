@@ -28,9 +28,6 @@ pub struct ItestArgs {
     /// How much of the suite to run.
     #[arg(long, value_enum, default_value_t = Tier::Standard)]
     pub tier: Tier,
-    /// How long `soak` runs.
-    #[arg(long, default_value_t = 60.0)]
-    pub soak_minutes: f64,
     /// How many half-hour cycles `sustained` runs: 16 is the defined
     /// 8-hour run, each fault twice; fewer is a shakedown, not the run.
     #[arg(long, default_value_t = 16, value_parser = clap::value_parser!(u32).range(1..=64))]

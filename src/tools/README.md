@@ -25,7 +25,7 @@ Build them with `cargo build --locked --release`, and run the binaries from `tar
 | [wellfed-stock](wellfed-stock) | What stock 1.1.15 speaks, as far as installing from it and rolling back need: its MQTT protocol and broker, the setup frame, the image server and the install-trial ledger, which `wellfed-install` runs in its own process. Its binary is the bench's stock server: `serve`, `ota-images`, the trial commands, `init-installer`, and for a set-up stock the captured-credential `init` and the feeder-only `network` redirect ([guide](../../docs/development/stock-server.md)) | No (network) |
 | [wellfed-stock-api](wellfed-stock-api) | The blocking loopback client of `wellfed-stock serve`'s HTTP API, shared by the suite and the page. Links nothing of the server | No (network) |
 | [wellfed-build](wellfed-build) | SDK firmware builds and their linked-image audits. `review` freezes a reviewed build or the stock OTA for `wellfed-flash`. `keygen` and `sign` sign a frozen review as an update ([firmware builds](../../docs/development/firmware-builds.md), [development updates](../../docs/development/uart-development.md)) | No |
-| [wellfed-audit](wellfed-audit) | Offline audits of finalized receive-only captures (startup, ADC samples, driver transients), and full-flash backup comparison | No |
+| [wellfed-audit](wellfed-audit) | Offline audits of finalized receive-only captures (startup, the QA self-test, driver transients), and full-flash backup comparison | No |
 | [wellfed-emu](wellfed-emu) | The vendor factory loader (mapping and bank selection) and UART flash helper, executed under Unicorn on supplied state. Backs the review's mapping check, the OTA marker fixtures and `wellfed-flash`'s emulated sessions | No |
 | [wellfed-signing](wellfed-signing) | Update signing, only ever of a frozen review: the bench key, version 2 manifests for the device API, and the downgrade and key statements. `wellfed-build keygen`/`sign`, the bench's offers and `wellfed restore-stock` use it | No |
 | [wellfed-image](wellfed-image) | The OTA image as every tool checks it: the container and core images, the two banks' layouts, the `private/` evidence root and frozen image reviews. The builder, the signer and the audits share these with `wellfed-flash` without linking it | No |
@@ -90,11 +90,11 @@ wellfed-flash    CLI            every bench write goes through it as a process
 | `wellfed-relay` | The relay board driver: power, the loader strap and the UART lines | Nothing first-party |
 | `wellfed-rig` | The operator sequences: power, loader, boot, capture, dump, the UART update and recovery chains, transients, the OTA loop, and the device API and server steps the suite builds on | `wellfed-relay`, `wellfed-formats`, `wellfed-client`, `wellfed-signing`, `wellfed-build`, and `wellfed-flash` as a process for every build, read and write |
 | `wellfed-itest` | The integration suite: scenarios, the live and scripted rigs, `stock-ota`, and their arguments | `wellfed-rig`, `wellfed-relay`, `wellfed-formats` |
-| `wellfed-bench-server` | The bench server: the lease, the relay board, the socket, the feeder session and the UART capture for its life, the rig's sequences, the suite, `wellfed install` and `wellfed-stock serve` as its jobs, one at a time, a job's questions and their answers, and the bank ledger; the client of its socket | `wellfed-rig`, `wellfed-itest`, `wellfed-relay`, `wellfed-formats`, `wellfed-connect` |
+| `wellfed-bench-server` | The bench server: the lease, the relay board, the socket, the feeder session and the UART capture for its life, the rig's sequences, the suite and `wellfed install` as its jobs, one at a time, a job's questions and their answers, and the bank ledger; the client of its socket | `wellfed-rig`, `wellfed-itest`, `wellfed-relay`, `wellfed-formats`, `wellfed-connect` |
 | `wellfed-bench` | The binary: `serve`, and the command line as the server's client | `wellfed-bench-server`, `wellfed-rig`, `wellfed-dashboard` (with `ui`) |
 | `wellfed-dashboard` | The progress page and its embedded web app, fed the server's live state through its `Live` trait, which also takes a job's answers | `wellfed-formats`, `wellfed-stock-api` |
 
-- **The relay board has a successor in design.** The [Wellfed Bench board](../hardware/bench/README.md) answers the same `AT+CHn` lines on one USB cable, with the UART bridge beside them. It has not been built, and nothing here knows it yet.
+- **The relay board has a successor.** The [Wellfed Bench board](../hardware/bench/README.md) answers the same `AT+CHn` lines on one USB cable, with the UART bridge beside them. The owner ordered assembled boards in October 2026. No tool here drives one yet: `wellfed-relay`'s `Board` trait is where it plugs in.
 - **Shared files live in `wellfed-formats`**, since one crate writes each and another reads it ([conventions](../../AGENTS.md#rust-conventions)). Under `bench`: a command's progress record and its writer, the server's live state and job stream, the bank ledger, the operator's notes, the run record (`NAME-itest.json`), the bench config, the session evidence layout, and the suite's scenario catalog. Under `stock`: the stock server's config, status document and image lease.
 - **One server holds the bench.** `wellfed-bench serve` takes the lease and the relay board for its life, so a command is a job it runs, never a second process racing for the port. The relay board sits behind `wellfed-relay`'s `Board` trait, so another board can take its place.
 - **The page cannot drive the bench by structure.** `wellfed-dashboard` links neither the relay driver, the flash client nor the server, and reports the flash client by hashing its file. The one thing it sends is the answer to a job's question, with the token the console prints at start, through `Live`, which the server checks like any client's. `make check-deps` enforces the first two ([Rust standard](../../docs/development/rust.md#dependencies)). `cargo xtask check-repository` enforces the rest, by refusing any manifest under `src/` that names `wellfed-flash` or `wellfed-stock`. It exempts each crate's own manifest. `wellfed-install`, the driver the CLI and the app share, may also name `wellfed-stock`, since it runs stock's server in-process.
@@ -108,19 +108,3 @@ wellfed-flash    CLI            every bench write goes through it as a process
 - **Single purpose.** A crate does one job. A second consumer is a reason to split, not to grow.
 - **Libraries leave IO to their caller where they can.** `wellfed-client` is sans-IO. `wellfed-stock` takes its sockets from the caller where it can, so the server, the CLI and the bench drive it the same way.
 - **Every pinned check survives a move.** The trial ledger's no-resend rule, the image hash binding and the evidence gates move unchanged, with their tests.
-
-## Older evidence names Python tools
-
-The tools here were Python until October 2026, and older evidence still names them, as `src/tools/<folder>/<script>.py` (or `src/tools/<script>.py` before October 21, 2026). Their last versions are in Git history. Plans, reports and journals they wrote still read in `wellfed-flash`.
-
-| Python tool | Now |
-| --- | --- |
-| `flash/uart-flash-read.py`, `flash-status.py`, `plan-stock-recovery.py`, `recovery-transaction.py`, `recovery-sector-transport.py`, `inspect-recovery-transaction.py`, `uart-stock-recovery.py`, `flash/uart-give-way.py`, `flash/uart-development.py`, `flash/development-bank.py`, `flash/development-wire-policy.py` | `wellfed-flash` |
-| `flash/review-development-image.py`, `audit/audit-ota-layout.py` | `wellfed-build review` and its layout audit |
-| `audit/audit-factory-mapping.py` (loader execution), `emulate/emulate-ota-markers.py`, `emulate/emulate-recovery-session.py` (helper model) | `wellfed-emu` |
-| `audit/audit-firmware-startup.py`, `audit/audit-firmware-adc.py`, `audit/audit-driver-transients.py`, `audit/audit-flash-backup.py`, `audit/audit-uart-startups.py` (capture validation) | `wellfed-audit` |
-| `bench/bench.py`, `bench/bench-dashboard.py` | `wellfed-bench` |
-| `emulate/virtual-feeder.py` | `wellfed-sim`'s `virtual-feeder` |
-| `check-repository.py`, `check-python.py` | `cargo xtask check-repository` and Rust tests |
-
-The other Python tools finished their job and were removed without a port: the stock write-back acceptance tests, the research audits, the early bring-up capture auditors, the stock C-probe research and the standalone diagnostic.

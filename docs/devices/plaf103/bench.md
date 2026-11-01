@@ -445,13 +445,13 @@ cargo build --release --bins --examples
 target/release/wellfed-bench itest --list
 target/release/wellfed-bench itest itest-YYYYMMDD-01 --build --tier smoke    # a few minutes
 target/release/wellfed-bench itest itest-YYYYMMDD-02 --build --power         # standard (default tier)
-target/release/wellfed-bench itest itest-YYYYMMDD-03 --build --power --destructive --tier soak --soak-minutes 120
+target/release/wellfed-bench itest itest-YYYYMMDD-03 --build --power --destructive
 target/release/wellfed-bench itest itest-YYYYMMDD-04 --review private/verification/<review> --only requests,request-auth
 target/release/wellfed-bench itest itest-YYYYMMDD-05 --review private/verification/<review> --only feed-writes --feeds
 target/release/wellfed-bench itest itest-YYYYMMDD-06 --build --power --destructive --feeds --only sustained   # the 8-hour run
 ```
 
-**Tiers.** `--tier smoke` runs `ota-update`, `requests` and `request-auth`, which takes minutes once the build under test is running. `standard`, the default, runs the whole functional suite. `soak` adds the long runs, `soak` and `sustained`. `--only` picks scenarios whatever their tier. The [sustained run](#sustained-run) is meant to run alone.
+**Tiers.** `--tier smoke` runs `ota-update`, `requests` and `request-auth`, which takes minutes once the build under test is running. `standard`, the default, runs the whole functional suite. `soak` adds the long run, `sustained`. `--only` picks scenarios whatever their tier. The [sustained run](#sustained-run) is meant to run alone.
 
 **Builds.** `--build` first asks `wellfed-build source-id --image` for the identity a build of these sources would embed. That identity covers every source input, the firmware, the variant and the update key. If a complete review with that `startup_identity` is already in `private/verification`, the suite signs it rather than building again. `wellfed-bench ota --build` does the same, and `--rebuild` builds anyway. So after the first run on unchanged sources, neither the build under test nor the trial firmware's `fail` image is rebuilt.
 
@@ -468,7 +468,6 @@ target/release/wellfed-bench itest itest-YYYYMMDD-06 --build --power --destructi
 | `feed-writes` | Writes from a second session during a feed, then a cancel ([details](#feed-writes)). | `--feeds` |
 | `ota-recovery` | The trial firmware's `fail` image installs and fails its trial, and KM0 gives way to bank 0, which answers the device API. The suite then pushes the re-signed baseline to it with one fault each, in its own transfer: a flipped byte → `stage=hash`, a chunk ahead of the wanted ones → `order`, 75 s of silence → `timeout`, none of them activating. Bank 0 keeps answering after each stop. A clean push then confirms and restores the baseline, so the fallback needs no restore install of its own. | `--build --power` |
 | `ota-power-cuts` | Installs the feeder's `twin` variant: the same firmware under another build identity, so it still serves the device API. It has to be a build the feeder has not confirmed, because a confirmed one skips the trial. Two cuts follow. **Mid-download** (48 sectors in), the next boot must be bank 0, and when the push offers again its first progress record must show the download starting again. **10 s into trial boot 1**, before the 30 s confirmation, KM0 must count boot 1 again (backup registers clear on power loss), and the build must still confirm. A cut during activation itself is not attempted, since the marker write and reset take milliseconds. The re-signed baseline then goes back on. | `--build --power --destructive` |
-| `soak` | A device API status every 30 s for `--soak-minutes` (default 60). It fails on any restart, any Wi-Fi loss or any missed answer, and reports the slowest. | soak tier |
 | `sustained` | `--sustained-cycles` (default 16) half-hour cycles of feeds every 10 minutes, each cycle opening with one fault from a fixed rotation. Any failed check cuts relay 1 and halts. Defined [below](#sustained-run). | soak tier, `--build --power --destructive --feeds` |
 | `stock-roundtrip` | To stock over the air and back through stock's updater ([below](#itest-scenario-stock-roundtrip)). | `--power --stock` |
 

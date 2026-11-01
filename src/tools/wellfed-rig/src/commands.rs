@@ -315,7 +315,7 @@ pub fn seconds_arg(flag: &'static str, value: f64) -> Result<Duration> {
 }
 
 /// As [`seconds_arg`], for a length given in minutes.
-pub fn minutes_arg(flag: &'static str, value: f64) -> Result<Duration> {
+pub(crate) fn minutes_arg(flag: &'static str, value: f64) -> Result<Duration> {
     length(flag, value, value * 60.0)
 }
 
