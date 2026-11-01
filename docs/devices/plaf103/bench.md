@@ -101,6 +101,7 @@ The files and shapes they share (the bench config, a command's progress record, 
 | `serve` | The bench server, in the foreground until `q`, Ctrl+C, SIGTERM or a hangup ([below](#the-bench-server)), drawn as a [full-screen console](#the-console). `--ui` serves the [progress page](#progress-page) beside it. |
 | `status` | The [bench lease](#bench-lease), then the server's job, its children, the UART, the feeder session, the bank ledger and the relays. With no server, it reads the relay board itself. A server that does not answer within 5 s is reported as such, after the lease. `--break-lease` first frees a lease a killed server left. |
 | `attach ID` | Follow job `ID` of the running server again, from its first kept line |
+| `console` | Watch the running server on a [full-screen console](#watching-from-another-terminal) of your own, here or over `ssh -t`. It only reads: `q` leaves, and the server runs on. |
 | `answer JOB SEQ done\|yes\|no` | Answer question `SEQ` of job `JOB` ([install as a job](#install-as-a-job)), once |
 | `banks` | The [bank ledger](#the-bank-ledger). `--seed DUMP_SESSION` starts it, from that dump's inspection or, when the inspection names no build, from `--bank N --build HASH`. |
 | `note` | The [operator's notes](#the-operators-notes): the step under way, the next steps, timers and evidence by card |
@@ -255,6 +256,22 @@ While a job asks a question, it shows in a panel above the log, with its number 
 `q` or Ctrl+C stops the server the same way SIGINT does: cancel the job, wait for its cleanup, then release the bench. During a UART write or a loader session the first press only shows the confirmation in the footer, and a second within 5 s stops ([above](#the-bench-server)). While the flash client writes, the screen redraws at most twice a second; otherwise four times. It draws from the live state and a channel only, so a slow terminal never holds the output pump: it loses console lines instead, which the job's stream and log file keep. When the server stops, the screen closes and the log's last 30 lines are printed on the terminal.
 
 Without a terminal (a service, a pipe), or with `--plain`, the console is plain lines on stdout, as before.
+
+#### Watching from another terminal
+
+`wellfed-bench console` draws the same screen for a server that is already running, in another terminal or from another machine. It connects to the server's socket and adds no listener, so a remote run goes over ssh, which needs `-t` for the terminal:
+
+```
+ssh -t HOST wellfed-bench console --root /path/to/checkout
+```
+
+- **It only reads.** It holds no way to post anything. `q` and Ctrl+C leave, and the server and its job run on, whatever the job is doing. The footer says so. It touches no hardware.
+- **Its log holds job output only.** It follows the running job, or else the last to finish, from its first kept line, with a separator at each new job and a line at each end. The lines only the server's own console prints, such as its start-up line and what it says while stopping, are not on the socket. A job's log is still complete: see [what the server keeps](#the-bench-server).
+- **A question shows, read-only.** Answer it with the `wellfed-bench answer` line the panel shows, or with `job_answer`.
+- **If the server goes away,** the last state stays on screen with a notice in the footer, and the console tries again every 2 s. It picks up whichever server answers next, and starts its log over if that is a new one. `q` still leaves.
+- **During a UART write** it redraws and polls the job's output at most twice a second, as the server's own console does. Over ssh it still runs on the bench host, so leave it if you want that host idle for a write.
+
+With no terminal or no server at the start, it exits with an error and says which. When it leaves, it prints the log's last 30 lines.
 
 #### The operator's notes
 

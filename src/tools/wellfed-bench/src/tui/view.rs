@@ -30,6 +30,9 @@ pub(crate) struct Screen<'a> {
     /// What the footer shows instead of the keys, such as the
     /// confirmation a first `q` during a write asks for.
     pub(crate) notice: Option<&'a str>,
+    /// The footer's keys: what `q` does differs between the server's own
+    /// console and one attached to it.
+    pub(crate) keys: &'a str,
 }
 
 const ROLES: [(&str, &str); 4] = [
@@ -90,8 +93,6 @@ pub(crate) fn draw(frame: &mut Frame<'_>, screen: &Screen<'_>) {
     }
     draw_log(frame, log, screen);
 
-    let keys =
-        "q or Ctrl+C stops the server (cancel, cleanup, release) · PgUp/PgDn scroll · End follows";
     let footer_line = match screen.notice {
         Some(notice) => Paragraph::new(notice).style(
             Style::new()
@@ -99,7 +100,7 @@ pub(crate) fn draw(frame: &mut Frame<'_>, screen: &Screen<'_>) {
                 .bg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         ),
-        None => Paragraph::new(keys).style(Style::new().fg(Color::DarkGray)),
+        None => Paragraph::new(screen.keys).style(Style::new().fg(Color::DarkGray)),
     };
     frame.render_widget(footer_line, footer);
 }

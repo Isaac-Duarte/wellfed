@@ -1,0 +1,188 @@
+//! The event stream and a [`Watched`] server over a real socket.
+
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use axum::extract::Request;
+use axum::http::Method;
+use axum::middleware::{Next, from_fn};
+use tokio::net::UnixListener;
+
+use super::*;
+use crate::Watched;
+
+type Seen = Arc<Mutex<Vec<(Method, String)>>>;
+
+/// A socket that serves `server`'s own routes and records what each request
+/// asked, which is what a client's read-only claim comes down to.
+fn recorded(server: &Running, dir: &Path) -> (PathBuf, Seen) {
+    let seen = Seen::default();
+    let recording = Arc::clone(&seen);
+    let router = crate::routes::router(Arc::clone(&server.shared)).layer(from_fn(
+        move |request: Request, next: Next| {
+            let recording = Arc::clone(&recording);
+            async move {
+                recording
+                    .lock()
+                    .unwrap()
+                    .push((request.method().clone(), request.uri().path().to_string()));
+                next.run(request).await
+            }
+        },
+    ));
+    let socket = dir.join("recorded.sock");
+    let listener = UnixListener::bind(&socket).unwrap();
+    tokio::spawn(async move { axum::serve(listener, router).await });
+    (socket, seen)
+}
+
+/// Take the lines `watched` has until one is `line`.
+async fn read_until(watched: &Watched, kept: &mut Vec<String>, line: &str) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !kept.iter().any(|kept| kept == line) {
+        match watched.line() {
+            Some(next) => kept.push(next),
+            None => {
+                assert!(Instant::now() < deadline, "no {line:?} in {kept:?}");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_event_stream_sends_the_state_each_change_and_ends_when_the_server_stops() {
+    if crate::tests::run_alone() {
+        return;
+    }
+    let _one = ONE_SERVER.lock().await;
+    let checkout = Checkout::new(0.1);
+    let server = Running::start(checkout.open());
+    let client = Client::new(&server.root);
+
+    let mut events = client.events().await.unwrap();
+    let first = events.next().await.unwrap().unwrap();
+    assert_eq!(first.server.phase, Phase::Serving);
+    assert_eq!(first.server.pid, std::process::id());
+
+    let id = server.submit(&["capture", "c1"]).await.unwrap();
+    loop {
+        let state = events.next().await.unwrap().unwrap();
+        if state
+            .job
+            .is_some_and(|job| job.id == id && job.end.is_some())
+        {
+            break;
+        }
+    }
+
+    server.quit().await;
+    let mut last = None;
+    while let Some(state) = events.next().await.unwrap() {
+        last = Some(state);
+    }
+    assert_eq!(last.unwrap().server.phase, Phase::Stopping);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_watcher_follows_a_job_with_gets_alone_and_leaving_lets_it_run_on() {
+    if crate::tests::run_alone() {
+        return;
+    }
+    let _one = ONE_SERVER.lock().await;
+    let checkout = Checkout::new(4.0);
+    let server = Running::start(checkout.open());
+    let (socket, seen) = recorded(&server, &checkout.root());
+    let id = server.submit(&["capture", "c1"]).await.unwrap();
+    let separator = format!("── job {id}: capture c1 ──");
+
+    // Leave in the middle of the job.
+    let watched = Watched::start(Client::at(socket.clone())).await.unwrap();
+    let mut kept = Vec::new();
+    read_until(&watched, &mut kept, &separator).await;
+    assert!(watched.answering());
+    assert_eq!(watched.state().job.map(|job| job.id), Some(id));
+    drop(watched);
+
+    let state = server.state().await;
+    assert_eq!(state.server.phase, Phase::Serving);
+    let job = state.job.as_ref().unwrap();
+    assert!(
+        job.end.is_none() && job.cancel == CancelState::None,
+        "{job:?}"
+    );
+    assert!(!state.activity.is_empty(), "{:?}", state.activity);
+
+    // Another attaches, and reads the job to its end.
+    let watched = Watched::start(Client::at(socket)).await.unwrap();
+    let mut kept = Vec::new();
+    read_until(&watched, &mut kept, &format!("── job {id} complete ──")).await;
+    assert_eq!(kept.iter().filter(|line| **line == separator).count(), 1);
+    assert!(
+        kept.contains(&"Captured 7 bytes in private/captures/c1".to_string()),
+        "{kept:?}"
+    );
+    drop(watched);
+    assert_eq!(follow(&server.client, id).await.0.code, 0);
+
+    // Every request was a GET of the three routes a watcher reads.
+    let seen = seen.lock().unwrap().clone();
+    let output = format!("/jobs/{id}/output");
+    assert!(seen.iter().any(|(_, path)| *path == output), "{seen:?}");
+    assert!(seen.iter().any(|(_, path)| path == "/events"), "{seen:?}");
+    for (method, path) in &seen {
+        assert_eq!(method, Method::GET, "{path}");
+        assert!(
+            path == "/state" || path == "/events" || *path == output,
+            "{path}"
+        );
+    }
+
+    server.quit().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_watcher_keeps_the_last_state_of_a_server_gone_and_resyncs_with_the_next() {
+    if crate::tests::run_alone() {
+        return;
+    }
+    let _one = ONE_SERVER.lock().await;
+    let checkout = Checkout::new(0.2);
+    let server = Running::start(checkout.open());
+    let watched = Watched::start(Client::new(&server.root)).await.unwrap();
+
+    let first = server.submit(&["capture", "c1"]).await.unwrap();
+    let mut kept = Vec::new();
+    read_until(&watched, &mut kept, &format!("── job {first} complete ──")).await;
+
+    server.quit().await;
+    until("the server to stop answering", || !watched.answering()).await;
+    let last = watched.state();
+    assert_eq!(last.server.phase, Phase::Stopping);
+    assert_eq!(last.job.map(|job| job.id), Some(first));
+
+    let server = Running::start(checkout.open());
+    until("the next server to answer", || watched.answering()).await;
+    assert_eq!(watched.state().server.phase, Phase::Serving);
+
+    let second = server.submit(&["capture", "c2"]).await.unwrap();
+    read_until(&watched, &mut kept, &format!("── job {second} complete ──")).await;
+
+    drop(watched);
+    server.quit().await;
+}
+
+#[test]
+fn a_keep_alive_or_another_event_carries_no_state() {
+    use crate::client::state_event;
+
+    assert!(state_event(b": keep-alive").unwrap().is_none());
+    assert!(state_event(b"event: other\ndata: {}").unwrap().is_none());
+    assert!(state_event(b"event: state").unwrap().is_none());
+    assert!(state_event(b"event: state\ndata: {").is_err());
+
+    let data = serde_json::to_string(&idle_state()).unwrap();
+    let event = format!("event: state\ndata: {data}");
+    let state = state_event(event.as_bytes()).unwrap().unwrap();
+    assert_eq!(state.server.pid, 1);
+}

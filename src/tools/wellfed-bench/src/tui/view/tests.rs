@@ -199,6 +199,16 @@ fn render_with(
     scroll: usize,
     notice: Option<&str>,
 ) -> String {
+    render_keys(state, log, scroll, notice, crate::tui::SERVE_KEYS)
+}
+
+fn render_keys(
+    state: &BenchState,
+    log: &VecDeque<String>,
+    scroll: usize,
+    notice: Option<&str>,
+    keys: &str,
+) -> String {
     let mut terminal = Terminal::new(TestBackend::new(130, 46)).unwrap();
     terminal
         .draw(|frame| {
@@ -209,6 +219,7 @@ fn render_with(
                     log,
                     scroll,
                     notice,
+                    keys,
                 },
             );
         })
@@ -226,6 +237,32 @@ fn a_first_q_during_a_write_puts_the_confirmation_in_the_footer() {
     assert!(asked.contains(prompt), "{asked}");
     assert!(!asked.contains("q or Ctrl+C stops the server"), "{asked}");
     assert!(plain.contains("q or Ctrl+C stops the server"), "{plain}");
+}
+
+#[test]
+fn an_attached_console_says_it_leaves_and_the_server_keeps_running() {
+    use crate::tui::attached::KEYS;
+
+    let screen = render_keys(&writing(), &log(1), 0, None, KEYS);
+
+    assert!(screen.contains("q or Ctrl+C leaves"), "{screen}");
+    assert!(screen.contains("the server keeps running"), "{screen}");
+    assert!(!screen.contains("stops the server"), "{screen}");
+}
+
+#[test]
+fn an_attached_console_keeps_the_last_state_under_the_retry_notice() {
+    use crate::tui::attached::{KEYS, NOT_ANSWERING};
+
+    let screen = render_keys(&writing(), &log(1), 0, Some(NOT_ANSWERING), KEYS);
+
+    assert!(
+        screen.contains("server not answering, retrying"),
+        "{screen}"
+    );
+    assert!(screen.contains("q leaves"), "{screen}");
+    assert!(screen.contains("UART WRITE IN PROGRESS"), "{screen}");
+    assert!(screen.contains("job line 1"), "{screen}");
 }
 
 fn log(lines: usize) -> VecDeque<String> {

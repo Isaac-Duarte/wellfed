@@ -22,6 +22,7 @@ use crate::stopping::Ask;
 
 mod feeder;
 mod install;
+mod watching;
 
 /// The output pipe is process-wide, so tests that run a server take turns
 /// when they share a process.

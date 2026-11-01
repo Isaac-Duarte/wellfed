@@ -4,7 +4,8 @@
 //! Each request opens its own connection, so a cancel can go out while a
 //! stream is being read. Leaving a stream (a second Ctrl+C, a closed
 //! terminal) only detaches: the job runs on, and `attach` follows it again
-//! from its first kept line.
+//! from its first kept line. [`Client::events`] follows the state as it
+//! changes, and `watching` builds a read-only view of the server on it.
 
 use std::path::{Path, PathBuf};
 
@@ -33,6 +34,10 @@ use crate::api::{
     Wait, Waited,
 };
 use crate::stopping::{CONFIRM_WINDOW, Confirm, Held};
+
+/// How long [`StateEvents`] waits for anything from the server, a keep-alive
+/// included, before calling it stuck. The server sends one every 15 s.
+const SILENT: Duration = Duration::from_secs(45);
 
 /// Why a client request did not get its answer.
 #[derive(Debug, thiserror::Error)]
@@ -67,6 +72,10 @@ pub enum ClientError {
     Json(#[from] serde_json::Error),
     #[error("The bench server closed job {id}'s stream before it ended")]
     StreamCut { id: JobId },
+    /// A server that holds the connection open but says nothing: its
+    /// process is stuck, say.
+    #[error("The bench server said nothing for {} s", after.as_secs())]
+    Silent { after: Duration },
     #[error("The wait's query: {0}")]
     Query(serde_urlencoded::ser::Error),
 }
@@ -107,6 +116,20 @@ impl Client {
     pub async fn state(&self) -> Result<BenchState, ClientError> {
         let response = self.send(Method::GET, "/state", None).await?;
         answer(response, StatusCode::OK).await
+    }
+
+    /// The state now, then again on each change, until the server stops:
+    /// its stream ends after a stopping server's state. Leaving it only
+    /// stops reading.
+    pub async fn events(&self) -> Result<StateEvents, ClientError> {
+        let response = self.send(Method::GET, "/events", None).await?;
+        if response.status() != StatusCode::OK {
+            return Err(refusal(response).await);
+        }
+        Ok(StateEvents {
+            body: response.into_body(),
+            pending: Vec::new(),
+        })
     }
 
     /// Post a command line, such as `["dump", "unit-01"]` (no `--root`), as
@@ -313,6 +336,55 @@ impl Client {
             .header(hyper::header::CONTENT_TYPE, "application/json")
             .body(Full::new(Bytes::from(body.unwrap_or_default())))?;
         Ok(sender.send_request(request).await?)
+    }
+}
+
+/// The server's state events, as [`Client::events`] opened them.
+pub struct StateEvents {
+    body: Incoming,
+    pending: Vec<u8>,
+}
+
+impl StateEvents {
+    /// The next state, or `None` once the server has ended the stream.
+    pub async fn next(&mut self) -> Result<Option<BenchState>, ClientError> {
+        loop {
+            while let Some(at) = self.pending.windows(2).position(|pair| pair == b"\n\n") {
+                let state = state_event(&self.pending[..at])?;
+                self.pending.drain(..at + 2);
+                if state.is_some() {
+                    return Ok(state);
+                }
+            }
+
+            let frame = tokio::time::timeout(SILENT, self.body.frame())
+                .await
+                .map_err(|_| ClientError::Silent { after: SILENT })?;
+            let Some(frame) = frame else {
+                return Ok(None);
+            };
+            if let Ok(data) = frame?.into_data() {
+                self.pending.extend_from_slice(&data);
+            }
+        }
+    }
+}
+
+/// The state one server-sent event carries; a keep-alive carries none. The
+/// server's JSON holds no raw newline, so its data is always one line.
+pub(crate) fn state_event(event: &[u8]) -> Result<Option<BenchState>, serde_json::Error> {
+    let mut named = false;
+    let mut data = None;
+    for line in event.split(|byte| *byte == b'\n') {
+        if let Some(name) = line.strip_prefix(b"event:") {
+            named = name.trim_ascii() == b"state";
+        } else if let Some(value) = line.strip_prefix(b"data:") {
+            data = Some(value.trim_ascii());
+        }
+    }
+    match data.filter(|_| named) {
+        Some(data) => serde_json::from_slice(data).map(Some),
+        None => Ok(None),
     }
 }
 

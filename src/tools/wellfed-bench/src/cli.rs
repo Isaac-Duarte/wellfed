@@ -12,6 +12,8 @@
 //!   job again.
 //! - `answer JOB SEQ done|yes|no` answers the question a job (`install`)
 //!   asks, once; the page answers it too.
+//! - `console` draws the server's full-screen console in another terminal
+//!   or over `ssh -t`. It only reads: `q` leaves, and the server runs on.
 //! - With no server running, only `status` (and `status --break-lease`)
 //!   runs: it reports the lease and reads the relay board itself, which is
 //!   the way back after a killed server. Every other command refuses and
@@ -92,6 +94,11 @@ enum Command {
         /// The job's number, as its command printed it.
         id: JobId,
     },
+    /// Watch the running server on a full-screen console of your own, here
+    /// or through `ssh -t HOST wellfed-bench console --root ROOT`. It only
+    /// reads: `q` or Ctrl+C leaves, and the server and its job run on. It
+    /// shows job output, not the lines only the server's own console prints.
+    Console,
     /// Answer the question a running job asks (`install`), as the page
     /// and the console show it with its number.
     Answer {
@@ -248,6 +255,7 @@ fn run(cli: Cli, argv: &[String]) -> anyhow::Result<u8> {
         }),
         Command::Note(args) => runtime.block_on(note::note(&Client::new(&root), &root, args)),
         Command::Mcp => runtime.block_on(mcp::serve(&root)),
+        Command::Console => tui::attached::run(&root, &runtime),
         Command::Attach { id } => runtime.block_on(async {
             let mut interrupts = interrupts()?;
             follow(&Client::new(&root), id, &mut interrupts).await

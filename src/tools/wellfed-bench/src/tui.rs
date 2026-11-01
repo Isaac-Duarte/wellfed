@@ -9,14 +9,19 @@
 //! host spends no more than that on it during a write. `q` and Ctrl+C
 //! (which raw mode delivers as a key, not a signal) ask for the same stop
 //! as SIGINT: cancel the job, wait for its cleanup, then release the bench.
-//! A job's question shows above the log, read-only: the page, the
-//! `answer` command and an agent answer it.
+//! A job's question shows above the log, read-only: the `answer` command
+//! and an agent answer it.
 //! While the flash client holds the UART, the first press only shows the
 //! confirmation in the footer, and a second within 5 s stops.
 //!
 //! Should the console end on its own (a terminal error, a panic), it tells
 //! the server, which puts its lines back on the terminal and keeps serving.
+//!
+//! `console` draws the same screen from another process ([`attached`]): the
+//! raw mode, the scrolling, the pacing and the drawing here are shared, and
+//! a [`Feed`] says where the state and the lines come from and what `q` does.
 
+pub(crate) mod attached;
 mod view;
 
 use std::collections::VecDeque;
@@ -35,7 +40,7 @@ use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc::UnboundedSender;
 use wellfed_bench_server::Store;
 use wellfed_bench_server::stopping::{Ask, CONFIRM_PROMPT, Confirm, Held, Press};
-use wellfed_formats::bench::live::Uart;
+use wellfed_formats::bench::live::{BenchState, Uart};
 
 use view::Screen;
 
@@ -47,6 +52,9 @@ const FRAME: Duration = Duration::from_millis(250);
 const WRITING_FRAME: Duration = Duration::from_millis(500);
 /// The log lines printed back on the terminal after the screen closes.
 const TAIL_AFTER: usize = 30;
+/// The footer's keys on the server's own console.
+const SERVE_KEYS: &str =
+    "q or Ctrl+C stops the server (cancel, cleanup, release) · PgUp/PgDn scroll · End follows";
 
 /// Whether the full-screen console can run: a terminal on stdout and a
 /// `/dev/tty` to draw on, unless `--plain` asked for lines.
@@ -86,7 +94,16 @@ impl Tui {
                     asks: asks.clone(),
                     done: Arc::clone(&finished),
                 };
-                run(tty, &store, &lines, &asks, &finished)
+                run(
+                    tty,
+                    &mut Served {
+                        store: &store,
+                        lines: &lines,
+                        asks: &asks,
+                        done: &finished,
+                        quitting: Quitting::default(),
+                    },
+                )
             })?;
         Ok(Self {
             done,
@@ -174,37 +191,85 @@ impl Drop for Screenful {
     }
 }
 
-fn run(
-    tty: File,
-    store: &Store,
-    lines: &Receiver<String>,
-    asks: &UnboundedSender<Ask>,
-    done: &AtomicBool,
-) -> io::Result<()> {
+/// Where a screen's state and lines come from, and what its keys do.
+trait Feed {
+    /// The footer's keys.
+    fn keys(&self) -> &'static str;
+    /// The state as of now.
+    fn state(&self) -> BenchState;
+    /// The next line waiting for the log, without waiting for one.
+    fn line(&mut self) -> Option<String>;
+    /// What the footer shows instead of the keys.
+    fn notice(&self, at: Instant) -> Option<&'static str>;
+    /// `q` or Ctrl+C was pressed.
+    fn quit_pressed(&mut self, at: Instant);
+    /// Whether to close the screen.
+    fn finished(&self) -> bool;
+}
+
+/// The server's own console: its store and console lines, and `q` asks it
+/// to stop.
+struct Served<'a> {
+    store: &'a Store,
+    lines: &'a Receiver<String>,
+    asks: &'a UnboundedSender<Ask>,
+    done: &'a AtomicBool,
+    quitting: Quitting,
+}
+
+impl Feed for Served<'_> {
+    fn keys(&self) -> &'static str {
+        SERVE_KEYS
+    }
+
+    fn state(&self) -> BenchState {
+        self.store.read()
+    }
+
+    fn line(&mut self) -> Option<String> {
+        self.lines.try_recv().ok()
+    }
+
+    fn notice(&self, at: Instant) -> Option<&'static str> {
+        self.quitting.notice(at)
+    }
+
+    fn quit_pressed(&mut self, at: Instant) {
+        let uart = self.store.read().uart;
+        if let Some(ask) = self.quitting.press(&uart, at) {
+            let _ = self.asks.send(ask);
+        }
+    }
+
+    fn finished(&self) -> bool {
+        self.done.load(Ordering::SeqCst)
+    }
+}
+
+fn run(tty: File, feed: &mut impl Feed) -> io::Result<()> {
     let mut after = tty.try_clone()?;
     let screen = Screenful::enter(tty.try_clone()?)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(tty))?;
     let mut log = VecDeque::new();
     let mut scroll = 0;
     let mut drawn: Option<Instant> = None;
-    let mut quitting = Quitting::default();
     let mut noticed = false;
 
     loop {
-        while let Ok(line) = lines.try_recv() {
+        while let Some(line) = feed.line() {
             push(&mut log, line);
             // Scrolled up, the view holds still as lines arrive.
             if scroll > 0 {
                 scroll = (scroll + 1).min(log.len());
             }
         }
-        let state = store.read();
+        let state = feed.state();
         let frame = if matches!(state.uart, Uart::Writing { .. }) {
             WRITING_FRAME
         } else {
             FRAME
         };
-        let notice = quitting.notice(Instant::now());
+        let notice = feed.notice(Instant::now());
         // The confirmation shows, and goes, at once.
         if notice.is_some() != noticed {
             drawn = None;
@@ -219,12 +284,13 @@ fn run(
                         log: &log,
                         scroll,
                         notice,
+                        keys: feed.keys(),
                     },
                 );
             })?;
             drawn = Some(Instant::now());
         }
-        if done.load(Ordering::SeqCst) {
+        if feed.finished() {
             break;
         }
 
@@ -237,13 +303,8 @@ fn run(
             Event::Key(key)
                 if key.kind == KeyEventKind::Press && quits(key.code, key.modifiers) =>
             {
-                let uart = store.read().uart;
-                match quitting.press(&uart, Instant::now()) {
-                    Some(ask) => {
-                        let _ = asks.send(ask);
-                    }
-                    None => drawn = None,
-                }
+                feed.quit_pressed(Instant::now());
+                drawn = None;
             }
             Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::PageUp | KeyCode::Up => {
