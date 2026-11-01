@@ -13,13 +13,16 @@ abstract interface class FeederBook implements Listenable {
   /// How feeders list this phone; empty until the owner names it.
   String get label;
 
+  /// The feeders this phone knows.
   List<KnownFeeder> get feeders;
 
+  /// Save how feeders list this phone.
   Future<void> setLabel(String label);
 
   /// Which theme the app draws.
   Appearance get appearance;
 
+  /// Save which theme the app draws.
   Future<void> setAppearance(Appearance appearance);
 
   /// Add `feeder`, or replace the one with its identity. With `paired`, this
@@ -39,6 +42,7 @@ abstract interface class FeederBook implements Listenable {
   /// Whether this phone owes `identity` its clock, having just paired.
   bool clockDue(String identity);
 
+  /// This phone gave `identity` its clock, so it no longer owes it.
   void clockSynced(String identity);
 }
 
@@ -50,6 +54,7 @@ class AppState extends ChangeNotifier implements FeederBook {
 
   static const _secretName = 'client-secret';
 
+  /// This phone's key.
   final ClientKey key;
   final String _path;
   AppStore _store;
@@ -61,6 +66,7 @@ class AppState extends ChangeNotifier implements FeederBook {
 
   Future<void> _writing = Future.value();
 
+  /// Read this phone's key and file, making a key the first time.
   static Future<AppState> load() async {
     const storage = FlutterSecureStorage();
     final String? saved = await storage.read(key: _secretName);

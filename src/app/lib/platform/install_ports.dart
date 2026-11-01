@@ -19,6 +19,7 @@ import 'package:wellfed/src/rust/api/store.dart';
 
 /// Where the installer's files live on this phone.
 class InstallPaths {
+  /// These paths.
   const InstallPaths({required this.store, required this.image, required this.data});
 
   /// The app's own file.
@@ -34,8 +35,10 @@ class InstallPaths {
 /// A connected feeder's control characteristic, as the install's run writes
 /// it. Its notifications go to the callbacks [InstallPorts.openLink] took.
 abstract interface class InstallLink {
+  /// Write `pieces` to the feeder, in order.
   Future<void> write(List<List<int>> pieces);
 
+  /// Hang up.
   Future<void> close();
 }
 
@@ -44,11 +47,13 @@ abstract interface class InstallLink {
 /// share sheet. Behind this, so every screen is tested with no Rust and no
 /// phone.
 abstract interface class InstallPorts {
+  /// Where the install keeps its files.
   Future<InstallPaths> paths();
 
   /// Unpack the APK's image, and check it against this build's pin.
   Future<ImageCheck> prepareImage(InstallPaths paths);
 
+  /// Whether this build may send an install.
   BuildCheck checkBuild();
 
   /// What an earlier run left on the feeder.
@@ -91,8 +96,10 @@ abstract interface class InstallPorts {
   /// The Wi-Fi this phone is on, when Android will say.
   Future<String?> currentNetwork();
 
+  /// One run, which goes once.
   InstallRun newRun(InstallSpec spec);
 
+  /// A listener for a request whose end is not known.
   InstallListener newListener(InstallPaths paths);
 
   /// How long a listener listens.
@@ -106,6 +113,7 @@ abstract interface class InstallPorts {
   /// running, and waiting for its owner. Each sighting is an event.
   Stream<void> setupHeard();
 
+  /// Where the feeder `identity` (hex) answers.
   Future<String?> locate(String identity);
 
   /// Keep this process alive with a notification, for as long as a run or a
@@ -113,13 +121,16 @@ abstract interface class InstallPorts {
   /// refused, so the app's being on screen is all that keeps it alive.
   Future<bool> holdProcess(String text);
 
+  /// Let this process go, once the run has ended.
   Future<void> releaseProcess();
 
   /// Hand the kept stock backup at `path` to the owner, to save elsewhere.
   Future<void> shareBackup(String path);
 }
 
+/// [InstallPorts] on Android, with this phone's key.
 class AppInstallPorts implements InstallPorts {
+  /// Ports signed by `_key`.
   const AppInstallPorts(this._key);
   static const _wifi = MethodChannel('io.github.isaacduarte.wellfed/wifi');
   static const _screen = MethodChannel('io.github.isaacduarte.wellfed/screen');
@@ -315,11 +326,13 @@ abstract interface class BackupPorts {
   /// The kept backup's path for feeder `identity`, if there is one.
   Future<String?> kept(String identity);
 
+  /// Hand the backup at `path` to wherever the owner keeps files.
   Future<void> share(String path);
 }
 
 /// The kept backups, by the paths the install keeps them under.
 class AppBackupPorts implements BackupPorts {
+  /// Ports signed by `key`.
   AppBackupPorts(ClientKey key) : _install = AppInstallPorts(key);
 
   final AppInstallPorts _install;

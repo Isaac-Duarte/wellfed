@@ -18,6 +18,7 @@ part 'install_steps.dart';
 
 /// One install, from the first screen to its end.
 class InstallFlow extends ChangeNotifier {
+  /// An install saved to `_book`.
   InstallFlow(this._book, this._ports);
 
   /// What this phone calls the feeder until the owner names it.
@@ -78,6 +79,8 @@ class InstallFlow extends ChangeNotifier {
   // The claim.
   /// A bench image's recovery window, waiting for the owner.
   int? _windowAsk;
+
+  /// A bench image's recovery window is waiting for the owner.
   bool get windowAsked => _windowAsk != null;
   List<int> _code = const [];
   DateTime? _deadline;
@@ -178,6 +181,7 @@ class InstallFlow extends ChangeNotifier {
   /// advertising by itself takes the owner's hold.
   bool _setupHint = false;
 
+  /// How long Bluetooth may find nothing before the owner is told to hold the button.
   static const setupHintAfter = Duration(seconds: 20);
 
   /// What the run waits for now, when nothing on the screen says so already:
@@ -253,6 +257,7 @@ class InstallFlow extends ChangeNotifier {
     return _permitted;
   }
 
+  /// Save this phone's name and go on; why it could not be saved, or null.
   Future<String?> setLabel(String label) async {
     try {
       await _book.setLabel(label);
@@ -277,6 +282,7 @@ class InstallFlow extends ChangeNotifier {
   /// The Wi-Fi this phone is on, when Android will say.
   Future<String?> currentNetwork() => _ports.currentNetwork();
 
+  /// Take the Wi-Fi for Bluetooth setup, or null to keep the feeder's own.
   void setHome(WifiCredentials? home) {
     _home = home;
     if (_resumeAfterWifi) {
@@ -327,6 +333,7 @@ class InstallFlow extends ChangeNotifier {
     await _book.remember(KnownFeeder(identity: identity, name: name, address: _address));
   }
 
+  /// Hand the kept backup to wherever the owner keeps files; why that failed, or null.
   Future<String?> saveBackup() async {
     final String? path = _backupPath;
     if (path == null) return null;

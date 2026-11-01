@@ -29,8 +29,10 @@ abstract interface class RestorePorts {
   /// picked none.
   Future<String?> pickBackup();
 
+  /// One run, which goes once.
   RestoreRun newRun(RestoreSpec spec);
 
+  /// Where the feeder `identity` (hex) answers.
   Future<String?> locate(String identity);
 
   /// What a read over a session says of the feeder at `address`.
@@ -46,10 +48,13 @@ abstract interface class RestorePorts {
   /// across. `false` when Android refused.
   Future<bool> holdProcess(String text);
 
+  /// Let this process go, once the run has ended.
   Future<void> releaseProcess();
 }
 
+/// [RestorePorts] on Android, with this phone's key.
 class AppRestorePorts implements RestorePorts {
+  /// Ports signed by `_key`.
   AppRestorePorts(this._key) : _install = AppInstallPorts(_key);
 
   final ClientKey _key;

@@ -20,8 +20,10 @@ export 'package:wellfed/state/pairing/pairing_state.dart';
 /// answering on the LAN. The protocol runs in Rust; this moves its bytes
 /// and tracks what the screen shows.
 class PairingFlow extends ChangeNotifier {
+  /// A pairing saved to `_app`.
   PairingFlow(this._app, this._ports);
 
+  /// How long the feeder gets to answer each step of the handshake.
   static const handshakeWait = Duration(seconds: 10);
 
   /// Beyond the feeder's own window, for its reply to arrive.

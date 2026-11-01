@@ -13,6 +13,7 @@ import 'package:wellfed/src/rust/api/update.dart';
 
 /// One running update: what it reports, and where it is told the feeder is.
 abstract interface class UpdatePush {
+  /// What the run reports, up to its end.
   Stream<UpdateProgress> get progress;
 
   /// Answer the run's ask `id` with where the feeder answers.
@@ -42,6 +43,7 @@ abstract interface class FeederPorts {
   /// across. `false` when Android refused.
   Future<bool> holdProcess(String text);
 
+  /// Let this process go, once the firmware is across.
   Future<void> releaseProcess();
 
   /// What the restore screen reaches outside Dart.
@@ -54,7 +56,9 @@ abstract interface class FeederPorts {
   Future<Uint8List?> pickRecording();
 }
 
+/// [FeederPorts] on Android, with this phone's key.
 class AppFeederPorts implements FeederPorts {
+  /// Ports signed by `_key`.
   AppFeederPorts(this._key);
 
   @override

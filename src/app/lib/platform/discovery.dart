@@ -8,8 +8,10 @@ import 'package:nsd/nsd.dart' as nsd;
 /// A feeder answering on the LAN: its identity (hex, from the TXT `id`)
 /// and where its device API listens.
 class FoundFeeder {
+  /// A feeder as NSD heard it.
   const FoundFeeder({required this.identity, required this.address, required this.name});
 
+  /// Its identity key, hex.
   final String identity;
 
   /// `ip:port`, IPv4.
@@ -22,6 +24,7 @@ class FoundFeeder {
 /// Feeders on the LAN over Android's NsdManager: `_wellfed._tcp`, each
 /// with its identity in the TXT `id`.
 class Discovery {
+  /// The NSD service feeders advertise.
   static const serviceType = '_wellfed._tcp';
 
   /// Every feeder found until the returned stream is cancelled.

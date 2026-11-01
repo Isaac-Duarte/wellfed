@@ -11,13 +11,16 @@ import 'package:wellfed/src/rust/api/store.dart';
 /// What a pairing reaches outside Dart: the Rust session, the radio and NSD.
 /// Behind this, so its screens are tested with no Rust and no radio.
 abstract interface class PairingPorts {
+  /// A setup session under `label`, giving the feeder `wifi` if there is any.
   SetupDriver newDriver(String label, WifiCredentials? wifi);
 
+  /// A recovery session under `label`.
   Recovery newRecovery(String label);
 
   /// Every advertisement of the setup service until cancelled.
   Stream<DiscoveredDevice> scan();
 
+  /// Connect to `device`.
   Future<BleLink> open(DiscoveredDevice device);
 
   /// Where the feeder with `identity` (hex) answers, within `wait`.
@@ -30,7 +33,9 @@ abstract interface class PairingPorts {
   Stream<FoundFeeder> browse();
 }
 
+/// [PairingPorts] on Android, with this phone's key.
 class AppPairingPorts implements PairingPorts {
+  /// Ports signed by `_key`.
   const AppPairingPorts(this._key);
 
   final ClientKey _key;

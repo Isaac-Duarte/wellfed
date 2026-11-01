@@ -7,6 +7,7 @@ import 'package:wellfed/state/fleet/app_state.dart';
 /// One controller per feeder this phone knows, kept while the app runs, so
 /// every screen of a feeder shows the one session.
 class FeederFleet extends ChangeNotifier {
+  /// One controller for each feeder in `_book`, kept in step with it.
   FeederFleet(this._book, this._ports) {
     _book.addListener(_sync);
     _sync();
@@ -16,8 +17,10 @@ class FeederFleet extends ChangeNotifier {
   final FeederPorts _ports;
   final _feeders = <String, FeederController>{};
 
+  /// Every feeder's controller.
   Iterable<FeederController> get all => _feeders.values;
 
+  /// The controller of `identity`, if this phone knows it.
   FeederController? operator [](String identity) => _feeders[identity];
 
   void _sync() {

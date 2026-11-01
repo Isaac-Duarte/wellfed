@@ -14,11 +14,18 @@ enum _Stage { loading, noBackup, before, running, done, uncertain, stopped }
 
 /// One restore of a feeder's original firmware.
 class RestoreFlow extends ChangeNotifier {
+  /// A restore of the feeder `identity`, called [feederName].
   RestoreFlow(this._ports, {required this.identity, required this.feederName, this.address});
 
   final RestorePorts _ports;
+
+  /// The feeder's identity key.
   final List<int> identity;
+
+  /// What this phone calls the feeder.
   final String feederName;
+
+  /// Where it last answered, if known.
   final String? address;
 
   /// How the restore stands.
@@ -61,6 +68,7 @@ class RestoreFlow extends ChangeNotifier {
   bool _holding = false;
   bool _disposed = false;
 
+  /// Find the copy of stock this phone kept, and look at it.
   Future<void> load() async {
     final String dataDir = await _ports.dataDir();
     _dataDir = dataDir;
@@ -99,6 +107,7 @@ class RestoreFlow extends ChangeNotifier {
     }
   }
 
+  /// The owner gave or took back their word.
   void setUnderstood(bool value) {
     _understood = value;
     _changed();
@@ -269,6 +278,7 @@ class RestoreFlow extends ChangeNotifier {
     _changed();
   }
 
+  /// Stop looking for the feeder.
   void stopLook() {
     _lookEnd?.cancel();
     _lookEnd = null;

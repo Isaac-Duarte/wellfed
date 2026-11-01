@@ -12,6 +12,7 @@ abstract interface class BleLink {
   /// Write `pieces` in order, each acknowledged before the next.
   Future<void> write(List<List<int>> pieces);
 
+  /// Hang up.
   Future<void> close();
 }
 
@@ -23,6 +24,8 @@ class SetupLink implements BleLink {
 
   /// How long a scan waits for the first feeder.
   static const findTimeout = Duration(seconds: 30);
+
+  /// How long a feeder gets to answer a connection.
   static const connectTimeout = Duration(seconds: 15);
 
   final FlutterReactiveBle _ble;

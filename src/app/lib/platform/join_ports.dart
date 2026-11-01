@@ -13,12 +13,16 @@ abstract interface class JoinPorts {
   /// an invite.
   String? inviteFeeder(String text);
 
+  /// Redeem `invite` at `address` under `label`, once.
   Future<JoinAnswer> join(String invite, String label, String address);
 
+  /// Where the feeder `identity` (hex) answers, within `wait`.
   Future<String?> locate(String identity, Duration wait);
 }
 
+/// [JoinPorts] on Android, with this phone's key.
 class AppJoinPorts implements JoinPorts {
+  /// Ports signed by `_key`.
   const AppJoinPorts(this._key);
 
   final ClientKey _key;
