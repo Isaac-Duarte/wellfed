@@ -23,20 +23,47 @@ src/app/tools/wellfed_lints/   the analyzer plugin behind the architecture rules
 
 | Rule | Why | Enforced by |
 | --- | --- | --- |
-| **One state per controller.** A `ChangeNotifier` in `state/` exposes one immutable `state`. Exclusive modes are a sealed hierarchy that carries only that mode's data. Concurrent concerns are sealed fields of one immutable class. | A field that can't apply in a mode can't be read in it, and a `switch` must handle every mode. | `single_state`; the compiler for `switch` |
+| **One state per controller.** A `ChangeNotifier` in `state/` exposes one immutable `state`. Exclusive modes are a sealed hierarchy that carries only that mode's data. Concurrent concerns are fields of one immutable class, sealed where they carry data. Screens receive a function that makes their controller, so a test gives them fakes. | A field that can't apply in a mode can't be read in it, and a `switch` must handle every mode. | `single_state`; the compiler for `switch` |
 | **No state package.** No Riverpod, Bloc or dependency injection package. | `ChangeNotifier` is enough, and a package's retries must not touch a feed. | Review |
 | **Layers point one way.** `state/` never imports `screens/` or `widgets/`. | Controllers stay testable without a widget tree. | `state_imports_no_ui` |
 | **Screens go through controllers.** Screens may name generated Rust types. They reach Rust calls and `platform/` only through a controller. | One place holds each rule about what the feeder is asked. | `ui_no_platform`, `ui_no_bridge_calls` |
-| **No widget helpers.** A method or function does not return a `Widget`, except a builder callback. Write a widget class. | A class gets its own element, rebuild boundary and `const`. | `no_widget_helper` |
-| **500 lines.** A hand-written file stays under 500 lines. Generated files are exempt, and there are no other exceptions today. | A long file is doing two jobs. | `file_length` |
-| **Strict lints, no warnings.** An explicit list from Flutter's own, plus `discarded_futures`, `use_build_context_synchronously`, `unnecessary_ignore` and `document_ignores`. Infos are errors. | A warning nobody fixes hides the next one. | `dart analyze --fatal-infos` |
+| **No widget helpers.** A method or function does not return a `Widget`. Write a widget class, or a `Builder` at the one place it is used. | A class gets its own element, rebuild boundary and `const`. | `no_widget_helper` |
+| **500 lines.** A hand-written file stays within 500 lines, tests included. Generated files are exempt, and there are no other exceptions today. One class too long for that splits by `part` files of extensions, as `InstallFlow` does. | A long file is doing two jobs. | `file_length` |
+| **Strict lints, no warnings.** An explicit list from Flutter's own, plus `discarded_futures`, `use_build_context_synchronously`, `unnecessary_ignore` and `document_ignores`, without `always_put_control_body_on_new_line`, which `dart format` undoes. Infos are errors. | A warning nobody fixes hides the next one. | `dart analyze --fatal-infos` |
 | **Deliberate exceptions.** An `// ignore:` covers one line and gives its reason on that line. | The next reader knows whether it still applies. | `document_ignores`, `unnecessary_ignore` |
 | **One format.** `dart format` at 120 columns, and package imports only. The generated bindings keep the generator's format. | No formatting in review. | `dart format --set-exit-if-changed`, `always_use_package_imports` |
 | **Generated contracts.** Rust types arrive through flutter_rust_bridge, and tokens through `tokens.g.dart`. Never hand-write a copy. Commit regenerated files with the change that caused them. | Two copies drift. | `check-app` fails on a stale regeneration |
 | **Native data.** Sealed classes, records and primary constructors. Use `freezed` only where `copyWith` or equality earn it. Public collections are unmodifiable. | Less generated code, and no caller can change a state in place. | Review |
-| **Errors become state.** Only `state/` catches bridge and platform errors, and turns them into typed state. Every catch names its type. | A screen draws what happened and can't lose a failure. | `catch_in_controllers`, `avoid_catches_without_on_clauses` |
+| **Errors become state.** Only `state/` and `platform/` catch: `state/` turns a bridge or platform error into typed state, and `platform/` catches only a plugin that isn't there. Every catch names its type. A catch that must turn any failure of a run into a screen says `on Object`. | A screen draws what happened and can't lose a failure, and a run can't hang on an error nobody catches. | `catch_in_controllers`, `avoid_catches_without_on_clauses` |
 | **No `!`.** Narrow with a check or a pattern. An exception is an `// ignore:` that states the invariant. | An assertion moves a wrong assumption to where it crashes. | `no_bang` |
-| **Timers have a reason.** `Timer` and `Future.delayed` live only in `state/` or `platform/`, with a named constant that says the hardware or protocol reason. Prefer an event. Tests use fake time. | A guessed wait hides a race. | `timers_in_state_or_platform` |
-| **Docs where others call.** `public_member_api_docs` applies in `state/` and `platform/`. Elsewhere, comments only say why. | Those two layers are what the rest of the app calls. | The analyzer in those folders |
+| **Timers have a reason.** `Timer` and `Future.delayed` live only in `state/` or `platform/`, with a named constant that says the hardware or protocol reason. Prefer an event. A screen that counts down uses `state/clock/`. Widget tests pump time and never wait for real. | A guessed wait hides a race. | `timers_in_state_or_platform` |
+| **Docs where others call.** `public_member_api_docs` applies in `state/` and `platform/`. Elsewhere, comments only say why. | Those two layers are what the rest of the app calls. | Nested `analysis_options.yaml` in those folders |
 | **Feeding safety.** Every feed goes through the device API. The app holds no schedule logic, and a retry never resends a request the core marked uncertain. | A retried feed can dispense twice. | Review; `test/` covers each outcome |
 | **Accessible.** WCAG 2.2 AA. Text is literal English until a second language is planned. | People use the app with a screen reader too. | Accessibility tests; review for the rest |
+
+## Tests
+
+| Layer | Covers | Where |
+| --- | --- | --- |
+| Widget and state | Each screen and controller, with fake ports and no Rust | `test/<domain>/` |
+| Accessibility | Android's 48dp targets, labels and contrast on every screen, in both themes | `test/accessibility/` |
+| Goldens | The shared widgets and the key screens, in both themes | `test/golden/` |
+| Smoke | The real bridge against `wellfed-feeder-sim`: a session, settings, the schedule, a feed and a join | `test/smoke/` |
+| The plugin | Each rule of `wellfed_lints`, firing and not firing | `tools/wellfed_lints/test/` |
+
+Goldens are made on Linux and skipped elsewhere, because font rendering differs by platform. After a deliberate change, run `flutter test test/golden --update-goldens` and look at the images: a golden proves that nothing changed, not that it looks right.
+
+The smoke tests run when `WELLFED_SMOKE_TARGET` names the directory holding the bridge and the simulator, as `make check-app` does. They start the simulator on a loopback port and stop it themselves. The radio can't run on a computer, so BLE setup, the install and the restore have no smoke test.
+
+## Before a release
+
+The host checks do not prove the app works on a phone. Run these on a real phone and feeder, by hand:
+
+1. Set up a new feeder over Bluetooth, from setup mode to the Home card.
+2. Recover a feeder over the LAN with its window open.
+3. Feed one portion. Check the bowl against what the app says.
+4. Add a meal, edit it, and delete it.
+5. Invite a second phone, join with its camera, and remove it.
+6. Install Wellfed over stock, then restore stock from the backup.
+7. Update the firmware with the app in the background and the screen off.
+8. Turn on TalkBack and go through Home, a feed and the schedule.

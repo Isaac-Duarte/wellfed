@@ -72,7 +72,7 @@ The repository is self-contained. SDK and toolchain copies and fixtures resolve 
 | `check-docs` | Local Markdown links and anchors, the commands, make targets and paths the docs name, status words and time-bound wording ([rules](writing.md#what-the-checks-refuse)), portability checks, no Python under `src/`, and the source rules (raw output writers, card ids). It builds only `xtask`, and runs no tool |
 | `check-fixtures` | The optional binary and SDK evidence suite. Missing inputs or skips fail ([fixtures](fixtures.md)) |
 | `check-web` | The web frontends: ESLint, Prettier, licenses, types, unit tests, the build and Playwright. Needs Node and pnpm ([TypeScript standard](typescript.md)) |
-| `check-app` | The Android app: its generated bindings and theme tokens unchanged, `dart format`, analysis, widget tests and a debug APK. Needs the pinned Flutter and the Android SDK ([Dart standard](dart.md)) |
+| `check-app` | The Android app: its generated bindings and theme tokens unchanged, `dart format`, the lint plugin's tests, analysis, widget, accessibility, golden and smoke tests, and a debug APK. Needs the pinned Flutter and the Android SDK ([Dart standard](dart.md)) |
 | `check` | Every contributor check except `check-fixtures`, `check-web` and `check-app` |
 
 Notes:

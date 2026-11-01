@@ -217,9 +217,10 @@ class _LengthVisitor extends SimpleAstVisitor<void> {
   void visitCompilationUnit(CompilationUnit node) {
     if (layerOf(context) == Layer.generated) return;
 
-    // The end-of-file token sits past the last newline, on a line no one wrote.
-    final last = node.endToken.previous ?? node.endToken;
-    final lines = node.lineInfo.getLocation(last.end).lineNumber;
+    // Counted from the line starts, as trailing comments are lines with no token.
+    // A final newline starts a last line that no one wrote.
+    final starts = node.lineInfo.lineStarts;
+    final lines = starts.last == node.endToken.offset ? starts.length - 1 : starts.length;
     if (lines > maxLines) rule.reportAtToken(node.beginToken);
   }
 }

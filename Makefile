@@ -7,7 +7,7 @@ help:
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
 	@echo "ui: build the web page (pnpm in src/web/) that wellfed-bench serve --ui embeds (built with --features ui)"
 	@echo "check-web: web types, unit tests, build, then the page end to end against wellfed-bench serve --ui on a fake relay board"
-	@echo "check-app: the Android app's bindings and tokens unchanged, format, analysis, widget tests and a debug APK (needs Flutter)"
+	@echo "check-app: the Android app's bindings and tokens unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, and a debug APK (needs the pinned Flutter)"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
 	@echo "sqlx-prepare: regenerate the server store's query metadata (.sqlx/) after changing a query or migration"
 	@echo "server-dist / server-image: the server's static release binaries in dist/server/ and its container image (docker or podman)"
@@ -107,7 +107,8 @@ APP = src/app
 FLUTTER_VERSION = 3.47.8
 APP_GENERATED = $(APP)/lib/src/rust $(APP)/rust/src/frb_generated.rs $(APP)/lib/theme/tokens.g.dart
 # The tests run in a zone with DST on any builder: the day-count test only proves
-# anything across a DST day, and Dart's local time cannot be faked.
+# anything across a DST day, and Dart's local time cannot be faked. The smoke
+# tests run the real bridge against a simulator they start and stop themselves.
 check-app:
 	@test "$$(cd $(APP) && flutter --version --machine | sed -n 's/.*"frameworkVersion": "\(.*\)".*/\1/p')" = "$(FLUTTER_VERSION)" || \
 		{ echo "check-app needs Flutter $(FLUTTER_VERSION)"; exit 1; }
@@ -118,7 +119,8 @@ check-app:
 	cd $(APP) && find lib test -name '*.dart' -not -path 'lib/src/rust/*' -exec dart format --set-exit-if-changed {} +
 	cd $(APP)/tools/wellfed_lints && dart pub get && dart test
 	cd $(APP) && dart analyze --fatal-infos
-	cd $(APP) && TZ=America/Denver flutter test
+	cargo build --locked -p wellfed-app-bridge -p wellfed-feeder-sim
+	cd $(APP) && TZ=America/Denver WELLFED_SMOKE_TARGET=$(CURDIR)/target/debug flutter test
 	cd $(APP) && flutter build apk --debug --target-platform android-arm64,android-x64
 
 # The image the APK installs is a build-time input, from a frozen review and

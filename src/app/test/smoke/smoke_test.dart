@@ -40,7 +40,12 @@ class _Feeder {
     final Directory state = await Directory.systemTemp.createTemp('wellfed-smoke');
     final keyFile = File('${state.path}/owner.json');
     await keyFile.writeAsString(
-      jsonEncode({'version': 1, 'secret': identityHex(identity: owner.secret()), 'label': 'Smoke', 'feeders': []}),
+      jsonEncode({
+        'version': 1,
+        'secret': identityHex(identity: owner.secret()),
+        'label': 'Smoke',
+        'feeders': <String>[],
+      }),
     );
     final Process process = await Process.start('$target/wellfed-feeder-sim', [
       '--state',

@@ -140,6 +140,10 @@ class FileLengthTest extends _LayerTest {
     await assertDiagnostics('${'// line\n' * maxLines}void f() {}\n', [lint(maxLines * 8, 4)]);
   }
 
+  Future<void> test_over_in_trailing_comments() async {
+    await assertDiagnostics('void f() {}\n${'// line\n' * maxLines}', [lint(0, 4)]);
+  }
+
   Future<void> test_at_the_limit() async {
     await assertNoDiagnostics('${'// line\n' * (maxLines - 1)}void f() {}\n');
   }
