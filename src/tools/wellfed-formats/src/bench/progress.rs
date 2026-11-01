@@ -53,7 +53,6 @@ pub enum BenchCommand {
     StockExecute,
     Ota,
     Itest,
-    StockOta,
     Install,
     RestoreStock,
 }
@@ -79,7 +78,6 @@ impl BenchCommand {
             Self::StockExecute => "stock-execute",
             Self::Ota => "ota",
             Self::Itest => "itest",
-            Self::StockOta => "stock-ota",
             Self::Install => "install",
             Self::RestoreStock => "restore-stock",
         }
@@ -717,7 +715,6 @@ mod tests {
             BenchCommand::Capture,
             BenchCommand::FlashExecute,
             BenchCommand::GiveWayPrepare,
-            BenchCommand::StockOta,
         ] {
             let named = serde_json::to_value(command).unwrap();
             assert_eq!(named, command.word(), "{command:?}");

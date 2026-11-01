@@ -3,6 +3,11 @@
 //! loopback ports.
 
 #![allow(dead_code)]
+use wellfed_stock::{
+    clock::StockPlans,
+    server::{Api, Bind, Options, OtaTrial, Server},
+};
+
 use std::{
     net::{Ipv4Addr, SocketAddr, TcpListener},
     path::PathBuf,
@@ -45,6 +50,41 @@ pub fn config() -> Config {
 /// The controller over `path`'s ledger, with [`config`].
 pub fn load(path: PathBuf) -> anyhow::Result<Controller> {
     Controller::load(config(), path, BUILD)
+}
+
+/// A server with the trial enabled, in this process, as `wellfed install` and
+/// the app run one, with the loopback API these tests speak. Needs
+/// [`allow_unreviewed`], and a runtime.
+pub fn trial_server(path: &std::path::Path) -> Server {
+    Server::start(
+        &path.canonicalize().unwrap(),
+        Options {
+            trial: OtaTrial::Enabled,
+            enroll: None,
+            api: Api::Loopback,
+            bind: Bind::Configured,
+            stock_plans: StockPlans::Unknown,
+        },
+    )
+    .unwrap()
+}
+
+/// Tests run from uncommitted trees, and production refuses such builds.
+/// Call it before any runtime starts.
+pub fn allow_unreviewed() {
+    // SAFETY: nextest runs each test in a process of its own, and the test
+    // calls this first, before it starts another thread.
+    unsafe { std::env::set_var(wellfed_stock::build_info::ALLOW_UNREVIEWED_ENV, "1") };
+}
+
+/// The runtime a [`trial_server`] test runs on: it starts after
+/// [`allow_unreviewed`], so it cannot be `#[tokio::test]`'s.
+pub fn runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap()
 }
 
 pub struct Service(Child);
@@ -153,28 +193,10 @@ pub fn addresses_on<const N: usize>(host: Ipv4Addr) -> std::io::Result<[SocketAd
         .expect("one address for each of the N listeners"))
 }
 
+/// The real `serve` binary on `path`.
 pub fn start(path: &std::path::Path) -> Service {
-    start_mode(path, false)
-}
-
-pub fn start_mode(path: &std::path::Path, ota: bool) -> Service {
-    start_in(path, ota, None)
-}
-
-/// Start the server, optionally in `cwd` (paths like `private/...` resolve there).
-pub fn start_in(path: &std::path::Path, ota: bool, cwd: Option<&std::path::Path>) -> Service {
     let mut command = Command::new(env!("CARGO_BIN_EXE_wellfed-stock"));
     command.args(["serve", "--config"]).arg(path);
-
-    if let Some(cwd) = cwd {
-        command.current_dir(cwd);
-    }
-    if ota {
-        // Tests run from uncommitted trees; production refuses such builds.
-        command
-            .arg("--enable-ota-trial")
-            .env(wellfed_stock::build_info::ALLOW_UNREVIEWED_ENV, "1");
-    }
 
     Service(
         command

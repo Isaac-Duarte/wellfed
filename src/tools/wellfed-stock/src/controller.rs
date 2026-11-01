@@ -88,7 +88,7 @@ pub enum Rejection {
     Full,
     #[error("persistent storage failed; command was not authorized")]
     Storage,
-    #[error("restart serve with --enable-ota-trial to allow the fixed experiment")]
+    #[error("this server was started with the install trial disabled")]
     OtaDisabled,
     #[error(
         "trial requires valid IDs, recent original-version and external-power reports and no plans"

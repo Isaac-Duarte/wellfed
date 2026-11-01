@@ -137,7 +137,6 @@ impl Inner {
         let mut tools = Processes::new(
             self.root.clone(),
             self.tools.flash_bin.clone(),
-            self.tools.stock_bin.clone(),
             self.tools.build_bin.clone(),
             stop.clone(),
             Children::new(),

@@ -72,12 +72,9 @@ pub enum Error {
         review: PathBuf,
         error: wellfed_signing::Error,
     },
-    /// The server's status does not show what a wait is for, yet.
+    /// The feeder's status does not show what a wait is for, yet.
     #[error(transparent)]
     NotReady(#[from] server::NotReady),
-    /// The server does not yet see stock ready to be asked for an install.
-    #[error(transparent)]
-    StockNotReady(#[from] server::StockNotReady),
     /// A device API session could not be opened or did not answer.
     #[error(transparent)]
     Device(#[from] device::DeviceError),
@@ -89,9 +86,6 @@ pub enum Error {
     Serial(#[from] serialport::Error),
     #[error(transparent)]
     Relay(#[from] wellfed_relay::Error),
-    /// `wellfed-stock`'s loopback API refused or did not answer.
-    #[error(transparent)]
-    Api(#[from] wellfed_stock_api::ApiError),
     /// A progress or evidence file could not be written or read.
     #[error(transparent)]
     Formats(#[from] wellfed_formats::Error),

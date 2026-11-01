@@ -14,7 +14,6 @@ mdns-sd = "0.21.6"
 wellfed-client.workspace = true
 wellfed-core.workspace = true
 wellfed-formats = { workspace = true, features = ["clap"] }
-wellfed-stock-api = { path = "../wellfed-stock-api" }
 wellfed-model.workspace = true
 wellfed-proto.workspace = true
 wellfed-relay = { path = "../wellfed-relay" }

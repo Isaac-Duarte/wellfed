@@ -2,10 +2,8 @@
 //! version 1): stock's captured device credentials and plans, and the
 //! server's own secrets and addresses.
 //!
-//! `init` imports it once from a captured CONNECT credential and a decoded
-//! MQTT capture, generating independent API and server secrets, and refuses
-//! to overwrite an existing file. It holds working device credentials, so it
-//! is written mode 0600 and has no `Debug`. Edit it only while the service is
+//! It holds working device credentials, so it is written mode 0600 and has
+//! no `Debug`. Edit it only while the service is
 //! stopped. `validate` keeps the HTTP API on loopback and the broker on one
 //! specific IPv4 address.
 //!
@@ -26,9 +24,8 @@ use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
-use wellfed_formats::hex;
 
-use crate::{enroll::Enrollment, protocol::lenient, storage};
+use crate::{enroll::Enrollment, storage};
 
 /// The field a config with a captured device has, and an installer's lacks.
 const DEVICE_FIELD: &str = "device_id";
@@ -219,173 +216,6 @@ pub enum State {
     Device(Box<Config>),
     /// An installer's config before any feeder enrolled.
     Unenrolled(InstallConfig),
-}
-
-/// Contributor-specific settings that cannot be inferred from a packet capture.
-pub struct ImportOptions {
-    pub mqtt_listen: SocketAddr,
-    pub hotspot_interface: String,
-    pub timezone: Tz,
-}
-
-/// One captured CONNECT record, as the capture tooling exports it.
-#[derive(Deserialize)]
-struct ConnectRecord {
-    #[serde(rename = "mqtt.clientid")]
-    client_id: String,
-    #[serde(rename = "mqtt.username")]
-    username: String,
-    #[serde(rename = "mqtt.passwd")]
-    password: String,
-}
-
-/// The parts of a `tshark -T json` packet the import reads. Every layer is
-/// optional and lenient: a frame of another shape (tshark writes an array for
-/// several MQTT messages in one frame) is skipped, not an error.
-#[derive(Deserialize)]
-struct Packet {
-    #[serde(rename = "_source", default, deserialize_with = "lenient")]
-    source: Option<Source>,
-}
-
-#[derive(Deserialize)]
-struct Source {
-    layers: Layers,
-}
-
-#[derive(Deserialize)]
-struct Layers {
-    #[serde(default, deserialize_with = "lenient")]
-    mqtt: Option<MqttLayer>,
-    #[serde(default, deserialize_with = "lenient")]
-    eth: Option<EthLayer>,
-}
-
-#[derive(Deserialize)]
-struct MqttLayer {
-    #[serde(rename = "mqtt.topic", default, deserialize_with = "lenient")]
-    topic: Option<String>,
-    /// The payload as colon-separated (or plain) hex.
-    #[serde(rename = "mqtt.msg", default, deserialize_with = "lenient")]
-    msg: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct EthLayer {
-    #[serde(rename = "eth.src", default, deserialize_with = "lenient")]
-    src: Option<String>,
-}
-
-/// A captured message the import keeps: the plan snapshot or the binding.
-#[derive(Deserialize)]
-struct Captured {
-    #[serde(default, deserialize_with = "lenient")]
-    cmd: Option<String>,
-    #[serde(default, deserialize_with = "lenient")]
-    plans: Option<Vec<Value>>,
-}
-
-pub fn import(
-    credentials: &Path,
-    capture: &Path,
-    output: &Path,
-    options: ImportOptions,
-) -> Result<()> {
-    ensure!(
-        !output.exists(),
-        "configuration already exists; refusing to replace secrets"
-    );
-
-    let credentials: Vec<ConnectRecord> = serde_json::from_slice(&fs::read(credentials)?)
-        .context("CONNECT credential fields missing")?;
-    let [credential] = <[ConnectRecord; 1]>::try_from(credentials)
-        .ok()
-        .context("expected exactly one captured CONNECT record")?;
-
-    let packets: Vec<Packet> = serde_json::from_slice(&fs::read(capture)?)?;
-    let mut device_id = None;
-    let mut plans = None;
-    let mut binding_response = None;
-    let mut target_mac = None;
-
-    for packet in packets {
-        let Some(layers) = packet.source.map(|source| source.layers) else {
-            continue;
-        };
-        let Some(mqtt) = layers.mqtt else {
-            continue;
-        };
-        let Some(topic) = mqtt.topic else {
-            continue;
-        };
-
-        let parts: Vec<_> = topic.split('/').collect();
-        if parts.len() != 6 || parts[0] != "dl" || parts[1] != "PLAF103" {
-            continue;
-        }
-        if device_id.as_deref().is_some_and(|id| id != parts[2]) {
-            bail!("capture contains multiple feeder identifiers");
-        }
-        device_id = Some(parts[2].to_owned());
-
-        if parts[5] == "post"
-            && let Some(mac) = layers.eth.and_then(|eth| eth.src)
-        {
-            ensure!(
-                target_mac.as_deref().is_none_or(|previous| previous == mac),
-                "capture contains multiple device MAC addresses"
-            );
-            target_mac = Some(mac);
-        }
-
-        let Some(bytes) = mqtt
-            .msg
-            .and_then(|text| hex::decode_vec(&text.replace(':', "")))
-        else {
-            continue;
-        };
-        let Ok(message) = serde_json::from_slice::<Map<String, Value>>(&bytes) else {
-            continue;
-        };
-        let Ok(captured) = Captured::deserialize(&message) else {
-            continue;
-        };
-
-        if parts[5] == "sub"
-            && matches!(
-                captured.cmd.as_deref(),
-                Some("GET_FEEDING_PLAN_EVENT" | "FEEDING_PLAN_SERVICE")
-            )
-            && let Some(values) = captured.plans
-        {
-            plans = Some(values);
-        }
-
-        if parts[4] == "system" && parts[5] == "sub" && captured.cmd.as_deref() == Some("BINDING") {
-            binding_response = Some(message);
-        }
-    }
-
-    let config = Config {
-        version: 1,
-        device_id: device_id.context("capture has no PLAF103 topics")?,
-        device_client_id: credential.client_id,
-        device_username: credential.username,
-        device_password: credential.password,
-        server_password: Uuid::new_v4().simple().to_string(),
-        api_token: Uuid::new_v4().simple().to_string(),
-        mqtt_listen: options.mqtt_listen,
-        http_listen: "127.0.0.1:8765".parse()?,
-        timezone: options.timezone,
-        plans: Some(plans.context("capture has no authoritative feeding-plan snapshot")?),
-        binding_response,
-        hotspot_interface: Some(options.hotspot_interface),
-        target_mac: Some(target_mac.context("capture lacks a device source MAC")?),
-        device_address: None,
-    };
-
-    config.validate()?;
-    storage::write_json(output, &config)
 }
 
 /// The config at `path` with its device: captured, or enrolled beside it.

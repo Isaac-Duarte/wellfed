@@ -5290,18 +5290,15 @@ name = "wellfed-itest"
 version = "0.1.0"
 dependencies = [
  "clap",
- "rustix",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
- "uuid",
  "wellfed-core",
  "wellfed-formats",
  "wellfed-model",
  "wellfed-relay",
  "wellfed-rig",
- "wellfed-stock-api",
 ]
 
 [[package]]
@@ -5416,7 +5413,6 @@ dependencies = [
  "wellfed-relay",
  "wellfed-session",
  "wellfed-signing",
- "wellfed-stock-api",
 ]
 
 [[package]]

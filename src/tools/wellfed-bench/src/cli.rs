@@ -41,8 +41,7 @@ use wellfed_relay::{AtBoard, Relay};
 use wellfed_rig::Cancel;
 use wellfed_rig::commands::{Bench, UartWhenOff, check_name, seconds_arg};
 use wellfed_rig::tools::{
-    Children, Processes, default_build_bin, default_flash_bin, default_stock_bin,
-    default_wellfed_bin,
+    Children, Processes, default_build_bin, default_flash_bin, default_wellfed_bin,
 };
 
 /// A client that detached from a job it left running exits with this, as
@@ -147,9 +146,6 @@ struct ServeArgs {
     /// The wellfed-flash binary every job runs (default: beside this one).
     #[arg(long)]
     flash_bin: Option<PathBuf>,
-    /// The wellfed-stock binary for `itest` and `stock-ota` (default: beside this one).
-    #[arg(long)]
-    stock_bin: Option<PathBuf>,
     /// The wellfed-build binary for `--build` (default: beside this one).
     #[arg(long)]
     build_bin: Option<PathBuf>,
@@ -335,7 +331,6 @@ async fn follow(
 fn serve(root: &Path, args: &ServeArgs, runtime: &tokio::runtime::Runtime) -> anyhow::Result<u8> {
     let tools = ToolPaths {
         flash_bin: args.flash_bin.clone().unwrap_or_else(default_flash_bin),
-        stock_bin: args.stock_bin.clone().unwrap_or_else(default_stock_bin),
         build_bin: args.build_bin.clone().unwrap_or_else(default_build_bin),
         wellfed_bin: args.wellfed_bin.clone().unwrap_or_else(default_wellfed_bin),
     };
@@ -720,7 +715,6 @@ fn direct_status(root: &Path) -> wellfed_rig::Result<u8> {
     let tools = Processes::new(
         root.to_path_buf(),
         default_flash_bin(),
-        default_stock_bin(),
         default_build_bin(),
         cancel.clone(),
         children.clone(),

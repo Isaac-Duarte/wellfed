@@ -33,7 +33,7 @@ wellfed-formats.workspace = true
 [features]
 default = ["bench"]
 # The bench host's side: the binary, its loopback API client, and the
-# feeder-only routing and neighbour lookups. An installer that runs the
+# neighbour lookup. An installer that runs the
 # broker, the server and the image server in its own process
 # (`wellfed-install`, which the Android app links) leaves it out.
 bench = [

@@ -372,9 +372,6 @@ pub enum Pause {
     /// A job's install push holds a session of its own: the feeder's owner
     /// sessions are the push's until it ends.
     Install,
-    /// `stock-ota` runs, with sessions of its own: the feeder runs stock,
-    /// which serves no device API, until the build it installs answers.
-    StockOta { job: JobId },
     /// `wellfed install` runs as job `job`, with sessions of its own: the
     /// feeder runs stock, and then the replacement it pairs with.
     StockInstall { job: JobId },
@@ -391,7 +388,7 @@ impl Pause {
     /// own install push leaves no room for one.
     pub const fn own_sessions_job(&self) -> Option<JobId> {
         match self {
-            Self::StockOta { job } | Self::StockInstall { job } => Some(*job),
+            Self::StockInstall { job } => Some(*job),
             Self::UartJob { .. } | Self::Install | Self::PowerOff | Self::Stopping => None,
         }
     }
@@ -415,7 +412,6 @@ impl std::fmt::Display for Pause {
         match self {
             Self::UartJob { job, label } => write!(f, "job {job} ({label}) holds the UART"),
             Self::Install => f.write_str("an install push holds the feeder's session"),
-            Self::StockOta { job } => write!(f, "job {job} (stock-ota) holds its own sessions"),
             Self::StockInstall { job } => write!(f, "job {job} (install) holds its own sessions"),
             Self::PowerOff => f.write_str("relay 1 is off"),
             Self::Stopping => f.write_str("the bench server is stopping"),

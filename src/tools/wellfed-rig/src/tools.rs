@@ -382,7 +382,6 @@ pub trait Analyzer {
 pub struct Processes {
     pub root: PathBuf,
     pub flash_bin: PathBuf,
-    pub stock_bin: PathBuf,
     pub build_bin: PathBuf,
     /// Ends every wait on a child, which is then killed or left to its own
     /// interrupt handling.
@@ -405,7 +404,6 @@ impl Processes {
     pub fn new(
         root: PathBuf,
         flash_bin: PathBuf,
-        stock_bin: PathBuf,
         build_bin: PathBuf,
         cancel: Cancel,
         children: Children,
@@ -413,7 +411,6 @@ impl Processes {
         Self {
             root,
             flash_bin,
-            stock_bin,
             build_bin,
             cancel,
             children,
@@ -449,11 +446,6 @@ fn beside_this(name: &str) -> PathBuf {
 /// `wellfed-flash` beside this executable, as `cargo build` places it.
 pub fn default_flash_bin() -> PathBuf {
     beside_this("wellfed-flash")
-}
-
-/// `wellfed-stock` beside this executable.
-pub fn default_stock_bin() -> PathBuf {
-    beside_this("wellfed-stock")
 }
 
 /// `wellfed` beside this executable, which the bench's `install` job runs.
@@ -1038,7 +1030,6 @@ mod tests {
         let mut tools = Processes {
             root: tmp.path().into(),
             flash_bin,
-            stock_bin: tmp.path().join("absent"),
             build_bin: tmp.path().join("absent"),
             cancel: Cancel::new(),
             children: Children::new(),
@@ -1075,7 +1066,6 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
         let mut tools = Processes {
             root: tmp.path().into(),
             flash_bin,
-            stock_bin: tmp.path().join("absent"),
             build_bin: tmp.path().join("absent"),
             cancel: Cancel::new(),
             children: Children::new(),
@@ -1097,7 +1087,6 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
         let mut tools = Processes {
             root: tmp.path().into(),
             flash_bin,
-            stock_bin: tmp.path().join("absent"),
             build_bin: tmp.path().join("absent"),
             cancel: Cancel::new(),
             children: Children::new(),
@@ -1126,7 +1115,6 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
         let mut tools = Processes {
             root: tmp.into(),
             flash_bin: fake_flash(tmp, &script),
-            stock_bin: "/bin/sh".into(),
             build_bin: tmp.join("absent"),
             cancel: Cancel::new(),
             children: Children::new(),
@@ -1226,7 +1214,6 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
         let mut tools = Processes {
             root: tmp.path().into(),
             flash_bin: tmp.path().join("absent"),
-            stock_bin: tmp.path().join("absent"),
             build_bin: builder,
             cancel: Cancel::new(),
             children: Children::new(),
@@ -1285,7 +1272,6 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
         let mut tools = Processes {
             root: tmp.path().into(),
             flash_bin: tmp.path().join("absent"),
-            stock_bin: tmp.path().join("absent"),
             build_bin: builder,
             cancel: Cancel::new(),
             children: children.clone(),
@@ -1313,7 +1299,6 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
         let mut tools = Processes {
             root: tmp.path().into(),
             flash_bin: tmp.path().join("absent"),
-            stock_bin: tmp.path().join("absent"),
             build_bin: tmp.path().join("absent"),
             cancel: Cancel::new(),
             children: Children::new(),

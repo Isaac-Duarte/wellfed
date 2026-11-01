@@ -15,8 +15,8 @@
 //!   its op (`wellfed_client::connection::Timing`: 75 s for an update key's
 //!   Dispense press), and nothing on the socket gives up sooner.
 //!
-//! It closes while a job holds the UART, while an install push or
-//! `stock-ota` holds sessions of their own, while relay 1 is off and while
+//! It closes while a job holds the UART, while an install push or an
+//! `install` job holds sessions of their own, while relay 1 is off and while
 //! the server stops, and otherwise reopens with a backoff. A request meets
 //! a closed session with [`Unavailable`], unless it is only opening, when
 //! it waits for it a while. One subscription per process: a second

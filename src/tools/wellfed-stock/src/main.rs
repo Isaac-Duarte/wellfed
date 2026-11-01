@@ -1,11 +1,11 @@
-//! `wellfed-stock` command line: the bench's server for stock 1.1.15.
+//! `wellfed-stock` command line: the bench's tools for a stock 1.1.15 feeder.
 //!
-//! `serve` runs the server ([`wellfed_stock::server`]): the MQTT broker
-//! stock connects to, the stock install path, and the loopback HTTP API, in
-//! this one process. Most other subcommands are clients of that API and read
-//! the bearer token from the private configuration, so the token never
-//! appears in shell arguments. Starting the service redirects no traffic;
-//! `network apply` is the separate, privileged step that does.
+//! `serve` runs the server ([`wellfed_stock::server`]): the MQTT broker stock
+//! connects to and the loopback HTTP API, in this one process, and never asks
+//! stock to install: `wellfed install` and the app run that in theirs. The
+//! `status` and `ota-trial-*` subcommands are clients of that API and read the
+//! bearer token from the private configuration, so the token never appears in
+//! shell arguments.
 
 #![forbid(unsafe_code)]
 #![warn(clippy::print_stdout)]
@@ -20,17 +20,16 @@ use tracing::info;
 use wellfed_client::install::{SETUP_ADDRESS, SETUP_SSID_PREFIX, SetupFrame};
 use wellfed_formats::bench::lease::Lease;
 use wellfed_stock::{
-    build_info::BUILD,
     clock,
     config::{self, State},
-    neighbour, network, ota,
+    ota,
     server::{self, OtaTrial, Server},
 };
 
 #[derive(Parser)]
 #[command(
     version,
-    about = "The bench's server for stock PLAF103 1.1.15: its broker, the image server and the install trials"
+    about = "The bench's server for stock PLAF103 1.1.15: its broker and the install ledger"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -39,25 +38,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Action {
-    /// Import captured credentials and plans; never overwrites existing config.
-    Init {
-        #[arg(long)]
-        credentials: PathBuf,
-        #[arg(long)]
-        capture: PathBuf,
-        /// Specific local IPv4 address and port reachable by the feeder.
-        #[arg(long)]
-        mqtt_listen: std::net::SocketAddr,
-        /// Interface receiving the feeder's traffic.
-        #[arg(long)]
-        hotspot_interface: String,
-        /// IANA timezone used for device clock replies.
-        #[arg(long, default_value = "UTC")]
-        timezone: chrono_tz::Tz,
-        #[arg(long, default_value = "private/server.json")]
-        output: PathBuf,
-    },
-
     /// Write an installer's config: fresh secrets and the broker address,
     /// and no device. The first stock feeder that connects while `serve
     /// --enroll-minutes` runs becomes its device. Never replaces a file.
@@ -77,9 +57,6 @@ enum Action {
     Serve {
         #[arg(long, default_value = "private/server.json")]
         config: PathBuf,
-        /// Allow the stock-to-replacement install trial; disabled by default.
-        #[arg(long)]
-        enable_ota_trial: bool,
         /// With an installer's config and no feeder enrolled yet: trust the
         /// first stock feeder that connects within this many minutes.
         #[arg(long)]
@@ -90,30 +67,6 @@ enum Action {
     Status {
         #[arg(long, default_value = "private/server.json")]
         config: PathBuf,
-    },
-
-    /// Serve a reviewed replacement build on the fixed trial port for stock
-    /// to install; never sends an OTA command. Writes a private token lease
-    /// beside the config.
-    OtaImages {
-        #[arg(long, default_value = "private/server.json")]
-        config: PathBuf,
-        /// The build's frozen review (its `review.json` and `image.bin`).
-        #[arg(long)]
-        directory: PathBuf,
-        /// The feeder's address; found by its MAC on the hotspot otherwise.
-        #[arg(long)]
-        peer: Option<std::net::Ipv4Addr>,
-    },
-
-    /// Ask stock once to install the build `ota-images` serves; never retries.
-    OtaTrial {
-        #[arg(long, default_value = "private/server.json")]
-        config: PathBuf,
-        #[arg(long)]
-        request_id: uuid::Uuid,
-        #[arg(long)]
-        server_token: uuid::Uuid,
     },
 
     /// Close the latest uncertain/failed trial from fresh version evidence after
@@ -171,31 +124,6 @@ enum Action {
         #[arg(long)]
         on_feeder_network: String,
     },
-
-    /// Explicit feeder-only gateway routing and WAN isolation; needs sudo.
-    Network {
-        #[command(subcommand)]
-        action: NetworkAction,
-    },
-}
-
-#[derive(Subcommand)]
-enum NetworkAction {
-    Apply {
-        #[arg(long, default_value = "private/server.json")]
-        config: PathBuf,
-        /// `off` keeps the WAN block and the input accepts but redirects
-        /// nothing: stock reaches the broker only where a setup frame named it.
-        #[arg(long, value_enum, default_value_t = network::Redirect::Broker)]
-        redirect: network::Redirect,
-    },
-    Remove,
-    Preview {
-        #[arg(long, default_value = "private/server.json")]
-        config: PathBuf,
-        #[arg(long, value_enum, default_value_t = network::Redirect::Broker)]
-        redirect: network::Redirect,
-    },
 }
 
 #[tokio::main]
@@ -213,30 +141,6 @@ async fn main() -> Result<()> {
         .init();
 
     match Cli::parse().command {
-        Action::Init {
-            credentials,
-            capture,
-            mqtt_listen,
-            hotspot_interface,
-            timezone,
-            output,
-        } => {
-            config::import(
-                &credentials,
-                &capture,
-                &output,
-                config::ImportOptions {
-                    mqtt_listen,
-                    hotspot_interface,
-                    timezone,
-                },
-            )?;
-            println!(
-                "Imported private configuration to {}. No device commands sent.",
-                output.display()
-            );
-        }
-
         Action::InitInstaller {
             mqtt_listen,
             timezone,
@@ -250,16 +154,8 @@ async fn main() -> Result<()> {
         }
         Action::Serve {
             config,
-            enable_ota_trial,
             enroll_minutes,
-        } => {
-            let trial = if enable_ota_trial {
-                OtaTrial::Enabled
-            } else {
-                OtaTrial::Disabled
-            };
-            serve(config, trial, enroll_minutes).await?
-        }
+        } => serve(config, enroll_minutes).await?,
         Action::Status { config } => {
             api_request(config, Method::GET, "/api/status", None::<&()>).await?
         }
@@ -304,46 +200,6 @@ async fn main() -> Result<()> {
                 None => println!("Sent once to {to}; no answer within 5 s (not resent)"),
             }
         }
-        Action::OtaImages {
-            config,
-            directory,
-            peer,
-        } => {
-            let path = config.canonicalize()?;
-            let config = config::load(&path)?;
-            // Given, else where an enrolled feeder connected from, else the
-            // bench feeder's MAC on the hotspot.
-            let peer = match (peer, config.device_address) {
-                (Some(peer), _) => peer,
-                (None, Some(std::net::IpAddr::V4(enrolled))) => enrolled,
-                (None, _) => match neighbour::discover(&config)? {
-                    std::net::IpAddr::V4(peer) => peer,
-                    std::net::IpAddr::V6(_) => {
-                        anyhow::bail!("the feeder has no IPv4 neighbour entry")
-                    }
-                },
-            };
-            let mut images = ota::image::start(&config, &path, &directory, peer).await?;
-            let std::net::IpAddr::V4(host) = config.mqtt_listen.ip() else {
-                bail!("OTA image host must use IPv4");
-            };
-            println!(
-                "Image server only; no update requested. Stops accepting at {} or on Ctrl-C or SIGTERM; active transfers drain.",
-                images.lease.expires_at
-            );
-            println!("Server token: {}", images.lease.token);
-            println!("Build: {}", images.url(host));
-
-            // The bench stops it with SIGTERM; either way its lease is removed.
-            let ended = tokio::select! {
-                result = images.finished() => Some(result),
-                _ = tokio::signal::ctrl_c() => None,
-                _ = terminated() => None,
-            };
-            images.stop(DRAIN).await;
-            ended.transpose()?;
-        }
-
         Action::OtaTrialResolve {
             config,
             request_id,
@@ -378,46 +234,6 @@ async fn main() -> Result<()> {
             )
             .await?;
         }
-
-        Action::OtaTrial {
-            config,
-            request_id,
-            server_token,
-        } => {
-            // No lease of its own: the trial-enabled `serve` that dispatches
-            // the install holds the bench for its whole lifetime.
-            api_request(
-                config,
-                Method::POST,
-                "/api/ota/trial",
-                Some(&ota::trial::Input {
-                    request_id,
-                    server_token,
-                }),
-            )
-            .await?;
-        }
-
-        Action::Network { action } => match action {
-            NetworkAction::Apply { config, redirect } => {
-                network::apply(&config::load(&config)?, redirect)?;
-                match redirect {
-                    network::Redirect::Broker => println!(
-                        "Test-feeder MQTT redirected locally; its forwarded WAN traffic is blocked."
-                    ),
-                    network::Redirect::Off => println!(
-                        "Test-feeder MQTT not redirected (it reaches the broker only where a setup frame named it); its forwarded WAN traffic is blocked."
-                    ),
-                }
-            }
-            NetworkAction::Remove => {
-                network::remove()?;
-                println!("Local broker routing removed; prior hotspot forwarding remains.");
-            }
-            NetworkAction::Preview { config, redirect } => {
-                println!("{}", network::rules(&config::load(&config)?, redirect)?)
-            }
-        },
     }
 
     Ok(())
@@ -437,11 +253,8 @@ async fn terminated() -> std::io::Result<()> {
 }
 
 /// The bench lease beside `config` (in a checkout, `private/`), for what
-/// drives the feeder: `setup-send`, and a trial-enabled `serve` for its
-/// whole lifetime, since it dispatches a multi-minute install. A plain
-/// `serve` and `ota-images` take none: they only answer, beside
-/// the bench command that drives the feeder. Run by the bench (`itest`,
-/// `stock-ota`), `serve` descends from the holder and runs on its lease.
+/// drives the feeder: `setup-send`, for its one frame. `serve` takes none: it
+/// only answers, beside the bench command that drives the feeder.
 fn bench_lease(config: &std::path::Path) -> Result<Lease> {
     // The directory the config is named in, not where a symlinked config
     // points: a worktree whose `private/server.json` links to the main
@@ -455,32 +268,12 @@ fn bench_lease(config: &std::path::Path) -> Result<Lease> {
     Lease::acquire_in(&directory).context("bench lease")
 }
 
-/// How long a stopped `ota-images` lets a transfer under way finish: its
-/// connection deadline, and a little more.
-const DRAIN: Duration = Duration::from_secs(310);
-
-async fn serve(path: PathBuf, trial: OtaTrial, enroll_minutes: Option<u64>) -> Result<()> {
-    // Trial dispatch must run a binary whose source can be reviewed: a clean
-    // commit of every build input. Status and /health report the commit.
-    // Checked here before the lease, and again where the server starts.
-    if trial == OtaTrial::Enabled {
-        BUILD
-            .require_reviewed()
-            .context("--enable-ota-trial refused")?;
-    }
-
-    // Taken before the API binds, so a trial cannot be asked of a server
-    // that does not hold the bench; held until the server stops. Found
-    // from the path as given, before the symlinks below are resolved.
-    let _lease = match trial {
-        OtaTrial::Enabled => Some(bench_lease(&path)?),
-        OtaTrial::Disabled => None,
-    };
+async fn serve(path: PathBuf, enroll_minutes: Option<u64>) -> Result<()> {
     let path = path.canonicalize()?;
     let mut server = Server::start(
         &path,
         server::Options {
-            trial,
+            trial: OtaTrial::Disabled,
             enroll: enroll_minutes.map(|minutes| Duration::from_secs(minutes * 60)),
             api: server::Api::Loopback,
             bind: server::Bind::Configured,
@@ -497,7 +290,7 @@ async fn serve(path: PathBuf, trial: OtaTrial, enroll_minutes: Option<u64>) -> R
     };
     server.stop().await;
 
-    info!("service stopped; use network remove to restore cloud routing if enabled");
+    info!("service stopped");
     outcome
 }
 
@@ -537,49 +330,12 @@ async fn api_request(
 
 #[cfg(test)]
 mod tests {
-    use clap::{CommandFactory, Parser};
+    use clap::CommandFactory;
 
-    use super::{Action, Cli};
+    use super::Cli;
 
     #[test]
     fn the_command_line_is_well_formed() {
         Cli::command().debug_assert();
-    }
-
-    /// `wellfed-itest`'s live rig spawns this binary with exactly these
-    /// arguments; it links nothing of this crate, so this is where a
-    /// renamed command or flag would surface.
-    #[test]
-    fn the_suite_invocations_parse() {
-        let serve = ["wellfed-stock", "serve", "--config", "private/server.json"];
-        assert!(matches!(
-            Cli::try_parse_from(serve).unwrap().command,
-            Action::Serve {
-                enable_ota_trial: false,
-                ..
-            }
-        ));
-
-        let trial = [&serve[..], &["--enable-ota-trial"]].concat();
-        assert!(matches!(
-            Cli::try_parse_from(trial).unwrap().command,
-            Action::Serve {
-                enable_ota_trial: true,
-                ..
-            }
-        ));
-
-        let images = [
-            "wellfed-stock",
-            "ota-images",
-            "--config",
-            "private/server.json",
-            "--directory",
-            "private/verification/review",
-        ];
-        assert!(matches!(
-            Cli::try_parse_from(images).unwrap().command,
-            Action::OtaImages { peer: None, .. }
-        ));
     }
 }

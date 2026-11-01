@@ -20,8 +20,13 @@ use std::{
 use uuid::Uuid;
 use wellfed_stock::{ota, storage};
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_explicit_api_install_publishes_once_and_never_again() {
+#[test]
+fn an_explicit_api_install_publishes_once_and_never_again() {
+    common::allow_unreviewed();
+    common::runtime().block_on(publishes_once());
+}
+
+async fn publishes_once() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("server.json");
     let mut config = common::config();
@@ -48,7 +53,7 @@ async fn an_explicit_api_install_publishes_once_and_never_again() {
     )
     .unwrap();
 
-    let service = common::start_mode(&path, true);
+    let service = common::trial_server(&path);
     let http = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(3))
@@ -265,27 +270,6 @@ async fn an_explicit_api_install_publishes_once_and_never_again() {
     worker.abort();
     drop(service);
     drop(image_server);
-}
-
-#[test]
-fn trial_mode_refuses_a_build_without_a_clean_source_commit() {
-    if wellfed_stock::build_info::BUILD.reviewable() {
-        return; // Built from a clean commit: the guard correctly permits it.
-    }
-
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_wellfed-stock"))
-        .args([
-            "serve",
-            "--config",
-            "/nonexistent/server.json",
-            "--enable-ota-trial",
-        ])
-        .env_remove(wellfed_stock::build_info::ALLOW_UNREVIEWED_ENV)
-        .output()
-        .unwrap();
-
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("clean commit"));
 }
 
 #[tokio::test]

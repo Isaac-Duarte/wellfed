@@ -73,7 +73,6 @@ pub enum Source {
     /// An over-the-air install whose trial fell back: KM0 gave way, so
     /// bank 1 no longer boots.
     OtaFellBack,
-    StockOta,
     /// The pinned stock image back into bank 1 over UART.
     StockExecute,
     /// An install the integration suite saw confirm, or fall back.

@@ -1,6 +1,6 @@
 //! Real-device integration suite (`wellfed-bench itest`): named scenarios run
 //! against the feeder on the bench, never from `cargo test` or `make check`.
-//! `wellfed-bench` links it and runs [`itest`] and [`stock_ota`] on its own
+//! `wellfed-bench` links it and runs [`itest`] on its own
 //! rig (`wellfed-rig`), in its own process.
 //!
 //! Builds reach the feeder over the air, which takes minutes where a UART
@@ -10,18 +10,18 @@
 //! prints the reviewed UART recovery commands instead of acting on its own.
 //!
 //! Every physical action goes through [`Rig`]: the live rig owns the
-//! hotspot, the `wellfed-stock` children, the UART captures, the device
+//! hotspot, the UART captures, the device
 //! API sessions (every request, the status, and the updates it pushes on a
 //! thread of its own, faults included) and (only with `--power`) the
 //! feeder supply relay, and restores what it changed when the run ends.
-//! `serve` stays for stock's broker and its updater's trial. Scenarios see
+//! Scenarios see
 //! only the trait, so they are tested on scripted feeders without hardware.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-pub use args::{ItestArgs, StockOtaArgs};
+pub use args::ItestArgs;
 pub use error::{Error, Result};
 use serde::Serialize;
 use wellfed_formats::bench::VERIFICATION;
@@ -34,7 +34,6 @@ use wellfed_rig::commands::ota::{self, Outcome, Staged, Target, Watch};
 use wellfed_rig::commands::{Bench, Image, OtaArgs};
 use wellfed_rig::device::{Answer, Ask, DeviceStatus, Intruder, Rebuffed};
 use wellfed_rig::say;
-use wellfed_rig::server::{StockStatus, TrialAnswer, TrialRequest};
 use wellfed_rig::tools::PushError;
 
 mod args;
@@ -43,7 +42,6 @@ mod feeds;
 mod live;
 mod log;
 mod scenarios;
-mod stock;
 mod sustained;
 #[cfg(test)]
 mod tests;
@@ -63,9 +61,6 @@ const UART_QUIET: Duration = Duration::from_millis(300);
 const UART_QUIET_MAX: Duration = Duration::from_secs(2);
 const UART_QUIET_POLL: Duration = Duration::from_millis(50);
 const STATUS_POLL: Duration = Duration::from_secs(5);
-/// A build that just started on bank 0 joins the hotspot and answers the
-/// device API well within this, a reconnect included.
-const HEALTH_WAIT: Duration = Duration::from_secs(120);
 /// A booted feeder joins the hotspot and serves the device API well within
 /// this; so does one whose session was dropped by a bounce.
 const STATUS_WAIT: Duration = Duration::from_secs(120);
@@ -81,7 +76,6 @@ fn met(need: Need, args: &ItestArgs) -> bool {
         Need::Power => args.power,
         Need::Build => args.build,
         Need::Destructive => args.destructive,
-        Need::Stock => args.stock.is_some(),
         Need::Feeds => args.feeds,
     }
 }
@@ -119,15 +113,6 @@ impl Fault {
     }
 }
 
-/// What answers stock on the hotspot's broker address.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Server {
-    /// `wellfed-stock serve`: broker and API.
-    Serve,
-    /// `serve --enable-ota-trial`, so it may ask stock to install an image.
-    StockTrial,
-}
-
 /// Whether tearing the rig down cuts relay 1 ([`Rig::arm_kill`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Armed {
@@ -162,8 +147,6 @@ trait Rig {
     fn wrote(&mut self, _bank: Bank, _content: Content) {}
     /// A frozen review's startup build ID.
     fn review_build(&mut self, review: &Path) -> Result<String>;
-    /// Replace whatever answers the feeder now.
-    fn server(&mut self, server: Server) -> Result<()>;
     /// Push `staged` over the device API with `fault` in the transfer, on a
     /// thread of its own, replacing any push still running; `None` stops it.
     fn offer(&mut self, staged: Option<&Staged>, fault: Fault) -> Result<()>;
@@ -191,8 +174,6 @@ trait Rig {
     fn intrude(&mut self, intruder: Intruder) -> Result<Rebuffed>;
     /// The host's wall clock, Unix milliseconds: what a clock sync sends.
     fn unix_ms(&self) -> i64;
-    /// `GET /api/status`: stock's reports and the install trials.
-    fn status(&mut self) -> Result<StockStatus>;
     fn hotspot(&mut self, hotspot: Hotspot) -> Result<()>;
     /// Cut the feeder's supply, wait, restore it: a cold boot.
     fn power_cycle(&mut self) -> Result<()>;
@@ -214,32 +195,6 @@ trait Rig {
     fn note(&mut self, text: &str);
     /// Show a scenario's state in the job's steps.
     fn scenario(&mut self, _name: &str, _state: StepState) {}
-    /// Start `ota-images` serving `review`'s build to the feeder; the URL
-    /// token from its lease. Only `stock-ota` uses it.
-    fn images(&mut self, _review: &Path) -> Result<String> {
-        Err(Error::Unsupported {
-            lacks: "serves no images",
-        })
-    }
-    /// `POST /api/ota/trial`: stock gets one `OTA_UPGRADE`, never resent.
-    fn stock_trial(&mut self, _trial: &TrialRequest) -> Result<()> {
-        Err(Error::Unsupported {
-            lacks: "sends no stock trials",
-        })
-    }
-    /// `POST /api/ota/trial/resolve`; refused until the server's evidence allows it.
-    fn resolve_trial(&mut self, _request_id: &str, _note: &str) -> Result<()> {
-        Err(Error::Unsupported {
-            lacks: "resolves no stock trials",
-        })
-    }
-    /// `POST /api/ota/trial/answered`: `build` answered the device API from
-    /// `bank` after the trial, as `note` says; sends the device nothing.
-    fn trial_answered(&mut self, _answer: &TrialAnswer) -> Result<()> {
-        Err(Error::Unsupported {
-            lacks: "closes no stock trials",
-        })
-    }
 }
 
 /// The build the suite installed (or found running) and every later
@@ -372,41 +327,6 @@ impl<'r> Ctx<'r> {
         }
     }
 
-    /// Poll the server's status until `check` passes; its report.
-    fn until_status(
-        &mut self,
-        what: &str,
-        within: Duration,
-        check: impl Fn(&StockStatus) -> Result<String>,
-    ) -> Result<String> {
-        let deadline = self.rig.clock() + within;
-        let mut last = String::new();
-        loop {
-            // The UART keeps draining, so its captures stay in step.
-            self.pull()?;
-            let verdict = self.rig.status().and_then(|status| check(&status));
-            let reason = match verdict {
-                Ok(report) => return Ok(report),
-                Err(reason) => reason,
-            };
-            let text = reason.to_string();
-            if text != last {
-                self.note(&format!("  Waiting for {what}: {text}"));
-                last = text;
-            }
-
-            if self.rig.clock() >= deadline {
-                return Err(Error::Waited {
-                    what: what.into(),
-                    within,
-                    last: Box::new(reason),
-                });
-            }
-            self.alive()?;
-            self.rig.wait(STATUS_POLL)?;
-        }
-    }
-
     /// One device API request, with the UART drained first.
     fn ask(&mut self, ask: &Ask) -> Result<Answer> {
         self.pull()?;
@@ -510,18 +430,7 @@ impl<'r> Ctx<'r> {
     /// Classify records from `since` against an offered `build` with the
     /// `ota` command's [`Watch`]; its outcome, or a timeout.
     fn watch(&mut self, build: &str, since: usize, within: Duration) -> Result<Outcome> {
-        self.watch_as(build, Target::Replacement, since, within)
-    }
-
-    /// As [`Self::watch`] for either target: stock passes on its banner.
-    fn watch_as(
-        &mut self,
-        build: &str,
-        target: Target,
-        since: usize,
-        within: Duration,
-    ) -> Result<Outcome> {
-        let mut watch = Watch::of(build, target);
+        let mut watch = Watch::of(build, Target::Replacement);
         let mut next = since;
         let deadline = self.rig.clock() + within;
         loop {
@@ -922,10 +831,6 @@ fn recovery_hint(name: &str, baseline: Option<&Baseline>) -> Vec<String> {
         format!("  wellfed-bench flash-prepare {name}-recover --target {target}"),
         "  then review the plan and run flash-execute with the --expected-plan-sha256 it printed."
             .into(),
-        // stock-roundtrip can stop on stock, which reports nothing here.
-        "If it stopped on stock: while stock still reports, wellfed-bench stock-ota brings the \
-         replacement back over the air; to put stock itself back, wellfed-bench stock-prepare."
-            .into(),
     ]
 }
 
@@ -934,20 +839,9 @@ pub fn itest_steps(args: &ItestArgs) -> Result<Vec<&'static str>> {
     steps(args)
 }
 
-/// The stages a `stock-ota` run takes on: its status steps.
-pub fn stock_ota_steps(args: &StockOtaArgs) -> Vec<&'static str> {
-    stock::steps(args)
-}
-
-/// Install a replacement from stock over stock's own updater, restore the
-/// bench, then print and record the outcome.
-pub fn stock_ota(bench: &mut Bench, args: &StockOtaArgs, stock_bin: PathBuf) -> Result<u8> {
-    stock::stock_ota(bench, args, stock_bin)
-}
-
 /// Run the selected scenarios on the live bench, restore it, then print
 /// and record the verdicts.
-pub fn itest(bench: &mut Bench, args: &ItestArgs, stock_bin: PathBuf) -> Result<u8> {
+pub fn itest(bench: &mut Bench, args: &ItestArgs) -> Result<u8> {
     let scenarios = select(args)?;
     let name = args.name().to_string();
     let record = bench
@@ -957,8 +851,8 @@ pub fn itest(bench: &mut Bench, args: &ItestArgs, stock_bin: PathBuf) -> Result<
     bench.fresh(&record)?;
     std::fs::create_dir_all(bench.root.join(VERIFICATION))?;
 
-    let mut rig = live::LiveRig::open(bench, args, stock_bin)?;
-    let (result, baseline) = match rig.start(Server::Serve) {
+    let mut rig = live::LiveRig::open(bench, args)?;
+    let (result, baseline) = match rig.start() {
         Ok(()) => {
             let mut ctx = Ctx::new(&mut rig, args);
             let result = run(&mut ctx, &scenarios);

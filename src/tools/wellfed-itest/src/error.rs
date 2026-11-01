@@ -13,13 +13,12 @@ use std::time::Duration;
 
 use wellfed_rig::commands::Image;
 use wellfed_rig::device::{Answer, DeviceError};
-use wellfed_rig::server::{NotReady, StockNotReady};
+use wellfed_rig::server::NotReady;
 use wellfed_rig::tools::PushError;
 
 use crate::feeds::FeedsError;
 use crate::live::LiveError;
 use crate::scenarios::ScenariosError;
-use crate::stock::StockError;
 use crate::sustained::SustainedError;
 use crate::{SCENARIOS, SILENCE, compact};
 
@@ -31,8 +30,6 @@ pub enum Error {
     Scenarios(#[from] ScenariosError),
     #[error(transparent)]
     Feeds(#[from] FeedsError),
-    #[error(transparent)]
-    Stock(#[from] StockError),
     #[error(transparent)]
     Sustained(#[from] SustainedError),
     #[error(transparent)]
@@ -107,11 +104,9 @@ macro_rules! through_rig {
 
 through_rig!(
     NotReady,
-    StockNotReady,
     DeviceError,
     std::io::Error,
     serde_json::Error,
-    wellfed_stock_api::ApiError,
     wellfed_formats::Error,
 );
 

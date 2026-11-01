@@ -1435,7 +1435,6 @@ pub fn steps(command: BenchCommand) -> &'static [&'static str] {
         | BenchCommand::Press
         | BenchCommand::Transients
         | BenchCommand::Itest
-        | BenchCommand::StockOta
         | BenchCommand::Install
         | BenchCommand::RestoreStock => &[],
     }

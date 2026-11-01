@@ -1,5 +1,5 @@
 //! The stock-to-replacement install: one `OTA_UPGRADE` naming the build
-//! the `ota-images` server holds, by the digest its frozen review binds
+//! the image server holds, by the digest its frozen review binds
 //! (carried in the server's lease and kept in the record). No arbitrary
 //! URLs. The controller persists a `Record` before the command goes out and
 //! never resends it.

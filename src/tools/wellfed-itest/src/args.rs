@@ -1,13 +1,11 @@
-//! The integration suite's command line: `itest` and `stock-ota`, which
-//! `wellfed-bench` parses beside its own commands and runs through this
-//! crate.
+//! The integration suite's command line: `itest`, which `wellfed-bench`
+//! parses beside its own commands and runs through this crate.
 
 use std::path::PathBuf;
 
 use clap::Args;
 use wellfed_formats::bench::catalog::Tier;
 use wellfed_formats::stock::SERVER_CONFIG;
-use wellfed_rig::commands::ota::{Firmware, Variant, parse_firmware, parse_variant};
 use wellfed_rig::device::OWNER_KEYS;
 
 #[derive(Debug, Clone, Args)]
@@ -46,19 +44,13 @@ pub struct ItestArgs {
     /// motor, and run unattended, so the hopper may be empty.
     #[arg(long)]
     pub feeds: bool,
-    /// Allow the round trip to stock and back (`stock-roundtrip`), installing
-    /// this frozen stock review (the pinned 1.1.15). Stock reaches the server
-    /// only through `sudo wellfed-stock network apply`, which the operator
-    /// runs; a failure on stock is a UART recovery.
-    #[arg(long, value_name = "STOCK_REVIEW", requires = "power")]
-    pub stock: Option<PathBuf>,
     /// Run the remaining scenarios after one fails (never after the feeder goes silent).
     #[arg(long)]
     pub keep_going: bool,
     /// With --build: build even when a review of the same sources exists.
     #[arg(long, requires = "build")]
     pub rebuild: bool,
-    /// wellfed-stock config the suite serves with (root-relative); its
+    /// wellfed-stock config (root-relative): its
     /// hotspot interface and feeder MAC also find the feeder when mDNS does not.
     #[arg(long, default_value = SERVER_CONFIG)]
     pub config: PathBuf,
@@ -75,37 +67,4 @@ impl ItestArgs {
     pub fn name(&self) -> &str {
         self.name.as_deref().unwrap_or("")
     }
-}
-
-#[derive(Debug, Clone, Args)]
-pub struct StockOtaArgs {
-    /// Session name: private/captures/NAME-uart-01, …, private/verification/NAME-*.
-    pub name: String,
-    /// No-motion firmware to build: qa (the default), optics, buttons, adc, speaker, blink, ble
-    /// or trial.
-    #[arg(long, value_parser = parse_firmware)]
-    pub firmware: Option<Firmware>,
-    /// Trial variant for --firmware trial: stall or fail.
-    #[arg(long, value_parser = parse_variant)]
-    pub variant: Option<Variant>,
-    /// Build even when a review of the same sources exists.
-    #[arg(long)]
-    pub rebuild: bool,
-    /// Stop once the build reports from bank 0, instead of offering it as a
-    /// signed update that its recovery role installs into bank 1.
-    #[arg(long)]
-    pub no_promote: bool,
-    /// Switch the feeder supply on if it is off (and off again afterwards).
-    #[arg(long)]
-    pub power: bool,
-    /// wellfed-stock config the run serves with (root-relative).
-    #[arg(long, default_value = SERVER_CONFIG)]
-    pub config: PathBuf,
-    /// Hotspot description: its NetworkManager `connection` (root-relative).
-    #[arg(long, default_value = "private/hotspot.json")]
-    pub hotspot: PathBuf,
-    /// The owner key file that confirms the promoted build over the device
-    /// API (root-relative).
-    #[arg(long, default_value = OWNER_KEYS)]
-    pub keys: PathBuf,
 }

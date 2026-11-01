@@ -933,7 +933,7 @@ mod tests {
         use wellfed_formats::bench::live::Session;
 
         let paused_for = |job| Session::Paused {
-            pause: Pause::StockOta { job },
+            pause: Pause::StockInstall { job },
         };
         let dir = tempfile::tempdir().unwrap();
         let pointers = state_server(dir.path(), bench_state(paused_for(7), false)).await;

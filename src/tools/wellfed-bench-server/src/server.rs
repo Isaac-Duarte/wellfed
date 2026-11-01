@@ -660,13 +660,7 @@ impl Shared {
                 label: spec.command.describe(),
             }));
         } else if spec.command.own_sessions() {
-            let pause = match spec.command {
-                jobs::JobCommand::Install(_) | jobs::JobCommand::RestoreStock(_) => {
-                    Pause::StockInstall { job: id }
-                }
-                _ => Pause::StockOta { job: id },
-            };
-            self.bed.feeder.hold(Some(pause));
+            self.bed.feeder.hold(Some(Pause::StockInstall { job: id }));
         }
         self.capture.stop();
 

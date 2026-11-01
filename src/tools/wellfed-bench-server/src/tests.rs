@@ -170,7 +170,7 @@ esac
         Options {
             tools: ToolPaths {
                 flash_bin: root.join("wellfed-flash"),
-                stock_bin: root.join("wellfed-stock"),
+
                 build_bin: root.join("absent"),
                 wellfed_bin: root.join("wellfed"),
             },

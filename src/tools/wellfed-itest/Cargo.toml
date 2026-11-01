@@ -4,7 +4,7 @@ name = "wellfed-itest"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "Real-device integration suite for the PLAF103 bench: named scenarios over the air and the device API, and the stock-to-replacement install"
+description = "Real-device integration suite for the PLAF103 bench: named scenarios over the air and the device API"
 publish.workspace = true
 
 [dependencies]
@@ -12,14 +12,11 @@ clap.workspace = true
 wellfed-rig = { path = "../wellfed-rig" }
 wellfed-core.workspace = true
 wellfed-formats.workspace = true
-wellfed-stock-api = { path = "../wellfed-stock-api" }
 wellfed-model.workspace = true
 wellfed-relay = { path = "../wellfed-relay" }
-rustix = { version = "1", features = ["fs", "process"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -15,7 +15,7 @@ use wellfed_formats::bench::Config;
 use wellfed_formats::bench::banks::Written;
 use wellfed_formats::bench::progress::{BenchCommand, ProgressSink, Status};
 use wellfed_formats::bench::{CAPTURES, STATUS_DIR, plain_name};
-use wellfed_itest::{ItestArgs, StockOtaArgs};
+use wellfed_itest::ItestArgs;
 use wellfed_relay::Relay;
 use wellfed_rig::Cancel;
 use wellfed_rig::commands::{
@@ -100,13 +100,6 @@ pub enum JobCommand {
     /// UART capture, installs over the air, restores the bench afterwards.
     /// Cold boots only with --power; never flashes over UART.
     Itest(ItestArgs),
-    /// Stock-to-replacement POC: with the feeder on stock 1.1.15, build a
-    /// replacement image and have stock install it over its own updater.
-    /// Runs its own hotspot, trial-enabled server and UART capture, sends
-    /// stock one request, restores the bench afterwards. Never flashes over
-    /// UART and never changes routing (`wellfed-stock network apply` is the
-    /// operator's).
-    StockOta(StockOtaArgs),
     /// Stock to a replacement with `wellfed install` (stock already
     /// reaching its broker, or `--from-bank0`), its questions answered with
     /// `wellfed-bench answer` or by an agent. Restarts the
@@ -137,7 +130,6 @@ impl JobCommand {
             Self::StockExecute(_) => BenchCommand::StockExecute,
             Self::Ota(_) => BenchCommand::Ota,
             Self::Itest(_) => BenchCommand::Itest,
-            Self::StockOta(_) => BenchCommand::StockOta,
             Self::Install(_) => BenchCommand::Install,
             Self::RestoreStock(_) => BenchCommand::RestoreStock,
         }
@@ -163,7 +155,6 @@ impl JobCommand {
             Self::StockExecute(args) => Some(&args.stock.name),
             Self::Ota(args) => Some(&args.name),
             Self::Itest(args) => args.name.as_deref(),
-            Self::StockOta(args) => Some(&args.name),
         }
     }
 
@@ -198,29 +189,24 @@ impl JobCommand {
             | Self::On
             | Self::Ota(_)
             | Self::Itest(_)
-            | Self::StockOta(_)
             | Self::Install(_)
             | Self::RestoreStock(_) => false,
         }
     }
 
     /// Whether the job runs device API sessions of its own throughout:
-    /// `stock-ota` meets stock, which serves no device API, then the build
-    /// it installs on bank 0. The server's session closes for it rather
-    /// than search for a feeder that cannot answer. `install` meets stock
-    /// too, then pairs with the replacement under its own key; `wellfed`
+    /// `install` meets stock, which serves no device API, then pairs with the
+    /// replacement under its own key. The server's session closes for it rather
+    /// than search for a feeder that cannot answer; `wellfed`
     /// opens no session beside the server's unless the server shows it
     /// paused for the job.
     pub(crate) fn own_sessions(&self) -> bool {
-        matches!(
-            self,
-            Self::StockOta(_) | Self::Install(_) | Self::RestoreStock(_)
-        )
+        matches!(self, Self::Install(_) | Self::RestoreStock(_))
     }
 
     /// One of the integration suite's commands.
     fn suite(&self) -> bool {
-        matches!(self, Self::Itest(_) | Self::StockOta(_))
+        matches!(self, Self::Itest(_))
     }
 
     /// Whether the job may switch relays. The over-the-air loop only
@@ -231,7 +217,6 @@ impl JobCommand {
         match self {
             Self::Ota(_) => false,
             Self::Itest(args) => args.power,
-            Self::StockOta(args) => args.power,
             _ => true,
         }
     }
@@ -302,7 +287,6 @@ pub(crate) fn parse(argv: &[String]) -> Result<JobSpec, Refusal> {
 #[derive(Debug, Clone)]
 pub struct ToolPaths {
     pub flash_bin: PathBuf,
-    pub stock_bin: PathBuf,
     pub build_bin: PathBuf,
     /// `wellfed`, which `install` runs.
     pub wellfed_bin: PathBuf,
@@ -399,7 +383,6 @@ fn open(bed: &Bed, spec: &JobSpec, run: &Run) -> Result<Bench, JobError> {
     let tools = Processes::new(
         bed.root.clone(),
         bed.tools.flash_bin.clone(),
-        bed.tools.stock_bin.clone(),
         bed.tools.build_bin.clone(),
         run.cancel.clone(),
         run.children.clone(),
@@ -443,7 +426,6 @@ fn record_start(
         JobCommand::Ota(args) if args.cancel => vec![commands::ota::CANCEL_STEP],
         JobCommand::Ota(args) => commands::ota::steps(args.source()),
         JobCommand::Itest(args) => wellfed_itest::itest_steps(args)?,
-        JobCommand::StockOta(args) => wellfed_itest::stock_ota_steps(args),
         JobCommand::StockPrepare(args) if args.fallback.is_some() => {
             commands::steps(BenchCommand::GiveWayPrepare).to_vec()
         }
@@ -484,7 +466,6 @@ fn dispatch(
     tools: &ToolPaths,
     asking: &Asking,
 ) -> Result<u8, JobError> {
-    let stock_bin = tools.stock_bin.clone();
     let captures = bench.root.join(CAPTURES);
     let ran = match command {
         JobCommand::Off => bench.off(),
@@ -509,10 +490,7 @@ fn dispatch(
         JobCommand::StockPrepare(args) => bench.stock_prepare(args),
         JobCommand::StockExecute(args) => bench.stock_execute(args),
         JobCommand::Ota(args) => bench.ota(args),
-        JobCommand::Itest(args) => return Ok(wellfed_itest::itest(bench, args, stock_bin)?),
-        JobCommand::StockOta(args) => {
-            return Ok(wellfed_itest::stock_ota(bench, args, stock_bin)?);
-        }
+        JobCommand::Itest(args) => return Ok(wellfed_itest::itest(bench, args)?),
         JobCommand::Install(args) => return tool_jobs::install(bench, args, tools, asking),
         JobCommand::RestoreStock(args) => {
             return tool_jobs::restore_stock(bench, args, tools, asking);
@@ -565,7 +543,6 @@ mod tests {
             ),
             tools: ToolPaths {
                 flash_bin: PathBuf::from("absent"),
-                stock_bin: PathBuf::from("absent"),
                 build_bin: PathBuf::from("absent"),
                 wellfed_bin: PathBuf::from("absent"),
             },

@@ -1,5 +1,4 @@
 use super::*;
-use wellfed_formats::bench::progress::BenchCommand;
 use wellfed_rig::commands;
 
 fn job(cli: &Cli) -> &JobCommand {
@@ -31,35 +30,14 @@ fn ota_takes_its_flags_and_serve_its_tools() {
     assert!(!args.attended_motion && !args.build);
     assert_eq!(args.config, PathBuf::from("private/server.json"));
 
-    let cli = Cli::try_parse_from(["wellfed-bench", "serve", "--stock-bin", "bin/wellfed-stock"])
+    let cli = Cli::try_parse_from(["wellfed-bench", "serve", "--flash-bin", "bin/wellfed-flash"])
         .unwrap();
     let Command::Serve(args) = &cli.command else {
         panic!("not serve")
     };
-    assert_eq!(args.stock_bin, Some(PathBuf::from("bin/wellfed-stock")));
+    assert_eq!(args.flash_bin, Some(PathBuf::from("bin/wellfed-flash")));
     // The tools are the server's, not a job's.
     assert!(Cli::try_parse_from(["wellfed-bench", "on", "--flash-bin", "f"]).is_err());
-}
-
-#[test]
-fn stock_ota_takes_a_name_its_firmware_and_no_promote() {
-    let cli = Cli::try_parse_from([
-        "wellfed-bench",
-        "stock-ota",
-        "poc-01",
-        "--firmware",
-        "feeder",
-        "--no-promote",
-    ])
-    .unwrap();
-    let JobCommand::StockOta(args) = job(&cli) else {
-        panic!("not stock-ota")
-    };
-    assert_eq!(args.name, "poc-01");
-    assert!(args.no_promote && !args.power);
-    assert_eq!(job(&cli).label(), BenchCommand::StockOta);
-
-    assert!(Cli::try_parse_from(["wellfed-bench", "stock-ota"]).is_err());
 }
 
 #[test]
@@ -241,7 +219,6 @@ fn with_no_server_every_hardware_command_refuses_and_names_serve() {
         &["dump", "d1"],
         &["ota", "o1", "--build"],
         &["itest", "i1"],
-        &["stock-ota", "s1"],
         &["attach", "1"],
     ] {
         let error = run_in(root.path(), argv).unwrap_err();

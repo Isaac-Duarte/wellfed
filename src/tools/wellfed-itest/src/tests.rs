@@ -4,7 +4,6 @@
 use std::path::Path;
 use std::time::Duration;
 
-use serde_json::json;
 use wellfed_model::{
     Counters, Counts, Generation, MealReminder, Memory, NtpServer, OpenRefusal, Refusal,
     ResetCause, Settings, Stats, StatsSection, TimeView, WifiSource, Window,
@@ -89,7 +88,6 @@ struct Feeder {
     fallback_at: Option<f64>,
     /// The last install's start and build, so a power cut can land in it.
     installing: Option<(f64, String)>,
-    server: String,
     locked: bool,
     /// The second owner session is open.
     held: bool,
@@ -170,7 +168,6 @@ impl Feeder {
             bank0: false,
             fallback_at: None,
             installing: None,
-            server: "serve".into(),
             locked: false,
             held: false,
             feeding: None,
@@ -835,13 +832,6 @@ impl Rig for Feeder {
         Ok(GOOD.into())
     }
 
-    fn server(&mut self, server: Server) -> Result<()> {
-        self.actions
-            .push(format!("server {server:?}").chars().take(40).collect());
-        self.server = "serve".into();
-        Ok(())
-    }
-
     fn intrude(&mut self, intruder: Intruder) -> Result<Rebuffed> {
         self.actions.push(format!("intrude {intruder:?}"));
         Ok(match intruder {
@@ -929,12 +919,6 @@ impl Rig for Feeder {
     fn unix_ms(&self) -> i64 {
         // 2026-10-22T12:00:00Z plus the virtual clock.
         1_792_670_400_000 + (self.now * 1000.0) as i64
-    }
-
-    /// The server hears nothing from the replacement firmware.
-    fn status(&mut self) -> Result<StockStatus> {
-        self.deliver();
-        Ok(StockStatus::default())
     }
 
     fn hotspot(&mut self, hotspot: Hotspot) -> Result<()> {
@@ -1102,12 +1086,10 @@ fn the_full_suite_passes_on_a_well_behaved_feeder() {
     ];
     let (reports, silent) = suite(&mut feeder, &flags);
 
-    // The round trip to stock needs --stock (it has its own scripted feeder).
     let failures: Vec<_> = reports
         .iter()
         .filter_map(|r| match &r.verdict {
             Verdict::Pass => None,
-            Verdict::Skip(_) if r.scenario == "stock-roundtrip" => None,
             other => Some(format!("{}: {other:?}", r.scenario)),
         })
         .collect();
@@ -1124,7 +1106,6 @@ fn the_full_suite_passes_on_a_well_behaved_feeder() {
     );
     assert!(!feeder.stored);
     assert!(!feeder.locked && !feeder.held);
-    assert_eq!(feeder.server, "serve");
     assert!(feeder.offered.is_none());
     assert!(!feeder.killed);
     // The baseline's clock was set, and only the scripted strangers knocked.
@@ -1156,7 +1137,6 @@ fn without_power_or_build_those_scenarios_are_skipped_not_passed() {
             ("feed-writes", "skip"),
             ("ota-recovery", "skip"),
             ("ota-power-cuts", "skip"),
-            ("stock-roundtrip", "skip"),
         ]
     );
     assert!(!feeder.actions.iter().any(|a| a == "power cycle"));
@@ -1498,22 +1478,6 @@ fn the_log_joins_split_lines_and_counts_from_a_mark() {
     assert_eq!(log.count(1, refused), 1);
     assert_eq!(log.find(1, refused), Some(2));
     assert_eq!(log.last_record_at(), Some(Duration::from_secs(2)));
-}
-
-#[test]
-fn http_responses_parse_with_and_without_chunking() {
-    let plain = b"HTTP/1.1 200 OK\r\ncontent-length: 11\r\n\r\n{\"ok\":true}";
-    assert_eq!(
-        wellfed_stock_api::parse_response(plain).unwrap(),
-        (200, json!({"ok": true}))
-    );
-
-    let chunked =
-        b"HTTP/1.1 503 Service Unavailable\r\ntransfer-encoding: chunked\r\n\r\n6\r\n{\"a\":1\r\n1\r\n}\r\n0\r\n\r\n";
-    assert_eq!(
-        wellfed_stock_api::parse_response(chunked).unwrap(),
-        (503, json!({"a": 1}))
-    );
 }
 
 #[test]

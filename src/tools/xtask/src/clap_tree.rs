@@ -859,7 +859,7 @@ mod repository_tests {
             ("wellfed", "update-key enroll"),
             ("wellfed-bench", "itest --only x --off-seconds 2"),
             ("wellfed-bench", "--root . status"),
-            ("wellfed-stock", "network apply --config x"),
+            ("wellfed-stock", "ota-trial-resolve --config x --note y"),
             ("wellfed-flash", "read observe"),
             ("wellfed-build", "build --firmware bringup --variant optics"),
             ("wellfed-audit", "backup"),

@@ -240,30 +240,8 @@ pub enum TrialPhase {
     ReplacementHealthy,
 }
 
-/// `POST /api/ota/trial` for the replacement image: the server sends stock
-/// one `OTA_UPGRADE` for it and never resends. The bench and the installer
-/// send it alike.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct TrialRequest {
-    pub request_id: String,
-    /// The image server's lease token.
-    pub server_token: String,
-}
-
-/// The body of `POST /api/ota/trial/answered`: the build identity and bank
-/// the replacement's device API reported, which the server holds to the
-/// build its image server served, and a note of what answered. It closes
-/// the trial without sending the device anything.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct TrialAnswer {
-    pub request_id: String,
-    pub build: String,
-    pub bank: u8,
-    pub note: String,
-}
-
-/// `wellfed-stock`'s config, root-relative: the suite serves with it and
-/// reads the server's address and token from it.
+/// `wellfed-stock`'s config, root-relative: the device client finds the feeder
+/// with it.
 pub const SERVER_CONFIG: &str = "private/server.json";
 
 /// The parts of `wellfed-stock`'s config the bench tools use.
@@ -289,10 +267,9 @@ impl ServerConfig {
 /// The image server's lease file, beside the server config.
 pub const IMAGE_LEASE_FILE: &str = "ota-image-server.json";
 
-/// Private record of the running image server (`wellfed-stock ota-images`),
-/// written beside the config. Trial dispatch requires its token, an
-/// unexpired accept window and a live listener; the bench reads the token
-/// for its trial request.
+/// Private record of the running image server, written beside the config.
+/// Trial dispatch requires its token, an unexpired accept window and a live
+/// listener; the installer reads the token for its trial request.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageLease {

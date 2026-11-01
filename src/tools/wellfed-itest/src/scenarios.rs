@@ -145,7 +145,7 @@ const fn same(a: &str, b: &str) -> bool {
 }
 
 /// The scenarios in catalog order; a test holds the two orders together.
-pub(super) const SCENARIOS: [Scenario; 11] = [
+pub(super) const SCENARIOS: [Scenario; 10] = [
     Scenario::new("ota-update", ota_update),
     Scenario::new("requests", requests),
     Scenario::new("request-auth", request_auth),
@@ -155,7 +155,6 @@ pub(super) const SCENARIOS: [Scenario; 11] = [
     Scenario::new("feed-writes", super::feeds::feed_writes),
     Scenario::new("ota-recovery", ota_recovery),
     Scenario::new("ota-power-cuts", ota_power_cuts),
-    Scenario::new("stock-roundtrip", super::stock::roundtrip),
     Scenario::new("sustained", super::sustained::sustained),
 ];
 

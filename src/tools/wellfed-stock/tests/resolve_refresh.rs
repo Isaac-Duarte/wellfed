@@ -18,8 +18,13 @@ use std::{
 };
 use uuid::Uuid;
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_refused_resolution_asks_stock_for_its_attributes_and_nothing_else() {
+#[test]
+fn a_refused_resolution_asks_stock_for_its_attributes_and_nothing_else() {
+    common::allow_unreviewed();
+    common::runtime().block_on(asks_for_attributes());
+}
+
+async fn asks_for_attributes() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("server.json");
     let mut config = common::config();
@@ -48,7 +53,7 @@ async fn a_refused_resolution_asks_stock_for_its_attributes_and_nothing_else() {
     )
     .unwrap();
 
-    let _service = common::start_mode(&path, true);
+    let _service = common::trial_server(&path);
     let http = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(3))

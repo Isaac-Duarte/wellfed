@@ -2,7 +2,7 @@
 //! publishes a device command.
 //!
 //! [`start`] runs this HTTP server as a task, on the fixed trial port for a
-//! single peer and a 15-minute accept window: for `ota-images`, and for an
+//! single peer and a 15-minute accept window: for an
 //! installer in its own process. The build is bound to its frozen
 //! review's `ota_sha256` and held in memory once loaded, so changing the files
 //! afterwards cannot change what is served. A private lease beside the config
@@ -281,7 +281,7 @@ async fn run(
 }
 
 /// The running image server, owned by whoever started it: the
-/// `ota-images` binary, or an installer in its own process.
+/// installer in its own process.
 pub struct Images {
     /// What the server serves, under which token, until when.
     pub lease: Lease,

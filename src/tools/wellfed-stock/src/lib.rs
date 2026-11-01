@@ -12,11 +12,9 @@
 //! the `wellfed-stock` binary's subcommands are the same entry points.
 //!
 //! The binary is the bench's server over it
-//! (docs/development/stock-server.md): `serve` runs [`server`]; `ota-images`
-//! the image server; `network` the feeder-only gateway redirect in
-//! `network`. The bench host's pieces (the binary, `network` and
-//! `neighbour`) are behind the default `bench` feature, which an
-//! installer leaves out.
+//! (docs/development/stock-server.md): `serve` runs [`server`] with the trial
+//! disabled. The bench host's pieces (the binary and `neighbour`) are behind
+//! the default `bench` feature, which an installer leaves out.
 
 #![forbid(unsafe_code)]
 #![warn(clippy::print_stdout)]
@@ -30,8 +28,6 @@ pub mod enroll;
 pub mod mqtt;
 #[cfg(feature = "bench")]
 pub mod neighbour;
-#[cfg(feature = "bench")]
-pub mod network;
 pub mod ota;
 pub mod protocol;
 pub mod server;

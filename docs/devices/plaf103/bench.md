@@ -17,7 +17,7 @@ These hold for every command on this page. The sections below give the detail.
 - **Unattended motion follows the owner's rules:** hopper empty, the D cells out so relay 1 is the kill switch, nobody at the bench, the bench lease free, and at most 3 portions a feed. Only `feed-writes` and `sustained`, under `--feeds`, ask the feeder to feed ([sustained run](#sustained-run)).
 - **Motion builds stay manual.** The bench never offers a startup-motion build, refuses the motor pulse under `--build`, and needs `--attended-motion` for any image whose manifest names a motion policy.
 - **A halt cuts relay 1 and leaves it off.** A person looks before power returns.
-- **The bench never changes routing or the firewall.** Redirecting stock's traffic (`wellfed-stock network apply`) is the operator's change, made and removed by hand.
+- **The bench never changes routing or the firewall.** Stock reaches a broker only where a setup frame named it.
 - **Don't rebuild `wellfed-flash` between prepare and execute.** A plan binds the SHA-256 of the binary that prepared it.
 - **Keep heavy host work away from updates.** Loader NAKs came while `make check` ran beside an install.
 
@@ -48,7 +48,7 @@ A DSD TECH SH-UR04A USB relay board (CP2102 serial, 9600 8N1) adds four switches
    cargo build --locked --release -p wellfed-bench -p wellfed-flash -p wellfed-stock -p wellfed
    ```
 
-   The server runs the `wellfed-flash` beside itself unless `serve --flash-bin` names another. `itest` and `stock-ota` run the `wellfed-stock` beside it unless `serve --stock-bin` names another ([stock server](../../development/stock-server.md)), and `install` runs the `wellfed` beside it unless `serve --wellfed-bin` names another, which runs stock's server in its own process.
+   The server runs the `wellfed-flash` beside itself unless `serve --flash-bin` names another. `install` runs the `wellfed` beside it unless `serve --wellfed-bin` names another, which runs stock's server in its own process.
 
 2. Write the ignored `private/bench.json`. The relay board also enumerates as a USB serial port and can take the name the UART adapter used to have, so use `/dev/serial/by-id/` paths:
 
@@ -117,10 +117,9 @@ The files and shapes they share (the bench config, a command's progress record, 
 | `give-way-prepare NAME`, `give-way-execute NAME` | The same pair for `give-way`. `--fallback` names bank 0's frozen review. |
 | `stock-prepare NAME`, `stock-execute NAME` | UART return to stock ([below](#to-stock-over-uart)) |
 | `ota NAME` | One over-the-air update of the running feeder ([below](#over-the-air-updates)). Never touches power or opens the relay board. |
-| `stock-ota NAME` | Stock installs a Wellfed build through its own updater ([below](#stock-to-a-replacement-stock-ota)) |
 | `install` | `wellfed install` as a job: its questions show on the console, `answer` and the agent answer them, and it restarts the feeder itself with relay 1 ([below](#install-as-a-job)) |
 | `restore-stock` | `wellfed restore-stock` as a job: a fresh update key enrolled with a Dispense press (unless `--key` names one the feeder trusts), then stock over the device API. With `--virtual-panel` it presses Dispense itself on a running virtual-panel build, and a failed press stops it. Nothing is offered again, and a feeder gone after the offer ends it uncertain ([rollback](../../firmware/consumer-installation.md#rollback)) |
-| `itest NAME` | The real-device [integration suite](#integration-suite). Runs its own hotspot, `serve` and receive-only UART capture, installs over the air, and restores the bench at the end. Opens the relay board only with `--power`, for cold boots. |
+| `itest NAME` | The real-device [integration suite](#integration-suite). Runs its own hotspot and receive-only UART capture, installs over the air, and restores the bench at the end. Opens the relay board only with `--power`, for cold boots. |
 
 `wellfed-bench <command> --help` lists the flags. `flash-prepare` and `flash-execute` take the updater's `--bank`, `--source`, `--original-read`, `--target`, `--interrupted` and `--restore-marker`, and `--attended-motion` for a target whose manifest names a motion policy.
 
@@ -159,7 +158,7 @@ Stopped: The bench is busy with job 3 (dump fw-01); wait for it, or cancel it fi
 
 A client that disconnects, a closed terminal say, only stops reading. The job runs on, and `attach ID` prints its output again from the start. The server keeps the output of its last 8 jobs in memory, and every job's in `private/bench-status/jobs/ID-NAME.log`. That file is written through a buffer and never synced, so a UART write never waits on the disk; it is complete once the job ends. Job numbers carry on from the highest file there, so a new server never reuses one.
 
-`ota`, and `itest` or `stock-ota` without `--power`, get a board that refuses every switch, as when they ran without opening it.
+`ota`, and `itest` without `--power`, get a board that refuses every switch, as when they ran without opening it.
 
 Ctrl+C, SIGTERM or a hangup of the server's terminal stops the server. It refuses new jobs, cancels the running one as a client's Ctrl+C does, waits for its cleanup, then removes the socket and releases the lease. Every child of a job runs in a process group of its own, so the terminal's Ctrl+C or hangup reaches only the server, never a `wellfed-flash` that is writing; the server forwards the cancel itself.
 
@@ -201,7 +200,6 @@ It closes:
 
 - while a job that holds the UART runs (`capture`, `boot`, `loader`, `transients`, `dump` and every prepare and execute);
 - while an install push runs (`ota`'s, or one of `itest`'s), which opens owner sessions of its own; it reopens after its cursor once the push ends;
-- for the whole of `stock-ota`, which meets stock (no device API) and then runs its own sessions with the build on bank 0;
 - for the whole of `install`, which meets stock, then pairs with the replacement and promotes it with sessions of its own;
 - while relay 1 is off, and while the server stops.
 
@@ -240,7 +238,6 @@ Before every job it stops the capture, killing its observe (which only receives)
 | `flash-execute` or `give-way-execute` that stops or is cancelled once the flash client ran | That bank is unknown, until a write or a seed settles it. Any non-zero exit counts, 2 as well: `wellfed-flash` exits 2 for any error its command returns, not only one before serial access. |
 | `stock-execute` | Bank 1 holds stock |
 | `ota` | Confirmed: bank 1 holds the offered build (or stock). Fell back: bank 1 holds no valid image. `--fault give-way-only`: bank 1 gave way |
-| `stock-ota` | Stock's install: bank 0 holds the build and bank 1 no valid image. The promotion: bank 1 holds the build |
 | `itest` | Each install the suite watched: confirmed, bank 1 holds the build; fell back, no valid image |
 | `install` | Once the installer started, by its exit alone. Exit 0: bank 1 holds the review's build, and bank 0 too unless `--from-bank0`. Any other end, a cancel included: those banks are unknown |
 
@@ -346,7 +343,6 @@ One tool drives the bench at a time. Before they touch anything, these take the 
 - `wellfed-bench serve`, for as long as it runs. The commands that are its jobs take no lease of their own, and `status` only reads it;
 - every `wellfed-flash` command that opens the serial port (`read`, `update`, `give-way`, `stock-recovery`);
 - `wellfed-stock setup-send`;
-- `wellfed-stock serve --enable-ota-trial`, for as long as it runs;
 - `wellfed install`, for as long as it runs.
 
 The server never stops for an install: its `install` job runs `wellfed install` on its lease. Run from another terminal while a server holds the bench, `wellfed install` is refused with the server named.
@@ -357,16 +353,14 @@ The lease names its holder: its pid, its start time and boot (so a reused pid is
 Stopped: The bench is held by pid 81234 (`wellfed-bench serve`, since 2026-10-26 12:00:00 UTC on bench); wait for it to finish or stop it
 ```
 
-**Chained tools.** A process descended from the holder runs on the holder's lease and leaves it in place. So the children the server's jobs start (`wellfed-flash` captures, reads and updates; the `serve --enable-ota-trial` of `itest` and `stock-ota`; `wellfed install`, with its stock server in its own process) never wait on their own parent. That is checked once, when the child starts, and a job waits for or stops its children before it ends, as the server waits for its job before it releases. Run by hand, `wellfed-flash` takes the lease itself, so a hand-run read cannot open the UART under a running server.
+**Chained tools.** A process descended from the holder runs on the holder's lease and leaves it in place. So the children the server's jobs start (`wellfed-flash` captures, reads and updates; `wellfed install`, with its stock server in its own process) never wait on their own parent. That is checked once, when the child starts, and a job waits for or stops its children before it ends, as the server waits for its job before it releases. Run by hand, `wellfed-flash` takes the lease itself, so a hand-run read cannot open the UART under a running server.
 
 **Tools that take no lease.** Under the server, the server holds the lease. A client only asks the server. The offline `wellfed-flash` commands (`plan-stock-recovery`, `decode-status`, `inspect-journal`) and an emulated helper (`WELLFED_FLASH_EMULATOR`, the host tests) take none.
 
 **The stock server.** `wellfed-stock` keeps the lease beside its `--config`, which on the bench is `private/`.
 
-- A trial-enabled `serve` holds the bench for its whole life, because the install it dispatches runs for minutes after the request. A `wellfed-bench serve` from another terminal is refused until it stops.
-- `ota-trial` takes no lease of its own. It only asks that server, which already holds the bench, so it works from any shell.
-- A plain `serve`, `broker` and `ota-images` take none. They only answer the feeder, beside the bench command that drives it (`ota` beside an operator's `serve`).
-- `network apply` and `network remove` take none either. They change the host's routing, not the bench, and they run under sudo, where a lease would leave a root-owned `private/bench.lease.lock` that later runs as the operator could not open. If one ever does (`Permission denied` on that file), remove it with sudo; it holds nothing.
+- `setup-send` holds it for its one frame.
+- `serve` takes none. It only answers the feeder, beside the bench command that drives it. It never asks stock to install: that needs `wellfed install`, which holds the lease itself.
 
 ### After a killed run
 
@@ -455,7 +449,7 @@ To install stock instead, see [to stock over the air](#to-stock-over-the-air).
 
 `itest` runs named real-device scenarios against the feeder on the bench. It is a bench command, not a test target. Builds go in over the air. The UART stays attached, receive-only, for the whole run: it is what the scenarios assert on, it is the evidence, and it is the way back when the feeder stops answering.
 
-The suite is the `wellfed-itest` crate, which the bench server links. `itest` and `stock-ota` are jobs: the server runs the scenarios on the rig in its own process, so the run, its cancel and its exit status are the job's, and the client exits with that status. `--list` answers in the client, with no server.
+The suite is the `wellfed-itest` crate, which the bench server links. `itest` is a job: the server runs the scenarios on the rig in its own process, so the run, its cancel and its exit status are the job's, and the client exits with that status. `--list` answers in the client, with no server.
 
 ```sh
 cargo build --release --bins --examples
@@ -486,7 +480,6 @@ target/release/wellfed-bench itest itest-YYYYMMDD-06 --build --power --destructi
 | `ota-recovery` | The trial firmware's `fail` image installs and fails its trial, and KM0 gives way to bank 0, which answers the device API. The suite then pushes the re-signed baseline to it with one fault each, in its own transfer: a flipped byte → `stage=hash`, a chunk ahead of the wanted ones → `order`, 75 s of silence → `timeout`, none of them activating. Bank 0 keeps answering after each stop. A clean push then confirms and restores the baseline, so the fallback needs no restore install of its own. | `--build --power` |
 | `ota-power-cuts` | Installs the feeder's `twin` variant: the same firmware under another build identity, so it still serves the device API. It has to be a build the feeder has not confirmed, because a confirmed one skips the trial. Two cuts follow. **Mid-download** (48 sectors in), the next boot must be bank 0, and when the push offers again its first progress record must show the download starting again. **10 s into trial boot 1**, before the 30 s confirmation, KM0 must count boot 1 again (backup registers clear on power loss), and the build must still confirm. A cut during activation itself is not attempted, since the marker write and reset take milliseconds. The re-signed baseline then goes back on. | `--build --power --destructive` |
 | `sustained` | `--sustained-cycles` (default 16) half-hour cycles of feeds every 10 minutes, each cycle opening with one fault from a fixed rotation. Any failed check cuts relay 1 and halts. Defined [below](#sustained-run). | soak tier, `--build --power --destructive --feeds` |
-| `stock-roundtrip` | To stock over the air and back through stock's updater ([below](#itest-scenario-stock-roundtrip)). | `--power --stock` |
 
 A scenario whose flag is missing is reported as **skipped**, never as passed. `--destructive` requires `--power`. The design recovers from both power cuts over the air; if it ever does not, recovery is the UART flash the suite prints.
 
@@ -506,14 +499,13 @@ Feeds and cancels are sent once, never resent on a fresh session: the feeder rem
 
 ### How a run behaves
 
-**Bench state.** Before changing anything, the suite refuses if the UART port is missing, the `wellfed-stock` binary is missing, an evidence name is in use, or anything already answers on the server's `http_listen` (stop that `serve`; the suite runs its own). It then:
+**Bench state.** Before changing anything, the suite refuses if the UART port is missing or an evidence name is in use. It then:
 
 1. records whether the hotspot connection named in `private/hotspot.json` is active, and brings it up;
 2. with `--power`, records relay 1 and switches the supply on;
 3. starts the UART capture;
-4. starts `wellfed-stock serve --config private/server.json` as a child.
 
-Updates go over the device API, pushed on a thread of their own while the scenario reads the UART. `serve` stays up for stock's broker. The suite talks to the feeder as the key in `--keys` (default `private/wellfed-owner.json`). It finds the feeder over mDNS or, while the bench host's firewall drops UDP 5353, through the hotspot's neighbour table and `target_mac`. All server output goes to `private/verification/NAME-servers.log`.
+Updates go over the device API, pushed on a thread of their own while the scenario reads the UART. The suite talks to the feeder as the key in `--keys` (default `private/wellfed-owner.json`). It finds the feeder over mDNS or, while the bench host's firewall drops UDP 5353, through the hotspot's neighbour table and `target_mac`. All server output goes to `private/verification/NAME-servers.log`.
 
 At the end, or on an error or Ctrl+C, the suite stops its children and puts the hotspot and the supply back as it found them, except after a `sustained` halt, which leaves the supply off. Without `--power` the relay board is never opened. The suite never flashes over UART and never changes the firewall or routing. Startup-motion builds are not offered. Only `feed-writes` and `sustained`, under `--feeds`, ask the feeder to feed, within the owner's limits: hopper empty, D cells out, at most 3 portions a feed. `sustained` also installs the `feed-jam`, `sensor-fault` and `feed-stall` variants, which move the motor only for a feed request.
 
@@ -605,9 +597,9 @@ Three bench routes cover stock 1.1.15:
 
 - to stock over the air (`ota` with a stock review);
 - to stock over UART (`stock-prepare` and `stock-execute`);
-- from stock to Wellfed over stock's own updater (`stock-ota`).
+- from stock to Wellfed over stock's own updater (the [`install` job](#install-as-a-job)).
 
-`itest`'s `stock-roundtrip` scenario chains the two over-the-air routes. The design for doing all of this without a bench is in [consumer installation](../../firmware/consumer-installation.md).
+The `install` and `restore-stock` jobs are the real path, and the suite does not cover it: [before a release](../../development/dart.md#before-a-release), run both. The design for doing all of this without a bench is in [consumer installation](../../firmware/consumer-installation.md).
 
 ### To stock over the air
 
@@ -630,7 +622,7 @@ Two reviewed commands, shaped like `flash-prepare` and `flash-execute`:
 # Bank 1 still holds a valid image: give way to bank 0 first.
 target/release/wellfed-bench stock-prepare NAME --fallback <bank-0 review>
 target/release/wellfed-bench stock-execute NAME --fallback <bank-0 review> --expected-plan-sha256 <sha>
-# Bank 1 invalid (a give-way, or just after a stock-ota install): recover.
+# Bank 1 invalid (a give-way, or just after stock's own install): recover.
 target/release/wellfed-bench stock-prepare NAME
 target/release/wellfed-bench stock-execute NAME --expected-plan-sha256 <sha>
 ```
@@ -652,48 +644,6 @@ It prints the next command with the plan's hash. With `--fallback`, both command
 
 The boot capture holds the unit's serial and cloud keys, so keep it private. The bench reads the plan through `wellfed-formats`' `StockRecoveryReviewed`.
 
-### Stock to a replacement (`stock-ota`)
-
-`stock-ota` has a feeder running stock 1.1.15 install a Wellfed build through stock's own MQTT-triggered HTTP updater, with no UART write ([stock OTA requirements](stock/ota-requirements.md)). It assumes stock is installed, and proves it first: the server must see stock report 1.1.15 on its adapter, which is also the server's own gate for the request.
-
-```sh
-cargo build --release --bins --examples          # from a clean commit: --enable-ota-trial refuses a dirty build
-target/release/wellfed-bench stock-ota NAME --power                     # default firmware (qa)
-sudo target/release/wellfed-stock network apply --config private/server.json   # once it reaches stock-ready
-sudo target/release/wellfed-stock network remove                               # afterwards
-```
-
-**Routing is the operator's.** Stock connects to its vendor broker on TCP 1883. Only `network apply`, a host firewall change, redirects the feeder's traffic to this server, and only the operator runs it and removes it.
-
-- **Image port:** `network apply` also accepts the image server's TCP 8088 from the feeder's MAC. Without that rule, stock connects for about 25 s and then reports `OTA_INFORM` error 2003.
-- **Timing:** `network apply` refuses until a broker listens, so run it once the run reaches `stock-ready`. Without it stock never reports, and the first stage fails after 5 minutes with nothing sent.
-
-**Stages:**
-
-1. **Build.** Before the bench is touched, the firmware is staged as `ota --build` does: build, review, sign the next version. Stock ignores the manifest; the promotion uses it.
-2. **`stock-ready`.** The bench comes up as in `itest`, with `serve --enable-ota-trial`. The stage then waits for fresh stock telemetry with `softwareVersion` 1.1.15 and `powerType` 1.
-3. **`stock-settle`.** An earlier request that failed or is uncertain blocks a new one. The run asks the server every 30 s to resolve it, for up to 25 minutes.
-   - **The server's evidence:** 20 minutes since that request, 10 quiet connected minutes, and a fresh 1.1.15 version report.
-   - **Version report:** idle stock reports its version only around a connect, so a refused resolve makes the server send stock a read-only `ATTR_GET_SERVICE`.
-   - **Heartbeat:** stock heartbeats about every 61 s, which the server's 90 s telemetry bound tolerates.
-4. **`stock-request`.** `wellfed-stock ota-images` serves the review's `image.bin`, bound to its `ota_sha256`, to the feeder found by its MAC. Then one `POST /api/ota/trial`. The server persists the request, then sends stock one `OTA_UPGRADE` with:
-   - target version `2.0.0`;
-   - the image's SHA-256;
-   - a URL of about 80 characters, under stock's 128-byte parser buffer.
-
-   It is never resent.
-5. **`stock-install`.** Stock's `OTA_PROGRESS` and `OTA_UPGRADE` reports are printed as they arrive, and a reported error fails the stage. Stock writes bank 0 and invalidates bank 1, so the stage passes only when the first `PLFW1 start` afterwards is the build, from **bank 0**.
-6. **`bank0-health`.** The build answers the device API from bank 0 while it waits for an update. Stock reports nothing after activating it and the build speaks no MQTT, so the run tells the server what it saw (`POST /api/ota/trial/answered`: the build identity and bank 0 the device API reported). The server checks that against the build it served and closes the request as `replacement_healthy` once stock's telemetry has gone stale (90 s), so the run asks every 10 s for 120 s. The next request then needs no 20-minute resolution first. A server that will not close it (stock still reporting, or its version reported after the request) is noted, not failed; the next request then waits for the resolution instead.
-7. **`promote`.** The same build is pushed, signed, over the device API. Bank 0 installs it into bank 1, and the trial boot confirms. The feeder ends in the normal two-bank state, with bank 0 holding the same build. `--no-promote` stops after `bank0-health`.
-
-Unknown on hardware: whether stock posts its `softwareVersion` between taking the command and rebooting into the build. If it does, every install fails the `bank0-health` fast path closed and waits for the resolution.
-
-**After it:**
-
-- The run restores the hotspot and the supply as it found them.
-- It writes `private/verification/NAME-itest.json` with the stage verdicts. Server output goes to `NAME-servers.log`.
-- If anything failed after the request was sent, the run prints the UART recovery pointer: bank 1 may be invalid.
-
 ### Install as a job
 
 `install` runs `wellfed install` ([consumer installation](../../firmware/consumer-installation.md)) as the server's job, so the server never stops for it. It takes the installer's bench flags, `--review`, `--stock-config`, and `--from-bank0` to resume, with `--manifest` or `--update-key`, `--home-network`, `--ble-address`, `--expect-device`, `--enroll-minutes`, `--keys` and `--address` passed through. `--virtual-panel` is the server's own: the installer never sees it. The setup-frame route (`--ssid`) and `--home-ssid` read a passphrase at a terminal and are no job; the bench's stock reaches the broker by its firewall redirect, and a consumer image's network comes from `--home-network private/hotspot.json`.
@@ -710,21 +660,6 @@ target/release/wellfed-bench install --review private/verification/<review> --ma
 - With `--virtual-panel`, the job answers the panel's prompts itself on a running [virtual panel](#virtual-panel) build, from its own thread, as it does the restart. It needs a consumer review, and refuses a bench one before the installer starts: on the recovery route a person unlocked the panel, where a press left over from a code cut short could feed. For `key-setup-code` it presses the code's six buttons in order, 150 ms each; for `press-dispense`, Dispense once. Each press is a `wellfed-flash read press` child under the server's lease, and the job's output records each one (`press 3 of 6, mic`, then the press's own line). Nothing unlocks the panel first: a code being keyed in takes every gesture whatever the lock says, so a Lock hold would count as one of its presses, and a waiting enrollment takes Dispense on a locked panel too. The server's UART capture is stopped for every job and starts again after it, so the presses have the port. The job answers done only once every press echoed and released. A press that did not stops the installer, and the job ends naming it; nothing is pressed again. Before each press the job looks again, and presses nothing more once it is stopping or the installer has exited. The presses add no step rows of their own. Without the flag these prompts go into the live state for a person at the panel, who answers done once the presses are in. The installer goes on without waiting for that answer, since the feeder times its own window.
 - Its standard error is the job's output, so what goes with a question (the recovery code beside the recovery window) shows right below it. A line on its standard output that is no question stops the installer. When the installer exits with an error, the error it printed last is the job's.
 - A cancel stops the installer through its own SIGTERM handler, which stops its stock server, and takes the question away. The job's end takes it away too, however it ended.
-
-### `itest` scenario `stock-roundtrip`
-
-```sh
-target/release/wellfed-bench itest NAME --review <baseline review> --only stock-roundtrip --power --stock <frozen stock review>
-```
-
-From the confirmed baseline:
-
-1. **To stock:** the stock review, offered over the air, installs into bank 1, and its banner must appear.
-2. **On stock:** the server switches to `serve --enable-ota-trial`. The scenario waits for stock to report, so run `network apply` then, and resolves any earlier request.
-3. **Back:** stock is asked to install the baseline, which starts on bank 0 and answers the device API there (closing the server's request as `replacement_healthy`), then is promoted into bank 1. It confirms at once, since it was confirmed before.
-4. **Restore:** back to plain `serve`, with the baseline's device-API status fresh.
-
-`--stock` requires `--power`. A failure on stock stops the suite with a stock-aware recovery hint. With the owner's `network apply` rules already in place, nobody has to touch the bench.
 
 ## Job records
 

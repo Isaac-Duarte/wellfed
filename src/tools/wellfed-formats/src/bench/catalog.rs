@@ -25,7 +25,6 @@ pub enum Need {
     Power,
     Build,
     Destructive,
-    Stock,
     Feeds,
 }
 
@@ -35,7 +34,6 @@ impl Need {
             Self::Power => "--power",
             Self::Build => "--build",
             Self::Destructive => "--destructive",
-            Self::Stock => "--stock",
             Self::Feeds => "--feeds",
         }
     }
@@ -45,9 +43,6 @@ impl Need {
             Self::Power => "it cold-boots the feeder",
             Self::Build => "it builds a variant",
             Self::Destructive => "it cuts power during an update",
-            Self::Stock => {
-                "it leaves the replacement for stock and back, through the feeder routing"
-            }
             Self::Feeds => "it moves the motor; the hopper may be empty",
         }
     }
@@ -67,7 +62,7 @@ pub struct Scenario {
 }
 
 /// The whole suite, in run order.
-pub const SCENARIOS: [Scenario; 11] = [
+pub const SCENARIOS: [Scenario; 10] = [
     Scenario {
         name: "ota-update",
         about: "install the build under test over the air and see it confirm",
@@ -129,13 +124,6 @@ pub const SCENARIOS: [Scenario; 11] = [
         about: "power cut mid-download (bank 0 takes the offer again from the start) and early in a trial (the count restarts)",
         tier: Tier::Standard,
         needs: &[Need::Power, Need::Build, Need::Destructive],
-        baseline: false,
-    },
-    Scenario {
-        name: "stock-roundtrip",
-        about: "to stock 1.1.15 over our updater, then back over stock's own and the bank-0 promotion",
-        tier: Tier::Standard,
-        needs: &[Need::Power, Need::Stock],
         baseline: false,
     },
     Scenario {

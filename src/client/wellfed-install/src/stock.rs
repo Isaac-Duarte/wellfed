@@ -446,8 +446,7 @@ impl Stock {
 
 /// Where the image server admits the feeder from: the address the
 /// enrollment recorded. A captured device has none; on the bench host it is
-/// found by its MAC in the hotspot's neighbour table, as `ota-images` finds
-/// it. Without the `bench` feature (an app) the enrollment is the only
+/// found by its MAC in the hotspot's neighbour table. Without the `bench` feature (an app) the enrollment is the only
 /// source, and a captured device is refused.
 fn peer(config: &wellfed_stock::config::Config) -> Result<Ipv4Addr, Error> {
     if let Some(IpAddr::V4(enrolled)) = config.device_address {

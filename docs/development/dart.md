@@ -67,3 +67,8 @@ The host checks do not prove the app works on a phone. Run these on a real phone
 6. Install Wellfed over stock, then restore stock from the backup.
 7. Update the firmware with the app in the background and the screen off.
 8. Turn on TalkBack and go through Home, a feed and the schedule.
+
+The integration suite no longer makes the trip through stock, so also run the bench server's jobs on the same build. Each is a physical check that no host test stands in for:
+
+1. Run the `restore-stock` job ([bench](../devices/plaf103/bench.md#stock-and-back)). You should see stock 1.1.15 on bank 1, reporting to the installer's broker.
+2. Run the `install` job ([running it](../firmware/consumer-installation.md#running-a-consumer-install-on-the-bench)). You should see the build confirmed on bank 1, and the kept backup beside the key file.
