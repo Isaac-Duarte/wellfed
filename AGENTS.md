@@ -64,7 +64,7 @@ This covers what this repository builds. Interop with things it does not build, 
 | Change | Run |
 | --- | --- |
 | Any Rust edit | `cargo fmt --all`, then `make check` (the contributor gate) |
-| Builder, audits, formats or flash review | Also `make check-fixtures` against fresh builds (`make -C src/firmware/vendor device firstboot`) |
+| Builder, audits, formats or flash review | Also `make check-fixtures` against fresh builds (`make -C src/firmware/vendor device firstboot`, and `make -C src/firmware/vendor firstboot FIRMWARE=feeder PROVISION=consumer` for the consumer image) |
 | Firmware crates | Also a fresh image build, so its link, RAM-park and stack audits run |
 | `src/web/` | Also `make check-web` (needs Node and pnpm, runs no Rust): ESLint, Prettier, licenses, types, unit tests, the build, and Playwright of the site and the docs site |
 | `Cargo.lock` or `deny.toml` | `make check` includes `check-deps` (cargo-deny); its first run downloads the RustSec database |
