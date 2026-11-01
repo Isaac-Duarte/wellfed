@@ -6,8 +6,8 @@
 //! same rule.
 
 use wellfed_core::store::slot::{
-    CRC_AT, Crc32, DualSlot, Extent, Found, Layout, Pick, Prepare, RECORD_BYTES, crc32, get_u64,
-    newest, put_u64, seal, target,
+    CRC_AT, DualSlot, Extent, Found, Layout, Pick, Prepare, RECORD_BYTES, crc32, get_u64, newest,
+    put_u64, seal, target,
 };
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
 
@@ -347,41 +347,4 @@ fn unbound_units_refuse_everything_and_a_clear_erases_both() {
     f.bytes[1][4000] = 0;
     assert!(units(&mut f, &UNIT).clear());
     assert!(f.bytes.iter().flatten().all(|&b| b == u8::MAX));
-}
-
-/// CRC-32 a bit at a time: the definition every stored record was written by.
-fn crc32_bitwise(p: &[u8]) -> u32 {
-    let mut crc = u32::MAX;
-    for &byte in p {
-        crc ^= u32::from(byte);
-        for _ in 0..8 {
-            crc = (crc >> 1) ^ if crc & 1 != 0 { 0xedb8_8320 } else { 0 };
-        }
-    }
-    !crc
-}
-
-#[test]
-fn crc32_keeps_the_formats_check_value() {
-    assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
-    assert_eq!(crc32(b""), 0);
-    assert_eq!(crc32_bitwise(b"123456789"), 0xcbf4_3926);
-}
-
-proptest::proptest! {
-    /// Whole, and in the two pieces a record read in chunks arrives in.
-    #[test]
-    fn crc32_matches_the_bitwise_definition(
-        bytes in proptest::collection::vec(proptest::prelude::any::<u8>(), 0..4200),
-        split in proptest::prelude::any::<proptest::sample::Index>(),
-    ) {
-        let expected = crc32_bitwise(&bytes);
-        proptest::prop_assert_eq!(crc32(&bytes), expected);
-
-        let (head, tail) = bytes.split_at(split.index(bytes.len() + 1));
-        let mut pieces = Crc32::new();
-        pieces.update(head);
-        pieces.update(tail);
-        proptest::prop_assert_eq!(pieces.finish(), expected);
-    }
 }

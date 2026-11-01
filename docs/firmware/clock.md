@@ -71,13 +71,6 @@ A client turns the owner's IANA name into the rule with `wellfed_client::time::r
 
 Without a zone setting, local time comes from the last client sync's offset and next change, which is correct across one change. A rule wins over a sync's offsets. `wellfed time --zone America/Denver` (or `--zone system`) sets it, and `--clear-zone` clears it.
 
-**What a reading costs.** Working a rule out for an instant takes about 25 software 64-bit divides (static), and the schedule asks for hundreds of offsets as a minute rolls over. So the clock keeps the current year's two transitions beside the rule (`zone::Year`), and a reading inside that year only compares seconds. The loop refreshes them from its 10 s store. A reading outside them, or within that 10 s of a new year, a new rule or the first fix, works the rule out whole and gets the same answer (host-tested across both transitions and New Year). Nothing evaluates the rule with interrupts masked:
-
-- Readers copy the state they need out under the mask and work from the copy. One that drops the offset (`hal::clock::unix_ms`) copies only the anchor and the rate.
-- The year is a pure function of the rule and the year number. A zone change clears it in the masked write that sets the rule, and the loop's refresh, worked out unmasked, is stored only if the rule it used is still the clock's. So a settings write during a refresh leaves the new zone in force, and readers on any task copy a rule and its year together.
-
-A read projects one anchor. The reading's centre is kept as its lead on the trusted estimate, which an untrusted fix sets, so the two cannot drift apart by more than the rounding of a single fix.
-
 ## NTP
 
 `wellfed_core::clock::ntp` is the exchange, sans-IO. `wellfed_feeder::feeder::time` runs it in the loop task on one non-blocking UDP socket, as the mDNS responder does, so it needs no new task.

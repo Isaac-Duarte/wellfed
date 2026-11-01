@@ -392,7 +392,7 @@ impl Platform for Plaf103 {
 
     /// The clock reads its own count.
     fn wall_ms(&mut self, _now_ms: u32) -> Option<u64> {
-        clock::unix_ms()
+        clock::state().reading.map(|reading| reading.unix_ms)
     }
 
     fn time_sync(&mut self, _now_ms: u32, sync: Sync, origin: Origin) -> Result<Jump, SyncError> {

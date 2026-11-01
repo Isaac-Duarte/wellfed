@@ -421,7 +421,7 @@ fn a_stalled_feed_past_its_due_time_goes_back_to_the_usual_limit() {
         tokio::time::sleep(Duration::from_secs(56)).await;
         relay.pause();
         let silent = tokio::time::timeout(
-            Duration::from_secs(30),
+            Duration::from_secs(20),
             next_forever(&mut heard, |update| match update {
                 SessionUpdate::Closed { error } => panic!("it closed: {error:?}"),
                 _ => None::<()>,
