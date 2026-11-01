@@ -28,8 +28,6 @@
 //! `wellfed-flash` stays a child process, never linked: its pinned checks,
 //! plan hashes and no-retry rule are its own.
 
-#![forbid(unsafe_code)]
-
 pub mod api;
 mod banks;
 mod board;
@@ -42,7 +40,7 @@ pub mod jobs;
 mod notes;
 mod output;
 mod routes;
-mod server;
+mod serve;
 mod state;
 pub mod stopping;
 mod tool_jobs;
@@ -53,7 +51,7 @@ pub use client::{Client, ClientError, Followed, Interrupt, StateEvents};
 pub use feeder::{ClockSync, DeviceOptions};
 pub use jobs::{JobCommand, JobOptions, ToolPaths};
 pub use output::{CONSOLE_QUEUE, Console};
-pub use server::{Options, ServeError, Server, restore_output};
+pub use serve::{Options, ServeError, Server, restore_output};
 pub use state::Store;
 pub use tool_jobs::{InstallArgs, RestoreStockArgs};
 pub use watching::Watched;

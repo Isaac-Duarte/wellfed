@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use serde_json::{Value, json};
-use wellfed_bench_server::{Console, Options, Server, ToolPaths};
+use wellfed_bench::server::{Console, Options, Server, ToolPaths};
 use wellfed_relay::{AtBoard, FakeBoard};
 
 struct Agent {
@@ -169,5 +169,5 @@ fn an_agent_lists_reads_posts_a_job_waits_and_is_refused_motion_and_feeds() {
     agent.child.wait().unwrap();
     let _ = stop.send(());
     runtime.block_on(served).unwrap().unwrap();
-    wellfed_bench_server::restore_output();
+    wellfed_bench::server::restore_output();
 }

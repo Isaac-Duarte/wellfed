@@ -22,7 +22,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use wellfed_formats::bench::live::{BenchState, DeferredStop, JobId, Uart};
 use wellfed_formats::bench::now;
 
-use crate::state::Store;
+use crate::server::state::Store;
 
 /// How long a first press during a write waits for the second.
 pub const CONFIRM_WINDOW: Duration = Duration::from_secs(5);
@@ -119,7 +119,7 @@ impl Stopper {
         }
     }
 
-    /// Complete once the server should stop; give it to [`crate::Server::run`].
+    /// Complete once the server should stop; give it to [`crate::server::Server::run`].
     /// With every sender of `asks` gone, nothing more can ask, and it
     /// stops only once a deferred stop is due.
     pub async fn until_stop(self, mut asks: UnboundedReceiver<Ask>) {
@@ -247,7 +247,7 @@ mod tests {
     }
 
     fn fixture() -> Fixture {
-        let store = Store::new(crate::tests::idle_state());
+        let store = Store::new(crate::server::tests::idle_state());
         let said = Arc::new(Mutex::new(Vec::new()));
         let fell_back = Arc::new(Mutex::new(false));
         let lines = Arc::clone(&said);

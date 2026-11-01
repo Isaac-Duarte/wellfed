@@ -41,10 +41,10 @@ use wellfed_formats::bench::live::{
 use wellfed_formats::bench::notes::Body as NoteBody;
 use wellfed_formats::bench::now;
 
-use crate::api::{Accepted, CancelRequest, JobRequest, OUTPUT_PAGE, OutputPage, Refusal};
+use crate::server::api::{Accepted, CancelRequest, JobRequest, OUTPUT_PAGE, OutputPage, Refusal};
 
-use crate::server::Shared;
-use crate::state::JobLog;
+use crate::server::serve::Shared;
+use crate::server::state::JobLog;
 
 pub(crate) fn router(shared: Arc<Shared>) -> Router {
     Router::new()
@@ -56,8 +56,8 @@ pub(crate) fn router(shared: Arc<Shared>) -> Router {
         .route("/jobs/{id}/answer", post(answer))
         .route("/jobs/{id}/output", get(output))
         .route("/notes", post(note))
-        .route("/wait", get(crate::wait::wait))
-        .merge(crate::device_routes::routes())
+        .route("/wait", get(crate::server::wait::wait))
+        .merge(crate::server::device_routes::routes())
         .with_state(shared)
 }
 

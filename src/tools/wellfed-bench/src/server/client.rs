@@ -29,11 +29,11 @@ use wellfed_formats::bench::feeder::{
 use wellfed_formats::bench::notes::{Body, Note};
 use wellfed_model::Op;
 
-use crate::api::{
+use crate::server::api::{
     Accepted, CancelRequest, DuringWrite, JobRequest, OutputPage, Refusal, SOCKET, Seed, Seeded,
     Wait, Waited,
 };
-use crate::stopping::{CONFIRM_WINDOW, Confirm, Held};
+use crate::server::stopping::{CONFIRM_WINDOW, Confirm, Held};
 
 /// How long [`StateEvents`] waits for anything from the server, a keep-alive
 /// included, before calling it stuck. The server sends one every 15 s.

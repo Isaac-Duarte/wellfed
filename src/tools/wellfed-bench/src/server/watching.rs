@@ -22,8 +22,8 @@ use tokio::task::JoinHandle;
 use wellfed_formats::bench::live::{BenchState, JobEnd, JobId, Phase, Uart};
 use wellfed_formats::bench::now;
 
-use crate::api::{OUTPUT_PAGE, OutputPage, Refusal};
-use crate::client::{Client, ClientError};
+use crate::server::api::{OUTPUT_PAGE, OutputPage, Refusal};
+use crate::server::client::{Client, ClientError};
 
 /// Between tries of a server that does not answer.
 const RETRY: Duration = Duration::from_secs(2);

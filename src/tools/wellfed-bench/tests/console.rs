@@ -10,8 +10,8 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use rustix::process::{Pid, Signal, kill_process};
-use wellfed_bench_server::api::DuringWrite;
-use wellfed_bench_server::{Client, Console, Followed, Options, Server, ToolPaths};
+use wellfed_bench::server::api::DuringWrite;
+use wellfed_bench::server::{Client, Console, Followed, Options, Server, ToolPaths};
 use wellfed_formats::bench::live::{BenchState, CancelState, Phase};
 use wellfed_relay::{AtBoard, FakeBoard};
 
@@ -199,5 +199,5 @@ fn the_console_refuses_without_a_terminal_or_server_and_q_leaves_the_job_running
 
     let _ = stop.send(());
     runtime.block_on(served).unwrap().unwrap();
-    wellfed_bench_server::restore_output();
+    wellfed_bench::server::restore_output();
 }

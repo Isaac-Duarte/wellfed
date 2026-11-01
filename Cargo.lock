@@ -4946,44 +4946,19 @@ name = "wellfed-bench"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap",
- "crossterm",
- "jiff",
- "ratatui",
- "rmcp",
- "rustix",
- "schemars",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "wellfed-bench-server",
- "wellfed-formats",
- "wellfed-relay",
- "wellfed-rig",
-]
-
-[[package]]
-name = "wellfed-bench-at"
-version = "0.1.0"
-dependencies = [
- "heapless",
-]
-
-[[package]]
-name = "wellfed-bench-server"
-version = "0.1.0"
-dependencies = [
  "axum",
  "bytes",
  "clap",
+ "crossterm",
  "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",
  "jiff",
+ "ratatui",
+ "rmcp",
  "rustix",
+ "schemars",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -5000,6 +4975,13 @@ dependencies = [
  "wellfed-relay",
  "wellfed-rig",
  "wellfed-session",
+]
+
+[[package]]
+name = "wellfed-bench-at"
+version = "0.1.0"
+dependencies = [
+ "heapless",
 ]
 
 [[package]]

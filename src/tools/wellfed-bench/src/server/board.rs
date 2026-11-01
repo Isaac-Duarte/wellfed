@@ -12,7 +12,7 @@ use wellfed_formats::bench::now;
 use wellfed_formats::bench::progress::RelayState;
 use wellfed_relay::{Board, Switch};
 
-use crate::state::Store;
+use crate::server::state::Store;
 
 /// The board's channels, 1 to 4.
 const CHANNELS: std::ops::RangeInclusive<u8> = 1..=4;

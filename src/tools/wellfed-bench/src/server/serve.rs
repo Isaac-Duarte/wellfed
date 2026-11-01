@@ -31,18 +31,18 @@ use wellfed_relay::{Board, POWER};
 use wellfed_rig::Cancel;
 use wellfed_rig::tools::Children;
 
-use crate::api::{DuringWrite, JobRequest, Refusal, SOCKET};
-use crate::banks::Banks;
-use crate::board::SharedBoard;
-use crate::capture::CaptureService;
-use crate::feeder::{DeviceOptions, Feeder, Task};
-use crate::jobs::{self, Bed, JobError, Ran, Run, ToolPaths};
-use crate::notes::Notes;
-use crate::output::{self, Console, Output};
-use crate::routes;
-use crate::state::{JobLog, Logs, Store};
-use crate::stopping::Stopper;
-use crate::tool_jobs::{self, Answering};
+use crate::server::api::{DuringWrite, JobRequest, Refusal, SOCKET};
+use crate::server::banks::Banks;
+use crate::server::board::SharedBoard;
+use crate::server::capture::CaptureService;
+use crate::server::feeder::{DeviceOptions, Feeder, Task};
+use crate::server::jobs::{self, Bed, JobError, Ran, Run, ToolPaths};
+use crate::server::notes::Notes;
+use crate::server::output::{self, Console, Output};
+use crate::server::routes;
+use crate::server::state::{JobLog, Logs, Store};
+use crate::server::stopping::Stopper;
+use crate::server::tool_jobs::{self, Answering};
 
 /// How long a quitting server lets its clients' connections finish once
 /// the job has ended.

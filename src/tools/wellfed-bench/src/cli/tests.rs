@@ -202,7 +202,7 @@ fn run_in(root: &Path, argv: &[&str]) -> anyhow::Result<u8> {
 /// The lease's refusal, from `serve` or from `status`.
 fn lease_error(result: anyhow::Result<u8>) -> lease::LeaseError {
     match result.unwrap_err().downcast() {
-        Ok(wellfed_bench_server::ServeError::Lease(error)) => error,
+        Ok(wellfed_bench::server::ServeError::Lease(error)) => error,
         Ok(other) => panic!("not a lease refusal: {other:?}"),
         Err(error) => error.downcast().unwrap(),
     }

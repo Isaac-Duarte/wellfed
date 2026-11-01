@@ -12,8 +12,8 @@ use wellfed_model::{Answer, Op, Pushed};
 use wellfed_rig::device::{Ask as RigAsk, DeviceLink};
 
 use super::*;
-use crate::api::{Seed, SeedError, SeededFrom};
-use crate::feeder::{ClockSync, DeviceOptions};
+use crate::server::api::{Seed, SeedError, SeededFrom};
+use crate::server::feeder::{ClockSync, DeviceOptions};
 
 const OWNER: [u8; 32] = [0x22; 32];
 /// An update key, as `wellfed update-key enroll` sends it.
@@ -117,7 +117,7 @@ fn cursor(root: &std::path::Path) -> Option<DeviceCursor> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_session_reads_status_sets_the_clock_and_resumes_after_its_cursor() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -220,7 +220,7 @@ async fn the_session_reads_status_sets_the_clock_and_resumes_after_its_cursor() 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_uart_job_pauses_the_session_and_it_opens_again_after() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -273,7 +273,7 @@ async fn a_uart_job_pauses_the_session_and_it_opens_again_after() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_capture_yields_the_port_to_a_job_and_comes_back() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -337,7 +337,7 @@ async fn the_capture_yields_the_port_to_a_job_and_comes_back() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn job_results_write_the_ledger_and_the_banner_disputes_them() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -424,7 +424,7 @@ async fn job_results_write_the_ledger_and_the_banner_disputes_them() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_seed_takes_the_operator_s_word_when_the_inspection_names_no_build() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -475,7 +475,7 @@ async fn a_seed_takes_the_operator_s_word_when_the_inspection_names_no_build() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_read_lost_with_its_session_goes_once_more_and_a_write_comes_back_uncertain() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -536,7 +536,7 @@ async fn a_read_lost_with_its_session_goes_once_more_and_a_write_comes_back_unce
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_install_push_closes_the_session_until_it_ends_and_no_clock_sync_leaves_the_clock() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -589,7 +589,7 @@ async fn an_install_push_closes_the_session_until_it_ends_and_no_clock_sync_leav
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_capture_never_starts_under_a_job_however_the_starts_interleave() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -640,7 +640,7 @@ async fn the_capture_never_starts_under_a_job_however_the_starts_interleave() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_write_that_stops_leaves_its_bank_unknown_and_a_seed_waits_for_no_job() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -691,7 +691,7 @@ async fn a_write_that_stops_leaves_its_bank_unknown_and_a_seed_waits_for_no_job(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_server_points_the_user_s_clients_at_itself_and_withdraws_when_it_quits() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -727,17 +727,17 @@ async fn the_server_points_the_user_s_clients_at_itself_and_withdraws_when_it_qu
 
 #[test]
 fn the_hotspot_is_read_only_while_no_job_and_no_loader_or_write_runs() {
-    let mut state = crate::tests::idle_state();
-    assert!(crate::server::hotspot_due(&state));
+    let mut state = crate::server::tests::idle_state();
+    assert!(crate::server::serve::hotspot_due(&state));
 
     state.uart = Uart::Writing {
         done: 1,
         total: 2,
         counted: true,
     };
-    assert!(!crate::server::hotspot_due(&state));
+    assert!(!crate::server::serve::hotspot_due(&state));
     state.uart = Uart::Loader;
-    assert!(!crate::server::hotspot_due(&state));
+    assert!(!crate::server::serve::hotspot_due(&state));
 
     state.uart = Uart::Idle;
     state.job = Some(wellfed_formats::bench::live::JobView {
@@ -750,7 +750,7 @@ fn the_hotspot_is_read_only_while_no_job_and_no_loader_or_write_runs() {
         cancel: CancelState::None,
         end: None,
     });
-    assert!(!crate::server::hotspot_due(&state));
+    assert!(!crate::server::serve::hotspot_due(&state));
 }
 
 impl Running {
@@ -762,7 +762,7 @@ impl Running {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn after_an_epoch_change_the_history_is_the_new_epoch_s_and_a_feed_reports_its_own_events() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -863,7 +863,7 @@ fn timer_state(state: &BenchState, label: &str) -> Option<notes::TimerState> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn notes_fold_into_the_state_and_a_uart_line_or_a_lapsed_window_settles_a_timer() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -961,7 +961,7 @@ async fn notes_fold_into_the_state_and_a_uart_line_or_a_lapsed_window_settles_a_
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_device_event_settles_the_timer_that_expects_its_kind() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -1009,7 +1009,7 @@ async fn a_device_event_settles_the_timer_that_expects_its_kind() {
 /// 10 s every other request gets, and answers it once.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_enrollment_answered_by_a_late_press_comes_back_through_the_server() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -1066,7 +1066,7 @@ async fn an_enrollment_answered_by_a_late_press_comes_back_through_the_server() 
 /// question waits.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_install_job_keeps_the_session_paused_for_its_whole_run() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;

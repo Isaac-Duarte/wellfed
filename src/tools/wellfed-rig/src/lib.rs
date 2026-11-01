@@ -10,8 +10,8 @@
 //! and evidence paths come from the ignored `private/bench.json`; see
 //! docs/devices/plaf103/bench.md.
 //!
-//! The bench server (`wellfed-bench-server`) runs these sequences as its
-//! jobs, publishing the progress they record as its live state.
+//! The bench server (in `wellfed-bench`) runs these sequences as its jobs,
+//! publishing the progress they record as its live state.
 
 #![forbid(unsafe_code)]
 

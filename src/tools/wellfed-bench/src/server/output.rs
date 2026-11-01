@@ -23,7 +23,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use crate::state::JobLog;
+use crate::server::state::JobLog;
 
 /// Lines the console may fall behind by before it loses some.
 pub const CONSOLE_QUEUE: usize = 4096;
@@ -32,7 +32,7 @@ const SYNC_WAIT: Duration = Duration::from_secs(2);
 /// What the pump consumes rather than forwards: [`Output::sync`]'s mark,
 /// found anywhere in a line, so one written after a partial line still
 /// counts. It starts with a control character no tool prints.
-const MARK: &str = "\u{1}wellfed-bench-server sync ";
+const MARK: &str = "\u{1}wellfed-bench sync ";
 
 /// The installed pipe, for the process's life.
 pub(crate) struct Output {
@@ -330,7 +330,7 @@ mod tests {
     fn on_a_terminal(body: impl FnOnce()) -> String {
         // Descriptors 1 and 2 are the process's: no server test may run
         // meanwhile.
-        let _one = crate::tests::ONE_SERVER.blocking_lock();
+        let _one = crate::server::tests::ONE_SERVER.blocking_lock();
         let terminal = tempfile::NamedTempFile::new().unwrap();
         let saved = (
             io::stdout().as_fd().try_clone_to_owned().unwrap(),
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn closing_writes_out_every_line_then_prints_straight_to_the_terminal() {
-        if crate::tests::run_alone() {
+        if crate::server::tests::run_alone() {
             return;
         }
         let written = on_a_terminal(|| {
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn a_stopped_pump_puts_the_terminal_back_and_waits_on_nothing() {
-        if crate::tests::run_alone() {
+        if crate::server::tests::run_alone() {
             return;
         }
         let written = on_a_terminal(|| {
@@ -397,7 +397,7 @@ mod tests {
 
     #[test]
     fn a_mark_after_a_partial_line_still_counts() {
-        if crate::tests::run_alone() {
+        if crate::server::tests::run_alone() {
             return;
         }
         let written = on_a_terminal(|| {

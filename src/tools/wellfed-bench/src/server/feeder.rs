@@ -46,10 +46,10 @@ use wellfed_formats::private::{self, SYSTEM_RANDOM};
 use wellfed_model::{Answer, Op, Pushed, Status};
 use wellfed_rig::device::{self, DeviceError, DeviceLink, Owner};
 
-use crate::banks::Banks;
-use crate::files;
-use crate::notes::{Notes, event_name};
-use crate::state::Store;
+use crate::server::banks::Banks;
+use crate::server::files;
+use crate::server::notes::{Notes, event_name};
+use crate::server::state::Store;
 
 /// How often the status is read while the session is open.
 const STATUS_EVERY: Duration = Duration::from_secs(10);

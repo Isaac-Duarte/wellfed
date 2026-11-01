@@ -9,7 +9,7 @@ use axum::middleware::{Next, from_fn};
 use tokio::net::UnixListener;
 
 use super::*;
-use crate::Watched;
+use crate::server::Watched;
 
 type Seen = Arc<Mutex<Vec<(Method, String)>>>;
 
@@ -18,7 +18,7 @@ type Seen = Arc<Mutex<Vec<(Method, String)>>>;
 fn recorded(server: &Running, dir: &Path) -> (PathBuf, Seen) {
     let seen = Seen::default();
     let recording = Arc::clone(&seen);
-    let router = crate::routes::router(Arc::clone(&server.shared)).layer(from_fn(
+    let router = crate::server::routes::router(Arc::clone(&server.shared)).layer(from_fn(
         move |request: Request, next: Next| {
             let recording = Arc::clone(&recording);
             async move {
@@ -52,7 +52,7 @@ async fn read_until(watched: &mut Watched, kept: &mut Vec<String>, line: &str) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_event_stream_sends_the_state_each_change_and_ends_when_the_server_stops() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -86,7 +86,7 @@ async fn the_event_stream_sends_the_state_each_change_and_ends_when_the_server_s
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_watcher_follows_a_job_with_gets_alone_and_leaving_lets_it_run_on() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -143,7 +143,7 @@ async fn a_watcher_follows_a_job_with_gets_alone_and_leaving_lets_it_run_on() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_watcher_keeps_the_last_state_of_a_server_gone_and_resyncs_with_the_next() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -184,7 +184,7 @@ async fn a_watcher_keeps_the_last_state_of_a_server_gone_and_resyncs_with_the_ne
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_watcher_nobody_reads_stops_fetching_and_loses_nothing_once_read_again() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -226,7 +226,7 @@ async fn a_watcher_nobody_reads_stops_fetching_and_loses_nothing_once_read_again
 
 #[test]
 fn a_keep_alive_or_another_event_carries_no_state() {
-    use crate::client::state_event;
+    use crate::server::client::state_event;
 
     assert!(state_event(b": keep-alive").unwrap().is_none());
     assert!(state_event(b"event: other\ndata: {}").unwrap().is_none());

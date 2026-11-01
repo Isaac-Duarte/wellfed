@@ -26,10 +26,10 @@ use wellfed_rig::tools::{Children, Processes};
 
 use wellfed_core::buttons::Buttons;
 
-use crate::api::Refusal;
-use crate::board::SharedBoard;
-use crate::feeder::Feeder;
-use crate::tool_jobs::{self, Asking, InstallArgs, RestoreStockArgs, ToolJobError};
+use crate::server::api::Refusal;
+use crate::server::board::SharedBoard;
+use crate::server::feeder::Feeder;
+use crate::server::tool_jobs::{self, Asking, InstallArgs, RestoreStockArgs, ToolJobError};
 
 /// A bench command that touches the hardware, as a job.
 #[derive(Debug, Clone, Subcommand)]
@@ -505,7 +505,7 @@ mod tests {
     use wellfed_relay::{AtBoard, FakeBoard, Switch};
 
     use super::*;
-    use crate::state::Store;
+    use crate::server::state::Store;
 
     fn words(words: &[&str]) -> Vec<String> {
         words.iter().map(|word| (*word).to_string()).collect()
@@ -520,13 +520,13 @@ mod tests {
     #[test]
     fn an_over_the_air_job_gets_a_board_that_refuses_every_switch() {
         let board = FakeBoard::default();
-        let store = Store::new(crate::tests::idle_state());
+        let store = Store::new(crate::server::tests::idle_state());
         let root = PathBuf::from("/nonexistent");
-        let banks = crate::banks::Banks::open(&root, store.clone()).unwrap();
-        let notes = crate::notes::Notes::open(&root, store.clone());
+        let banks = crate::server::banks::Banks::open(&root, store.clone()).unwrap();
+        let notes = crate::server::notes::Notes::open(&root, store.clone());
         let (feeder, _) = Feeder::new(
             &root,
-            &crate::feeder::DeviceOptions::default(),
+            &crate::server::feeder::DeviceOptions::default(),
             store.clone(),
             banks,
             notes,
@@ -552,7 +552,7 @@ mod tests {
             cancel: Cancel::new(),
             children: Children::new(),
             sink: Box::new(Discard),
-            asking: crate::tool_jobs::asking(1, store.clone()).0,
+            asking: crate::server::tool_jobs::asking(1, store.clone()).0,
         };
 
         for argv in [&["ota", "o1", "--build"][..], &["itest", "i1"]] {

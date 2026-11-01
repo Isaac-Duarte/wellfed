@@ -81,15 +81,14 @@ Run the bench from the repository root, or pass `--root`. A job reads the paths 
 
 ### The crates
 
-The bench is five crates with one-way dependencies:
+The bench is four crates with one-way dependencies:
 
 | Crate | What it does |
 | --- | --- |
 | `wellfed-relay` | The relay board driver, behind a `Board` trait the Wellfed Bench board can implement |
 | `wellfed-rig` | The operator sequences, and the steps the suite builds on |
 | `wellfed-itest` | The integration suite, on the rig |
-| `wellfed-bench-server` | The server: the lease, the board, the socket, the feeder session and the UART capture, the sequences and the suite as its jobs, and the bank ledger |
-| `wellfed-bench` | The command line over all of them, as one binary: `serve` and its clients |
+| `wellfed-bench` | One binary, over the others: the server (the lease, the board, the socket, the feeder session and the UART capture, the sequences and the suite as its jobs, and the bank ledger), `serve` and its clients |
 
 The files and shapes they share (the bench config, a command's progress record, the server's live state, the run records and the suite's catalog) are typed in `wellfed-formats`. The rig signs offers through `wellfed-signing`. Every build runs as a `wellfed-build` process, and every flash read and write as a `wellfed-flash` process.
 

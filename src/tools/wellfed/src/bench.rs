@@ -526,7 +526,7 @@ fn wants(message: &Pushed, after: Option<u64>, epoch: Option<u32>) -> bool {
 /// The CLI's side of the device routes, against a stand-in that serves
 /// them from a session of its own with the simulator: the CLI never links
 /// the bench, whose relay driver only the bench may. The server's side of
-/// the same routes is `wellfed-bench-server`'s tests.
+/// the same routes is `wellfed-bench`'s server tests.
 #[cfg(test)]
 mod tests {
     use std::fs;

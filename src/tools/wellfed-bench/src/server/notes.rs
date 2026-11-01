@@ -28,8 +28,8 @@ use wellfed_formats::bench::notes::{Body, Expect, NOTES, Note, Operator, Seen};
 use wellfed_formats::bench::now;
 use wellfed_model::EventKind;
 
-use crate::api::NoteError;
-use crate::state::Store;
+use crate::server::api::NoteError;
+use crate::server::state::Store;
 
 /// The notes, shared by the socket, the capture, the session and the
 /// output pump.
@@ -276,7 +276,7 @@ mod tests {
 
     fn notes() -> (tempfile::TempDir, Notes, Store) {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::new(crate::tests::idle_state());
+        let store = Store::new(crate::server::tests::idle_state());
         let notes = Notes::open(dir.path(), store.clone());
         (dir, notes, store)
     }
@@ -318,7 +318,7 @@ mod tests {
             operator(&store).step.as_deref(),
             Some("Install the candidate")
         );
-        let again = Store::new(crate::tests::idle_state());
+        let again = Store::new(crate::server::tests::idle_state());
         Notes::open(dir.path(), again.clone());
         // serde_json may read a time back an ulp off what it wrote, so the
         // state compared has been through the same text.

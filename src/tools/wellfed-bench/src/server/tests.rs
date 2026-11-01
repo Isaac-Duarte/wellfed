@@ -17,8 +17,8 @@ use wellfed_formats::bench::live::{
 use wellfed_relay::{AtBoard, Board, FakeBoard, POWER, STRAP, Switch};
 
 use super::*;
-use crate::api::{DuringWrite, Wait, WaitFor};
-use crate::stopping::Ask;
+use crate::server::api::{DuringWrite, Wait, WaitFor};
+use crate::server::stopping::Ask;
 
 mod feeder;
 mod install;
@@ -52,7 +52,7 @@ pub(crate) fn idle_state() -> BenchState {
 }
 
 /// Set in the process [`run_alone`] starts, which runs the test itself.
-const ALONE: &str = "WELLFED_BENCH_SERVER_ALONE";
+const ALONE: &str = "WELLFED_BENCH_ALONE";
 
 /// Whether the calling test is done, having run in a process of its own.
 ///
@@ -175,7 +175,7 @@ esac
                 wellfed_bin: root.join("wellfed"),
             },
             root,
-            console: crate::Console::Terminal,
+            console: crate::server::Console::Terminal,
         }
     }
 
@@ -199,7 +199,7 @@ struct Running {
     client: Client,
     /// The checkout the server runs for: its socket's `private/`'s parent.
     root: PathBuf,
-    shared: Arc<crate::server::Shared>,
+    shared: Arc<crate::server::serve::Shared>,
 }
 
 impl Running {
@@ -298,7 +298,7 @@ async fn state_until(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_job_streams_its_output_and_ends_with_its_code() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -333,7 +333,7 @@ async fn a_job_streams_its_output_and_ends_with_its_code() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_second_job_is_refused_while_one_runs() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -364,7 +364,7 @@ async fn a_second_job_is_refused_while_one_runs() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_server_parses_every_job_and_refuses_what_clap_refuses() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -429,7 +429,7 @@ async fn the_server_parses_every_job_and_refuses_what_clap_refuses() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_cancel_interrupts_the_flash_client_and_the_cleanup_cuts_power() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -475,7 +475,7 @@ async fn a_cancel_interrupts_the_flash_client_and_the_cleanup_cuts_power() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_cancel_mid_write_only_interrupts_the_flash_client_and_waits_for_it() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -538,7 +538,7 @@ async fn a_cancel_mid_write_only_interrupts_the_flash_client_and_waits_for_it() 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn with_every_asker_gone_the_server_keeps_serving() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -559,7 +559,7 @@ async fn with_every_asker_gone_the_server_keeps_serving() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sigterm_during_a_write_lets_the_job_end_then_stops() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -635,7 +635,7 @@ async fn sigterm_during_a_write_lets_the_job_end_then_stops() {
 /// threads of their own, then real waits over the socket beside real jobs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn waits_and_job_starts_side_by_side_never_deadlock() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -658,7 +658,7 @@ async fn waits_and_job_starts_side_by_side_never_deadlock() {
         let (shared, done, wait) = (Arc::clone(&server.shared), Arc::clone(&done), wait.clone());
         std::thread::spawn(move || {
             while !done.load(Ordering::SeqCst) {
-                let _ = crate::wait::checked(&shared, &wait);
+                let _ = crate::server::wait::checked(&shared, &wait);
             }
         });
     }
@@ -707,7 +707,7 @@ async fn waits_and_job_starts_side_by_side_never_deadlock() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_burst_of_output_streams_without_blocking() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -753,7 +753,7 @@ impl Board for PanicsOnce {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_panicking_job_ends_and_the_next_one_runs() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -783,7 +783,7 @@ async fn a_panicking_job_ends_and_the_next_one_runs() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_relay_poll_skips_while_a_job_runs() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -809,7 +809,7 @@ async fn the_relay_poll_skips_while_a_job_runs() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_job_posted_as_the_last_one_ends_is_never_busy() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -825,7 +825,7 @@ async fn a_job_posted_as_the_last_one_ends_is_never_busy() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_client_detaches_and_another_attaches_from_the_first_line() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -865,7 +865,7 @@ async fn a_client_detaches_and_another_attaches_from_the_first_line() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn quitting_cancels_the_job_waits_for_its_cleanup_then_frees_the_lease() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;

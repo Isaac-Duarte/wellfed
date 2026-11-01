@@ -23,8 +23,8 @@ use wellfed_formats::bench::banks::Ledger;
 use wellfed_formats::bench::feeder::{Ask, DeviceUnavailable, Stream};
 use wellfed_formats::bench::live::{Session, Unavailable};
 
-use crate::api::{Refusal, Seed};
-use crate::server::Shared;
+use crate::server::api::{Refusal, Seed};
+use crate::server::serve::Shared;
 
 pub(crate) fn routes() -> Router<Arc<Shared>> {
     Router::new()

@@ -23,7 +23,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use wellfed_bench_server::api::DuringWrite;
+use wellfed_bench::server::api::DuringWrite;
 use wellfed_formats::bench::prompt::{Answer, Prompt};
 
 use crate::note::{self, NoteArgs, What};

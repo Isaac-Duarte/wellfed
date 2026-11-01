@@ -2,8 +2,8 @@
 //! the relay board and runs the rig's sequences and the integration suite
 //! one job at a time, and its clients: one command per sequence, `attach`,
 //! `console` and `status`.
-//! The sequences live in `wellfed-rig`, the suite in `wellfed-itest` and
-//! the server in `wellfed-bench-server`; this crate is their command line.
+//! The sequences live in `wellfed-rig` and the suite in `wellfed-itest`;
+//! this crate is the server that runs them and their command line.
 
 #![forbid(unsafe_code)]
 

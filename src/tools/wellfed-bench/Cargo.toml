@@ -9,7 +9,14 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+axum.workspace = true
+bytes = "1"
 clap.workspace = true
+futures-util = { workspace = true, default-features = false }
+http-body-util.workspace = true
+# The clients' side of the socket: hyper's client over a unix stream.
+hyper = { version = "1.12.0", features = ["client", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
 # The operator's timers: local clock times and lengths such as `5m`.
 jiff = "0.2.38"
 # The full-screen console on /dev/tty; its keys are read by `tui::keys`.
@@ -21,20 +28,30 @@ rmcp = { version = "3.8.0", default-features = false, features = ["server", "tra
 schemars = "1.2.3"
 serde.workspace = true
 serde_json.workspace = true
-wellfed-bench-server = { path = "../wellfed-bench-server" }
-wellfed-formats.workspace = true
+# The `GET /wait` query, from the clients' side.
+serde_urlencoded = "0.7.1"
+wellfed-client.workspace = true
+wellfed-connect.workspace = true
+wellfed-core.workspace = true
+wellfed-formats = { workspace = true, features = ["device"] }
+wellfed-itest = { path = "../wellfed-itest" }
+wellfed-model.workspace = true
 wellfed-relay = { path = "../wellfed-relay" }
 wellfed-rig = { path = "../wellfed-rig" }
 # `event`: the console waits on its terminal with poll(2) (tui::keys).
-rustix = { version = "1", features = ["event", "fs", "process"] }
+rustix = { version = "1", features = ["event", "fs", "process", "stdio"] }
 thiserror.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync"] }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 
 [dev-dependencies]
 # The terminal tests' relay board is a pseudo-terminal.
 rustix = { version = "1", features = ["pty"] }
 tempfile.workspace = true
-# The MCP test runs a real server on a scripted relay board.
+# The feeder session against a simulated feeder over TCP.
+wellfed-feeder-sim = { path = "../wellfed-feeder-sim", features = ["harness"] }
+wellfed-session.workspace = true
+# The server's tests and the MCP test run a real server on a scripted relay
+# board.
 wellfed-relay = { path = "../wellfed-relay", features = ["fake"] }
 
 [lints]

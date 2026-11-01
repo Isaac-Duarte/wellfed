@@ -51,8 +51,8 @@ use wellfed_formats::manifest::{BuildManifest, Provisioning};
 use wellfed_rig::commands::{Bench, installed};
 use wellfed_rig::tools::own_group_with_input;
 
-use crate::jobs::{JobError, ToolPaths, press_name};
-use crate::state::Store;
+use crate::server::jobs::{JobError, ToolPaths, press_name};
+use crate::server::state::Store;
 
 /// How often the job looks at its cancel while its child is quiet.
 const TICK: Duration = Duration::from_millis(100);

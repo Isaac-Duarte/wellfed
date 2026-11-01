@@ -28,9 +28,9 @@ use wellfed_formats::bench::live::{BenchState, JobId, Uart};
 use wellfed_formats::bench::notes::TimerState;
 use wellfed_formats::bench::now;
 
-use crate::api::{Refusal, WAIT_MAX_MS, Wait, WaitError, WaitFor, Waited};
-use crate::notes::{Heard, event_kind};
-use crate::server::Shared;
+use crate::server::api::{Refusal, WAIT_MAX_MS, Wait, WaitError, WaitFor, Waited};
+use crate::server::notes::{Heard, event_kind};
+use crate::server::serve::Shared;
 
 /// How often a wait looks at the clock, for a timer falling due.
 const TICK: Duration = Duration::from_millis(500);
@@ -324,7 +324,7 @@ mod tests {
             build: Some("4d37".into()),
             bank: Some(1),
         };
-        let mut state = crate::tests::idle_state();
+        let mut state = crate::server::tests::idle_state();
         state.feeder.status = Some(wellfed_formats::bench::live::FeederStatus {
             build: "4d37c21a00ff".into(),
             bank: 1,
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn a_timer_nobody_set_or_a_job_past_the_next_is_refused() {
-        let mut state = crate::tests::idle_state();
+        let mut state = crate::server::tests::idle_state();
         state
             .operator
             .timers

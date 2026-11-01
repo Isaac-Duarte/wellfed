@@ -24,9 +24,9 @@ use std::process::ExitCode;
 use crate::{mcp, note, orphans, tui};
 use clap::{Args, Parser, Subcommand};
 use tokio::sync::mpsc;
-use wellfed_bench_server::api::{Seed, SeededFrom};
-use wellfed_bench_server::stopping::Ask;
-use wellfed_bench_server::{
+use wellfed_bench::server::api::{Seed, SeededFrom};
+use wellfed_bench::server::stopping::Ask;
+use wellfed_bench::server::{
     CONSOLE_QUEUE, Client, ClientError, ClockSync, Console, DeviceOptions, Followed, Interrupt,
     JobCommand, JobOptions, Options, Server, ToolPaths,
 };
@@ -197,7 +197,7 @@ pub(crate) fn main() -> ExitCode {
 
     let ran = run(cli, &argv);
     // A server's console goes back to the terminal before its last line.
-    wellfed_bench_server::restore_output();
+    wellfed_bench::server::restore_output();
     match ran {
         Ok(code) => ExitCode::from(code),
         Err(error) => {
@@ -327,7 +327,7 @@ async fn follow(
 }
 
 /// Run the server until Ctrl+C or SIGTERM, held back during a UART write
-/// as `wellfed_bench_server::stopping` says.
+/// as `wellfed_bench::server::stopping` says.
 fn serve(root: &Path, args: &ServeArgs, runtime: &tokio::runtime::Runtime) -> anyhow::Result<u8> {
     let tools = ToolPaths {
         flash_bin: args.flash_bin.clone().unwrap_or_else(default_flash_bin),
@@ -454,7 +454,7 @@ fn status(root: &Path, break_lease: bool, runtime: &tokio::runtime::Runtime) -> 
         Err(_) => {
             wellfed_rig::say!(
                 "Server: not answering on {} within {} s; the lease above says who holds the bench",
-                root.join(wellfed_bench_server::api::SOCKET).display(),
+                root.join(wellfed_bench::server::api::SOCKET).display(),
                 STATUS_WAIT.as_secs()
             );
             Ok(1)

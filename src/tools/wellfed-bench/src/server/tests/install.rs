@@ -74,7 +74,7 @@ fn refused(result: Result<(), ClientError>) -> AnswerError {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_install_restarts_the_feeder_itself_and_asks_the_rest_through_the_state() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -192,7 +192,7 @@ async fn an_install_restarts_the_feeder_itself_and_asks_the_rest_through_the_sta
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_cancel_stops_the_installer_and_takes_its_question_away() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -231,7 +231,7 @@ async fn a_cancel_stops_the_installer_and_takes_its_question_away() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_line_that_is_no_prompt_stops_the_installer_and_its_own_error_ends_the_job() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -313,7 +313,7 @@ impl Board for RefusesUartCut {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_restart_whose_cut_fails_part_way_powers_the_feeder_again() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -394,7 +394,7 @@ echo "Installed" >&2
 /// stays the server's, and the rest reach the installer.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_virtual_panel_install_presses_the_code_and_dispense_itself() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -450,7 +450,7 @@ async fn a_virtual_panel_install_presses_the_code_and_dispense_itself() {
 /// again, and the code goes unanswered.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_failed_press_stops_the_installer_and_presses_nothing_more() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -511,7 +511,7 @@ sleep 30 & wait $!
 /// person at the panel to answer once done.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn without_the_virtual_panel_the_code_is_a_person_s_to_key_in() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -552,7 +552,7 @@ async fn without_the_virtual_panel_the_code_is_a_person_s_to_key_in() {
 /// recovery route a person has unlocked the panel.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_virtual_panel_is_refused_for_a_bench_review() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -582,7 +582,7 @@ async fn the_virtual_panel_is_refused_for_a_bench_review() {
 /// presses: the job looks before each one.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn no_press_follows_an_installer_that_has_ended() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -631,7 +631,7 @@ const RESTORE: &[&str] = &["restore-stock", "--virtual-panel"];
 /// the server's.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_restore_job_presses_dispense_once_and_records_stock() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;
@@ -668,7 +668,7 @@ read a; echo "dispense $a" >> answers
 /// bank 1 is unknown; an uncertain restore's own words end the job as they were.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_restore_job_s_failed_press_stops_it_and_its_uncertain_words_end_it() {
-    if crate::tests::run_alone() {
+    if crate::server::tests::run_alone() {
         return;
     }
     let _one = ONE_SERVER.lock().await;

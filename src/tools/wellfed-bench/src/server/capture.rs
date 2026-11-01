@@ -27,10 +27,10 @@ use wellfed_formats::bench::{CAPTURES, now, relative};
 use wellfed_rig::Cancel;
 use wellfed_rig::tools::{Children, Processes, Tools};
 
-use crate::banks::Banks;
-use crate::jobs::ToolPaths;
-use crate::notes::Notes;
-use crate::state::Store;
+use crate::server::banks::Banks;
+use crate::server::jobs::ToolPaths;
+use crate::server::notes::Notes;
+use crate::server::state::Store;
 
 /// Each observe's length; the flash client caps one at 180 s.
 const SEGMENT: Duration = Duration::from_secs(180);

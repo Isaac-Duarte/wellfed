@@ -58,7 +58,6 @@ pub(crate) const TOOLS: [Tool; 8] = [
         name: "wellfed-bench",
         sources: &[
             "src/tools/wellfed-bench/src/",
-            "src/tools/wellfed-bench-server/src/",
             "src/tools/wellfed-rig/src/",
             "src/tools/wellfed-itest/src/",
         ],

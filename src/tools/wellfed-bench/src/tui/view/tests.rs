@@ -229,7 +229,7 @@ fn render_keys(
 
 #[test]
 fn a_first_q_during_a_write_puts_the_confirmation_in_the_footer() {
-    let prompt = wellfed_bench_server::stopping::CONFIRM_PROMPT;
+    let prompt = wellfed_bench::server::stopping::CONFIRM_PROMPT;
 
     let asked = render_with(&writing(), &log(1), 0, Some(prompt));
     let plain = render(&writing(), &log(1), 0);

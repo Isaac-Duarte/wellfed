@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::runtime::Runtime;
-use wellfed_bench_server::{Client, Watched};
+use wellfed_bench::server::{Client, Watched};
 use wellfed_formats::bench::live::BenchState;
 
 use super::Feed;

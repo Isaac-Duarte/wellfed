@@ -14,7 +14,7 @@ use std::str::FromStr;
 use anyhow::Context;
 use clap::{ArgGroup, Args, Subcommand};
 use jiff::{SignedDuration, Timestamp, Zoned, civil};
-use wellfed_bench_server::Client;
+use wellfed_bench::server::Client;
 use wellfed_formats::bench::notes::{Body, Expect, Note, Verdict, WINDOW};
 
 #[derive(Debug, Clone, PartialEq, Args)]
