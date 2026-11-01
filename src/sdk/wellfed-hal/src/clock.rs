@@ -339,7 +339,7 @@ pub fn set_rule(rule: Option<Rule>) {
 }
 
 /// The clock's state now: its reading (`None` while invalid), the learned
-/// rate and the last fix (at the clock's count, not uptime).
+/// rate and the last fix's age.
 pub fn state() -> State {
     let (clock, now) = update(|clock, now, _| (*clock, now));
     clock.state(now)

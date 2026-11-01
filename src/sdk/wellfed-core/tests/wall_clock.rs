@@ -598,11 +598,7 @@ fn a_warm_reset_resumes_the_clock_with_the_rtc_gap_in_its_error() {
     assert_eq!(state.reading.unwrap().error_ms, 2_430 + 300);
     assert!(!state.learned);
     assert_eq!(state.syncs, 0);
-    let (origin, at) = state.last.unwrap();
-    assert_eq!(
-        (origin, 63_000u32.wrapping_sub(at)),
-        (Origin::Owner, 132_000)
-    );
+    assert_eq!(state.last, Some((Origin::Owner, 132_000)));
 }
 
 #[test]
@@ -753,8 +749,7 @@ fn an_ntp_last_fix_survives_the_reset_as_ntp() {
     resumed
         .resume(2_000, &record, Some(505), Restart::Warm)
         .unwrap();
-    let (origin, at) = resumed.state(2_000).last.unwrap();
-    assert_eq!((origin, 2_000u32.wrapping_sub(at)), (Origin::Ntp, 15_000));
+    assert_eq!(resumed.state(2_000).last, Some((Origin::Ntp, 15_000)));
 }
 
 #[test]

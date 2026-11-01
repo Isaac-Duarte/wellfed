@@ -265,7 +265,9 @@ pub struct State {
     /// How far the true rate could be from it.
     pub rate_bound_ppb: u32,
     pub learned: bool,
-    /// The last fix's origin and when it came (uptime).
+    /// The last fix's origin and age in milliseconds. It is an age because
+    /// the fix is stamped by the clock's own count, which runs ahead of
+    /// uptime by the ticks flash erases stop.
     pub last: Option<(Origin, u32)>,
 }
 
@@ -599,7 +601,7 @@ impl WallClock {
             rate_ppb: self.rate_ppb,
             rate_bound_ppb: self.rate_bound_ppb,
             learned: self.learned,
-            last: self.last,
+            last: self.last.map(|(origin, at)| (origin, now.wrapping_sub(at))),
         }
     }
 

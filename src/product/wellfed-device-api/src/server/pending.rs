@@ -500,9 +500,7 @@ fn time_view<D: Device>(device: &mut D, now_ms: u32) -> Option<(TimeView<'static
             Origin::Client => proto::TimeSource::Client,
             Origin::Ntp => proto::TimeSource::Ntp,
         }),
-        last_age_s: clock
-            .last
-            .map(|(_, at)| state.now_ms.wrapping_sub(at) / 1000),
+        last_age_s: clock.last.map(|(_, age_ms)| age_ms / 1000),
         ntp_last: state.ntp_last.map(|result| match result {
             NtpResult::Used => proto::NtpResult::Used,
             NtpResult::Bounded => proto::NtpResult::Bounded,

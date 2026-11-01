@@ -2,7 +2,7 @@
 
 The feeder keeps up to ten feeding plans and runs them itself, with no server. This page explains what a plan is, when one runs, and how the feeder makes sure a meal runs at most once through restarts, clock jumps and daylight changes. It is for owners who want to know what to expect and for anyone changing the schedule code.
 
-Plans, the meal reminder and the meal call have all run on our feeder. Daylight changes and power cuts between a claim and its feed are tested in simulation only. The [roadmap](../roadmap.md) has the current status.
+Plans, the meal reminder and the meal call have all run on our feeder. The autumn daylight change has too: on November 1, 2026 a 01:30 meal ran once, in daylight time, and not again in standard time. The spring change and power cuts between a claim and its feed are tested in simulation only. The [roadmap](../roadmap.md) has the current status.
 
 ## Plans
 
