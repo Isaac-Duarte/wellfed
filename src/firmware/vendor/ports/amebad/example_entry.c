@@ -890,7 +890,7 @@ static void wellfed_radio_off(unsigned int attempt, int associated)
         /* 0 started, 1 already running; below 0 the driver failed. */
         int on = wifi_on(RTW_MODE_STA);
         if (on >= 0) {
-            wifi_set_power_mode(0, 1);
+            wifi_set_power_mode(0, 0);
         }
         failed = on >= 0 ? 0 : failed + 1;
         if (failed >= WELLFED_RADIO_TRIES) {
@@ -920,13 +920,15 @@ static void wellfed_wifi_task(void *unused)
         vTaskDelete(NULL);
         return;
     }
-    /* Inactive power save off, leisure power save kept. After a rejected
+    /* Inactive and leisure power save both off: the chip never sleeps on the
+     * adapter, so holding frames until a beacon wake saves nothing. IPS must stay
+     * off for its own reason. After a rejected
      * join the driver tears down in the timer task, and its key-table writes
      * (rtw_clearstakey_cmd, then ROM_WIFI_CAM_WRITE) race rtw_ps_processor's
      * ips_enter, which powers the MAC down when unassociated. A store to the
      * powered-down MAC stalled the bus and the tick with it, until the
      * watchdog reset the board: the call trail caught it in every such hang. */
-    wifi_set_power_mode(0, 1);
+    wifi_set_power_mode(0, 0);
     unsigned int attempt = 0;
     unsigned int backoff = WELLFED_BACKOFF_MIN_MS;
     for (;;) {
