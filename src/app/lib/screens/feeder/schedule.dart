@@ -306,8 +306,9 @@ class CallLink extends StatelessWidget {
     final ThemeTokens c = context.colors;
     return InkWell(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: Space.s1),
+      // Android's 48dp target, however the text sizes.
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
         child: Row(
           children: [
             Expanded(

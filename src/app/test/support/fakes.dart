@@ -7,6 +7,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show
 import 'package:flutter_test/flutter_test.dart' show WidgetTester;
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/feeder_ports.dart';
+import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
 import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/restore_ports.dart';
@@ -263,6 +264,15 @@ class FakeSession with FakeOpaque implements FeederSession {
   void status(Card card) => updates.add(SessionUpdate.status(card: card));
 
   void history(List<HistoryEntry> entries) => updates.add(SessionUpdate.history(entries: entries, caughtUp: true));
+}
+
+/// A phone with no backups.
+class FakeBackupPorts implements BackupPorts {
+  @override
+  Future<String?> kept(String identity) async => null;
+
+  @override
+  Future<void> share(String path) async {}
 }
 
 /// A phone with everything granted, and no plugins to ask.

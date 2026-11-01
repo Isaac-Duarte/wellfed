@@ -318,8 +318,9 @@ class _MealEditorState extends State<MealEditor> {
             onChanged: () => setState(() {}),
           ),
           const SizedBox(height: Space.s2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // Seven 48dp targets are wider than the narrowest phones, so the last may wrap.
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
             children: [
               for (final day in Weekday.values)
                 _DayToggle(
@@ -399,22 +400,28 @@ class _DayToggle extends StatelessWidget {
       button: true,
       selected: on,
       label: day.name,
+      // The circle is smaller than the target, which is Android's 48dp.
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onTap,
-        child: Container(
-          width: 40,
-          height: 40,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: on ? c.accent : null,
-            shape: BoxShape.circle,
-            border: on ? null : Border.all(color: c.lineStrong),
-          ),
-          child: ExcludeSemantics(
-            child: Text(
-              letter,
-              style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: on ? c.accentText : c.text),
+        child: SizedBox.square(
+          dimension: 48,
+          child: Center(
+            child: Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: on ? c.accent : null,
+                shape: BoxShape.circle,
+                border: on ? null : Border.all(color: c.lineStrong),
+              ),
+              child: ExcludeSemantics(
+                child: Text(
+                  letter,
+                  style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: on ? c.accentText : c.text),
+                ),
+              ),
             ),
           ),
         ),
