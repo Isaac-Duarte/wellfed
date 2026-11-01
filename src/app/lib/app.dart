@@ -1,22 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:wellfed/platform/feeder_ports.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/join_ports.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
-import 'package:wellfed/screens/add_feeder.dart';
-import 'package:wellfed/screens/app_settings.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
-import 'package:wellfed/screens/home.dart';
-import 'package:wellfed/screens/install_screen.dart';
-import 'package:wellfed/screens/join.dart';
-import 'package:wellfed/screens/recover_screen.dart';
-import 'package:wellfed/screens/setup_screen.dart';
-import 'package:wellfed/screens/welcome.dart';
+import 'package:wellfed/screens/home/add_feeder.dart';
+import 'package:wellfed/screens/home/home.dart';
+import 'package:wellfed/screens/home/welcome.dart';
+import 'package:wellfed/screens/install/install_screen.dart';
+import 'package:wellfed/screens/settings/app_settings.dart';
+import 'package:wellfed/screens/setup/join.dart';
+import 'package:wellfed/screens/setup/recover_screen.dart';
+import 'package:wellfed/screens/setup/setup_screen.dart';
 import 'package:wellfed/src/rust/api/store.dart';
-import 'package:wellfed/state/app_state.dart';
-import 'package:wellfed/state/fleet.dart';
+import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/theme/theme.dart';
 
 /// The app's routes. `root` is one route whatever the feeders: it follows

@@ -1,0 +1,139 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/screens/home/home.dart';
+import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/code_tiles.dart';
+import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/when.dart';
+
+Widget _themed(Widget child, {Brightness brightness = Brightness.light}) => MaterialApp(
+  theme: wellfedTheme(brightness),
+  home: Scaffold(body: child),
+);
+
+void main() {
+  // Dart's local time cannot be faked, so this needs a host zone with DST:
+  // `make check-app` sets TZ for it. Under UTC it passes without proving this.
+  test('yesterday is yesterday on every day of the year, DST days included', () {
+    for (var day = 1; day <= 366; day++) {
+      final now = DateTime(2026, 1, day, 12);
+      expect(dayText(DateTime(2026, 1, day, 6), now: now), 'Today');
+      expect(dayText(DateTime(2026, 1, day - 1, 21), now: now), 'Yesterday');
+      expect(dayText(DateTime(2026, 1, day + 1, 6), now: now), 'Tomorrow');
+    }
+  });
+
+  testWidgets('a moment says its day unless it is today', (tester) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      _themed(
+        Builder(
+          builder: (built) {
+            context = built;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    final now = DateTime(2026, 10, 31, 9);
+    String moment(DateTime at) => momentTextMs(context, at.millisecondsSinceEpoch, now: now);
+    String inSentence(DateTime at) => atMomentTextMs(context, at.millisecondsSinceEpoch, now: now);
+
+    final today = DateTime(2026, 10, 31, 6, 5);
+    final yesterday = DateTime(2026, 10, 30, 21);
+    final older = DateTime(2026, 10, 27, 21);
+
+    expect(moment(today), '6:05 AM');
+    expect(moment(yesterday), 'Yesterday 9:00 PM');
+    expect(moment(older), 'Tue 27 Oct 9:00 PM');
+    expect(inSentence(today), 'at 6:05 AM');
+    expect(inSentence(yesterday), 'yesterday at 9:00 PM');
+    expect(inSentence(older), 'on Tue 27 Oct at 9:00 PM');
+    expect(portionWord(1), 'portion');
+    expect(portionWord(2), 'portions');
+  });
+
+  testWidgets('the code shows each press as its panel button, in order', (tester) async {
+    await tester.pumpWidget(_themed(const CodeTiles([1, 2, 3, 4, 2, 1])));
+
+    expect(find.byType(PanelSymbol), findsNWidgets(6));
+    final List<String?> names = tester.widgetList<Text>(find.byType(Text)).map((text) => text.data).toList();
+    expect(names, ['Lock', 'Dispense', 'Mic', 'Reset', 'Dispense', 'Lock']);
+    expect(find.bySemanticsLabel('Press Lock, Dispense, Mic, Reset, Dispense, Lock'), findsOneWidget);
+  });
+
+  testWidgets('both themes take their roles from the brand tokens', (tester) async {
+    for (final (brightness, tokens) in [(Brightness.light, lightTokens), (Brightness.dark, darkTokens)]) {
+      late ThemeTokens seen;
+      await tester.pumpWidget(
+        _themed(
+          Builder(
+            builder: (context) {
+              seen = context.colors;
+              return const SizedBox();
+            },
+          ),
+          brightness: brightness,
+        ),
+      );
+      // MaterialApp animates from the previous theme.
+      await tester.pumpAndSettle();
+      expect(seen, same(tokens));
+      final ThemeData theme = wellfedTheme(brightness);
+      expect(theme.colorScheme.primary, tokens.accent);
+      expect(theme.scaffoldBackgroundColor, tokens.background);
+    }
+  });
+
+  testWidgets('a step screen keeps its actions below the content', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: wellfedTheme(Brightness.light),
+        home: StepScaffold(
+          title: 'Title',
+          body: 'Body',
+          content: const [Text('Content')],
+          actions: [FilledButton(onPressed: () {}, child: const Text('Go'))],
+        ),
+      ),
+    );
+
+    final Offset content = tester.getTopLeft(find.text('Content'));
+    final Offset action = tester.getTopLeft(find.text('Go'));
+    expect(action.dy, greaterThan(content.dy));
+  });
+
+  testWidgets('a step screen shows its step and how far the flow is', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: wellfedTheme(Brightness.light),
+        home: const StepScaffold(stepLabel: 'Step 2 of 4', progress: 0.5, title: 'Title'),
+      ),
+    );
+
+    expect(find.text('Step 2 of 4'), findsOneWidget);
+    final LinearProgressIndicator bar = tester.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+    expect(bar.value, 0.5);
+  });
+
+  testWidgets('the panel photo names the buttons to hold, in order', (tester) async {
+    await tester.pumpWidget(_themed(const SizedBox(width: 364, child: PanelPhoto(held: [1, 3]))));
+
+    expect(find.bySemanticsLabel("The feeder's button panel: hold Lock, then Mic"), findsOneWidget);
+  });
+
+  testWidgets('numbered steps keep their order and their bold names', (tester) async {
+    await tester.pumpWidget(_themed(const NumberedSteps(['Unlock it.', 'Hold **Lock**.'])));
+
+    expect(find.text('1'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    expect(find.textContaining('Hold Lock.', findRichText: true), findsOneWidget);
+  });
+
+  test('every reason a feed cannot start has words', () {
+    for (final Blocked reason in Blocked.values) {
+      expect(blockedWords(reason), isNotEmpty);
+    }
+  });
+}

@@ -1,0 +1,531 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+import 'package:wellfed/platform/restore_ports.dart';
+import 'package:wellfed/src/rust/api/restore.dart';
+import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/install/install.dart' show CheckState;
+import 'package:wellfed/state/restore/restore.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
+
+/// 12.4: putting the vendor's firmware back from the backup the install kept.
+class RestoreScreen extends StatefulWidget {
+  const RestoreScreen({super.key, required this.feeder, required this.ports});
+
+  final KnownFeeder feeder;
+  final RestorePorts ports;
+
+  @override
+  State<RestoreScreen> createState() => _RestoreScreenState();
+}
+
+class _RestoreScreenState extends State<RestoreScreen> {
+  late final RestoreFlow _flow = RestoreFlow(
+    widget.ports,
+    identity: identityBytes(hex: widget.feeder.identity),
+    feederName: widget.feeder.name,
+    address: widget.feeder.address,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_flow.load());
+  }
+
+  @override
+  void dispose() {
+    _flow.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => RestoreView(flow: _flow);
+}
+
+/// The flow's screens, whichever stage it is at.
+class RestoreView extends StatelessWidget {
+  const RestoreView({super.key, required this.flow});
+
+  final RestoreFlow flow;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: flow,
+    builder: (context, _) => PopScope(
+      canPop: !flow.committed,
+      child: switch (flow.stage) {
+        RestoreStage.loading => const Scaffold(body: SizedBox.shrink()),
+        RestoreStage.noBackup => _NoBackup(flow),
+        RestoreStage.before => _Before(flow),
+        RestoreStage.running => _Running(flow),
+        RestoreStage.done => _Done(flow),
+        RestoreStage.uncertain => _Uncertain(flow),
+        RestoreStage.stopped => _Stopped(flow),
+      },
+    ),
+  );
+}
+
+const _title = 'Restore original firmware';
+
+class _NoBackup extends StatelessWidget {
+  const _NoBackup(this.flow);
+
+  final RestoreFlow flow;
+
+  @override
+  Widget build(BuildContext context) => StepScaffold(
+    appBarTitle: _title,
+    title: 'No backup on this phone',
+    body:
+        "The copy of the vendor firmware made during install isn't on this "
+        'phone. If you saved a copy when the install ended, pick that file.',
+    content: [
+      if (flow.notStock != null)
+        const Notice(
+          tone: Tone.fault,
+          lead: "That isn't the original firmware.",
+          text:
+              "It doesn't match the vendor's 1.1.15 exactly, so it can't go "
+              'back on the feeder. It may be damaged or partial.',
+        ),
+    ],
+    actions: [FilledButton(onPressed: flow.pickFile, child: const Text('Pick the file'))],
+  );
+}
+
+class _Before extends StatelessWidget {
+  const _Before(this.flow);
+
+  final RestoreFlow flow;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeTokens c = context.colors;
+    final String name = flow.feederName;
+    return StepScaffold(
+      appBarTitle: _title,
+      body:
+          'Puts back the vendor firmware that was on $name before Wellfed, '
+          'from the backup made during install.',
+      content: [
+        FactList([
+          ('Backup', Text(_backupWords(flow))),
+          ('Version', Text('Vendor ${flow.version ?? ''}')),
+          ('Checked', Text('Matches the original', style: TextStyle(color: c.ok))),
+        ]),
+        const SizedBox(height: Space.s4),
+        const _Warning(
+          "Meals and people set up in Wellfed don't carry over. Set the "
+          "feeder up again in the vendor's app.",
+        ),
+        const SizedBox(height: Space.s3),
+        _Warning(
+          "After this, Wellfed can't talk to $name. If it doesn't come back "
+          "on the vendor firmware, this app can't help from here.",
+        ),
+      ],
+      actions: [
+        CheckboxListTile(
+          value: flow.understood,
+          onChanged: (value) => flow.setUnderstood(value ?? false),
+          contentPadding: EdgeInsets.zero,
+          controlAffinity: ListTileControlAffinity.leading,
+          title: const Text('I understand'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: c.fault, foregroundColor: c.background),
+          onPressed: flow.understood ? flow.start : null,
+          child: const Text(_title),
+        ),
+      ],
+    );
+  }
+
+  static String _backupWords(RestoreFlow flow) {
+    if (flow.picked) return 'From a picked file';
+    final DateTime? at = flow.backupDate;
+    if (at == null) return 'On this phone';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${at.day} ${months[at.month - 1]}, on this phone';
+  }
+}
+
+class _Warning extends StatelessWidget {
+  const _Warning(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeTokens c = context.colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        StrokeIcon(Glyph.warning, size: 18, color: c.warning),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.text),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 12.2's steps, for the way back.
+class _Running extends StatelessWidget {
+  const _Running(this.flow);
+
+  final RestoreFlow flow;
+
+  @override
+  Widget build(BuildContext context) => StepScaffold(
+    appBarTitle: 'Restoring ${flow.feederName}',
+    leading: flow.committed ? Leading.none : Leading.back,
+    content: [
+      if (flow.pressDispense) ...[
+        const Notice(
+          tone: Tone.warning,
+          lead: 'Press Dispense on the feeder, once.',
+          text: 'You have 60 seconds. The press shows you have the feeder in hand.',
+        ),
+        const SizedBox(height: Space.s4),
+      ],
+      Panel(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _Line('Press Dispense on the feeder', flow.pressing),
+              _Line('Sending', flow.sending, fraction: flow.written),
+              _Line('Restart on the original firmware', flow.restarting),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: Space.s4),
+      Text(
+        flow.sessionDropped
+            ? 'The connection dropped. Trying to get it back. Keep the feeder '
+                  'plugged in.'
+            : 'Keep the feeder plugged in, and this phone on the same Wi-Fi. '
+                  "Once this has started, there's no stopping it from here.",
+        style: bodyStyle(context),
+      ),
+      if (flow.holdRefused) ...[
+        const SizedBox(height: Space.s4),
+        const Notice(tone: Tone.warning, text: 'Keep this screen open: Android would not let this run behind.'),
+      ],
+      WaitWords(
+        flow.pressDispense ? null : flow.waitWords,
+        progress: (flow.pressing, flow.sending, flow.written, flow.restarting),
+      ),
+    ],
+  );
+}
+
+/// One line of the steps.
+class _Line extends StatelessWidget {
+  const _Line(this.text, this.state, {this.fraction});
+
+  final String text;
+  final CheckState state;
+
+  /// How far a running step is, when it knows.
+  final double? fraction;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeTokens c = context.colors;
+    final running = state == CheckState.running;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Space.s3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              SizedBox.square(
+                dimension: 22,
+                child: switch (state) {
+                  CheckState.done => StrokeIcon(Glyph.check, size: 20, color: c.ok, weight: 2.2),
+                  CheckState.running => CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: c.accent,
+                    backgroundColor: c.sunken,
+                  ),
+                  CheckState.waiting => Center(
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(color: c.lineStrong, shape: BoxShape.circle),
+                    ),
+                  ),
+                },
+              ),
+              const SizedBox(width: Space.s3),
+              Expanded(
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: running ? Fonts.semibold : null,
+                    color: state == CheckState.waiting ? c.textMuted : c.text,
+                  ),
+                ),
+              ),
+              if (running && fraction != null)
+                Text(
+                  '${(fraction! * 100).round()}%',
+                  style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+                ),
+            ],
+          ),
+          if (running && fraction != null) ...[const SizedBox(height: Space.s2), Bar(value: fraction!)],
+        ],
+      ),
+    );
+  }
+}
+
+class _Done extends StatelessWidget {
+  const _Done(this.flow);
+
+  final RestoreFlow flow;
+
+  @override
+  Widget build(BuildContext context) => StepScaffold(
+    leading: Leading.none,
+    title: 'The original firmware is going back',
+    body:
+        '${flow.feederName} is restarting on vendor ${flow.version ?? ''}. '
+        "Wellfed can't talk to it any more. It still looks for this phone, and "
+        'keeps trying forever. Hold Reset for about 5 seconds, then set it up '
+        "in the vendor's app.",
+    actions: const [_Close()],
+  );
+}
+
+class _Uncertain extends StatefulWidget {
+  const _Uncertain(this.flow);
+
+  final RestoreFlow flow;
+
+  @override
+  State<_Uncertain> createState() => _UncertainState();
+}
+
+class _UncertainState extends State<_Uncertain> {
+  RestoreFlow get flow => widget.flow;
+
+  @override
+  void initState() {
+    super.initState();
+    flow.startLook();
+  }
+
+  @override
+  void dispose() {
+    flow.stopLook();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String name = flow.feederName;
+    final (String title, String body) = switch (flow.look) {
+      RestoreLook.looking => ("We can't tell if it went through", _why()),
+      RestoreLook.wellfed => (
+        '$name is still running Wellfed',
+        "The restore didn't finish, and nothing is lost. You can restore "
+            'again; you press Dispense on the feeder once more.',
+      ),
+      RestoreLook.sighted => (
+        "We still can't tell",
+        '$name showed up on your Wi-Fi, but it never answered this phone as '
+            'idle. It may be finishing or restarting. Close this and check '
+            "again in a few minutes, here or in the vendor's app.",
+      ),
+      RestoreLook.setup => (
+        'A feeder nearby is waiting to be set up',
+        "If that's $name, the restore didn't finish, and Wellfed had already "
+            'cleared its Wi-Fi, its phones and its meals to make way. Your '
+            'backup is still good: set it up, then restore from there if you '
+            'still want to. If you have another feeder in setup, this may be '
+            'that one, and $name may be on the original firmware: check in the '
+            "vendor's app.",
+      ),
+      RestoreLook.nothing => (
+        "It's probably on the original firmware",
+        "$name didn't show up on your Wi-Fi or over Bluetooth. Check in the "
+            "vendor's app: if it shows up there, the restore worked.",
+      ),
+    };
+    return StepScaffold(
+      leading: Leading.none,
+      title: title,
+      body: body,
+      content: [
+        switch (flow.look) {
+          RestoreLook.looking => const Searching('Looking for it on your Wi-Fi and over Bluetooth…'),
+          RestoreLook.wellfed || RestoreLook.sighted => const SizedBox.shrink(),
+          RestoreLook.setup => const Notice(
+            tone: Tone.warning,
+            lead: "Don't hold Reset yet.",
+            text:
+                'If this feeder is on Wellfed, that erases the identity your '
+                "backup is filed under. Check the vendor's app first.",
+          ),
+          RestoreLook.nothing => const Notice(
+            tone: Tone.warning,
+            lead: "If the vendor's app can't find it,",
+            text:
+                'hold Reset for about 5 seconds and set it up there. Only do '
+                'this once you are sure it is not on Wellfed: on Wellfed, that '
+                'hold erases the identity your backup is filed under.',
+          ),
+        },
+        if (flow.detail case final detail?) ...[const SizedBox(height: Space.s3), _Small(detail)],
+      ],
+      actions: [
+        if (flow.look == RestoreLook.wellfed) FilledButton(onPressed: flow.again, child: const Text('Restore again')),
+        if (flow.look == RestoreLook.setup)
+          FilledButton(onPressed: () => context.push('/setup'), child: const Text('Set it up')),
+        _Close(outlined: flow.look == RestoreLook.wellfed || flow.look == RestoreLook.setup),
+      ],
+    );
+  }
+
+  String _why() => switch (flow.uncertain) {
+    UncertainWhy.stopped =>
+      'This was stopped as the firmware was starting to go across, or after it '
+          'had. Nothing more is sent.',
+    UncertainWhy.failed =>
+      'This phone hit a problem as the firmware was starting to go across, or '
+          'after it had. Nothing more is sent.',
+    _ =>
+      '${flow.feederName} stopped answering after the firmware started going '
+          'across. Nothing more is sent. Keep it plugged in while this looks.',
+  };
+}
+
+class _Stopped extends StatelessWidget {
+  const _Stopped(this.flow);
+
+  final RestoreFlow flow;
+
+  @override
+  Widget build(BuildContext context) {
+    final (String title, String body) = _words(flow.stop, flow.feederName);
+    return StepScaffold(
+      leading: Leading.none,
+      title: title,
+      body: body,
+      content: [if (flow.detail case final detail?) _Small(detail)],
+      actions: [
+        if (flow.mayRetry) FilledButton(onPressed: flow.again, child: const Text('Try again')),
+        _Close(outlined: flow.mayRetry),
+      ],
+    );
+  }
+
+  static (String, String) _words(RestoreStop? stop, String name) => switch (stop) {
+    RestoreStop.noPress => ('Dispense was not pressed in time', '$name keeps running Wellfed, and nothing was sent.'),
+    RestoreStop.enrollmentUnknown => (
+      "We don't know if the press got through",
+      '$name stopped answering just then. It keeps running Wellfed, and '
+          'trying again finds out first, without asking for a second '
+          'press if it took.',
+    ),
+    RestoreStop.keyRefused => (
+      "$name wouldn't take the press",
+      'It may be busy with another request, or its list of phones and '
+          'keys may be full. It keeps running Wellfed, and nothing was '
+          'sent.',
+    ),
+    RestoreStop.notOwner => (
+      'Only the owner can do this',
+      "This phone isn't the owner of $name, which keeps running Wellfed.",
+    ),
+    RestoreStop.notAnswering => (
+      "$name isn't answering",
+      'Nothing was sent. Check that it is plugged in and this phone is '
+          'on the same Wi-Fi.',
+    ),
+    RestoreStop.noUpdates => (
+      "$name can't take this",
+      'The firmware it runs takes no updates from this app. Nothing was '
+          'sent.',
+    ),
+    RestoreStop.backupRefused => (
+      "That isn't the original firmware",
+      "It doesn't match the vendor's 1.1.15 exactly, so nothing was sent.",
+    ),
+    RestoreStop.keyFailed => (
+      "This phone couldn't set up the restore",
+      '$name keeps running Wellfed, and nothing was sent. The backup is '
+          'fine: this is about space or storage on this phone.',
+    ),
+    RestoreStop.installRunning => (
+      'An install is running on $name',
+      '$name is busy with another install, so this restore sent nothing. '
+          'Wait for it to finish, then try again.',
+    ),
+    RestoreStop.cancelUnknown => (
+      "$name didn't clear an earlier install",
+      'An earlier install was cut short, and it has to go before the original '
+          'firmware can. $name keeps running Wellfed, and nothing was sent. '
+          'Try again in a minute.',
+    ),
+    RestoreStop.keyGone => (
+      'The restore lost its key',
+      '$name keeps running Wellfed, and nothing was sent. An earlier '
+          'restore on this phone cleared the key as this one was about to '
+          'use it. Try again; you may be asked to press Dispense once more.',
+    ),
+    RestoreStop.refused => (
+      '$name said no',
+      "It keeps running Wellfed, though the vendor's copy may be partly "
+          "written. This isn't sent again from here. If you want to try again, "
+          'unplug the feeder for a few seconds first, since it can refuse '
+          'until its power has been off, then start a new restore.',
+    ),
+    RestoreStop.cancelled => ('Stopped', '$name keeps running Wellfed, and nothing was sent.'),
+    RestoreStop.other || null => ('The restore stopped', '$name most likely keeps running Wellfed.'),
+  };
+}
+
+class _Small extends StatelessWidget {
+  const _Small(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: TextStyle(fontSize: Sizes.sm, color: context.colors.textMuted),
+  );
+}
+
+class _Close extends StatelessWidget {
+  const _Close({this.outlined = false});
+
+  final bool outlined;
+
+  @override
+  Widget build(BuildContext context) {
+    void close() => Navigator.of(context).maybePop();
+    return outlined
+        ? OutlinedButton(onPressed: close, child: const Text('Done'))
+        : FilledButton(onPressed: close, child: const Text('Done'));
+  }
+}

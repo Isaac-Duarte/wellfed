@@ -5,11 +5,11 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'package:wellfed/screens/feeder/feed_detail.dart';
 import 'package:wellfed/screens/feeder/today.dart' show faultTitle;
-import 'package:wellfed/screens/home.dart' show blockedWords;
+import 'package:wellfed/screens/home/home.dart' show blockedWords;
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
-import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/when.dart';

@@ -3,15 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-import 'package:wellfed/screens/feed_sheet.dart';
+import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/lights_help.dart';
 import 'package:wellfed/screens/feeder/no_time.dart';
 import 'package:wellfed/screens/feeder/shell.dart' show confirmRestart;
-import 'package:wellfed/screens/home.dart' show blockedWords;
+import 'package:wellfed/screens/home/home.dart' show blockedWords;
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;
-import 'package:wellfed/state/feeder.dart';
+import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
