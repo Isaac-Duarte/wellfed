@@ -1140,7 +1140,7 @@ fn what_is_kept_stays_bounded() {
 
     let state = watch.engine.state();
     assert!(state.feeds.len() <= 3, "{}", state.feeds.len());
-    assert!(state.seen.len() <= 9, "{}", state.seen.len());
+    assert!(state.seen.len() <= 18, "{}", state.seen.len());
 }
 
 const AFTER: &str = "2026-10-30T10:00:00Z";
@@ -1583,21 +1583,47 @@ fn no_clock_opens_past_its_threshold_and_clears_when_valid() {
 }
 
 #[test]
-fn a_silence_between_statuses_starts_their_timers_again() {
+fn polls_far_apart_still_reach_every_status_timer() {
+    for spacing in [16, 40] {
+        let mut watch = quiet();
+        let stuck = Status {
+            clock: None,
+            readiness: Some(Readiness::Blocked(Blocked::Fault)),
+            ..on_bank(0)
+        };
+        see_status(&mut watch, &on_bank(1), after(0));
+
+        let mut all = Vec::new();
+        for poll in 0..=240 / spacing {
+            all.extend(see_status(&mut watch, &stuck, after(1 + poll * spacing)));
+        }
+
+        let kinds = opened(&all);
+        for kind in [
+            AlertKind::NoClock,
+            AlertKind::CannotFeed,
+            AlertKind::RolledBack,
+        ] {
+            assert!(kinds.contains(&kind), "{spacing} minutes: {kind:?}");
+        }
+    }
+}
+
+#[test]
+fn a_silence_past_three_thresholds_starts_a_status_timer_again() {
     let mut watch = quiet();
-    let none = Status {
+    let stuck = Status {
         clock: None,
         readiness: Some(Readiness::Blocked(Blocked::Fault)),
-        ..on_bank(1)
+        ..on_bank(0)
     };
-    see_status(&mut watch, &none, after(0));
-    let fallen = Status { bank: 0, ..none };
-    see_status(&mut watch, &fallen, after(1));
+    see_status(&mut watch, &on_bank(1), after(0));
+    see_status(&mut watch, &stuck, after(1));
 
-    // Each would have passed its threshold by now, but nothing was read.
-    assert_eq!(see_status(&mut watch, &fallen, after(120)), []);
+    // Past three of every threshold, so this is a first reading of each.
+    assert_eq!(see_status(&mut watch, &stuck, after(182)), []);
 
-    let changes = hold(&mut watch, &fallen, 130..190);
+    let changes = hold(&mut watch, &stuck, 192..243);
     assert_eq!(
         opened(&changes),
         [
@@ -1605,6 +1631,57 @@ fn a_silence_between_statuses_starts_their_timers_again() {
             AlertKind::RolledBack,
             AlertKind::NoClock
         ]
+    );
+}
+
+#[test]
+fn a_silence_counts_against_each_timers_own_threshold() {
+    let mut watch = quiet();
+    let stuck = Status {
+        clock: None,
+        readiness: Some(Readiness::Blocked(Blocked::Fault)),
+        ..status(None)
+    };
+    see_status(&mut watch, &stuck, after(0));
+
+    // 91 minutes is past three of cannot feed's 30, inside three of no
+    // clock's hour.
+    assert_eq!(
+        opened(&see_status(&mut watch, &stuck, after(91))),
+        [AlertKind::NoClock]
+    );
+}
+
+#[test]
+fn a_silence_of_exactly_three_thresholds_does_not_restart() {
+    let mut watch = quiet();
+    let blocked = Status {
+        readiness: Some(Readiness::Blocked(Blocked::Fault)),
+        ..status(None)
+    };
+    see_status(&mut watch, &blocked, after(0));
+
+    assert_eq!(
+        opened(&see_status(&mut watch, &blocked, after(90))),
+        [AlertKind::CannotFeed]
+    );
+}
+
+#[test]
+fn a_timer_restarts_at_once_when_a_status_shows_its_condition_gone() {
+    let mut watch = quiet();
+    let none = Status {
+        clock: None,
+        ..status(None)
+    };
+    see_status(&mut watch, &none, after(0));
+    see_status(&mut watch, &status(None), after(40));
+
+    assert_eq!(see_status(&mut watch, &none, after(80)), []);
+    assert_eq!(see_status(&mut watch, &none, after(120)), []);
+    assert_eq!(
+        opened(&see_status(&mut watch, &none, after(140))),
+        [AlertKind::NoClock]
     );
 }
 
@@ -2458,4 +2535,165 @@ fn needs_plans_starts_true_and_a_read_answers_it() {
 
     watch.see(Observation::Plans(plans(1, &[])), t(AFTER));
     assert!(!watch.engine.needs_plans());
+}
+
+#[test]
+fn a_fault_status_ahead_of_its_fed_leaves_the_feed_a_record() {
+    let by = Source::Schedule { plan: 0 };
+    let mut watch = breakfast();
+    let seen = t("2026-10-30T08:01:00Z");
+    let fault = with_fault(1, FeedOutcome::Failed, None);
+    assert_eq!(
+        opened(&see_status(&mut watch, &fault, seen)),
+        [AlertKind::MealFailed]
+    );
+
+    let body = fed_body(1, FeedOutcome::Failed, FeedReason::Jammed, by);
+    assert_eq!(watch.event(Some(seen), body, seen), []);
+
+    assert_eq!(watch.engine.state().feeds.len(), 1);
+    assert_eq!(watch.read_status(t(DUE) + GRACE), []);
+    assert_eq!(watch.open_kinds(), [AlertKind::MealFailed]);
+}
+
+#[test]
+fn a_fed_behind_a_fault_status_still_counts_its_portions() {
+    let mut watch = quiet();
+    let low = EventBody::Food {
+        level: FoodLevel::Low,
+    };
+    watch.event(None, low, after(0));
+    let fault = Status {
+        food: FoodLevel::Low,
+        ..with_fault(1, FeedOutcome::Failed, Some(1))
+    };
+    see_status(&mut watch, &fault, after(1));
+
+    let body = EventBody::Fed {
+        feed: 1,
+        requested: 5,
+        completed: 5,
+        outcome: FeedOutcome::Failed,
+        reason: FeedReason::Jammed,
+        hopper: FoodLevel::Low,
+        by: CLIENT,
+    };
+
+    assert_eq!(
+        opened(&watch.event(None, body, after(2))),
+        [AlertKind::FoodEmpty]
+    );
+}
+
+#[test]
+fn a_fed_behind_a_fault_status_still_spends_a_once_plan() {
+    let once = Plan {
+        days: Weekdays::ONCE,
+        ..BREAKFAST
+    };
+    let by = Source::Schedule { plan: 0 };
+    let mut watch = Watch::with_plans(plans(1, &[(0, once)]), t(START));
+    let seen = t("2026-10-30T08:01:00Z");
+    see_status(&mut watch, &with_fault(1, FeedOutcome::Failed, None), seen);
+
+    let body = fed_body(1, FeedOutcome::Failed, FeedReason::Jammed, by);
+    watch.event(Some(seen), body, seen);
+
+    assert!(watch.engine.needs_plans());
+}
+
+#[test]
+fn a_welcome_after_a_reported_wipe_still_says_the_history_went() {
+    let mut watch = quiet();
+    let now = t(AFTER);
+    let boot = EventBody::Boot {
+        bank: 1,
+        reset_flags: 0,
+    };
+    let event = Event {
+        epoch: EPOCH,
+        seq: 10,
+        at: Some(now),
+        body: boot,
+    };
+    watch.see(Observation::Event(event), now);
+    see_status(&mut watch, &status(Some(9)), now);
+
+    let changes = watch.see(Observation::Welcome { epoch: EPOCH + 1 }, after(60));
+    assert_eq!(opened(&changes), [AlertKind::HistoryLost]);
+}
+
+#[test]
+fn a_reported_wipe_ends_with_the_next_event_read() {
+    let mut watch = quiet();
+    let now = t(AFTER);
+    let boot = EventBody::Boot {
+        bank: 1,
+        reset_flags: 0,
+    };
+    let event = |epoch, seq| Event {
+        epoch,
+        seq,
+        at: Some(now),
+        body: boot,
+    };
+    watch.see(Observation::Event(event(EPOCH, 10)), now);
+    see_status(&mut watch, &status(Some(9)), now);
+
+    // The ring went on in its own epoch, so the next change of epoch is news.
+    watch.see(Observation::Event(event(EPOCH, 11)), now);
+    let changes = watch.see(Observation::Event(event(EPOCH + 1, 12)), after(60));
+
+    assert_eq!(opened(&changes), [AlertKind::HistoryLost]);
+}
+
+#[test]
+fn a_new_epoch_counting_from_below_a_reported_wipe_is_another_loss() {
+    let mut watch = quiet();
+    let now = t(AFTER);
+    let boot = EventBody::Boot {
+        bank: 1,
+        reset_flags: 0,
+    };
+    let event = |epoch, seq| Event {
+        epoch,
+        seq,
+        at: Some(now),
+        body: boot,
+    };
+    watch.see(Observation::Event(event(EPOCH, 90)), now);
+    see_status(&mut watch, &status(Some(30)), now);
+
+    let changes = watch.see(Observation::Event(event(EPOCH + 1, 2)), after(60));
+
+    assert_eq!(opened(&changes), [AlertKind::HistoryLost]);
+}
+
+#[test]
+fn on_the_short_day_the_next_occurrence_ends_a_record_before_the_window_does() {
+    let early = Plan {
+        minute: 3 * 60 + 30,
+        ..BREAKFAST
+    };
+    let mut watch = Watch::with_plans(plans(1, &[(0, early)]), t("2026-03-06T12:00:00Z"));
+    watch.zone = TimeZone::posix("MST7MDT,M3.2.0,M11.1.0").unwrap();
+
+    // 03:30 MST on March 7, and 23 hours on, 03:30 MDT on March 8.
+    let due = t("2026-03-07T10:30:00Z");
+    assert_eq!(
+        opened(&watch.read_status(due + GRACE)),
+        [AlertKind::MealNoRecord]
+    );
+
+    let next_days = t("2026-03-08T09:30:30Z");
+    let failed = fed_body(
+        1,
+        FeedOutcome::Failed,
+        FeedReason::Jammed,
+        Source::Schedule { plan: 0 },
+    );
+    let changes = watch.event(Some(next_days), failed, next_days);
+
+    assert!(cleared(&changes).is_empty(), "{changes:?}");
+    assert!(watch.open_kinds().contains(&AlertKind::MealNoRecord));
 }

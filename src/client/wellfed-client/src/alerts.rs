@@ -67,6 +67,11 @@ const CLOCKS_APART: SignedDuration = SignedDuration::from_mins(5);
 const POWER_BACK: SignedDuration = SignedDuration::from_hours(24);
 /// How long without one before restarts are no longer repeating.
 const RESTARTS_QUIET: SignedDuration = SignedDuration::from_hours(24);
+/// How many of a status timer's own thresholds a silence must outlast to
+/// restart it. Polls can be far apart (Android's periodic minimum is 15
+/// minutes), and two readings of a condition say it probably held between
+/// them: a false alert from an unseen recovery costs less than wrong silence.
+const SILENCE_THRESHOLDS: i32 = 3;
 /// Portions confirmed past a low reading that likely emptied the hopper:
 /// what lies between the beam and the rotor.
 const PORTIONS_BELOW_THE_BEAM: u32 = 5;
@@ -425,9 +430,16 @@ struct Open {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Mark {
-    /// By the feed, not an alert's key: an uncertain feed's second `Fed`
-    /// can end differently, and most feeds open no alert at all.
+    /// The feed's `Fed` was read. By the feed, not an alert's key: an
+    /// uncertain feed's second `Fed` can end differently, and most feeds open
+    /// no alert at all.
     Feed {
+        epoch: u32,
+        feed: u32,
+    },
+    /// An alert for the feed was raised. Apart from [`Self::Feed`], as a
+    /// status can name a fault ahead of its `Fed`, which is still the record.
+    FeedAlert {
         epoch: u32,
         feed: u32,
     },
@@ -451,8 +463,9 @@ pub struct State {
     baseline: Option<Cursor>,
     /// The epoch the last welcome named.
     epoch: Option<u32>,
-    /// A status already reported a wipe, ahead of the epoch that names it.
-    wipe_reported: bool,
+    /// The cursor a status reported a wipe at, ahead of the epoch that
+    /// names it. Any event read since ends it.
+    wipe_reported: Option<Cursor>,
     open: Vec<Open>,
     seen: Vec<Seen>,
     /// Recent feeds, oldest first, each with an `at`.
@@ -509,7 +522,7 @@ impl Default for State {
             cursor: None,
             baseline: None,
             epoch: None,
-            wipe_reported: false,
+            wipe_reported: None,
             open: Vec::new(),
             seen: Vec::new(),
             feeds: Vec::new(),
@@ -751,7 +764,12 @@ impl State {
 
     fn welcome(&mut self, epoch: u32, now: Timestamp, changes: &mut Vec<Change>) {
         match self.read_to() {
-            Some(read) if read.epoch != epoch => self.new_epoch(epoch, now, changes),
+            // The feeder's own word, in a session after any status that
+            // reported a loss: at worst this says it twice.
+            Some(read) if read.epoch != epoch => {
+                self.wipe_reported = None;
+                self.new_epoch(epoch, now, changes);
+            }
             Some(_) | None => self.epoch = Some(epoch),
         }
     }
@@ -759,12 +777,13 @@ impl State {
     /// A new epoch is a new history: its numbers start again, and what the
     /// old one held is gone, but what is open stays open.
     fn new_epoch(&mut self, epoch: u32, now: Timestamp, changes: &mut Vec<Change>) {
+        let reported = self.wipe_reported.take().is_some();
         self.epoch = Some(epoch);
         self.cursor = Some(Cursor { epoch, seq: 0 });
         self.newest_event = None;
         self.lose_history(now);
 
-        if !std::mem::take(&mut self.wipe_reported) {
+        if !reported {
             let key = Key {
                 kind: AlertKind::HistoryLost,
                 occurrence: Occurrence::Epoch { epoch },
@@ -778,12 +797,13 @@ impl State {
     /// session's check still restarts the subscription if the epoch moved;
     /// the seq is the feeder's, so anything newer is read.
     fn wiped(&mut self, read: Cursor, newest: u64, now: Timestamp, changes: &mut Vec<Change>) {
-        self.cursor = Some(Cursor {
+        let cursor = Cursor {
             epoch: read.epoch,
             seq: newest,
-        });
+        };
+        self.cursor = Some(cursor);
         self.lose_history(now);
-        self.wipe_reported = true;
+        self.wipe_reported = Some(cursor);
 
         let key = Key {
             kind: AlertKind::HistoryLost,
@@ -803,12 +823,19 @@ impl State {
             return false;
         };
 
+        // A reported wipe answers for a new epoch only if that epoch goes on
+        // from what the status counted, with nothing read since.
+        if self.wipe_reported != Some(read) || seq <= read.seq {
+            self.wipe_reported = None;
+        }
+
         if read.epoch != epoch {
             self.new_epoch(epoch, now, changes);
         } else if seq <= read.seq {
             return false;
         }
 
+        self.wipe_reported = None;
         self.cursor = Some(Cursor { epoch, seq });
         true
     }
@@ -834,9 +861,9 @@ impl State {
     }
 
     /// Timers on a status judge only a status: with no status coming there
-    /// is nothing to say about the feeder but that it is unreachable. A long
-    /// silence between two statuses says nothing of what held between them,
-    /// so those timers start again.
+    /// is nothing to say about the feeder but that it is unreachable. Each
+    /// restarts when a status shows its condition gone, or after a silence
+    /// long for it ([`SILENCE_THRESHOLDS`]).
     fn status(
         &mut self,
         status: &Status,
@@ -845,13 +872,17 @@ impl State {
         changes: &mut Vec<Change>,
     ) {
         self.connected(changes);
-        if self
-            .last_status
-            .is_some_and(|at| elapsed(at, now) > thresholds.status_fresh)
-        {
-            self.no_clock_since = None;
-            self.blocked_since = None;
-            self.fell_back_at = self.fell_back_at.map(|_| now);
+        if let Some(at) = self.last_status {
+            let silence = elapsed(at, now);
+            if outlasts(silence, thresholds.no_clock) {
+                self.no_clock_since = None;
+            }
+            if outlasts(silence, thresholds.cannot_feed) {
+                self.blocked_since = None;
+            }
+            if outlasts(silence, thresholds.rolled_back) {
+                self.fell_back_at = self.fell_back_at.map(|_| now);
+            }
         }
         self.last_status = Some(now);
         self.status_at = Some(now);
@@ -889,7 +920,8 @@ impl State {
 
     /// A fault feed whose event never arrived: it fell in a gap, or before
     /// the baseline, and the status is what is left of it. Waits for the
-    /// backlog, so a `Fed` still on its way is the one that counts.
+    /// backlog, but the feeder can set the fault before it counts the event:
+    /// that `Fed` then finds the alert raised, and is still the record.
     fn feed_fault(&mut self, status: &Status, now: Timestamp, changes: &mut Vec<Change>) {
         let (Some(fault), Some(read)) = (status.feed_fault, self.read_to()) else {
             return;
@@ -904,7 +936,11 @@ impl State {
             FeedOutcome::Done | FeedOutcome::Cancelled => return,
         };
         let (epoch, feed) = (read.epoch, fault.feed);
-        if self.mark(Mark::Feed { epoch, feed }, now) {
+        let read_already = self
+            .seen
+            .iter()
+            .any(|seen| seen.mark == Mark::Feed { epoch, feed });
+        if !read_already && self.mark(Mark::FeedAlert { epoch, feed }, now) {
             let occurrence = Occurrence::Feed { epoch, feed };
             let detail = Detail::Fault(fault);
             self.raise(Alert::new(Key { kind, occurrence }, detail, now), changes);
@@ -1200,7 +1236,8 @@ impl State {
     }
 
     /// One bad clock must not stop meals or digests for good: what lies
-    /// ahead of `now` comes back to it.
+    /// ahead of `now` comes back to it. A clock stepping back can so reopen
+    /// a range a gap ruled out, which can only raise a false alarm.
     fn pull_back(&mut self, now: Timestamp, zone: &TimeZone) {
         for from in self.counted_from.iter_mut().flatten() {
             *from = (*from).min(now);
@@ -1236,7 +1273,8 @@ impl State {
 
         // With no clock when it ended, the watcher's own time stands in. It
         // is only ever later than the feed, which is all a record of an
-        // earlier occurrence needs.
+        // earlier occurrence needs. Read a day late it can answer for the
+        // wrong day's meal, which nothing here can tell.
         let stamp = feed.at.unwrap_or(now);
         self.feeds.push(Feed {
             at: Some(stamp),
@@ -1283,7 +1321,8 @@ impl State {
             (FeedOutcome::Done, Some(Source::Feeder) | None) | (FeedOutcome::Cancelled, _) => None,
         };
 
-        if let Some(kind) = kind {
+        let first = kind.is_some() && self.mark(Mark::FeedAlert { epoch, feed: id }, now);
+        if let (Some(kind), true) = (kind, first) {
             let occurrence = Occurrence::Feed { epoch, feed: id };
             let alert = Alert::new(Key { kind, occurrence }, Detail::Feed(feed), now);
             self.raise(alert, changes);
@@ -1577,6 +1616,13 @@ impl State {
 /// but turning back on starts afresh.
 const fn keeps_occurrences(new: &Plan, old: &Plan) -> bool {
     new.minute == old.minute && new.days.bits() == old.days.bits() && (old.enabled || !new.enabled)
+}
+
+/// Whether `silence` is long for a timer of `threshold`.
+fn outlasts(silence: SignedDuration, threshold: SignedDuration) -> bool {
+    threshold
+        .checked_mul(SILENCE_THRESHOLDS)
+        .is_some_and(|limit| silence > limit)
 }
 
 /// The time from `from` to `now`, never negative: a clock can step back.
