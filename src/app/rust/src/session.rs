@@ -45,8 +45,14 @@ use crate::today::{Facts, event_entry, gap_entry, result};
 
 /// How long one wait on the connection lasts before the loop looks at its
 /// commands again and reads the status anew; the session keeps itself alive
-/// meanwhile. So the card's meals and signal are at most this old.
-const TURN: Duration = Duration::from_secs(30);
+/// meanwhile. So the card's meals and signal are at most this old, and a read
+/// this often is what keeps [`QUIET_SILENCE`] fed.
+const TURN: Duration = Duration::from_secs(10);
+/// How long a feeder may stay silent before the app says it is unreachable. A
+/// power cut or a lost network closes nothing, so silence is the only sign.
+/// This is room for two unanswered reads, and for a write's answer behind a
+/// running feed; the session asks for nothing a press would answer.
+const QUIET_SILENCE: Duration = Duration::from_secs(30);
 /// While the history comes in: a backlog whose newest event this session
 /// skips never reaches its end, so a quiet moment ends it instead.
 const QUIET: Duration = Duration::from_secs(2);
@@ -177,6 +183,7 @@ async fn serve(
     asked: &mut HashMap<RequestId, Asked>,
 ) -> Result<(), BridgeError> {
     let mut connection = Connection::open(keys, feeder, address, random()?).await?;
+    connection.set_silence(QUIET_SILENCE);
     if !update(SessionUpdate::Opened {
         build: connection.build().to_owned(),
         role: connection.role(),
@@ -322,7 +329,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             .is_some_and(|(_, due)| due <= tokio::time::Instant::now())
         {
             self.running = None;
-            self.connection.set_silence(wellfed_connect::SILENCE);
+            self.connection.set_silence(QUIET_SILENCE);
         }
         if self.backlog.is_some() && !self.end_backlog() {
             return Ok(false);
@@ -410,7 +417,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             self.facts.feeds.push(feed);
             if self.running.is_some_and(|(ours, _)| ours == feed.feed) {
                 self.running = None;
-                self.connection.set_silence(wellfed_connect::SILENCE);
+                self.connection.set_silence(QUIET_SILENCE);
             }
         }
         let entry = match pushed {
