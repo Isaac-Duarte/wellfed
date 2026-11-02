@@ -7,6 +7,7 @@ import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 
 import '../support/fakes.dart';
+import '../support/harness.dart';
 import 'feeder_support.dart';
 
 void main() {
@@ -43,6 +44,34 @@ void main() {
     expect(find.text('Set by your router at 11:58 AM'), findsOneWidget);
     expect(find.text('Change in 9 days'), findsOneWidget);
     expect(find.text('Changed today'), findsNothing);
+  });
+
+  group('a router that gives no time', () {
+    TimeInfo time(NtpResult? last) =>
+        TimeInfo(generation: 4, writable: true, ntp: const NtpView.gateway(port: 123), syncs: 1, ntpLast: last);
+
+    testWidgets('offers Cloudflare, sent against the time generation', (tester) async {
+      final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
+      await feederShowShell(tester, fleet);
+      session.status(fakeCard(time: time(NtpResult.lost)));
+      await settle(tester);
+      session.requests.clear();
+
+      await tapIn(tester, find.widgetWithText(FilledButton, 'Use Cloudflare'));
+      final put = session.requests.first as FeederRequest_PutTime;
+      expect(put.base, 4);
+      expect(put.ntp, '162.159.200.1');
+      expect(session.requests.last, const FeederRequest.getTime());
+    });
+
+    testWidgets('is not offered while the router answers', (tester) async {
+      final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
+      await feederShowShell(tester, fleet);
+      session.status(fakeCard(time: time(NtpResult.used)));
+      await settle(tester);
+
+      expect(find.text("Your router doesn't give the time."), findsNothing);
+    });
   });
 
   testWidgets('a moment from an earlier day says which day', (tester) async {

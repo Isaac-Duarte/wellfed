@@ -5,6 +5,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/lights_help.dart';
 import 'package:wellfed/screens/feeder/no_time.dart';
+import 'package:wellfed/screens/feeder/router_time.dart';
 import 'package:wellfed/screens/feeder/today_faults.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
@@ -46,6 +47,10 @@ class TodayTab extends StatelessWidget {
                   const SizedBox(height: Space.s3),
                   if (live != null && !live.clockSet) ...[
                     NoTimeNotice(feeder: feeder),
+                    const SizedBox(height: Space.s3),
+                  ],
+                  if (live?.time case final time? when routerGivesNoTime(time)) ...[
+                    RouterTimeNotice(feeder: feeder, time: time),
                     const SizedBox(height: Space.s3),
                   ],
                   if (stopped) ...[
