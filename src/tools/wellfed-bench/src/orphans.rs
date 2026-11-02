@@ -10,7 +10,6 @@
 //! own has a bench of its own, and its tools are left alone. Nothing needs
 //! recording by the server that was killed.
 
-use std::fs;
 use std::path::Path;
 
 /// The directory a bench's lease, and so the bench, is identified by.
@@ -51,7 +50,16 @@ pub(crate) fn running(root: &Path) -> Vec<Orphan> {
     let Ok(private) = root.join(PRIVATE).canonicalize() else {
         return Vec::new();
     };
-    let mut found: Vec<Orphan> = fs::read_dir("/proc")
+    let mut found = processes(&private);
+    found.sort_by_key(|orphan| orphan.pid);
+    found
+}
+
+#[cfg(not(target_os = "macos"))]
+fn processes(private: &Path) -> Vec<Orphan> {
+    use std::fs;
+
+    fs::read_dir("/proc")
         .into_iter()
         .flatten()
         .flatten()
@@ -80,9 +88,47 @@ pub(crate) fn running(root: &Path) -> Vec<Orphan> {
                 command,
             })
         })
-        .collect();
-    found.sort_by_key(|orphan| orphan.pid);
-    found
+        .collect()
+}
+
+/// macOS has no /proc: `ps` lists the processes and `lsof` knows their
+/// working directories. Both by absolute path, so nothing on `PATH` can hide
+/// a running flash client.
+#[cfg(target_os = "macos")]
+fn processes(private: &Path) -> Vec<Orphan> {
+    let listing = text("/bin/ps", &["-axww", "-o", "pid=,comm="]).unwrap_or_default();
+    listing
+        .lines()
+        .filter_map(|line| {
+            // `comm` is the path it was started by.
+            let (pid, path) = line.trim().split_once(char::is_whitespace)?;
+            let name = Path::new(path.trim()).file_name()?.to_str()?;
+            if !TOOLS.contains(&name) {
+                return None;
+            }
+            let cwd = text("/usr/sbin/lsof", &["-a", "-d", "cwd", "-Fn", "-p", pid])?;
+            let cwd = cwd.lines().find_map(|line| line.strip_prefix('n'))?;
+            if Path::new(cwd).join(PRIVATE).canonicalize().ok()? != private {
+                return None;
+            }
+            let command = text("/bin/ps", &["-ww", "-o", "args=", "-p", pid])?;
+            Some(Orphan {
+                pid: pid.parse().ok()?,
+                name: name.to_string(),
+                command: command.trim().to_string(),
+            })
+        })
+        .collect()
+}
+
+/// A tool's standard output, if it ran and succeeded.
+#[cfg(target_os = "macos")]
+fn text(tool: &str, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new(tool).args(args).output().ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// Refuse while a flash client runs on `root`'s bench.

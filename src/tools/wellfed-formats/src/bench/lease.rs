@@ -11,9 +11,10 @@
 //! [`break_stale`] (after the operator has looked at the bench) frees it.
 //!
 //! Liveness is the process, not just its pid: the kernel reuses pids, so a
-//! holder is alive only while `/proc/<pid>/stat` shows the same start time
-//! on the same boot. A process descended from the holder (the bench's
-//! `wellfed-flash` children, its `wellfed restore-stock`) runs
+//! holder is alive only while the system shows the same start time on the
+//! same boot (`/proc/<pid>/stat` on Linux, `ps` on macOS, which has no /proc).
+//! A process descended from the holder (the bench's `wellfed-flash` children,
+//! its `wellfed restore-stock`) runs
 //! on the holder's lease and removes nothing when it ends, so a chained tool
 //! never deadlocks on its parent. That claim is checked once, when the child
 //! starts: a child the holder leaves running after it releases (which the
@@ -49,22 +50,25 @@ const FILE: &str = "bench.lease";
 const GUARD: &str = "bench.lease.lock";
 
 /// How far up the process tree a holder is looked for. A bench chain is
-/// two or three processes deep; the bound only ends a walk that /proc
-/// changes under.
+/// two or three processes deep; the bound only ends a walk that the process
+/// table changes under.
 const ANCESTRY: usize = 64;
 
 /// Linux's `ESRCH`: the process went away while its /proc entry was read.
+#[cfg(not(target_os = "macos"))]
 const ESRCH: i32 = 3;
 
 /// The process holding the bench.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Holder {
     pub pid: u32,
-    /// When the process started, in clock ticks after boot
-    /// (`/proc/<pid>/stat` field 22). With `boot`, it tells the holder from
-    /// a later process given the same pid.
+    /// When the process started: clock ticks after boot on Linux
+    /// (`/proc/<pid>/stat` field 22), seconds since the epoch on macOS (`ps`
+    /// shows no finer). With `boot`, it tells the holder from a later
+    /// process given the same pid. Only ever compared on the host that wrote it.
     pub start_ticks: u64,
-    /// `/proc/sys/kernel/random/boot_id` of the boot the holder ran on.
+    /// The identifier of the boot the holder ran on:
+    /// `/proc/sys/kernel/random/boot_id`, or `kern.bootsessionuuid` on macOS.
     pub boot: String,
     pub host: String,
     /// The holder's command line, as the operator would recognise it.
@@ -134,7 +138,7 @@ pub enum LeaseError {
     /// The lease file exists but is not a lease; nothing can say who holds it.
     #[error("{}: not a bench lease ({source}); remove it by hand once the bench is idle", path.display())]
     Unreadable { path: PathBuf, source: crate::Error },
-    /// This process's own identity could not be read from /proc.
+    /// A process's or this host's identity could not be read from the system.
     #[error("{}: no process identity in it", path.display())]
     Identity { path: PathBuf },
     #[error(transparent)]
@@ -362,7 +366,7 @@ impl Guard {
     }
 }
 
-/// The fields of `/proc/<pid>/stat` a lease needs.
+/// The fields of a process's status a lease needs.
 #[derive(Debug, PartialEq, Eq)]
 struct Stat {
     state: char,
@@ -370,10 +374,12 @@ struct Stat {
     start_ticks: u64,
 }
 
+#[cfg(not(target_os = "macos"))]
 fn stat_path(pid: u32) -> PathBuf {
     PathBuf::from(format!("/proc/{pid}/stat"))
 }
 
+#[cfg(not(target_os = "macos"))]
 impl Stat {
     /// `pid`'s stat, or `None` once the process is gone.
     fn read(pid: u32) -> Result<Option<Self>> {
@@ -403,19 +409,94 @@ impl Stat {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn boot_id() -> Result<String> {
     proc_text("/proc/sys/kernel/random/boot_id")
 }
 
+#[cfg(not(target_os = "macos"))]
 fn host() -> Result<String> {
     proc_text("/proc/sys/kernel/hostname")
 }
 
+#[cfg(not(target_os = "macos"))]
 fn proc_text(path: &str) -> Result<String> {
     let text = fs::read_to_string(path)?;
     let text = text.trim().to_string();
     require(!text.is_empty(), || LeaseError::Identity {
         path: path.into(),
+    })?;
+    Ok(text)
+}
+
+/// What an [`LeaseError::Identity`] names: there is no file on macOS, so the
+/// command that was asked.
+#[cfg(target_os = "macos")]
+fn stat_path(pid: u32) -> PathBuf {
+    PathBuf::from(format!("ps -p {pid}"))
+}
+
+/// macOS has no /proc, and this crate forbids the `unsafe` that `proc_pidinfo`
+/// would take, so its identity comes from the system's own tools, by absolute
+/// path so that nothing on `PATH` can answer for them.
+#[cfg(target_os = "macos")]
+impl Stat {
+    /// `pid`'s status, or `None` once the process is gone. `ps` exits nonzero
+    /// when no process matches. Its dates are local time, so UTC is asked for:
+    /// a start time must read the same whatever the reader's zone.
+    fn read(pid: u32) -> Result<Option<Self>> {
+        let output = std::process::Command::new("/bin/ps")
+            .args(["-o", "ppid=,stat=,lstart=", "-p", &pid.to_string()])
+            .env("LC_ALL", "C")
+            .env("TZ", "UTC")
+            .output()?;
+        if !output.status.success() {
+            return Ok(None);
+        }
+
+        let text = String::from_utf8_lossy(&output.stdout);
+        Self::parse(&text).map(Some).ok_or(LeaseError::Identity {
+            path: stat_path(pid),
+        })
+    }
+
+    /// `ppid stat lstart`, with lstart as `Sun Nov  1 11:00:56 2026`. Fields
+    /// are rejoined with one space because `ps` pads the day.
+    fn parse(text: &str) -> Option<Self> {
+        let mut fields = text.split_whitespace();
+        let ppid = fields.next()?.parse().ok()?;
+        let state = fields.next()?.chars().next()?;
+
+        let started = fields.collect::<Vec<_>>().join(" ");
+        let started = chrono::NaiveDateTime::parse_from_str(&started, "%a %b %e %H:%M:%S %Y");
+        Some(Self {
+            state,
+            ppid,
+            start_ticks: u64::try_from(started.ok()?.and_utc().timestamp()).ok()?,
+        })
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn boot_id() -> Result<String> {
+    sysctl("kern.bootsessionuuid")
+}
+
+#[cfg(target_os = "macos")]
+fn host() -> Result<String> {
+    sysctl("kern.hostname")
+}
+
+#[cfg(target_os = "macos")]
+fn sysctl(name: &str) -> Result<String> {
+    let output = std::process::Command::new("/usr/sbin/sysctl")
+        .args(["-n", name])
+        .output()?;
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    require(output.status.success() && !text.is_empty(), || {
+        LeaseError::Identity {
+            path: format!("sysctl {name}").into(),
+        }
     })?;
     Ok(text)
 }

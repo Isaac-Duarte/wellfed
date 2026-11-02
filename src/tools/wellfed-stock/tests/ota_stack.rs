@@ -21,6 +21,10 @@ use uuid::Uuid;
 use wellfed_stock::server::OtaTrial;
 use wellfed_stock::{ota, storage};
 
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+)]
 #[test]
 fn an_explicit_api_install_publishes_once_and_never_again() {
     common::allow_unreviewed();

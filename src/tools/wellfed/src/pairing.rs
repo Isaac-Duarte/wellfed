@@ -28,7 +28,7 @@ pub(crate) struct SetupArgs {
     keys: PathBuf,
     /// The feeder's Bluetooth address; otherwise the first in setup mode.
     #[arg(long)]
-    address: Option<bluer::Address>,
+    address: Option<crate::ble::Address>,
 }
 
 pub(crate) async fn setup(args: SetupArgs) -> Result<()> {

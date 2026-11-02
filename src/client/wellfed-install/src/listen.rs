@@ -348,6 +348,10 @@ mod tests {
     /// Stock coming back says it stayed. Its ledger will not close the request
     /// without 10 quiet minutes, so the end says that too, and a connected
     /// stock has heard only read-only queries and replies to its own reports.
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+    )]
     #[tokio::test(flavor = "current_thread")]
     async fn stock_coming_back_says_it_stayed_and_hears_no_install() {
         let dir = tempfile::tempdir().unwrap();
@@ -389,6 +393,10 @@ mod tests {
     }
 
     /// The device API answering where stock connected from says it installed.
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+    )]
     #[tokio::test(flavor = "current_thread")]
     async fn the_device_api_answering_says_it_installed() {
         let dir = tempfile::tempdir().unwrap();
@@ -411,6 +419,10 @@ mod tests {
 
     /// A server that cannot run is not a quiet feeder: its broker's port is
     /// taken, and the listener says so instead of counting to 20 minutes.
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+    )]
     #[tokio::test(flavor = "current_thread")]
     async fn a_dead_server_ends_the_wait() {
         let dir = tempfile::tempdir().unwrap();
@@ -429,6 +441,10 @@ mod tests {
     /// A feeder that never comes back leaves it unknown, and a stop ends
     /// the wait at once. The server runs with no trial enabled, so nothing
     /// in it could send an install.
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+    )]
     #[tokio::test(flavor = "current_thread")]
     async fn a_silent_feeder_leaves_it_unknown_and_a_stop_ends_the_wait() {
         let dir = tempfile::tempdir().unwrap();

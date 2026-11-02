@@ -285,7 +285,8 @@ pub(crate) async fn restore(args: RestoreArgs) -> Result<()> {
 /// installed but nothing listens, so a second Ctrl-C does not cut the stop short;
 /// the stop is itself bounded. A SIGHUP this process was started ignoring
 /// (`nohup`) stays ignored: whoever started it asked for it to outlive the
-/// terminal.
+/// terminal. Only Linux shows that, in /proc: on macOS a hangup always stops
+/// the restore, the same bounded stop.
 fn signalled() -> Result<impl Future<Output = Stop>> {
     let mut terminate = signal(SignalKind::terminate()).context("handle SIGTERM")?;
     let mut interrupt = signal(SignalKind::interrupt()).context("handle SIGINT")?;

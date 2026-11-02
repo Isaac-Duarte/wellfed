@@ -822,6 +822,10 @@ async fn to_the_feeder_check(
 /// forgets it, and the next one is served, not refused by the first one's
 /// ledger. Past the check the image server wants private addresses, which a
 /// loopback test has not got, so the run stops there with its own words.
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+)]
 #[test]
 fn another_feeder_is_served_after_the_owner_said_no_to_the_first() {
     // SAFETY: nextest runs each test in a process of its own, and no other
@@ -914,6 +918,10 @@ fn a_frame_taken_run_waits_for_the_feeder_and_asks_nothing_of_the_handover() {
 }
 
 /// A dead server is the server's failure: not "no feeder connected".
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+)]
 #[test]
 fn a_taken_port_is_not_no_feeder() {
     // SAFETY: as above, and the listener below is this thread's own.

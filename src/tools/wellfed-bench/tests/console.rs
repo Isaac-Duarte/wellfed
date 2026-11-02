@@ -46,10 +46,14 @@ fn console(root: &Path) -> Screen {
 /// because a shell stands between it and the test.
 fn console_under(root: &Path) -> Pid {
     let root = root.display().to_string();
-    let pid = fs::read_dir("/proc").unwrap().flatten().find_map(|entry| {
-        let pid = entry.file_name().to_str()?.parse::<i32>().ok()?;
-        let line = fs::read_to_string(entry.path().join("cmdline")).ok()?;
-        let mut words = line.split('\0');
+    let listing = Command::new("ps")
+        .args(["-A", "-ww", "-o", "pid=,args="])
+        .output()
+        .unwrap();
+    let listing = String::from_utf8_lossy(&listing.stdout);
+    let pid = listing.lines().find_map(|line| {
+        let mut words = line.split_whitespace();
+        let pid = words.next()?.parse::<i32>().ok()?;
         let this = words.next()? == BENCH && words.any(|word| word == root);
         this.then(|| Pid::from_raw(pid)).flatten()
     });

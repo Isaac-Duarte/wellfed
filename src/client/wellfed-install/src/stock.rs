@@ -521,6 +521,10 @@ mod tests {
 
     /// Forgetting a feeder does not lock the next one out, and does not let
     /// the forgotten one's open request go: each device has its own ledger.
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+    )]
     #[tokio::test(flavor = "current_thread")]
     async fn each_device_keeps_its_own_ledger_across_forgetting() {
         let dir = tempfile::tempdir().unwrap();

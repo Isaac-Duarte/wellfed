@@ -6,7 +6,7 @@ These docs follow the [writing guide](writing.md). The code follows the [Rust st
 
 ## Prerequisites
 
-We develop on Linux. You need:
+We develop on Linux, and `make check` also passes on macOS ([what differs on macOS](#macos)). You need:
 
 - Rust **1.99.1** through rustup. [rust-toolchain.toml](../../rust-toolchain.toml) pins it, with rustfmt, Clippy and the four ARM targets, so rustup fetches them on first use.
 - `cargo-nextest` and `cargo-deny`: `cargo install cargo-nextest cargo-deny`.
@@ -30,6 +30,28 @@ The Android app needs more too. See [the app](../../src/app/README.md#toolchain)
    You should see formatting, Clippy, the tests, the cross-builds, the simulator and the repository checks all pass. The first run of `check-deps` downloads the RustSec advisory database.
 
 If your environment forbids local sockets, give the network tests permission to run. Skipping them is not a passing result.
+
+## macOS
+
+`make check` runs on an Apple Silicon Mac with the same prerequisites. CMake and a C compiler come from Homebrew and the Xcode command line tools. Nothing here is the desktop app, which is [not started](../roadmap.md).
+
+These work the same as on Linux: the simulator, the server, the device API commands in the `wellfed` CLI, and `wellfed-bench` with its lease and console.
+
+These are not ported to macOS yet, so they need Linux for now:
+
+| What | Why | On macOS |
+| --- | --- | --- |
+| `wellfed setup` | Its macOS Bluetooth, through CoreBluetooth, has not run against a feeder yet. | It builds and runs, unproven. macOS asks for Bluetooth access for your terminal, and names the feeder by a UUID in place of its address. |
+| Finding the feeder in the hotspot's neighbour table | It uses `ip neigh`. | Pass `--peer` to `wellfed-stock`. |
+| The bench hotspot | It is a NetworkManager connection. | Not available. |
+| Full firmware images | The vendor's compiler is a Linux x86_64 binary ([firmware builds](firmware-builds.md)). | `wellfed-build` refuses on another host. The cross-builds in `make check` still run. |
+
+Some tests can't run on macOS, so a Mac's `make check` proves less than Linux's. Run the check on Linux too before relying on what they cover:
+
+- Ten tests are ignored there. They bind `127.x` addresses other than `127.0.0.1`, which only Linux's loopback answers without setup.
+- The tests in `wellfed-bench`'s `tests/hangup.rs` build only on Linux. They read each thread's state from `/proc`.
+
+A run started under `nohup` is also different. macOS doesn't show that SIGHUP is ignored, so `wellfed restore-stock` stops when its terminal closes, with its usual bounded stop.
 
 ## Repository layout
 

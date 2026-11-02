@@ -48,8 +48,10 @@ check-deps:
 	cargo deny --manifest-path src/fuzz/Cargo.toml --locked check --config src/fuzz/deny.toml
 	cargo deny --manifest-path $(BENCH_BOARD)/Cargo.toml --locked check --config $(BENCH_BOARD)/deny.toml
 
+# A consumer identity, because a bench one hashes the ignored build Wi-Fi file
+# and this check needs no private file. The build only needs a well-formed id.
 check-cross: check-bench-board
-	WELLFED_BUILD_ID=$$(cargo run --quiet --locked --release -p wellfed-build -- source-id) cargo build --locked -p wellfed-hal-common --release --target thumbv8m.base-none-eabi --features km0
+	WELLFED_BUILD_ID=$$(cargo run --quiet --locked --release -p wellfed-build -- source-id --provisioning consumer) cargo build --locked -p wellfed-hal-common --release --target thumbv8m.base-none-eabi --features km0
 
 # The bench board's firmware is its own workspace, built from its folder so
 # its .cargo/config.toml (target, linker script, UF2 runner) applies. It only

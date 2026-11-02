@@ -320,6 +320,10 @@ async fn an_in_process_server_refuses_the_trial_on_an_unreviewable_build() {
 
 /// A phone that leaves its Wi-Fi to send the setup frame loses `mqtt_listen`'s
 /// address, so that route's broker answers on every address.
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "binds a 127.x address other than 127.0.0.1, which only Linux's loopback answers"
+)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_broker_bound_to_any_address_answers_beyond_the_configured_one() {
     use wellfed_stock::server::{Api, Bind, Options, OtaTrial, Server};
