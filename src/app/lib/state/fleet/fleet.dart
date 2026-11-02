@@ -23,6 +23,13 @@ class FeederFleet extends ChangeNotifier {
   /// The controller of `identity`, if this phone knows it.
   FeederController? operator [](String identity) => _feeders[identity];
 
+  /// The app is back in the foreground: every feeder tries its link now.
+  void resumed() {
+    for (final FeederController controller in _feeders.values) {
+      controller.resumed();
+    }
+  }
+
   void _sync() {
     final Map<String, KnownFeeder> known = {for (final f in _book.feeders) f.identity: f};
     for (final String gone in _feeders.keys.where((id) => !known.containsKey(id)).toList()) {

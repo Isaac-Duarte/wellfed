@@ -169,9 +169,35 @@ class FeederController extends ChangeNotifier {
         if (opened) retry = _retryFirst;
       }
       if (_disposed) return;
-      await Future<void>.delayed(retry);
-      retry = retry * 2 > _retryMost ? _retryMost : retry * 2;
+      final bool woken = await _pause(retry);
+      retry = woken
+          ? _retryFirst
+          : retry * 2 > _retryMost
+          ? _retryMost
+          : retry * 2;
     }
+  }
+
+  /// Ends the reconnect loop's wait early, if it is waiting.
+  void Function()? _wake;
+
+  /// The app is back in the foreground. A session that dropped while it was
+  /// away is tried again now, rather than after the backoff its failures in
+  /// the background ran up, which left the screen offline for up to 15 s.
+  void resumed() => _wake?.call();
+
+  /// Waits `retry`, or until [resumed]; whether it was woken.
+  Future<bool> _pause(Duration retry) async {
+    final done = Completer<bool>();
+    final timer = Timer(retry, () => done.complete(false));
+    _wake = () {
+      timer.cancel();
+      if (!done.isCompleted) done.complete(true);
+    };
+
+    final bool woken = await done.future;
+    _wake = null;
+    return woken;
   }
 
   /// The last address, or NSD's when there is none or it stopped working.
@@ -333,6 +359,7 @@ class FeederController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _wake?.call();
     _feedDue?.cancel();
     _session?.close();
     _update?.dispose();

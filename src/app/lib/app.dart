@@ -65,6 +65,13 @@ class _WellfedAppState extends State<WellfedApp> {
   static const _phone = AppPhonePorts();
 
   late final _fleet = FeederFleet(widget.app, AppFeederPorts(widget.app.key));
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(onResume: _fleet.resumed);
+  }
 
   late final GoRouter _router = wellfedRouter(
     book: widget.app,
@@ -93,6 +100,7 @@ class _WellfedAppState extends State<WellfedApp> {
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _router.dispose();
     _fleet.dispose();
     super.dispose();
