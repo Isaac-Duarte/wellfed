@@ -6,6 +6,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/feeder_ports.dart';
 import 'package:wellfed/platform/join_ports.dart';
+import 'package:wellfed/platform/recorder.dart';
 import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart';
@@ -117,6 +118,10 @@ class _Ports implements FeederPorts {
 
   @override
   Future<Uint8List?> pickRecording() async => null;
+
+  /// The smoke flows record nothing.
+  @override
+  Recorder get recorder => throw UnsupportedError('no microphone in the smoke tests');
 
   @override
   Future<ImageCheck> updateImage() => throw UnimplementedError();

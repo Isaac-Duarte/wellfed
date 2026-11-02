@@ -4,6 +4,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/platform/recorder.dart';
 import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
@@ -54,6 +55,9 @@ abstract interface class FeederPorts {
 
   /// Ask the owner for a WAV; null when they back out.
   Future<Uint8List?> pickRecording();
+
+  /// The phone's microphone, for recording the meal call here.
+  Recorder get recorder;
 }
 
 /// [FeederPorts] on Android, with this phone's key.
@@ -65,6 +69,9 @@ class AppFeederPorts implements FeederPorts {
   Future<void> share(String text) async {
     await SharePlus.instance.share(ShareParams(text: text));
   }
+
+  @override
+  late final Recorder recorder = AppRecorder();
 
   @override
   Future<Uint8List?> pickRecording() async {

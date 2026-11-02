@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/platform/feeder_ports.dart';
+import 'package:wellfed/platform/recorder.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart' show ImageCheck;
@@ -65,6 +66,9 @@ class FeederController extends ChangeNotifier {
 
   /// Ask the owner for a recording; null when they back out.
   Future<Uint8List?> pickRecording() => _ports.pickRecording();
+
+  /// The phone's microphone, for recording the meal call here.
+  Recorder get recorder => _ports.recorder;
 
   /// Run `pick`: what it gave, and whether the file could be read.
   Future<(Uint8List?, bool)> readRecording(PickRecording pick) async {

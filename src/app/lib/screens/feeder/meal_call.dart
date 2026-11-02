@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/clock/clock.dart';
+import 'package:wellfed/state/feeder/call_recording.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -48,6 +49,20 @@ class _MealCallScreenState extends State<MealCallScreen> {
 
   /// The feeder is being asked to play the clip.
   bool _playing = false;
+
+  /// A recording made on this phone, sent as a picked file is once it stops.
+  late final CallRecording _recording = CallRecording(widget.feeder.recorder, (wav) => unawaited(_record(wav)))
+    ..addListener(_recorded);
+
+  void _recorded() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _recording.dispose();
+    super.dispose();
+  }
 
   /// Why the last write came to nothing, until the next. A snackbar alone can
   /// pass while the screen is still coming back.
@@ -176,13 +191,30 @@ class _MealCallScreenState extends State<MealCallScreen> {
     });
     if (picked == null) return;
 
-    final FeederReply? reply = await _sendOnce(picked);
+    await _send(picked, "Couldn't reach the feeder. Choose the recording again.");
+  }
+
+  /// A recording made here has stopped: it goes as a picked one does.
+  Future<void> _record(Uint8List wav) async {
+    if (!mounted || _busy) return;
+    setState(() {
+      _busy = true;
+      _reaching = true;
+      _problem = null;
+    });
+    await _send(wav, "Couldn't reach the feeder. Record it again.");
+  }
+
+  /// Send `wav` once, and say what the feeder holds after; `unreached` if
+  /// the session never answered.
+  Future<void> _send(Uint8List wav, String unreached) async {
+    final FeederReply? reply = await _sendOnce(wav);
     if (!mounted) return;
     if (reply == null) {
       setState(() {
         _busy = false;
         _reaching = false;
-        _problem = "Couldn't reach the feeder. Choose the recording again.";
+        _problem = unreached;
       });
     } else {
       await _settle(reply);
@@ -293,11 +325,34 @@ class _MealCallScreenState extends State<MealCallScreen> {
             Notice(tone: Tone.warning, text: problem),
             const SizedBox(height: Space.s3),
           ],
-          FilledButton(
-            onPressed: _busy || _picking ? null : _upload,
-            child: Text(stored ? 'Replace the recording' : 'Choose a recording'),
-          ),
-          if (stored) ...[
+          if (_recording.problem case final problem?) ...[
+            Notice(tone: Tone.warning, text: _recordingWords(problem)),
+            const SizedBox(height: Space.s3),
+          ],
+          if (_recording.recording) ...[
+            Notice(
+              tone: Tone.neutral,
+              text:
+                  'Recording… ${_recording.seconds} s of ${CallRecording.most.inSeconds}. '
+                  'It stops by itself at ${CallRecording.most.inSeconds} s.',
+            ),
+            const SizedBox(height: Space.s3),
+            FilledButton(onPressed: () => unawaited(_recording.stop()), child: const Text('Stop and upload')),
+            TextButton(onPressed: () => unawaited(_recording.cancel()), child: const Text('Cancel')),
+          ] else ...[
+            FilledButton(
+              onPressed: _busy || _picking || _recording.busy ? null : _upload,
+              child: Text(stored ? 'Replace with a file' : 'Choose a recording'),
+            ),
+            const SizedBox(height: Space.s2),
+            OutlinedButton(
+              onPressed: _busy || _picking || _recording.busy ? null : () => unawaited(_recording.start()),
+              child: const Text('Record on this phone'),
+            ),
+          ],
+          // Not while recording: a delete would leave the new clip nowhere to
+          // go, and a play would record the feeder's own speaker into it.
+          if (stored && !_recording.busy) ...[
             const SizedBox(height: Space.s2),
             OutlinedButton(
               onPressed: _busy || _picking || _playing ? null : () => unawaited(_play()),
@@ -315,3 +370,9 @@ class _MealCallScreenState extends State<MealCallScreen> {
     );
   }
 }
+
+String _recordingWords(RecordingProblem problem) => switch (problem) {
+  RecordingProblem.denied => "The app may not use the microphone. Allow it in Android's settings.",
+  RecordingProblem.failed => "Couldn't record. Try again.",
+  RecordingProblem.interrupted => 'The recording stopped when you left the app, so nothing was sent.',
+};

@@ -88,6 +88,122 @@ void main() {
       return (ports, first);
     }
 
+    const storedCall = FeederReply.call(
+      call: CallInfo(writable: true, clip: CallClip.stored(bytes: 9, crc: 1), ms: 3500),
+    );
+
+    testWidgets('a recording made here uploads once it stops', (tester) async {
+      final (FakeFeederPorts ports, FakeSession session) = await onScreen(tester, planNoRecording);
+      session.replies
+        ..add(planNoRecording)
+        ..add(storedCall);
+
+      await tapIn(tester, find.text('Record on this phone'));
+      expect(ports.recorder.starts, 1);
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.textContaining('Recording… 2 s of 8'), findsOneWidget);
+
+      await tapIn(tester, find.text('Stop and upload'));
+      expect(ports.recorder.stops, 1);
+      expect(session.requests.whereType<FeederRequest_UploadCall>().single.wav, [1, 2, 3]);
+      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+    });
+
+    testWidgets('a recording stops and uploads by itself at 8 s', (tester) async {
+      final (FakeFeederPorts ports, FakeSession session) = await onScreen(tester, planNoRecording);
+      session.replies
+        ..add(planNoRecording)
+        ..add(storedCall);
+
+      await tapIn(tester, find.text('Record on this phone'));
+      await tester.pump(const Duration(seconds: 8));
+      await settle(tester);
+      expect(ports.recorder.stops, 1);
+      expect(session.requests.whereType<FeederRequest_UploadCall>(), hasLength(1));
+    });
+
+    testWidgets('a cancelled recording sends nothing', (tester) async {
+      final (FakeFeederPorts ports, FakeSession session) = await onScreen(tester, planNoRecording);
+
+      await tapIn(tester, find.text('Record on this phone'));
+      await tapIn(tester, find.text('Cancel'));
+      expect(ports.recorder.stops, 1);
+      expect(session.requests.whereType<FeederRequest_UploadCall>(), isEmpty);
+      expect(find.text('Record on this phone'), findsOneWidget);
+    });
+
+    testWidgets('a double tap starts one recording, and it runs its full time', (tester) async {
+      final (FakeFeederPorts ports, FakeSession session) = await onScreen(tester, planNoRecording);
+
+      await tester.tap(find.text('Record on this phone'));
+      await tester.tap(find.text('Record on this phone'), warnIfMissed: false);
+      await tester.pump();
+      expect(ports.recorder.starts, 1);
+
+      await tester.pump(const Duration(seconds: 7));
+      expect(find.textContaining('Recording… 7 s of 8'), findsOneWidget);
+      expect(ports.recorder.stops, 0);
+      await tapIn(tester, find.text('Cancel'));
+    });
+
+    testWidgets('leaving while the microphone opens closes it and keeps nothing', (tester) async {
+      final (FakeFeederPorts ports, FakeSession session) = await onScreen(tester, planNoRecording);
+      ports.recorder.opening = Completer<void>();
+
+      await tester.tap(find.text('Record on this phone'));
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox());
+      ports.recorder.opening!.complete();
+      await settle(tester);
+
+      expect(ports.recorder.stops, 1);
+      expect(session.requests.whereType<FeederRequest_UploadCall>(), isEmpty);
+    });
+
+    testWidgets('a stored clip offers no play or delete while recording', (tester) async {
+      await onScreen(tester, storedCall);
+
+      await tapIn(tester, find.text('Record on this phone'));
+      expect(find.text('Play on the feeder'), findsNothing);
+      expect(find.text('Delete the recording'), findsNothing);
+      await tapIn(tester, find.text('Cancel'));
+      expect(find.text('Delete the recording'), findsOneWidget);
+    });
+
+    testWidgets('leaving the app ends the recording and sends nothing', (tester) async {
+      final (FakeFeederPorts ports, FakeSession session) = await onScreen(tester, planNoRecording);
+
+      await tapIn(tester, find.text('Record on this phone'));
+      const List<AppLifecycleState> away = [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+      ];
+      away.forEach(tester.binding.handleAppLifecycleStateChanged);
+      await settle(tester);
+      expect(ports.recorder.stops, 1);
+
+      // Nothing draws while the app is away; the owner reads why on return.
+      const List<AppLifecycleState> back = [
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ];
+      back.forEach(tester.binding.handleAppLifecycleStateChanged);
+      await settle(tester);
+      expect(find.textContaining('stopped when you left the app'), findsOneWidget);
+      expect(session.requests.whereType<FeederRequest_UploadCall>(), isEmpty);
+    });
+
+    testWidgets('a microphone not allowed says so and sends nothing', (tester) async {
+      final (FakeFeederPorts ports, FakeSession session) = await onScreen(tester, planNoRecording);
+      ports.recorder.allowed = false;
+
+      await tapIn(tester, find.text('Record on this phone'));
+      expect(find.textContaining('may not use the microphone'), findsOneWidget);
+      expect(session.requests, isEmpty);
+    });
+
     const noReach = "Couldn't reach the feeder. Choose the recording again.";
 
     testWidgets('a recording waits for the session, then goes once', (tester) async {
@@ -179,7 +295,7 @@ void main() {
       expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
       dyingOn<FeederRequest_UploadCall>(first);
 
-      await tester.tap(find.text('Replace the recording'));
+      await tester.tap(find.text('Replace with a file'));
       await settle(tester);
 
       expect(find.textContaining('may or may not have'), findsOneWidget);
@@ -203,7 +319,7 @@ void main() {
       final (_, FakeSession first) = await onScreen(tester, stored);
       dyingOn<FeederRequest_UploadCall>(first);
 
-      await tester.tap(find.text('Replace the recording'));
+      await tester.tap(find.text('Replace with a file'));
       await tester.pump();
       for (var second = 0; second < 70; second++) {
         await tester.pump(const Duration(seconds: 1));

@@ -10,6 +10,7 @@ import 'package:wellfed/platform/feeder_ports.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
 import 'package:wellfed/platform/phone.dart';
+import 'package:wellfed/platform/recorder.dart';
 import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
@@ -296,8 +297,35 @@ class FakePhonePorts implements PhonePorts {
   Future<String?> model() async => null;
 }
 
+/// The microphone: starts when [allowed], and stops with [recorded].
+class FakeRecorder implements Recorder {
+  bool allowed = true;
+  Uint8List? recorded = Uint8List.fromList([1, 2, 3]);
+  int starts = 0;
+  int stops = 0;
+
+  /// Holds `start`'s answer until completed, as a slow microphone would.
+  Completer<void>? opening;
+
+  @override
+  Future<bool> start() async {
+    starts++;
+    await opening?.future;
+    return allowed;
+  }
+
+  @override
+  Future<Uint8List?> stop() async {
+    stops++;
+    return recorded;
+  }
+}
+
 class FakeFeederPorts implements FeederPorts {
   final sessions = <FakeSession>[];
+
+  @override
+  final FakeRecorder recorder = FakeRecorder();
 
   /// What went to the share sheet.
   final shared = <String>[];
