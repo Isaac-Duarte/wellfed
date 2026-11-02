@@ -2,7 +2,7 @@
 
 Before the replacement firmware could feed, each piece of hardware was brought up by a probe: a bounded test that ran after startup, printed fixed UART records and then stopped. This page is the reference for those probes: what each one did, the records it printed, and what a passing capture looks like. It is for contributors reading old captures or rerunning a probe. Owners can skip it.
 
-The probes still matter because `wellfed-audit startup` checks every startup policy below. Each policy is bound both ways to a record format in the image: a manifest that declares the policy needs the marker string in the image, and an image carrying the marker needs the policy in its manifest. Policies for different probes exclude each other, so an image is audited under exactly the probe it carries. The everyday startup is in [startup and diagnostics](startup-diagnostics.md).
+`wellfed-audit startup` checks every startup policy below, except the flash-coordination probes' ([boot handshake](#boot-handshake) through the [settings power-cut test](#settings-power-cut-test)). Those records are retired from the audit: no current image emits or declares them, so it refuses a manifest naming one of their policies or an image carrying their records, and their sections stay as the record reference. Every other policy is bound both ways to a record format in the image: a manifest that declares the policy needs the marker string in the image, and an image carrying the marker needs the policy in its manifest. Policies for different probes exclude each other, so an image is audited under exactly the probe it carries. The everyday startup is in [startup and diagnostics](startup-diagnostics.md).
 
 Most probes no longer run in the normal firmware. The bring-up firmwares and the [QA firmware](qa.md) still run the optics, buttons, ADC, speaker and pulse probes from `src/sdk/wellfed-probes`.
 
@@ -40,7 +40,7 @@ Nominal clocks: SYSTIMER and TIM2 at 32 768 Hz (SDK: 31 µs ticks), and a watchd
 
 ## Boot handshake
 
-Policy `fw06-hello-v1`, bound to the HELLO record format. It needs the indicator policy and exactly one fully parsed HELLO, READY, peer and done record, in that order.
+Policy `fw06-hello-v1`, retired. A pass was exactly one HELLO, READY, peer and done record, in that order.
 
 After `PLLED1 done low=all`:
 
@@ -51,11 +51,11 @@ After `PLLED1 done low=all`:
 
 One `PLFLS1 foreign` line may appear after HELLO. Failures print `PLFLS1 error timeout ms=<n>` or `PLFLS1 error clock`.
 
-The audit checks the session and field values and the host receive times: READY within 2.5 s of HELLO, the peer change 9–12 s after READY, done 29–32 s after READY. Outcomes are `flash_handshake_missing`, `flash_handshake_malformed`, `flash_handshake_failed`, `flash_handshake_order` and `flash_handshake_timing`. Session values are reported as fixed hex fields. This is UART protocol evidence; it does not show that any flash write path is safe.
+By host receive times, READY came within 2.5 s of HELLO, the peer change 9–12 s after READY, and done 29–32 s after READY. This is UART protocol evidence; it does not show that any flash write path is safe.
 
 ## Park round trip
 
-Policy `fw06-park-v1`, bound to `PLPRK1 start mode=` and still requiring the HELLO format. The startup auditor checks only each boot's handshake: one HELLO and one READY (one `PLFLS1 foreign` allowed) after `PLLED1 done low=all`, the `fw06-hello-v1` field values, READY within 2.5 s of HELLO. It refuses `PLFLS1 peer` and `PLFLS1 done` and requires a `PLPRK1 start` after READY.
+Policy `fw06-park-v1`, retired. Each boot prints the handshake's HELLO and READY, with no `PLFLS1 peer` or `PLFLS1 done`.
 
 After READY, KM4 prints `PLPRK1 start mode=<0|1|2> marker=<hex8> watchdog=<pass|fail>` and four `PLPRK1 batch leases=<n> park_max=<ticks> release_max=<ticks> frozen=<n> alive=<n>` records at 25, 50, 75 and 100 leases. Maxima are 32 768 Hz ticks, bounded by the 40 ms exchange limit (1310). A passing capture is one power-on with exactly three startups:
 
@@ -67,7 +67,7 @@ Every batch needs frozen equal to leases and alive at least leases − 1. HELLO 
 
 ## Mediated flash read
 
-Policy `fw06-read-v1`, bound to `PLRDS1 start marker=` and still requiring the HELLO format. A read image cannot be audited under `fw06-hello-v1` or `fw06-park-v1`, nor the reverse. It is a single-boot policy: a reset shows up as `repeated_startup`. HELLO and READY are checked as under `fw06-park-v1`. No `PLPRK1`, `PLFLS1 peer` or `PLFLS1 done` may appear.
+Policy `fw06-read-v1`, retired. A single boot, with HELLO and READY as in the park round trip and no `PLPRK1`, `PLFLS1 peer` or `PLFLS1 done`.
 
 After READY, KM4 prints `PLRDS1 start marker=<hex8> watchdog=<pass|fail> installed=<0|1>`, four `PLRDS1 batch reads=<n> id=<6 hex> mismatches=<n> park_max=<ticks> release_max=<ticks> frozen=<n> alive=<n>` records at 25, 50, 75 and 100 reads, and `PLRDS1 done reads=<n> leases=<n> phase=<n> fault=<n>`. Failures print `PLRDS1 skip marker=<hex8>` or `PLFLS1 error ...`.
 
@@ -78,11 +78,11 @@ A pass needs:
 - `done reads=100 leases=100 phase=1 fault=0` within 30 s of start;
 - at least 30 s of capture after done with no more `PLRDS1` or `PLFLS1` output.
 
-Outcomes are `flash_read_missing`, `flash_read_malformed` (unparsed or repeated `PLRDS1` records, any `PLPRK1`), `flash_read_failed`, `flash_read_order` and `flash_read_timing`. HELLO and READY problems keep the `flash_handshake_*` outcomes. The report adds `flash_read_verified`, `flash_read_id`, `flash_read_reads`, `flash_read_leases`, `flash_read_park_max`, `flash_read_release_max`, `flash_read_frozen`, `flash_read_alive`, `flash_read_seconds` (start to done) and `flash_read_tail_seconds`. This is protocol and timing evidence for the mediated read; it does not show that any write path is safe.
+This is protocol and timing evidence for the mediated read; it does not show that any write path is safe.
 
 ## Scratch-sector write
 
-Policy `fw06-write-v1` covers one owner-approved 4 KiB scratch sector at flash offset `0x185000`. It is bound to `PLWRS1 start marker=` and still requires the HELLO format. A write image cannot be audited under `fw06-hello-v1`, `fw06-park-v1` or `fw06-read-v1`, nor the reverse. Single boot; HELLO and READY as under `fw06-read-v1`. No `PLPRK1`, `PLRDS1`, `PLFLS1 peer` or `PLFLS1 done` may appear.
+Policy `fw06-write-v1`, retired. It covers one owner-approved 4 KiB scratch sector at flash offset `0x185000`. A single boot, with HELLO and READY as in the mediated read and no `PLPRK1`, `PLRDS1`, `PLFLS1 peer` or `PLFLS1 done`.
 
 After READY, KM4 prints `PLWRS1 start marker=<hex8> watchdog=<pass|fail> installed=<0|1>`, `PLWRS1 preimage id=<6 hex> blank=<n>`, three `PLWRS1 cycle n=<n> erase_ticks=<ticks> blank=<n> program_max=<ticks> errors=<n>` records, `PLWRS1 restore erase_ticks=<ticks> blank=<n>` and `PLWRS1 done cycles=<n> leases=<n> phase=<n> fault=<n> park_max=<ticks> release_max=<ticks> frozen=<n>`. Ticks are 32 768 Hz. Failures print `PLWRS1 skip marker=<hex8>` or `PLFLS1 error ...`.
 
@@ -94,11 +94,11 @@ A pass needs:
 - `done cycles=3 leases=53 phase=1 fault=0 frozen=53` with park and release maxima in 1–1310 ticks, within 60 s of start;
 - at least 30 s of capture after done with no more `PLWRS1` or `PLFLS1` output.
 
-Outcomes are `flash_write_missing` (no start, preimage, restore or done), `flash_write_malformed` (unparsed or repeated `PLWRS1`, any `PLPRK1` or `PLRDS1`), `flash_write_failed` (skip, error or any field outside its bounds, including a non-blank preimage or a wrong ID), `flash_write_order` and `flash_write_timing`. HELLO and READY problems keep the `flash_handshake_*` outcomes. The report adds `flash_write_verified`, `flash_write_id`, `flash_write_preimage_blank`, `flash_write_cycles`, `flash_write_restore_erase_ticks`, `flash_write_restore_blank`, `flash_write_leases`, `flash_write_park_max`, `flash_write_release_max`, `flash_write_frozen`, `flash_write_erase_ms_max` (largest cycle or restore erase), `flash_write_seconds` (start to done) and `flash_write_tail_seconds`. This covers one scratch sector; it does not show that writes elsewhere, or under power loss, are safe.
+This covers one scratch sector; it does not show that writes elsewhere, or under power loss, are safe.
 
 ## Journal on NOR
 
-Policy `fw15-journal-v1` covers a journal in the owner-approved 64 KiB region `0x340000`–`0x350000` (16 sectors). It is bound to `PLJNL1 start mode=` and still requires the HELLO format. A journal image cannot be audited under any `fw06-*` policy, nor the reverse. The startup auditor checks only each boot's handshake, as under `fw06-park-v1`, and requires a `PLJNL1 start` after READY. No `PLPRK1`, `PLRDS1`, `PLWRS1`, `PLFLS1 peer` or `PLFLS1 done` may appear.
+Policy `fw15-journal-v1`, retired. It covers a journal in the owner-approved 64 KiB region `0x340000`–`0x350000` (16 sectors). Each boot prints HELLO and READY as in the park round trip, with no `PLPRK1`, `PLRDS1`, `PLWRS1`, `PLFLS1 peer` or `PLFLS1 done`.
 
 After READY, KM4 prints:
 
@@ -119,7 +119,7 @@ Every operation needs `ok=1 error=0`. Reserve, finish and wipe need nonzero tick
 
 ## Settings power-cut test
 
-Policies `fw15-settings-v1` and `fw15-settings-v2` are bound to `PLSET1 start marker=` and still require the HELLO format. A settings image cannot be audited under any other flash policy, nor the reverse. The startup auditor checks only a boot's handshake, as under `fw15-journal-v1`, and requires a `PLSET1 start` after READY. No `PLPRK1`, `PLRDS1`, `PLWRS1`, `PLJNL1`, `PLFLS1 peer` or `PLFLS1 done` may appear.
+Policies `fw15-settings-v1` and `fw15-settings-v2`, retired. Each boot prints HELLO and READY as in the journal, with no `PLPRK1`, `PLRDS1`, `PLWRS1`, `PLJNL1`, `PLFLS1 peer` or `PLFLS1 done`. These `PLSET1 start marker=` records are not setup mode's `PLSET1 start cause=`.
 
 After READY, KM4 prints `PLSET1 start marker=<hex8> watchdog=<pass|fail> installed=<0|1>` and `PLSET1 open status=<n> generation=<n> volume=<n> lights=<0|1> slot=<n> consistent=<0|1>`. Status is 0 LOADED, 1 EMPTY, 2 RECOVERED, 3 CORRUPT, 4 FUTURE, 5 IO or 6 WORN. It then saves settings and prints `PLSET1 batch saves=<n> generation=<n> ticks_max=<n>` after every 25 completed saves. In place of the last batch it prints `PLSET1 end saves=<n> generation=<n> leases=<n> frozen=<n> phase=<n> fault=<n>`.
 

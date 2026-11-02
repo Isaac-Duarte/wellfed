@@ -7,7 +7,7 @@
 mod common;
 
 use chrono::Utc;
-use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, Event, Packet, QoS};
 use serde_json::{Value, json};
 use std::net::Ipv4Addr;
 use std::{
@@ -55,20 +55,10 @@ async fn publishes_once() {
     .unwrap();
 
     let service = common::in_process(&path, OtaTrial::Enabled);
-    let http = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(3))
-        .build()
-        .unwrap();
+    let http = common::http();
     common::ready(&config, &http).await;
 
-    let mut options = MqttOptions::new(
-        &config.device_client_id,
-        config.mqtt_listen.ip().to_string(),
-        config.mqtt_listen.port(),
-    );
-    options.set_credentials(&config.device_username, &config.device_password);
-    options.set_clean_session(true);
+    let options = common::device_session(&config);
     let (client, mut events) = AsyncClient::new(options, 32);
 
     let commands = Arc::new(AtomicUsize::new(0));

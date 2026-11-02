@@ -84,7 +84,7 @@ pub const KEY_PATH: &str = "private/ota-key.json";
 
 /// The highest version signed so far in the checkout at `root`, with its
 /// file: the bench's manifests in [`VERIFICATION`] and the promotions
-/// `wellfed install` kept beside each feeder's backup under `backups`
+/// a run kept beside each feeder's backup under `backups`
 /// (root-relative unless absolute; `wellfed_formats::bench::STOCK_BACKUPS`
 /// by default). The bench
 /// and the installer both sign one above it, so neither reuses a version

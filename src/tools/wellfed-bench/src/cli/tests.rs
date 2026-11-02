@@ -1,3 +1,5 @@
+use std::assert_matches;
+
 use super::*;
 use wellfed_rig::commands;
 
@@ -41,36 +43,12 @@ fn ota_takes_its_flags_and_serve_its_tools() {
 }
 
 #[test]
-fn install_takes_the_bench_route_s_flags_and_answer_its_three_words() {
-    let cli = Cli::try_parse_from([
-        "wellfed-bench",
-        "install",
-        "--review",
-        "private/verification/r",
-        "--manifest",
-        "private/m.json",
-        "--stock-config",
-        "private/installer.json",
-    ])
-    .unwrap();
-    assert!(matches!(job(&cli), JobCommand::Install(_)));
-    assert_eq!(job(&cli).describe(), "install");
-    // The frame route reads a passphrase at a terminal: no job takes it.
-    assert!(
-        Cli::try_parse_from([
-            "wellfed-bench",
-            "install",
-            "--review",
-            "r",
-            "--manifest",
-            "m",
-            "--stock-config",
-            "c",
-            "--ssid",
-            "home",
-        ])
-        .is_err()
-    );
+fn restore_stock_takes_its_flags_and_answer_its_three_words() {
+    let cli = Cli::try_parse_from(["wellfed-bench", "restore-stock", "--virtual-panel"]).unwrap();
+    assert!(matches!(job(&cli), JobCommand::RestoreStock(_)));
+    assert_eq!(job(&cli).describe(), "restore-stock");
+    // The Android app installs: no job takes a feeder from stock.
+    assert!(Cli::try_parse_from(["wellfed-bench", "install", "--review", "r"]).is_err());
 
     let cli = Cli::try_parse_from(["wellfed-bench", "answer", "7", "2", "yes"]).unwrap();
     assert!(matches!(
@@ -82,8 +60,6 @@ fn install_takes_the_bench_route_s_flags_and_answer_its_three_words() {
         }
     ));
     assert!(Cli::try_parse_from(["wellfed-bench", "answer", "7", "2", "y"]).is_err());
-    // A user flag no more: the restart is 10 s.
-    assert!(Cli::try_parse_from(["wellfed-bench", "install", "--restart-seconds", "1"]).is_err());
 }
 
 #[test]
@@ -240,12 +216,9 @@ fn a_bad_name_is_refused_before_the_server_is_asked() {
     let error = run_in(root.path(), &["capture", "../x"]).unwrap_err();
 
     let refused: wellfed_rig::Error = error.downcast().unwrap();
-    assert!(
-        matches!(
-            refused,
-            wellfed_rig::Error::Command(commands::CommandsError::BadName { .. })
-        ),
-        "{refused:?}"
+    assert_matches!(
+        refused,
+        wellfed_rig::Error::Command(commands::CommandsError::BadName { .. })
     );
 }
 
@@ -256,7 +229,7 @@ fn a_held_bench_refuses_a_server_before_it_opens_anything() {
 
     // There is no bench.json either: the lease refuses first.
     let refused = lease_error(run_in(root.path(), &["serve"]));
-    assert!(matches!(refused, lease::LeaseError::Held(_)), "{refused:?}");
+    assert_matches!(refused, lease::LeaseError::Held(_));
 
     // A live holder's flash client is its own: the break is refused for
     // the live lease, not for the child.
@@ -271,7 +244,7 @@ fn a_held_bench_refuses_a_server_before_it_opens_anything() {
             .unwrap(),
     );
     let kept = lease_error(run_in(root.path(), &["status", "--break-lease"]));
-    assert!(matches!(kept, lease::LeaseError::Live(_)), "{kept:?}");
+    assert_matches!(kept, lease::LeaseError::Live(_));
     assert!(lease::inspect(root.path()).unwrap().is_some());
     drop(holder);
 }
@@ -310,10 +283,7 @@ fn a_flash_client_a_killed_server_left_keeps_the_lease_from_breaking() {
     );
     let error = run_in(root.path(), &["status", "--break-lease"]).unwrap_err();
     let refused: orphans::OrphanError = error.downcast().unwrap();
-    assert!(
-        matches!(&refused, orphans::OrphanError::FlashAlive { pid, .. } if *pid == left.0.id()),
-        "{refused:?}"
-    );
+    assert_matches!(&refused, orphans::OrphanError::FlashAlive { pid, .. } if *pid == left.0.id());
     assert!(lease::inspect(root.path()).unwrap().is_some());
 
     // A worktree whose private/ links here shares the lease, and so the
@@ -372,10 +342,7 @@ fn a_killed_holder_is_reported_until_status_breaks_it() {
     holder.0.wait().unwrap();
 
     let refused = lease_error(run_in(root.path(), &["serve"]));
-    assert!(
-        matches!(refused, lease::LeaseError::Stale(_)),
-        "{refused:?}"
-    );
+    assert_matches!(refused, lease::LeaseError::Stale(_));
 
     // Breaking frees the bench; the status itself then finds no server and
     // stops on the missing bench.json, before any relay.

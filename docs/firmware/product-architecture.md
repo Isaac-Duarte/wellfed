@@ -56,7 +56,7 @@ Most of this is design. What has been built and observed is on the [roadmap](../
   - Native Swift and Kotlin would mean two or three UIs for one maintainer.
 - **No web UI for owners, and the browser never talks to the feeder.** Browsers have no raw TCP, no mDNS, and no Web Bluetooth on iOS or Firefox. Chrome restricts HTTPS pages from reaching LAN devices. A UI served by the feeder would cost flash and a second listener, and its page would arrive over plain HTTP. A browser UI on the server was dropped on October 30, 2026: it would repeat every app screen, its feeding-safety logic included, and reach only owners who run a server. It would come back only as the way onto iPhones if Apple refuses the app.
 - **The app alone is the complete product.** The server is an opt-in add-on, for long history, remote access, accounts, pets and food, and firmware releases.
-- **The installer** is the app on Android or a computer, or the CLI. The server is not an installer: every install from stock runs from a frontend or the CLI. The server only installs firmware releases on a feeder already running Wellfed. An install on an iPhone is an open question: iOS suspends an app soon after it leaves the screen, and the phone is serving the feeder its firmware.
+- **The installer** is the app. The server is not an installer: every install from stock runs from the app. The server only installs firmware releases on a feeder already running Wellfed. An install on an iPhone is an open question: iOS suspends an app soon after it leaves the screen, and the phone is serving the feeder its firmware.
 - **Distribution:** APKs and server builds as GitHub releases. App stores and F-Droid come later. Apple's review of an app that replaces a feeder's firmware is an open question, to settle before any public iPhone release.
 - **App and server together.** When a server is configured, the app goes through it first. It goes straight to the feeder on the LAN only when the server is down, and an uncertain write never switches path ([two paths, one feed](../server/README.md#two-paths-one-feed)). Going app-direct only was rejected: no remote access, and each person's actions would reach the audit log only through the feeder.
 - **Alerts** are planned for the app and aren't designed yet ([roadmap](../roadmap.md), [deferred](#deferred)).
@@ -109,7 +109,7 @@ Some detail on each:
   - macOS and Linux, which run the install and can hand a feeder to a phone with an owner's invite;
   - iPhone, for setup and daily use;
   - Windows, once there is a machine to test it on.
-- **The CLI** (`wellfed`) speaks the device API and, under `wellfed server`, the server's HTTP API. It also runs the install. It stays the tool the bench drives, on Linux.
+- **The CLI** (`wellfed`) speaks the device API and, under `wellfed server`, the server's HTTP API. It keeps stock's backup and restores it, but it does not install from stock. It stays the tool the bench drives, on Linux.
 - **One UI** means one codebase for one maintainer. The server's HTTP API stays public through `openapi.json`, for anyone building another client.
 
 ## Setup and pairing

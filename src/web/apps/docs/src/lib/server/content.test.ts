@@ -161,11 +161,13 @@ describe("portable markdown", () => {
   test("an image is absolute, the tabs markers are dropped and both sections stay", () => {
     const install = portableMarkdown("guide/install.md") ?? "";
 
+    const back = portableMarkdown("guide/going-back.md") ?? "";
+
     expect(install).toContain("(https://docs.well-fed.dev/app-installing.png)");
-    expect(install).not.toContain("<!-- tabs -->");
-    expect(install).not.toContain("<!-- /tabs -->");
-    expect(install).toContain("### App");
-    expect(install).toContain("### CLI");
+    expect(back).not.toContain("<!-- tabs -->");
+    expect(back).not.toContain("<!-- /tabs -->");
+    expect(back).toContain("### App");
+    expect(back).toContain("### CLI");
   });
 
   test("code is left alone", () => {

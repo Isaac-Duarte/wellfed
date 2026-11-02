@@ -7,8 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The development Wi-Fi network the first-boot image joins, and the
-/// network `wellfed install --home-network` gives a consumer image. Its
+/// The development Wi-Fi network the first-boot image joins. Its
 /// `Debug` leaves the password out, so no error or log line carries it.
 #[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct WifiCredential {

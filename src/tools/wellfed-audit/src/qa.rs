@@ -202,15 +202,9 @@ pub fn verify(capture: &Path, manifest: &Path, image: &Path) -> Result<QaReport>
     })?;
 
     let c = &loaded.capture;
-    let arrival = |offset: usize| c.arrival(offset);
-    let check = startup::startup(
-        &c.rx,
-        &loaded.manifest,
-        &loaded.image,
-        &loaded.identity,
-        Some(&arrival),
-        Some(c.end()?),
-    )?;
+    // A capture with no end time was never finalized, whatever its hashes say.
+    c.end()?;
+    let check = startup::startup(&c.rx, &loaded.manifest, &loaded.image, &loaded.identity)?;
 
     let (mut outcome, qa) = classify(&c.rx);
     if check.outcome != Outcome::Pass {

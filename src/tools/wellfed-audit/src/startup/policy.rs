@@ -77,11 +77,6 @@ crate::outcomes! {
         Adc => "ADC policy",
         AdcSupply => "ADC supply policy",
         FlashHandshake => "Flash handshake policy",
-        FlashPark => "Flash park policy",
-        FlashRead => "Flash read policy",
-        FlashWrite => "Flash write policy",
-        FlashJournal => "Flash journal policy",
-        FlashSettings => "Flash settings policy",
     }
 }
 
@@ -103,7 +98,6 @@ pub(super) struct Policies {
     pub(super) led: Option<u8>,
     pub(super) routing: Option<u8>,
     pub(super) power: Option<u8>,
-    pub(super) flash: Option<FlashPolicy>,
 }
 
 /// A declared policy's version: absent (None) or one of `known`.
@@ -153,7 +147,7 @@ impl Policies {
         let routing = bind_routing(manifest, &has)?;
         let power = bind_power(manifest, &has)?;
         bind_unclassified(manifest, &has, led.is_some())?;
-        let flash = bind_flash(manifest, &has)?;
+        refuse_retired_flash(manifest, &has)?;
 
         Ok(Self {
             stopped,
@@ -161,7 +155,6 @@ impl Policies {
             led,
             routing,
             power,
-            flash,
         })
     }
 }
@@ -372,45 +365,18 @@ fn bind_unclassified(
     after_led(adc.is_some(), led, Probe::Adc)
 }
 
-fn bind_flash(
-    manifest: &BuildManifest,
-    has: &dyn Fn(&[u8]) -> bool,
-) -> Result<Option<FlashPolicy>> {
-    let flash = version(
+/// The flash-coordination probes are retired and no version of them is known:
+/// a manifest declaring one, or an image carrying their records, is not a
+/// build this audit can speak for. Passing it with the records unchecked would
+/// read as more than it showed.
+fn refuse_retired_flash(manifest: &BuildManifest, has: &dyn Fn(&[u8]) -> bool) -> Result<()> {
+    version::<()>(
         manifest.startup_flash_handshake_policy.as_deref(),
-        &[
-            ("fw06-hello-v1", FlashPolicy::Hello),
-            ("fw06-park-v1", FlashPolicy::Park),
-            ("fw06-read-v1", FlashPolicy::Read),
-            ("fw06-write-v1", FlashPolicy::Write),
-            ("fw15-journal-v1", FlashPolicy::Journal),
-            ("fw15-settings-v1", FlashPolicy::Settings),
-            ("fw15-settings-v2", FlashPolicy::Settings),
-        ],
+        &[],
         Policy::FlashHandshake,
     )?;
     agree(
-        flash.is_some() == has(FLASH_MARK),
+        !RETIRED_FLASH_MARKS.iter().any(|mark| has(mark)),
         Declaration::FlashHandshake,
-    )?;
-
-    // Checked both ways: a park image cannot be audited as a hello-only build, nor the reverse.
-    for (policy, mark, declaration) in [
-        (FlashPolicy::Park, PARK_MARK, Declaration::FlashPark),
-        (FlashPolicy::Read, READ_MARK, Declaration::FlashRead),
-        (FlashPolicy::Write, WRITE_MARK, Declaration::FlashWrite),
-        (
-            FlashPolicy::Journal,
-            JOURNAL_MARK,
-            Declaration::FlashJournal,
-        ),
-        (
-            FlashPolicy::Settings,
-            SETTINGS_MARK,
-            Declaration::FlashSettings,
-        ),
-    ] {
-        agree((flash == Some(policy)) == has(mark), declaration)?;
-    }
-    Ok(flash)
+    )
 }

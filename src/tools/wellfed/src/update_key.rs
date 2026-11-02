@@ -6,7 +6,7 @@
 //! builds (`wellfed-build sign --key`) for that feeder. The bench key is
 //! the same file, so it enrolls too: a feeder whose image embeds no key
 //! then still takes the bench's signed updates. The enrollment itself is
-//! `wellfed_install::update_key`'s, the one the install runs.
+//! `wellfed_install::update_key`'s, the one the app's install runs.
 
 use std::path::{Path, PathBuf};
 

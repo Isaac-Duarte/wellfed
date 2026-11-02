@@ -34,8 +34,8 @@ const BRINGUP: [&str; 2] = ["src/firmware/wellfed/", "src/sdk/wellfed-probes/src
 /// spawn the binary. cargo-deny cannot ban every dependent without banning
 /// the crate itself.
 const STOCK_SERVER: &str = "src/tools/wellfed-stock/Cargo.toml";
-/// The one crate that links the stock server: the install driver the CLI
-/// and the Android app share.
+/// The one crate that links the stock server: the install driver the Android
+/// app runs.
 const STOCK_INSTALLER: &str = "src/client/wellfed-install/Cargo.toml";
 /// The flash client's crate, the audited UART writer: every read and write
 /// runs it as its own process, so a fault elsewhere never takes a write down

@@ -7,7 +7,7 @@ This page covers life with a feeder running Wellfed: meals, feeding now, the but
 
 The app has one screen per feeder, with four tabs: **Today**, **Schedule**, **History** and **Settings**. Your phone has to be on the same network as the feeder, since the app talks to it directly.
 
-The CLI keeps your key in `private/wellfed-owner.json` under the folder you run it from, and makes a new key if that file is missing. So run it from the folder you installed from, or pass `--keys`.
+The CLI keeps your key in `private/wellfed-owner.json` under the folder you run it from, and makes a new key if that file is missing. So run it from the folder you first ran it in, or pass `--keys`.
 
 ![The app's Today tab, with Ready to feed at the top, a red notice that the feeder restarted during a feed and stopped somewhere between 0 and 3 of 3 portions, then rows for food, power, Wi-Fi, clock, desiccant and the button lock](app-today.png)
 

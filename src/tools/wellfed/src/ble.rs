@@ -1,7 +1,6 @@
-//! `wellfed setup`'s radio half, and `wellfed install`'s: find a feeder in
+//! `wellfed setup`'s radio half: find a feeder in
 //! setup mode through BlueZ and carry `wellfed_client::setup`'s messages
-//! over its control characteristic, as `wellfed_install`'s
-//! [`Bluetooth`] and [`SetupLink`].
+//! over its control characteristic, as `wellfed_install`'s [`SetupLink`].
 //!
 //! BlueZ quirks met on the bench shape this: a filtered discovery
 //! crashed bluetoothd 5.87, so discovery is unfiltered and the service UUID
@@ -18,7 +17,7 @@ use bluer::{Address, Uuid};
 use futures_util::{Stream, StreamExt};
 use tokio::time::timeout;
 use wellfed_client::setup::{CONTROL, Deframer, SERVICE, frame};
-use wellfed_install::{Bluetooth, PlatformError, SetupLink};
+use wellfed_install::{PlatformError, SetupLink};
 
 const FIND_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -112,20 +111,6 @@ impl Link {
     /// already dropped.
     pub(crate) async fn close(self) {
         let _ = timeout(CLOSE_TIMEOUT, self.device.disconnect()).await;
-    }
-}
-
-/// The computer's radio, finding the feeder at `address` or the first
-/// one in setup mode.
-pub(crate) struct Bluez {
-    pub(crate) address: Option<Address>,
-}
-
-impl Bluetooth for Bluez {
-    type Link = Link;
-
-    async fn open(&mut self) -> Result<Link, PlatformError> {
-        Ok(Link::open(self.address).await?)
     }
 }
 

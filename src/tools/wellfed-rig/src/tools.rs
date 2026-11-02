@@ -448,7 +448,7 @@ pub fn default_flash_bin() -> PathBuf {
     beside_this("wellfed-flash")
 }
 
-/// `wellfed` beside this executable, which the bench's `install` job runs.
+/// `wellfed` beside this executable, which the bench's `restore_stock` job runs.
 pub fn default_wellfed_bin() -> PathBuf {
     beside_this("wellfed")
 }
@@ -998,6 +998,7 @@ impl Analyzer for Sigrok {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use std::assert_matches;
     use std::os::unix::fs::PermissionsExt;
 
     use wellfed_formats::bench::progress::BenchCommand;
@@ -1009,6 +1010,18 @@ mod tests {
         CHILDREN
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The tools with every binary missing from `root`.
+    fn absent(root: &Path) -> Processes {
+        Processes {
+            root: root.into(),
+            flash_bin: root.join("absent"),
+            build_bin: root.join("absent"),
+            cancel: Cancel::new(),
+            children: Children::new(),
+            link: None,
+        }
     }
 
     /// A stand-in `wellfed-flash`: progress on stderr, a summary on stdout.
@@ -1028,12 +1041,8 @@ mod tests {
             r#"echo "Read 4096/8192 bytes" >&2; printf 'bad \377\n' >&2; echo '{"status":"failed"}'; exit 1"#,
         );
         let mut tools = Processes {
-            root: tmp.path().into(),
             flash_bin,
-            build_bin: tmp.path().join("absent"),
-            cancel: Cancel::new(),
-            children: Children::new(),
-            link: None,
+            ..absent(tmp.path())
         };
         let mut status = Status::new(tmp.path(), tmp.path().join("status"));
         status.begin(BenchCommand::Dump, Some("unit"), &[]).unwrap();
@@ -1064,12 +1073,8 @@ mod tests {
 echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
         );
         let mut tools = Processes {
-            root: tmp.path().into(),
             flash_bin,
-            build_bin: tmp.path().join("absent"),
-            cancel: Cancel::new(),
-            children: Children::new(),
-            link: None,
+            ..absent(tmp.path())
         };
         let output = tmp.path().join("capture");
 
@@ -1085,12 +1090,8 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
         let tmp = tempfile::tempdir().unwrap();
         let flash_bin = fake_flash(tmp.path(), "exit 2");
         let mut tools = Processes {
-            root: tmp.path().into(),
             flash_bin,
-            build_bin: tmp.path().join("absent"),
-            cancel: Cancel::new(),
-            children: Children::new(),
-            link: None,
+            ..absent(tmp.path())
         };
 
         let error = tools
@@ -1098,10 +1099,7 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
             .err()
             .unwrap();
 
-        assert!(
-            matches!(error, Error::Tool(ToolsError::ObserverExited)),
-            "{error:?}"
-        );
+        assert_matches!(error, Error::Tool(ToolsError::ObserverExited));
     }
 
     /// A chain over a stand-in observe that records one line per segment
@@ -1113,12 +1111,8 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
              [ $n -lt 3 ] || exit 3"
         );
         let mut tools = Processes {
-            root: tmp.into(),
             flash_bin: fake_flash(tmp, &script),
-            build_bin: tmp.join("absent"),
-            cancel: Cancel::new(),
-            children: Children::new(),
-            link: None,
+            ..absent(tmp)
         };
         let root = tmp.to_path_buf();
         tools
@@ -1212,12 +1206,8 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
         )
         .unwrap();
         let mut tools = Processes {
-            root: tmp.path().into(),
-            flash_bin: tmp.path().join("absent"),
             build_bin: builder,
-            cancel: Cancel::new(),
-            children: Children::new(),
-            link: None,
+            ..absent(tmp.path())
         };
         let mut status = Status::new(tmp.path(), tmp.path().join("status"));
         status.begin(BenchCommand::Ota, Some("unit"), &[]).unwrap();
@@ -1240,10 +1230,7 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
 
         tools.build_bin = tmp.path().join("absent");
         let error = tools.build_query(&[]).unwrap_err();
-        assert!(
-            matches!(&error, Error::Tool(ToolsError::BuildMissing { path }) if *path == tools.build_bin),
-            "{error:?}"
-        );
+        assert_matches!(&error, Error::Tool(ToolsError::BuildMissing { path }) if *path == tools.build_bin);
     }
 
     /// Whether a process `pid` still exists.
@@ -1270,12 +1257,9 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
         fs::set_permissions(&builder, fs::Permissions::from_mode(0o755)).unwrap();
         let children = Children::new();
         let mut tools = Processes {
-            root: tmp.path().into(),
-            flash_bin: tmp.path().join("absent"),
             build_bin: builder,
-            cancel: Cancel::new(),
             children: children.clone(),
-            link: None,
+            ..absent(tmp.path())
         };
 
         let build = std::thread::spawn(move || {
@@ -1297,20 +1281,12 @@ echo '{"status":"complete","result":{"bytes":7}}' > "$8/report.json""#,
     fn a_missing_flash_binary_is_refused() {
         let tmp = tempfile::tempdir().unwrap();
         let mut tools = Processes {
-            root: tmp.path().into(),
-            flash_bin: tmp.path().join("absent"),
-            build_bin: tmp.path().join("absent"),
-            cancel: Cancel::new(),
-            children: Children::new(),
-            link: None,
+            ..absent(tmp.path())
         };
         let mut status = Status::disabled();
 
         let error = tools.flash(&[], &mut status).unwrap_err();
-        assert!(
-            matches!(&error, Error::Tool(ToolsError::FlashMissing { .. })),
-            "{error:?}"
-        );
+        assert_matches!(&error, Error::Tool(ToolsError::FlashMissing { .. }));
         // The operator is told how to get the client.
         assert_eq!(
             error.to_string(),

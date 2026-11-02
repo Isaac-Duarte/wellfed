@@ -19,9 +19,9 @@
 //!   speaks the server's HTTP API through `wellfed-server-client`, with
 //!   the token `wellfed server login` keeps.
 //!
-//! `wellfed install` takes a feeder from stock 1.1.15 to the replacement
-//! (the `install` module): `wellfed-install`'s run, the one the Android app
-//! runs, with stock's server in this process.
+//! Installing from stock 1.1.15 is the Android app's alone. `wellfed backup`
+//! and `wellfed restore-stock` (the `backup` module) are how this command line
+//! keeps stock's image and goes back to it.
 //!
 //! [tools]: ../../../../src/tools/README.md
 //! [two paths, one feed]: ../../../../docs/server/README.md#two-paths-one-feed
@@ -38,7 +38,6 @@ mod configure;
 mod device;
 mod feeding;
 mod history;
-mod install;
 mod keys;
 mod pairing;
 mod plans;
@@ -135,10 +134,6 @@ enum Command {
     Calibrate(configure::CalibrateArgs),
     /// Become an owner again through the feeder's recovery window.
     Recover(pairing::RecoverArgs),
-    /// Install the replacement on a feeder running stock 1.1.15: point stock
-    /// at this computer, have it install the build into bank 0, pair as its
-    /// owner, and (with a verified stock backup) promote it to bank 1.
-    Install(Box<install::InstallArgs>),
     /// The owner's copy of stock: read it from the replacement on bank 0
     /// (bank 1 still holds stock until the promotion), show it, or export
     /// it unchanged.
@@ -155,22 +150,16 @@ enum Command {
 /// when a write's outcome is unknown.
 fn main() -> Result<ExitCode> {
     let cli = Cli::parse();
-    // The install drives stock's server in this process: its broker and
-    // session run on worker threads beside the run, which this thread
-    // drives. Every other command is one session on one thread.
-    let runtime = match &cli.command {
-        Command::Install(_) => tokio::runtime::Builder::new_multi_thread(),
-        _ => tokio::runtime::Builder::new_current_thread(),
-    }
-    .enable_all()
-    .build()?;
+    // Every command is one session on one thread.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
 
     // These open sessions of their own, beside the one the bench server
     // holds: setup and recovery over the pairing window, a join with
-    // another key, and the pushes of an install or a restore.
+    // another key, and the push of a restore.
     let own_sessions = match &cli.command {
         Command::Setup(_) => Some("setup"),
-        Command::Install(_) => Some("install"),
         Command::Recover(_) => Some("recover"),
         Command::Join(_) => Some("join"),
         Command::RestoreStock(_) => Some("restore-stock"),
@@ -207,7 +196,6 @@ fn main() -> Result<ExitCode> {
         Command::Stats(args) => runtime.block_on(history::stats_command(args)),
         Command::Trace(args) => runtime.block_on(history::trace_command(args)),
         Command::Recover(args) => runtime.block_on(pairing::recover_command(args)),
-        Command::Install(args) => runtime.block_on(install::run(*args)),
         Command::Backup(args) => runtime.block_on(backup::command(args)),
         Command::RestoreStock(args) => runtime.block_on(backup::restore(*args)),
     };
@@ -346,69 +334,16 @@ mod tests {
     fn the_command_line_is_well_formed() {
         Cli::command().debug_assert();
 
-        let install = [
-            "wellfed",
-            "install",
-            "--review",
-            "private/review",
-            "--manifest",
-            "private/manifest.bin",
-            "--stock-config",
-            "private/installer.json",
-            "--ssid",
-            "Home",
-        ];
-        assert!(matches!(
-            Cli::try_parse_from(install).map(|cli| cli.command),
-            Ok(Command::Install(_))
-        ));
-        // Resuming on bank 0 sends no frame.
-        let resumed = [&install[..8], &["--from-bank0", "--ssid", "Home"]].concat();
-        assert!(Cli::try_parse_from(resumed).is_err());
-        // The stock config defaults to an installer's: the bench's captured
-        // one, which holds a plan snapshot, is never the default.
-        let Ok(Cli {
-            command: Command::Install(_),
-        }) = Cli::try_parse_from(&install[..6])
-        else {
-            panic!("the stock config has a default");
-        };
-        // The review is what gets installed, so it is always named.
-        assert!(Cli::try_parse_from(["wellfed", "install", "--ssid", "Home"]).is_err());
-        assert!(Cli::try_parse_from(["wellfed", "install", "--review", "r", "-v"]).is_ok());
+        // The Android app installs: no command takes a feeder from stock.
+        let install = ["wellfed", "install", "--review", "private/review"];
+        assert!(Cli::try_parse_from(install).is_err());
         // Prompts go to a terminal or, for the bench server, as lines.
         for prompts in ["terminal", "lines"] {
-            let asked = [&install[..8], &["--prompts", prompts]].concat();
+            let asked = ["wellfed", "restore-stock", "--prompts", prompts];
             assert!(Cli::try_parse_from(asked).is_ok(), "{prompts}");
         }
-        assert!(Cli::try_parse_from([&install[..8], &["--prompts", "json"]].concat()).is_err());
-        // The frame's broker means nothing without the frame.
-        let broker = [&install[..8], &["--broker", "10.42.103.1:1883"]].concat();
-        assert!(Cli::try_parse_from(broker).is_err());
-        // A consumer run signs for itself, and names the network Bluetooth
-        // setup gives the feeder; the frame's network is that one already.
-        let consumer = [
-            "wellfed",
-            "install",
-            "--review",
-            "private/review",
-            "--stock-config",
-            "private/installer.json",
-            "--update-key",
-            "private/update-key.json",
-            "--home-ssid",
-            "Home",
-            "--ble-address",
-            "00:11:22:33:44:55",
-        ];
-        assert!(matches!(
-            Cli::try_parse_from(consumer).map(|cli| cli.command),
-            Ok(Command::Install(_))
-        ));
-        let both = [&install[..], &["--home-ssid", "Home"]].concat();
-        assert!(Cli::try_parse_from(both).is_err());
-        let resumed = [&install[..8], &["--from-bank0", "--home-ssid", "Home"]].concat();
-        assert!(Cli::try_parse_from(resumed).is_ok());
+        let asked = ["wellfed", "restore-stock", "--prompts", "json"];
+        assert!(Cli::try_parse_from(asked).is_err());
 
         // A plan's flags follow its verb, the slot first.
         let edit = [

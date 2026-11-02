@@ -9,8 +9,8 @@
 //!   during a UART write only a second Ctrl+C within 5 s does. Once the
 //!   cancel is taken, another Ctrl+C detaches, and `attach ID` follows the
 //!   job again.
-//! - `answer JOB SEQ done|yes|no` answers the question a job (`install`)
-//!   asks, once.
+//! - `answer JOB SEQ done|yes|no` answers the question a job
+//!   (`restore-stock`) asks, once.
 //! - `console` draws the server's full-screen console in another terminal
 //!   or over `ssh -t`. It only reads: `q` leaves, and the server runs on.
 //! - With no server running, only `status` (and `status --break-lease`)
@@ -38,11 +38,8 @@ use wellfed_formats::bench::prompt::Answer;
 use wellfed_formats::bench::rendezvous;
 use wellfed_formats::bench::{CONFIG, Config};
 use wellfed_relay::{AtBoard, Relay};
-use wellfed_rig::Cancel;
-use wellfed_rig::commands::{Bench, UartWhenOff, check_name, seconds_arg};
-use wellfed_rig::tools::{
-    Children, Processes, default_build_bin, default_flash_bin, default_wellfed_bin,
-};
+use wellfed_rig::commands::{check_name, seconds_arg};
+use wellfed_rig::tools::{default_build_bin, default_flash_bin, default_wellfed_bin};
 
 /// A client that detached from a job it left running exits with this, as
 /// an interrupted command does.
@@ -97,7 +94,7 @@ enum Command {
     /// reads: `q` or Ctrl+C leaves, and the server and its job run on. It
     /// shows job output, not the lines only the server's own console prints.
     Console,
-    /// Answer the question a running job asks (`install`), as the console
+    /// Answer the question a running job asks (`restore-stock`), as the console
     /// shows it with its number.
     Answer {
         /// The job's number.
@@ -149,7 +146,7 @@ struct ServeArgs {
     /// The wellfed-build binary for `--build` (default: beside this one).
     #[arg(long)]
     build_bin: Option<PathBuf>,
-    /// The wellfed binary for `install` (default: beside this one).
+    /// The wellfed binary for `restore-stock` (default: beside this one).
     #[arg(long)]
     wellfed_bin: Option<PathBuf>,
 
@@ -709,31 +706,12 @@ fn report_ports(root: &Path) {
 /// a killed server's bench can be looked at before it is freed.
 fn direct_status(root: &Path) -> wellfed_rig::Result<u8> {
     let config: Config = wellfed_rig::load(root, Path::new(CONFIG))?;
-    let relay = Relay::open(&config.relay_port)?;
-    let children = Children::new();
-    let cancel = Cancel::new();
-    let tools = Processes::new(
-        root.to_path_buf(),
-        default_flash_bin(),
-        default_build_bin(),
-        cancel.clone(),
-        children.clone(),
-    );
-
-    let mut bench = Bench {
-        root: root.to_path_buf(),
-        config,
-        relay,
-        status: wellfed_formats::bench::progress::Status::disabled(),
-        tools: Box::new(tools),
-        children,
-        cancel,
-        sleep: wellfed_rig::sleep,
-        off_time: std::time::Duration::ZERO,
-        uart_when_off: UartWhenOff::Isolated,
-        written: Vec::new(),
-    };
-    bench.status_report()
+    let mut relay = Relay::open(&config.relay_port)?;
+    for channel in 1..=4 {
+        wellfed_rig::say!("Relay {channel}: {}", on_off(relay.get(channel)?));
+    }
+    report_ports(root);
+    Ok(0)
 }
 
 #[cfg(test)]

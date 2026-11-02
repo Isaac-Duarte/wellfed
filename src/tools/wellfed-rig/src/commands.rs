@@ -427,22 +427,6 @@ impl Bench {
         Ok(true)
     }
 
-    pub fn status_report(&mut self) -> Result<u8> {
-        for channel in 1..=4 {
-            let on = self.get(channel)?;
-            say!("Relay {channel}: {}", if on { "on" } else { "off" });
-        }
-
-        for (key, port) in [
-            ("relay_port", &self.config.relay_port),
-            ("uart_port", &self.config.uart_port),
-        ] {
-            let present = Path::new(port).exists();
-            say!("{key}: {}", if present { "present" } else { "missing" });
-        }
-        Ok(0)
-    }
-
     pub fn on(&mut self) -> Result<u8> {
         self.set(STRAP, Switch::Off)?;
         self.power_on()?;
@@ -1298,7 +1282,7 @@ impl Bench {
 /// What the frozen review at `review` installs, as the bank ledger names
 /// it: a build by its startup identity, the stock image, or else a build
 /// by its OTA image's hash. `None` when neither file reads.
-pub fn installed(root: &Path, review: &Path) -> Option<Content> {
+fn installed(root: &Path, review: &Path) -> Option<Content> {
     let review = root.join(review);
     let manifest: Option<BuildManifest> =
         wellfed_formats::load(&review.join("build-manifest.json")).ok();
@@ -1435,7 +1419,6 @@ pub fn steps(command: BenchCommand) -> &'static [&'static str] {
         | BenchCommand::Press
         | BenchCommand::Transients
         | BenchCommand::Itest
-        | BenchCommand::Install
         | BenchCommand::RestoreStock => &[],
     }
 }

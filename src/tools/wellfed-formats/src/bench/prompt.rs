@@ -1,14 +1,14 @@
-//! What `wellfed install` asks the person at the feeder, and what they
+//! What the install's driver asks the person at the feeder, and what they
 //! answer, as values rather than terminal text.
 //!
-//! With `--prompts lines` the installer writes each [`Prompt`] as one JSON
-//! line on its standard output and reads one [`Answer`] line back from its
-//! standard input; the bench server runs it that way as a job and shows the
-//! question to whoever answers. The words live here, with the type, so the
-//! installer's terminal and every reader of the bench show the same ones.
+//! With `--prompts lines`, `wellfed restore-stock` writes each [`Prompt`] as
+//! one JSON line on its standard output and reads one [`Answer`] line back
+//! from its standard input; the bench server runs it that way as a job and
+//! shows the question to whoever answers. The words live here, with the type,
+//! so a terminal and every reader of the bench show the same ones.
 //!
 //! An answer line carries no sequence number and does not name its prompt:
-//! the installer reads exactly one answer after each prompt it writes, and
+//! the tool reads exactly one answer after each prompt it writes, and
 //! that strict alternation is the only thing that pairs them. So a reader
 //! (the bench server) writes an answer only to the prompt it has read and
 //! not yet answered, never one queued ahead for a prompt still to come,
@@ -16,7 +16,7 @@
 //!
 //! Two prompts ask for presses on the feeder's panel inside a window the
 //! feeder times itself ([`Prompt::KeySetupCode`], [`Prompt::PressDispense`]).
-//! The installer writes them and goes on at once, reading their answer only
+//! The tool writes them and goes on at once, reading their answer only
 //! before it writes its next prompt, so the alternation holds and a slow
 //! answer never eats into the feeder's window.
 //!

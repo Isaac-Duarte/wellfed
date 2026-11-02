@@ -17,7 +17,7 @@ The IDs U01–U08 point into the [evidence register](#evidence-register) at the 
 | A reachable plain HTTP endpoint serving the complete file | Direct `200`, explicit `Content-Length`, short URL, no compression or chunked body. U03, U04 |
 | An acceptable MQTT request and device state | Model, version, connectivity, idle and power conditions, time and memory are checked before download. U02 |
 
-`wellfed install` ([bench](../bench.md#install-as-a-job)) applies this contract to a Wellfed build, and stock 1.1.15 has accepted one through it. The image port must be reachable, or stock reports `OTA_INFORM` error 2003. See [consumer installation](../../../firmware/consumer-installation.md).
+The Android app ([consumer installation](../../../firmware/consumer-installation.md)) applies this contract to a Wellfed build, and stock 1.1.15 has accepted one through it. The image port must be reachable, or stock reports `OTA_INFORM` error 2003.
 
 ## The MQTT request
 

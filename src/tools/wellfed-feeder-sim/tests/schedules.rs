@@ -8,7 +8,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use wellfed_core::clock::wall::{Origin, Sync};
 use wellfed_core::clock::zone::Zone;
 use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_core::store::slot::crc32;
@@ -23,6 +22,7 @@ use wellfed_feeder::feeder::{self, schedule};
 use wellfed_feeder::store::events::Read;
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
+use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::sim::{Record, Sim};
 use wellfed_proto::api::{Blocked, EventBody, FeedOutcome, MissedReason, Source};
 
@@ -76,17 +76,7 @@ impl Feeder {
     /// An owner's sync: the wall clock reads `unix_ms` now, at UTC unless
     /// a zone rule is set.
     fn sync(&mut self, unix_ms: u64) {
-        let sync = Sync {
-            unix_ms,
-            offset_s: 0,
-            next_change_s: 0,
-            next_offset_s: 0,
-        };
-        let now = self.now;
-        self.sim
-            .platform()
-            .time_sync(now, sync, Origin::Owner)
-            .unwrap();
+        harness::owner_sync(&mut self.sim, self.now, unix_ms);
     }
 
     fn zone(&mut self, rule: &str) {
@@ -101,12 +91,13 @@ impl Feeder {
 
     /// Run the loop for `ms`, a pass at least every second.
     fn run(&mut self, ms: u64) {
-        let end = u64::from(self.now) + ms;
-        while u64::from(self.now) < end {
-            let claims = &mut self.claims;
-            let calls = &mut self.calls;
-            let now = self.now;
-            let delay = self.sim.pass(self.now, |record| match record {
+        let claims = &mut self.claims;
+        let calls = &mut self.calls;
+        harness::run_loop(
+            &mut self.sim,
+            &mut self.now,
+            ms,
+            |now, record| match record {
                 Record::Feeder(feeder::Record::Schedule(schedule::Record::Claimed { .. })) => {
                     *claims += 1;
                 }
@@ -116,10 +107,8 @@ impl Feeder {
                     ..
                 })) => calls.push((now, plan, due_s)),
                 _ => {}
-            });
-            let step = u64::from(delay.clamp(1, 1000)).min(end - u64::from(self.now));
-            self.now += u32::try_from(step.max(1)).unwrap();
-        }
+            },
+        );
     }
 
     /// Run until the wall clock reads `unix_ms`.
@@ -175,15 +164,7 @@ impl Feeder {
 
     /// Every event the ring holds, oldest first.
     fn events(&mut self) -> Vec<EventBody> {
-        let mut bodies = Vec::new();
-        let mut after = None;
-        while let Some(Read::Record(record)) =
-            self.sim.platform().event_after(Reader::slot(0), after)
-        {
-            after = Some(record.seq);
-            bodies.extend(wellfed_proto::decode_padded::<EventBody>(&record.body));
-        }
-        bodies
+        harness::events(&mut self.sim)
     }
 
     /// The `Fed` events: feed, requested portions, outcome and source.
@@ -296,10 +277,7 @@ fn a_plan_feeds_once_at_its_minute() {
     assert!(feeder.fed().is_empty(), "nothing before its minute");
 
     feeder.run(10 * MINUTE_MS);
-    assert_eq!(
-        feeder.fed(),
-        [(1, 2, FeedOutcome::Done, Source::Schedule(0))]
-    );
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
     // The next day's breakfast is the next feed. An unlearned clock
     // holds about 6.6 hours, so it is synced again first.
     feeder.run(4 * HOUR_MS);
@@ -341,10 +319,7 @@ fn a_forward_jump_runs_a_meal_within_the_grace_and_misses_one_past_it() {
     feeder.sync(WEDNESDAY + 7 * HOUR_MS + 40 * MINUTE_MS);
     feeder.run(MINUTE_MS);
 
-    assert_eq!(
-        feeder.fed(),
-        [(1, 2, FeedOutcome::Done, Source::Schedule(0))]
-    );
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
     let due = seconds(WEDNESDAY + 7 * HOUR_MS + 10 * MINUTE_MS);
     assert_eq!(feeder.missed(), [(1, due, MissedReason::Late)]);
 }
@@ -548,10 +523,7 @@ fn a_refused_feed_gives_its_occurrence_back_and_retries_without_spinning() {
     feeder.sim.refuse_feeds(false);
     feeder.run(10_000);
 
-    assert_eq!(
-        feeder.fed(),
-        [(1, 2, FeedOutcome::Done, Source::Schedule(0))]
-    );
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
 
     // Refused past the grace, it is missed, naming what blocked it.
     let mut feeder = breakfast();
@@ -579,10 +551,7 @@ fn a_meal_behind_a_write_runs_once_when_its_claim_is_taken() {
 
     feeder.sim.hold_write(false);
     feeder.run(10_000);
-    assert_eq!(
-        feeder.fed(),
-        [(1, 2, FeedOutcome::Done, Source::Schedule(0))]
-    );
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
     assert_eq!(feeder.claims, 1, "claimed once");
     assert!(feeder.missed().is_empty());
 }
@@ -604,10 +573,7 @@ fn a_meal_past_its_claim_s_deadline_gives_its_occurrence_back_and_retries() {
     feeder.sim.hold_write(false);
     feeder.run(u64::from(schedule::RETRY_MS) + 5_000);
     assert_eq!(feeder.claims, 2, "claimed again after the retry's wait");
-    assert_eq!(
-        feeder.fed(),
-        [(1, 2, FeedOutcome::Done, Source::Schedule(0))]
-    );
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
     assert!(feeder.missed().is_empty());
 
     let mut feeder = breakfast();
@@ -652,10 +618,7 @@ fn a_cancel_leaves_a_meal_waiting_for_its_claim_to_run_once() {
 
     feeder.sim.hold_write(false);
     feeder.run(10_000);
-    assert_eq!(
-        feeder.fed(),
-        [(1, 2, FeedOutcome::Done, Source::Schedule(0))]
-    );
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
     assert_eq!(feeder.claims, 1);
     assert!(feeder.missed().is_empty());
 }
@@ -724,6 +687,8 @@ fn a_plan_that_runs_once_saved_without_a_clock_feeds_at_its_minute() {
     );
 }
 
+/// Plan 0's meal, fed in full: feed number 1, 2 portions asked for.
+const FED_PLAN_0: (u32, u8, FeedOutcome, Source) = (1, 2, FeedOutcome::Done, Source::Schedule(0));
 const BREAKFAST: u64 = WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS;
 
 /// Breakfast with the reminder set `lead` minutes ahead.
@@ -761,10 +726,7 @@ fn the_reminder_comes_its_lead_before_the_meal_and_the_meal_runs_once() {
 
     // The meal itself, once, after its one reminder.
     feeder.run_until(BREAKFAST + 5 * MINUTE_MS);
-    assert_eq!(
-        feeder.fed(),
-        [(1, 2, FeedOutcome::Done, Source::Schedule(0))]
-    );
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
     assert_eq!(feeder.soon().len(), 1);
     assert_eq!(feeder.claims, 1);
     let order: Vec<bool> = feeder
@@ -828,10 +790,7 @@ fn a_plan_edited_inside_the_lead_is_reminded_only_for_a_new_occurrence() {
         .collect();
     assert_eq!(dues, [(seconds(BREAKFAST), 450), (moved, 448)]);
     feeder.run_until(BREAKFAST + 5 * MINUTE_MS);
-    assert_eq!(
-        feeder.fed(),
-        [(1, 2, FeedOutcome::Done, Source::Schedule(0))]
-    );
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
     assert_eq!(feeder.claims, 1);
 }
 
@@ -856,10 +815,7 @@ fn a_restart_inside_the_lead_reminds_the_same_occurrence_again_and_feeds_once() 
     assert_eq!(named, [(0, due), (0, due)]);
 
     feeder.run_until(BREAKFAST + 5 * MINUTE_MS);
-    assert_eq!(
-        feeder.fed(),
-        [(1, 2, FeedOutcome::Done, Source::Schedule(0))]
-    );
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
     assert_eq!(feeder.soon().len(), 2);
     assert!(feeder.missed().is_empty());
 }

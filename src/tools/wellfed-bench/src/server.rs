@@ -53,8 +53,15 @@ pub use jobs::{JobCommand, JobOptions, ToolPaths};
 pub use output::{CONSOLE_QUEUE, Console};
 pub use serve::{Options, ServeError, Server, restore_output};
 pub use state::Store;
-pub use tool_jobs::{InstallArgs, RestoreStockArgs};
+pub use tool_jobs::RestoreStockArgs;
 pub use watching::Watched;
+
+/// What these locks guard stays whole if a holder panics.
+fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 #[cfg(test)]
 mod tests;

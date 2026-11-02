@@ -21,8 +21,7 @@ jiff = "0.2.38"
 wellfed-client.workspace = true
 wellfed-connect.workspace = true
 wellfed-formats = { workspace = true, features = ["device"] }
-# `bench`: a captured device is found on the hotspot for the image server.
-wellfed-install = { workspace = true, features = ["bench"] }
+wellfed-install.workspace = true
 wellfed-model.workspace = true
 wellfed-proto.workspace = true
 wellfed-server-client.workspace = true
@@ -31,11 +30,7 @@ wellfed-signing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-# `wellfed install` drives stock's server in this process, which spawns its
-# broker and session on the runtime's workers.
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
-# The in-process stock server's log, as `wellfed-stock serve` writes it.
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "signal", "sync", "time"] }
 uuid = { workspace = true, features = ["v4"] }
 rpassword = "7"
 
@@ -46,6 +41,7 @@ wellfed-server-testkit.workspace = true
 axum.workspace = true
 wellfed-feeder-sim = { path = "../wellfed-feeder-sim", features = ["harness"] }
 tempfile.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 [lints]
 workspace = true

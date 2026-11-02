@@ -20,7 +20,7 @@ flowchart TD
 - **Meals that don't depend on a cloud.** Up to ten meal plans run on the feeder itself, so a vendor outage doesn't matter. The feeder does need a time source: after a power cut, or hours without one, scheduled meals hold until the clock is set. The Dispense button still works once you unlock the panel.
 - **No account.** Your phone talks directly to the feeder over your network, encrypted, and nothing goes to a cloud.
 - **Feeding you can check.** Each feed stops on time, a power cut never makes it feed twice, and a jam we injected ended the feed by name in the history. A real jam hasn't happened on our bench.
-- **A way back.** The install saves a checked copy of the vendor's firmware to your phone or computer, and you can put it back over the air.
+- **A way back.** The install saves a checked copy of the vendor's firmware to your phone, and you can put it back over the air.
 - **Something to build on.** An Android app, a command-line client and an encrypted local API all do the same things. An optional server is a proof of concept.
 
 ## What you give up

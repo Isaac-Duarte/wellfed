@@ -12,7 +12,7 @@ The server adds what a small device can't hold:
 - **Accounts and audit.** Each person logs in as themselves, with a role (owner, member or viewer). The audit log names who fed, changed a setting or adopted a feeder.
 - **Long history.** Every event and sample the feeder reports, kept for as long as you like, with hourly rollups for charts.
 - **Owner data.** Pets, foods, weights and refills, which the feeder doesn't track.
-- **Releases and installs.** It fetches or takes signed firmware releases, verifies them, and installs one on a feeder running Wellfed when an owner asks. It does not install from stock: the app and the CLI do that. It also keeps each feeder's stock firmware backup, so you can go back to stock.
+- **Releases and installs.** It fetches or takes signed firmware releases, verifies them, and installs one on a feeder running Wellfed when an owner asks. It does not install from stock: the app does that. It also keeps each feeder's stock firmware backup, so you can go back to stock.
 
 One server serves one household, with as many feeders as you own.
 

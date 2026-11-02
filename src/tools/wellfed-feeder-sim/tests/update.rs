@@ -7,15 +7,16 @@
 //! is bank 0's, which still answers; a build that never confirms gives way
 //! to bank 0 after its trial.
 
+mod common;
+
+use common::paused;
 use std::cell::RefCell;
-use std::future::Future;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::rc::Rc;
 use std::time::Duration;
 
 use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
-use tokio::task::LocalSet;
 use wellfed_client::update::{Image, InstallError, Installer, Next, Sent};
 use wellfed_client::update_key::{self, Enroll, EnrollError, Enrolled};
 use wellfed_connect::Connection;
@@ -41,15 +42,6 @@ const FRESH_PIN_MV: u32 = 2306;
 
 fn bench() -> SigningKey {
     SigningKey::from_bytes(&BENCH)
-}
-
-fn paused(test: impl Future<Output = ()>) {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .start_paused(true)
-        .build()
-        .unwrap();
-    runtime.block_on(LocalSet::new().run_until(test));
 }
 
 /// A signed image for build `build`.

@@ -3,9 +3,8 @@
 //! install-trial ledger) and, when asked, the loopback API in
 //! [`crate::api`].
 //!
-//! `wellfed-stock serve` runs it for the bench, and `wellfed install` and
-//! the Android app (through `wellfed-install`) run it as a task they own and
-//! stop: an app cannot spawn this binary, and in one process the server
+//! `wellfed-stock serve` runs it for the bench, and the Android app (through
+//! `wellfed-install`) runs it as a task it owns and stops: an app cannot spawn this binary, and in one process the server
 //! learns of an enrollment at once. With an installer's config the server's
 //! session starts only once a feeder enrolled, since its identity and topics
 //! derive from the device's ID; the broker holds that feeder's CONNACK

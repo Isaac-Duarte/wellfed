@@ -44,9 +44,7 @@ impl SharedBoard {
     fn lock(&self) -> MutexGuard<'_, Box<dyn Board>> {
         // A job that panicked mid-command leaves a board whose state the
         // next query reads again.
-        self.board
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        super::lock(&self.board)
     }
 
     fn publish(&self, channel: u8, on: bool) {

@@ -1,11 +1,12 @@
-//! The install's progress as this command line prints it: each
-//! [`Event`] as the line (or lines) it has always printed, on standard
-//! error, so standard output carries only what `--prompts lines` puts there.
+//! The driver's progress as this command line prints it, for a backup, an
+//! update key's enrollment and a restore: each [`Event`] as the line it has
+//! always printed, on standard error, so standard output carries only what
+//! `--prompts lines` puts there.
 
 use wellfed_client::install::STOCK_VERSION;
 use wellfed_client::update_key::Enrolled;
 use wellfed_install::Report;
-use wellfed_install::event::{Enrollment, Event, Wait};
+use wellfed_install::event::{Enrollment, Event};
 
 use crate::keys::fingerprint;
 
@@ -18,99 +19,9 @@ impl Report for Printer {
     }
 }
 
-/// The first 12 hex digits of a build identity.
-pub(crate) fn short(build: &str) -> &str {
-    &build[..build.len().min(12)]
-}
-
 /// The words for `event`.
 pub(crate) fn line(event: &Event) -> String {
     match event {
-        Event::AwaitingStock => "Waiting for stock to connect here. If it does not within a few \
-                                 minutes, restart the feeder again; nothing is sent to stock \
-                                 until it does."
-            .to_string(),
-        Event::StockServerStarted => {
-            "Started the stock server (its broker trusts the first feeder that connects)."
-                .to_string()
-        }
-        // Only `--ssid` sends a frame, which `--prompts lines` refuses: these
-        // are a person's words, not a job's evidence.
-        Event::FrameSent {
-            answer: Some(answer),
-        } => format!(
-            "Sent your Wi-Fi details to the feeder, once; it answered {}. It now joins your Wi-Fi \
-             and connects here, within about 2 minutes.",
-            wellfed_formats::hex::encode(answer)
-        ),
-        Event::FrameSent { answer: None } => {
-            "Sent your Wi-Fi details to the feeder, once. It did not answer, which is normal, and \
-             they are never sent twice. It now joins your Wi-Fi and connects here, within about \
-             2 minutes."
-                .to_string()
-        }
-        Event::Waiting(wait) => match wait {
-            Wait::NoFeeder => {
-                "Waiting: no stock feeder has connected to the broker yet".to_string()
-            }
-            Wait::Unreadable { error } => {
-                format!("Waiting: the stock server cannot read its enrollment ({error})")
-            }
-            Wait::Stock(reason) => format!("Waiting: {reason}"),
-        },
-        Event::VersionLost => "Stock connected but sent no version: its startup reports came \
-                               before the server listened. Restarting it once replays them."
-            .to_string(),
-        Event::StockServerEnded { error } => {
-            format!("The stock server stopped ({error}); nothing more can connect to it.")
-        }
-        Event::DevicePinned { device, address } => format!(
-            "The broker enrolled device {device} from {address}, the device --expect-device \
-             pins; no question asked."
-        ),
-        Event::Requesting { build, request } => format!(
-            "Asking stock once to install {} (request {request})",
-            short(build)
-        ),
-        Event::StockProgress(percent) => format!("Stock: {percent}% downloaded"),
-        Event::StockRestarting => "Stock went quiet: it restarts into the replacement.".to_string(),
-        Event::KeyKnown => "The replacement knows this computer's key already.".to_string(),
-        Event::KeyKnownAt { identity, address } => format!(
-            "The replacement knows this computer's key already: feeder {} at {address}.",
-            fingerprint(identity)
-        ),
-        Event::Rejoining { identity } => format!(
-            "Feeder {} paired with this computer in an earlier run; waiting for it to join the network.",
-            fingerprint(identity)
-        ),
-        Event::KnownKeyRefused { error } => {
-            format!("No session with the known feeder key ({error}).")
-        }
-        Event::Recovered { identity, outcome } => {
-            format!("Paired with feeder {} ({outcome}).", fingerprint(identity))
-        }
-        Event::SetupStarting => "The replacement has no network yet, so it starts Bluetooth \
-                                 setup by itself. Keep this computer within Bluetooth range of \
-                                 the feeder."
-            .to_string(),
-        Event::NoSetupFeeder { error } => {
-            format!("No feeder in Bluetooth setup mode ({error}).")
-        }
-        Event::SetUp { identity, outcome } => format!(
-            "Paired with feeder {} ({outcome}); it reboots to join the network.",
-            fingerprint(identity)
-        ),
-        Event::Joined { address } => {
-            format!("The replacement joined the network and answers at {address}.")
-        }
-        Event::ReplacementAnswers { build, bank } => format!(
-            "The replacement answers: build {} on bank {bank}",
-            short(build)
-        ),
-        Event::TrialClosed => {
-            "The stock server closed its record: replacement healthy.".to_string()
-        }
-        Event::TrialOpen { error } => format!("The stock server kept its record open ({error})."),
         Event::KeyEnrollment { key, outcome } => {
             let id = wellfed_formats::hex::encode(key);
             match outcome {
@@ -149,29 +60,7 @@ pub(crate) fn line(event: &Event) -> String {
         Event::StaleInstallCancelled => {
             "An earlier install was left pending; cancelling it before this offer.".to_string()
         }
-        Event::FeederTried { address, answered } => {
-            if *answered {
-                format!("  The feeder answers at {address}.")
-            } else {
-                format!("  No answer from the feeder at {address}.")
-            }
-        }
         Event::Floor(floor) => format!("The feeder's floor is version {floor}."),
-        Event::FloorUnread { error } => format!("The feeder's floor could not be read ({error})."),
-        Event::Signed {
-            build,
-            version,
-            key,
-            path,
-        } => format!(
-            "Signed build {} as version {version} with update key {}; kept at {}.",
-            short(build),
-            wellfed_formats::hex::encode(key),
-            path.display()
-        ),
-        Event::GivenBackupKept { path } => {
-            format!("Kept the --stock-backup copy at {}.", path.display())
-        }
         Event::BackupFound { path } => {
             format!("Using the stock backup kept at {}.", path.display())
         }
@@ -183,19 +72,60 @@ pub(crate) fn line(event: &Event) -> String {
         Event::BackupKept { path } => {
             format!("Kept the verified stock backup at {}.", path.display())
         }
-        Event::Promoting => "Promoting: bank 0 writes the replacement into bank 1.".to_string(),
         Event::Written { written, length } => format!("  {written} of {length} bytes written"),
         Event::SessionDropped { error } => {
             format!("  The session dropped ({error}); resuming on a new one.")
         }
         Event::AlreadyActivated => "Bank 1 already runs the build: it was activated.".to_string(),
         Event::Activated => "Activated: the feeder restarts into bank 1.".to_string(),
-        Event::Installed { build } => format!(
-            "Installed: build {} confirmed on bank 1. This computer is its owner.",
-            short(build)
-        ),
-        Event::ResumeRecordKept { error } => {
-            format!("warning: the resume record was not removed: {error}")
-        }
+        // Only the install's run sends these, and only the Android app runs it.
+        other @ (Event::AwaitingStock
+        | Event::StockServerStarted
+        | Event::FrameSent { .. }
+        | Event::Waiting(_)
+        | Event::VersionLost
+        | Event::StockServerEnded { .. }
+        | Event::DevicePinned { .. }
+        | Event::Requesting { .. }
+        | Event::StockProgress(_)
+        | Event::StockRestarting
+        | Event::KeyKnown
+        | Event::KeyKnownAt { .. }
+        | Event::KnownKeyRefused { .. }
+        | Event::Rejoining { .. }
+        | Event::Recovered { .. }
+        | Event::SetupStarting
+        | Event::NoSetupFeeder { .. }
+        | Event::SetUp { .. }
+        | Event::Joined { .. }
+        | Event::ReplacementAnswers { .. }
+        | Event::TrialClosed
+        | Event::TrialOpen { .. }
+        | Event::FeederTried { .. }
+        | Event::FloorUnread { .. }
+        | Event::Signed { .. }
+        | Event::GivenBackupKept { .. }
+        | Event::Promoting
+        | Event::Installed { .. }
+        | Event::ResumeRecordKept { .. }) => format!("{other:?}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A bench job's standard error is its evidence, so these words stay as
+    /// they are.
+    #[test]
+    fn a_job_s_output_is_unchanged() {
+        assert_eq!(
+            line(&Event::Written {
+                written: 512,
+                length: 1024,
+            }),
+            "  512 of 1024 bytes written"
+        );
+        assert_eq!(line(&Event::Floor(7)), "The feeder's floor is version 7.");
     }
 }

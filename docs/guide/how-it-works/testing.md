@@ -338,7 +338,7 @@ After a restore, then an install from that feeder.
 
 With a person at the terminal.
 
-**Passed with gaps.** In both runs the first setup code timed out. The first run had to be resumed, and the second took a second code. In the second, the code step also sat for some minutes, and we don't know why it moved on. The CLI's own hop onto the feeder's setup network didn't run, and the app's search for its feeder changed after its last run from stock.
+**Passed with gaps.** In both runs the first setup code timed out. The first run had to be resumed, and the second took a second code. In the second, the code step also sat for some minutes, and we don't know why it moved on. The CLI's own hop onto the feeder's setup network didn't run, and the app's search for its feeder changed after its last run from stock. That installer has since been removed, and the app is the only one.
 
 ## Clock and schedules
 

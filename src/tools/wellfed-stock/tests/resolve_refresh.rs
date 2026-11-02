@@ -7,7 +7,7 @@
 mod common;
 
 use chrono::{Duration as Age, Utc};
-use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, Event, Packet, QoS};
 use serde_json::{Value, json};
 use std::{
     sync::{
@@ -20,12 +20,7 @@ use uuid::Uuid;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_refused_resolution_asks_stock_for_its_attributes_and_nothing_else() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("server.json");
-    let mut config = common::config();
-    config.plans = None;
-    [config.mqtt_listen, config.http_listen] = common::addresses().unwrap();
-    wellfed_stock::storage::write_json(&path, &config).unwrap();
+    let (_dir, path, config) = common::configured();
 
     // An earlier request that stock reported failing, long enough ago.
     let request_id = Uuid::new_v4();
@@ -50,21 +45,11 @@ async fn a_refused_resolution_asks_stock_for_its_attributes_and_nothing_else() {
     .unwrap();
 
     let _service = common::start(&path);
-    let http = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(3))
-        .build()
-        .unwrap();
+    let http = common::http();
     common::ready(&config, &http).await;
 
     // A stock device that heartbeats and never reports its version.
-    let mut options = MqttOptions::new(
-        &config.device_client_id,
-        config.mqtt_listen.ip().to_string(),
-        config.mqtt_listen.port(),
-    );
-    options.set_credentials(&config.device_username, &config.device_password);
-    options.set_clean_session(true);
+    let options = common::device_session(&config);
     let (client, mut events) = AsyncClient::new(options, 32);
 
     let queries = Arc::new(AtomicUsize::new(0));

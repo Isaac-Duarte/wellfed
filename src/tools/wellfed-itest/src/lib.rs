@@ -648,11 +648,6 @@ struct Report {
     took: Duration,
 }
 
-/// The names of the scenarios a run takes on: its status steps.
-fn steps(args: &ItestArgs) -> Result<Vec<&'static str>> {
-    Ok(select(args)?.iter().map(|scenario| scenario.name).collect())
-}
-
 /// The scenarios `--only` names, in suite order; ota-update always first.
 fn select(args: &ItestArgs) -> Result<Vec<&'static Scenario>> {
     let only = &args.only;
@@ -836,7 +831,7 @@ fn recovery_hint(name: &str, baseline: Option<&Baseline>) -> Vec<String> {
 
 /// The scenarios an `itest` run takes on: its status steps.
 pub fn itest_steps(args: &ItestArgs) -> Result<Vec<&'static str>> {
-    steps(args)
+    Ok(select(args)?.iter().map(|scenario| scenario.name).collect())
 }
 
 /// Run the selected scenarios on the live bench, restore it, then print

@@ -539,7 +539,9 @@ impl Owner {
     /// The feeder's address: over mDNS by its identity, else by its MAC in
     /// the hotspot's neighbour table. Blocks for up to the mDNS wait.
     pub fn locate(&self) -> Result<SocketAddr, DeviceError> {
-        let found = browse(&self.identity).or_else(|| neighbour(&self.hotspot));
+        let found = wellfed_connect::locate(&self.identity, None, DISCOVERY)
+            .ok()
+            .or_else(|| neighbour(&self.hotspot));
         found.ok_or_else(|| DeviceError::NotFound {
             fingerprint: hex::encode(&self.identity[..8]),
             interface: self.hotspot.hotspot_interface.clone(),
@@ -1018,34 +1020,6 @@ impl Device {
         self.address = Some(address);
         Ok(address)
     }
-}
-
-/// The feeder with `identity` over mDNS (`_wellfed._tcp`, TXT `id=`).
-fn browse(identity: &[u8; 32]) -> Option<SocketAddr> {
-    let daemon = mdns_sd::ServiceDaemon::new().ok()?;
-    let receiver = daemon.browse("_wellfed._tcp.local.").ok()?;
-    let want = hex::encode(identity);
-    let deadline = Instant::now() + DISCOVERY;
-    let found = loop {
-        let left = deadline.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            break None;
-        }
-        let Ok(event) = receiver.recv_timeout(left) else {
-            break None;
-        };
-        let mdns_sd::ServiceEvent::ServiceResolved(info) = event else {
-            continue;
-        };
-        if info.get_property_val_str("id") != Some(want.as_str()) {
-            continue;
-        }
-        if let Some(ip) = info.get_addresses_v4().into_iter().next() {
-            break Some(SocketAddr::new(IpAddr::V4(ip), info.get_port()));
-        }
-    };
-    let _ = daemon.shutdown();
-    found
 }
 
 /// The feeder's MAC in the hotspot's neighbour table, read with `ip`.

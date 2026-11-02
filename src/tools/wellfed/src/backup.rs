@@ -4,7 +4,7 @@
 //! The copy comes from the feeder: while the replacement runs from bank 0
 //! after stock installed it, bank 1 still holds stock, and the bank-0
 //! role streams it over the device API (`wellfed_install::backup`, which
-//! the install runs too). It is kept per feeder under the owner's data
+//! the app's install runs too). It is kept per feeder under the owner's data
 //! directory (`private/stock-backups/<identity>/stock-1.1.15.bin` by
 //! default), never replaced by another copy.
 //!
@@ -26,13 +26,14 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use serde::Serialize;
+use tokio::signal::unix::{SignalKind, signal};
 use wellfed_client::install::{STOCK_VERSION, StockBackup};
 use wellfed_formats::canonical::sha256;
 use wellfed_install::restore::{
     Offering, Plan, Platform, Restored, Signing, Target as RestoreTarget, Uncertainty,
 };
 use wellfed_install::storage::{backup_path, load_backup};
-use wellfed_install::{Discovery, Mdns};
+use wellfed_install::{Discovery, Mdns, Stop};
 use wellfed_signing::Key;
 
 use crate::ask::{Asker, Prompts};
@@ -232,14 +233,14 @@ pub(crate) async fn restore(args: RestoreArgs) -> Result<()> {
         // Only announcements: a terminal has nothing to read back.
         prompter: match args.prompts {
             Prompts::Terminal => Asker::terminal_notices(),
-            Prompts::Lines => Asker::standard(Prompts::Lines),
+            Prompts::Lines => Asker::lines(),
         },
         discovery,
         keypair: key_file.keypair().clone(),
         report: Printer,
         offering: Offering::default(),
     };
-    match wellfed_install::restore::restore(plan, platform, crate::install::signalled()?).await? {
+    match wellfed_install::restore::restore(plan, platform, signalled()?).await? {
         Restored::Activated => {
             eprintln!(
                 "Activated: the feeder restarts into stock {STOCK_VERSION} from bank 1, with its \
@@ -279,6 +280,46 @@ pub(crate) async fn restore(args: RestoreArgs) -> Result<()> {
     }
 }
 
+/// Resolves on SIGTERM, SIGINT or SIGHUP, so a terminal that closes or a job's
+/// cancel still ends the restore through its stop. Once seen, the handlers stay
+/// installed but nothing listens, so a second Ctrl-C does not cut the stop short;
+/// the stop is itself bounded. A SIGHUP this process was started ignoring
+/// (`nohup`) stays ignored: whoever started it asked for it to outlive the
+/// terminal.
+fn signalled() -> Result<impl Future<Output = Stop>> {
+    let mut terminate = signal(SignalKind::terminate()).context("handle SIGTERM")?;
+    let mut interrupt = signal(SignalKind::interrupt()).context("handle SIGINT")?;
+    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    let mut hangup = if hangup_ignored(&status) {
+        None
+    } else {
+        Some(signal(SignalKind::hangup()).context("handle SIGHUP")?)
+    };
+    Ok(async move {
+        let hung_up = async {
+            match &mut hangup {
+                Some(hangup) => hangup.recv().await,
+                None => std::future::pending().await,
+            }
+        };
+        tokio::select! {
+            _ = terminate.recv() => Stop::Terminate,
+            _ = interrupt.recv() => Stop::Interrupt,
+            _ = hung_up => Stop::Hangup,
+        }
+    })
+}
+
+/// Whether `/proc/self/status` lists SIGHUP, signal 1 and so the mask's lowest
+/// bit, among the ignored signals.
+fn hangup_ignored(status: &str) -> bool {
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("SigIgn:"))
+        .and_then(|mask| u64::from_str_radix(mask.trim(), 16).ok())
+        .is_some_and(|mask| mask & 1 == 1)
+}
+
 /// Where a restore looks for the feeder once its address stops answering: an
 /// address the owner gave is the only one.
 enum Finder {
@@ -311,5 +352,30 @@ mod tests {
         let output = dir.path().join("exported.bin");
         assert!(export(&at, &output).is_err());
         assert!(!output.exists(), "nothing exported from a foreign file");
+    }
+
+    #[test]
+    fn an_ignored_hangup_is_read_from_the_process_status() {
+        let status = |mask: &str| format!("Name:\twellfed\nSigIgn:\t{mask}\nSigCgt:\t0\n");
+        assert!(hangup_ignored(&status("0000000000000001")));
+        assert!(hangup_ignored(&status("0000000000001003")));
+        assert!(!hangup_ignored(&status("0000000000001000")));
+        assert!(!hangup_ignored(""));
+    }
+
+    /// A terminal that closes stops the restore through its own stop.
+    #[tokio::test]
+    async fn a_closed_terminal_stops_the_restore() {
+        // Under nohup the signal stays ignored, by design, and nothing would end.
+        if hangup_ignored(&std::fs::read_to_string("/proc/self/status").unwrap_or_default()) {
+            return;
+        }
+        let stop = signalled().unwrap();
+        let status = std::process::Command::new("kill")
+            .args(["-HUP", &std::process::id().to_string()])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(stop.await, Stop::Hangup);
     }
 }

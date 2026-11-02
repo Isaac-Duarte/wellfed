@@ -75,11 +75,11 @@ Where the app and the CLI differ, write both under these markers, each on its ow
 
 ### App
 
-Tap **Install**.
+Tap **Feed now**.
 
 ### CLI
 
-Run `wellfed install`.
+Run `wellfed feed`.
 
 <!-- /tabs -->
 ```

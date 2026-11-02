@@ -15,8 +15,8 @@
 //!   its op (`wellfed_client::connection::Timing`: 75 s for an update key's
 //!   Dispense press), and nothing on the socket gives up sooner.
 //!
-//! It closes while a job holds the UART, while an install push or an
-//! `install` job holds sessions of their own, while relay 1 is off and while
+//! It closes while a job holds the UART, while an install push or a
+//! `restore-stock` job holds sessions of their own, while relay 1 is off and while
 //! the server stops, and otherwise reopens with a backoff. A request meets
 //! a closed session with [`Unavailable`], unless it is only opening, when
 //! it waits for it a while. One subscription per process: a second
@@ -27,7 +27,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot, watch};
@@ -48,6 +48,7 @@ use wellfed_rig::device::{self, DeviceError, DeviceLink, Owner};
 
 use crate::server::banks::Banks;
 use crate::server::files;
+use crate::server::lock;
 use crate::server::notes::{Notes, event_name};
 use crate::server::state::Store;
 
@@ -255,12 +256,6 @@ impl Feeder {
         };
         (self.keys.clone(), link)
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn random<const N: usize>() -> Option<[u8; N]> {

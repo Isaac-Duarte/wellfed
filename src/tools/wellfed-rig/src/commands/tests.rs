@@ -1,5 +1,6 @@
 //! No device I/O: loader sequencing, refusals and update stop rules.
 
+use std::assert_matches;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -445,6 +446,26 @@ fn prepare_plan(rig: &Rig, name: &str) {
     fs::write(&p.plan, r#"{"operation_plan": {"staging_packets": 4, "commit_packets": 1, "region": {"bytes": 4096}}}"#).unwrap();
 }
 
+/// Strap released, power off, UART isolated; then the strap held across the
+/// UART connecting and power on, then released.
+const LOADER_RELAYS: [(u8, bool); 9] = [
+    (2, false),
+    (1, false),
+    (3, false),
+    (4, false),
+    (2, true),
+    (3, true),
+    (4, true),
+    (1, true),
+    (2, false),
+];
+
+/// The first two words of every flash client command run.
+fn flash_commands(rig: &Rig) -> Vec<String> {
+    let calls = rig.tools.0.borrow();
+    calls.flash.iter().map(|a| a[..2].join(" ")).collect()
+}
+
 #[test]
 fn loader_holds_strap_across_power_on_and_leaves_feeder_powered() {
     let mut rig = rig();
@@ -453,20 +474,7 @@ fn loader_holds_strap_across_power_on_and_leaves_feeder_powered() {
     rig.bench.loader(&out).unwrap();
 
     assert_eq!(rig.tools.0.borrow().observed, [out]);
-    assert_eq!(
-        rig.board.log(),
-        [
-            (2, false),
-            (1, false),
-            (3, false),
-            (4, false),
-            (2, true),
-            (3, true),
-            (4, true),
-            (1, true),
-            (2, false)
-        ]
-    );
+    assert_eq!(rig.board.log(), LOADER_RELAYS);
     assert_eq!(rig.board.state(), [true, false, true, true]);
 }
 
@@ -554,17 +562,11 @@ fn reused_capture_names_are_refused_before_any_relay_change() {
         .bench
         .boot(&existing, Duration::from_secs(10))
         .unwrap_err();
-    assert!(
-        matches!(&error, Error::Command(CommandsError::NameTaken { path }) if path == "private/captures/used"),
-        "{error:?}"
-    );
+    assert_matches!(&error, Error::Command(CommandsError::NameTaken { path }) if path == "private/captures/used");
     // The refusal the operator reads, exactly.
     assert_eq!(error.to_string(), "Refusing to reuse private/captures/used");
     let error = rig.bench.loader(&existing).unwrap_err();
-    assert!(
-        matches!(error, Error::Command(CommandsError::NameTaken { .. })),
-        "{error:?}"
-    );
+    assert_matches!(error, Error::Command(CommandsError::NameTaken { .. }));
     assert!(rig.bench.capture("used", Duration::from_secs(5)).is_err());
 
     assert!(rig.board.log().is_empty());
@@ -576,10 +578,7 @@ fn boot_refuses_loader_output() {
     let out = rig.bench.root.join("out");
 
     let error = rig.bench.boot(&out, Duration::from_secs(10)).unwrap_err();
-    assert!(
-        matches!(error, Error::Command(CommandsError::ReachedLoader)),
-        "{error:?}"
-    );
+    assert_matches!(error, Error::Command(CommandsError::ReachedLoader));
 }
 
 #[test]
@@ -603,15 +602,12 @@ fn lengths_a_wait_cannot_take_are_refused() {
     );
     for value in [-1.0, f64::NAN, f64::INFINITY, 1e19] {
         let error = seconds_arg("--seconds", value).unwrap_err();
-        assert!(
-            matches!(
-                error,
-                Error::Command(CommandsError::BadLength {
-                    flag: "--seconds",
-                    ..
-                })
-            ),
-            "{error:?}"
+        assert_matches!(
+            error,
+            Error::Command(CommandsError::BadLength {
+                flag: "--seconds",
+                ..
+            })
         );
     }
     assert_eq!(
@@ -624,10 +620,7 @@ fn lengths_a_wait_cannot_take_are_refused() {
     let mut args = execute("unit");
     args.boot_seconds = -1.0;
     let error = rig.bench.flash_execute(&args).unwrap_err();
-    assert!(
-        matches!(error, Error::Command(CommandsError::BadLength { .. })),
-        "{error:?}"
-    );
+    assert_matches!(error, Error::Command(CommandsError::BadLength { .. }));
     assert!(rig.board.log().is_empty());
 }
 
@@ -637,10 +630,7 @@ fn execute_requires_a_prepared_single_use_plan() {
     rig.bench.on().unwrap();
 
     let error = rig.bench.flash_execute(&execute("unit")).unwrap_err();
-    assert!(
-        matches!(error, Error::Command(CommandsError::PlanRequired)),
-        "{error:?}"
-    );
+    assert_matches!(error, Error::Command(CommandsError::PlanRequired));
 
     // An existing execute directory means the plan already ran.
     prepare_plan(&rig, "unit");
@@ -691,9 +681,7 @@ fn prepare_stops_at_the_first_failed_step_with_power_on() {
 
     assert_eq!(rig.bench.flash_prepare(&update("unit")).unwrap(), 1);
 
-    let calls = rig.tools.0.borrow();
-    let ran: Vec<_> = calls.flash.iter().map(|a| a[..2].join(" ")).collect();
-    assert_eq!(ran, ["read small", "update inspect"]);
+    assert_eq!(flash_commands(&rig), ["read small", "update inspect"]);
     assert!(rig.board.state()[0]);
 }
 
@@ -709,15 +697,10 @@ fn prepare_records_the_matching_execute_line() {
 
     assert_eq!(rig.bench.flash_prepare(&update("unit")).unwrap(), 0);
 
-    let ran: Vec<_> = rig
-        .tools
-        .0
-        .borrow()
-        .flash
-        .iter()
-        .map(|a| a[..2].join(" "))
-        .collect();
-    assert_eq!(ran, ["read small", "update inspect", "update prepare"]);
+    assert_eq!(
+        flash_commands(&rig),
+        ["read small", "update inspect", "update prepare"]
+    );
 
     let sha = sha256(plan("update").as_bytes());
     assert_eq!(
@@ -733,9 +716,8 @@ fn prepare_records_the_matching_execute_line() {
     assert!(execute_line(&restore, "ab").contains("--restore-marker --interrupted"));
 }
 
-#[test]
-fn give_way_prepare_then_execute() {
-    let mut rig = rig();
+/// A prepared give-way and the execute arguments its plan's hash reviews.
+fn prepared_give_way(rig: &mut Rig) -> GiveWayExecuteArgs {
     fs::create_dir_all(rig.bench.root.join(VERIFICATION)).unwrap();
     let args = GiveWayArgs {
         name: "gw".into(),
@@ -743,12 +725,19 @@ fn give_way_prepare_then_execute() {
     };
     assert_eq!(rig.bench.give_way_prepare(&args).unwrap(), 0);
 
-    rig.tools.0.borrow_mut().results.push_back(boot_result());
-    let execute = GiveWayExecuteArgs {
+    GiveWayExecuteArgs {
         give_way: args,
         expected_plan_sha256: sha256(plan("give-way").as_bytes()),
         boot_seconds: 10.0,
-    };
+    }
+}
+
+#[test]
+fn give_way_prepare_then_execute() {
+    let mut rig = rig();
+    let execute = prepared_give_way(&mut rig);
+
+    rig.tools.0.borrow_mut().results.push_back(boot_result());
     assert_eq!(rig.bench.give_way_execute(&execute).unwrap(), 0);
 
     let calls = rig.tools.0.borrow();
@@ -764,19 +753,8 @@ fn give_way_prepare_then_execute() {
 fn a_write_that_exits_short_of_complete_leaves_its_bank_unknown_whatever_its_code() {
     for code in [1, 2] {
         let mut rig = rig();
-        fs::create_dir_all(rig.bench.root.join(VERIFICATION)).unwrap();
-        let args = GiveWayArgs {
-            name: "gw".into(),
-            fallback: "f".into(),
-        };
-        assert_eq!(rig.bench.give_way_prepare(&args).unwrap(), 0);
+        let execute = prepared_give_way(&mut rig);
         rig.tools.0.borrow_mut().flash_codes.push_back(code);
-
-        let execute = GiveWayExecuteArgs {
-            give_way: args,
-            expected_plan_sha256: sha256(plan("give-way").as_bytes()),
-            boot_seconds: 10.0,
-        };
         assert_eq!(rig.bench.give_way_execute(&execute).unwrap(), 1);
 
         assert_eq!(
@@ -798,6 +776,15 @@ fn stock(name: &str, fallback: Option<&str>) -> StockArgs {
     }
 }
 
+/// Execute arguments reviewing the plan `command` prepared.
+fn stock_execute(stock: StockArgs, command: &str) -> StockExecuteArgs {
+    StockExecuteArgs {
+        stock,
+        expected_plan_sha256: sha256(plan(command).as_bytes()),
+        boot_seconds: 10.0,
+    }
+}
+
 fn stock_banner() -> Observation {
     Observation {
         bytes: 4000,
@@ -814,12 +801,11 @@ fn stock_prepare_then_execute_puts_the_original_back_into_bank_1() {
     assert_eq!(rig.bench.stock_prepare(&args).unwrap(), 0);
 
     {
-        let calls = rig.tools.0.borrow();
-        let commands: Vec<_> = calls.flash.iter().map(|a| a[..2].join(" ")).collect();
         assert_eq!(
-            commands,
+            flash_commands(&rig),
             ["read small", "read full", "stock-recovery prepare"]
         );
+        let calls = rig.tools.0.borrow();
         // The recovery continues the full read of this helper session.
         let prepare = calls.flash.last().unwrap();
         assert!(flag(prepare, "--current").ends_with("st-full/flash-read.bin"));
@@ -827,11 +813,7 @@ fn stock_prepare_then_execute_puts_the_original_back_into_bank_1() {
     }
 
     rig.tools.0.borrow_mut().results.push_back(stock_banner());
-    let execute = StockExecuteArgs {
-        stock: args,
-        expected_plan_sha256: sha256(plan("stock-recovery").as_bytes()),
-        boot_seconds: 10.0,
-    };
+    let execute = stock_execute(args, "stock-recovery");
     assert_eq!(rig.bench.stock_execute(&execute).unwrap(), 0);
 
     let calls = rig.tools.0.borrow();
@@ -851,10 +833,7 @@ fn a_valid_bank_1_needs_the_give_way_first() {
     rig.tools.0.borrow_mut().bank1_valid = true;
 
     let error = rig.bench.stock_prepare(&stock("st", None)).unwrap_err();
-    assert!(
-        matches!(&error, Error::Command(CommandsError::Bank1Valid { name }) if name == "st"),
-        "{error:?}"
-    );
+    assert_matches!(&error, Error::Command(CommandsError::Bank1Valid { name }) if name == "st");
     let calls = rig.tools.0.borrow();
     assert!(!calls.flash.iter().any(|a| a[0] == "stock-recovery"));
 }
@@ -873,11 +852,7 @@ fn with_a_fallback_the_stock_commands_give_way_first() {
     }
 
     rig.tools.0.borrow_mut().results.push_back(boot_result());
-    let execute = StockExecuteArgs {
-        stock: args,
-        expected_plan_sha256: sha256(plan("give-way").as_bytes()),
-        boot_seconds: 10.0,
-    };
+    let execute = stock_execute(args, "give-way");
     assert_eq!(rig.bench.stock_execute(&execute).unwrap(), 0);
     let calls = rig.tools.0.borrow();
     assert_eq!(calls.flash.last().unwrap()[..2], ["give-way", "execute"]);
@@ -892,16 +867,9 @@ fn a_stock_boot_without_its_banner_fails() {
     assert_eq!(rig.bench.stock_prepare(&args).unwrap(), 0);
 
     rig.tools.0.borrow_mut().results.push_back(boot_result());
-    let execute = StockExecuteArgs {
-        stock: args,
-        expected_plan_sha256: sha256(plan("stock-recovery").as_bytes()),
-        boot_seconds: 10.0,
-    };
+    let execute = stock_execute(args, "stock-recovery");
     let error = rig.bench.stock_execute(&execute).unwrap_err();
-    assert!(
-        matches!(error, Error::Command(CommandsError::NoStockBanner)),
-        "{error:?}"
-    );
+    assert_matches!(error, Error::Command(CommandsError::NoStockBanner));
 }
 
 #[test]
@@ -913,10 +881,7 @@ fn stock_execute_needs_its_plan() {
         boot_seconds: 10.0,
     };
     let error = rig.bench.stock_execute(&execute).unwrap_err();
-    assert!(
-        matches!(error, Error::Command(CommandsError::PlanRequired)),
-        "{error:?}"
-    );
+    assert_matches!(error, Error::Command(CommandsError::PlanRequired));
     assert!(rig.tools.0.borrow().flash.is_empty());
 }
 
@@ -927,10 +892,7 @@ fn bank_1_needs_a_source_before_any_relay_change() {
     args.source = None;
 
     let error = rig.bench.flash_prepare(&args).unwrap_err();
-    assert!(
-        matches!(error, Error::Command(CommandsError::SourceRequired)),
-        "{error:?}"
-    );
+    assert_matches!(error, Error::Command(CommandsError::SourceRequired));
     assert!(rig.board.log().is_empty());
 }
 
@@ -948,10 +910,7 @@ fn motion_targets_need_the_attended_flag() {
     .unwrap();
 
     let error = rig.bench.require_attended_motion(&args).unwrap_err();
-    assert!(
-        matches!(&error, Error::Command(CommandsError::MotionNotAttended { policy }) if policy == "fw16-pulse-v1"),
-        "{error:?}"
-    );
+    assert_matches!(&error, Error::Command(CommandsError::MotionNotAttended { policy }) if policy == "fw16-pulse-v1");
     args.attended_motion = true;
     rig.bench.require_attended_motion(&args).unwrap();
 
@@ -1069,20 +1028,7 @@ fn loader_cycles_hold_the_strap_across_power_on() {
         .transients(&transients(TransientMode::Loader))
         .unwrap();
 
-    assert_eq!(
-        rig.board.log()[..9],
-        [
-            (2, false),
-            (1, false),
-            (3, false),
-            (4, false),
-            (2, true),
-            (3, true),
-            (4, true),
-            (1, true),
-            (2, false)
-        ]
-    );
+    assert_eq!(rig.board.log()[..9], LOADER_RELAYS);
     assert_eq!(rig.board.state()[..2], [false, false]);
 }
 
@@ -1096,12 +1042,9 @@ fn missing_sigrok_refuses_before_any_relay_change() {
         .transients(&transients(TransientMode::Boot))
         .unwrap_err();
 
-    assert!(
-        matches!(
-            error,
-            Error::Command(CommandsError::ToolMissing { tool: "sigrok-cli" })
-        ),
-        "{error:?}"
+    assert_matches!(
+        error,
+        Error::Command(CommandsError::ToolMissing { tool: "sigrok-cli" })
     );
     assert!(rig.board.log().is_empty());
 }
@@ -1129,10 +1072,7 @@ fn an_analyzer_that_never_arms_stops_before_power_on() {
         .transients(&transients(TransientMode::Boot))
         .expect_err("three launches exited");
 
-    assert!(
-        matches!(error, Error::Command(CommandsError::AnalyzerExited { .. })),
-        "{error:?}"
-    );
+    assert_matches!(error, Error::Command(CommandsError::AnalyzerExited { .. }));
     assert_eq!(rig.tools.0.borrow().analyzer_launches, 3);
     // Only the cut and the isolation: no relay was closed.
     assert!(
@@ -1159,7 +1099,7 @@ fn an_interrupt_while_arming_kills_the_analyzer_before_power_on() {
         .transients(&transients(TransientMode::Boot))
         .expect_err("interrupted");
 
-    assert!(matches!(error, Error::Interrupted), "{error:?}");
+    assert_matches!(error, Error::Interrupted);
     let calls = rig.tools.0.borrow();
     assert_eq!((calls.analyzer_launches, calls.analyzer_kills), (1, 1));
     assert!(
@@ -1234,18 +1174,11 @@ fn signed_by_bench(rig: &Rig, file: &str) -> wellfed_core::ota::Manifest {
         .manifest
 }
 
-/// A frozen review under private/verification, and `ota` arguments for it.
-fn ota_review(rig: &Rig, manifest: Value) -> OtaArgs {
-    let review = rig.bench.root.join(VERIFICATION).join("review");
-    // The product firmware, the one the status check applies to, unless named.
-    let mut manifest = manifest;
-    if let Some(fields) = manifest.as_object_mut() {
-        fields.entry("firmware").or_insert_with(|| json!("feeder"));
-    }
-    freeze(&rig.bench.root, &review, &manifest);
+/// `ota` arguments naming nothing to offer yet, with the command line's defaults.
+fn ota_args() -> OtaArgs {
     OtaArgs {
         name: "unit".into(),
-        review: Some("private/verification/review".into()),
+        review: None,
         build: false,
         rebuild: false,
         firmware: None,
@@ -1258,6 +1191,21 @@ fn ota_review(rig: &Rig, manifest: Value) -> OtaArgs {
         downgrade: false,
         fault: None,
         cancel: false,
+    }
+}
+
+/// A frozen review under private/verification, and `ota` arguments for it.
+fn ota_review(rig: &Rig, manifest: Value) -> OtaArgs {
+    let review = rig.bench.root.join(VERIFICATION).join("review");
+    // The product firmware, the one the status check applies to, unless named.
+    let mut manifest = manifest;
+    if let Some(fields) = manifest.as_object_mut() {
+        fields.entry("firmware").or_insert_with(|| json!("feeder"));
+    }
+    freeze(&rig.bench.root, &review, &manifest);
+    OtaArgs {
+        review: Some("private/verification/review".into()),
+        ..ota_args()
     }
 }
 
@@ -1475,12 +1423,9 @@ fn ota_refuses_a_motion_review_without_the_attended_flag() {
     );
 
     let error = rig.bench.ota(&args).unwrap_err();
-    assert!(
-        matches!(
-            error,
-            Error::Command(CommandsError::MotionNotAttended { .. })
-        ),
-        "{error:?}"
+    assert_matches!(
+        error,
+        Error::Command(CommandsError::MotionNotAttended { .. })
     );
     assert!(rig.tools.0.borrow().installs.is_empty());
 
@@ -1501,10 +1446,7 @@ fn a_consumer_review_needs_the_bench_key_enrolled() {
     rig.tools.0.borrow_mut().signers = vec![[7; 32]];
 
     let error = rig.bench.ota(&args).unwrap_err();
-    assert!(
-        matches!(&error, Error::Ota(OtaError::ConsumerUnenrolled { .. })),
-        "{error:?}"
-    );
+    assert_matches!(&error, Error::Ota(OtaError::ConsumerUnenrolled { .. }));
     assert!(error.to_string().contains("wellfed update-key enroll"));
     assert!(rig.tools.0.borrow().installs.is_empty());
 
@@ -1601,10 +1543,7 @@ fn ota_refuses_used_capture_names_before_signing() {
     fs::create_dir_all(rig.bench.root.join(CAPTURES).join("unit-03")).unwrap();
 
     let error = rig.bench.ota(&args).unwrap_err();
-    assert!(
-        matches!(&error, Error::Ota(OtaError::SegmentTaken { file }) if file == "unit-03"),
-        "{error:?}"
-    );
+    assert_matches!(&error, Error::Ota(OtaError::SegmentTaken { file }) if file == "unit-03");
     assert!(rig.tools.0.borrow().installs.is_empty());
 }
 
@@ -1711,16 +1650,13 @@ fn ota_reports_a_fallback_with_its_boot_count() {
     );
 
     let error = rig.bench.ota(&args).unwrap_err();
-    assert!(
-        matches!(
-            error,
-            Error::Ota(OtaError::FellBack {
-                boot: Some(3),
-                last: 1,
-                ..
-            })
-        ),
-        "{error:?}"
+    assert_matches!(
+        error,
+        Error::Ota(OtaError::FellBack {
+            boot: Some(3),
+            last: 1,
+            ..
+        })
     );
     // The stop the operator reads, and the run record keeps.
     assert_eq!(
@@ -1750,15 +1686,12 @@ fn ota_reports_an_update_error_stage() {
         .push_back(b"PLOTA1 error stage=hash\r\n".to_vec());
 
     let error = rig.bench.ota(&args).unwrap_err();
-    assert!(
-        matches!(
-            error,
-            Error::Ota(OtaError::UpdateFailed {
-                stage: wellfed_core::ota::install::StopStage::Hash,
-                ..
-            })
-        ),
-        "{error:?}"
+    assert_matches!(
+        error,
+        Error::Ota(OtaError::UpdateFailed {
+            stage: wellfed_core::ota::install::StopStage::Hash,
+            ..
+        })
     );
 }
 
@@ -1769,16 +1702,13 @@ fn ota_stops_when_time_runs_out() {
     args.minutes = 2.5;
 
     let error = rig.bench.ota(&args).unwrap_err();
-    assert!(
-        matches!(
-            error,
-            Error::Ota(OtaError::NoOutcome {
-                minutes: 2.5,
-                last: 3,
-                ..
-            })
-        ),
-        "{error:?}"
+    assert_matches!(
+        error,
+        Error::Ota(OtaError::NoOutcome {
+            minutes: 2.5,
+            last: 3,
+            ..
+        })
     );
     assert_eq!(
         error.to_string(),
@@ -1808,20 +1738,10 @@ fn device_status(build: &str, bank: u8) -> DeviceStatus {
 /// `ota --build` arguments.
 fn build_args() -> OtaArgs {
     OtaArgs {
-        name: "unit".into(),
-        review: None,
         build: true,
-        rebuild: false,
         firmware: Some(Firmware::Trial),
         variant: Some(Variant::Stall),
-        config: "private/server.json".into(),
-        keys: "private/wellfed-owner.json".into(),
-        version: None,
-        minutes: 20.0,
-        attended_motion: false,
-        downgrade: false,
-        fault: None,
-        cancel: false,
+        ..ota_args()
     }
 }
 
@@ -2022,10 +1942,7 @@ fn ota_build_refuses_an_existing_review_up_front() {
     fs::create_dir_all(rig.bench.root.join(VERIFICATION).join("unit-review")).unwrap();
 
     let error = rig.bench.ota(&args).unwrap_err();
-    assert!(
-        matches!(&error, Error::Command(CommandsError::NameTaken { path }) if path == "private/verification/unit-review"),
-        "{error:?}"
-    );
+    assert_matches!(&error, Error::Command(CommandsError::NameTaken { path }) if path == "private/verification/unit-review");
     assert!(rig.tools.0.borrow().ran.is_empty());
 }
 
@@ -2036,10 +1953,7 @@ fn build_options_without_build_are_refused() {
     args.variant = Some(Variant::Fail);
 
     let error = rig.bench.ota(&args).unwrap_err();
-    assert!(
-        matches!(error, Error::Ota(OtaError::BuildOnly)),
-        "{error:?}"
-    );
+    assert_matches!(error, Error::Ota(OtaError::BuildOnly));
     assert!(rig.tools.0.borrow().ran.is_empty());
 }
 
@@ -2151,10 +2065,7 @@ fn a_variant_needs_the_firmware_that_declares_it() {
         }
 
         let error = rig.bench.ota(&args).unwrap_err();
-        assert!(
-            matches!(error, Error::Ota(OtaError::VariantFirmware)),
-            "{error:?}"
-        );
+        assert_matches!(error, Error::Ota(OtaError::VariantFirmware));
         assert!(rig.tools.0.borrow().ran.is_empty());
     }
     assert!(

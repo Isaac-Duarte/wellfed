@@ -77,7 +77,7 @@ pub enum Source {
     StockExecute,
     /// An install the integration suite saw confirm, or fall back.
     Itest,
-    /// `wellfed install` or `wellfed restore-stock` as the bench's job.
+    /// `wellfed restore-stock` as the bench's job.
     Install,
 }
 

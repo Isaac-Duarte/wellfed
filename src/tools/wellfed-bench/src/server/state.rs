@@ -181,9 +181,7 @@ impl JobLog {
     }
 
     fn lock(&self) -> MutexGuard<'_, Lines> {
-        self.inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        super::lock(&self.inner)
     }
 }
 

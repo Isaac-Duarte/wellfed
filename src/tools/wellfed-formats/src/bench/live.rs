@@ -27,7 +27,7 @@ pub const JOBS: &str = "private/bench-status/jobs";
 const UPCOMING: usize = 3;
 
 /// Everything a reader shows of the bench right now.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct BenchState {
     /// The bench host's clock when the state was read, so a reader's
     /// timers agree with it.
@@ -57,7 +57,7 @@ pub struct BenchState {
 }
 
 /// The server process.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ServerView {
     pub pid: u32,
     pub started: f64,
@@ -82,9 +82,10 @@ pub struct DeferredStop {
 }
 
 /// Whether the server takes jobs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Phase {
+    #[default]
     Serving,
     /// Quitting: the running job is cancelled and its cleanup awaited
     /// before the lease is released; no new job starts.
@@ -122,7 +123,7 @@ impl JobView {
     }
 }
 
-/// A question a job waits on: `wellfed install` asks it, and whoever
+/// A question a job waits on: `wellfed restore-stock` asks it, and whoever
 /// answers (`wellfed-bench answer`, an agent) names
 /// its `seq`. The number is the job's own count of its questions, from 1,
 /// so an answer meant for one question never lands on the next.
@@ -131,7 +132,7 @@ pub struct PendingPrompt {
     pub job: JobId,
     pub seq: u32,
     pub prompt: Prompt,
-    /// The prompt's words, as the installer's terminal shows them.
+    /// The prompt's words, as a terminal shows them.
     pub text: String,
     pub expects: Expects,
 }
@@ -165,7 +166,7 @@ pub struct AnswerRequest {
 
 /// Why an answer was not passed to the job. Each is refused before
 /// anything reaches it, and a refused answer is never held for later: the
-/// installer reads answers in order, with no number of their own, so one
+/// tool reads answers in order, with no number of their own, so one
 /// sent ahead of its question would answer that question unseen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
 #[serde(tag = "refused", rename_all = "kebab-case")]
@@ -225,8 +226,7 @@ pub enum ActivityKind {
     Flash,
     /// `wellfed-build`.
     Build,
-    /// `wellfed install`, which stops its own stock server on SIGTERM, or
-    /// `wellfed restore-stock`.
+    /// `wellfed restore-stock`, which ends through its own stop on SIGTERM.
     Install,
     /// `sigrok-cli`.
     Analyzer,
@@ -234,14 +234,13 @@ pub enum ActivityKind {
 
 /// What the feeder's UART is doing, for the banner that says not to touch
 /// the bench during a write.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum Uart {
+    #[default]
     Idle,
     /// A receive-only capture holds the port.
-    Capturing {
-        path: Option<String>,
-    },
+    Capturing { path: Option<String> },
     /// The flash client has the ROM loader: a read, an inspection or a plan.
     Loader,
     /// The flash client is writing flash; `done` of `total` sectors are
@@ -370,8 +369,8 @@ pub enum Pause {
     /// A job's install push holds a session of its own: the feeder's owner
     /// sessions are the push's until it ends.
     Install,
-    /// `wellfed install` runs as job `job`, with sessions of its own: the
-    /// feeder runs stock, and then the replacement it pairs with.
+    /// `wellfed restore-stock` runs as job `job`, with sessions of its own,
+    /// and the feeder ends on stock, which serves no device API.
     StockInstall { job: JobId },
     /// Relay 1 is off: there is no feeder to talk to.
     PowerOff,
@@ -410,7 +409,9 @@ impl std::fmt::Display for Pause {
         match self {
             Self::UartJob { job, label } => write!(f, "job {job} ({label}) holds the UART"),
             Self::Install => f.write_str("an install push holds the feeder's session"),
-            Self::StockInstall { job } => write!(f, "job {job} (install) holds its own sessions"),
+            Self::StockInstall { job } => {
+                write!(f, "job {job} (restore-stock) holds its own sessions")
+            }
             Self::PowerOff => f.write_str("relay 1 is off"),
             Self::Stopping => f.write_str("the bench server is stopping"),
         }

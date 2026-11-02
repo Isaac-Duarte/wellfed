@@ -91,6 +91,14 @@ fn simulator() -> Threaded {
     Threaded::start(*wellfed_session::noise::Keypair::from_secret(OWNER).public())
 }
 
+/// A simulator, and a checkout whose owner key it enrolled.
+fn enrolled() -> (Threaded, Checkout) {
+    let feeder = simulator();
+    let checkout = checkout();
+    checkout.enroll(&feeder);
+    (feeder, checkout)
+}
+
 fn open(state: &BenchState) -> bool {
     matches!(state.feeder.session, Session::Open { .. })
 }
@@ -117,13 +125,8 @@ fn cursor(root: &std::path::Path) -> Option<DeviceCursor> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_session_reads_status_sets_the_clock_and_resumes_after_its_cursor() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
-    let feeder = simulator();
-    let checkout = checkout();
-    checkout.enroll(&feeder);
+    let Some(_turn) = turn().await else { return };
+    let (feeder, checkout) = enrolled();
     let root = checkout.root();
     let server = Running::start(checkout.open_at(Some(&feeder)));
 
@@ -186,14 +189,11 @@ async fn the_session_reads_status_sets_the_clock_and_resumes_after_its_cursor() 
 
     // A request through the socket is answered once.
     let asked = server.client.ask([7; 16], Op::Status).await.unwrap();
-    assert!(
-        matches!(
-            &asked,
-            Asked::Answered {
-                answer: Answer::Status(_)
-            }
-        ),
-        "{asked:?}"
+    assert_matches!(
+        &asked,
+        Asked::Answered {
+            answer: Answer::Status(_)
+        }
     );
     let info = server.client.session().await.unwrap();
     assert_eq!(
@@ -210,23 +210,15 @@ async fn the_session_reads_status_sets_the_clock_and_resumes_after_its_cursor() 
     .await
     .unwrap()
     .unwrap();
-    assert!(
-        matches!(&answer, wellfed_rig::device::Answer::Status(status)
-            if status.build == info.opened.as_ref().unwrap().build.to_ascii_lowercase()),
-        "{answer:?}"
-    );
+    assert_matches!(&answer, wellfed_rig::device::Answer::Status(status)
+            if status.build == info.opened.as_ref().unwrap().build.to_ascii_lowercase());
     server.quit().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_uart_job_pauses_the_session_and_it_opens_again_after() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
-    let feeder = simulator();
-    let checkout = checkout();
-    checkout.enroll(&feeder);
+    let Some(_turn) = turn().await else { return };
+    let (feeder, checkout) = enrolled();
     let server = Running::start(checkout.open_at(Some(&feeder)));
     state_until(&server, "the session", open).await;
 
@@ -249,11 +241,8 @@ async fn a_uart_job_pauses_the_session_and_it_opens_again_after() {
     );
     // Nothing is sent while it is paused.
     let refused = server.client.ask([8; 16], Op::Status).await.unwrap_err();
-    assert!(
-        matches!(&refused, ClientError::Unavailable(unavailable)
-            if matches!(unavailable.reason, Unavailable::Paused { .. })),
-        "{refused:?}"
-    );
+    assert_matches!(&refused, ClientError::Unavailable(unavailable)
+            if matches!(unavailable.reason, Unavailable::Paused { .. }));
 
     assert_eq!(follow(&server.client, id).await.0.code, 0);
     state_until(&server, "the session again", open).await;
@@ -273,10 +262,7 @@ async fn a_uart_job_pauses_the_session_and_it_opens_again_after() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_capture_yields_the_port_to_a_job_and_comes_back() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = checkout();
     checkout.banner(&format!(
         "noise\r\nPLFW1 start build={} bank=1 reset=0\r\nPLOTA1 activated version=3\r\n",
@@ -337,10 +323,7 @@ async fn the_capture_yields_the_port_to_a_job_and_comes_back() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn job_results_write_the_ledger_and_the_banner_disputes_them() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = checkout();
     let root = checkout.root();
     checkout.banner(&format!("PLFW1 start build={OTHER} bank=1\r\n"));
@@ -424,10 +407,7 @@ async fn job_results_write_the_ledger_and_the_banner_disputes_them() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_seed_takes_the_operator_s_word_when_the_inspection_names_no_build() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = checkout();
     let server = Running::start(checkout.open_at(None));
 
@@ -440,14 +420,11 @@ async fn a_seed_takes_the_operator_s_word_when_the_inspection_names_no_build() {
         })
         .await
         .unwrap_err();
-    assert!(
-        matches!(
-            &refused,
-            ClientError::Refused(api::Refusal::Seed {
-                error: SeedError::NoBuild { .. }
-            })
-        ),
-        "{refused:?}"
+    assert_matches!(
+        &refused,
+        ClientError::Refused(api::Refusal::Seed {
+            error: SeedError::NoBuild { .. }
+        })
     );
 
     let seeded = server
@@ -475,10 +452,7 @@ async fn a_seed_takes_the_operator_s_word_when_the_inspection_names_no_build() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_read_lost_with_its_session_goes_once_more_and_a_write_comes_back_uncertain() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let feeder = simulator();
     let relay = Relay::start(feeder.address).await;
     let checkout = checkout();
@@ -512,37 +486,26 @@ async fn a_read_lost_with_its_session_goes_once_more_and_a_write_comes_back_unce
         .ask([1; 16], Op::SetLock { locked: false })
         .await
         .unwrap_err();
-    assert!(
-        matches!(&twice, ClientError::Unavailable(refused)
-            if matches!(refused.reason, Unavailable::DuplicateId { .. })),
-        "{twice:?}"
-    );
+    assert_matches!(&twice, ClientError::Unavailable(refused)
+            if matches!(refused.reason, Unavailable::DuplicateId { .. }));
     relay.cut();
     relay.resume();
 
     assert_eq!(write.await.unwrap().unwrap(), Asked::Uncertain);
     let read = read.await.unwrap().unwrap();
-    assert!(
-        matches!(
-            &read,
-            Asked::Answered {
-                answer: Answer::Status(_)
-            }
-        ),
-        "{read:?}"
+    assert_matches!(
+        &read,
+        Asked::Answered {
+            answer: Answer::Status(_)
+        }
     );
     server.quit().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_install_push_closes_the_session_until_it_ends_and_no_clock_sync_leaves_the_clock() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
-    let feeder = simulator();
-    let checkout = checkout();
-    checkout.enroll(&feeder);
+    let Some(_turn) = turn().await else { return };
+    let (feeder, checkout) = enrolled();
     let server = Running::start(
         checkout
             .open_device(DeviceOptions {
@@ -572,14 +535,11 @@ async fn an_install_push_closes_the_session_until_it_ends_and_no_clock_sync_leav
         .await
         .unwrap()
         .unwrap_err();
-    assert!(
-        matches!(
-            refused,
-            wellfed_rig::device::DeviceError::Unavailable(Unavailable::Paused {
-                pause: Pause::Install
-            })
-        ),
-        "{refused:?}"
+    assert_matches!(
+        refused,
+        wellfed_rig::device::DeviceError::Unavailable(Unavailable::Paused {
+            pause: Pause::Install
+        })
     );
 
     release();
@@ -589,10 +549,7 @@ async fn an_install_push_closes_the_session_until_it_ends_and_no_clock_sync_leav
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_capture_never_starts_under_a_job_however_the_starts_interleave() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = checkout();
     let server = Running::start(checkout.open_at(None));
     state_until(&server, "the capture", |state| {
@@ -640,10 +597,7 @@ async fn the_capture_never_starts_under_a_job_however_the_starts_interleave() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_write_that_stops_leaves_its_bank_unknown_and_a_seed_waits_for_no_job() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = checkout();
     let root = checkout.root();
     fs::write(root.join("stop-writes"), "").unwrap();
@@ -681,20 +635,14 @@ async fn a_write_that_stops_leaves_its_bank_unknown_and_a_seed_waits_for_no_job(
         })
         .await
         .unwrap_err();
-    assert!(
-        matches!(&refused, ClientError::Refused(api::Refusal::Busy { id: busy, .. }) if *busy == id),
-        "{refused:?}"
-    );
+    assert_matches!(&refused, ClientError::Refused(api::Refusal::Busy { id: busy, .. }) if *busy == id);
     follow(&server.client, id).await;
     server.quit().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_server_points_the_user_s_clients_at_itself_and_withdraws_when_it_quits() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let pointers = tempfile::tempdir().unwrap();
     let (runtime, state) = (pointers.path().join("run"), pointers.path().join("state"));
     let checkout = checkout();
@@ -762,13 +710,8 @@ impl Running {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn after_an_epoch_change_the_history_is_the_new_epoch_s_and_a_feed_reports_its_own_events() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
-    let feeder = simulator();
-    let checkout = checkout();
-    checkout.enroll(&feeder);
+    let Some(_turn) = turn().await else { return };
+    let (feeder, checkout) = enrolled();
     // The cursor a server before a store reset kept: another epoch, and a
     // sequence far past anything the new one holds.
     let root = checkout.root();
@@ -863,10 +806,7 @@ fn timer_state(state: &BenchState, label: &str) -> Option<notes::TimerState> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn notes_fold_into_the_state_and_a_uart_line_or_a_lapsed_window_settles_a_timer() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = checkout();
     checkout.banner("PLFW1 start build=00 bank=0 reset=0\r\n");
     let root = checkout.root();
@@ -896,14 +836,11 @@ async fn notes_fold_into_the_state_and_a_uart_line_or_a_lapsed_window_settles_a_
         })
         .await
         .unwrap_err();
-    assert!(
-        matches!(
-            refused,
-            ClientError::Refused(api::Refusal::Note {
-                error: api::NoteError::OutsidePrivate { .. }
-            })
-        ),
-        "{refused:?}"
+    assert_matches!(
+        refused,
+        ClientError::Refused(api::Refusal::Note {
+            error: api::NoteError::OutsidePrivate { .. }
+        })
     );
     server
         .client
@@ -961,13 +898,8 @@ async fn notes_fold_into_the_state_and_a_uart_line_or_a_lapsed_window_settles_a_
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_device_event_settles_the_timer_that_expects_its_kind() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
-    let feeder = simulator();
-    let checkout = checkout();
-    checkout.enroll(&feeder);
+    let Some(_turn) = turn().await else { return };
+    let (feeder, checkout) = enrolled();
     let server = Running::start(checkout.open_at(Some(&feeder)));
     state_until(&server, "the first boot taken", |state| {
         state
@@ -1009,13 +941,8 @@ async fn a_device_event_settles_the_timer_that_expects_its_kind() {
 /// 10 s every other request gets, and answers it once.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_enrollment_answered_by_a_late_press_comes_back_through_the_server() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
-    let feeder = simulator();
-    let checkout = checkout();
-    checkout.enroll(&feeder);
+    let Some(_turn) = turn().await else { return };
+    let (feeder, checkout) = enrolled();
     let server = Running::start(checkout.open_at(Some(&feeder)));
     state_until(&server, "the session", open).await;
     for control in wellfed_feeder_sim::console::parse("hold lock").unwrap() {
@@ -1033,14 +960,11 @@ async fn an_enrollment_answered_by_a_late_press_comes_back_through_the_server() 
         }
     };
     let (asked, ()) = tokio::join!(server.client.ask([9; 16], enroll), hands);
-    assert!(
-        matches!(
-            asked,
-            Ok(Asked::Answered {
-                answer: Answer::Done { .. }
-            })
-        ),
-        "{asked:?}"
+    assert_matches!(
+        asked,
+        Ok(Asked::Answered {
+            answer: Answer::Done { .. }
+        })
     );
 
     let listed = server.client.ask([10; 16], Op::ListClients).await.unwrap();
@@ -1060,23 +984,15 @@ async fn an_enrollment_answered_by_a_late_press_comes_back_through_the_server() 
     server.quit().await;
 }
 
-/// `wellfed install` opens sessions of its own only once the server shows
+/// `wellfed restore-stock` opens sessions of its own only once the server shows
 /// its session paused for the job, so the pause holds from the job's start
-/// to its end: through the restart's relay off and on, and while a
-/// question waits.
+/// to its end, and while a question waits.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_install_job_keeps_the_session_paused_for_its_whole_run() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
-    let feeder = simulator();
-    let checkout = checkout();
-    checkout.enroll(&feeder);
+async fn a_restore_job_keeps_the_session_paused_for_its_whole_run() {
+    let Some(_turn) = turn().await else { return };
+    let (feeder, checkout) = enrolled();
     let script = r#"#!/bin/sh
-echo '{"kind":"restart-feeder"}'
-read a
-echo '{"kind":"open-recovery-window"}'
+echo '{"kind":"press-dispense","purpose":"enroll-update-key"}'
 read a
 "#;
     let wellfed = checkout.root().join("wellfed");
@@ -1085,16 +1001,7 @@ read a
     let server = Running::start(checkout.open_at(Some(&feeder)));
     state_until(&server, "the session", open).await;
 
-    let words = [
-        "install",
-        "--review",
-        "r",
-        "--manifest",
-        "m",
-        "--stock-config",
-        "c",
-    ];
-    let id = server.submit(&words).await.unwrap();
+    let id = server.submit(&["restore-stock"]).await.unwrap();
     let paused = Session::Paused {
         pause: Pause::StockInstall { job: id },
     };
@@ -1117,7 +1024,6 @@ read a
     assert!(held);
     assert_eq!(state.feeder.session, paused);
     assert_eq!(state.own_sessions_job(), Some(id));
-    assert!(checkout.board.log().contains(&(POWER, false)));
 
     server
         .client

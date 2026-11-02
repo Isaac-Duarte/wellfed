@@ -1,6 +1,6 @@
 //! Becoming a feeder's owner: `setup` over BLE, and `recover` through the
 //! feeder's recovery window on the LAN. Both run `wellfed_install`'s
-//! pairing, the one the install and the Android app run, which shows the
+//! pairing, the one the Android app runs, which shows the
 //! one-time code the owner keys in on the feeder's buttons.
 
 use std::path::PathBuf;

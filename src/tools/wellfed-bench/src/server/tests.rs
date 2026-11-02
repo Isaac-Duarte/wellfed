@@ -2,6 +2,7 @@
 //! relay board and a stand-in `wellfed-flash` script, which records the
 //! signal that stops it.
 
+use std::assert_matches;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -21,7 +22,7 @@ use crate::server::api::{DuringWrite, Wait, WaitFor};
 use crate::server::stopping::Ask;
 
 mod feeder;
-mod install;
+mod restore;
 mod watching;
 
 /// The output pipe is process-wide, so tests that run a server take turns
@@ -30,25 +31,9 @@ pub(crate) static ONE_SERVER: tokio::sync::Mutex<()> = tokio::sync::Mutex::const
 
 /// A server's state with nothing running and nothing read yet.
 pub(crate) fn idle_state() -> BenchState {
-    BenchState {
-        now: 0.0,
-        server: wellfed_formats::bench::live::ServerView {
-            pid: 1,
-            started: 0.0,
-            phase: Phase::Serving,
-            uart_port: false,
-            stopping: None,
-        },
-        job: None,
-        prompt: None,
-        activity: Vec::new(),
-        uart: Uart::Idle,
-        relays: Default::default(),
-        feeder: Default::default(),
-        capture: Default::default(),
-        banks: Default::default(),
-        operator: Default::default(),
-    }
+    let mut state = BenchState::default();
+    state.server.pid = 1;
+    state
 }
 
 /// Set in the process [`run_alone`] starts, which runs the test itself.
@@ -94,6 +79,15 @@ pub(crate) fn run_alone() -> bool {
         "{name} did not run exactly once in its own process:\n{stdout}\n{stderr}"
     );
     true
+}
+
+/// This test's turn at the process-wide output, or `None` once [`run_alone`]
+/// has run it elsewhere.
+pub(crate) async fn turn() -> Option<tokio::sync::MutexGuard<'static, ()>> {
+    if run_alone() {
+        return None;
+    }
+    Some(ONE_SERVER.lock().await)
 }
 
 /// A checkout with a bench config and a stand-in flash client:
@@ -298,10 +292,7 @@ async fn state_until(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_job_streams_its_output_and_ends_with_its_code() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(0.5);
     // A job number an earlier server used is never used again.
     fs::create_dir_all(checkout.root().join(JOBS)).unwrap();
@@ -333,10 +324,7 @@ async fn a_job_streams_its_output_and_ends_with_its_code() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_second_job_is_refused_while_one_runs() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(3.0);
     let server = Running::start(checkout.open());
     let first = server.submit(&["capture", "c1"]).await.unwrap();
@@ -351,11 +339,8 @@ async fn a_second_job_is_refused_while_one_runs() {
     );
 
     let refused = server.submit(&["capture", "c2"]).await.unwrap_err();
-    assert!(
-        matches!(&refused, ClientError::Refused(api::Refusal::Busy { id, label })
-            if *id == first && label == "capture c1"),
-        "{refused:?}"
-    );
+    assert_matches!(&refused, ClientError::Refused(api::Refusal::Busy { id, label })
+            if *id == first && label == "capture c1");
     assert!(!checkout.capture("c2").exists());
 
     assert_eq!(follow(&server.client, first).await.0.code, 0);
@@ -364,10 +349,7 @@ async fn a_second_job_is_refused_while_one_runs() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_server_parses_every_job_and_refuses_what_clap_refuses() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(0.1);
     let server = Running::start(checkout.open());
 
@@ -414,12 +396,9 @@ async fn the_server_parses_every_job_and_refuses_what_clap_refuses() {
     // refused rather than run against this checkout's sources.
     let other = tempfile::tempdir().unwrap();
     let refused = refusal(server.client.submit(other.path(), &argv(&["off"])).await);
-    assert!(
-        matches!(&refused, api::Refusal::OtherCheckout { server: ours, client }
+    assert_matches!(&refused, api::Refusal::OtherCheckout { server: ours, client }
             if *ours == server.root.display().to_string()
-                && *client == other.path().display().to_string()),
-        "{refused:?}"
-    );
+                && *client == other.path().display().to_string());
     // Nothing ran.
     assert!(server.state().await.job.is_none());
     assert!(checkout.board.log().is_empty());
@@ -429,10 +408,7 @@ async fn the_server_parses_every_job_and_refuses_what_clap_refuses() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_cancel_interrupts_the_flash_client_and_the_cleanup_cuts_power() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(30.0);
     let server = Running::start(checkout.open());
     let id = server.submit(&["loader", "l1"]).await.unwrap();
@@ -466,19 +442,13 @@ async fn a_cancel_interrupts_the_flash_client_and_the_cleanup_cuts_power() {
         .cancel(id, DuringWrite::Refuse)
         .await
         .unwrap_err();
-    assert!(
-        matches!(again, ClientError::Refused(api::Refusal::Finished { .. })),
-        "{again:?}"
-    );
+    assert_matches!(again, ClientError::Refused(api::Refusal::Finished { .. }));
     server.quit().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_cancel_mid_write_only_interrupts_the_flash_client_and_waits_for_it() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(0.1);
     let root = checkout.root();
     fs::write(root.join("private/verification/u1-plan.json"), "{}").unwrap();
@@ -516,12 +486,9 @@ async fn a_cancel_mid_write_only_interrupts_the_flash_client_and_waits_for_it() 
         .cancel(id, DuringWrite::Refuse)
         .await
         .unwrap_err();
-    assert!(
-        matches!(
-            refused,
-            ClientError::Refused(api::Refusal::CancelDuringWrite { id: refused }) if refused == id
-        ),
-        "{refused:?}"
+    assert_matches!(
+        refused,
+        ClientError::Refused(api::Refusal::CancelDuringWrite { id: refused }) if refused == id
     );
     assert!(!root.join("update-signal").exists());
     server.client.cancel(id, DuringWrite::Cancel).await.unwrap();
@@ -538,10 +505,7 @@ async fn a_cancel_mid_write_only_interrupts_the_flash_client_and_waits_for_it() 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn with_every_asker_gone_the_server_keeps_serving() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(0.1);
     let (asks, asked) = mpsc::unbounded_channel();
     let server = Running::start_asked(checkout.open(), Some(asked));
@@ -559,10 +523,7 @@ async fn with_every_asker_gone_the_server_keeps_serving() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sigterm_during_a_write_lets_the_job_end_then_stops() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(0.1);
     let root = checkout.root();
     fs::write(root.join("private/verification/u1-plan.json"), "{}").unwrap();
@@ -606,12 +567,9 @@ async fn sigterm_during_a_write_lets_the_job_end_then_stops() {
         Some(Some(id))
     );
     let refused = server.submit(&["capture", "c2"]).await.unwrap_err();
-    assert!(
-        matches!(
-            refused,
-            ClientError::Refused(api::Refusal::StoppingAfterWrite { job: Some(job) }) if job == id
-        ),
-        "{refused:?}"
+    assert_matches!(
+        refused,
+        ClientError::Refused(api::Refusal::StoppingAfterWrite { job: Some(job) }) if job == id
     );
 
     // The stand-in writes until a signal: the operator cancels it, as a
@@ -635,10 +593,7 @@ async fn sigterm_during_a_write_lets_the_job_end_then_stops() {
 /// threads of their own, then real waits over the socket beside real jobs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn waits_and_job_starts_side_by_side_never_deadlock() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(0.0);
     let server = Running::start(checkout.open());
     let wait = Wait {
@@ -707,10 +662,7 @@ async fn waits_and_job_starts_side_by_side_never_deadlock() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_burst_of_output_streams_without_blocking() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(0.1);
     let server = Running::start(checkout.open());
 
@@ -753,10 +705,7 @@ impl Board for PanicsOnce {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_panicking_job_ends_and_the_next_one_runs() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(0.1);
     let fake = checkout.board.clone();
     let opened = Server::open(checkout.options(), move |_| {
@@ -783,10 +732,7 @@ async fn a_panicking_job_ends_and_the_next_one_runs() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_relay_poll_skips_while_a_job_runs() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(2.0);
     let server = Running::start(checkout.open());
     let id = server.submit(&["capture", "c1"]).await.unwrap();
@@ -809,10 +755,7 @@ async fn the_relay_poll_skips_while_a_job_runs() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_job_posted_as_the_last_one_ends_is_never_busy() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(0.1);
     let server = Running::start(checkout.open());
 
@@ -825,10 +768,7 @@ async fn a_job_posted_as_the_last_one_ends_is_never_busy() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_client_detaches_and_another_attaches_from_the_first_line() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(1.0);
     let server = Running::start(checkout.open());
     let id = server.submit(&["capture", "c1"]).await.unwrap();
@@ -853,22 +793,16 @@ async fn a_client_detaches_and_another_attaches_from_the_first_line() {
     );
 
     let missing = server.client.follow(99, |_| {}, &mut receiver).await;
-    assert!(
-        matches!(
-            missing,
-            Err(ClientError::Refused(api::Refusal::NoSuchJob { id: 99 }))
-        ),
-        "{missing:?}"
+    assert_matches!(
+        missing,
+        Err(ClientError::Refused(api::Refusal::NoSuchJob { id: 99 }))
     );
     server.quit().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn quitting_cancels_the_job_waits_for_its_cleanup_then_frees_the_lease() {
-    if crate::server::tests::run_alone() {
-        return;
-    }
-    let _one = ONE_SERVER.lock().await;
+    let Some(_turn) = turn().await else { return };
     let checkout = Checkout::new(30.0);
     let root = checkout.root();
     // Whatever the caller's umask, the socket is the owner's alone.
@@ -908,10 +842,7 @@ async fn with_no_server_a_client_says_how_to_start_one() {
 
     let refused = Client::new(dir.path()).state().await.unwrap_err();
 
-    assert!(
-        matches!(&refused, ClientError::NoServer { socket } if socket == &dir.path().join(api::SOCKET)),
-        "{refused:?}"
-    );
+    assert_matches!(&refused, ClientError::NoServer { socket } if socket == &dir.path().join(api::SOCKET));
     assert!(refused.to_string().contains("wellfed-bench serve"));
 }
 

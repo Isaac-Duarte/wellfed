@@ -14,7 +14,7 @@ use std::{
 };
 
 use common::{addresses, ready, start, status};
-use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, Event, Packet, QoS};
 use serde_json::{Value, json};
 use wellfed_stock::storage;
 
@@ -43,11 +43,7 @@ async fn real_broker_api_and_simulated_stock_session_without_commands() {
     assert_eq!(unauth.status(), reqwest::StatusCode::UNAUTHORIZED);
 
     // The embedded broker must reject the wrong password, not allow anonymous use.
-    let mut wrong = MqttOptions::new(
-        &config.device_client_id,
-        config.mqtt_listen.ip().to_string(),
-        config.mqtt_listen.port(),
-    );
+    let mut wrong = common::device_options(&config);
     wrong.set_credentials("test-device", "wrong");
     let (_wrong_client, mut wrong_loop) = AsyncClient::new(wrong, 4);
     let result = tokio::time::timeout(Duration::from_secs(3), wrong_loop.poll())
@@ -55,13 +51,7 @@ async fn real_broker_api_and_simulated_stock_session_without_commands() {
         .unwrap();
     assert!(result.is_err(), "broker accepted unauthorized connection");
 
-    let mut options = MqttOptions::new(
-        &config.device_client_id,
-        config.mqtt_listen.ip().to_string(),
-        config.mqtt_listen.port(),
-    );
-    options.set_credentials(&config.device_username, &config.device_password);
-    options.set_clean_session(true);
+    let options = common::device_session(&config);
     let (device, mut events) = AsyncClient::new(options, 32);
 
     let worker_device = device.clone();

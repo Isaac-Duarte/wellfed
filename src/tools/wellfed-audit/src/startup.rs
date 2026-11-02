@@ -1,8 +1,9 @@
 //! A finalized receive-only diagnostic startup against its build artifact.
 //!
 //! Port of `audit-firmware-startup.py`: the same policies, record formats,
-//! outcomes and report fields. Only fixed public fields are parsed; arbitrary
-//! device text is never returned.
+//! outcomes and report fields, less the retired flash-coordination records,
+//! which it now refuses. Only fixed public fields are parsed; arbitrary device
+//! text is never returned.
 //!
 //! `load` binds the evidence before anything is classified: the manifest's
 //! `startup_identity` is the hash of its profile and inputs, the image is the
@@ -26,19 +27,16 @@ use wellfed_formats::session::Mode;
 
 use wellfed_formats::require;
 
-use crate::capture::{Capture, Time, seconds};
+use crate::capture::{Capture, seconds};
 use crate::{Result, digest, outcomes};
 
-mod flash;
 mod policy;
 
-pub(crate) use flash::{FlashPolicy, FlashReport, classify_flash};
 use policy::Policies;
 pub use policy::{Declaration, Policy, PolicyError, Probe};
 
-/// A startup capture refused: the build is not the one the manifest binds,
-/// the capture is not receive-only, or a declared probe lacks what its
-/// classifier needs.
+/// A startup capture refused: the build is not the one the manifest binds, or
+/// the capture is not receive-only.
 #[derive(Debug, thiserror::Error)]
 pub enum StartupError {
     #[error("Build identity is not source-bound")]
@@ -49,21 +47,6 @@ pub enum StartupError {
     IdentityAbsent,
     #[error("Receive-only observation required")]
     NotReceiveOnly,
-    #[error("Flash handshake requires the LED probe policy")]
-    FlashWithoutLed,
-    #[error("Flash handshake requires host receive times")]
-    NoReceiveTimes,
-    /// The transfer's clean tail is measured up to the capture's end.
-    #[error("Flash {transfer} requires the capture end time")]
-    NoEndTime { transfer: Transfer },
-}
-
-outcomes! {
-    /// A timed flash transfer the handshake probe classifies.
-    pub enum Transfer {
-        Read => "read",
-        Write => "write",
-    }
 }
 
 fn re(pattern: &str) -> Regex {
@@ -76,7 +59,6 @@ macro_rules! pattern {
         static $name: LazyLock<Regex> = LazyLock::new(|| re($text));
     };
 }
-pub(crate) use pattern;
 
 pattern!(
     START,
@@ -118,8 +100,8 @@ pattern!(
 
 pattern!(LED_RECORD, r"PLLED1[^\r\n]*\r\n");
 pattern!(LED_FAIL, r"PLLED1 pin=[^\r\n]* status=fail\r\n");
-/// The LED probe's last record; the flash and ADC probes follow it.
-pub(crate) const LED_DONE: &[u8] = b"PLLED1 done low=all\r\n";
+/// The LED probe's last record.
+const LED_DONE: &[u8] = b"PLLED1 done low=all\r\n";
 
 const AMACRO: u64 = 1 << 28;
 /// PORB, MBIAS and LDO trim/power, per the stock trace.
@@ -127,17 +109,17 @@ const SHARE_PAD_HELPER: u64 = 0x3ff;
 
 // Each probe's record format, as linked into the image, binds its policy.
 const SUPERVISION_MARK: &[u8] = b"PLTMR1 open board=";
-const FLASH_MARK: &[u8] = b"PLFLS1 hello authority=";
-/// Park round trip follows READY.
-const PARK_MARK: &[u8] = b"PLPRK1 start mode=";
-/// Mediated flash read follows READY.
-const READ_MARK: &[u8] = b"PLRDS1 start marker=";
-/// Owner-approved scratch-sector write follows READY.
-const WRITE_MARK: &[u8] = b"PLWRS1 start marker=";
-/// Flash journal on NOR follows READY.
-const JOURNAL_MARK: &[u8] = b"PLJNL1 start mode=";
-/// Settings-store power-cut stress follows READY.
-const SETTINGS_MARK: &[u8] = b"PLSET1 start marker=";
+/// The retired flash-coordination probes' start records: the HELLO/READY
+/// binding, park, mediated read, scratch-sector write, journal and settings
+/// stress. Setup mode's live `PLSET1 start cause=` is another record.
+const RETIRED_FLASH_MARKS: [&[u8]; 6] = [
+    b"PLFLS1 hello authority=",
+    b"PLPRK1 start mode=",
+    b"PLRDS1 start marker=",
+    b"PLWRS1 start marker=",
+    b"PLJNL1 start mode=",
+    b"PLSET1 start marker=",
+];
 /// Read-only power-input samples follow the LED probe.
 pub(crate) const ADC_MARK: &[u8] = b"PLADC1 open outputs=";
 /// fw14-adc-v2 samples add internal channel 10.
@@ -194,21 +176,6 @@ outcomes! {
         SharedPadMalformed => "shared_pad_malformed",
         SharedPadFailed => "shared_pad_failed",
         SharedPadOrder => "shared_pad_order",
-        FlashHandshakeMissing => "flash_handshake_missing",
-        FlashHandshakeMalformed => "flash_handshake_malformed",
-        FlashHandshakeFailed => "flash_handshake_failed",
-        FlashHandshakeOrder => "flash_handshake_order",
-        FlashHandshakeTiming => "flash_handshake_timing",
-        FlashReadMalformed => "flash_read_malformed",
-        FlashReadFailed => "flash_read_failed",
-        FlashReadMissing => "flash_read_missing",
-        FlashReadOrder => "flash_read_order",
-        FlashReadTiming => "flash_read_timing",
-        FlashWriteMalformed => "flash_write_malformed",
-        FlashWriteFailed => "flash_write_failed",
-        FlashWriteMissing => "flash_write_missing",
-        FlashWriteOrder => "flash_write_order",
-        FlashWriteTiming => "flash_write_timing",
     }
 }
 
@@ -265,10 +232,6 @@ fn dec(c: &Captures, i: usize) -> u64 {
     text(c, i).parse().unwrap_or(0)
 }
 
-fn decs(c: &Captures, from: usize) -> Vec<u64> {
-    (from..c.len()).map(|i| dec(c, i)).collect()
-}
-
 fn whole<'h>(c: &Captures<'h>) -> Match<'h> {
     c.get(0).expect("group 0 is the whole match")
 }
@@ -276,8 +239,6 @@ fn whole<'h>(c: &Captures<'h>) -> Match<'h> {
 fn all<'h>(pattern: &Regex, rx: &'h [u8]) -> Vec<Captures<'h>> {
     pattern.captures_iter(rx).collect()
 }
-
-pub(crate) type Arrival<'a> = &'a dyn Fn(usize) -> Result<Time>;
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ClockReport {
@@ -770,8 +731,6 @@ pub(crate) struct StartupReport {
     pub(crate) routing: Option<RoutingReport>,
     #[serde(flatten)]
     pub(crate) power: Option<PowerReport>,
-    #[serde(flatten)]
-    pub(crate) flash: Option<FlashReport>,
 }
 
 impl StartupReport {
@@ -867,37 +826,13 @@ fn led_before_pass(rx: &[u8]) -> bool {
 }
 
 /// Classify one startup segment under every policy the manifest declares.
-///
-/// `arrival(offset)` gives host receive times for timing-bound policies;
-/// `end` is the capture end time, needed for the flash read's and write's
-/// clean tail.
 pub(crate) fn startup(
     rx: &[u8],
     manifest: &BuildManifest,
     image: &[u8],
     identity: &str,
-    arrival: Option<Arrival>,
-    end: Option<Time>,
 ) -> Result<StartupReport> {
     let policies = Policies::bind(manifest, image)?;
-    let flash = policies
-        .flash
-        .map(|policy| -> Result<_> {
-            require(policies.led.is_some(), || StartupError::FlashWithoutLed)?;
-            let arrival = arrival.ok_or(StartupError::NoReceiveTimes)?;
-            require(policy != FlashPolicy::Read || end.is_some(), || {
-                StartupError::NoEndTime {
-                    transfer: Transfer::Read,
-                }
-            })?;
-            require(policy != FlashPolicy::Write || end.is_some(), || {
-                StartupError::NoEndTime {
-                    transfer: Transfer::Write,
-                }
-            })?;
-            Ok((policy, arrival))
-        })
-        .transpose()?;
 
     let start = classify(rx, identity, policies.stopped);
     let mut report = StartupReport {
@@ -907,7 +842,6 @@ pub(crate) fn startup(
         led: None,
         routing: None,
         power: None,
-        flash: None,
     };
 
     if policies.clock {
@@ -946,9 +880,6 @@ pub(crate) fn startup(
     if let Some(version) = policies.power {
         report.power = report.merge(classify_power(rx, version));
     }
-    if let Some((policy, arrival)) = flash {
-        report.flash = report.merge(classify_flash(rx, arrival, policy, end)?);
-    }
 
     Ok(report)
 }
@@ -985,17 +916,9 @@ pub fn verify(
 ) -> Result<StartupVerdict> {
     let loaded = load(capture, manifest, image)?;
     let c = &loaded.capture;
-    let arrival = |offset: usize| c.arrival(offset);
     let end = c.end()?;
 
-    let mut startup = startup(
-        &c.rx,
-        &loaded.manifest,
-        &loaded.image,
-        &loaded.identity,
-        Some(&arrival),
-        Some(end),
-    )?;
+    let mut startup = startup(&c.rx, &loaded.manifest, &loaded.image, &loaded.identity)?;
 
     let mut seconds_after_startup = None;
     if let (Outcome::Pass, Some(start)) = (startup.outcome, &startup.start) {

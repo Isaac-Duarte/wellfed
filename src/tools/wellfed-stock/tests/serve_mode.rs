@@ -4,7 +4,6 @@
 mod common;
 
 use std::process::Command;
-use std::time::Duration;
 
 use uuid::Uuid;
 use wellfed_stock::{ota, storage};
@@ -19,11 +18,7 @@ async fn serve_refuses_trial_publication() {
     storage::write_json(&path, &config).unwrap();
 
     let service = common::start(&path);
-    let http = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(3))
-        .build()
-        .unwrap();
+    let http = common::http();
     common::ready(&config, &http).await;
 
     let response = http

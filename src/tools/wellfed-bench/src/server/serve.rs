@@ -150,15 +150,7 @@ impl Server {
                 uart_port: Path::new(&config.uart_port).exists(),
                 stopping: None,
             },
-            job: None,
-            prompt: None,
-            activity: Vec::new(),
-            uart: Uart::Idle,
-            relays: Default::default(),
-            feeder: Default::default(),
-            capture: Default::default(),
-            banks: Default::default(),
-            operator: Default::default(),
+            ..BenchState::default()
         });
         let banks =
             Banks::open(&options.root, store.clone()).map_err(|error| ServeError::Banks {
