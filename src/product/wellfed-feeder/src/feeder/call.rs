@@ -26,7 +26,7 @@
 //!
 //! **A client's tune gives way.** A tune still sounding as a lead begins
 //! would push the call past its meal, so the device API refuses one that
-//! would ([`crowds`]). The call's own speaker request has no such check: it
+//! would ([`crowds`]), and so does the clip played once on request. The call's own speaker request has no such check: it
 //! comes first, and only waits for a tune already under way.
 //!
 //! [schedules]: ../../../../../docs/firmware/schedules.md

@@ -18,7 +18,7 @@ use wellfed_core::store::slot::SlotIo;
 use wellfed_core::tone::{PlayResult, Tune};
 use wellfed_device_api::Device;
 use wellfed_device_api::mailbox::{
-    CallClip, CallPlay, SettingsFields, SettingsResult, SettingsView,
+    CallChange, CallClip, CallPlay, CallResult, SettingsFields, SettingsResult, SettingsView,
 };
 use wellfed_feeder::feeder::owner::POLL_MS;
 use wellfed_feeder::feeder::{Feeder, Feeds, Platform, Record};
@@ -732,6 +732,97 @@ fn the_call_on_request_gives_way_to_a_meal_s_call() {
     let mut rig = rig_ahead_of_a_call(1_400);
     assert_eq!(play_call(&mut rig), CallPlay::Busy);
     the_call_runs_on_time(&mut rig);
+}
+
+/// The clip is refused by the loop, as a tune is, for a speaker that is
+/// itself free.
+fn call_refused_by_the_loop(rig: &mut Rig) {
+    assert_eq!(play_call(rig), CallPlay::Busy);
+    assert_eq!(audio::request_call(1), PlayResult::Started);
+}
+
+#[test]
+fn an_install_holding_the_flash_refuses_the_call() {
+    let mut rig = Rig::new();
+    publish_clip();
+    mailbox::request(Request::Cancel).unwrap();
+    assert!(mailbox::installing());
+
+    call_refused_by_the_loop(&mut rig);
+}
+
+#[test]
+fn a_restart_on_its_way_refuses_the_call() {
+    let mut rig = Rig::new();
+    publish_clip();
+    supervision::begin_restart_grace(rig.now);
+
+    call_refused_by_the_loop(&mut rig);
+}
+
+#[test]
+fn claimed_outputs_refuse_the_call() {
+    let mut rig = Rig::new();
+    publish_clip();
+    INTERLOCK.reset();
+    INTERLOCK.claim_feed(u32::MAX).unwrap();
+
+    assert_eq!(play_call(&mut rig), CallPlay::Busy);
+
+    INTERLOCK.release_feed();
+    assert_eq!(play_call(&mut rig), CallPlay::Started);
+}
+
+/// A delete or an upload queued for the writer takes the clip's sectors: a
+/// play then would hold the writer up, or read a clip being erased.
+#[test]
+fn a_queued_change_to_the_clip_refuses_the_call() {
+    let mut rig = Rig::new();
+    let mut store = CallStore::<PlanSectors>::default();
+    store.open(PlanSectors);
+    store.clip = CallClip::Stored {
+        bytes: CLIP_BYTES,
+        crc: 0,
+    };
+    call::publish(&store, true);
+    let queued = call::change(CallChange::Delete);
+    assert!(
+        matches!(queued, CallResult::Current { pending: true, .. }),
+        "{queued:?}"
+    );
+
+    assert_eq!(play_call(&mut rig), CallPlay::Busy);
+}
+
+#[test]
+fn setup_mode_refuses_the_call() {
+    let mut rig = Rig::new();
+    publish_clip();
+    rig.unlock();
+    let hold = Gesture::Hold {
+        chord: Buttons::of(Button::Lock).with(Button::Mic),
+        level: 1,
+    };
+    rig.pass_with(&[hold]);
+    assert!(rig.feeder.setup_on());
+
+    assert_eq!(play_call(&mut rig), CallPlay::Busy);
+}
+
+/// A clip asked for before a Dispense press plays on through the feed, as a
+/// tune does: the decoder's flash reads never hold up the drive.
+#[test]
+fn a_playing_call_keeps_playing_and_the_feed_goes_on() {
+    let mut rig = Rig::new();
+    publish_clip();
+    assert_eq!(play_call(&mut rig), CallPlay::Started);
+
+    feed_despite_the_speaker(&mut rig, 2);
+    assert!(
+        rig.logged_prefix("PLAUD1 done tune=call"),
+        "it ended during the drive: {:?}",
+        rig.lines
+    );
 }
 
 /// A feed's outputs may be claimed before the owner says it is busy.

@@ -437,9 +437,10 @@ pub enum Op<'a> {
     /// Play the stored meal call once, so the owner can hear it, answered
     /// `Done` once queued for the speaker. Refused [`Refusal::NotFound`]
     /// with no clip stored, [`Refusal::Muted`] when the sound settings
-    /// silence it now, and `Busy` while a feed, a tune or a meal's own call
-    /// has the speaker, or the clip would still sound as a meal's call is
-    /// due to begin.
+    /// silence it now, and `Busy` while a feed, a tune, a meal's own call,
+    /// setup, an install, a restart or a queued change to the clip has the
+    /// speaker or the store, or when the clip would still sound as a meal's
+    /// call is due to begin.
     PlayCall,
 }
 

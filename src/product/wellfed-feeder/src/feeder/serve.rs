@@ -972,10 +972,13 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
     }
 
     /// One play of the stored clip, under the same rules as a test tune: it
-    /// waits for a feed, setup, an install or a restart, and gives way to a
-    /// meal's call it would still be sounding into.
+    /// is refused `Busy` during a feed, setup, an install or a restart, and
+    /// when it would still be sounding as a meal's call begins. Also while
+    /// an upload or a delete is queued: the writer then has the clip's
+    /// sectors, or would wait out the play to take them.
     fn play_call(&mut self) -> CallPlay {
         let bytes = match self.platform.call() {
+            CallResult::Current { pending: true, .. } => return CallPlay::Busy,
             CallResult::Current {
                 view:
                     CallView {

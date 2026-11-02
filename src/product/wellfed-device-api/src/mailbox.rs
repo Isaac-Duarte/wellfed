@@ -481,7 +481,8 @@ pub enum CallPlay {
     /// The sound settings silence it now.
     Muted,
     /// A feed, a tune, a meal's call, setup, an install or a restart has
-    /// the speaker, or the clip would still sound as a meal's call begins.
+    /// the speaker, a change to the clip is queued or the store is loading,
+    /// or the clip would still sound as a meal's call begins.
     Busy,
     /// No clip is stored.
     NoClip,

@@ -18,8 +18,9 @@
 //! rewritten.
 //!
 //! Nothing here touches the motor or the emitters or writes flash, and the
-//! device API only reaches [`request`], through the loop's own refusals
-//! (`wellfed-feeder`'s `FeederDevice::play`).
+//! device API only reaches [`request`] and [`request_call`], through the
+//! loop's own refusals (`wellfed-feeder`'s `FeederDevice::play` and
+//! `FeederDevice::play_call`).
 
 use core::fmt;
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
