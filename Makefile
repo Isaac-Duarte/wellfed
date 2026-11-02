@@ -127,9 +127,9 @@ ifeq ($(shell uname),Linux)
 else
 	$(CONTAINER) build -q -t $(GOLDENS_IMAGE) --build-arg FLUTTER_VERSION=$(FLUTTER_VERSION) \
 		-f $(APP)/tools/goldens/Containerfile $(APP)/tools/goldens
-	mkdir -p $(GOLDENS_DIR)/failures
+	rm -rf $(GOLDENS_DIR)/failures && mkdir -p $(GOLDENS_DIR)/failures
 	COPYFILE_DISABLE=1 tar -L -C $(APP) --exclude ./build --exclude ./.dart_tool --exclude ./test/golden/failures \
-		--exclude ./android/.gradle -cf - . | \
+		--exclude ./android/.gradle --exclude ./android/.kotlin --exclude ./tools/wellfed_lints/.dart_tool -cf - . | \
 		$(CONTAINER) run --rm -i -v wellfed-pub-cache:/root/.pub-cache \
 		-v $(GOLDENS_DIR)/files:/files -v $(GOLDENS_DIR)/failures:/failures $(GOLDENS_IMAGE) \
 		sh -c 'tar -x && flutter test test/golden $(if $(UPDATE),--update-goldens && cp test/golden/files/*.png /files/) \
