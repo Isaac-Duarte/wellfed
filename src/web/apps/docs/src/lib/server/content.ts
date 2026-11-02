@@ -7,7 +7,7 @@
 import { posix } from "node:path";
 import type { Element, ElementContent, Root as Hast } from "hast";
 import { toString } from "hast-util-to-string";
-import type { Root as Mdast } from "mdast";
+import type { Root as Mdast, Paragraph, PhrasingContent, RootContent, Strong } from "mdast";
 import rehypeSlug from "rehype-slug";
 import rehypeStringify from "rehype-stringify";
 import remarkGfm from "remark-gfm";
@@ -121,6 +121,89 @@ const alerts: Plugin<[], Mdast> = () => (tree) => {
       data: { hProperties: { className: ["alert-title"] } },
       children: [{ type: "text", value: ALERTS[kind] }],
     });
+  });
+};
+
+// The test log's verdicts: GitHub shows plain bold text, and the site shows a
+// label whose color says how much is still wrong. The set is closed and every
+// entry needs exactly one, so a page can't slip in a softer phrase or leave a
+// result out. Only the listed pages are read, since "**Open.**" could open a
+// paragraph anywhere else with no such meaning.
+const VERDICT_PAGES: ReadonlySet<string> = new Set(["guide/how-it-works/testing.md"]);
+const VERDICTS: ReadonlyMap<string, string> = new Map([
+  ["Passed", "passed"],
+  ["Passed with gaps", "gaps"],
+  ["Fixed", "fixed"],
+  ["Partly fixed", "partly"],
+  ["Open", "open"],
+  ["Measured", "measured"],
+]);
+
+/** The text of bold that holds nothing else, such as a cell's `**Open**`. */
+function boldText(node: PhrasingContent | undefined): string | undefined {
+  if (node?.type !== "strong") return undefined;
+  const [only, extra] = node.children;
+  return only?.type === "text" && extra === undefined ? only.value : undefined;
+}
+
+function markVerdict(bold: Strong, name: string): void {
+  bold.data = { hProperties: { className: ["verdict", `verdict-${VERDICTS.get(name) ?? ""}`] } };
+  bold.children = [{ type: "text", value: name }];
+}
+
+// A verdict's own paragraph, so the label sits above its findings and a screen
+// reader or a search excerpt pauses after it, with no full stop left to show.
+function splitVerdict(paragraph: Paragraph, bold: Strong, name: string): Paragraph[] {
+  markVerdict(bold, name);
+  const label: Paragraph = {
+    type: "paragraph",
+    data: { hProperties: { className: ["verdict-line"] } },
+    children: [bold],
+  };
+
+  const rest = paragraph.children.slice(1);
+  const [next] = rest;
+  if (next?.type === "text") next.value = next.value.trimStart();
+  return rest.length === 0 ? [label] : [label, { type: "paragraph", children: rest }];
+}
+
+const verdicts: Plugin<[string], Mdast> = (file) => (tree) => {
+  if (!VERDICT_PAGES.has(file)) return;
+
+  const children: RootContent[] = [];
+  let entry: { line: number | undefined; found: boolean } | undefined;
+  const closeEntry = () => {
+    if (entry !== undefined && !entry.found)
+      throw new Error(`docs/${file}: the entry on line ${String(entry.line)} has no verdict`);
+  };
+
+  for (const node of tree.children) {
+    if (node.type === "heading" && node.depth <= 3) {
+      closeEntry();
+      entry = node.depth === 3 ? { line: node.position?.start.line, found: false } : undefined;
+    }
+
+    const lead = node.type === "paragraph" ? node.children[0] : undefined;
+    const text = boldText(lead);
+    if (entry === undefined || node.type !== "paragraph" || lead?.type !== "strong" || !text?.endsWith(".")) {
+      children.push(node);
+      continue;
+    }
+
+    const name = text.slice(0, -1);
+    if (!VERDICTS.has(name)) throw new Error(`docs/${file}: "${name}" isn't a verdict`);
+    if (entry.found) throw new Error(`docs/${file}: the entry on line ${String(entry.line)} has two verdicts`);
+    entry.found = true;
+    children.push(...splitVerdict(node, lead, name));
+  }
+  closeEntry();
+  tree.children = children;
+
+  visit(tree, "tableCell", (cell) => {
+    const [only, extra] = cell.children;
+    const name = boldText(only);
+    if (only?.type === "strong" && extra === undefined && name !== undefined && VERDICTS.has(name))
+      markVerdict(only, name);
   });
 };
 
@@ -448,6 +531,7 @@ export function render(file: string, markdown: string): Doc {
     .use(rewriteLinks, file)
     .use(rewritePictures, file, images)
     .use(alerts)
+    .use(verdicts, file)
     .use(markTabs, file)
     .use(remarkRehype)
     .use(rehypeSlug)

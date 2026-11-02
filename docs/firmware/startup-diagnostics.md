@@ -89,7 +89,6 @@ Every record starts with a fixed prefix. The ones a current firmware prints:
 | `PLIO1` | KM4 startup | Read-only pad-group, AON and GPIO routing observations |
 | `PLDBG1` | Indicator checks | Requested level, latch, input, directions, stopped state, pad control |
 | `PLLED1` | KM4 startup | Indicator sequence begin, results, terminal LOW or failure |
-| `PLFLS1` | KM4 and KM0 | Boot handshake between the cores ([probes](bring-up-probes.md#boot-handshake)) |
 | `PLWIF3` | Wi-Fi task | Join, keep, gateway and leave events ([link liveness](#link-liveness-without-internet-dns)) |
 | `PLSUP1` | Watchdog feeder | Supervision start, stop, lease faults and hang reports |
 | `PLFLT1` | KM4 fault handler | Hard-fault registers |
@@ -105,7 +104,6 @@ Notes:
 - **`PLPWR1` policies.** `before-km4-v1` requires one intact record before any KM4 report. `v2` adds the LDO trim, and `v3` the raw Port A input after each supply step. An image linking the `v3` record format is refused unless its manifest declares `before-km4-v3`.
 - **`PLIO1`.** `read-only-v2` adds KM4's view of the shared-pad supply control and the raw Port A input word.
 - **`PLDBG1`.** `bounded-probe-v2` adds `highs=N/64`, the extra input samples ([probes](bring-up-probes.md#indicator-probe)).
-- **`PLFLS1`.** Under `fw06-hello-v1` it carries HELLO, READY, an injected peer change and a terminal watch result. Under `fw06-park-v1`, `fw06-read-v1`, `fw06-write-v1`, `fw15-journal-v1`, `fw15-settings-v1` and `fw15-settings-v2` it carries only HELLO and READY.
 - **`PLWIF3`.** Policy `wifi-gateway-v1`. It is the `PLWIF2` join records plus a `gateway` event per probe (result, gateway IPv4, time). A loss carries its cause: `0` association, `2` lease, `3` gateway. Kind 7 `dns` and loss cause `1` belong to the retired DNS check and are never reused ([probes](bring-up-probes.md#wi-fi-dns-check-retired)). An intentional restart first logs `kind=leave` with `wifi_disconnect`'s `result`, `value` 1 if still associated after 1 s, and `ms` ([below](#leaving-before-a-restart)). The normal firmware also logs `hold until=startup max_ms=180000` once and keeps the radio off until the firmware reports `startup_done`, or 180 s pass. Bank 0 waits the same way, since it runs the firmware and its probes.
 - **`PLFLT1`.** A builder overlay of the vendor handler sends the queued lines, then prints `cfsr`, `hfsr`, `mmfar`, `bfar`, the exception `lr` and whether the process stack was in use, before the vendor backtrace. CFSR's IMPRECISERR, or a peripheral address in BFAR, marks a bus fault the stacked PC does not point at.
 - **`PLSUP1`.** `open watchdog=… trial=…` on its first step. `stop …` once when it stops feeding the watchdog (with `restart=1` for an intentional restart), and `stop watchdog_fault=…` once when a checkpoint is refused, so a stop that recovered and then lost its checkpoint logs both. At boot, before anything arms: `lease_fault …` ([OTA design](ota-design.md)) and `hang …` after a silent watchdog reset ([below](#silent-watchdog-resets)), then `trail …` with its `trail_mark …` and `trail_step …` lines, or `trail refused=empty|boot`, after a `masked` or `spin` hang ([the call trail](#the-call-trail)).
@@ -113,7 +111,7 @@ Notes:
 - **`PLPNC1`.** `panic file=… line=… col=…`, with the path's last 95 bytes, printed after the outputs are stopped and the queued lines are sent, and before the halt that the watchdog resets. It goes to the UART only: no backup register is free to carry it across the reset.
 - **`PLOTA1` and `PLWCH1`.** Policy `device-api-v1`, from `ota::update`. At the stage's start: `update store=… min_version=… attempt=…`, then `bank0 bytes=… recorded=…` or `refused reason=…`. On bank 1: `PLWCH1 offer=1 version=…` and `give_way=1 version=… restart=1`, or `error stage=give_way`. On bank 0: `manifest version=… bytes=…`, `progress sectors=N/TOTAL` every 16 sectors, `activated version=… bytes=… sectors=…`, `error stage=…` (timeout, cancelled, order, image, write, hash, marker, store), `key retired=…` or `added=…`, and `restart watchdog=1`.
 
-Records from retired probes (`PLTMR1`, `PLWDG1`, `PLPRK1`, `PLRDS1`, `PLWRS1`, `PLJNL1`, `PLSET1`, `PLADC1`, `PLWIF1`, `PLWIF2`, `PLMQT1`, `PLOPT1`) are described in [bring-up probes](bring-up-probes.md).
+Records from retired probes (`PLTMR1`, `PLWDG1`, `PLFLS1`, `PLPRK1`, `PLRDS1`, `PLWRS1`, `PLJNL1`, `PLSET1 start marker=`, `PLADC1`, `PLWIF1`, `PLWIF2`, `PLMQT1`, `PLOPT1`) are described in [bring-up probes](bring-up-probes.md).
 
 ## Link liveness without internet DNS
 

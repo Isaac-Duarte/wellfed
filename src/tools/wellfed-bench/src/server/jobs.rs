@@ -29,7 +29,7 @@ use wellfed_core::buttons::Buttons;
 use crate::server::api::Refusal;
 use crate::server::board::SharedBoard;
 use crate::server::feeder::Feeder;
-use crate::server::tool_jobs::{self, Asking, InstallArgs, RestoreStockArgs, ToolJobError};
+use crate::server::tool_jobs::{self, Asking, RestoreStockArgs, ToolJobError};
 
 /// A bench command that touches the hardware, as a job.
 #[derive(Debug, Clone, Subcommand)]
@@ -100,11 +100,6 @@ pub enum JobCommand {
     /// capture, installs over the air, restores the bench afterwards.
     /// Cold boots only with --power; never flashes over UART.
     Itest(ItestArgs),
-    /// Stock to a replacement with `wellfed install` (stock already
-    /// reaching its broker, or `--from-bank0`), its questions answered with
-    /// `wellfed-bench answer` or by an agent. Restarts the
-    /// feeder itself with relay 1 when the installer asks for it.
-    Install(InstallArgs),
     /// `wellfed restore-stock` as a job: a fresh update key enrolled with a
     /// Dispense press, or a key the feeder trusts, then stock over the device
     /// API. Nothing is offered again once its push returned.
@@ -130,18 +125,13 @@ impl JobCommand {
             Self::StockExecute(_) => BenchCommand::StockExecute,
             Self::Ota(_) => BenchCommand::Ota,
             Self::Itest(_) => BenchCommand::Itest,
-            Self::Install(_) => BenchCommand::Install,
             Self::RestoreStock(_) => BenchCommand::RestoreStock,
         }
     }
 
     pub fn name(&self) -> Option<&str> {
         match self {
-            Self::Off
-            | Self::On
-            | Self::Press { .. }
-            | Self::Install(_)
-            | Self::RestoreStock(_) => None,
+            Self::Off | Self::On | Self::Press { .. } | Self::RestoreStock(_) => None,
             Self::Capture { name, .. }
             | Self::Boot { name, .. }
             | Self::Loader { name }
@@ -185,23 +175,17 @@ impl JobCommand {
             | Self::GiveWayExecute(_)
             | Self::StockPrepare(_)
             | Self::StockExecute(_) => true,
-            Self::Off
-            | Self::On
-            | Self::Ota(_)
-            | Self::Itest(_)
-            | Self::Install(_)
-            | Self::RestoreStock(_) => false,
+            Self::Off | Self::On | Self::Ota(_) | Self::Itest(_) | Self::RestoreStock(_) => false,
         }
     }
 
     /// Whether the job runs device API sessions of its own throughout:
-    /// `install` meets stock, which serves no device API, then pairs with the
-    /// replacement under its own key. The server's session closes for it rather
-    /// than search for a feeder that cannot answer; `wellfed`
-    /// opens no session beside the server's unless the server shows it
-    /// paused for the job.
+    /// `restore-stock` ends on stock, which serves no device API. The server's
+    /// session closes for it rather than search for a feeder that cannot
+    /// answer; `wellfed` opens no session beside the server's unless the server
+    /// shows it paused for the job.
     pub(crate) fn own_sessions(&self) -> bool {
-        matches!(self, Self::Install(_) | Self::RestoreStock(_))
+        matches!(self, Self::RestoreStock(_))
     }
 
     /// One of the integration suite's commands.
@@ -288,7 +272,7 @@ pub(crate) fn parse(argv: &[String]) -> Result<JobSpec, Refusal> {
 pub struct ToolPaths {
     pub flash_bin: PathBuf,
     pub build_bin: PathBuf,
-    /// `wellfed`, which `install` runs.
+    /// `wellfed`, which `restore-stock` runs.
     pub wellfed_bin: PathBuf,
 }
 
@@ -491,7 +475,6 @@ fn dispatch(
         JobCommand::StockExecute(args) => bench.stock_execute(args),
         JobCommand::Ota(args) => bench.ota(args),
         JobCommand::Itest(args) => return Ok(wellfed_itest::itest(bench, args)?),
-        JobCommand::Install(args) => return tool_jobs::install(bench, args, tools, asking),
         JobCommand::RestoreStock(args) => {
             return tool_jobs::restore_stock(bench, args, tools, asking);
         }

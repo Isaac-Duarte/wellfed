@@ -19,10 +19,11 @@ use std::os::fd::{AsFd, OwnedFd};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use crate::server::lock;
 use crate::server::state::JobLog;
 
 /// Lines the console may fall behind by before it loses some.
@@ -312,13 +313,6 @@ fn write_console(mut console: File, queue: &mpsc::Receiver<String>) {
         // A closed terminal loses the console, never the server.
         let _ = writeln!(console, "{line}");
     }
-}
-
-/// What these locks guard stays whole if a holder panics.
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(test)]

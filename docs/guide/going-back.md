@@ -32,9 +32,9 @@ If it says **No backup on this phone**, tap **Pick the file** and choose the cop
 wellfed backup show
 ```
 
-Run this from the folder you installed from, or pass `--keys` and `--backups`. Run from anywhere else, it makes a new key and finds no backup, which doesn't mean the backup is gone.
+This reads a copy `wellfed backup read` kept. Run it from the folder you ran that from, or pass `--keys` and `--backups`. Run from anywhere else, it makes a new key and finds no backup, which doesn't mean the backup is gone.
 
-You should see `stock_version` 1.1.15 and `verified` true. To use a copy you saved, add `--backup <file>` in the next step. A file that doesn't match the pinned image exactly is refused.
+You should see `stock_version` 1.1.15 and `verified` true. To use the copy you saved from the app, add `--backup <file>` in the next step. A file that doesn't match the pinned image exactly is refused.
 
 <!-- /tabs -->
 

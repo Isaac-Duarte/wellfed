@@ -6,7 +6,6 @@
 
 use std::rc::Rc;
 
-use tokio::task::LocalSet;
 use wellfed_client::trace::{Pages, TraceError};
 use wellfed_connect::Connection;
 use wellfed_core::adc_scale::{AdcCalibration, SAMPLES};
@@ -149,11 +148,7 @@ async fn read(connection: &mut Connection, ids: &mut u8, feed: u32) -> Result<Tr
 
 #[test]
 fn a_feed_trace_reads_back_over_the_api_before_and_after_a_restart() {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    runtime.block_on(LocalSet::new().run_until(async {
+    harness::local(async {
         let (summary, body, edges) = three_portions();
         assert!(body.len() > wellfed_proto::trace::PAGE_MAX);
         let flash: Rc<Flash> = Flash::memory();
@@ -231,5 +226,5 @@ fn a_feed_trace_reads_back_over_the_api_before_and_after_a_restart() {
             assert_eq!((feeds.kept, feeds.capacity, feeds.traced), (1, 8, 0));
             sim.stop().await;
         }
-    }));
+    });
 }

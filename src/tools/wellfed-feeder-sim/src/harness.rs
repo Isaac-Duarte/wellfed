@@ -14,13 +14,17 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, LocalSet};
+use wellfed_core::clock::wall::{Origin, Sync};
+use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::setup::{MAX_MESSAGE, Received, Responder};
 
 use wellfed_board_plaf103::storage;
+use wellfed_feeder::feeder::Platform;
+use wellfed_feeder::store::events::Read;
 use wellfed_feeder::store::traces::{TraceError, TraceRing};
-use wellfed_proto::api::TraceSummary;
+use wellfed_proto::api::{EventBody, TraceSummary};
 use wellfed_proto::setup::{Enrolled, Reply, WifiSaved};
 use wellfed_session::noise::Keypair;
 use wellfed_session::setup_code::Code;
@@ -30,6 +34,53 @@ use crate::console::{self, ConsoleError};
 use crate::flash::{Flash, Region};
 use crate::platform::Random;
 use crate::serve::{self, Control, Event, Feeder};
+use crate::sim::{Record, Sim};
+
+/// Run `test` on a current-thread runtime, as a simulator's tasks need.
+pub fn local(test: impl Future<Output = ()>) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a current-thread runtime builds");
+    runtime.block_on(LocalSet::new().run_until(test));
+}
+
+/// Run `sim`'s loop in virtual time for `ms` from the uptime `now`, a pass at
+/// least every second, handing `record` the uptime and each record.
+pub fn run_loop(sim: &mut Sim, now: &mut u32, ms: u64, mut record: impl FnMut(u32, Record)) {
+    let end = u64::from(*now) + ms;
+    while u64::from(*now) < end {
+        let at = *now;
+        let delay = sim.pass(at, |logged| record(at, logged));
+        let step = u64::from(delay.clamp(1, 1000)).min(end - u64::from(at));
+        *now += u32::try_from(step.max(1)).expect("a step is at most a second");
+    }
+}
+
+/// An owner's sync at the uptime `now`: the wall clock reads `unix_ms`, at UTC
+/// unless a zone rule is set.
+pub fn owner_sync(sim: &mut Sim, now: u32, unix_ms: u64) {
+    let sync = Sync {
+        unix_ms,
+        offset_s: 0,
+        next_change_s: 0,
+        next_offset_s: 0,
+    };
+    sim.platform()
+        .time_sync(now, sync, Origin::Owner)
+        .expect("a test's sync is a valid time");
+}
+
+/// Every event `sim`'s ring holds, oldest first.
+pub fn events(sim: &mut Sim) -> Vec<EventBody> {
+    let mut bodies = Vec::new();
+    let mut after = None;
+    while let Some(Read::Record(record)) = sim.platform().event_after(Reader::slot(0), after) {
+        after = Some(record.seq);
+        bodies.extend(wellfed_proto::decode_padded::<EventBody>(&record.body));
+    }
+    bodies
+}
 
 /// Append a feed's sealed trace to `flash`'s trace ring, as the feeder's
 /// settings writer does once the feed is over: the simulator has no motor

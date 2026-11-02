@@ -7,8 +7,8 @@
 //!
 //! [`server`] runs stock's side in the caller's process: the broker, the
 //! session with stock and, optionally, the loopback API in [`api`]. [`ota`]'s
-//! image server runs the same way. `wellfed install` and the Android app
-//! (through `wellfed-install`) start both as tokio tasks they own and stop;
+//! image server runs the same way. The Android app (through
+//! `wellfed-install`) starts both as tokio tasks it owns and stops;
 //! the `wellfed-stock` binary's subcommands are the same entry points.
 //!
 //! The binary is the bench's server over it

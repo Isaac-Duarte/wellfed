@@ -90,9 +90,7 @@ impl Notes {
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
-        self.inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        super::lock(&self.inner)
     }
 
     /// A client's note, checked, stamped now and kept.

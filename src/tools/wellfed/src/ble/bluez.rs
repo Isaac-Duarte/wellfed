@@ -17,9 +17,6 @@ use wellfed_client::setup::{CONTROL, SERVICE};
 
 use super::{CONNECT_TIMEOUT, FIND_TIMEOUT, NOT_FOUND, Notifications};
 
-/// A consumer install on this host pairs over a backend proven on a feeder.
-pub(crate) const INSTALL_READY: bool = true;
-
 fn uuid(value: u128) -> Uuid {
     Uuid::from_u128(value)
 }

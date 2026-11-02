@@ -7,8 +7,7 @@
 //! macOS asks for Bluetooth access on behalf of the app that started this
 //! process, usually the terminal, under Privacy & Security in System Settings.
 //!
-//! This has not run against a feeder, so [`INSTALL_READY`] holds a consumer
-//! install back: its pairing comes after the install has changed the feeder.
+//! This has not run against a feeder.
 
 use std::str::FromStr;
 use std::time::Duration;
@@ -24,9 +23,6 @@ use uuid::Uuid;
 use wellfed_client::setup::{CONTROL, SERVICE};
 
 use super::{CONNECT_TIMEOUT, FIND_TIMEOUT, NOT_FOUND, Notifications};
-
-/// A consumer install on this host pairs over a backend proven on a feeder.
-pub(crate) const INSTALL_READY: bool = false;
 
 const NO_ACCESS: &str = "open this Mac's Bluetooth: check it is on, and that your terminal may use it (System Settings, Privacy & Security, Bluetooth)";
 

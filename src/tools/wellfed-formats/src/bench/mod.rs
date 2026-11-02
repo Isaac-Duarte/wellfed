@@ -1,7 +1,7 @@
 //! The relay bench's files and shapes: its config, the evidence layout of a
 //! session, the lease every tool driving the bench takes, a command's
 //! progress record, the bench server's live state, the bank ledger, the
-//! operator's notes, the installer's prompts and their answers, and the
+//! operator's notes, a job's prompts and their answers, and the
 //! integration suite's run records and catalog.
 //!
 //! The bench server and the suite write these and the clients only read
@@ -35,7 +35,7 @@ pub const CAPTURES: &str = "private/captures";
 pub const FLASH_BACKUPS: &str = "private/flash-backups";
 pub const VERIFICATION: &str = "private/verification";
 /// Root-relative: the owner's stock backups, one directory per feeder,
-/// where `wellfed install` also keeps the promotions it signed.
+/// where a run that signed its own promotion also keeps it.
 pub const STOCK_BACKUPS: &str = "private/stock-backups";
 
 /// `private/bench.json`: the ports and pinned evidence the bench uses.

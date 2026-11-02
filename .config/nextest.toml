@@ -11,6 +11,7 @@ fail-fast = false
 
 # The app's install runs bind the stock broker's fixed port, and the Reset route
 # binds it on every address, which no other address on that port can share.
+# This orders one run; a lock in those tests orders runs from other checkouts.
 [test-groups]
 app-install-broker = { max-threads = 1 }
 

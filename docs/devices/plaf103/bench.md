@@ -48,7 +48,7 @@ A DSD TECH SH-UR04A USB relay board (CP2102 serial, 9600 8N1) adds four switches
    cargo build --locked --release -p wellfed-bench -p wellfed-flash -p wellfed-stock -p wellfed
    ```
 
-   The server runs the `wellfed-flash` beside itself unless `serve --flash-bin` names another. `install` runs the `wellfed` beside it unless `serve --wellfed-bin` names another, which runs stock's server in its own process.
+   The server runs the `wellfed-flash` beside itself unless `serve --flash-bin` names another. `restore-stock` runs the `wellfed` beside it unless `serve --wellfed-bin` names another.
 
 2. Write the ignored `private/bench.json`. The relay board also enumerates as a USB serial port and can take the name the UART adapter used to have, so use `/dev/serial/by-id/` paths:
 
@@ -100,7 +100,7 @@ The files and shapes they share (the bench config, a command's progress record, 
 | `status` | The [bench lease](#bench-lease), then the server's job, its children, the UART, the feeder session, the bank ledger and the relays. With no server, it reads the relay board itself. A server that does not answer within 5 s is reported as such, after the lease. `--break-lease` first frees a lease a killed server left. |
 | `attach ID` | Follow job `ID` of the running server again, from its first kept line |
 | `console` | Watch the running server on a [full-screen console](#watching-from-another-terminal) of your own, here or over `ssh -t`. It only reads: `q` leaves, and the server runs on. |
-| `answer JOB SEQ done\|yes\|no` | Answer question `SEQ` of job `JOB` ([install as a job](#install-as-a-job)), once |
+| `answer JOB SEQ done\|yes\|no` | Answer question `SEQ` of job `JOB` ([restore as a job](#restore-as-a-job)), once |
 | `banks` | The [bank ledger](#the-bank-ledger). `--seed DUMP_SESSION` starts it, from that dump's inspection or, when the inspection names no build, from `--bank N --build HASH`. |
 | `note` | The [operator's notes](#the-operators-notes): the step under way, the next steps, timers and evidence by card |
 | `mcp` | The bench's tools for an agent, over the [Model Context Protocol](#mcp) on stdio, as a client of the server |
@@ -116,7 +116,6 @@ The files and shapes they share (the bench config, a command's progress record, 
 | `give-way-prepare NAME`, `give-way-execute NAME` | The same pair for `give-way`. `--fallback` names bank 0's frozen review. |
 | `stock-prepare NAME`, `stock-execute NAME` | UART return to stock ([below](#to-stock-over-uart)) |
 | `ota NAME` | One over-the-air update of the running feeder ([below](#over-the-air-updates)). Never touches power or opens the relay board. |
-| `install` | `wellfed install` as a job: its questions show on the console, `answer` and the agent answer them, and it restarts the feeder itself with relay 1 ([below](#install-as-a-job)) |
 | `restore-stock` | `wellfed restore-stock` as a job: a fresh update key enrolled with a Dispense press (unless `--key` names one the feeder trusts), then stock over the device API. With `--virtual-panel` it presses Dispense itself on a running virtual-panel build, and a failed press stops it. Nothing is offered again, and a feeder gone after the offer ends it uncertain ([rollback](../../firmware/consumer-installation.md#rollback)) |
 | `itest NAME` | The real-device [integration suite](#integration-suite). Runs its own hotspot and receive-only UART capture, installs over the air, and restores the bench at the end. Opens the relay board only with `--power`, for cold boots. |
 
@@ -199,7 +198,7 @@ It closes:
 
 - while a job that holds the UART runs (`capture`, `boot`, `loader`, `transients`, `dump` and every prepare and execute);
 - while an install push runs (`ota`'s, or one of `itest`'s), which opens owner sessions of its own; it reopens after its cursor once the push ends;
-- for the whole of `install`, which meets stock, then pairs with the replacement and promotes it with sessions of its own;
+- for the whole of `restore-stock`, which pushes stock with sessions of its own and leaves a feeder that serves no device API;
 - while relay 1 is off, and while the server stops.
 
 Otherwise it reopens after a loss, after 1 s and then twice as long each time up to 30 s. `ota` and `itest` ask through it: their status checks, cancels and the suite's requests are the server's session's. Only `itest`'s deliberate second and intruding sessions, the pushes of an install, and `install` open sessions of their own.
@@ -210,7 +209,7 @@ A read (status, settings, plans, statistics and the like) that got no answer, or
 
 When the session opens and the feeder counts more sessions than the server's own, the state warns of them (`status` prints it): something reached the feeder without the server.
 
-**The `wellfed` CLI.** Every device command reads that pointer first, whatever its working directory or key file. While the server it names answers, a command whose key file holds the server's key (a copy counts) goes through it, and a direct session is never opened beside it or used as a fallback. Everything else is refused, naming the server: another key, `--address`, and `setup`, `install`, `recover`, `join` and `restore-stock`, which open sessions of their own. The one exception is the server's own job. A command that descends from the process the pointer names passes only while the server's state shows its session paused for that running job's own sessions (`install`'s pause). Paused for a UART job, for power-off or for the server's own install push, or not paused at all, the job is refused too. A server that does not answer refuses its jobs like any other command.
+**The `wellfed` CLI.** Every device command reads that pointer first, whatever its working directory or key file. While the server it names answers, a command whose key file holds the server's key (a copy counts) goes through it, and a direct session is never opened beside it or used as a fallback. Everything else is refused, naming the server: another key, `--address`, and `setup`, `recover`, `join` and `restore-stock`, which open sessions of their own. The one exception is the server's own job. A command that descends from the process the pointer names passes only while the server's state shows its session paused for that running job's own sessions (`restore-stock`'s pause). Paused for a UART job, for power-off or for the server's own install push, or not paused at all, the job is refused too. A server that does not answer refuses its jobs like any other command.
 
 `events` and `feeds` read the history the server's session kept, and `logs` its log lines, so neither moves the server's own subscription or tail; `--samples` is refused. The server keeps the newest 4096 events and gaps, and 1024 log batches, apart. The held history is one epoch's: after a store reset (a new epoch) it starts again, empty, and numbers from two epochs are never compared.
 
@@ -238,7 +237,7 @@ Before every job it stops the capture, killing its observe (which only receives)
 | `stock-execute` | Bank 1 holds stock |
 | `ota` | Confirmed: bank 1 holds the offered build (or stock). Fell back: bank 1 holds no valid image. `--fault give-way-only`: bank 1 gave way |
 | `itest` | Each install the suite watched: confirmed, bank 1 holds the build; fell back, no valid image |
-| `install` | Once the installer started, by its exit alone. Exit 0: bank 1 holds the review's build, and bank 0 too unless `--from-bank0`. Any other end, a cancel included: those banks are unknown |
+| `restore-stock` | Once the tool started, by its exit alone. Exit 0: bank 1 holds stock. Any other end, a cancel included: bank 1 is unknown |
 
 Each entry is then checked against what the feeder says it runs: the `PLFW1 start build= bank=` banner on the capture, and the build and bank in the session's status. A report that names another build marks the entry disputed rather than replacing it, since either side may be wrong; the operator decides. `banks --seed DUMP_SESSION` starts the ledger. Today's flash inspections pin region hashes and name no build, so the seed takes `--bank` and `--build`, and says so. A seed is refused while a job runs. Like every file the server keeps, it is replaced whole and never synced, and nothing writes it while a job holds the UART. A `banks.json` that does not read refuses `serve` before the relay board opens, and is left for the operator to repair or remove.
 
@@ -306,9 +305,9 @@ Every tool's description says what it does physically.
 - **Reads:** `bench_status` (the live state, with its tails cut to 20 lines), `job_output {id, after}`, `logs_tail {source: device|uart|job, lines}`, `banks`, and `wait_for {for, …, timeout}` over `GET /wait`, with the timeout in seconds; `for: prompt` waits for a job's question.
 - **Notes:** `note_step`, `note_next`, `note_timer` and `note_evidence`, the same notes as `wellfed-bench note`, built straight from the arguments, so text may start with `-`. On the command line such text goes after `--`: `wellfed-bench note step -- "- flash bank 1"`.
 - **The feeder:** `device_read {op}` asks the server's session for one read: status, settings, time, plans, clients, update state, calibration, the meal call or a stats section. `clock_sync` sets the clock from this host. Nothing else goes to the feeder's device API from here: never a feed, a cancel, a plan, a setting or an update. The panel is another matter: `press` on a `virtual-panel` build has a finger's effects, so any press with Dispense needs `confirm_motion: true` (it can feed; the hopper must be empty) and a Reset hold over 1000 ms needs `confirm_destructive: true` (one of 5 s on an unlocked panel erases the enrolled keys, and a stall in the button task can carry a hold just short of 5 s past it). An agent that opens the recovery window with `lock+dispense` still cannot answer an install's `open-recovery-window` question: a person does. A read that comes back uncertain is reported as such.
-- **Hardware:** `job_cancel`, which the server refuses during a UART write unless `during_write: true` (the write then stops for good), and one tool a command: `power {state: on|off}`, `boot`, `capture`, `loader`, `dump`, `flash_prepare`, `flash_execute` (`plan_sha256` required), `give_way_prepare`, `give_way_execute`, `stock_prepare`, `stock_execute`, `ota`, `itest`, `transients`, `install` and `press`. `install`'s `virtual_panel` needs `confirm_motion: true`, as a Dispense press does, since the job presses Dispense itself. Each builds the command's words, with the session name after `--`, and posts them as a job, so the server's parse and every check apply as they do to a person's command line; it answers with the job's number, to follow with `wait_for {for: job, id}` and `job_output`.
+- **Hardware:** `job_cancel`, which the server refuses during a UART write unless `during_write: true` (the write then stops for good), and one tool a command: `power {state: on|off}`, `boot`, `capture`, `loader`, `dump`, `flash_prepare`, `flash_execute` (`plan_sha256` required), `give_way_prepare`, `give_way_execute`, `stock_prepare`, `stock_execute`, `ota`, `itest`, `transients`, `restore_stock` and `press`. `restore_stock`'s `virtual_panel` needs `confirm_motion: true`, as a Dispense press does, since the job presses Dispense itself. Each builds the command's words, with the session name after `--`, and posts them as a job, so the server's parse and every check apply as they do to a person's command line; it answers with the job's number, to follow with `wait_for {for: job, id}` and `job_output`.
 
-- **Questions:** `job_answer {seq, answer, id}` answers the question `bench_status` shows (`prompt`), once. It reads the question first and refuses two that only the owner may answer, at the feeder: whether this is their feeder (`recognize-feeder`) and the recovery window at the panel (`open-recovery-window`). Those are answered with `wellfed-bench answer`, or the feeder check ahead with `install`'s `expect_device`, which the owner gives. An agent may answer `key-setup-code` and `press-dispense`: the feeder's own check of the presses decides, and the answer only lets the installer ask its next question.
+- **Questions:** `job_answer {seq, answer, id}` answers the question `bench_status` shows (`prompt`), once. It reads the question first and refuses two that only the owner may answer, at the feeder: whether this is their feeder (`recognize-feeder`) and the recovery window at the panel (`open-recovery-window`). Those are answered with `wellfed-bench answer`. An agent may answer `key-setup-code` and `press-dispense`: the feeder's own check of the presses decides, and the answer only lets the installer ask its next question.
 
 Refused over MCP, before anything is posted, as they need a person at the bench: `attended_motion`, the suite's `feeds`, `break_lease`, a `destructive` suite run without `confirm_destructive: true`, and those two presses without theirs. Arguments a tool does not name are refused too, and so is any string a hardware tool is given that starts with `-`, so none reads as a flag. A session name never starts with `-` anywhere. Stdout carries the protocol alone; nothing else prints there.
 
@@ -341,10 +340,9 @@ One tool drives the bench at a time. Before they touch anything, these take the 
 
 - `wellfed-bench serve`, for as long as it runs. The commands that are its jobs take no lease of their own, and `status` only reads it;
 - every `wellfed-flash` command that opens the serial port (`read`, `update`, `give-way`, `stock-recovery`);
-- `wellfed-stock setup-send`;
-- `wellfed install`, for as long as it runs.
+- `wellfed-stock setup-send`.
 
-The server never stops for an install: its `install` job runs `wellfed install` on its lease. Run from another terminal while a server holds the bench, `wellfed install` is refused with the server named.
+The server never stops for a restore: its `restore-stock` job runs `wellfed restore-stock` on its lease. Run from another terminal while a server holds the bench, `wellfed restore-stock` is refused with the server named.
 
 The lease names its holder: its pid, its start time and boot (so a reused pid is not mistaken for it), its host, its command line and when it started. A second tool is refused with that holder named, before it opens a port or switches a relay:
 
@@ -352,14 +350,14 @@ The lease names its holder: its pid, its start time and boot (so a reused pid is
 Stopped: The bench is held by pid 81234 (`wellfed-bench serve`, since 2026-10-26 12:00:00 UTC on bench); wait for it to finish or stop it
 ```
 
-**Chained tools.** A process descended from the holder runs on the holder's lease and leaves it in place. So the children the server's jobs start (`wellfed-flash` captures, reads and updates; `wellfed install`, with its stock server in its own process) never wait on their own parent. That is checked once, when the child starts, and a job waits for or stops its children before it ends, as the server waits for its job before it releases. Run by hand, `wellfed-flash` takes the lease itself, so a hand-run read cannot open the UART under a running server.
+**Chained tools.** A process descended from the holder runs on the holder's lease and leaves it in place. So the children the server's jobs start (`wellfed-flash` captures, reads and updates; `wellfed restore-stock`) never wait on their own parent. That is checked once, when the child starts, and a job waits for or stops its children before it ends, as the server waits for its job before it releases. Run by hand, `wellfed-flash` takes the lease itself, so a hand-run read cannot open the UART under a running server.
 
 **Tools that take no lease.** Under the server, the server holds the lease. A client only asks the server. The offline `wellfed-flash` commands (`plan-stock-recovery`, `decode-status`, `inspect-journal`) and an emulated helper (`WELLFED_FLASH_EMULATOR`, the host tests) take none.
 
 **The stock server.** `wellfed-stock` keeps the lease beside its `--config`, which on the bench is `private/`.
 
 - `setup-send` holds it for its one frame.
-- `serve` takes none. It only answers the feeder, beside the bench command that drives it. It never asks stock to install: that needs `wellfed install`, which holds the lease itself.
+- `serve` takes none. It only answers the feeder, beside the bench command that drives it. It never asks stock to install: only the Android app does, and a phone holds no lease.
 
 ### After a killed run
 
@@ -592,13 +590,12 @@ A host panic does the same: until the run ends cleanly, tearing the rig down cut
 
 ## Stock and back
 
-Three bench routes cover stock 1.1.15:
+Two bench routes go to stock 1.1.15:
 
-- to stock over the air (`ota` with a stock review);
-- to stock over UART (`stock-prepare` and `stock-execute`);
-- from stock to Wellfed over stock's own updater (the [`install` job](#install-as-a-job), which needs [a stock that already holds this host's broker](../../firmware/consumer-installation.md#running-a-consumer-install-on-the-bench): a Reset hold and a setup frame, which erase stock's plans).
+- over the air (`ota` with a stock review, or the [`restore-stock` job](#restore-as-a-job) from the owner's backup);
+- over UART (`stock-prepare` and `stock-execute`).
 
-The `install` and `restore-stock` jobs are the real path, and the suite does not cover it: [before a release](../../development/dart.md#before-a-release), run both. The design for doing all of this without a bench is in [consumer installation](../../firmware/consumer-installation.md).
+The way from stock to Wellfed over stock's own updater is the Android app's, from a phone and a real Reset hold, which erases stock's plans ([running an install on the bench](../../firmware/consumer-installation.md#running-an-install-on-the-bench)). No bench job does it. The `restore-stock` job and the app's install are the real path, and the suite does not cover it: [before a release](../../development/dart.md#before-a-release), run both.
 
 ### To stock over the air
 
@@ -643,22 +640,21 @@ It prints the next command with the plan's hash. With `--fallback`, both command
 
 The boot capture holds the unit's serial and cloud keys, so keep it private. The bench reads the plan through `wellfed-formats`' `StockRecoveryReviewed`.
 
-### Install as a job
+### Restore as a job
 
-`install` runs `wellfed install` ([consumer installation](../../firmware/consumer-installation.md)) as the server's job, so the server never stops for it. It takes the installer's bench flags, `--review`, `--stock-config`, and `--from-bank0` to resume, with `--manifest` or `--update-key`, `--home-network`, `--ble-address`, `--expect-device`, `--enroll-minutes`, `--keys` and `--address` passed through. `--virtual-panel` is the server's own: the installer never sees it. The setup-frame route (`--ssid`) and `--home-ssid` read a passphrase at a terminal and are no job; the job sends no frame, so stock must already hold this host's broker ([consumer installation](../../firmware/consumer-installation.md#running-a-consumer-install-on-the-bench)), and a consumer image's network comes from `--home-network private/hotspot.json`.
+`restore-stock` runs `wellfed restore-stock` ([rollback](../../firmware/consumer-installation.md#rollback)) as the server's job, so the server never stops for it. It takes `--backup`, `--key`, `--version`, `--keys`, `--feeder` and `--address`, passed through. `--virtual-panel` is the server's own: the tool never sees it.
 
 ```sh
-target/release/wellfed-bench install --review private/verification/<review> --manifest private/<manifest>.json \
-  --stock-config private/installer.json
+target/release/wellfed-bench restore-stock --key private/ota-key.json
 ```
 
-- The server closes its feeder session for the whole job (`install`'s pause) and starts the installer once its state shows that, since the installer opens sessions of its own only then.
-- The installer writes each question as one line on its standard output (`--prompts lines`) and waits for its answer. When it asks for the feeder to restart, after stock's reports were lost, the job does it with relay 1: off for 10 s, then on, whatever came of the cut. That shows as the job's step (`restart feeder`) and a line in its output, not as an operator's note. Every other question goes into the live state (`prompt`: the job, its number, its words and the answers it takes) and waits for an answer from `wellfed-bench answer JOB SEQ done|yes|no` or `job_answer`; the console shows it too.
-- An answer is taken only for the question asked now, by its number, and only of its kind (done for an instruction, yes or no for a question). Anything else is refused and never held for later: the installer reads its answers in order, with no number of their own. The job takes the question away before it stops the installer, so an answer the server took (202) is written to the installer unless it has already exited.
-- With `--expect-device`, the owner's pin answers the feeder check: the pinned device passes with no question, and any other stops the installer before anything is sent to stock.
-- With `--virtual-panel`, the job answers the panel's prompts itself on a running [virtual panel](#virtual-panel) build, from its own thread, as it does the restart. It needs a consumer review, and refuses a bench one before the installer starts: on the recovery route a person unlocked the panel, where a press left over from a code cut short could feed. For `key-setup-code` it presses the code's six buttons in order, 150 ms each; for `press-dispense`, Dispense once. Each press is a `wellfed-flash read press` child under the server's lease, and the job's output records each one (`press 3 of 6, mic`, then the press's own line). Nothing unlocks the panel first: a code being keyed in takes every gesture whatever the lock says, so a Lock hold would count as one of its presses, and a waiting enrollment takes Dispense on a locked panel too. The server's UART capture is stopped for every job and starts again after it, so the presses have the port. The job answers done only once every press echoed and released. A press that did not stops the installer, and the job ends naming it; nothing is pressed again. Before each press the job looks again, and presses nothing more once it is stopping or the installer has exited. The presses add no step rows of their own. Without the flag these prompts go into the live state for a person at the panel, who answers done once the presses are in. The installer goes on without waiting for that answer, since the feeder times its own window.
-- Its standard error is the job's output, so what goes with a question (the recovery code beside the recovery window) shows right below it. A line on its standard output that is no question stops the installer. When the installer exits with an error, the error it printed last is the job's.
-- A cancel stops the installer through its own SIGTERM handler, which stops its stock server, and takes the question away. The job's end takes it away too, however it ended.
+- The server closes its feeder session for the whole job and starts the tool once its state shows that, since the tool opens sessions of its own only then.
+- The tool writes each question as one line on its standard output (`--prompts lines`), and goes on without waiting for the answer to the Dispense press, since the feeder times its own window. A question goes into the live state (`prompt`: the job, its number, its words and the answers it takes) and waits for an answer from `wellfed-bench answer JOB SEQ done|yes|no` or `job_answer`; the console shows it too.
+- An answer is taken only for the question asked now, by its number, and only of its kind (done for an instruction, yes or no for a question). Anything else is refused and never held for later: the tool reads its answers in order, with no number of their own. The job takes the question away before it stops the tool, so an answer the server took (202) is written to the tool unless it has already exited.
+- With `--virtual-panel`, the job answers `press-dispense` itself on a running [virtual panel](#virtual-panel) build, from its own thread. It presses Dispense once for 150 ms, as a `wellfed-flash read press` child under the server's lease, and the job's output records it. Nothing unlocks the panel first: a waiting enrollment takes Dispense on a locked panel too. The server's UART capture is stopped for every job and starts again after it, so the press has the port. The job answers done only once the press echoed and released. One that did not stops the tool, and the job ends naming it; nothing is pressed again. Before the press the job looks again, and presses nothing once it is stopping or the tool has exited. The press adds no step row of its own. Without the flag the prompt goes into the live state for a person at the panel, who answers done once it is pressed.
+- Its standard error is the job's output. A line on its standard output that is no question stops the tool. When the tool exits with an error, the error it printed last is the job's.
+- A cancel stops the tool through its own SIGTERM handler and takes the question away. The job's end takes it away too, however it ended.
+- Only a whole restore marks bank 1 as stock in the [bank ledger](#the-bank-ledger). Anything else marks it unknown, since the write may have stopped part-way.
 
 ## Job records
 

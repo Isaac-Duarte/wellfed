@@ -1,7 +1,7 @@
 //! Each tool's command line, read from its clap derives with `syn`.
 //!
 //! The docs check needs to know that `wellfed backup read` is a command and
-//! that `--ssid` belongs to `install`. Asking the binaries would mean building
+//! that `--backup` belongs to `restore-stock`. Asking the binaries would mean building
 //! every tool (the Bluetooth and emulator stacks included) in a check that
 //! otherwise builds nothing, and running each one. Reading the derives needs
 //! no build and runs no tool, so it can never touch a feeder.
@@ -853,7 +853,7 @@ mod repository_tests {
         let names = crate::repository::listed(&root).unwrap();
 
         for (name, line) in [
-            ("wellfed", "install --ssid x --from-bank0"),
+            ("wellfed", "restore-stock --backup x --version 1"),
             ("wellfed", "server login --server x --name y"),
             ("wellfed", "update-key enroll"),
             ("wellfed-bench", "itest --only x --off-seconds 2"),

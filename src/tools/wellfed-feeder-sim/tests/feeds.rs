@@ -5,18 +5,20 @@
 //! Dispense press takes the same owner. The feeding history reads every
 //! feed back after a restart.
 
-use std::future::Future;
+mod common;
+
+use common::paused;
+use std::assert_matches;
 use std::rc::Rc;
 use std::time::Duration;
 
-use tokio::task::LocalSet;
 use tokio::time::sleep;
 use wellfed_client::history::{Delivered, Entry};
 use wellfed_connect::Connection;
 use wellfed_core::feed::food_read::{FOOD_READ_EVERY_MS, FOOD_READ_FIRST_MS};
 use wellfed_feeder_sim::feeding;
 use wellfed_feeder_sim::flash::Flash;
-use wellfed_feeder_sim::harness::Running;
+use wellfed_feeder_sim::harness::{Running, local};
 use wellfed_feeder_sim::serve::Control;
 use wellfed_model::{
     Answer, Blocked, EventBody, FeedFault, FeedOutcome, FeedReason, FoodLevel, Generation, Op,
@@ -26,12 +28,13 @@ use wellfed_session::noise::Keypair;
 
 const OWNER: [u8; 32] = [0x21; 32];
 
-fn local(test: impl Future<Output = ()>) {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    runtime.block_on(LocalSet::new().run_until(test));
+/// A simulator on fresh flash, and its owner subscribed to the events.
+async fn subscribed() -> (Rc<Flash>, Running, Connection) {
+    let flash = Flash::memory();
+    let sim = start(&flash).await;
+    let mut owner = open(&sim).await;
+    owner.subscribe(None, false).await.unwrap();
+    (flash, sim, owner)
 }
 
 async fn start(flash: &Rc<Flash>) -> Running {
@@ -71,10 +74,7 @@ async fn readiness(connection: &mut Connection, id: u8) -> Option<Readiness> {
 #[test]
 fn a_feed_is_numbered_by_the_journal_and_ends_in_its_fed_event() {
     local(async {
-        let flash = Flash::memory();
-        let sim = start(&flash).await;
-        let mut owner = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        let (flash, sim, mut owner) = subscribed().await;
 
         let answer = owner.ask([1; 16], &Op::Feed { portions: 2 }).await.unwrap();
         assert_eq!(answer, Answer::Feeding { feed: 1 });
@@ -139,7 +139,7 @@ fn a_feed_outside_one_to_48_portions_is_refused_by_name() {
         let during = owner.ask([5; 16], &Op::Feed { portions: 0 }).await.unwrap();
         assert_eq!(during, Answer::Refused(Refusal::Portions { asked: 0 }));
         let cancel = owner.ask([6; 16], &Op::CancelFeed { feed: 1 }).await;
-        assert!(matches!(cancel, Ok(Answer::Done { .. })), "{cancel:?}");
+        assert_matches!(cancel, Ok(Answer::Done { .. }));
         let EventBody::Fed {
             feed, requested, ..
         } = next_fed(&mut owner).await
@@ -157,10 +157,7 @@ fn a_feed_outside_one_to_48_portions_is_refused_by_name() {
 #[test]
 fn a_dispense_press_feeds_one_portion_and_one_during_a_feed_is_recorded_not_queued() {
     local(async {
-        let flash = Flash::memory();
-        let sim = start(&flash).await;
-        let mut owner = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        let (_flash, sim, mut owner) = subscribed().await;
         // The panel starts locked; a locked press would do nothing.
         sim.type_line("hold lock").unwrap();
         loop {
@@ -194,7 +191,7 @@ fn a_dispense_press_feeds_one_portion_and_one_during_a_feed_is_recorded_not_queu
         sim.type_line("press dispense").unwrap();
         tokio::time::sleep(Duration::from_millis(500)).await;
         let cancel = owner.ask([2; 16], &Op::CancelFeed { feed: 2 }).await;
-        assert!(matches!(cancel, Ok(Answer::Done { .. })), "{cancel:?}");
+        assert_matches!(cancel, Ok(Answer::Done { .. }));
 
         // Event appends wait for the outputs, so the refused press's event
         // may follow the feed's result.
@@ -242,7 +239,7 @@ fn a_cancel_ends_the_feed_and_finds_nothing_once_it_has_ended() {
         let answer = owner.ask([1; 16], &Op::Feed { portions: 3 }).await.unwrap();
         assert_eq!(answer, Answer::Feeding { feed: 1 });
         let cancel = owner.ask([2; 16], &Op::CancelFeed { feed: 1 }).await;
-        assert!(matches!(cancel, Ok(Answer::Done { .. })), "{cancel:?}");
+        assert_matches!(cancel, Ok(Answer::Done { .. }));
         let EventBody::Fed { feed, outcome, .. } = next_fed(&mut owner).await else {
             unreachable!("next_fed returns a feed")
         };
@@ -322,12 +319,7 @@ async fn food(connection: &mut Connection, id: u8) -> FoodLevel {
 /// status, and the next, ten minutes on, shows a refill.
 #[test]
 fn the_food_beam_reads_at_rest_after_a_boot_and_a_refill() {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .start_paused(true)
-        .build()
-        .unwrap();
-    runtime.block_on(LocalSet::new().run_until(async {
+    paused(async {
         let flash = Flash::memory();
         let sim = start(&flash).await;
         sim.type_line("empty").unwrap();
@@ -348,7 +340,7 @@ fn the_food_beam_reads_at_rest_after_a_boot_and_a_refill() {
         assert_eq!(food(&mut owner, 4).await, FoodLevel::Present);
 
         sim.stop().await;
-    }));
+    });
 }
 
 /// A feed runs whatever the food beam reads, as stock's does: on an empty
@@ -358,10 +350,7 @@ fn the_food_beam_reads_at_rest_after_a_boot_and_a_refill() {
 #[test]
 fn a_feed_on_an_empty_hopper_runs_and_records_that_it_read_empty() {
     local(async {
-        let flash = Flash::memory();
-        let sim = start(&flash).await;
-        let mut owner = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        let (_flash, sim, mut owner) = subscribed().await;
         assert_eq!(food(&mut owner, 1).await, FoodLevel::Unread, "no feed yet");
 
         let mut id = 2;
@@ -374,7 +363,7 @@ fn a_feed_on_an_empty_hopper_runs_and_records_that_it_read_empty() {
                 sim.type_line(line).unwrap();
             }
             let answer = owner.ask([id; 16], &Op::Feed { portions: 2 }).await;
-            assert!(matches!(answer, Ok(Answer::Feeding { .. })), "{answer:?}");
+            assert_matches!(answer, Ok(Answer::Feeding { .. }));
             let EventBody::Fed {
                 completed,
                 outcome,
@@ -406,10 +395,7 @@ async fn feed_fault(connection: &mut Connection, id: u8) -> Option<FeedFault> {
 #[test]
 fn a_blocked_outlet_or_a_jam_ends_the_feed_by_name_with_its_portions_so_far() {
     local(async {
-        let flash = Flash::memory();
-        let sim = start(&flash).await;
-        let mut owner = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        let (flash, sim, mut owner) = subscribed().await;
         assert_eq!(feed_fault(&mut owner, 1).await, None);
 
         let mut id = 2;
@@ -465,10 +451,7 @@ fn a_blocked_outlet_or_a_jam_ends_the_feed_by_name_with_its_portions_so_far() {
 #[test]
 fn the_feeding_history_reads_every_feed_after_a_restart() {
     local(async {
-        let flash = Flash::memory();
-        let sim = start(&flash).await;
-        let mut owner = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        let (_flash, sim, mut owner) = subscribed().await;
         let answer = owner.ask([1; 16], &Op::Feed { portions: 2 }).await.unwrap();
         assert_eq!(answer, Answer::Feeding { feed: 1 });
         next_fed(&mut owner).await;
@@ -583,10 +566,7 @@ fn a_feed_behind_a_write_is_answered_once_it_runs_and_the_loop_serves_meanwhile(
 #[test]
 fn a_feed_past_its_claim_s_deadline_is_refused_and_its_id_stays_refused() {
     local(async {
-        let flash = Flash::memory();
-        let sim = start(&flash).await;
-        let mut owner = open(&sim).await;
-        owner.subscribe(None, false).await.unwrap();
+        let (flash, sim, mut owner) = subscribed().await;
         sim.control(Control::HoldWrite(true));
 
         let begun = std::time::Instant::now();

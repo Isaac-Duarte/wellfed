@@ -99,51 +99,50 @@ fn enabled(dir: &tempfile::TempDir) -> Controller {
     c
 }
 
+/// [`enabled`], with one trial submitted now: the request and the time.
+fn submitted(dir: &tempfile::TempDir) -> (Controller, ota::trial::Input, DateTime<Utc>) {
+    let mut c = enabled(dir);
+    let request = input();
+    let now = Utc::now();
+    submit(&mut c, request.clone(), now).unwrap();
+    (c, request, now)
+}
+
+/// What refuses this submission, which must not start a trial.
+fn refused(c: &mut Controller, input: ota::trial::Input, now: DateTime<Utc>) -> Rejection {
+    let Err(rejection) = submit(c, input, now) else {
+        panic!("the submission was accepted");
+    };
+    rejection
+}
+
 #[test]
 fn default_disabled_and_guarded_by_version_power_and_plans() {
     let dir = tempfile::tempdir().unwrap();
     let mut c = common::load(dir.path().join("ledger.json")).unwrap();
     ready(&mut c, "1.1.15");
 
-    assert!(matches!(
-        submit(&mut c, input(), Utc::now()),
-        Err(Rejection::OtaDisabled)
-    ));
+    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::OtaDisabled);
 
     c.enable_ota_trial();
     c.status.version_reported_at = None;
-    assert!(matches!(
-        submit(&mut c, input(), Utc::now()),
-        Err(Rejection::InvalidOta)
-    ));
+    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::InvalidOta);
 
     c.status.version_reported_at = Some(Utc::now() - Duration::seconds(301));
-    assert!(matches!(
-        submit(&mut c, input(), Utc::now()),
-        Err(Rejection::InvalidOta)
-    ));
+    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::InvalidOta);
 
     for version in ["1.1.14", "1.1.16", "2.0.0", "unverified"] {
         ready(&mut c, version);
-        assert!(matches!(
-            submit(&mut c, input(), Utc::now()),
-            Err(Rejection::InvalidOta)
-        ));
+        assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::InvalidOta);
     }
 
     ready(&mut c, "1.1.15");
     c.status.attributes.insert("powerType".to_owned(), json!(2));
-    assert!(matches!(
-        submit(&mut c, input(), Utc::now()),
-        Err(Rejection::InvalidOta)
-    ));
+    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::InvalidOta);
 
     c.status.attributes.insert("powerType".to_owned(), json!(1));
     c.config.plans = Some(vec![json!({"id":"plan"})]);
-    assert!(matches!(
-        submit(&mut c, input(), Utc::now()),
-        Err(Rejection::InvalidOta)
-    ));
+    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::InvalidOta);
 
     assert!(c.status.ota_trials.is_empty());
 
@@ -176,10 +175,7 @@ fn journal_before_publish_duplicate_conflict_restart_and_timeout_never_replay() 
 
     let mut conflicting = request.clone();
     conflicting.server_token = Uuid::new_v4();
-    assert!(matches!(
-        submit(&mut c, conflicting, now),
-        Err(Rejection::Conflict)
-    ));
+    assert_eq!(refused(&mut c, conflicting, now), Rejection::Conflict);
 
     c.expire(now + Duration::seconds(600)).unwrap();
     assert_eq!(c.status.ota_trials[0].phase, Phase::Uncertain);
@@ -192,10 +188,7 @@ fn journal_before_publish_duplicate_conflict_restart_and_timeout_never_replay() 
     // With fresh evidence, the uncertain trial alone refuses a new one.
     ready(&mut c, "1.1.15");
     c.enable_ota_trial();
-    assert!(matches!(
-        submit(&mut c, input(), Utc::now()),
-        Err(Rejection::OtaActive)
-    ));
+    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::OtaActive);
 }
 
 #[test]
@@ -279,10 +272,7 @@ fn precheck_rejection_storage_failure_and_wrong_request_errors_do_not_resend() {
     }
 
     assert!(submit(&mut c, request, now).unwrap().1.is_none());
-    assert!(matches!(
-        submit(&mut c, input(), now),
-        Err(Rejection::OtaActive)
-    ));
+    assert_eq!(refused(&mut c, input(), now), Rejection::OtaActive);
 
     // Exercise storage failure independently of the unresolved rejection.
     drop(c);
@@ -294,14 +284,8 @@ fn precheck_rejection_storage_failure_and_wrong_request_errors_do_not_resend() {
     std::fs::remove_file(&path).unwrap();
     std::fs::create_dir(&path).unwrap();
 
-    assert!(matches!(
-        submit(&mut c, input(), now),
-        Err(Rejection::Storage)
-    ));
-    assert!(matches!(
-        submit(&mut c, input(), now),
-        Err(Rejection::Storage)
-    ));
+    assert_eq!(refused(&mut c, input(), now), Rejection::Storage);
+    assert_eq!(refused(&mut c, input(), now), Rejection::Storage);
 }
 
 #[test]
@@ -335,10 +319,7 @@ fn an_error_after_progress_stays_failed_across_a_restart() {
     let mut c = common::load(path).unwrap();
     ready(&mut c, "1.1.15");
     c.enable_ota_trial();
-    assert!(matches!(
-        submit(&mut c, input(), Utc::now()),
-        Err(Rejection::OtaActive)
-    ));
+    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::OtaActive);
 }
 
 #[test]
@@ -360,10 +341,7 @@ fn dispatch_requires_a_matching_unexpired_image_server_lease_and_fresh_power() {
     assert!(c.status.ota_trials.is_empty());
 
     c.status.power_reported_at = Some(now - Duration::seconds(301));
-    assert!(matches!(
-        submit(&mut c, request.clone(), now),
-        Err(Rejection::InvalidOta)
-    ));
+    assert_eq!(refused(&mut c, request.clone(), now), Rejection::InvalidOta);
 
     c.status.power_reported_at = Some(now);
     assert!(submit(&mut c, request, now).unwrap().1.is_some());
@@ -444,10 +422,7 @@ fn the_replacements_answer_closes_only_the_latest_open_install() {
 #[test]
 fn an_answer_is_refused_while_stock_still_reports() {
     let dir = tempfile::tempdir().unwrap();
-    let mut c = enabled(&dir);
-    let now = Utc::now();
-    let request = input();
-    submit(&mut c, request.clone(), now).unwrap();
+    let (mut c, request, now) = submitted(&dir);
 
     // Stock's telemetry is current: it is the one running.
     let later = now + Duration::seconds(200);
@@ -493,10 +468,7 @@ fn an_answer_is_refused_while_stock_still_reports() {
 #[test]
 fn an_answer_must_name_the_served_build_on_bank_0() {
     let dir = tempfile::tempdir().unwrap();
-    let mut c = enabled(&dir);
-    let now = Utc::now();
-    let request = input();
-    submit(&mut c, request.clone(), now).unwrap();
+    let (mut c, request, now) = submitted(&dir);
     assert_eq!(c.status.ota_trials[0].build, served());
     let later = now + Duration::seconds(200);
 
@@ -535,10 +507,7 @@ fn an_answer_must_name_the_served_build_on_bank_0() {
 #[test]
 fn an_uncertain_install_still_closes_on_the_answer() {
     let dir = tempfile::tempdir().unwrap();
-    let mut c = enabled(&dir);
-    let now = Utc::now();
-    let request = input();
-    submit(&mut c, request.clone(), now).unwrap();
+    let (mut c, request, now) = submitted(&dir);
 
     // Stock's own session ends when it reboots into the new bank.
     c.disconnected(now + Duration::seconds(100)).unwrap();
@@ -552,10 +521,7 @@ fn an_uncertain_install_still_closes_on_the_answer() {
 #[test]
 fn a_failed_install_does_not_close_on_an_answer() {
     let dir = tempfile::tempdir().unwrap();
-    let mut c = enabled(&dir);
-    let now = Utc::now();
-    let request = input();
-    submit(&mut c, request.clone(), now).unwrap();
+    let (mut c, request, now) = submitted(&dir);
     observe(
         &mut c,
         "service",
@@ -635,10 +601,7 @@ fn an_uncertain_install_resolves_only_after_a_quiet_period_with_version_evidence
         Err(Rejection::Conflict)
     ));
     // A new request wants a fresh report, which an old session's does not give.
-    assert!(matches!(
-        submit(&mut c, input(), at),
-        Err(Rejection::InvalidOta)
-    ));
+    assert_eq!(refused(&mut c, input(), at), Rejection::InvalidOta);
     observe(&mut c, "system", config, at);
     assert!(submit(&mut c, input(), at).unwrap().1.is_some());
 }
@@ -813,10 +776,7 @@ fn a_trial_open_under_a_captured_config_refuses_the_same_device_through_an_insta
     ready(&mut c, "1.1.15");
     c.enable_ota_trial();
     assert_eq!(c.status.ota_trials.len(), 1);
-    assert!(matches!(
-        submit(&mut c, input(), Utc::now()),
-        Err(Rejection::OtaActive)
-    ));
+    assert_eq!(refused(&mut c, input(), Utc::now()), Rejection::OtaActive);
 }
 
 /// A ledger where this file's feeder has one trial out, nothing running.

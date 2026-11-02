@@ -50,9 +50,7 @@ impl Banks {
     }
 
     fn lock(&self) -> MutexGuard<'_, Ledger> {
-        self.ledger
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        super::lock(&self.ledger)
     }
 
     pub(crate) fn read(&self) -> Ledger {

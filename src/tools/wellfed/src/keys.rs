@@ -110,7 +110,7 @@ impl OwnerKey {
     }
 }
 
-/// The key file is the install's client key: what it opens sessions and
+/// The key file is the driver's client key: what it opens sessions and
 /// setups with, and where a feeder that enrolled it is noted.
 impl wellfed_install::Keys for OwnerKey {
     fn keypair(&self) -> &Keypair {

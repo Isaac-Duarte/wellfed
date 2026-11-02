@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::process::{Child, Command};
 
 use super::*;
@@ -80,17 +81,14 @@ fn a_live_holder_refuses_a_second_and_cannot_be_broken() {
     place(root.path(), &holder);
 
     let refused = Lease::acquire(root.path()).unwrap_err();
-    assert!(
-        matches!(&refused, LeaseError::Held(h) if **h == holder),
-        "{refused:?}"
-    );
+    assert_matches!(&refused, LeaseError::Held(h) if **h == holder);
     assert_eq!(
         inspect(root.path()).unwrap(),
         Some((holder.clone(), Liveness::Alive))
     );
 
     let kept = break_stale(root.path()).unwrap_err();
-    assert!(matches!(kept, LeaseError::Live(_)), "{kept:?}");
+    assert_matches!(kept, LeaseError::Live(_));
     assert_eq!(on_disk(root.path()), Some(holder));
 }
 
@@ -103,10 +101,7 @@ fn a_killed_holder_leaves_a_stale_lease_until_broken() {
     other.kill();
 
     let refused = Lease::acquire(root.path()).unwrap_err();
-    assert!(
-        matches!(&refused, LeaseError::Stale(h) if **h == holder),
-        "{refused:?}"
-    );
+    assert_matches!(&refused, LeaseError::Stale(h) if **h == holder);
     assert_eq!(
         inspect(root.path()).unwrap(),
         Some((holder.clone(), Liveness::Gone))
@@ -141,9 +136,9 @@ fn a_holder_on_another_host_is_neither_taken_nor_broken() {
 
     assert_eq!(elsewhere.liveness().unwrap(), Liveness::Unknown);
     let refused = Lease::acquire(root.path()).unwrap_err();
-    assert!(matches!(refused, LeaseError::Elsewhere(_)), "{refused:?}");
+    assert_matches!(refused, LeaseError::Elsewhere(_));
     let kept = break_stale(root.path()).unwrap_err();
-    assert!(matches!(kept, LeaseError::Elsewhere(_)), "{kept:?}");
+    assert_matches!(kept, LeaseError::Elsewhere(_));
     assert_eq!(on_disk(root.path()), Some(elsewhere));
 }
 
@@ -193,7 +188,7 @@ fn an_unreadable_lease_is_refused_not_overwritten() {
         break_stale(root.path()).unwrap_err(),
         inspect(root.path()).unwrap_err(),
     ] {
-        assert!(matches!(error, LeaseError::Unreadable { .. }), "{error:?}");
+        assert_matches!(error, LeaseError::Unreadable { .. });
     }
     assert_eq!(fs::read(root.path().join(LEASE)).unwrap(), b"{\"pid\": 1");
 }

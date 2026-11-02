@@ -1,6 +1,6 @@
 //! Why an install, or one of its shared steps, stopped. Each variant names
 //! what happened; where the feeder is left and what to run next is the
-//! platform's to say (the CLI adds its flags, the app its screens), so the
+//! platform's to say (the app's screens), so the
 //! variants that call for such advice wrap their cause whole and add none.
 
 use std::net::SocketAddr;
@@ -100,8 +100,7 @@ pub enum Error {
     #[error(transparent)]
     Trial(#[from] wellfed_stock::server::Refusal),
     /// The image server admits one IPv4 peer: the address the enrollment
-    /// recorded (or, on the bench host, the captured device's on the
-    /// hotspot).
+    /// recorded.
     #[error("the stock server knows no IPv4 address for the feeder to serve the image to")]
     NoPeer,
     #[error("read the enrollment {}", path.display())]

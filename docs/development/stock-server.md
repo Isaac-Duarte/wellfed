@@ -1,6 +1,6 @@
 # Stock server
 
-`wellfed-stock` is the server a feeder running stock 1.1.15 installs the replacement from. This guide says how it is built and how to run its binary at the bench. It is for developers; the owner's installer, `wellfed install`, runs it for you.
+`wellfed-stock` is the server a feeder running stock 1.1.15 installs the replacement from. This guide says how it is built and how to run its binary at the bench. It is for developers; the Android app, the owner's installer, runs it for you.
 
 The server exists only for stock. It holds an embedded authenticated broker, the stock protocol as far as an install needs it, the image server stock downloads from, and a bearer-authenticated loopback API. The replacement firmware speaks no MQTT. Its updates and status go over its [device API](../firmware/device-api.md), which `wellfed-bench` and the owner's `wellfed` CLI use directly.
 
@@ -11,7 +11,7 @@ The [`wellfed-stock`](../../src/tools/wellfed-stock) crate is both the library a
 - **The library** holds everything stock speaks: its MQTT protocol, and the broker with stock's two identities (the stock device and the server) and the CONNECT normalization in front of it. It also holds the server's MQTT session with stock, the loopback API, the setup frame, the image server and the install-trial ledger. `server::Server` runs the broker, the session and (optionally) the API as tasks in the caller's process, and `ota::image::start` the image server; the caller owns and stops them.
 - **The binary** adds the command line: `init-installer`, `serve`, `status`, `setup-send`, `ota-trial-resolve` and `ota-trial-answered`. Its `serve` is that same entry point, with the trial disabled, so it can never ask stock to install. The binary and the neighbour lookup sit behind the default `bench` feature.
 
-The one crate that links the library is the install driver, [`wellfed-install`](../../src/client/wellfed-install), without the `bench` feature: `wellfed install` and the Android app run stock's side in their own process. `cargo xtask check-repository` refuses any other crate that depends on `wellfed-stock`.
+The one crate that links the library is the install driver, [`wellfed-install`](../../src/client/wellfed-install), without the `bench` feature: the Android app runs stock's side in its own process. `cargo xtask check-repository` refuses any other crate that depends on `wellfed-stock`.
 
 The server does not control feeding on stock. The product uses stock only to install from and roll back to.
 
@@ -55,9 +55,9 @@ An install needs no capture. `init-installer` writes a config with fresh secrets
 - **One or the other.** A config that names a captured device and has an enrollment beside it is refused.
 - **The image server** admits the enrolled feeder's address.
 - **Stock's plans are left alone.** An installer's config holds no plan snapshot, so `GET_FEEDING_PLAN_EVENT` goes unanswered. Stock erases and rewrites its plan table on any reply that has a `plans` key, even an empty one. It does not check the code or the message ID, and it takes the message unasked. With no reply it keeps its table; it asks once and does not retry. An empty answer would erase the plans a rollback should find. The server never sends a plan message on its own: the commands it sends unasked are a closed set (`protocol::Sent`). (Static analysis of 1.1.15's KM4 image, with one UART capture of a stock install.)
-- **Stock's clock is set only when no meal can come due.** After the Reset hold and setup frame, which erased its plans, the `NTP` reply sets it (`wellfed install --ssid`, and the app's route). With no frame, stock may still hold plans, so the reply leaves its clock as it reads; so does `wellfed-stock serve`, which sends no frame. Stock 1.1.15 refused an install with error 1214 while its clock was two days behind, likely for that reason.
+- **Stock's clock is set only when no meal can come due.** After the Reset hold and setup frame, which erased its plans, the `NTP` reply sets it (the app's route). With no frame, stock may still hold plans, so the reply leaves its clock as it reads; so does `wellfed-stock serve`, which sends no frame. Stock 1.1.15 refused an install with error 1214 while its clock was two days behind, likely for that reason.
   - **The log** says, for every `NTP` request, stock's `ts` (or `unknown`), the skew in seconds, and whether the clock was set.
-  - **A captured nonempty table** holds the clock, with a warning: those plans may run any meals that came due in a jump. An empty one sets it. This is the library's rule: `serve` and `wellfed install` refuse a config with a table.
+  - **A captured nonempty table** holds the clock, with a warning: those plans may run any meals that came due in a jump. An empty one sets it. This is the library's rule: `serve` refuses a config with a table, and the app writes its own config, with none.
 - **No binding from a set-up stock.** A set-up stock sends no `BINDING` when it connects (observed). A stock fresh from the setup frame does, and an installer's config answers it with a generic reply built in the server, since it has no captured one ([saving the frame](../firmware/consumer-installation.md#stocks-setup-protocol)).
 - **Its settings stay.** The server never sends `DEVICE_CONFIG_SYNC`, `WIFI_CHANGE_SERVICE` or the MQTT `RESTORE` (`protocol::Sent` is a closed set).
 
@@ -78,7 +78,7 @@ Install trials are recorded beside the configuration, under an exclusive lock, i
   With no feeder enrolled in `private/installer.json`, `status` and `ota-trial-resolve` stop with an error. Write the config if it is missing (`wellfed-stock init-installer --mqtt-listen 10.42.103.1:1883 --output private/installer.json`) and add `--enroll-minutes 15` to `serve`, so that stock enrolls when it reports. The ledger is named by device ID, so it finds the trial.
 - A replacement install closes instead on `ota-trial-answered`, once the operator's client saw the served build answer its device API from bank 0 and stock has gone quiet ([below](#install-the-replacement)). A replacement speaks no MQTT, so it cannot enroll. With no feeder enrolled in `private/installer.json`, run `serve` and `ota-trial-answered` on a copy of the captured config in the same directory, without its `plans` key and still mode 0600, as `serve`'s refusal says: `wellfed-stock ota-trial-answered --config private/captured.json --request-id <id> --build <identity> --bank 0 --note <what answered>`.
 
-`setup-send` takes the [bench lease](../devices/plaf103/bench.md#bench-lease) for its one frame, and needs `--on-feeder-network <name>`: it refuses a name not starting `PL-AF103-`, but takes your word for it, unlike `wellfed install`, which checks. `serve` takes none: it only answers, beside the command that drives the feeder.
+`setup-send` takes the [bench lease](../devices/plaf103/bench.md#bench-lease) for its one frame, and needs `--on-feeder-network <name>`: it refuses a name not starting `PL-AF103-`, but takes your word for it, unlike the app, which joins only a network of that name through Android. `serve` takes none: it only answers, beside the command that drives the feeder.
 
 A server with the trial enabled starts only from a reviewable build: a clean commit of every input `build.rs` records. Those cover `wellfed-stock`, the crates it links, and the crates that decide and send the request in an installer (`wellfed-client`, `wellfed-install`). `server::Server::start` enforces it; tests set `WELLFED_ALLOW_UNREVIEWED_OTA_BUILD`.
 
@@ -98,11 +98,11 @@ Trial dispatch needs a clean, identifiable source commit. Test-only bypasses are
 
 ## Install the replacement
 
-`wellfed install` and the app drive this whole sequence in their own process.
+The app drives this whole sequence in its own process.
 
 1. Serve the frozen review. The image server serves its `image.bin` as `/ota/<token>/replacement.bin`, and does not command an update. It refuses an image that is not a build's, is larger than the stock footprint (1,376,288 bytes), lacks the loader marker, or does not match the review's `ota_sha256`. The review's layout audit is what establishes the container header and byte-sum stock checks. There is no `original.bin` beside it: the way back is the UART stock recovery. The lease records the served digest and the build's identity: the startup identity of the review's frozen `build-manifest.json`, which must match the review's `manifest_sha256`.
 
-2. Run with no schedule snapshot, as an installer's config has none. The queries then go unanswered and stock keeps its own plans. `serve` and `wellfed install` both refuse a config with a snapshot.
+2. Run with no schedule snapshot, as an installer's config has none. The queries then go unanswered and stock keeps its own plans. `serve` refuses a config with a snapshot.
 
 3. Ask once. The trial needs the lease, announces target version `2.0.0` with the lease's digest, and records both in the ledger.
 
@@ -113,7 +113,7 @@ The server sends nothing, and closes only the latest submitted or uncertain tria
 - **The answer names the served build on bank 0.** Its `build` equals the identity recorded at submission, and `bank` is 0. A record from before the identity was kept never closes this way.
 - **Stock is not demonstrably running.** Its telemetry is not current (none for 90 s), and it has reported no version since the submission. A version report after the submission marks the trial for good (`stock_reported` in the ledger). Stock was still running then, so a dropped session that came back on 1.1.15 cannot be closed by an answer; only `ota-trial-resolve`'s version evidence resolves it. This fails safe: if stock also reports its version during a download, an install that did succeed waits for the resolution as before.
 
-A proven session closes a trial too, with neither condition about stock. When a feeder this phone or computer paired from stock answers its own key's session with the trial's build, after the request, the installer records that answer beside the feeder's backups and closes the latest submitted or uncertain trial in the ledger: on any run that reads the feeder's status, a pick-up included, when a session opens from Home, and at a restore's activation. A trial no such session answered stays open.
+A proven session closes a trial too, with neither condition about stock. When a feeder this phone paired from stock answers its own key's session with the trial's build, after the request, the installer records that answer beside the feeder's backups and closes the latest submitted or uncertain trial in the ledger: on any run that reads the feeder's status, a pick-up included, when a session opens from Home, and at a restore's activation. A trial no such session answered stays open.
 
 Nothing a replacement reports ties it to stock's device ID, so that session cannot prove it is the feeder that took the request. A second feeder in setup on the same build could answer instead. So stock reporting after such a close reopens the trial as uncertain, for the version evidence above to resolve, unless a restore from this installer's records activated stock on that feeder first and marked the trial: the app's, `wellfed restore-stock`'s or the bench job's. The evidence's version report holds while stock stays in the session that sent it with its telemetry unbroken, since a stock still in that session cannot have installed, and it reports its version only around a connect; a dropped session or a telemetry gap voids it until a new one. A restore this ledger did not hear of, from another phone, waits for that evidence too.
 

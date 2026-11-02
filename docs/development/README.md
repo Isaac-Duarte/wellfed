@@ -41,8 +41,7 @@ These are not ported to macOS yet, so they need Linux for now:
 
 | What | Why | On macOS |
 | --- | --- | --- |
-| `wellfed install` of a consumer image | It pairs over Bluetooth after the install has changed the feeder, and the CLI's macOS Bluetooth has not run against a feeder yet. | `wellfed install` refuses before it touches the feeder. Use the Android app. `wellfed setup` is built for macOS, also unproven on a feeder. macOS asks for Bluetooth access for your terminal. |
-| The automatic Wi-Fi hop in `wellfed install` | It uses `nmcli`, `ip` and `iw`. | The route check cannot read the route, so it refuses and sends nothing. |
+| `wellfed setup` | Its macOS Bluetooth, through CoreBluetooth, has not run against a feeder yet. | It builds and runs, unproven. macOS asks for Bluetooth access for your terminal, and names the feeder by a UUID in place of its address. |
 | Finding the feeder in the hotspot's neighbour table | It uses `ip neigh`. | Pass `--peer` to `wellfed-stock`. |
 | The bench hotspot | It is a NetworkManager connection. | Not available. |
 | Full firmware images | The vendor's compiler is a Linux x86_64 binary ([firmware builds](firmware-builds.md)). | `wellfed-build` refuses on another host. The cross-builds in `make check` still run. |
@@ -52,7 +51,7 @@ Some tests can't run on macOS, so a Mac's `make check` proves less than Linux's.
 - Ten tests are ignored there. They bind `127.x` addresses other than `127.0.0.1`, which only Linux's loopback answers without setup.
 - The tests in `wellfed-bench`'s `tests/hangup.rs` build only on Linux. They read each thread's state from `/proc`.
 
-A run started under `nohup` is also different. macOS doesn't show that SIGHUP is ignored, so `wellfed install` stops when its terminal closes, with its usual bounded stop.
+A run started under `nohup` is also different. macOS doesn't show that SIGHUP is ignored, so `wellfed restore-stock` stops when its terminal closes, with its usual bounded stop.
 
 ## Repository layout
 

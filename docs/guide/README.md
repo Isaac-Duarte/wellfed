@@ -20,7 +20,7 @@ flowchart TD
 - **Meals that don't depend on a cloud.** Up to ten meal plans run on the feeder itself, so a vendor outage doesn't matter. The feeder does need a time source: after a power cut, or hours without one, scheduled meals hold until the clock is set. The Dispense button still works once you unlock the panel.
 - **No account.** Your phone talks directly to the feeder over your network, encrypted, and nothing goes to a cloud.
 - **Feeding you can check.** Each feed stops on time, a power cut never makes it feed twice, and a jam we injected ended the feed by name in the history. A real jam hasn't happened on our bench.
-- **A way back.** The install saves a checked copy of the vendor's firmware to your phone or computer, and you can put it back over the air.
+- **A way back.** The install saves a checked copy of the vendor's firmware to your phone, and you can put it back over the air.
 - **Something to build on.** An Android app, a command-line client and an encrypted local API all do the same things. An optional server is a proof of concept.
 
 ## What you give up
@@ -45,6 +45,7 @@ Not yet, as an owner: there's nothing public to install. Follow the [roadmap](..
 | Know how an install avoids stranding your feeder | [Install and rollback](how-it-works/install-and-rollback.md) |
 | Know why a feed can't run twice, and its limits | [How feeding stays safe](how-it-works/feeding-safety.md) |
 | Know who can reach your feeder | [Who can talk to your feeder](how-it-works/access.md) |
+| See what we did to the feeder, and what broke | [The test log](how-it-works/testing.md) |
 | See what works and what doesn't | [Roadmap](../roadmap.md) |
 | Run the optional server | [Running the server](../server/running.md) |
 | Help build it | [Development guide](../development/README.md) |

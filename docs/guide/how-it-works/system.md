@@ -67,13 +67,13 @@ flowchart LR
 
 ## Installing, and where the server stops
 
-Installs from stock run only from the app or the CLI. Someone has to be at the feeder for the Reset hold, your phone or computer has to reach its setup network, and it serves the firmware itself. The server plays no part in that.
+Installs from stock run only from the app. Someone has to be at the feeder for the Reset hold, your phone has to reach its setup network, and it serves the firmware itself. The server plays no part in that.
 
 ```mermaid
 %% svg: system-routes.svg
 flowchart LR
-  front["The app or the CLI"] -->|installs from stock| stock["A feeder on the vendor's firmware"]
-  front -->|offers an update, restores stock| wellfed["A feeder running Wellfed"]
+  front["The app"] -->|installs from stock| stock["A feeder on the vendor's firmware"]
+  front -->|offers an update, restores stock, as the CLI also can| wellfed["A feeder running Wellfed"]
   server["The server"] -->|release installs, tested in simulation only| wellfed
   server -.->|never| stock
 ```

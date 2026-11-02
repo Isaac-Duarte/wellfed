@@ -15,6 +15,7 @@ use std::{
     time::Duration,
 };
 
+use rumqttc::MqttOptions;
 use serde_json::Value;
 
 use wellfed_stock::{build_info::Build, config::Config};
@@ -52,7 +53,7 @@ pub fn load(path: PathBuf) -> anyhow::Result<Controller> {
     Controller::load(config(), path, BUILD)
 }
 
-/// A server in this process, as `wellfed install` and the app run one, with
+/// A server in this process, as the app runs one, with
 /// the loopback API these tests speak. It alone can enable the trial, which
 /// needs [`allow_unreviewed`], or serve a plan snapshot, which the binary
 /// refuses. Needs a runtime.
@@ -237,4 +238,42 @@ pub async fn status(config: &Config, client: &reqwest::Client) -> Value {
         .json()
         .await
         .unwrap()
+}
+
+/// The HTTP client a test reaches the service with, straight to loopback.
+pub fn http() -> reqwest::Client {
+    reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .unwrap()
+}
+
+/// MQTT options for the configured stock device at the embedded broker,
+/// with no credentials yet.
+pub fn device_options(config: &Config) -> MqttOptions {
+    MqttOptions::new(
+        &config.device_client_id,
+        config.mqtt_listen.ip().to_string(),
+        config.mqtt_listen.port(),
+    )
+}
+
+/// [`device_options`] with the device's credentials on a clean session.
+pub fn device_session(config: &Config) -> MqttOptions {
+    let mut options = device_options(config);
+    options.set_credentials(&config.device_username, &config.device_password);
+    options.set_clean_session(true);
+    options
+}
+
+/// A private directory holding [`config`] on free ports, with no plans.
+pub fn configured() -> (tempfile::TempDir, PathBuf, Config) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("server.json");
+    let mut config = config();
+    config.plans = None;
+    [config.mqtt_listen, config.http_listen] = addresses().unwrap();
+    wellfed_stock::storage::write_json(&path, &config).unwrap();
+    (dir, path, config)
 }

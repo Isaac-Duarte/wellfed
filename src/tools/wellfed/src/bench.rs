@@ -8,7 +8,7 @@
 //! - a command whose key is the server's goes through its session;
 //! - anything else is refused with [`BenchRefusal`], naming the server:
 //!   another key, `--address`, and the commands that open sessions of their
-//!   own (`setup`, `install`, `recover`, `join`, `restore-stock`), unless
+//!   own (`setup`, `recover`, `join`, `restore-stock`), unless
 //!   this process is one of the server's jobs and the server's state shows
 //!   its session paused for that job's own sessions;
 //! - a direct session is never opened beside it, nor used as a fallback: a
@@ -845,7 +845,7 @@ mod tests {
             }
         };
         point_at(Holder::of(server.id(), vec!["wellfed-bench".into()]).unwrap());
-        let refused = crate::refuse_beside_bench("install", pointers)
+        let refused = crate::refuse_beside_bench("restore-stock", pointers)
             .await
             .err()
             .unwrap();
@@ -853,7 +853,7 @@ mod tests {
             matches!(
                 refused.downcast_ref::<BenchRefusal>(),
                 Some(BenchRefusal::OwnSessions {
-                    command: "install",
+                    command: "restore-stock",
                     ..
                 })
             ),
@@ -899,8 +899,8 @@ mod tests {
             },
             job: Some(JobView {
                 id: 7,
-                label: "install".into(),
-                log: "private/bench-status/jobs/7-install.log".into(),
+                label: "restore-stock".into(),
+                log: "private/bench-status/jobs/7-restore-stock.log".into(),
                 accepted: 0.0,
                 record: None,
                 upcoming: Vec::new(),
@@ -937,7 +937,7 @@ mod tests {
         };
         let dir = tempfile::tempdir().unwrap();
         let pointers = state_server(dir.path(), bench_state(paused_for(7), false)).await;
-        crate::refuse_beside_bench("install", &pointers)
+        crate::refuse_beside_bench("restore-stock", &pointers)
             .await
             .unwrap();
 
@@ -964,7 +964,7 @@ mod tests {
         for state in refusals {
             let dir = tempfile::tempdir().unwrap();
             let pointers = state_server(dir.path(), state).await;
-            let refused = crate::refuse_beside_bench("install", &pointers)
+            let refused = crate::refuse_beside_bench("restore-stock", &pointers)
                 .await
                 .err()
                 .unwrap();
@@ -972,7 +972,7 @@ mod tests {
                 matches!(
                     refused.downcast_ref::<BenchRefusal>(),
                     Some(BenchRefusal::SessionNotPaused {
-                        command: "install",
+                        command: "restore-stock",
                         ..
                     })
                 ),
@@ -994,7 +994,7 @@ mod tests {
         };
         rendezvous::publish(dir.path(), &pointer).unwrap();
 
-        let refused = crate::refuse_beside_bench("install", &[dir.path().to_path_buf()])
+        let refused = crate::refuse_beside_bench("restore-stock", &[dir.path().to_path_buf()])
             .await
             .err()
             .unwrap();

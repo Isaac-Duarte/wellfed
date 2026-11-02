@@ -43,6 +43,8 @@ pub struct BuildManifest {
     pub startup_gpio_routing_policy: Option<String>,
     pub startup_shared_pad_policy: Option<String>,
     pub startup_gpio_clock_policy: Option<String>,
+    /// Retired: frozen reviews still carry it, and the startup audit refuses any
+    /// value, since it no longer classifies those records.
     pub startup_flash_handshake_policy: Option<String>,
     pub startup_adc_policy: Option<String>,
     pub startup_wifi_policy: Option<String>,

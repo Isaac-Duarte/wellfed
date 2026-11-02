@@ -80,6 +80,6 @@ The vendor's firmware then runs, and it keeps trying to reach the server it knew
 
 ## Evidence
 
-- **Observed, October 29 to 31, 2026.** The install, the backup, the promotion and the return to stock ran on one research feeder, from the app and the CLI. The backup's bytes were checked against the pinned hash.
+- **Observed, October 29 to 31, 2026.** The install, the backup, the promotion and the return to stock ran on one research feeder, from the app and from a command-line installer since removed. The backup's bytes were checked against the pinned hash.
 - **Recovered.** That a refused request can erase the updater's status comes from analysis of the vendor's firmware, not from a test on a feeder.
 - **Observed.** A build that fails to start or hangs gave way to the previous one on the same feeder. [Consumer installation](../../firmware/consumer-installation.md#evidence) and [the OTA design](../../firmware/ota-design.md) hold the record.

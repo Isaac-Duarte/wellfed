@@ -683,6 +683,61 @@ body {
   --alert-soft: var(--color-fault-soft);
 }
 
+/*
+ * The test log's verdicts. The fill goes only on what broke, in green once it's
+ * fixed, so a run of passes stays quiet and the failures are what the eye lands
+ * on. The words carry the meaning, and the color only repeats them.
+ */
+
+.prose p.verdict-line {
+  margin-bottom: var(--space-2);
+}
+.prose .verdict {
+  display: inline-block;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--verdict-line);
+  border-radius: var(--radius-control);
+  background: var(--verdict-fill, transparent);
+  color: var(--verdict-text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.verdict-passed {
+  --verdict-text: var(--color-ok);
+  --verdict-line: var(--color-line);
+}
+.verdict-measured {
+  --verdict-text: var(--color-text-muted);
+  --verdict-line: var(--color-line);
+}
+.verdict-gaps {
+  --verdict-text: var(--color-warning);
+  --verdict-line: var(--color-line);
+}
+.verdict-fixed {
+  --verdict-text: var(--color-ok);
+  --verdict-line: var(--color-ok);
+  --verdict-fill: var(--color-ok-soft);
+}
+.verdict-open {
+  --verdict-text: var(--color-warning);
+  --verdict-line: var(--color-warning);
+  --verdict-fill: var(--color-warning-soft);
+}
+.verdict-partly {
+  --verdict-text: var(--color-fault);
+  --verdict-line: var(--color-fault);
+  --verdict-fill: var(--color-fault-soft);
+}
+/* A label that can't break would take the width its table's text needs. */
+@media (max-width: 600px) {
+  .prose td .verdict {
+    white-space: normal;
+  }
+}
+
 /* Edit link and previous/next */
 
 .page-foot {

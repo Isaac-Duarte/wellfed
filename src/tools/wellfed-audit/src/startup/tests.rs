@@ -1,6 +1,5 @@
 //! The startup auditor's checks: classifiers, policy binding both ways, and
-//! evidence binding. The flash-coordination records are tested in
-//! `flash/tests.rs`, which shares this module's boot and record lines.
+//! evidence binding.
 
 use serde_json::{Value, json};
 
@@ -37,7 +36,7 @@ fn start(identity: &str) -> Vec<u8> {
         .into_bytes()
 }
 
-pub(super) fn boot(identity: &str) -> Vec<u8> {
+fn boot(identity: &str) -> Vec<u8> {
     [
         &b"Wellfed local firmware: Rust bringup\r\n"[..],
         &start(identity),
@@ -47,7 +46,7 @@ pub(super) fn boot(identity: &str) -> Vec<u8> {
     .concat()
 }
 
-pub(super) const STAGES: [&str; 9] = [
+const STAGES: [&str; 9] = [
     "startup", "PA0", "PA0", "PA2", "PA2", "PA4", "PA4", "PB22", "PB22",
 ];
 
@@ -129,7 +128,7 @@ fn readback_v2_reports_samples_without_changing_outcome() {
     assert_eq!(classify_led(detail, 1)["led_readbacks"], json!([]));
 }
 
-pub(super) const CLOCK_LINE: &[u8] = b"PLCLK1 function_before=00000000 clock_before=00000000 function_after=00100000 clock_after=00100000 status=pass\r\n";
+const CLOCK_LINE: &[u8] = b"PLCLK1 function_before=00000000 clock_before=00000000 function_after=00100000 clock_after=00100000 status=pass\r\n";
 
 #[test]
 fn shared_pad_record_must_be_intact_single_preserving_and_before_km4() {
@@ -212,7 +211,7 @@ fn shared_pad_v2_requires_stock_ldo_trim() {
     );
 }
 
-pub(super) const POWER_V3_LINE: &[u8] = b"PLPWR1 before_func=1201019a before_pad=00000000 after_func=1201019a after_pad=00000355 ext_a=e1c46e80,e1c46e00,e1c46e00,e1c46e00\n\r";
+const POWER_V3_LINE: &[u8] = b"PLPWR1 before_func=1201019a before_pad=00000000 after_func=1201019a after_pad=00000355 ext_a=e1c46e80,e1c46e00,e1c46e00,e1c46e00\n\r";
 
 #[test]
 fn shared_pad_v3_reports_port_a_samples() {
@@ -363,7 +362,7 @@ fn led_v3_labels_port_a_output_only_and_never_passes_them() {
     assert_ne!(outcome(&classify_led(&full, 2)), "pass");
 }
 
-pub(super) const OUTPUTS_LINE: &[u8] =
+const OUTPUTS_LINE: &[u8] =
     b"PLFW1 outputs pa=00006000 pb=00000000 dira=0000e000 dirb=00000008 status=pass\r\n";
 
 #[test]
@@ -671,4 +670,61 @@ fn routing_v3_has_only_the_startup_stage() {
         classify_routing(&v2_startup, 2)["outcome"],
         "gpio_routing_incomplete"
     );
+}
+
+#[test]
+fn the_retired_flash_probes_are_refused_not_skipped() {
+    let mut f = Fixture::new(json!({}));
+    let id = f.identity.clone();
+    let image = format!("PLFW1 start build={id} PLLED1 begin").into_bytes();
+    f.set("startup_led_policy", json!("bounded-probe-v1"));
+    f.image(&image);
+    f.capture(
+        &[(0.0, [&boot(&id)[..], &led_full(1).concat()].concat())],
+        120.0,
+    );
+
+    let passing = f.verify(60.0).unwrap();
+    assert_eq!(outcome(&passing), "pass");
+    assert!(
+        !passing
+            .as_object()
+            .unwrap()
+            .keys()
+            .any(|k| k.starts_with("flash_"))
+    );
+
+    // Setup mode's live record shares a tag with the settings test, not a format.
+    f.image(&[&image[..], b" PLSET1 start cause="].concat());
+    assert_eq!(outcome(&f.verify(60.0).unwrap()), "pass");
+
+    // An image carrying the records.
+    for mark in RETIRED_FLASH_MARKS {
+        f.image(&[&image[..], b" ", mark].concat());
+        assert_eq!(
+            policy_refusal(f.verify(60.0)),
+            mismatch(Declaration::FlashHandshake)
+        );
+    }
+
+    // A manifest declaring a policy, as the frozen reviews of those probes do.
+    f.image(&image);
+    for policy in [
+        "fw06-hello-v1",
+        "fw06-park-v1",
+        "fw06-read-v1",
+        "fw06-write-v1",
+        "fw15-journal-v1",
+        "fw15-settings-v1",
+        "fw15-settings-v2",
+    ] {
+        f.set("startup_flash_handshake_policy", json!(policy));
+        assert_eq!(
+            policy_refusal(f.verify(60.0)),
+            PolicyError::Unknown {
+                policy: Policy::FlashHandshake,
+                declared: policy.into(),
+            }
+        );
+    }
 }

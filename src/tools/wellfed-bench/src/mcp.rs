@@ -35,8 +35,8 @@ use tools::{Call, LogSource, Until, WaitArgs};
 /// What an agent reads first.
 const INSTRUCTIONS: &str = "The PLAF103 research bench, through its running `wellfed-bench serve`. \
 Hardware tools post a job and return its number: follow it with wait_for {for: job} and job_output. \
-An install job asks questions: wait_for {for: prompt}, read bench_status's prompt, and answer it with \
-job_answer; whether this is the owner's feeder and the panel's recovery window are a person's to answer. \
+A restore_stock job may ask for a Dispense press: wait_for {for: prompt}, read bench_status's prompt, and answer it \
+with job_answer once it is pressed. \
 One job runs at a time. Write tools (flash_execute, give_way_execute, stock_execute) need the plan \
 SHA-256 a prepare printed, after review. During a UART write nothing on the bench may be touched and \
 the bench host should stay idle. Motion needs a person at the bench and is refused here, except a \

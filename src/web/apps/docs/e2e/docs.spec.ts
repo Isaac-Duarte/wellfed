@@ -80,7 +80,7 @@ test("search knows nothing of an unpublished page", async ({ page }) => {
 test.describe("App and CLI tabs", () => {
   test("show one panel and remember the choice across pages", async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto("/install");
+    await page.goto("/going-back");
 
     const app = page.locator('.tab-panel[data-tab-panel="app"]').first();
     const cli = page.locator('.tab-panel[data-tab-panel="cli"]').first();
@@ -93,14 +93,14 @@ test.describe("App and CLI tabs", () => {
     await expect(page.getByRole("tab", { name: "CLI" }).first()).toHaveAttribute("aria-selected", "true");
 
     await page.goto("/roadmap");
-    await page.goto("/install");
+    await page.goto("/going-back");
     await expect(cli).toBeVisible();
     await expect(app).toBeHidden();
     expect(errors).toEqual([]);
   });
 
   test("move with the arrow keys", async ({ page }) => {
-    await page.goto("/install");
+    await page.goto("/going-back");
     await page.getByRole("tab", { name: "App" }).first().focus();
 
     await page.keyboard.press("ArrowRight");
@@ -110,7 +110,7 @@ test.describe("App and CLI tabs", () => {
   });
 
   test("a link into the other panel opens it", async ({ page }) => {
-    await page.goto("/install#cli");
+    await page.goto("/going-back#cli");
 
     await expect(page.locator('.tab-panel[data-tab-panel="cli"]').first()).toBeVisible();
     await expect(page.locator('.tab-panel[data-tab-panel="app"]').first()).toBeHidden();
@@ -120,7 +120,7 @@ test.describe("App and CLI tabs", () => {
     const context = await browser.newContext({ javaScriptEnabled: false, baseURL });
     const page = await context.newPage();
 
-    await page.goto("/install");
+    await page.goto("/going-back");
 
     await expect(page.locator('.tab-panel[data-tab-panel="app"]').first()).toBeVisible();
     await expect(page.locator('.tab-panel[data-tab-panel="cli"]').first()).toBeVisible();

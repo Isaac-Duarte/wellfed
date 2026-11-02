@@ -187,7 +187,7 @@ async fn resolve(handle: &Handle, status: &StockStatus) -> bool {
     };
     let input = ResolveInput {
         request_id: latest.input.request_id,
-        note: "wellfed install: stock reported its version after the request".to_string(),
+        note: "install: stock reported its version after the request".to_string(),
     };
     handle.resolve(input).await.is_ok()
 }

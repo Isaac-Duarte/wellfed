@@ -2,7 +2,7 @@
 //!
 //! `serve` runs the server ([`wellfed_stock::server`]): the MQTT broker stock
 //! connects to and the loopback HTTP API, in this one process, and never asks
-//! stock to install: `wellfed install` and the app run that in theirs. The
+//! stock to install: the Android app runs that in its own. The
 //! `status` and `ota-trial-*` subcommands are clients of that API and read the
 //! bearer token from the private configuration, so the token never appears in
 //! shell arguments.
@@ -122,8 +122,8 @@ enum Action {
         to: std::net::SocketAddr,
         /// The feeder's setup network this computer is on now, as you read it.
         /// This tool does not check: the frame carries the password in the
-        /// clear, and a home router may hold the same address. `wellfed install`
-        /// checks for itself.
+        /// clear, and a home router may hold the same address. The Android app
+        /// joins only a network of the feeder's name.
         #[arg(long)]
         on_feeder_network: String,
     },
@@ -274,7 +274,7 @@ fn bench_lease(config: &std::path::Path) -> Result<Lease> {
 async fn serve(path: PathBuf, enroll_minutes: Option<u64>) -> Result<()> {
     // Stock replaces its stored table with whatever a plan reply carries, an
     // empty list included, as soon as it connects. The library still replays
-    // a snapshot; this command, like `wellfed install`, never starts on one.
+    // a snapshot; this command never starts on one.
     let read: ServerConfig =
         wellfed_formats::load(&path).with_context(|| format!("read {}", path.display()))?;
     if read.has_plan_snapshot() {
@@ -356,8 +356,8 @@ mod tests {
         Cli::command().debug_assert();
     }
 
-    /// `wellfed install` uses this config too, so a hand-run command reads
-    /// the same ledger, and never a captured file with a plan snapshot.
+    /// Every command reads the same ledger, and never a captured file with a
+    /// plan snapshot.
     #[test]
     fn every_command_defaults_to_the_installers_config() {
         let id = "00000000-0000-0000-0000-000000000000";

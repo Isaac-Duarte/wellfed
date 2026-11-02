@@ -1,11 +1,13 @@
 //! The simulated feeder over real TCP on localhost, driven by
 //! `wellfed-connect` as the server and the CLI drive a feeder.
 
-use std::future::Future;
+mod common;
+
+use common::paused;
+use std::assert_matches;
 use std::rc::Rc;
 use std::time::Duration;
 
-use tokio::task::LocalSet;
 use wellfed_client::api::Invite;
 use wellfed_connect::{Connection, Error as ConnectError, join};
 use wellfed_core::clock::ntp;
@@ -16,14 +18,14 @@ use wellfed_device_api::{Reason, Record as ApiRecord};
 use wellfed_feeder::feeder::{self, owner, serve};
 use wellfed_feeder::panel::{Action, Event as PanelEvent, Source as PanelSource};
 use wellfed_feeder_sim::flash::Flash;
-use wellfed_feeder_sim::harness;
+use wellfed_feeder_sim::harness::{self, local};
 use wellfed_feeder_sim::serve::{Control, Event};
 use wellfed_feeder_sim::sim::Record;
 use wellfed_model::{
     Answer, Bowl, Calibration, CalibrationView, ClientRole, Desiccant, EventBody, Generation,
     Joined, MealReminder, MetricKind, NtpResult, NtpServer, Op, PLANS, Plan, Plans, Pushed,
-    Refusal, SampleValue, SettingsPatch, Source, Stats, StatsSection, Status, TimeChanges,
-    TimeSource, TimeSync, Tune, Weekdays, Wifi,
+    Refusal, SampleValue, Settings, SettingsPatch, Source, Stats, StatsSection, Status,
+    TimeChanges, TimeSource, TimeSync, Tune, Weekdays, Wifi,
 };
 use wellfed_proto::api::RequestId;
 use wellfed_session::noise::Keypair;
@@ -80,6 +82,35 @@ impl Running {
         [self.ids; 16]
     }
 
+    /// `connection` asks `op` under this file's next request id.
+    async fn ask(&mut self, connection: &mut Connection, op: &Op) -> Answer {
+        connection.ask(self.id(), op).await.unwrap()
+    }
+
+    /// An invite for a member, from `owner`.
+    async fn invite_member(&mut self, owner: &mut Connection) -> Invite {
+        let role = ClientRole::Member;
+        let answer = self.ask(owner, &Op::CreateInvite { role }).await;
+        let Answer::Invite(invite) = answer else {
+            panic!("{answer:?}");
+        };
+
+        Invite {
+            feeder: self.identity,
+            id: invite.id,
+            secret: invite.secret.0,
+        }
+    }
+
+    /// A member invited by `owner`, joined and in session.
+    async fn join_member(&mut self, owner: &mut Connection) -> Connection {
+        let invite = self.invite_member(owner).await;
+        join(&keys(MEMBER), invite, "member", self.address, [0x92; 32])
+            .await
+            .unwrap();
+        self.open(MEMBER).await.unwrap()
+    }
+
     fn type_line(&self, line: &str) {
         self.sim.type_line(line).unwrap();
     }
@@ -89,31 +120,34 @@ impl Running {
     }
 }
 
-fn local(test: impl Future<Output = ()>) {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    runtime.block_on(LocalSet::new().run_until(test));
+/// A write's answer, at the store's new generation.
+fn written(generation: u32) -> Answer {
+    Answer::Done {
+        generation: Some(Generation(generation)),
+    }
 }
 
-/// A test on tokio's paused clock, which jumps ahead whenever every task
-/// waits, so the 30 s relock and 90 s idle limit pass at once.
-fn paused(test: impl Future<Output = ()>) {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .start_paused(true)
-        .build()
-        .unwrap();
-    runtime.block_on(LocalSet::new().run_until(test));
+/// The refusal of a write against an older generation than `current`.
+fn stale_at(current: u32) -> Answer {
+    Answer::Refused(Refusal::Stale {
+        current: Generation(current),
+    })
 }
 
 async fn status(sim: &mut Running, connection: &mut Connection) -> Status {
-    let answer = connection.ask(sim.id(), &Op::Status).await.unwrap();
+    let answer = sim.ask(connection, &Op::Status).await;
     let Answer::Status(status) = answer else {
         panic!("{answer:?}");
     };
     status
+}
+
+async fn settings(sim: &mut Running, connection: &mut Connection) -> Settings {
+    let answer = sim.ask(connection, &Op::GetSettings).await;
+    let Answer::Settings(settings) = answer else {
+        panic!("{answer:?}");
+    };
+    settings
 }
 
 /// Every event the subscription replays, until it is quiet.
@@ -135,12 +169,9 @@ fn an_owner_reads_and_writes_the_feeder() {
         let mut owner = sim.open(OWNER).await.unwrap();
         assert_eq!(owner.role(), ClientRole::Owner);
 
-        let status = owner.ask(sim.id(), &Op::Status).await.unwrap();
-        let Answer::Status(status) = status else {
-            panic!("{status:?}");
-        };
-        assert_eq!(status.locked, Some(true), "the panel boots locked");
-        assert_eq!(status.clock, None, "no clock before a sync");
+        let before = status(&mut sim, &mut owner).await;
+        assert_eq!(before.locked, Some(true), "the panel boots locked");
+        assert_eq!(before.clock, None, "no clock before a sync");
 
         let changes = SettingsPatch {
             volume: Some(20),
@@ -150,30 +181,14 @@ fn an_owner_reads_and_writes_the_feeder() {
             base: Generation(0),
             changes,
         };
-        let done = owner.ask(sim.id(), &put).await.unwrap();
-        assert_eq!(
-            done,
-            Answer::Done {
-                generation: Some(Generation(1))
-            }
-        );
-        let stale = owner.ask(sim.id(), &put).await.unwrap();
-        assert_eq!(
-            stale,
-            Answer::Refused(Refusal::Stale {
-                current: Generation(1)
-            })
-        );
-        let settings = owner.ask(sim.id(), &Op::GetSettings).await.unwrap();
-        let Answer::Settings(settings) = settings else {
-            panic!("{settings:?}");
-        };
+        let done = sim.ask(&mut owner, &put).await;
+        assert_eq!(done, written(1));
+        let stale = sim.ask(&mut owner, &put).await;
+        assert_eq!(stale, stale_at(1));
+        let settings = settings(&mut sim, &mut owner).await;
         assert_eq!((settings.volume, settings.generation), (20, Generation(1)));
 
-        let unlock = owner
-            .ask(sim.id(), &Op::SetLock { locked: false })
-            .await
-            .unwrap();
+        let unlock = sim.ask(&mut owner, &Op::SetLock { locked: false }).await;
         assert_eq!(unlock, Answer::Done { generation: None });
         let sync = TimeSync {
             unix_ms: NOW_MS,
@@ -181,12 +196,9 @@ fn an_owner_reads_and_writes_the_feeder() {
             next_change_s: 0,
             next_offset_s: -6 * 3600,
         };
-        let synced = owner.ask(sim.id(), &Op::TimeSync(sync)).await.unwrap();
+        let synced = sim.ask(&mut owner, &Op::TimeSync(sync)).await;
         assert_eq!(synced, Answer::Done { generation: None });
-        let status = owner.ask(sim.id(), &Op::Status).await.unwrap();
-        let Answer::Status(status) = status else {
-            panic!("{status:?}");
-        };
+        let status = status(&mut sim, &mut owner).await;
         assert_eq!(status.locked, Some(false));
         let synced_at = i64::try_from(NOW_MS).unwrap();
         assert!(
@@ -195,10 +207,7 @@ fn an_owner_reads_and_writes_the_feeder() {
                 .is_some_and(|clock| clock.as_millisecond() >= synced_at)
         );
 
-        let feed = owner
-            .ask(sim.id(), &Op::Feed { portions: 1 })
-            .await
-            .unwrap();
+        let feed = sim.ask(&mut owner, &Op::Feed { portions: 1 }).await;
         assert_eq!(
             feed,
             Answer::Feeding { feed: 1 },
@@ -219,13 +228,13 @@ fn a_play_request_is_answered_and_gives_way_to_a_feed() {
         let mut owner = sim.open(OWNER).await.unwrap();
         let play = Op::Play { tune: Tune::Test };
 
-        let played = owner.ask(sim.id(), &play).await.unwrap();
+        let played = sim.ask(&mut owner, &play).await;
         assert_eq!(played, Answer::Refused(Refusal::Muted));
 
         let feed = Op::Feed { portions: 48 };
-        let feed = owner.ask(sim.id(), &feed).await.unwrap();
+        let feed = sim.ask(&mut owner, &feed).await;
         assert_eq!(feed, Answer::Feeding { feed: 1 });
-        let played = owner.ask(sim.id(), &play).await.unwrap();
+        let played = sim.ask(&mut owner, &play).await;
         assert_eq!(played, Answer::Refused(Refusal::Busy));
         sim.stop().await;
     });
@@ -239,41 +248,30 @@ fn an_owner_sets_the_meal_reminder_within_its_hour() {
     local(async {
         let mut sim = Running::start(&Flash::memory(), true).await;
         let mut owner = sim.open(OWNER).await.unwrap();
-        let settings = owner.ask(sim.id(), &Op::GetSettings).await.unwrap();
-        let Answer::Settings(settings) = settings else {
-            panic!("{settings:?}");
-        };
-        assert_eq!(settings.meal_reminder, MealReminder::Off);
+        let before = settings(&mut sim, &mut owner).await;
+        assert_eq!(before.meal_reminder, MealReminder::Off);
 
         for minutes in [0, 61] {
             let put = Op::PutSettings {
-                base: settings.generation,
+                base: before.generation,
                 changes: SettingsPatch {
                     meal_reminder: Some(MealReminder::Before { minutes }),
                     ..SettingsPatch::default()
                 },
             };
-            let refused = owner.ask(sim.id(), &put).await.unwrap();
+            let refused = sim.ask(&mut owner, &put).await;
             assert_eq!(refused, Answer::Refused(Refusal::Invalid), "{minutes}");
         }
         let put = Op::PutSettings {
-            base: settings.generation,
+            base: before.generation,
             changes: SettingsPatch {
                 meal_reminder: Some(MealReminder::Before { minutes: 15 }),
                 ..SettingsPatch::default()
             },
         };
-        let done = owner.ask(sim.id(), &put).await.unwrap();
-        assert_eq!(
-            done,
-            Answer::Done {
-                generation: Some(Generation(1))
-            }
-        );
-        let settings = owner.ask(sim.id(), &Op::GetSettings).await.unwrap();
-        let Answer::Settings(settings) = settings else {
-            panic!("{settings:?}");
-        };
+        let done = sim.ask(&mut owner, &put).await;
+        assert_eq!(done, written(1));
+        let settings = settings(&mut sim, &mut owner).await;
         assert_eq!(settings.meal_reminder, MealReminder::Before { minutes: 15 });
         sim.stop().await;
     });
@@ -305,7 +303,7 @@ fn an_owner_sets_the_zone_and_the_ntp_server_and_the_clock_follows() {
         let mut sim = Running::start(&Flash::memory(), true).await;
         let mut owner = sim.open(OWNER).await.unwrap();
 
-        let Answer::Time(before) = owner.ask(sim.id(), &Op::GetTime).await.unwrap() else {
+        let Answer::Time(before) = sim.ask(&mut owner, &Op::GetTime).await else {
             panic!("the time view");
         };
         assert_eq!(before.clock_ms, None, "no clock before a source");
@@ -323,17 +321,12 @@ fn an_owner_sets_the_zone_and_the_ntp_server_and_the_clock_follows() {
                 }),
             },
         };
-        let put = owner.ask(sim.id(), &put).await.unwrap();
-        assert_eq!(
-            put,
-            Answer::Done {
-                generation: Some(Generation(1))
-            }
-        );
+        let put = sim.ask(&mut owner, &put).await;
+        assert_eq!(put, written(1));
 
         let mut view = None;
         for _ in 0..50 {
-            let Answer::Time(time) = owner.ask(sim.id(), &Op::GetTime).await.unwrap() else {
+            let Answer::Time(time) = sim.ask(&mut owner, &Op::GetTime).await else {
                 panic!("the time view");
             };
             if time.clock_ms.is_some() {
@@ -355,7 +348,7 @@ fn an_owner_sets_the_zone_and_the_ntp_server_and_the_clock_follows() {
             next_change_s: 0,
             next_offset_s: 0,
         };
-        let stepped = owner.ask(sim.id(), &Op::TimeSync(hour_on)).await.unwrap();
+        let stepped = sim.ask(&mut owner, &Op::TimeSync(hour_on)).await;
         assert_eq!(stepped, Answer::Done { generation: None });
         sim.stop().await;
     });
@@ -377,12 +370,7 @@ fn a_retried_write_gets_its_first_answer_even_after_a_reconnect() {
 
         let mut first = sim.open(OWNER).await.unwrap();
         let answer = first.ask(id, &put).await.unwrap();
-        assert_eq!(
-            answer,
-            Answer::Done {
-                generation: Some(Generation(1))
-            }
-        );
+        assert_eq!(answer, written(1));
         drop(first);
 
         let mut second = sim.open(OWNER).await.unwrap();
@@ -402,23 +390,7 @@ fn an_invited_member_joins_and_a_revoke_closes_its_session() {
             Err(ConnectError::UnknownKey)
         ));
 
-        let invite = owner
-            .ask(
-                sim.id(),
-                &Op::CreateInvite {
-                    role: ClientRole::Member,
-                },
-            )
-            .await
-            .unwrap();
-        let Answer::Invite(invite) = invite else {
-            panic!("{invite:?}");
-        };
-        let invite = Invite {
-            feeder: sim.identity,
-            id: invite.id,
-            secret: invite.secret.0,
-        };
+        let invite = sim.invite_member(&mut owner).await;
         let joined = join(&keys(MEMBER), invite, "member", sim.address, [0x91; 32])
             .await
             .unwrap();
@@ -431,13 +403,13 @@ fn an_invited_member_joins_and_a_revoke_closes_its_session() {
 
         let mut member = sim.open(MEMBER).await.unwrap();
         assert_eq!(member.role(), ClientRole::Member);
-        let reboot = member.ask(sim.id(), &Op::Reboot).await.unwrap();
+        let reboot = sim.ask(&mut member, &Op::Reboot).await;
         assert_eq!(reboot, Answer::Refused(Refusal::Forbidden));
 
         let revoke = Op::RevokeClient {
             key: *keys(MEMBER).public(),
         };
-        let revoked = owner.ask(sim.id(), &revoke).await.unwrap();
+        let revoked = sim.ask(&mut owner, &revoke).await;
         assert_eq!(revoked, Answer::Done { generation: None });
         assert!(matches!(member.next(WAIT).await, Err(ConnectError::Closed)));
         assert!(matches!(
@@ -486,7 +458,7 @@ fn the_flash_keeps_the_identity_clients_and_history_across_restarts() {
         let identity = sim.identity;
         let mut owner = sim.open(OWNER).await.unwrap();
         let lock = Op::SetLock { locked: false };
-        owner.ask(sim.id(), &lock).await.unwrap();
+        sim.ask(&mut owner, &lock).await;
         drop(owner);
         sim.stop().await;
         drop(flash);
@@ -520,7 +492,7 @@ fn a_reboot_drops_the_sessions_and_boots_again() {
         // Long enough that the new boot's uptime is surely below it.
         tokio::time::sleep(Duration::from_secs(2)).await;
         let before = status(&mut sim, &mut owner).await;
-        let answer = owner.ask(sim.id(), &Op::Reboot).await.unwrap();
+        let answer = sim.ask(&mut owner, &Op::Reboot).await;
         assert_eq!(answer, Answer::Done { generation: None });
         assert!(matches!(owner.next(WAIT).await, Err(ConnectError::Closed)));
 
@@ -539,7 +511,7 @@ fn a_reboot_drops_the_sessions_and_boots_again() {
         // The restart saved the lifetime totals, and the new boot counts
         // itself on top of them.
         let section = StatsSection::Counters;
-        let answer = owner.ask(sim.id(), &Op::Stats { section }).await.unwrap();
+        let answer = sim.ask(&mut owner, &Op::Stats { section }).await;
         let Answer::Stats(Stats::Counters(counters)) = answer else {
             panic!("{answer:?}");
         };
@@ -561,10 +533,7 @@ fn a_fifth_connection_is_turned_away() {
         // Closed at once, its hello unread: the client sees the close or
         // the reset that unread bytes bring.
         let fifth = sim.open(OWNER).await;
-        assert!(
-            matches!(fifth, Err(ConnectError::Closed | ConnectError::Io(_))),
-            "{fifth:?}"
-        );
+        assert_matches!(fifth, Err(ConnectError::Closed | ConnectError::Io(_)));
         drop(open);
         sim.stop().await;
     });
@@ -666,23 +635,7 @@ fn a_reset_hold_clears_the_decided_stores_and_keeps_the_calibration_and_journal(
         let mut owner = sim.open(OWNER).await.unwrap();
         let old = (sim.identity, owner.epoch());
 
-        let invite = owner
-            .ask(
-                sim.id(),
-                &Op::CreateInvite {
-                    role: ClientRole::Member,
-                },
-            )
-            .await
-            .unwrap();
-        let Answer::Invite(invite) = invite else {
-            panic!("{invite:?}");
-        };
-        let invite = Invite {
-            feeder: sim.identity,
-            id: invite.id,
-            secret: invite.secret.0,
-        };
+        let invite = sim.invite_member(&mut owner).await;
         join(&keys(MEMBER), invite, "member", sim.address, [0x93; 32])
             .await
             .unwrap();
@@ -727,17 +680,12 @@ fn a_reset_hold_clears_the_decided_stores_and_keeps_the_calibration_and_journal(
                 bowl: Bowl::Single,
             },
         };
-        let first = Answer::Done {
-            generation: Some(Generation(1)),
-        };
+        let first = written(1);
         for op in [&settings, &wifi, &time, &plan, &weight] {
-            assert_eq!(owner.ask(sim.id(), op).await.unwrap(), first, "{op:?}");
+            assert_eq!(sim.ask(&mut owner, op).await, first, "{op:?}");
         }
         owner.subscribe(None, false).await.unwrap();
-        let fed = owner
-            .ask(sim.id(), &Op::Feed { portions: 1 })
-            .await
-            .unwrap();
+        let fed = sim.ask(&mut owner, &Op::Feed { portions: 1 }).await;
         let Answer::Feeding { feed: before } = fed else {
             panic!("{fed:?}");
         };
@@ -768,10 +716,7 @@ fn a_reset_hold_clears_the_decided_stores_and_keeps_the_calibration_and_journal(
                 break error;
             }
         };
-        assert!(
-            matches!(ended, ConnectError::Closed | ConnectError::Io(_)),
-            "{ended:?}"
-        );
+        assert_matches!(ended, ConnectError::Closed | ConnectError::Io(_));
         sim.identity = identity;
         assert!(matches!(
             sim.open(MEMBER).await,
@@ -790,7 +735,7 @@ fn a_reset_hold_clears_the_decided_stores_and_keeps_the_calibration_and_journal(
         );
         for op in [&settings, &wifi, &time, &plan] {
             assert_eq!(
-                owner.ask(sim.id(), op).await.unwrap(),
+                sim.ask(&mut owner, op).await,
                 first,
                 "{op:?} writes against an emptied store"
             );
@@ -801,10 +746,7 @@ fn a_reset_hold_clears_the_decided_stores_and_keeps_the_calibration_and_journal(
             (Generation(1), Some(9_800)),
             "the calibration stays"
         );
-        let fed = owner
-            .ask(sim.id(), &Op::Feed { portions: 1 })
-            .await
-            .unwrap();
+        let fed = sim.ask(&mut owner, &Op::Feed { portions: 1 }).await;
         assert!(
             matches!(fed, Answer::Feeding { feed } if feed > before),
             "feed numbers carry on from the journal: {fed:?} after {before}"
@@ -824,11 +766,8 @@ fn a_reset_hold_during_a_feed_is_refused() {
         let mut sim = Running::start(&Flash::memory(), true).await;
         let mut owner = sim.open(OWNER).await.unwrap();
         sim.control(wellfed_feeder_sim::serve::Control::StallFeeds(true));
-        let fed = owner
-            .ask(sim.id(), &Op::Feed { portions: 1 })
-            .await
-            .unwrap();
-        assert!(matches!(fed, Answer::Feeding { .. }), "{fed:?}");
+        let fed = sim.ask(&mut owner, &Op::Feed { portions: 1 }).await;
+        assert_matches!(fed, Answer::Feeding { .. });
 
         sim.type_line("hold lock");
         sim.type_line("hold reset");
@@ -858,88 +797,49 @@ fn wifi_credentials_are_stored_and_cleared_by_an_owner_only() {
             ssid: b"home".to_vec(),
             psk: "correct horse".to_owned(),
         };
-        let stored = owner
+        let stored = sim
             .ask(
-                sim.id(),
+                &mut owner,
                 &Op::PutWifi {
                     base: Generation(0),
                     wifi: Some(wifi),
                 },
             )
-            .await
-            .unwrap();
-        assert_eq!(
-            stored,
-            Answer::Done {
-                generation: Some(Generation(1))
-            }
-        );
-        let stale = owner
+            .await;
+        assert_eq!(stored, written(1));
+        let stale = sim
             .ask(
-                sim.id(),
+                &mut owner,
                 &Op::PutWifi {
                     base: Generation(0),
                     wifi: None,
                 },
             )
-            .await
-            .unwrap();
-        assert_eq!(
-            stale,
-            Answer::Refused(Refusal::Stale {
-                current: Generation(1)
-            })
-        );
-        let cleared = owner
+            .await;
+        assert_eq!(stale, stale_at(1));
+        let cleared = sim
             .ask(
-                sim.id(),
+                &mut owner,
                 &Op::PutWifi {
                     base: Generation(1),
                     wifi: None,
                 },
             )
-            .await
-            .unwrap();
-        assert_eq!(
-            cleared,
-            Answer::Done {
-                generation: Some(Generation(2))
-            }
-        );
+            .await;
+        assert_eq!(cleared, written(2));
         let status = status(&mut sim, &mut owner).await;
         assert_eq!(status.wifi_generation, Generation(2));
 
-        let invite = owner
+        let mut member = sim.join_member(&mut owner).await;
+        let forbidden = sim
             .ask(
-                sim.id(),
-                &Op::CreateInvite {
-                    role: ClientRole::Member,
-                },
-            )
-            .await
-            .unwrap();
-        let Answer::Invite(invite) = invite else {
-            panic!("{invite:?}");
-        };
-        let invite = Invite {
-            feeder: sim.identity,
-            id: invite.id,
-            secret: invite.secret.0,
-        };
-        join(&keys(MEMBER), invite, "member", sim.address, [0x92; 32])
-            .await
-            .unwrap();
-        let mut member = sim.open(MEMBER).await.unwrap();
-        let forbidden = member
-            .ask(
-                sim.id(),
+                &mut member,
                 &Op::PutWifi {
                     base: Generation(2),
                     wifi: None,
                 },
             )
-            .await
-            .unwrap();
+            .await;
         assert_eq!(forbidden, Answer::Refused(Refusal::Forbidden));
 
         let history = backlog(&mut owner).await;
@@ -964,17 +864,14 @@ fn events_that_arrive_while_a_request_waits_are_kept_for_next() {
         // Let the backlog (the boot) arrive unread, so the ask reads it
         // ahead of its own answer.
         tokio::time::sleep(Duration::from_millis(300)).await;
-        let answer = owner.ask(sim.id(), &Op::Status).await.unwrap();
+        let answer = sim.ask(&mut owner, &Op::Status).await;
         assert!(matches!(answer, Answer::Status(_)));
         assert_eq!(owner.queued(), 1);
 
         let message = owner.next(WAIT).await.unwrap();
-        assert!(
-            matches!(
-                message,
-                Pushed::Event(event) if matches!(event.body, EventBody::Boot { .. })
-            ),
-            "{message:?}"
+        assert_matches!(
+            message,
+            Pushed::Event(event) if matches!(event.body, EventBody::Boot { .. })
         );
         assert!(matches!(
             owner.ask(wellfed_connect::KEEPALIVE_ID, &Op::Status).await,
@@ -1003,7 +900,7 @@ fn the_keepalive_holds_a_quiet_session_past_the_idle_limit() {
                 Err(error) => panic!("the follower was dropped: {error}"),
             }
         }
-        let status = follower.ask(sim.id(), &Op::Status).await.unwrap();
+        let status = sim.ask(&mut follower, &Op::Status).await;
         assert!(matches!(status, Answer::Status(_)));
         // It has heard nothing for longer than the silence limit, which says
         // it is gone before it even reads the close.
@@ -1040,7 +937,7 @@ fn a_feeder_that_goes_silent_without_a_reset_is_noticed() {
                 other => break other,
             }
         };
-        assert!(matches!(ended, Err(ConnectError::Silent)), "{ended:?}");
+        assert_matches!(ended, Err(ConnectError::Silent));
         let waited = started.elapsed();
         assert!(
             waited + Duration::from_secs(1) >= wellfed_connect::SILENCE
@@ -1077,7 +974,7 @@ fn a_session_polled_with_dropped_next_futures_stays_alive() {
         }
 
         assert_eq!(boots, 1, "the backlog arrives once");
-        let status = follower.ask(sim.id(), &Op::Status).await.unwrap();
+        let status = sim.ask(&mut follower, &Op::Status).await;
         assert!(matches!(status, Answer::Status(_)));
         sim.stop().await;
     });
@@ -1142,7 +1039,7 @@ async fn recover(sim: &Running, secret: [u8; 32]) {
             }
         }
     };
-    assert!(matches!(reply, Reply::Done { .. }), "{reply:?}");
+    assert_matches!(reply, Reply::Done { .. });
     assert_eq!(session.feeder_key(), Some(sim.identity));
 
     let recovered = sim.open(secret).await.unwrap();
@@ -1170,10 +1067,7 @@ fn an_owner_tails_the_record_lines_the_feeder_logs() {
     local(async {
         let mut sim = Running::start(&Flash::memory(), true).await;
         let mut owner = sim.open(OWNER).await.unwrap();
-        let tail = owner
-            .ask(sim.id(), &Op::TailLog { after: None })
-            .await
-            .unwrap();
+        let tail = sim.ask(&mut owner, &Op::TailLog { after: None }).await;
         assert_eq!(tail, Answer::Done { generation: None });
 
         // From the boot on, as the feeder's UART printed it.
@@ -1187,39 +1081,13 @@ fn an_owner_tails_the_record_lines_the_feeder_logs() {
         );
 
         // A new line follows live.
-        let lock = owner
-            .ask(sim.id(), &Op::SetLock { locked: false })
-            .await
-            .unwrap();
+        let lock = sim.ask(&mut owner, &Op::SetLock { locked: false }).await;
         assert_eq!(lock, Answer::Done { generation: None });
         log_until(&mut owner, |line| line.contains("op=set-lock")).await;
 
         // A member may not.
-        let invite = owner
-            .ask(
-                sim.id(),
-                &Op::CreateInvite {
-                    role: ClientRole::Member,
-                },
-            )
-            .await
-            .unwrap();
-        let Answer::Invite(invite) = invite else {
-            panic!("{invite:?}");
-        };
-        let invite = Invite {
-            feeder: sim.identity,
-            id: invite.id,
-            secret: invite.secret.0,
-        };
-        join(&keys(MEMBER), invite, "member", sim.address, [0x92; 32])
-            .await
-            .unwrap();
-        let mut member = sim.open(MEMBER).await.unwrap();
-        let refused = member
-            .ask(sim.id(), &Op::TailLog { after: None })
-            .await
-            .unwrap();
+        let mut member = sim.join_member(&mut owner).await;
+        let refused = sim.ask(&mut member, &Op::TailLog { after: None }).await;
         assert_eq!(refused, Answer::Refused(Refusal::Forbidden));
         sim.stop().await;
     });
@@ -1235,7 +1103,7 @@ fn an_owner_reads_the_statistics_and_their_live_metrics() {
         assert!(owner.capabilities().stats);
 
         for section in StatsSection::ALL {
-            let answer = owner.ask(sim.id(), &Op::Stats { section }).await.unwrap();
+            let answer = sim.ask(&mut owner, &Op::Stats { section }).await;
             let Answer::Stats(stats) = answer else {
                 panic!("{section:?}: {answer:?}");
             };
@@ -1286,7 +1154,7 @@ fn an_owner_reads_the_statistics_and_their_live_metrics() {
 }
 
 async fn calibration(sim: &mut Running, owner: &mut Connection) -> CalibrationView {
-    let answer = owner.ask(sim.id(), &Op::GetCalibration).await.unwrap();
+    let answer = sim.ask(owner, &Op::GetCalibration).await;
     let Answer::Calibration(view) = answer else {
         panic!("the calibration: {answer:?}");
     };
@@ -1334,25 +1202,14 @@ fn an_owner_stores_the_portion_weight_and_only_the_verified_bowl() {
         let stored = owner
             .ask(sim.id(), &put(Some(9_800), Bowl::Single, 0))
             .await;
-        assert_eq!(
-            stored.unwrap(),
-            Answer::Done {
-                generation: Some(Generation(1))
-            }
-        );
+        assert_eq!(stored.unwrap(), written(1));
         let stale = owner.ask(sim.id(), &put(None, Bowl::Single, 0)).await;
-        assert_eq!(
-            stale.unwrap(),
-            Answer::Refused(Refusal::Stale {
-                current: Generation(1)
-            })
-        );
+        assert_eq!(stale.unwrap(), stale_at(1));
 
         let section = Op::Stats {
             section: StatsSection::Portions,
         };
-        let Answer::Stats(Stats::Portions(portions)) = owner.ask(sim.id(), &section).await.unwrap()
-        else {
+        let Answer::Stats(Stats::Portions(portions)) = sim.ask(&mut owner, &section).await else {
             panic!("the portions section");
         };
         assert_eq!(portions.portion_mg, Some(9_800));
@@ -1372,7 +1229,7 @@ fn an_owner_stores_the_portion_weight_and_only_the_verified_bowl() {
 }
 
 async fn plans(sim: &mut Running, connection: &mut Connection) -> Plans {
-    let answer = connection.ask(sim.id(), &Op::GetPlans).await.unwrap();
+    let answer = sim.ask(connection, &Op::GetPlans).await;
     let Answer::Plans(plans) = answer else {
         panic!("the plans: {answer:?}");
     };
@@ -1392,27 +1249,7 @@ fn a_member_edits_the_plans_against_the_generation_it_read() {
         let mut sim = Running::start(&flash, true).await;
         let mut owner = sim.open(OWNER).await.unwrap();
         assert!(owner.capabilities().plans);
-        let invite = owner
-            .ask(
-                sim.id(),
-                &Op::CreateInvite {
-                    role: ClientRole::Member,
-                },
-            )
-            .await
-            .unwrap();
-        let Answer::Invite(invite) = invite else {
-            panic!("{invite:?}");
-        };
-        let invite = Invite {
-            feeder: sim.identity,
-            id: invite.id,
-            secret: invite.secret.0,
-        };
-        join(&keys(MEMBER), invite, "member", sim.address, [0x92; 32])
-            .await
-            .unwrap();
-        let mut member = sim.open(MEMBER).await.unwrap();
+        let mut member = sim.join_member(&mut owner).await;
 
         let empty = plans(&mut sim, &mut member).await;
         assert_eq!(empty.generation, Generation(0));
@@ -1436,29 +1273,19 @@ fn a_member_edits_the_plans_against_the_generation_it_read() {
             portions: 49,
             ..breakfast
         });
-        let refused = member.ask(sim.id(), &put(0, invalid)).await.unwrap();
+        let refused = sim.ask(&mut member, &put(0, invalid)).await;
         assert_eq!(refused, Answer::Refused(Refusal::Portions { asked: 49 }));
         let mut late = table;
         late[1] = Some(Plan {
             minute: 24 * 60,
             ..breakfast
         });
-        let refused = member.ask(sim.id(), &put(0, late)).await.unwrap();
+        let refused = sim.ask(&mut member, &put(0, late)).await;
         assert_eq!(refused, Answer::Refused(Refusal::Invalid));
-        let stored = member.ask(sim.id(), &put(0, table)).await.unwrap();
-        assert_eq!(
-            stored,
-            Answer::Done {
-                generation: Some(Generation(1))
-            }
-        );
+        let stored = sim.ask(&mut member, &put(0, table)).await;
+        assert_eq!(stored, written(1));
         let stale = owner.ask(sim.id(), &put(0, [None; PLANS])).await.unwrap();
-        assert_eq!(
-            stale,
-            Answer::Refused(Refusal::Stale {
-                current: Generation(1)
-            })
-        );
+        assert_eq!(stale, stale_at(1));
         let changed = backlog(&mut owner).await.into_iter().any(|body| {
             matches!(
                 body,
@@ -1507,18 +1334,13 @@ fn the_desiccant_reminder_counts_from_its_reset_across_a_restart() {
             Desiccant::Unset
         );
 
-        let refused = owner.ask(sim.id(), &Op::ResetDesiccant).await.unwrap();
+        let refused = sim.ask(&mut owner, &Op::ResetDesiccant).await;
         assert_eq!(refused, Answer::Refused(Refusal::NoClock));
 
         let synced = owner.ask(sim.id(), &Op::TimeSync(sync(NOW_MS))).await;
         assert_eq!(synced.unwrap(), Answer::Done { generation: None });
-        let reset = owner.ask(sim.id(), &Op::ResetDesiccant).await.unwrap();
-        assert_eq!(
-            reset,
-            Answer::Done {
-                generation: Some(Generation(1))
-            }
-        );
+        let reset = sim.ask(&mut owner, &Op::ResetDesiccant).await;
+        assert_eq!(reset, written(1));
         assert_eq!(
             status(&mut sim, &mut owner).await.desiccant,
             Desiccant::Remaining {
@@ -1533,13 +1355,8 @@ fn the_desiccant_reminder_counts_from_its_reset_across_a_restart() {
                 ..SettingsPatch::default()
             },
         };
-        let changed = owner.ask(sim.id(), &period).await.unwrap();
-        assert_eq!(
-            changed,
-            Answer::Done {
-                generation: Some(Generation(2))
-            }
-        );
+        let changed = sim.ask(&mut owner, &period).await;
+        assert_eq!(changed, written(2));
         drop(owner);
         sim.stop().await;
         drop(flash);
@@ -1547,10 +1364,7 @@ fn the_desiccant_reminder_counts_from_its_reset_across_a_restart() {
         let flash = Flash::file(&path).unwrap();
         let mut sim = Running::start(&flash, false).await;
         let mut owner = sim.open(OWNER).await.unwrap();
-        let settings = owner.ask(sim.id(), &Op::GetSettings).await.unwrap();
-        let Answer::Settings(settings) = settings else {
-            panic!("{settings:?}");
-        };
+        let settings = settings(&mut sim, &mut owner).await;
         let replaced = settings.desiccant_replaced.map(|date| date.to_string());
         assert_eq!(
             (settings.desiccant_days, replaced.as_deref()),
@@ -1629,7 +1443,7 @@ fn a_client_that_stops_reading_rests_the_loop_and_loses_its_slot() {
 
         sim.control(Control::BlockSends(false));
         let closed = stuck.next(WAIT).await;
-        assert!(matches!(closed, Err(ConnectError::Closed)), "{closed:?}");
+        assert_matches!(closed, Err(ConnectError::Closed));
 
         // Every other slot taken, so the last connection can only have the
         // one the stuck client gave up.

@@ -18,12 +18,12 @@ Do these checks first, because the installer can only read the feeder after Rese
 
 | You need | Why |
 | --- | --- |
-| An Android 12 or newer phone that can leave your Wi-Fi briefly, or a Linux computer with Bluetooth and a Wi-Fi interface | It runs the install and serves the firmware. A wired-only computer can't reach the feeder's setup network. The app's route on a phone that can't hold both networks hasn't been run |
+| An Android 12 or newer phone that can leave your Wi-Fi briefly | It runs the install and serves the firmware. The app's route on a phone that can't hold both networks hasn't been run |
 | A 2.4 GHz Wi-Fi network and its password | The feeder has no other way onto your network |
-| About 10 minutes | Keep the app or the run open throughout, since your phone or computer is the server |
-| A second place to keep a file | You'll want a copy of the vendor's firmware away from your phone or computer |
+| About 10 minutes | Keep the app open throughout, since your phone is the server |
+| A second place to keep a file | You'll want a copy of the vendor's firmware away from your phone |
 
-Your phone or computer must be on the same network as the feeder. Client isolation or a guest network will block it, and a computer's firewall must allow TCP 1883 and 8088 from the feeder.
+Your phone must be on the same network as the feeder. Client isolation or a guest network will block it.
 
 ## What the install erases
 
@@ -55,6 +55,6 @@ You can put your feeder's own copy of the vendor's firmware back over the air, t
 
 ## Evidence
 
-- **Observed, October 30 and 31, 2026.** The install and the return to the vendor's firmware ran on one research feeder, from the app and the CLI.
+- **Observed, October 30 and 31, 2026.** The install and the return to the vendor's firmware ran on one research feeder, from the app.
 - **Modeled.** The app's minimum Android version comes from its build settings, and it hasn't been tried on every version.
 - **Recovered.** What the Reset hold clears on the vendor's firmware comes from analysis of that firmware.

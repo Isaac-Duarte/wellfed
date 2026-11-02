@@ -4,7 +4,7 @@ This is Wellfed's phone app. It installs Wellfed on a feeder that runs stock, se
 
 So far it does:
 
-- **Install:** from stock 1.1.15, from the same driver as `wellfed install`: through the feeder's own Wi-Fi after a Reset hold. It backs up stock and makes Wellfed permanent, and the meals are set up again in Wellfed afterwards ([consumer installation](../../docs/firmware/consumer-installation.md)).
+- **Install:** from stock 1.1.15, through the feeder's own Wi-Fi after a Reset hold. This app is the only installer. It backs up stock and makes Wellfed permanent, and the meals are set up again in Wellfed afterwards ([consumer installation](../../docs/firmware/consumer-installation.md)).
 - **Setup:** BLE setup of a new or reset feeder. You hold Lock, then Mic, give the Wi-Fi and the names, pick the feeder from those nearby in setup mode, then key in the 6-press code.
 - **Recovery:** taking a feeder already on your network as its owner again. You hold Lock, then Dispense, and key in the same kind of code.
 - **Home:** a card per feeder (compact when there are several), with whether it can feed now, the food, power, panel lock, Wi-Fi signal and anything that needs attention.
@@ -48,7 +48,7 @@ Servers come later ([roadmap](../../docs/roadmap.md)). Meal reminders are a sett
 
 ## The install
 
-`wellfed_install::run` drives the whole run, the same as the CLI's. Its future is not `Send`, so `rust/src/install.rs` runs it on a thread of its own, with a current-thread tokio runtime. Stock's broker and image server are tasks on that runtime, in this process, on unprivileged ports. The `bench` feature stays off.
+`wellfed_install::run` drives the whole run. Its future is not `Send`, so `rust/src/install.rs` runs it on a thread of its own, with a current-thread tokio runtime. Stock's broker and image server are tasks on that runtime, in this process, on unprivileged ports.
 
 - **Dart moves things and draws them.** What the run needs from outside (a person's answer, a radio write, an NSD lookup) comes to Dart as an `Ask` on one stream, and Dart answers by id. Progress comes as generated `InstallEvent`s. `state/install/` follows them, and `screens/install/` draws a screen per stage.
 - **Tests fake the edge, not the flow.** `platform/install_ports.dart` and `platform/pairing_ports.dart` are everything these screens reach outside Dart, so `test/` runs every state with no Rust and no phone. The bridge's own tests run the thread and the adapters against the simulated feeder.

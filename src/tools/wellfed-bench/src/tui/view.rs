@@ -183,9 +183,9 @@ fn draw_banner(frame: &mut Frame<'_>, area: Rect, uart: &Uart) {
     }
 }
 
-/// The question a job waits on, right above its output (where the
-/// installer prints what goes with it, such as a recovery code), with the
-/// command that answers it; the console itself only shows it.
+/// The question a job waits on, right above its output (where the tool
+/// prints what goes with it), with the command that answers it; the console
+/// itself only shows it.
 fn draw_prompt(frame: &mut Frame<'_>, area: Rect, pending: &PendingPrompt) {
     let block = Block::default()
         .borders(Borders::ALL)

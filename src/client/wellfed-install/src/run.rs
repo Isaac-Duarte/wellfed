@@ -159,10 +159,9 @@ pub struct Platform<P, B, D, K, R> {
 ///
 /// The returned future is not `Send` (rustc cannot prove it across a
 /// generic state machine this deep), so a platform drives it with
-/// `block_on`, on a thread of its own: the CLI on its main thread, the app
-/// on a thread it starts for the install. Stock's server and image server,
-/// which it spawns, are `Send` tasks on that same runtime: on its workers for
-/// the CLI's, and between the run's own awaits on the app's current-thread one.
+/// `block_on`, on a thread of its own, as the app does for the install. Stock's
+/// server and image server, which it spawns, are `Send` tasks on that same
+/// current-thread runtime, between the run's own awaits.
 pub async fn run<P, B, D, K, R>(
     plan: Plan,
     platform: Platform<P, B, D, K, R>,
@@ -1372,7 +1371,7 @@ where
             build: build.to_string(),
             bank: 0,
             note: format!(
-                "wellfed install: build {} answered from bank 0",
+                "install: build {} answered from bank 0",
                 build.get(..12).unwrap_or(build)
             ),
         };

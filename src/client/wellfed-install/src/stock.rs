@@ -444,23 +444,12 @@ impl Stock {
     }
 }
 
-/// Where the image server admits the feeder from: the address the
-/// enrollment recorded. A captured device has none; on the bench host it is
-/// found by its MAC in the hotspot's neighbour table. Without the `bench` feature (an app) the enrollment is the only
-/// source, and a captured device is refused.
+/// Where the image server admits the feeder from: the address the enrollment
+/// recorded. A captured device has none, and is refused.
 fn peer(config: &wellfed_stock::config::Config) -> Result<Ipv4Addr, Error> {
     if let Some(IpAddr::V4(enrolled)) = config.device_address {
         return Ok(enrolled);
     }
-    #[cfg(feature = "bench")]
-    {
-        match wellfed_stock::neighbour::discover(config) {
-            Ok(IpAddr::V4(found)) => Ok(found),
-            Ok(IpAddr::V6(_)) => Err(Error::NoPeer),
-            Err(error) => Err(Error::Images(error.into())),
-        }
-    }
-    #[cfg(not(feature = "bench"))]
     Err(Error::NoPeer)
 }
 

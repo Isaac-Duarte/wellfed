@@ -5,25 +5,10 @@ mod common;
 
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
-use std::time::Duration;
 
 use wellfed_formats::bench::lease::Holder;
 
-/// A config in a fresh directory, standing as `private/`.
-fn configured() -> (
-    tempfile::TempDir,
-    std::path::PathBuf,
-    wellfed_stock::config::Config,
-) {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("server.json");
-    let mut config = common::config();
-    config.plans = None;
-    [config.mqtt_listen, config.http_listen] = common::addresses().unwrap();
-    wellfed_stock::storage::write_json(&path, &config).unwrap();
-    (dir, path, config)
-}
-
+/// The holder of the bench lease in `directory`, if any.
 fn lease(directory: &Path) -> Option<Holder> {
     let data = std::fs::read(directory.join("bench.lease")).ok()?;
     Some(serde_json::from_slice(&data).unwrap())
@@ -31,13 +16,9 @@ fn lease(directory: &Path) -> Option<Holder> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_server_takes_no_lease() {
-    let (dir, path, config) = configured();
+    let (dir, path, config) = common::configured();
     let _service = common::start(&path);
-    let http = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(3))
-        .build()
-        .unwrap();
+    let http = common::http();
     common::ready(&config, &http).await;
 
     assert!(lease(dir.path()).is_none());
@@ -81,7 +62,7 @@ fn held(directory: &Path) -> Other {
 
 #[test]
 fn setup_send_refuses_a_held_bench() {
-    let (dir, path, _) = configured();
+    let (dir, path, _) = common::configured();
     let _other = held(dir.path());
 
     let output = setup_send(&path);
@@ -95,7 +76,7 @@ fn setup_send_refuses_a_held_bench() {
 /// in its own `private/`, beside the bench that runs from it.
 #[test]
 fn a_symlinked_config_looks_for_the_lease_where_it_is_named() {
-    let (main, target, _) = configured();
+    let (main, target, _) = common::configured();
     let worktree = tempfile::tempdir().unwrap();
     let link = worktree.path().join("server.json");
     std::os::unix::fs::symlink(&target, &link).unwrap();

@@ -75,16 +75,20 @@ Where the app and the CLI differ, write both under these markers, each on its ow
 
 ### App
 
-Tap **Install**.
+Tap **Feed now**.
 
 ### CLI
 
-Run `wellfed install`.
+Run `wellfed feed`.
 
 <!-- /tabs -->
 ```
 
 GitHub hides the comments and shows both sections. The site shows a switch that remembers the reader's choice. App comes first, and both sections are required.
+
+### Test log verdicts
+
+Each entry in [the test log](../guide/how-it-works/testing.md) has exactly one verdict, as bold text opening a paragraph, such as `**Passed.**`. The page defines the six verdicts. GitHub shows the bold text, and the site shows a colored label. The docs site's build fails on an entry with no verdict, an entry with two, or a phrase outside the set, so add a condition to the entry's text rather than to its verdict.
 
 ### Screenshots
 

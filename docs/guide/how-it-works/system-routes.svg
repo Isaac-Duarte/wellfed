@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" role="img" aria-labelledby="system-routes-title system-routes-desc">
   <title id="system-routes-title">Who can install what</title>
-  <desc id="system-routes-desc">The app or the CLI installs from stock onto a feeder on the vendor's firmware. The app or the CLI also offers updates to, and restores stock from, a feeder running Wellfed. The server can only install releases on a feeder already running Wellfed, tested in simulation only. The server never installs on a feeder on the vendor's firmware.</desc>
+  <desc id="system-routes-desc">The app installs from stock onto a feeder on the vendor's firmware. The app, and the CLI too, offers updates to, and restores stock from, a feeder running Wellfed. The server can only install releases on a feeder already running Wellfed, tested in simulation only. The server never installs on a feeder on the vendor's firmware.</desc>
   <defs>
     <marker id="system-routes-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path class="d-head" d="M0,0 L10,5 L0,10 z"/>
@@ -18,7 +18,7 @@
   <text x="99" y="91" text-anchor="middle" class="d-muted">the vendor's firmware</text>
 
   <rect class="d-accent" x="285" y="40" width="150" height="76" rx="8"/>
-  <text x="360" y="83" text-anchor="middle" class="d-title">The app or the CLI</text>
+  <text x="360" y="83" text-anchor="middle" class="d-title">The app</text>
 
   <rect class="d-box" x="546" y="40" width="150" height="76" rx="8"/>
   <text x="621" y="83" text-anchor="middle" class="d-title">Feeder on Wellfed</text>
@@ -32,6 +32,7 @@
   <text x="230" y="68" text-anchor="middle" class="d-muted">from stock</text>
 
   <line class="d-wire-accent" x1="435" y1="78" x2="542" y2="78" marker-end="url(#system-routes-arrow-accent)"/>
+  <text x="490" y="36" text-anchor="middle" class="d-muted">with the CLI too:</text>
   <text x="490" y="52" text-anchor="middle" class="d-muted">updates, and</text>
   <text x="490" y="68" text-anchor="middle" class="d-muted">restoring stock</text>
 

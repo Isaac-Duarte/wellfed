@@ -1,11 +1,11 @@
-//! How `wellfed install` asks the person at the feeder, and reads the
-//! answer: at a terminal, or as JSON lines for the bench server that runs it
-//! as a job (`wellfed_formats::bench::prompt`).
+//! How this command line asks the person at the feeder, and reads the
+//! answer: at a terminal, or as JSON lines for the bench server that runs
+//! `wellfed restore-stock` as a job (`wellfed_formats::bench::prompt`).
 //!
 //! In either mode a closed standard input is an error, never "no" and never
-//! "go on": nobody is there to answer, and the install must not carry on as
-//! if someone had. Standard input is read on a thread of its own, so a
-//! signal that ends the run is seen while a prompt waits.
+//! "go on": nobody is there to answer, and the run must not carry on as if
+//! someone had. Standard input is read on a thread of its own, so a signal
+//! that ends the run is seen while a prompt waits.
 //!
 //! A press at the panel inside a window the feeder times (the setup code,
 //! the Dispense that enrolls an update key) is announced rather than asked
@@ -42,8 +42,6 @@ pub(crate) enum Prompts {
 pub(crate) enum AskError {
     #[error("standard input closed with the {} prompt unanswered", prompt.name())]
     Closed { prompt: Prompt },
-    #[error("standard input closed with a question unanswered")]
-    ClosedOnQuestion,
     #[error("the answer to the {} prompt is not an answer: {line:?}", prompt.name())]
     Unreadable {
         prompt: Prompt,
@@ -74,9 +72,9 @@ pub(crate) struct Asker<W> {
 }
 
 impl Asker<Box<dyn Write>> {
-    /// Ask on this process's standard streams. Call it only once anything
-    /// else that reads standard input (the frame's passphrase) has.
-    pub(crate) fn standard(prompts: Prompts) -> Self {
+    /// Ask in JSON lines on this process's standard streams, for the bench
+    /// server.
+    pub(crate) fn lines() -> Self {
         let (send, lines) = mpsc::channel(1);
         std::thread::spawn(move || {
             for line in io::stdin().lock().lines() {
@@ -85,16 +83,12 @@ impl Asker<Box<dyn Write>> {
                 }
             }
         });
-        let output: Box<dyn Write> = match prompts {
-            Prompts::Terminal => Box::new(io::stderr()),
-            Prompts::Lines => Box::new(io::stdout()),
-        };
-        Self::new(prompts, output, lines)
+        Self::new(Prompts::Lines, Box::new(io::stdout()), lines)
     }
 
     /// An asker for a command that only announces, at the terminal: `wellfed
-    /// setup`, `recover` and `update-key enroll` show the code or the press
-    /// and read nothing back, so standard input is left alone.
+    /// setup`, `recover`, `update-key enroll` and `restore-stock` show the code
+    /// or the press and read nothing back, so standard input is left alone.
     pub(crate) fn terminal_notices() -> Self {
         let (_, lines) = mpsc::channel(1);
         Self::new(Prompts::Terminal, Box::new(io::stderr()), lines)
@@ -184,17 +178,6 @@ impl<W: Write> Asker<W> {
         self.read(prompt).await
     }
 
-    /// Show `words` and read back the line a person types, as it stands: a
-    /// terminal's own question, which the bench's JSON lines never carry.
-    pub(crate) async fn typed(&mut self, words: &str) -> Result<String, AskError> {
-        writeln!(self.output, "{words}").map_err(AskError::Write)?;
-        self.output.flush().map_err(AskError::Write)?;
-        match self.lines.recv().await {
-            Some(line) => line.map_err(AskError::Read),
-            None => Err(AskError::ClosedOnQuestion),
-        }
-    }
-
     /// Read one answer to `prompt`, of the kind it takes.
     async fn read(&mut self, prompt: Prompt) -> Result<(Prompt, Answer), AskError> {
         let line = match self.lines.recv().await {
@@ -226,7 +209,7 @@ impl<W: Write> Asker<W> {
     }
 }
 
-/// The install's person at the feeder is this asker: a question or an
+/// The driver's person at the feeder is this asker: a question or an
 /// instruction as before, and an announced press in the words a person at
 /// a terminal has always read.
 impl<W: Write> Prompter for Asker<W> {
@@ -454,8 +437,8 @@ mod tests {
         );
     }
 
-    /// The install's Dispense press is its prompt line for the bench, and
-    /// its words at a terminal.
+    /// The Dispense press is its prompt line for the bench, and its words at
+    /// a terminal.
     #[tokio::test]
     async fn an_announced_press_is_its_line_or_its_words() {
         let press = Announcement::PressDispense { key: [0xab; 8] };

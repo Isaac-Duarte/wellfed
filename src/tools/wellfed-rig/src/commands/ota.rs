@@ -105,7 +105,7 @@ const MOTION_MANUAL: &str = "drives the motor; motion builds stay manual (build 
 pub enum OtaError {
     #[error("Review build-manifest.json has no 64-hex startup_identity")]
     NoBuildId,
-    /// The install job takes root-relative paths under private/ only.
+    /// A job takes root-relative paths under private/ only.
     #[error("{} must be under private/", path.display())]
     NotPrivate { path: PathBuf },
     #[error("No version above u32::MAX")]
@@ -985,7 +985,7 @@ fn is_build_id(text: &str) -> bool {
 }
 
 impl Bench {
-    /// A root-relative path under private/, as the install job takes it.
+    /// A root-relative path under private/, as a job takes it.
     fn private_arg(&self, path: &Path) -> Result<String> {
         let Some(relative) = path
             .strip_prefix(&self.root)

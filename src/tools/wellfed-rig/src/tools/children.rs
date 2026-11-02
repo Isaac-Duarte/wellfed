@@ -32,7 +32,7 @@ pub fn own_group(command: &mut Command) -> &mut Command {
 }
 
 /// [`own_group`], but with standard input a pipe its owner writes: only
-/// for a child that takes answers there (`wellfed install --prompts
+/// for a child that takes answers there (`wellfed restore-stock --prompts
 /// lines`). The pipe is no terminal, so no read of it can stop the child.
 pub fn own_group_with_input(command: &mut Command) -> &mut Command {
     command.process_group(0).stdin(std::process::Stdio::piped())

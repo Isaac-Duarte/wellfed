@@ -1,6 +1,6 @@
-//! `wellfed setup`'s radio half, and `wellfed install`'s: find a feeder in
-//! setup mode and carry `wellfed_client::setup`'s messages over its control
-//! characteristic, as `wellfed_install`'s [`Bluetooth`] and [`SetupLink`].
+//! `wellfed setup`'s radio half: find a feeder in setup mode and carry
+//! `wellfed_client::setup`'s messages over its control characteristic, as
+//! `wellfed_install`'s [`SetupLink`].
 //!
 //! The framing is here, and each host's Bluetooth stack below it: [`bluez`]
 //! on Linux, [`corebluetooth`] on macOS. The Android app has its own, in Dart.
@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use futures_util::{Stream, StreamExt};
 use tokio::time::timeout;
 use wellfed_client::setup::{Deframer, frame};
-use wellfed_install::{Bluetooth, PlatformError, SetupLink};
+use wellfed_install::{PlatformError, SetupLink};
 
 #[cfg(target_os = "linux")]
 mod bluez;
@@ -23,7 +23,7 @@ mod corebluetooth;
 #[cfg(target_os = "macos")]
 use corebluetooth as platform;
 
-pub(crate) use platform::{Address, INSTALL_READY};
+pub(crate) use platform::Address;
 
 const FIND_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -89,20 +89,6 @@ impl Link {
     /// already dropped.
     pub(crate) async fn close(self) {
         self.connection.disconnect(CLOSE_TIMEOUT).await;
-    }
-}
-
-/// The computer's radio, finding the feeder at `address` or the first
-/// one in setup mode.
-pub(crate) struct Radio {
-    pub(crate) address: Option<Address>,
-}
-
-impl Bluetooth for Radio {
-    type Link = Link;
-
-    async fn open(&mut self) -> Result<Link, PlatformError> {
-        Ok(Link::open(self.address).await?)
     }
 }
 

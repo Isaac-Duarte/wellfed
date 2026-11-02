@@ -12,8 +12,9 @@
 //!
 //! Liveness is the process, not just its pid: the kernel reuses pids, so a
 //! holder is alive only while the system shows the same start time on the
-//! same boot (`/proc/<pid>/stat` on Linux, `ps` on macOS, which has no /proc). A process descended from the holder (the bench's
-//! `wellfed-flash` children, its `wellfed install`) runs
+//! same boot (`/proc/<pid>/stat` on Linux, `ps` on macOS, which has no /proc).
+//! A process descended from the holder (the bench's `wellfed-flash` children,
+//! its `wellfed restore-stock`) runs
 //! on the holder's lease and removes nothing when it ends, so a chained tool
 //! never deadlocks on its parent. That claim is checked once, when the child
 //! starts: a child the holder leaves running after it releases (which the

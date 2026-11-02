@@ -1,6 +1,6 @@
-//! The install from stock 1.1.15 to Wellfed, as one tokio driver that the
-//! CLI (`wellfed install`) and the Android app both run
-//! ([consumer installation]).
+//! The install from stock 1.1.15 to Wellfed, as the tokio driver the Android
+//! app runs ([consumer installation]). `wellfed restore-stock` shares its
+//! restore, pairing and update-key halves.
 //!
 //! The steps and every decision between them are `wellfed_client::install`'s;
 //! this crate is their IO, the same on every platform:
@@ -63,8 +63,7 @@ pub use review::Review;
 pub use run::{Plan, Platform, Signer, Start, Unjoined, run};
 pub use stock::StockOptions;
 pub use track::{Stop, Stopped, Unsettled};
-/// What stock's server is built from, which the CLI checks before it
-/// dispatches an install.
+/// What stock's server is built from.
 pub use wellfed_stock::build_info;
 /// What is known of stock's own plans, which decides its clock.
 pub use wellfed_stock::clock::StockPlans;

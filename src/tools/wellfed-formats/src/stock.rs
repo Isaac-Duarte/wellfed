@@ -59,7 +59,7 @@ pub struct StockEnrollment {
 /// (`installer.json`'s is `installer.device.json`): the feeder that
 /// enrolled, by its own MQTT identity, and where it first connected from.
 /// Its client ID is its device ID. `wellfed-stock`'s broker writes it once;
-/// `wellfed install` reads which device its run enrolled.
+/// the install's driver reads which device its run enrolled.
 ///
 /// It holds working credentials, so it has no `Debug`, and is written mode
 /// 0600.
@@ -244,8 +244,8 @@ pub enum TrialPhase {
 /// with it.
 pub const SERVER_CONFIG: &str = "private/server.json";
 
-/// An installer's config, root-relative: what `wellfed install` and
-/// `wellfed-stock` use unless told otherwise. It holds no plan snapshot.
+/// An installer's config, root-relative: what `wellfed-stock` uses unless
+/// told otherwise. It holds no plan snapshot.
 pub const INSTALLER_CONFIG: &str = "private/installer.json";
 
 /// The parts of `wellfed-stock`'s config the bench tools use.

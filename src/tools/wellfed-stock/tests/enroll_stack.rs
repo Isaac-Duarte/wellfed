@@ -117,11 +117,7 @@ async fn the_first_stock_feeder_enrolls_and_is_then_the_only_one() {
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
     });
-    let http_client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(3))
-        .build()
-        .unwrap();
+    let http_client = common::http();
     let mut online = false;
     for _ in 0..200 {
         if let Ok(response) = http_client

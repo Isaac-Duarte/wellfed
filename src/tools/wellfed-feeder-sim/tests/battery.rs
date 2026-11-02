@@ -3,23 +3,21 @@
 //! the device API over real TCP for what a client sees (the supply and its
 //! charge in the status, an update refused, the session lost and back).
 
+mod common;
+
+use common::paused;
 use std::cell::RefCell;
-use std::future::Future;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::rc::Rc;
 use std::time::Duration;
 
-use tokio::task::LocalSet;
 use wellfed_connect::Connection;
-use wellfed_core::clock::wall::{Origin, Sync};
 use wellfed_core::liveness::Radio;
 use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
-use wellfed_device_api::Reader;
 use wellfed_device_api::mailbox::{PlansChange, PlansResult};
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::supply::{RADIO_OFF_MS, RELEASE_MS, Released};
 use wellfed_feeder::feeder::{self, supply};
-use wellfed_feeder::store::events::Read;
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
@@ -77,28 +75,15 @@ impl Feeder {
 
     /// Run the loop for `ms`, a pass at least every second.
     fn run(&mut self, ms: u64) {
-        let end = u64::from(self.now) + ms;
-        while u64::from(self.now) < end {
-            let records = &mut self.records;
-            let delay = self.sim.pass(self.now, |record| records.push(record));
-            let step = u64::from(delay.clamp(1, 1000)).min(end - u64::from(self.now));
-            self.now += u32::try_from(step.max(1)).unwrap();
-        }
+        let records = &mut self.records;
+        harness::run_loop(&mut self.sim, &mut self.now, ms, |_, record| {
+            records.push(record);
+        });
     }
 
     /// An owner's sync: the wall clock reads `unix_ms` now, at UTC.
     fn sync(&mut self, unix_ms: u64) {
-        let sync = Sync {
-            unix_ms,
-            offset_s: 0,
-            next_change_s: 0,
-            next_offset_s: 0,
-        };
-        let now = self.now;
-        self.sim
-            .platform()
-            .time_sync(now, sync, Origin::Owner)
-            .unwrap();
+        harness::owner_sync(&mut self.sim, self.now, unix_ms);
     }
 
     fn wall(&mut self) -> u64 {
@@ -133,15 +118,7 @@ impl Feeder {
     }
 
     fn events(&mut self) -> Vec<EventBody> {
-        let mut bodies = Vec::new();
-        let mut after = None;
-        while let Some(Read::Record(record)) =
-            self.sim.platform().event_after(Reader::slot(0), after)
-        {
-            after = Some(record.seq);
-            bodies.extend(wellfed_proto::decode_padded::<EventBody>(&record.body));
-        }
-        bodies
+        harness::events(&mut self.sim)
     }
 
     fn fed(&mut self) -> Vec<(FeedOutcome, Source)> {
@@ -310,15 +287,6 @@ fn a_rail_decaying_at_a_cut_is_not_battery_mode() {
 }
 
 const OWNER: [u8; 32] = [0x22; 32];
-
-fn paused(test: impl Future<Output = ()>) {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .start_paused(true)
-        .build()
-        .unwrap();
-    runtime.block_on(LocalSet::new().run_until(test));
-}
 
 async fn open(sim: &harness::Running, attempt: u8) -> Connection {
     let keys = Keypair::from_secret(OWNER);

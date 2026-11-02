@@ -2,7 +2,7 @@
 
 The feeder runs from its adapter, with three D cells as a backup. This page covers how the firmware reads the supply and the pack's charge, what the feeder does on its batteries, the battery floor below which it will not feed, what happens after a brownout, and why the chip does not sleep yet.
 
-The inputs and battery mode are observed on our unit. The charge, the floor and the brownout handling are tested only in simulation. No feed's surge or sag on the pack has been measured. The [roadmap](../roadmap.md) has the current status.
+The inputs and battery mode are observed on our unit. The charge, the floor and the brownout handling are tested only in simulation. One feed on fresh cells is the only sag measured on the pack ([Evidence](#evidence)), and no tired pack has fed. The [roadmap](../roadmap.md) has the current status.
 
 ## Inputs
 
@@ -80,7 +80,7 @@ The UART shows `PLBAT2 radio off|on` and `PLBAT2 install stop queued=1` from the
 
 ## The floor
 
-The pack's floor is `wellfed_hal::power::FLOOR`, in the battery channel's scaled unit (pin millivolts). It is **provisional**: no feed's surge or sag on the pack has been measured, and the regulator's dropout and the chip's brownout level are unmeasured on this board. The SDK leaves the brownout thresholds at their reset values and documents them only as codes.
+The pack's floor is `wellfed_hal::power::FLOOR`, in the battery channel's scaled unit (pin millivolts). It is **provisional**: the only sag measured on the pack is one feed on fresh cells, far above this floor, and the regulator's dropout and the chip's brownout level are unmeasured on this board. The SDK leaves the brownout thresholds at their reset values and documents them only as codes.
 
 | Limit | Pin mV | Pack | Why |
 | --- | ---: | ---: | --- |
@@ -176,6 +176,7 @@ Physical acceptance needs the cells in, which is the owner's call. The order kee
 
   So channel 5 measures the pack, not the adapter, through a divider of about 2.06 (2.058 and 2.068 in the two states). Channel 4 stayed at 240 throughout, and the feeder neither reset nor showed anything visible at either transition. Channel 5 is noisier than the others: about 110 raw between the minimum and maximum of each 16-conversion sample, against 3 or 4 on channels 4 and 10. The meter readings were not time-stamped against particular samples.
 - **Health with a pack.** Observed (October 23): health read `"adapter":true,"battery_mv":4862` with the adapter (meter earlier: 4.85 V), and `"adapter":false,"battery_mv":4755` with it pulled (meter: 4.77 V). With no pack, the monitor logged `PLBAT1 open ok=1` only after the startup probe ended, then `sample pin_mv=15 adapter=1`.
+- **A feed on fresh cells.** Observed (November 1, one feed, three fresh D cells, full hopper, Dispense press after a relay-1 cut): 1 of 1 with no reset, 10,189 ms of drive, peak current 268 and mean 86 on the feeder's scale. The pack read 4,839 mV at rest with the adapter in and 4,586 mV at its lowest by the feeder's own samples, not a meter, so a short dip between samples wouldn't show. The radio went off 35 to 46 s after the cut, about 45 s after boot, not 5 s. Its 60 s minimum on time after a boot is the likely reason, unconfirmed.
 - **Surge.** Observed: the start-up surge lasted one 20 ms poll on the adapter.
 - **Power cut mid-drive.** Observed: an interrupted feed resolves as uncertain at the next boot and is never resumed ([motor and feeds](motor-pulse.md#a-power-cut-mid-feed)).
 - **Stock's floor and battery behavior.** Recovered from the stock firmware.

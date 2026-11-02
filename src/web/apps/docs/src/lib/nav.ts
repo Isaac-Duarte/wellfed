@@ -44,6 +44,7 @@ export const NAV: NavGroup[] = [
       { file: "guide/how-it-works/install-and-rollback.md", label: "Install and rollback" },
       { file: "guide/how-it-works/feeding-safety.md", label: "How feeding stays safe" },
       { file: "guide/how-it-works/access.md", label: "Who can talk to your feeder" },
+      { file: "guide/how-it-works/testing.md", label: "The test log" },
     ],
   },
   {

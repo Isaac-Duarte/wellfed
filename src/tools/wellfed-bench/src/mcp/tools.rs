@@ -6,7 +6,7 @@
 //! What a tool cannot express is refused here, before any words exist:
 //! motion that needs a person at the bench (`--attended-motion`, the
 //! suite's `--feeds`), breaking the lease, and a destructive suite run
-//! without its explicit confirmation, and an answer to an install's
+//! without its explicit confirmation, and an answer to a job's
 //! question that only a person at the feeder may give: whether it is the
 //! owner's feeder, and that its recovery window is open. No string a
 //! hardware tool takes may
@@ -174,7 +174,7 @@ pub(crate) enum Until {
     Timer,
     /// No job runs and the flash client holds no UART.
     Idle,
-    /// A job asks a question (install), already or once it does.
+    /// A job asks a question (restore_stock), already or once it does.
     Prompt,
 }
 
@@ -237,45 +237,6 @@ struct RestoreStockArgs {
     /// than one.
     feeder: Option<String>,
     /// The feeder's address; found over mDNS otherwise.
-    address: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct InstallArgs {
-    /// The replacement's frozen review, root-relative.
-    review: String,
-    /// The signed update manifest for the same build; without it the
-    /// installer signs with update_key (or, for a bench review, the bench
-    /// key).
-    manifest: Option<String>,
-    /// The update-signing key to sign with and enroll by a Dispense press.
-    update_key: Option<String>,
-    /// A consumer image's network: a private file of its ssid and password
-    /// (private/hotspot.json on the bench).
-    home_network: Option<String>,
-    /// The feeder's Bluetooth address for a consumer image's setup.
-    ble_address: Option<String>,
-    /// Stock's MQTT client ID, pinned by the owner: the feeder check passes
-    /// for it without a question and stops the run for any other.
-    expect_device: Option<String>,
-    /// The job answers the installer's panel prompts itself on a running
-    /// virtual-panel build: the setup code's presses and the Dispense press.
-    #[serde(default)]
-    virtual_panel: bool,
-    /// Required with virtual_panel, whose presses include Dispense: the
-    /// hopper is empty.
-    #[serde(default)]
-    confirm_motion: bool,
-    /// The installer's wellfed-stock config (init-installer).
-    stock_config: String,
-    /// The replacement is already on bank 0: start at pairing.
-    #[serde(default)]
-    from_bank0: bool,
-    enroll_minutes: Option<u64>,
-    /// The owner key file; the installer's default otherwise.
-    keys: Option<String>,
-    /// The replacement's address.
     address: Option<String>,
 }
 
@@ -616,7 +577,7 @@ const SPECS: &[Spec] = &[
     },
     Spec {
         name: "job_answer",
-        description: "Answer the question the running install asks (bench_status's prompt, by its seq): done for an instruction such as setting the DNS override, yes or no for a question. Sent once, never ahead of a question. Refused for the owner's own questions (is this your feeder, the recovery window at the panel), which a person answers with `wellfed-bench answer`.",
+        description: "Answer the question the running job asks (bench_status's prompt, by its seq): done for an instruction such as a Dispense press, yes or no for a question. Sent once, never ahead of a question. Refused for the owner's own questions (is this your feeder, the recovery window at the panel), which a person answers with `wellfed-bench answer`.",
         schema: schema::<AnswerArgs>,
     },
     Spec {
@@ -676,7 +637,7 @@ const SPECS: &[Spec] = &[
     },
     Spec {
         name: "press",
-        description: "Hold panel buttons together on a running virtual-panel build, typed on its UART: the same gesture as fingers, for setup codes, the recovery window (lock and dispense held 5 s, on a panel a 5 s lock hold unlocked first; it relocks after 30 s idle) and update-key enrollment. Refused unless the build echoes the press and reports its release. Its effects are a finger's: a 5 s Lock hold unlocks the panel; any press with Dispense can feed (needs confirm_motion, hopper empty); a Reset hold over 1 s needs confirm_destructive, as one of 5 s on an unlocked panel erases the enrolled keys. Opening the recovery window does not let an agent answer an install's recovery question: that stays a person's.",
+        description: "Hold panel buttons together on a running virtual-panel build, typed on its UART: the same gesture as fingers, for setup codes, the recovery window (lock and dispense held 5 s, on a panel a 5 s lock hold unlocked first; it relocks after 30 s idle) and update-key enrollment. Refused unless the build echoes the press and reports its release. Its effects are a finger's: a 5 s Lock hold unlocks the panel; any press with Dispense can feed (needs confirm_motion, hopper empty); a Reset hold over 1 s needs confirm_destructive, as one of 5 s on an unlocked panel erases the enrolled keys. Opening the recovery window does not let an agent answer a job's recovery question: that stays a person's.",
         schema: schema::<PressArgs>,
     },
     Spec {
@@ -733,11 +694,6 @@ const SPECS: &[Spec] = &[
         name: "transients",
         description: "Logic-analyzer captures (sigrok) of repeated relay power-ons or loader entries; each cycle powers the feeder on and ends powered off. No UART, no flash.",
         schema: schema::<TransientArgs>,
-    },
-    Spec {
-        name: "install",
-        description: "Stock to Wellfed with `wellfed install` as a job: its own stock server and sessions (the server's session pauses), stock installs the review into bank 0 over its own updater, then promotion writes bank 1. Restarts the feeder itself with relay 1 (off about 10 s, then on). With virtual_panel (needs confirm_motion) it also keys a consumer image's setup code in and presses Dispense for the update key's enrollment on a running virtual-panel build, as press does, and a failed press stops the install. Its other questions wait in bench_status's prompt for job_answer or a person (expect_device answers the feeder check ahead, for the pinned device only); no flash write over UART.",
-        schema: schema::<InstallArgs>,
     },
     Spec {
         name: "restore_stock",
@@ -883,7 +839,7 @@ pub(crate) fn agent_may_answer(prompt: &Prompt) -> Result<(), ToolError> {
             })
         }
         // The feeder's own check of the code or the press decides, not the
-        // answer, which only lets the installer ask its next question.
+        // answer, which only lets the tool ask its next question.
         Prompt::RestartFeeder
         | Prompt::SetupMode
         | Prompt::JoinBack
@@ -1098,25 +1054,6 @@ fn job_words(name: &str, args: JsonObject) -> Result<Vec<String>, ToolError> {
                 .value("--seconds", args.seconds)
                 .value("--samplerate", args.samplerate)
         }
-        "install" => {
-            let args: InstallArgs = parse(name, args)?;
-            if args.virtual_panel && !args.confirm_motion {
-                return Err(ToolError::UnconfirmedPanel { tool: name.into() });
-            }
-            Line::new(&["install"])
-                .value("--review", Some(args.review))
-                .value("--manifest", args.manifest)
-                .value("--update-key", args.update_key)
-                .value("--home-network", args.home_network)
-                .value("--ble-address", args.ble_address)
-                .value("--expect-device", args.expect_device)
-                .switch("--virtual-panel", args.virtual_panel)
-                .value("--stock-config", Some(args.stock_config))
-                .switch("--from-bank0", args.from_bank0)
-                .value("--enroll-minutes", args.enroll_minutes)
-                .value("--keys", args.keys)
-                .value("--address", args.address)
-        }
         "restore_stock" => {
             let args: RestoreStockArgs = parse(name, args)?;
             if args.virtual_panel && !args.confirm_motion {
@@ -1181,7 +1118,7 @@ mod tests {
             "ota",
             "itest",
             "transients",
-            "install",
+            "restore_stock",
             "job_answer",
         ] {
             assert!(tools.iter().any(|tool| tool.name == name), "{name}");
@@ -1226,40 +1163,7 @@ mod tests {
     }
 
     #[test]
-    fn install_builds_its_command_line() {
-        let install = call(
-            "install",
-            args(serde_json::json!({
-                "review": "private/verification/r",
-                "manifest": "private/m.json",
-                "stock_config": "private/installer.json",
-            })),
-        )
-        .unwrap();
-        assert_eq!(
-            install,
-            Call::Job(
-                [
-                    "install",
-                    "--review",
-                    "private/verification/r",
-                    "--manifest",
-                    "private/m.json",
-                    "--stock-config",
-                    "private/installer.json",
-                ]
-                .map(String::from)
-                .to_vec()
-            )
-        );
-        assert!(matches!(
-            call(
-                "install",
-                args(serde_json::json!({"review": "-r", "manifest": "m", "stock_config": "c"}))
-            ),
-            Err(ToolError::LeadingDash { .. })
-        ));
-
+    fn restore_stock_builds_its_command_line() {
         let restore = serde_json::json!({"virtual_panel": true});
         assert!(matches!(
             call("restore_stock", args(restore)),
@@ -1278,46 +1182,6 @@ mod tests {
             )
         );
 
-        // The unattended consumer run: the job presses Dispense itself, so
-        // it needs the motion confirmed.
-        let consumer = serde_json::json!({
-            "review": "private/verification/c",
-            "update_key": "private/ota-key.json",
-            "home_network": "private/hotspot.json",
-            "ble_address": "AA:BB:CC:DD:EE:FF",
-            "expect_device": "AF_FEEDER",
-            "stock_config": "private/installer.json",
-            "virtual_panel": true,
-        });
-        assert!(matches!(
-            call("install", args(consumer.clone())),
-            Err(ToolError::UnconfirmedPanel { .. })
-        ));
-        let mut confirmed = consumer;
-        confirmed["confirm_motion"] = true.into();
-        assert_eq!(
-            call("install", args(confirmed)).unwrap(),
-            Call::Job(
-                [
-                    "install",
-                    "--review",
-                    "private/verification/c",
-                    "--update-key",
-                    "private/ota-key.json",
-                    "--home-network",
-                    "private/hotspot.json",
-                    "--ble-address",
-                    "AA:BB:CC:DD:EE:FF",
-                    "--expect-device",
-                    "AF_FEEDER",
-                    "--virtual-panel",
-                    "--stock-config",
-                    "private/installer.json",
-                ]
-                .map(String::from)
-                .to_vec()
-            )
-        );
         assert_eq!(
             call(
                 "job_answer",
