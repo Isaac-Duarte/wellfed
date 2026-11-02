@@ -25,7 +25,7 @@ These hold for every command on this page. The sections below give the detail.
 
 ### Wiring
 
-A DSD TECH SH-UR04A USB relay board (CP2102 serial, 9600 8N1) adds four switches to the [UART wiring](uart.md). The [wiring diagram](../../../src/tools/wellfed-bench/wiring.svg) carries reference designators and net names for a bench PCB. That PCB is the [Wellfed Bench board](../../../src/hardware/bench/README.md), which puts the adapter and the four switches on one USB cable. It is designed and no board exists yet, so this page still describes the relay board.
+A DSD TECH SH-UR04A USB relay board (CP2102 serial, 9600 8N1) adds four switches to the [UART wiring](uart.md). The [wiring diagram](../../../src/tools/wellfed-bench/wiring.svg) carries reference designators and net names for a bench PCB. That PCB is the [Wellfed Bench board](../../../src/hardware/bench/README.md), which puts the adapter and the four switches on one USB cable. Its first boards have not been brought up, so this page still describes the relay board.
 
 | Relay | Contacts | Connection | Role |
 | --- | --- | --- | --- |

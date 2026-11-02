@@ -76,7 +76,7 @@ Send one line ending in CR, LF or CRLF, and you get exactly one line back ending
 
 | Command | Reply | Meaning |
 | --- | --- | --- |
-| `AT+VER?` | `OK+VER=0.1.0 revC` | Firmware version and board revision |
+| `AT+VER?` | `OK+VER=0.1.0 revB` | Firmware version and board revision |
 | `AT+VBUS?` | `OK+VBUS=5012` | Feeder 5 V, in mV |
 | `AT+CUR?` | `OK+CUR=180` | Feeder current, in mA (INA181 on 50 mΩ) |
 | `AT+SRC?` | `OK+SRC=HOST` / `AUX` | Which USB-C input feeds the feeder |

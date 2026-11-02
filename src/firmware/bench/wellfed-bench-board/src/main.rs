@@ -1,4 +1,4 @@
-//! Wellfed Bench rev C: RP2040 firmware for the feeder recovery board.
+//! Wellfed Bench rev B: RP2040 firmware for the feeder recovery board.
 //!
 //! The board enumerates as two CDC-ACM ports that stand in for the relay
 //! bench: interface 0 bridges the feeder UART (the FT232R's job) and interface

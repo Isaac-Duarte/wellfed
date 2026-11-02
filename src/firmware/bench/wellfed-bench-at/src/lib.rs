@@ -242,7 +242,7 @@ pub fn current_ma(raw: u16) -> u32 {
 }
 
 /// The board revision `AT+VER?` reports, as printed on its silkscreen.
-pub const BOARD_REVISION: &str = "revC";
+pub const BOARD_REVISION: &str = "revB";
 
 /// Formats the reply to `command`. `channels` must already reflect a `Set`.
 pub fn reply(command: Command, channels: Channels, telemetry: &Telemetry, version: &str) -> Reply {
@@ -424,7 +424,7 @@ mod tests {
         ch.set(Channel::UartRx, true);
         let r = |cmd| reply(cmd, ch, &t, "0.1.0");
         assert_eq!(r(Command::Ping), "OK");
-        assert_eq!(r(Command::Version), "OK+VER=0.1.0 revC");
+        assert_eq!(r(Command::Version), "OK+VER=0.1.0 revB");
         assert_eq!(r(Command::Vbus), "OK+VBUS=5012");
         assert_eq!(r(Command::Current), "OK+CUR=123");
         assert_eq!(r(Command::Source), "OK+SRC=AUX");

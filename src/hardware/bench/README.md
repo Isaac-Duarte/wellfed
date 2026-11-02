@@ -3,10 +3,7 @@
 The Wellfed Bench is an RP2040 USB-C board for recovering and developing on PETLIBRO feeders. It replaces the FT232R UART adapter and SH-UR04A relay board of the [relay bench](../../../docs/devices/plaf103/bench.md). Over one USB cable it shows up as a feeder UART bridge plus an `AT+CHn` relay port, so the bench tools can drive it the way they drive the relay board. This page covers the hardware: what is on the board, the files here, and how to order it. The firmware has [its own page](../../firmware/bench/README.md).
 
 > [!NOTE]
-> The board is designed but has never been built. Nothing here has been confirmed on hardware, and the bench tools do not use it yet.
-
-> [!WARNING]
-> Rev C is not ready to order. Its schematic adds two test pads, TP4 on `RUN` and TP5 on `QSPI_SS` (BOOT), that the board does not place or route yet: they sit outside the outline. Place and route them, run DRC, then export the gerbers.
+> Rev B is the only revision. Boards have been made, but none has been brought up: nothing here is confirmed on hardware, and the bench tools do not use it yet.
 
 ## What it does
 
@@ -25,7 +22,7 @@ The relay channels, LEDs, buttons and pin map are listed in the [firmware page](
 | Path | Contents |
 | --- | --- |
 | `kicad/` | The KiCad 10 project `wellfed_bench`: schematic, board and the `wellfed` symbol library |
-| `fab/` | JLCPCB assembly files: the BOM and the placement file. The gerbers join them once rev C's test pads are placed |
+| `fab/` | JLCPCB assembly files: the BOM and the placement file. Export the gerbers from `kicad/` (below) |
 | `enclosure/` | The OpenSCAD two-part enclosure and its button caps |
 
 ## Order from JLCPCB

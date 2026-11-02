@@ -8441,7 +8441,7 @@
 		)
 		(uuid "ab857de2-0d14-4dbc-b9e8-10ce4808d2ee")
 	)
-	(text "REV C ADDITIONS\n12. Board ID straps: GPIO24 tied to GND, GPIO25 open. Firmware reads both with internal pull-ups enabled:\n    rev B = 11 (both open), rev C = 01. Change the copper straps on each new revision.\n13. Test jig (top side): TP1 SWCLK, TP2 SWDIO, TP3 GND, TP4 RUN, TP5 QSPI_SS (hold low at reset = BOOTSEL),\n    plus the bare J6 holes for +3V3 (pin 1), VBUS_IN (pin 2) and GND.\n14. Feeder UART ESD is U7 (USBLC6-2SC6) on FDR_RX / FDR_TX. Back silkscreen carries the REV C date code."
+	(text "REV B ADDITIONS, CONTINUED\n12. Board ID straps: GPIO24 and GPIO25, read with internal pull-ups enabled. GPIO24's tie to GND is drawn but\n    not routed (DRC: U3 pad 36 unconnected), so rev B reads 11 (both open). Change the copper straps on each new revision.\n13. Test jig (top side): TP1 SWCLK, TP2 SWDIO, TP3 GND, plus the bare J6 holes for +3V3 (pin 1),\n    VBUS_IN (pin 2) and GND.\n14. Feeder UART ESD is U7 (USBLC6-2SC6) on FDR_RX / FDR_TX. Back silkscreen carries the date code."
 		(exclude_from_sim no)
 		(at 25.4 287.02 0)
 		(effects
@@ -8522,16 +8522,6 @@
 	)
 	(wire
 		(pts
-			(xy 203.2 205.74) (xy 203.2 208.28)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "3ec92fe6-66f2-4f8d-8cfa-246dedb98e39")
-	)
-	(wire
-		(pts
 			(xy 439.42 99.06) (xy 447.04 99.06)
 		)
 		(stroke
@@ -8559,16 +8549,6 @@
 			(type default)
 		)
 		(uuid "b57953f1-39ba-4b48-a1d5-c42ba5aed408")
-	)
-	(wire
-		(pts
-			(xy 213.36 205.74) (xy 213.36 208.28)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "da8574bf-9f7c-4c84-8790-1bb991b82e04")
 	)
 	(label "EXP_IO20"
 		(at 543.56 165.1 180)
@@ -8829,16 +8809,6 @@
 			(justify right bottom)
 		)
 		(uuid "29951f4a-252a-4420-b287-51f56597153b")
-	)
-	(label "QSPI_SS"
-		(at 213.36 208.28 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "2bb37735-0beb-4dab-95b0-354b368a31b2")
 	)
 	(label "EXP_SCL"
 		(at 546.1 184.15 0)
@@ -9289,16 +9259,6 @@
 			(justify left bottom)
 		)
 		(uuid "6295fe1f-44d4-4057-a1de-52f7e037e4dc")
-	)
-	(label "RUN"
-		(at 203.2 208.28 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "642ed9b9-5361-4f0e-b6e7-6b5ab8027815")
 	)
 	(label "EXP_ADC3"
 		(at 543.56 167.64 180)
@@ -14074,82 +14034,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Connector:TestPoint")
-		(at 203.2 205.74 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "142bd418-bd9d-4155-a619-75a7975bc1e9")
-		(property "Reference" "TP4"
-			(at 203.2 198.882 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "RUN"
-			(at 203.2 200.66 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 203.2 205.74 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 203.2 205.74 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "test point"
-			(at 203.2 205.74 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "11204550-8605-41f4-912f-c12f6c5d8d48")
-		)
-		(instances
-			(project "wellfed_bench"
-				(path "/75046244-8ed2-42d7-892b-052c2b2e798f"
-					(reference "TP4")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:R")
 		(at 490.22 104.14 0)
 		(unit 1)
@@ -16402,82 +16286,6 @@
 			(project "wellfed_bench"
 				(path "/75046244-8ed2-42d7-892b-052c2b2e798f"
 					(reference "R6")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Connector:TestPoint")
-		(at 213.36 205.74 0)
-		(unit 1)
-		(body_style 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(in_pos_files yes)
-		(dnp no)
-		(uuid "5aae0d62-0e28-43a7-bbdc-4be5bb32ffdc")
-		(property "Reference" "TP5"
-			(at 213.36 198.882 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "BOOT"
-			(at 213.36 200.66 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 213.36 205.74 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 213.36 205.74 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Description" "test point"
-			(at 213.36 205.74 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(pin "1"
-			(uuid "7540201b-26af-47e0-bfca-4a8d29dbfcf8")
-		)
-		(instances
-			(project "wellfed_bench"
-				(path "/75046244-8ed2-42d7-892b-052c2b2e798f"
-					(reference "TP5")
 					(unit 1)
 				)
 			)
