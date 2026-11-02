@@ -159,9 +159,19 @@ async fn the_session_reads_status_sets_the_clock_and_resumes_after_its_cursor() 
     .feeder
     .journal
     .unwrap();
-    until("the cursor on disk", || cursor(&root).is_some()).await;
-    assert_eq!(cursor(&root).unwrap().seq, first.seq);
-    assert!(events(&server).await.contains(&first.seq));
+    // A status can name an event before its push arrives, and a push reaches
+    // the state, then the cursor, then the stream, so each catches up in turn.
+    until("the cursor on disk", || {
+        cursor(&root).is_some_and(|cursor| cursor.seq >= first.seq)
+    })
+    .await;
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while !events(&server).await.contains(&first.seq) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the event on the stream");
 
     // A restart drops the session; the server reopens it and takes the new
     // boot, and only that, after its cursor.

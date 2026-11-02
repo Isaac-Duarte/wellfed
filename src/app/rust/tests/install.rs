@@ -35,7 +35,24 @@ use wellfed_session::setup_code::{Button, Code};
 
 const WAIT: Duration = Duration::from_secs(20);
 
+/// Held while a test may use the stock broker's port. Stock only ever dials
+/// that one port, so a run binds it for real, and a machine has one of it
+/// however many checkouts are testing: nextest's test group orders a single
+/// run, and this orders all of them. The kernel drops the lock with the
+/// process, so a killed test leaves nothing to clear.
+fn broker_port() -> std::fs::File {
+    let lock = std::fs::File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(std::env::temp_dir().join("wellfed-stock-broker-port.lock"))
+        .unwrap();
+    lock.lock().unwrap();
+    lock
+}
+
 fn local(test: impl Future<Output = ()>) {
+    let _port = broker_port();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
