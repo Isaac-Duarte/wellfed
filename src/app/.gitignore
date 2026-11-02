@@ -50,3 +50,4 @@ app.*.map.json
 # The image the APK installs: a build-time input, never in Git.
 /assets/installer/*
 !/assets/installer/README.md
+/test/golden/failures/

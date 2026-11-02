@@ -26,8 +26,12 @@ import '../restore/restore_support.dart';
 import '../support/fake_install.dart';
 import '../support/fakes.dart';
 import '../support/harness.dart';
+import 'comparator.dart';
 
-/// Pixels differ between font rasterizers, so one platform owns these files.
+/// Pixels differ between font rasterizers by as much as a real change, so
+/// Linux owns these files; macOS runs them in a Linux container
+/// (`make check-app`). x86_64 and arm64 Linux agree within the comparator's
+/// tolerance.
 final bool _skip = !Platform.isLinux;
 
 /// The app's own fonts: the test default draws every letter as a box.
@@ -72,7 +76,11 @@ PairingView _pairing(PairingState state) => PairingView(
 );
 
 void main() {
-  setUpAll(_loadFonts);
+  setUpAll(() async {
+    final previous = goldenFileComparator as LocalFileComparator;
+    goldenFileComparator = LinuxGoldenComparator(previous.basedir.resolve('golden_test.dart'));
+    await _loadFonts();
+  });
 
   for (final Brightness brightness in Brightness.values) {
     group(brightness.name, () {

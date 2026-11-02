@@ -1,4 +1,4 @@
-.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app app-installer-input sqlx-prepare server-dist server-image check-server-release
+.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app app-goldens app-installer-input sqlx-prepare server-dist server-image check-server-release
 
 help:
 	@echo "check: formatting, Clippy, Rust tests, cross-builds, simulator, repository checks"
@@ -7,6 +7,7 @@ help:
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
 	@echo "check-web: the site and docs site: lint, format, licenses, types, unit tests, build, then Playwright (needs Node and pnpm)"
 	@echo "check-app: the Android app's bindings and tokens unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, and a debug APK (needs the pinned Flutter)"
+	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
 	@echo "sqlx-prepare: regenerate the server store's query metadata (.sqlx/) after changing a query or migration"
 	@echo "server-dist / server-image: the server's static release binaries in dist/server/ and its container image (docker or podman)"
@@ -105,6 +106,7 @@ check-app:
 	cd $(APP) && dart analyze --fatal-infos
 	cargo build --locked -p wellfed-app-bridge -p wellfed-feeder-sim
 	cd $(APP) && TZ=America/Denver WELLFED_SMOKE_TARGET=$(CURDIR)/target/debug flutter test
+	@if [ "$$(uname)" != Linux ]; then $(MAKE) app-goldens; fi
 	cd $(APP) && flutter build apk --debug --target-platform android-arm64,android-x64
 
 # The image the APK installs is a build-time input, from a frozen review and
@@ -113,6 +115,27 @@ check-app:
 # is committed in the bridge instead. Without either, the app builds and says
 # it has no firmware to install.
 APP_INSTALLER = $(APP)/assets/installer
+# The goldens belong to Linux: font rasterizers differ by as much as a real
+# change. On any other host they run in a Linux container, fed the app's
+# sources as a tar, so the checkout gets back only the images: new ones with
+# UPDATE=1, and a failed run's diffs in test/golden/failures/.
+GOLDENS_IMAGE = wellfed-app-goldens:$(FLUTTER_VERSION)
+GOLDENS_DIR = $(CURDIR)/$(APP)/test/golden
+app-goldens:
+ifeq ($(shell uname),Linux)
+	cd $(APP) && flutter test test/golden $(if $(UPDATE),--update-goldens)
+else
+	$(CONTAINER) build -q -t $(GOLDENS_IMAGE) --build-arg FLUTTER_VERSION=$(FLUTTER_VERSION) \
+		-f $(APP)/tools/goldens/Containerfile $(APP)/tools/goldens
+	mkdir -p $(GOLDENS_DIR)/failures
+	COPYFILE_DISABLE=1 tar -L -C $(APP) --exclude ./build --exclude ./.dart_tool --exclude ./test/golden/failures \
+		--exclude ./android/.gradle -cf - . | \
+		$(CONTAINER) run --rm -i -v wellfed-pub-cache:/root/.pub-cache \
+		-v $(GOLDENS_DIR)/files:/files -v $(GOLDENS_DIR)/failures:/failures $(GOLDENS_IMAGE) \
+		sh -c 'tar -x && flutter test test/golden $(if $(UPDATE),--update-goldens && cp test/golden/files/*.png /files/) \
+			|| { cp -r test/golden/failures/. /failures/ 2>/dev/null; exit 1; }'
+endif
+
 app-installer-input:
 	@test -n "$(REVIEW)" -a -n "$(MANIFEST)" || \
 		{ echo "usage: make app-installer-input REVIEW=<review directory> MANIFEST=<signed update manifest>"; exit 1; }

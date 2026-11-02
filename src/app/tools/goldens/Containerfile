@@ -1,0 +1,23 @@
+# The app's golden tests on Linux, for a host that is not: font rasterizers
+# differ by as much as a real change, so the images belong to Linux, and
+# macOS runs them here (`make app-goldens`). Either Linux architecture
+# renders within the comparator's tolerance, so the image runs natively.
+#
+# The app's sources arrive on stdin as a tar, so nothing in the checkout is
+# written but the images an update copies back.
+
+ARG DEBIAN_IMAGE=docker.io/library/debian:bookworm-20261027-slim
+FROM ${DEBIAN_IMAGE}
+
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends ca-certificates curl git unzip xz-utils \
+	&& rm -rf /var/lib/apt/lists/*
+
+ARG FLUTTER_VERSION
+RUN test -n "${FLUTTER_VERSION}" \
+	&& git clone --depth 1 --branch "${FLUTTER_VERSION}" https://github.com/flutter/flutter.git /opt/flutter \
+	&& /opt/flutter/bin/flutter --disable-analytics \
+	&& /opt/flutter/bin/flutter precache --no-android --no-ios --no-web --no-linux --no-windows --no-macos --no-fuchsia
+ENV PATH=/opt/flutter/bin:${PATH}
+
+WORKDIR /app
