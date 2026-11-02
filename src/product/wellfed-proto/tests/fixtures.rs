@@ -1127,6 +1127,7 @@ fn messages() -> Vec<Fixture> {
             }),
             |b| decode::<EventBody>(b).is_ok(),
         ),
+        ("op-play-call", entry(&request(Op::PlayCall)), client),
     ]
 }
 

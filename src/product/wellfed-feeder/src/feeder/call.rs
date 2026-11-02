@@ -33,7 +33,6 @@
 
 use wellfed_core::clip;
 use wellfed_core::schedule::next_due;
-use wellfed_core::tone::Tune;
 use wellfed_device_api::mailbox::{
     CallClip, CallResult, PLANS, PlansResult, PlansView, PlayResult,
 };
@@ -59,12 +58,12 @@ pub const fn lead_ms(bytes: u32, plays: u8) -> u32 {
 /// meal's next occurrence, worked out once a minute, is the one to call.
 const _: () = assert!((lead_ms(clip::BYTES_MAX, clip::PLAYS_MAX) as u64) < MINUTE_MS);
 
-/// Whether `tune`, asked for at `wall_ms`, would still hold the speaker when
-/// the next call's lead begins at `lead_at`. [`SPARE_MS`] covers a tune's
-/// settle and drain as it does a clip's. With no valid clock no call plays,
-/// so nothing is crowded.
-pub fn crowds(lead_at: Option<u64>, wall_ms: Option<u64>, tune: Tune) -> bool {
-    let held = u64::from(tune.duration_ms().saturating_add(SPARE_MS));
+/// Whether a sound `sound_ms` long (a tune, or one play of the clip), asked
+/// for at `wall_ms`, would still hold the speaker when the next call's lead
+/// begins at `lead_at`. [`SPARE_MS`] covers its settle and drain as it does
+/// a call's. With no valid clock no call plays, so nothing is crowded.
+pub fn crowds(lead_at: Option<u64>, wall_ms: Option<u64>, sound_ms: u32) -> bool {
+    let held = u64::from(sound_ms.saturating_add(SPARE_MS));
     lead_at
         .zip(wall_ms)
         .is_some_and(|(lead_at, wall_ms)| wall_ms.saturating_add(held) >= lead_at)
@@ -208,6 +207,7 @@ impl Call {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wellfed_core::tone::Tune;
 
     const LEAD_AT: u64 = 100_000;
     /// The test tune is a second long, and the spare a second more.
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn a_tune_must_end_before_a_call_s_lead_begins() {
-        let crowds = |wall| crowds(Some(LEAD_AT), Some(wall), Tune::Test);
+        let crowds = |wall| crowds(Some(LEAD_AT), Some(wall), Tune::Test.duration_ms());
 
         assert!(!crowds(LEAD_AT - HELD - 1), "it ends in time");
         assert!(crowds(LEAD_AT - HELD), "it would reach the lead");
@@ -224,15 +224,15 @@ mod tests {
 
     #[test]
     fn with_no_call_to_come_or_no_clock_nothing_is_crowded() {
-        assert!(!crowds(None, Some(LEAD_AT), Tune::Test));
-        assert!(!crowds(Some(LEAD_AT), None, Tune::Test));
+        assert!(!crowds(None, Some(LEAD_AT), Tune::Test.duration_ms()));
+        assert!(!crowds(Some(LEAD_AT), None, Tune::Test.duration_ms()));
     }
 
     #[test]
     fn a_longer_tune_gives_way_sooner() {
         let wall = Some(LEAD_AT - HELD - 1);
 
-        assert!(!crowds(Some(LEAD_AT), wall, Tune::Test));
-        assert!(crowds(Some(LEAD_AT), wall, Tune::Twinkle));
+        assert!(!crowds(Some(LEAD_AT), wall, Tune::Test.duration_ms()));
+        assert!(crowds(Some(LEAD_AT), wall, Tune::Twinkle.duration_ms()));
     }
 }

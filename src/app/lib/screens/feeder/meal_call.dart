@@ -46,6 +46,9 @@ class _MealCallScreenState extends State<MealCallScreen> {
   /// A session is being waited for, not a write.
   bool _reaching = false;
 
+  /// The feeder is being asked to play the clip.
+  bool _playing = false;
+
   /// Why the last write came to nothing, until the next. A snackbar alone can
   /// pass while the screen is still coming back.
   String? _problem;
@@ -133,6 +136,21 @@ class _MealCallScreenState extends State<MealCallScreen> {
     if (reply is! FeederReply_Call && reply is! FeederReply_NotSent) {
       await _readBack();
     }
+  }
+
+  /// Hear the clip on the feeder. A play changes nothing stored, so nothing
+  /// is read back: the answer only says why it did not play, if it did not.
+  Future<void> _play() async {
+    setState(() {
+      _playing = true;
+      _problem = null;
+    });
+    final FeederReply reply = await widget.feeder.ask(const FeederRequest.playCall());
+    if (!mounted) return;
+    setState(() {
+      _playing = false;
+      _problem = replyProblem(reply);
+    });
   }
 
   /// An upload left unknown shows here as what the feeder holds, and is not
@@ -280,6 +298,11 @@ class _MealCallScreenState extends State<MealCallScreen> {
             child: Text(stored ? 'Replace the recording' : 'Choose a recording'),
           ),
           if (stored) ...[
+            const SizedBox(height: Space.s2),
+            OutlinedButton(
+              onPressed: _busy || _picking || _playing ? null : () => unawaited(_play()),
+              child: const Text('Play on the feeder'),
+            ),
             const SizedBox(height: Space.s2),
             OutlinedButton(
               style: OutlinedButton.styleFrom(foregroundColor: c.fault),

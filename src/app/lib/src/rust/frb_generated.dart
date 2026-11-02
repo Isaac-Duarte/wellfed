@@ -3473,10 +3473,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 22:
         return FeederRequest_DeleteCall();
       case 23:
-        return FeederRequest_UpdateState();
+        return FeederRequest_PlayCall();
       case 24:
-        return FeederRequest_CancelUpdate();
+        return FeederRequest_UpdateState();
       case 25:
+        return FeederRequest_CancelUpdate();
+      case 26:
         return FeederRequest_TailLog(
           after: dco_decode_opt_box_autoadd_u_32(raw[1]),
         );
@@ -6466,10 +6468,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 22:
         return FeederRequest_DeleteCall();
       case 23:
-        return FeederRequest_UpdateState();
+        return FeederRequest_PlayCall();
       case 24:
-        return FeederRequest_CancelUpdate();
+        return FeederRequest_UpdateState();
       case 25:
+        return FeederRequest_CancelUpdate();
+      case 26:
         var var_after = sse_decode_opt_box_autoadd_u_32(deserializer);
         return FeederRequest_TailLog(after: var_after);
       default:
@@ -9929,12 +9933,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_list_prim_u_8_strict(wav, serializer);
       case FeederRequest_DeleteCall():
         sse_encode_i_32(22, serializer);
-      case FeederRequest_UpdateState():
+      case FeederRequest_PlayCall():
         sse_encode_i_32(23, serializer);
-      case FeederRequest_CancelUpdate():
+      case FeederRequest_UpdateState():
         sse_encode_i_32(24, serializer);
-      case FeederRequest_TailLog(after: final after):
+      case FeederRequest_CancelUpdate():
         sse_encode_i_32(25, serializer);
+      case FeederRequest_TailLog(after: final after):
+        sse_encode_i_32(26, serializer);
         sse_encode_opt_box_autoadd_u_32(after, serializer);
     }
   }

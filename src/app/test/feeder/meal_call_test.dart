@@ -43,6 +43,27 @@ void main() {
       expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
     });
 
+    testWidgets('plays the stored clip on the feeder, and says why it did not', (tester) async {
+      final FakeSession session = await show(tester, const CallClip.stored(bytes: 9, crc: 1));
+      session.requests.clear();
+      session.replies
+        ..add(const FeederReply.done())
+        ..add(const FeederReply.refused(refusal: FeederRefusal.muted()));
+
+      await tapIn(tester, find.text('Play on the feeder'));
+      expect(session.requests, [const FeederRequest.playCall()]);
+      expect(find.text('Sound is off, or outside its hours.'), findsNothing);
+
+      await tapIn(tester, find.text('Play on the feeder'));
+      expect(session.requests, hasLength(2));
+      expect(find.text('Sound is off, or outside its hours.'), findsOneWidget);
+    });
+
+    testWidgets('offers no play with no clip stored', (tester) async {
+      await show(tester, const CallClip.none());
+      expect(find.text('Play on the feeder'), findsNothing);
+    });
+
     /// The screen on an open session, holding what `first` answers.
     Future<(FakeFeederPorts, FakeSession)> onScreen(WidgetTester tester, FeederReply first) async {
       final book = FakeBook()..feeders = [kitchen];

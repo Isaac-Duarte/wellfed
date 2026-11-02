@@ -17,7 +17,9 @@ use wellfed_core::schedule::{Plan, Weekdays};
 use wellfed_core::store::slot::SlotIo;
 use wellfed_core::tone::{PlayResult, Tune};
 use wellfed_device_api::Device;
-use wellfed_device_api::mailbox::{CallClip, SettingsFields, SettingsResult, SettingsView};
+use wellfed_device_api::mailbox::{
+    CallClip, CallPlay, SettingsFields, SettingsResult, SettingsView,
+};
 use wellfed_feeder::feeder::owner::POLL_MS;
 use wellfed_feeder::feeder::{Feeder, Feeds, Platform, Record};
 use wellfed_feeder::store::call::CallStore;
@@ -640,6 +642,96 @@ fn a_call_starts_on_time_after_refusing_a_tune_that_would_not_fit() {
     assert_eq!(play(&mut rig, Tune::Test), PlayResult::Busy);
 
     assert_eq!(the_call_runs_on_time(&mut rig), None);
+}
+
+/// A client's request to hear the stored meal call, as the device API asks it.
+fn play_call(rig: &mut Rig) -> CallPlay {
+    rig.feeder.device(rig.now, &mut rig.owner).play_call()
+}
+
+/// The owner hears the clip once, through the loop and the real speaker.
+#[test]
+fn the_stored_call_plays_once_on_request() {
+    let mut rig = Rig::new();
+    publish_clip();
+
+    assert_eq!(play_call(&mut rig), CallPlay::Started);
+    rig.pass();
+    assert_eq!(
+        audio_lines(&rig),
+        ["PLAUD1 play tune=call plays=1 ms=500 volume=50"]
+    );
+    assert_eq!(play_call(&mut rig), CallPlay::Busy, "it plays");
+
+    for _ in 0..200 {
+        rig.pass();
+        fake::play_audio(2);
+    }
+    assert!(
+        rig.logged_prefix("PLAUD1 done tune=call"),
+        "{:?}",
+        rig.lines
+    );
+    assert_eq!(play_call(&mut rig), CallPlay::Started, "it ended");
+}
+
+#[test]
+fn with_no_clip_there_is_nothing_to_play() {
+    let mut rig = Rig::new();
+    call::publish(&CallStore::<PlanSectors>::default(), true);
+
+    assert_eq!(play_call(&mut rig), CallPlay::NoClip);
+    rig.pass();
+    assert_eq!(audio_lines(&rig), Vec::<&str>::new());
+}
+
+/// The sound settings bind the clip as they bind a test tune.
+#[test]
+fn sound_off_answers_muted_to_the_call_too() {
+    let mut rig = Rig::new();
+    publish_clip();
+    publish_sound(false, 50);
+
+    assert_eq!(play_call(&mut rig), CallPlay::Muted);
+    rig.pass();
+    assert_eq!(fake::with(|h| h.audio_opens), 0);
+}
+
+#[test]
+fn a_feed_in_flight_refuses_the_call() {
+    let mut rig = Rig::new();
+    publish_clip();
+    rig.owner.busy = true;
+
+    assert_eq!(play_call(&mut rig), CallPlay::Busy);
+
+    rig.owner.busy = false;
+    assert_eq!(play_call(&mut rig), CallPlay::Started);
+}
+
+/// One play of the 500 ms clip holds the speaker 1.5 s with its spare, so a
+/// request 1.6 s ahead of a meal's call fits, and costs the call nothing.
+#[test]
+fn the_call_on_request_plays_when_it_ends_before_a_meal_s_call() {
+    let mut rig = rig_ahead_of_a_call(1_600);
+    assert_eq!(play_call(&mut rig), CallPlay::Started);
+    while !rig.logged_prefix("PLAUD1 done tune=call") {
+        rig.pass();
+        fake::play_audio(2);
+    }
+    assert!(rig.wall() < MEAL_MS - LEAD_MS, "{}", rig.wall());
+
+    // What follows is the meal's own call.
+    rig.lines.clear();
+    the_call_runs_on_time(&mut rig);
+}
+
+/// One asked for 1.4 s ahead would sound into the meal's call: it gives way.
+#[test]
+fn the_call_on_request_gives_way_to_a_meal_s_call() {
+    let mut rig = rig_ahead_of_a_call(1_400);
+    assert_eq!(play_call(&mut rig), CallPlay::Busy);
+    the_call_runs_on_time(&mut rig);
 }
 
 /// A feed's outputs may be claimed before the owner says it is busy.

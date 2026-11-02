@@ -22,6 +22,7 @@
 
 use core::fmt;
 
+use wellfed_core::clip;
 use wellfed_core::desiccant::{self, Count};
 use wellfed_core::log_tail::Batch as LogBatch;
 use wellfed_core::mdns::{self, Destination, Responder};
@@ -49,10 +50,10 @@ use crate::stats::Keeper;
 use crate::store::events::Read;
 use crate::update as wire;
 use wellfed_device_api::mailbox::{
-    Calibration, CalibrationResult, CallChange, CallResult, ClientChange, KeyResult, LockFields,
-    LockResult, NtpResult, Origin, PlansChange, PlansResult, PlayResult, Requested, SettingsFields,
-    SettingsResult, Table, TimeFields, TimeResult, TimeSettings, TimeSettingsResult, TimeState,
-    WifiResult, WifiSource,
+    Calibration, CalibrationResult, CallChange, CallClip, CallPlay, CallResult, CallView,
+    ClientChange, KeyResult, LockFields, LockResult, NtpResult, Origin, PlansChange, PlansResult,
+    PlayResult, Requested, SettingsFields, SettingsResult, Table, TimeFields, TimeResult,
+    TimeSettings, TimeSettingsResult, TimeState, WifiResult, WifiSource,
 };
 use wellfed_device_api::pairing::{self, Pairing};
 use wellfed_device_api::wifi::Credentials;
@@ -910,7 +911,7 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
         let feed = self.feed_active() || self.outputs_claimed();
         let elsewhere = self.setup || self.platform.installing() || self.platform.restarting();
         let wall_ms = self.platform.wall_ms(self.now_ms);
-        if feed || elsewhere || call::crowds(self.call_lead, wall_ms, tune) {
+        if feed || elsewhere || call::crowds(self.call_lead, wall_ms, tune.duration_ms()) {
             return PlayResult::Busy;
         }
         self.platform.play(tune)
@@ -968,6 +969,38 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
             return Err(Refusal::Busy);
         }
         self.platform.call_chunk(offset, data)
+    }
+
+    /// One play of the stored clip, under the same rules as a test tune: it
+    /// waits for a feed, setup, an install or a restart, and gives way to a
+    /// meal's call it would still be sounding into.
+    fn play_call(&mut self) -> CallPlay {
+        let bytes = match self.platform.call() {
+            CallResult::Current {
+                view:
+                    CallView {
+                        clip: CallClip::Stored { bytes, .. },
+                        ..
+                    },
+                ..
+            } => bytes,
+            CallResult::Current { .. } => return CallPlay::NoClip,
+            CallResult::Busy => return CallPlay::Busy,
+            CallResult::ReadOnly | CallResult::Unserved => return CallPlay::Unserved,
+        };
+
+        let feed = self.feed_active() || self.outputs_claimed();
+        let elsewhere = self.setup || self.platform.installing() || self.platform.restarting();
+        let wall_ms = self.platform.wall_ms(self.now_ms);
+        if feed || elsewhere || call::crowds(self.call_lead, wall_ms, clip::ms(bytes)) {
+            return CallPlay::Busy;
+        }
+
+        match self.platform.play_call(1) {
+            PlayResult::Started => CallPlay::Started,
+            PlayResult::Muted => CallPlay::Muted,
+            PlayResult::Busy => CallPlay::Busy,
+        }
     }
 
     fn phase(&self) -> Option<proto::Phase> {

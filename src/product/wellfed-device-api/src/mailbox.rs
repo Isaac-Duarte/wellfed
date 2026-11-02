@@ -473,6 +473,22 @@ pub enum CallChange {
     Delete,
 }
 
+/// How a request to play the stored meal call once ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallPlay {
+    /// Queued for the speaker, as a tune's `Started` is: queued, not heard.
+    Started,
+    /// The sound settings silence it now.
+    Muted,
+    /// A feed, a tune, a meal's call, setup, an install or a restart has
+    /// the speaker, or the clip would still sound as a meal's call begins.
+    Busy,
+    /// No clip is stored.
+    NoClip,
+    /// This firmware keeps no meal call.
+    Unserved,
+}
+
 /// How a meal call request ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallResult {

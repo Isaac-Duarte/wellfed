@@ -80,8 +80,10 @@ pub const fn parity(op: &Op) -> Parity {
         Op::GetCalibration | Op::PutCalibration { .. } => Without(NoRoute::Calibration),
         Op::GetPlans => Route(Get, "/feeders/{id}/plans"),
         Op::PutPlans { .. } => Route(Put, "/feeders/{id}/plans"),
-        Op::GetCall | Op::StartCall { .. } | Op::CallChunk { .. } | Op::DeleteCall => {
-            Without(NoRoute::CallToCome)
-        }
+        Op::GetCall
+        | Op::StartCall { .. }
+        | Op::CallChunk { .. }
+        | Op::DeleteCall
+        | Op::PlayCall => Without(NoRoute::CallToCome),
     }
 }

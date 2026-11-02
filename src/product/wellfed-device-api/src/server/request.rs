@@ -6,8 +6,8 @@ use super::memory::Remembered;
 use super::{Phase, Server, Waiting, slot_id};
 use crate::clients::{Label, Role};
 use crate::mailbox::{
-    Calibration, CalibrationResult, CallChange, CallResult, LockResult, MealReminder, NtpServer,
-    Origin, PLANS, Plan, PlansResult, PlayResult, SettingsFields, SettingsResult, Table,
+    Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult, MealReminder,
+    NtpServer, Origin, PLANS, Plan, PlansResult, PlayResult, SettingsFields, SettingsResult, Table,
     TimeFields, TimeResult, TimeSettingsResult, Weekdays, WifiResult, Window, Zone,
 };
 use crate::pairing::{self, Pairing};
@@ -124,6 +124,13 @@ impl Server {
                 PlayResult::Started => Reply::Done(None),
                 PlayResult::Muted => Reply::Refused(Refusal::Muted),
                 PlayResult::Busy => Reply::Refused(Refusal::Busy),
+            },
+            Action::PlayCall => match device.play_call() {
+                CallPlay::Started => Reply::Done(None),
+                CallPlay::Muted => Reply::Refused(Refusal::Muted),
+                CallPlay::Busy => Reply::Refused(Refusal::Busy),
+                CallPlay::NoClip => Reply::Refused(Refusal::NotFound),
+                CallPlay::Unserved => Reply::Refused(Refusal::Unavailable),
             },
             Action::TimeSync(fields) => match device.time_sync(fields, origin(role)) {
                 TimeResult::Synced { jump_ms } => {
@@ -730,6 +737,7 @@ pub(super) enum Action {
         offset: u32,
     },
     DeleteCall,
+    PlayCall,
     /// A field failed the stores' checks before anything ran.
     Invalid,
 }
@@ -861,6 +869,7 @@ impl From<Op<'_>> for Action {
                 Self::CallChunk { offset }
             }
             Op::DeleteCall => Self::DeleteCall,
+            Op::PlayCall => Self::PlayCall,
         }
     }
 }
@@ -929,6 +938,7 @@ impl Action {
             Self::StartCall { .. } => "start-call",
             Self::CallChunk { .. } => Self::CALL_CHUNK,
             Self::DeleteCall => "delete-call",
+            Self::PlayCall => "play-call",
             Self::Invalid => "invalid",
         }
     }

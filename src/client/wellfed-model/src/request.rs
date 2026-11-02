@@ -157,6 +157,8 @@ pub enum Op {
     },
     /// Erase the meal call. Owners only.
     DeleteCall,
+    /// Play the stored meal call once, to hear it.
+    PlayCall,
 }
 
 /// What the owner measured, as the feeder keeps it.

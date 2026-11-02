@@ -2130,7 +2130,7 @@ extension FeederRequestPatterns on FeederRequest {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( FeederRequest_GetSettings value)?  getSettings,TResult Function( FeederRequest_PutSettings value)?  putSettings,TResult Function( FeederRequest_PutWifi value)?  putWifi,TResult Function( FeederRequest_ForgetWifi value)?  forgetWifi,TResult Function( FeederRequest_SetLock value)?  setLock,TResult Function( FeederRequest_Play value)?  play,TResult Function( FeederRequest_SyncClock value)?  syncClock,TResult Function( FeederRequest_GetTime value)?  getTime,TResult Function( FeederRequest_PutTime value)?  putTime,TResult Function( FeederRequest_CreateInvite value)?  createInvite,TResult Function( FeederRequest_ListClients value)?  listClients,TResult Function( FeederRequest_RevokeClient value)?  revokeClient,TResult Function( FeederRequest_Reboot value)?  reboot,TResult Function( FeederRequest_ResetDesiccant value)?  resetDesiccant,TResult Function( FeederRequest_Stats value)?  stats,TResult Function( FeederRequest_ReadTrace value)?  readTrace,TResult Function( FeederRequest_GetCalibration value)?  getCalibration,TResult Function( FeederRequest_PutCalibration value)?  putCalibration,TResult Function( FeederRequest_GetPlans value)?  getPlans,TResult Function( FeederRequest_EditPlans value)?  editPlans,TResult Function( FeederRequest_GetCall value)?  getCall,TResult Function( FeederRequest_UploadCall value)?  uploadCall,TResult Function( FeederRequest_DeleteCall value)?  deleteCall,TResult Function( FeederRequest_UpdateState value)?  updateState,TResult Function( FeederRequest_CancelUpdate value)?  cancelUpdate,TResult Function( FeederRequest_TailLog value)?  tailLog,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( FeederRequest_GetSettings value)?  getSettings,TResult Function( FeederRequest_PutSettings value)?  putSettings,TResult Function( FeederRequest_PutWifi value)?  putWifi,TResult Function( FeederRequest_ForgetWifi value)?  forgetWifi,TResult Function( FeederRequest_SetLock value)?  setLock,TResult Function( FeederRequest_Play value)?  play,TResult Function( FeederRequest_SyncClock value)?  syncClock,TResult Function( FeederRequest_GetTime value)?  getTime,TResult Function( FeederRequest_PutTime value)?  putTime,TResult Function( FeederRequest_CreateInvite value)?  createInvite,TResult Function( FeederRequest_ListClients value)?  listClients,TResult Function( FeederRequest_RevokeClient value)?  revokeClient,TResult Function( FeederRequest_Reboot value)?  reboot,TResult Function( FeederRequest_ResetDesiccant value)?  resetDesiccant,TResult Function( FeederRequest_Stats value)?  stats,TResult Function( FeederRequest_ReadTrace value)?  readTrace,TResult Function( FeederRequest_GetCalibration value)?  getCalibration,TResult Function( FeederRequest_PutCalibration value)?  putCalibration,TResult Function( FeederRequest_GetPlans value)?  getPlans,TResult Function( FeederRequest_EditPlans value)?  editPlans,TResult Function( FeederRequest_GetCall value)?  getCall,TResult Function( FeederRequest_UploadCall value)?  uploadCall,TResult Function( FeederRequest_DeleteCall value)?  deleteCall,TResult Function( FeederRequest_PlayCall value)?  playCall,TResult Function( FeederRequest_UpdateState value)?  updateState,TResult Function( FeederRequest_CancelUpdate value)?  cancelUpdate,TResult Function( FeederRequest_TailLog value)?  tailLog,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case FeederRequest_GetSettings() when getSettings != null:
@@ -2156,7 +2156,8 @@ return getPlans(_that);case FeederRequest_EditPlans() when editPlans != null:
 return editPlans(_that);case FeederRequest_GetCall() when getCall != null:
 return getCall(_that);case FeederRequest_UploadCall() when uploadCall != null:
 return uploadCall(_that);case FeederRequest_DeleteCall() when deleteCall != null:
-return deleteCall(_that);case FeederRequest_UpdateState() when updateState != null:
+return deleteCall(_that);case FeederRequest_PlayCall() when playCall != null:
+return playCall(_that);case FeederRequest_UpdateState() when updateState != null:
 return updateState(_that);case FeederRequest_CancelUpdate() when cancelUpdate != null:
 return cancelUpdate(_that);case FeederRequest_TailLog() when tailLog != null:
 return tailLog(_that);case _:
@@ -2177,7 +2178,7 @@ return tailLog(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( FeederRequest_GetSettings value)  getSettings,required TResult Function( FeederRequest_PutSettings value)  putSettings,required TResult Function( FeederRequest_PutWifi value)  putWifi,required TResult Function( FeederRequest_ForgetWifi value)  forgetWifi,required TResult Function( FeederRequest_SetLock value)  setLock,required TResult Function( FeederRequest_Play value)  play,required TResult Function( FeederRequest_SyncClock value)  syncClock,required TResult Function( FeederRequest_GetTime value)  getTime,required TResult Function( FeederRequest_PutTime value)  putTime,required TResult Function( FeederRequest_CreateInvite value)  createInvite,required TResult Function( FeederRequest_ListClients value)  listClients,required TResult Function( FeederRequest_RevokeClient value)  revokeClient,required TResult Function( FeederRequest_Reboot value)  reboot,required TResult Function( FeederRequest_ResetDesiccant value)  resetDesiccant,required TResult Function( FeederRequest_Stats value)  stats,required TResult Function( FeederRequest_ReadTrace value)  readTrace,required TResult Function( FeederRequest_GetCalibration value)  getCalibration,required TResult Function( FeederRequest_PutCalibration value)  putCalibration,required TResult Function( FeederRequest_GetPlans value)  getPlans,required TResult Function( FeederRequest_EditPlans value)  editPlans,required TResult Function( FeederRequest_GetCall value)  getCall,required TResult Function( FeederRequest_UploadCall value)  uploadCall,required TResult Function( FeederRequest_DeleteCall value)  deleteCall,required TResult Function( FeederRequest_UpdateState value)  updateState,required TResult Function( FeederRequest_CancelUpdate value)  cancelUpdate,required TResult Function( FeederRequest_TailLog value)  tailLog,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( FeederRequest_GetSettings value)  getSettings,required TResult Function( FeederRequest_PutSettings value)  putSettings,required TResult Function( FeederRequest_PutWifi value)  putWifi,required TResult Function( FeederRequest_ForgetWifi value)  forgetWifi,required TResult Function( FeederRequest_SetLock value)  setLock,required TResult Function( FeederRequest_Play value)  play,required TResult Function( FeederRequest_SyncClock value)  syncClock,required TResult Function( FeederRequest_GetTime value)  getTime,required TResult Function( FeederRequest_PutTime value)  putTime,required TResult Function( FeederRequest_CreateInvite value)  createInvite,required TResult Function( FeederRequest_ListClients value)  listClients,required TResult Function( FeederRequest_RevokeClient value)  revokeClient,required TResult Function( FeederRequest_Reboot value)  reboot,required TResult Function( FeederRequest_ResetDesiccant value)  resetDesiccant,required TResult Function( FeederRequest_Stats value)  stats,required TResult Function( FeederRequest_ReadTrace value)  readTrace,required TResult Function( FeederRequest_GetCalibration value)  getCalibration,required TResult Function( FeederRequest_PutCalibration value)  putCalibration,required TResult Function( FeederRequest_GetPlans value)  getPlans,required TResult Function( FeederRequest_EditPlans value)  editPlans,required TResult Function( FeederRequest_GetCall value)  getCall,required TResult Function( FeederRequest_UploadCall value)  uploadCall,required TResult Function( FeederRequest_DeleteCall value)  deleteCall,required TResult Function( FeederRequest_PlayCall value)  playCall,required TResult Function( FeederRequest_UpdateState value)  updateState,required TResult Function( FeederRequest_CancelUpdate value)  cancelUpdate,required TResult Function( FeederRequest_TailLog value)  tailLog,}){
 final _that = this;
 switch (_that) {
 case FeederRequest_GetSettings():
@@ -2203,7 +2204,8 @@ return getPlans(_that);case FeederRequest_EditPlans():
 return editPlans(_that);case FeederRequest_GetCall():
 return getCall(_that);case FeederRequest_UploadCall():
 return uploadCall(_that);case FeederRequest_DeleteCall():
-return deleteCall(_that);case FeederRequest_UpdateState():
+return deleteCall(_that);case FeederRequest_PlayCall():
+return playCall(_that);case FeederRequest_UpdateState():
 return updateState(_that);case FeederRequest_CancelUpdate():
 return cancelUpdate(_that);case FeederRequest_TailLog():
 return tailLog(_that);}
@@ -2220,7 +2222,7 @@ return tailLog(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( FeederRequest_GetSettings value)?  getSettings,TResult? Function( FeederRequest_PutSettings value)?  putSettings,TResult? Function( FeederRequest_PutWifi value)?  putWifi,TResult? Function( FeederRequest_ForgetWifi value)?  forgetWifi,TResult? Function( FeederRequest_SetLock value)?  setLock,TResult? Function( FeederRequest_Play value)?  play,TResult? Function( FeederRequest_SyncClock value)?  syncClock,TResult? Function( FeederRequest_GetTime value)?  getTime,TResult? Function( FeederRequest_PutTime value)?  putTime,TResult? Function( FeederRequest_CreateInvite value)?  createInvite,TResult? Function( FeederRequest_ListClients value)?  listClients,TResult? Function( FeederRequest_RevokeClient value)?  revokeClient,TResult? Function( FeederRequest_Reboot value)?  reboot,TResult? Function( FeederRequest_ResetDesiccant value)?  resetDesiccant,TResult? Function( FeederRequest_Stats value)?  stats,TResult? Function( FeederRequest_ReadTrace value)?  readTrace,TResult? Function( FeederRequest_GetCalibration value)?  getCalibration,TResult? Function( FeederRequest_PutCalibration value)?  putCalibration,TResult? Function( FeederRequest_GetPlans value)?  getPlans,TResult? Function( FeederRequest_EditPlans value)?  editPlans,TResult? Function( FeederRequest_GetCall value)?  getCall,TResult? Function( FeederRequest_UploadCall value)?  uploadCall,TResult? Function( FeederRequest_DeleteCall value)?  deleteCall,TResult? Function( FeederRequest_UpdateState value)?  updateState,TResult? Function( FeederRequest_CancelUpdate value)?  cancelUpdate,TResult? Function( FeederRequest_TailLog value)?  tailLog,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( FeederRequest_GetSettings value)?  getSettings,TResult? Function( FeederRequest_PutSettings value)?  putSettings,TResult? Function( FeederRequest_PutWifi value)?  putWifi,TResult? Function( FeederRequest_ForgetWifi value)?  forgetWifi,TResult? Function( FeederRequest_SetLock value)?  setLock,TResult? Function( FeederRequest_Play value)?  play,TResult? Function( FeederRequest_SyncClock value)?  syncClock,TResult? Function( FeederRequest_GetTime value)?  getTime,TResult? Function( FeederRequest_PutTime value)?  putTime,TResult? Function( FeederRequest_CreateInvite value)?  createInvite,TResult? Function( FeederRequest_ListClients value)?  listClients,TResult? Function( FeederRequest_RevokeClient value)?  revokeClient,TResult? Function( FeederRequest_Reboot value)?  reboot,TResult? Function( FeederRequest_ResetDesiccant value)?  resetDesiccant,TResult? Function( FeederRequest_Stats value)?  stats,TResult? Function( FeederRequest_ReadTrace value)?  readTrace,TResult? Function( FeederRequest_GetCalibration value)?  getCalibration,TResult? Function( FeederRequest_PutCalibration value)?  putCalibration,TResult? Function( FeederRequest_GetPlans value)?  getPlans,TResult? Function( FeederRequest_EditPlans value)?  editPlans,TResult? Function( FeederRequest_GetCall value)?  getCall,TResult? Function( FeederRequest_UploadCall value)?  uploadCall,TResult? Function( FeederRequest_DeleteCall value)?  deleteCall,TResult? Function( FeederRequest_PlayCall value)?  playCall,TResult? Function( FeederRequest_UpdateState value)?  updateState,TResult? Function( FeederRequest_CancelUpdate value)?  cancelUpdate,TResult? Function( FeederRequest_TailLog value)?  tailLog,}){
 final _that = this;
 switch (_that) {
 case FeederRequest_GetSettings() when getSettings != null:
@@ -2246,7 +2248,8 @@ return getPlans(_that);case FeederRequest_EditPlans() when editPlans != null:
 return editPlans(_that);case FeederRequest_GetCall() when getCall != null:
 return getCall(_that);case FeederRequest_UploadCall() when uploadCall != null:
 return uploadCall(_that);case FeederRequest_DeleteCall() when deleteCall != null:
-return deleteCall(_that);case FeederRequest_UpdateState() when updateState != null:
+return deleteCall(_that);case FeederRequest_PlayCall() when playCall != null:
+return playCall(_that);case FeederRequest_UpdateState() when updateState != null:
 return updateState(_that);case FeederRequest_CancelUpdate() when cancelUpdate != null:
 return cancelUpdate(_that);case FeederRequest_TailLog() when tailLog != null:
 return tailLog(_that);case _:
@@ -2266,7 +2269,7 @@ return tailLog(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  getSettings,TResult Function( int base,  SettingsChanges changes)?  putSettings,TResult Function( int base,  String ssid,  String passphrase)?  putWifi,TResult Function( int base)?  forgetWifi,TResult Function( bool locked)?  setLock,TResult Function( Tune tune)?  play,TResult Function()?  syncClock,TResult Function()?  getTime,TResult Function( int base,  ZoneChange? zone,  String? ntp)?  putTime,TResult Function( ClientRole role)?  createInvite,TResult Function()?  listClients,TResult Function( Uint8List key)?  revokeClient,TResult Function()?  reboot,TResult Function()?  resetDesiccant,TResult Function( StatsSection section)?  stats,TResult Function( int feed)?  readTrace,TResult Function()?  getCalibration,TResult Function( int base,  PortionChange portion,  Bowl bowl)?  putCalibration,TResult Function()?  getPlans,TResult Function( PlansView plans,  PlanEdit edit)?  editPlans,TResult Function()?  getCall,TResult Function( Uint8List wav)?  uploadCall,TResult Function()?  deleteCall,TResult Function()?  updateState,TResult Function()?  cancelUpdate,TResult Function( int? after)?  tailLog,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  getSettings,TResult Function( int base,  SettingsChanges changes)?  putSettings,TResult Function( int base,  String ssid,  String passphrase)?  putWifi,TResult Function( int base)?  forgetWifi,TResult Function( bool locked)?  setLock,TResult Function( Tune tune)?  play,TResult Function()?  syncClock,TResult Function()?  getTime,TResult Function( int base,  ZoneChange? zone,  String? ntp)?  putTime,TResult Function( ClientRole role)?  createInvite,TResult Function()?  listClients,TResult Function( Uint8List key)?  revokeClient,TResult Function()?  reboot,TResult Function()?  resetDesiccant,TResult Function( StatsSection section)?  stats,TResult Function( int feed)?  readTrace,TResult Function()?  getCalibration,TResult Function( int base,  PortionChange portion,  Bowl bowl)?  putCalibration,TResult Function()?  getPlans,TResult Function( PlansView plans,  PlanEdit edit)?  editPlans,TResult Function()?  getCall,TResult Function( Uint8List wav)?  uploadCall,TResult Function()?  deleteCall,TResult Function()?  playCall,TResult Function()?  updateState,TResult Function()?  cancelUpdate,TResult Function( int? after)?  tailLog,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case FeederRequest_GetSettings() when getSettings != null:
 return getSettings();case FeederRequest_PutSettings() when putSettings != null:
@@ -2291,7 +2294,8 @@ return getPlans();case FeederRequest_EditPlans() when editPlans != null:
 return editPlans(_that.plans,_that.edit);case FeederRequest_GetCall() when getCall != null:
 return getCall();case FeederRequest_UploadCall() when uploadCall != null:
 return uploadCall(_that.wav);case FeederRequest_DeleteCall() when deleteCall != null:
-return deleteCall();case FeederRequest_UpdateState() when updateState != null:
+return deleteCall();case FeederRequest_PlayCall() when playCall != null:
+return playCall();case FeederRequest_UpdateState() when updateState != null:
 return updateState();case FeederRequest_CancelUpdate() when cancelUpdate != null:
 return cancelUpdate();case FeederRequest_TailLog() when tailLog != null:
 return tailLog(_that.after);case _:
@@ -2312,7 +2316,7 @@ return tailLog(_that.after);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  getSettings,required TResult Function( int base,  SettingsChanges changes)  putSettings,required TResult Function( int base,  String ssid,  String passphrase)  putWifi,required TResult Function( int base)  forgetWifi,required TResult Function( bool locked)  setLock,required TResult Function( Tune tune)  play,required TResult Function()  syncClock,required TResult Function()  getTime,required TResult Function( int base,  ZoneChange? zone,  String? ntp)  putTime,required TResult Function( ClientRole role)  createInvite,required TResult Function()  listClients,required TResult Function( Uint8List key)  revokeClient,required TResult Function()  reboot,required TResult Function()  resetDesiccant,required TResult Function( StatsSection section)  stats,required TResult Function( int feed)  readTrace,required TResult Function()  getCalibration,required TResult Function( int base,  PortionChange portion,  Bowl bowl)  putCalibration,required TResult Function()  getPlans,required TResult Function( PlansView plans,  PlanEdit edit)  editPlans,required TResult Function()  getCall,required TResult Function( Uint8List wav)  uploadCall,required TResult Function()  deleteCall,required TResult Function()  updateState,required TResult Function()  cancelUpdate,required TResult Function( int? after)  tailLog,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  getSettings,required TResult Function( int base,  SettingsChanges changes)  putSettings,required TResult Function( int base,  String ssid,  String passphrase)  putWifi,required TResult Function( int base)  forgetWifi,required TResult Function( bool locked)  setLock,required TResult Function( Tune tune)  play,required TResult Function()  syncClock,required TResult Function()  getTime,required TResult Function( int base,  ZoneChange? zone,  String? ntp)  putTime,required TResult Function( ClientRole role)  createInvite,required TResult Function()  listClients,required TResult Function( Uint8List key)  revokeClient,required TResult Function()  reboot,required TResult Function()  resetDesiccant,required TResult Function( StatsSection section)  stats,required TResult Function( int feed)  readTrace,required TResult Function()  getCalibration,required TResult Function( int base,  PortionChange portion,  Bowl bowl)  putCalibration,required TResult Function()  getPlans,required TResult Function( PlansView plans,  PlanEdit edit)  editPlans,required TResult Function()  getCall,required TResult Function( Uint8List wav)  uploadCall,required TResult Function()  deleteCall,required TResult Function()  playCall,required TResult Function()  updateState,required TResult Function()  cancelUpdate,required TResult Function( int? after)  tailLog,}) {final _that = this;
 switch (_that) {
 case FeederRequest_GetSettings():
 return getSettings();case FeederRequest_PutSettings():
@@ -2337,7 +2341,8 @@ return getPlans();case FeederRequest_EditPlans():
 return editPlans(_that.plans,_that.edit);case FeederRequest_GetCall():
 return getCall();case FeederRequest_UploadCall():
 return uploadCall(_that.wav);case FeederRequest_DeleteCall():
-return deleteCall();case FeederRequest_UpdateState():
+return deleteCall();case FeederRequest_PlayCall():
+return playCall();case FeederRequest_UpdateState():
 return updateState();case FeederRequest_CancelUpdate():
 return cancelUpdate();case FeederRequest_TailLog():
 return tailLog(_that.after);}
@@ -2354,7 +2359,7 @@ return tailLog(_that.after);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  getSettings,TResult? Function( int base,  SettingsChanges changes)?  putSettings,TResult? Function( int base,  String ssid,  String passphrase)?  putWifi,TResult? Function( int base)?  forgetWifi,TResult? Function( bool locked)?  setLock,TResult? Function( Tune tune)?  play,TResult? Function()?  syncClock,TResult? Function()?  getTime,TResult? Function( int base,  ZoneChange? zone,  String? ntp)?  putTime,TResult? Function( ClientRole role)?  createInvite,TResult? Function()?  listClients,TResult? Function( Uint8List key)?  revokeClient,TResult? Function()?  reboot,TResult? Function()?  resetDesiccant,TResult? Function( StatsSection section)?  stats,TResult? Function( int feed)?  readTrace,TResult? Function()?  getCalibration,TResult? Function( int base,  PortionChange portion,  Bowl bowl)?  putCalibration,TResult? Function()?  getPlans,TResult? Function( PlansView plans,  PlanEdit edit)?  editPlans,TResult? Function()?  getCall,TResult? Function( Uint8List wav)?  uploadCall,TResult? Function()?  deleteCall,TResult? Function()?  updateState,TResult? Function()?  cancelUpdate,TResult? Function( int? after)?  tailLog,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  getSettings,TResult? Function( int base,  SettingsChanges changes)?  putSettings,TResult? Function( int base,  String ssid,  String passphrase)?  putWifi,TResult? Function( int base)?  forgetWifi,TResult? Function( bool locked)?  setLock,TResult? Function( Tune tune)?  play,TResult? Function()?  syncClock,TResult? Function()?  getTime,TResult? Function( int base,  ZoneChange? zone,  String? ntp)?  putTime,TResult? Function( ClientRole role)?  createInvite,TResult? Function()?  listClients,TResult? Function( Uint8List key)?  revokeClient,TResult? Function()?  reboot,TResult? Function()?  resetDesiccant,TResult? Function( StatsSection section)?  stats,TResult? Function( int feed)?  readTrace,TResult? Function()?  getCalibration,TResult? Function( int base,  PortionChange portion,  Bowl bowl)?  putCalibration,TResult? Function()?  getPlans,TResult? Function( PlansView plans,  PlanEdit edit)?  editPlans,TResult? Function()?  getCall,TResult? Function( Uint8List wav)?  uploadCall,TResult? Function()?  deleteCall,TResult? Function()?  playCall,TResult? Function()?  updateState,TResult? Function()?  cancelUpdate,TResult? Function( int? after)?  tailLog,}) {final _that = this;
 switch (_that) {
 case FeederRequest_GetSettings() when getSettings != null:
 return getSettings();case FeederRequest_PutSettings() when putSettings != null:
@@ -2379,7 +2384,8 @@ return getPlans();case FeederRequest_EditPlans() when editPlans != null:
 return editPlans(_that.plans,_that.edit);case FeederRequest_GetCall() when getCall != null:
 return getCall();case FeederRequest_UploadCall() when uploadCall != null:
 return uploadCall(_that.wav);case FeederRequest_DeleteCall() when deleteCall != null:
-return deleteCall();case FeederRequest_UpdateState() when updateState != null:
+return deleteCall();case FeederRequest_PlayCall() when playCall != null:
+return playCall();case FeederRequest_UpdateState() when updateState != null:
 return updateState();case FeederRequest_CancelUpdate() when cancelUpdate != null:
 return cancelUpdate();case FeederRequest_TailLog() when tailLog != null:
 return tailLog(_that.after);case _:
@@ -3633,6 +3639,38 @@ int get hashCode => runtimeType.hashCode;
 @override
 String toString() {
     return 'FeederRequest.deleteCall()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class FeederRequest_PlayCall extends FeederRequest {
+  const FeederRequest_PlayCall(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is FeederRequest_PlayCall);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'FeederRequest.playCall()';
 }
 
 

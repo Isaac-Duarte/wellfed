@@ -77,6 +77,8 @@ pub enum FeederRequest {
         wav: Vec<u8>,
     },
     DeleteCall,
+    /// Play the stored clip once on the feeder, to hear it.
+    PlayCall,
     /// Where an install stands.
     UpdateState,
     /// Stop the install, with bank 1 left invalid.

@@ -149,6 +149,7 @@ pub async fn run(
         FeederRequest::GetCall => Op::GetCall,
         FeederRequest::UploadCall { wav } => return upload_call(commands, &wav).await,
         FeederRequest::DeleteCall => Op::DeleteCall,
+        FeederRequest::PlayCall => Op::PlayCall,
         FeederRequest::UpdateState => Op::UpdateState,
         FeederRequest::CancelUpdate => Op::CancelUpdate,
         FeederRequest::TailLog { after } => Op::TailLog { after },

@@ -242,6 +242,9 @@ sealed class FeederRequest with _$FeederRequest {
       FeederRequest_UploadCall;
   const factory FeederRequest.deleteCall() = FeederRequest_DeleteCall;
 
+  /// Play the stored clip once on the feeder, to hear it.
+  const factory FeederRequest.playCall() = FeederRequest_PlayCall;
+
   /// Where an install stands.
   const factory FeederRequest.updateState() = FeederRequest_UpdateState;
 

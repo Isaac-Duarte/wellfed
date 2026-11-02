@@ -80,7 +80,7 @@ enum Command {
     /// delete one (docs/firmware/schedules.md).
     Plans(plans::PlansArgs),
     /// The meal call a plan plays before its meal: show the stored clip,
-    /// upload one from a WAV file, or delete it
+    /// upload one from a WAV file, hear it once on the feeder, or delete it
     /// (docs/firmware/schedules.md#meal-call).
     Call(call::CallArgs),
     /// The desiccant reminder: days left until the pack is due, and with

@@ -4032,12 +4032,15 @@ impl SseDecode for crate::api::feeder::FeederRequest {
                 return crate::api::feeder::FeederRequest::DeleteCall;
             }
             23 => {
-                return crate::api::feeder::FeederRequest::UpdateState;
+                return crate::api::feeder::FeederRequest::PlayCall;
             }
             24 => {
-                return crate::api::feeder::FeederRequest::CancelUpdate;
+                return crate::api::feeder::FeederRequest::UpdateState;
             }
             25 => {
+                return crate::api::feeder::FeederRequest::CancelUpdate;
+            }
+            26 => {
                 let mut var_after = <Option<u32>>::sse_decode(deserializer);
                 return crate::api::feeder::FeederRequest::TailLog { after: var_after };
             }
@@ -7755,10 +7758,11 @@ impl flutter_rust_bridge::IntoDart for crate::api::feeder::FeederRequest {
                 [21.into_dart(), wav.into_into_dart().into_dart()].into_dart()
             }
             crate::api::feeder::FeederRequest::DeleteCall => [22.into_dart()].into_dart(),
-            crate::api::feeder::FeederRequest::UpdateState => [23.into_dart()].into_dart(),
-            crate::api::feeder::FeederRequest::CancelUpdate => [24.into_dart()].into_dart(),
+            crate::api::feeder::FeederRequest::PlayCall => [23.into_dart()].into_dart(),
+            crate::api::feeder::FeederRequest::UpdateState => [24.into_dart()].into_dart(),
+            crate::api::feeder::FeederRequest::CancelUpdate => [25.into_dart()].into_dart(),
             crate::api::feeder::FeederRequest::TailLog { after } => {
-                [25.into_dart(), after.into_into_dart().into_dart()].into_dart()
+                [26.into_dart(), after.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -10966,14 +10970,17 @@ impl SseEncode for crate::api::feeder::FeederRequest {
             crate::api::feeder::FeederRequest::DeleteCall => {
                 <i32>::sse_encode(22, serializer);
             }
-            crate::api::feeder::FeederRequest::UpdateState => {
+            crate::api::feeder::FeederRequest::PlayCall => {
                 <i32>::sse_encode(23, serializer);
             }
-            crate::api::feeder::FeederRequest::CancelUpdate => {
+            crate::api::feeder::FeederRequest::UpdateState => {
                 <i32>::sse_encode(24, serializer);
             }
-            crate::api::feeder::FeederRequest::TailLog { after } => {
+            crate::api::feeder::FeederRequest::CancelUpdate => {
                 <i32>::sse_encode(25, serializer);
+            }
+            crate::api::feeder::FeederRequest::TailLog { after } => {
+                <i32>::sse_encode(26, serializer);
                 <Option<u32>>::sse_encode(after, serializer);
             }
             _ => {

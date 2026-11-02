@@ -434,6 +434,13 @@ pub enum Op<'a> {
     /// Erase the stored meal call, answered `Done` once the store holds
     /// none. A plan's call then plays nothing. Owner sessions only.
     DeleteCall,
+    /// Play the stored meal call once, so the owner can hear it, answered
+    /// `Done` once queued for the speaker. Refused [`Refusal::NotFound`]
+    /// with no clip stored, [`Refusal::Muted`] when the sound settings
+    /// silence it now, and `Busy` while a feed, a tune or a meal's own call
+    /// has the speaker, or the clip would still sound as a meal's call is
+    /// due to begin.
+    PlayCall,
 }
 
 /// The meal call's stream: 8 kHz mono, 4-bit IMA ADPCM, two samples a
@@ -602,9 +609,11 @@ impl Op<'_> {
             Self::ReadBank1 { .. } => Capabilities::BACKUP,
             Self::GetPlans | Self::PutPlans { .. } => Capabilities::PLANS,
             Self::ResetDesiccant => Capabilities::DESICCANT,
-            Self::GetCall | Self::StartCall { .. } | Self::CallChunk { .. } | Self::DeleteCall => {
-                Capabilities::CALL
-            }
+            Self::GetCall
+            | Self::StartCall { .. }
+            | Self::CallChunk { .. }
+            | Self::DeleteCall
+            | Self::PlayCall => Capabilities::CALL,
             Self::Status
             | Self::GetSettings
             | Self::PutSettings { .. }

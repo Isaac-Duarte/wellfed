@@ -4,9 +4,9 @@
 
 use crate::clients::{Label, Role};
 use crate::mailbox::{
-    Calibration, CalibrationResult, CallChange, CallResult, LockResult, Origin, PlansResult,
-    PlayResult, SettingsFields, SettingsResult, Table, TimeFields, TimeResult, TimeSettings,
-    TimeSettingsResult, TimeState, WifiResult,
+    Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult, Origin,
+    PlansResult, PlayResult, SettingsFields, SettingsResult, Table, TimeFields, TimeResult,
+    TimeSettings, TimeSettingsResult, TimeState, WifiResult,
 };
 use crate::wifi::Credentials;
 use wellfed_core::log_tail::Batch as LogBatch;
@@ -158,6 +158,10 @@ pub trait Device {
     /// received is taken as done.
     fn call_chunk(&mut self, _offset: u32, _data: &[u8]) -> Result<(), Refusal> {
         Err(Refusal::Unavailable)
+    }
+    /// Queue the stored meal call to play once, so its owner can hear it.
+    fn play_call(&mut self) -> CallPlay {
+        CallPlay::Unserved
     }
     /// Today's local calendar day (days since 1970-01-01, UTC when the
     /// clock knows no offset) while the clock is valid: the day a desiccant

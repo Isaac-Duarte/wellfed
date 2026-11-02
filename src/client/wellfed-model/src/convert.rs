@@ -1512,6 +1512,7 @@ impl Op {
                 data,
             },
             Self::DeleteCall => proto::Op::DeleteCall,
+            Self::PlayCall => proto::Op::PlayCall,
         }
     }
 }

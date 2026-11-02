@@ -1,5 +1,6 @@
 //! The meal call over the device API: show the stored clip, upload a new
-//! one from a WAV file, or delete it (docs/firmware/schedules.md#meal-call).
+//! one from a WAV file, hear it once on the feeder, or delete it
+//! (docs/firmware/schedules.md#meal-call).
 //!
 //! The file is converted here (`wellfed_client::call`), so the feeder only
 //! stores and plays its own stream. An upload erases the clip the feeder
@@ -36,6 +37,9 @@ enum Action {
         /// A WAV file: integer PCM or 32-bit float, any rate and channels.
         file: PathBuf,
     },
+    /// Play the stored clip once on the feeder, to hear it. Refused while
+    /// sound is off or the speaker is busy.
+    Play(Target),
     /// Erase the stored clip; plans then play no call.
     Delete(Target),
 }
@@ -43,6 +47,7 @@ enum Action {
 pub(crate) async fn command(args: CallArgs) -> Result<()> {
     match args.action {
         Action::Show(target) => ask_and_print(&target, &Op::GetCall).await,
+        Action::Play(target) => ask_and_print(&target, &Op::PlayCall).await,
         Action::Delete(target) => ask_and_print(&target, &Op::DeleteCall).await,
         Action::Upload { target, file } => {
             let bytes = std::fs::read(&file).with_context(|| format!("read {}", file.display()))?;

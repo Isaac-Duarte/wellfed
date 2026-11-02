@@ -149,6 +149,7 @@ fn op() -> impl Strategy<Value = Op<'static>> {
         (any::<u32>(), bytes(CALL_CHUNK_MAX + 1))
             .prop_map(|(offset, data)| Op::CallChunk { offset, data }),
         Just(Op::DeleteCall),
+        Just(Op::PlayCall),
     ]
 }
 

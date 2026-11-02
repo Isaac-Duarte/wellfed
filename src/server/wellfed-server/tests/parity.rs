@@ -87,6 +87,7 @@ fn every_op() -> Vec<Op> {
             data: vec![0],
         },
         Op::DeleteCall,
+        Op::PlayCall,
     ];
     let mut kinds: Vec<_> = ops.iter().map(kind).collect();
     kinds.sort_unstable();
@@ -132,6 +133,7 @@ fn kind(op: &Op) -> u8 {
         Op::StartCall { .. } => 31,
         Op::CallChunk { .. } => 32,
         Op::DeleteCall => 33,
+        Op::PlayCall => 34,
     }
 }
 

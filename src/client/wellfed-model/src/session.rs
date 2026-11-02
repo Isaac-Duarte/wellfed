@@ -45,8 +45,8 @@ pub struct Capabilities {
     /// The desiccant reminder's `ResetDesiccant` op and the `NoClock`
     /// refusal.
     pub desiccant: bool,
-    /// The meal call: `GetCall`, `StartCall`, `CallChunk`, `DeleteCall`
-    /// and the `Call` answer.
+    /// The meal call: `GetCall`, `StartCall`, `CallChunk`, `DeleteCall`,
+    /// `PlayCall` and the `Call` answer.
     pub call: bool,
 }
 
