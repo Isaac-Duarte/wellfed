@@ -10,6 +10,7 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/ask_text.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
 
@@ -38,15 +39,20 @@ class FeederShell extends StatelessWidget {
             onPressed: () => Navigator.pop(context),
             icon: StrokeIcon(Glyph.back, color: c.text),
           ),
-          title: Text(
-            feeder.state.known.name,
-            style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
+          // The name changes here, from the menu, so the title follows it.
+          title: ListenableBuilder(
+            listenable: feeder,
+            builder: (context, _) => Text(
+              feeder.state.known.name,
+              style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
+            ),
           ),
           actions: [
             PopupMenuButton<void>(
               tooltip: 'More',
               icon: Icon(Icons.more_vert, color: c.text),
               itemBuilder: (context) => [
+                PopupMenuItem(onTap: () => unawaited(_rename(context, feeder)), child: const Text('Rename')),
                 PopupMenuItem(onTap: () => unawaited(confirmRestart(context, feeder)), child: const Text('Restart')),
               ],
             ),
@@ -79,6 +85,24 @@ class FeederShell extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Ask for a new name. It is this phone's name for the feeder, so it needs
+/// no session and works offline.
+Future<void> _rename(BuildContext context, FeederController feeder) async {
+  final String? name = await askText(
+    context,
+    title: 'Rename ${feeder.state.known.name}',
+    label: 'Name',
+    initial: feeder.state.known.name,
+    action: 'Rename',
+  );
+  if (name == null || !context.mounted) return;
+
+  final bool saved = await feeder.rename(name);
+  if (!saved && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't save the name. Try again.")));
   }
 }
 

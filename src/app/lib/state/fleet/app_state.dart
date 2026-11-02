@@ -39,6 +39,10 @@ abstract interface class FeederBook implements Listenable {
   /// is: only an owner's revocation takes a key off a feeder.
   Future<void> forget(String identity);
 
+  /// Call `identity` `name` on this phone. The name is this phone's alone:
+  /// the feeder keeps none, so another phone keeps its own.
+  Future<void> rename(String identity, String name);
+
   /// Whether this phone owes `identity` its clock, having just paired.
   bool clockDue(String identity);
 
@@ -138,6 +142,21 @@ class AppState extends ChangeNotifier implements FeederBook {
       feeders: [
         for (final feeder in store.feeders)
           if (feeder.identity != identity) feeder,
+      ],
+      appearance: store.appearance,
+    ),
+  );
+
+  @override
+  Future<void> rename(String identity, String name) => _update(
+    (store) => AppStore(
+      label: store.label,
+      feeders: [
+        for (final feeder in store.feeders)
+          if (feeder.identity == identity)
+            KnownFeeder(identity: feeder.identity, name: name, address: feeder.address)
+          else
+            feeder,
       ],
       appearance: store.appearance,
     ),

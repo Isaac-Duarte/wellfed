@@ -13,6 +13,7 @@ import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/recorder.dart';
 import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/platform/setup_link.dart';
+import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -102,6 +103,22 @@ class FakeBook extends ChangeNotifier implements FeederBook {
     feeders = [
       for (final feeder in feeders)
         if (feeder.identity != identity) feeder,
+    ];
+    notifyListeners();
+  }
+
+  /// Set to make the next save fail, as a full disk would.
+  BridgeError? renameFails;
+
+  @override
+  Future<void> rename(String identity, String name) async {
+    if (renameFails case final failure?) throw failure;
+    feeders = [
+      for (final feeder in feeders)
+        if (feeder.identity == identity)
+          KnownFeeder(identity: feeder.identity, name: name, address: feeder.address)
+        else
+          feeder,
     ];
     notifyListeners();
   }

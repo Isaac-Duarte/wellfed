@@ -152,6 +152,26 @@ class FeederController extends ChangeNotifier {
   /// Take this feeder off this phone.
   Future<void> forgetHere() => _book.forget(_state.known.identity);
 
+  /// Call this feeder `name` on this phone; a blank name changes nothing.
+  /// Whether this phone's file holds the name now.
+  Future<bool> rename(String name) async {
+    final String trimmed = name.trim();
+    final KnownFeeder known = _state.known;
+    if (trimmed.isEmpty || trimmed == known.name) return true;
+
+    try {
+      await _book.rename(known.identity, trimmed);
+    } on BridgeError {
+      return false;
+    }
+    _setState(
+      _state.copyWith(
+        known: KnownFeeder(identity: known.identity, name: trimmed, address: known.address),
+      ),
+    );
+    return true;
+  }
+
   /// One request to the feeder. A write goes out once and is never sent
   /// again; the reply says how it ended, an unknown end included.
   Future<FeederReply> ask(FeederRequest request) async {

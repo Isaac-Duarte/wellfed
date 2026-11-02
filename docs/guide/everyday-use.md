@@ -193,9 +193,13 @@ An owner chooses where the time comes from, with **Get the time from** on the **
 
 **Phones only** needs something to set the clock at least every 6 hours or so, such as a timer that runs `wellfed time`. The app doesn't do this by itself: it sets the clock only once it's lost, when you open the app, and by then meals are already holding.
 
+## Naming a feeder
+
+A feeder's name is your phone's own: choose **Rename** from the menu at the top of the feeder's screen. It works with the feeder offline, and someone else's phone keeps whatever name they gave it.
+
 ## People and invites
 
-An owner can do everything. A member can feed, edit meals and settings, and lock the buttons. In the app, the Wi-Fi, time zone, people and firmware screens show only for an owner. A feeder lists up to eight phones, computers and keys in all.
+An owner can do everything. A member can feed, edit meals and settings, and lock the buttons. In the app, the Wi-Fi, clock, meal call, people and firmware screens show only for an owner. A feeder lists up to eight phones, computers and keys in all.
 
 <!-- tabs -->
 
