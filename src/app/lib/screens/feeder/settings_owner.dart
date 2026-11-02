@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide Card;
 import 'package:wellfed/screens/feeder/clock_portion.dart';
 import 'package:wellfed/screens/feeder/diagnostics.dart';
+import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/people.dart';
 import 'package:wellfed/screens/feeder/settings_tab.dart';
 import 'package:wellfed/screens/feeder/updates.dart';
@@ -55,9 +56,15 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
             children: [
               _Link('Wi-Fi', signal, WifiScreen(feeder: feeder), first: true, open: (screen) => _open(context, screen)),
               _Link(
-                'Time zone',
+                'Clock and portion size',
                 zone == null || zone.isEmpty ? 'Follows the phones' : zone,
                 ClockPortionScreen(feeder: feeder),
+                open: (screen) => _open(context, screen),
+              ),
+              _Link(
+                'Meal call',
+                null,
+                MealCallScreen(feeder: feeder, pick: feeder.pickRecording),
                 open: (screen) => _open(context, screen),
               ),
               _Link('People', people, PeopleScreen(feeder: feeder), open: (screen) => _open(context, screen)),
@@ -86,7 +93,8 @@ class SettingsOwnerOnly extends StatelessWidget {
             children: [
               for (final (i, name) in const [
                 'Wi-Fi',
-                'Time zone',
+                'Clock and portion size',
+                'Meal call',
                 'Firmware updates',
                 'Restart, remove people',
               ].indexed)

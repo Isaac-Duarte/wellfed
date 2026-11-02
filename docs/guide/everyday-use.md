@@ -50,7 +50,7 @@ A few rules are worth knowing:
 
 ### Before a meal
 
-**Meal call** plays your own recording before a meal, up to five times, and ends as the meal is due. Uploading a recording takes an owner. In the app, it's a WAV file of about 8 seconds at most, chosen from the meal editor. On the CLI, it's `wellfed call upload dinner.wav`, then `wellfed plans edit 0 --call 2`. With sound off or outside its hours, the meal runs silently.
+**Meal call** plays your own recording before a meal, up to five times, and ends as the meal is due. Uploading a recording takes an owner. In the app, it's a WAV file of about 8 seconds at most, chosen in **Settings**, then **Meal call**, or from the meal editor. Another format, such as MP3, needs converting first, for example with `ffmpeg -i call.mp3 call.wav`. On the CLI, it's `wellfed call upload dinner.wav`, then `wellfed plans edit 0 --call 2`. With sound off or outside its hours, the meal runs silently.
 
 **Before each meal**, under Settings and Reminders, adds a **Meal coming** entry to History up to 60 minutes ahead. On the CLI, it's `wellfed settings --meal-reminder 10`. It's only a history entry: it plays nothing and sends no notification. Phone alerts are planned for the app, but they haven't been designed or built.
 
@@ -147,7 +147,7 @@ Feed one portion first and throw it away, so the rotor starts from a known place
 
 ### App
 
-This takes an owner. Open **Settings**, then **Time zone**, which opens **Clock and portion size**. Tap **I weighed 10 portions** and enter the grams.
+This takes an owner. Open **Settings**, then **Clock and portion size**. Tap **I weighed 10 portions** and enter the grams.
 
 ### CLI
 

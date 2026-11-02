@@ -83,7 +83,7 @@ void main() {
       expect(find.text('15 minutes ahead'), findsOneWidget);
       expect(find.text('Desiccant every 14 days'), findsOneWidget);
       expect(find.text('Next change in 9 days'), findsOneWidget);
-      for (final row in ['Wi-Fi', 'Time zone', 'People', 'Firmware']) {
+      for (final row in ['Wi-Fi', 'Clock and portion size', 'Meal call', 'People', 'Firmware']) {
         expect(find.text(row), findsOneWidget);
       }
       expect(find.text('Diagnostics'), findsOneWidget);
