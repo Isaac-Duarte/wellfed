@@ -8,7 +8,9 @@ import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
 
 /// Whether to offer a public time server: the feeder asks its router, which
-/// did not answer, and this phone may change where the time comes from.
+/// did not answer, and this phone may change where the time comes from. A
+/// router that answers loses a packet now and then, and the feeder asks
+/// again within seconds, so a clock the router last set is never offered.
 ///
 /// The firmware's default stays the router, so a feeder talks to nothing
 /// outside the owner's network unless the owner chooses it here.
@@ -16,6 +18,7 @@ bool routerGivesNoTime(TimeInfo? time) =>
     time != null &&
     time.writable &&
     time.ntp is NtpView_Gateway &&
+    time.last != TimeSource.ntp &&
     (time.ntpLast == NtpResult.lost || time.ntpLast == NtpResult.refused);
 
 /// The router gives no time: offer Cloudflare's server, or phones alone.
@@ -37,12 +40,13 @@ class _RouterTimeNoticeState extends State<RouterTimeNotice> {
     setState(() => _asking = true);
     final FeederReply reply = await widget.feeder.ask(FeederRequest.putTime(base: widget.time.generation, ntp: ntp));
     if (!mounted) return;
-    setState(() => _asking = false);
     showProblem(context, reply);
 
     // The feeder writes no event for a time setting, so read it again: the
-    // offer goes once the card shows the new source.
+    // offer goes once the card shows the new source. The buttons wait for
+    // it, as a second tap would go against the old generation.
     await widget.feeder.ask(const FeederRequest.getTime());
+    if (mounted) setState(() => _asking = false);
   }
 
   @override

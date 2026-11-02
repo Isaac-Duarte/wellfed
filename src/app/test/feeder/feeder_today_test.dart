@@ -47,8 +47,14 @@ void main() {
   });
 
   group('a router that gives no time', () {
-    TimeInfo time(NtpResult? last) =>
-        TimeInfo(generation: 4, writable: true, ntp: const NtpView.gateway(port: 123), syncs: 1, ntpLast: last);
+    TimeInfo time(NtpResult? last, {TimeSource? setBy}) => TimeInfo(
+      generation: 4,
+      writable: true,
+      ntp: const NtpView.gateway(port: 123),
+      syncs: 1,
+      last: setBy,
+      ntpLast: last,
+    );
 
     testWidgets('offers Cloudflare, sent against the time generation', (tester) async {
       final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
@@ -64,13 +70,43 @@ void main() {
       expect(session.requests.last, const FeederRequest.getTime());
     });
 
+    testWidgets('is not offered for one lost answer from a router that set the clock', (tester) async {
+      final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
+      await feederShowShell(tester, fleet);
+      session.status(fakeCard(time: time(NtpResult.lost, setBy: TimeSource.ntp)));
+      await settle(tester);
+
+      expect(find.text('Use Cloudflare'), findsNothing);
+    });
+
+    testWidgets('goes once the feeder reads back the new source', (tester) async {
+      final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
+      await feederShowShell(tester, fleet);
+      session.status(fakeCard(time: time(NtpResult.lost)));
+      await settle(tester);
+      expect(find.text('Use Cloudflare'), findsOneWidget);
+
+      session.status(
+        fakeCard(
+          time: const TimeInfo(
+            generation: 5,
+            writable: true,
+            ntp: NtpView.address(ip: '162.159.200.1', port: 123),
+            syncs: 1,
+          ),
+        ),
+      );
+      await settle(tester);
+      expect(find.text('Use Cloudflare'), findsNothing);
+    });
+
     testWidgets('is not offered while the router answers', (tester) async {
       final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
       await feederShowShell(tester, fleet);
       session.status(fakeCard(time: time(NtpResult.used)));
       await settle(tester);
 
-      expect(find.text("Your router doesn't give the time."), findsNothing);
+      expect(find.text('Use Cloudflare'), findsNothing);
     });
   });
 
