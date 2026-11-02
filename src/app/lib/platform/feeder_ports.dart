@@ -68,7 +68,14 @@ class AppFeederPorts implements FeederPorts {
 
   @override
   Future<Uint8List?> pickRecording() async {
-    const wav = XTypeGroup(label: 'WAV', extensions: ['wav']);
+    // Android's picker filters by MIME type, and turns the extension into just
+    // `audio/x-wav`: a WAV a file app labels with any of the other names it
+    // goes by was greyed out. The bridge checks the bytes either way.
+    const wav = XTypeGroup(
+      label: 'WAV',
+      extensions: ['wav'],
+      mimeTypes: ['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'],
+    );
     final XFile? picked = await openFile(acceptedTypeGroups: const [wav]);
     return picked?.readAsBytes();
   }
