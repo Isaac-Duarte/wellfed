@@ -52,9 +52,13 @@ printf 'AT+BOOTSEL\r\n' > /dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-i
    ```json
    {
      "relay_port": "/dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if02",
-     "uart_port": "/dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if00"
+     "uart_port": "/dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if00",
+     "baseline": "private/flash-backups/<full-read>/flash-read.bin",
+     "rom_report": "private/captures/<rom-inspection>/report.json"
    }
    ```
+
+   `baseline` is this feeder's full flash read and `rom_report` its ROM inspection. A new feeder gets both by hand first: `wellfed-flash read inspect-rom` while stock runs (it fails if a stock log line lands inside a reply, so run it while the feeder is quiet), then RECOVER's long press into the loader, `wellfed-flash read small` and `read full`.
 
 3. On Linux your user needs serial access: the `uucp` group on Arch, `dialout` on Debian and Ubuntu. macOS needs no group.
 
