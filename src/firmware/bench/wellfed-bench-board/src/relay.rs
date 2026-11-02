@@ -68,4 +68,11 @@ async fn send(sender: &mut Sender<'static, UsbDriver>, text: &str) {
             return;
         }
     }
+
+    // A full packet does not end a bulk transfer: Linux's cdc-acm holds it
+    // until a short one arrives, so a reply of exactly 64 bytes (`AT+STAT?`
+    // with a four-digit VBUS) would wait for the next command's reply.
+    if out.len().is_multiple_of(usize::from(PACKET)) {
+        let _ = sender.write_packet(&[]).await;
+    }
 }

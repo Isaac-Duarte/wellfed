@@ -54,7 +54,20 @@ async fn uart_to_usb(
         // change abandons the packet, since it is stale by then.
         match select(sender.write_packet(&buf[..n]), control.control_changed()).await {
             Either::First(_) => {}
-            Either::Second(()) => host_reopened(rx, sender.line_coding().data_rate()).await,
+            Either::Second(()) => {
+                host_reopened(rx, sender.line_coding().data_rate()).await;
+                continue;
+            }
+        }
+
+        // A full packet does not end a bulk transfer: the host holds it until
+        // a short one arrives. With nothing more queued, end the transfer now,
+        // or a loader reply that fills the packet exactly would stall.
+        if n == usize::from(PACKET) && !rx.read_ready().unwrap_or(false) {
+            match select(sender.write_packet(&[]), control.control_changed()).await {
+                Either::First(_) => {}
+                Either::Second(()) => host_reopened(rx, sender.line_coding().data_rate()).await,
+            }
         }
     }
 }
