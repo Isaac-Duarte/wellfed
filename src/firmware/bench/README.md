@@ -46,7 +46,7 @@ printf 'AT+BOOTSEL\r\n' > /dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-i
 
 ## Use it with the bench
 
-1. Find the ports with `ls /dev/serial/by-id/ | grep Wellfed`. The serial is the flash chip's unique ID, so each board keeps stable paths.
+1. Find the ports. On Linux, `ls /dev/serial/by-id/ | grep Wellfed`. On macOS, `ls /dev/cu.usbmodem*`: macOS names each port after the serial and its interface, so expect `cu.usbmodem<serial>1` for the UART bridge and `cu.usbmodem<serial>3` for the relay port. Use the `cu.` path, not `tty.`, which waits for carrier detect. The serial is the flash chip's unique ID, so each board keeps stable paths.
 2. Point `private/bench.json` at them:
 
    ```json
@@ -56,7 +56,7 @@ printf 'AT+BOOTSEL\r\n' > /dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-i
    }
    ```
 
-3. Your user needs serial access: the `uucp` group on Arch, `dialout` on Debian and Ubuntu.
+3. On Linux your user needs serial access: the `uucp` group on Arch, `dialout` on Debian and Ubuntu. macOS needs no group.
 
 ## Relay port
 
@@ -130,7 +130,7 @@ The code uses the first 2 MiB of the 16 MiB flash. The rest is reserved for stor
 Run these on the first boards, in order:
 
 1. The UF2 flashes, and `ls /dev/serial/by-id/` shows `-if00` and `-if02`.
-2. `AT+STAT?` with nothing attached: all channels 0, VBUS about 0, ALIVE 0.
+2. `AT+STAT?` with nothing attached: all channels 0, VBUS about 0, ALIVE 0. Read `AT+TXV?` a few times too. Nothing loads the feeder TX net and the firmware reads it with no pull, so a floating line can read high, and a high reading refuses RECOVER as if the D-cells were in.
 3. `AT+CH1=1`: the FDR LED lights and `AT+VBUS?` reads about 5000. Check it against a meter.
 4. Plug in the aux USB-C: `AT+SRC?` reads `AUX`. If it reads `HOST`, the ST polarity is inverted; flip it in `wellfed-bench-board/src/telemetry.rs`.
 5. With a feeder connected and powered, `AT+ALIVE?` is 1 and `AT+CUR?` matches a USB meter.
