@@ -46,7 +46,7 @@ printf 'AT+BOOTSEL\r\n' > /dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-i
 
 ## Use it with the bench
 
-1. Find the ports. On Linux, `ls /dev/serial/by-id/ | grep Wellfed`. On macOS, `ls /dev/cu.usbmodem*`: macOS names each port after the serial and its interface, so expect `cu.usbmodem<serial>1` for the UART bridge and `cu.usbmodem<serial>3` for the relay port. Use the `cu.` path, not `tty.`, which waits for carrier detect. The serial is the flash chip's unique ID, so each board keeps stable paths.
+1. Find the ports. On Linux, `ls /dev/serial/by-id/ | grep Wellfed`. On macOS, `ls /dev/cu.usbmodem*`: macOS names each port after the USB location and the interface number plus one, so a board in one socket shows `cu.usbmodem2101` (the UART bridge) and `cu.usbmodem2103` (the relay port). The names change with the socket or hub, so recheck them after moving the cable. Use the `cu.` path, not `tty.`, which waits for carrier detect. On Linux the by-id names carry the serial, the flash chip's unique ID, so each board keeps stable paths there.
 2. Point `private/bench.json` at them:
 
    ```json
