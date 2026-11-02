@@ -37,7 +37,6 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
 use wellfed_model::setup::Reply;
 use wellfed_model::{Answer, Hello, Op, OpenRefusal, Pushed};
 use wellfed_proto::api::{Open, RequestId};
@@ -87,7 +86,7 @@ impl Default for Timing {
 
 /// Where a mirror of the feeder's history stands: the newest event (or
 /// gap end) it holds, in the epoch it counts in.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cursor {
     pub epoch: u32,
     pub seq: u64,

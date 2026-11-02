@@ -53,14 +53,17 @@ pub fn sync(now: Timestamp, zone: &TimeZone) -> TimeSync {
 /// which the feeder runs first.
 pub fn next_meal(plans: &Plans, now: Timestamp, zone: &TimeZone) -> Option<NextMeal> {
     let now_ms = u64::try_from(now.as_millisecond()).ok()?;
-    let offset_at = offsets(zone);
+    let offset_at = |ms: u64| {
+        let at = Timestamp::from_millisecond(i64::try_from(ms).ok()?).ok()?;
+        Some(zone.to_offset(at).seconds())
+    };
 
     let mut next: Option<NextMeal> = None;
     for (slot, plan) in plans.plans.iter().enumerate() {
         let Some(plan) = plan.filter(|plan| plan.enabled) else {
             continue;
         };
-        let Some(due) = schedule::next_due(&core_plan(&plan), now_ms, &offset_at) else {
+        let Some(due) = schedule::next_due(&core_plan(&plan), now_ms, offset_at) else {
             continue;
         };
         let Some(at) = i64::try_from(due)
@@ -78,31 +81,6 @@ pub fn next_meal(plans: &Plans, now: Timestamp, zone: &TimeZone) -> Option<NextM
         }
     }
     next
-}
-
-/// The latest occurrence of `plan` at or before `now`, in `zone`: the instant
-/// the feeder's own reckoning gave it, so a skipped minute lands where the
-/// feeder ran it and a `Missed` event's `due` compares equal.
-pub(crate) fn latest_due(plan: &Plan, now: Timestamp, zone: &TimeZone) -> Option<Timestamp> {
-    let now_ms = u64::try_from(now.as_millisecond()).ok()?;
-    let due = schedule::latest_due(&core_plan(plan), now_ms, offsets(zone))?;
-    Timestamp::from_millisecond(i64::try_from(due).ok()?).ok()
-}
-
-/// The first occurrence of `plan` after `now`, in `zone`, whether or not the
-/// plan is enabled.
-pub(crate) fn following_due(plan: &Plan, now: Timestamp, zone: &TimeZone) -> Option<Timestamp> {
-    let now_ms = u64::try_from(now.as_millisecond()).ok()?;
-    let due = schedule::next_due(&core_plan(plan), now_ms, offsets(zone))?;
-    Timestamp::from_millisecond(i64::try_from(due).ok()?).ok()
-}
-
-/// `zone`'s offsets as the schedule asks for them.
-fn offsets(zone: &TimeZone) -> impl Fn(u64) -> Option<i32> + '_ {
-    |ms| {
-        let at = Timestamp::from_millisecond(i64::try_from(ms).ok()?).ok()?;
-        Some(zone.to_offset(at).seconds())
-    }
 }
 
 /// The feeder's zone as its time settings give it: its POSIX rule, or the

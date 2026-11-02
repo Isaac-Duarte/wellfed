@@ -13,8 +13,7 @@
 //! keeps until they install it is checked with the feeder's own offer check
 //! ([`release`]). The meal call's clip is converted from the owner's
 //! recording and uploaded a chunk at a time ([`call`]). Editing the plans and what they come to today are
-//! [`plans`], and a portion's weight [`calibration`]. What a watcher tells
-//! the owner about all of this is [`alerts`], which only reports.
+//! [`plans`], and a portion's weight [`calibration`].
 //! The consumer installer's steps from stock to a confirmed replacement,
 //! stock's setup frame and the backup gate before promotion are
 //! [`install`].
@@ -29,7 +28,6 @@
 //! [API design]: ../../../../docs/firmware/device-api.md
 #![forbid(unsafe_code)]
 
-pub mod alerts;
 pub mod api;
 pub mod calibration;
 pub mod call;
