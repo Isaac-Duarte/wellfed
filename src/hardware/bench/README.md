@@ -3,7 +3,7 @@
 The Wellfed Bench is an RP2040 USB-C board for recovering and developing on PETLIBRO feeders. It replaces the FT232R UART adapter and SH-UR04A relay board of the [relay bench](../../../docs/devices/plaf103/bench.md). Over one USB cable it shows up as a feeder UART bridge plus an `AT+CHn` relay port, so the bench tools can drive it the way they drive the relay board. This page covers the hardware: what is on the board, the files here, and how to order it. The firmware has [its own page](../../firmware/bench/README.md).
 
 > [!NOTE]
-> Rev B is the only revision. Boards have been made, but none has been brought up: nothing here is confirmed on hardware, and the bench tools do not use it yet.
+> Rev B is the only revision. One batch has been built. On November 2, 2026 one board passed the first four bring-up checks with nothing attached to its feeder side: it flashed, enumerated, switched feeder power (4.96 V out, no fault), the strap and both UART buffers, and moved to the aux input. Nothing has been checked with a feeder connected yet, and the bench tools do not use it yet.
 
 ## What it does
 
