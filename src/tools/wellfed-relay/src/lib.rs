@@ -72,7 +72,12 @@ impl SerialLink {
         #[cfg(unix)]
         let port: Box<dyn serialport::SerialPort> = {
             let mut port = builder.open_native()?;
-            port.set_exclusive(true)?;
+            // open_native already takes the port exclusively (TIOCEXCL), and
+            // macOS refuses a second TIOCEXCL with EBUSY, so ask only if it
+            // did not.
+            if !port.exclusive() {
+                port.set_exclusive(true)?;
+            }
             Box::new(port)
         };
         #[cfg(not(unix))]

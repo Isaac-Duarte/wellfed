@@ -22,7 +22,11 @@ impl Serial {
             .open_native()
             .map_err(io::Error::from)?;
 
-        port.set_exclusive(true).map_err(io::Error::from)?;
+        // open_native already takes the port exclusively (TIOCEXCL), and
+        // macOS refuses a second TIOCEXCL with EBUSY, so ask only if it did not.
+        if !port.exclusive() {
+            port.set_exclusive(true).map_err(io::Error::from)?;
+        }
         modem_line(port.write_request_to_send(false))?;
         modem_line(port.write_data_terminal_ready(false))?;
         Ok(Self(port))
