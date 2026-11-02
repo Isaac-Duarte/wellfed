@@ -309,6 +309,16 @@ void main() {
       expect(next.base, 9);
     });
 
+    testWidgets('a public server picked from the list goes as its address', (tester) async {
+      final FakeSession session = await show(tester);
+
+      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Address'));
+      await tapIn(tester, find.widgetWithText(ListTile, 'Cloudflare'));
+
+      final put = session.requests.first as FeederRequest_PutTime;
+      expect(put.ntp, '162.159.200.1');
+    });
+
     testWidgets('a bad address and an unanswered change say so', (tester) async {
       final FakeSession session = await show(tester);
       session.replies

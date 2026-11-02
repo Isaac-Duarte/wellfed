@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:wellfed/screens/feeder/ask_ntp.dart';
 import 'package:wellfed/screens/feeder/today.dart' show clockWords;
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/session.dart';
@@ -78,12 +79,7 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
   }
 
   Future<void> _address() async {
-    final String? address = await askText(
-      context,
-      title: 'Ask which address?',
-      label: 'IPv4 address',
-      keyboard: TextInputType.number,
-    );
+    final String? address = await askNtpServer(context);
     if (address != null && mounted) await _time(ntp: address);
   }
 
