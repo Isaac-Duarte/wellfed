@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/app.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
+import 'package:wellfed/screens/home/feeder_card.dart';
 import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/src/rust/api/error.dart';
@@ -17,6 +20,7 @@ import 'package:wellfed/theme/theme.dart';
 
 import '../support/fakes.dart';
 import 'feeder_support.dart';
+import 'schedule_history_support.dart';
 
 void main() {
   group('Home', () {
@@ -53,6 +57,31 @@ void main() {
       await feederTap(tester, find.byTooltip('Back'));
       expect(find.text('Feeders'), findsOneWidget);
       expect(find.byTooltip('Settings'), findsOneWidget);
+    });
+
+    Finder inCard(String text) => find.descendant(of: find.byType(FeederCard), matching: find.text(text));
+
+    testWidgets('the card says what it has not read, rather than none', (tester) async {
+      final (_, FakeSession session) = await home(tester);
+      session.status(fakeCard());
+      await settle(tester);
+
+      expect(inCard('Reading…'), findsOneWidget);
+      expect(inCard('Not read yet'), findsOneWidget);
+      expect(inCard('—'), findsNWidgets(2), reason: 'no next meal and no last feed read');
+      expect(inCard('None'), findsNothing);
+    });
+
+    testWidgets('the card tells held meals from none set', (tester) async {
+      final (_, FakeSession session) = await home(tester);
+      session.status(fakeCard(plans: planPlans([planPlan(7 * 60 + 30)]), clockSet: false));
+      await settle(tester);
+      expect(inCard('Meals held'), findsOneWidget);
+
+      session.status(fakeCard(plans: planPlans([planPlan(7 * 60 + 30, enabled: false)])));
+      await settle(tester);
+      expect(inCard('No meal set'), findsOneWidget);
+      expect(inCard('Meals held'), findsNothing);
     });
 
     testWidgets('says when an earlier install did not finish', (tester) async {
@@ -177,6 +206,40 @@ void main() {
       expect(find.text('≈ 24 g'), findsOneWidget);
       await feederTap(tester, find.text('Feed 2 portions · 24 g'));
       expect(session.feeds, [2]);
+    });
+
+    testWidgets('grams wait for a fresh reading each time the sheet opens', (tester) async {
+      final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
+      var portionMg = 12000;
+      Completer<void>? hold;
+      session.answering = (request) async {
+        if (request is! FeederRequest_GetCalibration) return const FeederReply.done();
+        await hold?.future;
+        return FeederReply.calibration(
+          calibration: CalibrationInfo(generation: 1, writable: true, portionMg: portionMg, bowl: Bowl.single),
+        );
+      };
+      await feederShowShell(tester, fleet);
+      session.status(fakeCard());
+      await settle(tester);
+      await feederTap(tester, find.widgetWithText(FilledButton, 'Feed now'));
+      expect(find.text('≈ 12 g'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10));
+      await settle(tester);
+
+      // Another phone re-weighed it: the old grams never show meanwhile.
+      portionMg = 15000;
+      final pending = Completer<void>();
+      hold = pending;
+      await feederTap(tester, find.widgetWithText(FilledButton, 'Feed now'));
+      expect(find.textContaining('≈'), findsNothing);
+      expect(find.textContaining("one turn of the feeder's wheel"), findsOneWidget);
+      expect(find.text('Feed 1 portion'), findsOneWidget);
+
+      pending.complete();
+      await settle(tester);
+      expect(find.text('≈ 15 g'), findsOneWidget);
+      expect(find.text('Feed 1 portion · 15 g'), findsOneWidget);
     });
 
     testWidgets('goes out once, and a refusal offers a new start', (tester) async {

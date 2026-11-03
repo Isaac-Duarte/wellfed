@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
+import 'package:wellfed/src/rust/api/feeder.dart' show CalibrationInfo;
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -74,18 +75,27 @@ class _ConfirmState extends State<_Confirm> {
   static const _most = 48;
   int _portions = 1;
 
+  /// The portion size read as this sheet opened. Grams come only from it, never
+  /// from an earlier reading another phone may since have changed.
+  CalibrationInfo? _calibration;
+
   @override
   void initState() {
     super.initState();
-    // The portion's weight, for grams beside the count. A feed never waits on
-    // it: without it the sheet speaks in turns of the wheel.
-    if (widget.feeder.state.calibration == null) unawaited(widget.feeder.loadCalibration());
+    unawaited(_readPortion());
+  }
+
+  /// A feed never waits on this: until it answers, the sheet speaks in turns
+  /// of the wheel.
+  Future<void> _readPortion() async {
+    final CalibrationInfo? read = await widget.feeder.loadCalibration();
+    if (mounted) setState(() => _calibration = read);
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final int? portionMg = widget.feeder.state.calibration?.portionMg;
+    final int? portionMg = _calibration?.portionMg;
     final String? grams = portionMg == null ? null : _grams(portionMg * _portions);
     final String portion = portionMg == null
         ? "One portion is one turn of the feeder's wheel."

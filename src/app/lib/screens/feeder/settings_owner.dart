@@ -32,7 +32,9 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
   void initState() {
     super.initState();
     if (feeder.state.clients.isEmpty) unawaited(feeder.loadClients());
-    if (feeder.state.call == null) unawaited(feeder.loadCall());
+    // Read each time: another phone may have changed the clip. The row shows
+    // the last one read meanwhile.
+    unawaited(feeder.loadCall());
   }
 
   void _open(BuildContext context, Widget screen) =>

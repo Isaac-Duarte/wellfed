@@ -152,8 +152,12 @@ class FeederController extends ChangeNotifier {
   /// Read the meal call the feeder holds; [state] keeps it.
   Future<void> loadCall() => ask(const FeederRequest.getCall());
 
-  /// Read the feeder's portion size; [state] keeps it.
-  Future<void> loadCalibration() => ask(const FeederRequest.getCalibration());
+  /// Read the feeder's portion size; [state] keeps it. The answer, when the
+  /// feeder gave one, for a screen that shows only what it just read.
+  Future<CalibrationInfo?> loadCalibration() async {
+    final FeederReply reply = await ask(const FeederRequest.getCalibration());
+    return reply is FeederReply_Calibration ? reply.calibration : null;
+  }
 
   /// Take this feeder off this phone.
   Future<void> forgetHere() => _book.forget(_state.known.identity);
@@ -291,6 +295,10 @@ class FeederController extends ChangeNotifier {
               error: () => null,
               history: const [],
               historyRead: false,
+              // A new session may meet a feeder another client re-weighed or
+              // gave a new clip, or one whose store was erased.
+              call: () => null,
+              calibration: () => null,
             ),
           );
           try {
