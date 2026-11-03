@@ -86,10 +86,13 @@ const ARROWS: [(&str, &[&str]); 8] = [
 /// CLI speaks the server's API through its typed client, and the app's
 /// flutter_rust_bridge crate does too, handing `wellfed-api`'s values to
 /// Dart.
-const INTO_SERVER: [(&str, &str); 3] = [
+const INTO_SERVER: [(&str, &str); 5] = [
     ("wellfed", "wellfed-server-client"),
     ("wellfed-app-bridge", "wellfed-server-client"),
     ("wellfed-app-bridge", API),
+    // Home Assistant's owner mode keeps releases as the server does.
+    ("wellfed-homeassistant", "wellfed-releases"),
+    ("wellfed-homeassistant", API),
 ];
 
 /// The crates below the binary, which must not link axum by any path.

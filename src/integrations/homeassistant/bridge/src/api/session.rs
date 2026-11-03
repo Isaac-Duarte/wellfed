@@ -4,6 +4,7 @@
 use wellfed_model as model;
 
 use super::enums::{NotSent, RefusalKind, Role, UpdateKind, WriteResult};
+use super::install::InstallProgress;
 use super::state::{Capabilities, State};
 use super::views::{Event, Feed};
 
@@ -87,6 +88,8 @@ pub struct Update {
     pub feed: Option<Feed>,
     /// For [`UpdateKind::StillUnknown`]: the portions that feed asked for.
     pub portions: Option<u8>,
+    /// For [`UpdateKind::Installing`].
+    pub install: Option<InstallProgress>,
     /// The first and last event lost, for a [`UpdateKind::Gap`] the feeder
     /// named; both `None` for a history that started over.
     pub gap_from: Option<u64>,
@@ -107,6 +110,7 @@ impl Update {
             replayed: false,
             feed: None,
             portions: None,
+            install: None,
             gap_from: None,
             gap_to: None,
             reason: None,
@@ -160,6 +164,13 @@ impl Update {
         Self {
             portions: Some(portions),
             ..Self::kind(UpdateKind::StillUnknown)
+        }
+    }
+
+    pub fn installing(view: &model::UpdateView) -> Self {
+        Self {
+            install: Some(view.into()),
+            ..Self::kind(UpdateKind::Installing)
         }
     }
 

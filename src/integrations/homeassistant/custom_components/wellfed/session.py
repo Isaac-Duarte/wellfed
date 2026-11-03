@@ -90,6 +90,7 @@ class FeederSession:
         self.role: bridge.Role | None = None
         self.capabilities: bridge.Capabilities | None = None
         self.state: bridge.State | None = None
+        self.install_progress: bridge.InstallProgress | None = None
 
     @property
     def status(self) -> bridge.Status | None:
@@ -169,6 +170,36 @@ class FeederSession:
         """Restart the feeder (owners only)."""
         await self._write(lambda feeder: feeder.reboot())
 
+    async def newest_release(
+        self, folder: str, project_keys: list[bytes], *, fetch: bool
+    ) -> bridge.UpdateOffer | None:
+        """The newest verified release held, after fetching the project's when asked."""
+        feeder = self._running()
+        return await self.hass.async_add_executor_job(
+            lambda: feeder.newest_release(folder, project_keys, fetch)
+        )
+
+    async def add_release(
+        self, folder: str, project_keys: list[bytes], path: str
+    ) -> bridge.UpdateOffer:
+        """Verify a release file and keep it."""
+        feeder = self._running()
+        return await self.hass.async_add_executor_job(
+            lambda: feeder.add_release(folder, project_keys, path)
+        )
+
+    async def install(self, folder: str, project_keys: list[bytes], release: str) -> bridge.Install:
+        """Install a held release (owners only); its progress comes as state changes."""
+        feeder = self._running()
+        return await self.hass.async_add_executor_job(
+            lambda: feeder.install(folder, project_keys, release)
+        )
+
+    def _running(self) -> bridge.Feeder:
+        if self._feeder is None:
+            raise WriteNotDone("Not sent: the session has stopped")
+        return self._feeder
+
     async def _write(self, call: Callable[[bridge.Feeder], bridge.Written]) -> bridge.Written:
         feeder = self._feeder
         if feeder is None:
@@ -213,6 +244,8 @@ class FeederSession:
             # A replayed event is history the state already holds, not news.
             if not update.replayed:
                 self.hass.bus.async_fire(EVENT_FEEDER, event_data(self.identity, update.event))
+        elif kind == bridge.UpdateKind.Installing:
+            self.install_progress = update.install
         elif kind == bridge.UpdateKind.Gap:
             _LOGGER.info(
                 "Some feeder events were not received: %s to %s", update.gap_from, update.gap_to

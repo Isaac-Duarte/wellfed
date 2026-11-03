@@ -5427,15 +5427,20 @@ dependencies = [
 name = "wellfed-homeassistant"
 version = "0.1.0"
 dependencies = [
+ "ed25519-dalek",
  "jiff",
  "pyo3",
+ "tempfile",
  "thiserror",
  "tokio",
+ "wellfed-api",
  "wellfed-client",
  "wellfed-connect",
  "wellfed-feeder-sim",
  "wellfed-formats",
  "wellfed-model",
+ "wellfed-releases",
+ "wellfed-server-testkit",
  "wellfed-session",
 ]
 

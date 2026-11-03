@@ -18,6 +18,8 @@ crate-type = ["cdylib", "lib"]
 python = ["dep:pyo3"]
 
 [dependencies]
+wellfed-api.workspace = true
+wellfed-releases.workspace = true
 jiff.workspace = true
 pyo3 = { version = "=0.30.1", features = ["abi3-py313", "experimental-inspect"], optional = true }
 thiserror.workspace = true
@@ -29,6 +31,9 @@ wellfed-model.workspace = true
 wellfed-session.workspace = true
 
 [dev-dependencies]
+ed25519-dalek.workspace = true
+tempfile.workspace = true
+wellfed-server-testkit.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 wellfed-feeder-sim = { workspace = true, features = ["harness"] }
 

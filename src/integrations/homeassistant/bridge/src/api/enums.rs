@@ -384,9 +384,61 @@ view_enum! {
         /// A feed whose answer never came has no `Fed` event this session
         /// could find: whether it ran is not known.
         StillUnknown => "still_unknown",
+        /// An install moved on: `install` says where it stands.
+        Installing => "installing",
         /// The feeder no longer knows this client's key; the session will
         /// not reconnect.
         Revoked => "revoked",
         Disconnected => "disconnected",
+    }
+}
+
+view_enum! {
+    /// Whose key signed a release.
+    Signer {
+        /// The project's key: a published release.
+        Project => "project",
+        /// The owner's enrolled update key: a self-built image.
+        Owner => "owner",
+    }
+}
+
+view_enum! {
+    /// How an install ended.
+    Installed {
+        /// Bank 1 took the release; the feeder restarts into it.
+        Activated => "activated",
+        /// The feeder already ran the release's build: nothing was sent.
+        AlreadyRunning => "already_running",
+        /// The install stopped on the feeder's refusal or its own error.
+        Failed => "failed",
+        /// The feeder stopped answering. With `offered`, bank 1 may be
+        /// partly written, or activated with its answer lost.
+        Gone => "gone",
+        /// It never started; `not_sent` says why.
+        NotSent => "not_sent",
+    }
+}
+
+view_enum! {
+    /// Where an install stands on the feeder.
+    InstallPhase {
+        Idle => "idle",
+        Checking => "checking",
+        GivingWay => "giving_way",
+        Receiving => "receiving",
+        Activated => "activated",
+    }
+}
+
+impl From<model::UpdatePhase> for InstallPhase {
+    fn from(phase: model::UpdatePhase) -> Self {
+        match phase {
+            model::UpdatePhase::Idle => Self::Idle,
+            model::UpdatePhase::Checking => Self::Checking,
+            model::UpdatePhase::GivingWay => Self::GivingWay,
+            model::UpdatePhase::Receiving => Self::Receiving,
+            model::UpdatePhase::Activated => Self::Activated,
+        }
     }
 }

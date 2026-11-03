@@ -3,6 +3,7 @@
 //! classes the stub describes rather than a copy of the model's spellings.
 //! Each blocking call releases the interpreter while it waits.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use pyo3::exceptions::PyException;
@@ -12,9 +13,10 @@ use pyo3::types::PyTuple;
 use crate::Error;
 use wellfed_model::SettingsPatch;
 
-use crate::api::{Role, Tune, Update, Written};
+use crate::api::{Install, Role, Tune, Update, UpdateOffer, Written};
 use crate::feeder::{self, Target};
 use crate::key::{self, ClientKey, bytes32};
+use crate::releases::{Library, block_on, release_id};
 
 /// A call into the Wellfed bridge failed.
 ///
@@ -163,6 +165,47 @@ impl Feeder {
         py.detach(|| self.0.reboot())
     }
 
+    /// The newest release in the cache under `folder`, after fetching the
+    /// project's releases it lacks when `fetch`; `None` with none held.
+    /// Verified against `project_keys` and the owner's enrolled keys.
+    #[pyo3(signature = (folder, project_keys, fetch=true))]
+    fn newest_release(
+        &self,
+        py: Python<'_>,
+        folder: PathBuf,
+        project_keys: Vec<Vec<u8>>,
+        fetch: bool,
+    ) -> PyResult<Option<UpdateOffer>> {
+        let library = Library::new(folder, project_keys, self.0.update_keys())?;
+        Ok(py.detach(|| block_on(library.newest(fetch)))??)
+    }
+
+    /// Verify the release file at `path` and keep it under `folder`.
+    fn add_release(
+        &self,
+        py: Python<'_>,
+        folder: PathBuf,
+        project_keys: Vec<Vec<u8>>,
+        path: PathBuf,
+    ) -> PyResult<UpdateOffer> {
+        let library = Library::new(folder, project_keys, self.0.update_keys())?;
+        Ok(py.detach(|| block_on(library.add_file(path)))??)
+    }
+
+    /// Install the release `id` from under `folder` (owners only); blocks
+    /// until it ends. Its progress comes as `installing` updates.
+    fn install(
+        &self,
+        py: Python<'_>,
+        folder: PathBuf,
+        project_keys: Vec<Vec<u8>>,
+        id: &str,
+    ) -> PyResult<Install> {
+        let library = Library::new(folder, project_keys, self.0.update_keys())?;
+        let id = release_id(id)?;
+        Ok(py.detach(|| self.0.install_release(&library, id))?)
+    }
+
     /// Read the status now.
     fn refresh(&self) {
         self.0.refresh();
@@ -176,7 +219,8 @@ mod wellfed_homeassistant {
     #[pymodule_export]
     use crate::api::{
         By, Capabilities, Event, EventKind, Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel,
-        NextMeal, NotSent, Plan, PortionsToday, Readiness, RefusalKind, Role, Settings, State,
-        Status, Tune, Update, UpdateKind, WriteResult, Written,
+        Install, InstallPhase, InstallProgress, Installed, NextMeal, NotSent, Plan, PortionsToday,
+        Readiness, RefusalKind, Role, Settings, Signer, State, Status, Tune, Update, UpdateKind,
+        UpdateOffer, WriteResult, Written,
     };
 }
