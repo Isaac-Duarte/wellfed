@@ -477,6 +477,12 @@ No build opens an MQTT session; the broker in `wellfed-stock` serves only stock 
 
 ## Evidence
 
+- **Modeled** (November 3, 2026), subscribers at once: the simulator now reads its event ring through the firmware's own turns (`wellfed_feeder::store::reads`, which the runtime's shared state holds too), answering one read after each loop pass as the settings writer does between them.
+  - Three sessions, the owner, a member and a second owner session, subscribed together and each got every event of one feed, the same `Fed` among them (`wellfed-feeder-sim/tests/subscribers.rs`).
+  - Two sessions at the newest event and a third replaying 160 lock changes and a feed, more than four batches, with new events arriving throughout: the replaying session got the whole ring in order with no gap, and all three the same feed.
+  - A session that left after its first replayed event, its batch and turn still held, stalled neither another session replaying the ring nor one following it.
+  - The server's mirror and two direct sessions, a member phone and the owner, each saw the phone's feed end in the same `Fed` (`wellfed-server/tests/end_to_end.rs`).
+  - These show delivery, not the interleaving the turns exist for: they also pass on the read logic from before the turns, since the simulator answers a read only between whole passes. The runtime's host tests (`wellfed-feeder-runtime/tests/writer.rs`) cover that interleaving. Not yet run on the feeder.
 - **Observed** (October 24, 2026; no owner action; each install used a bounded `serve`):
   - `fw47-api-02` (v114): `PLAPI1 listen socket=api open=1`. `wellfed status` opened an IK session as Owner. Settings writes moved the generation 3031 → 3032 → 3033. Lock, unlock and a clock sync were recorded, each with the client's fingerprint, and `events` read all six records.
   - **Invite and revoke:** an owner minted a member invite, and `wellfed join` redeemed it (XXpsk3) with a scratch key, which then opened a session as Member. With that member's `events --follow` session open, `revoke` closed the session at once, and the key was refused afterwards (`OpenRefusal::Unknown`). The history showed `Enrolled { path: Invite }`.

@@ -11,7 +11,6 @@ use std::rc::Rc;
 
 use wellfed_client::setup::{Ask, Credentials, Session, Step};
 use wellfed_core::buttons::{Button, Buttons, Gesture};
-use wellfed_device_api::Reader;
 use wellfed_device_api::mailbox::{KeyResult, WifiResult};
 use wellfed_feeder::feeder::platform::BuildWifi;
 use wellfed_feeder::feeder::setup::{self, Cause, Ended};
@@ -124,9 +123,7 @@ impl Feeder {
     fn refused_events(&mut self) -> usize {
         let mut count = 0;
         let mut after = None;
-        while let Some(Read::Record(record)) =
-            self.sim.platform().event_after(Reader::slot(0), after)
-        {
+        while let Read::Record(record) = self.sim.platform().ring_after(after) {
             after = Some(record.seq);
             let body = wellfed_proto::decode_padded::<EventBody>(&record.body);
             count += usize::from(matches!(body, Some(EventBody::DispenseRefused { .. })));

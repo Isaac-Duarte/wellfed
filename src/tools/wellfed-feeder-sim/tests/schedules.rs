@@ -12,7 +12,6 @@ use wellfed_core::clock::zone::Zone;
 use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_core::store::slot::crc32;
 use wellfed_core::tone::{PlayResult, Tune};
-use wellfed_device_api::Reader;
 use wellfed_device_api::mailbox::{
     CallChange, CallClip, CallResult, MealReminder, PlansChange, PlansResult, PlansView,
     SettingsFields, SettingsResult,
@@ -205,9 +204,7 @@ impl Feeder {
     fn soon(&mut self) -> Vec<(Option<u32>, u8, u32, u16, u8)> {
         let mut found = Vec::new();
         let mut after = None;
-        while let Some(Read::Record(record)) =
-            self.sim.platform().event_after(Reader::slot(0), after)
-        {
+        while let Read::Record(record) = self.sim.platform().ring_after(after) {
             after = Some(record.seq);
             if let Some(EventBody::MealSoon {
                 plan,

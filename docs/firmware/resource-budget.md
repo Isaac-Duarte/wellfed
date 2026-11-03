@@ -42,7 +42,7 @@ KM4 static sections, in bytes, from the first product image:
 | `.ram_image2.bss` | 37,576 | 37,616 | 41,028 |
 | `.ram_image2.nocache.data` | 23,928 | 23,920 | 23,932 |
 
-The session table is the 11,576-byte `BUDGET` static, about 2.9 KB a client. It is built at compile time (`Slot::filled`) because it is larger than the loop task's stack.
+The session table is part of the feeder's state, the `FEEDER` static in the firmware's `app.rs`. It is built at compile time (`Slot::filled`) because it is larger than the loop task's stack.
 
 **Heap.** FreeRTOS heap, free bytes, from `PLAPI1 heap`. Task stacks come from this heap.
 

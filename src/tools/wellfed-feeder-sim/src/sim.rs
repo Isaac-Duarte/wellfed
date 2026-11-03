@@ -302,6 +302,7 @@ impl Sim {
         let delay = self
             .feeder
             .pass(now_ms, &mut self.feeds, |r| record(Record::Feeder(r)));
+        self.platform().answer_read();
         let delay = feed_delay.map_or(delay, |feed| delay.min(feed));
         if let Some(result) = self.platform().write() {
             record(Record::Keys(result));

@@ -95,7 +95,7 @@ Home Assistant pairs with the feeder by an invite, as a second phone does, and h
 - **A long outage.** The feeder can only feed on schedule while it knows the time. A power cut with no time source, or a day without Wi-Fi, holds meals. No alert reaches you when that happens.
 - **A wrong answer about the time.** The time from your router isn't authenticated. Someone on your network can shift a set clock only within its error bound, but whoever answers first can set a clock that has none. An owner's sync is the check. [Clock](../../firmware/clock.md#the-clock) has the limits.
 - **Losing the phone that holds the keys.** If every client is lost, you need the recovery hold at the feeder. If the phone held the only backup of stock, that's gone with it.
-- **An untested server.** Feeds, accounts and release installs through the server have run in simulation only. A phone talking to the feeder directly gets no events while the server is connected.
+- **An untested server.** Feeds, accounts and release installs through the server have run in simulation only. So has the server following the feeder's events alongside a phone that talks to it directly.
 - **A different feeder.** All of this ran on one feeder.
 
 ## Evidence
