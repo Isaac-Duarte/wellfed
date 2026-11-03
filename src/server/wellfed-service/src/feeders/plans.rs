@@ -100,6 +100,7 @@ impl Service {
             | CommandOutcome::Invited { .. }
             | CommandOutcome::Calibration { .. }
             | CommandOutcome::Call { .. }
+            | CommandOutcome::Superseded
             | CommandOutcome::Unrecorded => Err(InternalError::Unexpected.into()),
         }
     }

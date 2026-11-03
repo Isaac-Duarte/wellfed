@@ -39,9 +39,9 @@ pub enum CallError {
 pub enum CallStart {
     /// From the start: the feeder's clip is erased first.
     Fresh,
-    /// From where the feeder says it stands, after an attempt whose
-    /// answers were lost.
-    Resume,
+    /// From where the feeder's view (read with [`Operation::read_call`])
+    /// says this upload stands, after an attempt whose answers were lost.
+    Resume(CallView),
 }
 
 impl Operation {
@@ -55,10 +55,7 @@ impl Operation {
         let mut sent = false;
         let mut upload = match start {
             CallStart::Fresh => Upload::new(clip),
-            CallStart::Resume => {
-                let view = self.call_view(&mut sent).await?;
-                Upload::resume(clip, &view)
-            }
+            CallStart::Resume(view) => Upload::resume(clip, &view),
         };
 
         loop {
@@ -74,9 +71,10 @@ impl Operation {
         }
     }
 
-    /// Where the feeder's upload stands.
-    async fn call_view(&mut self, sent: &mut bool) -> Result<CallView, CallError> {
-        match self.call_step(Op::GetCall, sent).await? {
+    /// The feeder's meal call: its clip, or the upload under way. A read,
+    /// so [`CallError::Lost`] here changed nothing on the feeder.
+    pub async fn read_call(&mut self) -> Result<CallView, CallError> {
+        match self.call_step(Op::GetCall, &mut false).await? {
             Answer::Call(view) => Ok(view),
             Answer::Refused(refusal) => {
                 Err(UploadFailed::Upload(UploadError::Refused(refusal)).into())

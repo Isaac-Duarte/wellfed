@@ -7503,12 +7503,15 @@ impl SseDecode for crate::api::server::ServerCommandOutcome {
                 return crate::api::server::ServerCommandOutcome::Call;
             }
             5 => {
+                return crate::api::server::ServerCommandOutcome::Superseded;
+            }
+            6 => {
                 let mut var_refusal = <crate::api::server::ServerRefusal>::sse_decode(deserializer);
                 return crate::api::server::ServerCommandOutcome::Refused {
                     refusal: var_refusal,
                 };
             }
-            6 => {
+            7 => {
                 let mut var_invite = <u32>::sse_decode(deserializer);
                 let mut var_seconds = <u16>::sse_decode(deserializer);
                 return crate::api::server::ServerCommandOutcome::Invited {
@@ -7516,11 +7519,11 @@ impl SseDecode for crate::api::server::ServerCommandOutcome {
                     seconds: var_seconds,
                 };
             }
-            7 => {
+            8 => {
                 let mut var_feed = <u32>::sse_decode(deserializer);
                 return crate::api::server::ServerCommandOutcome::Feeding { feed: var_feed };
             }
-            8 => {
+            9 => {
                 let mut var_feed = <u32>::sse_decode(deserializer);
                 let mut var_requested = <u8>::sse_decode(deserializer);
                 let mut var_completed = <u8>::sse_decode(deserializer);
@@ -7534,7 +7537,7 @@ impl SseDecode for crate::api::server::ServerCommandOutcome {
                     reason: var_reason,
                 };
             }
-            9 => {
+            10 => {
                 return crate::api::server::ServerCommandOutcome::Unrecorded;
             }
             _ => {
@@ -11780,17 +11783,18 @@ impl flutter_rust_bridge::IntoDart for crate::api::server::ServerCommandOutcome 
             crate::api::server::ServerCommandOutcome::Plans => [2.into_dart()].into_dart(),
             crate::api::server::ServerCommandOutcome::Calibration => [3.into_dart()].into_dart(),
             crate::api::server::ServerCommandOutcome::Call => [4.into_dart()].into_dart(),
+            crate::api::server::ServerCommandOutcome::Superseded => [5.into_dart()].into_dart(),
             crate::api::server::ServerCommandOutcome::Refused { refusal } => {
-                [5.into_dart(), refusal.into_into_dart().into_dart()].into_dart()
+                [6.into_dart(), refusal.into_into_dart().into_dart()].into_dart()
             }
             crate::api::server::ServerCommandOutcome::Invited { invite, seconds } => [
-                6.into_dart(),
+                7.into_dart(),
                 invite.into_into_dart().into_dart(),
                 seconds.into_into_dart().into_dart(),
             ]
             .into_dart(),
             crate::api::server::ServerCommandOutcome::Feeding { feed } => {
-                [7.into_dart(), feed.into_into_dart().into_dart()].into_dart()
+                [8.into_dart(), feed.into_into_dart().into_dart()].into_dart()
             }
             crate::api::server::ServerCommandOutcome::Fed {
                 feed,
@@ -11799,7 +11803,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server::ServerCommandOutcome 
                 outcome,
                 reason,
             } => [
-                8.into_dart(),
+                9.into_dart(),
                 feed.into_into_dart().into_dart(),
                 requested.into_into_dart().into_dart(),
                 completed.into_into_dart().into_dart(),
@@ -11807,7 +11811,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server::ServerCommandOutcome 
                 reason.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            crate::api::server::ServerCommandOutcome::Unrecorded => [9.into_dart()].into_dart(),
+            crate::api::server::ServerCommandOutcome::Unrecorded => [10.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -16303,17 +16307,20 @@ impl SseEncode for crate::api::server::ServerCommandOutcome {
             crate::api::server::ServerCommandOutcome::Call => {
                 <i32>::sse_encode(4, serializer);
             }
-            crate::api::server::ServerCommandOutcome::Refused { refusal } => {
+            crate::api::server::ServerCommandOutcome::Superseded => {
                 <i32>::sse_encode(5, serializer);
+            }
+            crate::api::server::ServerCommandOutcome::Refused { refusal } => {
+                <i32>::sse_encode(6, serializer);
                 <crate::api::server::ServerRefusal>::sse_encode(refusal, serializer);
             }
             crate::api::server::ServerCommandOutcome::Invited { invite, seconds } => {
-                <i32>::sse_encode(6, serializer);
+                <i32>::sse_encode(7, serializer);
                 <u32>::sse_encode(invite, serializer);
                 <u16>::sse_encode(seconds, serializer);
             }
             crate::api::server::ServerCommandOutcome::Feeding { feed } => {
-                <i32>::sse_encode(7, serializer);
+                <i32>::sse_encode(8, serializer);
                 <u32>::sse_encode(feed, serializer);
             }
             crate::api::server::ServerCommandOutcome::Fed {
@@ -16323,7 +16330,7 @@ impl SseEncode for crate::api::server::ServerCommandOutcome {
                 outcome,
                 reason,
             } => {
-                <i32>::sse_encode(8, serializer);
+                <i32>::sse_encode(9, serializer);
                 <u32>::sse_encode(feed, serializer);
                 <u8>::sse_encode(requested, serializer);
                 <u8>::sse_encode(completed, serializer);
@@ -16331,7 +16338,7 @@ impl SseEncode for crate::api::server::ServerCommandOutcome {
                 <crate::api::model::FeedReason>::sse_encode(reason, serializer);
             }
             crate::api::server::ServerCommandOutcome::Unrecorded => {
-                <i32>::sse_encode(9, serializer);
+                <i32>::sse_encode(10, serializer);
             }
             _ => {
                 unimplemented!("");

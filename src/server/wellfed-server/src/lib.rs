@@ -42,6 +42,8 @@ use wellfed_service::{RELEASE_MAX, Service};
 /// release or stock upload, which takes up to [`RELEASE_MAX`] (a stock
 /// image, its container's header and a full bank, is shorter).
 const BODY_LIMIT: usize = 64 * 1024;
+/// The largest meal call the feeder keeps: an upload's body limit.
+const CALL_UPLOAD_MAX: usize = wellfed_api::CALL_BYTES_MAX as usize;
 
 #[derive(Clone)]
 pub(crate) struct AppState {
@@ -106,7 +108,7 @@ fn router() -> OpenApiRouter<AppState> {
             calibration::calibration,
             calibration::put_calibration
         ))
-        .routes(routes!(call::call, call::upload_call, call::delete_call))
+        .routes(routes!(call::call, call::delete_call))
         .routes(routes!(call::play_call))
         .routes(routes!(feeders::lock))
         .routes(routes!(feeders::reset_desiccant))
@@ -153,6 +155,11 @@ fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(backups::backups, backups::create_backup))
         .routes(routes!(export::export))
         .layer(RequestBodyLimitLayer::new(BODY_LIMIT));
+    // A clip is read only up to the feeder's length: a longer one is
+    // refused `too_large` while it arrives, never held whole.
+    let calls = OpenApiRouter::new()
+        .routes(routes!(call::upload_call))
+        .layer(DefaultBodyLimit::max(CALL_UPLOAD_MAX));
     let uploads = OpenApiRouter::new()
         .routes(routes!(releases::upload_release))
         .routes(routes!(stock::upload_stock))
@@ -160,7 +167,7 @@ fn router() -> OpenApiRouter<AppState> {
     // An import streams into its transaction as it arrives, so it is held
     // to no size: it runs only on a fresh server, where no data is at stake.
     let imports = OpenApiRouter::new().routes(routes!(export::import));
-    let api = small.merge(uploads).merge(imports);
+    let api = small.merge(calls).merge(uploads).merge(imports);
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(health::health))
         .nest(wellfed_api::PREFIX, api)

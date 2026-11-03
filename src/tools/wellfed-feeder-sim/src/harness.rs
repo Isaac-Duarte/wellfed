@@ -342,6 +342,8 @@ struct Hold {
     left: Arc<Mutex<Option<usize>>>,
     answers: Arc<watch::Sender<bool>>,
     waiting: Arc<AtomicUsize>,
+    /// Every byte delivered to the feeder so far.
+    passed: Arc<AtomicUsize>,
 }
 
 impl Hold {
@@ -350,6 +352,7 @@ impl Hold {
     /// waits for each answer before its next request (an install's steps)
     /// had every earlier one answered, so none slips through after.
     fn sending(&self, n: usize) {
+        self.passed.fetch_add(n, Ordering::SeqCst);
         let mut left = self.left.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(budget) = left.as_mut() {
             if n >= *budget {
@@ -378,6 +381,7 @@ impl Relay {
             left: Arc::new(Mutex::new(None)),
             answers: Arc::clone(&to_client),
             waiting: Arc::new(AtomicUsize::new(0)),
+            passed: Arc::new(AtomicUsize::new(0)),
         };
         let holding = hold.clone();
         tokio::spawn(async move {
@@ -438,6 +442,14 @@ impl Relay {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         *left = Some(bytes);
+    }
+
+    /// How many bytes clients have sent the feeder through the relay: the
+    /// difference across one request is its size on the wire, for a
+    /// [`Self::hold_answers_after`] budget that lets it through and holds
+    /// the next.
+    pub fn passed(&self) -> usize {
+        self.hold.passed.load(Ordering::SeqCst)
     }
 
     /// Whether the feeder's answers are held back now.

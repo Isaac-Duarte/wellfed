@@ -441,6 +441,9 @@ fn settled(entry: &Command) -> Result<Settled> {
             | CommandOutcome::Call { .. }
             | CommandOutcome::Invited { .. },
         ) => Ok(Settled::Known),
+        Some(CommandOutcome::Superseded) => {
+            bail!("another change to the meal call came first: nothing was sent again")
+        }
         Some(CommandOutcome::Refused { refusal }) => {
             bail!("the feeder refused it: {}", text::word(refusal))
         }

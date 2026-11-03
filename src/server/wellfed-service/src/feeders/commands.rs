@@ -22,6 +22,10 @@ pub enum CommandError {
     Unknown,
     #[error("the Idempotency-Key already names another request; nothing was sent")]
     KeyReused,
+    #[error(
+        "the meal call changed on the feeder after this write was first sent; nothing was sent again"
+    )]
+    Superseded,
 }
 
 impl CommandError {
@@ -30,6 +34,7 @@ impl CommandError {
             Self::Offline => ErrorCode::FeederOffline,
             Self::Unknown => ErrorCode::OutcomeUnknown,
             Self::KeyReused => ErrorCode::KeyReused,
+            Self::Superseded => ErrorCode::Superseded,
         }
     }
 }
@@ -175,6 +180,7 @@ impl Service {
             | CommandOutcome::Invited { .. }
             | CommandOutcome::Calibration { .. }
             | CommandOutcome::Call { .. }
+            | CommandOutcome::Superseded
             | CommandOutcome::Unrecorded => Err(InternalError::Unexpected.into()),
         }
     }
@@ -261,6 +267,7 @@ pub(crate) fn done(outcome: &CommandOutcome) -> Result<()> {
     match outcome {
         CommandOutcome::Done => Ok(()),
         CommandOutcome::Refused { refusal } => Err(Error::Refused(*refusal)),
+        CommandOutcome::Superseded => Err(CommandError::Superseded.into()),
         CommandOutcome::Settings { .. }
         | CommandOutcome::Plans { .. }
         | CommandOutcome::Feeding { .. }

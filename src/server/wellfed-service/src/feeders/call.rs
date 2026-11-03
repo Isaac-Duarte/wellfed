@@ -6,18 +6,19 @@
 //! converts a recording on the client), and the server checks only what
 //! the feeder checks, its length. The upload runs on the mirror's long
 //! lane, a chunk per step, so feeds and status reads keep flowing beside
-//! it. A chunk's answer that is lost leaves the entry unknown; a retry
-//! under the same key reads where the feeder's upload stands and sends
-//! only the rest, or nothing once the feeder stores the clip.
+//! it. How an upload or a delete is sent, and retried without undoing a
+//! later change, is `call/send.rs`.
+
+mod send;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use wellfed_api::{CallView, CommandKind, CommandOutcome, FeederId, Hex};
-use wellfed_mirror::{CallError, CallStart, Clip, UploadError, UploadFailed};
+use wellfed_mirror::Clip;
 use wellfed_model::{Answer, Op};
 
 use crate::feeders::commands::{done, refused};
-use crate::feeders::journal::{Attempt, Write};
+use crate::feeders::journal::{Sending, Write};
 use crate::{
     Caller, CommandError, Error, IdempotencyKey, InstallError, InternalError, Invalid, Result,
     Service,
@@ -48,7 +49,9 @@ impl Service {
     /// one the feeder holds, and answer the feeder's view once it stores
     /// it. The feeder takes it only from an owner's key (`forbidden`
     /// otherwise). A refusal is final for the key, and one after the
-    /// upload began leaves the feeder with no clip.
+    /// upload began leaves the feeder with no clip. A retry finding that
+    /// the meal call changed since the first send is
+    /// [`CommandError::Superseded`].
     pub async fn upload_call(
         &self,
         caller: &Caller,
@@ -83,6 +86,7 @@ impl Service {
         match recorded.outcome {
             CommandOutcome::Call { call } => Ok(call),
             CommandOutcome::Refused { refusal } => Err(Error::Refused(refusal)),
+            CommandOutcome::Superseded => Err(CommandError::Superseded.into()),
             CommandOutcome::Done
             | CommandOutcome::Settings { .. }
             | CommandOutcome::Plans { .. }
@@ -95,15 +99,21 @@ impl Service {
     }
 
     /// Erase the meal call; plans then play none. Owners' keys only, on the
-    /// feeder's side.
+    /// feeder's side. A retry erases only the clip the first send found.
     pub async fn delete_call(
         &self,
         caller: &Caller,
         id: FeederId,
         key: Option<IdempotencyKey>,
     ) -> Result<()> {
-        self.call_write(caller, id, CommandKind::CallDelete, Op::DeleteCall, key)
-            .await
+        self.call_write(
+            caller,
+            id,
+            CommandKind::CallDelete,
+            Sending::DeleteCall,
+            key,
+        )
+        .await
     }
 
     /// Play the stored clip once, to hear it: refused `muted` while sound
@@ -114,7 +124,7 @@ impl Service {
         id: FeederId,
         key: Option<IdempotencyKey>,
     ) -> Result<()> {
-        self.call_write(caller, id, CommandKind::CallPlay, Op::PlayCall, key)
+        self.call_write(caller, id, CommandKind::CallPlay, Op::PlayCall.into(), key)
             .await
     }
 
@@ -123,7 +133,7 @@ impl Service {
         caller: &Caller,
         id: FeederId,
         kind: CommandKind,
-        op: Op,
+        op: Sending,
         key: Option<IdempotencyKey>,
     ) -> Result<()> {
         self.live_row(id).await?;
@@ -140,58 +150,5 @@ impl Service {
             })
             .await?;
         done(&recorded.outcome)
-    }
-
-    /// Run one attempt of an upload on the long lane and record what came
-    /// of it. A retry starts from where the feeder's upload stands.
-    pub(crate) async fn send_call(
-        &self,
-        key: IdempotencyKey,
-        feeder: FeederId,
-        clip: &Clip,
-        attempt: Attempt,
-    ) -> Result<CommandOutcome> {
-        let start = match attempt {
-            Attempt::First => CallStart::Fresh,
-            Attempt::Retry => CallStart::Resume,
-        };
-        let uploaded = match self.mirror.operation(feeder).await {
-            Ok(mut operation) => operation.upload_call(clip, start).await,
-            Err(error) => Err(CallError::Unsent(error)),
-        };
-        let now = self.shared.clock.now();
-
-        let outcome = match uploaded {
-            Ok(call) => CommandOutcome::Call { call },
-            Err(CallError::Failed(UploadFailed::Upload(UploadError::Refused(refusal)))) => {
-                CommandOutcome::Refused {
-                    refusal: refusal.into(),
-                }
-            }
-            // As for one request: a first attempt never sent leaves no
-            // entry, so the key is free for the same upload later.
-            Err(CallError::Unsent(error)) => {
-                if matches!(attempt, Attempt::First) {
-                    self.shared.store.forget_unsent(&key).await?;
-                }
-                return Err(error.into());
-            }
-            Err(CallError::Failed(UploadFailed::Upload(UploadError::Unexpected))) => {
-                self.unknown(&key, now).await?;
-                return Err(InternalError::Unexpected.into());
-            }
-            // The feeder holds what it received, or its restart forgot it:
-            // a retry under the key reads which and goes on from there.
-            Err(CallError::Lost(_) | CallError::Failed(_)) => {
-                self.unknown(&key, now).await?;
-                return Err(CommandError::Unknown.into());
-            }
-            Err(CallError::Random(failed)) => {
-                self.unknown_best_effort(&key).await;
-                return Err(failed.into());
-            }
-        };
-        self.record_answer(&key, &outcome, now).await?;
-        Ok(outcome)
     }
 }

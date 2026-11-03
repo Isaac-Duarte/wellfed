@@ -200,3 +200,132 @@ async fn until_receiving(service: &wellfed_service::Service, id: wellfed_api::Fe
     .await;
     received.get()
 }
+
+/// An upload whose answers were lost, then another clip uploaded under
+/// another key: the first one's retry would undo that, so it is settled
+/// superseded and sends nothing, and the feeder keeps the later clip.
+#[test]
+fn a_retry_never_overwrites_a_later_clip() {
+    local(async {
+        let sim = feeder::start().await;
+        let relay = Relay::start(sim.address).await;
+        let server = TestService::start_with(quick()).await;
+        let id = server
+            .adopt_as(&sim, &relay.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let service = server.service();
+        let caller = ada().into();
+
+        let key: IdempotencyKey = [6; 16];
+        relay.hold_answers_after(1_800);
+        let lost = service
+            .upload_call(&caller, id, stream(4_096), Some(key))
+            .await;
+        assert!(
+            matches!(lost, Err(Error::Command(CommandError::Unknown))),
+            "{lost:?}"
+        );
+        relay.cut();
+        relay.resume();
+        back(service, id).await;
+
+        let later = service
+            .upload_call(&caller, id, stream(2_000), Some([7; 16]))
+            .await
+            .unwrap();
+        for _ in 0..2 {
+            let retried = service
+                .upload_call(&caller, id, stream(4_096), Some(key))
+                .await;
+            assert!(
+                matches!(retried, Err(Error::Command(CommandError::Superseded))),
+                "{retried:?}"
+            );
+        }
+        let entry = service.command(&ada(), key).await.unwrap();
+        assert_eq!(entry.outcome, Some(CommandOutcome::Superseded));
+        assert_eq!(service.call(id).await.unwrap(), later);
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// A delete whose answer was lost: its retry is done once the feeder holds
+/// no clip, and superseded, with nothing sent, once another clip was
+/// uploaded since.
+#[test]
+fn a_retried_delete_erases_only_the_clip_it_found() {
+    local(async {
+        let sim = feeder::start().await;
+        let relay = Relay::start(sim.address).await;
+        let server = TestService::start_with(quick()).await;
+        let id = server
+            .adopt_as(&sim, &relay.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let service = server.service();
+        let caller = ada().into();
+
+        service
+            .upload_call(&caller, id, stream(1_000), Some([0x10; 16]))
+            .await
+            .unwrap();
+        let key: IdempotencyKey = [0x20; 16];
+        lose_the_delete(service, &relay, id, key).await;
+        assert_eq!(service.call(id).await.unwrap().clip, CallClip::None);
+        service.delete_call(&caller, id, Some(key)).await.unwrap();
+
+        // Lost again, then a clip uploaded before the retry.
+        let key: IdempotencyKey = [0x30; 16];
+        service
+            .upload_call(&caller, id, stream(1_000), Some([0x31; 16]))
+            .await
+            .unwrap();
+        lose_the_delete(service, &relay, id, key).await;
+        let later = service
+            .upload_call(&caller, id, stream(1_500), Some([0x32; 16]))
+            .await
+            .unwrap();
+        let retried = service.delete_call(&caller, id, Some(key)).await;
+        assert!(
+            matches!(retried, Err(Error::Command(CommandError::Superseded))),
+            "{retried:?}"
+        );
+        assert_eq!(service.call(id).await.unwrap(), later);
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// Send a delete under `key` whose answer the relay holds back: its read
+/// of the clip passes, the erase reaches the feeder, and its answer is
+/// lost. The session is then cut and comes back.
+async fn lose_the_delete(
+    service: &wellfed_service::Service,
+    relay: &Relay,
+    id: wellfed_api::FeederId,
+    key: IdempotencyKey,
+) {
+    let before = relay.passed();
+    service.call(id).await.unwrap();
+    let read = relay.passed() - before;
+    relay.hold_answers_after(read + 1);
+
+    let lost = service.delete_call(&ada().into(), id, Some(key)).await;
+    assert!(
+        matches!(lost, Err(Error::Command(CommandError::Unknown))),
+        "{lost:?}"
+    );
+    relay.cut();
+    relay.resume();
+    back(service, id).await;
+}
+
+/// Until the feeder's session answers again after a cut.
+async fn back(service: &wellfed_service::Service, id: wellfed_api::FeederId) {
+    until("the session answers again", || async {
+        service.call(id).await.is_ok()
+    })
+    .await;
+}

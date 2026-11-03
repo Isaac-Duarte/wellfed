@@ -194,7 +194,7 @@ A retry under the same key reads the journal first:
 
 - An **answered** write returns its recorded outcome without reaching the feeder.
 - A **sent** write is still in flight, so a retry is answered `outcome_unknown` and sends nothing. A server that stops first leaves it `sent`, and the next start marks it `unknown`.
-- An **unknown** write is sent again under the same device request ID when its kind allows: settings, plans, the calibration, lock and a cancel. A meal call's upload resumes instead: the retry reads where the feeder's upload stands and sends only the rest. A feed never is resent, because the feeder forgets request ids at a reboot.
+- An **unknown** write is sent again under the same device request ID when its kind allows: settings, plans, the calibration, lock and a cancel. A meal call's upload resumes instead: the retry reads where the feeder's upload stands and sends only the rest. An upload or an erase of the meal call keeps the clip the feeder held at its first send, and its retry is `superseded`, sending nothing, when the feeder holds another by then. A feed never is resent, because the feeder forgets request ids at a reboot.
 - A **refused** write is final for its key, `409 feeder_refused` with the feeder's reason. Trying later is a new request with a new key.
 
 **Feeds.** `POST /feeders/{id}/feed` (`{ "portions": n }`) requires `Idempotency-Key` and answers `202` once the feeder has reserved the feed in its journal. The answer carries the feeder's number for the feed, which keeps counting across restarts. There are no server-side limits: the feeder's refusals (`busy`, `invalid` past its cap) are the policy. The result is the feeder's `Fed` event, which settles the entry.

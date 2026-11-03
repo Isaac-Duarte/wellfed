@@ -5,8 +5,8 @@
 
 use uuid::Uuid;
 use wellfed_api::{
-    AdoptFeeder, Bowl, Calibration, CallClip, ClientRole, Connection, Credentials, ErrorCode,
-    FeederId, Generation, NewUser, Role,
+    AdoptFeeder, Bowl, CALL_BYTES_MAX, Calibration, CallClip, ClientRole, Connection, Credentials,
+    ErrorCode, FeederId, Generation, NewUser, PortionWeight, Role,
 };
 use wellfed_server_client::{Client, Error, StatusCode};
 use wellfed_server_testkit::{TestServer, ada_setup, feeder, local, refused, refused_for, until};
@@ -71,6 +71,8 @@ fn a_member_calibrates_and_a_viewer_only_reads() {
 
         let read = viewer.calibration(kitchen).await.unwrap();
         assert_eq!(read.generation, Generation(0));
+        let food = viewer.feeder_food(kitchen).await.unwrap();
+        assert_eq!(food.weight, PortionWeight::Uncalibrated);
         let weighed = Calibration {
             portion_mg: Some(9_800),
             bowl: Bowl::Single,
@@ -88,6 +90,12 @@ fn a_member_calibrates_and_a_viewer_only_reads() {
             .unwrap();
         assert_eq!(changed.calibration, weighed);
         assert_eq!(changed.generation, Generation(1));
+        // The food views weigh by it at once, not at the next statistics read.
+        let food = viewer.feeder_food(kitchen).await.unwrap();
+        assert_eq!(
+            food.weight,
+            PortionWeight::Calibration { portion_mg: 9_800 }
+        );
 
         let stale = owner
             .put_calibration(kitchen, read.generation, &weighed, key(3))
@@ -152,6 +160,14 @@ fn a_member_uploads_plays_and_erases_the_call_and_a_viewer_only_reads() {
             member.upload_call(kitchen, Vec::new(), key(14)).await,
             StatusCode::BAD_REQUEST,
             ErrorCode::Invalid,
+        );
+        let most = usize::try_from(CALL_BYTES_MAX).unwrap();
+        refused(
+            member
+                .upload_call(kitchen, vec![0; most + 1], key(17))
+                .await,
+            StatusCode::PAYLOAD_TOO_LARGE,
+            ErrorCode::TooLarge,
         );
 
         // The simulator has no speaker, so the feeder refuses it muted.

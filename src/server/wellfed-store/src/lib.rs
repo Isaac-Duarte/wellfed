@@ -53,7 +53,7 @@ use sqlx::sqlite::{
 };
 
 pub use audit::{AuditFilter, AuditRecord, AuditRow, NewAudit};
-pub use commands::{CommandFilter, CommandRow, Journaled, NewCommand};
+pub use commands::{CallBefore, CommandFilter, CommandRow, Journaled, NewCommand};
 pub use diagnostics::{FoodReading, RawTrace, StatsRow, TraceFound, TraceRow};
 pub use export::Snapshot;
 pub use feeders::{FeederRow, FeederState, NewFeeder, SealedKey, Synced};

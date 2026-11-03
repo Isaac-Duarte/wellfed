@@ -1,14 +1,16 @@
 //! The portion calibration: what one portion weighs and the bowl mode,
 //! read from the feeder and replaced against the generation read, as the
 //! settings are. The food views count in grams only once it is set, from
-//! the portions statistics the mirror reads.
+//! the portions statistics the server keeps: read again after a change, so
+//! the views follow it at once.
 
 use serde::Serialize;
+use tracing::warn;
 use wellfed_api::{
     Calibration, CalibrationView, CommandKind, CommandOutcome, FeederId, FeederRefusal, Generation,
     PORTION_MG_MAX, PORTION_MG_MIN,
 };
-use wellfed_model::{Answer, Op};
+use wellfed_model::{Answer, Op, StatsSection};
 
 use crate::feeders::commands::{CommandError, refused};
 use crate::feeders::journal::Write;
@@ -79,6 +81,7 @@ impl Service {
                     })?;
                 self.amend(&recorded.key, &CommandOutcome::Calibration { calibration })
                     .await?;
+                self.refresh_portions(id).await;
                 Ok(calibration)
             }
             CommandOutcome::Refused {
@@ -88,10 +91,46 @@ impl Service {
             CommandOutcome::Settings { .. }
             | CommandOutcome::Plans { .. }
             | CommandOutcome::Call { .. }
+            | CommandOutcome::Superseded
             | CommandOutcome::Feeding { .. }
             | CommandOutcome::Fed { .. }
             | CommandOutcome::Invited { .. }
             | CommandOutcome::Unrecorded => Err(InternalError::Unexpected.into()),
+        }
+    }
+
+    /// Read the feeder's portions statistics again and keep them, so the
+    /// food views weigh by a new calibration at once rather than at the
+    /// mirror's next read. A read that fails leaves that next read to it.
+    async fn refresh_portions(&self, id: FeederId) {
+        let section = StatsSection::Portions;
+        let read = match self.request_id() {
+            Ok(request) => self.ask(id, request, Op::Stats { section }).await,
+            Err(error) => Err(error),
+        };
+        let stats = match read {
+            Ok(Answer::Stats(stats)) => stats,
+            Ok(other) => {
+                warn!(feeder = %id, "the portions statistics were not read back: {other:?}");
+                return;
+            }
+            Err(error) => {
+                warn!(feeder = %id, %error, "the portions statistics were not read back");
+                return;
+            }
+        };
+
+        let store = &self.shared.store;
+        let boot_count = match store.state(id).await {
+            Ok(state) => state.status.map(|(status, _)| status.boot_count),
+            Err(error) => {
+                warn!(feeder = %id, %error, "the portions statistics were not kept");
+                return;
+            }
+        };
+        let now = self.shared.clock.now();
+        if let Err(error) = store.record_stats(id, now, boot_count, &stats).await {
+            warn!(feeder = %id, %error, "the portions statistics were not kept");
         }
     }
 

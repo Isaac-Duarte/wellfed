@@ -285,6 +285,7 @@ impl From<CommandOutcome> for ServerCommandOutcome {
             CommandOutcome::Plans { .. } => Self::Plans,
             CommandOutcome::Calibration { .. } => Self::Calibration,
             CommandOutcome::Call { .. } => Self::Call,
+            CommandOutcome::Superseded => Self::Superseded,
             CommandOutcome::Refused { refusal } => Self::Refused {
                 refusal: refusal.into(),
             },

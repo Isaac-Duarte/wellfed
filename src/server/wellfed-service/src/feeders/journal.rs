@@ -70,6 +70,9 @@ pub(crate) enum Sending {
     /// The meal call's clip, a chunk at a time on the long lane
     /// (`feeders/call.rs`).
     Call(Clip),
+    /// Erasing the meal call, once the feeder's clip is read
+    /// (`feeders/call.rs`).
+    DeleteCall,
 }
 
 impl From<Op> for Sending {
@@ -187,6 +190,10 @@ impl Service {
                     .send_call(key, feeder, &clip, attempt)
                     .await
                     .map(|outcome| (outcome, None)),
+                Sending::DeleteCall => service
+                    .send_delete(key, feeder, request, attempt)
+                    .await
+                    .map(|outcome| (outcome, None)),
             }
         });
         let Ok(sent) = sending.await else {
@@ -235,7 +242,7 @@ impl Service {
 
     /// Send one attempt and record what came of it: the outcome, and an
     /// invite's secret beside it.
-    async fn send(
+    pub(crate) async fn send(
         &self,
         key: IdempotencyKey,
         feeder: FeederId,

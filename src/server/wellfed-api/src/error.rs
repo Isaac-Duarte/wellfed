@@ -103,6 +103,10 @@ pub enum ErrorCode {
     /// The `Idempotency-Key` already names another request (another
     /// body, feeder, kind of write or user). Nothing was sent.
     KeyReused,
+    /// Another change to the feeder's meal call came between a write's
+    /// first send and its retry, so the retry sent nothing: it would have
+    /// undone that change. Final for the key.
+    Superseded,
     /// The file is not a release the server keeps; `release` says why.
     ReleaseRefused,
     /// Fetching releases is off (`releases.fetch`); uploads still work.

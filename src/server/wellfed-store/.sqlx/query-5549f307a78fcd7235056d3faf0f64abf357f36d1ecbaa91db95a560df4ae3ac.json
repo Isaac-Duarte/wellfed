@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT call_before FROM commands WHERE key = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "call_before",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "commands",
+            "name": "call_before"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "5549f307a78fcd7235056d3faf0f64abf357f36d1ecbaa91db95a560df4ae3ac"
+}

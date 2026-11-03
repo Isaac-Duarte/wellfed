@@ -97,6 +97,8 @@ pub enum ServerCommandOutcome {
     Calibration,
     /// The meal call the upload stored.
     Call,
+    /// Another change to the meal call came first; the retry sent nothing.
+    Superseded,
     Refused {
         refusal: ServerRefusal,
     },

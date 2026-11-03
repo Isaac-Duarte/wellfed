@@ -205,6 +205,10 @@ sealed class ServerCommandOutcome with _$ServerCommandOutcome {
 
   /// The meal call the upload stored.
   const factory ServerCommandOutcome.call() = ServerCommandOutcome_Call;
+
+  /// Another change to the meal call came first; the retry sent nothing.
+  const factory ServerCommandOutcome.superseded() =
+      ServerCommandOutcome_Superseded;
   const factory ServerCommandOutcome.refused({required ServerRefusal refusal}) =
       ServerCommandOutcome_Refused;
   const factory ServerCommandOutcome.invited({

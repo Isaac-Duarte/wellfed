@@ -843,7 +843,7 @@
             }
           },
           "400": {
-            "description": "invalid: an empty clip, one past the feeder's length, or a malformed Idempotency-Key",
+            "description": "invalid: an empty clip or a malformed Idempotency-Key",
             "content": {
               "application/json": {
                 "schema": {
@@ -872,7 +872,7 @@
             }
           },
           "409": {
-            "description": "feeder_archived; install_running; or feeder_refused (`forbidden`: the server's key is not an owner's; `not_writable`, `busy`): final for this key, and the clip the feeder held may be gone",
+            "description": "feeder_archived; install_running; superseded: a retry found another change to the meal call since the first send, and sent nothing; or feeder_refused (`forbidden`: the server's key is not an owner's; `not_writable`, `busy`): final for this key, and the clip the feeder held may be gone",
             "content": {
               "application/json": {
                 "schema": {
@@ -882,7 +882,7 @@
             }
           },
           "413": {
-            "description": "too_large",
+            "description": "too_large: past the feeder's length, refused as it arrives",
             "content": {
               "application/json": {
                 "schema": {
@@ -971,7 +971,7 @@
             }
           },
           "409": {
-            "description": "feeder_archived, or feeder_refused (`forbidden`: the server's key is not an owner's): final for this key",
+            "description": "feeder_archived; superseded: a retry found another clip than the first send did, and erased nothing; or feeder_refused (`forbidden`: the server's key is not an owner's): final for this key",
             "content": {
               "application/json": {
                 "schema": {
@@ -6741,6 +6741,21 @@
           },
           {
             "type": "object",
+            "description": "Another change to the meal call reached the feeder between this\nwrite's first send and its retry. The retry sent nothing, since it\nwould have undone that change.",
+            "required": [
+              "result"
+            ],
+            "properties": {
+              "result": {
+                "type": "string",
+                "enum": [
+                  "superseded"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "The feeder refused it; nothing ran.",
             "required": [
               "refusal",
@@ -7110,6 +7125,7 @@
           "feeder_refused",
           "outcome_unknown",
           "key_reused",
+          "superseded",
           "release_refused",
           "fetch_disabled",
           "releases_unreachable",
