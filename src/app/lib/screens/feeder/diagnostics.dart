@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' hide Card;
-import 'package:wellfed/screens/feeder/clock_portion.dart';
 import 'package:wellfed/screens/feeder/live_log.dart';
 import 'package:wellfed/screens/feeder/motor_trace.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
@@ -140,7 +139,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               children: [
                 _Link('Motor traces', 'Recent feeds', MotorTracesScreen(feeder: feeder), _open, first: true),
                 _Link('Live log', null, LiveLogScreen(feeder: feeder), _open),
-                _Link('Clock and portion size', null, ClockPortionScreen(feeder: feeder), _open),
               ],
             ),
           ),

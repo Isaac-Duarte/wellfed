@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/join_ports.dart';
-import 'package:wellfed/screens/feeder/clock_portion.dart';
+import 'package:wellfed/screens/feeder/clock.dart';
 import 'package:wellfed/screens/feeder/diagnostics.dart';
 import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/history.dart';
@@ -12,6 +12,7 @@ import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/meal_editor.dart';
 import 'package:wellfed/screens/feeder/motor_trace.dart';
 import 'package:wellfed/screens/feeder/people.dart';
+import 'package:wellfed/screens/feeder/portion.dart';
 import 'package:wellfed/screens/feeder/schedule.dart';
 import 'package:wellfed/screens/feeder/settings_tab.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
@@ -173,7 +174,8 @@ void main() {
             ('Wi-Fi', (feeder) => WifiScreen(feeder: feeder)),
             ('updates', (feeder) => UpdatesScreen(feeder: feeder)),
             ('diagnostics', (feeder) => DiagnosticsScreen(feeder: feeder)),
-            ('clock and portion', (feeder) => ClockPortionScreen(feeder: feeder)),
+            ('the clock', (feeder) => ClockScreen(feeder: feeder)),
+            ('portion size', (feeder) => PortionScreen(feeder: feeder)),
             ('the live log', (feeder) => LiveLogScreen(feeder: feeder)),
             ('the motor traces', (feeder) => MotorTracesScreen(feeder: feeder)),
             ('a motor trace', (feeder) => MotorTraceScreen(feeder: feeder, feed: 1)),

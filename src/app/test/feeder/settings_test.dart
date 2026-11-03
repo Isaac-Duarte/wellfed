@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wellfed/screens/feeder/clock_portion.dart';
 import 'package:wellfed/screens/feeder/settings_tab.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -107,7 +106,7 @@ void main() {
       expect(find.text('15 minutes ahead'), findsOneWidget);
       expect(find.text('Desiccant every 14 days'), findsOneWidget);
       expect(find.text('Next change in 9 days'), findsOneWidget);
-      for (final row in ['Wi-Fi', 'Clock and portion size', 'Meal call', 'People', 'Firmware']) {
+      for (final row in ['Wi-Fi', 'Clock', 'Portion size', 'Meal call', 'People', 'Firmware']) {
         expect(find.text(row), findsOneWidget);
       }
       expect(find.text('Diagnostics'), findsOneWidget);
@@ -277,148 +276,6 @@ void main() {
       await tapIn(tester, find.text('Cancel'));
       expect(session.requests, isEmpty);
       expect(feeder.state.known.name, 'Kitchen');
-    });
-  });
-
-  group('Clock and portion size', () {
-    const time = TimeInfo(
-      generation: 8,
-      writable: true,
-      ntp: NtpView.gateway(port: 123),
-      clockMs: 1000,
-      errorMs: 400,
-      syncs: 1,
-      last: TimeSource.ntp,
-    );
-    const calibration = CalibrationInfo(generation: 2, writable: true, portionMg: 11000, bowl: Bowl.single);
-
-    Future<FakeSession> show(WidgetTester tester) async {
-      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
-      session.status(fakeCard(time: time));
-      session.replies.add(const FeederReply.calibration(calibration: calibration));
-      await showTab(tester, ClockPortionScreen(feeder: feeder));
-      session.requests.clear();
-      return session;
-    }
-
-    testWidgets('shows the clock and the portion, with no fact it lacks', (tester) async {
-      await show(tester);
-
-      expect(find.text('under 1 s'), findsOneWidget);
-      expect(find.text('Set by your router'), findsOneWidget);
-      expect(find.text('11 g'), findsOneWidget);
-    });
-
-    testWidgets('coming to the screen reads the time again', (tester) async {
-      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
-      session.status(fakeCard(time: time));
-      await showTab(tester, ClockPortionScreen(feeder: feeder));
-
-      expect(session.requests, contains(const FeederRequest.getTime()));
-    });
-
-    testWidgets('offline it does not pass off an old reading as the time', (tester) async {
-      final FakeSession session = await show(tester);
-      expect(find.text('under 1 s'), findsOneWidget);
-
-      unawaited(session.updates.close());
-      await tester.pump();
-      await settle(tester);
-
-      expect(find.text("Can't read it right now"), findsOneWidget);
-      expect(find.text('Could be off by'), findsNothing);
-      expect(find.text('under 1 s'), findsNothing);
-
-      // Run out the controller's retry timer before the test ends.
-      await tester.pump(const Duration(seconds: 3));
-    });
-
-    testWidgets('where the time comes from goes against its generation', (tester) async {
-      final FakeSession session = await show(tester);
-
-      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Phones only'));
-      final put = session.requests.first as FeederRequest_PutTime;
-      expect(put.base, 8);
-      expect(put.ntp, 'off');
-      expect(put.zone, isNull);
-    });
-
-    testWidgets('a time change reads the time again, so the next goes against '
-        'the new generation', (tester) async {
-      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
-      session.status(fakeCard(time: time));
-      session.replies.add(const FeederReply.calibration(calibration: calibration));
-      await showTab(tester, ClockPortionScreen(feeder: feeder));
-      session.requests.clear();
-
-      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Phones only'));
-      expect(session.requests, hasLength(2));
-      expect(session.requests.first, isA<FeederRequest_PutTime>());
-      expect(session.requests.last, const FeederRequest.getTime());
-
-      // What the session then says of that read.
-      session.status(fakeCard(time: const TimeInfo(generation: 9, writable: true, ntp: NtpView.off(), syncs: 1)));
-      await settle(tester);
-      session.requests.clear();
-
-      expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Phones only')).selected, isTrue);
-      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Router'));
-      final next = session.requests.first as FeederRequest_PutTime;
-      expect(next.base, 9);
-    });
-
-    testWidgets('a public server picked from the list goes as its address', (tester) async {
-      final FakeSession session = await show(tester);
-
-      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Address'));
-      await tapIn(tester, find.widgetWithText(ListTile, 'Cloudflare'));
-
-      final put = session.requests.first as FeederRequest_PutTime;
-      expect(put.ntp, '162.159.200.1');
-    });
-
-    testWidgets('a bad address and an unanswered change say so', (tester) async {
-      final FakeSession session = await show(tester);
-      session.replies
-        ..add(const FeederReply.notAsked(reason: NotAsked.badNtp))
-        // The read after that change.
-        ..add(const FeederReply.done())
-        ..add(const FeederReply.unanswered());
-
-      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Address'));
-      await tester.enterText(find.byType(TextField), 'pool.ntp.org');
-      await tapIn(tester, find.widgetWithText(FilledButton, 'Save'));
-      expect(find.textContaining('IPv4 address, like'), findsOneWidget);
-
-      await tapIn(tester, find.widgetWithText(ChoiceChip, 'Phones only'));
-      expect(find.textContaining('may or may not have'), findsOneWidget);
-    });
-
-    testWidgets('a portion steps, or comes from what 10 weighed', (tester) async {
-      final FakeSession session = await show(tester);
-
-      await tapIn(tester, find.byTooltip('More'));
-      var put = session.requests.first as FeederRequest_PutCalibration;
-      expect(put.base, 2);
-      expect((put.portion as PortionChange_Milligrams).mg, 12000);
-      expect(put.bowl, Bowl.single);
-
-      session.requests.clear();
-      await tapIn(tester, find.text('I weighed 10 portions'));
-      await tester.enterText(find.byType(TextField), '98.4');
-      await tapIn(tester, find.widgetWithText(FilledButton, 'Save'));
-      put = session.requests.first as FeederRequest_PutCalibration;
-      final weighed = put.portion as PortionChange_Weighed;
-      expect(weighed.grams, '98.4');
-      expect(weighed.portions, 10);
-    });
-
-    testWidgets('a portion refused says so', (tester) async {
-      final FakeSession session = await show(tester);
-      session.replies.add(const FeederReply.refused(refusal: FeederRefusal.invalid()));
-
-      await tapIn(tester, find.byTooltip('More'));
-      expect(find.textContaining('refused that value'), findsOneWidget);
     });
   });
 }

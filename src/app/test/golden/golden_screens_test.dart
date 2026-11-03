@@ -4,12 +4,13 @@ import 'package:clock/clock.dart';
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/join_ports.dart';
-import 'package:wellfed/screens/feeder/clock_portion.dart';
+import 'package:wellfed/screens/feeder/clock.dart';
 import 'package:wellfed/screens/feeder/diagnostics.dart';
 import 'package:wellfed/screens/feeder/invite.dart';
 import 'package:wellfed/screens/feeder/lights_help.dart';
 import 'package:wellfed/screens/feeder/meal_editor.dart';
 import 'package:wellfed/screens/feeder/people.dart';
+import 'package:wellfed/screens/feeder/portion.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/screens/feeder/updates.dart';
 import 'package:wellfed/screens/home/home.dart';
@@ -175,6 +176,9 @@ TimeInfo? _readClock(TimeInfo? time) => switch (time) {
     generation: time.generation,
     writable: time.writable,
     zone: time.zone,
+    zoneNow: time.zoneNow,
+    phoneZone: time.phoneZone,
+    sameAsPhone: time.sameAsPhone,
     ntp: time.ntp,
     clockMs: fixtureNow.millisecondsSinceEpoch,
     errorMs: 300,
@@ -234,13 +238,19 @@ void main() {
         await matchesGolden('people', brightness);
       });
 
-      golden('clock and portion size', (tester) async {
+      golden('the clock', (tester) async {
         final (FeederController feeder, FakeSession session) = await oneFeeder(tester, phone: fixturePhone());
         answerAsFull(session);
         session.status(_changed(fullCard(), time: _readClock(fullCard().time)));
         await tester.pump();
-        await showPhone(tester, overBlank(ClockPortionScreen(feeder: feeder)), brightness);
-        await matchesGolden('clock_portion', brightness);
+        await showPhone(tester, overBlank(ClockScreen(feeder: feeder)), brightness);
+        await matchesGolden('clock', brightness);
+      });
+
+      golden('portion size', (tester) async {
+        final FeederController feeder = await goldenFeeder(tester);
+        await showPhone(tester, overBlank(PortionScreen(feeder: feeder)), brightness);
+        await matchesGolden('portion', brightness);
       });
 
       golden('diagnostics', (tester) async {
