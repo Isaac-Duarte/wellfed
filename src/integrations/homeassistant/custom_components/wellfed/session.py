@@ -86,6 +86,8 @@ class FeederSession:
 
         self.connected = False
         self.revoked = False
+        # Called once the feeder no longer knows this Home Assistant.
+        self.on_revoked: Callable[[], None] | None = None
         self.build: str | None = None
         self.role: bridge.Role | None = None
         self.capabilities: bridge.Capabilities | None = None
@@ -267,6 +269,8 @@ class FeederSession:
             _LOGGER.error("The feeder no longer knows this Home Assistant: pair it again")
             self.revoked = True
             self.connected = False
+            if self.on_revoked is not None:
+                self.on_revoked()
         elif kind == bridge.UpdateKind.Disconnected:
             if self.connected:
                 _LOGGER.warning("Feeder disconnected: %s", update.reason)

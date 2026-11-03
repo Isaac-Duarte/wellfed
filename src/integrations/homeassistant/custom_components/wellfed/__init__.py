@@ -73,6 +73,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> b
         bytes.fromhex(entry.data[CONF_IDENTITY]),
         entry.data.get(CONF_ADDRESS),
     )
+    session.on_revoked = lambda: entry.async_start_reauth(hass)
     session.start()
     entry.runtime_data = session
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

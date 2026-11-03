@@ -8,6 +8,9 @@ CONF_SECRET: Final = "secret"
 CONF_IDENTITY: Final = "identity"
 CONF_INVITE: Final = "invite"
 CONF_ADDRESS: Final = "address"
+CONF_ROLE: Final = "role"
+# Owner mode's option: the keys the project signs releases with, hex.
+CONF_PROJECT_KEYS: Final = "project_keys"
 
 # The label the feeder lists this client under.
 CLIENT_LABEL: Final = "home-assistant"
