@@ -561,7 +561,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
 
     /// Say the card again; `false` once nobody listens.
     fn card(&mut self) -> bool {
-        match self.facts.card() {
+        match crate::today::card(&self.facts) {
             Some(card) => (self.update)(SessionUpdate::Status { card }),
             None => true,
         }
