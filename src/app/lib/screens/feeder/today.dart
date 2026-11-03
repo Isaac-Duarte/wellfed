@@ -6,6 +6,8 @@ import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/lights_help.dart';
 import 'package:wellfed/screens/feeder/no_time.dart';
 import 'package:wellfed/screens/feeder/router_time.dart';
+import 'package:wellfed/screens/feeder/tabs.dart';
+import 'package:wellfed/screens/feeder/today_facts.dart';
 import 'package:wellfed/screens/feeder/today_faults.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
@@ -14,12 +16,13 @@ import 'package:wellfed/src/rust/api/session.dart' as api;
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
-import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/feeder_drawing.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/when.dart';
 
-/// How the feeder stands today, its facts and the lock (7.1), or what
+/// How the feeder stands today (7.1): the drawing with its food, last feed
+/// and lock, the next meal, and the facts that need the owner; or what
 /// stopped it (7.3). It shows only what the session has read; a fact not read
 /// yet says so.
 class TodayTab extends StatelessWidget {
@@ -64,7 +67,7 @@ class TodayTab extends StatelessWidget {
                     TodayLastFeedFailed(fault: fault),
                     const SizedBox(height: Space.s3),
                   ],
-                  if (card != null) ...[_Facts(feeder: feeder, card: card), const SizedBox(height: Space.s3)],
+                  if (card != null) ...[TodayFacts(feeder: feeder, card: card), const SizedBox(height: Space.s3)],
                   _LightsLink(),
                   if (stopped) ...[
                     const SizedBox(height: Space.s3),
@@ -90,15 +93,34 @@ class TodayTab extends StatelessWidget {
   );
 }
 
-class _Summary extends StatelessWidget {
+class _Summary extends StatefulWidget {
   const _Summary({required this.feeder});
 
   final FeederController feeder;
 
   @override
+  State<_Summary> createState() => _SummaryState();
+}
+
+class _SummaryState extends State<_Summary> {
+  bool _locking = false;
+
+  Future<void> _lock(bool locked) async {
+    setState(() => _locking = true);
+    final FeederReply reply = await widget.feeder.ask(FeederRequest.setLock(locked: locked));
+    if (!mounted) return;
+    setState(() => _locking = false);
+    showProblem(context, reply);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final api.Card? card = feeder.state.connection == Connection.online ? feeder.state.card : null;
+    final FeederController feeder = widget.feeder;
+    final bool online = feeder.state.connection == Connection.online;
+    final api.Card? card = online ? feeder.state.card : null;
+    // What the feeder last said, even offline: the drawing dims instead.
+    final api.Card? read = feeder.state.card;
     final (Color dot, String title) = switch (feeder.state.connection) {
       Connection.looking => (c.textMuted, 'Looking…'),
       Connection.connecting => (c.textMuted, 'Connecting…'),
@@ -110,127 +132,116 @@ class _Summary extends StatelessWidget {
       Connection.online => (c.warning, "Can't feed now"),
     };
     final small = TextStyle(fontSize: Sizes.base, color: c.textMuted);
-    final api.NextMealView? next = feeder.state.card?.nextMeal;
-    final api.FeedResult? last = feeder.state.card?.lastFed;
     final Blocked? blocked = card?.blocked;
 
-    return Row(
+    final (String food, Color? foodColor, FoodShown shown) = switch (read?.food) {
+      FoodLevel.present => ('Food in', null, FoodShown.full),
+      FoodLevel.low => ('Food low', c.warning, FoodShown.low),
+      FoodLevel.unread || null => ('Food not read', c.textMuted, FoodShown.none),
+    };
+    final bool? locked = read?.locked;
+    final List<Callout> callouts = [
+      Callout(anchor: 'window', side: CalloutSide.right, lines: [food], color: foodColor),
+      Callout(
+        anchor: 'button_lock',
+        side: CalloutSide.left,
+        lines: [
+          switch (locked) {
+            true => 'Buttons locked',
+            false => 'Buttons unlocked',
+            null => 'Lock not read',
+          },
+        ],
+        color: locked == null ? c.textMuted : null,
+        onTap: online && locked != null && !_locking ? () => unawaited(_lock(!locked)) : null,
+        tapHint: locked ?? false ? 'Unlock the buttons' : 'Lock the buttons',
+      ),
+      _lastFed(context, read?.lastFed),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        FeederImage(size: 120, dimmed: feeder.state.connection == Connection.offline),
-        const SizedBox(width: Space.s4),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: Space.s2),
-                  Flexible(
-                    child: Text(
-                      title,
-                      style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
-                    ),
-                  ),
-                ],
+        Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: Space.s2),
+            Flexible(
+              child: Text(
+                title,
+                style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
               ),
-              const SizedBox(height: Space.s1),
-              if (blocked == Blocked.fault)
-                Text('Meals are held until it restarts', style: small)
-              else if (blocked != null && blocked != Blocked.feeding)
-                Text('${blockedWords(blocked)}.', style: small),
-              if (next != null)
-                Text(
-                  'Next meal ${minuteText(context, next.minute)} · '
-                  '${portionsText(next.portions)}',
-                  style: small,
-                ),
-              if (last != null) Text(_lastFed(context, last), style: small),
-            ],
-          ),
+            ),
+          ],
         ),
+        if (blocked == Blocked.fault)
+          Text('Meals are held until it restarts', style: small)
+        else if (blocked != null && blocked != Blocked.feeding)
+          Text('${blockedWords(blocked)}.', style: small),
+        const SizedBox(height: Space.s3),
+        FeederDrawing(height: 280, callouts: callouts, food: shown, dimmed: !online, label: 'Drawing of the feeder'),
+        if (read != null) ...[const SizedBox(height: Space.s3), _NextMeal(card: read)],
       ],
     );
   }
 
-  static String _lastFed(BuildContext context, api.FeedResult last) {
+  /// The bowl's callout: when, and how much went out. A short or unsure feed
+  /// says its count against what was asked, never one number. Three short
+  /// lines, so it fits beside the drawing on a phone.
+  static Callout _lastFed(BuildContext context, api.FeedResult? last) {
+    if (last == null) {
+      return const Callout(anchor: 'bowl', side: CalloutSide.right, lines: ['Last feed', 'not read yet']);
+    }
     final PlatformInt64? at = last.atMs;
-    final when = at == null ? '' : ' ${momentTextMs(context, at)} ·';
-    return 'Last fed$when ${deliveredText(last)}';
+    final String when = at == null ? '' : momentTextMs(context, at);
+    final String amount = last.uncertain || last.confirmed != last.requested
+        ? '${deliveredText(last)} ${portionWord(last.requested)}'
+        : portionsText(last.confirmed);
+    return Callout(
+      anchor: 'bowl',
+      side: CalloutSide.right,
+      lines: ['Last fed', if (when.isNotEmpty) when, amount],
+      summary: when.isEmpty ? 'Last fed · $amount' : 'Last fed $when · $amount',
+    );
   }
 }
 
-class _Facts extends StatelessWidget {
-  const _Facts({required this.feeder, required this.card});
+/// The next meal, the line the owner opens the tab for, or a way to add one.
+class _NextMeal extends StatelessWidget {
+  const _NextMeal({required this.card});
 
-  final FeederController feeder;
   final api.Card card;
 
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    // A time only when the last feed took this reading: one at rest has none.
-    final api.FeedResult? fed = card.lastFed;
-    final PlatformInt64? last = fed?.hopper == card.food ? fed?.atMs : null;
-    final at = last == null ? '' : ' ${atMomentTextMs(context, last)}';
-    final (String food, Color foodColor) = switch (card.food) {
-      FoodLevel.present => ('In the hopper$at', c.food),
-      FoodLevel.low => ('Low$at', c.fault),
-      FoodLevel.unread => ('Not read yet', c.textMuted),
-    };
-    final online = feeder.state.connection == Connection.online;
+    final style = TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text);
+    final api.NextMealView? next = card.nextMeal;
+    final TabController? tabs = DefaultTabController.maybeOf(context);
 
-    return Panel(
-      child: Column(
-        children: [
-          _Row(
-            Glyph.food,
-            'Food',
-            first: true,
-            value: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(color: foodColor, shape: BoxShape.circle),
+    return Row(
+      children: [
+        StrokeIcon(Glyph.clock, size: 22, color: next == null ? c.textMuted : c.accent),
+        const SizedBox(width: Space.s3),
+        Expanded(
+          child: next == null
+              ? Text('No meal set', style: style.copyWith(color: c.textMuted))
+              : Text(
+                  'Next meal ${minuteText(context, next.minute)} · '
+                  '${untilText(DateTime.now(), next.atMs)} · ${portionsText(next.portions)}',
+                  style: style,
                 ),
-                const SizedBox(width: 6),
-                Flexible(child: _Value(food)),
-              ],
-            ),
-          ),
-          _Row(Glyph.power, 'Power', value: _Value(_power(card))),
-          _Row(Glyph.wifi, 'Wi-Fi', value: _Value(_signal(card.rssi))),
-          _Row(Glyph.clock, 'Clock', value: _Value(clockWords(context, card))),
-          _Row(
-            Glyph.droplet,
-            'Desiccant',
-            value: _DesiccantValue(feeder: feeder, card: card, online: online),
-          ),
-          _LockRow(feeder: feeder, card: card, online: online),
-        ],
-      ),
+        ),
+        // Only inside the feeder's tabs, where the schedule is one tap away.
+        if (next == null && tabs != null)
+          TextButton(onPressed: () => tabs.animateTo(scheduleTab), child: const Text('Add a meal')),
+      ],
     );
   }
-
-  static String _power(api.Card card) => switch ((card.adapter, card.batteryPercent)) {
-    (true, final int percent?) => 'Mains · batteries $percent%',
-    (true, null) => 'Mains',
-    (false, final int percent?) => 'Batteries $percent%',
-    (false, null) => 'Batteries',
-    (null, _) => 'Not read yet',
-  };
-
-  static String _signal(int rssi) => switch (rssi) {
-    >= -60 => 'Strong',
-    >= -72 => 'Fair',
-    _ => 'Weak',
-  };
 }
 
 /// Who last set the feeder's clock, and when.
@@ -246,151 +257,6 @@ String clockWords(BuildContext context, api.Card card) {
   };
   final PlatformInt64? at = time.lastAtMs;
   return at == null ? by : '$by ${atMomentTextMs(context, at)}';
-}
-
-/// One fact, one accessibility node. Without the container every row's text
-/// and the lock's switch merge into the list item, as one switch that reads
-/// out the whole panel.
-class _Row extends StatelessWidget {
-  const _Row(this.glyph, this.label, {required this.value, this.first = false, this.valueNamed = false});
-
-  final Glyph glyph;
-  final String label;
-  final Widget value;
-  final bool first;
-
-  /// The value carries `label` itself, so the words are not read out twice.
-  final bool valueNamed;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeTokens c = context.colors;
-    return Semantics(
-      container: true,
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 48),
-        padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: 8),
-        decoration: BoxDecoration(
-          border: first ? null : Border(top: BorderSide(color: c.line)),
-        ),
-        child: Row(
-          children: [
-            StrokeIcon(glyph, size: 22, color: c.textMuted),
-            const SizedBox(width: 14),
-            ExcludeSemantics(
-              excluding: valueNamed,
-              child: Text(label, style: TextStyle(fontSize: 15, color: c.text)),
-            ),
-            const SizedBox(width: Space.s3),
-            Expanded(
-              child: Align(alignment: Alignment.centerRight, child: value),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DesiccantValue extends StatefulWidget {
-  const _DesiccantValue({required this.feeder, required this.card, required this.online});
-
-  final FeederController feeder;
-  final api.Card card;
-  final bool online;
-
-  @override
-  State<_DesiccantValue> createState() => _DesiccantValueState();
-}
-
-class _DesiccantValueState extends State<_DesiccantValue> {
-  bool _asking = false;
-
-  Future<void> _changed() async {
-    setState(() => _asking = true);
-    final FeederReply reply = await widget.feeder.ask(const FeederRequest.resetDesiccant());
-    if (!mounted) return;
-    setState(() => _asking = false);
-    showProblem(context, reply);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeTokens c = context.colors;
-    final Desiccant desiccant = widget.card.desiccant;
-    final (String words, Color color) = switch (desiccant) {
-      Desiccant_Unset() => ('Not started', c.textMuted),
-      Desiccant_Unknown() => ('Unknown until the clock is set', c.textMuted),
-      Desiccant_Remaining(days: 0) => ('Change today', c.warning),
-      Desiccant_Remaining(:final days) when days > 0 => (
-        days == 1 ? 'Change in 1 day' : 'Change in $days days',
-        c.text,
-      ),
-      Desiccant_Remaining(:final days) => (days == -1 ? '1 day overdue' : '${-days} days overdue', c.warning),
-    };
-    final bool offer = switch (desiccant) {
-      Desiccant_Unset() => true,
-      Desiccant_Remaining(:final due) => due,
-      Desiccant_Unknown() => false,
-    };
-
-    return Wrap(
-      alignment: WrapAlignment.end,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: Space.s2,
-      children: [
-        Text(
-          words,
-          style: TextStyle(fontSize: Sizes.base, color: color),
-        ),
-        if (offer)
-          TextButton(onPressed: widget.online && !_asking ? _changed : null, child: const Text('Changed today')),
-      ],
-    );
-  }
-}
-
-class _LockRow extends StatefulWidget {
-  const _LockRow({required this.feeder, required this.card, required this.online});
-
-  final FeederController feeder;
-  final api.Card card;
-  final bool online;
-
-  @override
-  State<_LockRow> createState() => _LockRowState();
-}
-
-class _LockRowState extends State<_LockRow> {
-  bool _asking = false;
-
-  Future<void> _set(bool locked) async {
-    setState(() => _asking = true);
-    final FeederReply reply = await widget.feeder.ask(FeederRequest.setLock(locked: locked));
-    if (!mounted) return;
-    setState(() => _asking = false);
-    showProblem(context, reply);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bool? locked = widget.card.locked;
-    const name = 'Lock the buttons';
-    return _Row(
-      Glyph.lock,
-      name,
-      valueNamed: true,
-      value: Semantics(
-        container: true,
-        label: name,
-        child: Switch(
-          // What the feeder last said, not what was asked: an answer moves it.
-          value: locked ?? false,
-          onChanged: widget.online && locked != null && !_asking ? _set : null,
-        ),
-      ),
-    );
-  }
 }
 
 class _LightsLink extends StatelessWidget {
@@ -416,17 +282,4 @@ class _LightsLink extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Value extends StatelessWidget {
-  const _Value(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Text(
-    text,
-    textAlign: TextAlign.end,
-    style: TextStyle(fontSize: Sizes.base, color: context.colors.text),
-  );
 }

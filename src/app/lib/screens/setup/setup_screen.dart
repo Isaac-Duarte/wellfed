@@ -1,15 +1,20 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:wellfed/screens/feeder/lights_help.dart';
 import 'package:wellfed/screens/setup/name_step.dart';
 import 'package:wellfed/screens/setup/pairing_view.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
 import 'package:wellfed/state/setup/setup.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
-import 'package:wellfed/widgets/code_tiles.dart';
+import 'package:wellfed/widgets/feeder_drawing.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
+
+/// The control panel's band of the straight-on drawing, in its units: the
+/// buttons and lights, without the hopper above or the bowl below.
+const _panelBand = Rect.fromLTRB(-49, 390, 1049, 650);
 
 /// BLE setup, from the panel to the code. [SetupFlow] holds its steps.
 class SetupScreen extends StatefulWidget {
@@ -72,14 +77,32 @@ class _SetupScreenState extends State<SetupScreen> {
         progress: 0.25,
         leading: Leading.close,
         title: 'Put the feeder in setup mode',
-        content: const [
-          PanelPhoto(held: [1, 3]),
-          SizedBox(height: Space.s4),
-          NumberedSteps([
+        content: [
+          const FeederDrawing(
+            view: FeederView.panel,
+            crop: _panelBand,
+            height: 130,
+            highlights: {'button_lock', 'button_mic'},
+            label: "Drawing of the feeder's control panel",
+            callouts: [
+              Callout(anchor: 'button_lock', side: CalloutSide.below, lines: ['Lock']),
+              Callout(anchor: 'button_mic', side: CalloutSide.below, lines: ['Mic']),
+            ],
+          ),
+          const SizedBox(height: Space.s4),
+          const NumberedSteps([
             'Plug the feeder in. If the lock light is on, hold **Lock** for 5 seconds to unlock the panel.',
             'Hold **Lock** and **Mic** together for 5 seconds.',
             'The Wi-Fi light blinks slowly, about once a second. Setup mode lasts 15 minutes.',
           ]),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () =>
+                  unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LightsHelp()))),
+              child: const Text("The light isn't blinking"),
+            ),
+          ),
         ],
         actions: [FilledButton(onPressed: _flow.toWifi, child: const Text('The Wi-Fi light is blinking'))],
       ),

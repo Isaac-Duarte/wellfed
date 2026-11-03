@@ -36,14 +36,21 @@ void main() {
       expect(find.text(tab), findsOneWidget);
     }
     expect(find.text('Ready to feed'), findsOneWidget);
-    expect(find.text('Next meal 12:30 PM · 2 portions'), findsOneWidget);
-    expect(find.text('Last fed 7:30 AM · 2 of 2'), findsOneWidget);
-    expect(find.text('In the hopper at 7:30 AM'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^Next meal 12:30 PM · (in .+|now) · 2 portions$')), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^Last fed\s7:30 AM(\n| · )2 portions$')), findsOneWidget);
+    expect(find.text('Food in'), findsOneWidget);
+    expect(find.text('Buttons unlocked'), findsOneWidget);
+
+    // Nothing needs the owner, so the facts fold into one line.
+    expect(find.text('Strong'), findsNothing);
+    await feederTap(tester, find.text('Power, Wi-Fi and clock look fine'));
     expect(find.text('Mains · batteries 90%'), findsOneWidget);
     expect(find.text('Strong'), findsOneWidget);
     expect(find.text('Set by your router at 11:58 AM'), findsOneWidget);
     expect(find.text('Change in 9 days'), findsOneWidget);
-    expect(find.text('Changed today'), findsNothing);
+    expect(find.text('Mark changed'), findsNothing);
+    await feederTap(tester, find.text('Show less'));
+    expect(find.text('Strong'), findsNothing);
   });
 
   group('a clock with no zone and no offset', () {
@@ -180,39 +187,29 @@ void main() {
     );
     await settle(tester);
 
-    expect(find.text('Last fed Yesterday 9:00 PM · 2 of 2'), findsOneWidget);
-    expect(find.text('In the hopper yesterday at 9:00 PM'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^Last fed\sYesterday 9:00 PM(\n| · )2 portions$')), findsOneWidget);
+    await feederTap(tester, find.text('Power, Wi-Fi and clock look fine'));
     expect(find.text('Set by a paired device yesterday at 9:00 PM'), findsOneWidget);
   });
 
-  testWidgets('each fact is its own node, and the lock its own switch', (tester) async {
+  testWidgets('each fact is its own node, and the lock its own button', (tester) async {
     final SemanticsHandle semantics = tester.ensureSemantics();
     final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
     await feederShowShell(tester, fleet);
     session.status(fakeCard());
     await settle(tester);
+    await feederTap(tester, find.text('Power, Wi-Fi and clock look fine'));
 
-    final SemanticsNode food = tester.getSemantics(find.text('Food'));
-    expect(food.label, contains('Food'));
-    expect(food.label, isNot(contains('Wi-Fi')));
-    expect(food.label, isNot(contains('Lock the buttons')));
-    expect(tester.getSemantics(find.text('Wi-Fi')), isNot(same(food)));
+    final SemanticsNode power = tester.getSemantics(find.text('Power'));
+    expect(power.label, contains('Power'));
+    expect(power.label, isNot(contains('Wi-Fi')));
+    expect(power.label, isNot(contains('Buttons')));
+    expect(tester.getSemantics(find.text('Wi-Fi')), isNot(same(power)));
 
-    final SemanticsNode lock = tester.getSemantics(find.byType(Switch));
-    expect(
-      lock,
-      matchesSemantics(
-        label: 'Lock the buttons',
-        hasToggledState: true,
-        hasEnabledState: true,
-        isEnabled: true,
-        isFocusable: true,
-        hasTapAction: true,
-        hasFocusAction: true,
-      ),
-    );
-    final Size bounds = tester.getSize(find.byType(Switch));
-    expect(lock.rect.width, lessThanOrEqualTo(bounds.width));
+    final SemanticsNode lock = tester.getSemantics(find.text('Buttons unlocked'));
+    expect(lock, isSemantics(label: 'Buttons unlocked', isButton: true, hasTapAction: true));
+    expect(lock.hintOverrides?.onTapHint, 'Lock the buttons');
+    expect(lock.rect.height, greaterThanOrEqualTo(48));
 
     semantics.dispose();
   });
@@ -224,7 +221,7 @@ void main() {
     session.status(fakeCard(food: FoodLevel.low));
     await settle(tester);
 
-    expect(find.textContaining('Low'), findsWidgets);
+    expect(find.text('Food low'), findsOneWidget);
     expect(find.textContaining('empty'), findsNothing);
     expect(find.textContaining('Hopper'), findsNothing);
   });
@@ -243,9 +240,8 @@ void main() {
     );
     await settle(tester);
 
-    expect(find.text('Low'), findsOneWidget);
-    expect(find.text('Low at 7:30 AM'), findsNothing);
-    expect(find.textContaining('read low at'), findsNothing);
+    expect(find.text('Food low'), findsOneWidget);
+    expect(find.textContaining('low at'), findsNothing);
   });
 
   testWidgets('an uncertain last feed is a range, never one number', (tester) async {
@@ -259,7 +255,7 @@ void main() {
     );
     await settle(tester);
 
-    expect(find.text('Last fed 0 to 2 of 2'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^Last fed(\n| · )0 to 2 of 2 portions$')), findsOneWidget);
   });
 
   testWidgets('a one-portion feed that stopped says portion, not portions', (tester) async {
@@ -339,21 +335,21 @@ void main() {
     testWidgets('goes out once and follows what the feeder says', (tester) async {
       final FakeSession session = await locked(tester);
 
-      await feederTap(tester, find.byType(Switch));
+      await feederTap(tester, find.text('Buttons unlocked'));
       expect(session.requests, [const FeederRequest.setLock(locked: true)]);
       // Not moved by asking: only the status says it is locked.
-      expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+      expect(find.text('Buttons unlocked'), findsOneWidget);
 
       session.status(fakeCard(locked: true));
       await settle(tester);
-      expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+      expect(find.text('Buttons locked'), findsOneWidget);
     });
 
     testWidgets('says why it was refused', (tester) async {
       final FakeSession session = await locked(tester);
       session.replies.add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
 
-      await feederTap(tester, find.byType(Switch));
+      await feederTap(tester, find.text('Buttons unlocked'));
       expect(find.text("This phone isn't allowed to do that here."), findsOneWidget);
     });
 
@@ -361,7 +357,7 @@ void main() {
       final FakeSession session = await locked(tester);
       session.replies.add(const FeederReply.unanswered());
 
-      await feederTap(tester, find.byType(Switch));
+      await feederTap(tester, find.text('Buttons unlocked'));
       expect(find.textContaining('may or may not have'), findsOneWidget);
       await settle(tester);
       expect(session.requests, hasLength(1));
@@ -381,7 +377,7 @@ void main() {
       final FakeSession session = await due(tester);
 
       expect(find.text('3 days overdue'), findsOneWidget);
-      await feederTap(tester, find.text('Changed today'));
+      await feederTap(tester, find.text('Mark changed'));
       expect(session.requests, [const FeederRequest.resetDesiccant()]);
     });
 
@@ -391,10 +387,10 @@ void main() {
         ..add(const FeederReply.refused(refusal: FeederRefusal.noClock()))
         ..add(const FeederReply.unanswered());
 
-      await feederTap(tester, find.text('Changed today'));
+      await feederTap(tester, find.text('Mark changed'));
       expect(find.textContaining('Set its time first'), findsOneWidget);
 
-      await feederTap(tester, find.text('Changed today'));
+      await feederTap(tester, find.text('Mark changed'));
       expect(find.textContaining('may or may not have'), findsOneWidget);
       expect(session.requests, hasLength(2));
     });
