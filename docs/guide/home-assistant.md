@@ -118,4 +118,5 @@ Home Assistant doesn't install firmware: that takes an owner, and Home Assistant
 
 ## Evidence
 
-- **Modeled, November 2026.** Pairing, discovery, every entity and action, repairs, re-pairing and refusing an owner invite ran against the simulated feeder, which runs the feeder's own pairing, stores and feeding code. None of this has run on a real feeder yet; the [roadmap](../roadmap.md) tracks that.
+- **Observed, November 3, 2026.** On one research feeder, Home Assistant paired again after its key was revoked, and fed once from its Feed button.
+- **Modeled, November 2026.** Pairing, discovery, every entity and action, repairs, re-pairing and refusing an owner invite ran against the simulated feeder, which runs the feeder's own pairing, stores and feeding code. The [roadmap](../roadmap.md) tracks what has run on a real feeder.
