@@ -7,6 +7,7 @@ import 'package:wellfed/screens/feeder/meal_editor.dart';
 import 'package:wellfed/screens/feeder/schedule.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 
 import '../support/fakes.dart';
@@ -59,6 +60,26 @@ void main() {
       return session;
     }
 
+    testWidgets('marks the meal the feeder runs next', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      session.status(
+        fakeCard(
+          plans: planPlans([planPlan(7 * 60 + 30), planPlan(18 * 60)]),
+          nextMeal: NextMealView(
+            slot: 1,
+            atMs: DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch,
+            minute: 18 * 60,
+            portions: 2,
+          ),
+        ),
+      );
+      await showTab(tester, ScheduleTab(feeder: feeder));
+
+      expect(find.text('Next'), findsOneWidget);
+      final double chip = tester.getCenter(find.text('Next')).dy;
+      expect(chip, closeTo(tester.getCenter(find.text('6:00 PM')).dy, 2));
+    });
+
     testWidgets('lists the meals by time, with their days and calls', (tester) async {
       await show(
         tester,
@@ -74,7 +95,7 @@ void main() {
       expect(find.text('2 portions · every day'), findsOneWidget);
       expect(find.text('2 portions · Mon to Fri'), findsOneWidget);
       expect(find.text('3 portions · every day · meal call twice'), findsOneWidget);
-      expect(find.text('1 portion · once'), findsOneWidget);
+      expect(find.text('Off · 1 portion · once'), findsOneWidget);
       final double first = tester.getTopLeft(find.text('7:30 AM')).dy;
       final double last = tester.getTopLeft(find.text('10:00 PM')).dy;
       expect(first, lessThan(last));

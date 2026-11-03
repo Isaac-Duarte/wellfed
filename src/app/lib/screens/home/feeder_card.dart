@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/no_time.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
+import 'package:wellfed/src/rust/api/feeder.dart' show PlansView;
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -39,6 +40,7 @@ class FeederCard extends StatelessWidget {
                     ? () => _open(context)
                     : () => showFeedSheet(context, controller),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Row(
@@ -104,6 +106,7 @@ class FeederCard extends StatelessWidget {
               return Panel(
                 padding: const EdgeInsets.all(Space.s4),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     InkWell(
@@ -150,18 +153,20 @@ class FeederCard extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 Expanded(
+                                  flex: 2,
                                   child: next == null
-                                      ? const _Tile('Next meal', 'None', 'No meal set')
+                                      ? _Tile('Next meal', '—', _noNext(card.plans), lead: true)
                                       : _Tile(
                                           'Next meal',
                                           minuteText(context, next.minute),
                                           portionsText(next.portions),
+                                          lead: true,
                                         ),
                                 ),
                                 const SizedBox(width: Space.s2),
                                 Expanded(
                                   child: last == null
-                                      ? const _Tile('Last fed', 'None', 'Not read yet')
+                                      ? const _Tile('Last fed', '—', 'Not read yet')
                                       : _Tile(
                                           'Last fed',
                                           lastAt == null ? 'Time unknown' : momentTextMs(context, lastAt),
@@ -195,6 +200,15 @@ class FeederCard extends StatelessWidget {
             },
           ),
   );
+
+  /// Why the card names no next meal. Only meals read and none enabled mean
+  /// there is none; meals still being read, or held for want of the time,
+  /// say so rather than read as an empty schedule.
+  static String _noNext(PlansView? plans) {
+    if (plans == null) return 'Reading…';
+    final bool any = plans.plans.any((plan) => plan?.enabled ?? false);
+    return any ? 'Meals held' : 'No meal set';
+  }
 
   void _open(BuildContext context, [int tab = todayTab]) =>
       unawaited(context.push('/feeder/${controller.state.known.identity}?tab=$tab'));
@@ -298,11 +312,14 @@ String blockedWords(Blocked reason) => switch (reason) {
 
 /// A sunken fact: a label, the value, and a note under it.
 class _Tile extends StatelessWidget {
-  const _Tile(this.label, this.value, this.note);
+  const _Tile(this.label, this.value, this.note, {this.lead = false});
 
   final String label;
   final String value;
   final String note;
+
+  /// The tile the card leads with: its value set larger.
+  final bool lead;
 
   @override
   Widget build(BuildContext context) {
@@ -320,7 +337,7 @@ class _Tile extends StatelessWidget {
             value,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text),
+            style: TextStyle(fontSize: lead ? Sizes.lg : Sizes.md, fontWeight: Fonts.semibold, color: c.text),
           ),
           Text(note, maxLines: 1, overflow: TextOverflow.ellipsis, style: small),
         ],

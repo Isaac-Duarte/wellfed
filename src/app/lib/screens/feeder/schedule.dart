@@ -11,6 +11,7 @@ import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/when.dart';
 
@@ -127,8 +128,9 @@ class _ScheduleTabState extends State<ScheduleTab> {
                     const SizedBox(height: Space.s3),
                   ],
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Expanded(
+                      Flexible(
                         child: Text(
                           next == null
                               ? 'No meal is coming'
@@ -137,6 +139,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                           style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: c.text),
                         ),
                       ),
+                      const SizedBox(width: Space.s3),
                       Flexible(
                         child: Text(
                           full ? "$most of $most meals · the feeder's limit" : '${meals.length} of $most meals',
@@ -158,6 +161,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                               slot: slot,
                               plan: plan,
                               first: i == 0,
+                              next: next?.slot == slot,
                               online: online,
                             ),
                         ],
@@ -197,6 +201,7 @@ class _MealRow extends StatefulWidget {
     required this.slot,
     required this.plan,
     required this.first,
+    required this.next,
     required this.online,
   });
 
@@ -205,6 +210,9 @@ class _MealRow extends StatefulWidget {
   final int slot;
   final PlanView plan;
   final bool first;
+
+  /// The meal the feeder runs next.
+  final bool next;
   final bool online;
 
   @override
@@ -238,7 +246,9 @@ class _MealRowState extends State<_MealRow> {
     final ThemeTokens c = context.colors;
     final PlanView plan = widget.plan;
     final String time = minuteText(context, plan.minute);
+    // Off in words as well as on the switch, so the row says it without it.
     final String parts = [
+      if (!plan.enabled) 'Off',
       portionsText(plan.portions),
       daysText(plan.days),
       if (plan.call > 0) _calls(plan.call),
@@ -263,13 +273,21 @@ class _MealRowState extends State<_MealRow> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      time,
-                      style: TextStyle(
-                        fontSize: Sizes.md,
-                        fontWeight: Fonts.semibold,
-                        color: plan.enabled ? c.text : c.textMuted,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          time,
+                          style: TextStyle(
+                            fontSize: Sizes.md,
+                            fontWeight: Fonts.semibold,
+                            color: plan.enabled ? c.text : c.textMuted,
+                          ),
+                        ),
+                        if (widget.next) ...[
+                          const SizedBox(width: Space.s3),
+                          Flexible(child: StatusChip('Next', color: c.accent)),
+                        ],
+                      ],
                     ),
                     Text(
                       parts,
