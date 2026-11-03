@@ -61,7 +61,7 @@ class InstallBeforePage extends StatelessWidget {
     final bool damaged = state.pending == PendingInstall.damaged || state.pending == PendingInstall.ledgerDamaged;
     return StepScaffold(
       leading: Leading.close,
-      appBarTitle: 'Install Wellfed',
+      title: 'Install Wellfed',
       body:
           "Wellfed replaces the feeder's firmware. This phone keeps a backup "
           'of the original, so you can put it back later.',
@@ -126,7 +126,7 @@ class InstallBeforePage extends StatelessWidget {
         if (state.pending == PendingInstall.ledgerDamaged) InstallSetAsideLedger(flow: flow),
         // For a feeder past stock with no record to pick up from: Continue is
         // the Reset route, which is stock's.
-        OutlinedButton(
+        TextButton(
           onPressed: flow.mayStart && !damaged ? flow.alreadyRuns : null,
           child: const Text('This feeder already runs Wellfed'),
         ),

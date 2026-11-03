@@ -103,7 +103,7 @@ class _Before extends StatelessWidget {
     final ThemeTokens c = context.colors;
     final String name = flow.feederName;
     return StepScaffold(
-      appBarTitle: _title,
+      title: _title,
       body:
           'Puts back the vendor firmware that was on $name before Wellfed, '
           'from the backup made during install.',
@@ -123,8 +123,8 @@ class _Before extends StatelessWidget {
           "After this, Wellfed can't talk to $name. If it doesn't come back "
           "on the vendor firmware, this app can't help from here.",
         ),
-      ],
-      actions: [
+        const SizedBox(height: Space.s2),
+        // Under what it agrees to, its box in the warnings' glyph column.
         CheckboxListTile(
           value: state.understood,
           onChanged: (value) => flow.setUnderstood(value ?? false),
@@ -132,6 +132,8 @@ class _Before extends StatelessWidget {
           controlAffinity: ListTileControlAffinity.leading,
           title: const Text('I understand'),
         ),
+      ],
+      actions: [
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: c.fault, foregroundColor: c.background),
           onPressed: state.understood ? flow.start : null,

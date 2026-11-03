@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:wellfed/screens/settings/app_settings.dart' show SettingsButton;
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/layout.dart';
@@ -31,6 +32,8 @@ class WelcomeScreen extends StatelessWidget {
                     'Wellfed',
                     style: TextStyle(fontSize: Sizes.lg, fontWeight: Fonts.display, letterSpacing: -0.4, color: c.text),
                   ),
+                  const Spacer(),
+                  const SettingsButton(),
                 ],
               ),
               const Expanded(child: Center(child: FeederImage(size: 300))),

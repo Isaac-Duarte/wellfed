@@ -55,7 +55,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final List<FeederController> feeders = widget.fleet.all.toList();
       final one = feeders.length == 1;
       return Scaffold(
-        bottomNavigationBar: const MainNav(selected: 0),
         appBar: AppBar(
           toolbarHeight: 64,
           titleSpacing: 20,
@@ -69,6 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: StrokeIcon(Glyph.add, color: c.text),
               onPressed: () => context.push('/add'),
             ),
+            const SettingsButton(),
             const SizedBox(width: Space.s2),
           ],
         ),

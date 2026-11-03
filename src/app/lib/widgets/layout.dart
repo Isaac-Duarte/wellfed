@@ -313,13 +313,19 @@ class Notice extends StatelessWidget {
       Tone.neutral => c.sunken,
     };
     final Color words = tone == Tone.neutral ? c.textMuted : c.text;
+    // The glyph says the tone, as a status does: amber accent is the food's.
+    final Color mark = switch (tone) {
+      Tone.warning => c.warning,
+      Tone.fault => c.fault,
+      Tone.neutral => c.accent,
+    };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(radius)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (glyph case final glyph?) ...[StrokeIcon(glyph, size: 18, color: c.accent), const SizedBox(width: 10)],
+          if (glyph case final glyph?) ...[StrokeIcon(glyph, size: 18, color: mark), const SizedBox(width: 10)],
           Expanded(
             child: Text.rich(
               TextSpan(

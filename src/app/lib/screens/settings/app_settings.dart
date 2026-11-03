@@ -16,23 +16,16 @@ import 'package:wellfed/widgets/icons.dart';
 const sourceUrl = 'https://github.com/Isaac-Duarte/wellfed';
 const issuesUrl = '$sourceUrl/issues';
 
-/// The two places in the app's main navigation.
-class MainNav extends StatelessWidget {
-  const MainNav({super.key, required this.selected});
-
-  /// 0: Feeders, 1: Settings.
-  final int selected;
+/// The gear that opens the app's settings, from Feeders, or from Welcome
+/// before there are any.
+class SettingsButton extends StatelessWidget {
+  const SettingsButton({super.key});
 
   @override
-  Widget build(BuildContext context) => NavigationBar(
-    selectedIndex: selected,
-    onDestinationSelected: (index) {
-      if (index != selected) context.go(index == 0 ? '/' : '/settings');
-    },
-    destinations: const [
-      NavigationDestination(icon: StrokeIcon(Glyph.food), label: 'Feeders'),
-      NavigationDestination(icon: Icon(Icons.settings_outlined), label: 'Settings'),
-    ],
+  Widget build(BuildContext context) => IconButton(
+    tooltip: 'Settings',
+    icon: Icon(Icons.settings_outlined, color: context.colors.text),
+    onPressed: () => unawaited(context.push('/settings')),
   );
 }
 
@@ -70,6 +63,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
       title: 'Name on feeders',
       label: 'This phone',
       initial: widget.book.label,
+      note: 'Feeders keep the name they were joined with.',
     );
     if (name == null || !mounted) return;
 
@@ -91,14 +85,19 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
       return Scaffold(
         appBar: AppBar(
           toolbarHeight: 64,
-          titleSpacing: 20,
+          titleSpacing: 4,
           automaticallyImplyLeading: false,
+          leading: IconButton(
+            tooltip: 'Back',
+            // Opened from a link with nothing under it, back goes to Feeders.
+            onPressed: () => Navigator.of(context).canPop() ? Navigator.pop(context) : context.go('/'),
+            icon: StrokeIcon(Glyph.back, color: c.text),
+          ),
           title: Text(
             'Settings',
             style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
           ),
         ),
-        bottomNavigationBar: const MainNav(selected: 1),
         body: ListView(
           padding: const EdgeInsets.all(Space.s4),
           children: [
@@ -121,17 +120,30 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                 children: [
                   ListTile(
                     title: const Text('Name on feeders'),
-                    subtitle: Text(
-                      '${book.label}\nFeeders keep the name they were joined '
-                      'with.',
-                    ),
-                    isThreeLine: true,
+                    subtitle: Text(book.label),
+                    trailing: StrokeIcon(Glyph.chevron, size: 20, color: c.textMuted),
                     onTap: () => unawaited(_rename()),
                   ),
                   ListTile(
-                    title: const Text('Firmware backups'),
-                    trailing: Text('${_backups.state.length}', style: TextStyle(fontSize: 15, color: c.text)),
+                    title: const Text('About Wellfed'),
+                    trailing: StrokeIcon(Glyph.chevron, size: 20, color: c.textMuted),
+                    onTap: () => unawaited(
+                      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const AboutScreen())),
+                    ),
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: Space.s4),
+            const SectionLabel('Firmware backups'),
+            const SizedBox(height: Space.s2),
+            Panel(
+              child: Column(
+                children: [
+                  if (_backups.state.isEmpty)
+                    ListTile(
+                      title: Text('None yet', style: TextStyle(color: c.textMuted)),
+                    ),
                   for (final (feeder, path) in _backups.state)
                     ListTile(
                       title: Text(feeder.name),
@@ -141,13 +153,6 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                         onPressed: () => unawaited(_backups.share(path)),
                       ),
                     ),
-                  ListTile(
-                    title: const Text('About Wellfed'),
-                    trailing: StrokeIcon(Glyph.chevron, size: 20, color: c.textMuted),
-                    onTap: () => unawaited(
-                      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const AboutScreen())),
-                    ),
-                  ),
                 ],
               ),
             ),

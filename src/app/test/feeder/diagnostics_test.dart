@@ -225,9 +225,20 @@ void main() {
     testWidgets('a backup can be handed on', (tester) async {
       final (_, _FakeBackups backups) = await settings(tester);
 
-      expect(find.text('1'), findsOneWidget);
+      expect(find.text('Kitchen'), findsOneWidget);
+      expect(find.text('None yet'), findsNothing);
       await tapIn(tester, find.byTooltip("Share Kitchen's backup"));
       expect(backups.shared, ['/backups/aa']);
+    });
+
+    testWidgets('with no backups it says so, and the rename says what feeders keep', (tester) async {
+      final book = FakeBook()..label = 'My phone';
+      await showTab(tester, AppSettingsScreen(book: book, newBackups: () => BackupsFlow(book, FakeBackupPorts())));
+
+      expect(find.text('None yet'), findsOneWidget);
+      expect(find.text('My phone'), findsOneWidget);
+      await tapIn(tester, find.text('Name on feeders'));
+      expect(find.text('Feeders keep the name they were joined with.'), findsOneWidget);
     });
 
     testWidgets('About says what it is', (tester) async {

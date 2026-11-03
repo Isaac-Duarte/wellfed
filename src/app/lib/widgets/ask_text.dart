@@ -9,16 +9,20 @@ Future<String?> askText(
   String initial = '',
   TextInputType? keyboard,
   String action = 'Save',
-}) => showDialog<String>(context: context, builder: (_) => _AskText(title, label, initial, keyboard, action));
+  String? note,
+}) => showDialog<String>(context: context, builder: (_) => _AskText(title, label, initial, keyboard, action, note));
 
 class _AskText extends StatefulWidget {
-  const _AskText(this.title, this.label, this.initial, this.keyboard, this.action);
+  const _AskText(this.title, this.label, this.initial, this.keyboard, this.action, this.note);
 
   final String title;
   final String label;
   final String initial;
   final TextInputType? keyboard;
   final String action;
+
+  /// A line under the field on what the answer changes.
+  final String? note;
 
   @override
   State<_AskText> createState() => _AskTextState();
@@ -40,7 +44,7 @@ class _AskTextState extends State<_AskText> {
       controller: _controller,
       autofocus: true,
       keyboardType: widget.keyboard,
-      decoration: InputDecoration(labelText: widget.label),
+      decoration: InputDecoration(labelText: widget.label, helperText: widget.note, helperMaxLines: 3),
     ),
     actions: [
       TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
