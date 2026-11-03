@@ -39,13 +39,13 @@ Future<void> _show(WidgetTester tester, {required double width, required VoidCal
 Finder get _picture => find.descendant(of: find.byType(FeederDrawing), matching: find.byType(CustomPaint)).first;
 
 void main() {
-  testWidgets('loads the traced lines and leads each callout out to its label', (tester) async {
+  testWidgets('shows the render and leads each callout out to its label', (tester) async {
     await _show(tester, width: 412, onLock: () {});
 
+    expect(find.descendant(of: find.byType(FeederDrawing), matching: find.byType(Image)), findsOneWidget);
     expect(
       tester.renderObject(_picture),
       paints
-        ..path()
         ..line()
         ..circle(),
     );
@@ -94,7 +94,7 @@ void main() {
         const Scaffold(
           body: FeederDrawing(
             view: FeederView.panel,
-            crop: Rect.fromLTRB(-49, 390, 1049, 650),
+            crop: Rect.fromLTRB(0, 0.39, 1, 0.65),
             height: 130,
             highlights: {'button_lock', 'button_mic'},
             callouts: [

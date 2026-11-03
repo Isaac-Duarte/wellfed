@@ -119,10 +119,10 @@ class _Summary extends StatelessWidget {
     final small = TextStyle(fontSize: Sizes.base, color: c.textMuted);
     final Blocked? blocked = card?.blocked;
 
-    final (String food, Color? foodColor, FoodShown shown) = switch (read?.food) {
-      FoodLevel.present => ('Food in', null, FoodShown.full),
-      FoodLevel.low => ('Food low', c.warning, FoodShown.low),
-      FoodLevel.unread || null => ('Food not read', c.textMuted, FoodShown.none),
+    final (String food, Color? foodColor) = switch (read?.food) {
+      FoodLevel.present => ('Food in', null),
+      FoodLevel.low => ('Food low', c.warning),
+      FoodLevel.unread || null => ('Food not read', c.textMuted),
     };
     final bool? locked = read?.locked;
     // The lock label moves on tap, as a switch does, until the card agrees; a
@@ -177,7 +177,6 @@ class _Summary extends StatelessWidget {
           builder: (context, shownLocked, write) => FeederDrawing(
             height: 280,
             callouts: callouts(shownLocked, write),
-            food: shown,
             dimmed: !online,
             label: 'Drawing of the feeder',
           ),

@@ -162,6 +162,7 @@ void main() {
 
       golden('the welcome', (tester) async {
         await showPhone(tester, const WelcomeScreen(), brightness);
+        await decodeImages(tester);
         await matchesGolden('welcome', brightness);
       });
 
@@ -172,6 +173,7 @@ void main() {
 
       golden('the welcome on a small phone', (tester) async {
         await showPhone(tester, const WelcomeScreen(), brightness, size: smallPhone);
+        await decodeImages(tester);
         await matchesGolden('welcome_small', brightness);
       });
 
@@ -304,6 +306,7 @@ void main() {
             brightness,
             size: size,
           );
+          await decodeImages(tester);
           await matchesGolden(name, brightness);
         });
       }

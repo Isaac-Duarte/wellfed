@@ -16,7 +16,7 @@ import 'package:wellfed/widgets/network_picker.dart';
 
 /// The control panel's band of the straight-on drawing, in its units: the
 /// buttons and lights, without the hopper above or the bowl below.
-const _panelBand = Rect.fromLTRB(-49, 390, 1049, 650);
+const _panelBand = Rect.fromLTRB(0, 0.39, 1, 0.65);
 
 /// BLE setup, from the panel to the code. [SetupFlow] holds its steps.
 class SetupScreen extends StatefulWidget {
