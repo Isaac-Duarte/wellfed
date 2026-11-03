@@ -36,8 +36,9 @@ Future<void> showFeedSheet(BuildContext context, FeederController feeder) => sho
   barrierColor: context.colors.scrim.withValues(alpha: 0.6),
   builder: (context) => ListenableBuilder(
     listenable: feeder,
+    // Scrolls only when the text is too large for the screen.
     builder: (context, _) => SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(Space.s5, 0, Space.s5, 28),
         child: switch (feeder.state.feed) {
           FeedIdle() => _Confirm(feeder: feeder),
@@ -155,7 +156,9 @@ class _ConfirmState extends State<_Confirm> {
               child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
             ),
             const SizedBox(width: Space.s3),
+            // Twice Cancel's width, so "Feed 2 portions · 24 g" keeps to one line.
             Expanded(
+              flex: 2,
               child: FilledButton(
                 onPressed: widget.feeder.state.canFeed ? () => widget.feeder.feedNow(_portions) : null,
                 child: Text('Feed $_portions $_portionsWord${grams == null ? '' : ' · $grams'}'),

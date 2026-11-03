@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 
 import 'package:wellfed/src/rust/api/session.dart';
@@ -12,20 +13,20 @@ String clockTextMs(BuildContext context, int ms) => clockText(context, DateTime.
 /// `Fri 30 Oct 9:00 PM`. A bare time the next morning would read as today's.
 String momentTextMs(BuildContext context, int ms, {DateTime? now}) {
   final at = DateTime.fromMillisecondsSinceEpoch(ms);
-  final String clock = clockText(context, at);
-  return DateUtils.isSameDay(at, now ?? DateTime.now()) ? clock : '${dayText(at, now: now)} $clock';
+  final String time = clockText(context, at);
+  return DateUtils.isSameDay(at, now ?? clock.now()) ? time : '${dayText(at, now: now)} $time';
 }
 
 /// The same moment for the middle of a sentence: `at 9:00 PM`,
 /// `yesterday at 9:00 PM`, or `on Fri 30 Oct at 9:00 PM`.
 String atMomentTextMs(BuildContext context, int ms, {DateTime? now}) {
   final at = DateTime.fromMillisecondsSinceEpoch(ms);
-  final String clock = clockText(context, at);
+  final String time = clockText(context, at);
   return switch (dayText(at, now: now)) {
-    'Today' => 'at $clock',
-    'Yesterday' => 'yesterday at $clock',
-    'Tomorrow' => 'tomorrow at $clock',
-    final String day => 'on $day at $clock',
+    'Today' => 'at $time',
+    'Yesterday' => 'yesterday at $time',
+    'Tomorrow' => 'tomorrow at $time',
+    final String day => 'on $day at $time',
   };
 }
 
@@ -60,7 +61,7 @@ const _monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 
 /// `Today`, `Yesterday`, or `Fri 30 Oct`, by this phone's calendar.
 String dayText(DateTime at, {DateTime? now}) {
-  final DateTime today = now ?? DateTime.now();
+  final DateTime today = now ?? clock.now();
   // Calendar days, in UTC: two local midnights across a spring-forward day are
   // 23 hours apart, which is 0 whole days.
   final int days = DateTime.utc(

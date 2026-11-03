@@ -131,6 +131,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Flexible(
+                        flex: 2,
                         child: Text(
                           next == null
                               ? 'No meal is coming'

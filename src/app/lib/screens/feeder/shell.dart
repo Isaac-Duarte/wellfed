@@ -64,6 +64,8 @@ class FeederShell extends StatelessWidget {
             indicatorColor: c.accent,
             indicatorWeight: 3,
             indicatorSize: TabBarIndicatorSize.tab,
+            // Four names across a small phone, or in large text, without cutting one off.
+            labelPadding: const EdgeInsets.symmetric(horizontal: Space.s1),
             dividerColor: c.line,
             labelStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold),
             unselectedLabelStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.medium),

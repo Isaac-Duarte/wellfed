@@ -36,7 +36,7 @@ void main() {
       expect(find.text(tab), findsOneWidget);
     }
     expect(find.text('Ready to feed'), findsOneWidget);
-    expect(find.textContaining(RegExp(r'^Next meal 12:30 PM · (in .+|now) · 2 portions$')), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^Next meal 12:30 PM · (in .+|now) · 2\u00a0portions$')), findsOneWidget);
     expect(find.textContaining(RegExp(r'^Last fed\s7:30 AM(\n| · )2 portions$')), findsOneWidget);
     expect(find.text('Food in'), findsOneWidget);
     expect(find.text('Buttons unlocked'), findsOneWidget);

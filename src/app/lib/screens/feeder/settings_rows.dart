@@ -171,18 +171,26 @@ class _DesiccantRowState extends State<SettingsDesiccantRow> {
     return SettingsTile(
       first: false,
       onTap: widget.online ? () => unawaited(_period()) : null,
-      child: Row(
-        children: [
-          Expanded(child: SettingsWords('Desiccant every ${widget.settings.desiccantDays} days', note)),
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(0, 40),
-              padding: const EdgeInsets.symmetric(horizontal: Space.s3),
+      // The button drops under the words when large text leaves no room beside them.
+      child: SizedBox(
+        width: double.infinity,
+        child: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: Space.s3,
+          runSpacing: Space.s2,
+          children: [
+            SettingsWords('Desiccant every ${widget.settings.desiccantDays} days', note),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 40),
+                padding: const EdgeInsets.symmetric(horizontal: Space.s3),
+              ),
+              onPressed: widget.online && !_asking ? _changed : null,
+              child: const Text('Mark changed'),
             ),
-            onPressed: widget.online && !_asking ? _changed : null,
-            child: const Text('Mark changed'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

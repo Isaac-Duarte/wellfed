@@ -434,6 +434,7 @@ Card fakeCard({
   TimeInfo? time,
   SettingsView? settings,
   PlansView? plans,
+  int uptimeMs = 1000,
 }) => Card(
   build: build,
   food: food,
@@ -446,7 +447,7 @@ Card fakeCard({
   rssi: rssi,
   fault: fault,
   desiccant: desiccant,
-  uptimeMs: 1000,
+  uptimeMs: uptimeMs,
   bank: 1,
   nextMeal: nextMeal,
   lastFed: lastFed,

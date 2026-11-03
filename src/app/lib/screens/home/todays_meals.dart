@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:go_router/go_router.dart';
@@ -113,7 +114,7 @@ class _Standing extends StatelessWidget {
         c.warning,
       ),
       api.MealStanding_Passed() => _Words('No feed recorded', c.textMuted),
-      api.MealStanding_Next(:final PlatformInt64 atMs) => _Words(untilText(DateTime.now(), atMs), c.accent),
+      api.MealStanding_Next(:final PlatformInt64 atMs) => _Words(untilText(clock.now(), atMs), c.accent),
       api.MealStanding_Later() => _Words('Later', c.textMuted),
     };
   }

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:go_router/go_router.dart';
@@ -146,37 +147,40 @@ class FeederCard extends StatelessWidget {
                           final api.NextMealView? next = card.nextMeal;
                           final api.FeedResult? last = card.lastFed;
                           final PlatformInt64? lastAt = last?.atMs;
-                          // Equal heights, as a day or "Time unknown" takes the last-fed tile's value
-                          // onto a second line.
-                          return IntrinsicHeight(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: next == null
-                                      ? _Tile('Next meal', '—', _noNext(card.plans), lead: true)
-                                      : _Tile(
-                                          'Next meal',
-                                          minuteText(context, next.minute),
-                                          portionsText(next.portions),
-                                          lead: true,
-                                        ),
+                          // The next meal leads across the card. Under it, equal heights, as a day
+                          // or "Time unknown" takes the last-fed tile's value onto a second line.
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (next == null)
+                                _Tile('Next meal', '—', _noNext(card.plans), lead: true)
+                              else
+                                _Tile(
+                                  'Next meal',
+                                  minuteText(context, next.minute),
+                                  portionsText(next.portions),
+                                  lead: true,
                                 ),
-                                const SizedBox(width: Space.s2),
-                                Expanded(
-                                  child: last == null
-                                      ? const _Tile('Last fed', '—', 'Not read yet')
-                                      : _Tile(
-                                          'Last fed',
-                                          lastAt == null ? 'Time unknown' : momentTextMs(context, lastAt),
-                                          deliveredText(last),
-                                        ),
+                              const SizedBox(height: Space.s2),
+                              IntrinsicHeight(
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    Expanded(
+                                      child: last == null
+                                          ? const _Tile('Last fed', '—', 'Not read yet')
+                                          : _Tile(
+                                              'Last fed',
+                                              lastAt == null ? 'Time unknown' : momentTextMs(context, lastAt),
+                                              deliveredText(last),
+                                            ),
+                                    ),
+                                    const SizedBox(width: Space.s2),
+                                    Expanded(child: _Tile('Power', power, battery)),
+                                  ],
                                 ),
-                                const SizedBox(width: Space.s2),
-                                Expanded(child: _Tile('Power', power, battery)),
-                              ],
-                            ),
+                              ),
+                            ],
                           );
                         },
                       ),
@@ -268,7 +272,7 @@ class FeederCard extends StatelessWidget {
     }
     final DateTime? at = controller.state.cardAt;
     if (at == null) return 'Not heard from yet';
-    final int minutes = DateTime.now().difference(at).inMinutes;
+    final int minutes = clock.now().difference(at).inMinutes;
     return minutes < 1 ? 'Last heard just now' : 'Last heard $minutes min ago';
   }
 

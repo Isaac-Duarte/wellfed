@@ -6,6 +6,7 @@ import 'package:wellfed/screens/feeder/diagnostics.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/people.dart';
 import 'package:wellfed/screens/feeder/settings_tab.dart';
+import 'package:wellfed/screens/feeder/today.dart' show clockWords;
 import 'package:wellfed/screens/feeder/updates.dart';
 import 'package:wellfed/screens/feeder/wifi.dart';
 import 'package:wellfed/src/rust/api/feeder.dart' show CallInfo;
@@ -43,7 +44,6 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
   @override
   Widget build(BuildContext context) {
     final Card? card = feeder.state.card;
-    final String? zone = card?.time?.zone;
     final String? signal = switch (card?.rssi) {
       null => null,
       >= -60 => 'Strong signal',
@@ -69,7 +69,7 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
               _Link('Wi-Fi', signal, WifiScreen(feeder: feeder), first: true, open: (screen) => _open(context, screen)),
               _Link(
                 'Clock and portion size',
-                zone == null || zone.isEmpty ? 'Follows the phones' : zone,
+                card == null ? null : clockWords(context, card),
                 ClockPortionScreen(feeder: feeder),
                 open: (screen) => _open(context, screen),
               ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/screens/feeder/feed_sheet.dart';
@@ -210,6 +211,9 @@ class _SummaryState extends State<_Summary> {
   }
 }
 
+/// A space a line never breaks at, so "2 portions" wraps as one.
+const _keep = '\u00a0';
+
 /// The next meal, the line the owner opens the tab for, or a way to add one.
 class _NextMeal extends StatelessWidget {
   const _NextMeal({required this.card});
@@ -232,7 +236,7 @@ class _NextMeal extends StatelessWidget {
               ? Text('No meal set', style: style.copyWith(color: c.textMuted))
               : Text(
                   'Next meal ${minuteText(context, next.minute)} · '
-                  '${untilText(DateTime.now(), next.atMs)} · ${portionsText(next.portions)}',
+                  '${untilText(clock.now(), next.atMs)} · ${portionsText(next.portions).replaceAll(' ', _keep)}',
                   style: style,
                 ),
         ),
