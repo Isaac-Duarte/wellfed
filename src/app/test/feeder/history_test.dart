@@ -57,12 +57,12 @@ void main() {
 
       expect(find.text('Today'), findsOneWidget);
       expect(find.text('Yesterday'), findsOneWidget);
-      expect(find.text('Fed 2 of 2'), findsOneWidget);
+      expect(find.text('Fed 2 portions'), findsOneWidget);
       expect(find.text("Feed now · Ana's phone"), findsOneWidget);
       expect(find.text('Started up'), findsOneWidget);
-      expect(find.textContaining('the batteries were too low'), findsOneWidget);
+      expect(find.text('The batteries were too low'), findsOneWidget);
       expect(find.text("Some events here weren't kept"), findsOneWidget);
-      final double fed = tester.getTopLeft(find.text('Fed 2 of 2')).dy;
+      final double fed = tester.getTopLeft(find.text('Fed 2 portions')).dy;
       final double started = tester.getTopLeft(find.text('Started up')).dy;
       expect(fed, lessThan(started));
     });
@@ -144,16 +144,33 @@ void main() {
       ]);
 
       await tapIn(tester, find.widgetWithText(ChoiceChip, 'Feeds'));
-      expect(find.text('Fed 2 of 2'), findsOneWidget);
+      expect(find.text('Fed 2 portions'), findsOneWidget);
       expect(find.text('Meals changed'), findsNothing);
 
       await tapIn(tester, find.widgetWithText(ChoiceChip, 'Changes'));
       expect(find.text('Meals changed'), findsOneWidget);
-      expect(find.text('Fed 2 of 2'), findsNothing);
+      expect(find.text('Fed 2 portions'), findsNothing);
 
       await tapIn(tester, find.widgetWithText(ChoiceChip, 'Problems'));
       expect(find.text("Some events weren't kept"), findsOneWidget);
-      expect(find.text('Fed 2 of 2'), findsNothing);
+      expect(find.text('Fed 2 portions'), findsNothing);
+    });
+
+    testWidgets('a run of the same change folds into one row that opens, and feeds never fold', (tester) async {
+      final DateTime at = DateTime(now.year, now.month, now.day, 0, 30);
+      await show(tester, [
+        entry(1, HistoryBody.fed(result: fakeFed()), at: at),
+        entry(2, HistoryBody.fed(result: fakeFed()), at: at),
+        for (var i = 3; i < 8; i++) entry(i, const HistoryBody.settingsChanged(by: FedBy.feeder()), at: at),
+      ]);
+
+      expect(find.text('Settings changed'), findsOneWidget);
+      expect(find.text('The feeder · 5 times'), findsOneWidget);
+      expect(find.text('Fed 2 portions'), findsNWidgets(2));
+      expect(find.text('2 feeds'), findsOneWidget);
+
+      await tapIn(tester, find.text('Settings changed'));
+      expect(find.text(List.filled(5, '12:30 AM').join(', ')), findsOneWidget);
     });
   });
 }

@@ -5,14 +5,16 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/screens/feeder/feed_detail.dart';
 import 'package:wellfed/screens/feeder/today_faults.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
-import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/when.dart';
+
+part 'history_words.dart';
 
 enum _Filter { all, feeds, problems, changes }
 
@@ -53,6 +55,11 @@ String whoText(FeederController feeder, FedBy by) => switch (by) {
 /// What the feeder's history keeps (9.1): the ring, newest first. It is the
 /// feeder's own record, read by the session; 9.3's longer history needs a
 /// server, and is not here.
+///
+/// Each day is one card, headed by how its meals went. Feeds and problems
+/// lead with a tinted badge; changes and routine notes stay quiet, and a run
+/// of the same change folds into one row, so five settings saves don't push
+/// the day's feeds off the screen.
 class HistoryTab extends StatefulWidget {
   const HistoryTab({super.key, required this.feeder});
 
@@ -70,10 +77,15 @@ class _HistoryTabState extends State<HistoryTab> {
   late _Filter _filter =
       PageStorage.maybeOf(context)?.readState(context, identifier: _filterKey) as _Filter? ?? _Filter.all;
 
+  /// Folded runs the owner opened, by their newest entry's sequence number.
+  final Set<BigInt> _open = {};
+
   void _choose(_Filter filter) {
     PageStorage.maybeOf(context)?.writeState(context, filter, identifier: _filterKey);
     setState(() => _filter = filter);
   }
+
+  void _toggle(BigInt seq) => setState(() => _open.contains(seq) ? _open.remove(seq) : _open.add(seq));
 
   @override
   void initState() {
@@ -87,44 +99,35 @@ class _HistoryTabState extends State<HistoryTab> {
     builder: (context, _) {
       final ThemeTokens c = context.colors;
       final FeederController feeder = widget.feeder;
-      final List<HistoryEntry> entries = [
-        for (final entry in feeder.state.history.reversed)
-          if (_shown(_filter, entry.body)) entry,
-      ];
-      final rows = <Widget>[];
-      String? day;
-      for (final (i, entry) in entries.indexed) {
-        final PlatformInt64? at = entry.atMs;
-        if (at != null) {
-          final String heading = dayText(DateTime.fromMillisecondsSinceEpoch(at));
-          if (heading != day) {
-            day = heading;
-            rows.add(_DayHeading(heading, first: i == 0));
-          }
-        }
-        rows.add(_EntryRow(feeder: feeder, entry: entry));
-      }
+      final List<_Day> days = _days(context, feeder, feeder.state.history.reversed, _filter);
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Wrap(
-              spacing: Space.s2,
+            child: Row(
               children: [
                 for (final (name, filter) in const [
                   ('All', _Filter.all),
                   ('Feeds', _Filter.feeds),
                   ('Problems', _Filter.problems),
                   ('Changes', _Filter.changes),
-                ])
-                  ChoiceChip(label: Text(name), selected: _filter == filter, onSelected: (_) => _choose(filter)),
+                ]) ...[
+                  ChoiceChip(
+                    label: Text(name),
+                    showCheckmark: false,
+                    selected: _filter == filter,
+                    onSelected: (_) => _choose(filter),
+                  ),
+                  const SizedBox(width: Space.s2),
+                ],
               ],
             ),
           ),
           Expanded(
-            child: rows.isEmpty
+            child: days.isEmpty
                 ? Center(
                     child: Text(
                       feeder.state.historyRead
@@ -135,7 +138,12 @@ class _HistoryTabState extends State<HistoryTab> {
                       style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
                     ),
                   )
-                : ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 16), children: rows),
+                : ListView(
+                    padding: EdgeInsets.fromLTRB(16, 4, 16, 16 + MediaQuery.paddingOf(context).bottom),
+                    children: [
+                      for (final day in days) _DayCard(day: day, feeder: feeder, open: _open, toggle: _toggle),
+                    ],
+                  ),
           ),
         ],
       );
@@ -143,217 +151,253 @@ class _HistoryTabState extends State<HistoryTab> {
   );
 }
 
-class _DayHeading extends StatelessWidget {
-  const _DayHeading(this.text, {required this.first});
+/// One day of history: its heading, how its meals went, and its rows.
+class _Day {
+  _Day(this.heading);
 
-  final String text;
-  final bool first;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.only(top: first ? 4 : Space.s4, bottom: Space.s1),
-    child: Text(
-      text,
-      style: TextStyle(fontSize: Sizes.sm, fontWeight: Fonts.semibold, color: context.colors.textMuted),
-    ),
-  );
+  final String heading;
+  final List<_Run> runs = [];
+  int fed = 0;
+  int skipped = 0;
 }
 
-class _EntryRow extends StatelessWidget {
-  const _EntryRow({required this.feeder, required this.entry});
+/// One row: an entry, or a run of the same quiet change folded together,
+/// newest first.
+class _Run {
+  _Run(this.words, HistoryEntry first) : entries = [first];
 
+  final _Words words;
+  final List<HistoryEntry> entries;
+
+  HistoryEntry get newest => entries.first;
+}
+
+List<_Day> _days(BuildContext context, FeederController feeder, Iterable<HistoryEntry> newestFirst, _Filter filter) {
+  final days = <_Day>[];
+  _Day? last;
+  for (final entry in newestFirst) {
+    final PlatformInt64? at = entry.atMs;
+    // An entry with no time stays under the day before it; a first entry
+    // with none gets a heading of its own.
+    final String? heading = at == null ? null : dayText(DateTime.fromMillisecondsSinceEpoch(at));
+    final _Day day = last == null || (heading != null && heading != last.heading) ? _Day(heading ?? 'Earlier') : last;
+    if (!identical(day, last)) days.add(last = day);
+
+    // The day's tally counts every meal, whatever the filter shows.
+    final HistoryBody body = entry.body;
+    if (body is HistoryBody_Fed) day.fed++;
+    if (body is HistoryBody_Missed) day.skipped++;
+    if (!_shown(filter, body)) continue;
+
+    final _Words words = _describe(context, feeder, body);
+    final _Run? run = day.runs.isEmpty ? null : day.runs.last;
+    // Only quiet rows fold: each feed and each problem keeps its own row.
+    if (run != null && !words.loud && run.words == words) {
+      run.entries.add(entry);
+    } else {
+      day.runs.add(_Run(words, entry));
+    }
+  }
+  return [
+    for (final day in days)
+      if (day.runs.isNotEmpty) day,
+  ];
+}
+
+class _DayCard extends StatelessWidget {
+  const _DayCard({required this.day, required this.feeder, required this.open, required this.toggle});
+
+  final _Day day;
   final FeederController feeder;
-  final HistoryEntry entry;
+  final Set<BigInt> open;
+  final void Function(BigInt seq) toggle;
 
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final (Glyph glyph, Color color, String title, String note) = _words(context, c);
-    final PlatformInt64? at = entry.atMs;
-    final HistoryBody body = entry.body;
+    final String tally = [
+      if (day.fed > 0) '${day.fed} ${day.fed == 1 ? 'feed' : 'feeds'}',
+      if (day.skipped > 0) '${day.skipped} skipped',
+    ].join(' · ');
 
-    return InkWell(
-      onTap: body is HistoryBody_Fed
-          ? () => unawaited(
+    final rows = <Widget>[];
+    for (final _Run run in day.runs) {
+      final bool opened = open.contains(run.newest.seq);
+      rows.add(
+        _EntryRow(
+          entry: run.newest,
+          words: run.words,
+          first: rows.isEmpty,
+          times: run.entries.length,
+          opened: opened,
+          onTap: switch (run.newest.body) {
+            HistoryBody_Fed(:final FeedResult result) => () => unawaited(
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => FeedDetail(feeder: feeder, result: body.result),
+                  builder: (_) => FeedDetail(feeder: feeder, result: result),
                 ),
               ),
-            )
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: Space.s2),
+            ),
+            _ when run.entries.length > 1 => () => toggle(run.newest.seq),
+            _ => null,
+          },
+        ),
+      );
+      if (opened) rows.add(_FoldedTimes(run.entries));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.s3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Space.s1, 0, Space.s1, Space.s2),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    day.heading,
+                    style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: c.text),
+                  ),
+                ),
+                if (tally.isNotEmpty)
+                  Text(
+                    tally,
+                    style: TextStyle(fontSize: Sizes.sm, color: day.skipped > 0 ? c.warning : c.textMuted),
+                  ),
+              ],
+            ),
+          ),
+          Panel(child: Column(children: rows)),
+        ],
+      ),
+    );
+  }
+}
+
+class _EntryRow extends StatelessWidget {
+  const _EntryRow({
+    required this.entry,
+    required this.words,
+    required this.first,
+    required this.times,
+    required this.opened,
+    required this.onTap,
+  });
+
+  final HistoryEntry entry;
+  final _Words words;
+  final bool first;
+
+  /// How many entries the row stands for; more than one is a folded run.
+  final int times;
+  final bool opened;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeTokens c = context.colors;
+    final PlatformInt64? at = entry.atMs;
+    final String note = [if (words.note.isNotEmpty) words.note, if (times > 1) '$times times'].join(' · ');
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 60),
+        padding: const EdgeInsets.all(Space.s3),
+        decoration: BoxDecoration(
+          border: first ? null : Border(top: BorderSide(color: c.line)),
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              width: 64,
-              child: Text(
-                at == null ? '' : clockTextMs(context, at),
-                style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
-              ),
-            ),
-            StrokeIcon(glyph, size: 18, color: color),
-            const SizedBox(width: Space.s2),
+            _Badge(words: words),
+            const SizedBox(width: Space.s3),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    title,
-                    style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: c.text),
+                    words.title,
+                    style: TextStyle(
+                      fontSize: Sizes.base,
+                      fontWeight: words.loud ? Fonts.semibold : Fonts.medium,
+                      color: c.text,
+                    ),
                   ),
                   if (note.isNotEmpty)
-                    Text(
-                      note,
-                      style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        note,
+                        style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+                      ),
                     ),
                 ],
               ),
             ),
+            const SizedBox(width: Space.s2),
+            // The newest time of a run; opening it lists the rest.
+            if (at != null)
+              Text(
+                clockTextMs(context, at),
+                style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+              ),
+            if (onTap != null)
+              Padding(
+                padding: const EdgeInsets.only(left: Space.s1),
+                child: RotatedBox(
+                  quarterTurns: times > 1 ? (opened ? 3 : 1) : 0,
+                  child: StrokeIcon(Glyph.chevron, size: 16, color: c.textMuted),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
+}
 
-  (Glyph, Color, String, String) _words(BuildContext context, ThemeTokens c) {
-    String who(FedBy by) => whoText(feeder, by);
-    return switch (entry.body) {
-      HistoryBody_Fed(:final FeedResult result) when result.uncertain => (
-        Glyph.warning,
-        c.warning,
-        'Fed between ${result.confirmed} and ${result.atMost}',
-        result.by is FedBy_Unknown ? 'Interrupted · not repeated' : '${_asker(context, result.by)} · not repeated',
-      ),
-      HistoryBody_Fed(:final FeedResult result)
-          when result.outcome == FeedOutcome.done && result.confirmed == result.requested =>
-        (Glyph.check, c.ok, 'Fed ${deliveredText(result)}', _asker(context, result.by)),
-      HistoryBody_Fed(:final FeedResult result) => (
-        Glyph.warning,
-        c.warning,
-        'Fed ${deliveredText(result)}',
-        '${_asker(context, result.by)} · '
-            '${faultTitle(context, result.reason, null)}',
-      ),
-      HistoryBody_Missed(:final int slot, :final PlatformInt64 dueMs, :final MissedReason reason) => (
-        Glyph.warning,
-        c.warning,
-        'Meal skipped',
-        '${_meal(context, slot, dueMs)} · ${_missed(reason)}',
-      ),
-      HistoryBody_Restarted() => (Glyph.power, c.textMuted, 'Started up', ''),
-      HistoryBody_Lock(:final bool locked, :final FedBy by) => (
-        Glyph.lock,
-        c.textMuted,
-        locked ? 'Buttons locked' : 'Buttons unlocked',
-        who(by),
-      ),
-      HistoryBody_SettingsChanged(:final FedBy by) => (Glyph.check, c.textMuted, 'Settings changed', who(by)),
-      HistoryBody_WifiChanged(:final FedBy by) => (Glyph.wifi, c.textMuted, 'Wi-Fi changed', who(by)),
-      HistoryBody_PlansChanged(:final FedBy by) => (Glyph.clock, c.textMuted, 'Meals changed', who(by)),
-      HistoryBody_Joined(:final String fingerprint) => (
-        Glyph.add,
-        c.textMuted,
-        'Someone joined',
-        feeder.clientName(fingerprint),
-      ),
-      HistoryBody_UpdateKeyAdded(:final String fingerprint) => (
-        Glyph.add,
-        c.textMuted,
-        'Update key added',
-        feeder.clientName(fingerprint),
-      ),
-      HistoryBody_Revoked(:final String fingerprint, :final FedBy by) => (
-        Glyph.minus,
-        c.textMuted,
-        '${feeder.clientName(fingerprint)} removed',
-        who(by),
-      ),
-      HistoryBody_ClockSet(:final FedBy by) => (
-        Glyph.clock,
-        c.textMuted,
-        'Clock set',
-        by is FedBy_Feeder ? 'From its time server' : who(by),
-      ),
-      HistoryBody_Lost(:final int count) => (
-        Glyph.warning,
-        c.warning,
-        "Some events weren't kept",
-        '$count could not be recorded',
-      ),
-      HistoryBody_Gap() => (Glyph.info, c.textMuted, "Some events here weren't kept", ''),
-      HistoryBody_FeedingBlocked(reason: Blocked.setup) => (
-        Glyph.info,
-        c.textMuted,
-        'Not ready to feed',
-        blockedWords(Blocked.setup),
-      ),
-      HistoryBody_FeedingBlocked(reason: final Blocked reason?) => (
-        Glyph.warning,
-        c.warning,
-        'Not ready to feed',
-        blockedWords(reason),
-      ),
-      HistoryBody_FeedingBlocked(reason: null) => (Glyph.check, c.ok, 'Ready to feed again', ''),
-      HistoryBody_MealSoon(:final int minute, :final int portions) => (
-        Glyph.clock,
-        c.textMuted,
-        'Meal coming',
-        '${minuteText(context, minute)} · ${portionsText(portions)}',
-      ),
-      HistoryBody_Supply(:final bool? adapter) => (
-        Glyph.power,
-        c.textMuted,
-        switch (adapter) {
-          true => 'Back on mains',
-          false => 'On batteries',
-          null => 'Power changed',
-        },
-        '',
-      ),
-      HistoryBody_DispenseRefused(:final Blocked reason) => (
-        Glyph.warning,
-        c.textMuted,
-        'A press was refused',
-        blockedWords(reason),
-      ),
-      HistoryBody_Food(:final FoodLevel level) => (
-        Glyph.food,
-        level == FoodLevel.low ? c.fault : c.textMuted,
-        switch (level) {
-          FoodLevel.low => 'Food read low',
-          FoodLevel.present => 'Food in the hopper',
-          FoodLevel.unread => 'Food not read',
-        },
-        '',
-      ),
-      HistoryBody_Other() => (Glyph.info, c.textMuted, '', ''),
-    };
-  }
+/// A feed or a problem gets a tinted disc; a quiet change a ringed line icon.
+class _Badge extends StatelessWidget {
+  const _Badge({required this.words});
 
-  String _asker(BuildContext context, FedBy by) => switch (by) {
-    FedBy_Plan(:final slot) => _meal(context, slot, null),
-    FedBy_Client() => 'Feed now · ${whoText(feeder, by)}',
-    _ => whoText(feeder, by),
-  };
+  final _Words words;
 
-  /// `18:30 meal`, from when it was due or the slot's meal today, as an event
-  /// names only the slot.
-  String _meal(BuildContext context, int slot, int? dueMs) {
-    final List<PlanView?> plans = feeder.state.card?.plans?.plans ?? const <PlanView?>[];
-    final int? minute = slot < plans.length ? plans[slot]?.minute : null;
-    if (dueMs != null) return '${clockTextMs(context, dueMs)} meal';
-    return minute == null ? 'A meal' : '${minuteText(context, minute)} meal';
-  }
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 32,
+    height: 32,
+    alignment: Alignment.center,
+    decoration: words.loud
+        ? BoxDecoration(color: words.color.withValues(alpha: 0.16), shape: BoxShape.circle)
+        : BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: context.colors.line),
+          ),
+    child: StrokeIcon(words.glyph, size: 16, color: words.color, weight: words.loud ? 2 : 1.8),
+  );
+}
 
-  static String _missed(MissedReason reason) => switch (reason) {
-    MissedReason_Late() => 'the feeder was off or had no time',
-    MissedReason_Blocked(:final reason) => switch (reason) {
-      Blocked.battery => 'the batteries were too low',
-      _ => blockedWords(reason).toLowerCase(),
-    },
-    MissedReason_Interrupted() => 'the feeder stopped first',
-  };
+/// Every time in an opened run, under its row.
+class _FoldedTimes extends StatelessWidget {
+  const _FoldedTimes(this.entries);
+
+  final List<HistoryEntry> entries;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(56, 0, Space.s3, Space.s3),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        [
+          for (final entry in entries)
+            if (entry.atMs case final at?) clockTextMs(context, at) else 'Time not known',
+        ].join(', '),
+        style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: context.colors.textMuted),
+      ),
+    ),
+  );
 }
