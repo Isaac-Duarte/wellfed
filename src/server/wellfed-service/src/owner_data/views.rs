@@ -4,9 +4,12 @@
 //! so the property tests drive them without a store; [`super::derived`]
 //! reads the rows.
 //!
-//! Weights are kept in milligrams and energy in microkilocalories (a
-//! milligram of food at so many kcal per kg) until the answer rounds them,
-//! so splitting and summing never lose more than a milligram a share.
+//! Portions are counted on every feeder; only the feeder's own calibration
+//! turns them into grams, so an uncalibrated feeder's views stay in
+//! portions. Weights are kept in milligrams and energy in
+//! microkilocalories (a milligram of food at so many kcal per kg) until
+//! the answer rounds them, so splitting and summing never lose more than a
+//! milligram a share.
 
 mod intake;
 #[cfg(test)]
@@ -15,17 +18,16 @@ mod tests;
 pub(crate) use intake::{Served, days, intake};
 use jiff::{SignedDuration, Timestamp};
 use wellfed_api::{
-    FeedAnomaly, FeedOutcome, FeedReason, FeederId, Food, FoodLeft, MissedReason, PortionWeight,
-    Refill,
+    FeedAnomaly, FeedOutcome, FeedRate, FeedReason, FeederId, Food, FoodLeft, MissedReason,
+    PortionWeight, Refill, SinceRefill,
 };
 use wellfed_store::{Feed, FoodReading, Projected};
 
 const DAY: SignedDuration = SignedDuration::from_hours(24);
+const DAY_SECONDS: u64 = 86_400;
 const MG_PER_G: u64 = 1_000;
 /// Microkilocalories in a kilocalorie.
 const UKCAL_PER_KCAL: u64 = 1_000_000;
-/// A portion is 1/12 cup on a feeder with no calibration (provisional).
-const PORTIONS_PER_CUP: u64 = 12;
 
 /// A feed as the views read it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,22 +76,19 @@ pub(crate) struct MissedRow {
 }
 
 /// How a feeder's portions are weighed: by its calibration (the portion's
-/// weight in mg, as the server last read it) when it has one.
+/// weight in mg, as the server last read it), or not at all before one.
 pub(crate) const fn portion_weight(calibration: Option<u32>) -> PortionWeight {
     match calibration {
         Some(portion_mg) => PortionWeight::Calibration { portion_mg },
-        None => PortionWeight::TwelfthCup,
+        None => PortionWeight::Uncalibrated,
     }
 }
 
-/// One portion's weight in mg, or `None` when neither the calibration nor
-/// a food says.
-fn portion_mg(weight: PortionWeight, food: Option<&Food>) -> Option<u64> {
+/// One portion's weight in mg; `None` on an uncalibrated feeder.
+fn portion_mg(weight: PortionWeight) -> Option<u64> {
     match weight {
         PortionWeight::Calibration { portion_mg } => Some(u64::from(portion_mg)),
-        PortionWeight::TwelfthCup => {
-            food.map(|food| u64::from(food.grams_per_cup) * MG_PER_G / PORTIONS_PER_CUP)
-        }
+        PortionWeight::Uncalibrated => None,
     }
 }
 
@@ -103,31 +102,21 @@ fn uncertain_portions(feed: &FeedRow) -> u8 {
     }
 }
 
-/// What some feeds delivered.
+/// The portions some feeds delivered: confirmed, and those uncertain feeds
+/// may have dropped beyond them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Tally {
     portions: u32,
     uncertain: u32,
-    unweighed: u32,
-    mg: u64,
-    uncertain_mg: u64,
 }
 
 impl Tally {
-    fn of<'a>(feeds: impl IntoIterator<Item = &'a FeedRow>, weight: PortionWeight) -> Self {
+    fn of<'a>(feeds: impl IntoIterator<Item = &'a FeedRow>) -> Self {
         let mut tally = Self::default();
         for feed in feeds {
-            let (confirmed, uncertain) = (feed.completed, uncertain_portions(feed));
-            tally.portions = tally.portions.saturating_add(u32::from(confirmed));
-            tally.uncertain = tally.uncertain.saturating_add(u32::from(uncertain));
-            match portion_mg(weight, feed.food.as_ref()) {
-                Some(mg) => {
-                    tally.mg = tally.mg.saturating_add(mg * u64::from(confirmed));
-                    tally.uncertain_mg =
-                        tally.uncertain_mg.saturating_add(mg * u64::from(uncertain));
-                }
-                None => tally.unweighed = tally.unweighed.saturating_add(u32::from(confirmed)),
-            }
+            tally.portions = tally.portions.saturating_add(u32::from(feed.completed));
+            let uncertain = u32::from(uncertain_portions(feed));
+            tally.uncertain = tally.uncertain.saturating_add(uncertain);
         }
         tally
     }
@@ -140,17 +129,17 @@ fn rounded(numerator: u64, denominator: u64) -> u32 {
     u32::try_from(quotient).unwrap_or(u32::MAX)
 }
 
-/// What the feeder delivered a day over the `days` before `now`, in grams,
-/// confirmed portions only. The first feed in the span starts the clock
-/// and is not counted, so a span of whole meal intervals gives the meal
-/// rate whatever the history the server holds; `None` until the feeds span
-/// a day.
-pub(crate) fn grams_per_day(
+/// What the feeder delivered over the `days` before `now`, confirmed
+/// portions only, with grams a day by the calibration. The first feed in
+/// the span starts the clock and is not counted, so a span of whole meal
+/// intervals gives the meal rate whatever history the server holds; `None`
+/// until the feeds span a day.
+pub(crate) fn rate(
     now: Timestamp,
     days: u32,
     feeds: &[FeedRow],
     weight: PortionWeight,
-) -> Option<u32> {
+) -> Option<FeedRate> {
     let start = before(now, days);
     let mut recent: Vec<&FeedRow> = feeds
         .iter()
@@ -163,11 +152,18 @@ pub(crate) fn grams_per_day(
     if span < DAY {
         return None;
     }
-    let mg = Tally::of(counted.iter().copied(), weight).mg;
-    let seconds = u128::from(span.as_secs().unsigned_abs());
-    let per_day = u128::from(mg) * u128::from(DAY.as_secs().unsigned_abs())
-        / (seconds * u128::from(MG_PER_G));
-    Some(u32::try_from(per_day).unwrap_or(u32::MAX))
+    let portions = Tally::of(counted.iter().copied()).portions;
+    let seconds = span.as_secs().unsigned_abs();
+    let grams_per_day = portion_mg(weight).map(|mg| {
+        let per_day = u128::from(portions) * u128::from(mg) * u128::from(DAY_SECONDS)
+            / (u128::from(seconds) * u128::from(MG_PER_G));
+        u32::try_from(per_day).unwrap_or(u32::MAX)
+    });
+    Some(FeedRate {
+        portions,
+        hours: rounded(seconds, 3600),
+        grams_per_day,
+    })
 }
 
 /// `days` whole days before `now`, or the earliest time there is.
@@ -179,31 +175,45 @@ pub(crate) fn before(now: Timestamp, days: u32) -> Timestamp {
         .unwrap_or(Timestamp::MIN)
 }
 
-/// What the hopper has left by the count since `refill`: what it put in,
-/// less what the feeds since delivered. A refill the beam saw but nobody
-/// recorded resets nothing.
-pub(crate) fn food_left(
+/// What the feeds since `refill` delivered, and on a calibrated feeder what
+/// the refill has left: what it put in, less what they delivered. A refill
+/// the beam saw but nobody recorded resets nothing.
+pub(crate) fn since_refill(
     now: Timestamp,
     refill: &Refill,
     feeds: &[FeedRow],
     weight: PortionWeight,
     grams_per_day: Option<u32>,
+) -> SinceRefill {
+    let tally = Tally::of(feeds.iter().filter(|feed| feed.at >= refill.at));
+    let left = portion_mg(weight).map(|mg| food_left(now, refill, tally, mg, grams_per_day));
+    SinceRefill {
+        portions: tally.portions,
+        uncertain_portions: tally.uncertain,
+        left,
+    }
+}
+
+fn food_left(
+    now: Timestamp,
+    refill: &Refill,
+    tally: Tally,
+    portion_mg: u64,
+    grams_per_day: Option<u32>,
 ) -> FoodLeft {
-    let tally = Tally::of(feeds.iter().filter(|feed| feed.at >= refill.at), weight);
-    let left = (u64::from(refill.grams) * MG_PER_G).saturating_sub(tally.mg);
-    let least = left.saturating_sub(tally.uncertain_mg);
+    let used = u64::from(tally.portions).saturating_mul(portion_mg);
+    let uncertain = u64::from(tally.uncertain).saturating_mul(portion_mg);
+    let left = (u64::from(refill.grams) * MG_PER_G).saturating_sub(used);
+    let least = left.saturating_sub(uncertain);
 
     let empty_at = grams_per_day.filter(|&rate| rate > 0).and_then(|rate| {
-        let seconds = u128::from(left) * u128::from(DAY.as_secs().unsigned_abs())
-            / (u128::from(rate) * u128::from(MG_PER_G));
+        let seconds =
+            u128::from(left) * u128::from(DAY_SECONDS) / (u128::from(rate) * u128::from(MG_PER_G));
         now.checked_add(SignedDuration::from_secs(i64::try_from(seconds).ok()?))
             .ok()
     });
     FoodLeft {
-        portions: tally.portions,
-        uncertain_portions: tally.uncertain,
-        unweighed_portions: tally.unweighed,
-        grams_used: rounded(tally.mg, MG_PER_G),
+        grams_used: rounded(used, MG_PER_G),
         grams_left: rounded(left, MG_PER_G),
         grams_left_least: rounded(least, MG_PER_G),
         empty_at,

@@ -1,15 +1,19 @@
 //! A pet's intake by household day: each feed lands on the day it dropped
-//! in the household's zone, split evenly among the pets its feeder served
-//! then, and counted in calories by the food it served.
+//! in the household's zone. A calibrated feeder's feed is weighed, split
+//! evenly among the pets the feeder served then, and counted in calories
+//! by the food it served. An uncalibrated feeder's portions cannot be
+//! split by weight, so they are reported whole, a feeder at a time.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use jiff::{Timestamp, ToSpan};
-use wellfed_api::{FeederId, IntakeDay, IntakeFeeder, PetId, PetLink, PortionWeight};
+use wellfed_api::{
+    FeederId, FeederPortions, IntakeDay, IntakeFeeder, PetId, PetLink, PortionWeight, WeighedIntake,
+};
 
-use super::{FeedRow, MG_PER_G, Tally, UKCAL_PER_KCAL, rounded};
+use super::{FeedRow, MG_PER_G, Tally, UKCAL_PER_KCAL, portion_mg, rounded};
 
 /// The `count` household days ending `today`, oldest first.
 pub(crate) fn days(today: Date, count: u32) -> Vec<Date> {
@@ -39,14 +43,15 @@ fn pets_at(links: &[PetLink], at: Timestamp) -> BTreeSet<PetId> {
 }
 
 /// One day's sums, before rounding.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct DaySum {
     mg: u64,
     ukcal: u64,
     uncertain_mg: u64,
     unknown_food_mg: u64,
-    unweighed: u32,
     estimate: bool,
+    /// The uncalibrated feeders' portions, by feeder.
+    unweighed: BTreeMap<FeederId, Tally>,
 }
 
 /// What a pet ate on `dates` (household days in `zone`), from the feeders
@@ -78,7 +83,10 @@ pub(crate) fn intake(
             }
             let share = u64::try_from(pets.len()).unwrap_or(u64::MAX);
             shared |= share > 1;
-            add_share(sum, feed, source.weight, share);
+            match portion_mg(source.weight) {
+                Some(mg) => add_share(sum, feed, mg, share),
+                None => add_whole(sum, feed, source.feeder),
+            }
         }
         feeders.push(IntakeFeeder {
             feeder: source.feeder,
@@ -87,35 +95,71 @@ pub(crate) fn intake(
         });
     }
 
+    let weights = || feeders.iter().map(|feeder| portion_mg(feeder.weight));
+    let any_weighed = weights().any(|mg| mg.is_some());
+    let all_weighed = weights().all(|mg| mg.is_some());
     let days = sums
         .into_iter()
-        .map(|(date, sum)| IntakeDay {
-            date,
-            grams: rounded(sum.mg, MG_PER_G),
-            kcal: rounded(sum.ukcal, UKCAL_PER_KCAL),
-            target_percent: daily_kcal
-                .filter(|&target| target > 0)
-                .map(|target| rounded(sum.ukcal * 100, u64::from(target) * UKCAL_PER_KCAL)),
-            estimate: sum.estimate,
-            uncertain_grams: rounded(sum.uncertain_mg, MG_PER_G),
-            unknown_food_grams: rounded(sum.unknown_food_mg, MG_PER_G),
-            unweighed_portions: sum.unweighed,
-        })
+        .map(|(date, sum)| day(date, sum, any_weighed, daily_kcal.filter(|_| all_weighed)))
         .collect();
     (feeders, days)
 }
 
-/// Add one pet's even share of `feed` (of `share` pets) to its day.
-fn add_share(sum: &mut DaySum, feed: &FeedRow, weight: PortionWeight, share: u64) {
-    let tally = Tally::of([feed], weight);
-    let mg = tally.mg / share;
+/// The day as the view reports it: weighed when any of the pet's feeders
+/// is calibrated, and against the target only when all are.
+fn day(date: Date, sum: DaySum, weighed: bool, target: Option<u32>) -> IntakeDay {
+    let target_percent = target.filter(|&target| target > 0).map(|target| {
+        let whole = u64::from(target) * UKCAL_PER_KCAL;
+        rounded(sum.ukcal.saturating_mul(100), whole)
+    });
+    let unweighed = sum
+        .unweighed
+        .into_iter()
+        .map(|(feeder, tally)| FeederPortions {
+            feeder,
+            portions: tally.portions,
+            uncertain_portions: tally.uncertain,
+        })
+        .collect();
+
+    IntakeDay {
+        date,
+        weighed: weighed.then(|| WeighedIntake {
+            grams: rounded(sum.mg, MG_PER_G),
+            kcal: rounded(sum.ukcal, UKCAL_PER_KCAL),
+            uncertain_grams: rounded(sum.uncertain_mg, MG_PER_G),
+            unknown_food_grams: rounded(sum.unknown_food_mg, MG_PER_G),
+        }),
+        target_percent,
+        estimate: sum.estimate,
+        unweighed,
+    }
+}
+
+/// Add one pet's even share of `feed` (of `share` pets), at `portion_mg`
+/// a portion, to its day.
+fn add_share(sum: &mut DaySum, feed: &FeedRow, portion_mg: u64, share: u64) {
+    let tally = Tally::of([feed]);
+    let mg = u64::from(tally.portions).saturating_mul(portion_mg) / share;
+    let uncertain_mg = u64::from(tally.uncertain).saturating_mul(portion_mg) / share;
 
     sum.mg = sum.mg.saturating_add(mg);
-    sum.uncertain_mg = sum.uncertain_mg.saturating_add(tally.uncertain_mg / share);
-    sum.unweighed = sum.unweighed.saturating_add(tally.unweighed);
+    sum.uncertain_mg = sum.uncertain_mg.saturating_add(uncertain_mg);
     sum.estimate |= share > 1;
     match &feed.food {
-        Some(food) => sum.ukcal = sum.ukcal.saturating_add(mg * u64::from(food.kcal_per_kg)),
+        Some(food) => {
+            let ukcal = mg.saturating_mul(u64::from(food.kcal_per_kg));
+            sum.ukcal = sum.ukcal.saturating_add(ukcal);
+        }
         None => sum.unknown_food_mg = sum.unknown_food_mg.saturating_add(mg),
     }
+}
+
+/// Add an uncalibrated feeder's `feed` to its day whole.
+fn add_whole(sum: &mut DaySum, feed: &FeedRow, feeder: FeederId) {
+    let tally = Tally::of([feed]);
+    let kept = sum.unweighed.entry(feeder).or_default();
+
+    kept.portions = kept.portions.saturating_add(tally.portions);
+    kept.uncertain = kept.uncertain.saturating_add(tally.uncertain);
 }

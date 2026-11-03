@@ -1,12 +1,13 @@
-//! The derived views over HTTP against the simulated feeder: a feed through
+//! The derived views over HTTP against the simulated feeder, which has no
+//! calibration, so they count in portions: a feed through
 //! the server is counted against the last refill in the feeder's food view
 //! and in its pet's intake, every role reads both, and a bad span or an
 //! unknown pet is refused.
 
 use uuid::Uuid;
 use wellfed_api::{
-    AdoptFeeder, ClientRole, Connection, Credentials, ErrorCode, IntakeQuery, NewFood, NewPet,
-    NewRefill, NewUser, PetId, PortionWeight, Role, Species,
+    AdoptFeeder, ClientRole, Connection, Credentials, ErrorCode, FeederPortions, IntakeQuery,
+    NewFood, NewPet, NewRefill, NewUser, PetId, PortionWeight, Role, Species,
 };
 use wellfed_server_client::{Client, StatusCode};
 use wellfed_server_testkit::{TestServer, ada_setup, feeder, local, refused, until};
@@ -51,14 +52,12 @@ fn a_feed_through_the_server_counts_against_the_refill_and_the_pet() {
         })
         .await;
 
-        // A twelfth of a 120 g cup is 10 g; the simulator has no
-        // calibration.
+        // The simulator has no calibration, so the views count portions.
         let dry = NewFood {
             brand: "Acme".into(),
             name: "Dry".into(),
             kcal_per_kg: 3600,
             bag_grams: 2000,
-            grams_per_cup: 120,
         };
         let dry = owner.create_food(&dry).await.unwrap();
         owner.set_feeder_food(kitchen, dry.id).await.unwrap();
@@ -84,15 +83,15 @@ fn a_feed_through_the_server_counts_against_the_refill_and_the_pet() {
             .unwrap();
         until("the feed reaches the food view", || async {
             let view = owner.feeder_food(kitchen).await.unwrap();
-            view.left.is_some_and(|left| left.portions == 2)
+            view.since_refill.is_some_and(|since| since.portions == 2)
         })
         .await;
 
         let reader = viewer(&server, &owner).await;
         let view = reader.feeder_food(kitchen).await.unwrap();
-        assert_eq!(view.weight, PortionWeight::TwelfthCup);
-        let left = view.left.unwrap();
-        assert_eq!((left.grams_used, left.grams_left), (20, 1980));
+        assert_eq!(view.weight, PortionWeight::Uncalibrated);
+        let since = view.since_refill.unwrap();
+        assert_eq!((since.uncertain_portions, since.left), (0, None));
         assert_eq!(view.anomalies, []);
         let intake = reader
             .pet_intake(tom.id, &IntakeQuery::default())
@@ -100,10 +99,13 @@ fn a_feed_through_the_server_counts_against_the_refill_and_the_pet() {
             .unwrap();
         let today = intake.days.last().unwrap();
         assert_eq!(intake.days.len(), 7);
-        assert_eq!(
-            (today.grams, today.kcal, today.target_percent),
-            (20, 72, Some(50))
-        );
+        assert_eq!((today.weighed, today.target_percent), (None, None));
+        let portions = FeederPortions {
+            feeder: kitchen,
+            portions: 2,
+            uncertain_portions: 0,
+        };
+        assert_eq!(today.unweighed, [portions]);
         assert!(!today.estimate);
 
         let (bad, invalid) = (StatusCode::BAD_REQUEST, ErrorCode::Invalid);

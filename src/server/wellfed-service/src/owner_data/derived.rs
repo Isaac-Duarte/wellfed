@@ -4,8 +4,9 @@
 //! missed meals, the calibration) and [`views`] does the arithmetic.
 //!
 //! A feed's food is [`Service::feeder_food_at`] at the time it dropped, so
-//! a feed is weighed and counted in calories by the food it served, and
-//! its pets are [`Service::feeder_pets`] over the view's span.
+//! a feed is counted in calories by the food it served, and its pets are
+//! [`Service::feeder_pets`] over the view's span. Its weight is the
+//! feeder's calibration alone.
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -19,9 +20,9 @@ use crate::{Error, InternalError, Invalid, Result, Service};
 
 impl Service {
     /// The feeder's food now (its newest change, even when the clock has
-    /// stepped back before it), its newest refill, what the hopper has
-    /// left since that refill, the feeder's daily rate, a beam-seen refill
-    /// nobody recorded, and what went wrong over the last
+    /// stepped back before it), its newest refill, the portions since and
+    /// (once calibrated) what the hopper has left, the feeder's rate, a
+    /// beam-seen refill nobody recorded, and what went wrong over the last
     /// [`FOOD_VIEW_DAYS`] days.
     pub async fn feeder_food(&self, feeder: FeederId) -> Result<FeederFood> {
         self.row(feeder).await?;
@@ -35,19 +36,23 @@ impl Service {
         let since = last_refill.as_ref().map_or(week, |refill| refill.at);
         let feeds = self.feed_rows(feeder, since.min(week), after(now)).await?;
         let readings = store.food_readings(feeder, since, after(now)).await?;
-        let missed = self.missed(feeder, week, after(now)).await?;
+        // A meal is received after it was due, so every one due this week
+        // was received this week too.
+        let mut missed = self.missed(feeder, week, after(now)).await?;
+        missed.retain(|missed| missed.due >= week);
 
-        let grams_per_day = views::grams_per_day(now, FOOD_VIEW_DAYS, &feeds, weight);
-        let left = last_refill
+        let rate = views::rate(now, FOOD_VIEW_DAYS, &feeds, weight);
+        let grams_per_day = rate.and_then(|rate| rate.grams_per_day);
+        let since_refill = last_refill
             .as_ref()
-            .map(|refill| views::food_left(now, refill, &feeds, weight, grams_per_day));
+            .map(|refill| views::since_refill(now, refill, &feeds, weight, grams_per_day));
         let lately = feeds.iter().filter(|feed| feed.at >= week);
         Ok(FeederFood {
             current,
             last_refill,
             weight,
-            left,
-            grams_per_day,
+            since_refill,
+            rate,
             refilled_unrecorded: views::refilled_unrecorded(&readings),
             anomalies: views::anomalies(lately, &missed),
         })

@@ -59,8 +59,8 @@ pub use feeders::{
     AdoptFeeder, Connection, Feeder, FeederDetail, LockRequest, PlansChange, StatusSnapshot,
 };
 pub use foods::{
-    FeederFood, Food, FoodChoice, FoodHistoryPage, FoodPatch, FoodPeriod, GRAMS_PER_CUP, NewFood,
-    NewRefill, Refill, RefillPage,
+    FeederFood, Food, FoodChoice, FoodHistoryPage, FoodPatch, FoodPeriod, NewFood, NewRefill,
+    Refill, RefillPage,
 };
 pub use health::{FeederLink, Health, Job, JobOutcome, JobRun, ServerStatus, StoreState};
 pub use household::{Household, HouseholdPatch, TimeFormat, Units};
@@ -84,8 +84,8 @@ pub use stream::{FeederSample, StreamEvent, StreamQuery};
 pub use tokens::{BEARER, CreatedToken, NewToken, Token, TokenId};
 pub use users::{NewUser, UserPatch};
 pub use views::{
-    FOOD_VIEW_DAYS, FeedAnomaly, FoodLeft, INTAKE_DAYS, INTAKE_DAYS_MAX, IntakeDay, IntakeFeeder,
-    IntakeQuery, PetIntake, PortionWeight,
+    FOOD_VIEW_DAYS, FeedAnomaly, FeedRate, FeederPortions, FoodLeft, INTAKE_DAYS, INTAKE_DAYS_MAX,
+    IntakeDay, IntakeFeeder, IntakeQuery, PetIntake, PortionWeight, SinceRefill, WeighedIntake,
 };
 pub use wellfed_model::{
     Blocked, ClientRole, CurrentUnit, Desiccant, EnrollPath, EventBody, EventKind, FeedOutcome,

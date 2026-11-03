@@ -19,7 +19,6 @@ use crate::{Error, Invalid, OwnerDataError, Resource, Result, Service};
 
 const KCAL_MAX: u32 = 10_000;
 const BAG_MAX: u32 = 100_000;
-const CUP_MAX: u32 = 1000;
 const REFILL_MAX: u32 = 100_000;
 
 impl Service {
@@ -40,7 +39,6 @@ impl Service {
             name: label(&request.name)?.to_owned(),
             kcal_per_kg: within(request.kcal_per_kg, KCAL_MAX, Invalid::Kcal)?,
             bag_grams: within(request.bag_grams, BAG_MAX, Invalid::BagSize)?,
-            grams_per_cup: within(request.grams_per_cup, CUP_MAX, Invalid::GramsPerCup)?,
         };
 
         self.shared
@@ -65,9 +63,6 @@ impl Service {
         }
         if let Some(bag) = patch.bag_grams {
             food.bag_grams = within(bag, BAG_MAX, Invalid::BagSize)?;
-        }
-        if let Some(cup) = patch.grams_per_cup {
-            food.grams_per_cup = within(cup, CUP_MAX, Invalid::GramsPerCup)?;
         }
 
         if !self.shared.store.update_food(&food).await? {

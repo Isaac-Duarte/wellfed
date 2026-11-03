@@ -39,15 +39,14 @@ CREATE TABLE pet_feeders (
 CREATE UNIQUE INDEX pet_feeders_open ON pet_feeders (pet_id, feeder_id) WHERE to_ms IS NULL;
 CREATE INDEX pet_feeders_by_feeder ON pet_feeders (feeder_id, from_ms);
 
--- Energy is kcal per kg, as labels print it; a portion is a fraction of
--- `grams_per_cup`.
+-- Energy is kcal per kg, as labels print it. A portion's weight is the
+-- feeder's own calibration, never the food's.
 CREATE TABLE foods (
     id BLOB PRIMARY KEY NOT NULL,
     brand TEXT NOT NULL,
     name TEXT NOT NULL,
     kcal_per_kg INTEGER NOT NULL,
     bag_grams INTEGER NOT NULL,
-    grams_per_cup INTEGER NOT NULL,
     created_ms INTEGER NOT NULL
 ) STRICT;
 

@@ -26,7 +26,7 @@ impl Store {
     pub async fn foods(&self) -> Result<Vec<Food>> {
         let rows = sqlx::query_as!(
             Raw,
-            r#"SELECT id AS "id: Uuid", brand, name, kcal_per_kg, bag_grams, grams_per_cup
+            r#"SELECT id AS "id: Uuid", brand, name, kcal_per_kg, bag_grams
                FROM foods ORDER BY brand, name, id"#
         )
         .fetch_all(&self.reader)
@@ -37,7 +37,7 @@ impl Store {
     pub async fn food(&self, id: FoodId) -> Result<Option<Food>> {
         let row = sqlx::query_as!(
             Raw,
-            r#"SELECT id AS "id: Uuid", brand, name, kcal_per_kg, bag_grams, grams_per_cup
+            r#"SELECT id AS "id: Uuid", brand, name, kcal_per_kg, bag_grams
                FROM foods WHERE id = ?"#,
             id.0
         )
@@ -49,14 +49,13 @@ impl Store {
     pub async fn insert_food(&self, food: &Food, created: Timestamp) -> Result<()> {
         let created = millis(created);
         sqlx::query!(
-            "INSERT INTO foods (id, brand, name, kcal_per_kg, bag_grams, grams_per_cup, created_ms)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO foods (id, brand, name, kcal_per_kg, bag_grams, created_ms)
+             VALUES (?, ?, ?, ?, ?, ?)",
             food.id.0,
             food.brand,
             food.name,
             food.kcal_per_kg,
             food.bag_grams,
-            food.grams_per_cup,
             created,
         )
         .execute(&self.writer)
@@ -67,13 +66,12 @@ impl Store {
     /// Replace a food's fields; whether it exists.
     pub async fn update_food(&self, food: &Food) -> Result<bool> {
         let done = sqlx::query!(
-            "UPDATE foods SET brand = ?, name = ?, kcal_per_kg = ?, bag_grams = ?, grams_per_cup = ?
+            "UPDATE foods SET brand = ?, name = ?, kcal_per_kg = ?, bag_grams = ?
              WHERE id = ?",
             food.brand,
             food.name,
             food.kcal_per_kg,
             food.bag_grams,
-            food.grams_per_cup,
             food.id.0,
         )
         .execute(&self.writer)
@@ -139,8 +137,7 @@ impl Store {
         let row = sqlx::query_as!(
             Period,
             r#"SELECT p.seq, p.from_ms, NULL AS "to_ms?: i64",
-                      f.id AS "id: Uuid", f.brand, f.name, f.kcal_per_kg, f.bag_grams,
-                      f.grams_per_cup
+                      f.id AS "id: Uuid", f.brand, f.name, f.kcal_per_kg, f.bag_grams
                FROM feeder_foods p JOIN foods f ON f.id = p.food_id
                WHERE p.feeder_id = ?
                ORDER BY p.seq DESC LIMIT 1"#,
@@ -166,8 +163,7 @@ impl Store {
                       (SELECT n.from_ms FROM feeder_foods n
                        WHERE n.feeder_id = p.feeder_id AND n.seq > p.seq
                        ORDER BY n.seq LIMIT 1) AS "to_ms?: i64",
-                      f.id AS "id: Uuid", f.brand, f.name, f.kcal_per_kg, f.bag_grams,
-                      f.grams_per_cup
+                      f.id AS "id: Uuid", f.brand, f.name, f.kcal_per_kg, f.bag_grams
                FROM feeder_foods p JOIN foods f ON f.id = p.food_id
                WHERE p.feeder_id = ? AND p.from_ms <= ?
                ORDER BY p.seq DESC LIMIT 1"#,
@@ -195,8 +191,7 @@ impl Store {
                       (SELECT n.from_ms FROM feeder_foods n
                        WHERE n.feeder_id = p.feeder_id AND n.seq > p.seq
                        ORDER BY n.seq LIMIT 1) AS "to_ms?: i64",
-                      f.id AS "id: Uuid", f.brand, f.name, f.kcal_per_kg, f.bag_grams,
-                      f.grams_per_cup
+                      f.id AS "id: Uuid", f.brand, f.name, f.kcal_per_kg, f.bag_grams
                FROM feeder_foods p JOIN foods f ON f.id = p.food_id
                WHERE p.feeder_id = ? AND p.seq > ?
                ORDER BY p.seq LIMIT ?"#,
@@ -217,7 +212,6 @@ struct Raw {
     name: String,
     kcal_per_kg: i64,
     bag_grams: i64,
-    grams_per_cup: i64,
 }
 
 impl TryFrom<Raw> for Food {
@@ -231,7 +225,6 @@ impl TryFrom<Raw> for Food {
             name: raw.name,
             kcal_per_kg: small(raw.kcal_per_kg)?,
             bag_grams: small(raw.bag_grams)?,
-            grams_per_cup: small(raw.grams_per_cup)?,
         })
     }
 }
@@ -246,7 +239,6 @@ struct Period {
     name: String,
     kcal_per_kg: i64,
     bag_grams: i64,
-    grams_per_cup: i64,
 }
 
 impl Period {
@@ -260,7 +252,6 @@ impl Period {
             name: self.name,
             kcal_per_kg: self.kcal_per_kg,
             bag_grams: self.bag_grams,
-            grams_per_cup: self.grams_per_cup,
         })?;
         Ok((seq, FoodPeriod { food, from, to }))
     }

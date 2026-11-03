@@ -2,10 +2,11 @@
 //! target, and the feeds that went wrong. The server works them out from
 //! the feeds it mirrors and the owner data; none of it is stored.
 //!
-//! Every weight is an estimate. A portion weighs what the feeder's own
-//! calibration says when the server has read one, and otherwise a twelfth
-//! of a cup of the food the feed served. The feeder cannot tell which pet
-//! ate, so a feeder several pets share has its intake split evenly.
+//! A portion weighs only what the feeder's own calibration says. Until the
+//! owner calibrates a feeder, its views count in portions alone: no grams,
+//! calories, food left or run-out time. The feeder cannot tell which pet
+//! ate, so a calibrated feeder several pets share has its intake split
+//! evenly, as an estimate.
 
 use jiff::Timestamp;
 use jiff::civil::Date;
@@ -29,30 +30,47 @@ pub enum PortionWeight {
     /// The feeder's own calibration, as the server last read it, for every
     /// feed: the feeder keeps one calibration, not its history.
     Calibration { portion_mg: u32 },
-    /// No calibration read: each portion is taken as 1/12 cup of the food
-    /// the feed served (its `grams_per_cup`). A feed with no food set is
-    /// not weighed.
-    TwelfthCup,
+    /// The feeder has no calibration yet (or the server has not read it):
+    /// its portions are counted, never weighed.
+    Uncalibrated,
 }
 
-/// What the hopper has left by the count since the last refill: what that
-/// refill put in, less what the feeder delivered since. Food left before
-/// the refill is not known, so it is not counted.
+/// What the feeder delivered since the newest refill, and what the refill
+/// has left once the feeder is calibrated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct FoodLeft {
+pub struct SinceRefill {
     /// Portions the feedback sensor confirmed since the refill.
     pub portions: u32,
     /// Portions uncertain feeds may have dropped beyond those confirmed.
     pub uncertain_portions: u32,
-    /// Confirmed portions with no weight: no calibration and no food set.
-    pub unweighed_portions: u32,
+    /// What the hopper has left; `None` until the feeder is calibrated,
+    /// since a refill's grams and portions do not compare without it.
+    pub left: Option<FoodLeft>,
+}
+
+/// What the hopper has left by the count since the last refill: what that
+/// refill put in, less what the feeder delivered since by its calibration.
+/// Food left before the refill is not known, so it is not counted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct FoodLeft {
     pub grams_used: u32,
     /// The refill's grams less those used, at least 0.
     pub grams_left: u32,
     /// What is left should every uncertain portion have dropped.
     pub grams_left_least: u32,
-    /// When `grams_left` runs out at `grams_per_day`; `None` without a rate.
+    /// When `grams_left` runs out at the feeder's rate; `None` without one.
     pub empty_at: Option<Timestamp>,
+}
+
+/// What a feeder delivered lately: `portions` confirmed over `hours`, from
+/// its first feed in the span (which starts the clock and is not counted)
+/// until now, so a client shows the rate at the precision it likes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct FeedRate {
+    pub portions: u32,
+    pub hours: u32,
+    /// The same a day by the calibration; `None` until it is calibrated.
+    pub grams_per_day: Option<u32>,
 }
 
 /// A feed that went wrong, or a plan's meal that never ran.
@@ -117,31 +135,52 @@ pub struct PetIntake {
 pub struct IntakeFeeder {
     pub feeder: FeederId,
     pub weight: PortionWeight,
-    /// It served other pets too during these days, so its intake is split
-    /// between them as an estimate.
+    /// It served other pets too during these days. A calibrated feeder's
+    /// intake is then split between them as an estimate; an uncalibrated
+    /// one's portions are reported whole.
     pub shared: bool,
 }
 
 /// One household day of a pet's intake.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct IntakeDay {
     pub date: Date,
-    /// What the feeders delivered for the pet: confirmed portions only.
+    /// The pet's share of what its calibrated feeders delivered; `None`
+    /// when none of the feeders in the view is calibrated.
+    pub weighed: Option<WeighedIntake>,
+    /// `weighed.kcal` as a percentage of the daily target; `None` without
+    /// a target, or while any feeder in the view is uncalibrated, since
+    /// the day's total is then unknown.
+    pub target_percent: Option<u32>,
+    /// Some of `weighed` came from a feeder other pets share, split
+    /// evenly: the feeder cannot tell who ate.
+    pub estimate: bool,
+    /// What the uncalibrated feeders delivered on the day, a feeder at a
+    /// time, whole: portions cannot be split by weight, so these are not
+    /// the pet's share.
+    pub unweighed: Vec<FeederPortions>,
+}
+
+/// A day's intake by weight, confirmed portions only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct WeighedIntake {
     pub grams: u32,
     /// Of `grams` with a known food.
     pub kcal: u32,
-    /// `kcal` as a percentage of the daily target; `None` without one.
-    pub target_percent: Option<u32>,
-    /// Some of it came from a feeder other pets share, split evenly: the
-    /// feeder cannot tell who ate.
-    pub estimate: bool,
     /// Grams more uncertain feeds may have dropped for the pet.
     pub uncertain_grams: u32,
     /// Of `grams`, those dropped with no food set: no calories counted.
     pub unknown_food_grams: u32,
-    /// Confirmed portions on the pet's feeders that could not be weighed
-    /// (no calibration, no food set), counted whole rather than split.
-    pub unweighed_portions: u32,
+}
+
+/// The portions an uncalibrated feeder delivered on a day while it served
+/// the pet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct FeederPortions {
+    pub feeder: FeederId,
+    pub portions: u32,
+    /// Portions uncertain feeds may have dropped beyond those confirmed.
+    pub uncertain_portions: u32,
 }
 
 #[cfg(test)]
@@ -157,8 +196,8 @@ mod tests {
             r#"{"kind":"calibration","portion_mg":9200}"#
         );
         assert_eq!(
-            serde_json::to_string(&PortionWeight::TwelfthCup).unwrap(),
-            r#"{"kind":"twelfth_cup"}"#
+            serde_json::to_string(&PortionWeight::Uncalibrated).unwrap(),
+            r#"{"kind":"uncalibrated"}"#
         );
     }
 }

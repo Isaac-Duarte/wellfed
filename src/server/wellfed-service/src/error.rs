@@ -261,8 +261,6 @@ pub enum Invalid {
     Kcal,
     #[error("a bag is 1-100000 g")]
     BagSize,
-    #[error("a cup is 1-1000 g")]
-    GramsPerCup,
     #[error("a refill is 1-100000 g")]
     RefillGrams,
     #[error("an intake view covers 1-{} days", wellfed_api::INTAKE_DAYS_MAX)]

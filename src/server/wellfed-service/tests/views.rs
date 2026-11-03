@@ -1,7 +1,8 @@
-//! The derived views from stored rows: a feeder's food view counts from
-//! the last recorded refill and weighs portions by the calibration when
-//! the server has read one, a beam-seen refill only asks "refilled?", and
-//! a pet's intake splits a shared feeder and uses each feed's own food.
+//! The derived views from stored rows: a feeder's food view counts
+//! portions from the last recorded refill and weighs them only once the
+//! server has read the feeder's calibration, a beam-seen refill only asks
+//! "refilled?", and a pet's intake splits a shared calibrated feeder, uses
+//! each feed's own food, and reports an uncalibrated feeder in portions.
 //!
 //! The history is written straight into the store, with no feeder behind
 //! it, so each feed lands at the time the test gives it.
@@ -11,9 +12,9 @@ use std::sync::Arc;
 use jiff::Timestamp;
 use uuid::Uuid;
 use wellfed_api::{
-    ClientRole, EventBody, FeedAnomaly, FeedOutcome, FeedReason, FeederId, FoodLevel, FoodStats,
-    IntakeQuery, MissedReason, NewFood, NewPet, NewRefill, PetId, PortionWeight, Source, Species,
-    Stats,
+    ClientRole, EventBody, FeedAnomaly, FeedOutcome, FeedReason, FeederId, FeederPortions,
+    FoodLevel, FoodStats, IntakeQuery, MissedReason, NewFood, NewPet, NewRefill, PetId,
+    PortionWeight, Source, Species, Stats,
 };
 use wellfed_server_testkit::fixed::{ManualClock, NOW_MS};
 use wellfed_server_testkit::{TestService, ada, ada_setup, stored_body};
@@ -52,13 +53,12 @@ async fn start() -> (TestService, ManualClock, Store) {
     (test, clock, store)
 }
 
-fn food(name: &str, grams_per_cup: u32, kcal_per_kg: u32) -> NewFood {
+fn food(name: &str, kcal_per_kg: u32) -> NewFood {
     NewFood {
         brand: "Acme".into(),
         name: name.into(),
         kcal_per_kg,
         bag_grams: 2000,
-        grams_per_cup,
     }
 }
 
@@ -136,25 +136,23 @@ async fn calibrate(store: &Store, portion_mg: u32) {
 async fn a_recorded_refill_resets_the_count_and_the_beam_only_asks() {
     let (test, clock, store) = start().await;
     let service = test.service();
-    let dry = service.create_food(food("Dry", 120, 3600)).await.unwrap();
+    let dry = service.create_food(food("Dry", 3600)).await.unwrap();
     service.set_feeder_food(KITCHEN, dry.id).await.unwrap();
     service
         .add_refill(&ada(), KITCHEN, NewRefill::Grams { grams: 1000 })
         .await
         .unwrap();
 
-    // Three portions of a twelfth cup of 120 g: 30 g.
+    // Uncalibrated: three portions, and no weight to set against the
+    // refill's grams.
     fed(&store, 1, Some(at(30)), at(31), (3, 3)).await;
     beam(&store, at(40), false).await;
     beam(&store, at(50), true).await;
     clock.advance_to(at(60));
     let view = service.feeder_food(KITCHEN).await.unwrap();
-    assert_eq!(view.weight, PortionWeight::TwelfthCup);
-    let left = view.left.unwrap();
-    assert_eq!(
-        (left.portions, left.grams_used, left.grams_left),
-        (3, 30, 970)
-    );
+    assert_eq!(view.weight, PortionWeight::Uncalibrated);
+    let since = view.since_refill.unwrap();
+    assert_eq!((since.portions, since.left), (3, None));
     assert_eq!(view.refilled_unrecorded, Some(at(50)), "refilled?");
 
     // The feeder's own calibration weighs every feed once the server has
@@ -163,7 +161,8 @@ async fn a_recorded_refill_resets_the_count_and_the_beam_only_asks() {
     let view = service.feeder_food(KITCHEN).await.unwrap();
     let calibrated = PortionWeight::Calibration { portion_mg: 9_000 };
     assert_eq!(view.weight, calibrated);
-    assert_eq!(view.left.unwrap().grams_used, 27);
+    let left = view.since_refill.unwrap().left.unwrap();
+    assert_eq!((left.grams_used, left.grams_left), (27, 973));
 
     // A recorded refill starts the count again, and the beam's refill is
     // behind it.
@@ -178,10 +177,18 @@ async fn a_recorded_refill_resets_the_count_and_the_beam_only_asks() {
         reason: MissedReason::Late,
     };
     record(&store, 3, Some(at(95)), at(95), missed).await;
+    // A meal due before the week the view looks back over, reported now.
+    let stale = EventBody::Missed {
+        plan: 3,
+        due: at(-8 * 24 * 60),
+        reason: MissedReason::Late,
+    };
+    record(&store, 4, Some(at(100)), at(100), stale).await;
     clock.advance_to(at(120));
     let view = service.feeder_food(KITCHEN).await.unwrap();
-    let left = view.left.unwrap();
-    assert_eq!((left.portions, left.uncertain_portions), (1, 3));
+    let since = view.since_refill.unwrap();
+    assert_eq!((since.portions, since.uncertain_portions), (1, 3));
+    let left = since.left.unwrap();
     assert_eq!((left.grams_left, left.grams_left_least), (491, 464));
     assert_eq!(view.refilled_unrecorded, None);
     let uncertain = FeedAnomaly::Uncertain {
@@ -219,12 +226,13 @@ async fn intake(service: &Service, pet: PetId, days: u32) -> wellfed_api::PetInt
 async fn intake_splits_a_shared_feeder_and_counts_each_feeds_food() {
     let (test, clock, store) = start().await;
     let service = test.service();
-    let dry = service.create_food(food("Dry", 120, 3600)).await.unwrap();
-    let wet = service.create_food(food("Wet", 240, 1000)).await.unwrap();
+    let dry = service.create_food(food("Dry", 3600)).await.unwrap();
+    let wet = service.create_food(food("Wet", 1000)).await.unwrap();
     let tom = service.create_pet(pet("Tom", Some(250))).await.unwrap();
     let jerry = service.create_pet(pet("Jerry", None)).await.unwrap();
     service.set_feeder_food(KITCHEN, dry.id).await.unwrap();
     service.assign_feeder(tom.id, KITCHEN).await.unwrap();
+    calibrate(&store, 10_000).await;
 
     // Tom's alone: 20 g of dry.
     fed(&store, 1, Some(at(60)), at(60), (2, 2)).await;
@@ -235,7 +243,7 @@ async fn intake_splits_a_shared_feeder_and_counts_each_feeds_food() {
     clock.advance_to(at(240));
     service.set_feeder_food(KITCHEN, wet.id).await.unwrap();
     // Shared: 20 g of wet.
-    fed(&store, 3, Some(at(300)), at(300), (1, 1)).await;
+    fed(&store, 3, Some(at(300)), at(300), (2, 2)).await;
     clock.advance_to(at(330));
 
     let toms = intake(service, tom.id, 2).await;
@@ -243,20 +251,46 @@ async fn intake_splits_a_shared_feeder_and_counts_each_feeds_food() {
 
     assert_eq!(toms.zone, wellfed_server_testkit::ZONE);
     assert_eq!(toms.days.len(), 2);
-    assert_eq!(toms.days[0].grams, 0, "yesterday");
-    let today = toms.days[1];
+    assert_eq!(toms.days[0].weighed.unwrap().grams, 0, "yesterday");
+    let today = &toms.days[1];
+    let weighed = today.weighed.unwrap();
     // 20 + 10 + 10 g; 72 + 36 + 10 kcal of a 250 kcal target.
-    assert_eq!(
-        (today.grams, today.kcal, today.target_percent),
-        (40, 118, Some(47))
-    );
+    assert_eq!((weighed.grams, weighed.kcal), (40, 118));
+    assert_eq!(today.target_percent, Some(47));
     assert!(today.estimate);
     assert!(toms.feeders[0].shared);
-    let today = jerrys.days[1];
-    assert_eq!(
-        (today.grams, today.kcal, today.target_percent),
-        (20, 46, None)
-    );
+    let today = &jerrys.days[1];
+    let weighed = today.weighed.unwrap();
+    assert_eq!((weighed.grams, weighed.kcal), (20, 46));
+    assert_eq!(today.target_percent, None);
+    test.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_uncalibrated_feeder_counts_portions_only() {
+    let (test, clock, store) = start().await;
+    let service = test.service();
+    let tom = service.create_pet(pet("Tom", Some(250))).await.unwrap();
+    let jerry = service.create_pet(pet("Jerry", None)).await.unwrap();
+    service.assign_feeder(tom.id, KITCHEN).await.unwrap();
+    service.assign_feeder(jerry.id, KITCHEN).await.unwrap();
+    fed(&store, 1, Some(at(60)), at(60), (3, 2)).await;
+    clock.advance_to(at(120));
+
+    let toms = intake(service, tom.id, 1).await;
+
+    assert_eq!(toms.feeders[0].weight, PortionWeight::Uncalibrated);
+    let today = &toms.days[0];
+    assert_eq!((today.weighed, today.target_percent), (None, None));
+    // Whole, not split between Tom and Jerry.
+    let portions = FeederPortions {
+        feeder: KITCHEN,
+        portions: 2,
+        uncertain_portions: 1,
+    };
+    assert_eq!(today.unweighed, [portions]);
+    let view = service.feeder_food(KITCHEN).await.unwrap();
+    assert_eq!(view.since_refill, None, "no refill recorded");
     test.shutdown().await;
 }
 

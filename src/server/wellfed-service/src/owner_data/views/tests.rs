@@ -1,21 +1,22 @@
-//! The views' arithmetic under generated feeds, refills, readings and
-//! links: a refill resets the count and the beam never does, a shared
-//! feeder's intake splits evenly with nothing made or lost, every feed
-//! lands on one household day, and anomalies are exactly the feeds that
-//! went wrong.
+//! The views' arithmetic under generated feeds, refills and readings: a
+//! refill resets the count and the beam never does, an uncalibrated
+//! feeder is never weighed, and anomalies are exactly the feeds that went
+//! wrong. [`intake`] holds a pet's intake.
+
+mod intake;
 
 use jiff::civil::Date;
-use jiff::tz::TimeZone;
 use proptest::prelude::*;
 use proptest::sample::select;
 use uuid::Uuid;
-use wellfed_api::{FoodId, FoodStats, PetId, PetLink, RefillId, UserId};
+use wellfed_api::{FoodId, FoodStats, PetId, RefillId, UserId};
 
 use super::*;
 
 const KITCHEN: FeederId = FeederId(Uuid::from_u128(1));
 /// 2026-11-01T00:00:00Z: generated times are seconds after it.
 const BASE: i64 = 1_793_491_200;
+const TEN_GRAMS: PortionWeight = PortionWeight::Calibration { portion_mg: 10_000 };
 
 fn at(second: i64) -> Timestamp {
     Timestamp::from_second(BASE + second).unwrap()
@@ -25,14 +26,13 @@ fn pet(n: u128) -> PetId {
     PetId(Uuid::from_u128(100 + n))
 }
 
-fn food(grams_per_cup: u32, kcal_per_kg: u32) -> Food {
+fn food(kcal_per_kg: u32) -> Food {
     Food {
         id: FoodId(Uuid::from_u128(7)),
         brand: "Acme".into(),
         name: "Dry".into(),
         kcal_per_kg,
         bag_grams: 2000,
-        grams_per_cup,
     }
 }
 
@@ -61,11 +61,12 @@ fn done(second: i64, portions: u8, food: Option<Food>) -> FeedRow {
     }
 }
 
+fn calibration() -> impl Strategy<Value = PortionWeight> {
+    (1_000..=50_000u32).prop_map(|portion_mg| PortionWeight::Calibration { portion_mg })
+}
+
 fn weight() -> impl Strategy<Value = PortionWeight> {
-    prop_oneof![
-        (1_000..=50_000u32).prop_map(|portion_mg| PortionWeight::Calibration { portion_mg }),
-        Just(PortionWeight::TwelfthCup),
-    ]
+    prop_oneof![calibration(), Just(PortionWeight::Uncalibrated)]
 }
 
 /// A feed within the first 30 days, of any outcome.
@@ -77,7 +78,7 @@ fn feed() -> impl Strategy<Value = FeedRow> {
         FeedOutcome::Failed,
         FeedOutcome::Uncertain,
     ]);
-    let food = proptest::option::of((1..=1000u32, 1..=10_000u32).prop_map(|(c, k)| food(c, k)));
+    let food = proptest::option::of((1..=10_000u32).prop_map(food));
     (0..30 * 86_400i64, 1..=48u8, any::<u8>(), outcome, food).prop_map(
         |(second, requested, completed, outcome, food)| FeedRow {
             feeder: KITCHEN,
@@ -92,10 +93,14 @@ fn feed() -> impl Strategy<Value = FeedRow> {
     )
 }
 
+fn feeds() -> impl Strategy<Value = Vec<FeedRow>> {
+    proptest::collection::vec(feed(), 0..40)
+}
+
 proptest! {
     #[test]
     fn feeds_before_the_refill_do_not_count(
-        feeds in proptest::collection::vec(feed(), 0..40),
+        feeds in feeds(),
         weight in weight(),
         grams in 1..=100_000u32,
         refill_at in 0..30 * 86_400i64,
@@ -104,33 +109,50 @@ proptest! {
         let after: Vec<FeedRow> = feeds.iter().filter(|f| f.at >= refill.at).cloned().collect();
         let now = at(31 * 86_400);
 
-        let all = food_left(now, &refill, &feeds, weight, None);
+        let all = since_refill(now, &refill, &feeds, weight, None);
 
-        prop_assert_eq!(all, food_left(now, &refill, &after, weight, None));
-        prop_assert!(all.grams_left_least <= all.grams_left);
-        prop_assert!(all.grams_left <= grams);
-        if all.grams_used <= grams {
-            prop_assert!(all.grams_left.abs_diff(grams - all.grams_used) <= 1);
+        prop_assert_eq!(all, since_refill(now, &refill, &after, weight, None));
+        prop_assert_eq!(all.left.is_some(), weight != PortionWeight::Uncalibrated);
+        if let Some(left) = all.left {
+            prop_assert!(left.grams_left_least <= left.grams_left);
+            prop_assert!(left.grams_left <= grams);
+            if left.grams_used <= grams {
+                prop_assert!(left.grams_left.abs_diff(grams - left.grams_used) <= 1);
+            }
         }
     }
 
     #[test]
     fn another_feed_never_adds_food(
-        feeds in proptest::collection::vec(feed(), 0..40),
+        feeds in feeds(),
         extra in feed(),
-        weight in weight(),
+        weight in calibration(),
         grams in 1..=100_000u32,
     ) {
         let refill = refill(0, grams);
         let now = at(31 * 86_400);
-        let before = food_left(now, &refill, &feeds, weight, None);
+        let before = since_refill(now, &refill, &feeds, weight, None);
         let mut more = feeds.clone();
         more.push(extra);
 
-        let after = food_left(now, &refill, &more, weight, None);
+        let after = since_refill(now, &refill, &more, weight, None);
 
-        prop_assert!(after.grams_left <= before.grams_left);
+        prop_assert!(after.left.unwrap().grams_left <= before.left.unwrap().grams_left);
         prop_assert!(after.portions >= before.portions);
+    }
+
+    /// An uncalibrated feeder's rate is portions only, and a calibration
+    /// weighs the same portions.
+    #[test]
+    fn only_a_calibration_weighs_the_rate(feeds in feeds(), weight in calibration()) {
+        let now = at(31 * 86_400);
+
+        let counted = rate(now, 7, &feeds, PortionWeight::Uncalibrated);
+        let weighed = rate(now, 7, &feeds, weight);
+
+        prop_assert_eq!(counted.and_then(|rate| rate.grams_per_day), None);
+        prop_assert_eq!(counted.map(|rate| rate.portions), weighed.map(|rate| rate.portions));
+        prop_assert_eq!(weighed.is_some(), weighed.is_some_and(|rate| rate.grams_per_day.is_some()));
     }
 
     /// Whatever the beam saw, only a recorded refill resets the count: the
@@ -157,60 +179,7 @@ proptest! {
     }
 
     #[test]
-    fn a_shared_feeder_splits_evenly_and_loses_nothing(
-        feeds in proptest::collection::vec(feed(), 1..30),
-        weight in weight(),
-        pets in 1..=4u128,
-    ) {
-        let links: Vec<PetLink> = (0..pets).map(|n| PetLink {
-            pet: pet(n), feeder: KITCHEN, from: at(0), to: None,
-        }).collect();
-        let served = [Served { feeder: KITCHEN, weight, links: &links, feeds: &feeds }];
-        let dates = days(date(2026, 11, 30), 30);
-        let total = Tally::of(&feeds, weight).mg;
-
-        let shares: Vec<_> = (0..pets)
-            .map(|n| intake(pet(n), None, &dates, &TimeZone::UTC, &served))
-            .collect();
-
-        let (feeders, first) = &shares[0];
-        prop_assert_eq!(feeders[0].shared, pets > 1);
-        for (_, days) in &shares {
-            prop_assert_eq!(days, first, "every pet gets the same share");
-        }
-        let one: u64 = first.iter().map(|day| u64::from(day.grams)).sum();
-        let all = one * u64::try_from(pets).unwrap() * MG_PER_G;
-        let slack = u64::try_from(feeds.len() + first.len()).unwrap() * 1_000 * 4;
-        prop_assert!(all.abs_diff(total) <= slack, "{all} mg shared of {total} mg");
-        for day in first {
-            prop_assert!(!day.estimate || pets > 1, "one pet's intake is not an estimate");
-            prop_assert!(day.estimate || pets == 1 || day.grams + day.unweighed_portions == 0);
-        }
-    }
-
-    #[test]
-    fn every_feed_lands_on_one_household_day(
-        feeds in proptest::collection::vec(feed(), 0..30),
-        weight in weight(),
-        zone in select(vec!["UTC", "America/Denver", "Pacific/Kiritimati", "Asia/Kolkata"]),
-    ) {
-        let zone = wellfed_mirror::Zone::stored(zone, at(0)).unwrap().tz().clone();
-        let links = [PetLink { pet: pet(0), feeder: KITCHEN, from: at(-86_400), to: None }];
-        let served = [Served { feeder: KITCHEN, weight, links: &links, feeds: &feeds }];
-        let dates = days(date(2026, 12, 2), 33);
-
-        let (_, days) = intake(pet(0), None, &dates, &zone, &served);
-
-        prop_assert_eq!(days.len(), 33);
-        let mg: u64 = feeds.iter().map(|feed| Tally::of([feed], weight).mg).sum();
-        let grams: u64 = days.iter().map(|day| u64::from(day.grams)).sum();
-        prop_assert!((grams * MG_PER_G).abs_diff(mg) <= 33 * 500);
-    }
-
-    #[test]
-    fn anomalies_are_the_feeds_that_went_wrong_in_time_order(
-        feeds in proptest::collection::vec(feed(), 0..40),
-    ) {
+    fn anomalies_are_the_feeds_that_went_wrong_in_time_order(feeds in feeds()) {
         let found = anomalies(&feeds, &[]);
 
         let wrong = feeds.iter().filter(|feed| match feed.outcome {
@@ -254,41 +223,39 @@ fn a_feed_drops_at_the_feeders_time_when_its_clock_was_valid() {
 }
 
 #[test]
-fn a_portion_is_the_calibration_or_a_twelfth_cup() {
-    let dry = food(120, 3600);
-
-    assert_eq!(
-        portion_mg(portion_weight(Some(9_200)), Some(&dry)),
-        Some(9_200)
-    );
-    assert_eq!(portion_mg(portion_weight(None), Some(&dry)), Some(10_000));
-    assert_eq!(portion_mg(portion_weight(None), None), None);
+fn only_the_calibration_weighs_a_portion() {
+    assert_eq!(portion_mg(portion_weight(Some(9_200))), Some(9_200));
+    assert_eq!(portion_weight(None), PortionWeight::Uncalibrated);
+    assert_eq!(portion_mg(PortionWeight::Uncalibrated), None);
 }
 
 #[test]
 fn twice_a_day_for_a_week_is_the_meal_rate() {
     let feeds: Vec<FeedRow> = (0..14)
-        .map(|meal| done(meal * 12 * 3600, 2, Some(food(120, 3600))))
+        .map(|meal| done(meal * 12 * 3600, 2, None))
         .collect();
     let now = at(13 * 12 * 3600 + 3600);
 
-    let rate = grams_per_day(now, 7, &feeds, PortionWeight::TwelfthCup);
+    let rate = rate(now, 7, &feeds, TEN_GRAMS).unwrap();
 
-    // Two meals of two 10 g portions a day.
-    assert!(rate.is_some_and(|rate| rate.abs_diff(40) <= 3), "{rate:?}");
-    assert_eq!(
-        grams_per_day(at(3600), 7, &feeds[..1], PortionWeight::TwelfthCup),
-        None
+    // Two meals of two 10 g portions a day: 13 meals after the first,
+    // over 157 hours.
+    assert_eq!((rate.portions, rate.hours), (26, 157));
+    assert!(
+        rate.grams_per_day
+            .is_some_and(|grams| grams.abs_diff(40) <= 1)
     );
+    assert_eq!(super::rate(at(3600), 7, &feeds[..1], TEN_GRAMS), None);
 }
 
 #[test]
 fn the_hopper_runs_out_at_the_rate() {
     let feeds = [done(3600, 3, None)];
-    let weight = PortionWeight::Calibration { portion_mg: 10_000 };
 
-    let left = food_left(at(7200), &refill(0, 1_030), &feeds, weight, Some(100));
+    let since = since_refill(at(7200), &refill(0, 1_030), &feeds, TEN_GRAMS, Some(100));
 
+    assert_eq!(since.portions, 3);
+    let left = since.left.unwrap();
     assert_eq!((left.grams_used, left.grams_left), (30, 1_000));
     assert_eq!(left.empty_at, Some(at(7200 + 10 * 86_400)));
 }
@@ -311,44 +278,4 @@ fn a_counted_refill_in_one_boot_is_seen_without_a_low_reading() {
 
     assert_eq!(refilled_unrecorded(&rebooted), None);
     assert_eq!(refilled_unrecorded(&counted), Some(at(60)));
-}
-
-#[test]
-fn a_feed_on_a_feeder_the_pet_left_is_not_its_own() {
-    let links = [
-        PetLink {
-            pet: pet(0),
-            feeder: KITCHEN,
-            from: at(0),
-            to: Some(at(1000)),
-        },
-        PetLink {
-            pet: pet(1),
-            feeder: KITCHEN,
-            from: at(0),
-            to: None,
-        },
-    ];
-    let feeds = [
-        done(500, 2, Some(food(120, 3600))),
-        done(2000, 2, Some(food(120, 3600))),
-    ];
-    let served = [Served {
-        feeder: KITCHEN,
-        weight: PortionWeight::TwelfthCup,
-        links: &links,
-        feeds: &feeds,
-    }];
-    let dates = days(date(2026, 11, 1), 1);
-
-    let (_, mine) = intake(pet(0), Some(36), &dates, &TimeZone::UTC, &served);
-    let (_, theirs) = intake(pet(1), None, &dates, &TimeZone::UTC, &served);
-
-    // 20 g each feed; the first is split, the second is pet 1's alone.
-    assert_eq!(
-        (mine[0].grams, mine[0].kcal, mine[0].target_percent),
-        (10, 36, Some(100))
-    );
-    assert!(mine[0].estimate);
-    assert_eq!(theirs[0].grams, 30);
 }
