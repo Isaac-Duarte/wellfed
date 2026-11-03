@@ -11,6 +11,7 @@
 //! [API design]: ../../../../docs/server/design.md
 #![forbid(unsafe_code)]
 
+pub mod advertise;
 mod auth;
 pub mod config;
 mod error;

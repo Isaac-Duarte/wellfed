@@ -8,7 +8,7 @@ description = "Tokio driver for wellfed-client's device API sessions: locate a f
 publish.workspace = true
 
 [dependencies]
-mdns-sd = "0.21.6"
+mdns-sd.workspace = true
 wellfed-client.workspace = true
 wellfed-model.workspace = true
 wellfed-proto.workspace = true

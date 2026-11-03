@@ -99,6 +99,7 @@ To restore from a backup:
 | `hosts` | none | Names the server is reached by, besides IP addresses and `localhost`. Any other name is refused `421 unknown_host`, which stops DNS rebinding. |
 | `label` | `wellfed-server` | The label the server enrolls under on each feeder, 1-16 bytes. |
 | `discovery` | `mdns` | `off` adopts and reconnects by address only. |
+| `advertise` | `mdns` | Announce the server on the LAN so the app finds it ([find it from the app](#find-it-from-the-app)). `off` never does. |
 | `trusted_proxies` | none | Proxies (addresses or CIDR ranges) whose forwarded headers are believed. |
 | `retention.raw_sample_days` | keep forever | Days raw samples are kept. Hourly rollups are always kept. |
 | `releases.fetch` | `false` | Check the project's GitHub releases daily, at 04:00. |
@@ -106,14 +107,24 @@ To restore from a backup:
 | `releases.owner_keys` | `[]` | Your own enrolled update keys, 64 hex digits each. |
 | `backups.keep` | `7` | Backups kept. |
 
-Every key has a flag, and every flag an environment variable: `--listen` (`WELLFED_SERVER_LISTEN`), `--host` (`WELLFED_SERVER_HOSTS`, comma-separated), `--label`, `--discovery` (or `--no-discovery`), `--trusted-proxy` (`WELLFED_SERVER_TRUSTED_PROXIES`), `--raw-sample-days`, `--releases-fetch true|false`, `--release-project-key` and `--release-owner-key` (`WELLFED_SERVER_RELEASE_PROJECT_KEYS` and `..._OWNER_KEYS`, comma-separated) and `--backups-keep`. Each variable is `WELLFED_SERVER_` and the flag's name.
+Every key has a flag, and every flag an environment variable: `--listen` (`WELLFED_SERVER_LISTEN`), `--host` (`WELLFED_SERVER_HOSTS`, comma-separated), `--label`, `--discovery` (or `--no-discovery`), `--advertise` (or `--no-advertise`), `--trusted-proxy` (`WELLFED_SERVER_TRUSTED_PROXIES`), `--raw-sample-days`, `--releases-fetch true|false`, `--release-project-key` and `--release-owner-key` (`WELLFED_SERVER_RELEASE_PROJECT_KEYS` and `..._OWNER_KEYS`, comma-separated) and `--backups-keep`. Each variable is `WELLFED_SERVER_` and the flag's name.
 
 - **A flag beats its variable,** and either replaces the file's value whole. `--host` given once replaces the file's `hosts`.
 - **An override can't clear a list.** No flag or an empty variable means "not given". To drop every host or proxy, edit the file.
-- **`--no-discovery` beats** `--discovery` and its variable.
+- **`--no-discovery` beats** `--discovery` and its variable, and `--no-advertise` beats `--advertise`.
 - **A bad file stops the start.** An unknown key, a wrong type or an out-of-range value (a 17-byte label, `raw_sample_days = 0`, a host name with a port) is refused with the key's path (`retention.raw_sample_days`, `hosts[1]`) and its line. A missing file means the defaults.
 
 Under systemd, put `server.toml` in `/var/lib/wellfed-server/` as root: `sudo install -m 0644 server.toml /var/lib/wellfed-server/`. The server only reads it, and it holds no secret, so a root-owned file is fine. The next start reads it. Or set `WELLFED_SERVER_*` variables with `systemctl edit wellfed-server`.
+
+## Find it from the app
+
+The server announces itself on the home network over mDNS, so the app can list it without a typed address. It does this only while it listens beyond this computer: at the default `127.0.0.1:8080` nothing else could reach it, so nothing is announced.
+
+- **The record** is `_wellfed-server._tcp`, named after the machine's host name, with the HTTP port. Its TXT record holds the server's version and nothing else. Anyone on the network can hear it, so it names no household, account or feeder.
+- **The app connects by the address it resolves.** The server always answers to an IP address, so `hosts` needs nothing for it.
+- **On `0.0.0.0`** the record carries the machine's IPv4 addresses, and follows them as they change. On one address, it carries only that one.
+- **At shutdown** the server withdraws the record, so the app drops it at once.
+- **`advertise = "off"`** (or `--no-advertise`) turns it off. It is separate from `discovery`, which finds feeders. In a container on a bridged network, the announcement doesn't leave the bridge, so turn it off there too.
 
 ## Reach it from outside
 
@@ -226,4 +237,5 @@ Nothing in either is left running.
 ## Evidence
 
 - **Simulation**, October 27, 2026: the release check above runs in `make check` against the debug build. Both musl targets were built through the Containerfile, rustls with aws-lc and the bundled SQLite included.
+- **Simulation**, November 3, 2026: unit tests check the announcement's record (type, port, version only, addresses for each kind of listen address, none on loopback). No announcement was sent on a real network.
 - **Static analysis**, October 27, 2026: the settings table matches `server.example.toml`, which a test parses; the unit's hardening matches `packaging/wellfed-server.service`.

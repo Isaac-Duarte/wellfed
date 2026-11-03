@@ -80,7 +80,12 @@ impl Launch {
             }
         }
         command
-            .args(["--listen", "127.0.0.1:0", "--no-discovery"])
+            .args([
+                "--listen",
+                "127.0.0.1:0",
+                "--no-discovery",
+                "--no-advertise",
+            ])
             .env("RUST_LOG", "info")
             .env("NO_COLOR", "1")
             .stdin(Stdio::null())
@@ -227,6 +232,7 @@ fn release_check(launch: &Launch) {
                 invite: feeder::invite(&sim, ClientRole::Server).await,
                 name: "kitchen".into(),
                 address: Some(sim.address.to_string()),
+                phone_key: None,
             })
             .await
             .expect("the server adopts the simulator by address")

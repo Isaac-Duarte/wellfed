@@ -6,7 +6,8 @@ use std::path::Path;
 
 use clap::Parser;
 use wellfed_server::config::{
-    ConfigError, Discovery, FILE, HostName, Label, Overrides, ProxyRange, ServerConfig, UpdateKey,
+    Advertise, ConfigError, Discovery, FILE, HostName, Label, Overrides, ProxyRange, ServerConfig,
+    UpdateKey,
 };
 
 /// The server's flags alone, as `wellfed-server` takes them.
@@ -47,6 +48,7 @@ fn no_file_is_the_defaults() {
     assert!(config.hosts.is_empty());
     assert_eq!(config.label.as_str(), "wellfed-server");
     assert_eq!(config.discovery, Discovery::Mdns);
+    assert_eq!(config.advertise, Advertise::Mdns);
     assert!(config.trusted_proxies.is_empty());
     assert_eq!(config.retention.raw_sample_days, None);
     assert!(!config.releases.fetch);
@@ -82,6 +84,7 @@ listen = "0.0.0.0:9000"
 hosts = ["Feeder.LAN", "pets.home.arpa"]
 label = "kitchen-server"
 discovery = "off"
+advertise = "off"
 trusted_proxies = ["10.0.0.2", "::1", "172.16.0.0/12"]
 
 [retention]
@@ -109,6 +112,7 @@ keep = 3
     );
     assert_eq!(config.label.as_str(), "kitchen-server");
     assert_eq!(config.discovery, Discovery::Off);
+    assert_eq!(config.advertise, Advertise::Off);
     assert_eq!(
         config.trusted_proxies,
         [range("10.0.0.2"), range("::1"), range("172.16.0.0/12")]
@@ -133,6 +137,7 @@ fn flags_override_the_file() {
 listen = "0.0.0.0:9000"
 hosts = ["feeder.lan", "pets.lan"]
 discovery = "mdns"
+advertise = "mdns"
 trusted_proxies = ["10.0.0.2"]
 
 [retention]
@@ -153,6 +158,7 @@ owner_keys = ["1111111111111111111111111111111111111111111111111111111111111111"
         "--host",
         "other.lan",
         "--no-discovery",
+        "--no-advertise",
         "--raw-sample-days",
         "5",
         "--releases-fetch",
@@ -165,6 +171,7 @@ owner_keys = ["1111111111111111111111111111111111111111111111111111111111111111"
     assert_eq!(config.listen, "127.0.0.1:7000".parse().unwrap());
     assert_eq!(config.hosts, ["other.lan".parse::<HostName>().unwrap()]);
     assert_eq!(config.discovery, Discovery::Off);
+    assert_eq!(config.advertise, Advertise::Off);
     assert_eq!(config.retention.raw_sample_days, Some(days(5)));
     assert!(!config.releases.fetch);
     assert_eq!(config.releases.owner_keys, [UpdateKey([0x22; 32])]);
@@ -196,6 +203,11 @@ fn flags_check_their_values() {
         flags(&["--discovery", "off"]).discovery,
         Some(Discovery::Off)
     );
+    assert_eq!(
+        flags(&["--advertise", "off"]).advertise.advertise,
+        Some(Advertise::Off)
+    );
+    assert!(parse(&["--advertise", "loud"]).is_err());
     assert_eq!(
         flags(&["--host", "a.lan,b.lan"]).hosts,
         [

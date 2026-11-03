@@ -128,8 +128,11 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(settings.listen)
         .await
         .with_context(|| format!("listen on {}", settings.listen))?;
-    tracing::info!("serving on http://{}", listener.local_addr()?);
+    let listening = listener.local_addr()?;
+    tracing::info!("serving on http://{listening}");
     let jobs = wellfed_server::jobs::spawn(service.clone(), service.clock(), shutdown.clone());
+    let advertised =
+        wellfed_server::advertise::spawn(settings.advertise, listening, shutdown.clone());
 
     let stop = shutdown.clone();
     // Each request knows its connection's address: logins are limited by
@@ -149,6 +152,11 @@ async fn main() -> Result<()> {
     shutdown.cancel();
     if let Err(error) = jobs.await {
         tracing::error!("the jobs' task: {error}");
+    }
+    if let Some(advertised) = advertised
+        && let Err(error) = advertised.await
+    {
+        tracing::error!("the mDNS announcement's task: {error}");
     }
     service.shutdown().await;
     served.context("serve")

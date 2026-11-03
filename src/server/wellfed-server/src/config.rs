@@ -4,7 +4,8 @@
 //! The file holds what is neither a secret nor a household setting: the
 //! sealing key has its own file ([`crate::key`]) and the household's zone
 //! lives in the database. Every setting has a default, so a server with no
-//! file (or an empty one) listens on localhost:8080 with discovery on.
+//! file (or an empty one) listens on localhost:8080 with discovery and
+//! advertisement on.
 //!
 //! A flag, or the environment variable it names, replaces the file's value
 //! whole: `--host` given once replaces the file's `hosts` rather than adding
@@ -20,8 +21,10 @@ use serde::Deserialize;
 
 pub use crate::proxy::ProxyRange;
 
+mod advertise;
 mod releases;
 
+pub use advertise::{Advertise, AdvertiseOverrides};
 pub use releases::{RELEASES, ReleaseOverrides, Releases, UpdateKey};
 
 use releases::ReleasesFile;
@@ -96,6 +99,8 @@ pub struct ServerConfig {
     /// The label the server enrolls under on each feeder.
     pub label: Label,
     pub discovery: Discovery,
+    /// Whether the server announces itself over mDNS.
+    pub advertise: Advertise,
     /// Reverse proxies whose forwarded headers are believed: addresses or
     /// CIDR ranges. None by default: a request's scheme and address are
     /// its own connection's.
@@ -259,6 +264,8 @@ pub struct Overrides {
     /// counts a set variable as given and would refuse the pair.
     #[arg(long)]
     pub no_discovery: bool,
+    #[command(flatten)]
+    pub advertise: AdvertiseOverrides,
     /// A reverse proxy whose forwarded headers are believed, as an address
     /// or a CIDR range (`trusted_proxies`). Repeat for more.
     #[arg(
@@ -287,6 +294,7 @@ struct File {
     hosts: Option<Vec<HostName>>,
     label: Option<Label>,
     discovery: Option<Discovery>,
+    advertise: Option<Advertise>,
     trusted_proxies: Option<Vec<ProxyRange>>,
     #[serde(default)]
     retention: RetentionFile,
@@ -345,6 +353,7 @@ impl ServerConfig {
                 .or(file.label)
                 .unwrap_or_else(|| Label(LABEL.to_owned())),
             discovery: discovery.or(file.discovery).unwrap_or_default(),
+            advertise: overrides.advertise.merge(file.advertise),
             trusted_proxies: given(overrides.trusted_proxies)
                 .or(file.trusted_proxies)
                 .unwrap_or_default(),
