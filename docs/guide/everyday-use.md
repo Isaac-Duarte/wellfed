@@ -91,7 +91,7 @@ flowchart LR
 
 | To | Do this |
 | --- | --- |
-| Lock or unlock the buttons | Hold Lock for 5 seconds, or use **Lock the buttons** on Today, or `wellfed lock off` |
+| Lock or unlock the buttons | Hold Lock for 5 seconds, tap **Buttons locked** or **Buttons unlocked** beside the drawing on Today, or run `wellfed lock off` |
 | Feed one portion | Press Dispense on an unlocked panel |
 | Start Bluetooth setup | On an unlocked panel, hold Lock, then Mic, for 5 seconds. No feed runs during setup, which ends after 15 idle minutes, so an accidental hold can skip a meal. **Restart** in the app or `wellfed reboot` ends it sooner |
 | Add this phone back when no phone can reach the feeder | On an unlocked panel, hold Lock, then Dispense, for 5 seconds. Then, within 2 minutes, choose **Recover a feeder** in the app or run `wellfed recover`, and key in the code it shows |
@@ -123,7 +123,7 @@ The desiccant reminder counts days from your last change, every 14 days until yo
 
 ### App
 
-Tap **Mark changed** on Today or in Settings after you put in a fresh pack. Today shows the days left, or how many days overdue it is. The first time, the count begins when you tap.
+Tap **Mark changed** in Settings after you put in a fresh pack. Once a change is due, Today shows how many days overdue it is, with its own **Mark changed**. Until then, Today folds it into one line with power, Wi-Fi and the clock: tap that line to see the days left. The first time, the count begins when you tap.
 
 ### CLI
 
