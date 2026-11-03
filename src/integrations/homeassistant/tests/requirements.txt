@@ -1,5 +1,6 @@
 # The integration's test environment, for `make check-homeassistant`. The
 # harness pins Home Assistant itself (2026.2.3 with this release).
 maturin==1.16.0
+mypy==2.4.0
 pytest-homeassistant-custom-component==0.13.316
 ruff==0.14.0

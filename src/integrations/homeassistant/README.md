@@ -15,7 +15,7 @@ Home Assistant pairs with the feeder as its own client, by an invite, as a secon
 | Food low (binary sensor) | The food beam's last reading. |
 | Connected (binary sensor) | Whether the session is open. |
 
-The `wellfed.feed` action takes a feeder device and 1 to 48 portions, and answers the feeder's number for the feed. Every event the feeder records also fires `wellfed_event` on the bus, with the event's JSON.
+The `wellfed.feed` action takes a feeder device and 1 to 48 portions, and answers the feeder's number for the feed. Every event the feeder records also fires `wellfed_event` on the bus: its `kind` (`fed`, `lock`, `meal_soon` and so on), `seq` and `at`, with the feed, the lock, who made the change and the plan where the event names them.
 
 ## How a feed stays one feed
 
@@ -27,7 +27,7 @@ All of this lives in the Rust bridge, so the integration, the app and the CLI sh
 
 ## How it is built
 
-- `bridge/` is the `wellfed-homeassistant` crate. It wraps `wellfed-connect` and `wellfed-client` for Python through PyO3, as the `wellfed_homeassistant` module. Each feeder's session runs on a Rust thread of its own. Status, events and write results cross as `wellfed-model`'s JSON.
+- `bridge/` is the `wellfed-homeassistant` crate. It wraps `wellfed-connect` and `wellfed-client` for Python through PyO3, as the `wellfed_homeassistant` module. Each feeder's session runs on a Rust thread of its own. Status, events and write results cross as typed Python classes built from `wellfed-model`'s values. Their stub, `bridge/stubs/wellfed_homeassistant/__init__.pyi`, is generated from the module and committed, and mypy checks the integration against it.
 - `custom_components/wellfed/` is the integration. It holds no wire format, key derivation or feeding logic.
 - The client key is X25519, one per config entry. Its secret lives in the config entry, so a restart resumes as the same client.
 

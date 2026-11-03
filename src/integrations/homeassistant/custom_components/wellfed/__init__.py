@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_DEVICE_ID, Platform
-from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.helpers.typing import ConfigType
 import voluptuous as vol
 
 from .const import (
@@ -37,10 +38,10 @@ FEED_SCHEMA = vol.Schema(
 )
 
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register the feed action, which names the feeder by its device."""
 
-    async def feed(call: ServiceCall) -> dict[str, int]:
+    async def feed(call: ServiceCall) -> ServiceResponse:
         device = dr.async_get(hass).async_get(call.data[ATTR_DEVICE_ID])
         entry = next(
             (

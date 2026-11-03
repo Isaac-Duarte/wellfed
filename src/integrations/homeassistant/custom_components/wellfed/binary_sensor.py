@@ -10,6 +10,8 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+import wellfed_homeassistant as bridge
+
 from . import WellfedConfigEntry
 from .entity import WellfedEntity
 
@@ -45,8 +47,7 @@ class FoodLow(WellfedEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
-        status = self.session.status or {}
-        food = status.get("food")
-        if food == "unread":
+        status = self.session.status
+        if status is None or status.food == bridge.FoodLevel.Unread:
             return None
-        return food == "low"
+        return status.food == bridge.FoodLevel.Low

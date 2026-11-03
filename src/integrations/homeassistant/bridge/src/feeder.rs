@@ -7,10 +7,10 @@
 //!
 //! A feed or lock change goes out once, under a fresh request id, and is
 //! never sent again here or by the integration: an answer that never came
-//! means it may have run, so it comes back [`Written::Uncertain`], and the
+//! means it may have run, so it comes back uncertain, and the
 //! feeder's `Fed` or `Lock` event settles it. The event cursor survives a
 //! reconnect, so events recorded while the session was down still arrive.
-//! A command while no session is open is [`Written::NotSent`]: it never
+//! A command while no session is open is not sent: it never
 //! went out, so the owner may simply press again.
 
 use std::collections::HashMap;
@@ -19,12 +19,12 @@ use std::sync::Mutex;
 use std::sync::mpsc as std_mpsc;
 use std::time::Duration;
 
-use serde::Serialize;
 use tokio::sync::{mpsc, oneshot};
 use wellfed_connect::{Connection, Cursor, Received};
-use wellfed_model::{Answer, ClientRole, Event, Gap, Op, Pushed, Refusal, Status};
+use wellfed_model::{Answer, Op, Pushed};
 
 use crate::Error;
+use crate::api::{Update, Written};
 use crate::key::{ClientKey, locate, random};
 
 /// The device API's request id.
@@ -35,52 +35,6 @@ type RequestId = [u8; 16];
 const TURN: Duration = Duration::from_secs(30);
 /// How long a lost session waits before opening another.
 const RETRY: Duration = Duration::from_secs(10);
-
-/// What the session tells Home Assistant, in order.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Update {
-    Connected {
-        build: String,
-        role: ClientRole,
-    },
-    Status {
-        status: Box<Status>,
-    },
-    Event {
-        event: Event,
-    },
-    /// Events the feeder overwrote before this session read them, or a
-    /// history that started over: what happened meanwhile is not known.
-    Gap {
-        gap: Option<Gap>,
-    },
-    Disconnected {
-        reason: String,
-    },
-}
-
-/// How a write ended.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(tag = "result", rename_all = "snake_case")]
-pub enum Written {
-    /// The feed is reserved under the feeder's number `feed`; its `Fed`
-    /// event carries the result.
-    Feeding {
-        feed: u32,
-    },
-    /// The write took effect.
-    Done,
-    Refused {
-        refusal: Refusal,
-    },
-    /// It never went out: no session was open.
-    NotSent {
-        reason: String,
-    },
-    /// It went out and no answer came: it may have run. Never resend it.
-    Uncertain,
-}
 
 #[derive(Debug)]
 enum Command {
@@ -160,13 +114,13 @@ impl Feeder {
     fn write(&self, op: Op) -> Written {
         let (reply, answer) = oneshot::channel();
         if self.commands.send(Command::Write { op, reply }).is_err() {
-            return Written::NotSent {
-                reason: "the session has stopped".into(),
-            };
+            return Written::not_sent("the session has stopped");
         }
         // The session answers every write it takes, uncertain when it ends
         // first, so a dropped reply is a session that ended mid-write.
-        answer.blocking_recv().unwrap_or(Written::Uncertain)
+        answer
+            .blocking_recv()
+            .unwrap_or_else(|_| Written::uncertain())
     }
 }
 
@@ -187,7 +141,7 @@ async fn run(
             },
             Err(error) => error.to_string(),
         };
-        if updates.send(Update::Disconnected { reason }).is_err() {
+        if updates.send(Update::disconnected(reason)).is_err() {
             return;
         }
 
@@ -202,9 +156,7 @@ async fn run(
                 command = commands.recv() => match command {
                     None => return,
                     Some(Command::Write { reply, .. }) => {
-                        let _ = reply.send(Written::NotSent {
-                            reason: "the feeder is not connected".into(),
-                        });
+                        let _ = reply.send(Written::not_sent("the feeder is not connected"));
                     }
                     Some(Command::Refresh) => {}
                 },
@@ -231,10 +183,7 @@ async fn serve(
     updates: &std_mpsc::Sender<Update>,
 ) -> Ended {
     let send = |update: Update| updates.send(update).is_ok();
-    if !send(Update::Connected {
-        build: connection.build().to_owned(),
-        role: connection.role(),
-    }) {
+    if !send(Update::connected(connection.build(), connection.role())) {
         return Ended::Dropped;
     }
 
@@ -255,7 +204,7 @@ async fn serve(
     let from = match *cursor {
         Some(held) if held.epoch == epoch => Some(held),
         held => {
-            if held.is_some() && !send(Update::Gap { gap: None }) {
+            if held.is_some() && !send(Update::gap(None)) {
                 return Ended::Dropped;
             }
             status.last_event.map(|seq| Cursor { epoch, seq })
@@ -265,9 +214,7 @@ async fn serve(
         return Ended::Lost(error.to_string());
     }
     *cursor = connection.cursor().or(from);
-    if !send(Update::Status {
-        status: Box::new(status),
-    }) {
+    if !send(Update::status(&status)) {
         return Ended::Dropped;
     }
 
@@ -288,7 +235,7 @@ async fn serve(
                     Err(reason) => {
                         // Refused before any byte went out.
                         if let Pending::Write(reply) = waiting {
-                            let _ = reply.send(Written::NotSent { reason });
+                            let _ = reply.send(Written::not_sent(reason));
                         }
                         continue;
                     }
@@ -303,7 +250,7 @@ async fn serve(
                         }
                         Some(Pending::Status) => {
                             if let Some(Answer::Status(status)) = answer
-                                && !send(Update::Status { status: Box::new(status) })
+                                && !send(Update::status(&status))
                             {
                                 break Ended::Dropped;
                             }
@@ -314,8 +261,8 @@ async fn serve(
                 Ok(Received::Pushed(pushed)) => {
                     *cursor = connection.cursor();
                     let update = match pushed {
-                        Pushed::Event(event) => Update::Event { event },
-                        Pushed::Gap(gap) => Update::Gap { gap: Some(gap) },
+                        Pushed::Event(event) => Update::event(&event),
+                        Pushed::Gap(gap) => Update::gap(Some(&gap)),
                         Pushed::Sample(_) | Pushed::Log(_) => continue,
                     };
                     if !send(update) {
@@ -335,7 +282,7 @@ async fn serve(
     // Each write still outstanding went out and was never answered.
     for (_, waiting) in pending {
         if let Pending::Write(reply) = waiting {
-            let _ = reply.send(Written::Uncertain);
+            let _ = reply.send(Written::uncertain());
         }
     }
     ended
@@ -357,12 +304,12 @@ fn read_status(connection: &mut Connection, pending: &mut HashMap<RequestId, Pen
 
 fn written(answer: Option<&Answer>) -> Written {
     match answer {
-        None => Written::Uncertain,
-        Some(Answer::Feeding { feed }) => Written::Feeding { feed: *feed },
-        Some(Answer::Done { .. }) => Written::Done,
-        Some(Answer::Refused(refusal)) => Written::Refused { refusal: *refusal },
+        None => Written::uncertain(),
+        Some(Answer::Feeding { feed }) => Written::feeding(*feed),
+        Some(Answer::Done { .. }) => Written::done(),
+        Some(Answer::Refused(refusal)) => Written::refused(refusal),
         // A write answered with anything else ran or not as the feeder
         // decided; this client cannot tell which.
-        Some(_) => Written::Uncertain,
+        Some(_) => Written::uncertain(),
     }
 }

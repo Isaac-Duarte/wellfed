@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from homeassistant.config_entries import SOURCE_USER, ConfigEntry
 from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr
 import pytest
@@ -73,10 +74,10 @@ async def test_the_button_feeds_once_to_its_fed_event(
     hass: HomeAssistant, simulator: Simulator
 ) -> None:
     entry = await _pair(hass, simulator)
-    fed = []
+    fed: list[Mapping[str, Any]] = []
     hass.bus.async_listen(
         EVENT_FEEDER,
-        lambda event: fed.append(event.data) if event.data["body"]["kind"] == "fed" else None,
+        lambda event: fed.append(event.data) if event.data["kind"] == "fed" else None,
     )
 
     await hass.services.async_call(
@@ -86,13 +87,11 @@ async def test_the_button_feeds_once_to_its_fed_event(
         blocking=True,
     )
     await _until(hass, lambda: len(fed) == 1)
-    assert fed[0]["body"]["completed"] == 1
+    assert fed[0]["completed"] == 1
     await _until(
         hass,
-        lambda: hass.states.get("sensor.feeder_" + _short(entry) + "_last_fed").attributes.get(
-            "feed"
-        )
-        == fed[0]["body"]["feed"],
+        lambda: _state(hass, "sensor.feeder_" + _short(entry) + "_last_fed").attributes.get("feed")
+        == fed[0]["feed"],
     )
 
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -102,8 +101,7 @@ async def test_the_feed_action_answers_the_feeders_number(
     hass: HomeAssistant, simulator: Simulator
 ) -> None:
     entry = await _pair(hass, simulator)
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.unique_id)})
-    assert device is not None
+    device = _device(hass, entry)
 
     response = await hass.services.async_call(
         DOMAIN,
@@ -112,6 +110,7 @@ async def test_the_feed_action_answers_the_feeders_number(
         blocking=True,
         return_response=True,
     )
+    assert response is not None
     assert isinstance(response["feed"], int)
 
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -124,9 +123,9 @@ async def test_the_lock_switch_follows_the_feeder(
     lock = "switch.feeder_" + _short(entry) + "_child_lock"
 
     await hass.services.async_call("switch", "turn_on", {ATTR_ENTITY_ID: lock}, blocking=True)
-    await _until(hass, lambda: hass.states.get(lock).state == STATE_ON)
+    await _until(hass, lambda: _state(hass, lock).state == STATE_ON)
     await hass.services.async_call("switch", "turn_off", {ATTR_ENTITY_ID: lock}, blocking=True)
-    await _until(hass, lambda: hass.states.get(lock).state == STATE_OFF)
+    await _until(hass, lambda: _state(hass, lock).state == STATE_OFF)
 
     assert await hass.config_entries.async_unload(entry.entry_id)
 
@@ -136,7 +135,7 @@ async def test_the_feed_action_refuses_portions_out_of_range(
     hass: HomeAssistant, simulator: Simulator, portions: int
 ) -> None:
     entry = await _pair(hass, simulator)
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.unique_id)})
+    device = _device(hass, entry)
 
     with pytest.raises(Exception, match="value must be"):
         await hass.services.async_call(
@@ -147,4 +146,18 @@ async def test_the_feed_action_refuses_portions_out_of_range(
 
 
 def _short(entry: ConfigEntry) -> str:
+    assert entry.unique_id is not None
     return entry.unique_id[:8]
+
+
+def _state(hass: HomeAssistant, entity_id: str) -> State:
+    state = hass.states.get(entity_id)
+    assert state is not None, entity_id
+    return state
+
+
+def _device(hass: HomeAssistant, entry: ConfigEntry) -> dr.DeviceEntry:
+    assert entry.unique_id is not None
+    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.unique_id)})
+    assert device is not None
+    return device

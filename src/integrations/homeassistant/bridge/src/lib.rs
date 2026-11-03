@@ -18,6 +18,7 @@
 
 #![cfg_attr(not(feature = "python"), forbid(unsafe_code))]
 
+pub mod api;
 pub mod feeder;
 pub mod key;
 #[cfg(feature = "python")]

@@ -23,7 +23,7 @@ BIN_DIR = Path(os.environ.get("WELLFED_BIN_DIR", REPOSITORY / "target" / "debug"
 
 
 @pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations):
+def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Load `custom_components/wellfed`."""
     return
 
@@ -38,7 +38,8 @@ def _binary(name: str) -> Path:
 def _free_port() -> int:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
+        port: int = probe.getsockname()[1]
+        return port
 
 
 @dataclass

@@ -29,33 +29,37 @@ from .session import FeederSession
 
 
 def _battery(session: FeederSession) -> int | None:
-    supply = (session.status or {}).get("supply") or {}
-    battery = supply.get("battery") or {}
-    return battery.get("percent") if battery.get("state") == "reading" else None
+    return session.status.battery_percent if session.status is not None else None
 
 
 def _desiccant(session: FeederSession) -> int | None:
-    desiccant = (session.status or {}).get("desiccant") or {}
-    return desiccant.get("days") if desiccant.get("state") == "remaining" else None
+    return session.status.desiccant_days if session.status is not None else None
 
 
 def _last_fed(session: FeederSession) -> datetime | None:
-    event = session.last_fed
-    if event is None or event.get("at") is None:
+    fed = session.last_fed
+    if fed is None or fed.at_ms is None:
         return None
-    return dt_util.parse_datetime(event["at"])
+    return dt_util.utc_from_timestamp(fed.at_ms / 1000)
 
 
 def _last_fed_attributes(session: FeederSession) -> dict[str, Any]:
-    event = session.last_fed
-    if event is None:
+    fed = session.last_fed
+    if fed is None:
         return {}
-    body = event["body"]
-    return {
-        key: body[key]
-        for key in ("feed", "requested", "completed", "outcome", "reason", "by")
-        if key in body
+    attributes: dict[str, Any] = {
+        "feed": fed.feed,
+        "requested": fed.requested,
+        "completed": fed.completed,
+        "outcome": fed.outcome.key,
+        "reason": fed.reason.key,
+        "by": fed.by.key,
     }
+    if fed.client is not None:
+        attributes["client"] = fed.client
+    if fed.plan is not None:
+        attributes["plan"] = fed.plan
+    return attributes
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -92,7 +96,7 @@ SENSORS = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value=lambda session: (session.status or {}).get("rssi"),
+        value=lambda session: session.status.rssi if session.status is not None else None,
     ),
 )
 

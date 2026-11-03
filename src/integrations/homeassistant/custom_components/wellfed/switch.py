@@ -29,7 +29,7 @@ class LockSwitch(WellfedEntity, SwitchEntity):
     @property
     def is_on(self) -> bool | None:
         status = self.session.status
-        return None if status is None else status.get("locked")
+        return None if status is None else status.locked
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self.session.set_lock(True)

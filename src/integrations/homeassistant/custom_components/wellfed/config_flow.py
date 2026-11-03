@@ -19,7 +19,7 @@ SCHEMA = vol.Schema(
 )
 
 
-def _join(invite: str, address: str | None) -> tuple[bytes, bytes, str]:
+def _join(invite: str, address: str | None) -> tuple[bytes, bytes, bridge.Role]:
     """A new key joined with `invite`: its secret, the feeder, the role."""
     identity = bridge.invite_feeder(invite)
     secret = bridge.generate_secret()
@@ -60,7 +60,7 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
                             CONF_IDENTITY: identity.hex(),
                             CONF_ADDRESS: address,
                         },
-                        description_placeholders={"role": role},
+                        description_placeholders={"role": role.key},
                     )
 
         return self.async_show_form(step_id="user", data_schema=SCHEMA, errors=errors)

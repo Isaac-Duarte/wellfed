@@ -7,7 +7,7 @@ help:
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
 	@echo "check-web: the site and docs site: lint, format, licenses, types, unit tests, build, then Playwright (needs Node and pnpm)"
 	@echo "check-app: the Android app's bindings and tokens unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, and a debug APK (needs the pinned Flutter)"
-	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, Ruff, and its tests against the simulator (needs uv)"
+	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator (needs uv)"
 	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
 	@echo "sqlx-prepare: regenerate the server store's query metadata (.sqlx/) after changing a query or migration"
@@ -192,8 +192,14 @@ check-server-release:
 # bridge's own tests run in `check-rust`, without the PyO3 module; this lints
 # the module, builds the wheel into a venv of pinned test dependencies, and
 # runs Home Assistant's tests against a simulator and the CLI they start.
+# The bridge's stub is generated from the built module and committed, so a
+# Rust change that alters what Python sees fails here until it is
+# regenerated; mypy checks the integration against it.
 HA = src/integrations/homeassistant
 HA_VENV = target/homeassistant-venv
+HA_STUBS = $(HA)/bridge/stubs
+# This host's wheel alone, so the install never picks up a cross-built one.
+HA_WHEEL = target/homeassistant-wheels/check
 check-homeassistant:
 	cargo clippy --locked -p wellfed-homeassistant --features python --all-targets -- -D warnings
 	cargo clippy --locked -p wellfed-homeassistant --features python --lib -- -D warnings $(PRODUCTION_LINTS)
@@ -201,7 +207,12 @@ check-homeassistant:
 	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install -r $(HA)/tests/requirements.txt
 	$(HA_VENV)/bin/ruff check $(HA)
 	$(HA_VENV)/bin/ruff format --check $(HA)
+	$(HA_VENV)/bin/maturin generate-stubs --locked -q -i $(HA_VENV)/bin/python -m $(HA)/bridge/Cargo.toml --out $(HA_STUBS)
+	@test -z "$$(git status --porcelain -- $(HA_STUBS))" || \
+		{ git status --short -- $(HA_STUBS); echo "the bridge's stub is stale: commit the regenerated one"; exit 1; }
 	cargo build --locked -p wellfed -p wellfed-feeder-sim
-	$(HA_VENV)/bin/maturin build --locked --release -m $(HA)/bridge/Cargo.toml -o target/homeassistant-wheels
-	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install --reinstall target/homeassistant-wheels/wellfed_homeassistant-0.1.0-*.whl
+	rm -rf $(HA_WHEEL)
+	$(HA_VENV)/bin/maturin build --locked --release --generate-stubs -i $(HA_VENV)/bin/python -m $(HA)/bridge/Cargo.toml -o $(HA_WHEEL)
+	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install --reinstall $(HA_WHEEL)/*.whl
+	cd $(HA) && $(CURDIR)/$(HA_VENV)/bin/mypy
 	cd $(HA) && WELLFED_BIN_DIR=$(CURDIR)/target/debug $(CURDIR)/$(HA_VENV)/bin/python -m pytest -q -p no:cacheprovider

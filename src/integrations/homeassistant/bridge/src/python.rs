@@ -1,33 +1,38 @@
 //! The `wellfed_homeassistant` Python module. Every value the feeder
-//! defines crosses as the device API model's own JSON, so Python reads
-//! `wellfed-model`'s spellings rather than a copy of them. Each blocking
-//! call releases the interpreter while it waits.
+//! defines crosses as one of [`crate::api`]'s typed views, so Python reads
+//! classes the stub describes rather than a copy of the model's spellings.
+//! Each blocking call releases the interpreter while it waits.
 
 use std::time::Duration;
 
-use pyo3::create_exception;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 
 use crate::Error;
+use crate::api::{Role, Update, Written};
 use crate::feeder::{self, Target};
 use crate::key::{self, ClientKey, bytes32};
 
-create_exception!(
-    wellfed_homeassistant,
-    WellfedError,
-    PyException,
-    "A call into the Wellfed bridge failed."
-);
+/// A call into the Wellfed bridge failed.
+///
+/// A class rather than `create_exception!`, so the stub describes it.
+#[pyclass(extends = PyException, subclass, module = "wellfed_homeassistant")]
+struct WellfedError;
 
-impl From<Error> for PyErr {
-    fn from(error: Error) -> Self {
-        WellfedError::new_err(error.to_string())
+#[pymethods]
+impl WellfedError {
+    #[new]
+    #[pyo3(signature = (*_args))]
+    fn new(_args: &Bound<'_, PyTuple>) -> Self {
+        Self
     }
 }
 
-fn json(value: &impl serde::Serialize) -> PyResult<String> {
-    serde_json::to_string(value).map_err(|error| WellfedError::new_err(error.to_string()))
+impl From<Error> for PyErr {
+    fn from(error: Error) -> Self {
+        PyErr::new::<WellfedError, _>(error.to_string())
+    }
 }
 
 /// A new client key's secret, for the config entry.
@@ -58,7 +63,7 @@ fn join(
     invite: &str,
     label: &str,
     address: Option<&str>,
-) -> PyResult<String> {
+) -> PyResult<Role> {
     let key = ClientKey::restore(secret)?;
     let role = py.detach(|| {
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -67,7 +72,7 @@ fn join(
             .map_err(Error::Thread)?;
         runtime.block_on(key::join(&key, invite, label, address))
     })?;
-    Ok(role.code().to_owned())
+    Ok(role.into())
 }
 
 /// One feeder's session, on a thread of its own until this is dropped.
@@ -87,22 +92,20 @@ impl Feeder {
         )?))
     }
 
-    /// The next update as JSON within `timeout` seconds, or `None`.
-    fn next_update(&self, py: Python<'_>, timeout: f64) -> PyResult<Option<String>> {
+    /// The next update within `timeout` seconds, or `None`.
+    fn next_update(&self, py: Python<'_>, timeout: f64) -> Option<Update> {
         let wait = Duration::try_from_secs_f64(timeout.max(0.0)).unwrap_or(Duration::ZERO);
         py.detach(|| self.0.next_update(wait))
-            .map(|update| json(&update))
-            .transpose()
     }
 
-    /// Start a feed; how it ended, as JSON. Never retry an `uncertain` one.
-    fn feed(&self, py: Python<'_>, portions: u8) -> PyResult<String> {
-        json(&py.detach(|| self.0.feed(portions)))
+    /// Start a feed; how it ended. Never retry an uncertain one.
+    fn feed(&self, py: Python<'_>, portions: u8) -> Written {
+        py.detach(|| self.0.feed(portions))
     }
 
-    /// Lock or unlock the panel; how it ended, as JSON.
-    fn set_lock(&self, py: Python<'_>, locked: bool) -> PyResult<String> {
-        json(&py.detach(|| self.0.set_lock(locked)))
+    /// Lock or unlock the panel; how it ended.
+    fn set_lock(&self, py: Python<'_>, locked: bool) -> Written {
+        py.detach(|| self.0.set_lock(locked))
     }
 
     /// Read the status now.
@@ -115,4 +118,9 @@ impl Feeder {
 mod wellfed_homeassistant {
     #[pymodule_export]
     use super::{Feeder, WellfedError, generate_secret, invite_feeder, join, public_key};
+    #[pymodule_export]
+    use crate::api::{
+        By, Event, EventKind, Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel, Readiness,
+        RefusalKind, Role, Status, Update, UpdateKind, WriteResult, Written,
+    };
 }
