@@ -140,7 +140,9 @@ class _Recording extends StatelessWidget {
               _Round(
                 tooltip: 'Stop and send',
                 color: c.fault,
-                onTap: onStop,
+                // Stop sits where Record was: a quick second tap must not send
+                // a near-empty clip over the one stored.
+                onTap: seconds >= 1 ? onStop : null,
                 child: StrokeIcon(Glyph.stop, size: 30, color: c.background, weight: 2.4),
               ),
             ],
@@ -179,6 +181,7 @@ class _Round extends StatelessWidget {
     message: tooltip,
     child: Semantics(
       button: true,
+      enabled: onTap != null,
       child: SizedBox.square(
         dimension: _button,
         child: Material(

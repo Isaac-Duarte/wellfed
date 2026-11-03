@@ -108,6 +108,10 @@ void main() {
 
       await tapIn(tester, find.byTooltip('Record on this phone'));
       expect(ports.recorder.starts, 1);
+      expect(find.text('0 s'), findsOneWidget);
+      await tester.tap(find.byTooltip('Stop and send'));
+      await tester.pump();
+      expect(ports.recorder.stops, 0, reason: 'a second tap at once would send an empty clip');
       await tester.pump(const Duration(seconds: 2));
       expect(find.text('2 s'), findsOneWidget);
 
