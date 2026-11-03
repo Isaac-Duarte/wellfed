@@ -112,9 +112,13 @@ enum Asked {
     Settings,
     Plans,
     Time,
-    Feed { portions: u8 },
+    Feed {
+        portions: u8,
+    },
     Cancel,
     Clock,
+    /// This phone's zone, stored on a feeder just paired.
+    Zone,
     Ask(oneshot::Sender<Option<Answer>>),
 }
 
@@ -174,6 +178,12 @@ struct Serving<'a, U> {
     running: Option<(u32, tokio::time::Instant)>,
     /// When Dart last asked for something, which may be waiting behind a feed.
     asked_at: Option<tokio::time::Instant>,
+    /// This session gave the feeder its offset, once: a feeder that refuses
+    /// the sync is not asked again on every read of the time.
+    offset_given: bool,
+    /// A feeder just paired with no zone gets this phone's, once. Only then:
+    /// later, no zone is the owner's choice (the clock screen clears it).
+    zone_due: bool,
 }
 
 async fn serve(
@@ -213,6 +223,8 @@ async fn serve(
         time_asked: Instant::now(),
         running: None,
         asked_at: None,
+        offset_given: false,
+        zone_due: sync_clock,
     };
     if sync_clock || status.clock.is_none() {
         let sync = wellfed_client::time::sync(Timestamp::now(), &TimeZone::system());
@@ -377,7 +389,18 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                 Ok(self.card())
             }
             (Asked::Time, Some(Answer::Time(time))) => {
+                let give = !self.offset_given && needs_offset(&time);
+                let zone = self.zone_due.then(|| zone_for(&time)).flatten();
+                self.zone_due = false;
                 self.facts.time = Some(TimeRead::just_read(time));
+                if let Some(op) = zone {
+                    self.request(&op, Asked::Zone)?;
+                }
+                if give {
+                    self.offset_given = true;
+                    let sync = wellfed_client::time::sync(Timestamp::now(), &TimeZone::system());
+                    self.request(&Op::TimeSync(sync), Asked::Clock)?;
+                }
                 Ok(self.card())
             }
             (Asked::Ask(reply), answer) => {
@@ -405,6 +428,12 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                 Ok((self.update)(SessionUpdate::ClockSynced))
             }
             (Asked::Clock, _) => Ok((self.update)(SessionUpdate::ClockNotSynced)),
+            (Asked::Zone, Some(Answer::Done { .. })) => {
+                self.request(&Op::GetTime, Asked::Time)?;
+                Ok(true)
+            }
+            // Refused or unanswered: the clock screen still offers it.
+            (Asked::Zone, _) => Ok(true),
             (what, answer) => {
                 let message = feed_answered(what, answer);
                 if let Some(SessionUpdate::FeedStarted {
@@ -520,12 +549,101 @@ const fn moves_plans(body: &EventBody) -> bool {
     )
 }
 
+/// Whether the feeder runs a valid clock with no local offset. Plans hold
+/// then, and nothing says so: an NTP fix carries no offset, and one a
+/// client's sync gave lives in RAM. So a feeder with no zone set that lost
+/// power keeps the right time but holds every meal, until a client syncs.
+/// The session gives it this phone's.
+fn needs_offset(time: &wellfed_model::TimeView) -> bool {
+    time.clock_ms.is_some() && time.offset_s.is_none() && time.zone.is_none()
+}
+
+/// This phone's zone for a feeder that keeps none and may store one. A zone
+/// is kept on flash, so the offset survives a power cut, and its rule
+/// follows daylight saving.
+fn zone_for(time: &wellfed_model::TimeView) -> Option<Op> {
+    if time.zone.is_some() || !time.writable {
+        return None;
+    }
+    let changes =
+        crate::requests::time_changes(Some(crate::api::feeder::ZoneChange::Phone), None).ok()?;
+    Some(Op::PutTime {
+        base: time.generation,
+        changes,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use jiff::Timestamp;
     use wellfed_model::{FeedOutcome, FeedReason, FoodLevel, Generation, MissedReason, Source};
 
     use super::*;
+
+    /// A feeder's time view: a valid clock set by NTP, no zone, no offset.
+    fn after_a_power_cut() -> wellfed_model::TimeView {
+        wellfed_model::TimeView {
+            generation: Generation(1),
+            writable: true,
+            zone: None,
+            ntp: wellfed_model::NtpServer::Gateway { port: 123 },
+            clock_ms: Some(1_793_000_000_000),
+            error_ms: Some(30),
+            offset_s: None,
+            rate_ppb: 0,
+            rate_bound_ppb: 5_000_000,
+            learned: false,
+            syncs: 1,
+            last: Some(wellfed_model::TimeSource::Ntp),
+            last_age_s: Some(60),
+            ntp_last: Some(wellfed_model::NtpResult::Used),
+        }
+    }
+
+    /// The state that held a meal on the bench feeder on November 2: the
+    /// clock right, the offset gone with the power, no zone to bring it back.
+    #[test]
+    fn a_valid_clock_with_no_offset_and_no_zone_needs_this_phone_s() {
+        assert!(needs_offset(&after_a_power_cut()));
+    }
+
+    #[test]
+    fn an_offset_a_zone_or_no_clock_needs_nothing() {
+        let with_offset = wellfed_model::TimeView {
+            offset_s: Some(-7 * 3600),
+            ..after_a_power_cut()
+        };
+        let with_zone = wellfed_model::TimeView {
+            zone: Some("MST7".into()),
+            ..after_a_power_cut()
+        };
+        // An invalid clock gets the session's opening sync already.
+        let no_clock = wellfed_model::TimeView {
+            clock_ms: None,
+            ..after_a_power_cut()
+        };
+
+        assert!(!needs_offset(&with_offset));
+        assert!(!needs_offset(&with_zone));
+        assert!(!needs_offset(&no_clock));
+    }
+
+    /// A zone the owner set is never replaced, and a store that cannot be
+    /// written is not asked.
+    #[test]
+    fn a_zone_set_or_a_read_only_store_gets_no_zone() {
+        let set = wellfed_model::TimeView {
+            zone: Some("MST7".into()),
+            ..after_a_power_cut()
+        };
+        let read_only = wellfed_model::TimeView {
+            writable: false,
+            ..after_a_power_cut()
+        };
+
+        assert!(zone_for(&set).is_none());
+        assert!(zone_for(&read_only).is_none());
+    }
 
     /// Past this a feeder that stayed on ended the feed itself: its largest
     /// request, with every reversal and homing, still fits.

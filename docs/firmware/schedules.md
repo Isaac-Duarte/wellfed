@@ -32,7 +32,7 @@ A plan you add, enable again, or whose time or days you change, runs only from i
 
 ## When a plan runs
 
-The feeder needs a valid clock with a zone offset to run plans. Until a time source sets the clock after a cold boot, plans hold and manual feeds still work ([clock](clock.md)).
+The feeder needs a valid clock with a zone offset to run plans. Until a time source sets the clock after a cold boot, plans hold and manual feeds still work ([clock](clock.md)). An NTP fix carries no offset, and one a client's sync gave lives in RAM, so a feeder with no zone set holds every plan after a power cut even once NTP has the time right. The app stores the phone's zone at pairing, gives a feeder with no offset its own at each connection, and says the meals hold until then.
 
 Each occurrence goes through the missed-meal rule ([clock](clock.md#missed-meal-rule)):
 

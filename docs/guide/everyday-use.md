@@ -183,6 +183,8 @@ Your feeder needs the time to run meals, and it has no battery-backed clock. "No
 
 After a power cut, your plans come back but the clock doesn't. If your router answers, the clock is set soon after the feeder rejoins Wi-Fi. Otherwise, open the app on the same Wi-Fi: it gives the feeder your phone's time when it connects to a feeder with no clock, and Today offers **Set the time from this phone**. On the CLI, run `wellfed time`.
 
+The feeder also needs your time zone, since meals are set in local time. The app stores your phone's zone when you set a feeder up; you can change it on **Clock and portion size**. Without one, the feeder uses the offset a phone last gave it, which a power cut erases: the clock comes back right from the router or a time server, but every meal holds until a phone gives the offset again. The app does that as soon as it connects, and the **Today** tab says **Meals are on hold** until then.
+
 When the time returns, a meal less than 15 minutes late runs, and an older one is skipped. On a day with a long outage, feed your pet another way.
 
 Even with your router answering, the clock reads invalid for up to a minute about every 6.6 hours, until the next poll sets it again. A meal due in that minute runs once it's back.

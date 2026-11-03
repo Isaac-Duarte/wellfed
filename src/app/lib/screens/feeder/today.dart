@@ -49,6 +49,10 @@ class TodayTab extends StatelessWidget {
                     NoTimeNotice(feeder: feeder),
                     const SizedBox(height: Space.s3),
                   ],
+                  if (live?.time case final time? when live != null && holdsForNoZone(live)) ...[
+                    NoZoneNotice(feeder: feeder, time: time),
+                    const SizedBox(height: Space.s3),
+                  ],
                   if (live?.time case final time? when routerGivesNoTime(time)) ...[
                     RouterTimeNotice(feeder: feeder, time: time),
                     const SizedBox(height: Space.s3),

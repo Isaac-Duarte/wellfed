@@ -46,6 +46,55 @@ void main() {
     expect(find.text('Changed today'), findsNothing);
   });
 
+  group('a clock with no zone and no offset', () {
+    TimeInfo time({bool writable = true, String? zone, int? offsetS}) => TimeInfo(
+      generation: 6,
+      writable: writable,
+      zone: zone,
+      ntp: const NtpView.address(ip: '162.159.200.1', port: 123),
+      syncs: 1,
+      last: TimeSource.ntp,
+      offsetS: offsetS,
+    );
+
+    testWidgets("says meals hold, and an owner's tap stores this phone's zone", (tester) async {
+      final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
+      await feederShowShell(tester, fleet);
+      session.status(fakeCard(time: time()));
+      await settle(tester);
+      session.requests.clear();
+
+      await tapIn(tester, find.text("Use this phone's zone"));
+      final put = session.requests.first as FeederRequest_PutTime;
+      expect(put.base, 6);
+      expect(put.zone, const ZoneChange.phone());
+      expect(session.requests.last, const FeederRequest.getTime());
+    });
+
+    testWidgets("a member's tap gives this phone's time instead", (tester) async {
+      final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
+      await feederShowShell(tester, fleet);
+      session.status(fakeCard(time: time(writable: false)));
+      await settle(tester);
+      session.requests.clear();
+
+      await tapIn(tester, find.text('Set the time from this phone'));
+      expect(session.requests.first, const FeederRequest.syncClock());
+    });
+
+    testWidgets('says nothing once a zone or an offset is known', (tester) async {
+      final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
+      await feederShowShell(tester, fleet);
+      session.status(fakeCard(time: time(zone: 'MST7')));
+      await settle(tester);
+      expect(find.text("Use this phone's zone"), findsNothing);
+
+      session.status(fakeCard(time: time(offsetS: -25200)));
+      await settle(tester);
+      expect(find.text("Use this phone's zone"), findsNothing);
+    });
+  });
+
   group('a router that gives no time', () {
     TimeInfo time(NtpResult? last, {TimeSource? setBy}) => TimeInfo(
       generation: 4,

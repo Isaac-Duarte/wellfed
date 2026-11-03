@@ -230,7 +230,10 @@ async fn upload_call(commands: &mpsc::UnboundedSender<Command>, wav: &[u8]) -> F
     }
 }
 
-fn time_changes(zone: Option<ZoneChange>, ntp: Option<String>) -> Result<TimeChanges, NotAsked> {
+pub(crate) fn time_changes(
+    zone: Option<ZoneChange>,
+    ntp: Option<String>,
+) -> Result<TimeChanges, NotAsked> {
     let now = Timestamp::now();
     let named = |name: &str| {
         let host = TimeZone::get(name).ok();
