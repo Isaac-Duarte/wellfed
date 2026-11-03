@@ -96,6 +96,7 @@ fn readiness_shows_the_store_each_feeders_link_and_the_jobs() {
                 invite: feeder::invite(&sim, ClientRole::Server).await,
                 name: "kitchen".into(),
                 address: Some(sim.address.to_string()),
+                phone_key: None,
             })
             .await
             .unwrap()

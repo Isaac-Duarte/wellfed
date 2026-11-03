@@ -104,6 +104,7 @@ async fn a_viewer_reads_but_every_write_is_refused() {
         invite: "wellfed-invite:1:x".into(),
         name: "kitchen".into(),
         address: None,
+        phone_key: None,
     };
     refused_for("adopt", viewer.adopt(&adopt).await, forbidden, code);
     refused_for("users", viewer.users().await, forbidden, code);

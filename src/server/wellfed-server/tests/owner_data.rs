@@ -168,6 +168,7 @@ fn an_owner_keeps_pets_foods_and_refills_over_http() {
                 invite: feeder::invite(&sim, ClientRole::Server).await,
                 name: "kitchen".into(),
                 address: Some(sim.address.to_string()),
+                phone_key: None,
             })
             .await
             .unwrap()

@@ -51,6 +51,7 @@ async fn adopt(http: &Client, sim: &Running) -> FeederId {
             invite: feeder::invite(sim, ClientRole::Server).await,
             name: "kitchen".into(),
             address: Some(sim.address.to_string()),
+            phone_key: None,
         })
         .await
         .unwrap()
@@ -251,6 +252,7 @@ fn a_feed_whose_answer_is_lost_is_unknown_never_resent_and_settled_from_its_fed_
                 invite: feeder::invite(&sim, ClientRole::Server).await,
                 name: "kitchen".into(),
                 address: Some(relay.address.to_string()),
+                phone_key: None,
             })
             .await
             .unwrap()

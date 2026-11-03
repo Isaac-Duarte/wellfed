@@ -43,6 +43,7 @@ fn a_feed_through_the_server_counts_against_the_refill_and_the_pet() {
                 invite: feeder::invite(&sim, ClientRole::Server).await,
                 name: "kitchen".into(),
                 address: Some(sim.address.to_string()),
+                phone_key: None,
             })
             .await
             .unwrap()

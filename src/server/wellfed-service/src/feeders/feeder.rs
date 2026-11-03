@@ -8,7 +8,7 @@ use wellfed_mirror::Invite;
 use wellfed_store::{FeederRow, NewFeeder};
 
 use crate::feeders::keys;
-use crate::{Error, FeederError, InternalError, Invalid, Resource, Result, Service};
+use crate::{Caller, Error, FeederError, InternalError, Invalid, Resource, Result, Service};
 
 const PAGE: u32 = 100;
 const PAGE_MAX: u32 = 500;
@@ -20,13 +20,23 @@ impl Service {
     /// own, store the key sealed, and start mirroring the feeder. A feeder
     /// that was removed comes back under its id, its history continuing.
     ///
+    /// A phone that adopts names the key it already holds on the feeder,
+    /// which is recorded as the caller's phone key once the feeder lists
+    /// it. Whether the caller may hold one is checked before anything is
+    /// enrolled; a key the feeder does not list, or whose listing cannot be
+    /// read, is refused after the adoption, which stands.
+    ///
     /// Adoptions run one at a time: two racing for one feeder would both
     /// enroll a key, and the loser's would hold a client slot on the feeder
     /// with nothing on the server to use it.
-    pub async fn adopt(&self, request: AdoptFeeder) -> Result<Feeder> {
+    pub async fn adopt(&self, caller: &Caller, request: AdoptFeeder) -> Result<Feeder> {
         let name = feeder_name(&request.name)?;
         let invite = Invite::parse(&request.invite).map_err(FeederError::from)?;
-        let _one_at_a_time = self.feeders.adopting.lock().await;
+        let phone = match request.phone_key {
+            Some(key) => Some((self.direct_key_holder(caller).await?.0, key.0)),
+            None => None,
+        };
+        let one_at_a_time = self.feeders.adopting.lock().await;
         let archived = match self.shared.store.feeder_by_identity(&invite.feeder).await? {
             Some(id) if self.row(id).await?.archived.is_some() => Some(id),
             Some(_) => return Err(FeederError::AlreadyAdopted.into()),
@@ -82,6 +92,12 @@ impl Service {
 
         let row = self.row(id).await?;
         self.spawn(&row).await?;
+        // The feeder is stored: the next adoption may start while this one
+        // waits for its session.
+        drop(one_at_a_time);
+        if let Some((token, key)) = phone {
+            self.claim_phone(caller, token, id, key).await?;
+        }
         Ok(self.view(row))
     }
 

@@ -81,6 +81,7 @@ fn a_token_reads_and_writes_without_an_origin_and_the_journal_names_it() {
                 invite: feeder::invite(&sim, ClientRole::Server).await,
                 name: "kitchen".into(),
                 address: Some(sim.address.to_string()),
+                phone_key: None,
             })
             .await
             .unwrap()

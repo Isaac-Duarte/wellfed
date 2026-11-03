@@ -38,6 +38,7 @@ async fn mirrored(server: &TestServer, sim: &feeder::Running, n: usize) -> (Clie
             invite: feeder::invite(sim, ClientRole::Server).await,
             name: "kitchen".into(),
             address: Some(sim.address.to_string()),
+            phone_key: None,
         })
         .await
         .unwrap()

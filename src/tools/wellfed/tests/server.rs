@@ -109,6 +109,7 @@ async fn adopt(http: &Client, sim: &Running, address: String) -> FeederId {
         invite: feeder::invite(sim, ClientRole::Server).await,
         name: "kitchen".into(),
         address: Some(address),
+        phone_key: None,
     };
     let id = http.adopt(&request).await.unwrap().id;
     until("the server connects to the feeder", || async {
@@ -271,6 +272,7 @@ fn clients_revoke_and_reboot_go_through_the_server() {
             invite: feeder::invite(&sim, ClientRole::Owner).await,
             name: "kitchen".into(),
             address: Some(sim.address.to_string()),
+            phone_key: None,
         };
         http.adopt(&request).await.unwrap();
         until("the server connects to the feeder", || async {
@@ -325,6 +327,7 @@ fn install_follows_a_release_to_activation() {
             invite: feeder::invite(&sim, ClientRole::Owner).await,
             name: "kitchen".into(),
             address: Some(sim.address.to_string()),
+            phone_key: None,
         };
         let kitchen = http.adopt(&request).await.unwrap().id;
         let file = release::signed(&release::project(), 7, BUILD, 16 * release::SECTOR);
@@ -394,6 +397,7 @@ fn stock_is_read_shown_exported_and_never_signed_unless_pinned() {
             invite: feeder::invite(&sim, ClientRole::Owner).await,
             name: "kitchen".into(),
             address: Some(sim.address.to_string()),
+            phone_key: None,
         };
         let kitchen = http.adopt(&request).await.unwrap().id;
         feeder::stock_gave_way(&sim, &banks);

@@ -223,11 +223,15 @@ fn a_removed_feeder_is_archived_its_key_revoked_and_adopted_again_under_its_id()
         );
 
         let again = service
-            .adopt(AdoptFeeder {
-                invite: feeder::invite(&sim, ClientRole::Owner).await,
-                name: "again".into(),
-                address: Some(sim.address.to_string()),
-            })
+            .adopt(
+                &owner(),
+                AdoptFeeder {
+                    invite: feeder::invite(&sim, ClientRole::Owner).await,
+                    name: "again".into(),
+                    address: Some(sim.address.to_string()),
+                    phone_key: None,
+                },
+            )
             .await
             .unwrap();
         assert_eq!(again.id, id);

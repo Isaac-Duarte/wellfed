@@ -35,7 +35,8 @@ pub struct FeederClient {
 pub enum ClientOwner {
     /// The server's own key.
     Server,
-    /// A phone the server invited for this account, through this token.
+    /// A phone the server invited for this account, through this token, or
+    /// one that named its key when it adopted the feeder.
     Phone {
         user: UserId,
         token: Option<TokenId>,

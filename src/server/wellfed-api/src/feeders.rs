@@ -10,7 +10,8 @@ use wellfed_model::{ClientRole, Hex, NextMeal, PLANS, Plan, Status};
 use crate::FeederId;
 
 /// Adopt a feeder by redeeming an invite its owner created for the server
-/// (`wellfed invite --role server`).
+/// (`wellfed invite --role server`), or one the owner's phone made with its
+/// own key.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct AdoptFeeder {
     /// The invite's text, `wellfed-invite:1:…`. It holds a secret, so it
@@ -23,6 +24,15 @@ pub struct AdoptFeeder {
     /// discovery is off.
     #[serde(default)]
     pub address: Option<String>,
+    /// The public key the caller's phone already holds on the feeder, when
+    /// the phone adopts it: once the feeder lists that key, the server
+    /// records it as this account's phone key, as if it had invited it, so
+    /// deleting, demoting or putting an expiry on the account revokes it.
+    /// Only a phone's token names one, for an account and token with no
+    /// expiry. Absent when nothing but the server joins (the CLI).
+    #[serde(default)]
+    #[schema(value_type = Option<String>)]
+    pub phone_key: Option<Hex<32>>,
 }
 
 impl fmt::Debug for AdoptFeeder {
@@ -30,6 +40,7 @@ impl fmt::Debug for AdoptFeeder {
         f.debug_struct("AdoptFeeder")
             .field("name", &self.name)
             .field("address", &self.address)
+            .field("phone_key", &self.phone_key)
             .finish_non_exhaustive()
     }
 }

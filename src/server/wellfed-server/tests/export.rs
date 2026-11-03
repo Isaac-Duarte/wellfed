@@ -99,6 +99,7 @@ async fn adopt(owner: &Client, sim: &Running) -> FeederId {
             invite: feeder::invite(sim, ClientRole::Server).await,
             name: "kitchen".into(),
             address: Some(sim.address.to_string()),
+            phone_key: None,
         })
         .await
         .unwrap()

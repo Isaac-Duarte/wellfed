@@ -122,7 +122,7 @@ The tables:
 | Group | Tables |
 | --- | --- |
 | Accounts | `household` (one row: name, units, time format, the IANA zone), `users` (with an optional expiry), `sessions` (with their last use), `tokens` |
-| Feeders | `feeders` (identity, sealed key, cursor), `feeder_state` (cached plans, settings and status, with generation), `phone_keys` (the phones' keys the server invited), `kept_clients` |
+| Feeders | `feeders` (identity, sealed key, cursor), `feeder_state` (cached plans, settings and status, with generation), `phone_keys` (the phones' keys the server invited, or an adopting phone named), `kept_clients` |
 | History | `events`, raw, keyed by feeder, epoch and `seq`, so the cursor sync is idempotent and a re-created ring's history stays apart; `gaps` |
 | Projections | `feeds` (one row per feed, its latest event), `lock_changes`, `boots`, `clock_syncs`, `blocked_changes`: written in the raw insert's transaction, and rebuilt from `events` when `projection_version` changes |
 | Samples | `samples` (feeder, metric, time, the raw value and its number), `sample_rollups` (count, min, max and sum per feeder, metric and UTC hour), `sample_marks` (the newest sample rolled up, and the number code's version) |

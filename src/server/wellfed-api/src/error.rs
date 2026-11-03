@@ -66,6 +66,14 @@ pub enum ErrorCode {
     DirectKeyRefused,
     /// The key is already one of the feeder's clients, or another phone's.
     ClientKeyTaken,
+    /// The feeder is adopted, but it does not list the phone key the
+    /// adoption named, so the key is not recorded as the caller's. The
+    /// adoption stands: the feeder is in `GET /feeders`.
+    PhoneKeyNotListed,
+    /// The feeder is adopted, but the server could not read its client
+    /// list to confirm the phone key the adoption named, so the key is not
+    /// recorded as the caller's. The adoption stands.
+    PhoneKeyUnconfirmed,
     /// The feeder dropped the invite unanswered: unknown, used or expired.
     InviteExpired,
     /// The server could not reach the feeder.

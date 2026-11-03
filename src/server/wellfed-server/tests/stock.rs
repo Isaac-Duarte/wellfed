@@ -53,6 +53,7 @@ impl Rig {
                 invite: feeder::invite(&sim, role).await,
                 name: "kitchen".into(),
                 address: Some(sim.address.to_string()),
+                phone_key: None,
             })
             .await
             .unwrap()

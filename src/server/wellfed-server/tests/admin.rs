@@ -25,6 +25,7 @@ async fn adopted(server: &TestServer, sim: &Running) -> (Client, FeederId) {
             invite: feeder::invite(sim, ClientRole::Owner).await,
             name: "kitchen".into(),
             address: Some(sim.address.to_string()),
+            phone_key: None,
         })
         .await
         .unwrap()
@@ -225,6 +226,7 @@ fn a_removed_feeder_is_archived_refused_writes_and_adopted_again() {
                 invite: feeder::invite(&sim, ClientRole::Owner).await,
                 name: "kitchen".into(),
                 address: Some(sim.address.to_string()),
+                phone_key: None,
             })
             .await
             .unwrap();

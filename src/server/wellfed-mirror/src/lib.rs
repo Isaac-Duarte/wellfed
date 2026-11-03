@@ -308,6 +308,17 @@ impl Mirror {
         self.handles().get(&id).map(task::Handle::link)
     }
 
+    /// Wait up to `within` for the feeder's session to be up: whether it
+    /// is. A feeder just started connects in the background, and asks
+    /// before then are refused offline.
+    pub async fn online(&self, id: FeederId, within: Duration) -> bool {
+        let Some(mut link) = self.handles().get(&id).map(|handle| handle.link.clone()) else {
+            return false;
+        };
+        let up = link.wait_for(|link| *link == Link::Online);
+        matches!(tokio::time::timeout(within, up).await, Ok(Ok(_)))
+    }
+
     /// The epoch the feeder's open session counts its history in, or
     /// `None` while it has none: what the newest event of its status
     /// counts in.

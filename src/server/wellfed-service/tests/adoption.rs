@@ -6,7 +6,12 @@ use wellfed_model::{Answer, Op};
 use wellfed_server_testkit::feeder::{self, invite, open_owner};
 use wellfed_server_testkit::fixed::NOW_MS;
 use wellfed_server_testkit::{TestService, ada, local};
-use wellfed_service::{CommandError, Error, FeederError, Invalid};
+use wellfed_service::{Caller, CommandError, Error, FeederError, Invalid};
+
+/// The owner, adopting with no phone key.
+fn owner() -> Caller {
+    ada().into()
+}
 
 #[test]
 fn an_adopted_feeder_connects_syncs_its_clock_and_mirrors_its_history() {
@@ -45,11 +50,16 @@ fn an_adopted_feeder_connects_syncs_its_clock_and_mirrors_its_history() {
                 .any(|body| matches!(body, EventBody::ClockSync { .. }))
         );
 
-        let again = server.service().adopt(AdoptFeeder {
-            invite: invite(&sim, ClientRole::Server).await,
-            name: "again".into(),
-            address: Some(sim.address.to_string()),
-        });
+        let owner = owner();
+        let again = server.service().adopt(
+            &owner,
+            AdoptFeeder {
+                invite: invite(&sim, ClientRole::Server).await,
+                name: "again".into(),
+                address: Some(sim.address.to_string()),
+                phone_key: None,
+            },
+        );
         assert!(matches!(
             again.await,
             Err(Error::Feeder(FeederError::AlreadyAdopted))
@@ -102,11 +112,15 @@ fn an_invite_for_a_member_is_adopted_with_that_role_and_bad_input_is_refused() {
         let service = server.service();
 
         let member = service
-            .adopt(AdoptFeeder {
-                invite: invite(&sim, ClientRole::Member).await,
-                name: "hall".into(),
-                address: Some(sim.address.to_string()),
-            })
+            .adopt(
+                &owner(),
+                AdoptFeeder {
+                    invite: invite(&sim, ClientRole::Member).await,
+                    name: "hall".into(),
+                    address: Some(sim.address.to_string()),
+                    phone_key: None,
+                },
+            )
             .await
             .unwrap();
         assert_eq!(member.role, ClientRole::Member);
@@ -116,23 +130,28 @@ fn an_invite_for_a_member_is_adopted_with_that_role_and_bad_input_is_refused() {
             invite: invite.into(),
             name: "x".into(),
             address: address.map(Into::into),
+            phone_key: None,
         };
         assert!(matches!(
-            service.adopt(request("nonsense", Some("127.0.0.1"))).await,
+            service
+                .adopt(&owner(), request("nonsense", Some("127.0.0.1")))
+                .await,
             Err(Error::Feeder(FeederError::Invite(_)))
         ));
         assert!(matches!(
-            service.adopt(request(&used, None)).await,
+            service.adopt(&owner(), request(&used, None)).await,
             Err(Error::Feeder(FeederError::AlreadyAdopted))
         ));
         let other = feeder::start().await;
         let fresh = invite(&other, ClientRole::Server).await;
         assert!(matches!(
-            service.adopt(request(&fresh, None)).await,
+            service.adopt(&owner(), request(&fresh, None)).await,
             Err(Error::Invalid(Invalid::AddressRequired))
         ));
         assert!(matches!(
-            service.adopt(request(&fresh, Some("not an address"))).await,
+            service
+                .adopt(&owner(), request(&fresh, Some("not an address")))
+                .await,
             Err(Error::Invalid(Invalid::Address))
         ));
         let query = EventQuery {

@@ -31,6 +31,13 @@ pub(crate) async fn feeders(
 }
 
 /// Adopt a feeder by redeeming an invite its owner made for the server.
+///
+/// A phone that adopts names the key it already holds on the feeder
+/// (`phone_key`), and the server records it as the caller's phone key once
+/// the feeder lists it, so revoking the account revokes it. Naming one
+/// needs a phone's token with no expiry on it or the account, checked
+/// before anything is enrolled. `phone_key_not_listed` and
+/// `phone_key_unconfirmed` come after the adoption, which stands.
 #[utoipa::path(
     post,
     path = "/feeders",
@@ -39,18 +46,18 @@ pub(crate) async fn feeders(
     responses(
         (status = 201, body = Feeder),
         (status = 400, body = Problem, description = "invalid: not an invite, or no address"),
-        (status = 403, body = Problem, description = "forbidden: owners only"),
-        (status = 409, body = Problem, description = "already_adopted, or feeder_refused"),
+        (status = 403, body = Problem, description = "forbidden: owners only; token_required or direct_key_refused for a phone key"),
+        (status = 409, body = Problem, description = "already_adopted, feeder_refused, or, with the feeder adopted, phone_key_not_listed, phone_key_unconfirmed or client_key_taken"),
         (status = 410, body = Problem, description = "invite_expired"),
         (status = 502, body = Problem, description = "unreachable"),
     ),
 )]
 pub(crate) async fn adopt(
     State(state): State<AppState>,
-    _: Allowed<need::Adopt>,
+    Allowed(caller, _): Allowed<need::Adopt>,
     WithRejection(Json(request), _): JsonBody<AdoptFeeder>,
 ) -> ApiResult<(StatusCode, Json<Feeder>)> {
-    let feeder = state.service.adopt(request).await?;
+    let feeder = state.service.adopt(&caller, request).await?;
     Ok((StatusCode::CREATED, Json(feeder)))
 }
 

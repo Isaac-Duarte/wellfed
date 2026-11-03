@@ -34,6 +34,8 @@ So a client can resolve a lost feed on either path without resending it. Holding
 
 This costs the feeder a client slot per phone. A feeder has 8 slots: the server, the CLI and up to six phones.
 
+A phone that pairs with a feeder before there is a server keeps that key. When the phone adopts the feeder, it names the key in `POST /feeders` (`phone_key`). The server checks that the feeder lists it, then records it as that account's phone key. So deleting, demoting or putting an expiry on the account revokes it, as it revokes a key the server invited. If the feeder doesn't list the key, the request is refused `409 phone_key_not_listed`, and the feeder stays adopted.
+
 Every device operation the app can make has a server route, or a stated reason it has none, in `wellfed_service::parity`. It is an exhaustive match over the device API's operations, so a new operation doesn't build until it gets one. Some routes need the feeder's owner role: Wi-Fi, reboot, revoking a client, a phone's invite, the time zone rule, installs and the stock backup. They work only when the server was adopted with an owner's invite. With the `server` role, the feeder refuses them `forbidden`.
 
 **Adopt with an owner's invite.** That is the supported setup, since it is the only one where every route works. It gives the server the feeder's full authority, as your own CLI has: it can change Wi-Fi, revoke clients and offer updates, including downgrades and update key changes. The feeder still checks the signature on every image. So protect the server's data directory as you would your owner key.

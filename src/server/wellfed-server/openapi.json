@@ -353,6 +353,7 @@
           "feeders"
         ],
         "summary": "Adopt a feeder by redeeming an invite its owner made for the server.",
+        "description": "A phone that adopts names the key it already holds on the feeder\n(`phone_key`), and the server records it as the caller's phone key once\nthe feeder lists it, so revoking the account revokes it. Naming one\nneeds a phone's token with no expiry on it or the account, checked\nbefore anything is enrolled. `phone_key_not_listed` and\n`phone_key_unconfirmed` come after the adoption, which stands.",
         "operationId": "adopt",
         "requestBody": {
           "content": {
@@ -385,7 +386,7 @@
             }
           },
           "403": {
-            "description": "forbidden: owners only",
+            "description": "forbidden: owners only; token_required or direct_key_refused for a phone key",
             "content": {
               "application/json": {
                 "schema": {
@@ -395,7 +396,7 @@
             }
           },
           "409": {
-            "description": "already_adopted, or feeder_refused",
+            "description": "already_adopted, feeder_refused, or, with the feeder adopted, phone_key_not_listed, phone_key_unconfirmed or client_key_taken",
             "content": {
               "application/json": {
                 "schema": {
@@ -5085,7 +5086,7 @@
     "schemas": {
       "AdoptFeeder": {
         "type": "object",
-        "description": "Adopt a feeder by redeeming an invite its owner created for the server\n(`wellfed invite --role server`).",
+        "description": "Adopt a feeder by redeeming an invite its owner created for the server\n(`wellfed invite --role server`), or one the owner's phone made with its\nown key.",
         "required": [
           "invite",
           "name"
@@ -5105,6 +5106,13 @@
           "name": {
             "type": "string",
             "description": "What the household calls the feeder (1-64 characters)."
+          },
+          "phone_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The public key the caller's phone already holds on the feeder, when\nthe phone adopts it: once the feeder lists that key, the server\nrecords it as this account's phone key, as if it had invited it, so\ndeleting, demoting or putting an expiry on the account revokes it.\nOnly a phone's token names one, for an account and token with no\nexpiry. Absent when nothing but the server joins (the CLI)."
           }
         }
       },
@@ -5652,7 +5660,7 @@
           },
           {
             "type": "object",
-            "description": "A phone the server invited for this account, through this token.",
+            "description": "A phone the server invited for this account, through this token, or\none that named its key when it adopted the feeder.",
             "required": [
               "user",
               "kind"
@@ -6249,6 +6257,8 @@
           "token_required",
           "direct_key_refused",
           "client_key_taken",
+          "phone_key_not_listed",
+          "phone_key_unconfirmed",
           "invite_expired",
           "unreachable",
           "feeder_offline",

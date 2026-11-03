@@ -29,6 +29,14 @@ pub enum ClientError {
     KeyTaken,
     #[error("that is the server's own key: remove the feeder to revoke it")]
     OwnKey,
+    #[error(
+        "the feeder is adopted, but it does not list the phone key named, so that key is not recorded as yours"
+    )]
+    PhoneKeyNotListed,
+    #[error(
+        "the feeder is adopted, but its clients could not be read to confirm the phone key named, so that key is not recorded as yours"
+    )]
+    PhoneKeyUnconfirmed,
 }
 
 impl ClientError {
@@ -38,6 +46,8 @@ impl ClientError {
             Self::DirectKeyRefused => ErrorCode::DirectKeyRefused,
             Self::KeyTaken => ErrorCode::ClientKeyTaken,
             Self::OwnKey => ErrorCode::Invalid,
+            Self::PhoneKeyNotListed => ErrorCode::PhoneKeyNotListed,
+            Self::PhoneKeyUnconfirmed => ErrorCode::PhoneKeyUnconfirmed,
         }
     }
 }

@@ -4,13 +4,16 @@
 //! while the server is down. The server makes the invite it joins with,
 //! recording the key, account and token first, so a phone that joins with
 //! the key it named is attributed even when the invite's answer is lost.
-//! A viewer, and an account or token with an expiry, holds no key: the
+//! A phone that adopts a feeder names the key it already holds there, and
+//! the server records that one the same way once the feeder lists it. A
+//! viewer, and an account or token with an expiry, holds no key: the
 //! server alone enforces its limits. Revoking them is [`revoke`]'s.
 
 use jiff::{SignedDuration, Timestamp};
+use tracing::warn;
 use wellfed_api::{
     ClientRole, CommandKind, CommandOutcome, FeederId, NewPhoneInvite, PhoneInvite, PhoneKey,
-    RevokeReason, Role, User,
+    RevokeReason, Role, TokenId, User,
 };
 use wellfed_mirror::Invite;
 use wellfed_model::Op;
@@ -50,23 +53,7 @@ impl Service {
         id: FeederId,
         request: NewPhoneInvite,
     ) -> Result<PhoneInvite> {
-        let Some(token) = caller.token else {
-            return Err(ClientError::TokenRequired.into());
-        };
-        let role = match caller.user.role {
-            Role::Owner => ClientRole::Owner,
-            Role::Member => ClientRole::Member,
-            Role::Viewer => return Err(ClientError::DirectKeyRefused.into()),
-        };
-        let token_expires = self
-            .shared
-            .store
-            .token(token)
-            .await?
-            .and_then(|token| token.expires);
-        if caller.user.expires.is_some() || token_expires.is_some() {
-            return Err(ClientError::DirectKeyRefused.into());
-        }
+        let (token, role) = self.direct_key_holder(caller).await?;
         let row = self.live_row(id).await?;
         let key = request.key.0;
         let listed = self.list_clients(id).await?;
@@ -154,6 +141,93 @@ impl Service {
             seconds: made.seconds,
             address: row.address,
         })
+    }
+
+    /// Record the key the caller's phone already holds on a feeder it just
+    /// adopted as the caller's phone key, as [`Self::invite_phone`] records
+    /// the key it invites, once the feeder lists it: from then on deleting,
+    /// demoting or putting an expiry on the account revokes it. `token` is
+    /// the caller's, checked by [`Self::direct_key_holder`] before the
+    /// adoption. The key joined long before, so no invite of it is live.
+    ///
+    /// The adoption stands whatever this answers: the server's own key is
+    /// enrolled and stored, and asking to adopt again is refused.
+    pub(super) async fn claim_phone(
+        &self,
+        caller: &Caller,
+        token: TokenId,
+        id: FeederId,
+        key: [u8; 32],
+    ) -> Result<()> {
+        // The session the adoption just started comes up in the background.
+        let within = self.shared.config.timing.answer;
+        if !self.mirror.online(id, within).await {
+            warn!("the feeder did not come online to confirm the adopting phone's key");
+            return Err(ClientError::PhoneKeyUnconfirmed.into());
+        }
+        let listed = match self.list_clients(id).await {
+            Ok(listed) => listed,
+            Err(error) => {
+                warn!(%error, "the feeder's clients could not be read to confirm the adopting phone's key");
+                return Err(ClientError::PhoneKeyUnconfirmed.into());
+            }
+        };
+        let Some(client) = listed
+            .iter()
+            .find(|client| client.key.0 == key && !client.you)
+        else {
+            return Err(ClientError::PhoneKeyNotListed.into());
+        };
+
+        let now = self.shared.clock.now();
+        let phone = NewPhone {
+            feeder: id,
+            key,
+            user: caller.user.id,
+            token,
+            // The role the feeder enforces for the key, not the account's.
+            role: client.role,
+            invited: now,
+            invite_until: now,
+        };
+        match self.shared.store.record_phone(&phone).await? {
+            Recorded::New | Recorded::Again { .. } => {}
+            Recorded::Taken => return Err(ClientError::KeyTaken.into()),
+        }
+
+        // The account may have lost its key meanwhile, and a feeder adopted
+        // again may still hold the token's earlier key: one key per token.
+        self.reconcile_phones().await?;
+        let replaced = Whose::Replaced {
+            feeder: id,
+            token,
+            keep: key,
+        };
+        self.revoke_phones(replaced, RevokeReason::Replaced).await
+    }
+
+    /// The caller's token and the role its phone's key takes, when the
+    /// caller may hold a key of its own: a phone's token, for an owner's or
+    /// member's account, with no expiry on either.
+    pub(super) async fn direct_key_holder(&self, caller: &Caller) -> Result<(TokenId, ClientRole)> {
+        let Some(token) = caller.token else {
+            return Err(ClientError::TokenRequired.into());
+        };
+        let role = match caller.user.role {
+            Role::Owner => ClientRole::Owner,
+            Role::Member => ClientRole::Member,
+            Role::Viewer => return Err(ClientError::DirectKeyRefused.into()),
+        };
+        let token_expires = self
+            .shared
+            .store
+            .token(token)
+            .await?
+            .and_then(|token| token.expires);
+        if caller.user.expires.is_some() || token_expires.is_some() {
+            return Err(ClientError::DirectKeyRefused.into());
+        }
+        Ok((token, role))
     }
 
     /// The phone keys the server recorded: everyone's for an owner, the

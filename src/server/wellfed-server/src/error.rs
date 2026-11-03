@@ -144,7 +144,11 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::FoodInUse
         | ErrorCode::NoCurrentFood
         | ErrorCode::FeederArchived
-        | ErrorCode::ClientKeyTaken => StatusCode::CONFLICT,
+        | ErrorCode::ClientKeyTaken
+        // The adoption stands: asking again is refused `already_adopted`,
+        // so neither is a status a client would retry.
+        | ErrorCode::PhoneKeyNotListed
+        | ErrorCode::PhoneKeyUnconfirmed => StatusCode::CONFLICT,
         ErrorCode::Unauthenticated | ErrorCode::BadCredentials => StatusCode::UNAUTHORIZED,
         ErrorCode::LoginLimited => StatusCode::TOO_MANY_REQUESTS,
         ErrorCode::Forbidden

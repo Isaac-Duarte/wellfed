@@ -33,6 +33,7 @@ fn an_owner_adopts_a_feeder_and_works_it_over_http() {
                 invite: feeder::invite(&sim, ClientRole::Server).await,
                 name: "kitchen".into(),
                 address: Some(sim.address.to_string()),
+                phone_key: None,
             })
             .await
             .unwrap()
@@ -171,6 +172,7 @@ async fn adopted(http: &mut wellfed_server_client::Client, sim: &feeder::Running
             invite: feeder::invite(sim, ClientRole::Server).await,
             name: "kitchen".into(),
             address: Some(sim.address.to_string()),
+            phone_key: None,
         })
         .await
         .unwrap()

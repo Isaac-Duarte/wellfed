@@ -188,11 +188,15 @@ impl TestService {
     pub async fn adopt_as(&self, sim: &Running, address: &str, role: ClientRole) -> FeederId {
         let feeder = self
             .service
-            .adopt(AdoptFeeder {
-                invite: feeder::invite(sim, role).await,
-                name: "kitchen".into(),
-                address: Some(address.into()),
-            })
+            .adopt(
+                &crate::ada().into(),
+                AdoptFeeder {
+                    invite: feeder::invite(sim, role).await,
+                    name: "kitchen".into(),
+                    address: Some(address.into()),
+                    phone_key: None,
+                },
+            )
             .await
             .expect("the service adopts the simulator");
         assert_eq!(feeder.role, role);
