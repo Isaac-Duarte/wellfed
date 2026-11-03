@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/feeder_drawing.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
@@ -76,7 +77,7 @@ class _InstallCard extends StatelessWidget {
                 ),
                 const SizedBox(height: Space.s1),
                 Text(
-                  "For a feeder still on the vendor's app. This phone replaces its firmware and keeps a backup "
+                  "For a feeder still on the vendor's app. This $deviceName replaces its firmware and keeps a backup "
                   'of the original.',
                   style: TextStyle(fontSize: Sizes.base, height: 1.45, color: c.textMuted),
                 ),

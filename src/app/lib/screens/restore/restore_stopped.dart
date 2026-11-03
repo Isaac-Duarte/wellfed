@@ -4,6 +4,7 @@ import 'package:wellfed/screens/restore/restore_screen.dart';
 import 'package:wellfed/src/rust/api/restore.dart';
 import 'package:wellfed/state/restore/restore.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/layout.dart';
 
 class RestoreUncertainPage extends StatefulWidget {
@@ -44,7 +45,7 @@ class _UncertainState extends State<RestoreUncertainPage> {
       ),
       RestoreLook.sighted => (
         "We still can't tell",
-        '$name showed up on your Wi-Fi, but it never answered this phone as '
+        '$name showed up on your Wi-Fi, but it never answered this $deviceName as '
             'idle. It may be finishing or restarting. Close this and check '
             "again in a few minutes, here or in the vendor's app.",
       ),
@@ -103,7 +104,7 @@ class _UncertainState extends State<RestoreUncertainPage> {
       'This was stopped as the firmware was starting to go across, or after it '
           'had. Nothing more is sent.',
     UncertainWhy.failed =>
-      'This phone hit a problem as the firmware was starting to go across, or '
+      'This $deviceName hit a problem as the firmware was starting to go across, or '
           'after it had. Nothing more is sent.',
     _ =>
       '${flow.feederName} stopped answering after the firmware started going '
@@ -148,11 +149,11 @@ class RestoreStoppedPage extends StatelessWidget {
     ),
     RestoreStop.notOwner => (
       'Only the owner can do this',
-      "This phone isn't the owner of $name, which keeps running Wellfed.",
+      "This $deviceName isn't the owner of $name, which keeps running Wellfed.",
     ),
     RestoreStop.notAnswering => (
       "$name isn't answering",
-      'Nothing was sent. Check that it is plugged in and this phone is '
+      'Nothing was sent. Check that it is plugged in and this $deviceName is '
           'on the same Wi-Fi.',
     ),
     RestoreStop.noUpdates => (
@@ -165,9 +166,9 @@ class RestoreStoppedPage extends StatelessWidget {
       "It doesn't match the vendor's 1.1.15 exactly, so nothing was sent.",
     ),
     RestoreStop.keyFailed => (
-      "This phone couldn't set up the restore",
+      "This $deviceName couldn't set up the restore",
       '$name keeps running Wellfed, and nothing was sent. The backup is '
-          'fine: this is about space or storage on this phone.',
+          'fine: this is about space or storage on this $deviceName.',
     ),
     RestoreStop.installRunning => (
       'An install is running on $name',
@@ -183,7 +184,7 @@ class RestoreStoppedPage extends StatelessWidget {
     RestoreStop.keyGone => (
       'The restore lost its key',
       '$name keeps running Wellfed, and nothing was sent. An earlier '
-          'restore on this phone cleared the key as this one was about to '
+          'restore on this $deviceName cleared the key as this one was about to '
           'use it. Try again; you may be asked to press Dispense once more.',
     ),
     RestoreStop.refused => (

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:wellfed/state/wifi/networks.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 
 /// The network the feeder should join, picked from what this phone hears.
@@ -270,7 +271,7 @@ class _Row extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
     final String note = [
-      if (choice.current) "This phone's network",
+      if (choice.current) "This $deviceName's network",
       if (!choice.joinable) "5 GHz only: the feeder can't join" else if (!choice.secured) 'No password',
       if (choice.joinable) ?_strength(choice.level),
     ].join(' · ');
@@ -365,7 +366,7 @@ class _Choice extends StatelessWidget {
 
 String _problemWords(ScanProblem problem) => switch (problem) {
   ScanProblem.permission => 'Allow location for Wellfed to list the networks nearby. Or type its name.',
-  ScanProblem.wifiOff => "Turn on this phone's Wi-Fi to list the networks nearby. Or type its name.",
+  ScanProblem.wifiOff => "Turn on this $deviceName's Wi-Fi to list the networks nearby. Or type its name.",
   ScanProblem.locationOff => 'Turn on location to list the networks nearby. Or type its name.',
-  ScanProblem.unavailable => "This phone didn't list the networks nearby. Type its name.",
+  ScanProblem.unavailable => "This $deviceName didn't list the networks nearby. Type its name.",
 };

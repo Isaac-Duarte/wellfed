@@ -5,6 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/settings/app_settings.dart' show SettingsButton;
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/feeder_drawing.dart';
 import 'package:wellfed/widgets/layout.dart';
 
@@ -31,6 +32,7 @@ class WelcomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
+    if (isDesktop) return const _DesktopWelcome();
     return Scaffold(
       body: SafeArea(
         // Fills the screen, and scrolls once large text makes it longer.
@@ -105,6 +107,100 @@ class WelcomeScreen extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Welcome in a desktop window: the drawing beside the promise, as the
+/// website's hero lays them out, and the button its own width.
+class _DesktopWelcome extends StatelessWidget {
+  const _DesktopWelcome();
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeTokens c = context.colors;
+    return Scaffold(
+      body: LayoutBuilder(
+        builder: (context, viewport) => SingleChildScrollView(
+          padding: const EdgeInsets.all(Space.s6),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: math.max(0, viewport.maxHeight - 2 * Space.s6)),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    SvgPicture.asset(
+                      context.isDark ? 'assets/brand/mark.svg' : 'assets/brand/mark-on-light.svg',
+                      width: 32,
+                      height: 32,
+                      excludeFromSemantics: true,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Wellfed',
+                      style: TextStyle(
+                        fontSize: Sizes.lg,
+                        fontWeight: Fonts.display,
+                        letterSpacing: -0.4,
+                        color: c.text,
+                      ),
+                    ),
+                    const Spacer(),
+                    const SettingsButton(),
+                  ],
+                ),
+                const SizedBox(height: Space.s6),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: FeederDrawing(
+                        height: _drawingMost + 60,
+                        label: 'Drawing of the feeder',
+                        callouts: [
+                          for (final claim in _claims)
+                            Callout(anchor: claim.anchor, side: claim.side, lines: [claim.label], color: c.textMuted),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: Space.s6),
+                    Expanded(
+                      flex: 4,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Headline("Your pet's dinner shouldn't need the internet.", size: 40),
+                          const SizedBox(height: Space.s4),
+                          Text(
+                            'Wellfed talks to your feeder over your own Wi-Fi. No '
+                            'account, no vendor cloud.',
+                            style: TextStyle(fontSize: Sizes.md, height: 1.5, color: c.textMuted),
+                          ),
+                          const SizedBox(height: Space.s6),
+                          FilledButton(
+                            style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: Space.s6)),
+                            onPressed: () => context.push('/add'),
+                            child: const Text('Add a feeder'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: Space.s6),
+                Text(
+                  'Independent community project. Not affiliated with or '
+                  'endorsed by PETLIBRO.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: Sizes.xs, height: 1.5, color: c.textMuted),
+                ),
+              ],
             ),
           ),
         ),

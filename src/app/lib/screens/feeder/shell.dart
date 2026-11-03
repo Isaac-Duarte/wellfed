@@ -9,6 +9,7 @@ import 'package:wellfed/screens/server/server_screens.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 
 /// One feeder: its name and the tabs (board 7).
@@ -27,19 +28,27 @@ class FeederShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
+    // A desktop opens a feeder from the sidebar, with nothing under it to go
+    // back to, and its tabs sit at the start of the line as a desktop's do.
+    final bool back = !isDesktop || Navigator.canPop(context);
     return DefaultTabController(
       length: 4,
       initialIndex: initialTab,
+      // A desktop switches tabs at once, as its other apps do; sliding
+      // repaints both pages every frame.
+      animationDuration: isDesktop ? Duration.zero : null,
       child: Scaffold(
         appBar: AppBar(
-          toolbarHeight: 64,
+          toolbarHeight: isDesktop ? 72 : 64,
           automaticallyImplyLeading: false,
-          titleSpacing: 4,
-          leading: IconButton(
-            tooltip: 'Back',
-            onPressed: () => Navigator.pop(context),
-            icon: StrokeIcon(Glyph.back, color: c.text),
-          ),
+          titleSpacing: back ? 4 : Space.s5,
+          leading: back
+              ? IconButton(
+                  tooltip: 'Back',
+                  onPressed: () => Navigator.pop(context),
+                  icon: StrokeIcon(Glyph.back, color: c.text),
+                )
+              : null,
           // The name changes from Settings, so the title follows it.
           title: ListenableBuilder(
             listenable: feeder,
@@ -49,7 +58,9 @@ class FeederShell extends StatelessWidget {
               children: [
                 Text(
                   feeder.state.known.name,
-                  style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
+                  style: isDesktop
+                      ? TextStyle(fontSize: 24, fontWeight: Fonts.display, letterSpacing: -0.4, color: c.text)
+                      : TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
                 ),
                 // With no server there is one way, and nothing to say.
                 if (server != null && feeder.state.serverId != null) PathLine(path: feeder.state.path),
@@ -75,8 +86,11 @@ class FeederShell extends StatelessWidget {
             indicatorColor: c.accent,
             indicatorWeight: 3,
             indicatorSize: TabBarIndicatorSize.tab,
+            isScrollable: isDesktop,
+            tabAlignment: isDesktop ? TabAlignment.start : null,
+            padding: isDesktop ? const EdgeInsets.symmetric(horizontal: Space.s3) : null,
             // Four names across a small phone, or in large text, without cutting one off.
-            labelPadding: const EdgeInsets.symmetric(horizontal: Space.s1),
+            labelPadding: EdgeInsets.symmetric(horizontal: isDesktop ? Space.s4 : Space.s1),
             dividerColor: c.line,
             labelStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold),
             unselectedLabelStyle: const TextStyle(fontSize: Sizes.base, fontWeight: Fonts.medium),
@@ -94,6 +108,8 @@ class FeederShell extends StatelessWidget {
             UnconfirmedWrites(feeder: feeder),
             Expanded(
               child: TabBarView(
+                // A swipe between tabs is a touch gesture; a mouse drags text.
+                physics: isDesktop ? const NeverScrollableScrollPhysics() : null,
                 children: [
                   TodayTab(feeder: feeder),
                   ScheduleTab(feeder: feeder),
@@ -121,7 +137,7 @@ class _Gone extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(),
-    body: const Center(child: Text('This phone no longer knows that feeder.')),
+    body: Center(child: Text('This $deviceName no longer knows that feeder.')),
   );
 }
 

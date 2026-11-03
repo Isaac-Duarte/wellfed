@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 
@@ -96,12 +97,12 @@ class _NameStepState extends State<NameStep> {
       stepLabel: widget.stepLabel,
       progress: widget.progress,
       onLeading: widget.onBack,
-      title: asksFeeder ? 'Name things' : 'Name this phone',
+      title: asksFeeder ? 'Name things' : 'Name this $deviceName',
       content: [
         if (asksFeeder) ...[
           LabeledField(
             label: 'This feeder',
-            hint: 'Only this phone uses it.',
+            hint: 'Only this $deviceName uses it.',
             child: TextField(
               controller: _feeder,
               textCapitalization: TextCapitalization.words,
@@ -112,7 +113,7 @@ class _NameStepState extends State<NameStep> {
           const SizedBox(height: 20),
         ],
         LabeledField(
-          label: 'This phone, as the feeder shows it',
+          label: 'This $deviceName, as the feeder shows it',
           hint: "Others see it in the feeder's People list and its history.",
           counter: '$_bytes/${NameStep.maxBytes}',
           child: TextField(
@@ -133,7 +134,7 @@ class _NameStepState extends State<NameStep> {
         ),
         if (_failed case final failed?) ...[
           const SizedBox(height: Space.s3),
-          Notice(tone: Tone.fault, lead: "This phone couldn't save that.", text: failed),
+          Notice(tone: Tone.fault, lead: "This $deviceName couldn't save that.", text: failed),
         ],
       ],
       actions: [FilledButton(onPressed: _valid ? () => unawaited(_done()) : null, child: Text(widget.action))],

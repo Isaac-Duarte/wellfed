@@ -14,6 +14,7 @@ import 'package:wellfed/state/settings/backups.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/settings_list.dart';
 
@@ -68,7 +69,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
     final String? name = await askText(
       context,
       title: 'Name on feeders',
-      label: 'This phone',
+      label: 'This $deviceName',
       initial: widget.book.label,
       note: 'Feeders keep the name they were joined with.',
     );
@@ -91,18 +92,23 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
       final FeederBook book = widget.book;
       return Scaffold(
         appBar: AppBar(
-          toolbarHeight: 64,
-          titleSpacing: 4,
+          toolbarHeight: isDesktop ? 72 : 64,
           automaticallyImplyLeading: false,
-          leading: IconButton(
-            tooltip: 'Back',
-            // Opened from a link with nothing under it, back goes to Feeders.
-            onPressed: () => Navigator.of(context).canPop() ? Navigator.pop(context) : context.go('/'),
-            icon: StrokeIcon(Glyph.back, color: c.text),
-          ),
+          // A desktop opens Settings from the sidebar, which is also the way out.
+          titleSpacing: isDesktop && !Navigator.of(context).canPop() ? Space.s5 : 4,
+          leading: isDesktop && !Navigator.of(context).canPop()
+              ? null
+              : IconButton(
+                  tooltip: 'Back',
+                  // Opened from a link with nothing under it, back goes to Feeders.
+                  onPressed: () => Navigator.of(context).canPop() ? Navigator.pop(context) : context.go('/'),
+                  icon: StrokeIcon(Glyph.back, color: c.text),
+                ),
           title: Text(
             'Settings',
-            style: TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
+            style: isDesktop
+                ? TextStyle(fontSize: 24, fontWeight: Fonts.display, letterSpacing: -0.4, color: c.text)
+                : TextStyle(fontSize: 22, fontWeight: Fonts.semibold, color: c.text),
           ),
         ),
         body: ListView(
@@ -124,7 +130,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
             ),
             const SizedBox(height: Space.s5),
             SettingsSection(
-              'This phone',
+              'This $deviceName',
               Column(
                 children: [
                   SettingsLink('Name on feeders', book.label, first: true, onTap: () => unawaited(_rename())),

@@ -8,6 +8,7 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 
@@ -46,7 +47,7 @@ class InstallStoppedPage extends StatelessWidget {
         'A new install has to wait',
         'The feeder is on its original firmware, but it has not stayed connected '
             "long enough to rule out the earlier install. A new one isn't "
-            'possible until it has stayed connected to this phone for 10 minutes '
+            'possible until it has stayed connected to this $deviceName for 10 minutes '
             'without a break. Leave it plugged in, keep Wellfed open and listen '
             'again.',
       ),
@@ -58,11 +59,11 @@ class InstallStoppedPage extends StatelessWidget {
       ),
       Listening.failed => (
         "We can't listen for the feeder",
-        state.listenerDetail ?? 'Something on this phone stopped it.',
+        state.listenerDetail ?? 'Something on this $deviceName stopped it.',
       ),
       _ when state.listeningForEarlier => (
         'Waiting to hear from the feeder',
-        'This phone never heard how an earlier install ended, even if you have '
+        'This $deviceName never heard how an earlier install ended, even if you have '
             'put the original firmware back since. Leave the feeder plugged in. '
             'That install closes 20 minutes after it went out, once the feeder '
             'has reported its version and been quiet for 10. Nothing is sent a '
@@ -110,9 +111,9 @@ class InstallStoppedPage extends StatelessWidget {
       'Nothing was sent. Check that it is plugged in, then start again.',
     ),
     StopCase_HandoverFailed() => (
-      "This phone couldn't finish the handover",
+      "This $deviceName couldn't finish the handover",
       "Nothing was installed. Check that the feeder's setup network is up and "
-          'that this phone is on your Wi-Fi, then start again. If its setup '
+          'that this $deviceName is on your Wi-Fi, then start again. If its setup '
           'network is gone, hold Reset again first.',
     ),
     StopCase_NotConfirmed() => (
@@ -121,14 +122,14 @@ class InstallStoppedPage extends StatelessWidget {
           'up where it stopped to look again.',
     ),
     StopCase_FrameNotTaken() => (
-      "The feeder didn't reach this phone",
+      "The feeder didn't reach this $deviceName",
       'It should keep nothing and open its setup network again. '
           'Check the Wi-Fi password, that your Wi-Fi has a 2.4 GHz band, and '
-          'that this phone stayed on it.',
+          'that this $deviceName stayed on it.',
     ),
     StopCase_EarlierRequestOpen() => (
       'An earlier install is still open',
-      'This phone never heard how it ended, even if you have put the original '
+      'This $deviceName never heard how it ended, even if you have put the original '
           'firmware back since, so Wellfed will not ask again yet. Listen with '
           'the feeder plugged in: 20 minutes after that install, once it has '
           'reported its version and been quiet for 10, you can start again.',
@@ -141,13 +142,16 @@ class InstallStoppedPage extends StatelessWidget {
       ),
       RequestRefusal.offline => (
         'The feeder went offline',
-        'It left this phone before the install went out, and nothing was '
+        'It left this $deviceName before the install went out, and nothing was '
             'sent. Check that it is plugged in, then start again.',
       ),
-      RequestRefusal.imageServer => ("This phone wasn't ready to serve the firmware", 'Nothing was sent. Start again.'),
+      RequestRefusal.imageServer => (
+        "This $deviceName wasn't ready to serve the firmware",
+        'Nothing was sent. Start again.',
+      ),
       RequestRefusal.other => (
         "The install wasn't sent",
-        'Nothing reached the feeder. See below for what this phone said.',
+        'Nothing reached the feeder. See below for what this $deviceName said.',
       ),
     },
     StopCase_StockRefused(:final code) => (
@@ -163,10 +167,10 @@ class InstallStoppedPage extends StatelessWidget {
     ),
     StopCase_NoSetupFeeder() => (
       'No feeder is waiting over Bluetooth',
-      'It may still be starting. Keep this phone near it and try again.',
+      'It may still be starting. Keep this $deviceName near it and try again.',
     ),
     StopCase_SetupFailed(:final refusal) => (
-      "This phone couldn't claim it",
+      "This $deviceName couldn't claim it",
       switch (refusal) {
         SetupRefusal.wrongCode =>
           'The feeder heard a different order of presses, or another device '
@@ -177,7 +181,7 @@ class InstallStoppedPage extends StatelessWidget {
         SetupRefusal.busy => 'Another phone is setting it up. Wait, then try again.',
         SetupRefusal.full => 'It holds 8 phones and servers. An owner removes one first.',
         SetupRefusal.notWritable => "It can't save right now. Try again in a minute.",
-        SetupRefusal.invalid => 'It rejected the phone name or the Wi-Fi. Check them and start again.',
+        SetupRefusal.invalid => 'It rejected the $deviceName name or the Wi-Fi. Check them and start again.',
         null =>
           'The Bluetooth exchange broke off. Move closer and try again. It '
               'runs Wellfed and still holds its original firmware.',
@@ -187,48 +191,48 @@ class InstallStoppedPage extends StatelessWidget {
       'A different feeder answered',
       'The code was keyed in on a feeder this install does not know. It may be '
           'another feeder, or this one after a factory reset, which gives it a '
-          'new identity. It accepted this phone and may now hold your Wi-Fi '
-          'password, and it stays known to this phone even if you forget this '
+          'new identity. It accepted this $deviceName and may now hold your Wi-Fi '
+          'password, and it stays known to this $deviceName even if you forget this '
           "install. To carry on with this install's feeder, put it in setup "
           'mode, then pick up and key in the code on its buttons. Otherwise, '
           'forget this install.',
     ),
     StopCase_LedgerDamaged() => (
-      "This phone can't read an install request's record",
+      "This $deviceName can't read an install request's record",
       'Nothing was sent to the feeder. Until you say otherwise, Wellfed treats '
           'that request as still open.',
     ),
     StopCase_BackupDamaged() => (
-      "This phone's backup is damaged",
+      "This $deviceName's backup is damaged",
       'The copy of the original firmware it kept for this feeder no longer '
           'opens. Wellfed stays where it is on the feeder, and nothing was '
           'overwritten.',
     ),
     StopCase_BackupDiffers() => (
       "The backup doesn't match the one kept",
-      'What the feeder holds differs from the copy this phone kept, and a kept '
+      'What the feeder holds differs from the copy this $deviceName kept, and a kept '
           "copy is never replaced. Wellfed won't make itself permanent until "
           'that is settled.',
     ),
     StopCase_DamagedRecord() => (
-      "This phone can't read its install record",
+      "This $deviceName can't read its install record",
       'Nothing was sent to the feeder. Forget this install to go on. Every '
-          'backup of the original firmware stays on this phone.',
+          'backup of the original firmware stays on this $deviceName.',
     ),
     StopCase_NotAnswering() => (
       'The feeder stopped answering',
-      'It paired with this phone, but does not answer on this network. Check '
-          'that this phone is on the network you gave it.',
+      'It paired with this $deviceName, but does not answer on this network. Check '
+          'that this $deviceName is on the network you gave it.',
     ),
     StopCase_NotJoined() => (
       "It didn't join your Wi-Fi",
-      'It runs Wellfed and this phone is its owner, but it never appeared on '
-          'your network. The Wi-Fi password may be wrong, or this phone may be '
+      'It runs Wellfed and this $deviceName is its owner, but it never appeared on '
+          'your network. The Wi-Fi password may be wrong, or this $deviceName may be '
           'on another network. Give it the Wi-Fi again: you put the feeder back '
-          'in setup mode with its buttons, and this phone shows how.',
+          'in setup mode with its buttons, and this $deviceName shows how.',
     ),
     StopCase_PhoneOffWifi() => (
-      "This phone isn't on Wi-Fi",
+      "This $deviceName isn't on Wi-Fi",
       'Nothing was sent. Join your home network, then try again.',
     ),
     StopCase_WifiRefused() => (
@@ -250,7 +254,7 @@ class InstallStoppedPage extends StatelessWidget {
           'running.',
     ),
     StopCase_ServerFailed() => (
-      "This phone couldn't serve the feeder",
+      "This $deviceName couldn't serve the feeder",
       'Another app may hold the port it needs. Nothing was sent.',
     ),
     StopCase_Cancelled() => ('You stopped the install', 'Nothing is waiting on it.'),

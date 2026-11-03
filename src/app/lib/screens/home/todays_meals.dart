@@ -1,9 +1,6 @@
-import 'dart:async';
-
 import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -38,7 +35,7 @@ class TodaysMeals extends StatelessWidget {
                 ),
               ),
               TextButton(
-                onPressed: () => unawaited(context.push('/feeder/${controller.state.known.identity}?tab=$scheduleTab')),
+                onPressed: () => openFeeder(context, controller.state.known.identity, scheduleTab),
                 child: const Text('Schedule'),
               ),
             ],

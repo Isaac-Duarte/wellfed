@@ -8,6 +8,7 @@ import 'package:wellfed/state/setup/setup.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/code_tiles.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 
@@ -94,7 +95,7 @@ class _PickState extends State<_Pick> {
       title: 'Recover a feeder',
       body:
           'Lost every phone that could open it? If the feeder is still on '
-          'your Wi-Fi, you can add this phone as an owner without erasing '
+          'your Wi-Fi, you can add this $deviceName as an owner without erasing '
           'anything.',
       content: [
         const PanelPhoto(held: [1, 2], caption: 'Lock, then Dispense'),

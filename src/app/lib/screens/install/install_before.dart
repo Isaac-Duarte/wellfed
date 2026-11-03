@@ -6,6 +6,7 @@ import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 
@@ -63,14 +64,14 @@ class InstallBeforePage extends StatelessWidget {
       leading: Leading.close,
       title: 'Install Wellfed',
       body:
-          "Wellfed replaces the feeder's firmware. This phone keeps a backup "
+          "Wellfed replaces the feeder's firmware. This $deviceName keeps a backup "
           'of the original, so you can put it back later.',
       content: [
         const SectionLabel("You'll need"),
         const SizedBox(height: Space.s3),
         const InstallFact('The feeder plugged in, no food being dispensed'),
-        const InstallFact('This phone on your home Wi-Fi, and its password'),
-        const InstallFact('About 10 minutes with Wellfed open: this phone serves the firmware'),
+        InstallFact('This $deviceName on your home Wi-Fi, and its password'),
+        InstallFact('About 10 minutes with Wellfed open: this $deviceName serves the firmware'),
         const SizedBox(height: Space.s4),
         const Notice(
           tone: Tone.warning,
@@ -94,17 +95,17 @@ class InstallBeforePage extends StatelessWidget {
         ],
         if (state.pending == PendingInstall.damaged) ...[
           const SizedBox(height: Space.s4),
-          const Notice(
+          Notice(
             tone: Tone.warning,
-            lead: "This phone can't read its record of an earlier install.",
+            lead: "This $deviceName can't read its record of an earlier install.",
             text: 'Forget that install to go on. Its backups stay.',
           ),
         ],
         if (state.pending == PendingInstall.ledgerDamaged) ...[
           const SizedBox(height: Space.s4),
-          const Notice(
+          Notice(
             tone: Tone.warning,
-            lead: "This phone can't read its record of an install request.",
+            lead: "This $deviceName can't read its record of an install request.",
             text: 'It treats that request as still open until you say otherwise.',
           ),
         ],
@@ -158,7 +159,7 @@ class InstallWhichFeederPage extends StatelessWidget {
         RouteCard(
           glyph: Glyph.install,
           title: feeder.name,
-          body: 'Already on this phone.',
+          body: 'Already on this $deviceName.',
           onTap: () => unawaited(flow.pickFeeder(feeder.identity)),
         ),
         const SizedBox(height: Space.s3),
@@ -166,7 +167,7 @@ class InstallWhichFeederPage extends StatelessWidget {
       RouteCard(
         glyph: Glyph.install,
         title: 'Another feeder, over Bluetooth',
-        body: 'Hold it into setup mode with its buttons. This phone shows how.',
+        body: 'Hold it into setup mode with its buttons. This $deviceName shows how.',
         onTap: () => unawaited(flow.pickFeeder(null)),
       ),
     ],
@@ -215,8 +216,8 @@ class InstallForgetInstallPage extends StatelessWidget {
       title: 'Forget this install?',
       confirm: 'Forget',
       words: [
-        'This clears what this phone kept for the install in progress: which feeder it was installing on, and which feeder it trusted. It changes nothing on the feeder.',
-        'Every backup of the original firmware stays on this phone.',
+        'This clears what this $deviceName kept for the install in progress: which feeder it was installing on, and which feeder it trusted. It changes nothing on the feeder.',
+        'Every backup of the original firmware stays on this $deviceName.',
         if (flow.forgetEndsPickUp) '"Pick up where it stopped" ends here. To finish this feeder later, choose "This feeder already runs Wellfed" on the first screen.',
         if (flow.requestStillOpen) 'An install sent to a feeder has no known result. Wellfed stops listening for it, but keeps the record, so that feeder is never sent it a second time. If that feeder comes back, starting again waits until its result is known.',
       ],
@@ -241,10 +242,10 @@ class InstallSetAsideLedger extends StatelessWidget {
       context,
       title: 'Set the damaged record aside?',
       confirm: 'Set it aside',
-      words: const [
-        'This phone no longer knows whether an install it sent to a feeder is still open. If you go on, it could send that feeder the install again.',
+      words: [
+        'This $deviceName no longer knows whether an install it sent to a feeder is still open. If you go on, it could send that feeder the install again.',
         'Check that feeder first. Wait until it has finished anything it started, and see whether it runs Wellfed or its original firmware.',
-        'The record is renamed and kept on this phone, not deleted. Every backup stays.',
+        'The record is renamed and kept on this $deviceName, not deleted. Every backup stays.',
       ],
     );
     if (sure) flow.setAsideLedgers();
@@ -269,10 +270,10 @@ class InstallSetAsideBackup extends StatelessWidget {
       context,
       title: 'Set this backup aside?',
       confirm: 'Set it aside',
-      words: const [
+      words: [
         'That copy of the original firmware can no longer be used to go back to it.',
-        "Wellfed reads a fresh copy only if the feeder still holds its original firmware. If it doesn't, this phone has no copy left to go back with.",
-        'The file is renamed and kept on this phone, not deleted.',
+        "Wellfed reads a fresh copy only if the feeder still holds its original firmware. If it doesn't, this $deviceName has no copy left to go back with.",
+        'The file is renamed and kept on this $deviceName, not deleted.',
       ],
     );
     if (sure) unawaited(flow.setAsideBackup(path, problem));
@@ -343,9 +344,9 @@ class _ResetState extends State<InstallResetPage> {
         ),
         if (offWifi) ...[
           const SizedBox(height: Space.s3),
-          const Notice(
+          Notice(
             tone: Tone.fault,
-            lead: "This phone isn't on Wi-Fi.",
+            lead: "This $deviceName isn't on Wi-Fi.",
             text: 'Join your home Wi-Fi, then press the button again.',
           ),
         ],

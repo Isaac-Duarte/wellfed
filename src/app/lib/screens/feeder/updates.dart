@@ -12,6 +12,7 @@ import 'package:wellfed/state/update/update.dart';
 import 'package:wellfed/state/update/update_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
@@ -214,7 +215,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                       const _Line(done: false, active: false, text: 'Check it started properly, then keep it'),
                       const SizedBox(height: Space.s4),
                       Text(
-                        'Keep the feeder plugged in. If this phone loses the connection, the '
+                        'Keep the feeder plugged in. If this $deviceName loses the connection, the '
                         'feeder runs its other copy of Wellfed, which can feed and may be '
                         'older than the one it ran.',
                         style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: c.textMuted),

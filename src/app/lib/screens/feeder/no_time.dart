@@ -3,6 +3,7 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
 
@@ -39,7 +40,7 @@ class _NoTimeNoticeState extends State<NoTimeNotice> {
             'feed. Feed now still works.',
       ),
       const SizedBox(height: Space.s2),
-      OutlinedButton(onPressed: _asking ? null : _sync, child: const Text('Set the time from this phone')),
+      OutlinedButton(onPressed: _asking ? null : _sync, child: Text('Set the time from this $deviceName')),
     ],
   );
 }
@@ -97,7 +98,7 @@ class _NoZoneNoticeState extends State<NoZoneNotice> {
       const SizedBox(height: Space.s2),
       OutlinedButton(
         onPressed: _asking ? null : _fix,
-        child: Text(widget.time.writable ? "Use this phone's zone" : 'Set the time from this phone'),
+        child: Text(widget.time.writable ? "Use this $deviceName's zone" : 'Set the time from this $deviceName'),
       ),
     ],
   );

@@ -6,11 +6,12 @@ import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/state/server/server.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/layout.dart';
 
 /// What logging out or removing the server leaves, said where both are.
-const keptKeysWords =
-    'This phone keeps its own keys on its feeders and reaches them directly, '
+String get keptKeysWords =>
+    'This $deviceName keeps its own keys on its feeders and reaches them directly, '
     'as before the server. Deleting your account on the server revokes those keys.';
 
 /// The account this phone is logged in to the home server as: who, and the
@@ -27,13 +28,13 @@ class AccountScreen extends StatelessWidget {
   final VoidCallback? logInAgain;
 
   Future<void> _logOut(BuildContext context) async {
-    if (!await _confirm(context, 'Log out?', 'The server stops taking this phone. $keptKeysWords')) return;
+    if (!await _confirm(context, 'Log out?', 'The server stops taking this $deviceName. $keptKeysWords')) return;
     final bool revoked = await server.logOut();
     if (!context.mounted) return;
     if (!revoked) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("The server couldn't be reached, so this phone's token works until it is revoked there."),
+        SnackBar(
+          content: Text("The server couldn't be reached, so this $deviceName's token works until it is revoked there."),
         ),
       );
     }
@@ -41,8 +42,8 @@ class AccountScreen extends StatelessWidget {
   }
 
   Future<void> _remove(BuildContext context) async {
-    const words =
-        "The server keeps this phone's token until it is revoked there; log out instead to end it now. "
+    final words =
+        "The server keeps this $deviceName's token until it is revoked there; log out instead to end it now. "
         '$keptKeysWords';
     if (!await _confirm(context, 'Remove the server?', words)) return;
     await server.removeServer();
@@ -96,9 +97,10 @@ class AccountScreen extends StatelessWidget {
             Notice(
               tone: problem == ServerProblem.signedOut ? Tone.fault : Tone.warning,
               text: switch (problem) {
-                ServerProblem.unreachable => 'The server is not answering. Feeders this phone reaches go directly.',
+                ServerProblem.unreachable =>
+                  'The server is not answering. Feeders this $deviceName reaches go directly.',
                 ServerProblem.signedOut =>
-                  'The server no longer takes this phone, so nothing is sent on its own keys either. '
+                  'The server no longer takes this $deviceName, so nothing is sent on its own keys either. '
                       'Log in again, or remove the server.',
                 ServerProblem.other => 'The server answered something this app does not read.',
               },
@@ -116,7 +118,7 @@ class AccountScreen extends StatelessWidget {
           if (household case final VoidCallback open)
             OutlinedButton(onPressed: open, child: const Text('Pets and foods')),
           const SizedBox(height: Space.s5),
-          const Muted(keptKeysWords),
+          Muted(keptKeysWords),
           const SizedBox(height: Space.s3),
           FilledButton(onPressed: () => unawaited(_logOut(context)), child: const Text('Log out')),
           const SizedBox(height: Space.s2),

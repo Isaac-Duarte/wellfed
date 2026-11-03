@@ -10,6 +10,7 @@ import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/when.dart';
@@ -32,9 +33,9 @@ Future<void> feedNow(BuildContext context, FeederController feeder) {
 /// Confirm the portions, then follow the feed to its end. The sheet shows
 /// only what the feeder said; an uncertain feed shows its range and is never
 /// offered again as a retry.
-Future<void> showFeedSheet(BuildContext context, FeederController feeder) => showModalBottomSheet<void>(
+Future<void> showFeedSheet(BuildContext context, FeederController feeder) => showPanel<void>(
   context: context,
-  isScrollControlled: true,
+  scrollControlled: true,
   barrierColor: context.colors.scrim.withValues(alpha: 0.6),
   builder: (context) => ListenableBuilder(
     listenable: feeder,
@@ -298,7 +299,7 @@ class _Progress extends StatelessWidget {
                       ],
                     ),
                   ),
-                ('Asked by', const Text('This phone')),
+                ('Asked by', Text('This $deviceName')),
               ]),
               FilledButton(onPressed: () => _close(context), child: const Text('Close')),
             ],
@@ -312,12 +313,12 @@ class _Progress extends StatelessWidget {
           final String why = switch (feed) {
             FeedRefused(:final FeedRefusal refusal) => _refusal(refusal),
             FeedNotSent(why: NotSentWhy.signedOut) =>
-              "The server no longer takes this phone's login, so nothing goes to "
+              "The server no longer takes this $deviceName's login, so nothing goes to "
                   'the feeder. Log in again, or remove the server to use this '
-                  "phone's own key.",
+                  "$deviceName's own key.",
             FeedNotSent(why: NotSentWhy.forbidden) => 'This account may not feed.',
             FeedNotSent(why: NotSentWhy.notPinned) =>
-              "This phone couldn't write the feed down before sending it, so it "
+              "This $deviceName couldn't write the feed down before sending it, so it "
                   "didn't send it.",
             _ =>
               'The connection dropped before the request went out. Try again '

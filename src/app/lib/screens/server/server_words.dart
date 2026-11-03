@@ -2,20 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 
 /// What a server error means to the owner, in a sentence.
 String serverErrorWords(ServerError error) => switch (error.kind) {
   ServerErrorKind.address => 'That is not a server address. It looks like http://192.168.1.20:8080.',
-  ServerErrorKind.redirected => 'The server sent the phone elsewhere. Use this address instead: ${error.message}',
-  ServerErrorKind.unreachable => 'Nothing answered at that address. Check the phone is on the home network.',
+  ServerErrorKind.redirected => 'The server sent the $deviceName elsewhere. Use this address instead: ${error.message}',
+  ServerErrorKind.unreachable => 'Nothing answered at that address. Check the $deviceName is on the home network.',
   ServerErrorKind.interrupted => 'The connection broke before the server answered.',
   ServerErrorKind.badCredentials => 'The name or the password is wrong.',
   ServerErrorKind.rateLimited => switch (error.retryAfterSeconds) {
     final int seconds? => 'Too many tries. Try again in $seconds seconds.',
     null => 'Too many tries. Try again in a while.',
   },
-  ServerErrorKind.tokenRevoked => 'The server no longer takes this phone. Log in again.',
+  ServerErrorKind.tokenRevoked => 'The server no longer takes this $deviceName. Log in again.',
   ServerErrorKind.accountDisabled => 'This account has expired. An owner can extend it on the server.',
   ServerErrorKind.forbidden => 'Your account may not do that.',
   ServerErrorKind.notFound => 'The server no longer has that.',
@@ -24,8 +25,8 @@ String serverErrorWords(ServerError error) => switch (error.kind) {
   ServerErrorKind.noCurrentFood => 'Set the food this feeder holds first.',
   ServerErrorKind.alreadyAdopted => 'The server already has this feeder.',
   ServerErrorKind.inviteExpired => 'The feeder dropped the invite. Try again.',
-  ServerErrorKind.phoneKeyUnconfirmed => "The server couldn't reach the feeder to confirm this phone. Try again.",
-  ServerErrorKind.phoneKeyRefused => 'The server would not take this phone as yours: ${error.message}',
+  ServerErrorKind.phoneKeyUnconfirmed => "The server couldn't reach the feeder to confirm this $deviceName. Try again.",
+  ServerErrorKind.phoneKeyRefused => 'The server would not take this $deviceName as yours: ${error.message}',
   ServerErrorKind.feederOffline => "The server can't reach this feeder right now.",
   ServerErrorKind.outcomeUnknown => 'The feeder did not answer in time. Check before you try again.',
   ServerErrorKind.keyReused || ServerErrorKind.refused => 'The server refused: ${error.message}',

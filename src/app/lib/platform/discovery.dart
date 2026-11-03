@@ -5,21 +5,9 @@ import 'dart:typed_data';
 
 import 'package:nsd/nsd.dart' as nsd;
 
-/// A feeder answering on the LAN: its identity (hex, from the TXT `id`)
-/// and where its device API listens.
-class FoundFeeder {
-  /// A feeder as NSD heard it.
-  const FoundFeeder({required this.identity, required this.address, required this.name});
+import 'package:wellfed/src/rust/api/discovery.dart';
 
-  /// Its identity key, hex.
-  final String identity;
-
-  /// `ip:port`, IPv4.
-  final String address;
-
-  /// The service instance name the feeder announces.
-  final String name;
-}
+export 'package:wellfed/src/rust/api/discovery.dart' show FoundFeeder;
 
 /// An owner's server answering on the LAN: the URL to log in at, and the
 /// name it announces.
@@ -34,9 +22,10 @@ class FoundServer {
   final String name;
 }
 
-/// Feeders on the LAN over Android's NsdManager: `_wellfed._tcp`, each
-/// with its identity in the TXT `id`; and owner's servers,
-/// `_wellfed-server._tcp`.
+/// Feeders on the LAN, `_wellfed._tcp`, each with its identity in the TXT
+/// `id`; and owner's servers, `_wellfed-server._tcp`. Android browses
+/// through NsdManager; Linux, where `nsd` has no side, browses feeders
+/// through the bridge's mDNS.
 class Discovery {
   /// The NSD service feeders advertise.
   static const serviceType = '_wellfed._tcp';
@@ -45,12 +34,42 @@ class Discovery {
   static const serverType = '_wellfed-server._tcp';
 
   /// Every feeder found until the returned stream is cancelled.
-  static Stream<FoundFeeder> browse() => _browse(serviceType, _feeder);
+  static Stream<FoundFeeder> browse() => Platform.isLinux ? _bridge() : _nsd(serviceType, _feeder);
 
-  /// Every owner's server found until the returned stream is cancelled.
-  static Stream<FoundServer> browseServers() => _browse(serverType, _server);
+  /// Every owner's server found until the returned stream is cancelled. The
+  /// bridge browses feeders only, so on Linux nothing is found and the
+  /// server is entered by its address.
+  static Stream<FoundServer> browseServers() =>
+      Platform.isLinux ? const Stream<FoundServer>.empty() : _nsd(serverType, _server);
 
-  static Stream<T> _browse<T>(String type, T? Function(nsd.Service) read) {
+  static Stream<FoundFeeder> _bridge() {
+    late final StreamController<FoundFeeder> out;
+    FeederBrowse? browse;
+    StreamSubscription<FoundFeeder>? heard;
+
+    out = StreamController<FoundFeeder>(
+      onListen: () {
+        try {
+          final started = FeederBrowse();
+          browse = started;
+          heard = started.run().listen(out.add, onError: out.addError, onDone: out.close);
+        } on Object catch (error) {
+          out.addError(error);
+        }
+      },
+      onCancel: () async {
+        // Stopping is what ends the browse's thread and its daemon; the
+        // stream it feeds closes after.
+        browse?.stop();
+        await heard?.cancel();
+        browse?.dispose();
+        await out.close();
+      },
+    );
+    return out.stream;
+  }
+
+  static Stream<T> _nsd<T>(String type, T? Function(nsd.Service) read) {
     late final StreamController<T> out;
     nsd.Discovery? discovery;
     var cancelled = false;
@@ -94,8 +113,8 @@ class Discovery {
   /// it did not announce itself in time.
   static Future<String?> locate(String identity, Duration wait) async {
     final found = Completer<String?>();
-    // Cancelling the subscription is what stops NsdManager's discovery, so
-    // it is cancelled on every path, the timeout's included.
+    // Cancelling the subscription is what stops the browse, so it is
+    // cancelled on every path, the timeout's included.
     final StreamSubscription<FoundFeeder> browsing = browse().listen(
       (feeder) {
         if (feeder.identity == identity && !found.isCompleted) {

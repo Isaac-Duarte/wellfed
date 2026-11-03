@@ -11,6 +11,7 @@ import 'package:wellfed/state/clock/clock.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/settings_list.dart';
@@ -107,7 +108,7 @@ class _ClockScreenState extends State<ClockScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              "Use this phone's zone · ${placeName(phoneZone)}",
+                              "Use this $deviceName's zone · ${placeName(phoneZone)}",
                               style: TextStyle(fontSize: 15, fontWeight: Fonts.semibold, color: c.accent),
                             ),
                           ),
@@ -306,7 +307,7 @@ class _ZoneWords extends StatelessWidget {
           ? '${placeName(phone)} · ${zone.abbreviation}'
           : '${zone.abbreviation} · $offset',
       [
-        if (time.sameAsPhone == true) 'Same as this phone' else offset,
+        if (time.sameAsPhone == true) 'Same as this $deviceName' else offset,
         if (zone.seasonal) 'follows daylight saving',
       ].join(' · '),
     );

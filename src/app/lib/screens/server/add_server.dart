@@ -5,6 +5,7 @@ import 'package:wellfed/screens/server/server_words.dart';
 import 'package:wellfed/state/server/add_server.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/layout.dart';
 
 /// Add the owner's server: its address, typed or heard on the LAN, and the
@@ -54,9 +55,9 @@ class _AddServerScreenState extends State<AddServerScreen> {
       return ServerPage(
         title: 'Add a home server',
         children: [
-          const Muted(
+          Muted(
             'A Wellfed server on your network keeps the long history, reaches feeders '
-            'away from this phone, and lets the household share them. The phone still '
+            'away from this $deviceName, and lets the household share them. The $deviceName still '
             'reaches its own feeders directly when the server is down.',
           ),
           const SizedBox(height: Space.s4),
@@ -86,7 +87,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
           const SizedBox(height: Space.s3),
           LabeledField(
             label: 'Password',
-            hint: 'Used once to sign this phone in. It is not kept.',
+            hint: 'Used once to sign this $deviceName in. It is not kept.',
             child: TextField(controller: _password, obscureText: true, autocorrect: false, enabled: !sending),
           ),
           const SizedBox(height: Space.s4),

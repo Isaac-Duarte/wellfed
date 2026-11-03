@@ -115,7 +115,8 @@ check-web:
 # The Android app (src/app/). Its Dart bindings and theme tokens are
 # generated from Rust and committed, so a regeneration must leave them
 # unchanged. The bridge crate's own tests run in `check-rust`. The APK is
-# built for arm64 phones and x86_64 emulators only.
+# built for arm64 phones and x86_64 emulators only, and the Linux desktop
+# build only on a Linux host, since Flutter cannot cross-build it.
 APP = src/app
 FLUTTER_VERSION = 3.47.8
 APP_APK = $(APP)/build/app/outputs/flutter-apk/app-debug.apk
@@ -145,6 +146,7 @@ check-app:
 	done
 	@unzip -p $(APP_APK) 'classes*.dex' | grep -aq 'Lorg/rustls/platformverifier/CertificateVerifier' || \
 		{ echo "the APK lacks rustls-platform-verifier's Kotlin half"; exit 1; }
+	@if [ "$$(uname)" = Linux ]; then cd $(APP) && flutter build linux --debug; fi
 
 # The image the APK installs is a build-time input, from a frozen review and
 # its signed update manifest under private/. This copies them in (they are

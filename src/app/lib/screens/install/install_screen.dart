@@ -9,6 +9,7 @@ import 'package:wellfed/screens/setup/name_step.dart';
 import 'package:wellfed/screens/setup/setup_screen.dart';
 import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 
 /// Installing Wellfed on a feeder that runs stock, one screen per stage of
@@ -49,8 +50,8 @@ class _InstallScreenState extends State<InstallScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Stop the install?'),
-        content: const Text(
-          'This phone stops serving the feeder. The install request is '
+        content: Text(
+          'This $deviceName stops serving the feeder. The install request is '
           'never sent a second time.',
         ),
         actions: [

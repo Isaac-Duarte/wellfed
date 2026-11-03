@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:network_info_plus/network_info_plus.dart';
@@ -29,9 +31,12 @@ abstract interface class PhonePorts {
   Future<String?> model();
 }
 
-/// [PhonePorts] on Android.
+/// [PhonePorts] on Android and on the Linux desktop.
+///
+/// Linux has no runtime permissions: BlueZ and NetworkManager answer any
+/// process of the logged-in user, so everything setup uses is granted.
 class AppPhonePorts implements PhonePorts {
-  /// The phone this runs on.
+  /// The device this runs on.
   const AppPhonePorts();
 
   /// Bluetooth to reach the feeder, and location only because Android needs it
@@ -46,6 +51,7 @@ class AppPhonePorts implements PhonePorts {
 
   @override
   Future<bool> setupGranted() async {
+    if (Platform.isLinux) return true;
     for (final Permission permission in _setup) {
       if (!await permission.isGranted) return false;
     }
@@ -54,37 +60,45 @@ class AppPhonePorts implements PhonePorts {
 
   @override
   Future<bool> askForSetup() async {
+    if (Platform.isLinux) return true;
     final Map<Permission, PermissionStatus> granted = await _setup.request();
     return _bluetooth.every((permission) => granted[permission]?.isGranted ?? false);
   }
 
   @override
   Future<bool> askForBluetooth() async {
+    if (Platform.isLinux) return true;
     final Map<Permission, PermissionStatus> granted = await _bluetooth.request();
     return granted.values.every((status) => status.isGranted);
   }
 
+  /// Never asked on Linux, where nothing is ever refused.
   @override
   Future<void> openSettings() async {
+    if (Platform.isLinux) return;
     await openAppSettings();
   }
 
-  /// The plugins only answer on a phone; typing the name always works.
+  /// The plugins only answer on a phone, or a Linux desktop running
+  /// NetworkManager; typing the name always works.
   @override
   Future<String?> currentNetwork() async {
     try {
-      if (!await Permission.locationWhenInUse.isGranted) return null;
+      if (!Platform.isLinux && !await Permission.locationWhenInUse.isGranted) return null;
       return await NetworkInfo().getWifiName();
     } on MissingPluginException {
       return null;
     }
   }
 
+  /// On Linux the hostname, which tells one computer from another where the
+  /// distribution's name would not.
   @override
   Future<NetworkScan> scanNetworks() => scanNearbyNetworks();
 
   @override
   Future<String?> model() async {
+    if (Platform.isLinux) return Platform.localHostname;
     try {
       return (await DeviceInfoPlugin().androidInfo).model;
     } on MissingPluginException {

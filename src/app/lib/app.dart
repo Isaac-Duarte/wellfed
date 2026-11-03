@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/platform/feeder_ports.dart';
@@ -6,6 +8,7 @@ import 'package:wellfed/platform/join_ports.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
 import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/server_ports.dart';
+import 'package:wellfed/screens/desktop/sidebar_shell.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
@@ -32,17 +35,22 @@ import 'package:wellfed/state/server/server_history.dart';
 import 'package:wellfed/state/settings/backups.dart';
 import 'package:wellfed/state/setup/setup.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/desktop.dart';
 
 /// The app's routes. `root` is one route whatever the feeders: it follows
 /// `book` by itself, because refreshing the router when a feeder is saved
 /// would rebuild the stack under a flow still showing its success screen.
+///
+/// A desktop build passes `shell`, which draws the window around every page:
+/// the routes then live in its navigator, so a page opens beside the sidebar.
 GoRouter wellfedRouter({
   required Listenable book,
   required WidgetBuilder root,
   required Map<String, WidgetBuilder> pages,
   Widget Function(BuildContext, String identity, int tab)? feeder,
-}) => GoRouter(
-  routes: [
+  Widget Function(BuildContext, GoRouter router, GlobalKey<NavigatorState> pages, Widget child)? shell,
+}) {
+  final List<RouteBase> routes = [
     GoRoute(
       path: '/',
       builder: (context, _) => ListenableBuilder(listenable: book, builder: (context, _) => root(context)),
@@ -58,8 +66,40 @@ GoRouter wellfedRouter({
           int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
         ),
       ),
-  ],
-);
+  ];
+  if (shell == null) return GoRouter(routes: routes);
+
+  final pagesKey = GlobalKey<NavigatorState>();
+  late final GoRouter router;
+  router = GoRouter(
+    routes: [
+      ShellRoute(
+        navigatorKey: pagesKey,
+        builder: (context, _, child) => shell(context, router, pagesKey, child),
+        routes: routes,
+      ),
+    ],
+  );
+  return router;
+}
+
+/// The sidebar's place for the page on top: a page pushed over another
+/// names its own location, not the one under it.
+Place? placeOf(GoRouter router) {
+  final String path = router.routerDelegate.currentConfiguration.last.matchedLocation;
+  if (path == '/') return const OverviewPlace();
+  if (path == '/add') return const AddPlace();
+  if (path == '/settings') return const SettingsPlace();
+  if (path.startsWith('/feeder/')) return FeederPlace(Uri.decodeComponent(path.substring('/feeder/'.length)));
+  return null;
+}
+
+String _pathOf(Place place) => switch (place) {
+  OverviewPlace() => '/',
+  FeederPlace(:final String identity) => '/feeder/${Uri.encodeComponent(identity)}',
+  AddPlace() => '/add',
+  SettingsPlace() => '/settings',
+};
 
 class WellfedApp extends StatefulWidget {
   const WellfedApp({super.key, required this.app});
@@ -126,6 +166,19 @@ class _WellfedAppState extends State<WellfedApp> {
           ),
     feeder: (context, identity, tab) =>
         FeederRoute(fleet: _fleet, identity: identity, initialTab: tab, server: _serverScreens),
+    shell: isDesktop
+        ? (context, router, pages, child) => ListenableBuilder(
+            listenable: router.routerDelegate,
+            builder: (context, _) => SidebarShell(
+              fleet: _fleet,
+              at: placeOf(router),
+              go: (place) => router.go(_pathOf(place)),
+              // Through the page's own PopScope, so a running flow asks first.
+              back: () => unawaited(pages.currentState?.maybePop()),
+              child: child,
+            ),
+          )
+        : null,
     pages: {
       '/add': (context) => const AddFeederScreen(),
       '/setup': (context) => SetupScreen(newFlow: () => SetupFlow(widget.app, _pairing, _phone)),

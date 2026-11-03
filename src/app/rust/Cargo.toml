@@ -4,11 +4,11 @@ name = "wellfed-app-bridge"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "The Android app's Rust half over flutter_rust_bridge: the client key, BLE setup and LAN recovery, device API sessions through wellfed-connect, and the owner's server through wellfed-server-client"
+description = "The app's Rust half over flutter_rust_bridge: the client key, BLE setup and LAN recovery, LAN discovery on Linux, device API sessions through wellfed-connect, and the owner's server through wellfed-server-client"
 publish.workspace = true
 
 [lib]
-# cdylib for Android; lib for the crate's own tests.
+# cdylib for Android and Linux; lib for the crate's own tests.
 crate-type = ["cdylib", "staticlib", "lib"]
 
 [dependencies]

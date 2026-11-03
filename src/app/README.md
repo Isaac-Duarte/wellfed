@@ -28,7 +28,7 @@ People and the audit log are not on the phone yet ([roadmap](../../docs/roadmap.
 
 | Part | Where | Does |
 | --- | --- | --- |
-| Screens, state, platform IO | `lib/` (Dart) | BLE through `flutter_reactive_ble`, NSD through `nsd`, the client secret in `flutter_secure_storage`, the install's notification through `flutter_foreground_task`, saving the backup through `share_plus` |
+| Screens, state, platform IO | `lib/` (Dart) | BLE through `flutter_reactive_ble`, NSD through `nsd` on Android, the client secret in `flutter_secure_storage`, the install's notification through `flutter_foreground_task`, saving the backup through `share_plus` |
 | `wellfed-app-bridge` | `rust/` (Rust) | The client key, the setup and recovery sessions (`wellfed_client::setup`), device API sessions (`wellfed_connect`), the install (`wellfed_install`), the app's file |
 | Generated | `lib/src/rust/`, `rust/src/frb_generated.rs` | The Dart API and types, from `flutter_rust_bridge_codegen generate` |
 | Theme | `lib/theme/tokens.g.dart` | Colors and sizes from [`assets/brand/tokens.json`](../../assets/brand/tokens.json) |
@@ -94,8 +94,16 @@ The versions this was built with:
 - The Android SDK command-line tools, with platforms 37 (the app) and 36 (the `rust_builder` plugin), build-tools 36.0.0, and the NDK that the pinned Flutter names as `flutter.ndkVersion`. Run `flutter config --android-sdk <path>`.
 - The Rust targets: `rustup target add --toolchain 1.99.1 aarch64-linux-android x86_64-linux-android`.
 - `cargo install flutter_rust_bridge_codegen --version 2.13.0 --locked`.
+- For the Linux desktop build: clang, CMake, Ninja, pkg-config, and the GTK 3 and libsecret development files (`gtk3` and `libsecret` on Arch, `libgtk-3-dev` and `libsecret-1-dev` on Debian), then `flutter config --enable-linux-desktop`.
 
-Then `make check-app` from the repository root regenerates the bindings and checks they are unchanged, formats, analyzes, runs the widget tests and builds a debug APK. The bridge's own tests run in `make check`, against the simulated feeder.
+Then `make check-app` from the repository root regenerates the bindings and checks they are unchanged, formats, analyzes, runs the widget tests and builds a debug APK, and on a Linux host the Linux desktop app too. The bridge's own tests run in `make check`, against the simulated feeder.
+
+## The Linux desktop app
+
+It is the same app, started with `flutter run -d linux`, or built with `flutter build linux` into `build/linux/x64/release/bundle/`. So far it starts and finds feeders on the LAN. Recovery over the LAN needs nothing more, but has not been walked on Linux yet. It cannot yet set a feeder up over Bluetooth or install, which need a Bluetooth plugin with a Linux side and joining the feeder's own Wi-Fi through NetworkManager.
+
+- **Discovery goes through Rust.** `nsd` has no Linux side, so `platform/discovery.dart` browses through the bridge's `FeederBrowse`, over the same `wellfed_connect::Browse` the CLI locates feeders with. Android keeps NsdManager, which holds the multicast lock a phone needs.
+- **Nothing asks for permissions.** BlueZ and NetworkManager answer any process of the logged-in user, so `AppPhonePorts` reports everything granted, and the computer's name is its hostname.
 
 ## Change the bridge
 

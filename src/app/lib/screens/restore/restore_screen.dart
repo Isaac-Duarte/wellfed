@@ -6,6 +6,7 @@ import 'package:wellfed/state/install/install.dart' show CheckState;
 import 'package:wellfed/state/restore/restore.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 
@@ -74,7 +75,7 @@ class _NoBackup extends StatelessWidget {
   @override
   Widget build(BuildContext context) => StepScaffold(
     appBarTitle: _title,
-    title: 'No backup on this phone',
+    title: 'No backup on this $deviceName',
     body:
         "The copy of the vendor firmware made during install isn't on this "
         'phone. If you saved a copy when the install ended, pick that file.',
@@ -139,9 +140,9 @@ class _Before extends StatelessWidget {
   static String _backupWords(RestoreBefore state) {
     if (state.picked) return 'From a picked file';
     final DateTime? at = state.backupDate;
-    if (at == null) return 'On this phone';
+    if (at == null) return 'On this $deviceName';
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return '${at.day} ${months[at.month - 1]}, on this phone';
+    return '${at.day} ${months[at.month - 1]}, on this $deviceName';
   }
 }
 
@@ -251,7 +252,7 @@ class _Running extends StatelessWidget {
         state.sessionDropped
             ? 'The connection dropped. Trying to get it back. Keep the feeder '
                   'plugged in.'
-            : 'Keep the feeder plugged in, and this phone on the same Wi-Fi. '
+            : 'Keep the feeder plugged in, and this $deviceName on the same Wi-Fi. '
                   "Once this has started, there's no stopping it from here.",
         style: bodyStyle(context),
       ),
@@ -344,7 +345,7 @@ class _Done extends StatelessWidget {
     title: 'The original firmware is going back',
     body:
         '${flow.feederName} is restarting on vendor ${state.version ?? ''}. '
-        "Wellfed can't talk to it any more. It still looks for this phone, and "
+        "Wellfed can't talk to it any more. It still looks for this $deviceName, and "
         'keeps trying forever. Hold Reset for about 5 seconds, then set it up '
         "in the vendor's app.",
     actions: const [RestoreClose()],

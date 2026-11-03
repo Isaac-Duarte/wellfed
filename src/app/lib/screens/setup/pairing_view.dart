@@ -6,6 +6,7 @@ import 'package:wellfed/state/pairing/pairing.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/code_tiles.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 
@@ -37,7 +38,7 @@ class PairingView extends StatelessWidget {
       final PairingJoining joining =>
         ble
             ? _Joining(state: joining)
-            : const _Waiting(title: 'Code accepted', body: 'Saving the feeder on this phone.'),
+            : _Waiting(title: 'Code accepted', body: 'Saving the feeder on this $deviceName.'),
       final PairingDone done => _Ready(state: done),
       final PairingFailed failed => _Failed(state: failed, ble: ble, onRetry: onRetry),
     },
@@ -227,7 +228,7 @@ class _Joining extends StatelessWidget {
               const SizedBox(height: 28),
               Headline('${state.feederName} is joining your Wi-Fi', size: 24, align: TextAlign.center),
               const SizedBox(height: 28),
-              const _DoneLine('This phone added as owner'),
+              _DoneLine('This $deviceName added as owner'),
               const SizedBox(height: Space.s4),
               _DoneLine(
                 state.wifiSaved == WifiSaved.unchanged ? 'The feeder keeps its Wi-Fi' : 'Wi-Fi saved on the feeder',
@@ -253,9 +254,9 @@ class _Joining extends StatelessWidget {
               const Spacer(),
               Text(
                 network == null
-                    ? 'Keep this phone on its network. This usually takes '
+                    ? 'Keep this $deviceName on its network. This usually takes '
                           'under a minute.'
-                    : 'Keep this phone on $network. This usually takes '
+                    : 'Keep this $deviceName on $network. This usually takes '
                           'under a minute.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
@@ -279,11 +280,11 @@ class _Ready extends StatelessWidget {
     final String name = state.feederName;
     final String? network = state.network;
     final String body = switch ((state.enrolled, network)) {
-      (Enrolled.already, _) => 'This phone was already one of its owners; nothing changed.',
+      (Enrolled.already, _) => 'This $deviceName was already one of its owners; nothing changed.',
       (_, final String network?) =>
         "It's on $network and you're its owner. You can feed it now from "
-            'this phone.',
-      _ => "You're its owner. You can feed it now from this phone.",
+            'this $deviceName.',
+      _ => "You're its owner. You can feed it now from this $deviceName.",
     };
 
     return Scaffold(
@@ -368,13 +369,13 @@ class _Failed extends StatelessWidget {
     ),
     PairingFailure.notOnLan => (
       'Paired, but not on this network',
-      'The feeder is saved on this phone, but it did not show up here. '
-          'Check that this phone is on the network you gave the feeder; '
+      'The feeder is saved on this $deviceName, but it did not show up here. '
+          'Check that this $deviceName is on the network you gave the feeder; '
           'Home keeps looking.',
     ),
     PairingFailure.input => (
       'Check the names and Wi-Fi',
-      'The phone name is 1 to 16 characters. A Wi-Fi password is 8 to 63 '
+      'The $deviceName name is 1 to 16 characters. A Wi-Fi password is 8 to 63 '
           'characters.',
     ),
     PairingFailure.other => ("Setup didn't finish", state.message ?? 'Try again.'),
@@ -400,7 +401,7 @@ class _Failed extends StatelessWidget {
     ),
     SetupRefusal.notWritable => ("The feeder can't save right now", 'Try again in a minute.'),
     SetupRefusal.invalid ||
-    null => ('The feeder rejected the name or Wi-Fi', 'Check the phone name and the Wi-Fi password.'),
+    null => ('The feeder rejected the name or Wi-Fi', 'Check the $deviceName name and the Wi-Fi password.'),
   };
 
   @override

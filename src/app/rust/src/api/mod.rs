@@ -1,6 +1,7 @@
 //! What Dart calls. Each module is one screen flow's needs; the values
 //! that cross are owned, so nothing borrows across the bridge.
 
+pub mod discovery;
 pub mod error;
 pub mod feeder;
 pub mod install;

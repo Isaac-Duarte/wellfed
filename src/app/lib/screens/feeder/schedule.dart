@@ -10,6 +10,7 @@ import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/pending.dart';
@@ -181,10 +182,25 @@ class _ScheduleTabState extends State<ScheduleTab> {
               ),
             ),
             const SizedBox(height: Space.s3),
-            FilledButton(
-              onPressed: online && !full ? () => unawaited(openMealEditor(context, feeder: feeder, held: plans)) : null,
-              child: Text(full ? 'Add meal · delete one first' : 'Add meal'),
-            ),
+            if (isDesktop)
+              // Its own width at the end of the line, as a desktop's buttons are.
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: Space.s5)),
+                  onPressed: online && !full
+                      ? () => unawaited(openMealEditor(context, feeder: feeder, held: plans))
+                      : null,
+                  child: Text(full ? 'Add meal · delete one first' : 'Add meal'),
+                ),
+              )
+            else
+              FilledButton(
+                onPressed: online && !full
+                    ? () => unawaited(openMealEditor(context, feeder: feeder, held: plans))
+                    : null,
+                child: Text(full ? 'Add meal · delete one first' : 'Add meal'),
+              ),
           ],
         ),
       );
