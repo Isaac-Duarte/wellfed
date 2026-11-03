@@ -34,6 +34,8 @@ enum Glyph {
   wave('<path d="M3 11v2M6.5 8v8M10 4.5v15M13.5 7.5v9M17 10v4M20.5 11v2"/>'),
   play('<path d="M8 5.5v13l10.5-6.5z"/>'),
   stop('<rect x="6.5" y="6.5" width="11" height="11" rx="2"/>'),
+  pause('<path d="M9 5.5v13M15 5.5v13"/>'),
+  search('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>'),
   sliders(
     '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/> '
     '<circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',

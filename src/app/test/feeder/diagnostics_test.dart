@@ -185,6 +185,42 @@ void main() {
       expect(feeder.hearingLog, isFalse);
     });
 
+    testWidgets('pausing holds the view, and the lines heard meanwhile join it on resume', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      await showTab(tester, LiveLogScreen(feeder: feeder));
+      expect(find.text("Waiting for the feeder's next line…"), findsOneWidget);
+
+      session.updates.add(const SessionUpdate.log(seq: 1, dropped: 0, lines: ['PLNET1 rssi=-58']));
+      await settle(tester);
+      expect(find.text('1 line'), findsOneWidget);
+
+      await tapIn(tester, find.byTooltip('Pause'));
+      session.updates.add(const SessionUpdate.log(seq: 3, dropped: 0, lines: ['PLFD1 start n=2', 'PLFD1 done n=2']));
+      await settle(tester);
+      expect(find.text('PLFD1 start n=2'), findsNothing);
+      expect(find.text('Paused · 2 new lines'), findsOneWidget);
+
+      await tapIn(tester, find.text('Show them'));
+      expect(find.text('PLFD1 start n=2'), findsOneWidget);
+      expect(find.text('3 lines'), findsOneWidget);
+    });
+
+    testWidgets('a filter shows only the lines that have it', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      await showTab(tester, LiveLogScreen(feeder: feeder));
+      session.updates.add(const SessionUpdate.log(seq: 2, dropped: 0, lines: ['PLNET1 rssi=-58', 'PLFD1 done n=2']));
+      await settle(tester);
+
+      await tester.enterText(find.byType(TextField), 'plfd');
+      await settle(tester);
+      expect(find.text('PLFD1 done n=2'), findsOneWidget);
+      expect(find.text('PLNET1 rssi=-58'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), 'nothing like it');
+      await settle(tester);
+      expect(find.text('No line has “nothing like it”.'), findsOneWidget);
+    });
+
     testWidgets('a refused tail says so', (tester) async {
       final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.replies.add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
