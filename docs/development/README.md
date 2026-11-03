@@ -95,7 +95,8 @@ The repository is self-contained. SDK and toolchain copies and fixtures resolve 
 | `check-fixtures` | The optional binary and SDK evidence suite. Missing inputs or skips fail ([fixtures](fixtures.md)) |
 | `check-web` | The site and the docs site: ESLint, Prettier, licenses, types, unit tests, the build and Playwright. Needs Node and pnpm, and runs no Rust ([TypeScript standard](typescript.md)) |
 | `check-app` | The Android app: its generated bindings and theme tokens unchanged, `dart format`, the lint plugin's tests, analysis, widget, accessibility, golden and smoke tests, and a debug APK. Needs the pinned Flutter and the Android SDK ([Dart standard](dart.md)) |
-| `check` | Every contributor check except `check-fixtures`, `check-web` and `check-app` |
+| `check-homeassistant` | The Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, a wheel built and installed into a pinned Home Assistant venv, and its tests against the simulator with 95% coverage. Needs uv ([Python standard](python.md)). `make homeassistant-wheels` cross-builds the release wheels |
+| `check` | Every contributor check except `check-fixtures`, `check-web`, `check-app` and `check-homeassistant` |
 
 Notes:
 

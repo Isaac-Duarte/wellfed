@@ -49,6 +49,15 @@ The site and the docs site in `src/web/` follow the [TypeScript standard](docs/d
 - **Dependencies.** Exact versions, a frozen lockfile, a 7-day minimum release age, no install scripts unless listed, and an allowed license (`pnpm run licenses`).
 - **Strict and quiet.** Strict TypeScript with no `any`, non-null assertions or casts outside generated code; zero warnings from svelte-check, ESLint and Prettier; a deliberate lint disable carries its reason on the same line.
 
+## Python conventions
+
+The Home Assistant integration in `src/integrations/homeassistant/` is the only Python in the repository. The [Python standard](docs/development/python.md) is the full rule set, with what enforces each rule. In short:
+
+- **Python moves values; Rust decides.** Sessions, invites, writes, settlement, release checks and installs live in the `wellfed-homeassistant` bridge. The integration reads its typed classes and never parses the wire or retries a write.
+- **Generated stub.** `bridge/wellfed_homeassistant.pyi` is generated from the module and committed with the change that caused it; mypy strict checks the integration against it.
+- **Translated and typed.** Ruff, `mypy --strict`, and a translation key on every name, state and error the user sees.
+- **Releases.** Agents build and check the release machinery (`make homeassistant-wheels`, `.github/workflows/homeassistant.yml`) but never publish to PyPI, create repositories or push tags. The owner does those.
+
 ## Compatibility
 
 Wellfed is in active development, and the research unit is the only device running it. **Never add backward compatibility.** Change a format in place and drop the old reader: on-flash records, the device API's messages, server JSON and database rows, file shapes and old evidence. No migrations, no `#[serde(default)]` shims, no capability bits or new variants added only to keep an old peer working. When a stored format changes, the change records the bench step that clears it (erasing or resetting the store) instead.
@@ -68,7 +77,7 @@ This covers what this repository builds. Interop with things it does not build, 
 | Firmware crates | Also a fresh image build, so its link, RAM-park and stack audits run |
 | `src/web/` | Also `make check-web` (needs Node and pnpm, runs no Rust): ESLint, Prettier, licenses, types, unit tests, the build, and Playwright of the site and the docs site |
 | `Cargo.lock` or `deny.toml` | `make check` includes `check-deps` (cargo-deny); its first run downloads the RustSec database |
-| `src/integrations/homeassistant/` | Also `make check-homeassistant` (needs uv): the bridge's Clippy with its PyO3 module, Ruff, the wheel build and Home Assistant's tests against the simulator |
+| `src/integrations/homeassistant/` | Also `make check-homeassistant` (needs uv): the bridge's Clippy with its PyO3 module, the committed stub unchanged, Ruff, mypy strict, the wheel build and Home Assistant's tests against the simulator with 95% coverage |
 | `src/app/`, or a `wellfed-client` type the app uses | Also `make check-app` (needs the Flutter SDK): bindings regenerated with no diff, `dart format`, the lint plugin's tests, `dart analyze --fatal-infos`, `flutter test` with the goldens and the smoke tests, and a debug APK build |
 
 A skipped or missing fixture is not a passing check.

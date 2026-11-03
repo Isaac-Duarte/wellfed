@@ -4,7 +4,8 @@ build-backend = "maturin"
 
 [project]
 name = "wellfed-homeassistant"
-version = "0.1.0"
+# The bridge crate's version, one source for the wheel and the integration.
+dynamic = ["version"]
 description = "Wellfed's device API client for Home Assistant, built from the Rust workspace"
 requires-python = ">=3.13"
 license = "MIT"

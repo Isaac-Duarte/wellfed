@@ -2,7 +2,7 @@
 line-length = 100
 target-version = "py314"
 # Generated from the bridge by `maturin generate-stubs`; checked for staleness instead.
-extend-exclude = ["bridge/stubs"]
+extend-exclude = ["bridge/wellfed_homeassistant.pyi"]
 
 [lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]

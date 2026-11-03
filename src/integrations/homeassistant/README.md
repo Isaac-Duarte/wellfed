@@ -44,27 +44,49 @@ All of this lives in the Rust bridge, so the integration, the app and the CLI sh
 
 ## How it is built
 
-- `bridge/` is the `wellfed-homeassistant` crate. It wraps `wellfed-connect` and `wellfed-client` for Python through PyO3, as the `wellfed_homeassistant` module. Each feeder's session runs on a Rust thread of its own. Status, events and write results cross as typed Python classes built from `wellfed-model`'s values. Their stub, `bridge/stubs/wellfed_homeassistant/__init__.pyi`, is generated from the module and committed, and mypy checks the integration against it.
-- `custom_components/wellfed/` is the integration. It holds no wire format, key derivation or feeding logic.
+- `bridge/` is the `wellfed-homeassistant` crate. It wraps `wellfed-connect` and `wellfed-client` for Python through PyO3, as the `wellfed_homeassistant` module. Status, events and write results cross as typed Python classes built from `wellfed-model`'s values. Their stub, `bridge/wellfed_homeassistant.pyi`, is generated from the module and committed; every wheel ships it, and mypy checks the integration against it.
+- Each feeder's session runs on a Rust thread of its own, with a tokio runtime. It reads the status, settings, plans, time and (for an owner) calibration on connect, replays the event backlog into `wellfed_client::today`'s facts, and follows new events. Writes go out once, gated by the role and the feeder's capabilities, one at a time per store. An install runs `wellfed-connect`'s update driver on a lane beside the session.
+- `custom_components/wellfed/` is the integration. It holds no wire format, key derivation or feeding logic. A pump thread hands the bridge's updates to Home Assistant's event loop, and writes run in its executor.
 - The client key is X25519, one per config entry. Its secret lives in the config entry, so a restart resumes as the same client.
+- The [Python standard](../../../docs/development/python.md) has the rules and the tests; the [owner guide](../../../docs/guide/home-assistant.md) is what an owner reads.
 
-## Install it
+## Run it from a checkout
 
-1. Run `make check-homeassistant`. It builds the wheel into `target/homeassistant-wheels/` and runs the tests. It needs [uv](https://docs.astral.sh/uv/). No feeder needed.
-2. Install the wheel into Home Assistant's Python environment: `pip install target/homeassistant-wheels/wellfed_homeassistant-0.1.0-*.whl`. The wheel is built for the machine you build on, so build it on (or for) the Home Assistant host.
-3. Copy `custom_components/wellfed` into Home Assistant's `config/custom_components/`, and restart Home Assistant.
-4. On a paired client, run `wellfed invite --role member`, or make an invite in the app. You should see a `wellfed-invite:` line. It works once, for 10 minutes.
-5. In Home Assistant, add the Wellfed integration and paste the invite. Give the feeder's IP address if mDNS does not reach Home Assistant's network. You should see a Feeder device with the entities above.
+1. Run `make check-homeassistant`. It builds this machine's wheel into `target/homeassistant-wheels/check/` and runs the tests. It needs [uv](https://docs.astral.sh/uv/). No feeder needed.
+2. For another machine, run `make homeassistant-wheels`. It cross-builds every release wheel into `target/homeassistant-wheels/release/`: musllinux for Home Assistant's own images, manylinux for other installs.
+3. Install the wheel for the Home Assistant host into its Python environment, copy `custom_components/wellfed` into its `config/custom_components/`, and restart Home Assistant.
+4. Pair as the [owner guide](../../../docs/guide/home-assistant.md#pair-it-with-the-feeder) says.
+
+## Releasing
+
+The version is the bridge crate's (`bridge/Cargo.toml`). The wheel takes it from there, and `custom_components/wellfed/manifest.json` repeats it as its `version` and as the `wellfed-homeassistant==` requirement. A test in `bridge/tests/version.rs` fails when they disagree.
+
+`.github/workflows/homeassistant.yml` runs the checks on every push. A `homeassistant-v<version>` tag also builds the wheels and the sdist, publishes them to PyPI by trusted publishing, and pushes the integration with a generated `hacs.json` and the owner guide as its README to the mirror repository, `Isaac-Duarte/wellfed-homeassistant`, where it tags and releases `v<version>`. HACS installs from those releases.
+
+To cut a release:
+
+1. Bump the version in `bridge/Cargo.toml` and both places in `manifest.json`, then run `make check` and `make check-homeassistant`.
+2. Merge to `master`, and check the workflow passes there.
+3. Tag the merge `homeassistant-v<version>` and push the tag.
+
+The owner's steps, once, before the first tag:
+
+1. Create the `wellfed-homeassistant` project on PyPI with this repository's workflow `homeassistant.yml` and the `pypi` environment as its trusted publisher.
+2. Create the `pypi` environment in this repository.
+3. Create the mirror repository, add a deploy key with write access, and store its private half as the `HOMEASSISTANT_MIRROR_KEY` secret here.
+4. Store a token that may create releases in the mirror as `HOMEASSISTANT_MIRROR_TOKEN`.
+
+Contributors and agents build and check all of this. Only the owner publishes, creates repositories or pushes a release tag.
 
 ## Limits
 
 - The session takes one of the feeder's four client slots for as long as Home Assistant runs.
-- Last fed starts empty after a restart. The session follows new events only, not the ring's history.
-- A history that started over while Home Assistant was away is logged as a gap. Events recorded in between are not replayed.
+- A history that started over while Home Assistant was away is a gap: what happened in between is not known, and the new history is read from its start.
 - The client key's secret is stored in Home Assistant's config entries, in plain text, as Home Assistant stores other integrations' credentials.
-- There is no release pipeline for the wheel yet, so Home Assistant cannot install it from its manifest's requirement.
+- Meal plans are switched on and off, not added or edited.
 
 ## Evidence
 
-- **Modeled**, November 3, 2026: the bridge's tests pair by invite, feed to the `Fed` event, set the lock, refuse a write with no session, and report a feed whose answer was held back as uncertain, with one feed run. Home Assistant 2026.2.3's tests, under `pytest-homeassistant-custom-component`, pair through the config flow, refuse a spent invite, and drive the button, the action and the switch, all against `wellfed-feeder-sim`.
+- **Modeled**, November 3, 2026: the bridge's tests pair by invite; replay the backlog into the last feed; feed, cancel, change the lock and settings on the generation read, refusing a second change while one waits and a stale one; settle a feed whose answer was held back, and report one that never reached the feeder as unknown; stop on a revoked key; and install a signed release through the simulator's two banks. Home Assistant 2026.10.4's tests on Python 3.14, under `pytest-homeassistant-custom-component`, drive the flows, every entity and action, the repairs, diagnostics and an install, against `wellfed-feeder-sim` and a scripted bridge, at 97% coverage.
+- **Modeled**, November 3, 2026: `make homeassistant-wheels` cross-built every release wheel on macOS, and the musllinux aarch64 wheel installed and imported on Python 3.14 in an Alpine container.
 - Not yet run against a real feeder.
