@@ -173,6 +173,35 @@ void main() {
       expect(_shown(tester), isFalse);
     });
 
+    testWidgets('on then off, tapped quickly, never shows the first on the way', (tester) async {
+      final _Host host = await _host(tester);
+      await tester.tap(find.byType(Switch));
+      await settle(tester);
+      await tester.tap(find.byType(Switch));
+      await settle(tester);
+      expect(_shown(tester), isFalse);
+
+      // The card agreed with the second tap all along, then took the first.
+      host.card.value = true;
+      await settle(tester);
+      expect(_shown(tester), isFalse);
+      host.asks.first.complete(const FeederReply.done(generation: 6));
+      await settle(tester);
+      expect(_shown(tester), isFalse);
+
+      host.card.value = false;
+      await settle(tester);
+      expect(_shown(tester), isFalse);
+      host.asks.last.complete(const FeederReply.done(generation: 7));
+      await settle(tester);
+      expect(_shown(tester), isFalse);
+
+      // Settled: the card shows again.
+      host.card.value = true;
+      await settle(tester);
+      expect(_shown(tester), isTrue);
+    });
+
     testWidgets('holds a value without asking for it', (tester) async {
       final _Host host = await _host(tester);
 

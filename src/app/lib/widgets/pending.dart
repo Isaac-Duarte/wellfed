@@ -66,6 +66,11 @@ class _PendingState<T> extends State<Pending<T>> implements PendingWrite<T> {
   /// The newest ask, so an older one's reply cannot settle a newer value.
   int _ticket = 0;
 
+  /// Asks whose reply has not come. While any is out, a card that agrees
+  /// does not settle the value: on, then off, tapped quickly would show the
+  /// first write's card on the way.
+  int _out = 0;
+
   /// Whether a `Done` naming `done` is settled by a card at `generation`,
   /// or for a store with no generation, by a card that moved.
   bool _settled(int? done, {required bool moved}) => switch ((done, widget.generation)) {
@@ -83,7 +88,7 @@ class _PendingState<T> extends State<Pending<T>> implements PendingWrite<T> {
     super.didUpdateWidget(old);
     final (T,)? asked = _asked;
     if (asked == null) return;
-    if (widget.card == asked.$1) {
+    if (widget.card == asked.$1 && _out == 0) {
       _clear();
     } else if (_answered case _Done(:final generation)
         when _settled(generation, moved: widget.card != old.card || widget.generation != old.generation)) {
@@ -104,9 +109,11 @@ class _PendingState<T> extends State<Pending<T>> implements PendingWrite<T> {
     setState(() {
       _asked = (value,);
       _answered = const _NotYet();
+      _out++;
     });
 
     final FeederReply reply = await send();
+    _out--;
     if (!mounted) return;
     if (ticket == _ticket) {
       setState(() {

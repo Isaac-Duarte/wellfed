@@ -17,11 +17,16 @@
 //! out that was refused, never answered or answered with another generation
 //! leaves no generation to trust, so the waiting ones end unsent. A change read
 //! from another generation than the one out went on never waits: merged onto
-//! the new one, its check against a stale read would be skipped. Nothing that
-//! went out is ever sent again.
+//! the new one, its check against a stale read would be skipped.
+//!
+//! Plans writes go one at a time too. A meal switched while one is out waits,
+//! and goes again as that switch on the table the one out made; any other
+//! plans write asked meanwhile ends unsent. Nothing that went out is ever
+//! sent again.
 
 use tokio::sync::oneshot;
-use wellfed_model::{Answer, Generation, Op, PLANS, Plan, Settings, SettingsPatch};
+use wellfed_client::plans::{self, Edit};
+use wellfed_model::{Answer, Generation, Op, PLANS, Plan, Plans, Settings, SettingsPatch};
 
 use crate::session::Heard;
 use crate::today::Facts;
@@ -48,9 +53,13 @@ pub(crate) enum Write {
         base: Generation,
         changes: SettingsPatch,
     },
-    /// The desiccant changed today: it moves the settings generation, and
-    /// the card shows it only from the read its event brings.
-    Reset,
+    /// The desiccant changed today, on the settings generation `base` when
+    /// it is known. Its `Done` moves the card's settings generation, so a
+    /// change tapped next goes on it; the date shows from the read its event
+    /// brings.
+    Reset {
+        base: Option<Generation>,
+    },
     Lock {
         locked: bool,
     },
@@ -66,16 +75,21 @@ impl Write {
     pub(crate) const fn of(op: &Op) -> Option<Self> {
         match *op {
             Op::PutSettings { base, changes } => Some(Self::Settings { base, changes }),
-            Op::ResetDesiccant => Some(Self::Reset),
+            // The settings queue gives it the generation it goes on.
+            Op::ResetDesiccant => Some(Self::Reset { base: None }),
             Op::SetLock { locked } => Some(Self::Lock { locked }),
             Op::PutPlans { base, plans } => Some(Self::Plans { base, plans }),
             _ => None,
         }
     }
 
-    /// Whether this goes through the settings queue.
-    pub(crate) const fn queued(&self) -> bool {
-        matches!(self, Self::Settings { .. } | Self::Reset)
+    /// The queue this goes through, if any.
+    pub(crate) const fn queue(&self) -> Option<Line> {
+        match self {
+            Self::Settings { .. } | Self::Reset { .. } => Some(Line::Settings),
+            Self::Plans { .. } => Some(Line::Plans),
+            Self::Lock { .. } => None,
+        }
     }
 
     /// Put the write on `facts` as `answer` landed it; whether the card moved.
@@ -95,7 +109,19 @@ impl Write {
                 }
                 true
             }
-            Self::Reset => false,
+            Self::Reset { base } => {
+                let (Some(base), Some(settings)) = (base, facts.settings.as_mut()) else {
+                    return false;
+                };
+                if settings.generation != base || !landed_on(base, answer) {
+                    return false;
+                }
+                settings.generation = after(base);
+                if let Some(status) = facts.status.as_mut() {
+                    status.settings_generation = after(base);
+                }
+                true
+            }
             Self::Lock { locked } => {
                 let (Some(status), Some(Answer::Done { .. })) = (facts.status.as_mut(), answer)
                 else {
@@ -167,7 +193,7 @@ fn merged(earlier: SettingsPatch, later: SettingsPatch) -> SettingsPatch {
     }
 }
 
-/// A settings write to send: its op, and everyone its one answer goes to.
+/// A queued write to send: its op, and everyone its one answer goes to.
 pub(crate) struct Outgoing {
     pub(crate) op: Op,
     pub(crate) write: Write,
@@ -183,16 +209,31 @@ impl Outgoing {
         }
     }
 
-    const fn reset(replies: Vec<Reply>) -> Self {
+    const fn reset(base: Option<Generation>, replies: Vec<Reply>) -> Self {
         Self {
             op: Op::ResetDesiccant,
-            write: Write::Reset,
+            write: Write::Reset { base },
+            replies,
+        }
+    }
+
+    const fn plans(base: Generation, plans: [Option<Plan>; PLANS], replies: Vec<Reply>) -> Self {
+        Self {
+            op: Op::PutPlans { base, plans },
+            write: Write::Plans { base, plans },
             replies,
         }
     }
 }
 
-/// What became of a settings write a screen asked for.
+/// The queues writes wait in: one for each store whose generation they share.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Line {
+    Settings,
+    Plans,
+}
+
+/// What became of a queued write a screen asked for.
 pub(crate) enum Queued {
     /// Nothing was out: send it now.
     Send(Outgoing),
@@ -203,7 +244,7 @@ pub(crate) enum Queued {
     Held(Reply),
 }
 
-/// What follows a settings write's answer.
+/// What follows a queued write's answer.
 pub(crate) enum Next {
     /// Nothing waited.
     Idle,
@@ -248,7 +289,7 @@ impl SettingsQueue {
                 ),
                 _ => (
                     known.map_or(Out::Unknown, Out::On),
-                    Outgoing::reset(vec![reply]),
+                    Outgoing::reset(known, vec![reply]),
                 ),
             };
             self.out = out;
@@ -294,7 +335,10 @@ impl SettingsQueue {
         }
         if !self.resets.is_empty() {
             self.out = Out::On(base);
-            return Next::Send(Outgoing::reset(std::mem::take(&mut self.resets)));
+            return Next::Send(Outgoing::reset(
+                Some(base),
+                std::mem::take(&mut self.resets),
+            ));
         }
         Next::Idle
     }
@@ -308,6 +352,102 @@ impl SettingsQueue {
             .unwrap_or_default();
         waiting.append(&mut self.resets);
         waiting
+    }
+}
+
+/// A meal switched on or off: a plans write that can go again on the table
+/// the one before it made.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct MealSwitch {
+    pub(crate) slot: u8,
+    pub(crate) enabled: bool,
+}
+
+/// Plans writes one at a time. A plans write sends the whole table, so one
+/// that waits goes again only as what it is: a meal switched, put on the
+/// table the one out made. Anything else (the editor's whole meal) ends
+/// unsent, since the table it was made from is gone.
+#[derive(Default)]
+pub(crate) struct PlansQueue {
+    /// The write out: the revision it went on and the table it sends.
+    out: Option<(Generation, [Option<Plan>; PLANS])>,
+    /// The meals switched since, in order, and who asked each.
+    waiting: Vec<(MealSwitch, Reply)>,
+}
+
+impl PlansQueue {
+    /// A plans write from a screen: `plans` on `base`, and the meal switch it
+    /// is, if it is one.
+    pub(crate) fn ask(
+        &mut self,
+        base: Generation,
+        plans: [Option<Plan>; PLANS],
+        switch: Option<MealSwitch>,
+        reply: Reply,
+    ) -> Queued {
+        let Some((on, _)) = self.out else {
+            self.out = Some((base, plans));
+            return Queued::Send(Outgoing::plans(base, plans, vec![reply]));
+        };
+        match switch {
+            Some(switch) if on == base => {
+                self.waiting.push((switch, reply));
+                Queued::Waits
+            }
+            _ => Queued::Held(reply),
+        }
+    }
+
+    /// The write out was answered with `answer`, or `None` with none. A meal
+    /// switched since whose meal the new table no longer holds hears it was
+    /// held, here.
+    pub(crate) fn answered(&mut self, answer: Option<&Answer>) -> Next {
+        let out = self.out.take();
+        let landed = out.filter(|(base, _)| landed_on(*base, answer));
+        let Some((base, table)) = landed else {
+            let unsent = self.take();
+            return if unsent.is_empty() {
+                Next::Idle
+            } else {
+                Next::Unsent(unsent)
+            };
+        };
+        if self.waiting.is_empty() {
+            return Next::Idle;
+        }
+
+        let mut next = Plans {
+            generation: after(base),
+            writable: true,
+            plans: table,
+        };
+        let mut replies = Vec::new();
+        for (switch, reply) in self.waiting.drain(..) {
+            let edit = Edit::Enabled {
+                slot: switch.slot,
+                enabled: switch.enabled,
+            };
+            match plans::edited(&next, edit) {
+                Ok(table) => {
+                    next.plans = table;
+                    replies.push(reply);
+                }
+                Err(_) => {
+                    // Dart stopped waiting: nothing to tell it.
+                    let _ = reply.send(Heard::Held);
+                }
+            }
+        }
+        if replies.is_empty() {
+            return Next::Idle;
+        }
+        self.out = Some((next.generation, next.plans));
+        Next::Send(Outgoing::plans(next.generation, next.plans, replies))
+    }
+
+    /// The writes still waiting, which never went.
+    pub(crate) fn take(&mut self) -> Vec<Reply> {
+        self.waiting.drain(..).map(|(_, reply)| reply).collect()
     }
 }
 
@@ -476,16 +616,36 @@ mod tests {
         assert_eq!(landed.plans[0].map(|plan| plan.enabled), Some(false));
     }
 
+    /// A change tapped after a reset goes on the generation the reset made,
+    /// so the card takes that much of it at once.
     #[test]
-    fn a_reset_queues_with_the_settings_and_lands_nothing_on_the_card() {
+    fn a_reset_queues_with_the_settings_and_moves_only_their_generation() {
         let mut facts = Facts {
             settings: Some(settings()),
             ..Facts::default()
         };
-        assert_eq!(Write::of(&Op::ResetDesiccant), Some(Write::Reset));
-        assert!(Write::Reset.queued());
-        assert!(!Write::Reset.landed(&mut facts, Some(&done(8))));
+        assert_eq!(
+            Write::of(&Op::ResetDesiccant),
+            Some(Write::Reset { base: None })
+        );
+        assert_eq!(Write::Reset { base: None }.queue(), Some(Line::Settings));
+
+        let unknown = Write::Reset { base: None };
+        assert!(!unknown.landed(&mut facts, Some(&done(8))));
+        let reset = Write::Reset {
+            base: Some(Generation(7)),
+        };
+        assert!(!reset.landed(&mut facts, Some(&done(7))));
         assert_eq!(facts.settings, Some(settings()));
+
+        assert!(reset.landed(&mut facts, Some(&done(8))));
+        assert_eq!(
+            facts.settings,
+            Some(Settings {
+                generation: Generation(8),
+                ..settings()
+            })
+        );
     }
 
     #[test]
@@ -494,7 +654,15 @@ mod tests {
             Write::of(&Op::SetLock { locked: true }),
             Some(Write::Lock { locked: true })
         );
-        assert!(!Write::Lock { locked: true }.queued());
+        assert_eq!(Write::Lock { locked: true }.queue(), None);
+        assert_eq!(
+            Write::of(&Op::PutPlans {
+                base: Generation(3),
+                plans: [None; PLANS]
+            })
+            .and_then(|write| write.queue()),
+            Some(Line::Plans)
+        );
         assert_eq!(Write::of(&Op::GetSettings), None);
         assert_eq!(Write::of(&Op::Feed { portions: 1 }), None);
     }
@@ -599,7 +767,7 @@ mod tests {
                 Queued::Waits
             ));
             assert!(matches!(
-                queue.ask(Write::Reset, None, reply().0),
+                queue.ask(Write::Reset { base: None }, None, reply().0),
                 Queued::Waits
             ));
 
@@ -618,14 +786,14 @@ mod tests {
     #[test]
     fn a_reset_waits_and_is_waited_behind_like_any_settings_write() {
         let mut queue = SettingsQueue::default();
-        let reset = sent(queue.ask(Write::Reset, Some(Generation(7)), reply().0));
+        let reset = sent(queue.ask(Write::Reset { base: None }, Some(Generation(7)), reply().0));
         assert_eq!(reset.op, Op::ResetDesiccant);
         assert!(matches!(
             queue.ask(change(7, volume(40)), Some(Generation(7)), reply().0),
             Queued::Waits
         ));
         assert!(matches!(
-            queue.ask(Write::Reset, Some(Generation(7)), reply().0),
+            queue.ask(Write::Reset { base: None }, Some(Generation(7)), reply().0),
             Queued::Waits
         ));
 
@@ -651,9 +819,9 @@ mod tests {
     #[test]
     fn what_waits_behind_a_reset_on_an_unknown_generation_never_goes() {
         let mut queue = SettingsQueue::default();
-        sent(queue.ask(Write::Reset, None, reply().0));
+        sent(queue.ask(Write::Reset { base: None }, None, reply().0));
         assert!(matches!(
-            queue.ask(Write::Reset, None, reply().0),
+            queue.ask(Write::Reset { base: None }, None, reply().0),
             Queued::Waits
         ));
 
@@ -671,5 +839,155 @@ mod tests {
 
         assert_eq!(queue.take().len(), 1);
         assert!(queue.take().is_empty());
+    }
+
+    fn switch(slot: u8, enabled: bool) -> Option<MealSwitch> {
+        Some(MealSwitch { slot, enabled })
+    }
+
+    fn switched(slot: usize, enabled: bool) -> [Option<Plan>; PLANS] {
+        let mut table = plans().plans;
+        if let Some(Some(plan)) = table.get_mut(slot) {
+            plan.enabled = enabled;
+        }
+        table
+    }
+
+    fn sent_plans(next: Next) -> Outgoing {
+        let Next::Send(outgoing) = next else {
+            panic!("the meal switched since goes");
+        };
+        outgoing
+    }
+
+    /// Two meals switched within one round trip: the second goes as its
+    /// switch on the table the first made, so both land.
+    #[test]
+    fn a_meal_switched_while_another_is_out_goes_on_the_table_it_made() {
+        let mut queue = PlansQueue::default();
+        let first = switched(0, false);
+
+        let out = sent(queue.ask(Generation(3), first, switch(0, false), reply().0));
+        assert_eq!(
+            out.op,
+            Op::PutPlans {
+                base: Generation(3),
+                plans: first
+            }
+        );
+        // Made from the table as the screen read it: without the first.
+        assert!(matches!(
+            queue.ask(
+                Generation(3),
+                switched(1, false),
+                switch(1, false),
+                reply().0
+            ),
+            Queued::Waits
+        ));
+        assert!(matches!(
+            queue.ask(
+                Generation(3),
+                switched(2, false),
+                switch(2, false),
+                reply().0
+            ),
+            Queued::Waits
+        ));
+
+        let next = sent_plans(queue.answered(Some(&done(4))));
+        let mut both = first;
+        for slot in [1, 2] {
+            if let Some(Some(plan)) = both.get_mut(slot) {
+                plan.enabled = false;
+            }
+        }
+        assert_eq!(
+            next.op,
+            Op::PutPlans {
+                base: Generation(4),
+                plans: both
+            }
+        );
+        assert_eq!(next.replies.len(), 2);
+        assert!(matches!(queue.answered(Some(&done(5))), Next::Idle));
+    }
+
+    /// The editor's whole meal was made from a table that is gone, and a
+    /// switch read from another revision would skip its check against a stale
+    /// read: neither waits.
+    #[test]
+    fn a_whole_table_write_or_one_from_another_revision_never_waits() {
+        let mut queue = PlansQueue::default();
+        sent(queue.ask(
+            Generation(3),
+            switched(0, false),
+            switch(0, false),
+            reply().0,
+        ));
+
+        assert!(matches!(
+            queue.ask(Generation(3), switched(1, false), None, reply().0),
+            Queued::Held(_)
+        ));
+        assert!(matches!(
+            queue.ask(
+                Generation(2),
+                switched(1, false),
+                switch(1, false),
+                reply().0
+            ),
+            Queued::Held(_)
+        ));
+        assert!(matches!(queue.answered(Some(&done(4))), Next::Idle));
+    }
+
+    #[test]
+    fn a_refused_unanswered_or_unlanded_plans_write_ends_the_waiting_ones_unsent() {
+        let refused = Answer::Refused(Refusal::Busy);
+        let unchanged = done(3);
+        for answer in [Some(&refused), None, Some(&unchanged)] {
+            let mut queue = PlansQueue::default();
+            sent(queue.ask(
+                Generation(3),
+                switched(0, false),
+                switch(0, false),
+                reply().0,
+            ));
+            assert!(matches!(
+                queue.ask(
+                    Generation(3),
+                    switched(1, false),
+                    switch(1, false),
+                    reply().0
+                ),
+                Queued::Waits
+            ));
+
+            let Next::Unsent(replies) = queue.answered(answer) else {
+                panic!("nothing goes on a table it cannot trust");
+            };
+            assert_eq!(replies.len(), 1);
+            sent(queue.ask(Generation(5), switched(0, true), switch(0, true), reply().0));
+        }
+    }
+
+    /// A meal the new table no longer holds cannot be switched on it.
+    #[test]
+    fn a_switch_whose_meal_is_gone_ends_held() {
+        let mut queue = PlansQueue::default();
+        let mut gone = plans().plans;
+        if let Some(slot) = gone.get_mut(1) {
+            *slot = None;
+        }
+        sent(queue.ask(Generation(3), gone, None, reply().0));
+        let (waiting, mut heard) = reply();
+        assert!(matches!(
+            queue.ask(Generation(3), switched(1, false), switch(1, false), waiting),
+            Queued::Waits
+        ));
+
+        assert!(matches!(queue.answered(Some(&done(4))), Next::Idle));
+        assert!(matches!(heard.try_recv(), Ok(Heard::Held)));
     }
 }
