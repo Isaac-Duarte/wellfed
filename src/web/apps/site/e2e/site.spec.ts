@@ -21,6 +21,7 @@ test("renders the landing page from its own origin only", async ({ page, baseURL
     "href",
     "https://github.com/Isaac-Duarte/wellfed",
   );
+  await expect(page.getByRole("link", { name: "Discord" })).toHaveAttribute("href", "https://discord.gg/5UfwjAsnw9");
   await expect(page.getByText("In heavy development.")).toBeVisible();
   await expect(page.getByText("Not affiliated with or endorsed by PETLIBRO", { exact: false })).toBeVisible();
 

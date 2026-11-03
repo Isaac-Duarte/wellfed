@@ -4,8 +4,8 @@
   import { resolve } from "$app/paths";
   import type { Snippet } from "svelte";
   import { favicon, lockup, lockupOnLight, themeColor } from "#lib/brand.ts";
-  import { DOCS, REPO, SITE } from "#lib/links.ts";
-  import { GitHubMark as GitHub } from "@wellfed/ui";
+  import { DISCORD, DOCS, REPO, SITE } from "#lib/links.ts";
+  import { DiscordMark as Discord, GitHubMark as GitHub } from "@wellfed/ui";
 
   let { children }: { children: Snippet } = $props();
 
@@ -44,6 +44,7 @@
       </picture>
     </a>
     <nav aria-label="Primary">
+      <a href={DISCORD} rel="external" class="discord" aria-label="Discord"><Discord /></a>
       <a href={REPO} rel="external" class="github"><GitHub /><span>GitHub</span></a>
     </nav>
   </div>
@@ -118,6 +119,10 @@
   }
   nav a:hover {
     color: var(--color-text);
+  }
+  .discord {
+    display: inline-flex;
+    align-items: center;
   }
   .github {
     display: inline-flex;
