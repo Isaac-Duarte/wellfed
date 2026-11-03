@@ -89,6 +89,8 @@ impl From<Error> for ServerError {
                 ErrorCode::Invalid => ServerErrorKind::Invalid,
                 ErrorCode::FoodInUse => ServerErrorKind::FoodInUse,
                 ErrorCode::FeederOffline | ErrorCode::Unreachable => ServerErrorKind::FeederOffline,
+                ErrorCode::OutcomeUnknown => ServerErrorKind::OutcomeUnknown,
+                ErrorCode::KeyReused => ServerErrorKind::KeyReused,
                 // The rest a screen shows by the server's own title.
                 _ => ServerErrorKind::Refused,
             },

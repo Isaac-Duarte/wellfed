@@ -23,8 +23,8 @@ use wellfed_model::{
 
 use crate::api::feeder::{
     CalibrationInfo, CallInfo, ClientView, FeederRefusal, FeederReply, FeederRequest, InviteView,
-    NotAsked, NtpView, PlanEdit, PlanView, PlansView, PortionChange, SettingsView, TimeInfo,
-    TraceView, UpdateInfo, ZoneChange,
+    NotAsked, NtpView, PlanEdit, PlanView, PlansView, PortionChange, SettingsChanges, SettingsView,
+    TimeInfo, TraceView, UpdateInfo, ZoneChange,
 };
 use crate::session::{Command, Heard};
 
@@ -78,15 +78,7 @@ pub async fn run(
         FeederRequest::GetSettings => Op::GetSettings,
         FeederRequest::PutSettings { base, changes } => Op::PutSettings {
             base: Generation(base),
-            changes: SettingsPatch {
-                lights: changes.lights,
-                sound: changes.sound,
-                volume: changes.volume,
-                lights_window: changes.lights_window,
-                sound_window: changes.sound_window,
-                desiccant_days: changes.desiccant_days,
-                meal_reminder: changes.meal_reminder,
-            },
+            changes: settings_patch(changes),
         },
         FeederRequest::PutWifi {
             base,
@@ -149,17 +141,12 @@ pub async fn run(
         },
         FeederRequest::GetPlans => Op::GetPlans,
         FeederRequest::EditPlans { plans, edit } => {
-            let held = plans_of(&plans);
-            let edited = edit_of(edit).and_then(|edit| {
-                let table = plans::edited(&held, edit).map_err(not_edited)?;
-                Ok((edit, table))
-            });
-            let (edit, table) = match edited {
+            let (base, edit, table) = match edited_plans(&plans, &edit) {
                 Ok(edited) => edited,
                 Err(reason) => return not_asked(reason),
             };
             let command = |reply| Command::EditPlans {
-                base: held.generation,
+                base,
                 plans: table,
                 edit,
                 reply,
@@ -184,7 +171,39 @@ pub async fn run(
     }
 }
 
-const fn not_asked(reason: NotAsked) -> FeederReply {
+/// A settings change as the device API carries it.
+pub(crate) const fn settings_patch(changes: SettingsChanges) -> SettingsPatch {
+    SettingsPatch {
+        lights: changes.lights,
+        sound: changes.sound,
+        volume: changes.volume,
+        lights_window: changes.lights_window,
+        sound_window: changes.sound_window,
+        desiccant_days: changes.desiccant_days,
+        meal_reminder: changes.meal_reminder,
+    }
+}
+
+/// The table `edit` makes of `plans`, with the generation it goes on and
+/// the edit as the plans queue takes it.
+pub(crate) fn edited_plans(
+    plans: &PlansView,
+    edit: &PlanEdit,
+) -> Result<
+    (
+        Generation,
+        plans::Edit,
+        [Option<Plan>; wellfed_model::PLANS],
+    ),
+    NotAsked,
+> {
+    let held = plans_of(plans);
+    let edit = edit_of(edit)?;
+    let table = plans::edited(&held, edit).map_err(not_edited)?;
+    Ok((held.generation, edit, table))
+}
+
+pub(crate) const fn not_asked(reason: NotAsked) -> FeederReply {
     FeederReply::NotAsked { reason }
 }
 
@@ -300,14 +319,14 @@ const fn not_edited(error: EditError) -> NotAsked {
     }
 }
 
-fn edit_of(edit: PlanEdit) -> Result<plans::Edit, NotAsked> {
-    Ok(match edit {
-        PlanEdit::Add { plan } => plans::Edit::Add(plan_of(&plan)),
+fn edit_of(edit: &PlanEdit) -> Result<plans::Edit, NotAsked> {
+    Ok(match *edit {
+        PlanEdit::Add { ref plan } => plans::Edit::Add(plan_of(plan)),
         PlanEdit::Change {
             slot,
             minute,
             portions,
-            days,
+            ref days,
             call,
             enabled,
         } => plans::Edit::Change {
@@ -563,7 +582,7 @@ fn invite_of(invite: wellfed_model::Invite, identity: [u8; 32], role: ClientRole
     }
 }
 
-fn reply_of(answer: Answer) -> FeederReply {
+pub(crate) fn reply_of(answer: Answer) -> FeederReply {
     match answer {
         Answer::Done { generation } => FeederReply::Done {
             generation: generation.map(|generation| generation.0),

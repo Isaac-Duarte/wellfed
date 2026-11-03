@@ -33,6 +33,7 @@ Servers come later ([roadmap](../../docs/roadmap.md)). Meal reminders are a sett
 | Theme | `lib/theme/tokens.g.dart` | Colors and sizes from [`assets/brand/tokens.json`](../../assets/brand/tokens.json) |
 
 - **The Rust half checks what the feeder checks.** Dart moves bytes and shows what the session says. A feed goes out once; a feed whose answer never came is shown as "may have run" and never sent again.
+- **With a server, every feeder request goes through the path router** (`rust/src/route/`, `PathRouter` in Dart). It picks the server first and the phone's own session when the server can't reach the feeder ([two paths, one feed](../../docs/server/README.md#two-paths-one-feed)). A write that may have run stays pinned to its path, in `pending.json` beside the app's file, until that path settles it. A new feed waits until an uncertain one is settled or put away. The screens don't use it yet.
 - **Images** are links to the committed renders in `assets/renders/`, and the launcher icon links to `assets/brand/android/`.
 - **The client secret never leaves the phone.** Android backup is off, so a new phone pairs again.
 - **A session gives a feeder this phone's clock** right after pairing, and whenever the feeder's clock is not set, as `wellfed time` does.

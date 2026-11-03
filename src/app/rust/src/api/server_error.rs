@@ -40,6 +40,13 @@ pub enum ServerErrorKind {
     /// The server has no session with the feeder right now, or could not
     /// reach it.
     FeederOffline,
+    /// No answer from the feeder in time (`504 outcome_unknown`): the
+    /// write may have run. Retried under the same key, or read from the
+    /// server's journal; never sent again any other way.
+    OutcomeUnknown,
+    /// The idempotency key already names another request: nothing was
+    /// sent.
+    KeyReused,
     /// The server refused for another reason; `message` is its title.
     Refused,
     /// The server answered something this app does not read: another

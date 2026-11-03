@@ -261,7 +261,12 @@ fn a_session_shows_the_card_and_runs_a_feed_to_its_end() {
         // The panel boots locked.
         assert_eq!(card.locked, Some(true));
 
-        commands.send(Command::Feed { portions: 2 }).unwrap();
+        commands
+            .send(Command::Feed {
+                portions: 2,
+                reply: None,
+            })
+            .unwrap();
         let (feed, portions) = next(&mut heard, |update| match update {
             SessionUpdate::FeedStarted { feed, portions, .. } => Some((feed, portions)),
             _ => None,
@@ -279,7 +284,12 @@ fn a_session_shows_the_card_and_runs_a_feed_to_its_end() {
         assert!(!result.uncertain);
         assert_eq!(result.words, "2 of 2 portions, done");
 
-        commands.send(Command::Feed { portions: 0 }).unwrap();
+        commands
+            .send(Command::Feed {
+                portions: 0,
+                reply: None,
+            })
+            .unwrap();
         let refusal = next(&mut heard, |update| match update {
             SessionUpdate::FeedRefused { refusal } => Some(refusal),
             _ => None,
@@ -326,7 +336,12 @@ async fn feed_in_flight(
     tokio::time::sleep(Duration::from_secs(3)).await;
 
     sim.control(Control::StallFeeds(true));
-    commands.send(Command::Feed { portions: 2 }).unwrap();
+    commands
+        .send(Command::Feed {
+            portions: 2,
+            reply: None,
+        })
+        .unwrap();
     next(&mut heard, |update| match update {
         SessionUpdate::FeedStarted { .. } => Some(()),
         _ => None,
@@ -575,7 +590,12 @@ fn a_feed_whose_answer_never_comes_is_reported_once_and_not_resent() {
         // The request reaches the feeder; its answer is lost on the way
         // back, then the connection with it.
         relay.hold_answers();
-        commands.send(Command::Feed { portions: 1 }).unwrap();
+        commands
+            .send(Command::Feed {
+                portions: 1,
+                reply: None,
+            })
+            .unwrap();
         tokio::time::sleep(Duration::from_millis(300)).await;
         relay.cut();
 
@@ -1008,7 +1028,12 @@ fn the_card_and_the_history_show_a_feed_read_again_by_a_new_session() {
         let owner = *Keypair::from_secret(OWNER).public();
         let sim = Running::start(&Flash::memory(), Some(owner)).await;
         let (commands, mut heard) = opened(sim.identity, sim.address).await;
-        commands.send(Command::Feed { portions: 1 }).unwrap();
+        commands
+            .send(Command::Feed {
+                portions: 1,
+                reply: None,
+            })
+            .unwrap();
         let ended = next(&mut heard, |update| match update {
             SessionUpdate::FeedEnded { result } => Some(result),
             _ => None,
@@ -1140,7 +1165,12 @@ fn a_recording_uploads_as_the_meal_call_and_a_trace_refused_says_so() {
         let reply = ask(FeederRequest::DeleteCall).await;
         assert!(matches!(reply, FeederReply::Done { .. }), "{reply:?}");
 
-        commands.send(Command::Feed { portions: 1 }).unwrap();
+        commands
+            .send(Command::Feed {
+                portions: 1,
+                reply: None,
+            })
+            .unwrap();
         let feed = next(&mut heard, |update| match update {
             SessionUpdate::FeedEnded { result } => Some(result.feed),
             _ => None,

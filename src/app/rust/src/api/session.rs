@@ -3,7 +3,7 @@
 //! stream [`FeederSession::run`] feeds.
 
 use std::net::SocketAddr;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use flutter_rust_bridge::frb;
 use tokio::sync::mpsc;
@@ -17,6 +17,7 @@ use crate::api::model::{
     Blocked, ClientRole, Desiccant, FeedOutcome, FeedReason, FoodLevel, MissedReason,
 };
 use crate::frb_generated::StreamSink;
+use crate::link::DirectLink;
 use crate::requests;
 use crate::session::{self, Command};
 
@@ -310,6 +311,8 @@ struct Start {
 pub struct FeederSession {
     feeder: [u8; 32],
     commands: mpsc::UnboundedSender<Command>,
+    /// What the path router reads of this session.
+    link: Arc<DirectLink>,
     start: Mutex<Option<Start>>,
 }
 
@@ -331,9 +334,15 @@ impl FeederSession {
             .map_err(|_| BridgeError::new(ErrorKind::Key, "a feeder identity is 32 bytes"))?;
         let address = wellfed_connect::parse_address(&address)?;
         let (commands, receiver) = mpsc::unbounded_channel();
+        let link = Arc::new(DirectLink::new(
+            feeder,
+            commands.clone(),
+            key.keypair().public(),
+        ));
         Ok(Self {
             feeder,
             commands,
+            link,
             start: Mutex::new(Some(Start {
                 keys: key.keypair().clone(),
                 address,
@@ -346,29 +355,45 @@ impl FeederSession {
     /// Connect and serve until the session ends: `updates` hears `Opened`,
     /// then the card, and `Closed` last. Runs once.
     pub async fn run(&self, updates: StreamSink<SessionUpdate>) {
+        self.run_with(|update| updates.add(update).is_ok()).await;
+    }
+
+    /// [`Self::run`], into `emit` until it returns `false`: what Rust tests
+    /// run a session with, since only Dart makes a [`StreamSink`].
+    #[frb(ignore)]
+    pub async fn run_with(&self, mut emit: impl FnMut(SessionUpdate) -> bool) {
         let start = self.start.lock().ok().and_then(|mut start| start.take());
         let Some(start) = start else {
             let error = BridgeError::new(ErrorKind::Ended, "this session already ran");
             // Nobody listening means nobody to tell.
-            let _ = updates.add(SessionUpdate::Closed { error: Some(error) });
+            let _ = emit(SessionUpdate::Closed { error: Some(error) });
             return;
         };
-        session::run(
+        session::run_linked(
+            Some(&self.link),
             start.keys,
             self.feeder,
             start.address,
             start.sync_clock,
             start.commands,
-            |update| updates.add(update).is_ok(),
+            emit,
         )
         .await;
+    }
+
+    /// What the path router reaches this session through.
+    pub(crate) fn direct(&self) -> Arc<DirectLink> {
+        Arc::clone(&self.link)
     }
 
     /// Feed `portions` (1-48) once. The answer and the feed's end arrive
     /// as updates.
     #[frb(sync)]
     pub fn feed(&self, portions: u8) -> Result<(), BridgeError> {
-        self.send(Command::Feed { portions })
+        self.send(Command::Feed {
+            portions,
+            reply: None,
+        })
     }
 
     #[frb(sync)]

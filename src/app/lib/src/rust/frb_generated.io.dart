@@ -10,6 +10,7 @@ import 'api/join.dart';
 import 'api/keys.dart';
 import 'api/model.dart';
 import 'api/restore.dart';
+import 'api/router.dart';
 import 'api/server.dart';
 import 'api/server_error.dart';
 import 'api/server_views.dart';
@@ -53,6 +54,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_InstallRunPtr => wire
       ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerInstallRunPtr;
+
+  CrossPlatformFinalizerArg
+  get rust_arc_decrement_strong_count_PathRouterPtr => wire
+      ._rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouterPtr;
 
   CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_RecoveryPtr => wire
@@ -100,6 +105,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   InstallRun
   dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerInstallRun(
+    dynamic raw,
+  );
+
+  @protected
+  PathRouter
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
     dynamic raw,
   );
 
@@ -164,6 +175,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PathRouter
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
+    dynamic raw,
+  );
+
+  @protected
   Recovery
   dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     dynamic raw,
@@ -218,6 +235,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PathRouter
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
+    dynamic raw,
+  );
+
+  @protected
   Recovery
   dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     dynamic raw,
@@ -253,6 +276,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<RestoreUpdate> dco_decode_StreamSink_restore_update_Sse(
+    dynamic raw,
+  );
+
+  @protected
+  RustStreamSink<RouterUpdate> dco_decode_StreamSink_router_update_Sse(
     dynamic raw,
   );
 
@@ -398,6 +426,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NtpResult dco_decode_box_autoadd_ntp_result(dynamic raw);
 
   @protected
+  PendingWrite dco_decode_box_autoadd_pending_write(dynamic raw);
+
+  @protected
   Phase dco_decode_box_autoadd_phase(dynamic raw);
 
   @protected
@@ -426,6 +457,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RestoreSpec dco_decode_box_autoadd_restore_spec(dynamic raw);
+
+  @protected
+  RoutePath dco_decode_box_autoadd_route_path(dynamic raw);
+
+  @protected
+  ServerAccount dco_decode_box_autoadd_server_account(dynamic raw);
 
   @protected
   ServerCommand dco_decode_box_autoadd_server_command(dynamic raw);
@@ -473,6 +510,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SettingsView dco_decode_box_autoadd_settings_view(dynamic raw);
+
+  @protected
+  Settlement dco_decode_box_autoadd_settlement(dynamic raw);
 
   @protected
   SetupRefusal dco_decode_box_autoadd_setup_refusal(dynamic raw);
@@ -694,6 +734,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<int?> dco_decode_list_opt_box_autoadd_u_16(dynamic raw);
 
   @protected
+  List<PendingWrite> dco_decode_list_pending_write(dynamic raw);
+
+  @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
 
   @protected
@@ -816,6 +859,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NtpResult? dco_decode_opt_box_autoadd_ntp_result(dynamic raw);
 
   @protected
+  PendingWrite? dco_decode_opt_box_autoadd_pending_write(dynamic raw);
+
+  @protected
   Phase? dco_decode_opt_box_autoadd_phase(dynamic raw);
 
   @protected
@@ -826,6 +872,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Resets? dco_decode_opt_box_autoadd_resets(dynamic raw);
+
+  @protected
+  RoutePath? dco_decode_opt_box_autoadd_route_path(dynamic raw);
 
   @protected
   ServerCommandOutcome? dco_decode_opt_box_autoadd_server_command_outcome(
@@ -907,6 +956,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PendingInstall dco_decode_pending_install(dynamic raw);
 
   @protected
+  PendingWrite dco_decode_pending_write(dynamic raw);
+
+  @protected
   Phase dco_decode_phase(dynamic raw);
 
   @protected
@@ -956,6 +1008,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Resume dco_decode_resume(dynamic raw);
+
+  @protected
+  RetryOutcome dco_decode_retry_outcome(dynamic raw);
+
+  @protected
+  RoutePath dco_decode_route_path(dynamic raw);
+
+  @protected
+  RoutedFeed dco_decode_routed_feed(dynamic raw);
+
+  @protected
+  RoutedReply dco_decode_routed_reply(dynamic raw);
+
+  @protected
+  RouterUpdate dco_decode_router_update(dynamic raw);
 
   @protected
   ServerAccount dco_decode_server_account(dynamic raw);
@@ -1055,6 +1122,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SettingsView dco_decode_settings_view(dynamic raw);
+
+  @protected
+  Settlement dco_decode_settlement(dynamic raw);
 
   @protected
   SetupRefusal dco_decode_setup_refusal(dynamic raw);
@@ -1159,6 +1229,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Window dco_decode_window(dynamic raw);
 
   @protected
+  WriteKind dco_decode_write_kind(dynamic raw);
+
+  @protected
   ZoneChange dco_decode_zone_change(dynamic raw);
 
   @protected
@@ -1191,6 +1264,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   InstallRun
   sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerInstallRun(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PathRouter
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
     SseDeserializer deserializer,
   );
 
@@ -1255,6 +1334,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PathRouter
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Recovery
   sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     SseDeserializer deserializer,
@@ -1309,6 +1394,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PathRouter
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Recovery
   sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     SseDeserializer deserializer,
@@ -1344,6 +1435,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RustStreamSink<RestoreUpdate> sse_decode_StreamSink_restore_update_Sse(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RustStreamSink<RouterUpdate> sse_decode_StreamSink_router_update_Sse(
     SseDeserializer deserializer,
   );
 
@@ -1507,6 +1603,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NtpResult sse_decode_box_autoadd_ntp_result(SseDeserializer deserializer);
 
   @protected
+  PendingWrite sse_decode_box_autoadd_pending_write(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Phase sse_decode_box_autoadd_phase(SseDeserializer deserializer);
 
   @protected
@@ -1537,6 +1638,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RestoreSpec sse_decode_box_autoadd_restore_spec(SseDeserializer deserializer);
+
+  @protected
+  RoutePath sse_decode_box_autoadd_route_path(SseDeserializer deserializer);
+
+  @protected
+  ServerAccount sse_decode_box_autoadd_server_account(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ServerCommand sse_decode_box_autoadd_server_command(
@@ -1604,6 +1713,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SettingsView sse_decode_box_autoadd_settings_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  Settlement sse_decode_box_autoadd_settlement(SseDeserializer deserializer);
 
   @protected
   SetupRefusal sse_decode_box_autoadd_setup_refusal(
@@ -1839,6 +1951,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<int?> sse_decode_list_opt_box_autoadd_u_16(SseDeserializer deserializer);
 
   @protected
+  List<PendingWrite> sse_decode_list_pending_write(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
 
   @protected
@@ -1983,6 +2100,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PendingWrite? sse_decode_opt_box_autoadd_pending_write(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Phase? sse_decode_opt_box_autoadd_phase(SseDeserializer deserializer);
 
   @protected
@@ -1995,6 +2117,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Resets? sse_decode_opt_box_autoadd_resets(SseDeserializer deserializer);
+
+  @protected
+  RoutePath? sse_decode_opt_box_autoadd_route_path(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ServerCommandOutcome? sse_decode_opt_box_autoadd_server_command_outcome(
@@ -2104,6 +2231,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PendingInstall sse_decode_pending_install(SseDeserializer deserializer);
 
   @protected
+  PendingWrite sse_decode_pending_write(SseDeserializer deserializer);
+
+  @protected
   Phase sse_decode_phase(SseDeserializer deserializer);
 
   @protected
@@ -2153,6 +2283,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Resume sse_decode_resume(SseDeserializer deserializer);
+
+  @protected
+  RetryOutcome sse_decode_retry_outcome(SseDeserializer deserializer);
+
+  @protected
+  RoutePath sse_decode_route_path(SseDeserializer deserializer);
+
+  @protected
+  RoutedFeed sse_decode_routed_feed(SseDeserializer deserializer);
+
+  @protected
+  RoutedReply sse_decode_routed_reply(SseDeserializer deserializer);
+
+  @protected
+  RouterUpdate sse_decode_router_update(SseDeserializer deserializer);
 
   @protected
   ServerAccount sse_decode_server_account(SseDeserializer deserializer);
@@ -2264,6 +2409,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SettingsView sse_decode_settings_view(SseDeserializer deserializer);
 
   @protected
+  Settlement sse_decode_settlement(SseDeserializer deserializer);
+
+  @protected
   SetupRefusal sse_decode_setup_refusal(SseDeserializer deserializer);
 
   @protected
@@ -2366,6 +2514,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Window sse_decode_window(SseDeserializer deserializer);
 
   @protected
+  WriteKind sse_decode_write_kind(SseDeserializer deserializer);
+
+  @protected
   ZoneChange sse_decode_zone_change(SseDeserializer deserializer);
 
   @protected
@@ -2406,6 +2557,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void
   sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerInstallRun(
     InstallRun self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
+    PathRouter self,
     SseSerializer serializer,
   );
 
@@ -2481,6 +2639,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
+    PathRouter self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
   sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     Recovery self,
     SseSerializer serializer,
@@ -2544,6 +2709,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
+    PathRouter self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void
   sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRecovery(
     Recovery self,
     SseSerializer serializer,
@@ -2585,6 +2757,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_StreamSink_restore_update_Sse(
     RustStreamSink<RestoreUpdate> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_StreamSink_router_update_Sse(
+    RustStreamSink<RouterUpdate> self,
     SseSerializer serializer,
   );
 
@@ -2802,6 +2980,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_pending_write(
+    PendingWrite self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_phase(Phase self, SseSerializer serializer);
 
   @protected
@@ -2849,6 +3033,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_restore_spec(
     RestoreSpec self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_route_path(
+    RoutePath self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_server_account(
+    ServerAccount self,
     SseSerializer serializer,
   );
 
@@ -2939,6 +3135,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_settings_view(
     SettingsView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_settlement(
+    Settlement self,
     SseSerializer serializer,
   );
 
@@ -3219,6 +3421,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_pending_write(
+    List<PendingWrite> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_32_strict(
     Uint32List self,
     SseSerializer serializer,
@@ -3414,6 +3622,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_pending_write(
+    PendingWrite? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_phase(Phase? self, SseSerializer serializer);
 
   @protected
@@ -3431,6 +3645,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_resets(
     Resets? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_route_path(
+    RoutePath? self,
     SseSerializer serializer,
   );
 
@@ -3573,6 +3793,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_pending_write(PendingWrite self, SseSerializer serializer);
+
+  @protected
   void sse_encode_phase(Phase self, SseSerializer serializer);
 
   @protected
@@ -3625,6 +3848,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_resume(Resume self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_retry_outcome(RetryOutcome self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_route_path(RoutePath self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_routed_feed(RoutedFeed self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_routed_reply(RoutedReply self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_router_update(RouterUpdate self, SseSerializer serializer);
 
   @protected
   void sse_encode_server_account(ServerAccount self, SseSerializer serializer);
@@ -3774,6 +4012,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_settings_view(SettingsView self, SseSerializer serializer);
 
   @protected
+  void sse_encode_settlement(Settlement self, SseSerializer serializer);
+
+  @protected
   void sse_encode_setup_refusal(SetupRefusal self, SseSerializer serializer);
 
   @protected
@@ -3883,6 +4124,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_window(Window self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_write_kind(WriteKind self, SseSerializer serializer);
 
   @protected
   void sse_encode_zone_change(ZoneChange self, SseSerializer serializer);
@@ -4070,6 +4314,40 @@ class RustLibWire implements BaseWire {
       );
   late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerInstallRun =
       _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerInstallRunPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void
+  rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouterPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_wellfed_rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter',
+      );
+  late final _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter =
+      _rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouterPtr
+          .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+
+  void
+  rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
+    ffi.Pointer<ffi.Void> ptr,
+  ) {
+    return _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
+      ptr,
+    );
+  }
+
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouterPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
+        'frbgen_wellfed_rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter',
+      );
+  late final _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter =
+      _rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouterPtr
           .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 
   void

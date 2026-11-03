@@ -5032,6 +5032,7 @@ dependencies = [
  "jiff",
  "jni",
  "log",
+ "proptest",
  "rumqttc",
  "rustls-platform-verifier",
  "serde",

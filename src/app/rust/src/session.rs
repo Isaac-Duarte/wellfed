@@ -45,6 +45,7 @@ use wellfed_session::noise::Keypair;
 use crate::api::error::{BridgeError, ErrorKind};
 use crate::api::keys::random;
 use crate::api::session::{FeedRefusal, HistoryEntry, SessionUpdate};
+use crate::link::DirectLink;
 use crate::requests::TimeRead;
 use crate::today::{Facts, event_entry, gap_entry, result};
 use crate::writes::{Line, MealSwitch, Next, PlansQueue, Queued, Reply, SettingsQueue, Write};
@@ -87,7 +88,7 @@ const FEED_SPARE: Duration = Duration::from_secs(25);
 
 /// When a feed of `portions` is overdue: a feeder that stayed on has ended it by
 /// then.
-fn feed_due(portions: u8) -> Duration {
+pub(crate) fn feed_due(portions: u8) -> Duration {
     FEED_PORTION * u32::from(portions) + FEED_SPARE
 }
 
@@ -96,8 +97,11 @@ type RequestId = [u8; 16];
 
 #[derive(Debug)]
 pub enum Command {
+    /// A feed; `reply`, when given, hears its answer too (the router's
+    /// feeds), beside the updates every feed makes.
     Feed {
         portions: u8,
+        reply: Option<Reply>,
     },
     CancelFeed {
         feed: u32,
@@ -147,6 +151,7 @@ enum Asked {
     Time,
     Feed {
         portions: u8,
+        reply: Option<Reply>,
     },
     Cancel,
     Clock,
@@ -168,11 +173,26 @@ pub async fn run(
     feeder: [u8; 32],
     address: SocketAddr,
     sync_clock: bool,
+    commands: mpsc::UnboundedReceiver<Command>,
+    update: impl FnMut(SessionUpdate) -> bool,
+) {
+    run_linked(None, keys, feeder, address, sync_clock, commands, update).await;
+}
+
+/// [`run`], telling `link` (the path router's view of this session) as it
+/// opens, reads the history and ends.
+pub(crate) async fn run_linked(
+    link: Option<&DirectLink>,
+    keys: Keypair,
+    feeder: [u8; 32],
+    address: SocketAddr,
+    sync_clock: bool,
     mut commands: mpsc::UnboundedReceiver<Command>,
     mut update: impl FnMut(SessionUpdate) -> bool,
 ) {
     let mut out = Outstanding::default();
     let error = serve(
+        link,
         &keys,
         feeder,
         address,
@@ -183,6 +203,9 @@ pub async fn run(
     )
     .await
     .err();
+    if let Some(link) = link {
+        link.closed();
+    }
 
     // A session that ends answers nothing still outstanding, and each of
     // those writes may have run: say so before the end.
@@ -193,7 +216,11 @@ pub async fn run(
     } = out;
     for what in asked.into_values() {
         match what {
-            Asked::Feed { .. } => {
+            Asked::Feed { reply, .. } => {
+                if let Some(reply) = reply {
+                    // Nobody waiting means nobody to tell.
+                    let _ = reply.send(Heard::Unanswered);
+                }
                 update(SessionUpdate::FeedUnanswered);
             }
             Asked::Ask(reply) => {
@@ -225,6 +252,7 @@ struct Outstanding {
 
 /// The session's own requests and the history as it comes in.
 struct Serving<'a, U> {
+    link: Option<&'a DirectLink>,
     connection: Connection,
     update: &'a mut U,
     out: &'a mut Outstanding,
@@ -247,7 +275,12 @@ struct Serving<'a, U> {
     zone_due: bool,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the session's inputs, passed once from its two entry points"
+)]
 async fn serve(
+    link: Option<&DirectLink>,
     keys: &Keypair,
     feeder: [u8; 32],
     address: SocketAddr,
@@ -264,6 +297,9 @@ async fn serve(
     }) {
         return Ok(());
     }
+    if let Some(link) = link {
+        link.opened();
+    }
 
     let Answer::Status(status) = connection.ask(random()?, &Op::Status).await? else {
         return Err(BridgeError::new(
@@ -274,7 +310,11 @@ async fn serve(
     let backlog = Backlog {
         newest: status.last_event,
     };
+    if let Some(link) = link {
+        link.event_at(status.last_event);
+    }
     let mut serving = Serving {
+        link,
         connection,
         update,
         out,
@@ -341,7 +381,9 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         let (op, what) = match command {
             Command::Close => return Ok(false),
             Command::Refresh => (Op::Status, Asked::Status),
-            Command::Feed { portions } => (Op::Feed { portions }, Asked::Feed { portions }),
+            Command::Feed { portions, reply } => {
+                (Op::Feed { portions }, Asked::Feed { portions, reply })
+            }
             Command::CancelFeed { feed } => (Op::CancelFeed { feed }, Asked::Cancel),
             Command::EditPlans {
                 base,
@@ -555,6 +597,9 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         };
         match (what, answer) {
             (Asked::Status, Some(Answer::Status(status))) => {
+                if let Some(link) = self.link {
+                    link.event_at(status.last_event);
+                }
                 self.facts.status = Some(status);
                 Ok(self.card())
             }
@@ -616,6 +661,20 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             // Refused or unanswered: the clock screen still offers it.
             (Asked::Zone, _) => Ok(true),
             (what, answer) => {
+                let what = match what {
+                    Asked::Feed {
+                        portions,
+                        reply: Some(reply),
+                    } => {
+                        // The router stopped waiting: nothing to tell it.
+                        let _ = reply.send(Heard::from(answer.clone()));
+                        Asked::Feed {
+                            portions,
+                            reply: None,
+                        }
+                    }
+                    other => other,
+                };
                 let message = feed_answered(what, answer);
                 if let Some(SessionUpdate::FeedStarted {
                     feed, due_seconds, ..
@@ -643,6 +702,12 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             Some(Entry::Feed(feed)) => Some(feed),
             _ => None,
         };
+        if let (Some(link), Pushed::Event(event)) = (self.link, pushed) {
+            link.event_at(Some(event.seq));
+        }
+        if let (Some(link), Some(feed)) = (self.link, fed.as_ref()) {
+            link.fed(feed);
+        }
         if let Some(feed) = fed {
             self.facts.feeds.push(feed);
             if self.running.is_some_and(|(ours, _)| ours == feed.feed) {
@@ -700,7 +765,7 @@ fn time_read_due(since_asked: Duration, on_its_way: bool, feeding: bool) -> bool
 /// The screen's update for a feed's or a cancel's answer, or its absence.
 fn feed_answered(what: Asked, answer: Option<Answer>) -> Option<SessionUpdate> {
     match (what, answer) {
-        (Asked::Feed { portions }, Some(Answer::Feeding { feed })) => {
+        (Asked::Feed { portions, .. }, Some(Answer::Feeding { feed })) => {
             Some(SessionUpdate::FeedStarted {
                 feed,
                 portions,

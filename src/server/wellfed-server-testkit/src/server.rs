@@ -51,7 +51,19 @@ impl TestServer {
         Self::serve_behind(service, TrustedProxies::default()).await
     }
 
+    /// The server again on a stopped one's database
+    /// ([`Self::stop_keeping`]), with `config`, at `address`: a server that
+    /// comes back where its clients knew it.
+    pub async fn reopen_at(store: TempStore, config: Config, address: SocketAddr) -> Self {
+        let service = TestService::open(store, config).await;
+        Self::serve_at(service, TrustedProxies::default(), address).await
+    }
+
     async fn serve_behind(service: TestService, proxies: TrustedProxies) -> Self {
+        Self::serve_at(service, proxies, SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).await
+    }
+
+    async fn serve_at(service: TestService, proxies: TrustedProxies, address: SocketAddr) -> Self {
         let shutdown = CancellationToken::new();
         let app = wellfed_server::app(
             service.service().clone(),
@@ -60,7 +72,7 @@ impl TestServer {
             proxies,
         );
 
-        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        let listener = tokio::net::TcpListener::bind(address)
             .await
             .expect("bind the server's port");
         let address = listener
@@ -103,6 +115,14 @@ impl TestServer {
     /// The service's data directory.
     pub fn store(&self) -> &TempStore {
         self.service.store()
+    }
+
+    /// End the open streams, stop serving, and stop the service, keeping
+    /// its database for [`Self::reopen_at`].
+    pub async fn stop_keeping(self) -> TempStore {
+        self.shutdown.cancel();
+        self.served.await.expect("the server's task ends cleanly");
+        self.service.stop().await
     }
 
     /// End the open streams, stop serving, and stop the service.

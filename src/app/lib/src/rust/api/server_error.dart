@@ -10,7 +10,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 // These functions are ignored because they are not marked as `pub`: `new`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`, `fmt`
 
-class ServerError implements FrbException {
+class ServerError {
   final ServerErrorKind kind;
   final String message;
 
@@ -83,6 +83,15 @@ enum ServerErrorKind {
   /// The server has no session with the feeder right now, or could not
   /// reach it.
   feederOffline,
+
+  /// No answer from the feeder in time (`504 outcome_unknown`): the
+  /// write may have run. Retried under the same key, or read from the
+  /// server's journal; never sent again any other way.
+  outcomeUnknown,
+
+  /// The idempotency key already names another request: nothing was
+  /// sent.
+  keyReused,
 
   /// The server refused for another reason; `message` is its title.
   refused,

@@ -406,11 +406,9 @@ impl ServerSession {
     pub async fn follow_with(
         &self,
         last_event_id: Option<String>,
-        mut emit: impl FnMut(ServerUpdate) -> bool,
+        emit: impl FnMut(ServerUpdate) -> bool,
     ) {
-        let error = self.stream(last_event_id, &mut emit).await.err();
-        // Nobody listening means nobody to tell.
-        emit(ServerUpdate::Closed { error });
+        self.handle().follow(last_event_id, emit).await;
     }
 
     /// End every follow, now and later. The reads still work.
@@ -428,6 +426,35 @@ impl ServerSession {
         }
     }
 
+    /// What the path router calls the server through: this session's
+    /// client and its close.
+    pub(crate) fn handle(&self) -> ServerHandle {
+        ServerHandle {
+            client: self.client.clone(),
+            closed: self.closed.subscribe(),
+        }
+    }
+}
+
+/// A [`ServerSession`]'s client and close, for the path router.
+#[derive(Clone, Debug)]
+pub(crate) struct ServerHandle {
+    pub(crate) client: Client,
+    closed: watch::Receiver<bool>,
+}
+
+impl ServerHandle {
+    /// Follow the stream, as [`ServerSession::follow_with`] does.
+    pub(crate) async fn follow(
+        &self,
+        last_event_id: Option<String>,
+        mut emit: impl FnMut(ServerUpdate) -> bool,
+    ) {
+        let error = self.stream(last_event_id, &mut emit).await.err();
+        // Nobody listening means nobody to tell.
+        emit(ServerUpdate::Closed { error });
+    }
+
     /// The stream's events into `emit`: `Ok` once closed or nobody
     /// listens, the reason otherwise.
     async fn stream(
@@ -435,7 +462,7 @@ impl ServerSession {
         last_event_id: Option<String>,
         emit: &mut impl FnMut(ServerUpdate) -> bool,
     ) -> Result<(), ServerError> {
-        let mut closed = self.closed.subscribe();
+        let mut closed = self.closed.clone();
         if *closed.borrow() {
             return Err(ServerError::new(
                 ServerErrorKind::Closed,

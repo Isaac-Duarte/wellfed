@@ -8,6 +8,7 @@ pub mod join;
 pub mod keys;
 pub mod model;
 pub mod restore;
+pub mod router;
 pub mod server;
 pub mod server_error;
 pub mod server_views;
