@@ -64,6 +64,7 @@ void main() {
       session.status(
         fakeCard(
           nextMeal: NextMealView(
+            slot: 1,
             atMs: now.add(const Duration(minutes: 26)).millisecondsSinceEpoch,
             minute: 12 * 60 + 30,
             portions: 2,

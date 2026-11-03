@@ -4079,12 +4079,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   NextMealView dco_decode_next_meal_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return NextMealView(
-      atMs: dco_decode_i_64(arr[0]),
-      minute: dco_decode_u_16(arr[1]),
-      portions: dco_decode_u_8(arr[2]),
+      slot: dco_decode_u_8(arr[0]),
+      atMs: dco_decode_i_64(arr[1]),
+      minute: dco_decode_u_16(arr[2]),
+      portions: dco_decode_u_8(arr[3]),
     );
   }
 
@@ -7211,10 +7212,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   NextMealView sse_decode_next_meal_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_slot = sse_decode_u_8(deserializer);
     var var_atMs = sse_decode_i_64(deserializer);
     var var_minute = sse_decode_u_16(deserializer);
     var var_portions = sse_decode_u_8(deserializer);
     return NextMealView(
+      slot: var_slot,
       atMs: var_atMs,
       minute: var_minute,
       portions: var_portions,
@@ -10575,6 +10578,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   void sse_encode_next_meal_view(NextMealView self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_8(self.slot, serializer);
     sse_encode_i_64(self.atMs, serializer);
     sse_encode_u_16(self.minute, serializer);
     sse_encode_u_8(self.portions, serializer);

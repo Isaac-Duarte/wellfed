@@ -446,6 +446,8 @@ class MealView {
 }
 
 class NextMealView {
+  /// The plan's slot, which the schedule marks as next.
+  final int slot;
   final PlatformInt64 atMs;
 
   /// The minute of the feeder's local day.
@@ -453,19 +455,22 @@ class NextMealView {
   final int portions;
 
   const NextMealView({
+    required this.slot,
     required this.atMs,
     required this.minute,
     required this.portions,
   });
 
   @override
-  int get hashCode => atMs.hashCode ^ minute.hashCode ^ portions.hashCode;
+  int get hashCode =>
+      slot.hashCode ^ atMs.hashCode ^ minute.hashCode ^ portions.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is NextMealView &&
           runtimeType == other.runtimeType &&
+          slot == other.slot &&
           atMs == other.atMs &&
           minute == other.minute &&
           portions == other.portions;

@@ -18,7 +18,7 @@ void main() {
     final int fedAt = feederTodayAt(7, 30);
     session.status(
       fakeCard(
-        nextMeal: NextMealView(atMs: feederTodayAt(12, 30), minute: 12 * 60 + 30, portions: 2),
+        nextMeal: NextMealView(slot: 0, atMs: feederTodayAt(12, 30), minute: 12 * 60 + 30, portions: 2),
         lastFed: fakeFed(atMs: fedAt),
         time: TimeInfo(
           generation: 1,

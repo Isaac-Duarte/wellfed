@@ -70,6 +70,8 @@ pub struct FaultView {
 }
 
 pub struct NextMealView {
+    /// The plan's slot, which the schedule marks as next.
+    pub slot: u8,
     pub at_ms: i64,
     /// The minute of the feeder's local day.
     pub minute: u16,

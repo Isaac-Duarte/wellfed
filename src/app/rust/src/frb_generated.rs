@@ -4958,10 +4958,12 @@ impl SseDecode for crate::api::model::MissedReason {
 impl SseDecode for crate::api::session::NextMealView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_slot = <u8>::sse_decode(deserializer);
         let mut var_atMs = <i64>::sse_decode(deserializer);
         let mut var_minute = <u16>::sse_decode(deserializer);
         let mut var_portions = <u8>::sse_decode(deserializer);
         return crate::api::session::NextMealView {
+            slot: var_slot,
             at_ms: var_atMs,
             minute: var_minute,
             portions: var_portions,
@@ -8543,6 +8545,7 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::model::MissedReaso
 impl flutter_rust_bridge::IntoDart for crate::api::session::NextMealView {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
+            self.slot.into_into_dart().into_dart(),
             self.at_ms.into_into_dart().into_dart(),
             self.minute.into_into_dart().into_dart(),
             self.portions.into_into_dart().into_dart(),
@@ -11754,6 +11757,7 @@ impl SseEncode for crate::api::model::MissedReason {
 impl SseEncode for crate::api::session::NextMealView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u8>::sse_encode(self.slot, serializer);
         <i64>::sse_encode(self.at_ms, serializer);
         <u16>::sse_encode(self.minute, serializer);
         <u8>::sse_encode(self.portions, serializer);

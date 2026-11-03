@@ -98,6 +98,7 @@ impl Facts {
         });
 
         let next = next_meal(plans, now, &zone).map(|meal| NextMealView {
+            slot: meal.slot,
             at_ms: meal.at.as_millisecond(),
             minute: minute_of(meal.at, &zone),
             portions: meal.portions,
