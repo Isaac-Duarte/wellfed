@@ -203,9 +203,13 @@ class InstallSendingPage extends StatelessWidget {
               ),
             ),
             Flexible(
-              child: Text(
-                _status(),
-                style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+              child: Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: Text(
+                  _status(),
+                  textAlign: TextAlign.end,
+                  style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+                ),
               ),
             ),
           ],

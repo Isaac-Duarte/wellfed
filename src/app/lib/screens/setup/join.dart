@@ -54,7 +54,7 @@ class _JoinScreenState extends State<JoinScreen> {
         builder: (context) {
           final ThemeTokens c = context.colors;
           return StepScaffold(
-            appBarTitle: 'Join with an invite',
+            title: 'Join with an invite',
             body:
                 'Ask an owner to open People › Invite someone on their phone, then '
                 'point this camera at the code.',

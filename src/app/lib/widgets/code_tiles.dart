@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:wellfed/state/clock/clock.dart';
@@ -118,7 +119,7 @@ class _CodeWindowState extends State<CodeWindow> {
 
   int _left() {
     final DateTime? deadline = widget.deadline;
-    return deadline == null ? 0 : deadline.difference(DateTime.now()).inSeconds.clamp(0, 999);
+    return deadline == null ? 0 : deadline.difference(clock.now()).inSeconds.clamp(0, 999);
   }
 
   void _ticked() => setState(() {});

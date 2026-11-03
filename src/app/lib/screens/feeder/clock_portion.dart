@@ -128,6 +128,7 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
           padding: const EdgeInsets.all(Space.s4),
           children: [
             const SectionLabel('Clock'),
+            const SizedBox(height: Space.s2),
             FactList([
               (
                 'Feeder time',
@@ -149,20 +150,17 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
               style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
             ),
             const SizedBox(height: Space.s2),
-            Row(
+            Wrap(
+              spacing: Space.s2,
+              runSpacing: Space.s2,
               children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _asking || time == null ? null : () => unawaited(_time(zone: const ZoneChange.phone())),
-                    child: const Text("This phone's zone"),
-                  ),
+                OutlinedButton(
+                  onPressed: _asking || time == null ? null : () => unawaited(_time(zone: const ZoneChange.phone())),
+                  child: const Text("Use this phone's zone"),
                 ),
-                const SizedBox(width: Space.s2),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _asking || time == null ? null : () => unawaited(_time(zone: const ZoneChange.clear())),
-                    child: const Text('Clear it'),
-                  ),
+                TextButton(
+                  onPressed: _asking || time == null ? null : () => unawaited(_time(zone: const ZoneChange.clear())),
+                  child: const Text('Clear it'),
                 ),
               ],
             ),
@@ -199,6 +197,7 @@ class _ClockPortionScreenState extends State<ClockPortionScreen> {
               ),
             const SizedBox(height: Space.s5),
             const SectionLabel('Portion size'),
+            const SizedBox(height: Space.s2),
             Builder(
               builder: (context) {
                 final ThemeTokens c = context.colors;

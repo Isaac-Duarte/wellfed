@@ -196,7 +196,11 @@ void main() {
         answerAsFull(session);
         session.status(_fourMealsCard());
         await tester.pump();
-        await showPhone(tester, HomeScreen(fleet: fleet, earlierInstall: () async => PendingInstall.nothing), brightness);
+        await showPhone(
+          tester,
+          HomeScreen(fleet: fleet, earlierInstall: () async => PendingInstall.nothing),
+          brightness,
+        );
         await decodeImages(tester);
         await matchesGolden('home', brightness);
       });
