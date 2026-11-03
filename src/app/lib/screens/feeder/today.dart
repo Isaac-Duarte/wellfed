@@ -141,9 +141,7 @@ class _Summary extends StatelessWidget {
         ],
         color: locked == null ? c.textMuted : null,
         onTap: online && locked != null
-            ? () => unawaited(
-                write.ask(!shownLocked, () => feeder.ask(FeederRequest.setLock(locked: !shownLocked))),
-              )
+            ? () => unawaited(write.ask(!shownLocked, () => feeder.ask(FeederRequest.setLock(locked: !shownLocked))))
             : null,
         tapHint: shownLocked ? 'Unlock the buttons' : 'Lock the buttons',
       ),
