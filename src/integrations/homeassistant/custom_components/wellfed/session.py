@@ -9,7 +9,9 @@ reported as uncertain and never sent again.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
+import contextlib
 import logging
 import threading
 
@@ -19,7 +21,7 @@ from homeassistant.util import dt as dt_util
 
 import wellfed_homeassistant as bridge
 
-from .const import EVENT_FEEDER
+from .const import DOMAIN, EVENT_FEEDER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +30,10 @@ PUMP_WAIT = 1.0
 
 
 class WriteNotDone(HomeAssistantError):
-    """A feed or lock change the feeder did not carry out, or may have."""
+    """A write the feeder did not carry out, or may have, in the owner's words."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__(translation_domain=DOMAIN, translation_key=key)
 
 
 def _datetime(unix_ms: int | None) -> str | None:
@@ -93,6 +98,12 @@ class FeederSession:
         self.capabilities: bridge.Capabilities | None = None
         self.state: bridge.State | None = None
         self.install_progress: bridge.InstallProgress | None = None
+        # The feed this Home Assistant started, until its `Fed` event.
+        self.running_feed: int | None = None
+        # The Portions number's value: what the Feed button asks for.
+        self.portions = 1
+        self._event_listeners: list[Callable[[bridge.Event], None]] = []
+        self._ready = asyncio.Event()
 
     @property
     def status(self) -> bridge.Status | None:
@@ -116,6 +127,18 @@ class FeederSession:
             self._pump.join(timeout=PUMP_WAIT * 3)
         self._feeder = None
 
+    async def ready(self, timeout: float) -> None:
+        """Wait until the first state is in, or the key is found revoked."""
+        with contextlib.suppress(TimeoutError):
+            async with asyncio.timeout(timeout):
+                await self._ready.wait()
+
+    @callback
+    def add_event_listener(self, listener: Callable[[bridge.Event], None]) -> Callable[[], None]:
+        """Call `listener` with each event as it happens (never a replay)."""
+        self._event_listeners.append(listener)
+        return lambda: self._event_listeners.remove(listener)
+
     @callback
     def add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
         """Call `listener` on every change; returns its removal."""
@@ -126,7 +149,9 @@ class FeederSession:
         """Start a feed; the feeder's number for it."""
         written = await self._write(lambda feeder: feeder.feed(portions))
         if written.feed is None:
-            raise WriteNotDone("The feeder answered a feed without its number")
+            raise WriteNotDone("write_uncertain")
+        self.running_feed = written.feed
+        self._changed()
         return written.feed
 
     async def cancel_feed(self, feed: int) -> None:
@@ -199,13 +224,13 @@ class FeederSession:
 
     def _running(self) -> bridge.Feeder:
         if self._feeder is None:
-            raise WriteNotDone("Not sent: the session has stopped")
+            raise WriteNotDone("not_sent_stopped")
         return self._feeder
 
     async def _write(self, call: Callable[[bridge.Feeder], bridge.Written]) -> bridge.Written:
         feeder = self._feeder
         if feeder is None:
-            raise WriteNotDone("Not sent: the session has stopped")
+            raise WriteNotDone("not_sent_stopped")
         written = await self.hass.async_add_executor_job(call, feeder)
         result = written.result
         if result in (bridge.WriteResult.Feeding, bridge.WriteResult.Done):
@@ -213,15 +238,12 @@ class FeederSession:
         if result == bridge.WriteResult.Uncertain:
             # It may have run. The feeder's event settles it; sending it
             # again could feed twice.
-            raise WriteNotDone(
-                "The feeder did not answer, so it may have run. It was not "
-                "sent again; the feeding history will show whether it did."
-            )
+            raise WriteNotDone("write_uncertain")
         if result == bridge.WriteResult.NotSent:
-            reason = written.not_sent.key if written.not_sent is not None else "unknown"
-            raise WriteNotDone(f"Not sent: {reason}")
-        refusal = written.refusal.key if written.refusal is not None else "unknown"
-        raise WriteNotDone(f"The feeder refused: {refusal}")
+            reason = written.not_sent or bridge.NotSent.Disconnected
+            raise WriteNotDone(f"not_sent_{reason.key}")
+        refusal = written.refusal or bridge.RefusalKind.Invalid
+        raise WriteNotDone(f"refused_{refusal.key}")
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -242,10 +264,16 @@ class FeederSession:
             self.capabilities = update.capabilities
         elif kind == bridge.UpdateKind.State:
             self.state = update.state
+            self._ready.set()
         elif kind == bridge.UpdateKind.Event and update.event is not None:
             # A replayed event is history the state already holds, not news.
+            event = update.event
+            if event.fed is not None and event.fed.feed == self.running_feed:
+                self.running_feed = None
             if not update.replayed:
-                self.hass.bus.async_fire(EVENT_FEEDER, event_data(self.identity, update.event))
+                self.hass.bus.async_fire(EVENT_FEEDER, event_data(self.identity, event))
+                for hear in list(self._event_listeners):
+                    hear(event)
         elif kind == bridge.UpdateKind.Installing:
             self.install_progress = update.install
         elif kind == bridge.UpdateKind.Gap:
@@ -268,6 +296,7 @@ class FeederSession:
         elif kind == bridge.UpdateKind.Revoked:
             _LOGGER.error("The feeder no longer knows this Home Assistant: pair it again")
             self.revoked = True
+            self._ready.set()
             self.connected = False
             if self.on_revoked is not None:
                 self.on_revoked()
@@ -275,5 +304,9 @@ class FeederSession:
             if self.connected:
                 _LOGGER.warning("Feeder disconnected: %s", update.reason)
             self.connected = False
+        self._changed()
+
+    @callback
+    def _changed(self) -> None:
         for listener in list(self._listeners):
             listener()

@@ -1,21 +1,37 @@
 # Home Assistant integration
 
-This integration puts a Wellfed feeder in Home Assistant with no server. It is for owners who run Home Assistant and want feeds, the panel lock and the feeder's state in their automations. It is a proof of concept: its status is on the [roadmap](../../../docs/roadmap.md).
+This integration puts a Wellfed feeder in Home Assistant with no server. It is for owners who run Home Assistant and want feeds, the panel lock and the feeder's state in their automations. Its status is on the [roadmap](../../../docs/roadmap.md).
 
 Home Assistant pairs with the feeder as its own client, by an invite, as a second phone does. It holds one [device API](../../../docs/firmware/device-api.md) session to the feeder over the LAN. Nothing runs on the feeder for it, and it needs no `wellfed-server`.
 
 ## What you get
 
+Every state is the feeder's, read from its status and events, never assumed after a command. Entities marked *owner* appear only with an owner invite, and an entity for something the feeder's firmware does not serve is left out.
+
 | Entity | What it does |
 | --- | --- |
-| Feed one portion (button) | Each press sends one feed of one portion. |
-| Child lock (switch) | Locks or unlocks the panel. It shows the feeder's state, not the last command. |
-| Last fed (sensor) | When the last feed this session saw ended, with its portions and outcome as attributes. |
-| Battery, Desiccant days left, Wi-Fi signal (sensors) | From the feeder's status, read every 30 s and after each event. Wi-Fi signal is off by default. |
-| Food low (binary sensor) | The food beam's last reading. |
-| Connected (binary sensor) | Whether the session is open. |
+| Feed (button) | Sends one feed of the Portions number's value. |
+| Portions (number) | What the Feed button asks for, 1 to 48. Home Assistant keeps it across restarts. |
+| Cancel feed (button) | Stops the feed this Home Assistant started, while it runs. |
+| Feed (event) | Each feed as it ends: fed, cancelled, failed, uncertain or expired, with its portions and who asked. An uncertain feed's portions are a range. |
+| Last fed, Portions today, Next meal (sensors) | The feeder's day, reckoned as the app reckons it. Portions today counts confirmed portions, with the most that may have dropped as an attribute. |
+| Food, Readiness (sensors) | The food beam's last reading, and whether a feed can start now or why not. |
+| Battery, Desiccant days left, Wi-Fi signal (sensors) | From the status. Wi-Fi signal is off by default. |
+| Connected, Food low, Feed problem, On battery (binary sensors) | The session, the hopper, the last failed feed this boot and the supply. |
+| Child lock, Sound, Lights (switches) | The panel lock and the feeder's settings. |
+| Meal *HH:MM* (switches) | One per feeding plan, on or off. A plan added on the feeder adds its switch; a deleted one removes it. |
+| Volume (number) | The speaker's volume. |
+| Desiccant replaced, Play chime (buttons) | Records a fresh pack today; plays the chime. |
+| Portion weight (number), Restart (button) | *Owner*: the weight of one portion, 1 to 50 g, and a restart. |
+| Firmware (update) | *Owner*: the installed build, the newest verified release, and an install with its progress. |
 
-The `wellfed.feed` action takes a feeder device and 1 to 48 portions, and answers the feeder's number for the feed. Every event the feeder records also fires `wellfed_event` on the bus: its `kind` (`fed`, `lock`, `meal_soon` and so on), `seq` and `at`, with the feed, the lock, who made the change and the plan where the event names them.
+The actions:
+
+- `wellfed.feed` takes a feeder device and 1 to 48 portions, and answers the feeder's number for the feed.
+- `wellfed.cancel_feed` stops a feed: the one Home Assistant started, or the one whose number you give.
+- `wellfed.add_release` verifies a `.plota` file from a folder Home Assistant may read and keeps it for the Firmware entity (*owner*).
+
+Every event the feeder records as it happens also fires `wellfed_event` on the bus: its `kind` (`fed`, `lock`, `meal_soon` and so on), `seq` and `at`, with the feed, the lock, who made the change and the plan where the event names them. Events from the history read at connect are not fired again.
 
 ## How a feed stays one feed
 

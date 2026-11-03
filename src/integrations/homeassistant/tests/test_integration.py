@@ -83,7 +83,7 @@ async def test_the_button_feeds_once_to_its_fed_event(
     await hass.services.async_call(
         "button",
         "press",
-        {ATTR_ENTITY_ID: "button.feeder_" + _short(entry) + "_feed_one_portion"},
+        {ATTR_ENTITY_ID: "button.feeder_" + _short(entry) + "_feed"},
         blocking=True,
     )
     await _until(hass, lambda: len(fed) == 1)

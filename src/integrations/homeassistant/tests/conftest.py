@@ -47,17 +47,23 @@ class Simulator:
     address: str
     keys: Path
     cli: Path
+    process: subprocess.Popen[bytes]
+
+    def owner(self, *args: str) -> str:
+        """A `wellfed` command as the simulator's owner; its output."""
+        command = [str(self.cli), *args, "--keys", str(self.keys), "--address", self.address]
+        done = subprocess.run(command, capture_output=True, text=True, check=True, timeout=60)
+        return done.stdout
+
+    def console(self, line: str) -> None:
+        """A line typed at the simulator's console: a press, the adapter, the hopper."""
+        assert self.process.stdin is not None
+        self.process.stdin.write(f"{line}\n".encode())
+        self.process.stdin.flush()
 
     def invite(self, role: str = "member") -> str:
         """A single-use invite from the simulator's owner."""
-        made = subprocess.run(
-            [self.cli, "invite", "--keys", self.keys, "--address", self.address, "--role", role],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
-        )
-        return made.stdout.strip()
+        return self.owner("invite", "--role", role).strip()
 
 
 @pytest.fixture
@@ -91,7 +97,7 @@ def simulator(tmp_path: Path, socket_enabled: None) -> Iterator[Simulator]:
         process.kill()
         pytest.fail("the simulator did not start listening")
 
-    yield Simulator(address=f"127.0.0.1:{port}", keys=keys, cli=cli)
+    yield Simulator(address=f"127.0.0.1:{port}", keys=keys, cli=cli, process=process)
 
     process.kill()
     process.wait(timeout=10)

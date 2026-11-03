@@ -247,10 +247,13 @@ fn settings_change_on_the_generation_read_and_one_at_a_time() {
 
     relay.resume();
     assert_eq!(first.join().unwrap(), Written::done());
+    // The next change goes on the generation the first landed at, at once,
+    // without waiting for the settings to be read again.
+    assert_eq!(feeder.put_settings(volume(25)), Written::done());
     let state = state_where(&feeder, |state| {
-        state.settings.is_some_and(|settings| settings.volume == 20)
+        state.settings.is_some_and(|settings| settings.volume == 25)
     });
-    assert_eq!(state.settings.map(|settings| settings.volume), Some(20));
+    assert_eq!(state.settings.map(|settings| settings.volume), Some(25));
 }
 
 fn volume(volume: u8) -> SettingsPatch {

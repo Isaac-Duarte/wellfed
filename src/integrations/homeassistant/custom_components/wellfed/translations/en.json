@@ -61,16 +61,104 @@
     "binary_sensor": {
       "food_low": {
         "name": "Food low"
+      },
+      "feed_problem": {
+        "name": "Feed problem",
+        "state_attributes": {
+          "feed": {
+            "name": "Feed"
+          },
+          "outcome": {
+            "name": "Outcome"
+          },
+          "reason": {
+            "name": "Reason"
+          }
+        }
+      },
+      "on_battery": {
+        "name": "On battery"
       }
     },
     "button": {
       "feed": {
-        "name": "Feed one portion"
+        "name": "Feed"
+      },
+      "cancel_feed": {
+        "name": "Cancel feed"
+      },
+      "reset_desiccant": {
+        "name": "Desiccant replaced"
+      },
+      "play_chime": {
+        "name": "Play chime"
+      },
+      "reboot": {
+        "name": "Restart"
+      }
+    },
+    "event": {
+      "feed_event": {
+        "name": "Feed",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "fed": "Fed",
+              "cancelled": "Cancelled",
+              "failed": "Failed",
+              "uncertain": "Uncertain",
+              "expired": "Expired"
+            }
+          }
+        }
+      }
+    },
+    "number": {
+      "portions": {
+        "name": "Portions"
+      },
+      "volume": {
+        "name": "Volume"
+      },
+      "portion_weight": {
+        "name": "Portion weight"
       }
     },
     "sensor": {
       "last_fed": {
         "name": "Last fed"
+      },
+      "portions_today": {
+        "name": "Portions today",
+        "unit_of_measurement": "portions"
+      },
+      "next_meal": {
+        "name": "Next meal"
+      },
+      "food": {
+        "name": "Food",
+        "state": {
+          "unread": "Not read yet",
+          "present": "Present",
+          "low": "Low"
+        }
+      },
+      "readiness": {
+        "name": "Readiness",
+        "state": {
+          "ready": "Ready",
+          "starting": "Starting",
+          "journal": "Feed journal unreadable",
+          "fault": "Stopped on a fault",
+          "resolving": "Resolving an interrupted feed",
+          "feeding": "Feeding",
+          "joining": "Joining Wi-Fi",
+          "updating": "Updating",
+          "setup": "In setup",
+          "unserved": "No feeding on this build",
+          "battery": "Battery too low",
+          "restarting": "Restarting"
+        }
       },
       "desiccant": {
         "name": "Desiccant days left"
@@ -79,6 +167,20 @@
     "switch": {
       "child_lock": {
         "name": "Child lock"
+      },
+      "sound": {
+        "name": "Sound"
+      },
+      "lights": {
+        "name": "Lights"
+      },
+      "plan": {
+        "name": "Meal {time}"
+      }
+    },
+    "update": {
+      "firmware": {
+        "name": "Firmware"
       }
     }
   },
@@ -94,6 +196,34 @@
         "portions": {
           "name": "Portions",
           "description": "Portions to dispense, 1 to 48."
+        }
+      }
+    },
+    "cancel_feed": {
+      "name": "Cancel feed",
+      "description": "Stop a running feed. Without a number, the feed Home Assistant started.",
+      "fields": {
+        "device_id": {
+          "name": "Feeder",
+          "description": "The feeder running the feed."
+        },
+        "feed": {
+          "name": "Feed",
+          "description": "The feeder's number for the feed."
+        }
+      }
+    },
+    "add_release": {
+      "name": "Add firmware release",
+      "description": "Verify a `.plota` firmware file and keep it for the firmware update entity. Owner mode only.",
+      "fields": {
+        "device_id": {
+          "name": "Feeder",
+          "description": "The feeder the release is for."
+        },
+        "path": {
+          "name": "Path",
+          "description": "The file, in a folder Home Assistant may read."
         }
       }
     }
@@ -113,6 +243,107 @@
     },
     "abort": {
       "owner_only": "Firmware installs need an owner invite. Pair again with `wellfed invite --role owner` to turn them on."
+    }
+  },
+  "exceptions": {
+    "write_uncertain": {
+      "message": "The feeder did not answer, so it may have run. It was not sent again: the feeding history will show whether it did."
+    },
+    "not_a_feeder": {
+      "message": "That device is not a Wellfed feeder."
+    },
+    "no_feed": {
+      "message": "No feed from Home Assistant is running to cancel."
+    },
+    "owner_only": {
+      "message": "This needs an owner invite."
+    },
+    "path_not_allowed": {
+      "message": "Home Assistant may not read {path}. Add its folder to allowlist_external_dirs."
+    },
+    "revoked": {
+      "message": "The feeder no longer knows this Home Assistant. Pair it again."
+    },
+    "not_ready": {
+      "message": "The feeder did not answer. Home Assistant will try again."
+    },
+    "no_release": {
+      "message": "No verified release is held to install."
+    },
+    "install_failed": {
+      "message": "The install stopped: the feeder refused it or it failed. The feeder keeps running its firmware."
+    },
+    "install_gone": {
+      "message": "The feeder stopped answering during the install. Check its firmware once it is back."
+    },
+    "install_not_sent": {
+      "message": "The install did not start: another may be running, or this Home Assistant is not an owner."
+    },
+    "not_sent_disconnected": {
+      "message": "Not sent: the feeder is not connected. Nothing reached it, so you can try again."
+    },
+    "not_sent_stopped": {
+      "message": "Not sent: this feeder's session has stopped. Reload the integration, or pair it again if it was removed."
+    },
+    "not_sent_busy": {
+      "message": "Not sent: a change to the same settings is still waiting on the feeder. Try again in a moment."
+    },
+    "not_sent_forbidden": {
+      "message": "Not sent: this needs an owner invite. Pair again with `wellfed invite --role owner` to allow it."
+    },
+    "not_sent_unsupported": {
+      "message": "Not sent: the feeder's firmware does not support this."
+    },
+    "not_sent_not_read": {
+      "message": "Not sent: Home Assistant has not read the feeder's settings yet. Try again in a moment."
+    },
+    "not_sent_invalid": {
+      "message": "Not sent: that value is outside what the feeder accepts."
+    },
+    "refused_forbidden": {
+      "message": "The feeder refused: this client's role may not do that."
+    },
+    "refused_stale": {
+      "message": "The feeder refused: the settings changed meanwhile. Home Assistant read them again; check and try again."
+    },
+    "refused_busy": {
+      "message": "The feeder refused: it is busy. Try again in a moment."
+    },
+    "refused_unavailable": {
+      "message": "The feeder refused: this firmware does not serve that."
+    },
+    "refused_invalid": {
+      "message": "The feeder refused: a value failed its checks."
+    },
+    "refused_not_writable": {
+      "message": "The feeder refused: its storage cannot be written now."
+    },
+    "refused_full": {
+      "message": "The feeder refused: it is full."
+    },
+    "refused_not_found": {
+      "message": "The feeder refused: there is no such feed or plan."
+    },
+    "refused_muted": {
+      "message": "The feeder refused: its sound is off or outside its sound window."
+    },
+    "refused_time": {
+      "message": "The feeder refused the time."
+    },
+    "refused_fault": {
+      "message": "The feeder refused: it stopped on a fault and feeds again after a restart."
+    },
+    "refused_update": {
+      "message": "The feeder refused the firmware."
+    },
+    "refused_unverified": {
+      "message": "The feeder refused: that bowl mode is not verified on this feeder."
+    },
+    "refused_portions": {
+      "message": "The feeder refused: a feed is 1 to 48 portions."
+    },
+    "refused_no_clock": {
+      "message": "The feeder refused: its clock is not set yet."
     }
   }
 }

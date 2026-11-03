@@ -210,4 +210,6 @@ async def test_release_keys_are_an_owner_s_option(
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert owner.options[CONF_PROJECT_KEYS] == [key.lower()]
+    # Saved options reload the entry, so the update entity sees the keys.
+    await hass.async_block_till_done()
     assert await hass.config_entries.async_unload(owner.entry_id)

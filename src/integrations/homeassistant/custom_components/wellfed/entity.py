@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
+
+import wellfed_homeassistant as bridge
 
 from .const import DOMAIN
 from .session import FeederSession
@@ -34,3 +38,13 @@ class WellfedEntity(Entity):
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self.session.add_listener(self.async_write_ha_state))
+
+
+def owner_mode(session: FeederSession) -> bool:
+    """Whether this Home Assistant joined with an owner invite."""
+    return session.role == bridge.Role.Owner
+
+
+def serves(session: FeederSession, capability: Callable[[bridge.Capabilities], bool]) -> bool:
+    """Whether the feeder serves what `capability` names."""
+    return session.capabilities is not None and capability(session.capabilities)

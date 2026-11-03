@@ -44,8 +44,8 @@ use wellfed_client::update::Image;
 use wellfed_connect::update::{Opened, Pace, Pushed as PushEnded, Steps};
 use wellfed_connect::{Connection, Cursor, Received};
 use wellfed_model::{
-    Answer, Blocked, CalibrationView, Capabilities, ClientRole, EventBody, Op, Pushed, Readiness,
-    SettingsPatch, Source, Status, UpdateView,
+    Answer, Blocked, CalibrationView, Capabilities, ClientRole, EventBody, Generation, Op, Pushed,
+    Readiness, SettingsPatch, Source, Status, UpdateView,
 };
 
 use crate::Error;
@@ -519,6 +519,8 @@ enum Pending {
     Write {
         reply: oneshot::Sender<Written>,
         kind: Kind,
+        /// What went out, to put on the facts once it lands.
+        op: Op,
     },
     Read(Read),
     /// An install's request: the answer goes back to its driver, and a
@@ -575,7 +577,7 @@ impl<'a> Session<'a> {
         // Each write still outstanding went out and was never answered.
         let outstanding: Vec<Pending> = self.pending.drain().map(|(_, pending)| pending).collect();
         for pending in outstanding {
-            if let Pending::Write { reply, kind } = pending {
+            if let Pending::Write { reply, kind, .. } = pending {
                 self.unanswered(kind);
                 let _ = reply.send(Written::uncertain());
             }
@@ -728,7 +730,7 @@ impl<'a> Session<'a> {
             let _ = reply.send(Written::not_sent(NotSent::Disconnected));
             return Err(lost(error));
         }
-        self.pending.insert(id, Pending::Write { reply, kind });
+        self.pending.insert(id, Pending::Write { reply, kind, op });
         Ok(())
     }
 
@@ -788,8 +790,8 @@ impl<'a> Session<'a> {
 
     fn answered(&mut self, id: RequestId, answer: Option<Answer>) -> Step {
         match self.pending.remove(&id) {
-            Some(Pending::Write { reply, kind }) => {
-                let written = self.written(kind, answer.as_ref())?;
+            Some(Pending::Write { reply, kind, op }) => {
+                let written = self.written(kind, &op, answer.as_ref())?;
                 let _ = reply.send(written);
                 Ok(())
             }
@@ -803,7 +805,7 @@ impl<'a> Session<'a> {
     }
 
     /// How the write of `kind` ended, by its answer.
-    fn written(&mut self, kind: Kind, answer: Option<&Answer>) -> Result<Written, Ended> {
+    fn written(&mut self, kind: Kind, op: &Op, answer: Option<&Answer>) -> Result<Written, Ended> {
         let Some(answer) = answer else {
             self.unanswered(kind);
             return Ok(Written::uncertain());
@@ -820,11 +822,51 @@ impl<'a> Session<'a> {
                 // state shows what it now holds.
                 self.read(store_read(store))?;
                 Ok(match writes::landed(Some(answer), base) {
-                    Landed::Done => Written::done(),
+                    Landed::Done => {
+                        self.landed(op);
+                        self.state()?;
+                        Written::done()
+                    }
                     Landed::Stale | Landed::Refused(_) => once(answer),
                     Landed::Unknown => Written::uncertain(),
                 })
             }
+        }
+    }
+
+    /// Put a store write that landed on the facts at its next generation,
+    /// as the feeder now holds it: the next change is built on it at once,
+    /// rather than on a generation the re-read has yet to bring.
+    fn landed(&mut self, op: &Op) {
+        let facts = &mut self.memory.facts;
+        match op {
+            Op::PutSettings { base, changes } => {
+                if let Some(settings) = facts
+                    .settings
+                    .as_mut()
+                    .filter(|held| held.generation == *base)
+                {
+                    settings.apply(*changes);
+                    settings.generation = next(*base);
+                    if let Some(status) = facts.status.as_mut() {
+                        status.settings_generation = settings.generation;
+                    }
+                }
+            }
+            Op::PutPlans { base, plans } => {
+                if let Some(held) = facts.plans.as_mut().filter(|held| held.generation == *base) {
+                    held.plans = *plans;
+                    held.generation = next(*base);
+                }
+            }
+            Op::PutCalibration { base, calibration } => {
+                let view = self.memory.calibration.as_mut();
+                if let Some(view) = view.filter(|view| view.generation == *base) {
+                    view.calibration = *calibration;
+                    view.generation = next(*base);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -975,6 +1017,11 @@ impl<'a> Session<'a> {
 /// Whether the feeder reports a feed running now.
 fn feeding_now(status: &Status) -> bool {
     status.readiness == Some(Readiness::Blocked(Blocked::Feeding))
+}
+
+/// The generation a store moves to from `base`.
+const fn next(base: Generation) -> Generation {
+    Generation(base.0.wrapping_add(1))
 }
 
 const fn store_read(store: Store) -> Read {

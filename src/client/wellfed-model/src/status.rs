@@ -259,6 +259,44 @@ pub struct Settings {
     pub writable: bool,
 }
 
+impl Settings {
+    /// These settings with `changes` applied, as the feeder applies a
+    /// patch: what it does not name stays. A client that saw a change land
+    /// puts it on what it holds this way, rather than waiting on a re-read.
+    pub fn apply(&mut self, changes: SettingsPatch) {
+        let SettingsPatch {
+            lights,
+            sound,
+            volume,
+            lights_window,
+            sound_window,
+            desiccant_days,
+            meal_reminder,
+        } = changes;
+        if let Some(lights) = lights {
+            self.lights = lights;
+        }
+        if let Some(sound) = sound {
+            self.sound = sound;
+        }
+        if let Some(volume) = volume {
+            self.volume = volume;
+        }
+        if let Some(window) = lights_window {
+            self.lights_window = window;
+        }
+        if let Some(window) = sound_window {
+            self.sound_window = window;
+        }
+        if let Some(days) = desiccant_days {
+            self.desiccant_days = days;
+        }
+        if let Some(reminder) = meal_reminder {
+            self.meal_reminder = reminder;
+        }
+    }
+}
+
 /// The settings to change; absent fields stay as they are.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SettingsPatch {

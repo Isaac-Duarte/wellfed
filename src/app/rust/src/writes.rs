@@ -26,7 +26,7 @@
 
 use tokio::sync::oneshot;
 use wellfed_client::plans::{self, Edit};
-use wellfed_model::{Answer, Generation, Op, PLANS, Plan, Plans, Settings, SettingsPatch};
+use wellfed_model::{Answer, Generation, Op, PLANS, Plan, Plans, SettingsPatch};
 
 use crate::session::Heard;
 use crate::today::Facts;
@@ -102,7 +102,7 @@ impl Write {
                 if settings.generation != base || !landed_on(base, answer) {
                     return false;
                 }
-                patch(settings, changes);
+                settings.apply(changes);
                 settings.generation = after(base);
                 if let Some(status) = facts.status.as_mut() {
                     status.settings_generation = after(base);
@@ -142,41 +142,6 @@ impl Write {
                 true
             }
         }
-    }
-}
-
-/// `settings` with `changes` applied, as the feeder applies a patch: what it
-/// does not name stays.
-fn patch(settings: &mut Settings, changes: SettingsPatch) {
-    let SettingsPatch {
-        lights,
-        sound,
-        volume,
-        lights_window,
-        sound_window,
-        desiccant_days,
-        meal_reminder,
-    } = changes;
-    if let Some(lights) = lights {
-        settings.lights = lights;
-    }
-    if let Some(sound) = sound {
-        settings.sound = sound;
-    }
-    if let Some(volume) = volume {
-        settings.volume = volume;
-    }
-    if let Some(window) = lights_window {
-        settings.lights_window = window;
-    }
-    if let Some(window) = sound_window {
-        settings.sound_window = window;
-    }
-    if let Some(days) = desiccant_days {
-        settings.desiccant_days = days;
-    }
-    if let Some(reminder) = meal_reminder {
-        settings.meal_reminder = reminder;
     }
 }
 
@@ -453,7 +418,7 @@ impl PlansQueue {
 
 #[cfg(test)]
 mod tests {
-    use wellfed_model::{MealReminder, Refusal, Weekdays, Window};
+    use wellfed_model::{MealReminder, Refusal, Settings, Weekdays, Window};
 
     use super::*;
 
