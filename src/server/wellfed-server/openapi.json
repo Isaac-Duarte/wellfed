@@ -1752,7 +1752,7 @@
         "tags": [
           "feeders"
         ],
-        "summary": "Claim a key the caller's phone already holds on the feeder (paired\nbefore the server, or named by an adoption whose claim did not settle)\nas the caller's phone key, once the feeder lists it. The same rules as\nan invite: a phone's token, for an owner or a member with no expiry on\nthe account or the token. The same token asking again is answered the\nrecord its claim made, so a lost answer or `phone_key_unconfirmed` is\nsettled by asking again.",
+        "summary": "Claim a key the caller's phone already holds on the feeder (paired\nbefore the server, or named by an adoption whose claim did not settle)\nas the caller's phone key, once the feeder lists it. A phone's token\nwith no expiry on it or the account, as for an invite; and only an\nowner claims a key the server has not recorded, since the feeder cannot\nprove whose a key is. A member's phone that paired before the server\nasks for an invite (`POST /feeders/{id}/invites`) and joins with a new\nkey instead. The token that recorded a key asking again, whatever its\nrole, is answered that record, so a lost answer or\n`phone_key_unconfirmed` is settled by asking again.",
         "operationId": "claim_phone",
         "parameters": [
           {
@@ -1795,7 +1795,7 @@
             }
           },
           "403": {
-            "description": "forbidden (a viewer), token_required, direct_key_refused, or phone_key_above_role",
+            "description": "forbidden (a viewer), token_required, direct_key_refused, or phone_claim_owners_only (a member's claim of a key not recorded)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6340,7 +6340,7 @@
           "phone_key_unconfirmed",
           "phone_key_kept",
           "phone_key_not_a_phone",
-          "phone_key_above_role",
+          "phone_claim_owners_only",
           "invite_expired",
           "unreachable",
           "feeder_offline",

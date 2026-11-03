@@ -41,8 +41,10 @@ pub enum ClientError {
     PhoneKeyKept,
     #[error("the feeder lists that key as a server's or an update signer's, not a phone's")]
     PhoneKeyNotAPhone,
-    #[error("the feeder lists that key with a role above your account's")]
-    PhoneKeyAboveRole,
+    #[error(
+        "only an owner claims a key the server has not recorded: ask for an invite for your phone instead"
+    )]
+    PhoneClaimOwnersOnly,
 }
 
 impl ClientError {
@@ -56,7 +58,7 @@ impl ClientError {
             Self::PhoneKeyUnconfirmed => ErrorCode::PhoneKeyUnconfirmed,
             Self::PhoneKeyKept => ErrorCode::PhoneKeyKept,
             Self::PhoneKeyNotAPhone => ErrorCode::PhoneKeyNotAPhone,
-            Self::PhoneKeyAboveRole => ErrorCode::PhoneKeyAboveRole,
+            Self::PhoneClaimOwnersOnly => ErrorCode::PhoneClaimOwnersOnly,
         }
     }
 }

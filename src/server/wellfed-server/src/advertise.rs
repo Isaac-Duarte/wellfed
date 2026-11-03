@@ -3,9 +3,10 @@
 //!
 //! Anyone on the LAN hears the record, so it carries the HTTP port, the
 //! server's version and its [`ServerId`], and nothing else: no household,
-//! account, feeder or machine name. The instance is the server's `label`;
-//! the host is the label and the id's first digits, so it never collides
-//! with the machine's own mDNS name. The app connects to the address it
+//! account, feeder or machine name. The instance and the host are the
+//! server's `label` and the id's first digits, so two servers on the
+//! default label never announce one name, and the host never collides with
+//! the machine's own mDNS name. The app connects to the address it
 //! resolves, which the server always answers to, since an IP address passes
 //! the host check, and recognises the server by `id` when that address
 //! changes. Announcing is best effort: a host whose mDNS fails still
@@ -145,18 +146,19 @@ fn record(
     label: &str,
     id: ServerId,
 ) -> Result<Option<ServiceInfo>, mdns_sd::Error> {
+    let instance = format!("{label}-{}", id.short());
     let host = format!("{}-{}.local.", host_stem(label), id.short());
     let id = id.to_string();
     let properties = [("version", env!("CARGO_PKG_VERSION")), ("id", id.as_str())];
     let auto = |family| -> Result<_, mdns_sd::Error> {
-        let record = ServiceInfo::new(SERVICE, label, &host, (), port, &properties[..])?;
+        let record = ServiceInfo::new(SERVICE, &instance, &host, (), port, &properties[..])?;
         Ok((record.enable_addr_auto(), family))
     };
 
     let (mut record, interfaces) = match serves {
         Serves::Loopback => return Ok(None),
         Serves::One(ip) => {
-            let record = ServiceInfo::new(SERVICE, label, &host, ip, port, &properties[..])?;
+            let record = ServiceInfo::new(SERVICE, &instance, &host, ip, port, &properties[..])?;
             (record, IfKind::Addr(ip))
         }
         Serves::AllV4 => auto(IfKind::IPv4)?,
@@ -211,7 +213,7 @@ mod tests {
         assert_eq!(record.get_type(), SERVICE);
         assert_eq!(
             record.get_fullname(),
-            "wellfed-server._wellfed-server._tcp.local."
+            "wellfed-server-01234567._wellfed-server._tcp.local."
         );
         assert_eq!(record.get_hostname(), "wellfed-server-01234567.local.");
         assert_eq!(record.get_port(), 8080);

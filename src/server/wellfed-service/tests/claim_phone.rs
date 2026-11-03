@@ -1,16 +1,17 @@
 //! Claiming a key a phone already holds on a feeder: only a phone's token
 //! with no expiry on it or its account claims one; a claim refused because
 //! the feeder could not be read is settled by claiming again; a claim
-//! racing the account's deletion or the token's revocation is revoked; and
-//! a key the account cannot hold (kept, a server's, above its role, the
-//! server's own, another token's) is refused.
+//! racing the account's deletion or the token's revocation is revoked; a
+//! member claims only a key already recorded as theirs, so it can never
+//! take another person's; and a key an owner cannot claim (kept, a
+//! server's, the server's own, another token's) is refused.
 
 use std::time::Duration;
 
 use jiff::Timestamp;
 use wellfed_api::{
-    ClientOwner, ClientRole, Connection as Link, FeederId, Hex, NewToken, NewUser, PhoneClaim,
-    PhoneKey, Role, User,
+    ClientOwner, ClientRole, Connection as Link, FeederId, Hex, NewPhoneInvite, NewToken, NewUser,
+    PhoneClaim, PhoneKey, Role, User,
 };
 use wellfed_server_testkit::feeder::{self, Flash, Running};
 use wellfed_server_testkit::fixed::NOW_MS;
@@ -223,12 +224,9 @@ fn a_key_the_account_cannot_hold_is_refused() {
         } = adopted().await;
         let service = server.service();
         let owner = on_phone(service, ada.user.clone(), None).await;
-        let bob = account(service, &ada, "bob", Role::Member).await;
-        let member = on_phone(service, bob, None).await;
         let kept = paired(&sim, 5, ClientRole::Owner).await;
         service.keep_client(id, kept).await.unwrap();
         let server_role = paired(&sim, 6, ClientRole::Server).await;
-        let owners = paired(&sim, 7, ClientRole::Owner).await;
         let members = paired(&sim, 8, ClientRole::Member).await;
         let clients = service.clients(id).await.unwrap();
         let own = clients
@@ -251,10 +249,6 @@ fn a_key_the_account_cannot_hold_is_refused() {
             ClientError::PhoneKeyNotAPhone
         );
         assert_eq!(
-            refused(claim(service, &member, id, owners).await),
-            ClientError::PhoneKeyAboveRole
-        );
-        assert_eq!(
             refused(claim(service, &owner, id, own).await),
             ClientError::OwnKey
         );
@@ -263,12 +257,71 @@ fn a_key_the_account_cannot_hold_is_refused() {
             ClientError::PhoneKeyNotListed
         );
 
-        let recorded = claim(service, &member, id, members).await.unwrap();
-        assert_eq!(recorded.role, ClientRole::Member);
+        let recorded = claim(service, &owner, id, members).await.unwrap();
         assert_eq!(
-            refused(claim(service, &owner, id, members).await),
+            recorded.role,
+            ClientRole::Member,
+            "the role the feeder lists"
+        );
+        let second = on_phone(service, ada.user.clone(), None).await;
+        assert_eq!(
+            refused(claim(service, &second, id, members).await),
             ClientError::KeyTaken,
             "another token's key"
+        );
+    });
+}
+
+/// A member's claim of a key the server has not recorded is refused before
+/// anything is recorded or revoked: the claim could be of another person's
+/// key. The key the server invited for the member's phone is answered.
+#[test]
+fn a_member_claims_only_a_key_recorded_as_theirs() {
+    local(async {
+        let Adopted {
+            sim,
+            server,
+            id,
+            ada,
+            ..
+        } = adopted().await;
+        let service = server.service();
+        let bob = account(service, &ada, "bob", Role::Member).await;
+        let member = on_phone(service, bob, None).await;
+        let cys = paired(&sim, 11, ClientRole::Member).await;
+        let owners = paired(&sim, 12, ClientRole::Owner).await;
+        let invite = service
+            .invite_phone(
+                &member,
+                id,
+                NewPhoneInvite {
+                    key: Hex(feeder::phone_key(secret(13))),
+                },
+            )
+            .await
+            .unwrap();
+        feeder::join_phone(&sim, &invite.invite, secret(13)).await;
+
+        for key in [cys, owners] {
+            assert!(matches!(
+                claim(service, &member, id, key).await,
+                Err(Error::Client(ClientError::PhoneClaimOwnersOnly))
+            ));
+        }
+        let invited = claim(service, &member, id, feeder::phone_key(secret(13)))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            (invited.user, invited.token),
+            (member.user.id, member.token)
+        );
+        let phones = service.phones(&ada.user).await.unwrap();
+        assert_eq!(phones, [invited], "nothing else recorded");
+        let held = feeder::client_keys(&sim).await;
+        assert!(
+            held.contains(&cys) && held.contains(&owners),
+            "nothing revoked"
         );
     });
 }

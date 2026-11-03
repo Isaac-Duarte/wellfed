@@ -130,11 +130,14 @@ pub(crate) async fn invite_phone(
 
 /// Claim a key the caller's phone already holds on the feeder (paired
 /// before the server, or named by an adoption whose claim did not settle)
-/// as the caller's phone key, once the feeder lists it. The same rules as
-/// an invite: a phone's token, for an owner or a member with no expiry on
-/// the account or the token. The same token asking again is answered the
-/// record its claim made, so a lost answer or `phone_key_unconfirmed` is
-/// settled by asking again.
+/// as the caller's phone key, once the feeder lists it. A phone's token
+/// with no expiry on it or the account, as for an invite; and only an
+/// owner claims a key the server has not recorded, since the feeder cannot
+/// prove whose a key is. A member's phone that paired before the server
+/// asks for an invite (`POST /feeders/{id}/invites`) and joins with a new
+/// key instead. The token that recorded a key asking again, whatever its
+/// role, is answered that record, so a lost answer or
+/// `phone_key_unconfirmed` is settled by asking again.
 #[utoipa::path(
     post,
     path = "/feeders/{id}/phones",
@@ -144,7 +147,7 @@ pub(crate) async fn invite_phone(
     responses(
         (status = 200, body = PhoneKey),
         (status = 400, body = Problem, description = "invalid: the server's own key"),
-        (status = 403, body = Problem, description = "forbidden (a viewer), token_required, direct_key_refused, or phone_key_above_role"),
+        (status = 403, body = Problem, description = "forbidden (a viewer), token_required, direct_key_refused, or phone_claim_owners_only (a member's claim of a key not recorded)"),
         (status = 404, body = Problem),
         (status = 409, body = Problem, description = "phone_key_not_listed, phone_key_unconfirmed (claim again), phone_key_kept, phone_key_not_a_phone, client_key_taken or feeder_archived"),
     ),

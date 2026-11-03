@@ -5,9 +5,10 @@
 //! Assistant's zeroconf recognise the same server after its address
 //! changes, and it keeps the announced host name apart from the machine's
 //! own. It is not a secret and is never derived from the sealing key: the
-//! announcement is public on the LAN. A file that does not hold an id (a
-//! first start cut short) is replaced by a new one, since nothing but a
-//! listener remembering the old one depends on it.
+//! announcement is public on the LAN. A file that cannot be read or does
+//! not hold an id (a first start cut short) is replaced by a new one, with
+//! a warning, since nothing but a listener remembering the old one depends
+//! on it.
 
 use std::fmt;
 use std::io::Write as _;
@@ -49,12 +50,6 @@ impl fmt::Display for ServerId {
 
 #[derive(Debug, thiserror::Error)]
 pub enum IdError {
-    #[error("read {}", path.display())]
-    Read {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
     #[error("write {}", path.display())]
     Write {
         path: PathBuf,
@@ -74,7 +69,9 @@ pub fn server_id(data: &Path, random: &dyn Random) -> Result<ServerId, IdError> 
             None => tracing::warn!("{} holds no server id; making a new one", path.display()),
         },
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(source) => return Err(IdError::Read { path, source }),
+        Err(error) => {
+            tracing::warn!("read {}: {error}; making a new server id", path.display());
+        }
     }
 
     let mut bytes = [0; 8];
@@ -122,12 +119,27 @@ mod tests {
 
     #[test]
     fn a_file_holding_no_id_is_replaced() {
+        for held in [&b"abab"[..], &[0xff, 0xfe, 0x00][..]] {
+            let data = tempfile::tempdir().unwrap();
+            std::fs::write(data.path().join(ID_FILE), held).unwrap();
+
+            let id = server_id(data.path(), &Fixed(0x02)).unwrap();
+
+            assert_eq!(id.to_string(), "0202020202020202", "{held:?}");
+            assert_eq!(server_id(data.path(), &Fixed(0x03)).unwrap(), id);
+        }
+    }
+
+    /// A path that cannot be read as a file (here a directory) is warned
+    /// about, and the start goes on once a new id is written: only that
+    /// write failing stops it.
+    #[test]
+    fn an_unreadable_id_is_never_fatal_by_itself() {
         let data = tempfile::tempdir().unwrap();
-        std::fs::write(data.path().join(ID_FILE), "abab").unwrap();
+        std::fs::create_dir(data.path().join(ID_FILE)).unwrap();
 
-        let id = server_id(data.path(), &Fixed(0x02)).unwrap();
+        let made = server_id(data.path(), &Fixed(0x04));
 
-        assert_eq!(id.to_string(), "0202020202020202");
-        assert_eq!(server_id(data.path(), &Fixed(0x03)).unwrap(), id);
+        assert!(matches!(made, Err(IdError::Write { .. })), "{made:?}");
     }
 }

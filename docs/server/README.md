@@ -38,9 +38,9 @@ A phone that pairs with a feeder before there is a server keeps that key. It cla
 
 - **A refused claim leaves an adoption standing.** If the feeder doesn't list the key (`409 phone_key_not_listed`) or couldn't be read (`409 phone_key_unconfirmed`), the feeder is still adopted. Claim the key again once it is online.
 - **A claim asked again is answered its record,** so a lost answer is safe to retry.
-- **The same rules as an invite:** a phone's token, for an owner or a member, with no expiry on the account or the token.
-- **What a claim can't take:** the server's own key, a client an owner kept, a key the feeder lists as a server's or an update signer's, a key above the account's role (a member can't claim an owner's key), and another phone's key.
-- **The feeder can't prove which phone holds a key.** So a claim trusts an owner's or member's account to name its own key.
+- **Only an owner claims a new key.** It takes a phone's token, with no expiry on the account or the token. The feeder can't prove which phone holds a key, so a claim trusts the account to name its own. A member who claimed someone else's key could then revoke it, so a member's claim of a key the server hasn't recorded is refused `403 phone_claim_owners_only`.
+- **A member's phone that paired before the server** asks for an invite (`POST /feeders/{id}/invites`) and joins with a new key. Its old key shows as unowned, for an owner to revoke.
+- **What a claim can't take:** the server's own key, a client an owner kept, a key the feeder lists as a server's or an update signer's, and another phone's key.
 
 Every device operation the app can make has a server route, or a stated reason it has none, in `wellfed_service::parity`. It is an exhaustive match over the device API's operations, so a new operation doesn't build until it gets one. Some routes need the feeder's owner role: Wi-Fi, reboot, revoking a client, a phone's invite, the time zone rule, installs and the stock backup. They work only when the server was adopted with an owner's invite. With the `server` role, the feeder refuses them `forbidden`.
 

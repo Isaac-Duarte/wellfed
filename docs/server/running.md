@@ -66,7 +66,7 @@ The server keeps everything in one directory, given by `--data` or `WELLFED_SERV
 | --- | --- |
 | `server.db` | The database. |
 | `server.toml` | The settings. Optional: every key has a default. |
-| `server.id` | The server's id: 16 hex digits made on the first start. Not a secret. The app recognizes the server by it ([find it from the app](#find-it-from-the-app)). |
+| `server.id` | The server's id: 16 hex digits made on the first start. Not a secret. The app recognizes the server by it ([find it from the app](#find-it-from-the-app)). If it's missing, unreadable or damaged, the server makes a new one and warns. |
 | `keys/server.key` | The sealing key: 32 bytes, mode 0600, in a 0700 directory. It seals every feeder key in the database. |
 | `backups/` | Daily copies of the database (mode 0700, each copy 0600), with a `README.txt` saying where the key is and how to restore. |
 | `releases/` | Verified firmware releases, each with a record. |
@@ -121,7 +121,7 @@ Under systemd, put `server.toml` in `/var/lib/wellfed-server/` as root: `sudo in
 
 The server announces itself on the home network over mDNS, so the app can list it without a typed address. It does this only while it listens beyond this computer: at the default `127.0.0.1:8080` nothing else could reach it, so nothing is announced.
 
-- **The record** is `_wellfed-server._tcp`, named after `label` (`wellfed-server` by default), with the HTTP port. Its host name is the label and the start of the server's id, such as `wellfed-server-1a2b3c4d.local`, so it never clashes with the machine's own name.
+- **The record** is `_wellfed-server._tcp`, with the HTTP port. Its instance and host names are `label` (`wellfed-server` by default) and the start of the server's id, such as `wellfed-server-1a2b3c4d` and `wellfed-server-1a2b3c4d.local`. So two servers never announce the same name, and neither clashes with the machine's own.
 - **Its TXT record** holds the server's version (`version`) and its id (`id`, from `server.id`), and nothing else. Anyone on the network can hear it, so it names no household, account, feeder or machine.
 - **The app connects by the address it resolves,** and recognizes the server by `id` when that address changes. The server always answers to an IP address, so `hosts` needs nothing for it.
 - **On `0.0.0.0`** the record carries the machine's IPv4 addresses, and follows them as they change. On `[::]` it carries IPv6 addresses, and IPv4 ones too when the socket also takes IPv4. On one address, it carries only that one.

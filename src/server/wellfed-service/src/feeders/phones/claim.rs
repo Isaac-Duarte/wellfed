@@ -4,11 +4,16 @@
 //! caller's phone key, as it records a key it invited, so deleting,
 //! demoting or putting an expiry on the account revokes it.
 //!
-//! The feeder cannot prove which phone holds a key, so a claim trusts an
-//! owner's or member's account to name its own. What a claim cannot take:
-//! a key the feeder does not list, the server's own, one an owner kept as a
-//! client of its own, one listed with a role no phone holds (a server's or
-//! an update signer's), and one listed above the account's role.
+//! The feeder cannot prove which phone holds a key, so a claim trusts the
+//! account to name its own, and only an owner's is trusted that far: an
+//! owner may revoke any client anyway, but a member who claimed another
+//! person's key could then revoke it, by claiming another key under the
+//! same token or revoking the token. A member's phone that paired before
+//! the server gets a key of its own through an invite instead. Asking again
+//! for a key already recorded is answered for any role. What an owner's
+//! claim cannot take: a key the feeder does not list, the server's own, one
+//! an owner kept as a client of its own, and one listed with a role no
+//! phone holds (a server's or an update signer's).
 
 use tracing::warn;
 use wellfed_api::{ClientRole, FeederId, PhoneClaim, PhoneKey, RevokeReason, Role, TokenId};
@@ -59,19 +64,15 @@ impl Service {
                 Err(ClientError::KeyTaken.into())
             };
         }
+        if holder.role != ClientRole::Owner {
+            return Err(ClientError::PhoneClaimOwnersOnly.into());
+        }
         if store.kept_clients(id).await?.contains(&key) {
             return Err(ClientError::PhoneKeyKept.into());
         }
         let role = self.listed_role(id, &key).await?;
-        let allowed = match role {
-            ClientRole::Server | ClientRole::UpdateSigner => {
-                return Err(ClientError::PhoneKeyNotAPhone.into());
-            }
-            ClientRole::Owner => holder.role == ClientRole::Owner,
-            ClientRole::Member => true,
-        };
-        if !allowed {
-            return Err(ClientError::PhoneKeyAboveRole.into());
+        if matches!(role, ClientRole::Server | ClientRole::UpdateSigner) {
+            return Err(ClientError::PhoneKeyNotAPhone.into());
         }
 
         let now = self.shared.clock.now();

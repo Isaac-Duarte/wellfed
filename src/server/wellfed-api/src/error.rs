@@ -81,9 +81,12 @@ pub enum ErrorCode {
     /// The feeder lists the key claimed with a role no phone holds: a
     /// server's or an update signer's.
     PhoneKeyNotAPhone,
-    /// The feeder lists the key claimed with a role above the account's: a
-    /// member claiming an owner's key.
-    PhoneKeyAboveRole,
+    /// Only an owner claims a key the server has not recorded: the feeder
+    /// cannot prove whose a key is, and a member's claim could take another
+    /// person's key and then revoke it. A member's phone that paired before
+    /// the server gets a key of its own through an invite
+    /// (`POST /feeders/{id}/invites`).
+    PhoneClaimOwnersOnly,
     /// The feeder dropped the invite unanswered: unknown, used or expired.
     InviteExpired,
     /// The server could not reach the feeder.
