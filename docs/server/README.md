@@ -22,7 +22,7 @@ One server serves one household, with as many feeders as you own.
 
 The app's screens don't connect to a server yet. Its Rust half has the router that will carry them, which follows this design and is tested in simulation only. When a server is configured, the app talks to it whenever it can reach it. That way remote access works and the audit log names the person. Each owner's or member's phone also holds its own key on every feeder. When the server is down, the phone uses that key on the home network, for reads and new requests only. A viewer's phone holds no key, so the server alone enforces a viewer's limits.
 
-The danger is a retry that crosses paths. The server and the phone send different request ids, so a feed that timed out on one path and was retried on the other could feed twice. So **an uncertain write never switches path.** It is retried on its own path under its own key, or resolved from the feeder's history (a feed by its `Fed` event). It is never resent on the other path. The CLI follows the same rule: each command takes one path, the device API or `wellfed server`, with no fallback between them.
+The danger is a retry that crosses paths. The server and the phone send different request ids, so a feed that timed out on one path and was retried on the other could feed twice. So **an uncertain write never switches path.** It is resolved on its own path only, from the server's journal under its key or from the feeder's history (a feed by its `Fed` event). It is never resent on the other path. The CLI follows the same rule: each command takes one path, the device API or `wellfed server`, with no fallback between them.
 
 The server enforces its half:
 
@@ -32,7 +32,9 @@ The server enforces its half:
 
 So a client can resolve a lost feed on either path without resending it. Holding an uncertain write to its own path is the app's half.
 
-One answer is certain the other way. A first attempt answered `503 feeder_offline` never reached the feeder: the server's feeder task never took it, and the server drops its journal entry. The write has run nowhere, so the app sends it on the phone's own session. The key is then free on the server, and a retry under it would be a new send, so the app never sends that key to the server again.
+The app goes one step further: it sends each write once, and its retry only reads. The server dedups a key only while its journal holds it. It holds none for a write it never recorded: a `feeder_offline` answer the phone never heard, a failure before the insert, or a request that never reached it. Resending such a key after you fed again would be a new feed. So the app reads `GET /api/v1/commands/{key}`. A `404` settles the write as never sent only when it comes from the same server and account the write went to, ten minutes after its attempt. Anything else leaves it uncertain.
+
+One answer is certain the other way. An attempt answered `503 feeder_offline` never reached the feeder: the server's feeder task never took it, and the server drops its journal entry. The write has run nowhere, so the app sends it on the phone's own session.
 
 This costs the feeder a client slot per phone. A feeder has 8 slots: the server, the CLI and up to six phones.
 

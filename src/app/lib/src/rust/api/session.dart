@@ -29,7 +29,9 @@ abstract class FeederSession implements RustOpaqueInterface {
   void close();
 
   /// Feed `portions` (1-48) once. The answer and the feed's end arrive
-  /// as updates.
+  /// as updates. Refused with [`ErrorKind::Routed`] once a path router
+  /// holds the session: its feeds go through the router, which pins them
+  /// and keeps one feed from doubling an uncertain one.
   void feed({required int portions});
 
   /// A session with `feeder` (its identity key) at `address` (`ip:port`,

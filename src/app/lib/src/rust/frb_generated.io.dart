@@ -423,6 +423,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NextMealView dco_decode_box_autoadd_next_meal_view(dynamic raw);
 
   @protected
+  NotSentReason dco_decode_box_autoadd_not_sent_reason(dynamic raw);
+
+  @protected
   NtpResult dco_decode_box_autoadd_ntp_result(dynamic raw);
 
   @protected
@@ -808,6 +811,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NotAsked dco_decode_not_asked(dynamic raw);
 
   @protected
+  NotSentReason dco_decode_not_sent_reason(dynamic raw);
+
+  @protected
   NtpResult dco_decode_ntp_result(dynamic raw);
 
   @protected
@@ -854,6 +860,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NextMealView? dco_decode_opt_box_autoadd_next_meal_view(dynamic raw);
+
+  @protected
+  NotSentReason? dco_decode_opt_box_autoadd_not_sent_reason(dynamic raw);
 
   @protected
   NtpResult? dco_decode_opt_box_autoadd_ntp_result(dynamic raw);
@@ -909,6 +918,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SettingsView? dco_decode_opt_box_autoadd_settings_view(dynamic raw);
+
+  @protected
+  Settlement? dco_decode_opt_box_autoadd_settlement(dynamic raw);
 
   @protected
   SetupRefusal? dco_decode_opt_box_autoadd_setup_refusal(dynamic raw);
@@ -1600,6 +1612,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  NotSentReason sse_decode_box_autoadd_not_sent_reason(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   NtpResult sse_decode_box_autoadd_ntp_result(SseDeserializer deserializer);
 
   @protected
@@ -2035,6 +2052,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NotAsked sse_decode_not_asked(SseDeserializer deserializer);
 
   @protected
+  NotSentReason sse_decode_not_sent_reason(SseDeserializer deserializer);
+
+  @protected
   NtpResult sse_decode_ntp_result(SseDeserializer deserializer);
 
   @protected
@@ -2091,6 +2111,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NextMealView? sse_decode_opt_box_autoadd_next_meal_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NotSentReason? sse_decode_opt_box_autoadd_not_sent_reason(
     SseDeserializer deserializer,
   );
 
@@ -2170,6 +2195,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SettingsView? sse_decode_opt_box_autoadd_settings_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  Settlement? sse_decode_opt_box_autoadd_settlement(
     SseDeserializer deserializer,
   );
 
@@ -2974,6 +3004,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_not_sent_reason(
+    NotSentReason self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_ntp_result(
     NtpResult self,
     SseSerializer serializer,
@@ -3535,6 +3571,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_not_asked(NotAsked self, SseSerializer serializer);
 
   @protected
+  void sse_encode_not_sent_reason(NotSentReason self, SseSerializer serializer);
+
+  @protected
   void sse_encode_ntp_result(NtpResult self, SseSerializer serializer);
 
   @protected
@@ -3612,6 +3651,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_next_meal_view(
     NextMealView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_not_sent_reason(
+    NotSentReason? self,
     SseSerializer serializer,
   );
 
@@ -3711,6 +3756,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_settings_view(
     SettingsView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_settlement(
+    Settlement? self,
     SseSerializer serializer,
   );
 

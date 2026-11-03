@@ -2,12 +2,21 @@
 //! attempt's end means, when a feed may start, and what settles an uncertain
 //! write. [`super::io`] drives requests around these and keeps the [`Book`]
 //! on disk, so every rule here is tested without a socket.
+//!
+//! A write goes out once. Nothing here ever plans a second send of a key:
+//! resolving an uncertain write only reads, the server's journal for one
+//! pinned to the server ([`RetryPlan::ReadJournal`]) and the feeder's
+//! history for one pinned to the phone's own session
+//! ([`RetryPlan::ReadHistory`]). The server dedups a key only while its
+//! journal holds it, and it holds none for a write it never recorded (a lost
+//! `feeder_offline`, a failure before the insert, a request that died on the
+//! way), so a resend could be a fresh feed after the owner fed again.
 
 use uuid::Uuid;
 use wellfed_api::{CommandOutcome, CommandState};
 
 use crate::api::router::{RoutePath, Settlement};
-use crate::route::pins::{PinRecord, PinState, PinnedWrite};
+use crate::route::pins::{PinRecord, PinState, PinnedWrite, RunningFeed, ServerMark};
 
 /// How long a server that failed to connect is passed over before a new
 /// request tries it again. The stream reopening or any call answering marks
@@ -16,12 +25,13 @@ pub(crate) const RECHECK_MS: i64 = 30_000;
 
 /// How long after its last attempt a server write the journal does not hold
 /// is taken as never sent. The server records a write before it sends it,
-/// so an entry it never made was never sent; the wait covers a request still
-/// on its way to a server that is slow to take it.
-pub(crate) const UNFOUND_GRACE_MS: i64 = 60_000;
+/// so an entry it never made was never sent; the wait covers a request
+/// still on its way to a server that is slow to take it, well past the
+/// phone's own 30 s request timeout.
+pub(crate) const UNFOUND_GRACE_MS: i64 = 10 * 60_000;
 
-/// How long a pin the owner put away is kept for its path to settle it.
-/// One still pending holds forever.
+/// How long a pin the owner put away is kept, from the acknowledgement, for
+/// its path to settle it. One still pending holds forever.
 pub(crate) const KEEP_MS: i64 = 7 * 24 * 3_600_000;
 
 /// What this phone may use to reach a feeder.
@@ -47,13 +57,15 @@ pub(crate) enum Keys {
 
 impl Access {
     /// The access to a feeder the server lists (`on_server`) and the phone
-    /// holds a session for (`direct`); `None` when the phone has neither.
+    /// holds a session for (`direct`); `None` when it may use neither. An
+    /// account that holds no key of its own never uses one, even to a
+    /// feeder the server does not list.
     pub(crate) const fn of(on_server: bool, direct: bool, keys: Keys) -> Option<Self> {
         match (on_server, direct, keys) {
             (true, true, Keys::Own) => Some(Self::Both),
             (true, _, _) => Some(Self::ServerOnly),
-            (false, true, _) => Some(Self::DirectOnly),
-            (false, false, _) => None,
+            (false, true, Keys::Own) => Some(Self::DirectOnly),
+            (false, true, Keys::ServerOnly) | (false, false, _) => None,
         }
     }
 }
@@ -66,6 +78,11 @@ pub(crate) enum ServerReach {
     Down {
         since_ms: i64,
     },
+    /// It answers, but no longer for this phone's token (revoked, expired,
+    /// or the account disabled): the server path is closed, not down. An
+    /// account with keys of its own reaches its feeders directly, where
+    /// the feeder itself refuses a key the server revoked.
+    Refused,
 }
 
 impl ServerReach {
@@ -74,6 +91,7 @@ impl ServerReach {
         match self {
             Self::Up => true,
             Self::Down { since_ms } => now_ms.saturating_sub(since_ms) >= RECHECK_MS,
+            Self::Refused => false,
         }
     }
 }
@@ -119,29 +137,22 @@ pub(crate) enum ServerFailure {
     Interrupted,
     /// `504 outcome_unknown`: the journal keeps it unknown.
     OutcomeUnknown,
-    /// The server has no session with the feeder, or could not reach it.
-    /// On a first attempt the server forgets the entry, so nothing ran; on
-    /// a retry of an unknown write it says nothing of the first.
+    /// `503 feeder_offline`: the server's feeder task never took it, and a
+    /// first attempt's entry is dropped. Nothing ran.
     FeederOffline,
-    /// The feeder refused it (`409 feeder_refused`): final for the key,
-    /// and replayed to a retry.
+    /// The feeder refused it (`409 feeder_refused`): final for the key.
     FeederRefused,
-    /// A settings or plans write whose base the store moved past. On a
-    /// first attempt nothing ran; on a retry the first may have made the
-    /// very change that moved it.
+    /// A settings or plans write whose base the store moved past: the
+    /// feeder refused it, and nothing ran.
     Stale,
     /// The key already names another request: nothing was sent.
     KeyReused,
+    /// The phone's token no longer holds (`401`), or its account is
+    /// disabled: nothing was sent, and the server is closed to this phone.
+    Unauthorized,
     /// The server refused before sending anything: forbidden, invalid, a
-    /// token that no longer holds, a redirect.
+    /// redirect.
     Rejected,
-}
-
-/// Whether this is the key's first attempt.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Attempt {
-    First,
-    Retry,
 }
 
 /// How one attempt on a path ended.
@@ -155,31 +166,28 @@ pub(crate) enum Ended {
     Unsent,
     /// It may have run.
     Uncertain,
-    /// A retry found the store moved past the write's base, which the
-    /// write itself may have done: final, and the store is to be read.
-    Superseded,
 }
 
-/// What a failed server call says of the write it carried.
-pub(crate) const fn server_ended(failure: ServerFailure, attempt: Attempt) -> Ended {
-    match (failure, attempt) {
-        (ServerFailure::FeederRefused, _) => Ended::Refused,
-        (ServerFailure::Stale, Attempt::First) => Ended::Refused,
-        (ServerFailure::Stale, Attempt::Retry) => Ended::Superseded,
-        (ServerFailure::Connect, Attempt::First)
-        | (ServerFailure::FeederOffline, Attempt::First) => Ended::Unsent,
-        (ServerFailure::KeyReused | ServerFailure::Rejected, Attempt::First) => Ended::Refused,
-        // A retry that fails any other way says nothing of the first send.
-        (ServerFailure::Connect, Attempt::Retry)
-        | (ServerFailure::FeederOffline, Attempt::Retry)
-        | (ServerFailure::KeyReused | ServerFailure::Rejected, Attempt::Retry)
-        | (ServerFailure::Interrupted | ServerFailure::OutcomeUnknown, _) => Ended::Uncertain,
+/// What a failed server call says of the write it carried, its only send.
+pub(crate) const fn server_ended(failure: ServerFailure) -> Ended {
+    match failure {
+        ServerFailure::Connect | ServerFailure::FeederOffline => Ended::Unsent,
+        ServerFailure::FeederRefused
+        | ServerFailure::Stale
+        | ServerFailure::KeyReused
+        | ServerFailure::Unauthorized
+        | ServerFailure::Rejected => Ended::Refused,
+        ServerFailure::Interrupted | ServerFailure::OutcomeUnknown => Ended::Uncertain,
     }
 }
 
-/// Whether a failure says the server itself is out of reach.
-pub(crate) const fn server_down(failure: ServerFailure) -> bool {
-    matches!(failure, ServerFailure::Connect)
+/// What a failure says of the server itself.
+pub(crate) const fn reach_after(failure: ServerFailure, now_ms: i64) -> ServerReach {
+    match failure {
+        ServerFailure::Connect => ServerReach::Down { since_ms: now_ms },
+        ServerFailure::Unauthorized => ServerReach::Refused,
+        _ => ServerReach::Up,
+    }
 }
 
 /// Where an intent goes after an attempt that ended `ended` on `path`: done,
@@ -201,6 +209,23 @@ pub(crate) const fn fallback(
     }
 }
 
+/// How an uncertain write is asked what became of it: only ever by
+/// reading, on its own path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RetryPlan {
+    /// `GET /commands/{key}` on the server it went to.
+    ReadJournal,
+    /// The feeder's history, as the phone's own session reads it.
+    ReadHistory,
+}
+
+pub(crate) const fn retry_plan(pin: &PinRecord) -> RetryPlan {
+    match pin.path {
+        RoutePath::Server => RetryPlan::ReadJournal,
+        RoutePath::Direct => RetryPlan::ReadHistory,
+    }
+}
+
 /// What a journal entry, as the server holds it now, settles of a write
 /// pinned to the server; `None` while it is still unknown or in flight.
 pub(crate) fn settled_by_command(
@@ -218,7 +243,10 @@ fn settlement_of(outcome: &CommandOutcome) -> Settlement {
         CommandOutcome::Done
         | CommandOutcome::Settings { .. }
         | CommandOutcome::Plans { .. }
+        | CommandOutcome::Calibration { .. }
+        | CommandOutcome::Call { .. }
         | CommandOutcome::Invited { .. } => Settlement::Done,
+        CommandOutcome::Superseded => Settlement::Superseded,
         CommandOutcome::Refused { refusal } => Settlement::Refused {
             refusal: (*refusal).into(),
         },
@@ -241,13 +269,17 @@ fn settlement_of(outcome: &CommandOutcome) -> Settlement {
 }
 
 /// A server write the journal does not hold settles as never sent, once its
-/// last attempt is [`UNFOUND_GRACE_MS`] old.
-pub(crate) const fn settled_unfound(pin: &PinRecord, now_ms: i64) -> Option<Settlement> {
-    if now_ms.saturating_sub(pin.tried_ms) >= UNFOUND_GRACE_MS {
-        Some(Settlement::NotSent)
-    } else {
-        None
-    }
+/// last attempt is `grace_ms` old, and only when the journal that does not
+/// hold it is the one it went to: the same token, so the same server, and
+/// the same account, since another's entries are not found either.
+pub(crate) fn settled_unfound(
+    pin: &PinRecord,
+    asked: Option<ServerMark>,
+    now_ms: i64,
+    grace_ms: i64,
+) -> Option<Settlement> {
+    let same = pin.server.is_some() && pin.server == asked;
+    (same && now_ms.saturating_sub(pin.tried_ms) >= grace_ms).then_some(Settlement::NotSent)
 }
 
 /// A feed's end this phone's own session read from the feeder's history.
@@ -264,21 +296,22 @@ pub(crate) struct Seen {
 /// What the feeds this phone's key asked for, as the feeder's history
 /// records them (`seen`), settle of `pin`, a feed pinned to the phone's own
 /// session. Its `Fed` is the one event after the newest the session knew
-/// when it was sent, not a feed this phone heard answered since. Anything
-/// another unsettled direct feed on the feeder could also claim settles
-/// neither: an uncertain feed is never given another's end.
+/// when it was sent, for the portions it asked, and not a feed this phone
+/// saw started (before or since). Anything another unsettled direct feed on
+/// the feeder could also claim settles neither: an uncertain feed is never
+/// given another's end.
 pub(crate) fn settled_by_history(
     pin: &PinRecord,
     others: &[&PinRecord],
     seen: &[Seen],
 ) -> Option<Settlement> {
-    let PinnedWrite::Feed { .. } = pin.write else {
+    let PinnedWrite::Feed { portions } = pin.write else {
         return None;
     };
     let mark = pin.mark?;
-    let mut candidates = seen
-        .iter()
-        .filter(|seen| seen.seq > mark && !pin.excluded.contains(&seen.feed));
+    let mut candidates = seen.iter().filter(|seen| {
+        seen.seq > mark && seen.requested == portions && !pin.excluded.contains(&seen.feed)
+    });
     let found = candidates.next()?;
     if candidates.next().is_some() {
         return None;
@@ -288,7 +321,7 @@ pub(crate) fn settled_by_history(
         other.key != pin.key
             && other.feeder == pin.feeder
             && other.path == RoutePath::Direct
-            && matches!(other.write, PinnedWrite::Feed { .. })
+            && matches!(other.write, PinnedWrite::Feed { portions } if portions == found.requested)
             && !other.excluded.contains(&found.feed)
             && other.mark.is_none_or(|mark| found.seq > mark)
     });
@@ -304,10 +337,14 @@ pub(crate) fn settled_by_history(
     })
 }
 
-/// The pinned writes, as the router keeps them on disk.
+/// The pinned writes and this phone's running direct feeds, as the router
+/// keeps them on disk.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Book {
     pub(crate) pins: Vec<PinRecord>,
+    /// Direct feeds this phone saw the feeder reserve, whose `Fed` it has
+    /// not read yet: none is an uncertain feed's end.
+    pub(crate) running: Vec<RunningFeed>,
 }
 
 impl Book {
@@ -320,7 +357,7 @@ impl Book {
         self.pins.iter().find(|pin| {
             pin.feeder == feeder
                 && matches!(pin.write, PinnedWrite::Feed { .. })
-                && (pin.state == PinState::Sending || !pin.acknowledged)
+                && (pin.state == PinState::Sending || pin.acknowledged_ms.is_none())
         })
     }
 
@@ -332,55 +369,67 @@ impl Book {
         self.pins.iter_mut().find(|pin| pin.key == key)
     }
 
-    /// A feed about to go: refused, with the key of the feed that holds it
-    /// back, while another feed on its feeder does, else written down before
-    /// it is sent, so a phone that stops mid-send still finds it pinned.
-    pub(crate) fn admit(&mut self, pin: PinRecord) -> Result<(), Uuid> {
-        if let Some(holding) = self.holding_feeds(&pin.feeder) {
+    /// The direct feeds running on `feeder` at `now_ms`, which a new direct
+    /// feed's pin never takes an end from.
+    pub(crate) fn running_on(&self, feeder: &str, now_ms: i64) -> Vec<u32> {
+        self.running
+            .iter()
+            .filter(|running| running.feeder == feeder && running.until_ms > now_ms)
+            .map(|running| running.feed)
+            .collect()
+    }
+
+    /// A write about to go, written down before it is sent, so a phone that
+    /// stops mid-send still finds it pinned. A feed is refused, with the key
+    /// of the feed that holds it back, while another feed on its feeder
+    /// does. A direct feed's pin takes no end from a feed already running.
+    pub(crate) fn admit(&mut self, pin: PinRecord, now_ms: i64) -> Result<(), Uuid> {
+        if matches!(pin.write, PinnedWrite::Feed { .. })
+            && let Some(holding) = self.holding_feeds(&pin.feeder)
+        {
             return Err(holding.key);
+        }
+        let mut pin = pin;
+        if pin.path == RoutePath::Direct {
+            pin.excluded.extend(self.running_on(&pin.feeder, now_ms));
         }
         self.pins.push(pin);
         Ok(())
     }
 
-    /// An attempt ended `ended`. A write that may have run is pinned to the
-    /// path it went on: `pin` is written down as uncertain, or the pin it
-    /// already has keeps everything but its state and its last attempt. Any
-    /// other end takes it out. Whether the end changed the book.
-    pub(crate) fn ended(&mut self, pin: PinRecord, ended: Ended) -> bool {
+    /// An attempt ended `ended`. A write that may have run stays pinned to
+    /// the path it went on, uncertain. Any other end takes it out. Whether
+    /// the end changed the book.
+    pub(crate) fn ended(&mut self, key: Uuid, ended: Ended, now_ms: i64) -> bool {
         match ended {
-            Ended::Uncertain => match self.get_mut(pin.key) {
+            Ended::Uncertain => match self.get_mut(key) {
                 Some(held) => {
-                    let changed =
-                        held.state != PinState::Uncertain || held.tried_ms != pin.tried_ms;
                     held.state = PinState::Uncertain;
-                    held.tried_ms = pin.tried_ms;
-                    changed
-                }
-                None => {
-                    self.pins.push(PinRecord {
-                        state: PinState::Uncertain,
-                        ..pin
-                    });
+                    held.tried_ms = now_ms;
                     true
                 }
+                None => false,
             },
-            Ended::Answered | Ended::Refused | Ended::Unsent | Ended::Superseded => {
-                self.settle(pin.key)
-            }
+            Ended::Answered | Ended::Refused | Ended::Unsent => self.settle(key),
         }
     }
 
-    /// A feed the server definitely did not send goes on the phone's own
+    /// A write the server definitely did not send goes on the phone's own
     /// session instead: its pin, still sending, names that path and the
     /// newest event the session knows, before it goes. Only a pin still
     /// sending moves; an uncertain one never does. Whether it moved.
     pub(crate) fn moved(&mut self, key: Uuid, mark: Option<u64>, now_ms: i64) -> bool {
+        let running = self
+            .get(key)
+            .map(|pin| self.running_on(&pin.feeder, now_ms))
+            .unwrap_or_default();
         match self.get_mut(key) {
             Some(pin) if pin.state == PinState::Sending && pin.path == RoutePath::Server => {
                 pin.path = RoutePath::Direct;
                 pin.mark = mark;
                 pin.tried_ms = now_ms;
+                pin.server = None;
+                pin.excluded.extend(running);
                 true
             }
             _ => false,
@@ -394,16 +443,17 @@ impl Book {
         self.pins.len() != before
     }
 
-    /// The owner looked and put `key` away: it no longer holds a new feed
-    /// back, and it stays pinned to its path until it settles. One nothing
-    /// can settle goes: a direct write other than a feed (the phone's own
-    /// session never sends it again and no history names it), or a direct
-    /// feed sent before its session knew any event. Whether it changed.
-    pub(crate) fn acknowledge(&mut self, key: Uuid) -> bool {
+    /// The owner looked and put `key` away at `now_ms`: it no longer holds
+    /// a new feed back, and it stays pinned to its path until it settles.
+    /// One nothing can settle goes: a direct write other than a feed (the
+    /// phone's own session never sends it again and no history names it),
+    /// or a direct feed sent before its session knew any event. Whether it
+    /// changed.
+    pub(crate) fn acknowledge(&mut self, key: Uuid, now_ms: i64) -> bool {
         let Some(pin) = self.get_mut(key) else {
             return false;
         };
-        if pin.acknowledged || pin.state != PinState::Uncertain {
+        if pin.acknowledged_ms.is_some() || pin.state != PinState::Uncertain {
             return false;
         }
         let settles = match pin.path {
@@ -413,7 +463,7 @@ impl Book {
             }
         };
         if settles {
-            pin.acknowledged = true;
+            pin.acknowledged_ms = Some(now_ms);
         } else {
             self.settle(key);
         }
@@ -421,19 +471,21 @@ impl Book {
     }
 
     /// Put away pins the owner acknowledged more than [`KEEP_MS`] before
-    /// `now_ms`: their own path has had its chance to settle them. Whether
-    /// any went.
+    /// `now_ms`, and running feeds past the time they are kept. Whether any went.
     pub(crate) fn expire(&mut self, now_ms: i64) -> bool {
-        let before = self.pins.len();
-        self.pins
-            .retain(|pin| !pin.acknowledged || now_ms.saturating_sub(pin.sent_ms) < KEEP_MS);
-        self.pins.len() != before
+        let before = (self.pins.len(), self.running.len());
+        self.pins.retain(|pin| {
+            pin.acknowledged_ms
+                .is_none_or(|at| now_ms.saturating_sub(at) < KEEP_MS)
+        });
+        self.running.retain(|running| running.until_ms > now_ms);
+        before != (self.pins.len(), self.running.len())
     }
 
-    /// The feeder answered this phone's direct feed `feed`: no uncertain
-    /// direct feed on it may take that one's end for its own.
-    pub(crate) fn answered_direct(&mut self, feeder: &str, feed: u32) -> bool {
-        let mut changed = false;
+    /// The feeder reserved this phone's direct feed `feed`, which may run
+    /// until `until_ms`: no uncertain direct feed on it, now or sent while
+    /// it runs, may take that one's end for its own.
+    pub(crate) fn started_direct(&mut self, feeder: &str, feed: u32, until_ms: i64) {
         for pin in &mut self.pins {
             if pin.feeder == feeder
                 && pin.path == RoutePath::Direct
@@ -441,10 +493,28 @@ impl Book {
                 && !pin.excluded.contains(&feed)
             {
                 pin.excluded.push(feed);
-                changed = true;
             }
         }
-        changed
+        if !self
+            .running
+            .iter()
+            .any(|running| running.feeder == feeder && running.feed == feed)
+        {
+            self.running.push(RunningFeed {
+                feeder: feeder.to_owned(),
+                feed,
+                until_ms,
+            });
+        }
+    }
+
+    /// The history gave the ends of `feeds` on `feeder`: they no longer run.
+    /// Whether any did.
+    pub(crate) fn ended_direct(&mut self, feeder: &str, feeds: &[u32]) -> bool {
+        let before = self.running.len();
+        self.running
+            .retain(|running| running.feeder != feeder || !feeds.contains(&running.feed));
+        self.running.len() != before
     }
 }
 

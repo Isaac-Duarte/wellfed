@@ -17,14 +17,15 @@ import 'server_views.dart';
 import 'session.dart';
 part 'router.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`
-// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `follow_with`, `updates_with`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `follow_with`, `open_with`, `updates_with`
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PathRouter>>
 abstract class PathRouter implements RustOpaqueInterface {
   /// The owner looked at the bowl and put `key` away: a new feed may go.
-  /// It stays pinned to its path until it settles, or for a week; one
-  /// nothing can settle (a direct write other than a feed) goes now.
+  /// It stays pinned to its path until it settles, or for a week from
+  /// now; one nothing can settle (a direct write other than a feed) goes
+  /// now. A key that is no idempotency key is refused.
   void acknowledge({required String key});
 
   /// Run one request. One the server has no route for goes on the
@@ -64,9 +65,12 @@ abstract class PathRouter implements RustOpaqueInterface {
   /// [`ServerSession::follow`].
   Stream<ServerUpdate> follow({String? lastEventId});
 
-  /// A router keeping its pins at `pins_path` (`pending.json` beside the
-  /// app's file). With no server configured it passes every request to
-  /// the phone's own sessions.
+  /// The one router keeping its pins at `pins_path` (`pending.json`
+  /// beside the app's file); [`ErrorKind::InUse`] while another holds
+  /// them. With no server configured it passes every request to the
+  /// phone's own sessions.
+  ///
+  /// [`ErrorKind::InUse`]: crate::api::error::ErrorKind::InUse
   factory PathRouter({required String pinsPath}) =>
       RustLib.instance.api.crateApiRouterPathRouterNew(pinsPath: pinsPath);
 
@@ -87,13 +91,31 @@ abstract class PathRouter implements RustOpaqueInterface {
   /// those it answers for.
   Future<void> resolve();
 
-  /// Ask a pending write's own path what became of it: the server again
-  /// under its key (which sends a feed nothing new), or the feeder's
-  /// history as the phone's own session read it. Never the other path.
+  /// Ask a pending write's own path what became of it, only by reading:
+  /// the server's journal entry for its key, or the feeder's history as
+  /// the phone's own session read it. Nothing is sent, on either path.
   Future<RetryOutcome> retry({required String key});
 
   /// Hear the router's updates until [`Self::close`].
   Stream<RouterUpdate> updates();
+}
+
+/// Why a write went nowhere.
+enum NotSentReason {
+  /// The phone reaches the feeder no way it may use.
+  noPath,
+
+  /// No idempotency key: the system random source failed.
+  random,
+
+  /// The pin could not be written down, so it did not go.
+  store,
+
+  /// The server did not send it: `server_error` says why.
+  server,
+
+  /// The phone's own session ended before it went.
+  session,
 }
 
 /// A write that may have run, pinned to the path it went on.
@@ -159,7 +181,7 @@ sealed class RetryOutcome with _$RetryOutcome {
   }) = RetryOutcome_Settled;
 
   /// Still not known: its own path did not say, or could not be reached.
-  /// It was not sent on the other path.
+  /// Nothing was sent.
   const factory RetryOutcome.uncertain({required PendingWrite pending}) =
       RetryOutcome_Uncertain;
 
@@ -205,10 +227,21 @@ sealed class RoutedFeed with _$RoutedFeed {
   const factory RoutedFeed.uncertain({required PendingWrite pending}) =
       RoutedFeed_Uncertain;
 
+  /// Its call ended with no answer, but the server's stream had already
+  /// said what became of it: it is no longer pending. A `Started` feed's
+  /// end follows as [`RouterUpdate::FeedEnded`].
+  const factory RoutedFeed.settled({
+    required PendingWrite pending,
+    required Settlement settlement,
+  }) = RoutedFeed_Settled;
+
   /// Nothing went out: safe to start over. `error` is the server's
   /// reason when it refused it (a viewer may not feed) or could not be
   /// reached.
-  const factory RoutedFeed.notSent({ServerError? error}) = RoutedFeed_NotSent;
+  const factory RoutedFeed.notSent({
+    required NotSentReason reason,
+    ServerError? error,
+  }) = RoutedFeed_NotSent;
 
   /// Another feed on this feeder is unanswered or uncertain: the owner
   /// looks at the bowl and puts it away first.
@@ -228,16 +261,30 @@ class RoutedReply {
   final PendingWrite? pending;
   final ServerError? serverError;
 
+  /// Why, when it went nowhere.
+  final NotSentReason? notSent;
+
+  /// A write whose call ended unanswered while the server's stream had
+  /// already said what became of it: not pending.
+  final Settlement? settlement;
+
   const RoutedReply({
     this.path,
     required this.reply,
     this.pending,
     this.serverError,
+    this.notSent,
+    this.settlement,
   });
 
   @override
   int get hashCode =>
-      path.hashCode ^ reply.hashCode ^ pending.hashCode ^ serverError.hashCode;
+      path.hashCode ^
+      reply.hashCode ^
+      pending.hashCode ^
+      serverError.hashCode ^
+      notSent.hashCode ^
+      settlement.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -247,7 +294,9 @@ class RoutedReply {
           path == other.path &&
           reply == other.reply &&
           pending == other.pending &&
-          serverError == other.serverError;
+          serverError == other.serverError &&
+          notSent == other.notSent &&
+          settlement == other.settlement;
 }
 
 @freezed
@@ -305,8 +354,9 @@ sealed class Settlement with _$Settlement {
   /// The server holds no record of it: it was never sent.
   const factory Settlement.notSent() = Settlement_NotSent;
 
-  /// A settings or plans write whose retry found the store moved on,
-  /// which the write itself may have done: read it to see.
+  /// A meal call write another change to the call overtook: final, and
+  /// whether this one ever took effect no longer shows. Read the call to
+  /// see it now.
   const factory Settlement.superseded() = Settlement_Superseded;
 }
 

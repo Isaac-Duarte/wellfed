@@ -4542,6 +4542,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NotSentReason dco_decode_box_autoadd_not_sent_reason(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_not_sent_reason(raw);
+  }
+
+  @protected
   NtpResult dco_decode_box_autoadd_ntp_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_ntp_result(raw);
@@ -6014,6 +6020,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NotSentReason dco_decode_not_sent_reason(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return NotSentReason.values[raw as int];
+  }
+
+  @protected
   NtpResult dco_decode_ntp_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return NtpResult.values[raw as int];
@@ -6122,6 +6134,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NotSentReason? dco_decode_opt_box_autoadd_not_sent_reason(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_not_sent_reason(raw);
+  }
+
+  @protected
   NtpResult? dco_decode_opt_box_autoadd_ntp_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_ntp_result(raw);
@@ -6227,6 +6245,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SettingsView? dco_decode_opt_box_autoadd_settings_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_settings_view(raw);
+  }
+
+  @protected
+  Settlement? dco_decode_opt_box_autoadd_settlement(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_settlement(raw);
   }
 
   @protected
@@ -6612,10 +6636,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pending: dco_decode_box_autoadd_pending_write(raw[1]),
         );
       case 3:
-        return RoutedFeed_NotSent(
-          error: dco_decode_opt_box_autoadd_server_error(raw[1]),
+        return RoutedFeed_Settled(
+          pending: dco_decode_box_autoadd_pending_write(raw[1]),
+          settlement: dco_decode_box_autoadd_settlement(raw[2]),
         );
       case 4:
+        return RoutedFeed_NotSent(
+          reason: dco_decode_not_sent_reason(raw[1]),
+          error: dco_decode_opt_box_autoadd_server_error(raw[2]),
+        );
+      case 5:
         return RoutedFeed_Held(
           pending: dco_decode_box_autoadd_pending_write(raw[1]),
         );
@@ -6628,13 +6658,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RoutedReply dco_decode_routed_reply(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return RoutedReply(
       path: dco_decode_opt_box_autoadd_route_path(arr[0]),
       reply: dco_decode_feeder_reply(arr[1]),
       pending: dco_decode_opt_box_autoadd_pending_write(arr[2]),
       serverError: dco_decode_opt_box_autoadd_server_error(arr[3]),
+      notSent: dco_decode_opt_box_autoadd_not_sent_reason(arr[4]),
+      settlement: dco_decode_opt_box_autoadd_settlement(arr[5]),
     );
   }
 
@@ -8483,6 +8515,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NotSentReason sse_decode_box_autoadd_not_sent_reason(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_not_sent_reason(deserializer));
+  }
+
+  @protected
   NtpResult sse_decode_box_autoadd_ntp_result(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_ntp_result(deserializer));
@@ -10277,6 +10317,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  NotSentReason sse_decode_not_sent_reason(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return NotSentReason.values[inner];
+  }
+
+  @protected
   NtpResult sse_decode_ntp_result(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
@@ -10464,6 +10511,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_next_meal_view(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  NotSentReason? sse_decode_opt_box_autoadd_not_sent_reason(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_not_sent_reason(deserializer));
     } else {
       return null;
     }
@@ -10679,6 +10739,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_settings_view(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  Settlement? sse_decode_opt_box_autoadd_settlement(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_settlement(deserializer));
     } else {
       return null;
     }
@@ -11198,9 +11271,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_pending = sse_decode_box_autoadd_pending_write(deserializer);
         return RoutedFeed_Uncertain(pending: var_pending);
       case 3:
-        var var_error = sse_decode_opt_box_autoadd_server_error(deserializer);
-        return RoutedFeed_NotSent(error: var_error);
+        var var_pending = sse_decode_box_autoadd_pending_write(deserializer);
+        var var_settlement = sse_decode_box_autoadd_settlement(deserializer);
+        return RoutedFeed_Settled(
+          pending: var_pending,
+          settlement: var_settlement,
+        );
       case 4:
+        var var_reason = sse_decode_not_sent_reason(deserializer);
+        var var_error = sse_decode_opt_box_autoadd_server_error(deserializer);
+        return RoutedFeed_NotSent(reason: var_reason, error: var_error);
+      case 5:
         var var_pending = sse_decode_box_autoadd_pending_write(deserializer);
         return RoutedFeed_Held(pending: var_pending);
       default:
@@ -11215,11 +11296,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_reply = sse_decode_feeder_reply(deserializer);
     var var_pending = sse_decode_opt_box_autoadd_pending_write(deserializer);
     var var_serverError = sse_decode_opt_box_autoadd_server_error(deserializer);
+    var var_notSent = sse_decode_opt_box_autoadd_not_sent_reason(deserializer);
+    var var_settlement = sse_decode_opt_box_autoadd_settlement(deserializer);
     return RoutedReply(
       path: var_path,
       reply: var_reply,
       pending: var_pending,
       serverError: var_serverError,
+      notSent: var_notSent,
+      settlement: var_settlement,
     );
   }
 
@@ -13376,6 +13461,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_not_sent_reason(
+    NotSentReason self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_not_sent_reason(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_ntp_result(
     NtpResult self,
     SseSerializer serializer,
@@ -14988,6 +15082,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_not_sent_reason(
+    NotSentReason self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_ntp_result(NtpResult self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
@@ -15179,6 +15282,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_next_meal_view(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_not_sent_reason(
+    NotSentReason? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_not_sent_reason(self, serializer);
     }
   }
 
@@ -15397,6 +15513,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_settings_view(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_settlement(
+    Settlement? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_settlement(self, serializer);
     }
   }
 
@@ -15838,11 +15967,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case RoutedFeed_Uncertain(pending: final pending):
         sse_encode_i_32(2, serializer);
         sse_encode_box_autoadd_pending_write(pending, serializer);
-      case RoutedFeed_NotSent(error: final error):
+      case RoutedFeed_Settled(
+        pending: final pending,
+        settlement: final settlement,
+      ):
         sse_encode_i_32(3, serializer);
+        sse_encode_box_autoadd_pending_write(pending, serializer);
+        sse_encode_box_autoadd_settlement(settlement, serializer);
+      case RoutedFeed_NotSent(reason: final reason, error: final error):
+        sse_encode_i_32(4, serializer);
+        sse_encode_not_sent_reason(reason, serializer);
         sse_encode_opt_box_autoadd_server_error(error, serializer);
       case RoutedFeed_Held(pending: final pending):
-        sse_encode_i_32(4, serializer);
+        sse_encode_i_32(5, serializer);
         sse_encode_box_autoadd_pending_write(pending, serializer);
     }
   }
@@ -15854,6 +15991,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_feeder_reply(self.reply, serializer);
     sse_encode_opt_box_autoadd_pending_write(self.pending, serializer);
     sse_encode_opt_box_autoadd_server_error(self.serverError, serializer);
+    sse_encode_opt_box_autoadd_not_sent_reason(self.notSent, serializer);
+    sse_encode_opt_box_autoadd_settlement(self.settlement, serializer);
   }
 
   @protected
@@ -16951,7 +17090,9 @@ class FeederSessionImpl extends RustOpaque implements FeederSession {
       RustLib.instance.api.crateApiSessionFeederSessionClose(that: this);
 
   /// Feed `portions` (1-48) once. The answer and the feed's end arrive
-  /// as updates.
+  /// as updates. Refused with [`ErrorKind::Routed`] once a path router
+  /// holds the session: its feeds go through the router, which pins them
+  /// and keeps one feed from doubling an uncertain one.
   void feed({required int portions}) => RustLib.instance.api
       .crateApiSessionFeederSessionFeed(that: this, portions: portions);
 
@@ -17086,8 +17227,9 @@ class PathRouterImpl extends RustOpaque implements PathRouter {
   );
 
   /// The owner looked at the bowl and put `key` away: a new feed may go.
-  /// It stays pinned to its path until it settles, or for a week; one
-  /// nothing can settle (a direct write other than a feed) goes now.
+  /// It stays pinned to its path until it settles, or for a week from
+  /// now; one nothing can settle (a direct write other than a feed) goes
+  /// now. A key that is no idempotency key is refused.
   void acknowledge({required String key}) => RustLib.instance.api
       .crateApiRouterPathRouterAcknowledge(that: this, key: key);
 
@@ -17176,9 +17318,9 @@ class PathRouterImpl extends RustOpaque implements PathRouter {
   Future<void> resolve() =>
       RustLib.instance.api.crateApiRouterPathRouterResolve(that: this);
 
-  /// Ask a pending write's own path what became of it: the server again
-  /// under its key (which sends a feed nothing new), or the feeder's
-  /// history as the phone's own session read it. Never the other path.
+  /// Ask a pending write's own path what became of it, only by reading:
+  /// the server's journal entry for its key, or the feeder's history as
+  /// the phone's own session read it. Nothing is sent, on either path.
   Future<RetryOutcome> retry({required String key}) =>
       RustLib.instance.api.crateApiRouterPathRouterRetry(that: this, key: key);
 

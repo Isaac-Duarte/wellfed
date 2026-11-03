@@ -6,6 +6,7 @@
 //! The listener is called with no lock held here, so the router may read
 //! the link from inside it.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use tokio::sync::mpsc;
@@ -39,6 +40,8 @@ pub(crate) struct DirectLink {
     pub(crate) commands: mpsc::UnboundedSender<Command>,
     /// This phone's key's first 4 bytes, as events name a client.
     phone: [u8; 4],
+    /// A path router holds the session: every feed goes through it.
+    routed: AtomicBool,
     state: Mutex<LinkState>,
 }
 
@@ -63,6 +66,7 @@ impl DirectLink {
             feeder: wellfed_formats::hex::encode(&feeder),
             commands,
             phone: fingerprint,
+            routed: AtomicBool::new(false),
             state: Mutex::new(LinkState::default()),
         }
     }
@@ -86,9 +90,15 @@ impl DirectLink {
         self.state().seen.clone()
     }
 
-    /// Hear every change from now on.
+    /// Hear every change from now on, as the session's router: from now on
+    /// every feed goes through it.
     pub(crate) fn listen(&self, listener: Listener) {
+        self.routed.store(true, Ordering::SeqCst);
         self.state().listener = Some(listener);
+    }
+
+    pub(crate) fn is_routed(&self) -> bool {
+        self.routed.load(Ordering::SeqCst)
     }
 
     fn tell(&self, news: LinkNews) {

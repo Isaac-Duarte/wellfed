@@ -427,10 +427,11 @@ impl ServerSession {
     }
 
     /// What the path router calls the server through: this session's
-    /// client and its close.
+    /// client, its token's id and its close.
     pub(crate) fn handle(&self) -> ServerHandle {
         ServerHandle {
             client: self.client.clone(),
+            token: uuid::Uuid::parse_str(&self.link.token_id).ok(),
             closed: self.closed.subscribe(),
         }
     }
@@ -440,6 +441,10 @@ impl ServerSession {
 #[derive(Clone, Debug)]
 pub(crate) struct ServerHandle {
     pub(crate) client: Client,
+    /// The phone token's id, which one server issued: the router's mark of
+    /// which journal a write went to. `None` for a stored id that does not
+    /// parse, whose writes no journal then settles as never sent.
+    pub(crate) token: Option<uuid::Uuid>,
     closed: watch::Receiver<bool>,
 }
 

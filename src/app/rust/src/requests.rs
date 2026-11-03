@@ -29,7 +29,7 @@ use crate::api::feeder::{
 use crate::session::{Command, Heard};
 
 /// How a request's one op ended, short of an answer.
-enum Lost {
+pub(crate) enum Lost {
     Unanswered,
     NotSent,
     /// A settings write asked while another was out, which never went.
@@ -49,22 +49,25 @@ impl From<Lost> for FeederReply {
 }
 
 /// One op through the session's loop. A session that ended before sending it
-/// drops the reply; one that sent it says if it heard nothing.
-async fn ask(commands: &mpsc::UnboundedSender<Command>, op: Op) -> Result<Answer, Lost> {
+/// says so; one that sent it says if it heard nothing.
+pub(crate) async fn ask(commands: &mpsc::UnboundedSender<Command>, op: Op) -> Result<Answer, Lost> {
     asked(commands, |reply| Command::Ask { op, reply }).await
 }
 
-/// The command `command` makes of its reply, through the session's loop.
-async fn asked(
+/// The command `command` makes of its reply, through the session's loop. A
+/// command the loop refuses to take never went; a reply dropped without a
+/// word may have gone, so it reads as unanswered.
+pub(crate) async fn asked(
     commands: &mpsc::UnboundedSender<Command>,
     command: impl FnOnce(oneshot::Sender<Heard>) -> Command,
 ) -> Result<Answer, Lost> {
     let (reply, heard) = oneshot::channel();
     commands.send(command(reply)).map_err(|_| Lost::NotSent)?;
-    match heard.await.map_err(|_| Lost::NotSent)? {
+    match heard.await.map_err(|_| Lost::Unanswered)? {
         Heard::Answer(answer) => Ok(answer),
         Heard::Unanswered => Err(Lost::Unanswered),
         Heard::Held => Err(Lost::Held),
+        Heard::NotSent => Err(Lost::NotSent),
     }
 }
 
@@ -132,7 +135,7 @@ pub async fn run(
             base,
             portion,
             bowl,
-        } => match portion_mg(portion) {
+        } => match portion_mg(&portion) {
             Ok(portion_mg) => Op::PutCalibration {
                 base: Generation(base),
                 calibration: Calibration { portion_mg, bowl },
@@ -296,15 +299,15 @@ pub(crate) fn time_changes(
     Ok(TimeChanges { zone, ntp })
 }
 
-fn portion_mg(portion: PortionChange) -> Result<Option<u32>, NotAsked> {
+pub(crate) fn portion_mg(portion: &PortionChange) -> Result<Option<u32>, NotAsked> {
     use wellfed_client::calibration::{mean_mg, parse_grams};
 
     match portion {
         PortionChange::Clear => Ok(None),
-        PortionChange::Milligrams { mg } => Ok(Some(mg)),
+        PortionChange::Milligrams { mg } => Ok(Some(*mg)),
         PortionChange::Weighed { grams, portions } => {
-            let weighed = parse_grams(&grams).map_err(|_| NotAsked::BadWeight)?;
-            let mean = mean_mg(weighed, portions).map_err(|_| NotAsked::BadWeight)?;
+            let weighed = parse_grams(grams).map_err(|_| NotAsked::BadWeight)?;
+            let mean = mean_mg(weighed, *portions).map_err(|_| NotAsked::BadWeight)?;
             Ok(Some(mean))
         }
     }
@@ -541,7 +544,7 @@ pub(crate) const fn refusal_of(refusal: Refusal) -> FeederRefusal {
     }
 }
 
-fn call_of(view: CallView) -> CallInfo {
+pub(crate) fn call_of(view: CallView) -> CallInfo {
     CallInfo {
         writable: view.writable,
         clip: view.clip,
@@ -559,7 +562,7 @@ fn client_of(client: Client) -> ClientView {
     }
 }
 
-const fn calibration_of(view: CalibrationView) -> CalibrationInfo {
+pub(crate) const fn calibration_of(view: CalibrationView) -> CalibrationInfo {
     CalibrationInfo {
         generation: view.generation.0,
         writable: view.writable,

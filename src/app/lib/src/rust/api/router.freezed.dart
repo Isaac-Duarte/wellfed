@@ -401,13 +401,14 @@ extension RoutedFeedPatterns on RoutedFeed {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RoutedFeed_Started value)?  started,TResult Function( RoutedFeed_Refused value)?  refused,TResult Function( RoutedFeed_Uncertain value)?  uncertain,TResult Function( RoutedFeed_NotSent value)?  notSent,TResult Function( RoutedFeed_Held value)?  held,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RoutedFeed_Started value)?  started,TResult Function( RoutedFeed_Refused value)?  refused,TResult Function( RoutedFeed_Uncertain value)?  uncertain,TResult Function( RoutedFeed_Settled value)?  settled,TResult Function( RoutedFeed_NotSent value)?  notSent,TResult Function( RoutedFeed_Held value)?  held,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case RoutedFeed_Started() when started != null:
 return started(_that);case RoutedFeed_Refused() when refused != null:
 return refused(_that);case RoutedFeed_Uncertain() when uncertain != null:
-return uncertain(_that);case RoutedFeed_NotSent() when notSent != null:
+return uncertain(_that);case RoutedFeed_Settled() when settled != null:
+return settled(_that);case RoutedFeed_NotSent() when notSent != null:
 return notSent(_that);case RoutedFeed_Held() when held != null:
 return held(_that);case _:
   return orElse();
@@ -427,13 +428,14 @@ return held(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RoutedFeed_Started value)  started,required TResult Function( RoutedFeed_Refused value)  refused,required TResult Function( RoutedFeed_Uncertain value)  uncertain,required TResult Function( RoutedFeed_NotSent value)  notSent,required TResult Function( RoutedFeed_Held value)  held,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RoutedFeed_Started value)  started,required TResult Function( RoutedFeed_Refused value)  refused,required TResult Function( RoutedFeed_Uncertain value)  uncertain,required TResult Function( RoutedFeed_Settled value)  settled,required TResult Function( RoutedFeed_NotSent value)  notSent,required TResult Function( RoutedFeed_Held value)  held,}){
 final _that = this;
 switch (_that) {
 case RoutedFeed_Started():
 return started(_that);case RoutedFeed_Refused():
 return refused(_that);case RoutedFeed_Uncertain():
-return uncertain(_that);case RoutedFeed_NotSent():
+return uncertain(_that);case RoutedFeed_Settled():
+return settled(_that);case RoutedFeed_NotSent():
 return notSent(_that);case RoutedFeed_Held():
 return held(_that);}
 }
@@ -449,13 +451,14 @@ return held(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RoutedFeed_Started value)?  started,TResult? Function( RoutedFeed_Refused value)?  refused,TResult? Function( RoutedFeed_Uncertain value)?  uncertain,TResult? Function( RoutedFeed_NotSent value)?  notSent,TResult? Function( RoutedFeed_Held value)?  held,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RoutedFeed_Started value)?  started,TResult? Function( RoutedFeed_Refused value)?  refused,TResult? Function( RoutedFeed_Uncertain value)?  uncertain,TResult? Function( RoutedFeed_Settled value)?  settled,TResult? Function( RoutedFeed_NotSent value)?  notSent,TResult? Function( RoutedFeed_Held value)?  held,}){
 final _that = this;
 switch (_that) {
 case RoutedFeed_Started() when started != null:
 return started(_that);case RoutedFeed_Refused() when refused != null:
 return refused(_that);case RoutedFeed_Uncertain() when uncertain != null:
-return uncertain(_that);case RoutedFeed_NotSent() when notSent != null:
+return uncertain(_that);case RoutedFeed_Settled() when settled != null:
+return settled(_that);case RoutedFeed_NotSent() when notSent != null:
 return notSent(_that);case RoutedFeed_Held() when held != null:
 return held(_that);case _:
   return null;
@@ -474,13 +477,14 @@ return held(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String key,  RoutePath path,  int feed,  int portions,  int dueSeconds)?  started,TResult Function( String key,  RoutePath path,  FeedRefusal refusal)?  refused,TResult Function( PendingWrite pending)?  uncertain,TResult Function( ServerError? error)?  notSent,TResult Function( PendingWrite pending)?  held,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String key,  RoutePath path,  int feed,  int portions,  int dueSeconds)?  started,TResult Function( String key,  RoutePath path,  FeedRefusal refusal)?  refused,TResult Function( PendingWrite pending)?  uncertain,TResult Function( PendingWrite pending,  Settlement settlement)?  settled,TResult Function( NotSentReason reason,  ServerError? error)?  notSent,TResult Function( PendingWrite pending)?  held,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case RoutedFeed_Started() when started != null:
 return started(_that.key,_that.path,_that.feed,_that.portions,_that.dueSeconds);case RoutedFeed_Refused() when refused != null:
 return refused(_that.key,_that.path,_that.refusal);case RoutedFeed_Uncertain() when uncertain != null:
-return uncertain(_that.pending);case RoutedFeed_NotSent() when notSent != null:
-return notSent(_that.error);case RoutedFeed_Held() when held != null:
+return uncertain(_that.pending);case RoutedFeed_Settled() when settled != null:
+return settled(_that.pending,_that.settlement);case RoutedFeed_NotSent() when notSent != null:
+return notSent(_that.reason,_that.error);case RoutedFeed_Held() when held != null:
 return held(_that.pending);case _:
   return orElse();
 
@@ -499,13 +503,14 @@ return held(_that.pending);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String key,  RoutePath path,  int feed,  int portions,  int dueSeconds)  started,required TResult Function( String key,  RoutePath path,  FeedRefusal refusal)  refused,required TResult Function( PendingWrite pending)  uncertain,required TResult Function( ServerError? error)  notSent,required TResult Function( PendingWrite pending)  held,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String key,  RoutePath path,  int feed,  int portions,  int dueSeconds)  started,required TResult Function( String key,  RoutePath path,  FeedRefusal refusal)  refused,required TResult Function( PendingWrite pending)  uncertain,required TResult Function( PendingWrite pending,  Settlement settlement)  settled,required TResult Function( NotSentReason reason,  ServerError? error)  notSent,required TResult Function( PendingWrite pending)  held,}) {final _that = this;
 switch (_that) {
 case RoutedFeed_Started():
 return started(_that.key,_that.path,_that.feed,_that.portions,_that.dueSeconds);case RoutedFeed_Refused():
 return refused(_that.key,_that.path,_that.refusal);case RoutedFeed_Uncertain():
-return uncertain(_that.pending);case RoutedFeed_NotSent():
-return notSent(_that.error);case RoutedFeed_Held():
+return uncertain(_that.pending);case RoutedFeed_Settled():
+return settled(_that.pending,_that.settlement);case RoutedFeed_NotSent():
+return notSent(_that.reason,_that.error);case RoutedFeed_Held():
 return held(_that.pending);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -520,13 +525,14 @@ return held(_that.pending);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String key,  RoutePath path,  int feed,  int portions,  int dueSeconds)?  started,TResult? Function( String key,  RoutePath path,  FeedRefusal refusal)?  refused,TResult? Function( PendingWrite pending)?  uncertain,TResult? Function( ServerError? error)?  notSent,TResult? Function( PendingWrite pending)?  held,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String key,  RoutePath path,  int feed,  int portions,  int dueSeconds)?  started,TResult? Function( String key,  RoutePath path,  FeedRefusal refusal)?  refused,TResult? Function( PendingWrite pending)?  uncertain,TResult? Function( PendingWrite pending,  Settlement settlement)?  settled,TResult? Function( NotSentReason reason,  ServerError? error)?  notSent,TResult? Function( PendingWrite pending)?  held,}) {final _that = this;
 switch (_that) {
 case RoutedFeed_Started() when started != null:
 return started(_that.key,_that.path,_that.feed,_that.portions,_that.dueSeconds);case RoutedFeed_Refused() when refused != null:
 return refused(_that.key,_that.path,_that.refusal);case RoutedFeed_Uncertain() when uncertain != null:
-return uncertain(_that.pending);case RoutedFeed_NotSent() when notSent != null:
-return notSent(_that.error);case RoutedFeed_Held() when held != null:
+return uncertain(_that.pending);case RoutedFeed_Settled() when settled != null:
+return settled(_that.pending,_that.settlement);case RoutedFeed_NotSent() when notSent != null:
+return notSent(_that.reason,_that.error);case RoutedFeed_Held() when held != null:
 return held(_that.pending);case _:
   return null;
 
@@ -755,10 +761,90 @@ as PendingWrite,
 /// @nodoc
 
 
-class RoutedFeed_NotSent extends RoutedFeed {
-  const RoutedFeed_NotSent({this.error}): super._();
+class RoutedFeed_Settled extends RoutedFeed {
+  const RoutedFeed_Settled({required this.pending, required this.settlement}): super._();
   
 
+ final  PendingWrite pending;
+ final  Settlement settlement;
+
+/// Create a copy of RoutedFeed
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RoutedFeed_SettledCopyWith<RoutedFeed_Settled> get copyWith => _$RoutedFeed_SettledCopyWithImpl<RoutedFeed_Settled>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is RoutedFeed_Settled&&(identical(other.pending, pending) || other.pending == pending)&&(identical(other.settlement, settlement) || other.settlement == settlement));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,pending,settlement);
+}
+
+@override
+String toString() {
+    return 'RoutedFeed.settled(pending: $pending, settlement: $settlement)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RoutedFeed_SettledCopyWith<$Res> implements $RoutedFeedCopyWith<$Res> {
+  factory $RoutedFeed_SettledCopyWith(RoutedFeed_Settled value, $Res Function(RoutedFeed_Settled) _then) = _$RoutedFeed_SettledCopyWithImpl;
+@useResult
+$Res call({
+ PendingWrite pending, Settlement settlement
+});
+
+
+$SettlementCopyWith<$Res> get settlement;
+
+}
+/// @nodoc
+class _$RoutedFeed_SettledCopyWithImpl<$Res>
+    implements $RoutedFeed_SettledCopyWith<$Res> {
+  _$RoutedFeed_SettledCopyWithImpl(this._self, this._then);
+
+  final RoutedFeed_Settled _self;
+  final $Res Function(RoutedFeed_Settled) _then;
+
+/// Create a copy of RoutedFeed
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? pending = null,Object? settlement = null,}) {
+  return _then(RoutedFeed_Settled(
+pending: null == pending ? _self.pending : pending // ignore: cast_nullable_to_non_nullable
+as PendingWrite,settlement: null == settlement ? _self.settlement : settlement // ignore: cast_nullable_to_non_nullable
+as Settlement,
+  ));
+}
+
+/// Create a copy of RoutedFeed
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$SettlementCopyWith<$Res> get settlement {
+  
+  return $SettlementCopyWith<$Res>(_self.settlement, (value) {
+    return _then(_self.copyWith(settlement: value));
+  });
+}
+}
+
+/// @nodoc
+
+
+class RoutedFeed_NotSent extends RoutedFeed {
+  const RoutedFeed_NotSent({required this.reason, this.error}): super._();
+  
+
+ final  NotSentReason reason;
  final  ServerError? error;
 
 /// Create a copy of RoutedFeed
@@ -771,18 +857,18 @@ $RoutedFeed_NotSentCopyWith<RoutedFeed_NotSent> get copyWith => _$RoutedFeed_Not
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is RoutedFeed_NotSent&&(identical(other.error, error) || other.error == error));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is RoutedFeed_NotSent&&(identical(other.reason, reason) || other.reason == reason)&&(identical(other.error, error) || other.error == error));
 }
 
 
 @override
 int get hashCode {
-    return Object.hash(runtimeType,error);
+    return Object.hash(runtimeType,reason,error);
 }
 
 @override
 String toString() {
-    return 'RoutedFeed.notSent(error: $error)';
+    return 'RoutedFeed.notSent(reason: $reason, error: $error)';
 }
 
 
@@ -793,7 +879,7 @@ abstract mixin class $RoutedFeed_NotSentCopyWith<$Res> implements $RoutedFeedCop
   factory $RoutedFeed_NotSentCopyWith(RoutedFeed_NotSent value, $Res Function(RoutedFeed_NotSent) _then) = _$RoutedFeed_NotSentCopyWithImpl;
 @useResult
 $Res call({
- ServerError? error
+ NotSentReason reason, ServerError? error
 });
 
 
@@ -810,9 +896,10 @@ class _$RoutedFeed_NotSentCopyWithImpl<$Res>
 
 /// Create a copy of RoutedFeed
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? error = freezed,}) {
+@pragma('vm:prefer-inline') $Res call({Object? reason = null,Object? error = freezed,}) {
   return _then(RoutedFeed_NotSent(
-error: freezed == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
+reason: null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
+as NotSentReason,error: freezed == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
 as ServerError?,
   ));
 }

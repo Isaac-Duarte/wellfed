@@ -81,4 +81,13 @@ enum ErrorKind {
 
   /// The connection broke during an exchange: its outcome is unknown.
   interrupted,
+
+  /// The pending writes' file is already open in another router: one
+  /// router owns it.
+  inUse,
+
+  /// The session is the path router's: its feeds go through
+  /// [`PathRouter::feed`](crate::api::router::PathRouter::feed), which
+  /// pins them.
+  routed,
 }

@@ -1,6 +1,11 @@
 //! Every request to a feeder, through the owner's server or the phone's own
-//! session, as Dart makes it once a server is configured. With none, the
-//! router passes everything to the phone's own session as before.
+//! session. With no server configured the router passes everything to the
+//! phone's own session, but it still pins every write, so Dart makes every
+//! request through it once the app has one, and never around it: a session
+//! the router holds refuses [`FeederSession::feed`]. A pins file that does
+//! not open (corrupt, or already open in another router) fails
+//! [`PathRouter::new`], and the app then sends no write at all: it never
+//! falls back to unpinned writes.
 //!
 //! The path is chosen per feeder, server first: a new read or a new write
 //! goes direct when the server is unreachable, or reports the feeder offline
@@ -10,20 +15,26 @@
 //! takes now, for the screen's indicator.
 //!
 //! A write carries one idempotency key from the owner's confirmation to its
-//! result, on whichever path it first went. **A write that may have run never
-//! switches path.** It is pinned to its path, on disk, and resolved there
-//! only: on the server by a retry under its key or the journal entry the key
-//! names (`GET /commands/{key}`, or the stream's `command` event); on the
-//! phone's own session from the feeder's history (a feed by its `Fed`
-//! event). Nothing here sends it again on its own, and a retry never sends it
-//! on the other path, even with its own path down: it then stays uncertain,
-//! and [`PathRouter::pending`] lists it. A write the server definitely did
-//! not send has run nowhere, and goes on the phone's own session instead:
-//! no connection to the server (refused before a byte of the request left),
-//! or `feeder_offline` on a first attempt, which the server answers only for
-//! a write its feeder task never took, dropping the journal entry. Since the
-//! server keeps no entry, the router never sends that key to the server
-//! again: the write is the direct path's from then on.
+//! result, and is pinned on disk before it goes. **A write is sent once, and
+//! a write that may have run never switches path.** It is resolved only on
+//! its own path, and only by reading: on the server, the journal entry its
+//! key names (`GET /commands/{key}`, or the stream's `command` event); on
+//! the phone's own session, the feeder's history (a feed by its `Fed`
+//! event). [`PathRouter::retry`] reads; it never sends. The server dedups a
+//! key only while its journal holds it, and it holds none for a write it
+//! never recorded (a lost `feeder_offline` answer, a failure before the
+//! insert, a request that never reached it, an app that stopped before it
+//! sent), so a resend could feed again after the owner already had. A
+//! journal that lacks the key settles it as never sent only when it is the
+//! one the write went to (the same token and account), well after its
+//! attempt. With its path down it stays uncertain, and
+//! [`PathRouter::pending`] lists it.
+//!
+//! A write the server definitely did not send has run nowhere, and goes on
+//! the phone's own session instead: no connection to the server (refused
+//! before a byte of the request left), or `feeder_offline`, which the server
+//! answers only for a write its feeder task never took, dropping the
+//! journal entry.
 //!
 //! A new feed waits while another feed on the same feeder is sent and not yet
 //! answered, or uncertain and not yet put away by the owner
@@ -42,6 +53,7 @@ use crate::api::server_error::ServerError;
 use crate::api::server_views::{ServerAccount, ServerFeeder};
 use crate::api::session::{FeedRefusal, FeederSession};
 use crate::frb_generated::StreamSink;
+use crate::route::core::UNFOUND_GRACE_MS;
 use crate::route::io::Router;
 
 /// The way a request reaches a feeder.
@@ -116,9 +128,25 @@ pub enum Settlement {
     Unrecorded,
     /// The server holds no record of it: it was never sent.
     NotSent,
-    /// A settings or plans write whose retry found the store moved on,
-    /// which the write itself may have done: read it to see.
+    /// A meal call write another change to the call overtook: final, and
+    /// whether this one ever took effect no longer shows. Read the call to
+    /// see it now.
     Superseded,
+}
+
+/// Why a write went nowhere.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NotSentReason {
+    /// The phone reaches the feeder no way it may use.
+    NoPath,
+    /// No idempotency key: the system random source failed.
+    Random,
+    /// The pin could not be written down, so it did not go.
+    Store,
+    /// The server did not send it: `server_error` says why.
+    Server,
+    /// The phone's own session ended before it went.
+    Session,
 }
 
 /// How a feed through the router began.
@@ -144,10 +172,20 @@ pub enum RoutedFeed {
     /// It may have run. It is pinned to its path and never sent again;
     /// [`PathRouter::retry`] asks that path what became of it.
     Uncertain { pending: PendingWrite },
+    /// Its call ended with no answer, but the server's stream had already
+    /// said what became of it: it is no longer pending. A `Started` feed's
+    /// end follows as [`RouterUpdate::FeedEnded`].
+    Settled {
+        pending: PendingWrite,
+        settlement: Settlement,
+    },
     /// Nothing went out: safe to start over. `error` is the server's
     /// reason when it refused it (a viewer may not feed) or could not be
     /// reached.
-    NotSent { error: Option<ServerError> },
+    NotSent {
+        reason: NotSentReason,
+        error: Option<ServerError>,
+    },
     /// Another feed on this feeder is unanswered or uncertain: the owner
     /// looks at the bowl and puts it away first.
     Held { pending: PendingWrite },
@@ -164,6 +202,11 @@ pub struct RoutedReply {
     pub reply: FeederReply,
     pub pending: Option<PendingWrite>,
     pub server_error: Option<ServerError>,
+    /// Why, when it went nowhere.
+    pub not_sent: Option<NotSentReason>,
+    /// A write whose call ended unanswered while the server's stream had
+    /// already said what became of it: not pending.
+    pub settlement: Option<Settlement>,
 }
 
 /// What a retry of a pending write found.
@@ -174,7 +217,7 @@ pub enum RetryOutcome {
         settlement: Settlement,
     },
     /// Still not known: its own path did not say, or could not be reached.
-    /// It was not sent on the other path.
+    /// Nothing was sent.
     Uncertain { pending: PendingWrite },
     /// No pending write has that key.
     Unknown,
@@ -207,13 +250,23 @@ pub struct PathRouter {
 }
 
 impl PathRouter {
-    /// A router keeping its pins at `pins_path` (`pending.json` beside the
-    /// app's file). With no server configured it passes every request to
-    /// the phone's own sessions.
+    /// The one router keeping its pins at `pins_path` (`pending.json`
+    /// beside the app's file); [`ErrorKind::InUse`] while another holds
+    /// them. With no server configured it passes every request to the
+    /// phone's own sessions.
+    ///
+    /// [`ErrorKind::InUse`]: crate::api::error::ErrorKind::InUse
     #[frb(sync)]
     pub fn new(pins_path: String) -> Result<Self, BridgeError> {
+        Self::open_with(pins_path, UNFOUND_GRACE_MS)
+    }
+
+    /// [`Self::new`], taking a server write its journal lacks as never sent
+    /// `grace_ms` after its attempt, for Rust tests.
+    #[frb(ignore)]
+    pub fn open_with(pins_path: String, grace_ms: i64) -> Result<Self, BridgeError> {
         Ok(Self {
-            router: Router::open(pins_path.into())?,
+            router: Router::open(std::path::Path::new(&pins_path), grace_ms)?,
         })
     }
 
@@ -279,16 +332,17 @@ impl PathRouter {
         self.router.pending()
     }
 
-    /// Ask a pending write's own path what became of it: the server again
-    /// under its key (which sends a feed nothing new), or the feeder's
-    /// history as the phone's own session read it. Never the other path.
+    /// Ask a pending write's own path what became of it, only by reading:
+    /// the server's journal entry for its key, or the feeder's history as
+    /// the phone's own session read it. Nothing is sent, on either path.
     pub async fn retry(&self, key: String) -> RetryOutcome {
         self.router.retry(&key).await
     }
 
     /// The owner looked at the bowl and put `key` away: a new feed may go.
-    /// It stays pinned to its path until it settles, or for a week; one
-    /// nothing can settle (a direct write other than a feed) goes now.
+    /// It stays pinned to its path until it settles, or for a week from
+    /// now; one nothing can settle (a direct write other than a feed) goes
+    /// now. A key that is no idempotency key is refused.
     #[frb(sync)]
     pub fn acknowledge(&self, key: String) -> Result<(), BridgeError> {
         self.router.acknowledge(&key)

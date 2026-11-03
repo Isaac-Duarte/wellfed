@@ -5914,6 +5914,8 @@ impl SseDecode for crate::api::error::ErrorKind {
             14 => crate::api::error::ErrorKind::Store,
             15 => crate::api::error::ErrorKind::Invite,
             16 => crate::api::error::ErrorKind::Interrupted,
+            17 => crate::api::error::ErrorKind::InUse,
+            18 => crate::api::error::ErrorKind::Routed,
             _ => unreachable!("Invalid variant for ErrorKind: {}", inner),
         };
     }
@@ -7464,6 +7466,21 @@ impl SseDecode for crate::api::feeder::NotAsked {
     }
 }
 
+impl SseDecode for crate::api::router::NotSentReason {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::router::NotSentReason::NoPath,
+            1 => crate::api::router::NotSentReason::Random,
+            2 => crate::api::router::NotSentReason::Store,
+            3 => crate::api::router::NotSentReason::Server,
+            4 => crate::api::router::NotSentReason::Session,
+            _ => unreachable!("Invalid variant for NotSentReason: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::model::NtpResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -7655,6 +7672,19 @@ impl SseDecode for Option<crate::api::session::NextMealView> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<crate::api::session::NextMealView>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::router::NotSentReason> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::router::NotSentReason>::sse_decode(
                 deserializer,
             ));
         } else {
@@ -7862,6 +7892,17 @@ impl SseDecode for Option<crate::api::feeder::SettingsView> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<crate::api::feeder::SettingsView>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::router::Settlement> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::router::Settlement>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -8491,11 +8532,23 @@ impl SseDecode for crate::api::router::RoutedFeed {
                 };
             }
             3 => {
-                let mut var_error =
-                    <Option<crate::api::server_error::ServerError>>::sse_decode(deserializer);
-                return crate::api::router::RoutedFeed::NotSent { error: var_error };
+                let mut var_pending = <crate::api::router::PendingWrite>::sse_decode(deserializer);
+                let mut var_settlement = <crate::api::router::Settlement>::sse_decode(deserializer);
+                return crate::api::router::RoutedFeed::Settled {
+                    pending: var_pending,
+                    settlement: var_settlement,
+                };
             }
             4 => {
+                let mut var_reason = <crate::api::router::NotSentReason>::sse_decode(deserializer);
+                let mut var_error =
+                    <Option<crate::api::server_error::ServerError>>::sse_decode(deserializer);
+                return crate::api::router::RoutedFeed::NotSent {
+                    reason: var_reason,
+                    error: var_error,
+                };
+            }
+            5 => {
                 let mut var_pending = <crate::api::router::PendingWrite>::sse_decode(deserializer);
                 return crate::api::router::RoutedFeed::Held {
                     pending: var_pending,
@@ -8516,11 +8569,15 @@ impl SseDecode for crate::api::router::RoutedReply {
         let mut var_pending = <Option<crate::api::router::PendingWrite>>::sse_decode(deserializer);
         let mut var_serverError =
             <Option<crate::api::server_error::ServerError>>::sse_decode(deserializer);
+        let mut var_notSent = <Option<crate::api::router::NotSentReason>>::sse_decode(deserializer);
+        let mut var_settlement = <Option<crate::api::router::Settlement>>::sse_decode(deserializer);
         return crate::api::router::RoutedReply {
             path: var_path,
             reply: var_reply,
             pending: var_pending,
             server_error: var_serverError,
+            not_sent: var_notSent,
+            settlement: var_settlement,
         };
     }
 }
@@ -11158,6 +11215,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::error::ErrorKind {
             Self::Store => 14.into_dart(),
             Self::Invite => 15.into_dart(),
             Self::Interrupted => 16.into_dart(),
+            Self::InUse => 17.into_dart(),
+            Self::Routed => 18.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -12426,6 +12485,30 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::feeder::NotAsked>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::router::NotSentReason {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::NoPath => 0.into_dart(),
+            Self::Random => 1.into_dart(),
+            Self::Store => 2.into_dart(),
+            Self::Server => 3.into_dart(),
+            Self::Session => 4.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::router::NotSentReason
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::router::NotSentReason>
+    for crate::api::router::NotSentReason
+{
+    fn into_into_dart(self) -> crate::api::router::NotSentReason {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::NtpResult> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
@@ -13057,11 +13140,23 @@ impl flutter_rust_bridge::IntoDart for crate::api::router::RoutedFeed {
             crate::api::router::RoutedFeed::Uncertain { pending } => {
                 [2.into_dart(), pending.into_into_dart().into_dart()].into_dart()
             }
-            crate::api::router::RoutedFeed::NotSent { error } => {
-                [3.into_dart(), error.into_into_dart().into_dart()].into_dart()
-            }
+            crate::api::router::RoutedFeed::Settled {
+                pending,
+                settlement,
+            } => [
+                3.into_dart(),
+                pending.into_into_dart().into_dart(),
+                settlement.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::router::RoutedFeed::NotSent { reason, error } => [
+                4.into_dart(),
+                reason.into_into_dart().into_dart(),
+                error.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             crate::api::router::RoutedFeed::Held { pending } => {
-                [4.into_dart(), pending.into_into_dart().into_dart()].into_dart()
+                [5.into_dart(), pending.into_into_dart().into_dart()].into_dart()
             }
             _ => {
                 unimplemented!("");
@@ -13088,6 +13183,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::router::RoutedReply {
             self.reply.into_into_dart().into_dart(),
             self.pending.into_into_dart().into_dart(),
             self.server_error.into_into_dart().into_dart(),
+            self.not_sent.into_into_dart().into_dart(),
+            self.settlement.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -15700,6 +15797,8 @@ impl SseEncode for crate::api::error::ErrorKind {
                 crate::api::error::ErrorKind::Store => 14,
                 crate::api::error::ErrorKind::Invite => 15,
                 crate::api::error::ErrorKind::Interrupted => 16,
+                crate::api::error::ErrorKind::InUse => 17,
+                crate::api::error::ErrorKind::Routed => 18,
                 _ => {
                     unimplemented!("");
                 }
@@ -17019,6 +17118,25 @@ impl SseEncode for crate::api::feeder::NotAsked {
     }
 }
 
+impl SseEncode for crate::api::router::NotSentReason {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::router::NotSentReason::NoPath => 0,
+                crate::api::router::NotSentReason::Random => 1,
+                crate::api::router::NotSentReason::Store => 2,
+                crate::api::router::NotSentReason::Server => 3,
+                crate::api::router::NotSentReason::Session => 4,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::model::NtpResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -17200,6 +17318,16 @@ impl SseEncode for Option<crate::api::session::NextMealView> {
     }
 }
 
+impl SseEncode for Option<crate::api::router::NotSentReason> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::router::NotSentReason>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::api::model::NtpResult> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -17366,6 +17494,16 @@ impl SseEncode for Option<crate::api::feeder::SettingsView> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::feeder::SettingsView>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::router::Settlement> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::router::Settlement>::sse_encode(value, serializer);
         }
     }
 }
@@ -17922,12 +18060,21 @@ impl SseEncode for crate::api::router::RoutedFeed {
                 <i32>::sse_encode(2, serializer);
                 <crate::api::router::PendingWrite>::sse_encode(pending, serializer);
             }
-            crate::api::router::RoutedFeed::NotSent { error } => {
+            crate::api::router::RoutedFeed::Settled {
+                pending,
+                settlement,
+            } => {
                 <i32>::sse_encode(3, serializer);
+                <crate::api::router::PendingWrite>::sse_encode(pending, serializer);
+                <crate::api::router::Settlement>::sse_encode(settlement, serializer);
+            }
+            crate::api::router::RoutedFeed::NotSent { reason, error } => {
+                <i32>::sse_encode(4, serializer);
+                <crate::api::router::NotSentReason>::sse_encode(reason, serializer);
                 <Option<crate::api::server_error::ServerError>>::sse_encode(error, serializer);
             }
             crate::api::router::RoutedFeed::Held { pending } => {
-                <i32>::sse_encode(4, serializer);
+                <i32>::sse_encode(5, serializer);
                 <crate::api::router::PendingWrite>::sse_encode(pending, serializer);
             }
             _ => {
@@ -17944,6 +18091,8 @@ impl SseEncode for crate::api::router::RoutedReply {
         <crate::api::feeder::FeederReply>::sse_encode(self.reply, serializer);
         <Option<crate::api::router::PendingWrite>>::sse_encode(self.pending, serializer);
         <Option<crate::api::server_error::ServerError>>::sse_encode(self.server_error, serializer);
+        <Option<crate::api::router::NotSentReason>>::sse_encode(self.not_sent, serializer);
+        <Option<crate::api::router::Settlement>>::sse_encode(self.settlement, serializer);
     }
 }
 

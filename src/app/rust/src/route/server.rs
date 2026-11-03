@@ -1,64 +1,65 @@
-//! The router's calls to the server: each pinned write under its key, the
-//! reads the server serves, and how a failed call reads to the rules in
+//! The router's calls to the server: each write's one send under its key,
+//! the reads the server serves, and how a failed call reads to the rules in
 //! [`super::core`].
 
 use uuid::Uuid;
-use wellfed_api::{Command, ErrorCode, FeederId, Generation, PlansChange};
+use wellfed_api::{ErrorCode, FeederId, Generation, PlansChange};
 use wellfed_server_client::{Client, Error, Lock};
 
 use crate::api::feeder::{FeederRefusal, FeederReply, FeederRequest};
 use crate::api::session::FeedRefusal;
-use crate::requests::{plans_view, settings_view};
+use crate::requests::{calibration_of, call_of, plans_view, settings_view};
 use crate::route::core::ServerFailure;
 use crate::route::pins::PinnedWrite;
 
-/// What the server answered a write.
-pub(crate) enum Answered {
-    /// A feed's journal entry: reserved (`feeding`), or, for a retry, what
-    /// it came to since.
-    Feed(Command),
-    /// A write that took effect; `generation` is the store's after it.
-    Done { generation: Option<u32> },
+const fn done(generation: Option<u32>) -> FeederReply {
+    FeederReply::Done { generation }
 }
 
-/// Send `write` to feeder `id` under `key`; `None` for a write no server
-/// route carries.
+/// Send `write` to feeder `id` under `key`, its one send; `stream` is a
+/// meal call upload's clip. `None` for a write no server route carries (and
+/// for a feed, which goes by [`Client::feed`] for its journal entry).
 pub(crate) async fn send(
     client: &Client,
     id: FeederId,
     write: &PinnedWrite,
+    stream: Option<Vec<u8>>,
     key: Uuid,
-) -> Option<Result<Answered, Error>> {
+) -> Option<Result<FeederReply, Error>> {
     let sent = match *write {
-        PinnedWrite::Feed { portions } => client.feed(id, portions, key).await.map(Answered::Feed),
-        PinnedWrite::Cancel { feed } => client
-            .cancel_feed(id, feed, key)
-            .await
-            .map(|()| Answered::Done { generation: None }),
+        PinnedWrite::Cancel { feed } => {
+            client.cancel_feed(id, feed, key).await.map(|()| done(None))
+        }
         PinnedWrite::Settings { base, changes } => client
             .put_settings(id, Generation(base), &changes, key)
             .await
-            .map(|settings| Answered::Done {
-                generation: Some(settings.generation.0),
-            }),
+            .map(|settings| done(Some(settings.generation.0))),
         PinnedWrite::Lock { locked } => {
             let lock = if locked { Lock::Locked } else { Lock::Unlocked };
-            client
-                .set_lock(id, lock, key)
-                .await
-                .map(|()| Answered::Done { generation: None })
+            client.set_lock(id, lock, key).await.map(|()| done(None))
         }
-        PinnedWrite::Desiccant => client
-            .reset_desiccant(id, key)
-            .await
-            .map(|()| Answered::Done { generation: None }),
+        PinnedWrite::Desiccant => client.reset_desiccant(id, key).await.map(|()| done(None)),
         PinnedWrite::Plans { base, plans } => client
             .put_plans(id, Generation(base), &PlansChange { plans }, key)
             .await
-            .map(|plans| Answered::Done {
-                generation: Some(plans.generation.0),
+            .map(|plans| done(Some(plans.generation.0))),
+        PinnedWrite::Calibration { base, calibration } => client
+            .put_calibration(id, Generation(base), &calibration, key)
+            .await
+            .map(|view| FeederReply::Calibration {
+                calibration: calibration_of(view),
             }),
-        PinnedWrite::Other { .. } => return None,
+        PinnedWrite::CallUpload => {
+            client
+                .upload_call(id, stream?, key)
+                .await
+                .map(|view| FeederReply::Call {
+                    call: call_of(view),
+                })
+        }
+        PinnedWrite::CallDelete => client.delete_call(id, key).await.map(|()| done(None)),
+        PinnedWrite::CallPlay => client.play_call(id, key).await.map(|()| done(None)),
+        PinnedWrite::Feed { .. } | PinnedWrite::Other { .. } => return None,
     };
     Some(sent)
 }
@@ -81,6 +82,17 @@ pub(crate) async fn read(
         FeederRequest::GetPlans => client.plans(id).await.map(|plans| FeederReply::Plans {
             plans: plans_view(&plans),
         }),
+        FeederRequest::GetCalibration => {
+            client
+                .calibration(id)
+                .await
+                .map(|view| FeederReply::Calibration {
+                    calibration: calibration_of(view),
+                })
+        }
+        FeederRequest::GetCall => client.call(id).await.map(|view| FeederReply::Call {
+            call: call_of(view),
+        }),
         _ => return None,
     };
     Some(read)
@@ -90,7 +102,8 @@ pub(crate) async fn read(
 /// connect counts as nothing sent: reqwest's connect errors are the
 /// resolver, the TCP connect and the TLS handshake, all before a byte of
 /// the request is written; a connection that breaks after is a request
-/// error, which may have run.
+/// error, which may have run. Of the server's answers, only
+/// `feeder_offline` says its feeder task never took the write.
 pub(crate) fn failure(error: &Error) -> ServerFailure {
     match error {
         Error::Http(http) if http.is_connect() => ServerFailure::Connect,
@@ -99,14 +112,16 @@ pub(crate) fn failure(error: &Error) -> ServerFailure {
             status, problem, ..
         } => match problem.code {
             ErrorCode::OutcomeUnknown => ServerFailure::OutcomeUnknown,
-            ErrorCode::FeederOffline | ErrorCode::Unreachable => ServerFailure::FeederOffline,
+            ErrorCode::FeederOffline => ServerFailure::FeederOffline,
             ErrorCode::FeederRefused => ServerFailure::FeederRefused,
             ErrorCode::KeyReused => ServerFailure::KeyReused,
-            // The server failed inside, which may be after it sent.
+            ErrorCode::Unauthenticated | ErrorCode::AccountDisabled => ServerFailure::Unauthorized,
+            // The server failed inside, or lost its feeder part way
+            // (`unreachable`): either may be after it sent.
             _ if status.is_server_error() => ServerFailure::Interrupted,
             _ => ServerFailure::Rejected,
         },
-        Error::Stale(_) | Error::StalePlans(_) => ServerFailure::Stale,
+        Error::Stale(_) | Error::StalePlans(_) | Error::StaleCalibration(_) => ServerFailure::Stale,
         Error::Base(_) | Error::Build(_) | Error::Redirect { .. } | Error::NoSession => {
             ServerFailure::Rejected
         }
@@ -123,6 +138,9 @@ pub(crate) fn refusal(error: &Error) -> Option<FeederRefusal> {
         Error::StalePlans(plans) => Some(FeederRefusal::Stale {
             current: plans.generation.0,
         }),
+        Error::StaleCalibration(calibration) => Some(FeederRefusal::Stale {
+            current: calibration.generation.0,
+        }),
         Error::Problem { problem, .. } => problem.refusal.map(|refusal| match refusal {
             Api::Forbidden => FeederRefusal::Forbidden,
             // The server's refusal does not carry the generation.
@@ -138,6 +156,7 @@ pub(crate) fn refusal(error: &Error) -> Option<FeederRefusal> {
             Api::Fault => FeederRefusal::Fault,
             Api::Portions => FeederRefusal::Portions { asked: 0 },
             Api::NoClock => FeederRefusal::NoClock,
+            Api::Unverified => FeederRefusal::Unverified,
         }),
         _ => None,
     }

@@ -107,9 +107,10 @@ pub enum Command {
         feed: u32,
     },
     Refresh,
-    /// One op; `reply` hears how it ended, and is dropped unused if it never
+    /// One op; `reply` hears how it ended, [`Heard::NotSent`] when it never
     /// went out. A settings write may wait behind another: see
-    /// [`crate::writes`].
+    /// [`crate::writes`]. A reply dropped unanswered is read as one that
+    /// may have run.
     Ask {
         op: Op,
         reply: oneshot::Sender<Heard>,
@@ -135,6 +136,8 @@ pub enum Heard {
     /// A settings or plans write asked while another was out, which never
     /// went: see [`crate::writes`].
     Held,
+    /// The session ended before it went out.
+    NotSent,
 }
 
 impl From<Option<Answer>> for Heard {
@@ -164,6 +167,24 @@ enum Asked {
         write: Write,
         replies: Vec<Reply>,
     },
+}
+
+impl Asked {
+    /// Tell whoever waits on it that it never went out.
+    fn never_sent(self) {
+        let replies = match self {
+            Self::Feed {
+                reply: Some(reply), ..
+            }
+            | Self::Ask(reply) => vec![reply],
+            Self::Write { replies, .. } => replies,
+            _ => Vec::new(),
+        };
+        for reply in replies {
+            // Nobody waiting means nobody to tell.
+            let _ = reply.send(Heard::NotSent);
+        }
+    }
 }
 
 /// Run the session until Dart closes it or the feeder goes away. `update`
@@ -235,11 +256,34 @@ pub(crate) async fn run_linked(
             _ => {}
         }
     }
-    // The writes still waiting never went: dropped unused, each caller hears
-    // it was not sent.
-    drop(settings.take());
-    drop(plans.take());
+    // The writes still waiting never went, nor did the commands the loop
+    // never took: each caller hears so. Closing first means no command
+    // lands after the drain unanswered.
+    for reply in settings.take().into_iter().chain(plans.take()) {
+        let _ = reply.send(Heard::NotSent);
+    }
+    commands.close();
+    while let Ok(command) = commands.try_recv() {
+        never_sent(command);
+    }
     update(SessionUpdate::Closed { error });
+}
+
+/// Tell whoever waits on `command` that it never went out.
+fn never_sent(command: Command) {
+    let reply = match command {
+        Command::Feed {
+            reply: Some(reply), ..
+        }
+        | Command::Ask { reply, .. }
+        | Command::EditPlans { reply, .. } => reply,
+        Command::Feed { reply: None, .. }
+        | Command::CancelFeed { .. }
+        | Command::Refresh
+        | Command::Close => return,
+    };
+    // Nobody waiting means nobody to tell.
+    let _ = reply.send(Heard::NotSent);
 }
 
 /// What a session has out or waiting, which is answered as it ends.
@@ -369,10 +413,19 @@ async fn serve(
 }
 
 impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
+    /// Send `op`. It is outstanding before a byte goes, so a send that
+    /// fails part way is answered as one that may have run when the
+    /// session ends.
     fn request(&mut self, op: &Op, what: Asked) -> Result<(), BridgeError> {
-        let id = random()?;
-        self.connection.request(id, op)?;
+        let id = match random() {
+            Ok(id) => id,
+            Err(error) => {
+                what.never_sent();
+                return Err(error);
+            }
+        };
         self.out.asked.insert(id, what);
+        self.connection.request(id, op)?;
         Ok(())
     }
 

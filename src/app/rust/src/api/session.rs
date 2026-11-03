@@ -387,9 +387,17 @@ impl FeederSession {
     }
 
     /// Feed `portions` (1-48) once. The answer and the feed's end arrive
-    /// as updates.
+    /// as updates. Refused with [`ErrorKind::Routed`] once a path router
+    /// holds the session: its feeds go through the router, which pins them
+    /// and keeps one feed from doubling an uncertain one.
     #[frb(sync)]
     pub fn feed(&self, portions: u8) -> Result<(), BridgeError> {
+        if self.link.is_routed() {
+            return Err(BridgeError::new(
+                ErrorKind::Routed,
+                "this session's feeds go through the path router",
+            ));
+        }
         self.send(Command::Feed {
             portions,
             reply: None,
