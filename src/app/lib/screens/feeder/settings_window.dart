@@ -6,6 +6,7 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/pending.dart';
 import 'package:wellfed/widgets/when.dart';
 
 /// What a window comes to, in words.
@@ -41,31 +42,41 @@ class SettingsWindowRow extends StatelessWidget {
   final bool first;
 
   @override
-  Widget build(BuildContext context) => SettingsTile(
-    first: first,
-    onTap: online
-        ? () async {
-            final Window? chosen = await showDialog<Window>(
-              context: context,
-              builder: (_) => _WindowDialog(question: question, window: window),
-            );
-            if (chosen != null && context.mounted) {
-              await put(context, feeder, settings, windowed(chosen));
+  Widget build(BuildContext context) => Pending<Window>(
+    card: window,
+    generation: settings.generation,
+    builder: (context, shown, windowWrite) => SettingsTile(
+      first: first,
+      onTap: online
+          ? () async {
+              final Window? chosen = await showDialog<Window>(
+                context: context,
+                builder: (_) => _WindowDialog(question: question, window: shown),
+              );
+              if (chosen != null && context.mounted) {
+                await windowWrite.ask(chosen, () => put(feeder, settings, windowed(chosen)));
+              }
             }
-          }
-        : null,
-    child: Row(
-      children: [
-        Expanded(child: SettingsWords(name, windowText(context, window))),
-        Semantics(
-          container: true,
-          label: name,
-          child: Switch(
-            value: on,
-            onChanged: online ? (next) => unawaited(put(context, feeder, settings, toggle(next))) : null,
+          : null,
+      child: Row(
+        children: [
+          Expanded(child: SettingsWords(name, windowText(context, shown))),
+          Pending<bool>(
+            card: on,
+            generation: settings.generation,
+            builder: (context, shownOn, onWrite) => Semantics(
+              container: true,
+              label: name,
+              child: Switch(
+                value: shownOn,
+                onChanged: online
+                    ? (next) => unawaited(onWrite.ask(next, () => put(feeder, settings, toggle(next))))
+                    : null,
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 }

@@ -46,7 +46,7 @@ use crate::api::keys::random;
 use crate::api::session::{FeedRefusal, HistoryEntry, SessionUpdate};
 use crate::requests::TimeRead;
 use crate::today::{Facts, event_entry, gap_entry, result};
-use crate::writes::{Next, Reply, SettingsQueue, Write};
+use crate::writes::{Next, Queued, Reply, SettingsQueue, Write};
 
 /// How long one wait on the connection lasts before the loop looks at its
 /// commands again and reads the status anew; the session keeps itself alive
@@ -118,8 +118,8 @@ pub enum Heard {
     Answer(Answer),
     /// It went out and no answer came: it may have run.
     Unanswered,
-    /// A settings write that waited behind one the feeder refused or never
-    /// answered, and so never went.
+    /// A settings write asked while another was out, which never went: see
+    /// [`crate::writes`].
     Held,
 }
 
@@ -331,17 +331,23 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             Command::Feed { portions } => (Op::Feed { portions }, Asked::Feed { portions }),
             Command::CancelFeed { feed } => (Op::CancelFeed { feed }, Asked::Cancel),
             Command::Ask { op, reply } => match Write::of(&op) {
-                Some(Write::Settings { base, changes }) => {
-                    match self.out.settings.ask(base, changes, reply) {
-                        Some(outgoing) => (
+                Some(write) if write.queued() => {
+                    let known = self.facts.settings.map(|settings| settings.generation);
+                    match self.out.settings.ask(write, known, reply) {
+                        Queued::Send(outgoing) => (
                             outgoing.op,
                             Asked::Write {
                                 write: outgoing.write,
                                 replies: outgoing.replies,
                             },
                         ),
-                        // It goes once the settings write out is answered.
-                        None => return Ok(true),
+                        // It goes once the settings write out lands.
+                        Queued::Waits => return Ok(true),
+                        Queued::Held(reply) => {
+                            // Dart stopped waiting: nothing to tell it.
+                            let _ = reply.send(Heard::Held);
+                            return Ok(true);
+                        }
                     }
                 }
                 Some(write) => (
@@ -366,39 +372,49 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         Ok(())
     }
 
-    /// A write's answer: the card takes a `Done` at once, the settings writes
-    /// that waited go or end, and everyone who asked hears it.
+    /// A write's answer: everyone who asked hears it, the card takes a `Done`
+    /// that landed, and the settings writes that waited go or end.
+    ///
+    /// The callers hear first: whatever ends the session after, a write the
+    /// feeder answered must never read as not sent, which is safe to resend.
     fn wrote(
         &mut self,
         write: &Write,
         replies: Vec<Reply>,
-        answer: Option<Answer>,
+        answer: Option<&Answer>,
     ) -> Result<bool, BridgeError> {
-        if write.landed(&mut self.facts, answer.as_ref()) && !self.card() {
+        let heard = Heard::from(answer.cloned());
+        for reply in replies {
+            // Dart stopped waiting: nothing to tell it.
+            let _ = reply.send(heard.clone());
+        }
+        let next = if write.queued() {
+            self.out.settings.answered(answer)
+        } else {
+            Next::Idle
+        };
+        let follow = match next {
+            Next::Idle => None,
+            Next::Send(outgoing) => Some(outgoing),
+            Next::Unsent(waiting) => {
+                for reply in waiting {
+                    let _ = reply.send(Heard::Held);
+                }
+                None
+            }
+        };
+
+        if write.landed(&mut self.facts, answer) && !self.card() {
             return Ok(false);
         }
-        if matches!(write, Write::Settings { .. }) {
-            match self.out.settings.answered(answer.as_ref()) {
-                Next::Idle => {}
-                Next::Send(outgoing) => self.asked(
-                    &outgoing.op,
-                    Asked::Write {
-                        write: outgoing.write,
-                        replies: outgoing.replies,
-                    },
-                )?,
-                Next::Unsent(waiting) => {
-                    for reply in waiting {
-                        // Dart stopped waiting: nothing to tell it.
-                        let _ = reply.send(Heard::Held);
-                    }
-                }
-            }
-        }
-
-        let heard = Heard::from(answer);
-        for reply in replies {
-            let _ = reply.send(heard.clone());
+        if let Some(outgoing) = follow {
+            self.asked(
+                &outgoing.op,
+                Asked::Write {
+                    write: outgoing.write,
+                    replies: outgoing.replies,
+                },
+            )?;
         }
         Ok(true)
     }
@@ -549,7 +565,9 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                 let _ = reply.send(Heard::from(answer));
                 Ok(true)
             }
-            (Asked::Write { write, replies }, answer) => self.wrote(&write, replies, answer),
+            (Asked::Write { write, replies }, answer) => {
+                self.wrote(&write, replies, answer.as_ref())
+            }
             (Asked::Clock, Some(Answer::Done { .. })) => {
                 self.request(&Op::GetTime, Asked::Time)?;
                 Ok((self.update)(SessionUpdate::ClockSynced))

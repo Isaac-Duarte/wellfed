@@ -4984,6 +4984,7 @@ impl SseDecode for crate::api::feeder::NotAsked {
             7 => crate::api::feeder::NotAsked::BadZone,
             8 => crate::api::feeder::NotAsked::BadRecording,
             9 => crate::api::feeder::NotAsked::BadKey,
+            10 => crate::api::feeder::NotAsked::Held,
             _ => unreachable!("Invalid variant for NotAsked: {}", inner),
         };
     }
@@ -8575,6 +8576,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::feeder::NotAsked {
             Self::BadZone => 7.into_dart(),
             Self::BadRecording => 8.into_dart(),
             Self::BadKey => 9.into_dart(),
+            Self::Held => 10.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -11775,6 +11777,7 @@ impl SseEncode for crate::api::feeder::NotAsked {
                 crate::api::feeder::NotAsked::BadZone => 7,
                 crate::api::feeder::NotAsked::BadRecording => 8,
                 crate::api::feeder::NotAsked::BadKey => 9,
+                crate::api::feeder::NotAsked::Held => 10,
                 _ => {
                     unimplemented!("");
                 }

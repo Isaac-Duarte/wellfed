@@ -32,7 +32,7 @@ use crate::session::{Command, Heard};
 enum Lost {
     Unanswered,
     NotSent,
-    /// A settings write that waited behind one that failed, and never went.
+    /// A settings write asked while another was out, which never went.
     Held,
 }
 

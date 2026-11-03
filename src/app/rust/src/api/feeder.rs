@@ -317,8 +317,9 @@ pub enum NotAsked {
     BadRecording,
     /// A key is not 32 bytes.
     BadKey,
-    /// A settings change that waited behind one the feeder refused or never
-    /// answered: the generation it would go on is not known, so it never went.
+    /// A settings change asked while another was out, which never went: the
+    /// one out did not land, so the generation it would go on is not known,
+    /// or it was read from another generation than the one out went on.
     Held,
 }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -336,25 +338,29 @@ void main() {
       return session;
     }
 
-    testWidgets('goes out once and follows what the feeder says', (tester) async {
+    testWidgets('goes out once, moves on tap and stays as the feeder agrees', (tester) async {
       final FakeSession session = await locked(tester);
+      final answer = Completer<FeederReply>();
+      session.answering = (_) => answer.future;
 
       await feederTap(tester, find.byType(Switch));
       expect(session.requests, [const FeederRequest.setLock(locked: true)]);
-      // Not moved by asking: only the status says it is locked.
-      expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+      expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
 
       session.status(fakeCard(locked: true));
+      answer.complete(const FeederReply.done());
       await settle(tester);
       expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+      expect(session.requests, hasLength(1));
     });
 
-    testWidgets('says why it was refused', (tester) async {
+    testWidgets('moves back and says why it was refused', (tester) async {
       final FakeSession session = await locked(tester);
       session.replies.add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
 
       await feederTap(tester, find.byType(Switch));
       expect(find.text("This phone isn't allowed to do that here."), findsOneWidget);
+      expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
     });
 
     testWidgets('says an unanswered change is unknown, and sends it once', (tester) async {

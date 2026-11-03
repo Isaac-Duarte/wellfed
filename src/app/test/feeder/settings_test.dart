@@ -37,6 +37,31 @@ Future<(FeederController, FakeSession)> _settingsTab(WidgetTester tester, {Clien
 
 FeederRequest_PutSettings _put(FakeSession session) => session.requests.single as FeederRequest_PutSettings;
 
+/// The settings as the feeder holds them after one change.
+SettingsView _withLights(bool lights) => SettingsView(
+  generation: 6,
+  lights: lights,
+  sound: _settings.sound,
+  volume: _settings.volume,
+  lightsWindow: _settings.lightsWindow,
+  soundWindow: _settings.soundWindow,
+  desiccantDays: _settings.desiccantDays,
+  mealReminder: _settings.mealReminder,
+  writable: true,
+);
+
+SettingsView _withVolume(int volume) => SettingsView(
+  generation: 6,
+  lights: _settings.lights,
+  sound: _settings.sound,
+  volume: volume,
+  lightsWindow: _settings.lightsWindow,
+  soundWindow: _settings.soundWindow,
+  desiccantDays: _settings.desiccantDays,
+  mealReminder: _settings.mealReminder,
+  writable: true,
+);
+
 void main() {
   group('Settings', () {
     testWidgets('a session opening says which build answered', (tester) async {
@@ -119,6 +144,72 @@ void main() {
       await tapIn(tester, find.byType(Switch).first);
       expect(find.textContaining('may or may not have'), findsOneWidget);
       expect(session.requests, hasLength(2));
+    });
+
+    testWidgets('a switch moves on tap and stays while the change is out', (tester) async {
+      final (_, FakeSession session) = await _settingsTab(tester);
+      final answer = Completer<FeederReply>();
+      session.answering = (_) => answer.future;
+      bool lights() => tester.widget<Switch>(find.byType(Switch).first).value;
+
+      await tapIn(tester, find.byType(Switch).first);
+      expect(lights(), isFalse);
+
+      // The session puts the feeder's done on the card before the reply.
+      session.status(fakeCard(settings: _withLights(false)));
+      answer.complete(const FeederReply.done(generation: 6));
+      await settle(tester);
+      expect(lights(), isFalse);
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('a refused switch moves back and says why', (tester) async {
+      final (_, FakeSession session) = await _settingsTab(tester);
+      final answer = Completer<FeederReply>();
+      session.answering = (_) => answer.future;
+      bool lights() => tester.widget<Switch>(find.byType(Switch).first).value;
+
+      await tapIn(tester, find.byType(Switch).first);
+      expect(lights(), isFalse);
+      answer.complete(const FeederReply.refused(refusal: FeederRefusal.notWritable()));
+      await settle(tester);
+      expect(lights(), isTrue);
+      expect(find.textContaining("can't save changes"), findsOneWidget);
+    });
+
+    testWidgets('the volume stays where it was let go until the card shows it', (tester) async {
+      final (_, FakeSession session) = await _settingsTab(tester);
+      final answer = Completer<FeederReply>();
+      session.answering = (_) => answer.future;
+
+      await tester.drag(find.byType(Slider), const Offset(-60, 0));
+      await settle(tester);
+      final int? asked = _put(session).changes.volume;
+      expect(asked, isNotNull);
+      expect(asked, lessThan(50));
+      expect(find.text('$asked'), findsOneWidget);
+
+      session.status(fakeCard(settings: _withVolume(asked ?? 0)));
+      await tester.pump();
+      expect(find.text('$asked'), findsOneWidget);
+      answer.complete(const FeederReply.done(generation: 6));
+      await settle(tester);
+      expect(find.text('$asked'), findsOneWidget);
+      expect(find.text('50'), findsNothing);
+    });
+
+    testWidgets('a refused volume goes back to what the feeder holds', (tester) async {
+      final (_, FakeSession session) = await _settingsTab(tester);
+      final answer = Completer<FeederReply>();
+      session.answering = (_) => answer.future;
+
+      await tester.drag(find.byType(Slider), const Offset(-60, 0));
+      await settle(tester);
+      expect(find.text('50'), findsNothing);
+      answer.complete(const FeederReply.refused(refusal: FeederRefusal.busy()));
+      await settle(tester);
+      expect(find.text('50'), findsOneWidget);
+      expect(find.textContaining("It's busy"), findsOneWidget);
     });
 
     testWidgets('a window is chosen in its dialog', (tester) async {

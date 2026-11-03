@@ -16,6 +16,7 @@ import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/pending.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/when.dart';
 
@@ -350,7 +351,7 @@ class _DesiccantValueState extends State<_DesiccantValue> {
   }
 }
 
-class _LockRow extends StatefulWidget {
+class _LockRow extends StatelessWidget {
   const _LockRow({required this.feeder, required this.card, required this.online});
 
   final FeederController feeder;
@@ -358,35 +359,26 @@ class _LockRow extends StatefulWidget {
   final bool online;
 
   @override
-  State<_LockRow> createState() => _LockRowState();
-}
-
-class _LockRowState extends State<_LockRow> {
-  bool _asking = false;
-
-  Future<void> _set(bool locked) async {
-    setState(() => _asking = true);
-    final FeederReply reply = await widget.feeder.ask(FeederRequest.setLock(locked: locked));
-    if (!mounted) return;
-    setState(() => _asking = false);
-    showProblem(context, reply);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final bool? locked = widget.card.locked;
+    final bool? locked = card.locked;
     const name = 'Lock the buttons';
     return _Row(
       Glyph.lock,
       name,
       valueNamed: true,
-      value: Semantics(
-        container: true,
-        label: name,
-        child: Switch(
-          // What the feeder last said, not what was asked: an answer moves it.
-          value: locked ?? false,
-          onChanged: widget.online && locked != null && !_asking ? _set : null,
+      // What was asked from the tap until the card agrees; a refusal moves it
+      // back.
+      value: Pending<bool>(
+        card: locked ?? false,
+        builder: (context, shown, write) => Semantics(
+          container: true,
+          label: name,
+          child: Switch(
+            value: shown,
+            onChanged: online && locked != null
+                ? (next) => unawaited(write.ask(next, () => feeder.ask(FeederRequest.setLock(locked: next))))
+                : null,
+          ),
         ),
       ),
     );

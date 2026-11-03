@@ -1170,10 +1170,10 @@ fn card_so_far(heard: &mut mpsc::UnboundedReceiver<SessionUpdate>) -> Option<Car
     card
 }
 
-/// A settings, lock or plans write moves the card on its `Done`, before its
-/// caller hears it: no event or read again comes between.
+/// A settings, lock or plans write moves the card on its `Done`, by the time
+/// its caller hears it: no event or read again comes between.
 #[test]
-fn a_done_moves_the_card_before_its_caller_hears_it() {
+fn a_done_moves_the_card_by_the_time_its_caller_hears_it() {
     local(async {
         let owner = *Keypair::from_secret(OWNER).public();
         let sim = Running::start(&Flash::memory(), Some(owner)).await;
@@ -1351,6 +1351,103 @@ fn a_settings_change_waiting_behind_a_refused_one_is_not_sent() {
             panic!("no settings");
         };
         assert_eq!(read, settings, "nothing was written");
+
+        commands.send(Command::Close).unwrap();
+        sim.stop().await;
+    });
+}
+
+/// The listener goes away at the very card the change moves: the change was
+/// answered, so its caller hears `Done`, never "not sent", which a screen may
+/// send again.
+#[test]
+fn a_write_answered_as_the_listener_leaves_is_heard_as_answered() {
+    const QUIET_VOLUME: u8 = 33;
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, receiver) = mpsc::unbounded_channel();
+        let (updates, mut heard) = mpsc::unbounded_channel();
+        tokio::task::spawn_local(session::run(
+            Keypair::from_secret(OWNER),
+            sim.identity,
+            sim.address,
+            false,
+            receiver,
+            move |update| {
+                let leaving = matches!(
+                    &update,
+                    SessionUpdate::Status { card }
+                        if card.settings.as_ref().is_some_and(|settings| settings.volume == QUIET_VOLUME)
+                );
+                updates.send(update).is_ok() && !leaving
+            },
+        ));
+        next(&mut heard, |update| match update {
+            SessionUpdate::History { caught_up, .. } => caught_up.then_some(()),
+            _ => None,
+        })
+        .await;
+        let ask = |request| requests::run(&commands, sim.identity, request);
+        let FeederReply::Settings { settings } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+        assert_ne!(settings.volume, QUIET_VOLUME);
+
+        let reply = ask(FeederRequest::PutSettings {
+            base: settings.generation,
+            changes: SettingsChanges {
+                volume: Some(QUIET_VOLUME),
+                ..SettingsChanges::default()
+            },
+        })
+        .await;
+        assert!(matches!(reply, FeederReply::Done { .. }), "{reply:?}");
+
+        next(&mut heard, |update| match update {
+            SessionUpdate::Closed { .. } => Some(()),
+            _ => None,
+        })
+        .await;
+        sim.stop().await;
+    });
+}
+
+/// A desiccant reset moves the settings generation, so a change asked while
+/// one is out waits for it and goes on the generation it made.
+#[test]
+fn a_settings_change_behind_a_desiccant_reset_goes_on_the_reset_s_generation() {
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, _heard) = opened(sim.identity, sim.address).await;
+        let ask = |request| requests::run(&commands, sim.identity, request);
+        // A reset is dated from the feeder's clock.
+        let reply = ask(FeederRequest::SyncClock).await;
+        assert!(matches!(reply, FeederReply::Done { .. }), "{reply:?}");
+        let FeederReply::Settings { settings } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+
+        let (reset, change) = tokio::join!(
+            ask(FeederRequest::ResetDesiccant),
+            ask(FeederRequest::PutSettings {
+                base: settings.generation,
+                changes: SettingsChanges {
+                    desiccant_days: Some(60),
+                    ..SettingsChanges::default()
+                },
+            }),
+        );
+        assert!(matches!(reset, FeederReply::Done { .. }), "{reset:?}");
+        assert!(matches!(change, FeederReply::Done { .. }), "{change:?}");
+
+        let FeederReply::Settings { settings: read } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+        assert_eq!(read.desiccant_days, 60);
+        assert!(read.desiccant_replaced.is_some());
+        assert_eq!(read.generation, settings.generation + 2);
 
         commands.send(Command::Close).unwrap();
         sim.stop().await;
