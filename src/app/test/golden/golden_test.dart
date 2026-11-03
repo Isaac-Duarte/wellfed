@@ -7,6 +7,7 @@ import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
+import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
 import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/home/welcome.dart';
@@ -243,6 +244,11 @@ void main() {
       _golden('the welcome', (tester) async {
         await _phone(tester, const WelcomeScreen(), brightness);
         await _matches('welcome', brightness);
+      });
+
+      _golden('adding a feeder', (tester) async {
+        await _phone(tester, const AddFeederScreen(), brightness);
+        await _matches('add_feeder', brightness);
       });
 
       _golden('the welcome on a small phone', (tester) async {

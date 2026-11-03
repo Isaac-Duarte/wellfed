@@ -4,6 +4,7 @@ import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
+import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/home/welcome.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
@@ -49,6 +50,8 @@ Future<FeederController> _feeder(WidgetTester tester) async {
 
 void main() {
   testWidgets('the welcome', (tester) => _show(tester, const WelcomeScreen()));
+
+  testWidgets('adding a feeder', (tester) => _show(tester, const AddFeederScreen()));
 
   testWidgets('home', (tester) async {
     final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
