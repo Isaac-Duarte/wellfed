@@ -158,9 +158,12 @@ class _Summary extends StatelessWidget {
               else if (blocked != null && blocked != Blocked.feeding)
                 Text('${blockedWords(blocked)}.', style: small),
               const SizedBox(height: Space.s2),
+              // Centered on one line: the lock's pill sits in a 48 dp tap
+              // target, the food's in none.
               Wrap(
                 spacing: Space.s2,
                 runSpacing: Space.s2,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   _Chip(
                     glyph: Glyph.food,
