@@ -9,8 +9,6 @@ import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/feeder_ports.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
-import 'package:wellfed/platform/phone.dart';
-import 'package:wellfed/platform/recorder.dart';
 import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/error.dart';
@@ -23,9 +21,13 @@ import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/api/update.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/wifi/networks.dart';
 import 'package:wellfed/theme/theme.dart';
 
 import 'fake_install.dart';
+import 'fake_phone.dart';
+
+export 'fake_phone.dart';
 
 /// Pump past transitions. Not `pumpAndSettle`: a screen waiting on the feeder
 /// shows a spinner, which never settles.
@@ -293,51 +295,6 @@ class FakeBackupPorts implements BackupPorts {
   Future<void> share(String path) async {}
 }
 
-/// A phone with everything granted, and no plugins to ask.
-class FakePhonePorts implements PhonePorts {
-  @override
-  Future<bool> setupGranted() async => true;
-
-  @override
-  Future<bool> askForSetup() async => true;
-
-  @override
-  Future<bool> askForBluetooth() async => true;
-
-  @override
-  Future<void> openSettings() async {}
-
-  @override
-  Future<String?> currentNetwork() async => null;
-
-  @override
-  Future<String?> model() async => null;
-}
-
-/// The microphone: starts when [allowed], and stops with [recorded].
-class FakeRecorder implements Recorder {
-  bool allowed = true;
-  Uint8List? recorded = Uint8List.fromList([1, 2, 3]);
-  int starts = 0;
-  int stops = 0;
-
-  /// Holds `start`'s answer until completed, as a slow microphone would.
-  Completer<void>? opening;
-
-  @override
-  Future<bool> start() async {
-    starts++;
-    await opening?.future;
-    return allowed;
-  }
-
-  @override
-  Future<Uint8List?> stop() async {
-    stops++;
-    return recorded;
-  }
-}
-
 class FakeFeederPorts implements FeederPorts {
   final sessions = <FakeSession>[];
 
@@ -352,6 +309,18 @@ class FakeFeederPorts implements FeederPorts {
 
   @override
   Future<Uint8List?> pickRecording() async => null;
+
+  /// The Wi-Fi this phone is on.
+  String? network;
+
+  /// What a scan finds: by default, the phone lists nothing, as with no plugin.
+  NetworkScan scan = const NetworksUnread(ScanProblem.unavailable);
+
+  @override
+  Future<String?> currentNetwork() async => network;
+
+  @override
+  Future<NetworkScan> scanNetworks() async => scan;
   final answers = <(String, String)>[];
 
   @override

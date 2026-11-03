@@ -7,6 +7,7 @@ import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
+import 'package:wellfed/screens/feeder/wifi.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
 import 'package:wellfed/screens/home/home.dart';
@@ -85,7 +86,7 @@ void _frame(WidgetTester tester, {Size size = _phoneSize, double text = 1}) {
 
 /// The fixture's feeder, its session answering as [answerAsFull] does.
 Future<FeederController> _feeder(WidgetTester tester, {Card? card}) async {
-  final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+  final (FeederController feeder, FakeSession session) = await oneFeeder(tester, phone: fixturePhone());
   answerAsFull(session);
   session.status(card ?? fullCard());
   await tester.pump();
@@ -339,6 +340,20 @@ void main() {
         await _matches('meal_call_recording', brightness);
         await tester.tap(find.text('Cancel'));
         await settle(tester);
+      });
+
+      _golden('Wi-Fi settings', (tester) async {
+        final FeederController feeder = await _feeder(tester);
+        await _phone(tester, WifiScreen(feeder: feeder), brightness);
+        await _matches('wifi_settings', brightness);
+      });
+
+      _golden('the network picker', (tester) async {
+        final FeederController feeder = await _feeder(tester);
+        await _phone(tester, WifiScreen(feeder: feeder), brightness);
+        await tester.tap(find.text('Home'));
+        await settle(tester);
+        await _matches('wifi_picker', brightness);
       });
 
       _golden('the feed sheet', (tester) async {

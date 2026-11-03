@@ -14,6 +14,7 @@ import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/restore/restore.dart';
 import 'package:wellfed/state/update/update.dart';
+import 'package:wellfed/state/wifi/networks.dart';
 
 /// Where a recording comes from.
 typedef PickRecording = Future<Uint8List?> Function();
@@ -69,6 +70,12 @@ class FeederController extends ChangeNotifier {
 
   /// The phone's microphone, for recording the meal call here.
   Recorder get recorder => _ports.recorder;
+
+  /// The Wi-Fi this phone is on, when Android will say.
+  Future<String?> currentNetwork() => _ports.currentNetwork();
+
+  /// The networks this phone hears, for the feeder's Wi-Fi.
+  Future<NetworkScan> scanNetworks() => _ports.scanNetworks();
 
   /// Run `pick`: what it gave, and whether the file could be read.
   Future<(Uint8List?, bool)> readRecording(PickRecording pick) async {

@@ -4,6 +4,7 @@ import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
+import 'package:wellfed/screens/feeder/wifi.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/home/welcome.dart';
@@ -70,6 +71,14 @@ void main() {
       await _show(tester, FeederShell(feeder: feeder, initialTab: tab));
     });
   }
+
+  testWidgets('Wi-Fi settings, and its network picker', (tester) async {
+    final (FeederController feeder, FakeSession session) = await oneFeeder(tester, phone: fixturePhone());
+    session.status(fullCard());
+    await _show(tester, WifiScreen(feeder: feeder));
+    await tester.tap(find.text('Home'));
+    await settle(tester);
+  });
 
   testWidgets('the meal call', (tester) async {
     final FeederController feeder = await _feeder(tester);

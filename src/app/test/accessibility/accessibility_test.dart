@@ -206,6 +206,16 @@ void main() {
         await settle(tester);
       });
 
+      testWidgets('the network picker and its list', (tester) async {
+        final (FeederController feeder, FakeSession session) = await oneFeeder(tester, phone: fixturePhone());
+        session.status(fullCard());
+        await _show(tester, WifiScreen(feeder: feeder), brightness);
+        await expectAccessible(tester);
+        await tester.tap(find.text('Home'));
+        await settle(tester);
+        await expectAccessible(tester);
+      });
+
       testWidgets('the feed sheet', (tester) async {
         final FeederController feeder = await _feeder(tester);
         await _show(

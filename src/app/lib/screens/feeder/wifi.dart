@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:wellfed/screens/feeder/settings_tab.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/network_picker.dart';
 import 'package:wellfed/widgets/replies.dart';
 
 /// Change the feeder's Wi-Fi (10.4). The credentials are stored for its next
@@ -24,6 +28,7 @@ class _WifiScreenState extends State<WifiScreen> {
   final _network = TextEditingController();
   final _password = TextEditingController();
   bool _asking = false;
+  bool _hidden = true;
 
   @override
   void dispose() {
@@ -97,17 +102,22 @@ class _WifiScreenState extends State<WifiScreen> {
     showProblem(context, reply);
   }
 
+  bool get _valid => _network.text.isNotEmpty && _password.text.length >= 8 && _password.text.length <= 63;
+
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
     final FeederController feeder = widget.feeder;
+    final bool online = feeder.state.connection == Connection.online;
     final int? rssi = feeder.state.card?.rssi;
-    final String? signal = switch (rssi) {
-      null => null,
-      >= -60 => 'a strong signal',
-      >= -72 => 'a fair signal',
-      _ => 'a weak signal',
-    };
+    final String status = !online
+        ? "Can't reach it right now"
+        : switch (rssi) {
+            null => 'Online',
+            >= -60 => 'Online · strong signal',
+            >= -72 => 'Online · fair signal',
+            _ => 'Online · weak signal',
+          };
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
@@ -126,38 +136,90 @@ class _WifiScreenState extends State<WifiScreen> {
       body: ListView(
         padding: const EdgeInsets.all(Space.s4),
         children: [
-          if (signal != null)
-            Text(
-              '${feeder.state.known.name} is online with $signal.',
-              style: TextStyle(fontSize: 15, height: 1.5, color: c.text),
+          Panel(
+            padding: const EdgeInsets.all(Space.s4),
+            child: Row(
+              children: [
+                IconTile(online ? Glyph.wifi : Glyph.wifiOff, muted: !online),
+                const SizedBox(width: Space.s4),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        status,
+                        style: TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "The feeder doesn't report the network's name.",
+                        style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          const SizedBox(height: Space.s4),
-          TextField(
-            controller: _network,
-            autocorrect: false,
-            decoration: const InputDecoration(labelText: 'New network'),
           ),
-          const SizedBox(height: Space.s3),
-          TextField(
-            controller: _password,
-            obscureText: true,
-            autocorrect: false,
-            enableSuggestions: false,
-            decoration: const InputDecoration(labelText: 'Password'),
+          const SizedBox(height: Space.s5),
+          SettingsSection(
+            'Switch network',
+            last: true,
+            Padding(
+              padding: const EdgeInsets.all(Space.s4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  LabeledField(
+                    label: 'Network',
+                    child: NetworkPicker(
+                      controller: _network,
+                      scan: feeder.scanNetworks,
+                      current: feeder.currentNetwork,
+                      onChanged: () => setState(() {}),
+                    ),
+                  ),
+                  const SizedBox(height: Space.s4),
+                  LabeledField(
+                    label: 'Password',
+                    hint: '8 to 63 characters.',
+                    child: TextField(
+                      controller: _password,
+                      obscureText: _hidden,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      decoration: InputDecoration(
+                        suffixIcon: IconButton(
+                          tooltip: _hidden ? 'Show password' : 'Hide password',
+                          icon: StrokeIcon(_hidden ? Glyph.eye : Glyph.eyeOff, size: 20, color: c.textMuted),
+                          onPressed: () => setState(() => _hidden = !_hidden),
+                        ),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  const SizedBox(height: Space.s4),
+                  const Notice(
+                    tone: Tone.neutral,
+                    glyph: Glyph.info,
+                    text:
+                        "It restarts to join. If it can't, set it up again over Bluetooth. Meals keep running "
+                        'either way.',
+                  ),
+                  const SizedBox(height: Space.s4),
+                  FilledButton(onPressed: _asking || !_valid ? null : _switch, child: const Text('Switch network')),
+                ],
+              ),
+            ),
           ),
-          const SizedBox(height: Space.s4),
-          const Notice(
-            tone: Tone.neutral,
-            glyph: Glyph.info,
-            text:
-                "The feeder restarts to join. If it can't, set it up again "
-                'over Bluetooth: hold Lock and Mic for 5 seconds. Meals keep '
-                'running either way.',
+          const SizedBox(height: Space.s5),
+          Center(
+            child: TextButton(
+              style: TextButton.styleFrom(foregroundColor: c.fault),
+              onPressed: _asking ? null : _forget,
+              child: const Text('Forget this network'),
+            ),
           ),
-          const SizedBox(height: Space.s4),
-          FilledButton(onPressed: _asking ? null : _switch, child: const Text('Switch network')),
-          const SizedBox(height: Space.s2),
-          TextButton(onPressed: _asking ? null : _forget, child: const Text('Forget this network')),
         ],
       ),
     );

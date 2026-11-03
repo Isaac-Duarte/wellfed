@@ -19,6 +19,7 @@ import 'package:wellfed/src/rust/frb_generated.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/state/join/join.dart';
+import 'package:wellfed/state/wifi/networks.dart';
 
 import '../support/fakes.dart';
 
@@ -122,6 +123,12 @@ class _Ports implements FeederPorts {
   /// The smoke flows record nothing.
   @override
   Recorder get recorder => throw UnsupportedError('no microphone in the smoke tests');
+
+  @override
+  Future<String?> currentNetwork() async => null;
+
+  @override
+  Future<NetworkScan> scanNetworks() async => const NetworksUnread(ScanProblem.unavailable);
 
   @override
   Future<ImageCheck> updateImage() => throw UnimplementedError();

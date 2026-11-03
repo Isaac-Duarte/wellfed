@@ -4,6 +4,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/recorder.dart';
 import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/src/rust/api/install.dart';
@@ -11,6 +12,7 @@ import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/api/update.dart';
+import 'package:wellfed/state/wifi/networks.dart';
 
 /// One running update: what it reports, and where it is told the feeder is.
 abstract interface class UpdatePush {
@@ -58,6 +60,12 @@ abstract interface class FeederPorts {
 
   /// The phone's microphone, for recording the meal call here.
   Recorder get recorder;
+
+  /// The Wi-Fi this phone is on, when Android will say.
+  Future<String?> currentNetwork();
+
+  /// The networks this phone hears, for the feeder's Wi-Fi.
+  Future<NetworkScan> scanNetworks();
 }
 
 /// [FeederPorts] on Android, with this phone's key.
@@ -72,6 +80,12 @@ class AppFeederPorts implements FeederPorts {
 
   @override
   late final Recorder recorder = AppRecorder();
+
+  @override
+  Future<String?> currentNetwork() => const AppPhonePorts().currentNetwork();
+
+  @override
+  Future<NetworkScan> scanNetworks() => scanNearbyNetworks();
 
   @override
   Future<Uint8List?> pickRecording() async {
