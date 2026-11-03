@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/screens/feeder/meal_choices.dart';
 import 'package:wellfed/screens/feeder/meal_editor.dart';
 import 'package:wellfed/screens/feeder/schedule.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
@@ -153,7 +154,9 @@ void main() {
       await tapIn(tester, find.text('Add meal'));
       await tapIn(tester, find.byTooltip('One more'));
       await tapIn(tester, find.text('Weekends'));
-      await tapIn(tester, find.widgetWithText(ChoiceChip, '2'));
+      // A meal not saved yet has no switch to turn it off.
+      expect(find.descendant(of: find.byType(MealEditor), matching: find.byType(Switch)), findsNothing);
+      await tapIn(tester, find.widgetWithText(Segment, '2'));
       await tapIn(tester, find.text('Save'));
 
       final added = session.requests.single as FeederRequest_EditPlans;

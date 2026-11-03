@@ -215,10 +215,22 @@ void main() {
 
   for (final Brightness brightness in Brightness.values) {
     group(brightness.name, () {
-      for (final (String name, int? slot) in [('meal_new', null), ('meal_edit', 0)]) {
+      // The choices keep even rows on a narrow phone and at Android's largest text.
+      for (final (String name, int? slot, Size size, double text) in [
+        ('meal_new', null, phoneSize, 1.0),
+        ('meal_edit', 0, phoneSize, 1.0),
+        ('meal_small', 0, smallPhone, 1.0),
+        ('meal_largest_text', 0, phoneSize, 2.0),
+      ]) {
         golden(name, (tester) async {
           final FeederController feeder = await goldenFeeder(tester);
-          await showPhone(tester, overBlank(MealEditor(feeder: feeder, held: _plans, slot: slot)), brightness);
+          await showPhone(
+            tester,
+            overBlank(MealEditor(feeder: feeder, held: _plans, slot: slot)),
+            brightness,
+            size: size,
+            text: text,
+          );
           await matchesGolden(name, brightness);
         });
       }

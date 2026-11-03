@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
+import 'package:wellfed/screens/feeder/meal_choices.dart';
 import 'package:wellfed/screens/feeder/schedule.dart' show CallLink;
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -311,11 +312,10 @@ class _MealEditorState extends State<MealEditor> {
           const SizedBox(height: Space.s4),
           Text('Repeat', style: label),
           const SizedBox(height: Space.s2),
-          _Choice<List<Weekday>>(
+          Segments<List<Weekday>>(
             const [('Daily', _everyDay), ('Weekdays', _weekdays), ('Weekends', _weekend), ('Once', <Weekday>[])],
-            same,
-            (days) => _days = days.toSet(),
-            onChanged: () => setState(() {}),
+            selected: same,
+            onSelected: (days) => setState(() => _days = days.toSet()),
           ),
           const SizedBox(height: Space.s2),
           // Seven 48dp targets are wider than the narrowest phones, so the last may wrap.
@@ -323,7 +323,7 @@ class _MealEditorState extends State<MealEditor> {
             alignment: WrapAlignment.spaceBetween,
             children: [
               for (final day in Weekday.values)
-                _DayToggle(
+                DayToggle(
                   day: day,
                   on: _days.contains(day),
                   onTap: () => setState(() {
@@ -343,28 +343,32 @@ class _MealEditorState extends State<MealEditor> {
               ),
             ),
           ),
+          const SizedBox(height: Space.s1),
+          Text('How many times it plays', style: muted),
           const SizedBox(height: Space.s2),
-          _Choice<int>(
+          Segments<int>(
             const [('Off', 0), ('1', 1), ('2', 2), ('3', 3), ('4', 4), ('5', 5)],
-            (plays) => plays == _call,
-            (plays) => _call = plays,
-            onChanged: () => setState(() {}),
+            selected: (plays) => plays == _call,
+            onSelected: (plays) => setState(() => _call = plays),
           ),
-          const SizedBox(height: Space.s3),
-          Row(
-            children: [
-              // The switch carries the name, so its node is its own size: a
-              // tap at the node's center lands on the switch.
-              Expanded(
-                child: ExcludeSemantics(child: Text('On', style: label)),
-              ),
-              Semantics(
-                container: true,
-                label: 'On',
-                child: Switch(value: _enabled, onChanged: (on) => setState(() => _enabled = on)),
-              ),
-            ],
-          ),
+          // A new meal is on once saved; only a saved one can be turned off.
+          if (widget.slot != null) ...[
+            const SizedBox(height: Space.s3),
+            Row(
+              children: [
+                // The switch carries the name, so its node is its own size: a
+                // tap at the node's center lands on the switch.
+                Expanded(
+                  child: ExcludeSemantics(child: Text('On', style: label)),
+                ),
+                Semantics(
+                  container: true,
+                  label: 'On',
+                  child: Switch(value: _enabled, onChanged: (on) => setState(() => _enabled = on)),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: Space.s2),
           Text(
             'Changes start from the next $time. A meal that already ran '
@@ -383,75 +387,4 @@ class _MealEditorState extends State<MealEditor> {
       ),
     );
   }
-}
-
-class _DayToggle extends StatelessWidget {
-  const _DayToggle({required this.day, required this.on, required this.onTap});
-
-  final Weekday day;
-  final bool on;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeTokens c = context.colors;
-    final String letter = day.name[0].toUpperCase();
-    return Semantics(
-      button: true,
-      selected: on,
-      label: day.name,
-      // The circle is smaller than the target, which is Android's 48dp.
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox.square(
-          dimension: 48,
-          child: Center(
-            child: Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: on ? c.accent : null,
-                shape: BoxShape.circle,
-                border: on ? null : Border.all(color: c.lineStrong),
-              ),
-              child: ExcludeSemantics(
-                child: Text(
-                  letter,
-                  style: TextStyle(fontSize: Sizes.base, fontWeight: Fonts.semibold, color: on ? c.accentText : c.text),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Choice<T> extends StatelessWidget {
-  const _Choice(this.options, this.selected, this.choose, {required this.onChanged});
-
-  final List<(String, T)> options;
-  final bool Function(T) selected;
-  final void Function(T) choose;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: Space.s2,
-    runSpacing: Space.s2,
-    children: [
-      for (final (name, value) in options)
-        ChoiceChip(
-          label: Text(name),
-          selected: selected(value),
-          onSelected: (_) {
-            choose(value);
-            onChanged();
-          },
-        ),
-    ],
-  );
 }
