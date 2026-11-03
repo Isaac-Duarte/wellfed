@@ -688,6 +688,7 @@ fn the_store_round_trips_and_starts_empty() {
             name: "Kitchen".into(),
             address: Some("192.168.1.20:4747".into()),
         }],
+        server: None,
     };
     save_store(path, &store).unwrap();
     assert_eq!(load_store(path).unwrap(), store);

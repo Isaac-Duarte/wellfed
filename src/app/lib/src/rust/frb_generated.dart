@@ -10,6 +10,9 @@ import 'api/join.dart';
 import 'api/keys.dart';
 import 'api/model.dart';
 import 'api/restore.dart';
+import 'api/server.dart';
+import 'api/server_error.dart';
+import 'api/server_views.dart';
 import 'api/session.dart';
 import 'api/setup.dart';
 import 'api/store.dart';
@@ -79,7 +82,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 810520828;
+  int get rustContentHash => -1180674935;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -210,6 +213,119 @@ abstract class RustLibApi extends BaseApi {
   });
 
   void crateApiRestoreRestoreRunStop({required RestoreRun that});
+
+  Future<ServerAccount> crateApiServerServerSessionAccount({
+    required ServerSession that,
+  });
+
+  void crateApiServerServerSessionClose({required ServerSession that});
+
+  Future<ServerFood> crateApiServerServerSessionCreateFood({
+    required ServerSession that,
+    required String brand,
+    required String name,
+    required int kcalPerKg,
+    required int bagGrams,
+  });
+
+  Future<ServerPet> crateApiServerServerSessionCreatePet({
+    required ServerSession that,
+    required String name,
+    required Species species,
+    String? birthDate,
+    int? dailyKcal,
+  });
+
+  Future<void> crateApiServerServerSessionDeleteFood({
+    required ServerSession that,
+    required String id,
+  });
+
+  Future<void> crateApiServerServerSessionDeletePet({
+    required ServerSession that,
+    required String id,
+  });
+
+  Future<ServerEventPage> crateApiServerServerSessionEvents({
+    required ServerSession that,
+    required String feeder,
+    int? epoch,
+    BigInt? after,
+    int? limit,
+  });
+
+  Future<ServerFeederDetail> crateApiServerServerSessionFeeder({
+    required ServerSession that,
+    required String id,
+  });
+
+  Future<ServerFeederFood> crateApiServerServerSessionFeederFood({
+    required ServerSession that,
+    required String feeder,
+  });
+
+  Future<List<ServerFeeder>> crateApiServerServerSessionFeeders({
+    required ServerSession that,
+  });
+
+  Stream<ServerUpdate> crateApiServerServerSessionFollow({
+    required ServerSession that,
+    String? lastEventId,
+  });
+
+  Future<List<ServerFood>> crateApiServerServerSessionFoods({
+    required ServerSession that,
+  });
+
+  Future<String> crateApiServerServerSessionHealth({
+    required ServerSession that,
+  });
+
+  ServerLink crateApiServerServerSessionLink({required ServerSession that});
+
+  Future<ServerSession> crateApiServerServerSessionLogin({
+    required String url,
+    required String name,
+    required String password,
+    required String phone,
+  });
+
+  Future<void> crateApiServerServerSessionLogout({required ServerSession that});
+
+  Future<ServerPetIntake> crateApiServerServerSessionPetIntake({
+    required ServerSession that,
+    required String pet,
+    int? days,
+  });
+
+  Future<List<ServerPet>> crateApiServerServerSessionPets({
+    required ServerSession that,
+  });
+
+  ServerSession crateApiServerServerSessionRestore({
+    required ServerLink link,
+    required String secret,
+  });
+
+  String crateApiServerServerSessionSecret({required ServerSession that});
+
+  Future<ServerFood> crateApiServerServerSessionUpdateFood({
+    required ServerSession that,
+    required String id,
+    required String brand,
+    required String name,
+    required int kcalPerKg,
+    required int bagGrams,
+  });
+
+  Future<ServerPet> crateApiServerServerSessionUpdatePet({
+    required ServerSession that,
+    required String id,
+    required String name,
+    required Species species,
+    String? birthDate,
+    int? dailyKcal,
+  });
 
   Uint8List crateApiSetupSetupDriverCode({required SetupDriver that});
 
@@ -362,6 +478,15 @@ abstract class RustLibApi extends BaseApi {
   get rust_arc_decrement_strong_count_RestoreRun;
 
   CrossPlatformFinalizerArg get rust_arc_decrement_strong_count_RestoreRunPtr;
+
+  RustArcIncrementStrongCountFnType
+  get rust_arc_increment_strong_count_ServerSession;
+
+  RustArcDecrementStrongCountFnType
+  get rust_arc_decrement_strong_count_ServerSession;
+
+  CrossPlatformFinalizerArg
+  get rust_arc_decrement_strong_count_ServerSessionPtr;
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_SetupDriver;
@@ -1415,6 +1540,827 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "RestoreRun_stop", argNames: ["that"]);
 
   @override
+  Future<ServerAccount> crateApiServerServerSessionAccount({
+    required ServerSession that,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 33,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_server_account,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionAccountConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionAccountConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_account",
+        argNames: ["that"],
+      );
+
+  @override
+  void crateApiServerServerSessionClose({required ServerSession that}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 34)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiServerServerSessionCloseConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionCloseConstMeta =>
+      const TaskConstMeta(debugName: "ServerSession_close", argNames: ["that"]);
+
+  @override
+  Future<ServerFood> crateApiServerServerSessionCreateFood({
+    required ServerSession that,
+    required String brand,
+    required String name,
+    required int kcalPerKg,
+    required int bagGrams,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          sse_encode_String(brand, serializer);
+          sse_encode_String(name, serializer);
+          sse_encode_u_32(kcalPerKg, serializer);
+          sse_encode_u_32(bagGrams, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 35,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_server_food,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionCreateFoodConstMeta,
+        argValues: [that, brand, name, kcalPerKg, bagGrams],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionCreateFoodConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_create_food",
+        argNames: ["that", "brand", "name", "kcalPerKg", "bagGrams"],
+      );
+
+  @override
+  Future<ServerPet> crateApiServerServerSessionCreatePet({
+    required ServerSession that,
+    required String name,
+    required Species species,
+    String? birthDate,
+    int? dailyKcal,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          sse_encode_String(name, serializer);
+          sse_encode_species(species, serializer);
+          sse_encode_opt_String(birthDate, serializer);
+          sse_encode_opt_box_autoadd_u_32(dailyKcal, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 36,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_server_pet,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionCreatePetConstMeta,
+        argValues: [that, name, species, birthDate, dailyKcal],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionCreatePetConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_create_pet",
+        argNames: ["that", "name", "species", "birthDate", "dailyKcal"],
+      );
+
+  @override
+  Future<void> crateApiServerServerSessionDeleteFood({
+    required ServerSession that,
+    required String id,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          sse_encode_String(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 37,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionDeleteFoodConstMeta,
+        argValues: [that, id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionDeleteFoodConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_delete_food",
+        argNames: ["that", "id"],
+      );
+
+  @override
+  Future<void> crateApiServerServerSessionDeletePet({
+    required ServerSession that,
+    required String id,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          sse_encode_String(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 38,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionDeletePetConstMeta,
+        argValues: [that, id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionDeletePetConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_delete_pet",
+        argNames: ["that", "id"],
+      );
+
+  @override
+  Future<ServerEventPage> crateApiServerServerSessionEvents({
+    required ServerSession that,
+    required String feeder,
+    int? epoch,
+    BigInt? after,
+    int? limit,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          sse_encode_String(feeder, serializer);
+          sse_encode_opt_box_autoadd_u_32(epoch, serializer);
+          sse_encode_opt_box_autoadd_u_64(after, serializer);
+          sse_encode_opt_box_autoadd_u_32(limit, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 39,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_server_event_page,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionEventsConstMeta,
+        argValues: [that, feeder, epoch, after, limit],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionEventsConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_events",
+        argNames: ["that", "feeder", "epoch", "after", "limit"],
+      );
+
+  @override
+  Future<ServerFeederDetail> crateApiServerServerSessionFeeder({
+    required ServerSession that,
+    required String id,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          sse_encode_String(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 40,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_server_feeder_detail,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionFeederConstMeta,
+        argValues: [that, id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionFeederConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_feeder",
+        argNames: ["that", "id"],
+      );
+
+  @override
+  Future<ServerFeederFood> crateApiServerServerSessionFeederFood({
+    required ServerSession that,
+    required String feeder,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          sse_encode_String(feeder, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 41,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_server_feeder_food,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionFeederFoodConstMeta,
+        argValues: [that, feeder],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionFeederFoodConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_feeder_food",
+        argNames: ["that", "feeder"],
+      );
+
+  @override
+  Future<List<ServerFeeder>> crateApiServerServerSessionFeeders({
+    required ServerSession that,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 42,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_server_feeder,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionFeedersConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionFeedersConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_feeders",
+        argNames: ["that"],
+      );
+
+  @override
+  Stream<ServerUpdate> crateApiServerServerSessionFollow({
+    required ServerSession that,
+    String? lastEventId,
+  }) {
+    final updates = RustStreamSink<ServerUpdate>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+              that,
+              serializer,
+            );
+            sse_encode_opt_String(lastEventId, serializer);
+            sse_encode_StreamSink_server_update_Sse(updates, serializer);
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 43,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: null,
+          ),
+          constMeta: kCrateApiServerServerSessionFollowConstMeta,
+          argValues: [that, lastEventId, updates],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return updates.stream;
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionFollowConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_follow",
+        argNames: ["that", "lastEventId", "updates"],
+      );
+
+  @override
+  Future<List<ServerFood>> crateApiServerServerSessionFoods({
+    required ServerSession that,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 44,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_server_food,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionFoodsConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionFoodsConstMeta =>
+      const TaskConstMeta(debugName: "ServerSession_foods", argNames: ["that"]);
+
+  @override
+  Future<String> crateApiServerServerSessionHealth({
+    required ServerSession that,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 45,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionHealthConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionHealthConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_health",
+        argNames: ["that"],
+      );
+
+  @override
+  ServerLink crateApiServerServerSessionLink({required ServerSession that}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 46)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_server_link,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiServerServerSessionLinkConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionLinkConstMeta =>
+      const TaskConstMeta(debugName: "ServerSession_link", argNames: ["that"]);
+
+  @override
+  Future<ServerSession> crateApiServerServerSessionLogin({
+    required String url,
+    required String name,
+    required String password,
+    required String phone,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(url, serializer);
+          sse_encode_String(name, serializer);
+          sse_encode_String(password, serializer);
+          sse_encode_String(phone, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 47,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData:
+              sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionLoginConstMeta,
+        argValues: [url, name, password, phone],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionLoginConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_login",
+        argNames: ["url", "name", "password", "phone"],
+      );
+
+  @override
+  Future<void> crateApiServerServerSessionLogout({
+    required ServerSession that,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 48,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionLogoutConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionLogoutConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_logout",
+        argNames: ["that"],
+      );
+
+  @override
+  Future<ServerPetIntake> crateApiServerServerSessionPetIntake({
+    required ServerSession that,
+    required String pet,
+    int? days,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          sse_encode_String(pet, serializer);
+          sse_encode_opt_box_autoadd_u_32(days, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 49,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_server_pet_intake,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionPetIntakeConstMeta,
+        argValues: [that, pet, days],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionPetIntakeConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_pet_intake",
+        argNames: ["that", "pet", "days"],
+      );
+
+  @override
+  Future<List<ServerPet>> crateApiServerServerSessionPets({
+    required ServerSession that,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 50,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_server_pet,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionPetsConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionPetsConstMeta =>
+      const TaskConstMeta(debugName: "ServerSession_pets", argNames: ["that"]);
+
+  @override
+  ServerSession crateApiServerServerSessionRestore({
+    required ServerLink link,
+    required String secret,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_box_autoadd_server_link(link, serializer);
+          sse_encode_String(secret, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData:
+              sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionRestoreConstMeta,
+        argValues: [link, secret],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionRestoreConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_restore",
+        argNames: ["link", "secret"],
+      );
+
+  @override
+  String crateApiServerServerSessionSecret({required ServerSession that}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 52)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiServerServerSessionSecretConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionSecretConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_secret",
+        argNames: ["that"],
+      );
+
+  @override
+  Future<ServerFood> crateApiServerServerSessionUpdateFood({
+    required ServerSession that,
+    required String id,
+    required String brand,
+    required String name,
+    required int kcalPerKg,
+    required int bagGrams,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          sse_encode_String(id, serializer);
+          sse_encode_String(brand, serializer);
+          sse_encode_String(name, serializer);
+          sse_encode_u_32(kcalPerKg, serializer);
+          sse_encode_u_32(bagGrams, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 53,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_server_food,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionUpdateFoodConstMeta,
+        argValues: [that, id, brand, name, kcalPerKg, bagGrams],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionUpdateFoodConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_update_food",
+        argNames: ["that", "id", "brand", "name", "kcalPerKg", "bagGrams"],
+      );
+
+  @override
+  Future<ServerPet> crateApiServerServerSessionUpdatePet({
+    required ServerSession that,
+    required String id,
+    required String name,
+    required Species species,
+    String? birthDate,
+    int? dailyKcal,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+            that,
+            serializer,
+          );
+          sse_encode_String(id, serializer);
+          sse_encode_String(name, serializer);
+          sse_encode_species(species, serializer);
+          sse_encode_opt_String(birthDate, serializer);
+          sse_encode_opt_box_autoadd_u_32(dailyKcal, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 54,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_server_pet,
+          decodeErrorData: sse_decode_server_error,
+        ),
+        constMeta: kCrateApiServerServerSessionUpdatePetConstMeta,
+        argValues: [that, id, name, species, birthDate, dailyKcal],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiServerServerSessionUpdatePetConstMeta =>
+      const TaskConstMeta(
+        debugName: "ServerSession_update_pet",
+        argNames: ["that", "id", "name", "species", "birthDate", "dailyKcal"],
+      );
+
+  @override
   Uint8List crateApiSetupSetupDriverCode({required SetupDriver that}) {
     return handler.executeSync(
       SyncTask(
@@ -1424,7 +2370,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 33)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 55)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_u_8_strict,
@@ -1456,7 +2402,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
           sse_encode_String(label, serializer);
           sse_encode_opt_box_autoadd_wifi_credentials(wifi, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 34)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 56)!;
         },
         codec: SseCodec(
           decodeSuccessData:
@@ -1490,7 +2436,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_list_prim_u_8_loose(bytes, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 35)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 57)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_setup_step,
@@ -1519,7 +2465,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 36)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_list_prim_u_8_strict,
@@ -1544,7 +2490,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 59,
             port: port_,
           );
         },
@@ -1568,7 +2514,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 38)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1593,7 +2539,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 39,
+            funcId: 61,
             port: port_,
           );
         },
@@ -1618,7 +2564,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(path, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 62)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_backup_check,
@@ -1640,7 +2586,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 41)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_build_check,
@@ -1663,7 +2609,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 42)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_image_check,
@@ -1692,7 +2638,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dataDir, serializer);
           sse_encode_list_prim_u_8_loose(identity, serializer);
           sse_encode_String(build, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 43)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1718,7 +2664,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(identity, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 44)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1741,7 +2687,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dataDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 45)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1768,7 +2714,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dataDir, serializer);
           sse_encode_list_prim_u_8_loose(identity, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 46)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1794,7 +2740,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(hex, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 47)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_u_8_strict,
@@ -1817,7 +2763,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(identity, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 48)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1842,7 +2788,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 49,
+            funcId: 71,
             port: port_,
           );
         },
@@ -1867,7 +2813,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dataDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 50)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -1893,7 +2839,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_list_prim_u_8_strict,
@@ -1930,7 +2876,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 52,
+            funcId: 74,
             port: port_,
           );
         },
@@ -1961,7 +2907,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dataDir, serializer);
           sse_encode_list_prim_u_8_loose(identity, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 75)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
@@ -1989,7 +2935,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 54,
+            funcId: 76,
             port: port_,
           );
         },
@@ -2014,7 +2960,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dataDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 55)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 77)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_pending_install,
@@ -2049,7 +2995,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 56,
+            funcId: 78,
             port: port_,
           );
         },
@@ -2084,7 +3030,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 57,
+            funcId: 79,
             port: port_,
           );
         },
@@ -2115,7 +3061,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dataDir, serializer);
           sse_encode_String(path, serializer);
           sse_encode_backup_problem(problem, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 58)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 80)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2141,7 +3087,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dataDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 81)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2169,7 +3115,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 60,
+            funcId: 82,
             port: port_,
           );
         },
@@ -2193,7 +3139,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 83)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2215,7 +3161,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 62)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 84)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2286,6 +3232,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RustArcDecrementStrongCountFnType
   get rust_arc_decrement_strong_count_RestoreRun => wire
       .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerRestoreRun;
+
+  RustArcIncrementStrongCountFnType
+  get rust_arc_increment_strong_count_ServerSession => wire
+      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession;
+
+  RustArcDecrementStrongCountFnType
+  get rust_arc_decrement_strong_count_ServerSession => wire
+      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession;
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_SetupDriver => wire
@@ -2362,6 +3316,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return RestoreRunImpl.frbInternalDcoDecode(raw as List<dynamic>);
+  }
+
+  @protected
+  ServerSession
+  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ServerSessionImpl.frbInternalDcoDecode(raw as List<dynamic>);
   }
 
   @protected
@@ -2446,6 +3409,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ServerSession
+  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ServerSessionImpl.frbInternalDcoDecode(raw as List<dynamic>);
+  }
+
+  @protected
   SetupDriver
   dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSetupDriver(
     dynamic raw,
@@ -2518,6 +3490,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ServerSession
+  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ServerSessionImpl.frbInternalDcoDecode(raw as List<dynamic>);
+  }
+
+  @protected
   SetupDriver
   dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSetupDriver(
     dynamic raw,
@@ -2544,6 +3525,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   RustStreamSink<RestoreUpdate> dco_decode_StreamSink_restore_update_Sse(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
+  RustStreamSink<ServerUpdate> dco_decode_StreamSink_server_update_Sse(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -2582,12 +3571,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   AppStore dco_decode_app_store(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return AppStore(
       label: dco_decode_String(arr[0]),
       feeders: dco_decode_list_known_feeder(arr[1]),
       appearance: dco_decode_appearance(arr[2]),
+      server: dco_decode_opt_box_autoadd_server_link(arr[3]),
     );
   }
 
@@ -2706,6 +3696,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   FedBy dco_decode_box_autoadd_fed_by(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_fed_by(raw);
+  }
+
+  @protected
+  FeedRate dco_decode_box_autoadd_feed_rate(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_feed_rate(raw);
   }
 
   @protected
@@ -2889,6 +3885,86 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ServerCommand dco_decode_box_autoadd_server_command(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_command(raw);
+  }
+
+  @protected
+  ServerCommandOutcome dco_decode_box_autoadd_server_command_outcome(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_command_outcome(raw);
+  }
+
+  @protected
+  ServerEntry dco_decode_box_autoadd_server_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_entry(raw);
+  }
+
+  @protected
+  ServerError dco_decode_box_autoadd_server_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_error(raw);
+  }
+
+  @protected
+  ServerEvent dco_decode_box_autoadd_server_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_event(raw);
+  }
+
+  @protected
+  ServerFoodLeft dco_decode_box_autoadd_server_food_left(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_food_left(raw);
+  }
+
+  @protected
+  ServerFoodPeriod dco_decode_box_autoadd_server_food_period(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_food_period(raw);
+  }
+
+  @protected
+  ServerInstall dco_decode_box_autoadd_server_install(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_install(raw);
+  }
+
+  @protected
+  ServerLink dco_decode_box_autoadd_server_link(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_link(raw);
+  }
+
+  @protected
+  ServerNextMeal dco_decode_box_autoadd_server_next_meal(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_next_meal(raw);
+  }
+
+  @protected
+  ServerRefill dco_decode_box_autoadd_server_refill(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_refill(raw);
+  }
+
+  @protected
+  ServerSinceRefill dco_decode_box_autoadd_server_since_refill(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_since_refill(raw);
+  }
+
+  @protected
+  ServerSnapshot dco_decode_box_autoadd_server_snapshot(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_server_snapshot(raw);
+  }
+
+  @protected
   SettingsChanges dco_decode_box_autoadd_settings_changes(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_settings_changes(raw);
@@ -2976,6 +4052,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   UpdateInfo dco_decode_box_autoadd_update_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_update_info(raw);
+  }
+
+  @protected
+  WeighedIntake dco_decode_box_autoadd_weighed_intake(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_weighed_intake(raw);
   }
 
   @protected
@@ -3123,6 +4205,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  CommandKind dco_decode_command_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return CommandKind.values[raw as int];
+  }
+
+  @protected
+  CommandState dco_decode_command_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return CommandState.values[raw as int];
+  }
+
+  @protected
   Counters dco_decode_counters(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -3243,6 +4337,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   FeedOutcome dco_decode_feed_outcome(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return FeedOutcome.values[raw as int];
+  }
+
+  @protected
+  FeedRate dco_decode_feed_rate(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return FeedRate(
+      portions: dco_decode_u_32(arr[0]),
+      hours: dco_decode_u_32(arr[1]),
+      gramsPerDay: dco_decode_opt_box_autoadd_u_32(arr[2]),
+    );
   }
 
   @protected
@@ -3821,6 +4928,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  InstallState dco_decode_install_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return InstallState.values[raw as int];
+  }
+
+  @protected
   InstallUpdate dco_decode_install_update(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     switch (raw[0]) {
@@ -3949,6 +5062,58 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
+  }
+
+  @protected
+  List<ServerAnomaly> dco_decode_list_server_anomaly(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_server_anomaly).toList();
+  }
+
+  @protected
+  List<ServerEntry> dco_decode_list_server_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_server_entry).toList();
+  }
+
+  @protected
+  List<ServerFeeder> dco_decode_list_server_feeder(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_server_feeder).toList();
+  }
+
+  @protected
+  List<ServerFeederPortions> dco_decode_list_server_feeder_portions(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_server_feeder_portions)
+        .toList();
+  }
+
+  @protected
+  List<ServerFood> dco_decode_list_server_food(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_server_food).toList();
+  }
+
+  @protected
+  List<ServerIntakeDay> dco_decode_list_server_intake_day(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_server_intake_day).toList();
+  }
+
+  @protected
+  List<ServerIntakeFeeder> dco_decode_list_server_intake_feeder(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_server_intake_feeder).toList();
+  }
+
+  @protected
+  List<ServerPet> dco_decode_list_server_pet(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_server_pet).toList();
   }
 
   @protected
@@ -4162,6 +5327,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  FeedRate? dco_decode_opt_box_autoadd_feed_rate(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_feed_rate(raw);
+  }
+
+  @protected
   FeedRefusal? dco_decode_opt_box_autoadd_feed_refusal(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_feed_refusal(raw);
@@ -4228,6 +5399,66 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ServerCommandOutcome? dco_decode_opt_box_autoadd_server_command_outcome(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_server_command_outcome(raw);
+  }
+
+  @protected
+  ServerError? dco_decode_opt_box_autoadd_server_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_server_error(raw);
+  }
+
+  @protected
+  ServerFoodLeft? dco_decode_opt_box_autoadd_server_food_left(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_server_food_left(raw);
+  }
+
+  @protected
+  ServerFoodPeriod? dco_decode_opt_box_autoadd_server_food_period(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_server_food_period(raw);
+  }
+
+  @protected
+  ServerLink? dco_decode_opt_box_autoadd_server_link(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_server_link(raw);
+  }
+
+  @protected
+  ServerNextMeal? dco_decode_opt_box_autoadd_server_next_meal(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_server_next_meal(raw);
+  }
+
+  @protected
+  ServerRefill? dco_decode_opt_box_autoadd_server_refill(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_server_refill(raw);
+  }
+
+  @protected
+  ServerSinceRefill? dco_decode_opt_box_autoadd_server_since_refill(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_server_since_refill(raw);
+  }
+
+  @protected
+  ServerSnapshot? dco_decode_opt_box_autoadd_server_snapshot(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_server_snapshot(raw);
+  }
+
+  @protected
   SettingsView? dco_decode_opt_box_autoadd_settings_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_settings_view(raw);
@@ -4279,6 +5510,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int? dco_decode_opt_box_autoadd_u_8(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_8(raw);
+  }
+
+  @protected
+  WeighedIntake? dco_decode_opt_box_autoadd_weighed_intake(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_weighed_intake(raw);
   }
 
   @protected
@@ -4391,6 +5628,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           grams: dco_decode_String(raw[1]),
           portions: dco_decode_u_32(raw[2]),
         );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  PortionWeight dco_decode_portion_weight(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return PortionWeight_Calibration(portionMg: dco_decode_u_32(raw[1]));
+      case 1:
+        return PortionWeight_Uncalibrated();
       default:
         throw Exception("unreachable");
     }
@@ -4532,6 +5782,470 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ServerAccount dco_decode_server_account(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return ServerAccount(
+      id: dco_decode_String(arr[0]),
+      name: dco_decode_String(arr[1]),
+      role: dco_decode_server_role(arr[2]),
+      expiresMs: dco_decode_opt_box_autoadd_i_64(arr[3]),
+    );
+  }
+
+  @protected
+  ServerAnomaly dco_decode_server_anomaly(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return ServerAnomaly_Missed(
+          feeder: dco_decode_String(raw[1]),
+          plan: dco_decode_u_8(raw[2]),
+          dueMs: dco_decode_i_64(raw[3]),
+          reason: dco_decode_box_autoadd_missed_reason(raw[4]),
+        );
+      case 1:
+        return ServerAnomaly_Uncertain(
+          feeder: dco_decode_String(raw[1]),
+          feed: dco_decode_u_32(raw[2]),
+          atMs: dco_decode_i_64(raw[3]),
+          requested: dco_decode_u_8(raw[4]),
+          completed: dco_decode_u_8(raw[5]),
+        );
+      case 2:
+        return ServerAnomaly_Short(
+          feeder: dco_decode_String(raw[1]),
+          feed: dco_decode_u_32(raw[2]),
+          atMs: dco_decode_i_64(raw[3]),
+          requested: dco_decode_u_8(raw[4]),
+          completed: dco_decode_u_8(raw[5]),
+          outcome: dco_decode_feed_outcome(raw[6]),
+          reason: dco_decode_feed_reason(raw[7]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  ServerCommand dco_decode_server_command(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    return ServerCommand(
+      key: dco_decode_String(arr[0]),
+      feeder: dco_decode_String(arr[1]),
+      kind: dco_decode_command_kind(arr[2]),
+      state: dco_decode_command_state(arr[3]),
+      outcome: dco_decode_opt_box_autoadd_server_command_outcome(arr[4]),
+      feed: dco_decode_opt_box_autoadd_u_32(arr[5]),
+      sentMs: dco_decode_i_64(arr[6]),
+      updatedMs: dco_decode_i_64(arr[7]),
+    );
+  }
+
+  @protected
+  ServerCommandOutcome dco_decode_server_command_outcome(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return ServerCommandOutcome_Done();
+      case 1:
+        return ServerCommandOutcome_Settings();
+      case 2:
+        return ServerCommandOutcome_Plans();
+      case 3:
+        return ServerCommandOutcome_Refused(
+          refusal: dco_decode_server_refusal(raw[1]),
+        );
+      case 4:
+        return ServerCommandOutcome_Invited(
+          invite: dco_decode_u_32(raw[1]),
+          seconds: dco_decode_u_16(raw[2]),
+        );
+      case 5:
+        return ServerCommandOutcome_Feeding(feed: dco_decode_u_32(raw[1]));
+      case 6:
+        return ServerCommandOutcome_Fed(
+          feed: dco_decode_u_32(raw[1]),
+          requested: dco_decode_u_8(raw[2]),
+          completed: dco_decode_u_8(raw[3]),
+          outcome: dco_decode_feed_outcome(raw[4]),
+          reason: dco_decode_feed_reason(raw[5]),
+        );
+      case 7:
+        return ServerCommandOutcome_Unrecorded();
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  ServerConnection dco_decode_server_connection(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ServerConnection.values[raw as int];
+  }
+
+  @protected
+  ServerEntry dco_decode_server_entry(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ServerEntry(
+      epoch: dco_decode_u_32(arr[0]),
+      receivedMs: dco_decode_i_64(arr[1]),
+      entry: dco_decode_history_entry(arr[2]),
+    );
+  }
+
+  @protected
+  ServerError dco_decode_server_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ServerError(
+      kind: dco_decode_server_error_kind(arr[0]),
+      message: dco_decode_String(arr[1]),
+      retryAfterSeconds: dco_decode_opt_box_autoadd_u_32(arr[2]),
+    );
+  }
+
+  @protected
+  ServerErrorKind dco_decode_server_error_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ServerErrorKind.values[raw as int];
+  }
+
+  @protected
+  ServerEvent dco_decode_server_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return ServerEvent_History(
+          feeder: dco_decode_String(raw[1]),
+          entry: dco_decode_box_autoadd_server_entry(raw[2]),
+        );
+      case 1:
+        return ServerEvent_Connection(
+          feeder: dco_decode_String(raw[1]),
+          connection: dco_decode_server_connection(raw[2]),
+        );
+      case 2:
+        return ServerEvent_Command(
+          command: dco_decode_box_autoadd_server_command(raw[1]),
+        );
+      case 3:
+        return ServerEvent_Install(
+          install: dco_decode_box_autoadd_server_install(raw[1]),
+        );
+      case 4:
+        return ServerEvent_Resync();
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
+  ServerEventPage dco_decode_server_event_page(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ServerEventPage(
+      epoch: dco_decode_opt_box_autoadd_u_32(arr[0]),
+      entries: dco_decode_list_server_entry(arr[1]),
+      next: dco_decode_opt_box_autoadd_u_64(arr[2]),
+    );
+  }
+
+  @protected
+  ServerFeeder dco_decode_server_feeder(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    return ServerFeeder(
+      id: dco_decode_String(arr[0]),
+      name: dco_decode_String(arr[1]),
+      identity: dco_decode_String(arr[2]),
+      role: dco_decode_client_role(arr[3]),
+      address: dco_decode_opt_String(arr[4]),
+      connection: dco_decode_server_connection(arr[5]),
+      synced: dco_decode_opt_box_autoadd_u_64(arr[6]),
+      epoch: dco_decode_opt_box_autoadd_u_32(arr[7]),
+      archivedMs: dco_decode_opt_box_autoadd_i_64(arr[8]),
+    );
+  }
+
+  @protected
+  ServerFeederDetail dco_decode_server_feeder_detail(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ServerFeederDetail(
+      feeder: dco_decode_server_feeder(arr[0]),
+      status: dco_decode_opt_box_autoadd_server_snapshot(arr[1]),
+      nextMeal: dco_decode_opt_box_autoadd_server_next_meal(arr[2]),
+    );
+  }
+
+  @protected
+  ServerFeederFood dco_decode_server_feeder_food(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return ServerFeederFood(
+      current: dco_decode_opt_box_autoadd_server_food_period(arr[0]),
+      lastRefill: dco_decode_opt_box_autoadd_server_refill(arr[1]),
+      weight: dco_decode_portion_weight(arr[2]),
+      sinceRefill: dco_decode_opt_box_autoadd_server_since_refill(arr[3]),
+      rate: dco_decode_opt_box_autoadd_feed_rate(arr[4]),
+      refilledUnrecordedMs: dco_decode_opt_box_autoadd_i_64(arr[5]),
+      anomalies: dco_decode_list_server_anomaly(arr[6]),
+    );
+  }
+
+  @protected
+  ServerFeederPortions dco_decode_server_feeder_portions(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ServerFeederPortions(
+      feeder: dco_decode_String(arr[0]),
+      portions: dco_decode_u_32(arr[1]),
+      uncertainPortions: dco_decode_u_32(arr[2]),
+    );
+  }
+
+  @protected
+  ServerFood dco_decode_server_food(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return ServerFood(
+      id: dco_decode_String(arr[0]),
+      brand: dco_decode_String(arr[1]),
+      name: dco_decode_String(arr[2]),
+      kcalPerKg: dco_decode_u_32(arr[3]),
+      bagGrams: dco_decode_u_32(arr[4]),
+    );
+  }
+
+  @protected
+  ServerFoodLeft dco_decode_server_food_left(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return ServerFoodLeft(
+      gramsUsed: dco_decode_u_32(arr[0]),
+      gramsLeft: dco_decode_u_32(arr[1]),
+      gramsLeftLeast: dco_decode_u_32(arr[2]),
+      emptyAtMs: dco_decode_opt_box_autoadd_i_64(arr[3]),
+    );
+  }
+
+  @protected
+  ServerFoodPeriod dco_decode_server_food_period(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ServerFoodPeriod(
+      food: dco_decode_server_food(arr[0]),
+      fromMs: dco_decode_i_64(arr[1]),
+      toMs: dco_decode_opt_box_autoadd_i_64(arr[2]),
+    );
+  }
+
+  @protected
+  ServerInstall dco_decode_server_install(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return ServerInstall(
+      id: dco_decode_String(arr[0]),
+      feeder: dco_decode_String(arr[1]),
+      version: dco_decode_u_32(arr[2]),
+      state: dco_decode_install_state(arr[3]),
+      written: dco_decode_u_32(arr[4]),
+      imageLen: dco_decode_u_32(arr[5]),
+      finishedMs: dco_decode_opt_box_autoadd_i_64(arr[6]),
+    );
+  }
+
+  @protected
+  ServerIntakeDay dco_decode_server_intake_day(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return ServerIntakeDay(
+      date: dco_decode_String(arr[0]),
+      weighed: dco_decode_opt_box_autoadd_weighed_intake(arr[1]),
+      targetPercent: dco_decode_opt_box_autoadd_u_32(arr[2]),
+      estimate: dco_decode_bool(arr[3]),
+      unweighed: dco_decode_list_server_feeder_portions(arr[4]),
+    );
+  }
+
+  @protected
+  ServerIntakeFeeder dco_decode_server_intake_feeder(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ServerIntakeFeeder(
+      feeder: dco_decode_String(arr[0]),
+      weight: dco_decode_portion_weight(arr[1]),
+      shared: dco_decode_bool(arr[2]),
+    );
+  }
+
+  @protected
+  ServerLink dco_decode_server_link(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ServerLink(
+      url: dco_decode_String(arr[0]),
+      user: dco_decode_String(arr[1]),
+      tokenId: dco_decode_String(arr[2]),
+    );
+  }
+
+  @protected
+  ServerNextMeal dco_decode_server_next_meal(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ServerNextMeal(
+      atMs: dco_decode_i_64(arr[0]),
+      slot: dco_decode_u_8(arr[1]),
+      portions: dco_decode_u_8(arr[2]),
+    );
+  }
+
+  @protected
+  ServerPet dco_decode_server_pet(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return ServerPet(
+      id: dco_decode_String(arr[0]),
+      name: dco_decode_String(arr[1]),
+      species: dco_decode_species(arr[2]),
+      birthDate: dco_decode_opt_String(arr[3]),
+      dailyKcal: dco_decode_opt_box_autoadd_u_32(arr[4]),
+      feeders: dco_decode_list_String(arr[5]),
+    );
+  }
+
+  @protected
+  ServerPetIntake dco_decode_server_pet_intake(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return ServerPetIntake(
+      pet: dco_decode_String(arr[0]),
+      zone: dco_decode_String(arr[1]),
+      dailyKcal: dco_decode_opt_box_autoadd_u_32(arr[2]),
+      feeders: dco_decode_list_server_intake_feeder(arr[3]),
+      days: dco_decode_list_server_intake_day(arr[4]),
+      anomalies: dco_decode_list_server_anomaly(arr[5]),
+    );
+  }
+
+  @protected
+  ServerRefill dco_decode_server_refill(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return ServerRefill(
+      id: dco_decode_String(arr[0]),
+      feeder: dco_decode_String(arr[1]),
+      atMs: dco_decode_i_64(arr[2]),
+      grams: dco_decode_u_32(arr[3]),
+      fullBag: dco_decode_bool(arr[4]),
+      food: dco_decode_opt_String(arr[5]),
+      user: dco_decode_String(arr[6]),
+    );
+  }
+
+  @protected
+  ServerRefusal dco_decode_server_refusal(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ServerRefusal.values[raw as int];
+  }
+
+  @protected
+  ServerRole dco_decode_server_role(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ServerRole.values[raw as int];
+  }
+
+  @protected
+  ServerSinceRefill dco_decode_server_since_refill(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ServerSinceRefill(
+      portions: dco_decode_u_32(arr[0]),
+      uncertainPortions: dco_decode_u_32(arr[1]),
+      left: dco_decode_opt_box_autoadd_server_food_left(arr[2]),
+    );
+  }
+
+  @protected
+  ServerSnapshot dco_decode_server_snapshot(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ServerSnapshot(
+      atMs: dco_decode_i_64(arr[0]),
+      live: dco_decode_bool(arr[1]),
+      card: dco_decode_card(arr[2]),
+    );
+  }
+
+  @protected
+  ServerUpdate dco_decode_server_update(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return ServerUpdate_Opened();
+      case 1:
+        return ServerUpdate_Event(
+          resume: dco_decode_String(raw[1]),
+          event: dco_decode_box_autoadd_server_event(raw[2]),
+        );
+      case 2:
+        return ServerUpdate_Closed(
+          error: dco_decode_opt_box_autoadd_server_error(raw[1]),
+        );
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
   SessionUpdate dco_decode_session_update(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     switch (raw[0]) {
@@ -4654,6 +6368,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw Exception("unreachable");
     }
+  }
+
+  @protected
+  Species dco_decode_species(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return Species.values[raw as int];
   }
 
   @protected
@@ -5045,6 +6765,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  WeighedIntake dco_decode_weighed_intake(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return WeighedIntake(
+      grams: dco_decode_u_32(arr[0]),
+      kcal: dco_decode_u_32(arr[1]),
+      uncertainGrams: dco_decode_u_32(arr[2]),
+      unknownFoodGrams: dco_decode_u_32(arr[3]),
+    );
+  }
+
+  @protected
   WifiCredentials dco_decode_wifi_credentials(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -5185,6 +6919,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ServerSession
+  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return ServerSessionImpl.frbInternalSseDecode(
+      sse_decode_usize(deserializer),
+      sse_decode_i_32(deserializer),
+    );
+  }
+
+  @protected
   SetupDriver
   sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSetupDriver(
     SseDeserializer deserializer,
@@ -5293,6 +7039,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ServerSession
+  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return ServerSessionImpl.frbInternalSseDecode(
+      sse_decode_usize(deserializer),
+      sse_decode_i_32(deserializer),
+    );
+  }
+
+  @protected
   SetupDriver
   sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSetupDriver(
     SseDeserializer deserializer,
@@ -5389,6 +7147,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ServerSession
+  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return ServerSessionImpl.frbInternalSseDecode(
+      sse_decode_usize(deserializer),
+      sse_decode_i_32(deserializer),
+    );
+  }
+
+  @protected
   SetupDriver
   sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSetupDriver(
     SseDeserializer deserializer,
@@ -5418,6 +7188,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   RustStreamSink<RestoreUpdate> sse_decode_StreamSink_restore_update_Sse(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
+  RustStreamSink<ServerUpdate> sse_decode_StreamSink_server_update_Sse(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -5461,10 +7239,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_label = sse_decode_String(deserializer);
     var var_feeders = sse_decode_list_known_feeder(deserializer);
     var var_appearance = sse_decode_appearance(deserializer);
+    var var_server = sse_decode_opt_box_autoadd_server_link(deserializer);
     return AppStore(
       label: var_label,
       feeders: var_feeders,
       appearance: var_appearance,
+      server: var_server,
     );
   }
 
@@ -5595,6 +7375,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   FedBy sse_decode_box_autoadd_fed_by(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_fed_by(deserializer));
+  }
+
+  @protected
+  FeedRate sse_decode_box_autoadd_feed_rate(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_feed_rate(deserializer));
   }
 
   @protected
@@ -5800,6 +7586,108 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ServerCommand sse_decode_box_autoadd_server_command(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_command(deserializer));
+  }
+
+  @protected
+  ServerCommandOutcome sse_decode_box_autoadd_server_command_outcome(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_command_outcome(deserializer));
+  }
+
+  @protected
+  ServerEntry sse_decode_box_autoadd_server_entry(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_entry(deserializer));
+  }
+
+  @protected
+  ServerError sse_decode_box_autoadd_server_error(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_error(deserializer));
+  }
+
+  @protected
+  ServerEvent sse_decode_box_autoadd_server_event(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_event(deserializer));
+  }
+
+  @protected
+  ServerFoodLeft sse_decode_box_autoadd_server_food_left(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_food_left(deserializer));
+  }
+
+  @protected
+  ServerFoodPeriod sse_decode_box_autoadd_server_food_period(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_food_period(deserializer));
+  }
+
+  @protected
+  ServerInstall sse_decode_box_autoadd_server_install(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_install(deserializer));
+  }
+
+  @protected
+  ServerLink sse_decode_box_autoadd_server_link(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_link(deserializer));
+  }
+
+  @protected
+  ServerNextMeal sse_decode_box_autoadd_server_next_meal(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_next_meal(deserializer));
+  }
+
+  @protected
+  ServerRefill sse_decode_box_autoadd_server_refill(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_refill(deserializer));
+  }
+
+  @protected
+  ServerSinceRefill sse_decode_box_autoadd_server_since_refill(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_since_refill(deserializer));
+  }
+
+  @protected
+  ServerSnapshot sse_decode_box_autoadd_server_snapshot(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_server_snapshot(deserializer));
+  }
+
+  @protected
   SettingsChanges sse_decode_box_autoadd_settings_changes(
     SseDeserializer deserializer,
   ) {
@@ -5895,6 +7783,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   UpdateInfo sse_decode_box_autoadd_update_info(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_update_info(deserializer));
+  }
+
+  @protected
+  WeighedIntake sse_decode_box_autoadd_weighed_intake(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_weighed_intake(deserializer));
   }
 
   @protected
@@ -6065,6 +7961,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  CommandKind sse_decode_command_kind(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return CommandKind.values[inner];
+  }
+
+  @protected
+  CommandState sse_decode_command_state(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return CommandState.values[inner];
+  }
+
+  @protected
   Counters sse_decode_counters(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_boot = sse_decode_counts(deserializer);
@@ -6201,6 +8111,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
     return FeedOutcome.values[inner];
+  }
+
+  @protected
+  FeedRate sse_decode_feed_rate(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_portions = sse_decode_u_32(deserializer);
+    var var_hours = sse_decode_u_32(deserializer);
+    var var_gramsPerDay = sse_decode_opt_box_autoadd_u_32(deserializer);
+    return FeedRate(
+      portions: var_portions,
+      hours: var_hours,
+      gramsPerDay: var_gramsPerDay,
+    );
   }
 
   @protected
@@ -6862,6 +8785,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  InstallState sse_decode_install_state(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return InstallState.values[inner];
+  }
+
+  @protected
   InstallUpdate sse_decode_install_update(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -7044,6 +8974,112 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  List<ServerAnomaly> sse_decode_list_server_anomaly(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ServerAnomaly>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_server_anomaly(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ServerEntry> sse_decode_list_server_entry(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ServerEntry>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_server_entry(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ServerFeeder> sse_decode_list_server_feeder(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ServerFeeder>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_server_feeder(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ServerFeederPortions> sse_decode_list_server_feeder_portions(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ServerFeederPortions>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_server_feeder_portions(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ServerFood> sse_decode_list_server_food(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ServerFood>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_server_food(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ServerIntakeDay> sse_decode_list_server_intake_day(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ServerIntakeDay>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_server_intake_day(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ServerIntakeFeeder> sse_decode_list_server_intake_feeder(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ServerIntakeFeeder>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_server_intake_feeder(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ServerPet> sse_decode_list_server_pet(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ServerPet>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_server_pet(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -7340,6 +9376,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  FeedRate? sse_decode_opt_box_autoadd_feed_rate(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_feed_rate(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   FeedRefusal? sse_decode_opt_box_autoadd_feed_refusal(
     SseDeserializer deserializer,
   ) {
@@ -7473,6 +9520,123 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ServerCommandOutcome? sse_decode_opt_box_autoadd_server_command_outcome(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_server_command_outcome(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  ServerError? sse_decode_opt_box_autoadd_server_error(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_server_error(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  ServerFoodLeft? sse_decode_opt_box_autoadd_server_food_left(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_server_food_left(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  ServerFoodPeriod? sse_decode_opt_box_autoadd_server_food_period(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_server_food_period(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  ServerLink? sse_decode_opt_box_autoadd_server_link(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_server_link(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  ServerNextMeal? sse_decode_opt_box_autoadd_server_next_meal(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_server_next_meal(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  ServerRefill? sse_decode_opt_box_autoadd_server_refill(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_server_refill(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  ServerSinceRefill? sse_decode_opt_box_autoadd_server_since_refill(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_server_since_refill(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  ServerSnapshot? sse_decode_opt_box_autoadd_server_snapshot(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_server_snapshot(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   SettingsView? sse_decode_opt_box_autoadd_settings_view(
     SseDeserializer deserializer,
   ) {
@@ -7574,6 +9738,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_u_8(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  WeighedIntake? sse_decode_opt_box_autoadd_weighed_intake(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_weighed_intake(deserializer));
     } else {
       return null;
     }
@@ -7739,6 +9916,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PortionWeight sse_decode_portion_weight(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_portionMg = sse_decode_u_32(deserializer);
+        return PortionWeight_Calibration(portionMg: var_portionMg);
+      case 1:
+        return PortionWeight_Uncalibrated();
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
   Portions sse_decode_portions(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_portions = sse_decode_u_32(deserializer);
@@ -7885,6 +10078,545 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
     return Resume.values[inner];
+  }
+
+  @protected
+  ServerAccount sse_decode_server_account(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_name = sse_decode_String(deserializer);
+    var var_role = sse_decode_server_role(deserializer);
+    var var_expiresMs = sse_decode_opt_box_autoadd_i_64(deserializer);
+    return ServerAccount(
+      id: var_id,
+      name: var_name,
+      role: var_role,
+      expiresMs: var_expiresMs,
+    );
+  }
+
+  @protected
+  ServerAnomaly sse_decode_server_anomaly(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_feeder = sse_decode_String(deserializer);
+        var var_plan = sse_decode_u_8(deserializer);
+        var var_dueMs = sse_decode_i_64(deserializer);
+        var var_reason = sse_decode_box_autoadd_missed_reason(deserializer);
+        return ServerAnomaly_Missed(
+          feeder: var_feeder,
+          plan: var_plan,
+          dueMs: var_dueMs,
+          reason: var_reason,
+        );
+      case 1:
+        var var_feeder = sse_decode_String(deserializer);
+        var var_feed = sse_decode_u_32(deserializer);
+        var var_atMs = sse_decode_i_64(deserializer);
+        var var_requested = sse_decode_u_8(deserializer);
+        var var_completed = sse_decode_u_8(deserializer);
+        return ServerAnomaly_Uncertain(
+          feeder: var_feeder,
+          feed: var_feed,
+          atMs: var_atMs,
+          requested: var_requested,
+          completed: var_completed,
+        );
+      case 2:
+        var var_feeder = sse_decode_String(deserializer);
+        var var_feed = sse_decode_u_32(deserializer);
+        var var_atMs = sse_decode_i_64(deserializer);
+        var var_requested = sse_decode_u_8(deserializer);
+        var var_completed = sse_decode_u_8(deserializer);
+        var var_outcome = sse_decode_feed_outcome(deserializer);
+        var var_reason = sse_decode_feed_reason(deserializer);
+        return ServerAnomaly_Short(
+          feeder: var_feeder,
+          feed: var_feed,
+          atMs: var_atMs,
+          requested: var_requested,
+          completed: var_completed,
+          outcome: var_outcome,
+          reason: var_reason,
+        );
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  ServerCommand sse_decode_server_command(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_key = sse_decode_String(deserializer);
+    var var_feeder = sse_decode_String(deserializer);
+    var var_kind = sse_decode_command_kind(deserializer);
+    var var_state = sse_decode_command_state(deserializer);
+    var var_outcome = sse_decode_opt_box_autoadd_server_command_outcome(
+      deserializer,
+    );
+    var var_feed = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_sentMs = sse_decode_i_64(deserializer);
+    var var_updatedMs = sse_decode_i_64(deserializer);
+    return ServerCommand(
+      key: var_key,
+      feeder: var_feeder,
+      kind: var_kind,
+      state: var_state,
+      outcome: var_outcome,
+      feed: var_feed,
+      sentMs: var_sentMs,
+      updatedMs: var_updatedMs,
+    );
+  }
+
+  @protected
+  ServerCommandOutcome sse_decode_server_command_outcome(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        return ServerCommandOutcome_Done();
+      case 1:
+        return ServerCommandOutcome_Settings();
+      case 2:
+        return ServerCommandOutcome_Plans();
+      case 3:
+        var var_refusal = sse_decode_server_refusal(deserializer);
+        return ServerCommandOutcome_Refused(refusal: var_refusal);
+      case 4:
+        var var_invite = sse_decode_u_32(deserializer);
+        var var_seconds = sse_decode_u_16(deserializer);
+        return ServerCommandOutcome_Invited(
+          invite: var_invite,
+          seconds: var_seconds,
+        );
+      case 5:
+        var var_feed = sse_decode_u_32(deserializer);
+        return ServerCommandOutcome_Feeding(feed: var_feed);
+      case 6:
+        var var_feed = sse_decode_u_32(deserializer);
+        var var_requested = sse_decode_u_8(deserializer);
+        var var_completed = sse_decode_u_8(deserializer);
+        var var_outcome = sse_decode_feed_outcome(deserializer);
+        var var_reason = sse_decode_feed_reason(deserializer);
+        return ServerCommandOutcome_Fed(
+          feed: var_feed,
+          requested: var_requested,
+          completed: var_completed,
+          outcome: var_outcome,
+          reason: var_reason,
+        );
+      case 7:
+        return ServerCommandOutcome_Unrecorded();
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  ServerConnection sse_decode_server_connection(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ServerConnection.values[inner];
+  }
+
+  @protected
+  ServerEntry sse_decode_server_entry(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_epoch = sse_decode_u_32(deserializer);
+    var var_receivedMs = sse_decode_i_64(deserializer);
+    var var_entry = sse_decode_history_entry(deserializer);
+    return ServerEntry(
+      epoch: var_epoch,
+      receivedMs: var_receivedMs,
+      entry: var_entry,
+    );
+  }
+
+  @protected
+  ServerError sse_decode_server_error(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_server_error_kind(deserializer);
+    var var_message = sse_decode_String(deserializer);
+    var var_retryAfterSeconds = sse_decode_opt_box_autoadd_u_32(deserializer);
+    return ServerError(
+      kind: var_kind,
+      message: var_message,
+      retryAfterSeconds: var_retryAfterSeconds,
+    );
+  }
+
+  @protected
+  ServerErrorKind sse_decode_server_error_kind(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ServerErrorKind.values[inner];
+  }
+
+  @protected
+  ServerEvent sse_decode_server_event(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_feeder = sse_decode_String(deserializer);
+        var var_entry = sse_decode_box_autoadd_server_entry(deserializer);
+        return ServerEvent_History(feeder: var_feeder, entry: var_entry);
+      case 1:
+        var var_feeder = sse_decode_String(deserializer);
+        var var_connection = sse_decode_server_connection(deserializer);
+        return ServerEvent_Connection(
+          feeder: var_feeder,
+          connection: var_connection,
+        );
+      case 2:
+        var var_command = sse_decode_box_autoadd_server_command(deserializer);
+        return ServerEvent_Command(command: var_command);
+      case 3:
+        var var_install = sse_decode_box_autoadd_server_install(deserializer);
+        return ServerEvent_Install(install: var_install);
+      case 4:
+        return ServerEvent_Resync();
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
+  ServerEventPage sse_decode_server_event_page(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_epoch = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_entries = sse_decode_list_server_entry(deserializer);
+    var var_next = sse_decode_opt_box_autoadd_u_64(deserializer);
+    return ServerEventPage(
+      epoch: var_epoch,
+      entries: var_entries,
+      next: var_next,
+    );
+  }
+
+  @protected
+  ServerFeeder sse_decode_server_feeder(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_name = sse_decode_String(deserializer);
+    var var_identity = sse_decode_String(deserializer);
+    var var_role = sse_decode_client_role(deserializer);
+    var var_address = sse_decode_opt_String(deserializer);
+    var var_connection = sse_decode_server_connection(deserializer);
+    var var_synced = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_epoch = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_archivedMs = sse_decode_opt_box_autoadd_i_64(deserializer);
+    return ServerFeeder(
+      id: var_id,
+      name: var_name,
+      identity: var_identity,
+      role: var_role,
+      address: var_address,
+      connection: var_connection,
+      synced: var_synced,
+      epoch: var_epoch,
+      archivedMs: var_archivedMs,
+    );
+  }
+
+  @protected
+  ServerFeederDetail sse_decode_server_feeder_detail(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_feeder = sse_decode_server_feeder(deserializer);
+    var var_status = sse_decode_opt_box_autoadd_server_snapshot(deserializer);
+    var var_nextMeal = sse_decode_opt_box_autoadd_server_next_meal(
+      deserializer,
+    );
+    return ServerFeederDetail(
+      feeder: var_feeder,
+      status: var_status,
+      nextMeal: var_nextMeal,
+    );
+  }
+
+  @protected
+  ServerFeederFood sse_decode_server_feeder_food(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_current = sse_decode_opt_box_autoadd_server_food_period(
+      deserializer,
+    );
+    var var_lastRefill = sse_decode_opt_box_autoadd_server_refill(deserializer);
+    var var_weight = sse_decode_portion_weight(deserializer);
+    var var_sinceRefill = sse_decode_opt_box_autoadd_server_since_refill(
+      deserializer,
+    );
+    var var_rate = sse_decode_opt_box_autoadd_feed_rate(deserializer);
+    var var_refilledUnrecordedMs = sse_decode_opt_box_autoadd_i_64(
+      deserializer,
+    );
+    var var_anomalies = sse_decode_list_server_anomaly(deserializer);
+    return ServerFeederFood(
+      current: var_current,
+      lastRefill: var_lastRefill,
+      weight: var_weight,
+      sinceRefill: var_sinceRefill,
+      rate: var_rate,
+      refilledUnrecordedMs: var_refilledUnrecordedMs,
+      anomalies: var_anomalies,
+    );
+  }
+
+  @protected
+  ServerFeederPortions sse_decode_server_feeder_portions(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_feeder = sse_decode_String(deserializer);
+    var var_portions = sse_decode_u_32(deserializer);
+    var var_uncertainPortions = sse_decode_u_32(deserializer);
+    return ServerFeederPortions(
+      feeder: var_feeder,
+      portions: var_portions,
+      uncertainPortions: var_uncertainPortions,
+    );
+  }
+
+  @protected
+  ServerFood sse_decode_server_food(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_brand = sse_decode_String(deserializer);
+    var var_name = sse_decode_String(deserializer);
+    var var_kcalPerKg = sse_decode_u_32(deserializer);
+    var var_bagGrams = sse_decode_u_32(deserializer);
+    return ServerFood(
+      id: var_id,
+      brand: var_brand,
+      name: var_name,
+      kcalPerKg: var_kcalPerKg,
+      bagGrams: var_bagGrams,
+    );
+  }
+
+  @protected
+  ServerFoodLeft sse_decode_server_food_left(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_gramsUsed = sse_decode_u_32(deserializer);
+    var var_gramsLeft = sse_decode_u_32(deserializer);
+    var var_gramsLeftLeast = sse_decode_u_32(deserializer);
+    var var_emptyAtMs = sse_decode_opt_box_autoadd_i_64(deserializer);
+    return ServerFoodLeft(
+      gramsUsed: var_gramsUsed,
+      gramsLeft: var_gramsLeft,
+      gramsLeftLeast: var_gramsLeftLeast,
+      emptyAtMs: var_emptyAtMs,
+    );
+  }
+
+  @protected
+  ServerFoodPeriod sse_decode_server_food_period(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_food = sse_decode_server_food(deserializer);
+    var var_fromMs = sse_decode_i_64(deserializer);
+    var var_toMs = sse_decode_opt_box_autoadd_i_64(deserializer);
+    return ServerFoodPeriod(food: var_food, fromMs: var_fromMs, toMs: var_toMs);
+  }
+
+  @protected
+  ServerInstall sse_decode_server_install(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_feeder = sse_decode_String(deserializer);
+    var var_version = sse_decode_u_32(deserializer);
+    var var_state = sse_decode_install_state(deserializer);
+    var var_written = sse_decode_u_32(deserializer);
+    var var_imageLen = sse_decode_u_32(deserializer);
+    var var_finishedMs = sse_decode_opt_box_autoadd_i_64(deserializer);
+    return ServerInstall(
+      id: var_id,
+      feeder: var_feeder,
+      version: var_version,
+      state: var_state,
+      written: var_written,
+      imageLen: var_imageLen,
+      finishedMs: var_finishedMs,
+    );
+  }
+
+  @protected
+  ServerIntakeDay sse_decode_server_intake_day(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_date = sse_decode_String(deserializer);
+    var var_weighed = sse_decode_opt_box_autoadd_weighed_intake(deserializer);
+    var var_targetPercent = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_estimate = sse_decode_bool(deserializer);
+    var var_unweighed = sse_decode_list_server_feeder_portions(deserializer);
+    return ServerIntakeDay(
+      date: var_date,
+      weighed: var_weighed,
+      targetPercent: var_targetPercent,
+      estimate: var_estimate,
+      unweighed: var_unweighed,
+    );
+  }
+
+  @protected
+  ServerIntakeFeeder sse_decode_server_intake_feeder(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_feeder = sse_decode_String(deserializer);
+    var var_weight = sse_decode_portion_weight(deserializer);
+    var var_shared = sse_decode_bool(deserializer);
+    return ServerIntakeFeeder(
+      feeder: var_feeder,
+      weight: var_weight,
+      shared: var_shared,
+    );
+  }
+
+  @protected
+  ServerLink sse_decode_server_link(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_url = sse_decode_String(deserializer);
+    var var_user = sse_decode_String(deserializer);
+    var var_tokenId = sse_decode_String(deserializer);
+    return ServerLink(url: var_url, user: var_user, tokenId: var_tokenId);
+  }
+
+  @protected
+  ServerNextMeal sse_decode_server_next_meal(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_atMs = sse_decode_i_64(deserializer);
+    var var_slot = sse_decode_u_8(deserializer);
+    var var_portions = sse_decode_u_8(deserializer);
+    return ServerNextMeal(
+      atMs: var_atMs,
+      slot: var_slot,
+      portions: var_portions,
+    );
+  }
+
+  @protected
+  ServerPet sse_decode_server_pet(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_name = sse_decode_String(deserializer);
+    var var_species = sse_decode_species(deserializer);
+    var var_birthDate = sse_decode_opt_String(deserializer);
+    var var_dailyKcal = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_feeders = sse_decode_list_String(deserializer);
+    return ServerPet(
+      id: var_id,
+      name: var_name,
+      species: var_species,
+      birthDate: var_birthDate,
+      dailyKcal: var_dailyKcal,
+      feeders: var_feeders,
+    );
+  }
+
+  @protected
+  ServerPetIntake sse_decode_server_pet_intake(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_pet = sse_decode_String(deserializer);
+    var var_zone = sse_decode_String(deserializer);
+    var var_dailyKcal = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_feeders = sse_decode_list_server_intake_feeder(deserializer);
+    var var_days = sse_decode_list_server_intake_day(deserializer);
+    var var_anomalies = sse_decode_list_server_anomaly(deserializer);
+    return ServerPetIntake(
+      pet: var_pet,
+      zone: var_zone,
+      dailyKcal: var_dailyKcal,
+      feeders: var_feeders,
+      days: var_days,
+      anomalies: var_anomalies,
+    );
+  }
+
+  @protected
+  ServerRefill sse_decode_server_refill(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_feeder = sse_decode_String(deserializer);
+    var var_atMs = sse_decode_i_64(deserializer);
+    var var_grams = sse_decode_u_32(deserializer);
+    var var_fullBag = sse_decode_bool(deserializer);
+    var var_food = sse_decode_opt_String(deserializer);
+    var var_user = sse_decode_String(deserializer);
+    return ServerRefill(
+      id: var_id,
+      feeder: var_feeder,
+      atMs: var_atMs,
+      grams: var_grams,
+      fullBag: var_fullBag,
+      food: var_food,
+      user: var_user,
+    );
+  }
+
+  @protected
+  ServerRefusal sse_decode_server_refusal(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ServerRefusal.values[inner];
+  }
+
+  @protected
+  ServerRole sse_decode_server_role(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ServerRole.values[inner];
+  }
+
+  @protected
+  ServerSinceRefill sse_decode_server_since_refill(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_portions = sse_decode_u_32(deserializer);
+    var var_uncertainPortions = sse_decode_u_32(deserializer);
+    var var_left = sse_decode_opt_box_autoadd_server_food_left(deserializer);
+    return ServerSinceRefill(
+      portions: var_portions,
+      uncertainPortions: var_uncertainPortions,
+      left: var_left,
+    );
+  }
+
+  @protected
+  ServerSnapshot sse_decode_server_snapshot(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_atMs = sse_decode_i_64(deserializer);
+    var var_live = sse_decode_bool(deserializer);
+    var var_card = sse_decode_card(deserializer);
+    return ServerSnapshot(atMs: var_atMs, live: var_live, card: var_card);
+  }
+
+  @protected
+  ServerUpdate sse_decode_server_update(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        return ServerUpdate_Opened();
+      case 1:
+        var var_resume = sse_decode_String(deserializer);
+        var var_event = sse_decode_box_autoadd_server_event(deserializer);
+        return ServerUpdate_Event(resume: var_resume, event: var_event);
+      case 2:
+        var var_error = sse_decode_opt_box_autoadd_server_error(deserializer);
+        return ServerUpdate_Closed(error: var_error);
+      default:
+        throw UnimplementedError('');
+    }
   }
 
   @protected
@@ -8035,6 +10767,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw UnimplementedError('');
     }
+  }
+
+  @protected
+  Species sse_decode_species(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return Species.values[inner];
   }
 
   @protected
@@ -8481,6 +11220,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  WeighedIntake sse_decode_weighed_intake(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_grams = sse_decode_u_32(deserializer);
+    var var_kcal = sse_decode_u_32(deserializer);
+    var var_uncertainGrams = sse_decode_u_32(deserializer);
+    var var_unknownFoodGrams = sse_decode_u_32(deserializer);
+    return WeighedIntake(
+      grams: var_grams,
+      kcal: var_kcal,
+      uncertainGrams: var_uncertainGrams,
+      unknownFoodGrams: var_unknownFoodGrams,
+    );
+  }
+
+  @protected
   WifiCredentials sse_decode_wifi_credentials(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_ssid = sse_decode_String(deserializer);
@@ -8632,6 +11386,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
+  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+    ServerSession self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+      (self as ServerSessionImpl).frbInternalSseEncode(move: true),
+      serializer,
+    );
+  }
+
+  @protected
+  void
   sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSetupDriver(
     SetupDriver self,
     SseSerializer serializer,
@@ -8749,6 +11516,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
+  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+    ServerSession self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+      (self as ServerSessionImpl).frbInternalSseEncode(move: false),
+      serializer,
+    );
+  }
+
+  @protected
+  void
   sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSetupDriver(
     SetupDriver self,
     SseSerializer serializer,
@@ -8853,6 +11633,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
+  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerServerSession(
+    ServerSession self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_usize(
+      (self as ServerSessionImpl).frbInternalSseEncode(move: null),
+      serializer,
+    );
+  }
+
+  @protected
+  void
   sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSetupDriver(
     SetupDriver self,
     SseSerializer serializer,
@@ -8908,6 +11701,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       self.setupAndSerialize(
         codec: SseCodec(
           decodeSuccessData: sse_decode_restore_update,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_StreamSink_server_update_Sse(
+    RustStreamSink<ServerUpdate> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_server_update,
           decodeErrorData: sse_decode_AnyhowException,
         ),
       ),
@@ -8978,6 +11788,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.label, serializer);
     sse_encode_list_known_feeder(self.feeders, serializer);
     sse_encode_appearance(self.appearance, serializer);
+    sse_encode_opt_box_autoadd_server_link(self.server, serializer);
   }
 
   @protected
@@ -9113,6 +11924,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_box_autoadd_fed_by(FedBy self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_fed_by(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_feed_rate(
+    FeedRate self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_feed_rate(self, serializer);
   }
 
   @protected
@@ -9368,6 +12188,123 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_server_command(
+    ServerCommand self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_command(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_server_command_outcome(
+    ServerCommandOutcome self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_command_outcome(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_server_entry(
+    ServerEntry self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_entry(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_server_error(
+    ServerError self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_error(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_server_event(
+    ServerEvent self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_event(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_server_food_left(
+    ServerFoodLeft self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_food_left(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_server_food_period(
+    ServerFoodPeriod self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_food_period(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_server_install(
+    ServerInstall self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_install(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_server_link(
+    ServerLink self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_link(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_server_next_meal(
+    ServerNextMeal self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_next_meal(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_server_refill(
+    ServerRefill self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_refill(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_server_since_refill(
+    ServerSinceRefill self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_since_refill(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_server_snapshot(
+    ServerSnapshot self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_snapshot(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_settings_changes(
     SettingsChanges self,
     SseSerializer serializer,
@@ -9485,6 +12422,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_update_info(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_weighed_intake(
+    WeighedIntake self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_weighed_intake(self, serializer);
   }
 
   @protected
@@ -9615,6 +12561,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_command_kind(CommandKind self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_command_state(CommandState self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_counters(Counters self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_counts(self.boot, serializer);
@@ -9712,6 +12670,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_feed_outcome(FeedOutcome self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_feed_rate(FeedRate self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.portions, serializer);
+    sse_encode_u_32(self.hours, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.gramsPerDay, serializer);
   }
 
   @protected
@@ -10274,6 +13240,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_install_state(InstallState self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_install_update(InstallUpdate self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     switch (self) {
@@ -10442,6 +13414,102 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putUint8List(self);
+  }
+
+  @protected
+  void sse_encode_list_server_anomaly(
+    List<ServerAnomaly> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_server_anomaly(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_server_entry(
+    List<ServerEntry> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_server_entry(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_server_feeder(
+    List<ServerFeeder> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_server_feeder(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_server_feeder_portions(
+    List<ServerFeederPortions> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_server_feeder_portions(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_server_food(
+    List<ServerFood> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_server_food(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_server_intake_day(
+    List<ServerIntakeDay> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_server_intake_day(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_server_intake_feeder(
+    List<ServerIntakeFeeder> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_server_intake_feeder(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_server_pet(
+    List<ServerPet> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_server_pet(item, serializer);
+    }
   }
 
   @protected
@@ -10698,6 +13766,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_feed_rate(
+    FeedRate? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_feed_rate(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_feed_refusal(
     FeedRefusal? self,
     SseSerializer serializer,
@@ -10835,6 +13916,123 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_server_command_outcome(
+    ServerCommandOutcome? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_server_command_outcome(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_server_error(
+    ServerError? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_server_error(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_server_food_left(
+    ServerFoodLeft? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_server_food_left(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_server_food_period(
+    ServerFoodPeriod? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_server_food_period(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_server_link(
+    ServerLink? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_server_link(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_server_next_meal(
+    ServerNextMeal? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_server_next_meal(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_server_refill(
+    ServerRefill? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_server_refill(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_server_since_refill(
+    ServerSinceRefill? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_server_since_refill(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_server_snapshot(
+    ServerSnapshot? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_server_snapshot(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_settings_view(
     SettingsView? self,
     SseSerializer serializer,
@@ -10936,6 +14134,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_u_8(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_weighed_intake(
+    WeighedIntake? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_weighed_intake(self, serializer);
     }
   }
 
@@ -11086,6 +14297,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_portion_weight(PortionWeight self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case PortionWeight_Calibration(portionMg: final portionMg):
+        sse_encode_i_32(0, serializer);
+        sse_encode_u_32(portionMg, serializer);
+      case PortionWeight_Uncalibrated():
+        sse_encode_i_32(1, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_portions(Portions self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_32(self.portions, serializer);
@@ -11192,6 +14415,420 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_resume(Resume self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_server_account(ServerAccount self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_String(self.name, serializer);
+    sse_encode_server_role(self.role, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.expiresMs, serializer);
+  }
+
+  @protected
+  void sse_encode_server_anomaly(ServerAnomaly self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case ServerAnomaly_Missed(
+        feeder: final feeder,
+        plan: final plan,
+        dueMs: final dueMs,
+        reason: final reason,
+      ):
+        sse_encode_i_32(0, serializer);
+        sse_encode_String(feeder, serializer);
+        sse_encode_u_8(plan, serializer);
+        sse_encode_i_64(dueMs, serializer);
+        sse_encode_box_autoadd_missed_reason(reason, serializer);
+      case ServerAnomaly_Uncertain(
+        feeder: final feeder,
+        feed: final feed,
+        atMs: final atMs,
+        requested: final requested,
+        completed: final completed,
+      ):
+        sse_encode_i_32(1, serializer);
+        sse_encode_String(feeder, serializer);
+        sse_encode_u_32(feed, serializer);
+        sse_encode_i_64(atMs, serializer);
+        sse_encode_u_8(requested, serializer);
+        sse_encode_u_8(completed, serializer);
+      case ServerAnomaly_Short(
+        feeder: final feeder,
+        feed: final feed,
+        atMs: final atMs,
+        requested: final requested,
+        completed: final completed,
+        outcome: final outcome,
+        reason: final reason,
+      ):
+        sse_encode_i_32(2, serializer);
+        sse_encode_String(feeder, serializer);
+        sse_encode_u_32(feed, serializer);
+        sse_encode_i_64(atMs, serializer);
+        sse_encode_u_8(requested, serializer);
+        sse_encode_u_8(completed, serializer);
+        sse_encode_feed_outcome(outcome, serializer);
+        sse_encode_feed_reason(reason, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_server_command(ServerCommand self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.key, serializer);
+    sse_encode_String(self.feeder, serializer);
+    sse_encode_command_kind(self.kind, serializer);
+    sse_encode_command_state(self.state, serializer);
+    sse_encode_opt_box_autoadd_server_command_outcome(self.outcome, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.feed, serializer);
+    sse_encode_i_64(self.sentMs, serializer);
+    sse_encode_i_64(self.updatedMs, serializer);
+  }
+
+  @protected
+  void sse_encode_server_command_outcome(
+    ServerCommandOutcome self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case ServerCommandOutcome_Done():
+        sse_encode_i_32(0, serializer);
+      case ServerCommandOutcome_Settings():
+        sse_encode_i_32(1, serializer);
+      case ServerCommandOutcome_Plans():
+        sse_encode_i_32(2, serializer);
+      case ServerCommandOutcome_Refused(refusal: final refusal):
+        sse_encode_i_32(3, serializer);
+        sse_encode_server_refusal(refusal, serializer);
+      case ServerCommandOutcome_Invited(
+        invite: final invite,
+        seconds: final seconds,
+      ):
+        sse_encode_i_32(4, serializer);
+        sse_encode_u_32(invite, serializer);
+        sse_encode_u_16(seconds, serializer);
+      case ServerCommandOutcome_Feeding(feed: final feed):
+        sse_encode_i_32(5, serializer);
+        sse_encode_u_32(feed, serializer);
+      case ServerCommandOutcome_Fed(
+        feed: final feed,
+        requested: final requested,
+        completed: final completed,
+        outcome: final outcome,
+        reason: final reason,
+      ):
+        sse_encode_i_32(6, serializer);
+        sse_encode_u_32(feed, serializer);
+        sse_encode_u_8(requested, serializer);
+        sse_encode_u_8(completed, serializer);
+        sse_encode_feed_outcome(outcome, serializer);
+        sse_encode_feed_reason(reason, serializer);
+      case ServerCommandOutcome_Unrecorded():
+        sse_encode_i_32(7, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_server_connection(
+    ServerConnection self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_server_entry(ServerEntry self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.epoch, serializer);
+    sse_encode_i_64(self.receivedMs, serializer);
+    sse_encode_history_entry(self.entry, serializer);
+  }
+
+  @protected
+  void sse_encode_server_error(ServerError self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_error_kind(self.kind, serializer);
+    sse_encode_String(self.message, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.retryAfterSeconds, serializer);
+  }
+
+  @protected
+  void sse_encode_server_error_kind(
+    ServerErrorKind self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_server_event(ServerEvent self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case ServerEvent_History(feeder: final feeder, entry: final entry):
+        sse_encode_i_32(0, serializer);
+        sse_encode_String(feeder, serializer);
+        sse_encode_box_autoadd_server_entry(entry, serializer);
+      case ServerEvent_Connection(
+        feeder: final feeder,
+        connection: final connection,
+      ):
+        sse_encode_i_32(1, serializer);
+        sse_encode_String(feeder, serializer);
+        sse_encode_server_connection(connection, serializer);
+      case ServerEvent_Command(command: final command):
+        sse_encode_i_32(2, serializer);
+        sse_encode_box_autoadd_server_command(command, serializer);
+      case ServerEvent_Install(install: final install):
+        sse_encode_i_32(3, serializer);
+        sse_encode_box_autoadd_server_install(install, serializer);
+      case ServerEvent_Resync():
+        sse_encode_i_32(4, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_server_event_page(
+    ServerEventPage self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_box_autoadd_u_32(self.epoch, serializer);
+    sse_encode_list_server_entry(self.entries, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.next, serializer);
+  }
+
+  @protected
+  void sse_encode_server_feeder(ServerFeeder self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_String(self.name, serializer);
+    sse_encode_String(self.identity, serializer);
+    sse_encode_client_role(self.role, serializer);
+    sse_encode_opt_String(self.address, serializer);
+    sse_encode_server_connection(self.connection, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.synced, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.epoch, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.archivedMs, serializer);
+  }
+
+  @protected
+  void sse_encode_server_feeder_detail(
+    ServerFeederDetail self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_feeder(self.feeder, serializer);
+    sse_encode_opt_box_autoadd_server_snapshot(self.status, serializer);
+    sse_encode_opt_box_autoadd_server_next_meal(self.nextMeal, serializer);
+  }
+
+  @protected
+  void sse_encode_server_feeder_food(
+    ServerFeederFood self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_box_autoadd_server_food_period(self.current, serializer);
+    sse_encode_opt_box_autoadd_server_refill(self.lastRefill, serializer);
+    sse_encode_portion_weight(self.weight, serializer);
+    sse_encode_opt_box_autoadd_server_since_refill(
+      self.sinceRefill,
+      serializer,
+    );
+    sse_encode_opt_box_autoadd_feed_rate(self.rate, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.refilledUnrecordedMs, serializer);
+    sse_encode_list_server_anomaly(self.anomalies, serializer);
+  }
+
+  @protected
+  void sse_encode_server_feeder_portions(
+    ServerFeederPortions self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.feeder, serializer);
+    sse_encode_u_32(self.portions, serializer);
+    sse_encode_u_32(self.uncertainPortions, serializer);
+  }
+
+  @protected
+  void sse_encode_server_food(ServerFood self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_String(self.brand, serializer);
+    sse_encode_String(self.name, serializer);
+    sse_encode_u_32(self.kcalPerKg, serializer);
+    sse_encode_u_32(self.bagGrams, serializer);
+  }
+
+  @protected
+  void sse_encode_server_food_left(
+    ServerFoodLeft self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.gramsUsed, serializer);
+    sse_encode_u_32(self.gramsLeft, serializer);
+    sse_encode_u_32(self.gramsLeftLeast, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.emptyAtMs, serializer);
+  }
+
+  @protected
+  void sse_encode_server_food_period(
+    ServerFoodPeriod self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_server_food(self.food, serializer);
+    sse_encode_i_64(self.fromMs, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.toMs, serializer);
+  }
+
+  @protected
+  void sse_encode_server_install(ServerInstall self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_String(self.feeder, serializer);
+    sse_encode_u_32(self.version, serializer);
+    sse_encode_install_state(self.state, serializer);
+    sse_encode_u_32(self.written, serializer);
+    sse_encode_u_32(self.imageLen, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.finishedMs, serializer);
+  }
+
+  @protected
+  void sse_encode_server_intake_day(
+    ServerIntakeDay self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.date, serializer);
+    sse_encode_opt_box_autoadd_weighed_intake(self.weighed, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.targetPercent, serializer);
+    sse_encode_bool(self.estimate, serializer);
+    sse_encode_list_server_feeder_portions(self.unweighed, serializer);
+  }
+
+  @protected
+  void sse_encode_server_intake_feeder(
+    ServerIntakeFeeder self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.feeder, serializer);
+    sse_encode_portion_weight(self.weight, serializer);
+    sse_encode_bool(self.shared, serializer);
+  }
+
+  @protected
+  void sse_encode_server_link(ServerLink self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.url, serializer);
+    sse_encode_String(self.user, serializer);
+    sse_encode_String(self.tokenId, serializer);
+  }
+
+  @protected
+  void sse_encode_server_next_meal(
+    ServerNextMeal self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_64(self.atMs, serializer);
+    sse_encode_u_8(self.slot, serializer);
+    sse_encode_u_8(self.portions, serializer);
+  }
+
+  @protected
+  void sse_encode_server_pet(ServerPet self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_String(self.name, serializer);
+    sse_encode_species(self.species, serializer);
+    sse_encode_opt_String(self.birthDate, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.dailyKcal, serializer);
+    sse_encode_list_String(self.feeders, serializer);
+  }
+
+  @protected
+  void sse_encode_server_pet_intake(
+    ServerPetIntake self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.pet, serializer);
+    sse_encode_String(self.zone, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.dailyKcal, serializer);
+    sse_encode_list_server_intake_feeder(self.feeders, serializer);
+    sse_encode_list_server_intake_day(self.days, serializer);
+    sse_encode_list_server_anomaly(self.anomalies, serializer);
+  }
+
+  @protected
+  void sse_encode_server_refill(ServerRefill self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_String(self.feeder, serializer);
+    sse_encode_i_64(self.atMs, serializer);
+    sse_encode_u_32(self.grams, serializer);
+    sse_encode_bool(self.fullBag, serializer);
+    sse_encode_opt_String(self.food, serializer);
+    sse_encode_String(self.user, serializer);
+  }
+
+  @protected
+  void sse_encode_server_refusal(ServerRefusal self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_server_role(ServerRole self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_server_since_refill(
+    ServerSinceRefill self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.portions, serializer);
+    sse_encode_u_32(self.uncertainPortions, serializer);
+    sse_encode_opt_box_autoadd_server_food_left(self.left, serializer);
+  }
+
+  @protected
+  void sse_encode_server_snapshot(
+    ServerSnapshot self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_64(self.atMs, serializer);
+    sse_encode_bool(self.live, serializer);
+    sse_encode_card(self.card, serializer);
+  }
+
+  @protected
+  void sse_encode_server_update(ServerUpdate self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case ServerUpdate_Opened():
+        sse_encode_i_32(0, serializer);
+      case ServerUpdate_Event(resume: final resume, event: final event):
+        sse_encode_i_32(1, serializer);
+        sse_encode_String(resume, serializer);
+        sse_encode_box_autoadd_server_event(event, serializer);
+      case ServerUpdate_Closed(error: final error):
+        sse_encode_i_32(2, serializer);
+        sse_encode_opt_box_autoadd_server_error(error, serializer);
+    }
   }
 
   @protected
@@ -11313,6 +14950,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(4, serializer);
         sse_encode_box_autoadd_bridge_error(error, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_species(Species self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
@@ -11683,6 +15326,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_weighed_intake(WeighedIntake self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.grams, serializer);
+    sse_encode_u_32(self.kcal, serializer);
+    sse_encode_u_32(self.uncertainGrams, serializer);
+    sse_encode_u_32(self.unknownFoodGrams, serializer);
+  }
+
+  @protected
   void sse_encode_wifi_credentials(
     WifiCredentials self,
     SseSerializer serializer,
@@ -11968,6 +15620,168 @@ class RestoreRunImpl extends RustOpaque implements RestoreRun {
   /// End the run. Once an offer may be out it ends uncertain, and nothing
   /// is sent again.
   void stop() => RustLib.instance.api.crateApiRestoreRestoreRunStop(that: this);
+}
+
+@sealed
+class ServerSessionImpl extends RustOpaque implements ServerSession {
+  // Not to be used by end users
+  ServerSessionImpl.frbInternalDcoDecode(List<dynamic> wire)
+    : super.frbInternalDcoDecode(wire, _kStaticData);
+
+  // Not to be used by end users
+  ServerSessionImpl.frbInternalSseDecode(BigInt ptr, int externalSizeOnNative)
+    : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
+
+  static final _kStaticData = RustArcStaticData(
+    rustArcIncrementStrongCount:
+        RustLib.instance.api.rust_arc_increment_strong_count_ServerSession,
+    rustArcDecrementStrongCount:
+        RustLib.instance.api.rust_arc_decrement_strong_count_ServerSession,
+    rustArcDecrementStrongCountPtr:
+        RustLib.instance.api.rust_arc_decrement_strong_count_ServerSessionPtr,
+  );
+
+  /// Who this phone's token speaks for.
+  Future<ServerAccount> account() =>
+      RustLib.instance.api.crateApiServerServerSessionAccount(that: this);
+
+  /// End every follow, now and later. The reads still work.
+  void close() =>
+      RustLib.instance.api.crateApiServerServerSessionClose(that: this);
+
+  Future<ServerFood> createFood({
+    required String brand,
+    required String name,
+    required int kcalPerKg,
+    required int bagGrams,
+  }) => RustLib.instance.api.crateApiServerServerSessionCreateFood(
+    that: this,
+    brand: brand,
+    name: name,
+    kcalPerKg: kcalPerKg,
+    bagGrams: bagGrams,
+  );
+
+  /// Add a pet; `birth_date` is `YYYY-MM-DD`.
+  Future<ServerPet> createPet({
+    required String name,
+    required Species species,
+    String? birthDate,
+    int? dailyKcal,
+  }) => RustLib.instance.api.crateApiServerServerSessionCreatePet(
+    that: this,
+    name: name,
+    species: species,
+    birthDate: birthDate,
+    dailyKcal: dailyKcal,
+  );
+
+  /// Delete a food no feeder's history names.
+  Future<void> deleteFood({required String id}) => RustLib.instance.api
+      .crateApiServerServerSessionDeleteFood(that: this, id: id);
+
+  Future<void> deletePet({required String id}) => RustLib.instance.api
+      .crateApiServerServerSessionDeletePet(that: this, id: id);
+
+  /// A page of `feeder`'s history after `after` in `epoch` (the server's
+  /// current epoch when `None`), at most `limit` (1-1000, default 100).
+  Future<ServerEventPage> events({
+    required String feeder,
+    int? epoch,
+    BigInt? after,
+    int? limit,
+  }) => RustLib.instance.api.crateApiServerServerSessionEvents(
+    that: this,
+    feeder: feeder,
+    epoch: epoch,
+    after: after,
+    limit: limit,
+  );
+
+  /// One feeder with its last status and next meal.
+  Future<ServerFeederDetail> feeder({required String id}) => RustLib
+      .instance
+      .api
+      .crateApiServerServerSessionFeeder(that: this, id: id);
+
+  /// The feeder's food, what is left, and how fast it goes.
+  Future<ServerFeederFood> feederFood({required String feeder}) => RustLib
+      .instance
+      .api
+      .crateApiServerServerSessionFeederFood(that: this, feeder: feeder);
+
+  Future<List<ServerFeeder>> feeders() =>
+      RustLib.instance.api.crateApiServerServerSessionFeeders(that: this);
+
+  /// Follow the server's live stream, after `last_event_id` when given
+  /// (the `resume` of the last event heard), until it ends or
+  /// [`Self::close`]: `updates` hears `Opened`, the events, and `Closed`
+  /// last. The stream is not opened again here; following again from the
+  /// last `resume` misses nothing the server still keeps.
+  Stream<ServerUpdate> follow({String? lastEventId}) => RustLib.instance.api
+      .crateApiServerServerSessionFollow(that: this, lastEventId: lastEventId);
+
+  Future<List<ServerFood>> foods() =>
+      RustLib.instance.api.crateApiServerServerSessionFoods(that: this);
+
+  /// The server's version, with no login: whether it answers at all.
+  Future<String> health() =>
+      RustLib.instance.api.crateApiServerServerSessionHealth(that: this);
+
+  /// What the app's file keeps of this session.
+  ServerLink link() =>
+      RustLib.instance.api.crateApiServerServerSessionLink(that: this);
+
+  /// Revoke this phone's token on the server and end every follow. The
+  /// phone's own keys on its feeders stay: it reaches them directly. A
+  /// token the server already stopped counts as revoked.
+  Future<void> logout() =>
+      RustLib.instance.api.crateApiServerServerSessionLogout(that: this);
+
+  /// A pet's intake over the last `days` (1-31, default 7).
+  Future<ServerPetIntake> petIntake({required String pet, int? days}) => RustLib
+      .instance
+      .api
+      .crateApiServerServerSessionPetIntake(that: this, pet: pet, days: days);
+
+  Future<List<ServerPet>> pets() =>
+      RustLib.instance.api.crateApiServerServerSessionPets(that: this);
+
+  /// The token's secret, for secure storage only.
+  String secret() =>
+      RustLib.instance.api.crateApiServerServerSessionSecret(that: this);
+
+  /// Replace a food's fields with these, as its edit form holds them.
+  Future<ServerFood> updateFood({
+    required String id,
+    required String brand,
+    required String name,
+    required int kcalPerKg,
+    required int bagGrams,
+  }) => RustLib.instance.api.crateApiServerServerSessionUpdateFood(
+    that: this,
+    id: id,
+    brand: brand,
+    name: name,
+    kcalPerKg: kcalPerKg,
+    bagGrams: bagGrams,
+  );
+
+  /// Replace a pet's fields with these, as its edit form holds them.
+  Future<ServerPet> updatePet({
+    required String id,
+    required String name,
+    required Species species,
+    String? birthDate,
+    int? dailyKcal,
+  }) => RustLib.instance.api.crateApiServerServerSessionUpdatePet(
+    that: this,
+    id: id,
+    name: name,
+    species: species,
+    birthDate: birthDate,
+    dailyKcal: dailyKcal,
+  );
 }
 
 @sealed

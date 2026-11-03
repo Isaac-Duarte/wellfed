@@ -8,6 +8,8 @@ import 'error.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+import 'server_views.dart';
+
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`
 
 /// This app's version, as its About screen says it.
@@ -39,17 +41,23 @@ class AppStore {
   final List<KnownFeeder> feeders;
   final Appearance appearance;
 
+  /// The owner's server this phone logged in to, if any. Its token's
+  /// secret is in secure storage, as the client secret is.
+  final ServerLink? server;
+
   const AppStore({
     required this.label,
     required this.feeders,
     required this.appearance,
+    this.server,
   });
 
   static Future<AppStore> default_() =>
       RustLib.instance.api.crateApiStoreAppStoreDefault();
 
   @override
-  int get hashCode => label.hashCode ^ feeders.hashCode ^ appearance.hashCode;
+  int get hashCode =>
+      label.hashCode ^ feeders.hashCode ^ appearance.hashCode ^ server.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -58,7 +66,8 @@ class AppStore {
           runtimeType == other.runtimeType &&
           label == other.label &&
           feeders == other.feeders &&
-          appearance == other.appearance;
+          appearance == other.appearance &&
+          server == other.server;
 }
 
 /// Which theme the app draws.

@@ -107,12 +107,14 @@ class AppState extends ChangeNotifier implements FeederBook {
   Appearance get appearance => _store.appearance;
 
   @override
-  Future<void> setAppearance(Appearance appearance) =>
-      _update((store) => AppStore(label: store.label, feeders: store.feeders, appearance: appearance));
+  Future<void> setAppearance(Appearance appearance) => _update(
+    (store) => AppStore(label: store.label, feeders: store.feeders, appearance: appearance, server: store.server),
+  );
 
   @override
-  Future<void> setLabel(String label) =>
-      _update((store) => AppStore(label: label, feeders: store.feeders, appearance: store.appearance));
+  Future<void> setLabel(String label) => _update(
+    (store) => AppStore(label: label, feeders: store.feeders, appearance: store.appearance, server: store.server),
+  );
 
   @override
   Future<void> remember(KnownFeeder feeder, {bool paired = false, bool keepName = false}) {
@@ -131,6 +133,7 @@ class AppState extends ChangeNotifier implements FeederBook {
           ),
         ],
         appearance: store.appearance,
+        server: store.server,
       );
     });
   }
@@ -144,6 +147,7 @@ class AppState extends ChangeNotifier implements FeederBook {
           if (feeder.identity != identity) feeder,
       ],
       appearance: store.appearance,
+      server: store.server,
     ),
   );
 
@@ -159,6 +163,7 @@ class AppState extends ChangeNotifier implements FeederBook {
             feeder,
       ],
       appearance: store.appearance,
+      server: store.server,
     ),
   );
 

@@ -25,6 +25,7 @@ mod frb_generated;
 pub mod install;
 pub mod requests;
 pub mod restore;
+mod server;
 pub mod session;
 mod today;
 mod trace;

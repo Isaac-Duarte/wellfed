@@ -42,7 +42,7 @@ src/server/wellfed-server    the binary: config, axum routers per resource, the 
                               supervisor
 src/server/wellfed-server-testkit  a temp store, a fixed clock and random, the simulator harness, signed test releases, the server in process
 src/app/                      Flutter app, plus a thin flutter_rust_bridge crate (wellfed-app-bridge) over wellfed-client,
-                              wellfed-connect and wellfed-model, and wellfed-api once it has server screens
+                              wellfed-connect and wellfed-model, and wellfed-server-client and wellfed-api for the server
 ```
 
 The map is the target. Today the server is `wellfed-api`, `wellfed-store`, `wellfed-mirror`, `wellfed-releases`, `wellfed-service` and `wellfed-server`, with `wellfed-server-client` and `wellfed-server-testkit` beside them. The app talks to feeders only, not yet to a server. There is no web UI, and none is planned.
@@ -82,6 +82,9 @@ wellfed-server ─► wellfed-service ─┬─► wellfed-mirror ─┬─► w
 
 wellfed (the CLI) ─► wellfed-server-client ─► wellfed-api
           └─► wellfed-connect (the device API, as today)
+
+wellfed-app-bridge (the app) ─► wellfed-server-client, wellfed-api
+          └─► wellfed-connect (the device API)
 ```
 
 | Crate | May depend on (workspace crates) |
@@ -99,8 +102,8 @@ wellfed (the CLI) ─► wellfed-server-client ─► wellfed-api
 
 - **SQL stays in the store.** No crate but `wellfed-store` depends on sqlx, in its tests included.
 - **HTTP stays in the binary.** Nothing below `wellfed-server` links axum, or any of axum's own crates (`axum-core`, `axum-extra`), by any path.
-- **The arrows as drawn.** Each server crate's normal and build dependencies on workspace crates come from its row above. A crate outside the server takes a server crate only where drawn: the CLI takes `wellfed-server-client`, and the app's `wellfed-app-bridge` takes `wellfed-api`. Dev-dependencies are exempt, since a test may build a simulated feeder or a whole server. Rows may name crates that don't exist yet, so each is checked from its first manifest. Changing a row changes this table and the check together.
-- **`wellfed-api` on Android.** Its own dependencies come from an allow-list (`jiff`, `wellfed-model`, `serde`, `utoipa`, `uuid`). `make check` builds no Android target.
+- **The arrows as drawn.** Each server crate's normal and build dependencies on workspace crates come from its row above. A crate outside the server takes a server crate only where drawn: the CLI takes `wellfed-server-client`, and the app's `wellfed-app-bridge` takes `wellfed-server-client` and `wellfed-api`. Dev-dependencies are exempt, since a test may build a simulated feeder or a whole server. Rows may name crates that don't exist yet, so each is checked from its first manifest. Changing a row changes this table and the check together.
+- **`wellfed-api` on Android.** Its own dependencies come from an allow-list (`jiff`, `wellfed-model`, `serde`, `utoipa`, `uuid`). `make check` builds no Android target; `make check-app`'s APK build does, `wellfed-server-client`'s reqwest and rustls included.
 - **Files stay small.** A Rust source under `src/server/` has at most 400 lines, or 600 under a `tests/` directory. A `tests.rs` beside the code it tests keeps 400. Generated files (`openapi.json`, the sqlx metadata) aren't counted.
 
 Beyond the [Rust standard](../development/rust.md), the server keeps a few rules. If a change wants SQL in a handler or axum in the service, move the code rather than adding the dependency. The server maps service errors to `problem+json` in one `IntoResponse`, and there is no `anyhow` below the binary. IDs are newtypes, roles and metrics are enums, and generations are their own type. Every server dependency's version is pinned in `[workspace.dependencies]`, and a crate's manifest only picks features.

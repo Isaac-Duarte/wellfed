@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use wellfed_formats::private;
 
 use crate::api::error::{BridgeError, ErrorKind};
+pub use crate::api::server_views::ServerLink;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,6 +18,9 @@ pub struct AppStore {
     pub label: String,
     pub feeders: Vec<KnownFeeder>,
     pub appearance: Appearance,
+    /// The owner's server this phone logged in to, if any. Its token's
+    /// secret is in secure storage, as the client secret is.
+    pub server: Option<ServerLink>,
 }
 
 /// Which theme the app draws.

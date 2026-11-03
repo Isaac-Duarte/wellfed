@@ -84,9 +84,11 @@ const ARROWS: [(&str, &[&str]); 8] = [
 
 /// The only edges into a server crate from a crate outside the server: the
 /// CLI speaks the server's API through its typed client, and the app's
-/// flutter_rust_bridge crate hands `wellfed-api`'s types to Dart.
-const INTO_SERVER: [(&str, &str); 2] = [
+/// flutter_rust_bridge crate does too, handing `wellfed-api`'s values to
+/// Dart.
+const INTO_SERVER: [(&str, &str); 3] = [
     ("wellfed", "wellfed-server-client"),
+    ("wellfed-app-bridge", "wellfed-server-client"),
     ("wellfed-app-bridge", API),
 ];
 
@@ -482,6 +484,7 @@ mod tests {
         edges.extend([
             ("wellfed-mirror", "axum-core", Use::Links),
             ("wellfed-app-bridge", "wellfed-api", Use::Links),
+            ("wellfed-app-bridge", "wellfed-server-client", Use::Links),
         ]);
         let mut members = MEMBERS.to_vec();
         members.push("wellfed-app-bridge");

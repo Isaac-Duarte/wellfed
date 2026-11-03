@@ -4,7 +4,7 @@ name = "wellfed-app-bridge"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "The Android app's Rust half over flutter_rust_bridge: the client key, BLE setup and LAN recovery, and device API sessions through wellfed-connect"
+description = "The Android app's Rust half over flutter_rust_bridge: the client key, BLE setup and LAN recovery, device API sessions through wellfed-connect, and the owner's server through wellfed-server-client"
 publish.workspace = true
 
 [lib]
@@ -20,11 +20,13 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
 uuid = { workspace = true, features = ["v4"] }
+wellfed-api.workspace = true
 wellfed-client.workspace = true
 wellfed-connect.workspace = true
 wellfed-formats.workspace = true
 wellfed-install.workspace = true
 wellfed-model.workspace = true
+wellfed-server-client.workspace = true
 wellfed-session.workspace = true
 
 [dev-dependencies]
@@ -37,6 +39,7 @@ tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 wellfed-feeder-sim = { workspace = true, features = ["harness"] }
 wellfed-install = { workspace = true, features = ["fixtures"] }
 wellfed-signing.workspace = true
+wellfed-server-testkit.workspace = true
 
 [lints]
 workspace = true

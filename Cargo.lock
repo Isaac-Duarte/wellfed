@@ -5038,6 +5038,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "uuid",
+ "wellfed-api",
  "wellfed-client",
  "wellfed-connect",
  "wellfed-core",
@@ -5045,6 +5046,8 @@ dependencies = [
  "wellfed-formats",
  "wellfed-install",
  "wellfed-model",
+ "wellfed-server-client",
+ "wellfed-server-testkit",
  "wellfed-session",
  "wellfed-signing",
 ]
