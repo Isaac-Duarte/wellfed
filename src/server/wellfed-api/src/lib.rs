@@ -33,6 +33,7 @@ mod stock;
 mod stream;
 mod tokens;
 mod users;
+mod views;
 
 use std::fmt;
 
@@ -82,12 +83,16 @@ pub use stock::{
 pub use stream::{FeederSample, StreamEvent, StreamQuery};
 pub use tokens::{BEARER, CreatedToken, NewToken, Token, TokenId};
 pub use users::{NewUser, UserPatch};
+pub use views::{
+    FOOD_VIEW_DAYS, FeedAnomaly, FoodLeft, INTAKE_DAYS, INTAKE_DAYS_MAX, IntakeDay, IntakeFeeder,
+    IntakeQuery, PetIntake, PortionWeight,
+};
 pub use wellfed_model::{
     Blocked, ClientRole, CurrentUnit, Desiccant, EnrollPath, EventBody, EventKind, FeedOutcome,
-    FeedReason, Food as FoodStats, FoodLevel, Generation, Hex, MealReminder, MetricKind, NextMeal,
-    PLANS, Plan, Plans, Power, Readiness, SampleValue, Settings, SettingsPatch, Source, Stats,
-    StatsSection, Status as FeederStatus, Trace, TraceEntry, TraceSummary, Weekday, Weekdays,
-    WifiSource, Window,
+    FeedReason, Food as FoodStats, FoodLevel, Generation, Hex, MealReminder, MetricKind,
+    MissedReason, NextMeal, PLANS, Plan, Plans, Power, Readiness, SampleValue, Settings,
+    SettingsPatch, Source, Stats, StatsSection, Status as FeederStatus, Trace, TraceEntry,
+    TraceSummary, Weekday, Weekdays, WifiSource, Window,
 };
 
 /// The prefix every resource lives under.

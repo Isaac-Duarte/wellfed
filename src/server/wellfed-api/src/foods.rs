@@ -3,14 +3,14 @@
 //!
 //! A feeder serves one food at a time. Setting another starts a new period
 //! from that moment, so a past feed's calories use the food it served. A
-//! portion is 1/12 cup (provisional), so a portion weighs
-//! `grams_per_cup / 12`.
+//! portion weighs what the feeder's calibration says, or 1/12 cup
+//! (`grams_per_cup / 12`, provisional) on a feeder without one.
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{FeederId, FoodId, RefillId, UserId};
+use crate::{FeedAnomaly, FeederId, FoodId, FoodLeft, PortionWeight, RefillId, UserId};
 
 /// The grams a cup holds when a food does not say: a typical dry kibble.
 pub const GRAMS_PER_CUP: u32 = 110;
@@ -71,13 +71,29 @@ pub struct FoodPeriod {
     pub to: Option<Timestamp>,
 }
 
-/// A feeder's food as it stands.
+/// A feeder's food as it stands: what it serves, what the hopper has left,
+/// and what went wrong lately (the last [`FOOD_VIEW_DAYS`] days).
+///
+/// [`FOOD_VIEW_DAYS`]: crate::FOOD_VIEW_DAYS
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct FeederFood {
     /// The food it serves now; `None` before an owner sets one.
     pub current: Option<FoodPeriod>,
     /// The newest refill recorded.
     pub last_refill: Option<Refill>,
+    /// How the view weighed the feeder's portions.
+    pub weight: PortionWeight,
+    /// What the hopper has left; `None` before a refill is recorded.
+    pub left: Option<FoodLeft>,
+    /// What the feeder delivered a day lately, confirmed portions only;
+    /// `None` until the server holds a day of its feeds.
+    pub grams_per_day: Option<u32>,
+    /// "Refilled?": the food beam saw food again after reading low, with
+    /// no refill recorded since, at the reading that saw it. It does not
+    /// reset the count: recording the refill does.
+    pub refilled_unrecorded: Option<Timestamp>,
+    /// Missed, uncertain and short feeds lately, oldest first.
+    pub anomalies: Vec<FeedAnomaly>,
 }
 
 /// `PUT /feeders/{id}/food`: the food a feeder serves from now on.

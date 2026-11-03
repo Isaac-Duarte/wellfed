@@ -265,6 +265,8 @@ pub enum Invalid {
     GramsPerCup,
     #[error("a refill is 1-100000 g")]
     RefillGrams,
+    #[error("an intake view covers 1-{} days", wellfed_api::INTAKE_DAYS_MAX)]
+    IntakeDays,
     #[error("a sample span's `from` is before its `to`")]
     SampleSpan,
     #[error("an SSID is 1-32 bytes")]

@@ -139,6 +139,46 @@ impl Store {
             .collect()
     }
 
+    /// The events of `kind` received in `from..to`, of every epoch, oldest
+    /// first by the server's clock (the feeder's may have been invalid),
+    /// each with its epoch: the kinds no projection holds, such as missed
+    /// meals, read by time.
+    pub async fn events_received(
+        &self,
+        id: FeederId,
+        kind: EventKind,
+        from: Timestamp,
+        to: Timestamp,
+    ) -> Result<Vec<(u32, EventRow)>> {
+        let (from, to) = (millis(from), millis(to));
+        let kind = kind.code();
+        let rows = sqlx::query!(
+            r#"SELECT epoch, seq, at_s, received_ms, kind, body FROM events
+               WHERE feeder_id = ? AND kind = ? AND received_ms >= ? AND received_ms < ?
+               ORDER BY received_ms, epoch, seq"#,
+            id.0,
+            kind,
+            from,
+            to,
+        )
+        .fetch_all(&self.reader)
+        .await?;
+
+        rows.into_iter()
+            .map(|row| {
+                let epoch = u32::try_from(row.epoch).map_err(|_| Error::Corrupt("event epoch"))?;
+                let event = EventRow {
+                    seq: from_i64(row.seq, "event sequence")?,
+                    at: seconds(row.at_s)?,
+                    received: timestamp(row.received_ms)?,
+                    kind: EventKind::from_code(&row.kind).ok_or(Error::Corrupt("event kind"))?,
+                    body: row.body,
+                };
+                Ok((epoch, event))
+            })
+            .collect()
+    }
+
     /// The gaps of `epoch` that end after `after` and at or before
     /// `through`.
     pub async fn gaps(

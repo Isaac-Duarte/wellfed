@@ -3,12 +3,24 @@
 
 use reqwest::{Method, StatusCode};
 use wellfed_api::{
-    FeederId, NewPet, NewWeight, PageQuery, Pet, PetId, PetPatch, Weight, WeightId, WeightPage,
+    FeederId, IntakeQuery, NewPet, NewWeight, PageQuery, Pet, PetId, PetIntake, PetPatch, Weight,
+    WeightId, WeightPage,
 };
 
 use crate::{Client, Error, decode, expect_status};
 
 impl Client {
+    /// What the pet ate on each of the last `query.days` household days,
+    /// against its target, and what went wrong on its feeders.
+    pub async fn pet_intake(&self, pet: PetId, query: &IntakeQuery) -> Result<PetIntake, Error> {
+        let response = self
+            .api(Method::GET, &format!("/pets/{pet}/intake"))
+            .query(query)
+            .send()
+            .await?;
+        decode(response, StatusCode::OK).await
+    }
+
     /// Every pet, by name.
     pub async fn pets(&self) -> Result<Vec<Pet>, Error> {
         let response = self.api(Method::GET, "/pets").send().await?;

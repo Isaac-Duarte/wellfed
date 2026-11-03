@@ -1200,7 +1200,7 @@
         "tags": [
           "foods"
         ],
-        "summary": "The food the feeder serves now, and its newest refill.",
+        "summary": "The food the feeder serves now, its newest refill, and what the hopper\nhas left by the count since: grams per portion from the feeder's\ncalibration (or 1/12 cup of the food without one, as `weight` says),\nportions since the refill, its rate and when it runs out. Also a refill\nthe food beam saw that nobody recorded (\"refilled?\", which resets\nnothing), and the missed, uncertain and short feeds of the last week.",
         "operationId": "feeder_food",
         "parameters": [
           {
@@ -3870,6 +3870,75 @@
           },
           "404": {
             "description": "not_found: the pet, or the feeder does not serve it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pets/{id}/intake": {
+      "get": {
+        "tags": [
+          "pets"
+        ],
+        "summary": "What the pet ate on each of the last `days` household days, today last,\nin grams and calories against its daily target, from every feeder that\nserved it; and the missed, uncertain and short feeds on those feeders.\nA feeder other pets share has its intake split evenly, as an estimate.",
+        "operationId": "intake",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/PetId"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "description": "The household days to cover, ending today (1-31, default 7).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PetIntake"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid: `days` out of range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
             "content": {
               "application/json": {
                 "schema": {
@@ -6678,6 +6747,137 @@
           }
         }
       },
+      "FeedAnomaly": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A plan's occurrence did not run, and never will.",
+            "required": [
+              "feeder",
+              "plan",
+              "due",
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "due": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "feeder": {
+                "$ref": "#/components/schemas/FeederId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "missed"
+                ]
+              },
+              "plan": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "reason": {
+                "$ref": "#/components/schemas/MissedReason"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The feeder stopped without recording a result: anything up to\n`requested` may have dropped, `completed` of it confirmed.",
+            "required": [
+              "feeder",
+              "feed",
+              "at",
+              "requested",
+              "completed",
+              "kind"
+            ],
+            "properties": {
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "completed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "feed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "feeder": {
+                "$ref": "#/components/schemas/FeederId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "uncertain"
+                ]
+              },
+              "requested": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The feed ended with fewer portions than it asked for (a cancel is a\nperson's choice, so it is not one).",
+            "required": [
+              "feeder",
+              "feed",
+              "at",
+              "requested",
+              "completed",
+              "outcome",
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "completed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "feed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "feeder": {
+                "$ref": "#/components/schemas/FeederId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "short"
+                ]
+              },
+              "outcome": {
+                "$ref": "#/components/schemas/FeedOutcome"
+              },
+              "reason": {
+                "$ref": "#/components/schemas/FeedReason"
+              },
+              "requested": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "description": "A feed that went wrong, or a plan's meal that never ran."
+      },
       "FeedFault": {
         "type": "object",
         "description": "A feed that ended on a fault: its `Fed` event has the rest.",
@@ -7038,8 +7238,19 @@
       },
       "FeederFood": {
         "type": "object",
-        "description": "A feeder's food as it stands.",
+        "description": "A feeder's food as it stands: what it serves, what the hopper has left,\nand what went wrong lately (the last [`FOOD_VIEW_DAYS`] days).\n\n[`FOOD_VIEW_DAYS`]: crate::FOOD_VIEW_DAYS",
+        "required": [
+          "weight",
+          "anomalies"
+        ],
         "properties": {
+          "anomalies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedAnomaly"
+            },
+            "description": "Missed, uncertain and short feeds lately, oldest first."
+          },
           "current": {
             "oneOf": [
               {
@@ -7051,6 +7262,15 @@
               }
             ]
           },
+          "grams_per_day": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "What the feeder delivered a day lately, confirmed portions only;\n`None` until the server holds a day of its feeds.",
+            "minimum": 0
+          },
           "last_refill": {
             "oneOf": [
               {
@@ -7061,6 +7281,29 @@
                 "type": "null"
               }
             ]
+          },
+          "left": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FoodLeft",
+                "description": "What the hopper has left; `None` before a refill is recorded."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "refilled_unrecorded": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "\"Refilled?\": the food beam saw food again after reading low, with\nno refill recorded since, at the reading that saw it. It does not\nreset the count: recording the refill does."
+          },
+          "weight": {
+            "$ref": "#/components/schemas/PortionWeight",
+            "description": "How the view weighed the feeder's portions."
           }
         }
       },
@@ -7440,6 +7683,63 @@
       "FoodId": {
         "type": "string",
         "format": "uuid"
+      },
+      "FoodLeft": {
+        "type": "object",
+        "description": "What the hopper has left by the count since the last refill: what that\nrefill put in, less what the feeder delivered since. Food left before\nthe refill is not known, so it is not counted.",
+        "required": [
+          "portions",
+          "uncertain_portions",
+          "unweighed_portions",
+          "grams_used",
+          "grams_left",
+          "grams_left_least"
+        ],
+        "properties": {
+          "empty_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When `grams_left` runs out at `grams_per_day`; `None` without a rate."
+          },
+          "grams_left": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The refill's grams less those used, at least 0.",
+            "minimum": 0
+          },
+          "grams_left_least": {
+            "type": "integer",
+            "format": "int32",
+            "description": "What is left should every uncertain portion have dropped.",
+            "minimum": 0
+          },
+          "grams_used": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "portions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Portions the feedback sensor confirmed since the refill.",
+            "minimum": 0
+          },
+          "uncertain_portions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Portions uncertain feeds may have dropped beyond those confirmed.",
+            "minimum": 0
+          },
+          "unweighed_portions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Confirmed portions with no weight: no calibration and no food set.",
+            "minimum": 0
+          }
+        }
       },
       "FoodLevel": {
         "type": "string",
@@ -8017,6 +8317,89 @@
         ],
         "description": "What an install writes into bank 1."
       },
+      "IntakeDay": {
+        "type": "object",
+        "description": "One household day of a pet's intake.",
+        "required": [
+          "date",
+          "grams",
+          "kcal",
+          "estimate",
+          "uncertain_grams",
+          "unknown_food_grams",
+          "unweighed_portions"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "estimate": {
+            "type": "boolean",
+            "description": "Some of it came from a feeder other pets share, split evenly: the\nfeeder cannot tell who ate."
+          },
+          "grams": {
+            "type": "integer",
+            "format": "int32",
+            "description": "What the feeders delivered for the pet: confirmed portions only.",
+            "minimum": 0
+          },
+          "kcal": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Of `grams` with a known food.",
+            "minimum": 0
+          },
+          "target_percent": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`kcal` as a percentage of the daily target; `None` without one.",
+            "minimum": 0
+          },
+          "uncertain_grams": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Grams more uncertain feeds may have dropped for the pet.",
+            "minimum": 0
+          },
+          "unknown_food_grams": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Of `grams`, those dropped with no food set: no calories counted.",
+            "minimum": 0
+          },
+          "unweighed_portions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Confirmed portions on the pet's feeders that could not be weighed\n(no calibration, no food set), counted whole rather than split.",
+            "minimum": 0
+          }
+        }
+      },
+      "IntakeFeeder": {
+        "type": "object",
+        "description": "A feeder an intake view counted, and how.",
+        "required": [
+          "feeder",
+          "weight",
+          "shared"
+        ],
+        "properties": {
+          "feeder": {
+            "$ref": "#/components/schemas/FeederId"
+          },
+          "shared": {
+            "type": "boolean",
+            "description": "It served other pets too during these days, so its intake is split\nbetween them as an estimate."
+          },
+          "weight": {
+            "$ref": "#/components/schemas/PortionWeight"
+          }
+        }
+      },
       "Job": {
         "type": "string",
         "description": "The server's background jobs.",
@@ -8592,6 +8975,56 @@
         "type": "string",
         "format": "uuid"
       },
+      "PetIntake": {
+        "type": "object",
+        "description": "What a pet ate, a household day at a time.",
+        "required": [
+          "pet",
+          "zone",
+          "feeders",
+          "days",
+          "anomalies"
+        ],
+        "properties": {
+          "anomalies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedAnomaly"
+            },
+            "description": "What went wrong on those feeders during these days, oldest first."
+          },
+          "daily_kcal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The pet's daily target, as it stands now.",
+            "minimum": 0
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntakeDay"
+            },
+            "description": "Oldest first, today last."
+          },
+          "feeders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntakeFeeder"
+            },
+            "description": "The feeders that served the pet during these days."
+          },
+          "pet": {
+            "$ref": "#/components/schemas/PetId"
+          },
+          "zone": {
+            "type": "string",
+            "description": "The zone the days are in: the household's, or `UTC` before one."
+          }
+        }
+      },
       "PetPatch": {
         "type": "object",
         "description": "A change to a pet; an absent field is left as it is, and `null` clears\nan optional one.",
@@ -8878,6 +9311,47 @@
             "minimum": 0
           }
         }
+      },
+      "PortionWeight": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The feeder's own calibration, as the server last read it, for every\nfeed: the feeder keeps one calibration, not its history.",
+            "required": [
+              "portion_mg",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "calibration"
+                ]
+              },
+              "portion_mg": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "No calibration read: each portion is taken as 1/12 cup of the food\nthe feed served (its `grams_per_cup`). A feed with no food set is\nnot weighed.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "twelfth_cup"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "How a view weighed a feeder's portions."
       },
       "Power": {
         "type": "object",

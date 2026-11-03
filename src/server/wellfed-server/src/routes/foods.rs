@@ -118,7 +118,12 @@ pub(crate) async fn delete_food(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// The food the feeder serves now, and its newest refill.
+/// The food the feeder serves now, its newest refill, and what the hopper
+/// has left by the count since: grams per portion from the feeder's
+/// calibration (or 1/12 cup of the food without one, as `weight` says),
+/// portions since the refill, its rate and when it runs out. Also a refill
+/// the food beam saw that nobody recorded ("refilled?", which resets
+/// nothing), and the missed, uncertain and short feeds of the last week.
 #[utoipa::path(
     get,
     path = "/feeders/{id}/food",
