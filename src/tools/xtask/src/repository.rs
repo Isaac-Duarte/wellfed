@@ -16,6 +16,8 @@ use regex::Regex;
 // Top-level directories that hold local inputs or agent state.
 const UNPUBLISHED: [&str; 6] = ["private", ".venv", "target", ".aws", ".codex", ".agents"];
 const EVIDENCE: [&str; 5] = ["bin", "pcap", "pcapng", "img", "apk"];
+/// The Home Assistant integration's Python, the one Python under `src/`.
+const HOME_ASSISTANT: &str = "src/integrations/homeassistant/";
 const TEXT: [&str; 11] = [
     "md", "rs", "py", "toml", "json", "yml", "txt", "c", "h", "ts", "svg",
 ];
@@ -177,7 +179,9 @@ fn check_file(root: &Path, name: &str, summary: &mut Summary) {
 
     let extension = relative.extension().and_then(|e| e.to_str()).unwrap_or("");
     // The Python tools were ported to Rust and removed (October 23, 2026).
-    if extension == "py" && first == "src" {
+    // Home Assistant's integration is the one Python left: Home Assistant
+    // loads only Python, and its protocol logic is the Rust bridge's.
+    if extension == "py" && first == "src" && !name.starts_with(HOME_ASSISTANT) {
         summary.errors.push(format!(
             "{name}: first-party tools are Rust; no Python sources under src/"
         ));
@@ -570,6 +574,7 @@ mod tests {
             "private/x.json",
             "dump.bin",
             "src/tools/a.py",
+            "src/integrations/homeassistant/custom_components/wellfed/sensor.py",
             "src/tools/b.rs",
             "src/tools/c.rs",
             "docs/page.md",

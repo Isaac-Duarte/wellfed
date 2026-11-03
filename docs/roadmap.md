@@ -66,7 +66,7 @@ This page tracks what works today and what comes next. It covers the replacement
 | Desktop app (macOS and Linux) | Not started | The same app as Android, including the install. |
 | iPhone app | Not started | The same app, for setup and daily use. Whether it can install is an open question, so you would install from Android or a computer. |
 | Windows app | Not started | Waits for a machine to test it on. |
-| Home Assistant | Not started | Paused. Planned as an integration over the server's API. |
+| Home Assistant | Experimental | A proof of concept that pairs with the feeder directly, with no server: a feed button and action, the child lock, and the feeder's state. Tested in simulation only. See [the integration](../src/integrations/homeassistant/README.md). |
 
 ## Development hardware
 

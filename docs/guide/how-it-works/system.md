@@ -16,7 +16,7 @@ flowchart LR
   cli["The CLI: Linux"] -->|encrypted session over Wi-Fi| feeder
   server["The server: optional, a proof of concept"] -.->|encrypted session| feeder
   cli -.->|HTTP| server
-  ha["Home Assistant: paused"] -.->|the server's HTTP API| server
+  ha["Home Assistant: a proof of concept"] -.->|encrypted session over Wi-Fi| feeder
   router["Your router: the time, by default"] --> feeder
 ```
 
@@ -86,9 +86,9 @@ The server adopts a feeder with an invite, and stores everything the feeder repo
 
 The app will go through a server first once it can connect to one, and straight to the feeder when the server is down. That's a design, not something that runs today. A retry never crosses paths: a feed whose answer was lost on one path is never resent on the other, since that could feed twice. [Two paths, one feed](../../server/README.md#two-paths-one-feed) explains it.
 
-## Home Assistant, maybe later
+## Home Assistant
 
-Home Assistant is paused until the server has proven itself on a real feeder. The route is chosen: an integration that calls the server's HTTP API, with one request id per press, so a replayed automation shouldn't feed twice. So it would need the server, but no code on the feeder and no feeder key of its own. Nothing exists yet.
+Home Assistant pairs with the feeder by an invite, as a second phone does, and holds its own session. It needs no server and no code on the feeder. Its session runs in the same Rust as the app's and the CLI's, so each press goes out once under its own request id, and a feed whose answer was lost is reported, never resent. It's a proof of concept that has run against the simulated feeder only. [The integration](../../../src/integrations/homeassistant/README.md) covers what it offers and how to install it.
 
 ## What this doesn't protect against
 
@@ -103,4 +103,5 @@ Home Assistant is paused until the server has proven itself on a real feeder. Th
 - **Observed, October 28 and 29, 2026.** Plans ran on one research feeder with no server, and a plan due with no clock held. The server adopted the same feeder by invite, and kept its history whole across a server restart, a power cut and a Wi-Fi drop.
 - **Observed, October 27, 2026.** Three time polls against a responder on the bench's network were used, about 17 minutes apart. The bench's responder isn't a home router, and no router has been tested.
 - **Modeled, October 24 to 27, 2026.** Server feeds, accounts, release installs and the stock backup ran against the simulated feeder. The clock's expiry after a long uptime has run only in host tests.
-- **Design, October 23 to 31, 2026.** Home Assistant's route, the app's path through a server, and that the server doesn't install from stock are the owner's decisions, in [product architecture](../../firmware/product-architecture.md).
+- **Modeled, November 3, 2026.** Home Assistant paired, fed and set the lock against the simulated feeder.
+- **Design, October 23 to November 3, 2026.** Home Assistant's route, the app's path through a server, and that the server doesn't install from stock are the owner's decisions, in [product architecture](../../firmware/product-architecture.md).

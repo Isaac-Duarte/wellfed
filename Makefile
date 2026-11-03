@@ -1,4 +1,4 @@
-.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app app-goldens app-installer-input sqlx-prepare server-dist server-image check-server-release
+.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant app-goldens app-installer-input sqlx-prepare server-dist server-image check-server-release
 
 help:
 	@echo "check: formatting, Clippy, Rust tests, cross-builds, simulator, repository checks"
@@ -7,6 +7,7 @@ help:
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
 	@echo "check-web: the site and docs site: lint, format, licenses, types, unit tests, build, then Playwright (needs Node and pnpm)"
 	@echo "check-app: the Android app's bindings and tokens unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, and a debug APK (needs the pinned Flutter)"
+	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, Ruff, and its tests against the simulator (needs uv)"
 	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
 	@echo "sqlx-prepare: regenerate the server store's query metadata (.sqlx/) after changing a query or migration"
@@ -186,3 +187,21 @@ server-image:
 check-server-release:
 	WELLFED_RELEASE_SERVER=$(CURDIR)/$(SERVER_DIST)/wellfed-server-$$(uname -m)-unknown-linux-musl cargo nextest run --locked -p wellfed-server --test release
 	WELLFED_RELEASE_IMAGE=$(SERVER_IMAGE) WELLFED_RELEASE_RUNTIME=$(CONTAINER) cargo nextest run --locked -p wellfed-server --test release --run-ignored only
+
+# The Home Assistant integration (src/integrations/homeassistant/). Its Rust
+# bridge's own tests run in `check-rust`, without the PyO3 module; this lints
+# the module, builds the wheel into a venv of pinned test dependencies, and
+# runs Home Assistant's tests against a simulator and the CLI they start.
+HA = src/integrations/homeassistant
+HA_VENV = target/homeassistant-venv
+check-homeassistant:
+	cargo clippy --locked -p wellfed-homeassistant --features python --all-targets -- -D warnings
+	cargo clippy --locked -p wellfed-homeassistant --features python --lib -- -D warnings $(PRODUCTION_LINTS)
+	test -x $(HA_VENV)/bin/python || uv venv --python 3.13 $(HA_VENV)
+	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install -r $(HA)/tests/requirements.txt
+	$(HA_VENV)/bin/ruff check $(HA)
+	$(HA_VENV)/bin/ruff format --check $(HA)
+	cargo build --locked -p wellfed -p wellfed-feeder-sim
+	$(HA_VENV)/bin/maturin build --locked --release -m $(HA)/bridge/Cargo.toml -o target/homeassistant-wheels
+	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install --reinstall target/homeassistant-wheels/wellfed_homeassistant-0.1.0-*.whl
+	cd $(HA) && WELLFED_BIN_DIR=$(CURDIR)/target/debug $(CURDIR)/$(HA_VENV)/bin/python -m pytest -q -p no:cacheprovider

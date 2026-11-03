@@ -61,7 +61,7 @@ Most of this is design. What has been built and observed is on the [roadmap](../
 - **App and server together.** When a server is configured, the app goes through it first. It goes straight to the feeder on the LAN only when the server is down, and an uncertain write never switches path ([two paths, one feed](../server/README.md#two-paths-one-feed)). Going app-direct only was rejected: no remote access, and each person's actions would reach the audit log only through the feeder.
 - **Alerts** are planned for the app and aren't designed yet ([roadmap](../roadmap.md), [deferred](#deferred)).
 - **Remote access** goes through a reverse proxy in front of the server, or the owner's VPN ([deferred](#deferred)).
-- **Home Assistant is paused**, with its route chosen ([below](#home-assistant)).
+- **Home Assistant pairs with the feeder directly**, as its own client ([below](#home-assistant)).
 
 ## Components
 
@@ -72,11 +72,12 @@ Most of this is design. What has been built and observed is on the [roadmap](../
       │   └───────────────────────────────────►│ feeder │◄──────
       │ HTTP                                   └────────┘
       ▼                                            ▲
-  wellfed-server (optional) ── Noise stream ──────┘
+  wellfed-server (optional) ── Noise stream ──────┤
       history store, release fetching, release installs
-      ▲
-      │ HTTP
-  the CLI, and later a Home Assistant integration
+      ▲                                            │
+      │ HTTP                                       │
+  the CLI                                          │
+  Home Assistant ─────────── Noise stream ─────────┘
 ```
 
 In code:
@@ -88,6 +89,7 @@ In code:
 | Product runtime | `src/product/wellfed-feeder-runtime` | The product's stores on the SDK runtime: the settings writer and its mailboxes |
 | Firmware | `src/firmware/wellfed/feeder` | The PLAF103's wiring, and the feeding owner stepped in the loop |
 | Client core | `wellfed-client` | The sans-IO protocol logic every client shares |
+| Home Assistant | `src/integrations/homeassistant` | The integration's Python, and its PyO3 bridge over `wellfed-connect` |
 | Server | `wellfed-server` | The owner's server |
 
 Some detail on each:
@@ -215,12 +217,15 @@ The goal is that anyone can do anything with their feeder's data. The server kee
 
 ## Home Assistant
 
-Paused by the owner, until the server has proven itself on a real feeder. When it resumes, it is a custom integration that calls the server's HTTP API, in a repository of its own, since this one holds no Python under `src/`. So it needs a server, but no code on the feeder and no feeder key of its own.
+A custom integration that pairs with the feeder as an ordinary device API client, by an invite, and holds one session to it. It needs no server and no code on the feeder. Its Python is Home Assistant's UI and glue only: the session runs in Rust, in `wellfed-connect` and `wellfed-client` through a PyO3 bridge, so Home Assistant, the app and the CLI share one implementation. It lives in [`src/integrations/homeassistant`](../../src/integrations/homeassistant/README.md), the one Python under `src/`.
 
-- **One press, one feed.** Each press carries one `Idempotency-Key`. An uncertain feed is reported as uncertain and never retried, and reconnects and automation replays can't feed twice.
-- **Least access.** It uses the narrowest token the server can give it.
+- **One press, one feed.** Each press goes out once, under a fresh request id. A feed with no session open is not sent. A feed whose answer was lost is reported as uncertain and never retried; its `Fed` event settles it.
+- **Least access.** It joins as a member, by an invite the owner makes.
+- **Rejected: through the server's HTTP API.** The route chosen on October 30. It would make Home Assistant need a server, which most owners won't run, and Home Assistant already lives on the LAN with the feeder.
 - **Rejected: the ESPHome native API on the feeder.** It reimplements an unofficial protocol that changes with Home Assistant releases, and it spends firmware RAM.
 - **Rejected: MQTT discovery through `wellfed-server`.** It adds a broker and a second protocol, and MQTT can deliver a command twice, so a feed would need its own protection against duplicates.
+- **Rejected: Matter on the feeder.** Its C++ stack would not fit the firmware's flash and RAM headroom or its task slots, it needs a second BLE commissioning path, and Matter has no feeder device type, so a feed would look like an on/off switch.
+- **Its cost:** one of the feeder's four client slots, held while Home Assistant runs.
 
 ## Deferred
 
@@ -240,7 +245,7 @@ Paused by the owner, until the server has proven itself on a real feeder. When i
 
 ## Evidence
 
-- **Design:** the decisions above are the owner's, recorded on October 23, 2026, with the app-and-server path decided on October 26, the "not automatic" setup rule on October 24, the frontends, the dropped web UI, notifications and the Home Assistant route on October 30, and that the server is not an installer on October 31.
+- **Design:** the decisions above are the owner's, recorded on October 23, 2026, with the app-and-server path decided on October 26, the "not automatic" setup rule on October 24, the frontends, the dropped web UI, notifications and the Home Assistant route on October 30, that the server is not an installer on October 31, and Home Assistant's direct pairing on November 3.
 - **Observed:** a Wi-Fi association held every task, a priority-4 one included, for 0.45–0.72 s on October 25 ([resource budget](resource-budget.md#scheduling-gaps-across-wi-fi-rejoins)).
 - **Observed:** PA18 rests HIGH and reads LOW for about 1.17 s at each rotor mark, one mark per portion. During a 3 s empty drive, channel 4 read a scaled maximum of 166 and a mean of 64 ([motor pulse](motor-pulse.md)).
 - **Observed:** the task-slot limit was found in another session's captures (`fw44-simon-01`).

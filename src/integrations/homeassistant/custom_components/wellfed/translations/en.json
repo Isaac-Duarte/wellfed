@@ -1,0 +1,50 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pair a Wellfed feeder",
+        "description": "Make an invite on a paired client (`wellfed invite --role member`, or People in the app) and paste it here within 10 minutes. Home Assistant joins as its own client; it needs no server.",
+        "data": {
+          "invite": "Invite",
+          "address": "Address"
+        },
+        "data_description": {
+          "invite": "The `wellfed-invite:` text, single use.",
+          "address": "The feeder's IP address. Leave empty to find it on the network."
+        }
+      }
+    },
+    "error": {
+      "invalid_invite": "That is not a Wellfed invite.",
+      "join_failed": "The feeder did not accept the invite. It may have expired or been used already, so make a new one."
+    },
+    "abort": {
+      "already_configured": "This feeder is already paired."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "food_low": { "name": "Food low" }
+    },
+    "button": {
+      "feed": { "name": "Feed one portion" }
+    },
+    "sensor": {
+      "last_fed": { "name": "Last fed" },
+      "desiccant": { "name": "Desiccant days left" }
+    },
+    "switch": {
+      "child_lock": { "name": "Child lock" }
+    }
+  },
+  "services": {
+    "feed": {
+      "name": "Feed",
+      "description": "Dispense portions now. Sent once: a feed whose answer is lost is reported, never retried.",
+      "fields": {
+        "device_id": { "name": "Feeder", "description": "The feeder to feed from." },
+        "portions": { "name": "Portions", "description": "Portions to dispense, 1 to 48." }
+      }
+    }
+  }
+}
