@@ -56,7 +56,7 @@ The Home Assistant integration in `src/integrations/homeassistant/` is the only 
 - **Python moves values; Rust decides.** Sessions, invites, writes, settlement, release checks and installs live in the `wellfed-homeassistant` bridge. The integration reads its typed classes and never parses the wire or retries a write.
 - **Generated stub.** `bridge/wellfed_homeassistant.pyi` is generated from the module and committed with the change that caused it; mypy strict checks the integration against it.
 - **Translated and typed.** Ruff, `mypy --strict`, and a translation key on every name, state and error the user sees.
-- **Releases.** Agents build and check the release machinery (`make homeassistant-wheels`, `.github/workflows/homeassistant.yml`) but never publish to PyPI, create repositories or push tags. The owner does those.
+- **Releases.** Agents build and check the release wheels (`make homeassistant-wheels`) but never publish to PyPI, create repositories or push tags. The owner does those.
 
 ## Compatibility
 

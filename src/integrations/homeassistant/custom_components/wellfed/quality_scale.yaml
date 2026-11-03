@@ -12,7 +12,7 @@ rules:
   config-flow: done
   dependency-transparency:
     status: todo
-    comment: The wheel is built by CI from this repository; the owner publishes it to PyPI.
+    comment: The wheels are built from this repository with make homeassistant-wheels; the owner publishes them to PyPI.
   docs-actions: done
   docs-high-level-description: done
   docs-installation-instructions: done

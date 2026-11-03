@@ -61,22 +61,14 @@ All of this lives in the Rust bridge, so the integration, the app and the CLI sh
 
 The version is the bridge crate's (`bridge/Cargo.toml`). The wheel takes it from there, and `custom_components/wellfed/manifest.json` repeats it as its `version` and as the `wellfed-homeassistant==` requirement. A test in `bridge/tests/version.rs` fails when they disagree.
 
-`.github/workflows/homeassistant.yml` runs the checks on every push. A `homeassistant-v<version>` tag also builds the wheels and the sdist, publishes them to PyPI by trusted publishing, and pushes the integration with a generated `hacs.json` and the owner guide as its README to the mirror repository, `Isaac-Duarte/wellfed-homeassistant`, where it tags and releases `v<version>`. HACS installs from those releases.
-
 To cut a release:
 
 1. Bump the version in `bridge/Cargo.toml` and both places in `manifest.json`, then run `make check` and `make check-homeassistant`.
-2. Merge to `master`, and check the workflow passes there.
-3. Tag the merge `homeassistant-v<version>` and push the tag.
+2. Run `make homeassistant-wheels`. It writes every wheel and the sdist to `target/homeassistant-wheels/release/`.
+3. The owner uploads them to PyPI (`uv publish target/homeassistant-wheels/release/*`), and publishes `custom_components/wellfed` with the [owner guide](../../../docs/guide/home-assistant.md) as its README to the HACS repository, `Isaac-Duarte/wellfed-homeassistant`, tagged and released `v<version>`. HACS installs from those releases.
 
-The owner's steps, once, before the first tag:
+Contributors and agents build and check releases. Only the owner publishes, creates repositories or pushes a release tag.
 
-1. Create the `wellfed-homeassistant` project on PyPI with this repository's workflow `homeassistant.yml` and the `pypi` environment as its trusted publisher.
-2. Create the `pypi` environment in this repository.
-3. Create the mirror repository, add a deploy key with write access, and store its private half as the `HOMEASSISTANT_MIRROR_KEY` secret here.
-4. Store a token that may create releases in the mirror as `HOMEASSISTANT_MIRROR_TOKEN`.
-
-Contributors and agents build and check all of this. Only the owner publishes, creates repositories or pushes a release tag.
 
 ## Limits
 
