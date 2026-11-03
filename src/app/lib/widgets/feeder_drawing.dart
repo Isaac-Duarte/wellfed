@@ -211,12 +211,35 @@ class _Laid extends StatelessWidget {
           children: [
             figure,
             const SizedBox(height: Space.s2),
-            Wrap(
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: Space.s4,
-              children: [for (final callout in drawing.callouts) _Listed(callout, style: style)],
-            ),
+            // Labels that do nothing read as one line of words; any that act
+            // keep a tap target each.
+            if (drawing.callouts.every((callout) => callout.onTap == null))
+              Text.rich(
+                TextSpan(
+                  children: [
+                    for (final (index, callout) in drawing.callouts.indexed) ...[
+                      if (index > 0)
+                        TextSpan(
+                          text: '\u00a0\u00a0·  ',
+                          style: style.copyWith(color: context.colors.textMuted),
+                        ),
+                      // Breaks only between labels, never inside one.
+                      TextSpan(
+                        text: callout.text.replaceAll(' ', '\u00a0'),
+                        style: _labelStyle(context.colors, callout, style),
+                      ),
+                    ],
+                  ],
+                ),
+                textAlign: TextAlign.center,
+              )
+            else
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: Space.s4,
+                children: [for (final callout in drawing.callouts) _Listed(callout, style: style)],
+              ),
           ],
         );
       },

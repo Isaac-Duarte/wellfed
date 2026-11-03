@@ -10,9 +10,9 @@ import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
-import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/pending.dart';
+import 'package:wellfed/widgets/settings_list.dart';
 
 /// Change one setting, against the generation the screen shows. A change
 /// asked while another is out waits in Rust and goes on that one's generation.
@@ -187,82 +187,5 @@ class SettingsTab extends StatelessWidget {
     if (sure != true || !context.mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
     await feeder.forgetHere();
-  }
-}
-
-/// A labelled panel of rows, with the room around it every section shares.
-class SettingsSection extends StatelessWidget {
-  const SettingsSection(this.label, this.child, {super.key, this.last = false});
-
-  final String label;
-  final Widget child;
-  final bool last;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.only(bottom: last ? 0 : Space.s5),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: Space.s1, bottom: Space.s2),
-          child: SectionLabel(label),
-        ),
-        Panel(child: child),
-      ],
-    ),
-  );
-}
-
-class SettingsTile extends StatelessWidget {
-  const SettingsTile({super.key, required this.first, required this.child, this.onTap});
-
-  final bool first;
-  final Widget child;
-  final VoidCallback? onTap;
-
-  @override
-  // A node of its own: with no tap to tell them apart, as offline, every row
-  // on the panel would merge into one.
-  Widget build(BuildContext context) => Semantics(
-    container: true,
-    child: InkWell(
-      onTap: onTap,
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 60),
-        padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: Space.s3),
-        decoration: BoxDecoration(
-          border: first ? null : Border(top: BorderSide(color: context.colors.line)),
-        ),
-        child: child,
-      ),
-    ),
-  );
-}
-
-/// A name, and what it stands at under it.
-class SettingsWords extends StatelessWidget {
-  const SettingsWords(this.name, [this.note, Key? key]) : super(key: key);
-
-  final String name;
-  final String? note;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeTokens c = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(name, style: TextStyle(fontSize: 15, color: c.text)),
-        if (note case final note?) ...[
-          const SizedBox(height: 2),
-          Text(
-            note,
-            style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
-          ),
-        ],
-      ],
-    );
   }
 }

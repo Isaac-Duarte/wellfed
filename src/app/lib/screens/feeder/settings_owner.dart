@@ -5,7 +5,6 @@ import 'package:wellfed/screens/feeder/clock_portion.dart';
 import 'package:wellfed/screens/feeder/diagnostics.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/people.dart';
-import 'package:wellfed/screens/feeder/settings_tab.dart';
 import 'package:wellfed/screens/feeder/today.dart' show clockWords;
 import 'package:wellfed/screens/feeder/updates.dart';
 import 'package:wellfed/screens/feeder/wifi.dart';
@@ -16,6 +15,7 @@ import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/settings_list.dart';
 
 class SettingsOwnerSection extends StatefulWidget {
   const SettingsOwnerSection({super.key, required this.feeder});
@@ -141,16 +141,7 @@ class _Link extends StatelessWidget {
   final bool first;
 
   @override
-  Widget build(BuildContext context) => SettingsTile(
-    first: first,
-    onTap: () => open(screen),
-    child: Row(
-      children: [
-        Expanded(child: SettingsWords(name, note)),
-        StrokeIcon(Glyph.chevron, size: 20, color: context.colors.textMuted),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) => SettingsLink(name, note, first: first, onTap: () => open(screen));
 }
 
 /// Ask, then restart. The feeder refuses a restart while a feed runs; one

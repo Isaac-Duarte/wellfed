@@ -12,6 +12,7 @@ import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/settings_list.dart';
 
 const sourceUrl = 'https://github.com/Isaac-Duarte/wellfed';
 const issuesUrl = '$sourceUrl/issues';
@@ -101,8 +102,11 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
         body: ListView(
           padding: const EdgeInsets.all(Space.s4),
           children: [
-            const SectionLabel('Appearance'),
-            const SizedBox(height: Space.s2),
+            // Indented as each settings section's label is.
+            const Padding(
+              padding: EdgeInsets.only(left: Space.s1, bottom: Space.s2),
+              child: SectionLabel('Appearance'),
+            ),
             SegmentedButton<Appearance>(
               segments: const [
                 ButtonSegment(value: Appearance.system, label: Text('System')),
@@ -112,21 +116,15 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
               selected: {book.appearance},
               onSelectionChanged: (chosen) => unawaited(book.setAppearance(chosen.first)),
             ),
-            const SizedBox(height: Space.s4),
-            const SectionLabel('This phone'),
-            const SizedBox(height: Space.s2),
-            Panel(
-              child: Column(
+            const SizedBox(height: Space.s5),
+            SettingsSection(
+              'This phone',
+              Column(
                 children: [
-                  ListTile(
-                    title: const Text('Name on feeders'),
-                    subtitle: Text(book.label),
-                    trailing: StrokeIcon(Glyph.chevron, size: 20, color: c.textMuted),
-                    onTap: () => unawaited(_rename()),
-                  ),
-                  ListTile(
-                    title: const Text('About Wellfed'),
-                    trailing: StrokeIcon(Glyph.chevron, size: 20, color: c.textMuted),
+                  SettingsLink('Name on feeders', book.label, first: true, onTap: () => unawaited(_rename())),
+                  SettingsLink(
+                    'About Wellfed',
+                    null,
                     onTap: () => unawaited(
                       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const AboutScreen())),
                     ),
@@ -134,23 +132,31 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: Space.s4),
-            const SectionLabel('Firmware backups'),
-            const SizedBox(height: Space.s2),
-            Panel(
-              child: Column(
+            SettingsSection(
+              'Firmware backups',
+              last: true,
+              Column(
                 children: [
                   if (_backups.state.isEmpty)
-                    ListTile(
-                      title: Text('None yet', style: TextStyle(color: c.textMuted)),
+                    SettingsTile(
+                      first: true,
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text('None yet', style: TextStyle(fontSize: 15, color: c.textMuted)),
+                      ),
                     ),
-                  for (final (feeder, path) in _backups.state)
-                    ListTile(
-                      title: Text(feeder.name),
-                      trailing: IconButton(
-                        tooltip: "Share ${feeder.name}'s backup",
-                        icon: const Icon(Icons.share_outlined),
-                        onPressed: () => unawaited(_backups.share(path)),
+                  for (final (index, (feeder, path)) in _backups.state.indexed)
+                    SettingsTile(
+                      first: index == 0,
+                      child: Row(
+                        children: [
+                          Expanded(child: SettingsWords(feeder.name)),
+                          IconButton(
+                            tooltip: "Share ${feeder.name}'s backup",
+                            icon: Icon(Icons.share_outlined, color: c.textMuted),
+                            onPressed: () => unawaited(_backups.share(path)),
+                          ),
+                        ],
                       ),
                     ),
                 ],

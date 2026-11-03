@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:wellfed/screens/feeder/settings_tab.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
@@ -9,6 +8,7 @@ import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/network_picker.dart';
 import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/settings_list.dart';
 
 /// Change the feeder's Wi-Fi (10.4). The credentials are stored for its next
 /// join, and it rejoins only on a restart, so saving them is followed by one.

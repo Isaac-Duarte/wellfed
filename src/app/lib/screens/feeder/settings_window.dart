@@ -7,6 +7,7 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/pending.dart';
+import 'package:wellfed/widgets/settings_list.dart';
 import 'package:wellfed/widgets/when.dart';
 
 /// What a window comes to, in words.
