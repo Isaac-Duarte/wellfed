@@ -124,6 +124,7 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
                 invite: feeder::invite(&sim, ClientRole::Server).await,
                 name: "kitchen".into(),
                 address: Some(sim.address.to_string()),
+                phone_key: None,
             })
             .await
             .unwrap()
