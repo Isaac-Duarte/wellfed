@@ -85,6 +85,7 @@ async fn household(sim: &Running) -> (TestServer, Client) {
             name: "Dry".into(),
             kcal_per_kg: 3600,
             bag_grams: 2000,
+            grams_per_cup: 110,
         })
         .await
         .unwrap();
@@ -317,10 +318,13 @@ fn a_csv_archive_has_a_header_and_a_record_per_row() {
             .1;
         let foods = String::from_utf8(foods.clone()).unwrap();
         let lines: Vec<&str> = foods.split_terminator("\r\n").collect();
-        assert_eq!(lines[0], "id,brand,name,kcal_per_kg,bag_grams,created_ms");
+        assert_eq!(
+            lines[0],
+            "id,brand,name,kcal_per_kg,bag_grams,grams_per_cup,created_ms"
+        );
         assert_eq!(lines.len(), 2);
         assert!(
-            lines[1].contains(",\"Acme, \"\"Fine\"\" Foods\",Dry,3600,2000,"),
+            lines[1].contains(",\"Acme, \"\"Fine\"\" Foods\",Dry,3600,2000,110,"),
             "{}",
             lines[1]
         );

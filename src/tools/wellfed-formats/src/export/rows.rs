@@ -462,6 +462,7 @@ pub struct Food {
     pub name: String,
     pub kcal_per_kg: i64,
     pub bag_grams: i64,
+    pub grams_per_cup: i64,
     pub created_ms: i64,
 }
 

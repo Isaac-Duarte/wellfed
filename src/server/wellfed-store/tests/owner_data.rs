@@ -45,6 +45,7 @@ fn food(n: u128, bag_grams: u32) -> Food {
         name: format!("recipe {n}"),
         kcal_per_kg: 3600,
         bag_grams,
+        grams_per_cup: 110,
     }
 }
 

@@ -34,7 +34,7 @@ use std::time::Duration;
 
 use tokio::task::LocalSet;
 use uuid::Uuid;
-use wellfed_api::{Credentials, ErrorCode, EventBody, Role, Setup, User, UserId};
+use wellfed_api::{Credentials, ErrorCode, Role, Setup, User, UserId};
 use wellfed_server_client::StatusCode;
 
 pub use server::TestServer;
@@ -42,15 +42,6 @@ pub use service::{TempStore, TestService, config};
 
 /// How long a test waits for something the server does on its own.
 pub const WAIT: Duration = Duration::from_secs(10);
-
-/// An event's body as the mirror stores it, the feeder's own encoding,
-/// for a test that writes history into the store with no feeder behind it.
-pub fn stored_body(body: EventBody) -> Vec<u8> {
-    let mut raw = [0; 64];
-    let body = wellfed_proto::api::EventBody::from(body);
-    let len = wellfed_proto::encode(&body, &mut raw).expect("an event body fits 64 bytes");
-    raw[..len].to_vec()
-}
 
 /// Run `test` on a current-thread runtime inside a [`LocalSet`], where the
 /// simulator's tasks run.

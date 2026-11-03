@@ -3,16 +3,17 @@
 //!
 //! A feeder serves one food at a time. Setting another starts a new period
 //! from that moment, so a past feed's calories use the food it served. A
-//! portion weighs what the feeder's own calibration says; a food carries
-//! no portion size of its own.
+//! portion is 1/12 cup (provisional), so a portion weighs
+//! `grams_per_cup / 12`.
 
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{
-    FeedAnomaly, FeedRate, FeederId, FoodId, PortionWeight, RefillId, SinceRefill, UserId,
-};
+use crate::{FeederId, FoodId, RefillId, UserId};
+
+/// The grams a cup holds when a food does not say: a typical dry kibble.
+pub const GRAMS_PER_CUP: u32 = 110;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Food {
@@ -25,6 +26,8 @@ pub struct Food {
     pub kcal_per_kg: u32,
     /// A full bag's weight (1-100000 g): what a full-bag refill adds.
     pub bag_grams: u32,
+    /// What a cup of it weighs (1-1000 g).
+    pub grams_per_cup: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -33,6 +36,14 @@ pub struct NewFood {
     pub name: String,
     pub kcal_per_kg: u32,
     pub bag_grams: u32,
+    /// 110 g when absent.
+    #[serde(default = "grams_per_cup")]
+    #[schema(default = 110)]
+    pub grams_per_cup: u32,
+}
+
+fn grams_per_cup() -> u32 {
+    GRAMS_PER_CUP
 }
 
 /// A change to a food; an absent field is left as it is. A change applies
@@ -47,6 +58,8 @@ pub struct FoodPatch {
     pub kcal_per_kg: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bag_grams: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grams_per_cup: Option<u32>,
 }
 
 /// A span of time a feeder served one food: from `from` until `to`, the
@@ -58,32 +71,13 @@ pub struct FoodPeriod {
     pub to: Option<Timestamp>,
 }
 
-/// A feeder's food as it stands: what it serves, what the hopper has left,
-/// and what went wrong lately (the last [`FOOD_VIEW_DAYS`] days).
-///
-/// [`FOOD_VIEW_DAYS`]: crate::FOOD_VIEW_DAYS
+/// A feeder's food as it stands.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct FeederFood {
     /// The food it serves now; `None` before an owner sets one.
     pub current: Option<FoodPeriod>,
     /// The newest refill recorded.
     pub last_refill: Option<Refill>,
-    /// How the view weighed the feeder's portions: by its calibration, or
-    /// not at all before the owner calibrates it, when the view counts in
-    /// portions only.
-    pub weight: PortionWeight,
-    /// What the feeder delivered since the newest refill; `None` before
-    /// one is recorded.
-    pub since_refill: Option<SinceRefill>,
-    /// What the feeder delivered lately, confirmed portions only; `None`
-    /// until the server holds a day of its feeds.
-    pub rate: Option<FeedRate>,
-    /// "Refilled?": the food beam saw food again after reading low, with
-    /// no refill recorded since, at the reading that saw it. It does not
-    /// reset the count: recording the refill does.
-    pub refilled_unrecorded: Option<Timestamp>,
-    /// Missed, uncertain and short feeds lately, oldest first.
-    pub anomalies: Vec<FeedAnomaly>,
 }
 
 /// `PUT /feeders/{id}/food`: the food a feeder serves from now on.
@@ -136,6 +130,14 @@ pub struct RefillPage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cup_is_110_grams_unless_the_food_says() {
+        let food: NewFood =
+            serde_json::from_str(r#"{"brand":"B","name":"N","kcal_per_kg":3600,"bag_grams":2000}"#)
+                .unwrap();
+        assert_eq!(food.grams_per_cup, 110);
+    }
 
     #[test]
     fn a_refill_names_its_kind() {

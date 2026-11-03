@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id: Uuid\", brand, name, kcal_per_kg, bag_grams\n               FROM foods ORDER BY brand, name, id",
+  "query": "SELECT id AS \"id: Uuid\", brand, name, kcal_per_kg, bag_grams, grams_per_cup\n               FROM foods ORDER BY brand, name, id",
   "describe": {
     "columns": [
       {
@@ -57,6 +57,17 @@
             "name": "bag_grams"
           }
         }
+      },
+      {
+        "name": "grams_per_cup",
+        "ordinal": 5,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "foods",
+            "name": "grams_per_cup"
+          }
+        }
       }
     ],
     "parameters": {
@@ -67,8 +78,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "dd2077ee69c99fcd44e836b493af420411e614af2c5c427568f0334ebdf88726"
+  "hash": "368c884ac1288989fba073b28703362288f91ac2b1746ca2c8b03d257a108fc2"
 }

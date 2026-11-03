@@ -263,7 +263,7 @@ impl Snapshot {
             Table::Foods => rows(
                 sqlx::query_as!(
                     Food,
-                    r#"SELECT id AS "id: Uuid", brand, name, kcal_per_kg, bag_grams,
+                    r#"SELECT id AS "id: Uuid", brand, name, kcal_per_kg, bag_grams, grams_per_cup,
                               created_ms
                        FROM foods ORDER BY id"#
                 )

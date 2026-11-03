@@ -55,6 +55,7 @@ fn kibble(name: &str) -> NewFood {
         name: name.into(),
         kcal_per_kg: 3600,
         bag_grams: 2000,
+        grams_per_cup: 110,
     }
 }
 

@@ -134,7 +134,6 @@ fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(pets::assign_feeder, pets::unassign_feeder))
         .routes(routes!(pets::weights, pets::add_weight))
         .routes(routes!(pets::delete_weight))
-        .routes(routes!(pets::intake))
         .routes(routes!(foods::foods, foods::create_food))
         .routes(routes!(foods::food, foods::update_food, foods::delete_food))
         .routes(routes!(foods::feeder_food, foods::set_feeder_food))
