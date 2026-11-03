@@ -22,7 +22,7 @@ use wellfed_homeassistant::api::{
     Written,
 };
 use wellfed_homeassistant::feeder::{Feeder, Target};
-use wellfed_homeassistant::key::{ClientKey, invite_feeder, join};
+use wellfed_homeassistant::key::{ClientKey, invite_feeder, join, join_member};
 use wellfed_model::{
     Answer, ClientRole, Generation, Op, PLANS, Plan, Pushed, SettingsPatch, Weekdays,
 };
@@ -329,16 +329,45 @@ fn a_write_while_the_feeder_is_gone_is_not_sent() {
 }
 
 #[test]
-fn a_member_s_owner_only_write_is_never_sent() {
+fn a_member_sets_the_portion_weight() {
     let (sim, key) = joined();
     let feeder = session(&sim, key, sim.address);
     state_where(&feeder, |_| true);
 
-    assert_eq!(feeder.reboot(), Written::not_sent(NotSent::Forbidden));
+    assert_eq!(feeder.set_portion_weight(9_500), Written::done());
+    state_where(&feeder, |state| state.portion_mg == Some(9_500));
     assert_eq!(
-        feeder.set_portion_weight(9_000),
-        Written::not_sent(NotSent::Forbidden)
+        feeder.set_portion_weight(999),
+        Written::not_sent(NotSent::Invalid)
     );
+}
+
+#[test]
+fn an_owner_invite_s_key_removes_itself() {
+    let sim = Threaded::start(*Keypair::from_secret(OWNER).public());
+    let role = ClientRole::Owner;
+    let Answer::Invite(invite) = owner(&sim, &Op::CreateInvite { role }) else {
+        panic!("no invite");
+    };
+    let text = Invite {
+        feeder: sim.identity,
+        id: invite.id,
+        secret: invite.secret.0,
+    }
+    .text();
+
+    let key = ClientKey::generate().unwrap();
+    let address = sim.address.to_string();
+    let joined = runtime()
+        .block_on(join_member(&key, &text, "home-assistant", Some(&address)))
+        .unwrap();
+    assert_eq!(joined.role, Role::Owner);
+    assert!(joined.removed);
+
+    let Answer::Clients(clients) = owner(&sim, &Op::ListClients) else {
+        panic!("the owner lists the clients");
+    };
+    assert!(clients.iter().all(|client| client.key.0 != key.public()));
 }
 
 #[test]

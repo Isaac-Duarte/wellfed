@@ -23,7 +23,6 @@ pub mod feeder;
 pub mod key;
 #[cfg(feature = "python")]
 mod python;
-pub mod releases;
 pub mod writes;
 
 /// Why a call into the bridge failed.
@@ -43,14 +42,4 @@ pub enum Error {
     Refused(wellfed_model::Refusal),
     #[error("start the session thread: {0}")]
     Thread(std::io::Error),
-    #[error(transparent)]
-    Releases(#[from] wellfed_releases::Error),
-    #[error("a release signing key is 32 bytes, not {0}")]
-    KeyLength(usize),
-    #[error("not a release id: 64 hex digits")]
-    ReleaseId,
-    #[error("read the release file: {0}")]
-    File(std::io::Error),
-    #[error("{0} bytes is longer than any release")]
-    FileTooLarge(u64),
 }

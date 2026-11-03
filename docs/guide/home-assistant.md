@@ -18,30 +18,28 @@ Home Assistant joins the feeder as its own client, as a second phone does. It ta
 
 ## Pair it with the feeder
 
-1. Decide which invite to make. A **member** invite lets Home Assistant feed, change the settings, the lock and the plans, and read everything. An **owner** invite also lets it install firmware, older firmware included, change the feeder's Wi-Fi, set the portion weight, restart the feeder and remove other clients. Make an owner invite only if you want Home Assistant to do those things.
-
-2. Make the invite, as below.
+1. Make a **member** invite. Home Assistant joins only as a member: it can feed, change the settings, the lock, the plans and the portion weight, and read everything. It can't change the Wi-Fi, remove people, restart the feeder or install firmware. If you paste an owner invite, Home Assistant removes the key it was given and asks for a member invite.
 
 <!-- tabs -->
 
 ### App
 
-Open **Settings**, then **People**, and tap **Invite someone**. Choose **Member** or **Owner**, then share the link and copy its text.
+Open **Settings**, then **People**, and tap **Invite someone**. Choose **Member**, then share the link and copy its text.
 
 ### CLI
 
-Run `wellfed invite --role member`, or `--role owner`. It prints the invite.
+Run `wellfed invite --role member`. It prints the invite.
 
 <!-- /tabs -->
 
-3. In Home Assistant, open **Settings**, **Devices & services**. If the feeder shows as discovered, choose **Add** on it; otherwise choose **Add integration** and search for Wellfed.
-4. Paste the invite. If Home Assistant didn't discover the feeder, also give its IP address, or leave it empty to find it on the network. You should see "Paired as member", or "Paired as owner".
+2. In Home Assistant, open **Settings**, **Devices & services**. If the feeder shows as discovered, choose **Add** on it; otherwise choose **Add integration** and search for Wellfed.
+3. Paste the invite. If Home Assistant didn't discover the feeder, also give its IP address, or leave it empty to find it on the network. You should see the feeder's device with its entities.
 
 The invite works once. If pairing fails, make a new one rather than trying the old one again.
 
 ## What you get
 
-Every state comes from the feeder itself, never from the last button you pressed. Entities marked *owner* appear only after an owner invite.
+Every state comes from the feeder itself, never from the last button you pressed.
 
 | Entity | What it does |
 | --- | --- |
@@ -55,8 +53,7 @@ Every state comes from the feeder itself, never from the last button you pressed
 | **Child lock**, **Sound**, **Lights** switches, **Volume** | The panel lock and the feeder's settings. |
 | **Meal *HH:MM*** switches | One for each meal plan, to turn it on or off. New and deleted plans come and go on their own. |
 | **Desiccant replaced**, **Play chime** buttons | Record a fresh desiccant pack today; play the chime. |
-| **Portion weight**, **Restart** | *Owner*: what one portion weighs, and a restart. |
-| **Firmware** update | *Owner*: the installed firmware, the newest verified release, and an install. |
+| **Portion weight** | What one portion weighs, 1 to 50 g, for portions counted in grams. |
 
 The **wellfed.feed** action feeds a feeder from an automation and answers the feeder's number for the feed. **wellfed.cancel_feed** stops a feed. Every event the feeder records also fires `wellfed_event`, which an automation can trigger on.
 
@@ -82,7 +79,7 @@ For meals at fixed times, use the feeder's own meal plans instead. They run on t
 
 ## How it stays current
 
-The feeder pushes each event as it happens, and Home Assistant reads the feeder's status again after each one and every 30 seconds. When the connection drops, it reconnects every 10 seconds and catches up on the events it missed, so a feed that ended meanwhile still shows. The Firmware entity looks for releases every 6 hours.
+The feeder pushes each event as it happens, and Home Assistant reads the feeder's status again after each one and every 30 seconds. When the connection drops, it reconnects every 10 seconds and catches up on the events it missed, so a feed that ended meanwhile still shows.
 
 It supports the PETLIBRO Granary PLAF103 running Wellfed, the one feeder Wellfed runs on ([supported devices](../devices/README.md)). It does not work with the vendor's firmware.
 
@@ -98,12 +95,7 @@ Home Assistant sends a feed once and never sends it again on its own. If the fee
 
 ## Firmware updates
 
-With an owner invite, the **Firmware** entity offers the newest verified release:
-
-- **From the project's releases.** In the integration's **Configure** options, enter the project's release keys. Home Assistant checks the project's releases a few times a day.
-- **From a file.** Put the `.plota` file in a folder Home Assistant may read (listed under `allowlist_external_dirs`), and call **wellfed.add_release** with its path.
-
-Home Assistant offers only a release signed by a project key you entered or by an update key you enrolled on the feeder. Choose **Install** to send it. You see the progress, and the feeder restarts into the new firmware.
+Home Assistant doesn't install firmware: that takes an owner, and Home Assistant is a member. Update the feeder from the app.
 
 ## Remove it
 
@@ -126,4 +118,4 @@ Home Assistant offers only a release signed by a project key you entered or by a
 
 ## Evidence
 
-- **Modeled, November 2026.** Pairing, discovery, every entity and action, repairs, re-pairing and a firmware install ran against the simulated feeder, which runs the feeder's own pairing, stores and feeding code. None of this has run on a real feeder yet; the [roadmap](../roadmap.md) tracks that.
+- **Modeled, November 2026.** Pairing, discovery, every entity and action, repairs, re-pairing and refusing an owner invite ran against the simulated feeder, which runs the feeder's own pairing, stores and feeding code. None of this has run on a real feeder yet; the [roadmap](../roadmap.md) tracks that.

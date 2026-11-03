@@ -40,11 +40,6 @@ class WellfedEntity(Entity):
         self.async_on_remove(self.session.add_listener(self.async_write_ha_state))
 
 
-def owner_mode(session: FeederSession) -> bool:
-    """Whether this Home Assistant joined with an owner invite."""
-    return session.role == bridge.Role.Owner
-
-
 def serves(session: FeederSession, capability: Callable[[bridge.Capabilities], bool]) -> bool:
     """Whether the feeder serves what `capability` names."""
     return session.capabilities is not None and capability(session.capabilities)

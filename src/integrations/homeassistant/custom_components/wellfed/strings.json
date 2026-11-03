@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Pair a Wellfed feeder",
-        "description": "Make an invite on a paired client (`wellfed invite --role member`, or People in the app) and paste it here within 10 minutes. Home Assistant joins as its own client; it needs no server.\n\nA member invite lets Home Assistant feed, change the settings, the lock and the plans, and read everything. An owner invite (`--role owner`) also lets it install firmware, including older firmware, change the feeder's Wi-Fi, set the portion weight, restart the feeder and remove other clients. Give it an owner invite only if you want Home Assistant to do those things.",
+        "description": "Make a member invite on a paired client (`wellfed invite --role member`, or People in the app) and paste it here within 10 minutes. Home Assistant joins as its own client, as a member: it can feed, change the settings, the lock, the plans and the portion weight, and read everything. It needs no server.",
         "data": {
           "invite": "Invite",
           "address": "Address"
@@ -15,7 +15,7 @@
       },
       "zeroconf_confirm": {
         "title": "Pair the feeder at {address}",
-        "description": "Make an invite on a paired client (`wellfed invite`, or People in the app) and paste it here within 10 minutes. A member invite is enough to feed and change settings; an owner invite also allows firmware installs, Wi-Fi changes and removing clients.",
+        "description": "Make a member invite on a paired client (`wellfed invite --role member`, or People in the app) and paste it here within 10 minutes.",
         "data": {
           "invite": "Invite"
         },
@@ -25,7 +25,7 @@
       },
       "reauth_confirm": {
         "title": "Pair the feeder again",
-        "description": "The feeder no longer knows this Home Assistant: its key was removed. Make a new invite on a paired client and paste it here. Home Assistant joins with a new key.",
+        "description": "The feeder no longer knows this Home Assistant: its key was removed. Make a new member invite on a paired client and paste it here. Home Assistant joins with a new key.",
         "data": {
           "invite": "Invite"
         }
@@ -44,7 +44,9 @@
     "error": {
       "invalid_invite": "That is not a Wellfed invite.",
       "join_failed": "The feeder did not accept the invite. It may have expired or been used already, so make a new one.",
-      "wrong_feeder": "That invite is for a different feeder."
+      "wrong_feeder": "That invite is for a different feeder.",
+      "owner_invite": "That was an owner invite. Home Assistant joins only as a member, so it removed the key it was given. Make a member invite instead.",
+      "owner_invite_kept": "That was an owner invite, and Home Assistant could not remove the key it was given. Remove the client named home-assistant from the feeder (People in the app, or `wellfed revoke`), then make a member invite."
     },
     "abort": {
       "already_configured": "This feeder is already paired.",
@@ -52,10 +54,7 @@
       "reauth_successful": "Paired again.",
       "reconfigure_successful": "Saved."
     },
-    "flow_title": "{name}",
-    "create_entry": {
-      "joined": "Paired as {role}."
-    }
+    "flow_title": "{name}"
   },
   "entity": {
     "binary_sensor": {
@@ -92,9 +91,6 @@
       },
       "play_chime": {
         "name": "Play chime"
-      },
-      "reboot": {
-        "name": "Restart"
       }
     },
     "event": {
@@ -177,11 +173,6 @@
       "plan": {
         "name": "Meal {time}"
       }
-    },
-    "update": {
-      "firmware": {
-        "name": "Firmware"
-      }
     }
   },
   "services": {
@@ -212,37 +203,6 @@
           "description": "The feeder's number for the feed."
         }
       }
-    },
-    "add_release": {
-      "name": "Add firmware release",
-      "description": "Verify a `.plota` firmware file and keep it for the firmware update entity. Owner mode only.",
-      "fields": {
-        "device_id": {
-          "name": "Feeder",
-          "description": "The feeder the release is for."
-        },
-        "path": {
-          "name": "Path",
-          "description": "The file, in a folder Home Assistant may read."
-        }
-      }
-    }
-  },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Firmware releases",
-        "description": "The project's release keys, as 64 hex digits each, separated by spaces. Home Assistant offers a release only when one of these keys, or an update key you enrolled on the feeder, signed it.",
-        "data": {
-          "project_keys": "Release keys"
-        }
-      }
-    },
-    "error": {
-      "invalid_key": "Each key is 64 hex digits."
-    },
-    "abort": {
-      "owner_only": "Firmware installs need an owner invite. Pair again with `wellfed invite --role owner` to turn them on."
     }
   },
   "exceptions": {
@@ -255,29 +215,11 @@
     "no_feed": {
       "message": "No feed from Home Assistant is running to cancel."
     },
-    "owner_only": {
-      "message": "This needs an owner invite."
-    },
-    "path_not_allowed": {
-      "message": "Home Assistant may not read {path}. Add its folder to allowlist_external_dirs."
-    },
     "revoked": {
       "message": "The feeder no longer knows this Home Assistant. Pair it again."
     },
     "not_ready": {
       "message": "The feeder did not answer. Home Assistant will try again."
-    },
-    "no_release": {
-      "message": "No verified release is held to install."
-    },
-    "install_failed": {
-      "message": "The install stopped: the feeder refused it or it failed. The feeder keeps running its firmware."
-    },
-    "install_gone": {
-      "message": "The feeder stopped answering during the install. Check its firmware once it is back."
-    },
-    "install_not_sent": {
-      "message": "The install did not start: another may be running, or this Home Assistant is not an owner."
     },
     "not_sent_disconnected": {
       "message": "Not sent: the feeder is not connected. Nothing reached it, so you can try again."
@@ -289,7 +231,7 @@
       "message": "Not sent: a change to the same settings is still waiting on the feeder. Try again in a moment."
     },
     "not_sent_forbidden": {
-      "message": "Not sent: this needs an owner invite. Pair again with `wellfed invite --role owner` to allow it."
+      "message": "Not sent: this client's role may not do that."
     },
     "not_sent_unsupported": {
       "message": "Not sent: the feeder's firmware does not support this."

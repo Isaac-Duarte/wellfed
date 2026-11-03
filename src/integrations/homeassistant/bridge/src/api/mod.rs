@@ -12,16 +12,14 @@
 //! feeder checks stays in Rust: these carry facts out, never a request in.
 
 mod enums;
-mod install;
 mod session;
 mod state;
 mod views;
 
 pub use enums::{
-    By, EventKind, FeedOutcome, FeedReason, FoodLevel, InstallPhase, Installed, NotSent, Readiness,
-    RefusalKind, Role, Signer, Tune, UpdateKind, WriteResult,
+    By, EventKind, FeedOutcome, FeedReason, FoodLevel, NotSent, Readiness, RefusalKind, Role, Tune,
+    UpdateKind, WriteResult,
 };
-pub use install::{Install, InstallProgress, UpdateOffer};
 pub use session::{Update, Written};
 pub use state::{Capabilities, NextMeal, Plan, PortionsToday, Settings, State};
 pub use views::{Event, Feed, FeedFault, Status};

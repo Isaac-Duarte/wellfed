@@ -1,11 +1,15 @@
-"""Pair Home Assistant with a feeder by an invite from a paired client.
+"""Pair Home Assistant with a feeder by a member invite from a paired client.
 
 A feeder is found by hand (an invite, and an address or mDNS) or by
 zeroconf, which fills in the address. An invite is single-use, so each join
 runs once: a failure asks for a new invite rather than retrying. A revoked
 key asks for a new invite through reauth, under the same entry with a new
-key. An owner invite also turns on owner mode, whose options name the
-project's release keys.
+key.
+
+Home Assistant is a member and nothing more. An invite does not say its
+role until it is redeemed, so the bridge redeems it, and a key enrolled as
+anything but a member removes itself at once; the flow then asks for a
+member invite.
 """
 
 from __future__ import annotations
@@ -14,13 +18,7 @@ from collections.abc import Mapping
 import re
 from typing import Any
 
-from homeassistant.config_entries import (
-    ConfigEntry,
-    ConfigFlow,
-    ConfigFlowResult,
-    OptionsFlow,
-)
-from homeassistant.core import callback
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 import probatio
 
@@ -31,8 +29,6 @@ from .const import (
     CONF_ADDRESS,
     CONF_IDENTITY,
     CONF_INVITE,
-    CONF_PROJECT_KEYS,
-    CONF_ROLE,
     CONF_SECRET,
     DOMAIN,
 )
@@ -40,16 +36,26 @@ from .const import (
 INVITE_SCHEMA = probatio.Schema({probatio.Required(CONF_INVITE): str})
 USER_SCHEMA = INVITE_SCHEMA.extend({probatio.Optional(CONF_ADDRESS): str})
 
-# A key as `wellfed invite` and the release tools print it.
+# The identity a feeder advertises: its key, 64 hex digits.
 KEY = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
-def _join(invite: str, address: str | None) -> tuple[bytes, bytes, bridge.Role]:
-    """A new key joined with `invite`: its secret, the feeder, the role."""
+class NotMember(Exception):
+    """The invite was not a member's; `removed` says whether its key went again."""
+
+    def __init__(self, removed: bool) -> None:
+        super().__init__()
+        self.removed = removed
+
+
+def _join(invite: str, address: str | None) -> tuple[bytes, bytes]:
+    """A new key joined as a member with `invite`: its secret and the feeder."""
     identity = bridge.invite_feeder(invite)
     secret = bridge.generate_secret()
-    role = bridge.join(secret, invite, CLIENT_LABEL, address)
-    return secret, identity, role
+    joined = bridge.join(secret, invite, CLIENT_LABEL, address)
+    if joined.role != bridge.Role.Member:
+        raise NotMember(joined.removed)
+    return secret, identity
 
 
 def _invite_feeder(invite: str) -> bytes | None:
@@ -60,8 +66,23 @@ def _invite_feeder(invite: str) -> bytes | None:
         return None
 
 
+async def _redeem(
+    flow: ConfigFlow, invite: str, address: str | None, errors: dict[str, str]
+) -> tuple[bytes, bytes] | None:
+    """Join once with `invite`; on failure, the error to show and `None`."""
+    try:
+        # An invite is single-use: this runs once, and a failure asks the
+        # owner for a new invite rather than retrying.
+        return await flow.hass.async_add_executor_job(_join, invite, address)
+    except NotMember as refused:
+        errors["base"] = "owner_invite" if refused.removed else "owner_invite_kept"
+    except bridge.WellfedError:
+        errors["base"] = "join_failed"
+    return None
+
+
 class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Redeem an invite made with `wellfed invite` or the app."""
+    """Redeem a member invite made with `wellfed invite` or the app."""
 
     VERSION = 1
 
@@ -79,9 +100,9 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(identity.hex())
                 self._abort_if_unique_id_configured()
                 address = user_input.get(CONF_ADDRESS) or None
-                result = await self._pair(invite, address, errors)
-                if result is not None:
-                    return result
+                joined = await _redeem(self, invite, address, errors)
+                if joined is not None:
+                    return self._entry(*joined, address)
 
         return self.async_show_form(step_id="user", data_schema=USER_SCHEMA, errors=errors)
 
@@ -111,9 +132,9 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
             elif identity.hex() != self.unique_id:
                 errors[CONF_INVITE] = "wrong_feeder"
             else:
-                result = await self._pair(invite, self._address, errors)
-                if result is not None:
-                    return result
+                joined = await _redeem(self, invite, self._address, errors)
+                if joined is not None:
+                    return self._entry(*joined, self._address)
 
         return self.async_show_form(
             step_id="zeroconf_confirm",
@@ -122,26 +143,14 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={"address": self._address or ""},
         )
 
-    async def _pair(
-        self, invite: str, address: str | None, errors: dict[str, str]
-    ) -> ConfigFlowResult | None:
-        try:
-            # An invite is single-use: this runs once, and a failure asks
-            # the owner for a new invite rather than retrying.
-            secret, identity, role = await self.hass.async_add_executor_job(_join, invite, address)
-        except bridge.WellfedError:
-            errors["base"] = "join_failed"
-            return None
+    def _entry(self, secret: bytes, identity: bytes, address: str | None) -> ConfigFlowResult:
         return self.async_create_entry(
             title=f"Wellfed {identity.hex()[:8]}",
             data={
                 CONF_SECRET: secret.hex(),
                 CONF_IDENTITY: identity.hex(),
                 CONF_ADDRESS: address,
-                CONF_ROLE: role.key,
             },
-            description="joined",
-            description_placeholders={"role": role.key},
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
@@ -161,16 +170,11 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
             elif identity.hex() != entry.unique_id:
                 errors[CONF_INVITE] = "wrong_feeder"
             else:
-                try:
-                    secret, _, role = await self.hass.async_add_executor_job(
-                        _join, invite, entry.data.get(CONF_ADDRESS)
-                    )
-                except bridge.WellfedError:
-                    errors["base"] = "join_failed"
-                else:
+                joined = await _redeem(self, invite, entry.data.get(CONF_ADDRESS), errors)
+                if joined is not None:
+                    secret, _ = joined
                     return self.async_update_reload_and_abort(
-                        entry,
-                        data_updates={CONF_SECRET: secret.hex(), CONF_ROLE: role.key},
+                        entry, data_updates={CONF_SECRET: secret.hex()}
                     )
 
         return self.async_show_form(
@@ -189,29 +193,3 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
         current = entry.data.get(CONF_ADDRESS) or ""
         schema = probatio.Schema({probatio.Optional(CONF_ADDRESS, default=current): str})
         return self.async_show_form(step_id="reconfigure", data_schema=schema)
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
-        return WellfedOptionsFlow()
-
-
-class WellfedOptionsFlow(OptionsFlow):
-    """Owner mode's options: the keys the project signs its releases with."""
-
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        if self.config_entry.data.get(CONF_ROLE) != bridge.Role.Owner.key:
-            return self.async_abort(reason="owner_only")
-
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            keys = user_input.get(CONF_PROJECT_KEYS, "").replace(",", " ").split()
-            if all(KEY.match(key) for key in keys):
-                return self.async_create_entry(
-                    data={CONF_PROJECT_KEYS: [key.lower() for key in keys]}
-                )
-            errors[CONF_PROJECT_KEYS] = "invalid_key"
-
-        current = " ".join(self.config_entry.options.get(CONF_PROJECT_KEYS, []))
-        schema = probatio.Schema({probatio.Optional(CONF_PROJECT_KEYS, default=current): str})
-        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

@@ -40,7 +40,7 @@ UNKNOWN_ISSUE = "unknown_feed"
 
 
 class WriteNotDone(HomeAssistantError):
-    """A write the feeder did not carry out, or may have, in the owner's words."""
+    """A write the feeder did not carry out, or may have, in words the user reads."""
 
     def __init__(self, key: str) -> None:
         super().__init__(translation_domain=DOMAIN, translation_key=key)
@@ -107,7 +107,6 @@ class FeederSession:
         self.role: bridge.Role | None = None
         self.capabilities: bridge.Capabilities | None = None
         self.state: bridge.State | None = None
-        self.install_progress: bridge.InstallProgress | None = None
         # The feed this Home Assistant started, until its `Fed` event.
         self.running_feed: int | None = None
         # The Portions number's value: what the Feed button asks for.
@@ -210,42 +209,8 @@ class FeederSession:
         await self._write(lambda feeder: feeder.set_plan_enabled(slot, enabled))
 
     async def set_portion_weight(self, mg: int) -> None:
-        """Store the weight of one portion (owners only)."""
+        """Store the weight of one portion."""
         await self._write(lambda feeder: feeder.set_portion_weight(mg))
-
-    async def reboot(self) -> None:
-        """Restart the feeder (owners only)."""
-        await self._write(lambda feeder: feeder.reboot())
-
-    async def newest_release(
-        self, folder: str, project_keys: list[bytes], *, fetch: bool
-    ) -> bridge.UpdateOffer | None:
-        """The newest verified release held, after fetching the project's when asked."""
-        feeder = self._running()
-        return await self.hass.async_add_executor_job(
-            lambda: feeder.newest_release(folder, project_keys, fetch)
-        )
-
-    async def add_release(
-        self, folder: str, project_keys: list[bytes], path: str
-    ) -> bridge.UpdateOffer:
-        """Verify a release file and keep it."""
-        feeder = self._running()
-        return await self.hass.async_add_executor_job(
-            lambda: feeder.add_release(folder, project_keys, path)
-        )
-
-    async def install(self, folder: str, project_keys: list[bytes], release: str) -> bridge.Install:
-        """Install a held release (owners only); its progress comes as state changes."""
-        feeder = self._running()
-        return await self.hass.async_add_executor_job(
-            lambda: feeder.install(folder, project_keys, release)
-        )
-
-    def _running(self) -> bridge.Feeder:
-        if self._feeder is None:
-            raise WriteNotDone("not_sent_stopped")
-        return self._feeder
 
     async def _write(self, call: Callable[[bridge.Feeder], bridge.Written]) -> bridge.Written:
         feeder = self._feeder
@@ -296,8 +261,6 @@ class FeederSession:
                 self.hass.bus.async_fire(EVENT_FEEDER, data)
                 for hear in list(self._event_listeners):
                     hear(event)
-        elif kind == bridge.UpdateKind.Installing:
-            self.install_progress = update.install
         elif kind == bridge.UpdateKind.Gap:
             _LOGGER.info(
                 "Some feeder events were not received: %s to %s", update.gap_from, update.gap_to

@@ -1,9 +1,7 @@
-from _typeshed import SupportsGetItem
-from os import PathLike
 from typing import Final, SupportsFloat, SupportsIndex, final
 from typing_extensions import disjoint_base
 
-__all__ = ["By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Install", "InstallPhase", "InstallProgress", "Installed", "NextMeal", "NotSent", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "Settings", "Signer", "State", "Status", "Tune", "Update", "UpdateKind", "UpdateOffer", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key"]
+__all__ = ["By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "NextMeal", "NotSent", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "Settings", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key"]
 
 @final
 class By:
@@ -263,10 +261,6 @@ class Feeder:
     One feeder's session, on a thread of its own until this is dropped.
     """
     def __new__(cls, /, secret: bytes, identity: bytes, address: str | None = None) -> Feeder: ...
-    def add_release(self, /, folder: str | PathLike[str], project_keys: SupportsGetItem[int, SupportsGetItem[int, SupportsIndex]], path: str | PathLike[str]) -> UpdateOffer:
-        """
-        Verify the release file at `path` and keep it under `folder`.
-        """
     def cancel_feed(self, /, feed: SupportsIndex) -> Written:
         """
         Stop the feed the feeder numbered `feed`, if it still runs.
@@ -274,17 +268,6 @@ class Feeder:
     def feed(self, /, portions: SupportsIndex) -> Written:
         """
         Start a feed; how it ended. Never retry an uncertain one.
-        """
-    def install(self, /, folder: str | PathLike[str], project_keys: SupportsGetItem[int, SupportsGetItem[int, SupportsIndex]], id: str) -> Install:
-        """
-        Install the release `id` from under `folder` (owners only); blocks
-        until it ends. Its progress comes as `installing` updates.
-        """
-    def newest_release(self, /, folder: str | PathLike[str], project_keys: SupportsGetItem[int, SupportsGetItem[int, SupportsIndex]], fetch: bool = True) -> UpdateOffer | None:
-        """
-        The newest release in the cache under `folder`, after fetching the
-        project's releases it lacks when `fetch`; `None` with none held.
-        Verified against `project_keys` and the owner's enrolled keys.
         """
     def next_update(self, /, timeout: SupportsFloat | SupportsIndex) -> Update | None:
         """
@@ -296,10 +279,6 @@ class Feeder:
         Change the settings named, on the settings last read; the rest
         stay as they are. One settings change at a time: another while it
         waits is not sent.
-        """
-    def reboot(self, /) -> Written:
-        """
-        Restart the feeder (owners only).
         """
     def refresh(self, /) -> None:
         """
@@ -319,8 +298,7 @@ class Feeder:
         """
     def set_portion_weight(self, /, mg: SupportsIndex) -> Written:
         """
-        Store the weight of one portion in milligrams, 1,000-50,000
-        (owners only).
+        Store the weight of one portion in milligrams, 1,000-50,000.
         """
 
 @final
@@ -346,96 +324,23 @@ class FoodLevel:
         """
 
 @final
-class Install:
+class Joined:
     """
-    How an install ended.
-    """
-    def __eq__(self, value: object, /) -> bool: ...
-    def __ne__(self, value: object, /) -> bool: ...
-    @property
-    def not_sent(self, /) -> NotSent | None: ...
-    @property
-    def offered(self, /) -> bool:
-        """
-        Whether the offer went out: after it, bank 1 may hold part of the
-        release.
-        """
-    @property
-    def result(self, /) -> Installed: ...
-
-@final
-class InstallPhase:
-    """
-    Where an install stands on the feeder.
-    """
-    Activated: Final[InstallPhase]
-    Checking: Final[InstallPhase]
-    GivingWay: Final[InstallPhase]
-    Idle: Final[InstallPhase]
-    Receiving: Final[InstallPhase]
-    def __eq__(self, value: object, /) -> bool: ...
-    def __hash__(self, /) -> int: ...
-    def __int__(self, /) -> int: ...
-    def __ne__(self, value: object, /) -> bool: ...
-    def __repr__(self, /) -> str: ...
-    @property
-    def key(self, /) -> str:
-        """
-        The snake_case name: an entity's state and its translation key.
-        """
-
-@final
-class InstallProgress:
-    """
-    Where an install stands, as the feeder answered it.
+    How a member join ended.
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
     @property
-    def image_len(self, /) -> int: ...
-    @property
-    def phase(self, /) -> InstallPhase: ...
-    @property
-    def written(self, /) -> int:
+    def removed(self, /) -> bool:
         """
-        Bytes written and read back so far.
+        For any role but member: whether the key was removed from the
+        feeder again. When it was not, a key with that role stays listed
+        (as the label it joined with) until someone revokes it.
         """
-
-@final
-class Installed:
-    """
-    How an install ended.
-    """
-    Activated: Final[Installed]
-    """
-    Bank 1 took the release; the feeder restarts into it.
-    """
-    AlreadyRunning: Final[Installed]
-    """
-    The feeder already ran the release's build: nothing was sent.
-    """
-    Failed: Final[Installed]
-    """
-    The install stopped on the feeder's refusal or its own error.
-    """
-    Gone: Final[Installed]
-    """
-    The feeder stopped answering. With `offered`, bank 1 may be
-    partly written, or activated with its answer lost.
-    """
-    NotSent: Final[Installed]
-    """
-    It never started; `not_sent` says why.
-    """
-    def __eq__(self, value: object, /) -> bool: ...
-    def __hash__(self, /) -> int: ...
-    def __int__(self, /) -> int: ...
-    def __ne__(self, value: object, /) -> bool: ...
-    def __repr__(self, /) -> str: ...
     @property
-    def key(self, /) -> str:
+    def role(self, /) -> Role:
         """
-        The snake_case name: an entity's state and its translation key.
+        The role the invite enrolled the key with.
         """
 
 @final
@@ -655,30 +560,6 @@ class Settings:
         """
 
 @final
-class Signer:
-    """
-    Whose key signed a release.
-    """
-    Owner: Final[Signer]
-    """
-    The owner's enrolled update key: a self-built image.
-    """
-    Project: Final[Signer]
-    """
-    The project's key: a published release.
-    """
-    def __eq__(self, value: object, /) -> bool: ...
-    def __hash__(self, /) -> int: ...
-    def __int__(self, /) -> int: ...
-    def __ne__(self, value: object, /) -> bool: ...
-    def __repr__(self, /) -> str: ...
-    @property
-    def key(self, /) -> str:
-        """
-        The snake_case name: an entity's state and its translation key.
-        """
-
-@final
 class State:
     """
     Everything the session knows of the feeder now.
@@ -853,11 +734,6 @@ class Update:
     @property
     def gap_to(self, /) -> int | None: ...
     @property
-    def install(self, /) -> InstallProgress | None:
-        """
-        For [`UpdateKind::Installing`].
-        """
-    @property
     def kind(self, /) -> UpdateKind: ...
     @property
     def portions(self, /) -> int | None:
@@ -903,10 +779,6 @@ class UpdateKind:
     Events this session never received: what happened meanwhile is
     not known.
     """
-    Installing: Final[UpdateKind]
-    """
-    An install moved on: `install` says where it stands.
-    """
     Revoked: Final[UpdateKind]
     """
     The feeder no longer knows this client's key; the session will
@@ -935,33 +807,6 @@ class UpdateKind:
         """
         The snake_case name: an entity's state and its translation key.
         """
-
-@final
-class UpdateOffer:
-    """
-    A verified release held for an install.
-    """
-    def __eq__(self, value: object, /) -> bool: ...
-    def __ne__(self, value: object, /) -> bool: ...
-    @property
-    def build(self, /) -> str:
-        """
-        The build it carries, hex, as the feeder's status names its own.
-        """
-    @property
-    def id(self, /) -> str:
-        """
-        SHA-256 over the signed manifest, hex: the release's name.
-        """
-    @property
-    def signer(self, /) -> Signer: ...
-    @property
-    def tag(self, /) -> str | None:
-        """
-        The project release's tag, for one fetched from GitHub.
-        """
-    @property
-    def version(self, /) -> int: ...
 
 @disjoint_base
 class WellfedError(Exception):
@@ -1040,10 +885,11 @@ def invite_feeder(text: str) -> bytes:
     The identity key of the feeder `text` invites to.
     """
 
-def join(secret: bytes, invite: str, label: str, address: str | None = None) -> Role:
+def join(secret: bytes, invite: str, label: str, address: str | None = None) -> Joined:
     """
-    Redeem `invite` as the key `secret`, listed as `label`; the role the
-    feeder enrolled it with. Runs once: an invite is single-use.
+    Redeem `invite` as the key `secret`, listed as `label`, keeping the key
+    only as a member: any other role is revoked at once. Runs once: an invite
+    is single-use.
     """
 
 def public_key(secret: bytes) -> bytes:

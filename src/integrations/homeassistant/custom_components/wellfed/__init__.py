@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_DEVICE_ID, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
@@ -16,20 +14,15 @@ from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 import probatio
 
-import wellfed_homeassistant as bridge
-
 from .const import (
     ATTR_FEED,
-    ATTR_PATH,
     ATTR_PORTIONS,
     CONF_ADDRESS,
     CONF_IDENTITY,
-    CONF_PROJECT_KEYS,
     CONF_SECRET,
     DOMAIN,
     PORTIONS_MAX,
     PORTIONS_MIN,
-    SERVICE_ADD_RELEASE,
     SERVICE_CANCEL_FEED,
     SERVICE_FEED,
 )
@@ -42,7 +35,6 @@ PLATFORMS = [
     Platform.NUMBER,
     Platform.SENSOR,
     Platform.SWITCH,
-    Platform.UPDATE,
 ]
 
 # How long setup waits for the feeder's first answer before it tries again
@@ -67,22 +59,6 @@ CANCEL_SCHEMA = probatio.Schema(
         probatio.Optional(ATTR_FEED): probatio.All(probatio.Coerce(int), probatio.Range(min=0)),
     }
 )
-ADD_RELEASE_SCHEMA = probatio.Schema(
-    {
-        probatio.Required(ATTR_DEVICE_ID): cv.string,
-        probatio.Required(ATTR_PATH): cv.string,
-    }
-)
-
-
-def release_folder(hass: HomeAssistant, entry: ConfigEntry) -> str:
-    """Where an owner's releases for this feeder are kept."""
-    return hass.config.path(DOMAIN, entry.data[CONF_IDENTITY])
-
-
-def project_keys(entry: ConfigEntry) -> list[bytes]:
-    """The project's release keys from owner mode's options."""
-    return [bytes.fromhex(key) for key in entry.options.get(CONF_PROJECT_KEYS, [])]
 
 
 def _entry(hass: HomeAssistant, call: ServiceCall) -> WellfedConfigEntry:
@@ -108,21 +84,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key="no_feed")
         await session.cancel_feed(feed)
 
-    async def add_release(call: ServiceCall) -> ServiceResponse:
-        entry = _entry(hass, call)
-        session = entry.runtime_data
-        if session.role != bridge.Role.Owner:
-            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="owner_only")
-        path = call.data[ATTR_PATH]
-        if not hass.config.is_allowed_path(path):
-            raise ServiceValidationError(
-                translation_domain=DOMAIN,
-                translation_key="path_not_allowed",
-                translation_placeholders={"path": path},
-            )
-        offer = await session.add_release(release_folder(hass, entry), project_keys(entry), path)
-        return {"version": offer.version, "build": offer.build}
-
     hass.services.async_register(
         DOMAIN,
         SERVICE_FEED,
@@ -131,13 +92,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(DOMAIN, SERVICE_CANCEL_FEED, cancel_feed, schema=CANCEL_SCHEMA)
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_ADD_RELEASE,
-        add_release,
-        schema=ADD_RELEASE_SCHEMA,
-        supports_response=SupportsResponse.OPTIONAL,
-    )
     return True
 
 
@@ -161,16 +115,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> b
         raise ConfigEntryNotReady(translation_domain=DOMAIN, translation_key="not_ready")
 
     entry.runtime_data = session
-    await hass.async_add_executor_job(
-        lambda: Path(release_folder(hass, entry)).mkdir(parents=True, exist_ok=True)
-    )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    entry.async_on_unload(entry.add_update_listener(_options_changed))
     return True
-
-
-async def _options_changed(hass: HomeAssistant, entry: WellfedConfigEntry) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> bool:

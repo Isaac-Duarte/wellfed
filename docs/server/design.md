@@ -85,9 +85,6 @@ wellfed (the CLI) ─► wellfed-server-client ─► wellfed-api
 
 wellfed-app-bridge (the app) ─► wellfed-server-client, wellfed-api
           └─► wellfed-connect (the device API)
-
-wellfed-homeassistant (Home Assistant) ─► wellfed-releases, wellfed-api
-          └─► wellfed-connect (the device API)
 ```
 
 | Crate | May depend on (workspace crates) |
@@ -105,7 +102,7 @@ wellfed-homeassistant (Home Assistant) ─► wellfed-releases, wellfed-api
 
 - **SQL stays in the store.** No crate but `wellfed-store` depends on sqlx, in its tests included.
 - **HTTP stays in the binary.** Nothing below `wellfed-server` links axum, or any of axum's own crates (`axum-core`, `axum-extra`), by any path.
-- **The arrows as drawn.** Each server crate's normal and build dependencies on workspace crates come from its row above. A crate outside the server takes a server crate only where drawn: the CLI takes `wellfed-server-client`, the app's `wellfed-app-bridge` takes `wellfed-server-client` and `wellfed-api`, and Home Assistant's `wellfed-homeassistant` takes `wellfed-releases` and `wellfed-api`, keeping an owner's releases as the server does. Dev-dependencies are exempt, since a test may build a simulated feeder or a whole server. Rows may name crates that don't exist yet, so each is checked from its first manifest. Changing a row changes this table and the check together.
+- **The arrows as drawn.** Each server crate's normal and build dependencies on workspace crates come from its row above. A crate outside the server takes a server crate only where drawn: the CLI takes `wellfed-server-client`, and the app's `wellfed-app-bridge` takes `wellfed-server-client` and `wellfed-api`. Dev-dependencies are exempt, since a test may build a simulated feeder or a whole server. Rows may name crates that don't exist yet, so each is checked from its first manifest. Changing a row changes this table and the check together.
 - **`wellfed-api` on Android.** Its own dependencies come from an allow-list (`jiff`, `wellfed-model`, `serde`, `utoipa`, `uuid`). `make check` builds no Android target; `make check-app`'s APK build does, `wellfed-server-client`'s reqwest and rustls included.
 - **Files stay small.** A Rust source under `src/server/` has at most 400 lines, or 600 under a `tests/` directory. A `tests.rs` beside the code it tests keeps 400. Generated files (`openapi.json`, the sqlx metadata) aren't counted.
 

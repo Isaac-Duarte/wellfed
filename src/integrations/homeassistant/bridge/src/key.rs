@@ -8,7 +8,7 @@ use std::path::Path;
 
 use wellfed_client::api::Invite;
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
-use wellfed_model::{ClientRole, Joined};
+use wellfed_model::{ClientRole, Joined as Enrollment};
 use wellfed_session::noise::Keypair;
 
 use crate::Error;
@@ -90,8 +90,81 @@ pub async fn join(
 
     let joined = wellfed_connect::join(key.keypair(), invite, label, address, random()?).await?;
     match joined {
-        Joined::Enrolled { role } => Ok(role),
-        Joined::Refused(refusal) => Err(Error::Refused(refusal)),
+        Enrollment::Enrolled { role } => Ok(role),
+        Enrollment::Refused(refusal) => Err(Error::Refused(refusal)),
+    }
+}
+
+/// How a member join ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(frozen, get_all, eq, module = "wellfed_homeassistant")
+)]
+pub struct Joined {
+    /// The role the invite enrolled the key with.
+    pub role: crate::api::Role,
+    /// For any role but member: whether the key was removed from the
+    /// feeder again. When it was not, a key with that role stays listed
+    /// (as the label it joined with) until someone revokes it.
+    pub removed: bool,
+}
+
+/// Redeem `invite` as [`join`] does, keeping the key only as a member.
+/// Home Assistant is a member and nothing more: a key an owner invite
+/// enrolled could change the Wi-Fi, remove clients and install firmware
+/// whatever Home Assistant shows, and an invite does not say its role until
+/// it is redeemed. So a key enrolled as anything else revokes itself at once,
+/// with the owner's right it was just given.
+pub async fn join_member(
+    key: &ClientKey,
+    invite: &str,
+    label: &str,
+    address: Option<&str>,
+) -> Result<Joined, Error> {
+    let feeder = invite_feeder(invite)?;
+    let role = join(key, invite, label, address).await?;
+    if role == ClientRole::Member {
+        return Ok(Joined {
+            role: role.into(),
+            removed: false,
+        });
+    }
+
+    let removed = revoke_self(key, &feeder, address).await.unwrap_or(false);
+    Ok(Joined {
+        role: role.into(),
+        removed,
+    })
+}
+
+/// Revoke `key` on the feeder `feeder`, as the key itself; whether it is
+/// gone. The revocation closes the key's own sessions, the asking one among
+/// them, so its answer may never come: what settles it is a new session,
+/// which the feeder refuses once the key is unknown.
+async fn revoke_self(
+    key: &ClientKey,
+    feeder: &[u8; 32],
+    address: Option<&str>,
+) -> Result<bool, Error> {
+    let address = locate(feeder, address).await?;
+    let open = || async {
+        let ephemeral = random()?;
+        Ok::<_, Error>(
+            wellfed_connect::Connection::open(key.keypair(), *feeder, address, ephemeral).await,
+        )
+    };
+
+    let mut connection = open().await??;
+    let revoke = wellfed_model::Op::RevokeClient { key: key.public() };
+    // Answered or not, the next open says whether it took.
+    let _ = connection.ask(random()?, &revoke).await;
+    drop(connection);
+
+    match open().await? {
+        Err(wellfed_connect::Error::UnknownKey) => Ok(true),
+        Ok(_) => Ok(false),
+        Err(error) => Err(error.into()),
     }
 }
 

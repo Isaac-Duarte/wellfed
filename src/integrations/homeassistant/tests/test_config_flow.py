@@ -1,5 +1,5 @@
 """The config flows against a simulated feeder: zeroconf, reauth after a
-revocation, reconfigure and owner mode's options."""
+revocation, reconfigure, and an owner invite refused."""
 
 from __future__ import annotations
 
@@ -22,8 +22,6 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from custom_components.wellfed.const import (
     CONF_ADDRESS,
     CONF_INVITE,
-    CONF_PROJECT_KEYS,
-    CONF_ROLE,
     CONF_SECRET,
     DOMAIN,
 )
@@ -57,11 +55,11 @@ def _discovery(simulator: Simulator) -> ZeroconfServiceInfo:
     )
 
 
-async def _pair(hass: HomeAssistant, simulator: Simulator, role: str = "member") -> ConfigEntry:
+async def _pair(hass: HomeAssistant, simulator: Simulator) -> ConfigEntry:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {CONF_INVITE: simulator.invite(role), CONF_ADDRESS: simulator.address},
+        {CONF_INVITE: simulator.invite(), CONF_ADDRESS: simulator.address},
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     entry: ConfigEntry = result["result"]
@@ -87,7 +85,6 @@ async def test_zeroconf_fills_in_the_address_and_asks_for_the_invite(
     entry = result["result"]
     assert entry.unique_id == discovery.properties["id"]
     assert entry.data[CONF_ADDRESS] == simulator.address
-    assert entry.data[CONF_ROLE] == "member"
     await hass.async_block_till_done()
     await _until(hass, lambda: entry.runtime_data.state is not None)
 
@@ -187,29 +184,23 @@ async def test_reconfigure_changes_the_address(hass: HomeAssistant, simulator: S
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_release_keys_are_an_owner_s_option(
+async def test_an_owner_invite_is_refused_and_its_key_removed(
     hass: HomeAssistant, simulator: Simulator
 ) -> None:
-    member = await _pair(hass, simulator)
-    result = await hass.config_entries.options.async_init(member.entry_id)
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "owner_only"
-    assert await hass.config_entries.async_remove(member.entry_id)
-
-    owner = await _pair(hass, simulator, role="owner")
-    assert owner.data[CONF_ROLE] == "owner"
-    result = await hass.config_entries.options.async_init(owner.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_PROJECT_KEYS: "not-a-key"}
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_INVITE: simulator.invite("owner"), CONF_ADDRESS: simulator.address},
     )
-    assert result["errors"] == {CONF_PROJECT_KEYS: "invalid_key"}
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "owner_invite"}
+    # Only the simulator's own owner is left.
+    assert "home-assistant" not in simulator.owner("clients")
 
-    key = "AB" * 32
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_PROJECT_KEYS: key}
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_INVITE: simulator.invite(), CONF_ADDRESS: simulator.address},
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert owner.options[CONF_PROJECT_KEYS] == [key.lower()]
-    # Saved options reload the entry, so the update entity sees the keys.
     await hass.async_block_till_done()
-    assert await hass.config_entries.async_unload(owner.entry_id)
+    assert await hass.config_entries.async_unload(result["result"].entry_id)

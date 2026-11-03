@@ -29,27 +29,22 @@
 //!   good: it is reported once and the thread stops reconnecting.
 
 use std::collections::{HashMap, VecDeque};
-use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::sync::mpsc as std_mpsc;
-use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{mpsc, oneshot};
 use wellfed_client::history::{Backlog, Entry, Feed};
-use wellfed_client::release::MANIFEST_LEN;
 use wellfed_client::today::Facts;
-use wellfed_client::update::Image;
-use wellfed_connect::update::{Opened, Pace, Pushed as PushEnded, Steps};
 use wellfed_connect::{Connection, Cursor, Received};
 use wellfed_model::{
     Answer, Blocked, CalibrationView, Capabilities, ClientRole, EventBody, Generation, Op, Pushed,
-    Readiness, SettingsPatch, Source, Status, UpdateView,
+    Readiness, SettingsPatch, Source, Status,
 };
 
 use crate::Error;
-use crate::api::{self, Install, Installed, NotSent, State, Tune, Update, Written};
+use crate::api::{self, NotSent, State, Tune, Update, Written};
 use crate::key::{ClientKey, locate, random};
 use crate::writes::{self, Kind, Landed, Store, Write};
 
@@ -61,11 +56,6 @@ type RequestId = [u8; 16];
 const TURN: Duration = Duration::from_secs(30);
 /// How long a lost session waits before opening another.
 const RETRY: Duration = Duration::from_secs(10);
-/// As [`RETRY`] while an install waits for the feeder to come back from a
-/// restart into the bank that takes it.
-const RETRY_INSTALLING: Duration = Duration::from_secs(1);
-/// From a restart until the feeder answers the device API again.
-const REOPEN_WAIT: Duration = Duration::from_secs(5 * 60);
 /// How long an uncertain feed waits for its `Fed` event within one
 /// session: longer than the longest feed the feeder runs.
 const SETTLE: Duration = Duration::from_secs(15 * 60);
@@ -80,31 +70,6 @@ enum Command {
         reply: oneshot::Sender<Written>,
     },
     Refresh,
-    /// Install a verified release file, carrying the build `build`.
-    Install {
-        file: Vec<u8>,
-        build: [u8; 32],
-        reply: oneshot::Sender<Install>,
-    },
-}
-
-/// One request of an install, carried by whichever session is open: its
-/// answer, or `None` when the session ended first.
-#[derive(Debug)]
-struct LaneStep {
-    op: Op,
-    reply: oneshot::Sender<Option<Answer>>,
-}
-
-/// What the session thread shares with an install it runs beside the
-/// session, and with the handle.
-#[derive(Clone, Debug)]
-struct Shared {
-    /// Whether a session is open now, for an install waiting to reopen.
-    online: watch::Sender<bool>,
-    installing: Arc<AtomicBool>,
-    /// The update keys the owner enrolled on the feeder, as last listed.
-    update_keys: Arc<Mutex<Vec<[u8; 32]>>>,
 }
 
 /// Where the session finds its feeder.
@@ -120,7 +85,6 @@ pub struct Target {
 pub struct Feeder {
     commands: mpsc::UnboundedSender<Command>,
     updates: Mutex<std_mpsc::Receiver<Update>>,
-    update_keys: Arc<Mutex<Vec<[u8; 32]>>>,
 }
 
 impl Feeder {
@@ -130,51 +94,18 @@ impl Feeder {
     pub fn start(key: ClientKey, target: Target) -> Result<Self, Error> {
         let (commands, inbox) = mpsc::unbounded_channel();
         let (outbox, updates) = std_mpsc::channel();
-        let shared = Shared {
-            online: watch::Sender::new(false),
-            installing: Arc::new(AtomicBool::new(false)),
-            update_keys: Arc::new(Mutex::new(Vec::new())),
-        };
-        let update_keys = Arc::clone(&shared.update_keys);
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(Error::Thread)?;
         std::thread::Builder::new()
             .name("wellfed-session".into())
-            .spawn(move || runtime.block_on(run(key, target, inbox, outbox, shared)))
+            .spawn(move || runtime.block_on(run(key, target, inbox, outbox)))
             .map_err(Error::Thread)?;
 
         Ok(Self {
             commands,
             updates: Mutex::new(updates),
-            update_keys,
-        })
-    }
-
-    /// The update keys the owner enrolled on the feeder, as an owner's
-    /// session last listed them; empty for a member, or before the list.
-    pub fn update_keys(&self) -> Vec<[u8; 32]> {
-        self.update_keys
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    /// Install the verified release `file`, which carries the build
-    /// `build` (owners only); blocks until bank 1 is activated, the install
-    /// fails, or the feeder is gone. Its progress comes as updates. One at a
-    /// time, and an offer is never sent again behind the owner's back.
-    pub fn install(&self, file: Vec<u8>, build: [u8; 32]) -> Install {
-        let (reply, answer) = oneshot::channel();
-        let install = Command::Install { file, build, reply };
-        if self.commands.send(install).is_err() {
-            return Install::not_sent(NotSent::Stopped);
-        }
-        answer.blocking_recv().unwrap_or(Install {
-            result: Installed::Gone,
-            offered: true,
-            not_sent: None,
         })
     }
 
@@ -220,14 +151,9 @@ impl Feeder {
         self.write(Write::PlanEnabled { slot, enabled })
     }
 
-    /// Store the weight of one portion (owners only).
+    /// Store the weight of one portion.
     pub fn set_portion_weight(&self, mg: u32) -> Written {
         self.write(Write::PortionWeight { mg })
-    }
-
-    /// Restart the feeder (owners only).
-    pub fn reboot(&self) -> Written {
-        self.write(Write::Reboot)
     }
 
     /// Read the status now, rather than at the next turn.
@@ -303,25 +229,16 @@ async fn run(
     target: Target,
     mut commands: mpsc::UnboundedReceiver<Command>,
     updates: std_mpsc::Sender<Update>,
-    shared: Shared,
 ) {
     let mut fingerprint = [0; 4];
     fingerprint.copy_from_slice(&key.public()[..4]);
     let mut memory = Memory::default();
-    let (lane, mut steps) = mpsc::unbounded_channel();
-    let mut inbox = Inbox {
-        commands: &mut commands,
-        steps: &mut steps,
-        lane,
-    };
 
     loop {
         let ended = match open(&key, &target).await {
             Ok(connection) => {
-                let session = Session::new(connection, fingerprint, &mut memory, &updates, &shared);
-                let ended = session.serve(&mut inbox).await;
-                shared.online.send_replace(false);
-                ended
+                let session = Session::new(connection, fingerprint, &mut memory, &updates);
+                session.serve(&mut commands).await
             }
             Err(Error::Connect(wellfed_connect::Error::UnknownKey)) => Ended::Revoked,
             Err(error) => Ended::Lost(error.to_string()),
@@ -329,9 +246,7 @@ async fn run(
         let reason = match ended {
             Ended::Dropped => return,
             Ended::Revoked => {
-                // An install running now finds no session again.
-                inbox.steps.close();
-                revoked(inbox.commands, &updates).await;
+                revoked(&mut commands, &updates).await;
                 return;
             }
             Ended::Lost(reason) => reason,
@@ -342,43 +257,22 @@ async fn run(
 
         // While no session is open a write is refused at once, never held
         // for the next one: a feed sent minutes after its press is not the
-        // feed the owner asked for. An install's step finds no session and
-        // its driver waits to reopen.
-        let retry = if shared.installing.load(Ordering::SeqCst) {
-            RETRY_INSTALLING
-        } else {
-            RETRY
-        };
-        let pause = tokio::time::sleep(retry);
+        // feed the owner asked for.
+        let pause = tokio::time::sleep(RETRY);
         tokio::pin!(pause);
         loop {
             tokio::select! {
                 () = &mut pause => break,
-                command = inbox.commands.recv() => match command {
+                command = commands.recv() => match command {
                     None => return,
                     Some(Command::Write { reply, .. }) => {
                         let _ = reply.send(Written::not_sent(NotSent::Disconnected));
                     }
-                    Some(Command::Install { reply, .. }) => {
-                        let _ = reply.send(Install::not_sent(NotSent::Disconnected));
-                    }
                     Some(Command::Refresh) => {}
                 },
-                Some(step) = inbox.steps.recv() => {
-                    let _ = step.reply.send(None);
-                }
             }
         }
     }
-}
-
-/// What a session takes in: the handle's commands, and the requests of an
-/// install running beside it.
-struct Inbox<'a> {
-    commands: &'a mut mpsc::UnboundedReceiver<Command>,
-    steps: &'a mut mpsc::UnboundedReceiver<LaneStep>,
-    /// For an install the session starts.
-    lane: mpsc::UnboundedSender<LaneStep>,
 }
 
 /// The key is gone from the feeder: say so once, then refuse every write
@@ -391,101 +285,9 @@ async fn revoked(
         return;
     }
     while let Some(command) = commands.recv().await {
-        match command {
-            Command::Write { reply, .. } => {
-                let _ = reply.send(Written::not_sent(NotSent::Stopped));
-            }
-            Command::Install { reply, .. } => {
-                let _ = reply.send(Install::not_sent(NotSent::Stopped));
-            }
-            Command::Refresh => {}
+        if let Command::Write { reply, .. } = command {
+            let _ = reply.send(Written::not_sent(NotSent::Stopped));
         }
-    }
-}
-
-/// An install on the lane beside the session: `wellfed-connect`'s update
-/// driver, the one the CLI and the server run, with each of its requests
-/// carried by whichever session is open. A dropped session loses nothing:
-/// chunks are idempotent by offset, the session thread reconnects on its
-/// own, and the driver reads where the install stands from the next one.
-struct Lane {
-    steps: mpsc::UnboundedSender<LaneStep>,
-    online: watch::Receiver<bool>,
-    build: [u8; 32],
-    updates: std_mpsc::Sender<Update>,
-}
-
-impl Steps for Lane {
-    type Error = Infallible;
-
-    async fn step(&mut self, op: Op) -> Result<Option<Answer>, Infallible> {
-        let (reply, answer) = oneshot::channel();
-        if self.steps.send(LaneStep { op, reply }).is_err() {
-            return Ok(None);
-        }
-        Ok(answer.await.ok().flatten())
-    }
-
-    async fn reopen(&mut self) -> Result<Option<Opened>, Infallible> {
-        let deadline = tokio::time::Instant::now() + REOPEN_WAIT;
-        loop {
-            let online = self.online.wait_for(|online| *online);
-            match tokio::time::timeout_at(deadline, online).await {
-                Ok(Ok(_)) => {}
-                // Not back in time, or the session thread has ended.
-                Err(_) | Ok(Err(_)) => return Ok(None),
-            }
-            if let Some(Answer::Status(status)) = self.step(Op::Status).await? {
-                return Ok(Some(Opened {
-                    bank: status.bank,
-                    build: status.build,
-                }));
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Ok(None);
-            }
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-    }
-
-    /// Bank 1 can run the release's build only once bank 0 activated it.
-    fn activated(&mut self, opened: &Opened) -> bool {
-        let build = wellfed_session::hex::Lower(&self.build).to_string();
-        opened.bank == 1 && opened.build.eq_ignore_ascii_case(&build)
-    }
-
-    fn progress(&mut self, view: &UpdateView) {
-        let _ = self.updates.send(Update::installing(view));
-    }
-}
-
-/// Push `file` on the lane and say how it ended.
-async fn install(mut lane: Lane, file: Vec<u8>) -> Install {
-    let Some((manifest, payload)) = file.split_at_checked(MANIFEST_LEN) else {
-        return Install::not_sent(NotSent::Invalid);
-    };
-    let image = Image {
-        manifest,
-        downgrade: None,
-        payload,
-    };
-
-    let pushed = match wellfed_connect::update::push(image, &mut lane, Pace::DEFAULT).await {
-        Ok(pushed) => pushed,
-        Err(never) => match never {},
-    };
-    let (result, offered) = match pushed {
-        PushEnded::Activated => (Installed::Activated, true),
-        PushEnded::AlreadyRunning => (Installed::AlreadyRunning, false),
-        // The driver does not say whether the offer went out before the
-        // install's own error; the feeder's update state does.
-        PushEnded::Failed(_) => (Installed::Failed, true),
-        PushEnded::Gone { offered } => (Installed::Gone, offered),
-    };
-    Install {
-        result,
-        offered,
-        not_sent: None,
     }
 }
 
@@ -509,8 +311,6 @@ enum Read {
     Plans,
     Time,
     Calibration,
-    /// The client table, for the owner's enrolled update keys.
-    Clients,
 }
 
 /// What an outstanding request was for.
@@ -523,9 +323,6 @@ enum Pending {
         op: Op,
     },
     Read(Read),
-    /// An install's request: the answer goes back to its driver, and a
-    /// dropped session drops the reply, which reads as no answer.
-    Lane(oneshot::Sender<Option<Answer>>),
 }
 
 struct Session<'a> {
@@ -535,7 +332,6 @@ struct Session<'a> {
     capabilities: Capabilities,
     memory: &'a mut Memory,
     updates: &'a std_mpsc::Sender<Update>,
-    shared: &'a Shared,
     /// The replay at connect, until its newest event has come.
     backlog: Option<Backlog>,
     pending: HashMap<RequestId, Pending>,
@@ -550,7 +346,6 @@ impl<'a> Session<'a> {
         fingerprint: [u8; 4],
         memory: &'a mut Memory,
         updates: &'a std_mpsc::Sender<Update>,
-        shared: &'a Shared,
     ) -> Self {
         Self {
             role: connection.role(),
@@ -559,18 +354,14 @@ impl<'a> Session<'a> {
             fingerprint,
             memory,
             updates,
-            shared,
             backlog: None,
             pending: HashMap::new(),
         }
     }
 
-    async fn serve(mut self, inbox: &mut Inbox<'_>) -> Ended {
+    async fn serve(mut self, commands: &mut mpsc::UnboundedReceiver<Command>) -> Ended {
         let ended = match self.open().await {
-            Ok(()) => {
-                self.shared.online.send_replace(true);
-                self.follow(inbox).await
-            }
+            Ok(()) => self.follow(commands).await,
             Err(ended) => ended,
         };
 
@@ -608,11 +399,8 @@ impl<'a> Session<'a> {
         if self.capabilities.time {
             self.read(Read::Time)?;
         }
-        if self.role == ClientRole::Owner && self.capabilities.calibration {
+        if self.capabilities.calibration {
             self.read(Read::Calibration)?;
-        }
-        if self.role == ClientRole::Owner && self.capabilities.update {
-            self.read(Read::Clients)?;
         }
 
         // A cursor from another history is a gap: what happened meanwhile
@@ -637,19 +425,14 @@ impl<'a> Session<'a> {
         }
     }
 
-    async fn follow(&mut self, inbox: &mut Inbox<'_>) -> Ended {
+    async fn follow(&mut self, commands: &mut mpsc::UnboundedReceiver<Command>) -> Ended {
         loop {
             let step = tokio::select! {
-                command = inbox.commands.recv() => match command {
+                command = commands.recv() => match command {
                     None => return Ended::Dropped,
                     Some(Command::Write { write, reply }) => self.write(write, reply),
                     Some(Command::Refresh) => self.read(Read::Status),
-                    Some(Command::Install { file, build, reply }) => {
-                        self.install(file, build, reply, &inbox.lane);
-                        Ok(())
-                    }
                 },
-                Some(step) = inbox.steps.recv() => self.lane(step),
                 received = self.connection.receive(TURN) => match received {
                     Ok(Received::Answer { id, answer }) => self.answered(id, answer),
                     Ok(Received::Pushed(pushed)) => self.pushed(&pushed),
@@ -694,7 +477,6 @@ impl<'a> Session<'a> {
             Read::Plans => Op::GetPlans,
             Read::Time => Op::GetTime,
             Read::Calibration => Op::GetCalibration,
-            Read::Clients => Op::ListClients,
         };
         let id = random().map_err(lost)?;
         self.connection.request(id, &op).map_err(lost)?;
@@ -734,54 +516,6 @@ impl<'a> Session<'a> {
         Ok(())
     }
 
-    /// Carry one of an install's requests on this session.
-    fn lane(&mut self, step: LaneStep) -> Step {
-        let id = random().map_err(lost)?;
-        if let Err(error) = self.connection.request(id, &step.op) {
-            let _ = step.reply.send(None);
-            return Err(lost(error));
-        }
-        self.pending.insert(id, Pending::Lane(step.reply));
-        Ok(())
-    }
-
-    /// Start installing `file` beside the session, if this client may and
-    /// no install runs already.
-    fn install(
-        &mut self,
-        file: Vec<u8>,
-        build: [u8; 32],
-        reply: oneshot::Sender<Install>,
-        lane: &mpsc::UnboundedSender<LaneStep>,
-    ) {
-        let allowed = if self.role != ClientRole::Owner {
-            Err(NotSent::Forbidden)
-        } else if !self.capabilities.update {
-            Err(NotSent::Unsupported)
-        } else if self.shared.installing.swap(true, Ordering::SeqCst) {
-            Err(NotSent::Busy)
-        } else {
-            Ok(())
-        };
-        if let Err(why) = allowed {
-            let _ = reply.send(Install::not_sent(why));
-            return;
-        }
-
-        let lane = Lane {
-            steps: lane.clone(),
-            online: self.shared.online.subscribe(),
-            build,
-            updates: self.updates.clone(),
-        };
-        let installing = Arc::clone(&self.shared.installing);
-        tokio::spawn(async move {
-            let installed = install(lane, file).await;
-            installing.store(false, Ordering::SeqCst);
-            let _ = reply.send(installed);
-        });
-    }
-
     fn store_busy(&self, store: Store) -> bool {
         self.pending.values().any(|pending| {
             matches!(pending, Pending::Write { kind: Kind::Store { store: out, .. }, .. } if *out == store)
@@ -796,10 +530,6 @@ impl<'a> Session<'a> {
                 Ok(())
             }
             Some(Pending::Read(read)) => self.fact(read, answer),
-            Some(Pending::Lane(reply)) => {
-                let _ = reply.send(answer);
-                Ok(())
-            }
             None => Ok(()),
         }
     }
@@ -896,19 +626,6 @@ impl<'a> Session<'a> {
             (Read::Time, Some(Answer::Time(time))) => facts.time = Some(time),
             (Read::Calibration, Some(Answer::Calibration(view))) => {
                 self.memory.calibration = Some(view);
-            }
-            (Read::Clients, Some(Answer::Clients(clients))) => {
-                let keys = clients
-                    .iter()
-                    .filter(|client| client.role == ClientRole::UpdateSigner)
-                    .map(|client| client.key.0)
-                    .collect();
-                *self
-                    .shared
-                    .update_keys
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner) = keys;
-                return Ok(());
             }
             // A read that failed is asked again at the next turn or event.
             _ => return Ok(()),

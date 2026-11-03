@@ -1,5 +1,5 @@
 """The feeder's numbers: the portions the Feed button asks for, the
-volume, and an owner's portion weight."""
+volume, and the weight of one portion."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import WellfedConfigEntry
 from .const import PORTIONS_MAX, PORTIONS_MIN
-from .entity import WellfedEntity, owner_mode, serves
+from .entity import WellfedEntity, serves
 
 PARALLEL_UPDATES = 0
 
@@ -34,7 +34,7 @@ async def async_setup_entry(
     entities: list[WellfedEntity] = [Volume(session, "volume")]
     if serves(session, lambda caps: caps.feed):
         entities.append(Portions(session, "portions"))
-    if owner_mode(session) and serves(session, lambda caps: caps.calibration):
+    if serves(session, lambda caps: caps.calibration):
         entities.append(PortionWeight(session, "portion_weight"))
     async_add_entities(entities)
 
@@ -87,7 +87,7 @@ class Volume(WellfedEntity, NumberEntity):
 
 
 class PortionWeight(WellfedEntity, NumberEntity):
-    """The weight of one portion, as the owner measured it."""
+    """The weight of one portion, as it was measured."""
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_device_class = NumberDeviceClass.WEIGHT

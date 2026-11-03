@@ -3,7 +3,6 @@
 //! classes the stub describes rather than a copy of the model's spellings.
 //! Each blocking call releases the interpreter while it waits.
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use pyo3::exceptions::PyException;
@@ -13,10 +12,9 @@ use pyo3::types::PyTuple;
 use crate::Error;
 use wellfed_model::SettingsPatch;
 
-use crate::api::{Install, Role, Tune, Update, UpdateOffer, Written};
+use crate::api::{Tune, Update, Written};
 use crate::feeder::{self, Target};
-use crate::key::{self, ClientKey, bytes32};
-use crate::releases::{Library, block_on, release_id};
+use crate::key::{self, ClientKey, Joined, bytes32};
 
 /// A call into the Wellfed bridge failed.
 ///
@@ -57,8 +55,9 @@ fn invite_feeder(text: &str) -> PyResult<Vec<u8>> {
     Ok(key::invite_feeder(text)?.to_vec())
 }
 
-/// Redeem `invite` as the key `secret`, listed as `label`; the role the
-/// feeder enrolled it with. Runs once: an invite is single-use.
+/// Redeem `invite` as the key `secret`, listed as `label`, keeping the key
+/// only as a member: any other role is revoked at once. Runs once: an invite
+/// is single-use.
 #[pyfunction]
 #[pyo3(signature = (secret, invite, label, address=None))]
 fn join(
@@ -67,16 +66,16 @@ fn join(
     invite: &str,
     label: &str,
     address: Option<&str>,
-) -> PyResult<Role> {
+) -> PyResult<Joined> {
     let key = ClientKey::restore(secret)?;
-    let role = py.detach(|| {
+    let joined = py.detach(|| {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(Error::Thread)?;
-        runtime.block_on(key::join(&key, invite, label, address))
+        runtime.block_on(key::join_member(&key, invite, label, address))
     })?;
-    Ok(role.into())
+    Ok(joined)
 }
 
 /// One feeder's session, on a thread of its own until this is dropped.
@@ -154,56 +153,9 @@ impl Feeder {
         py.detach(|| self.0.set_plan_enabled(slot, enabled))
     }
 
-    /// Store the weight of one portion in milligrams, 1,000-50,000
-    /// (owners only).
+    /// Store the weight of one portion in milligrams, 1,000-50,000.
     fn set_portion_weight(&self, py: Python<'_>, mg: u32) -> Written {
         py.detach(|| self.0.set_portion_weight(mg))
-    }
-
-    /// Restart the feeder (owners only).
-    fn reboot(&self, py: Python<'_>) -> Written {
-        py.detach(|| self.0.reboot())
-    }
-
-    /// The newest release in the cache under `folder`, after fetching the
-    /// project's releases it lacks when `fetch`; `None` with none held.
-    /// Verified against `project_keys` and the owner's enrolled keys.
-    #[pyo3(signature = (folder, project_keys, fetch=true))]
-    fn newest_release(
-        &self,
-        py: Python<'_>,
-        folder: PathBuf,
-        project_keys: Vec<Vec<u8>>,
-        fetch: bool,
-    ) -> PyResult<Option<UpdateOffer>> {
-        let library = Library::new(folder, project_keys, self.0.update_keys())?;
-        Ok(py.detach(|| block_on(library.newest(fetch)))??)
-    }
-
-    /// Verify the release file at `path` and keep it under `folder`.
-    fn add_release(
-        &self,
-        py: Python<'_>,
-        folder: PathBuf,
-        project_keys: Vec<Vec<u8>>,
-        path: PathBuf,
-    ) -> PyResult<UpdateOffer> {
-        let library = Library::new(folder, project_keys, self.0.update_keys())?;
-        Ok(py.detach(|| block_on(library.add_file(path)))??)
-    }
-
-    /// Install the release `id` from under `folder` (owners only); blocks
-    /// until it ends. Its progress comes as `installing` updates.
-    fn install(
-        &self,
-        py: Python<'_>,
-        folder: PathBuf,
-        project_keys: Vec<Vec<u8>>,
-        id: &str,
-    ) -> PyResult<Install> {
-        let library = Library::new(folder, project_keys, self.0.update_keys())?;
-        let id = release_id(id)?;
-        Ok(py.detach(|| self.0.install_release(&library, id))?)
     }
 
     /// Read the status now.
@@ -219,8 +171,9 @@ mod wellfed_homeassistant {
     #[pymodule_export]
     use crate::api::{
         By, Capabilities, Event, EventKind, Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel,
-        Install, InstallPhase, InstallProgress, Installed, NextMeal, NotSent, Plan, PortionsToday,
-        Readiness, RefusalKind, Role, Settings, Signer, State, Status, Tune, Update, UpdateKind,
-        UpdateOffer, WriteResult, Written,
+        NextMeal, NotSent, Plan, PortionsToday, Readiness, RefusalKind, Role, Settings, State,
+        Status, Tune, Update, UpdateKind, WriteResult, Written,
     };
+    #[pymodule_export]
+    use crate::key::Joined;
 }

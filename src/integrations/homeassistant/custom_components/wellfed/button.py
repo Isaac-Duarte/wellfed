@@ -13,7 +13,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 import wellfed_homeassistant as bridge
 
 from . import WellfedConfigEntry
-from .entity import WellfedEntity, owner_mode, serves
+from .entity import WellfedEntity, serves
 from .session import FeederSession
 
 PARALLEL_UPDATES = 0
@@ -63,13 +63,6 @@ BUTTONS = (
         translation_key="play_chime",
         entity_category=EntityCategory.CONFIG,
         press=lambda session: session.play(bridge.Tune.Chime),
-    ),
-    WellfedButtonDescription(
-        key="reboot",
-        translation_key="reboot",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        press=lambda session: session.reboot(),
-        offered=owner_mode,
     ),
 )
 

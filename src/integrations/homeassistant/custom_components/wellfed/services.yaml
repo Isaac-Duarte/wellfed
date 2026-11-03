@@ -25,15 +25,3 @@ cancel_feed:
           min: 0
           max: 4294967295
           mode: box
-add_release:
-  fields:
-    device_id:
-      required: true
-      selector:
-        device:
-          integration: wellfed
-    path:
-      required: true
-      example: /config/wellfed/feeder-v12.plota
-      selector:
-        text:

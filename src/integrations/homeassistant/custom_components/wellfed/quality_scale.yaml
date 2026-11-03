@@ -72,5 +72,5 @@ rules:
     comment: The bridge's calls block and run in the executor; the session itself runs on a Rust thread.
   inject-websession:
     status: exempt
-    comment: The feeder speaks the device API over TCP, not HTTP; release fetches are the bridge's own.
+    comment: The feeder speaks the device API over TCP, not HTTP.
   strict-typing: done

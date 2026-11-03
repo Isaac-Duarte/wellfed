@@ -65,7 +65,7 @@ A dual-slot store, `PLFCAL01` (`wellfed_feeder::store::calibration`), holds the 
 `Capabilities::CALIBRATION` is bit 256, after `TRACES` (64) and `POWER` (128). The ops, outcome, refusal and statistics section are appended after the traces' codes:
 
 - `Op::GetCalibration` returns `Outcome::Calibration(CalibrationView { generation, writable, calibration: Calibration { portion_mg, bowl }, phase })`. `phase` is `None` from a feeder with no feeding owner (the simulator) or before it opens.
-- `Op::PutCalibration { base, calibration }` is for owners only, answered `Done { generation }` once stored. It is refused `Stale` past `base`, `Busy` while the outputs are claimed or a change waits, `Invalid` outside the limits, and `Unverified` for another bowl mode.
+- `Op::PutCalibration { base, calibration }` is for owners and members (not the server's key), answered `Done { generation }` once stored. It is refused `Stale` past `base`, `Busy` while the outputs are claimed or a change waits, `Invalid` outside the limits, and `Unverified` for another bowl mode.
 - `StatsSection::Portions` returns `Stats::Portions(Portions { portions, homed, outlet_breaks, portion_mg, delivered_mg })`, since this boot: credited portions, feeds that began with a homing mark, outlet-beam breaks, the stored weight, and `portions × portion_mg`.
 
 A session without the bit is refused `Unavailable` for all three, so an older client or feeder never meets a variant it cannot decode. The fixtures in `tests/fixtures/v1.txt` pin the new messages. The server maps `Unverified` to `Forbidden`, as it maps update refusals, so a server session cannot write the calibration.

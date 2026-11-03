@@ -264,16 +264,6 @@ pub struct Threaded {
 impl Threaded {
     /// A fresh simulator with `owner`'s public key enrolled as an owner.
     pub fn start(owner: [u8; 32]) -> Self {
-        Self::spawn(owner, None)
-    }
-
-    /// As [`Self::start`], trusting `update_key` for updates, on banks that
-    /// outlive its restarts as an install needs.
-    pub fn start_updatable(owner: [u8; 32], update_key: [u8; 32]) -> Self {
-        Self::spawn(owner, Some(update_key))
-    }
-
-    fn spawn(owner: [u8; 32], update_key: Option<[u8; 32]>) -> Self {
         let (started, starting) = std::sync::mpsc::channel();
         let (control, controls) = std::sync::mpsc::channel::<Control>();
         let thread = std::thread::spawn(move || {
@@ -282,11 +272,7 @@ impl Threaded {
                 .build()
                 .expect("a current-thread runtime builds");
             runtime.block_on(tokio::task::LocalSet::new().run_until(async move {
-                let any = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
-                let banks = Banks::new();
-                let sim =
-                    Running::start_with(&Flash::memory(), &banks, update_key, Some(owner), any)
-                        .await;
+                let sim = Running::start(&Flash::memory(), Some(owner)).await;
                 let _ = started.send((sim.address, sim.identity));
                 loop {
                     match controls.try_recv() {

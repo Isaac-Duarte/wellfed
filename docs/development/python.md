@@ -32,10 +32,10 @@ src/integrations/homeassistant/
 
 | Layer | Covers | Where |
 | --- | --- | --- |
-| Bridge | The session, writes, settlement and installs, in Rust against the simulator | `bridge/tests/` |
+| Bridge | The session, writes, settlement and the member-only join, in Rust against the simulator | `bridge/tests/` |
 | Flows | Pairing, zeroconf, reauth, reconfigure and the options | `tests/test_config_flow.py` |
 | Entities | Each entity and action end to end against the simulator | `tests/test_entities.py`, `tests/test_integration.py` |
-| Scripted | Repairs, a revoked key or a silent feeder at setup, installs, diagnostics, stale devices | `tests/test_fake_paths.py` |
+| Scripted | Repairs, a revoked key or a silent feeder at setup, diagnostics, stale devices | `tests/test_fake_paths.py` |
 
 The simulator tests start `wellfed-feeder-sim` and use the `wellfed` CLI as its owner, both from `WELLFED_BIN_DIR`, which `check-homeassistant` sets. Coverage of the integration must stay at 95% or above.
 
@@ -43,7 +43,7 @@ The simulator tests start `wellfed-feeder-sim` and use the `wellfed` CLI as its 
 
 The host checks don't prove the integration works on a feeder. On a real feeder, with Home Assistant run from a scratch config:
 
-1. Pair with a member invite, then with an owner invite.
+1. Pair with a member invite, then try an owner invite: Home Assistant should refuse it and the feeder should no longer list its key.
 2. Feed one portion from the Feed button, and check the bowl against the Feed event.
 3. Turn the child lock and a meal plan off and on, and check the feeder agrees.
 4. Revoke Home Assistant's key, and pair it again through the repair.

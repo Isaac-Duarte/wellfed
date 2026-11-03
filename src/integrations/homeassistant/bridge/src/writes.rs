@@ -36,7 +36,6 @@ pub enum Write {
     Settings(SettingsPatch),
     PlanEnabled { slot: u8, enabled: bool },
     PortionWeight { mg: u32 },
-    Reboot,
 }
 
 /// A store whose writes name the generation they were made on.
@@ -74,19 +73,15 @@ pub struct Read<'a> {
 /// Whether this client may send `write` to a feeder that serves
 /// `capabilities`.
 pub fn gate(write: &Write, role: ClientRole, capabilities: &Capabilities) -> Result<(), NotSent> {
-    let (owner_only, served) = match write {
-        Write::Feed { .. } | Write::CancelFeed { .. } => (false, capabilities.feed),
-        Write::ResetDesiccant => (false, capabilities.desiccant),
-        Write::PlanEnabled { .. } => (false, capabilities.plans),
-        Write::PortionWeight { .. } => (true, capabilities.calibration),
-        Write::Reboot => (true, true),
-        Write::SetLock { .. } | Write::Play { .. } | Write::Settings(_) => (false, true),
+    let served = match write {
+        Write::Feed { .. } | Write::CancelFeed { .. } => capabilities.feed,
+        Write::ResetDesiccant => capabilities.desiccant,
+        Write::PlanEnabled { .. } => capabilities.plans,
+        Write::PortionWeight { .. } => capabilities.calibration,
+        Write::SetLock { .. } | Write::Play { .. } | Write::Settings(_) => true,
     };
-    let allowed = match role {
-        ClientRole::Owner => true,
-        ClientRole::Member | ClientRole::Server => !owner_only,
-        ClientRole::UpdateSigner => false,
-    };
+    // Every write here is a member's: an update signer's key may only sign.
+    let allowed = role != ClientRole::UpdateSigner;
 
     wellfed_formats::require(allowed, || NotSent::Forbidden)?;
     wellfed_formats::require(served, || NotSent::Unsupported)
@@ -104,7 +99,6 @@ pub fn build(write: &Write, read: &Read<'_>) -> Result<(Op, Kind), NotSent> {
         Write::SetLock { locked } => (Op::SetLock { locked }, Kind::Once),
         Write::ResetDesiccant => (Op::ResetDesiccant, Kind::Once),
         Write::Play { tune } => (Op::Play { tune: tune.into() }, Kind::Once),
-        Write::Reboot => (Op::Reboot, Kind::Once),
 
         Write::Settings(changes) => {
             let valid = changes.volume.is_none_or(|volume| volume <= 100)
@@ -194,14 +188,9 @@ mod tests {
     };
 
     #[test]
-    fn a_member_may_not_weigh_portions_or_restart_the_feeder() {
-        for write in [Write::PortionWeight { mg: 9_000 }, Write::Reboot] {
-            assert_eq!(
-                gate(&write, ClientRole::Member, &ALL),
-                Err(NotSent::Forbidden)
-            );
-            assert_eq!(gate(&write, ClientRole::Owner, &ALL), Ok(()));
-        }
+    fn a_member_may_make_every_write_and_an_update_signer_none() {
+        let weigh = Write::PortionWeight { mg: 9_000 };
+        assert_eq!(gate(&weigh, ClientRole::Member, &ALL), Ok(()));
         let feed = Write::Feed { portions: 1 };
         assert_eq!(gate(&feed, ClientRole::Member, &ALL), Ok(()));
         assert_eq!(

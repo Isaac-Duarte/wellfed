@@ -10,7 +10,7 @@ from homeassistant.config_entries import SOURCE_USER, ConfigEntry
 from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 import pytest
 
@@ -28,11 +28,11 @@ async def _until(hass: HomeAssistant, condition: Callable[[], bool]) -> None:
             await hass.async_block_till_done()
 
 
-async def _pair(hass: HomeAssistant, simulator: Simulator, role: str = "member") -> ConfigEntry:
+async def _pair(hass: HomeAssistant, simulator: Simulator) -> ConfigEntry:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {CONF_INVITE: simulator.invite(role), CONF_ADDRESS: simulator.address},
+        {CONF_INVITE: simulator.invite(), CONF_ADDRESS: simulator.address},
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     entry: ConfigEntry = result["result"]
@@ -66,9 +66,7 @@ async def _switch(hass: HomeAssistant, entity_id: str, on: bool) -> None:
     await hass.services.async_call("switch", service, {ATTR_ENTITY_ID: entity_id}, blocking=True)
 
 
-async def test_a_member_gets_the_member_entities_and_no_owner_ones(
-    hass: HomeAssistant, simulator: Simulator
-) -> None:
+async def test_a_member_gets_every_entity(hass: HomeAssistant, simulator: Simulator) -> None:
     entry = await _pair(hass, simulator)
     registry = er.async_get(hass)
     ids = {item.entity_id for item in er.async_entries_for_config_entry(registry, entry.entry_id)}
@@ -98,8 +96,8 @@ async def test_a_member_gets_the_member_entities_and_no_owner_ones(
         ("event", "feed"),
     ]:
         assert _id(entry, domain, name) in ids, (domain, name)
-    for domain, name in [("button", "restart"), ("number", "portion_weight")]:
-        assert _id(entry, domain, name) not in ids, (domain, name)
+    assert _id(entry, "number", "portion_weight") in ids, "a member's to set"
+    assert _id(entry, "button", "restart") not in ids
     assert not any(entity_id.startswith("update.") for entity_id in ids)
 
     signal = registry.async_get(_id(entry, "sensor", "signal_strength"))
@@ -252,25 +250,11 @@ async def test_the_binary_sensors_follow_the_hopper_the_adapter_and_a_fault(
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_an_owner_gets_the_owner_entities(hass: HomeAssistant, simulator: Simulator) -> None:
-    entry = await _pair(hass, simulator, role="owner")
+async def test_a_member_sets_the_portion_weight(hass: HomeAssistant, simulator: Simulator) -> None:
+    entry = await _pair(hass, simulator)
     weight = _id(entry, "number", "portion_weight")
-    assert hass.states.get(_id(entry, "button", "restart")) is not None
-    firmware = _state(hass, _id(entry, "update", "firmware"))
-    assert firmware.state == STATE_OFF, "nothing newer held"
 
     await _set(hass, weight, 9.5)
     await _until(hass, lambda: _state(hass, weight).state == "9.5")
-
-    device = dr.async_get(hass).async_get_device_by_identifier(
-        (DOMAIN, entry.unique_id or ""), entry.entry_id
-    )
-    assert device is not None
-    with pytest.raises(HomeAssistantError):
-        await hass.services.async_call(
-            DOMAIN,
-            "add_release",
-            {"device_id": device.id, "path": "/not/allowed.plota"},
-            blocking=True,
-        )
+    assert '"portion_mg": 9500' in simulator.owner("calibrate")
     assert await hass.config_entries.async_unload(entry.entry_id)
