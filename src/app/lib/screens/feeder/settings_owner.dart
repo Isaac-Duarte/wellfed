@@ -9,13 +9,14 @@ import 'package:wellfed/screens/feeder/settings_tab.dart';
 import 'package:wellfed/screens/feeder/today.dart' show clockWords;
 import 'package:wellfed/screens/feeder/updates.dart';
 import 'package:wellfed/screens/feeder/wifi.dart';
-import 'package:wellfed/src/rust/api/feeder.dart' show CallInfo;
+import 'package:wellfed/src/rust/api/feeder.dart' show CallInfo, FeederReply, FeederRequest;
 import 'package:wellfed/src/rust/api/model.dart' show CallClip_None, CallClip_Receiving, CallClip_Stored;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
-import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/replies.dart';
 
 class SettingsOwnerSection extends StatefulWidget {
   const SettingsOwnerSection({super.key, required this.feeder});
@@ -59,43 +60,44 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
       CallClip_None() => 'None recorded',
     };
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SectionLabel('Feeder'),
-        Panel(
-          child: Column(
-            children: [
-              _Link('Wi-Fi', signal, WifiScreen(feeder: feeder), first: true, open: (screen) => _open(context, screen)),
-              _Link(
-                'Clock and portion size',
-                card == null ? null : clockWords(context, card),
-                ClockPortionScreen(feeder: feeder),
-                open: (screen) => _open(context, screen),
-              ),
-              _Link(
-                'Meal call',
-                clip,
-                MealCallScreen(feeder: feeder, pick: feeder.pickRecording),
-                open: (screen) => _open(context, screen),
-              ),
-              _Link('People', people, PeopleScreen(feeder: feeder), open: (screen) => _open(context, screen)),
-              _Link(
-                'Firmware',
-                card == null ? null : shortBuild(card.build),
-                UpdatesScreen(feeder: feeder),
-                open: (screen) => _open(context, screen),
-              ),
-              _Link(
-                'Diagnostics',
-                card == null ? null : 'Up ${upText(card.uptimeMs ~/ 1000)}',
-                DiagnosticsScreen(feeder: feeder),
-                open: (screen) => _open(context, screen),
-              ),
-            ],
+    final bool online = feeder.state.connection == Connection.online;
+    return SettingsSection(
+      'Feeder',
+      Column(
+        children: [
+          _Link('Wi-Fi', signal, WifiScreen(feeder: feeder), first: true, open: (screen) => _open(context, screen)),
+          _Link(
+            'Clock and portion size',
+            card == null ? null : clockWords(context, card),
+            ClockPortionScreen(feeder: feeder),
+            open: (screen) => _open(context, screen),
           ),
-        ),
-      ],
+          _Link(
+            'Meal call',
+            clip,
+            MealCallScreen(feeder: feeder, pick: feeder.pickRecording),
+            open: (screen) => _open(context, screen),
+          ),
+          _Link('People', people, PeopleScreen(feeder: feeder), open: (screen) => _open(context, screen)),
+          _Link(
+            'Firmware',
+            card == null ? null : shortBuild(card.build),
+            UpdatesScreen(feeder: feeder),
+            open: (screen) => _open(context, screen),
+          ),
+          _Link(
+            'Diagnostics',
+            card == null ? null : 'Up ${upText(card.uptimeMs ~/ 1000)}',
+            DiagnosticsScreen(feeder: feeder),
+            open: (screen) => _open(context, screen),
+          ),
+          SettingsTile(
+            first: false,
+            onTap: online ? () => unawaited(confirmRestart(context, feeder)) : null,
+            child: const SettingsWords('Restart', "It's back in about a minute"),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -106,37 +108,32 @@ class SettingsOwnerOnly extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SectionLabel('Owner only'),
-        Panel(
-          child: Column(
-            children: [
-              for (final (i, name) in const [
-                'Wi-Fi',
-                'Clock and portion size',
-                'Meal call',
-                'Firmware updates',
-                'Restart, remove people',
-              ].indexed)
-                SettingsTile(
-                  first: i == 0,
-                  child: Row(
-                    children: [
-                      StrokeIcon(Glyph.lock, size: 18, color: c.textMuted),
-                      const SizedBox(width: Space.s3),
-                      Text(
-                        name,
-                        style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
-                      ),
-                    ],
+    return SettingsSection(
+      'Owner only',
+      Column(
+        children: [
+          for (final (i, name) in const [
+            'Wi-Fi',
+            'Clock and portion size',
+            'Meal call',
+            'Firmware updates',
+            'Restart, remove people',
+          ].indexed)
+            SettingsTile(
+              first: i == 0,
+              child: Row(
+                children: [
+                  StrokeIcon(Glyph.lock, size: 18, color: c.textMuted),
+                  const SizedBox(width: Space.s3),
+                  Text(
+                    name,
+                    style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
                   ),
-                ),
-            ],
-          ),
-        ),
-      ],
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -161,4 +158,26 @@ class _Link extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// Ask, then restart. The feeder refuses a restart while a feed runs; one
+/// that goes unanswered may have gone through, and is not sent again.
+Future<void> confirmRestart(BuildContext context, FeederController feeder) async {
+  final bool? sure = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Restart ${feeder.state.known.name}?'),
+      content: const Text("It's back in about a minute. It can't feed during the restart."),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Restart')),
+      ],
+    ),
+  );
+  if (sure != true) return;
+
+  final FeederReply reply = await feeder.ask(const FeederRequest.reboot());
+  if (context.mounted && showProblem(context, reply)) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${feeder.state.known.name} is restarting.')));
+  }
 }

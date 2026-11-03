@@ -9,7 +9,9 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/ask_text.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
 
 /// Change one setting, against the generation the screen shows.
@@ -33,95 +35,136 @@ class SettingsTab extends StatelessWidget {
       final ThemeTokens c = context.colors;
       final SettingsView? settings = feeder.state.card?.settings;
       final owner = feeder.state.role == ClientRole.owner;
-      if (settings == null) {
-        return Center(
-          child: Text(
-            feeder.state.connection == Connection.online
-                ? 'Reading the settings…'
-                : "Can't read the settings right now.",
-            style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
-          ),
-        );
-      }
       final online = feeder.state.connection == Connection.online;
 
       return ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        // Clear of the gesture bar, so the last row is never under it.
+        padding: EdgeInsets.fromLTRB(Space.s4, Space.s4, Space.s4, Space.s6 + MediaQuery.paddingOf(context).bottom),
         children: [
-          if (!owner) ...[
-            Text.rich(
-              TextSpan(
-                style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
+          if (settings == null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: Space.s5),
+              child: Text(
+                online ? 'Reading the settings…' : "Can't read the settings right now.",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
+              ),
+            )
+          else ...[
+            if (!owner) ...[
+              Text.rich(
+                TextSpan(
+                  style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
+                  children: [
+                    const TextSpan(text: "You're a "),
+                    TextSpan(
+                      text: 'member',
+                      style: TextStyle(fontWeight: Fonts.semibold, color: c.text),
+                    ),
+                    TextSpan(
+                      text:
+                          ' of ${feeder.state.known.name}. You can change lights, '
+                          'sounds and reminders.',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: Space.s4),
+            ],
+            SettingsSection(
+              'Lights and sound',
+              Column(
                 children: [
-                  const TextSpan(text: "You're a "),
-                  TextSpan(
-                    text: 'member',
-                    style: TextStyle(fontWeight: Fonts.semibold, color: c.text),
+                  SettingsWindowRow(
+                    feeder: feeder,
+                    settings: settings,
+                    online: online,
+                    name: 'Lights',
+                    on: settings.lights,
+                    window: settings.lightsWindow,
+                    question: 'When can the lights be on?',
+                    toggle: (on) => SettingsChanges(lights: on),
+                    windowed: (window) => SettingsChanges(lightsWindow: window),
+                    first: true,
                   ),
-                  TextSpan(
-                    text:
-                        ' of ${feeder.state.known.name}. You can change lights, '
-                        'sounds and reminders.',
+                  SettingsWindowRow(
+                    feeder: feeder,
+                    settings: settings,
+                    online: online,
+                    name: 'Sounds',
+                    on: settings.sound,
+                    window: settings.soundWindow,
+                    question: 'When can sounds play?',
+                    toggle: (on) => SettingsChanges(sound: on),
+                    windowed: (window) => SettingsChanges(soundWindow: window),
                   ),
+                  SettingsVolumeRow(feeder: feeder, settings: settings, online: online),
                 ],
               ),
             ),
-            const SizedBox(height: Space.s3),
+            SettingsSection(
+              'Reminders',
+              Column(
+                children: [
+                  SettingsReminderRow(feeder: feeder, settings: settings, online: online),
+                  SettingsDesiccantRow(feeder: feeder, settings: settings, online: online),
+                ],
+              ),
+            ),
+            if (owner) SettingsOwnerSection(feeder: feeder) else const SettingsOwnerOnly(),
           ],
-          const SectionLabel('Lights and sound'),
-          Panel(
-            child: Column(
+          // What this phone keeps about the feeder: it works offline too.
+          SettingsSection(
+            'On this phone',
+            Column(
               children: [
-                SettingsWindowRow(
-                  feeder: feeder,
-                  settings: settings,
-                  online: online,
-                  name: 'Lights',
-                  on: settings.lights,
-                  window: settings.lightsWindow,
-                  question: 'When can the lights be on?',
-                  toggle: (on) => SettingsChanges(lights: on),
-                  windowed: (window) => SettingsChanges(lightsWindow: window),
+                SettingsTile(
                   first: true,
+                  onTap: () => unawaited(_rename(context, feeder)),
+                  child: Row(
+                    children: [
+                      Expanded(child: SettingsWords('Name', feeder.state.known.name)),
+                      StrokeIcon(Glyph.chevron, size: 20, color: c.textMuted),
+                    ],
+                  ),
                 ),
-                SettingsWindowRow(
-                  feeder: feeder,
-                  settings: settings,
-                  online: online,
-                  name: 'Sounds',
-                  on: settings.sound,
-                  window: settings.soundWindow,
-                  question: 'When can sounds play?',
-                  toggle: (on) => SettingsChanges(sound: on),
-                  windowed: (window) => SettingsChanges(soundWindow: window),
+                SettingsTile(
+                  first: false,
+                  onTap: () => unawaited(_forget(context, feeder)),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Remove from this phone',
+                      style: TextStyle(fontSize: 15, fontWeight: Fonts.medium, color: c.fault),
+                    ),
+                  ),
                 ),
-                SettingsVolumeRow(feeder: feeder, settings: settings, online: online),
               ],
             ),
-          ),
-          const SizedBox(height: Space.s4),
-          const SectionLabel('Reminders'),
-          Panel(
-            child: Column(
-              children: [
-                SettingsReminderRow(feeder: feeder, settings: settings, online: online),
-                SettingsDesiccantRow(feeder: feeder, settings: settings, online: online),
-              ],
-            ),
-          ),
-          const SizedBox(height: Space.s4),
-          if (owner) SettingsOwnerSection(feeder: feeder) else const SettingsOwnerOnly(),
-          const SizedBox(height: Space.s4),
-          // Restart lives in the screen's menu; this is the one way off the phone.
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: c.fault, minimumSize: const Size.fromHeight(48)),
-            onPressed: () => unawaited(_forget(context, feeder)),
-            child: const Text('Remove from this phone'),
+            last: true,
           ),
         ],
       );
     },
   );
+
+  /// Ask for a new name. It is this phone's name for the feeder, so it needs
+  /// no session and works offline.
+  static Future<void> _rename(BuildContext context, FeederController feeder) async {
+    final String? name = await askText(
+      context,
+      title: 'Rename ${feeder.state.known.name}',
+      label: 'Name',
+      initial: feeder.state.known.name,
+      action: 'Rename',
+    );
+    if (name == null || !context.mounted) return;
+
+    final bool saved = await feeder.rename(name);
+    if (!saved && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't save the name. Try again.")));
+    }
+  }
 
   /// This phone forgets the feeder. The feeder's list stays as it is, so an
   /// owner removes the key from People; a member cannot remove itself.
@@ -147,6 +190,30 @@ class SettingsTab extends StatelessWidget {
   }
 }
 
+/// A labelled panel of rows, with the room around it every section shares.
+class SettingsSection extends StatelessWidget {
+  const SettingsSection(this.label, this.child, {super.key, this.last = false});
+
+  final String label;
+  final Widget child;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.only(bottom: last ? 0 : Space.s5),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: Space.s1, bottom: Space.s2),
+          child: SectionLabel(label),
+        ),
+        Panel(child: child),
+      ],
+    ),
+  );
+}
+
 class SettingsTile extends StatelessWidget {
   const SettingsTile({super.key, required this.first, required this.child, this.onTap});
 
@@ -162,8 +229,8 @@ class SettingsTile extends StatelessWidget {
     child: InkWell(
       onTap: onTap,
       child: Container(
-        constraints: const BoxConstraints(minHeight: 52),
-        padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: Space.s2),
+        constraints: const BoxConstraints(minHeight: 60),
+        padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: Space.s3),
         decoration: BoxDecoration(
           border: first ? null : Border(top: BorderSide(color: context.colors.line)),
         ),
@@ -188,11 +255,13 @@ class SettingsWords extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(name, style: TextStyle(fontSize: 15, color: c.text)),
-        if (note case final note?)
+        if (note case final note?) ...[
+          const SizedBox(height: 2),
           Text(
             note,
             style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
           ),
+        ],
       ],
     );
   }

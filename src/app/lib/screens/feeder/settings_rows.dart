@@ -181,9 +181,9 @@ class _DesiccantRowState extends State<SettingsDesiccantRow> {
           runSpacing: Space.s2,
           children: [
             SettingsWords('Desiccant every ${widget.settings.desiccantDays} days', note),
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 40),
+            TextButton(
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 48),
                 padding: const EdgeInsets.symmetric(horizontal: Space.s3),
               ),
               onPressed: widget.online && !_asking ? _changed : null,

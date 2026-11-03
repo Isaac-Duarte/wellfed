@@ -142,7 +142,7 @@ void main() {
       expect(find.textContaining('Sound is off'), findsOneWidget);
     });
 
-    testWidgets('the feeder rows say where each stands, with no restart button', (tester) async {
+    testWidgets('the feeder rows say where each stands, with Restart and Remove at the end', (tester) async {
       final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.answering = (request) async => switch (request) {
         FeederRequest_GetCall() => const FeederReply.call(
@@ -157,8 +157,9 @@ void main() {
       expect(find.text('Your recording · 4 s'), findsOneWidget);
       expect(find.text('0123456789ab'), findsOneWidget);
       expect(find.text('Up 0 min'), findsOneWidget);
-      expect(find.text('Restart'), findsNothing, reason: "it's in the screen's menu");
-      expect(find.widgetWithText(TextButton, 'Remove from this phone'), findsOneWidget);
+      await scrollTo(tester, find.text('Remove from this phone'));
+      expect(find.text('Restart'), findsOneWidget);
+      expect(find.text('Remove from this phone'), findsOneWidget);
     });
 
     testWidgets('removing takes the feeder off this phone once confirmed', (tester) async {
@@ -171,7 +172,8 @@ void main() {
       ports.session.status(fakeCard(settings: _settings));
       await showTab(tester, SettingsTab(feeder: feeder));
 
-      await tapIn(tester, find.widgetWithText(TextButton, 'Remove from this phone'));
+      await scrollTo(tester, find.text('Remove from this phone'));
+      await tapIn(tester, find.text('Remove from this phone'));
       expect(book.feeders, hasLength(1), reason: 'it asks first');
       await tapIn(tester, find.widgetWithText(FilledButton, 'Remove'));
       expect(book.feeders, isEmpty);
@@ -180,6 +182,7 @@ void main() {
     testWidgets('removing asks first, and goes back', (tester) async {
       final (FeederController feeder, FakeSession session) = await _settingsTab(tester);
 
+      await scrollTo(tester, find.text('Remove from this phone'));
       await tapIn(tester, find.text('Remove from this phone'));
       expect(find.textContaining('stays on its People list'), findsOneWidget);
       await tapIn(tester, find.text('Cancel'));

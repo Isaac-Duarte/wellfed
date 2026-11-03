@@ -470,15 +470,17 @@ void main() {
     }
   });
 
-  testWidgets('the restart is in the menu too', (tester) async {
+  testWidgets('the restart is in Settings too, and the screen has no menu', (tester) async {
     final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
     await feederShowShell(tester, fleet);
-    session.status(fakeCard());
+    session.status(fakeCard(settings: fullCard().settings));
     await settle(tester);
+    expect(find.byTooltip('More'), findsNothing);
 
-    await feederTap(tester, find.byTooltip('More'));
+    await feederTap(tester, find.text('Settings'));
+    await scrollTo(tester, find.text('Restart'));
     await feederTap(tester, find.text('Restart'));
     await feederTap(tester, find.widgetWithText(FilledButton, 'Restart'));
-    expect(session.requests, [const FeederRequest.reboot()]);
+    expect(session.requests.whereType<FeederRequest_Reboot>(), hasLength(1));
   });
 }

@@ -21,8 +21,8 @@ void main() {
   }
 
   Future<void> rename(WidgetTester tester, String name) async {
-    await tapIn(tester, find.byTooltip('More'));
-    await tapIn(tester, find.text('Rename'));
+    await tapIn(tester, find.text('Settings'));
+    await tapIn(tester, find.text('Name'));
     await tester.enterText(find.byType(TextField), name);
     await tapIn(tester, find.widgetWithText(FilledButton, 'Rename'));
   }

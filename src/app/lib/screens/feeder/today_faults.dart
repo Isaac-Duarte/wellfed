@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:wellfed/screens/feeder/shell.dart' show confirmRestart;
+import 'package:wellfed/screens/feeder/settings_owner.dart' show confirmRestart;
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;
 import 'package:wellfed/state/feeder/feeder.dart';

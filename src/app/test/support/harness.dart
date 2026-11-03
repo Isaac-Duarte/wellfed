@@ -127,6 +127,17 @@ Future<void> showTab(WidgetTester tester, Widget tab) async {
 }
 
 /// Tap and let the fake's answer come back.
+/// Scroll the screen's list down until `target` is built: a lazy list builds
+/// no row below the fold.
+Future<void> scrollTo(WidgetTester tester, Finder target) => tester.scrollUntilVisible(
+  target,
+  200,
+  scrollable: find
+      .byWidgetPredicate((w) => w is Scrollable && w.axisDirection == AxisDirection.down)
+      .hitTestable()
+      .first,
+);
+
 Future<void> tapIn(WidgetTester tester, Finder target) async {
   await tester.ensureVisible(target);
   await tester.pump();
