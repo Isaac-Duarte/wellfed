@@ -470,7 +470,7 @@ void main() {
     }
   });
 
-  testWidgets('the restart is in Settings too, and the screen has no menu', (tester) async {
+  testWidgets('the feeder screen has no menu and Settings no restart', (tester) async {
     final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
     await feederShowShell(tester, fleet);
     session.status(fakeCard(settings: fullCard().settings));
@@ -478,9 +478,7 @@ void main() {
     expect(find.byTooltip('More'), findsNothing);
 
     await feederTap(tester, find.text('Settings'));
-    await scrollTo(tester, find.text('Restart'));
-    await feederTap(tester, find.text('Restart'));
-    await feederTap(tester, find.widgetWithText(FilledButton, 'Restart'));
-    expect(session.requests.whereType<FeederRequest_Reboot>(), hasLength(1));
+    await scrollTo(tester, find.text('Remove from this phone'));
+    expect(find.text('Restart'), findsNothing);
   });
 }

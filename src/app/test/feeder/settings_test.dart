@@ -142,7 +142,7 @@ void main() {
       expect(find.textContaining('Sound is off'), findsOneWidget);
     });
 
-    testWidgets('the feeder rows say where each stands, with Restart and Remove at the end', (tester) async {
+    testWidgets('the feeder rows say where each stands, with Remove at the end and no Restart', (tester) async {
       final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       session.answering = (request) async => switch (request) {
         FeederRequest_GetCall() => const FeederReply.call(
@@ -158,7 +158,7 @@ void main() {
       expect(find.text('0123456789ab'), findsOneWidget);
       expect(find.text('Up 0 min'), findsOneWidget);
       await scrollTo(tester, find.text('Remove from this phone'));
-      expect(find.text('Restart'), findsOneWidget);
+      expect(find.text('Restart'), findsNothing);
       expect(find.text('Remove from this phone'), findsOneWidget);
     });
 

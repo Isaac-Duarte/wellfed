@@ -93,7 +93,7 @@ flowchart LR
 | --- | --- |
 | Lock or unlock the buttons | Hold Lock for 5 seconds, tap **Buttons locked** or **Buttons unlocked** beside the drawing on Today, or run `wellfed lock off` |
 | Feed one portion | Press Dispense on an unlocked panel |
-| Start Bluetooth setup | On an unlocked panel, hold Lock, then Mic, for 5 seconds. No feed runs during setup, which ends after 15 idle minutes, so an accidental hold can skip a meal. **Restart** in the app or `wellfed reboot` ends it sooner |
+| Start Bluetooth setup | On an unlocked panel, hold Lock, then Mic, for 5 seconds. No feed runs during setup, which ends after 15 idle minutes, so an accidental hold can skip a meal. `wellfed reboot` on the CLI ends it sooner |
 | Add this phone back when no phone can reach the feeder | On an unlocked panel, hold Lock, then Dispense, for 5 seconds. Then, within 2 minutes, choose **Recover a feeder** in the app or run `wellfed recover`, and key in the code it shows |
 | Erase people, Wi-Fi, meals, settings and history | On an unlocked panel, hold Reset for 5 seconds |
 
@@ -197,7 +197,7 @@ An owner chooses where the time comes from, with **Get the time from** on the **
 
 ## Naming a feeder
 
-A feeder's name is your phone's own: choose **Rename** from the menu at the top of the feeder's screen. It works with the feeder offline, and someone else's phone keeps whatever name they gave it.
+A feeder's name is your phone's own: tap **Name** under **On this phone** at the bottom of the feeder's **Settings** tab. It works with the feeder offline, and someone else's phone keeps whatever name they gave it.
 
 ## People and invites
 

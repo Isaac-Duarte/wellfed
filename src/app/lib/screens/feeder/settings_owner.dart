@@ -13,7 +13,6 @@ import 'package:wellfed/src/rust/api/feeder.dart' show CallInfo, FeederReply, Fe
 import 'package:wellfed/src/rust/api/model.dart' show CallClip_None, CallClip_Receiving, CallClip_Stored;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
-import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
@@ -60,7 +59,6 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
       CallClip_None() => 'None recorded',
     };
 
-    final bool online = feeder.state.connection == Connection.online;
     return SettingsSection(
       'Feeder',
       Column(
@@ -91,11 +89,6 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
             DiagnosticsScreen(feeder: feeder),
             open: (screen) => _open(context, screen),
           ),
-          SettingsTile(
-            first: false,
-            onTap: online ? () => unawaited(confirmRestart(context, feeder)) : null,
-            child: const SettingsWords('Restart', "It's back in about a minute"),
-          ),
         ],
       ),
     );
@@ -117,7 +110,7 @@ class SettingsOwnerOnly extends StatelessWidget {
             'Clock and portion size',
             'Meal call',
             'Firmware updates',
-            'Restart, remove people',
+            'Remove people',
           ].indexed)
             SettingsTile(
               first: i == 0,
