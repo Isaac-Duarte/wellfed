@@ -11,7 +11,7 @@ The server adds what a small device can't hold:
 - **Remote access.** Reach your feeders from outside the home, through a reverse proxy or a VPN.
 - **Accounts and audit.** Each person logs in as themselves, with a role (owner, member or viewer). The audit log names who fed, changed a setting or adopted a feeder.
 - **Long history.** Every event and sample the feeder reports, kept for as long as you like, with hourly rollups for charts.
-- **Owner data.** Pets, foods, weights and refills, which the feeder doesn't track.
+- **Owner data.** Pets, foods, weights and refills, which the feeder doesn't track. From them and the feeds it mirrors, the server counts the portions since each refill and each pet's portions, and lists the feeds that were missed, uncertain or short. Once a feeder's portions are calibrated (weighed in the app), it also estimates the grams its hopper has left and when it runs out, and what each pet ate in grams and calories against its daily target.
 - **Releases and installs.** It fetches or takes signed firmware releases, verifies them, and installs one on a feeder running Wellfed when an owner asks. It does not install from stock: the app does that. It also keeps each feeder's stock firmware backup, so you can go back to stock.
 
 One server serves one household, with as many feeders as you own.
@@ -48,7 +48,7 @@ The API lives under `/api/v1`, as JSON. The complete reference is [`openapi.json
 | Feeders | `/feeders`, `/feeders/{id}`, `/feeders/{id}/settings`, `/plans`, `/lock`, `/desiccant/reset`, `/wifi`, `/reboot`, `/play`, `/clients`, `/invites`, `/phones` | Adopt and remove feeders, live status and the next meal, settings, feeding plans and administration |
 | Feeding | `/feeders/{id}/feed`, `/feeds/{feed}/cancel`, `/commands`, `/commands/{key}` | Feed, cancel, and the journal of every write |
 | History | `/feeders/{id}/events`, `/samples`, `/feeds/{feed}/trace`, `/stats`, `/log`, `/audit` | Events, samples, feed traces, statistics, the live debug log and the audit log |
-| Owner data | `/pets`, `/foods`, `/pets/{id}/weights`, `/pets/{id}/feeders/{feeder}`, `/feeders/{id}/food`, `/refills` | Pets, foods, weights, which feeder serves which pet, refills |
+| Owner data | `/pets`, `/foods`, `/pets/{id}/weights`, `/pets/{id}/feeders/{feeder}`, `/feeders/{id}/food`, `/refills`, `/pets/{id}/intake` | Pets, foods, weights, which feeder serves which pet, refills; the food left since the last refill and a pet's intake against its target |
 | Firmware | `/releases`, `/releases/check`, `/feeders/{id}/install`, `/feeders/{id}/stock…` | Releases, installs, the stock backup and restore |
 | Server data | `/backups`, `/export`, `/import`, `/status` | Backups, a full export, import onto a fresh server, readiness |
 | Live | `/stream` | Server-Sent Events for every feeder you can see |

@@ -32,7 +32,7 @@ pub(crate) async fn foods(
     Ok(Json(state.service.foods().await?))
 }
 
-/// Add a food. A cup is 110 g unless `grams_per_cup` says otherwise.
+/// Add a food: its energy and its bag size.
 #[utoipa::path(
     post,
     path = "/foods",
@@ -118,7 +118,12 @@ pub(crate) async fn delete_food(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// The food the feeder serves now, and its newest refill.
+/// The food the feeder serves now, its newest refill, the portions since
+/// and the feeder's rate. Once the feeder is calibrated (`weight` says),
+/// also the grams the hopper has left and when it runs out; before, the
+/// view counts in portions only. Also a refill
+/// the food beam saw that nobody recorded ("refilled?", which resets
+/// nothing), and the missed, uncertain and short feeds of the last week.
 #[utoipa::path(
     get,
     path = "/feeders/{id}/food",

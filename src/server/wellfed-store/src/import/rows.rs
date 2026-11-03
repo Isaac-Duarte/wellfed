@@ -312,14 +312,13 @@ pub(super) async fn pet_feeder(tx: &mut SqliteConnection, link: &PetFeeder) -> R
 
 pub(super) async fn food(tx: &mut SqliteConnection, food: &Food) -> Result<()> {
     sqlx::query!(
-        "INSERT INTO foods (id, brand, name, kcal_per_kg, bag_grams, grams_per_cup, created_ms)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO foods (id, brand, name, kcal_per_kg, bag_grams, created_ms)
+         VALUES (?, ?, ?, ?, ?, ?)",
         food.id,
         food.brand,
         food.name,
         food.kcal_per_kg,
         food.bag_grams,
-        food.grams_per_cup,
         food.created_ms,
     )
     .execute(tx)

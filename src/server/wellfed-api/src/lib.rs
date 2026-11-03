@@ -33,6 +33,7 @@ mod stock;
 mod stream;
 mod tokens;
 mod users;
+mod views;
 
 use std::fmt;
 
@@ -58,8 +59,8 @@ pub use feeders::{
     AdoptFeeder, Connection, Feeder, FeederDetail, LockRequest, PlansChange, StatusSnapshot,
 };
 pub use foods::{
-    FeederFood, Food, FoodChoice, FoodHistoryPage, FoodPatch, FoodPeriod, GRAMS_PER_CUP, NewFood,
-    NewRefill, Refill, RefillPage,
+    FeederFood, Food, FoodChoice, FoodHistoryPage, FoodPatch, FoodPeriod, NewFood, NewRefill,
+    Refill, RefillPage,
 };
 pub use health::{FeederLink, Health, Job, JobOutcome, JobRun, ServerStatus, StoreState};
 pub use household::{Household, HouseholdPatch, TimeFormat, Units};
@@ -82,12 +83,16 @@ pub use stock::{
 pub use stream::{FeederSample, StreamEvent, StreamQuery};
 pub use tokens::{BEARER, CreatedToken, NewToken, Token, TokenId};
 pub use users::{NewUser, UserPatch};
+pub use views::{
+    FOOD_VIEW_DAYS, FeedAnomaly, FeedRate, FeederPortions, FoodLeft, INTAKE_DAYS, INTAKE_DAYS_MAX,
+    IntakeDay, IntakeFeeder, IntakeQuery, PetIntake, PortionWeight, SinceRefill, WeighedIntake,
+};
 pub use wellfed_model::{
     Blocked, ClientRole, CurrentUnit, Desiccant, EnrollPath, EventBody, EventKind, FeedOutcome,
-    FeedReason, Food as FoodStats, FoodLevel, Generation, Hex, MealReminder, MetricKind, NextMeal,
-    PLANS, Plan, Plans, Power, Readiness, SampleValue, Settings, SettingsPatch, Source, Stats,
-    StatsSection, Status as FeederStatus, Trace, TraceEntry, TraceSummary, Weekday, Weekdays,
-    WifiSource, Window,
+    FeedReason, Food as FoodStats, FoodLevel, Generation, Hex, MealReminder, MetricKind,
+    MissedReason, NextMeal, PLANS, Plan, Plans, Power, Readiness, SampleValue, Settings,
+    SettingsPatch, Source, Stats, StatsSection, Status as FeederStatus, Trace, TraceEntry,
+    TraceSummary, Weekday, Weekdays, WifiSource, Window,
 };
 
 /// The prefix every resource lives under.

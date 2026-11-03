@@ -32,7 +32,6 @@ fn kibble(name: &str, bag_grams: u32) -> NewFood {
         name: name.into(),
         kcal_per_kg: 3600,
         bag_grams,
-        grams_per_cup: wellfed_api::GRAMS_PER_CUP,
     }
 }
 
@@ -221,7 +220,7 @@ fn a_food_is_checked_and_one_a_feeder_served_is_kept() {
         let kitchen = server.adopt(&sim).await;
 
         let dry = service.create_food(kibble(" Indoor ", 2000)).await.unwrap();
-        assert_eq!((dry.name.as_str(), dry.grams_per_cup), ("Indoor", 110));
+        assert_eq!(dry.name, "Indoor");
         for (food, want) in [
             (kibble("", 2000), Invalid::FoodName),
             (kibble("x", 0), Invalid::BagSize),
@@ -232,22 +231,15 @@ fn a_food_is_checked_and_one_a_feeder_served_is_kept() {
                 },
                 Invalid::Kcal,
             ),
-            (
-                NewFood {
-                    grams_per_cup: 0,
-                    ..kibble("x", 2000)
-                },
-                Invalid::GramsPerCup,
-            ),
         ] {
             invalid(service.create_food(food).await, want);
         }
         let patch = wellfed_api::FoodPatch {
-            grams_per_cup: Some(95),
+            bag_grams: Some(1500),
             ..wellfed_api::FoodPatch::default()
         };
         let dry = service.update_food(dry.id, patch).await.unwrap();
-        assert_eq!(dry.grams_per_cup, 95);
+        assert_eq!(dry.bag_grams, 1500);
         assert_eq!(service.foods().await.unwrap(), std::slice::from_ref(&dry));
 
         service.set_feeder_food(kitchen, dry.id).await.unwrap();

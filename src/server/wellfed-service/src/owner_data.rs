@@ -1,11 +1,13 @@
 //! What the household keeps that the feeders do not: its own settings,
 //! the pets, the foods and refills, and the samples read raw or by the
-//! hour.
+//! hour; and the views derived from them and the mirrored feeds.
 
+mod derived;
 mod foods;
 mod household;
 mod pets;
 mod samples;
+mod views;
 
 use std::sync::Arc;
 

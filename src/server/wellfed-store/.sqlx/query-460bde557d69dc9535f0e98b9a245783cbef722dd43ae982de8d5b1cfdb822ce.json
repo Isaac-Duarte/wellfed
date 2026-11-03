@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT p.seq, p.from_ms,\n                      (SELECT n.from_ms FROM feeder_foods n\n                       WHERE n.feeder_id = p.feeder_id AND n.seq > p.seq\n                       ORDER BY n.seq LIMIT 1) AS \"to_ms?: i64\",\n                      f.id AS \"id: Uuid\", f.brand, f.name, f.kcal_per_kg, f.bag_grams,\n                      f.grams_per_cup\n               FROM feeder_foods p JOIN foods f ON f.id = p.food_id\n               WHERE p.feeder_id = ? AND p.from_ms <= ?\n               ORDER BY p.seq DESC LIMIT 1",
+  "query": "SELECT p.seq, p.from_ms,\n                      (SELECT n.from_ms FROM feeder_foods n\n                       WHERE n.feeder_id = p.feeder_id AND n.seq > p.seq\n                       ORDER BY n.seq LIMIT 1) AS \"to_ms?: i64\",\n                      f.id AS \"id: Uuid\", f.brand, f.name, f.kcal_per_kg, f.bag_grams\n               FROM feeder_foods p JOIN foods f ON f.id = p.food_id\n               WHERE p.feeder_id = ? AND p.seq > ?\n               ORDER BY p.seq LIMIT ?",
   "describe": {
     "columns": [
       {
@@ -90,21 +90,10 @@
             "name": "bag_grams"
           }
         }
-      },
-      {
-        "name": "grams_per_cup",
-        "ordinal": 8,
-        "type_info": "Integer",
-        "origin": {
-          "Table": {
-            "table": "foods",
-            "name": "grams_per_cup"
-          }
-        }
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 3
     },
     "nullable": [
       false,
@@ -114,9 +103,8 @@
       false,
       false,
       false,
-      false,
       false
     ]
   },
-  "hash": "8cf28a2df966f6e81fa56aa7f37cda37d08cc7dfa1ec9c937910b10b4e9e7884"
+  "hash": "460bde557d69dc9535f0e98b9a245783cbef722dd43ae982de8d5b1cfdb822ce"
 }

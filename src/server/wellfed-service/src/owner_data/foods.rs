@@ -9,8 +9,8 @@
 
 use jiff::Timestamp;
 use wellfed_api::{
-    FeederFood, FeederId, Food, FoodHistoryPage, FoodId, FoodPatch, FoodPeriod, NewFood, NewRefill,
-    PageQuery, Refill, RefillId, RefillPage, User,
+    FeederId, Food, FoodHistoryPage, FoodId, FoodPatch, FoodPeriod, NewFood, NewRefill, PageQuery,
+    Refill, RefillId, RefillPage, User,
 };
 use wellfed_store::FoodSet;
 
@@ -19,7 +19,6 @@ use crate::{Error, Invalid, OwnerDataError, Resource, Result, Service};
 
 const KCAL_MAX: u32 = 10_000;
 const BAG_MAX: u32 = 100_000;
-const CUP_MAX: u32 = 1000;
 const REFILL_MAX: u32 = 100_000;
 
 impl Service {
@@ -40,7 +39,6 @@ impl Service {
             name: label(&request.name)?.to_owned(),
             kcal_per_kg: within(request.kcal_per_kg, KCAL_MAX, Invalid::Kcal)?,
             bag_grams: within(request.bag_grams, BAG_MAX, Invalid::BagSize)?,
-            grams_per_cup: within(request.grams_per_cup, CUP_MAX, Invalid::GramsPerCup)?,
         };
 
         self.shared
@@ -66,9 +64,6 @@ impl Service {
         if let Some(bag) = patch.bag_grams {
             food.bag_grams = within(bag, BAG_MAX, Invalid::BagSize)?;
         }
-        if let Some(cup) = patch.grams_per_cup {
-            food.grams_per_cup = within(cup, CUP_MAX, Invalid::GramsPerCup)?;
-        }
 
         if !self.shared.store.update_food(&food).await? {
             return Err(Error::NotFound(Resource::Food));
@@ -84,20 +79,6 @@ impl Service {
             Err(wellfed_store::Error::InUse(_)) => Err(OwnerDataError::FoodInUse.into()),
             Err(error) => Err(error.into()),
         }
-    }
-
-    /// The feeder's food now (its newest change, even when the clock has
-    /// stepped back before it), and its newest refill.
-    pub async fn feeder_food(&self, feeder: FeederId) -> Result<FeederFood> {
-        self.row(feeder).await?;
-
-        let store = &self.shared.store;
-        let current = store.current_food(feeder).await?;
-        let last_refill = store.last_refill(feeder).await?;
-        Ok(FeederFood {
-            current,
-            last_refill,
-        })
     }
 
     /// The food the feeder served at `at`, and the period it served it in:

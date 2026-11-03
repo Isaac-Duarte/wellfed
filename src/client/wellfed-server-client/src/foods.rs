@@ -50,7 +50,9 @@ impl Client {
         Ok(())
     }
 
-    /// The feeder's food now, and its newest refill.
+    /// The feeder's food view: its food now, its newest refill, what the
+    /// hopper has left since, a refill the beam saw that nobody recorded,
+    /// and the last week's anomalies.
     pub async fn feeder_food(&self, feeder: FeederId) -> Result<FeederFood, Error> {
         let response = self
             .api(Method::GET, &format!("/feeders/{feeder}/food"))
