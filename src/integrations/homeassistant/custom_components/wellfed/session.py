@@ -10,6 +10,7 @@ reported as uncertain and never sent again.
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import Callable
 import contextlib
 import logging
@@ -17,6 +18,7 @@ import threading
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 
 import wellfed_homeassistant as bridge
@@ -27,6 +29,14 @@ _LOGGER = logging.getLogger(__name__)
 
 # How long the pump waits on the bridge before it looks for a stop.
 PUMP_WAIT = 1.0
+
+# Events kept for diagnostics.
+RECENT_EVENTS = 20
+
+# A feed whose answer was lost, until its `Fed` event settles it.
+UNCERTAIN_ISSUE = "uncertain_feed"
+# A lost feed the feeder's history holds no record of.
+UNKNOWN_ISSUE = "unknown_feed"
 
 
 class WriteNotDone(HomeAssistantError):
@@ -104,6 +114,10 @@ class FeederSession:
         self.portions = 1
         self._event_listeners: list[Callable[[bridge.Event], None]] = []
         self._ready = asyncio.Event()
+        # Feeds whose answer was lost, until each is settled or found unknown.
+        self._uncertain = 0
+        # The last events as they happened, for diagnostics.
+        self.recent: deque[dict[str, object]] = deque(maxlen=RECENT_EVENTS)
 
     @property
     def status(self) -> bridge.Status | None:
@@ -147,7 +161,13 @@ class FeederSession:
 
     async def feed(self, portions: int) -> int:
         """Start a feed; the feeder's number for it."""
-        written = await self._write(lambda feeder: feeder.feed(portions))
+        try:
+            written = await self._write(lambda feeder: feeder.feed(portions))
+        except WriteNotDone as error:
+            if error.translation_key == "write_uncertain":
+                self._uncertain += 1
+                self._issue(UNCERTAIN_ISSUE, ir.IssueSeverity.WARNING, {})
+            raise
         if written.feed is None:
             raise WriteNotDone("write_uncertain")
         self.running_feed = written.feed
@@ -271,7 +291,9 @@ class FeederSession:
             if event.fed is not None and event.fed.feed == self.running_feed:
                 self.running_feed = None
             if not update.replayed:
-                self.hass.bus.async_fire(EVENT_FEEDER, event_data(self.identity, event))
+                data = event_data(self.identity, event)
+                self.recent.append(data)
+                self.hass.bus.async_fire(EVENT_FEEDER, data)
                 for hear in list(self._event_listeners):
                     hear(event)
         elif kind == bridge.UpdateKind.Installing:
@@ -287,12 +309,15 @@ class FeederSession:
                 update.feed.completed,
                 update.feed.requested,
             )
+            self._settled()
         elif kind == bridge.UpdateKind.StillUnknown:
             _LOGGER.warning(
                 "A feed of %s portions whose answer was lost left no record: whether it "
                 "ran is not known",
                 update.portions,
             )
+            self._settled()
+            self._issue(UNKNOWN_ISSUE, ir.IssueSeverity.WARNING, {"portions": str(update.portions)})
         elif kind == bridge.UpdateKind.Revoked:
             _LOGGER.error("The feeder no longer knows this Home Assistant: pair it again")
             self.revoked = True
@@ -305,6 +330,29 @@ class FeederSession:
                 _LOGGER.warning("Feeder disconnected: %s", update.reason)
             self.connected = False
         self._changed()
+
+    @callback
+    def _settled(self) -> None:
+        """One lost feed is accounted for; the issue clears with the last."""
+        self._uncertain = max(0, self._uncertain - 1)
+        if self._uncertain == 0:
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNCERTAIN_ISSUE))
+
+    def _issue_id(self, issue: str) -> str:
+        return f"{issue}_{self.identity.hex()}"
+
+    @callback
+    def _issue(self, issue: str, severity: ir.IssueSeverity, placeholders: dict[str, str]) -> None:
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            self._issue_id(issue),
+            is_fixable=False,
+            is_persistent=False,
+            severity=severity,
+            translation_key=issue,
+            translation_placeholders={"feeder": self.identity.hex()[:8], **placeholders},
+        )
 
     @callback
     def _changed(self) -> None:

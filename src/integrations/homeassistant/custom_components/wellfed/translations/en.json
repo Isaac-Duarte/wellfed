@@ -345,5 +345,15 @@
     "refused_no_clock": {
       "message": "The feeder refused: its clock is not set yet."
     }
+  },
+  "issues": {
+    "uncertain_feed": {
+      "title": "A feed on feeder {feeder} may have run",
+      "description": "Home Assistant sent a feed and no answer came, so it may have run. It was not sent again. This clears itself once the feeder's history shows the feed. Check the bowl before feeding again."
+    },
+    "unknown_feed": {
+      "title": "Whether a feed on feeder {feeder} ran is not known",
+      "description": "Home Assistant sent a feed of {portions} portions and no answer came, and the feeder's history holds no record of it. It may have run without being recorded, or never reached the feeder. Check the bowl, then ignore this."
+    }
   }
 }

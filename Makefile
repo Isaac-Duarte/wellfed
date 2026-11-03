@@ -7,7 +7,7 @@ help:
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
 	@echo "check-web: the site and docs site: lint, format, licenses, types, unit tests, build, then Playwright (needs Node and pnpm)"
 	@echo "check-app: the Android app's bindings and tokens unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, and a debug APK (needs the pinned Flutter)"
-	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator (needs uv)"
+	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator with 95% coverage, on Home Assistant 2026.10 and Python 3.14 (needs uv)"
 	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
 	@echo "sqlx-prepare: regenerate the server store's query metadata (.sqlx/) after changing a query or migration"
@@ -203,7 +203,7 @@ HA_WHEEL = target/homeassistant-wheels/check
 check-homeassistant:
 	cargo clippy --locked -p wellfed-homeassistant --features python --all-targets -- -D warnings
 	cargo clippy --locked -p wellfed-homeassistant --features python --lib -- -D warnings $(PRODUCTION_LINTS)
-	test -x $(HA_VENV)/bin/python || uv venv --python 3.13 $(HA_VENV)
+	$(HA_VENV)/bin/python -c 'import sys; sys.exit(sys.version_info[:2] != (3, 14))' 2>/dev/null || uv venv --clear --python 3.14 $(HA_VENV)
 	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install -r $(HA)/tests/requirements.txt
 	$(HA_VENV)/bin/ruff check $(HA)
 	$(HA_VENV)/bin/ruff format --check $(HA)
@@ -215,4 +215,5 @@ check-homeassistant:
 	$(HA_VENV)/bin/maturin build --locked --release --generate-stubs -i $(HA_VENV)/bin/python -m $(HA)/bridge/Cargo.toml -o $(HA_WHEEL)
 	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install --reinstall $(HA_WHEEL)/*.whl
 	cd $(HA) && $(CURDIR)/$(HA_VENV)/bin/mypy
-	cd $(HA) && WELLFED_BIN_DIR=$(CURDIR)/target/debug $(CURDIR)/$(HA_VENV)/bin/python -m pytest -q -p no:cacheprovider
+	cd $(HA) && WELLFED_BIN_DIR=$(CURDIR)/target/debug $(CURDIR)/$(HA_VENV)/bin/python -m pytest -q -p no:cacheprovider \
+		--cov=custom_components/wellfed --cov-report=term-missing --cov-fail-under=95

@@ -22,7 +22,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
-import voluptuous as vol
+import probatio
 
 import wellfed_homeassistant as bridge
 
@@ -37,8 +37,8 @@ from .const import (
     DOMAIN,
 )
 
-INVITE_SCHEMA = vol.Schema({vol.Required(CONF_INVITE): str})
-USER_SCHEMA = INVITE_SCHEMA.extend({vol.Optional(CONF_ADDRESS): str})
+INVITE_SCHEMA = probatio.Schema({probatio.Required(CONF_INVITE): str})
+USER_SCHEMA = INVITE_SCHEMA.extend({probatio.Optional(CONF_ADDRESS): str})
 
 # A key as `wellfed invite` and the release tools print it.
 KEY = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -187,7 +187,7 @@ class WellfedConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_update_reload_and_abort(entry, data_updates={CONF_ADDRESS: address})
 
         current = entry.data.get(CONF_ADDRESS) or ""
-        schema = vol.Schema({vol.Optional(CONF_ADDRESS, default=current): str})
+        schema = probatio.Schema({probatio.Optional(CONF_ADDRESS, default=current): str})
         return self.async_show_form(step_id="reconfigure", data_schema=schema)
 
     @staticmethod
@@ -213,5 +213,5 @@ class WellfedOptionsFlow(OptionsFlow):
             errors[CONF_PROJECT_KEYS] = "invalid_key"
 
         current = " ".join(self.config_entry.options.get(CONF_PROJECT_KEYS, []))
-        schema = vol.Schema({vol.Optional(CONF_PROJECT_KEYS, default=current): str})
+        schema = probatio.Schema({probatio.Optional(CONF_PROJECT_KEYS, default=current): str})
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

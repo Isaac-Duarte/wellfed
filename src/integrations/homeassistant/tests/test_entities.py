@@ -153,7 +153,9 @@ async def test_the_cancel_button_stops_the_feed_home_assistant_started(
     assert _state(hass, event).attributes["completed"] < 10
     await _until(hass, lambda: _state(hass, cancel).state == "unavailable")
 
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.unique_id or "")})
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, entry.unique_id or ""), entry.entry_id
+    )
     assert device is not None
     with pytest.raises(ServiceValidationError):
         await hass.services.async_call(
@@ -260,7 +262,9 @@ async def test_an_owner_gets_the_owner_entities(hass: HomeAssistant, simulator: 
     await _set(hass, weight, 9.5)
     await _until(hass, lambda: _state(hass, weight).state == "9.5")
 
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.unique_id or "")})
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, entry.unique_id or ""), entry.entry_id
+    )
     assert device is not None
     with pytest.raises(HomeAssistantError):
         await hass.services.async_call(

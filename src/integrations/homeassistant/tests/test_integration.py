@@ -158,6 +158,8 @@ def _state(hass: HomeAssistant, entity_id: str) -> State:
 
 def _device(hass: HomeAssistant, entry: ConfigEntry) -> dr.DeviceEntry:
     assert entry.unique_id is not None
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, entry.unique_id)})
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        (DOMAIN, entry.unique_id), entry.entry_id
+    )
     assert device is not None
     return device

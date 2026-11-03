@@ -14,7 +14,7 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
-import voluptuous as vol
+import probatio
 
 import wellfed_homeassistant as bridge
 
@@ -53,24 +53,24 @@ type WellfedConfigEntry = ConfigEntry[FeederSession]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-FEED_SCHEMA = vol.Schema(
+FEED_SCHEMA = probatio.Schema(
     {
-        vol.Required(ATTR_DEVICE_ID): cv.string,
-        vol.Optional(ATTR_PORTIONS, default=1): vol.All(
-            vol.Coerce(int), vol.Range(min=PORTIONS_MIN, max=PORTIONS_MAX)
+        probatio.Required(ATTR_DEVICE_ID): cv.string,
+        probatio.Optional(ATTR_PORTIONS, default=1): probatio.All(
+            probatio.Coerce(int), probatio.Range(min=PORTIONS_MIN, max=PORTIONS_MAX)
         ),
     }
 )
-CANCEL_SCHEMA = vol.Schema(
+CANCEL_SCHEMA = probatio.Schema(
     {
-        vol.Required(ATTR_DEVICE_ID): cv.string,
-        vol.Optional(ATTR_FEED): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        probatio.Required(ATTR_DEVICE_ID): cv.string,
+        probatio.Optional(ATTR_FEED): probatio.All(probatio.Coerce(int), probatio.Range(min=0)),
     }
 )
-ADD_RELEASE_SCHEMA = vol.Schema(
+ADD_RELEASE_SCHEMA = probatio.Schema(
     {
-        vol.Required(ATTR_DEVICE_ID): cv.string,
-        vol.Required(ATTR_PATH): cv.string,
+        probatio.Required(ATTR_DEVICE_ID): cv.string,
+        probatio.Required(ATTR_PATH): cv.string,
     }
 )
 
@@ -178,3 +178,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> 
     if unloaded:
         await hass.async_add_executor_job(entry.runtime_data.stop)
     return unloaded
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: WellfedConfigEntry, device: dr.DeviceEntry
+) -> bool:
+    """A device of this entry other than its feeder is stale, and may go."""
+    return (DOMAIN, entry.data[CONF_IDENTITY]) not in device.identifiers
