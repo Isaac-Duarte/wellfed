@@ -62,6 +62,20 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets('setup mode marks Lock and Mic on the panel, and helps when the light stays dark', (tester) async {
+      _tall(tester);
+      await tester.pumpWidget(
+        themed(SetupScreen(newFlow: () => SetupFlow(FakeBook(), FakePairingPorts(), FakePhonePorts()))),
+      );
+      await settle(tester);
+
+      expect(find.text('Lock'), findsOneWidget);
+      expect(find.text('Mic'), findsOneWidget);
+      await tester.tap(find.text("The light isn't blinking"));
+      await settle(tester);
+      expect(find.text('Lights and buttons'), findsOneWidget);
+    });
+
     testWidgets('Show a new code goes back to the same feeder with another code', (tester) async {
       _tall(tester);
       final book = FakeBook();

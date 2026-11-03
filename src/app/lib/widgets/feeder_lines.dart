@@ -2,18 +2,22 @@ part of 'feeder_drawing.dart';
 
 /// The drawing's units laid into the widget: scaled to fit, centered.
 class _Frame {
-  _Frame(this.lines, this.size) : scale = math.min(size.height / lines.box.height, size.width / lines.box.width);
+  _Frame(this.lines, this.box, this.size) : scale = math.min(size.height / box.height, size.width / box.width);
 
   final _Lines lines;
+
+  /// The part of the drawing shown, in its units.
+  final Rect box;
   final Size size;
   final double scale;
 
-  Offset get origin => Offset((size.width - lines.box.width * scale) / 2, (size.height - lines.box.height * scale) / 2);
+  Offset get origin => Offset((size.width - box.width * scale) / 2, (size.height - box.height * scale) / 2);
 
   double get left => origin.dx;
-  double get right => origin.dx + lines.box.width * scale;
+  double get right => origin.dx + box.width * scale;
+  double get bottom => origin.dy + box.height * scale;
 
-  Offset at(Offset point) => origin + (point - lines.box.topLeft) * scale;
+  Offset at(Offset point) => origin + (point - box.topLeft) * scale;
 
   Offset? anchor(String name) => switch (lines.anchors[name]) {
     null => null,
@@ -45,10 +49,11 @@ class _Painter extends CustomPainter {
       ..save()
       ..translate(frame.origin.dx, frame.origin.dy)
       ..scale(frame.scale)
-      ..translate(-lines.box.left, -lines.box.top);
+      ..translate(-frame.box.left, -frame.box.top)
+      ..clipRect(frame.box);
     for (final _Group group in lines.groups) {
       final (Color color, double weight) = switch ((group.part, group.line)) {
-        (_Part.food, _) => (colors.food, 0.8),
+        (_Part.food, _) => (colors.food, 1.25),
         (_Part.icon, _) => (colors.textMuted, 0.75),
         (_Part.window, _) || (_, _Line.crease) => (colors.lineStrong, 1.0),
         (_, _Line.outline || _Line.edge) => (colors.text, 1.15),
@@ -105,9 +110,13 @@ class _Painter extends CustomPainter {
       ..strokeWidth = _stroke
       ..color = colors.text;
     for (final _Placed callout in placed) {
-      final double end = callout.callout.side == CalloutSide.left ? 0 : size.width;
+      final Offset end = switch (callout.callout.side) {
+        CalloutSide.left => Offset(0, callout.at.dy),
+        CalloutSide.right => Offset(size.width, callout.at.dy),
+        CalloutSide.below => Offset(callout.at.dx, callout.rect.top - _lift),
+      };
       canvas
-        ..drawLine(callout.at, Offset(end, callout.at.dy), leader)
+        ..drawLine(callout.at, end, leader)
         ..drawCircle(callout.at, 3.5, dotFill)
         ..drawCircle(callout.at, 3.5, dotLine);
     }

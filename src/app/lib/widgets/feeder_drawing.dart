@@ -23,7 +23,9 @@ enum FeederView {
   final String asset;
 }
 
-enum CalloutSide { left, right }
+/// Where a callout's leader runs: out to an edge, or down under the drawing
+/// for parts too near an edge to lead out sideways.
+enum CalloutSide { left, right, below }
 
 /// How much food the hopper shows through its window.
 enum FoodShown { full, low, none }
@@ -78,6 +80,7 @@ class FeederDrawing extends StatefulWidget {
     this.food = FoodShown.full,
     this.dimmed = false,
     this.label,
+    this.crop,
   });
 
   final FeederView view;
@@ -92,6 +95,9 @@ class FeederDrawing extends StatefulWidget {
   /// What the picture shows, for a screen reader. The callouts read out on
   /// their own.
   final String? label;
+
+  /// The part of the drawing to show, in its units; all of it when null.
+  final Rect? crop;
 
   @override
   State<FeederDrawing> createState() => _FeederDrawingState();
@@ -127,8 +133,14 @@ class _FeederDrawingState extends State<FeederDrawing> {
 const double _gap = 8;
 const double _minRoom = 64;
 
+/// The widest a label under the drawing gets.
+const double _belowWidth = 120;
+
 /// The lift of a label's last line off its leader.
 const double _lift = 3;
+
+/// More lines than this and a label reads as a paragraph: it goes to the list.
+const int _maxLines = 4;
 
 /// Lines in logical pixels at any scale: the site's strokes are in drawing
 /// units, which a phone shrinks past seeing.
@@ -151,9 +163,15 @@ class _Laid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, box) {
         final double height = drawing.height;
-        final double width = box.hasBoundedWidth ? box.maxWidth : lines.box.width * height / lines.box.height;
+        final Rect shown = drawing.crop ?? lines.box;
+        final double width = box.hasBoundedWidth ? box.maxWidth : shown.width * height / shown.height;
         final size = Size(width, height);
-        final frame = _Frame(lines, size);
+        // Labels under the drawing take a band off its height.
+        final double band = drawing.callouts
+            .where((callout) => callout.side == CalloutSide.below)
+            .map((callout) => _measure(callout, c, style, scaler, direction, _belowWidth).height + 2 * _gap)
+            .fold<double>(0, math.max);
+        final frame = _Frame(lines, shown, Size(width, math.max(1.0, height - band)));
         final List<_Placed>? placed = _place(frame, size, drawing.callouts, c, style, scaler, direction);
 
         final picture = Opacity(
@@ -219,30 +237,57 @@ class _Laid extends StatelessWidget {
     for (final callout in callouts) {
       final Offset? at = frame.anchor(callout.anchor);
       if (at == null) continue;
-      final bool left = callout.side == CalloutSide.left;
-      final double room = (left ? frame.left : size.width - frame.right) - _gap;
-      if (room < _minRoom) return null;
-
-      final painter = TextPainter(
-        text: TextSpan(text: callout.lines.join('\n'), style: _labelStyle(c, callout, style)),
-        textDirection: direction,
-        textScaler: scaler,
-      )..layout(maxWidth: room);
-      final int count = painter.computeLineMetrics().length;
-      final double textHeight = painter.height;
-      painter.dispose();
-
-      final double top = at.dy - _lift - textHeight;
-      if (count > 3 || top < 0) return null;
-      final rect = Rect.fromLTWH(left ? 0 : size.width - room, top, room, textHeight);
+      final Rect rect;
+      if (callout.side == CalloutSide.below) {
+        final Size text = _measure(callout, c, style, scaler, direction, _belowWidth);
+        final double left = (at.dx - text.width / 2).clamp(0.0, math.max(0.0, size.width - text.width));
+        rect = Rect.fromLTWH(left, frame.bottom + _gap, text.width, text.height);
+        if (rect.bottom > size.height + 1) return null;
+      } else {
+        final bool left = callout.side == CalloutSide.left;
+        final double room = (left ? frame.left : size.width - frame.right) - _gap;
+        if (room < _minRoom) return null;
+        final Size text = _measure(callout, c, style, scaler, direction, room);
+        final double top = at.dy - _lift - text.height;
+        if (_lineCount(text, style, scaler) > _maxLines || top < 0) return null;
+        rect = Rect.fromLTWH(left ? 0 : size.width - room, top, room, text.height);
+      }
       final bool crowded = placed.any(
-        (other) => other.callout.side == callout.side && other.rect.top < at.dy + _gap && rect.top < other.at.dy + _gap,
+        (other) =>
+            other.callout.side == callout.side &&
+            switch (callout.side) {
+              CalloutSide.below => other.rect.inflate(_gap / 2).overlaps(rect.inflate(_gap / 2)),
+              CalloutSide.left || CalloutSide.right => other.rect.top < at.dy + _lift && rect.top < other.at.dy + _lift,
+            },
       );
       if (crowded) return null;
       placed.add(_Placed(callout, at, rect));
     }
     return placed;
   }
+
+  /// A label's size as it will draw, wrapped to `maxWidth`.
+  static Size _measure(
+    Callout callout,
+    ThemeTokens c,
+    TextStyle style,
+    TextScaler scaler,
+    TextDirection direction,
+    double maxWidth,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(text: callout.lines.join('\n'), style: _labelStyle(c, callout, style)),
+      textDirection: direction,
+      textScaler: scaler,
+    )..layout(maxWidth: maxWidth);
+    final Size size = painter.size;
+    painter.dispose();
+    return size;
+  }
+
+  /// Lines in a measured label, from its height.
+  static int _lineCount(Size text, TextStyle style, TextScaler scaler) =>
+      (text.height / scaler.scale((style.fontSize ?? Sizes.sm) * (style.height ?? 1))).round();
 }
 
 class _Placed {
@@ -269,10 +314,15 @@ class _OnDrawing extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Callout callout = placed.callout;
-    final bool left = callout.side == CalloutSide.left;
     final TextStyle own = _labelStyle(context.colors, callout, style);
-    final text = Text(callout.lines.join('\n'), textAlign: left ? TextAlign.left : TextAlign.right, style: own);
+    final TextAlign align = switch (callout.side) {
+      CalloutSide.left => TextAlign.left,
+      CalloutSide.right => TextAlign.right,
+      CalloutSide.below => TextAlign.center,
+    };
+    final text = Text(callout.lines.join('\n'), textAlign: align, style: own);
     final Rect rect = placed.rect;
+    final Offset at = placed.at;
     final VoidCallback? onTap = callout.onTap;
     if (onTap == null) {
       return Positioned(
@@ -283,20 +333,19 @@ class _OnDrawing extends StatelessWidget {
       );
     }
 
-    double top = rect.top - _lift;
-    double bottom = placed.at.dy + _gap;
-    if (bottom - top < 48) {
-      final double grow = (48 - (bottom - top)) / 2;
-      top -= grow;
-      bottom += grow;
-    }
-    final double regionLeft = left ? 0 : placed.at.dx;
-    final double regionWidth = math.max(left ? placed.at.dx : size.width - placed.at.dx, rect.width);
-    return Positioned(
-      left: left ? regionLeft : size.width - regionWidth,
-      top: top,
-      width: regionWidth,
-      height: bottom - top,
+    // The words and their whole leader, grown to the 48 dp a finger needs.
+    final Rect reach = switch (callout.side) {
+      CalloutSide.left => Rect.fromLTRB(0, rect.top - _lift, at.dx, at.dy + _gap),
+      CalloutSide.right => Rect.fromLTRB(at.dx, rect.top - _lift, size.width, at.dy + _gap),
+      CalloutSide.below => Rect.fromLTRB(rect.left, at.dy - _gap, rect.right, rect.bottom + _lift),
+    };
+    final region = Rect.fromCenter(
+      center: reach.center,
+      width: math.max(48, reach.width),
+      height: math.max(48, reach.height),
+    );
+    return Positioned.fromRect(
+      rect: region,
       child: Semantics(
         container: true,
         button: true,
@@ -308,13 +357,7 @@ class _OnDrawing extends StatelessWidget {
             borderRadius: BorderRadius.circular(Radii.control),
             child: Stack(
               children: [
-                Positioned(
-                  left: left ? 0 : null,
-                  right: left ? null : 0,
-                  top: rect.top - top,
-                  width: rect.width,
-                  child: text,
-                ),
+                Positioned(left: rect.left - region.left, top: rect.top - region.top, width: rect.width, child: text),
               ],
             ),
           ),

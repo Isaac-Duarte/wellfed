@@ -84,4 +84,33 @@ void main() {
       greaterThanOrEqualTo(48),
     );
   });
+
+  testWidgets('a cropped panel leads its callouts down under the drawing', (tester) async {
+    tester.view.physicalSize = const Size(364, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      themed(
+        const Scaffold(
+          body: FeederDrawing(
+            view: FeederView.panel,
+            crop: Rect.fromLTRB(-49, 390, 1049, 650),
+            height: 130,
+            highlights: {'button_lock', 'button_mic'},
+            callouts: [
+              Callout(anchor: 'button_lock', side: CalloutSide.below, lines: ['Lock']),
+              Callout(anchor: 'button_mic', side: CalloutSide.below, lines: ['Mic']),
+            ],
+          ),
+        ),
+      ),
+    );
+    await settle(tester);
+
+    expect(tester.renderObject(_picture), paints..line());
+    final Rect lock = tester.getRect(find.text('Lock'));
+    final Rect mic = tester.getRect(find.text('Mic'));
+    expect(lock.center.dx, lessThan(mic.center.dx));
+    expect(lock.bottom, lessThanOrEqualTo(130));
+  });
 }

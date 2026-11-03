@@ -183,7 +183,7 @@ class _SummaryState extends State<_Summary> {
         else if (blocked != null && blocked != Blocked.feeding)
           Text('${blockedWords(blocked)}.', style: small),
         const SizedBox(height: Space.s3),
-        FeederDrawing(height: 220, callouts: callouts, food: shown, dimmed: !online, label: 'Drawing of the feeder'),
+        FeederDrawing(height: 280, callouts: callouts, food: shown, dimmed: !online, label: 'Drawing of the feeder'),
         if (read != null) ...[const SizedBox(height: Space.s3), _NextMeal(card: read)],
       ],
     );
@@ -236,11 +236,9 @@ class _NextMeal extends StatelessWidget {
                   style: style,
                 ),
         ),
-        if (next == null)
-          TextButton(
-            onPressed: tabs == null ? null : () => tabs.animateTo(scheduleTab),
-            child: const Text('Add a meal'),
-          ),
+        // Only inside the feeder's tabs, where the schedule is one tap away.
+        if (next == null && tabs != null)
+          TextButton(onPressed: () => tabs.animateTo(scheduleTab), child: const Text('Add a meal')),
       ],
     );
   }
