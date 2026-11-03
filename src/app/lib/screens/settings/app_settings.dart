@@ -90,13 +90,14 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
     builder: (context, _) {
       final ThemeTokens c = context.colors;
       final FeederBook book = widget.book;
+      // A desktop opens Settings from the sidebar, which is also the way out.
+      final bool fromSidebar = isDesktop && !Navigator.of(context).canPop();
       return Scaffold(
         appBar: AppBar(
           toolbarHeight: isDesktop ? 72 : 64,
           automaticallyImplyLeading: false,
-          // A desktop opens Settings from the sidebar, which is also the way out.
-          titleSpacing: isDesktop && !Navigator.of(context).canPop() ? Space.s5 : 4,
-          leading: isDesktop && !Navigator.of(context).canPop()
+          titleSpacing: fromSidebar ? Space.s5 : 4,
+          leading: fromSidebar
               ? null
               : IconButton(
                   tooltip: 'Back',

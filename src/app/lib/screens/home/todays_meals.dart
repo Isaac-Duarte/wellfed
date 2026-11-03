@@ -11,9 +11,12 @@ import 'package:wellfed/widgets/when.dart';
 
 /// What today's meals come to (5.1), below the only card.
 class TodaysMeals extends StatelessWidget {
-  const TodaysMeals({super.key, required this.controller});
+  const TodaysMeals({super.key, required this.controller, this.gap = Space.s4});
 
   final FeederController controller;
+
+  /// The room above the heading, which sets it off from the card above.
+  final double gap;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -25,7 +28,7 @@ class TodaysMeals extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: Space.s4),
+          SizedBox(height: gap),
           Row(
             children: [
               Expanded(

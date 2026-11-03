@@ -40,7 +40,7 @@ class AddFeederScreen extends StatelessWidget {
             ),
             SettingsLink(
               'Recover a feeder',
-              'On your Wi-Fi, but no phone can open it',
+              'On your Wi-Fi, but no $anyDevice can open it',
               onTap: () => context.push('/recover'),
             ),
           ],

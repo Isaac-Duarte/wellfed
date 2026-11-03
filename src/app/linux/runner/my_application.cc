@@ -62,9 +62,34 @@ static void my_application_activate(GApplication* application) {
       project, self->dart_entrypoint_arguments);
 
   FlView* view = fl_view_new(project);
+  // The page color of the theme the desktop asks for, so a resize shows the
+  // page rather than black: tokens.json's light and dark `background`. GNOME
+  // 42 and later say dark through the color-scheme setting, others through
+  // GTK's prefer-dark or a dark theme's name. An appearance chosen in the
+  // app's settings can still differ until Flutter paints.
+  gboolean dark = FALSE;
+  GSettingsSchemaSource* schemas = g_settings_schema_source_get_default();
+  g_autoptr(GSettingsSchema) gnome_interface =
+      schemas == nullptr ? nullptr
+                         : g_settings_schema_source_lookup(
+                               schemas, "org.gnome.desktop.interface", TRUE);
+  if (gnome_interface != nullptr &&
+      g_settings_schema_has_key(gnome_interface, "color-scheme")) {
+    g_autoptr(GSettings) settings =
+        g_settings_new("org.gnome.desktop.interface");
+    g_autofree gchar* scheme = g_settings_get_string(settings, "color-scheme");
+    dark = g_strcmp0(scheme, "prefer-dark") == 0;
+  }
+  gboolean prefer_dark = FALSE;
+  g_autofree gchar* theme_name = nullptr;
+  g_object_get(gtk_settings_get_default(), "gtk-application-prefer-dark-theme",
+               &prefer_dark, "gtk-theme-name", &theme_name, nullptr);
+  g_autofree gchar* theme_lower =
+      theme_name == nullptr ? nullptr : g_ascii_strdown(theme_name, -1);
+  dark = dark || prefer_dark ||
+         (theme_lower != nullptr && strstr(theme_lower, "dark") != nullptr);
   GdkRGBA background_color;
-  // The light theme's page color, so a resize never flashes black.
-  gdk_rgba_parse(&background_color, "#F4F6FA");
+  gdk_rgba_parse(&background_color, dark ? "#121417" : "#F4F6FA");
   fl_view_set_background_color(view, &background_color);
   gtk_widget_show(GTK_WIDGET(view));
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));

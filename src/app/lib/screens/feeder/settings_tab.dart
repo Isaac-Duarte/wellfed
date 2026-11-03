@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide Card;
+import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/feeder/settings_owner.dart';
 import 'package:wellfed/screens/feeder/settings_rows.dart';
 import 'package:wellfed/screens/feeder/settings_window.dart';
@@ -226,7 +227,13 @@ class SettingsTab extends StatelessWidget {
       ),
     );
     if (sure != true || !context.mounted) return;
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    // On a desktop the feeder's page is the first, with nothing under it to
+    // pop back to, so the window goes to the overview.
+    if (isDesktop) {
+      context.go('/');
+    } else {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
     await feeder.forgetHere();
   }
 }

@@ -168,14 +168,8 @@ class _DesktopOverview extends StatelessWidget {
                       children: [
                         Expanded(child: FeederCard(controller: feeders.single)),
                         const SizedBox(width: Space.s5),
-                        // Today's meals bring their own heading's top gap; the card's
-                        // top lines up with the list's instead.
-                        Expanded(
-                          child: Transform.translate(
-                            offset: const Offset(0, -Space.s4 - 10),
-                            child: TodaysMeals(controller: feeders.single),
-                          ),
-                        ),
+                        // Beside the card, not under it, the meals need no gap above.
+                        Expanded(child: TodaysMeals(controller: feeders.single, gap: 0)),
                       ],
                     ),
             )

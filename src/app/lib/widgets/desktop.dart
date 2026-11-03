@@ -81,3 +81,7 @@ Future<T?> showPanel<T>({
 /// What the app runs on, as its words name it: "this phone" on a phone,
 /// "this computer" on a desktop.
 String get deviceName => isDesktop ? 'computer' : 'phone';
+
+/// Any of the owner's devices, as the words name them: "phone" on a phone,
+/// "device" on a desktop, where a phone may open the feeder too.
+String get anyDevice => isDesktop ? 'device' : 'phone';

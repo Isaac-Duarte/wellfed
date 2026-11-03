@@ -78,7 +78,7 @@ class _NoBackup extends StatelessWidget {
     title: 'No backup on this $deviceName',
     body:
         "The copy of the vendor firmware made during install isn't on this "
-        'phone. If you saved a copy when the install ended, pick that file.',
+        '$deviceName. If you saved a copy when the install ended, pick that file.',
     content: [
       if (state.notStock != null)
         const Notice(

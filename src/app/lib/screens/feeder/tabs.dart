@@ -13,10 +13,14 @@ const settingsTab = 3;
 /// Open a feeder at `tab`: over Home on a phone, so Back returns to it, and
 /// in place on a desktop, where the sidebar is the way back.
 void openFeeder(BuildContext context, String identity, int tab) {
-  final location = '/feeder/$identity?tab=$tab';
+  final String location = feederPath(identity, tab: tab);
   if (isDesktop) {
     context.go(location);
   } else {
     unawaited(context.push(location));
   }
 }
+
+/// A feeder's route, at `tab` when one is named.
+String feederPath(String identity, {int? tab}) =>
+    '/feeder/${Uri.encodeComponent(identity)}${tab == null ? '' : '?tab=$tab'}';

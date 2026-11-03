@@ -150,9 +150,14 @@ class FeederRoute extends StatelessWidget {
   final int initialTab;
   final ServerScreens? server;
 
+  /// Follows the fleet, so a feeder forgotten while its page shows gives way
+  /// to the plain way back instead of a disposed controller.
   @override
-  Widget build(BuildContext context) {
-    final FeederController? feeder = fleet[identity];
-    return feeder == null ? const _Gone() : FeederShell(feeder: feeder, initialTab: initialTab, server: server);
-  }
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: fleet,
+    builder: (context, _) {
+      final FeederController? feeder = fleet[identity];
+      return feeder == null ? const _Gone() : FeederShell(feeder: feeder, initialTab: initialTab, server: server);
+    },
+  );
 }

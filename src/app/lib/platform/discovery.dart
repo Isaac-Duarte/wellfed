@@ -52,7 +52,16 @@ class Discovery {
         try {
           final started = FeederBrowse();
           browse = started;
-          heard = started.run().listen(out.add, onError: out.addError, onDone: out.close);
+          heard = started.run().listen(
+            out.add,
+            onError: out.addError,
+            // Ended by itself: free the handle now rather than at finalization.
+            onDone: () {
+              started.dispose();
+              browse = null;
+              unawaited(out.close());
+            },
+          );
         } on Object catch (error) {
           out.addError(error);
         }

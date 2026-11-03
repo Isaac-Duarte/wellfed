@@ -89,13 +89,13 @@ class SidebarShell extends StatelessWidget {
   );
 
   /// Ctrl+1 to Ctrl+9 open the feeders in the sidebar's order, Ctrl+0 the
-  /// overview; Ctrl+N adds one, Ctrl+, opens settings and Escape steps back.
+  /// overview (Welcome before there is a feeder); Ctrl+N adds one, Ctrl+,
+  /// opens settings and Escape steps back.
   Map<ShortcutActivator, VoidCallback> _shortcuts(List<FeederController> feeders) => {
     const SingleActivator(LogicalKeyboardKey.escape): back,
     const SingleActivator(LogicalKeyboardKey.comma, control: true): () => go(const SettingsPlace()),
     const SingleActivator(LogicalKeyboardKey.keyN, control: true): () => go(const AddPlace()),
-    if (feeders.isNotEmpty)
-      const SingleActivator(LogicalKeyboardKey.digit0, control: true): () => go(const OverviewPlace()),
+    const SingleActivator(LogicalKeyboardKey.digit0, control: true): () => go(const OverviewPlace()),
     for (final (i, feeder) in feeders.take(_digits.length).indexed)
       SingleActivator(_digits[i], control: true): () => go(FeederPlace(feeder.state.known.identity)),
   };

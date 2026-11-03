@@ -94,7 +94,7 @@ class _PickState extends State<_Pick> {
     return StepScaffold(
       title: 'Recover a feeder',
       body:
-          'Lost every phone that could open it? If the feeder is still on '
+          'Lost every $anyDevice that could open it? If the feeder is still on '
           'your Wi-Fi, you can add this $deviceName as an owner without erasing '
           'anything.',
       content: [

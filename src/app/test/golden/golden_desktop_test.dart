@@ -64,6 +64,7 @@ void main() {
         final fleet = FeederFleet(FakeBook(), FakeFeederPorts());
         addTearDown(fleet.dispose);
         await _desktop(tester, _window(fleet, const OverviewPlace(), const WelcomeScreen()), brightness);
+        await decodeImages(tester);
         await matchesGolden('desktop_welcome', brightness);
       });
 
@@ -103,6 +104,7 @@ void main() {
       _desktopGolden('adding a feeder', (tester) async {
         final FeederFleet fleet = await _fleet(tester);
         await _desktop(tester, _window(fleet, const AddPlace(), const AddFeederScreen()), brightness);
+        await decodeImages(tester);
         await matchesGolden('desktop_add_feeder', brightness);
       });
 
@@ -118,6 +120,7 @@ void main() {
           ),
           brightness,
         );
+        await decodeImages(tester);
         await matchesGolden('desktop_app_settings', brightness);
       });
 
@@ -129,6 +132,7 @@ void main() {
           _window(fleet, FeederPlace(feeder.state.known.identity), shell(feeder, todayTab)),
           brightness,
         );
+        await decodeImages(tester);
         await tester.tap(find.text('Feed now').first);
         await settle(tester);
         await matchesGolden('desktop_feed_dialog', brightness);

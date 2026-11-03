@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/src/rust/api/feeder.dart' show CalibrationInfo;
 import 'package:wellfed/src/rust/api/model.dart';
@@ -256,7 +255,7 @@ class _Progress extends StatelessWidget {
                     child: OutlinedButton(
                       onPressed: () {
                         _close(context);
-                        unawaited(context.push('/feeder/${feeder.state.known.identity}?tab=$historyTab'));
+                        openFeeder(context, feeder.state.known.identity, historyTab);
                       },
                       child: const Text('See history'),
                     ),

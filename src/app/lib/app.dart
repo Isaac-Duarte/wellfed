@@ -10,6 +10,7 @@ import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/server_ports.dart';
 import 'package:wellfed/screens/desktop/sidebar_shell.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
+import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/home/welcome.dart';
@@ -60,10 +61,16 @@ GoRouter wellfedRouter({
     if (feeder != null)
       GoRoute(
         path: '/feeder/:id',
-        builder: (context, state) => feeder(
-          context,
-          state.pathParameters['id'] ?? '',
-          int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+        // go_router keys a page by its route's pattern, so going from one
+        // feeder (or tab link) to another would keep the last one's tabs and
+        // state. Keying by the location builds each afresh.
+        builder: (context, state) => KeyedSubtree(
+          key: ValueKey(state.uri.toString()),
+          child: feeder(
+            context,
+            state.pathParameters['id'] ?? '',
+            int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+          ),
         ),
       ),
   ];
@@ -86,7 +93,8 @@ GoRouter wellfedRouter({
 /// The sidebar's place for the page on top: a page pushed over another
 /// names its own location, not the one under it.
 Place? placeOf(GoRouter router) {
-  final String path = router.routerDelegate.currentConfiguration.last.matchedLocation;
+  final String? path = router.routerDelegate.currentConfiguration.lastOrNull?.matchedLocation;
+  if (path == null) return null;
   if (path == '/') return const OverviewPlace();
   if (path == '/add') return const AddPlace();
   if (path == '/settings') return const SettingsPlace();
@@ -96,10 +104,76 @@ Place? placeOf(GoRouter router) {
 
 String _pathOf(Place place) => switch (place) {
   OverviewPlace() => '/',
-  FeederPlace(:final String identity) => '/feeder/${Uri.encodeComponent(identity)}',
+  FeederPlace(:final String identity) => feederPath(identity),
   AddPlace() => '/add',
   SettingsPlace() => '/settings',
 };
+
+/// The desktop window around `child`, the page `router` shows in `pages`.
+class DesktopShell extends StatelessWidget {
+  const DesktopShell({super.key, required this.fleet, required this.router, required this.pages, required this.child});
+
+  final FeederFleet fleet;
+  final GoRouter router;
+  final GlobalKey<NavigatorState> pages;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: router.routerDelegate,
+    builder: (context, _) => SidebarShell(
+      fleet: fleet,
+      at: placeOf(router),
+      go: (place) => unawaited(_goTo(router, pages, fleet, place)),
+      back: () => unawaited(_back(pages)),
+      child: child,
+    ),
+  );
+}
+
+/// Leave the pages showing for `place`. Each page above the first is popped
+/// through its own PopScope, so a running install or a committed restore
+/// asks first, and one that stays keeps the window where it is.
+Future<void> _goTo(GoRouter router, GlobalKey<NavigatorState> pages, FeederFleet fleet, Place place) async {
+  final NavigatorState? navigator = pages.currentState;
+  if (navigator == null) return;
+  while (navigator.canPop()) {
+    final Route<Object?>? before = _top(navigator);
+    await navigator.maybePop();
+    if (identical(_top(navigator), before)) return;
+  }
+
+  final String path = _pathOf(place);
+  // With no feeders there is no sidebar to come back by, so the page opens
+  // over Welcome with its Back.
+  if (fleet.all.isEmpty && place is! OverviewPlace) {
+    unawaited(router.push(path));
+  } else {
+    router.go(path);
+  }
+}
+
+/// Escape: out of a text field first, then back a page through its PopScope.
+Future<void> _back(GlobalKey<NavigatorState> pages) async {
+  final FocusNode? focus = FocusManager.instance.primaryFocus;
+  // A field's node belongs to the Focus its EditableText builds.
+  if (focus?.context?.findAncestorWidgetOfExactType<EditableText>() != null) {
+    focus?.unfocus();
+    return;
+  }
+  await pages.currentState?.maybePop();
+}
+
+/// The route on top of `navigator`. A predicate that holds at once pops
+/// nothing, and is the one way a navigator names its top route.
+Route<Object?>? _top(NavigatorState navigator) {
+  Route<Object?>? top;
+  navigator.popUntil((route) {
+    top = route;
+    return true;
+  });
+  return top;
+}
 
 class WellfedApp extends StatefulWidget {
   const WellfedApp({super.key, required this.app});
@@ -167,17 +241,7 @@ class _WellfedAppState extends State<WellfedApp> {
     feeder: (context, identity, tab) =>
         FeederRoute(fleet: _fleet, identity: identity, initialTab: tab, server: _serverScreens),
     shell: isDesktop
-        ? (context, router, pages, child) => ListenableBuilder(
-            listenable: router.routerDelegate,
-            builder: (context, _) => SidebarShell(
-              fleet: _fleet,
-              at: placeOf(router),
-              go: (place) => router.go(_pathOf(place)),
-              // Through the page's own PopScope, so a running flow asks first.
-              back: () => unawaited(pages.currentState?.maybePop()),
-              child: child,
-            ),
-          )
+        ? (context, router, pages, child) => DesktopShell(fleet: _fleet, router: router, pages: pages, child: child)
         : null,
     pages: {
       '/add': (context) => const AddFeederScreen(),
