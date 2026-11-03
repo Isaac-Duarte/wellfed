@@ -7,9 +7,9 @@ import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/lights_help.dart';
 import 'package:wellfed/screens/feeder/no_time.dart';
 import 'package:wellfed/screens/feeder/router_time.dart';
-import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/screens/feeder/today_facts.dart';
 import 'package:wellfed/screens/feeder/today_faults.dart';
+import 'package:wellfed/screens/feeder/today_timeline.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -17,14 +17,14 @@ import 'package:wellfed/src/rust/api/session.dart' as api;
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
-import 'package:wellfed/widgets/feeder_drawing.dart';
+import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/pending.dart';
 import 'package:wellfed/widgets/when.dart';
 
-/// How the feeder stands today (7.1): the drawing with its food, last feed
-/// and lock, the next meal, and the facts that need the owner; or what
-/// stopped it (7.3). It shows only what the session has read; a fact not read
+/// How the feeder stands today (7.1): a header with its state, food and lock,
+/// what the cat has been given today and every meal of the day, and the facts
+/// that need the owner; or what stopped it (7.3). It shows only what the session has read; a fact not read
 /// yet says so.
 class TodayTab extends StatelessWidget {
   const TodayTab({super.key, required this.feeder});
@@ -48,7 +48,7 @@ class TodayTab extends StatelessWidget {
               child: ListView(
                 children: [
                   _Summary(feeder: feeder),
-                  const SizedBox(height: Space.s3),
+                  const SizedBox(height: Space.s4),
                   if (live != null && !live.clockSet) ...[
                     NoTimeNotice(feeder: feeder),
                     const SizedBox(height: Space.s3),
@@ -68,7 +68,12 @@ class TodayTab extends StatelessWidget {
                     TodayLastFeedFailed(fault: fault),
                     const SizedBox(height: Space.s3),
                   ],
-                  if (card != null) ...[TodayFacts(feeder: feeder, card: card), const SizedBox(height: Space.s3)],
+                  if (card != null) ...[
+                    TodayTimeline(feeder: feeder, card: card),
+                    const SizedBox(height: Space.s4),
+                    TodayFacts(feeder: feeder, card: card),
+                    const SizedBox(height: Space.s3),
+                  ],
                   _LightsLink(),
                   if (stopped) ...[
                     const SizedBox(height: Space.s3),
@@ -104,7 +109,7 @@ class _Summary extends StatelessWidget {
     final ThemeTokens c = context.colors;
     final bool online = feeder.state.connection == Connection.online;
     final api.Card? card = online ? feeder.state.card : null;
-    // What the feeder last said, even offline: the drawing dims instead.
+    // What the feeder last said, even offline: the picture dims instead.
     final api.Card? read = feeder.state.card;
     final (Color dot, String title) = switch (feeder.state.connection) {
       Connection.looking => (c.textMuted, 'Looking…'),
@@ -116,131 +121,135 @@ class _Summary extends StatelessWidget {
       Connection.online when card?.blocked == Blocked.fault => (c.fault, "Can't feed"),
       Connection.online => (c.warning, "Can't feed now"),
     };
-    final small = TextStyle(fontSize: Sizes.base, color: c.textMuted);
+    final small = TextStyle(fontSize: Sizes.sm, color: c.textMuted);
     final Blocked? blocked = card?.blocked;
-
-    final (String food, Color? foodColor) = switch (read?.food) {
-      FoodLevel.present => ('Food in', null),
-      FoodLevel.low => ('Food low', c.warning),
-      FoodLevel.unread || null => ('Food not read', c.textMuted),
-    };
     final bool? locked = read?.locked;
-    // The lock label moves on tap, as a switch does, until the card agrees; a
-    // refusal moves it back.
-    List<Callout> callouts(bool shownLocked, PendingWrite<bool> write) => [
-      Callout(anchor: 'window', side: CalloutSide.right, lines: [food], color: foodColor),
-      Callout(
-        anchor: 'button_lock',
-        side: CalloutSide.left,
-        lines: [
-          switch (locked) {
-            null => 'Lock not read',
-            _ when shownLocked => 'Buttons locked',
-            _ => 'Buttons unlocked',
-          },
-        ],
-        color: locked == null ? c.textMuted : null,
-        onTap: online && locked != null
-            ? () => unawaited(write.ask(!shownLocked, () => feeder.ask(FeederRequest.setLock(locked: !shownLocked))))
-            : null,
-        tapHint: shownLocked ? 'Unlock the buttons' : 'Lock the buttons',
-      ),
-      _lastFed(context, read?.lastFed),
-    ];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: Space.s2),
-            Flexible(
-              child: Text(
-                title,
-                style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
+        FeederImage(size: 72, dimmed: !online),
+        const SizedBox(width: Space.s3),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: Space.s2),
+                  Flexible(
+                    child: Text(
+                      title,
+                      style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
-        ),
-        // Offline, everything under this is what the feeder said then.
-        if (feeder.state.cardAt case final DateTime at? when !online)
-          Text(lastHeardText(context, at), style: small)
-        else if (blocked == Blocked.fault)
-          Text('Meals are held until it restarts', style: small)
-        else if (blocked != null && blocked != Blocked.feeding)
-          Text('${blockedWords(blocked)}.', style: small),
-        const SizedBox(height: Space.s3),
-        Pending<bool>(
-          card: locked ?? false,
-          builder: (context, shownLocked, write) => FeederDrawing(
-            height: 280,
-            callouts: callouts(shownLocked, write),
-            dimmed: !online,
-            label: 'Drawing of the feeder',
+              // Offline, everything under this is what the feeder said then.
+              if (feeder.state.cardAt case final DateTime at? when !online)
+                Text(lastHeardText(context, at), style: small)
+              else if (blocked == Blocked.fault)
+                Text('Meals are held until it restarts', style: small)
+              else if (blocked != null && blocked != Blocked.feeding)
+                Text('${blockedWords(blocked)}.', style: small),
+              const SizedBox(height: Space.s2),
+              Wrap(
+                spacing: Space.s2,
+                runSpacing: Space.s2,
+                children: [
+                  _Chip(
+                    glyph: Glyph.food,
+                    text: switch (read?.food) {
+                      FoodLevel.present => 'Food in',
+                      FoodLevel.low => 'Food low',
+                      FoodLevel.unread || null => 'Food not read',
+                    },
+                    color: read?.food == FoodLevel.low ? c.warning : null,
+                  ),
+                  // The lock moves on tap, as a switch does, until the card
+                  // agrees; a refusal moves it back.
+                  Pending<bool>(
+                    card: locked ?? false,
+                    builder: (context, shownLocked, write) => _Chip(
+                      glyph: Glyph.lock,
+                      text: switch (locked) {
+                        null => 'Lock not read',
+                        _ when shownLocked => 'Buttons locked',
+                        _ => 'Buttons unlocked',
+                      },
+                      tapHint: shownLocked ? 'Unlock the buttons' : 'Lock the buttons',
+                      onTap: online && locked != null
+                          ? () => unawaited(
+                              write.ask(!shownLocked, () => feeder.ask(FeederRequest.setLock(locked: !shownLocked))),
+                            )
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-        if (read != null) ...[const SizedBox(height: Space.s3), _NextMeal(card: read)],
       ],
-    );
-  }
-
-  /// The bowl's callout: when, and how much went out. A short or unsure feed
-  /// says its count against what was asked, never one number. Three short
-  /// lines, so it fits beside the drawing on a phone.
-  static Callout _lastFed(BuildContext context, api.FeedResult? last) {
-    if (last == null) {
-      return const Callout(anchor: 'bowl', side: CalloutSide.right, lines: ['Last feed', 'not read yet']);
-    }
-    final PlatformInt64? at = last.atMs;
-    final String when = at == null ? '' : momentTextMs(context, at);
-    final String amount = fedAmountText(last);
-    return Callout(
-      anchor: 'bowl',
-      side: CalloutSide.right,
-      lines: ['Last fed', if (when.isNotEmpty) when, amount],
-      summary: when.isEmpty ? 'Last fed · $amount' : 'Last fed $when · $amount',
     );
   }
 }
 
-/// A space a line never breaks at, so "2 portions" wraps as one.
-const _keep = '\u00a0';
+/// A fact in the header, as a pill; one that does something is outlined in
+/// the accent and is a 48 dp target.
+class _Chip extends StatelessWidget {
+  const _Chip({required this.glyph, required this.text, this.color, this.onTap, this.tapHint});
 
-/// The next meal, the line the owner opens the tab for, or a way to add one.
-class _NextMeal extends StatelessWidget {
-  const _NextMeal({required this.card});
-
-  final api.Card card;
+  final Glyph glyph;
+  final String text;
+  final Color? color;
+  final VoidCallback? onTap;
+  final String? tapHint;
 
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final style = TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text);
-    final api.NextMealView? next = card.nextMeal;
-    final TabController? tabs = DefaultTabController.maybeOf(context);
-
-    return Row(
-      children: [
-        StrokeIcon(Glyph.clock, size: 22, color: next == null ? c.textMuted : c.accent),
-        const SizedBox(width: Space.s3),
-        Expanded(
-          child: next == null
-              ? Text('No meal set', style: style.copyWith(color: c.textMuted))
-              : Text(
-                  'Next meal ${minuteText(context, next.minute)} · '
-                  '${untilText(clock.now(), next.atMs)} · ${portionsText(next.portions).replaceAll(' ', _keep)}',
-                  style: style,
-                ),
+    final Color ink = color ?? (onTap == null ? c.text : c.accent);
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: onTap == null ? c.line : c.accent.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          StrokeIcon(glyph, size: 14, color: ink, weight: 2),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: Sizes.sm, fontWeight: Fonts.medium, color: ink),
+            ),
+          ),
+        ],
+      ),
+    );
+    final VoidCallback? tap = onTap;
+    if (tap == null) return Semantics(container: true, child: pill);
+    return Semantics(
+      container: true,
+      button: true,
+      onTapHint: tapHint,
+      child: InkWell(
+        onTap: tap,
+        borderRadius: BorderRadius.circular(999),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: Align(widthFactor: 1, heightFactor: 1, child: pill),
         ),
-        // Only inside the feeder's tabs, where the schedule is one tap away.
-        if (next == null && tabs != null)
-          TextButton(onPressed: () => tabs.animateTo(scheduleTab), child: const Text('Add a meal')),
-      ],
+      ),
     );
   }
 }

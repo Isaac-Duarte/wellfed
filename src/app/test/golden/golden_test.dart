@@ -208,8 +208,33 @@ void main() {
       });
 
       golden('today', (tester) async {
-        final FeederController feeder = await goldenFeeder(tester);
+        // A whole day: a meal fed, one skipped, one next and one later, and a
+        // press of the Dispense button between them.
+        final (FeederController feeder, FakeSession session) = await oneFeeder(tester, phone: fixturePhone());
+        answerAsFull(session);
+        session
+          ..status(_fourMealsCard())
+          ..history([
+            HistoryEntry(
+              seq: BigInt.one,
+              atMs: DateTime(2026, 11, 2, 9, 12).millisecondsSinceEpoch,
+              body: HistoryBody.fed(
+                result: fakeFed(atMs: DateTime(2026, 11, 2, 9, 12).millisecondsSinceEpoch, requested: 1, confirmed: 1),
+              ),
+            ),
+            HistoryEntry(
+              seq: BigInt.two,
+              atMs: DateTime(2026, 11, 2, 12, 1).millisecondsSinceEpoch,
+              body: HistoryBody.missed(
+                slot: 1,
+                dueMs: DateTime(2026, 11, 2, 12).millisecondsSinceEpoch,
+                reason: const MissedReason.late_(),
+              ),
+            ),
+          ]);
+        await tester.pump();
         await showPhone(tester, shell(feeder, todayTab), brightness);
+        await decodeImages(tester);
         await matchesGolden('today', brightness);
       });
 

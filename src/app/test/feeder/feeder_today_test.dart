@@ -38,8 +38,9 @@ void main() {
       expect(find.text(tab), findsOneWidget);
     }
     expect(find.text('Ready to feed'), findsOneWidget);
-    expect(find.textContaining(RegExp(r'^Next meal 12:30 PM · (in .+|now) · 2\u00a0portions$')), findsOneWidget);
-    expect(find.textContaining(RegExp(r'^Last fed\s7:30 AM(\n| · )2 portions$')), findsOneWidget);
+    // Today's feed, on its line of the day.
+    expect(find.text('7:30 AM'), findsOneWidget);
+    expect(find.text('Fed 2 portions'), findsOneWidget);
     expect(find.text('Food in'), findsOneWidget);
     expect(find.text('Buttons unlocked'), findsOneWidget);
 
@@ -190,7 +191,7 @@ void main() {
     );
     await settle(tester);
 
-    expect(find.textContaining(RegExp(r'^Last fed\sYesterday 9:00 PM(\n| · )2 portions$')), findsOneWidget);
+    expect(find.text('Last fed Yesterday 9:00 PM · 2 portions'), findsOneWidget);
     await feederTap(tester, find.text('Power, Wi-Fi and clock look fine'));
     expect(find.text('Set by a paired device yesterday at 9:00 PM'), findsOneWidget);
   });
@@ -258,7 +259,7 @@ void main() {
     );
     await settle(tester);
 
-    expect(find.textContaining(RegExp(r'^Last fed(\n| · )0 to 2 of 2 portions$')), findsOneWidget);
+    expect(find.text('Last fed · 0 to 2 of 2 portions'), findsOneWidget);
   });
 
   testWidgets('a one-portion feed that stopped says portion, not portions', (tester) async {
