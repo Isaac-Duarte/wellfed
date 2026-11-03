@@ -172,7 +172,7 @@ class FeederCard extends StatelessWidget {
                                           : _Tile(
                                               'Last fed',
                                               lastAt == null ? 'Time unknown' : momentTextMs(context, lastAt),
-                                              deliveredText(last),
+                                              fedAmountText(last),
                                             ),
                                     ),
                                     const SizedBox(width: Space.s2),

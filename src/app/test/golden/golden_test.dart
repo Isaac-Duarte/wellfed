@@ -7,13 +7,16 @@ import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
+import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/home/welcome.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/screens/setup/pairing_view.dart';
 import 'package:wellfed/screens/setup/setup_screen.dart';
+import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
 import 'package:wellfed/state/settings/backups.dart';
 import 'package:wellfed/state/setup/setup.dart';
@@ -22,6 +25,7 @@ import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 
+import '../feeder/feeder_support.dart';
 import '../install/install_support.dart';
 import '../restore/restore_support.dart';
 import '../support/fake_install.dart';
@@ -105,6 +109,32 @@ void _golden(String name, Future<void> Function(WidgetTester tester) body) =>
 
 Future<void> _matches(String name, Brightness brightness) =>
     expectLater(find.byType(MaterialApp), matchesGoldenFile('files/$name.${brightness.name}.png'));
+
+/// Four meals with a meal call each, one in every standing, so the rows show
+/// with both a short time ("7:00 AM") and a long one ("12:00 PM").
+Card _fourMealsCard() => fakeCard(
+  nextMeal: NextMealView(slot: 2, atMs: DateTime(2026, 11, 2, 17).millisecondsSinceEpoch, minute: 17 * 60, portions: 2),
+  lastFed: fixtureFed,
+  meals: [
+    MealView(
+      slot: 0,
+      minute: 7 * 60,
+      portions: 2,
+      call: 1,
+      standing: MealStanding.fed(result: fixtureFed),
+    ),
+    const MealView(slot: 1, minute: 12 * 60, portions: 1, call: 1, standing: MealStanding.passed()),
+    MealView(
+      slot: 2,
+      minute: 17 * 60,
+      portions: 2,
+      call: 1,
+      standing: MealStanding.next(atMs: DateTime(2026, 11, 2, 17).millisecondsSinceEpoch),
+    ),
+    const MealView(slot: 3, minute: 22 * 60, portions: 1, call: 1, standing: MealStanding.later()),
+  ],
+  plans: fullCard().plans,
+);
 
 /// Every fact on Today that needs the owner at once: low food, batteries at
 /// 15% with the adapter out, a weak signal, the desiccant overdue, and this
@@ -233,6 +263,16 @@ void main() {
         );
         await _decodeImages(tester);
         await _matches('feeder_card', brightness);
+      });
+
+      _golden("home with today's meals", (tester) async {
+        final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
+        answerAsFull(session);
+        session.status(_fourMealsCard());
+        await tester.pump();
+        await _phone(tester, HomeScreen(fleet: fleet, earlierInstall: () async => PendingInstall.nothing), brightness);
+        await _decodeImages(tester);
+        await _matches('home', brightness);
       });
 
       _golden('today', (tester) async {

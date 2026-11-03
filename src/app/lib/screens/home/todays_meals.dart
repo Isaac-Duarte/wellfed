@@ -68,21 +68,26 @@ class _MealRow extends StatelessWidget {
       decoration: BoxDecoration(
         border: first ? null : Border(top: BorderSide(color: c.line)),
       ),
+      // The time sits above what the meal gives, not in a fixed column beside
+      // it: "12:00 PM" is wider than "7:00 AM", and wider still in large text.
       child: Row(
         children: [
-          SizedBox(
-            width: 64,
-            child: Text(
-              minuteText(context, meal.minute),
-              style: TextStyle(fontSize: 15, fontWeight: Fonts.semibold, color: c.text),
-            ),
-          ),
           Expanded(
-            child: Text(
-              what,
-              style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  minuteText(context, meal.minute),
+                  style: TextStyle(fontSize: 15, fontWeight: Fonts.semibold, color: c.text),
+                ),
+                Text(
+                  what,
+                  style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
+                ),
+              ],
             ),
           ),
+          const SizedBox(width: Space.s3),
           _Standing(meal),
         ],
       ),

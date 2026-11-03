@@ -103,7 +103,7 @@ void main() {
 
       expect(find.text('Time unknown'), findsOneWidget);
       expect(find.text('Unknown'), findsNothing);
-      expect(find.text('0 to 2 of 2'), findsOneWidget);
+      expect(find.text('0 to 2 of 2 portions'), findsOneWidget);
     });
 
     testWidgets("shows the next meal, the last feed and today's meals", (tester) async {
@@ -143,7 +143,8 @@ void main() {
 
       expect(find.text('Next meal'), findsOneWidget);
       expect(find.text('Last fed'), findsOneWidget);
-      expect(find.text('2 of 2'), findsOneWidget);
+      expect(find.text('2 portions'), findsWidgets);
+      expect(find.text('2 of 2'), findsNothing);
       expect(find.text("Today's meals"), findsOneWidget);
       expect(find.text('Fed'), findsOneWidget);
       expect(find.text('in 26 min'), findsOneWidget);

@@ -56,6 +56,12 @@ String _text(BuildContext context, TimeOfDay time) =>
 String deliveredText(FeedResult fed) =>
     fed.uncertain ? '${fed.confirmed} to ${fed.atMost} of ${fed.requested}' : '${fed.confirmed} of ${fed.requested}';
 
+/// How much a feed gave, in portions: "2 portions" when it gave all it was
+/// asked for, otherwise the count against the request ("1 of 2 portions").
+String fedAmountText(FeedResult fed) => fed.uncertain || fed.confirmed != fed.requested
+    ? '${deliveredText(fed)} ${portionWord(fed.requested)}'
+    : portionsText(fed.confirmed);
+
 const _dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const _monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 

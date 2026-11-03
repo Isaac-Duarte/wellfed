@@ -199,9 +199,7 @@ class _SummaryState extends State<_Summary> {
     }
     final PlatformInt64? at = last.atMs;
     final String when = at == null ? '' : momentTextMs(context, at);
-    final String amount = last.uncertain || last.confirmed != last.requested
-        ? '${deliveredText(last)} ${portionWord(last.requested)}'
-        : portionsText(last.confirmed);
+    final String amount = fedAmountText(last);
     return Callout(
       anchor: 'bowl',
       side: CalloutSide.right,
