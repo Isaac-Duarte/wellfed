@@ -149,74 +149,33 @@ class InstallConfirmPage extends StatelessWidget {
   }
 }
 
-/// A screen with the feeder on it and no way back: the run goes on by
-/// itself, and the notification speaks for it when the phone is elsewhere.
-class _FeederPage extends StatelessWidget {
-  const _FeederPage({required this.title, required this.children});
-
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(28, 56, 28, 28),
-        children: [
-          const Center(child: FeederImage(size: 180)),
-          const SizedBox(height: 28),
-          Headline(title, size: 24, align: TextAlign.center),
-          const SizedBox(height: 28),
-          ...children,
-        ],
-      ),
-    ),
-  );
-}
-
-/// 2.5: stock downloads the replacement from this phone.
+/// 2.5: stock downloads the replacement from this phone, then restarts into
+/// it. There is no way back from here: the run goes on by itself, and the
+/// notification speaks for it when the phone is elsewhere.
 class InstallSendingPage extends StatelessWidget {
   const InstallSendingPage({super.key, required this.flow, required this.state});
 
   final InstallFlow flow;
   final InstallSending state;
 
-  String _status() {
-    if (state.restarting) return 'Restarting into Wellfed';
-    final Duration? left = flow.timeLeft;
-    if (left == null) return '${state.percent}%';
-    return '${state.percent}% · about ${left.inSeconds + 1} s left';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final ThemeTokens c = context.colors;
-    return _FeederPage(
+    final Duration? left = state.restarting ? null : flow.timeLeft;
+    return StepScaffold(
+      stepLabel: 'Step 3 of 5',
+      progress: 0.6,
+      leading: Leading.none,
       title: 'Installing Wellfed',
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                state.restarting ? 'The feeder is restarting' : 'Sending firmware',
-                style: TextStyle(fontSize: 15, fontWeight: Fonts.semibold, color: c.text),
-              ),
-            ),
-            Flexible(
-              child: Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: Text(
-                  _status(),
-                  textAlign: TextAlign.end,
-                  style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
-                ),
-              ),
-            ),
-          ],
+      body: 'The feeder downloads Wellfed from this phone, then restarts into it.',
+      content: [
+        _Step(
+          'Sending firmware',
+          state.restarting ? CheckState.done : CheckState.running,
+          fraction: state.percent / 100,
+          detail: left == null ? null : 'About ${left.inSeconds + 1} s left',
         ),
+        _Step('Restarting into Wellfed', state.restarting ? CheckState.running : CheckState.waiting),
         const SizedBox(height: Space.s2),
-        Bar(value: state.restarting ? 1 : state.percent / 100),
-        const SizedBox(height: Space.s5),
         if (state.holdRefused) ...[
           const Notice(
             tone: Tone.fault,
@@ -312,13 +271,16 @@ class InstallClaimPage extends StatelessWidget {
 
 /// One line of the checklist.
 class _Step extends StatelessWidget {
-  const _Step(this.text, this.state, {this.fraction});
+  const _Step(this.text, this.state, {this.fraction, this.detail});
 
   final String text;
   final CheckState state;
 
   /// How far a running step is, when it knows.
   final double? fraction;
+
+  /// A muted line under a running step, such as the time left.
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
@@ -370,6 +332,13 @@ class _Step extends StatelessWidget {
             ],
           ),
           if (running && part != null) ...[const SizedBox(height: Space.s2), Bar(value: part)],
+          if (detail case final detail? when running) ...[
+            const SizedBox(height: Space.s1),
+            Text(
+              detail,
+              style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+            ),
+          ],
         ],
       ),
     );
