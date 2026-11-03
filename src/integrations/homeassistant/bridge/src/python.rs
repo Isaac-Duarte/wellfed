@@ -10,7 +10,9 @@ use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
 use crate::Error;
-use crate::api::{Role, Update, Written};
+use wellfed_model::SettingsPatch;
+
+use crate::api::{Role, Tune, Update, Written};
 use crate::feeder::{self, Target};
 use crate::key::{self, ClientKey, bytes32};
 
@@ -103,9 +105,62 @@ impl Feeder {
         py.detach(|| self.0.feed(portions))
     }
 
+    /// Stop the feed the feeder numbered `feed`, if it still runs.
+    fn cancel_feed(&self, py: Python<'_>, feed: u32) -> Written {
+        py.detach(|| self.0.cancel_feed(feed))
+    }
+
     /// Lock or unlock the panel; how it ended.
     fn set_lock(&self, py: Python<'_>, locked: bool) -> Written {
         py.detach(|| self.0.set_lock(locked))
+    }
+
+    /// Record a fresh desiccant pack today.
+    fn reset_desiccant(&self, py: Python<'_>) -> Written {
+        py.detach(|| self.0.reset_desiccant())
+    }
+
+    fn play(&self, py: Python<'_>, tune: &Tune) -> Written {
+        let tune = *tune;
+        py.detach(|| self.0.play(tune))
+    }
+
+    /// Change the settings named, on the settings last read; the rest
+    /// stay as they are. One settings change at a time: another while it
+    /// waits is not sent.
+    #[pyo3(signature = (*, sound=None, lights=None, volume=None, desiccant_days=None))]
+    fn put_settings(
+        &self,
+        py: Python<'_>,
+        sound: Option<bool>,
+        lights: Option<bool>,
+        volume: Option<u8>,
+        desiccant_days: Option<u8>,
+    ) -> Written {
+        let changes = SettingsPatch {
+            sound,
+            lights,
+            volume,
+            desiccant_days,
+            ..SettingsPatch::default()
+        };
+        py.detach(|| self.0.put_settings(changes))
+    }
+
+    /// Turn the plan in `slot` on or off, on the plans last read.
+    fn set_plan_enabled(&self, py: Python<'_>, slot: u8, enabled: bool) -> Written {
+        py.detach(|| self.0.set_plan_enabled(slot, enabled))
+    }
+
+    /// Store the weight of one portion in milligrams, 1,000-50,000
+    /// (owners only).
+    fn set_portion_weight(&self, py: Python<'_>, mg: u32) -> Written {
+        py.detach(|| self.0.set_portion_weight(mg))
+    }
+
+    /// Restart the feeder (owners only).
+    fn reboot(&self, py: Python<'_>) -> Written {
+        py.detach(|| self.0.reboot())
     }
 
     /// Read the status now.
@@ -120,7 +175,8 @@ mod wellfed_homeassistant {
     use super::{Feeder, WellfedError, generate_secret, invite_feeder, join, public_key};
     #[pymodule_export]
     use crate::api::{
-        By, Event, EventKind, Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel, Readiness,
-        RefusalKind, Role, Status, Update, UpdateKind, WriteResult, Written,
+        By, Capabilities, Event, EventKind, Feed, FeedFault, FeedOutcome, FeedReason, FoodLevel,
+        NextMeal, NotSent, Plan, PortionsToday, Readiness, RefusalKind, Role, Settings, State,
+        Status, Tune, Update, UpdateKind, WriteResult, Written,
     };
 }

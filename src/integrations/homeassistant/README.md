@@ -21,7 +21,8 @@ The `wellfed.feed` action takes a feeder device and 1 to 48 portions, and answer
 
 - A press or an action sends one request, under a fresh request id. The integration never sends it again.
 - If no session is open, the feed is not sent, and you get an error that says so. Pressing again is safe.
-- If the request went out and no answer came, the feed may have run. You get an error that says so, and nothing is retried. The feeder's `Fed` event settles it, and it arrives when the session comes back, since the event cursor survives a reconnect.
+- If the request went out and no answer came, the feed may have run. You get an error that says so, and nothing is retried. The bridge keeps the feed and settles it when a `Fed` event names this Home Assistant as its source, even one that arrives after a reconnect, since the event cursor survives it. If the feeder's history holds no such feed and the feeder is not feeding, it is reported as unknown, never as a guessed count.
+- A change to the settings, the plans or the portion weight goes on what was last read, one at a time per store. A second change while the first waits is not sent, and one the feeder finds stale is refused and the store read again.
 
 All of this lives in the Rust bridge, so the integration, the app and the CLI share one implementation of the session.
 

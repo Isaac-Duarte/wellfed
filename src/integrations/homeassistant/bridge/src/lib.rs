@@ -23,6 +23,7 @@ pub mod feeder;
 pub mod key;
 #[cfg(feature = "python")]
 mod python;
+pub mod writes;
 
 /// Why a call into the bridge failed.
 #[derive(Debug, thiserror::Error)]

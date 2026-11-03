@@ -3,13 +3,12 @@
 
 use wellfed_model as model;
 
-use super::enums::{
-    By, EventKind, FeedOutcome, FeedReason, FoodLevel, Readiness, RefusalKind, Role, UpdateKind,
-    WriteResult,
-};
+use wellfed_client::history;
+
+use super::enums::{By, EventKind, FeedOutcome, FeedReason, FoodLevel, Readiness};
 
 /// The client or plan a source names, beside its kind.
-fn source_detail(source: &model::Source) -> (Option<String>, Option<u8>) {
+pub(super) fn source_detail(source: &model::Source) -> (Option<String>, Option<u8>) {
     match source {
         model::Source::Client { client } => (Some(client.to_string()), None),
         model::Source::Schedule { plan } => (None, Some(*plan)),
@@ -113,7 +112,8 @@ impl From<model::FeedFault> for FeedFault {
     }
 }
 
-/// A feed that ended, from its `Fed` event.
+/// A feed that ended, from its `Fed` event, as the feeding history reads
+/// it: an uncertain feed is a range of portions, never one count.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "python",
@@ -128,46 +128,40 @@ pub struct Feed {
     pub requested: u8,
     /// The portions the feedback sensor confirmed.
     pub completed: u8,
+    /// The most that may have dropped: `completed` unless the feed is
+    /// uncertain, when it is what was asked for.
+    pub at_most: u8,
     pub outcome: FeedOutcome,
     pub reason: FeedReason,
     /// What the food beam read during the feed.
     pub hopper: FoodLevel,
-    pub by: By,
+    /// Who asked; `None` for a feed a reset interrupted, whose requester
+    /// the feeder's journal does not keep.
+    pub by: Option<By>,
     /// The fingerprint of the client that asked, for [`By::Client`].
     pub client: Option<String>,
     /// The plan's slot, for [`By::Plan`].
     pub plan: Option<u8>,
 }
 
-impl Feed {
-    /// The feed `event` records, if it is a `Fed` event.
-    pub fn from_event(event: &model::Event) -> Option<Self> {
-        let model::EventBody::Fed {
-            feed,
-            requested,
-            completed,
-            outcome,
-            reason,
-            hopper,
-            by,
-        } = &event.body
-        else {
-            return None;
-        };
-        let (client, plan) = source_detail(by);
+impl From<&history::Feed> for Feed {
+    fn from(fed: &history::Feed) -> Self {
+        let (completed, at_most) = fed.delivered.bounds();
+        let (client, plan) = fed.by.as_ref().map_or((None, None), source_detail);
 
-        Some(Self {
-            feed: *feed,
-            at_ms: event.at.map(|at| at.as_millisecond()),
-            requested: *requested,
-            completed: *completed,
-            outcome: (*outcome).into(),
-            reason: (*reason).into(),
-            hopper: (*hopper).into(),
-            by: by.into(),
+        Self {
+            feed: fed.feed,
+            at_ms: fed.at.map(|at| at.as_millisecond()),
+            requested: fed.requested,
+            completed,
+            at_most,
+            outcome: fed.outcome.into(),
+            reason: fed.reason.into(),
+            hopper: fed.hopper.into(),
+            by: fed.by.as_ref().map(By::from),
             client,
             plan,
-        })
+        }
     }
 }
 
@@ -225,141 +219,11 @@ impl From<&model::Event> for Event {
             seq: event.seq,
             at_ms: event.at.map(|at| at.as_millisecond()),
             kind: (&event.body).into(),
-            fed: Feed::from_event(event),
+            fed: history::Feed::from_event(event).as_ref().map(Feed::from),
             locked,
             by: source.map(By::from),
             client,
             plan,
-        }
-    }
-}
-
-/// How a write ended.
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(frozen, get_all, eq, module = "wellfed_homeassistant")
-)]
-pub struct Written {
-    pub result: WriteResult,
-    /// The feeder's number for a feed it reserved.
-    pub feed: Option<u32>,
-    /// Why it refused, for [`WriteResult::Refused`].
-    pub refusal: Option<RefusalKind>,
-    /// Why it never went out, for [`WriteResult::NotSent`].
-    pub reason: Option<String>,
-}
-
-impl Written {
-    fn result(result: WriteResult) -> Self {
-        Self {
-            result,
-            feed: None,
-            refusal: None,
-            reason: None,
-        }
-    }
-
-    pub fn feeding(feed: u32) -> Self {
-        Self {
-            feed: Some(feed),
-            ..Self::result(WriteResult::Feeding)
-        }
-    }
-
-    pub fn done() -> Self {
-        Self::result(WriteResult::Done)
-    }
-
-    pub fn refused(refusal: &model::Refusal) -> Self {
-        Self {
-            refusal: Some(refusal.into()),
-            ..Self::result(WriteResult::Refused)
-        }
-    }
-
-    pub fn not_sent(reason: impl Into<String>) -> Self {
-        Self {
-            reason: Some(reason.into()),
-            ..Self::result(WriteResult::NotSent)
-        }
-    }
-
-    pub fn uncertain() -> Self {
-        Self::result(WriteResult::Uncertain)
-    }
-}
-
-/// What the session tells Home Assistant, in order.
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(frozen, get_all, eq, module = "wellfed_homeassistant")
-)]
-pub struct Update {
-    pub kind: UpdateKind,
-    /// The build that answered, for [`UpdateKind::Connected`].
-    pub build: Option<String>,
-    /// The role this client holds, for [`UpdateKind::Connected`].
-    pub role: Option<Role>,
-    pub status: Option<Status>,
-    pub event: Option<Event>,
-    /// The first and last event lost, for a [`UpdateKind::Gap`] the feeder
-    /// named; both `None` for a history that started over.
-    pub gap_from: Option<u64>,
-    pub gap_to: Option<u64>,
-    /// Why the session ended, for [`UpdateKind::Disconnected`].
-    pub reason: Option<String>,
-}
-
-impl Update {
-    fn kind(kind: UpdateKind) -> Self {
-        Self {
-            kind,
-            build: None,
-            role: None,
-            status: None,
-            event: None,
-            gap_from: None,
-            gap_to: None,
-            reason: None,
-        }
-    }
-
-    pub fn connected(build: impl Into<String>, role: model::ClientRole) -> Self {
-        Self {
-            build: Some(build.into()),
-            role: Some(role.into()),
-            ..Self::kind(UpdateKind::Connected)
-        }
-    }
-
-    pub fn status(status: &model::Status) -> Self {
-        Self {
-            status: Some(status.into()),
-            ..Self::kind(UpdateKind::Status)
-        }
-    }
-
-    pub fn event(event: &model::Event) -> Self {
-        Self {
-            event: Some(event.into()),
-            ..Self::kind(UpdateKind::Event)
-        }
-    }
-
-    pub fn gap(gap: Option<&model::Gap>) -> Self {
-        Self {
-            gap_from: gap.map(|gap| gap.from),
-            gap_to: gap.map(|gap| gap.to),
-            ..Self::kind(UpdateKind::Gap)
-        }
-    }
-
-    pub fn disconnected(reason: impl Into<String>) -> Self {
-        Self {
-            reason: Some(reason.into()),
-            ..Self::kind(UpdateKind::Disconnected)
         }
     }
 }

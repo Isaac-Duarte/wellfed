@@ -312,7 +312,7 @@ view_enum! {
         /// The write took effect.
         Done => "done",
         Refused => "refused",
-        /// It never went out: no session was open.
+        /// It never went out; `not_sent` says why.
         NotSent => "not_sent",
         /// It went out and no answer came: it may have run. Never resend it.
         Uncertain => "uncertain",
@@ -320,14 +320,73 @@ view_enum! {
 }
 
 view_enum! {
+    /// Why a write never went out. Each is safe to try again: the feeder
+    /// saw nothing of it.
+    NotSent {
+        /// No session is open now.
+        Disconnected => "disconnected",
+        /// The session has stopped for good: its handle is gone, or the
+        /// feeder revoked this client.
+        Stopped => "stopped",
+        /// A change to the same store is still waiting on its answer.
+        Busy => "busy",
+        /// This client's role may not do that.
+        Forbidden => "forbidden",
+        /// The feeder's firmware does not serve it.
+        Unsupported => "unsupported",
+        /// What the change is based on has not been read yet.
+        NotRead => "not_read",
+        /// A value outside what the feeder accepts.
+        Invalid => "invalid",
+    }
+}
+
+view_enum! {
+    /// A tune the feeder plays on request.
+    Tune {
+        Chime => "chime",
+        Meal => "meal",
+        Coin => "coin",
+        Alert => "alert",
+        Test => "test",
+        Twinkle => "twinkle",
+    }
+}
+
+impl From<Tune> for model::Tune {
+    fn from(tune: Tune) -> Self {
+        match tune {
+            Tune::Chime => Self::Chime,
+            Tune::Meal => Self::Meal,
+            Tune::Coin => Self::Coin,
+            Tune::Alert => Self::Alert,
+            Tune::Test => Self::Test,
+            Tune::Twinkle => Self::Twinkle,
+        }
+    }
+}
+
+view_enum! {
     /// What a session update carries.
     UpdateKind {
+        /// A session opened: its build, role and capabilities.
         Connected => "connected",
-        Status => "status",
+        /// What the session knows of the feeder changed.
+        State => "state",
+        /// An event; `replayed` when it came from the history read at
+        /// connect rather than as it happened.
         Event => "event",
         /// Events this session never received: what happened meanwhile is
         /// not known.
         Gap => "gap",
+        /// A feed whose answer never came has its `Fed` event.
+        Settled => "settled",
+        /// A feed whose answer never came has no `Fed` event this session
+        /// could find: whether it ran is not known.
+        StillUnknown => "still_unknown",
+        /// The feeder no longer knows this client's key; the session will
+        /// not reconnect.
+        Revoked => "revoked",
         Disconnected => "disconnected",
     }
 }

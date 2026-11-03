@@ -1,7 +1,7 @@
 from typing import Final, SupportsFloat, SupportsIndex, final
 from typing_extensions import disjoint_base
 
-__all__ = ["By", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Readiness", "RefusalKind", "Role", "Status", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key"]
+__all__ = ["By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "NextMeal", "NotSent", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "Settings", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key"]
 
 @final
 class By:
@@ -28,6 +28,27 @@ class By:
         """
         The snake_case name: an entity's state and its translation key.
         """
+
+@final
+class Capabilities:
+    """
+    What the feeder serves this session, as Home Assistant chooses its
+    entities by.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    @property
+    def calibration(self, /) -> bool: ...
+    @property
+    def desiccant(self, /) -> bool: ...
+    @property
+    def feed(self, /) -> bool: ...
+    @property
+    def plans(self, /) -> bool: ...
+    @property
+    def time(self, /) -> bool: ...
+    @property
+    def update(self, /) -> bool: ...
 
 @final
 class Event:
@@ -110,10 +131,17 @@ class EventKind:
 @final
 class Feed:
     """
-    A feed that ended, from its `Fed` event.
+    A feed that ended, from its `Fed` event, as the feeding history reads
+    it: an uncertain feed is a range of portions, never one count.
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
+    @property
+    def at_most(self, /) -> int:
+        """
+        The most that may have dropped: `completed` unless the feed is
+        uncertain, when it is what was asked for.
+        """
     @property
     def at_ms(self, /) -> int | None:
         """
@@ -121,7 +149,11 @@ class Feed:
         while that was invalid.
         """
     @property
-    def by(self, /) -> By: ...
+    def by(self, /) -> By | None:
+        """
+        Who asked; `None` for a feed a reset interrupted, whose requester
+        the feeder's journal does not keep.
+        """
     @property
     def client(self, /) -> str | None:
         """
@@ -229,6 +261,10 @@ class Feeder:
     One feeder's session, on a thread of its own until this is dropped.
     """
     def __new__(cls, /, secret: bytes, identity: bytes, address: str | None = None) -> Feeder: ...
+    def cancel_feed(self, /, feed: SupportsIndex) -> Written:
+        """
+        Stop the feed the feeder numbered `feed`, if it still runs.
+        """
     def feed(self, /, portions: SupportsIndex) -> Written:
         """
         Start a feed; how it ended. Never retry an uncertain one.
@@ -237,13 +273,37 @@ class Feeder:
         """
         The next update within `timeout` seconds, or `None`.
         """
+    def play(self, /, tune: Tune) -> Written: ...
+    def put_settings(self, /, *, sound: bool | None = None, lights: bool | None = None, volume: SupportsIndex | None = None, desiccant_days: SupportsIndex | None = None) -> Written:
+        """
+        Change the settings named, on the settings last read; the rest
+        stay as they are. One settings change at a time: another while it
+        waits is not sent.
+        """
+    def reboot(self, /) -> Written:
+        """
+        Restart the feeder (owners only).
+        """
     def refresh(self, /) -> None:
         """
         Read the status now.
         """
+    def reset_desiccant(self, /) -> Written:
+        """
+        Record a fresh desiccant pack today.
+        """
     def set_lock(self, /, locked: bool) -> Written:
         """
         Lock or unlock the panel; how it ended.
+        """
+    def set_plan_enabled(self, /, slot: SupportsIndex, enabled: bool) -> Written:
+        """
+        Turn the plan in `slot` on or off, on the plans last read.
+        """
+    def set_portion_weight(self, /, mg: SupportsIndex) -> Written:
+        """
+        Store the weight of one portion in milligrams, 1,000-50,000
+        (owners only).
         """
 
 @final
@@ -267,6 +327,113 @@ class FoodLevel:
         """
         The snake_case name: an entity's state and its translation key.
         """
+
+@final
+class NextMeal:
+    """
+    The plans' next meal, by the feeder's clock.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    @property
+    def at_ms(self, /) -> int:
+        """
+        Unix milliseconds.
+        """
+    @property
+    def minute(self, /) -> int:
+        """
+        The minute of the feeder's local day it falls on.
+        """
+    @property
+    def portions(self, /) -> int: ...
+    @property
+    def slot(self, /) -> int: ...
+
+@final
+class NotSent:
+    """
+    Why a write never went out. Each is safe to try again: the feeder
+    saw nothing of it.
+    """
+    Busy: Final[NotSent]
+    """
+    A change to the same store is still waiting on its answer.
+    """
+    Disconnected: Final[NotSent]
+    """
+    No session is open now.
+    """
+    Forbidden: Final[NotSent]
+    """
+    This client's role may not do that.
+    """
+    Invalid: Final[NotSent]
+    """
+    A value outside what the feeder accepts.
+    """
+    NotRead: Final[NotSent]
+    """
+    What the change is based on has not been read yet.
+    """
+    Stopped: Final[NotSent]
+    """
+    The session has stopped for good: its handle is gone, or the
+    feeder revoked this client.
+    """
+    Unsupported: Final[NotSent]
+    """
+    The feeder's firmware does not serve it.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __hash__(self, /) -> int: ...
+    def __int__(self, /) -> int: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def key(self, /) -> str:
+        """
+        The snake_case name: an entity's state and its translation key.
+        """
+
+@final
+class Plan:
+    """
+    One feeding plan, by its slot.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    @property
+    def days(self, /) -> int:
+        """
+        The weekdays it runs, Monday in bit 0; 0 for a plan that runs once.
+        """
+    @property
+    def enabled(self, /) -> bool: ...
+    @property
+    def minute(self, /) -> int:
+        """
+        The minute of the feeder's local day it is due at (0-1439).
+        """
+    @property
+    def portions(self, /) -> int: ...
+    @property
+    def slot(self, /) -> int: ...
+
+@final
+class PortionsToday:
+    """
+    The portions fed on the feeder's local day: a range, since an
+    uncertain feed is never one number.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    @property
+    def at_most(self, /) -> int: ...
+    @property
+    def confirmed(self, /) -> int: ...
+    @property
+    def feeds(self, /) -> int: ...
 
 @final
 class Readiness:
@@ -350,6 +517,73 @@ class Role:
         """
 
 @final
+class Settings:
+    """
+    The settings Home Assistant shows and changes.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    @property
+    def desiccant_days(self, /) -> int:
+        """
+        The desiccant reminder's period, 1-90 days.
+        """
+    @property
+    def lights(self, /) -> bool: ...
+    @property
+    def meal_reminder_minutes(self, /) -> int | None:
+        """
+        Minutes ahead of each meal its `meal_soon` event comes; `None` when
+        off.
+        """
+    @property
+    def sound(self, /) -> bool: ...
+    @property
+    def volume(self, /) -> int:
+        """
+        0-100.
+        """
+
+@final
+class State:
+    """
+    Everything the session knows of the feeder now.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    @property
+    def last_fed(self, /) -> Feed | None:
+        """
+        The newest feed the history has given.
+        """
+    @property
+    def next_meal(self, /) -> NextMeal | None: ...
+    @property
+    def plans(self, /) -> list[Plan] | None:
+        """
+        The filled plan slots, by slot; `None` until read or on a feeder
+        without plans.
+        """
+    @property
+    def portion_mg(self, /) -> int | None:
+        """
+        The weight of one portion, milligrams; `None` until measured, or
+        for a client that does not read the calibration.
+        """
+    @property
+    def portions_today(self, /) -> PortionsToday | None:
+        """
+        `None` while the feeder's clock is invalid.
+        """
+    @property
+    def settings(self, /) -> Settings | None:
+        """
+        `None` until read.
+        """
+    @property
+    def status(self, /) -> Status: ...
+
+@final
 class Status:
     """
     What the feeder reports about itself.
@@ -430,6 +664,28 @@ class Status:
     def uptime_ms(self, /) -> int: ...
 
 @final
+class Tune:
+    """
+    A tune the feeder plays on request.
+    """
+    Alert: Final[Tune]
+    Chime: Final[Tune]
+    Coin: Final[Tune]
+    Meal: Final[Tune]
+    Test: Final[Tune]
+    Twinkle: Final[Tune]
+    def __eq__(self, value: object, /) -> bool: ...
+    def __hash__(self, /) -> int: ...
+    def __int__(self, /) -> int: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def key(self, /) -> str:
+        """
+        The snake_case name: an entity's state and its translation key.
+        """
+
+@final
 class Update:
     """
     What the session tells Home Assistant, in order.
@@ -439,10 +695,21 @@ class Update:
     @property
     def build(self, /) -> str | None:
         """
-        The build that answered, for [`UpdateKind::Connected`].
+        For [`UpdateKind::Connected`]: the build that answered, this
+        client's role and what the feeder serves.
         """
     @property
-    def event(self, /) -> Event | None: ...
+    def capabilities(self, /) -> Capabilities | None: ...
+    @property
+    def event(self, /) -> Event | None:
+        """
+        For [`UpdateKind::Event`].
+        """
+    @property
+    def feed(self, /) -> Feed | None:
+        """
+        For [`UpdateKind::Settled`]: the feed whose answer never came.
+        """
     @property
     def gap_from(self, /) -> int | None:
         """
@@ -454,17 +721,28 @@ class Update:
     @property
     def kind(self, /) -> UpdateKind: ...
     @property
+    def portions(self, /) -> int | None:
+        """
+        For [`UpdateKind::StillUnknown`]: the portions that feed asked for.
+        """
+    @property
     def reason(self, /) -> str | None:
         """
-        Why the session ended, for [`UpdateKind::Disconnected`].
+        Why the session ended, for [`UpdateKind::Disconnected`]: for logs.
         """
     @property
-    def role(self, /) -> Role | None:
+    def replayed(self, /) -> bool:
         """
-        The role this client holds, for [`UpdateKind::Connected`].
+        Whether the event came from the history read at connect: already
+        part of the state, and not news.
         """
     @property
-    def status(self, /) -> Status | None: ...
+    def role(self, /) -> Role | None: ...
+    @property
+    def state(self, /) -> State | None:
+        """
+        For [`UpdateKind::State`].
+        """
 
 @final
 class UpdateKind:
@@ -472,14 +750,38 @@ class UpdateKind:
     What a session update carries.
     """
     Connected: Final[UpdateKind]
+    """
+    A session opened: its build, role and capabilities.
+    """
     Disconnected: Final[UpdateKind]
     Event: Final[UpdateKind]
+    """
+    An event; `replayed` when it came from the history read at
+    connect rather than as it happened.
+    """
     Gap: Final[UpdateKind]
     """
     Events this session never received: what happened meanwhile is
     not known.
     """
-    Status: Final[UpdateKind]
+    Revoked: Final[UpdateKind]
+    """
+    The feeder no longer knows this client's key; the session will
+    not reconnect.
+    """
+    Settled: Final[UpdateKind]
+    """
+    A feed whose answer never came has its `Fed` event.
+    """
+    State: Final[UpdateKind]
+    """
+    What the session knows of the feeder changed.
+    """
+    StillUnknown: Final[UpdateKind]
+    """
+    A feed whose answer never came has no `Fed` event this session
+    could find: whether it ran is not known.
+    """
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...
     def __int__(self, /) -> int: ...
@@ -515,7 +817,7 @@ class WriteResult:
     """
     NotSent: Final[WriteResult]
     """
-    It never went out: no session was open.
+    It never went out; `not_sent` says why.
     """
     Refused: Final[WriteResult]
     Uncertain: Final[WriteResult]
@@ -546,7 +848,7 @@ class Written:
         The feeder's number for a feed it reserved.
         """
     @property
-    def reason(self, /) -> str | None:
+    def not_sent(self, /) -> NotSent | None:
         """
         Why it never went out, for [`WriteResult::NotSent`].
         """

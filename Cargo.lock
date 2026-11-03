@@ -5427,6 +5427,7 @@ dependencies = [
 name = "wellfed-homeassistant"
 version = "0.1.0"
 dependencies = [
+ "jiff",
  "pyo3",
  "thiserror",
  "tokio",

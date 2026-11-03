@@ -53,7 +53,8 @@ def _last_fed_attributes(session: FeederSession) -> dict[str, Any]:
         "completed": fed.completed,
         "outcome": fed.outcome.key,
         "reason": fed.reason.key,
-        "by": fed.by.key,
+        "by": fed.by.key if fed.by is not None else None,
+        "at_most": fed.at_most,
     }
     if fed.client is not None:
         attributes["client"] = fed.client

@@ -68,7 +68,7 @@ def event_data(identity: bytes, event: bridge.Event) -> dict[str, object]:
 
 
 class FeederSession:
-    """The bridge's session, its latest status and its listeners."""
+    """The bridge's session, what it knows of the feeder, and its listeners."""
 
     def __init__(
         self,
@@ -85,10 +85,21 @@ class FeederSession:
         self._listeners: list[Callable[[], None]] = []
 
         self.connected = False
+        self.revoked = False
         self.build: str | None = None
         self.role: bridge.Role | None = None
-        self.status: bridge.Status | None = None
-        self.last_fed: bridge.Feed | None = None
+        self.capabilities: bridge.Capabilities | None = None
+        self.state: bridge.State | None = None
+
+    @property
+    def status(self) -> bridge.Status | None:
+        """The feeder's status as last read."""
+        return self.state.status if self.state is not None else None
+
+    @property
+    def last_fed(self) -> bridge.Feed | None:
+        """The newest feed the feeder's history has given."""
+        return self.state.last_fed if self.state is not None else None
 
     def start(self) -> None:
         """Start pumping updates into the event loop."""
@@ -115,9 +126,48 @@ class FeederSession:
             raise WriteNotDone("The feeder answered a feed without its number")
         return written.feed
 
+    async def cancel_feed(self, feed: int) -> None:
+        """Stop the feed the feeder numbered `feed`, if it still runs."""
+        await self._write(lambda feeder: feeder.cancel_feed(feed))
+
     async def set_lock(self, locked: bool) -> None:
         """Lock or unlock the panel."""
         await self._write(lambda feeder: feeder.set_lock(locked))
+
+    async def reset_desiccant(self) -> None:
+        """Record a fresh desiccant pack today."""
+        await self._write(lambda feeder: feeder.reset_desiccant())
+
+    async def play(self, tune: bridge.Tune) -> None:
+        """Play one of the feeder's tunes."""
+        await self._write(lambda feeder: feeder.play(tune))
+
+    async def put_settings(
+        self,
+        *,
+        sound: bool | None = None,
+        lights: bool | None = None,
+        volume: int | None = None,
+        desiccant_days: int | None = None,
+    ) -> None:
+        """Change the settings named, on the settings last read."""
+        await self._write(
+            lambda feeder: feeder.put_settings(
+                sound=sound, lights=lights, volume=volume, desiccant_days=desiccant_days
+            )
+        )
+
+    async def set_plan_enabled(self, slot: int, enabled: bool) -> None:
+        """Turn the plan in `slot` on or off, on the plans last read."""
+        await self._write(lambda feeder: feeder.set_plan_enabled(slot, enabled))
+
+    async def set_portion_weight(self, mg: int) -> None:
+        """Store the weight of one portion (owners only)."""
+        await self._write(lambda feeder: feeder.set_portion_weight(mg))
+
+    async def reboot(self) -> None:
+        """Restart the feeder (owners only)."""
+        await self._write(lambda feeder: feeder.reboot())
 
     async def _write(self, call: Callable[[bridge.Feeder], bridge.Written]) -> bridge.Written:
         feeder = self._feeder
@@ -135,7 +185,8 @@ class FeederSession:
                 "sent again; the feeding history will show whether it did."
             )
         if result == bridge.WriteResult.NotSent:
-            raise WriteNotDone(f"Not sent: {written.reason}")
+            reason = written.not_sent.key if written.not_sent is not None else "unknown"
+            raise WriteNotDone(f"Not sent: {reason}")
         refusal = written.refusal.key if written.refusal is not None else "unknown"
         raise WriteNotDone(f"The feeder refused: {refusal}")
 
@@ -155,17 +206,34 @@ class FeederSession:
             self.connected = True
             self.build = update.build
             self.role = update.role
-        elif kind == bridge.UpdateKind.Status:
-            self.status = update.status
+            self.capabilities = update.capabilities
+        elif kind == bridge.UpdateKind.State:
+            self.state = update.state
         elif kind == bridge.UpdateKind.Event and update.event is not None:
-            event = update.event
-            if event.fed is not None:
-                self.last_fed = event.fed
-            self.hass.bus.async_fire(EVENT_FEEDER, event_data(self.identity, event))
+            # A replayed event is history the state already holds, not news.
+            if not update.replayed:
+                self.hass.bus.async_fire(EVENT_FEEDER, event_data(self.identity, update.event))
         elif kind == bridge.UpdateKind.Gap:
             _LOGGER.info(
                 "Some feeder events were not received: %s to %s", update.gap_from, update.gap_to
             )
+        elif kind == bridge.UpdateKind.Settled and update.feed is not None:
+            _LOGGER.info(
+                "The feed whose answer was lost ran: feed %s, %s of %s portions",
+                update.feed.feed,
+                update.feed.completed,
+                update.feed.requested,
+            )
+        elif kind == bridge.UpdateKind.StillUnknown:
+            _LOGGER.warning(
+                "A feed of %s portions whose answer was lost left no record: whether it "
+                "ran is not known",
+                update.portions,
+            )
+        elif kind == bridge.UpdateKind.Revoked:
+            _LOGGER.error("The feeder no longer knows this Home Assistant: pair it again")
+            self.revoked = True
+            self.connected = False
         elif kind == bridge.UpdateKind.Disconnected:
             if self.connected:
                 _LOGGER.warning("Feeder disconnected: %s", update.reason)
