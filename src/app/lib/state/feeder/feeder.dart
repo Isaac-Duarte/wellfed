@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/platform/feeder_ports.dart';
@@ -320,7 +321,7 @@ class FeederController extends ChangeNotifier {
             // Only a hint for the next start; NSD finds the feeder anyway.
           }
         case SessionUpdate_Status(card: final Card card):
-          _setState(_state.copyWith(card: card, cardAt: DateTime.now(), cardFresh: true));
+          _setState(_state.copyWith(card: card, cardAt: clock.now(), cardFresh: true));
         case SessionUpdate_FeedStarted(:final int feed, :final int portions, :final int dueSeconds):
           _feedDue?.cancel();
           _feedDue = Timer(Duration(seconds: dueSeconds), _feedOverdue);

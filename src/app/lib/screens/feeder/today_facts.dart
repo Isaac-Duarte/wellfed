@@ -54,6 +54,7 @@ class _TodayFactsState extends State<TodayFacts> {
           _More(
             open: _open,
             allFine: unusual.isEmpty,
+            live: online,
             first: shown.isEmpty,
             onTap: () => setState(() => _open = !_open),
           ),
@@ -100,22 +101,40 @@ class _FactRow extends StatelessWidget {
   };
 }
 
-/// The fold: what it holds when closed, and a way to close it again.
+/// The fold: what it holds when closed, and a way to close it again. Offline
+/// it speaks of when the feeder was last heard, never of now.
 class _More extends StatelessWidget {
-  const _More({required this.open, required this.allFine, required this.first, required this.onTap});
+  const _More({
+    required this.open,
+    required this.allFine,
+    required this.live,
+    required this.first,
+    required this.onTap,
+  });
 
   final bool open;
   final bool allFine;
+
+  /// The card is the feeder's word now; otherwise it is from when Today's
+  /// "Last heard" line says.
+  final bool live;
   final bool first;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final String words = switch ((open, allFine)) {
-      (true, _) => 'Show less',
-      (false, true) => 'Power, Wi-Fi and clock look fine',
-      (false, false) => 'Everything else looks fine',
+    final String words = switch ((open, allFine, live)) {
+      (true, _, _) => 'Show less',
+      (false, true, true) => 'Power, Wi-Fi and clock look fine',
+      (false, false, true) => 'Everything else looks fine',
+      (false, true, false) => 'Power, Wi-Fi and clock were fine then',
+      (false, false, false) => 'Everything else was fine then',
+    };
+    final (Glyph glyph, Color color) = switch ((open, live)) {
+      (true, _) => (Glyph.minus, c.textMuted),
+      (false, true) => (Glyph.check, c.ok),
+      (false, false) => (Glyph.clock, c.textMuted),
     };
     return Semantics(
       container: true,
@@ -131,7 +150,7 @@ class _More extends StatelessWidget {
           ),
           child: Row(
             children: [
-              StrokeIcon(open ? Glyph.minus : Glyph.check, size: 22, color: open ? c.textMuted : c.ok),
+              StrokeIcon(glyph, size: 22, color: color),
               const SizedBox(width: 14),
               Expanded(
                 child: Text(words, style: TextStyle(fontSize: 15, color: c.text)),

@@ -213,12 +213,7 @@ class _Laid extends StatelessWidget {
             ),
             Positioned.fill(
               child: CustomPaint(
-                painter: _Painter(
-                  frame: frame,
-                  colors: c,
-                  highlights: drawing.highlights,
-                  placed: placed ?? const [],
-                ),
+                painter: _Painter(frame: frame, colors: c, highlights: drawing.highlights, placed: placed ?? const []),
               ),
             ),
           ],

@@ -167,7 +167,10 @@ class _Summary extends StatelessWidget {
             ),
           ],
         ),
-        if (blocked == Blocked.fault)
+        // Offline, everything under this is what the feeder said then.
+        if (feeder.state.cardAt case final DateTime at? when !online)
+          Text(lastHeardText(context, at), style: small)
+        else if (blocked == Blocked.fault)
           Text('Meals are held until it restarts', style: small)
         else if (blocked != null && blocked != Blocked.feeding)
           Text('${blockedWords(blocked)}.', style: small),
@@ -241,6 +244,12 @@ class _NextMeal extends StatelessWidget {
     );
   }
 }
+
+/// When the card on screen was last current: `Last heard 2:58 PM`, or
+/// `Last heard yesterday at 9:00 PM`.
+String lastHeardText(BuildContext context, DateTime at) => DateUtils.isSameDay(at, clock.now())
+    ? 'Last heard ${clockText(context, at)}'
+    : 'Last heard ${atMomentTextMs(context, at.millisecondsSinceEpoch)}';
 
 /// Who last set the feeder's clock, and when.
 String clockWords(BuildContext context, api.Card card) {
