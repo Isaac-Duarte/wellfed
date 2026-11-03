@@ -44,7 +44,7 @@ pub use request::{
     Answer, Bowl, Calibration, CalibrationView, Client, Invite, NtpResult, NtpServer, Op, Phase,
     Refusal, TimeChanges, TimeSource, TimeSync, TimeView, Tune, Wifi,
 };
-pub use session::{Capabilities, Hello, Joined, OpenRefusal};
+pub use session::{DeviceKind, Hello, Joined, Model, OpenRefusal};
 pub use stats::{
     Counters, Counts, Erases, FeedStats, Flash, Food, Memory, Portions, PowerStats, ResetCause,
     Resets, Stats, StatsSection, TaskStack,

@@ -594,12 +594,7 @@ async fn enroll(
     hands: Option<&str>,
     cut: Option<&harness::Relay>,
 ) -> Result<Enrolled, EnrollError> {
-    let mut enroll = Enroll::new(
-        signer_public(),
-        "laptop",
-        connection.role(),
-        connection.capabilities(),
-    )?;
+    let mut enroll = Enroll::new(signer_public(), "laptop", connection.role())?;
     loop {
         let op = match enroll.poll() {
             update_key::Next::Send(op) | update_key::Next::Press(op) => op,
@@ -777,7 +772,7 @@ fn only_an_owner_enrolls_an_update_key() {
         // The owner's own session key is listed as an owner, so it is
         // refused before anything is sent.
         let own = *Keypair::from_secret(OWNER).public();
-        let owner_session = Enroll::new(own, "mine", owner.role(), owner.capabilities()).unwrap();
+        let owner_session = Enroll::new(own, "mine", owner.role()).unwrap();
         assert_eq!(
             owner_session.listed(&clients(&mut rig).await),
             Err(EnrollError::SessionKey {

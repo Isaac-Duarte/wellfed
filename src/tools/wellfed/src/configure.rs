@@ -224,11 +224,6 @@ pub(crate) async fn settings_command(args: SettingsArgs) -> Result<()> {
 pub(crate) async fn desiccant_command(args: DesiccantArgs) -> Result<()> {
     let (_, _, mut connection) = connect(&args.target).await?;
     if args.reset {
-        // An op the feeder predates would end the session rather than be
-        // refused, so ask only a feeder that claims the reminder.
-        if !connection.capabilities().desiccant {
-            bail!("this feeder's build has no desiccant reminder; update it first");
-        }
         match connection.ask(&Op::ResetDesiccant).await? {
             Answer::Done { .. } => eprintln!("Desiccant replaced today."),
             Answer::Refused(model::Refusal::NoClock) => bail!(
@@ -299,11 +294,6 @@ pub(crate) async fn calibrate_command(args: CalibrateArgs) -> Result<()> {
     };
 
     let (_, _, mut connection) = connect(&args.target).await?;
-    // An op the feeder predates would end the session rather than be
-    // refused, so ask only a feeder that claims the calibration.
-    if !connection.capabilities().calibration {
-        bail!("this feeder's build keeps no calibration; update it first");
-    }
     let Answer::Calibration(view) = connection.ask(&Op::GetCalibration).await? else {
         bail!("the feeder did not return its calibration");
     };

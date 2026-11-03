@@ -1,12 +1,13 @@
 //! Bounded properties of the device protocol's codec: every message a
-//! client or feeder can be handed decodes or is refused without a panic,
+//! client or device can be handed decodes or is refused without a panic,
 //! whatever a decoded message re-encodes to reads back as the same value,
-//! and every request a client can build survives the trip to the feeder.
+//! and every request a client can build survives the trip to the device.
 //! The byte fixtures (`fixtures.rs`) pin the encoding itself; these
 //! properties cover the values between them.
 
 use proptest::prelude::*;
 use wellfed_proto::api::*;
+use wellfed_proto::device::Model;
 use wellfed_proto::setup::{self, Answer, Reply, Request};
 use wellfed_proto::{Error, decode, decode_padded, encode, trace};
 
@@ -101,19 +102,20 @@ fn op() -> impl Strategy<Value = Op<'static>> {
     );
     prop_oneof![
         Just(Op::Status),
-        Just(Op::GetSettings),
-        (any::<u32>(), changes).prop_map(|(base, changes)| Op::PutSettings { base, changes }),
+        Just(Op::Feeder(FeederOp::GetSettings)),
+        (any::<u32>(), changes)
+            .prop_map(|(base, changes)| Op::Feeder(FeederOp::PutSettings { base, changes })),
         (any::<u32>(), proptest::option::of(wifi()))
             .prop_map(|(base, wifi)| Op::PutWifi { base, wifi }),
-        any::<bool>().prop_map(|locked| Op::SetLock { locked }),
-        tune().prop_map(|tune| Op::Play { tune }),
+        any::<bool>().prop_map(|locked| Op::Feeder(FeederOp::SetLock { locked })),
+        tune().prop_map(|tune| Op::Feeder(FeederOp::Play { tune })),
         sync.prop_map(Op::TimeSync),
         role().prop_map(|role| Op::CreateInvite { role }),
         Just(Op::ListClients),
         any::<[u8; 32]>().prop_map(|key| Op::RevokeClient { key }),
-        any::<u8>().prop_map(|portions| Op::Feed { portions }),
+        any::<u8>().prop_map(|portions| Op::Feeder(FeederOp::Feed { portions })),
         Just(Op::Reboot),
-        any::<u32>().prop_map(|feed| Op::CancelFeed { feed }),
+        any::<u32>().prop_map(|feed| Op::Feeder(FeederOp::CancelFeed { feed })),
         (bytes(200), proptest::option::of(bytes(200))).prop_map(|(manifest, downgrade)| {
             Op::OfferUpdate {
                 manifest,
@@ -140,16 +142,19 @@ fn op() -> impl Strategy<Value = Op<'static>> {
         (0..StatsSection::ALL.len()).prop_map(|index| Op::Stats {
             section: StatsSection::ALL[index],
         }),
-        (any::<u32>(), any::<u16>()).prop_map(|(feed, offset)| Op::FeedTrace { feed, offset }),
-        Just(Op::GetPlans),
-        (any::<u32>(), plans()).prop_map(|(base, plans)| Op::PutPlans { base, plans }),
-        Just(Op::ResetDesiccant),
-        Just(Op::GetCall),
-        (any::<u32>(), any::<u32>()).prop_map(|(bytes, crc)| Op::StartCall { bytes, crc }),
+        (any::<u32>(), any::<u16>())
+            .prop_map(|(feed, offset)| Op::Feeder(FeederOp::FeedTrace { feed, offset })),
+        Just(Op::Feeder(FeederOp::GetPlans)),
+        (any::<u32>(), plans())
+            .prop_map(|(base, plans)| Op::Feeder(FeederOp::PutPlans { base, plans })),
+        Just(Op::Feeder(FeederOp::ResetDesiccant)),
+        Just(Op::Feeder(FeederOp::GetCall)),
+        (any::<u32>(), any::<u32>())
+            .prop_map(|(bytes, crc)| Op::Feeder(FeederOp::StartCall { bytes, crc })),
         (any::<u32>(), bytes(CALL_CHUNK_MAX + 1))
-            .prop_map(|(offset, data)| Op::CallChunk { offset, data }),
-        Just(Op::DeleteCall),
-        Just(Op::PlayCall),
+            .prop_map(|(offset, data)| Op::Feeder(FeederOp::CallChunk { offset, data })),
+        Just(Op::Feeder(FeederOp::DeleteCall)),
+        Just(Op::Feeder(FeederOp::PlayCall)),
     ]
 }
 
@@ -216,9 +221,17 @@ fn ntp() -> impl Strategy<Value = NtpServer> {
 fn client_message() -> impl Strategy<Value = ClientMessage<'static>> {
     prop_oneof![
         (any::<RequestId>(), op()).prop_map(|(id, op)| ClientMessage::Request { id, op }),
-        (any::<Option<u64>>(), any::<bool>())
+        (any::<Option<u64>>(), samples())
             .prop_map(|(after, samples)| ClientMessage::Subscribe { after, samples }),
     ]
+}
+
+fn samples() -> impl Strategy<Value = Samples> {
+    prop_oneof![Just(Samples::Off), Just(Samples::On)]
+}
+
+fn model() -> impl Strategy<Value = Model> {
+    proptest::sample::select(Model::ALL.to_vec())
 }
 
 fn open() -> impl Strategy<Value = Open> {
@@ -312,19 +325,19 @@ proptest! {
     fn opening_messages_round_trip(
         open in open(),
         major in any::<u16>(),
-        capabilities in any::<u32>(),
+        model in model(),
         label in text(24),
         role in role(),
         build in text(40),
         epoch in any::<u32>(),
     ) {
         round_trip!(Open, open);
-        round_trip!(Hello, Hello { major, capabilities: Capabilities(capabilities) });
+        round_trip!(Hello, Hello { major });
         round_trip!(Join<'_>, Join { label });
         round_trip!(Joined, Joined::Enrolled { role });
         round_trip!(
             Welcome<'_>,
-            Welcome::Open { major, capabilities: Capabilities(capabilities), build, role, epoch }
+            Welcome::Open { major, model, build, role, epoch }
         );
     }
 
@@ -355,7 +368,7 @@ proptest! {
     fn client_side_decoders_survive_any_bytes(bytes in wire()) {
         stable!(Welcome<'_>, &bytes);
         stable!(Joined, &bytes);
-        stable!(FeederMessage<'_>, &bytes);
+        stable!(DeviceMessage<'_>, &bytes);
         stable!(Reply, &bytes);
 
         // A batch's bytes are read only when it is walked: any bytes as a
@@ -368,7 +381,7 @@ proptest! {
         }
         message.push(u8::try_from(len).unwrap());
         message.extend_from_slice(&bytes);
-        if let Ok(FeederMessage::Events(batch)) = decode::<FeederMessage<'_>>(&message) {
+        if let Ok(DeviceMessage::Events(batch)) = decode::<DeviceMessage<'_>>(&message) {
             let mut walked = 0;
             for event in batch.iter() {
                 walked += 1;

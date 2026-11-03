@@ -1,6 +1,14 @@
-//! What the server needs from the rest of the feeder, and the values it
+//! What the server needs from the rest of the device, and the values it
 //! passes across: an update request for the installer, a client store
 //! change, an event read from the ring.
+//!
+//! [`Device`] is what every kind provides for the shared core: identity,
+//! sessions, Wi-Fi, time, events, updates, the log and statistics. Each
+//! kind's module adds its own trait on top ([`FeederDevice`]), which the
+//! server reaches only through [`Device::feeder`] (a [`NoFeeder`] for
+//! another kind), for that module's
+//! requests: the server itself is generic over [`Device`] alone, so a
+//! device of another kind serves the shared core unchanged.
 
 use crate::clients::{Label, Role};
 use crate::mailbox::{
@@ -14,29 +22,33 @@ use wellfed_core::named_enum;
 use wellfed_core::ota::offer::KeyId;
 use wellfed_core::tone::Tune as CoreTune;
 use wellfed_proto::api::{
-    self as proto, Bank1Page, Blocked, Bowl, Capabilities, EventBody, Phase, Readiness, Refusal,
-    Source, Stats, StatsSection, Status, Supply, TracePage, UpdateView,
+    self as proto, Bank1Page, Blocked, Bowl, EventBody, Phase, Readiness, Refusal, Source, Stats,
+    StatsSection, Status, TracePage, UpdateView,
 };
+use wellfed_proto::device::Model;
 
-/// The rest of the feeder, as the server needs it. Every call returns at
-/// once: a write is queued for its owner, and the server polls for the
-/// result on later passes.
+/// The rest of the device, as the server's shared core needs it. Every call
+/// returns at once: a write is queued for its owner, and the server polls
+/// for the result on later passes.
 pub trait Device {
     /// Fill `out` from the vetted generator; false when it has no output.
     fn random(&mut self, out: &mut [u8; 32]) -> bool;
     /// The build identity, for the welcome and status.
     fn build(&self) -> &'static str;
-    /// Everything [`Status`] reports but the session count.
+    /// The device's model, for the welcome; its kind follows from it.
+    fn model(&self) -> Model;
+    /// The feeder's module of this device: [`NoFeeder`] for another kind,
+    /// whose [`Self::feeder`] is always `None`. Generic rather than `dyn`,
+    /// so the module's calls stay direct, as the stack audit requires.
+    type Feeder: FeederDevice;
+    /// The feeder's module, `None` for another kind: its requests are
+    /// then refused `Unavailable`.
+    fn feeder(&mut self) -> Option<&mut Self::Feeder>;
+    /// Everything [`Status`] reports, the kind's part included, but the
+    /// session count.
     fn status(&mut self, now_ms: u32) -> Status<'static>;
-    /// The settings, or one change queued for the writer.
-    fn settings(&mut self, change: SettingsFields) -> SettingsResult;
     /// The Wi-Fi store; with `Some`, one change (`Some(None)` clears) queued.
     fn wifi(&mut self, change: Option<Option<Credentials>>) -> WifiResult;
-    fn lock(&mut self, locked: bool) -> LockResult;
-    /// Queue a tune for the speaker, or say why it will not sound now.
-    /// `Started` means queued, not heard: a codec that then will not open
-    /// reaches only the log.
-    fn play(&mut self, tune: CoreTune) -> PlayResult;
     /// A client's sync; `origin` says whether it may step the clock.
     fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult;
     /// Queue a client store change; its ticket, or `None` while the mailbox
@@ -44,30 +56,6 @@ pub trait Device {
     fn keys(&mut self, change: KeyChange) -> Option<u32>;
     /// The result of the change with `ticket`, once written.
     fn keys_outcome(&mut self, ticket: u32) -> Option<KeyOutcome>;
-    /// What this firmware serves beyond major version 1's first ops.
-    fn capabilities(&self) -> Capabilities;
-    /// Whether a feed can start now, and why not: the one decision both
-    /// the status reports and [`Self::feed`] is asked under. A device with
-    /// no feeding owner is [`Blocked::Unserved`].
-    fn readiness(&mut self) -> Readiness {
-        Readiness::Blocked(Blocked::Unserved)
-    }
-    /// The supply as the device judges it, for a status to a session that
-    /// shares [`Capabilities::POWER`]; `None` from a device that does not
-    /// judge it.
-    fn supply(&mut self) -> Option<Supply> {
-        None
-    }
-    /// Queue one feed for the feeding owner on `by`'s behalf: the number
-    /// its journal will hold it under. Asked only while
-    /// [`Self::readiness`] is ready; the owner still refuses one that lost
-    /// a race (a join that began since).
-    fn feed(&mut self, portions: u8, by: Source) -> Result<u32, Refusal>;
-    /// Whether the feed `feed` queued is durably reserved yet: `None` while
-    /// it waits, or why it ended before it was.
-    fn feed_reserved(&mut self, feed: u32) -> Option<Result<(), Refusal>>;
-    /// Stop the feed `feed` if it is still running; false once it has ended.
-    fn cancel_feed(&mut self, feed: u32) -> bool;
     /// Record one durable event.
     fn record(&mut self, now_ms: u32, body: EventBody);
     /// The first durable event after `after` (`None`: from the oldest),
@@ -80,28 +68,20 @@ pub trait Device {
     /// The event ring's epoch, `None` until the ring is open. A session is
     /// welcomed only once it is known.
     fn epoch(&self) -> Option<u32>;
-    /// Restart the feeder.
+    /// Restart the device.
     fn reboot(&mut self);
-    /// One section of the statistics, read when its answer is sealed. Asked
-    /// only of a device whose capabilities carry the section's bit.
+    /// One section of the statistics, read when its answer is sealed.
     fn stats(&mut self, section: StatsSection, now_ms: u32) -> Stats<'_>;
-    /// One page of feed `feed`'s trace from byte `offset` of its body, read
-    /// when its answer is sealed: `NotFound` when no trace of it is kept,
-    /// `Busy` while it is still recorded, `Invalid` for an offset past the
-    /// body. Asked only of a device whose capabilities carry the traces.
-    fn feed_trace(&mut self, feed: u32, offset: u16) -> Result<TracePage<'_>, Refusal>;
     /// One page of bank 1 from `offset`, read when its answer is sealed:
     /// served only by the bank-0 recovery role (`Unavailable` elsewhere),
     /// `Busy` while an install holds the flash, `Invalid` at or past the
-    /// bank's end. Asked only of a device whose capabilities carry
-    /// [`Capabilities::BACKUP`], and only for an owner.
+    /// bank's end. Asked only for an owner.
     fn bank1_page(&mut self, _offset: u32) -> Result<Bank1Page<'_>, Refusal> {
         Err(Refusal::Unavailable)
     }
 
     /// Queue an update request for the installer: its ticket, or why it
-    /// cannot be queued now. A device without [`Capabilities::UPDATE`]
-    /// serves none.
+    /// cannot be queued now. A device without an installer serves none.
     fn update(&mut self, _request: UpdateRequest<'_>) -> Result<u32, Refusal> {
         Err(Refusal::Unavailable)
     }
@@ -118,17 +98,19 @@ pub trait Device {
     fn update_view(&mut self) -> Option<UpdateView> {
         None
     }
-    /// An install holds the flash (or is about to restart): no feed starts.
+    /// An install holds the flash (or is about to restart): no kind's
+    /// operation (a feed) starts.
     fn installing(&self) -> bool {
         false
     }
-    /// A feed is queued or runs: no install starts.
-    fn feed_active(&self) -> bool {
+    /// The kind runs an operation a restart or an install would cut (a
+    /// feed is queued or runs): no install starts, and no reboot.
+    fn operating(&self) -> bool {
         false
     }
 
     /// The time settings; with `Some`, the whole new settings queued for
-    /// the writer. A device without [`Capabilities::TIME`] keeps none.
+    /// the writer. A device without a clock store keeps none.
     fn time_settings(&mut self, _change: Option<TimeSettings>) -> TimeSettingsResult {
         TimeSettingsResult::Unserved
     }
@@ -136,19 +118,59 @@ pub trait Device {
     fn time_state(&mut self, _now_ms: u32) -> Option<TimeState> {
         None
     }
+    /// The logged lines after line `after` (`None`: from the oldest kept)
+    /// that fit `text` whole, each ending in `\n` and printable ASCII.
+    /// `None` when there is nothing new. A device without a RAM tail keeps
+    /// none.
+    fn log_after(&mut self, _after: Option<u32>, _text: &mut [u8]) -> Option<LogBatch> {
+        None
+    }
+}
+
+/// The rest of a feeder, as the feeder's module of the device API needs
+/// it ([`proto::FeederOp`]).
+pub trait FeederDevice: Device {
+    /// The settings, or one change queued for the writer.
+    fn settings(&mut self, change: SettingsFields) -> SettingsResult;
+    fn lock(&mut self, locked: bool) -> LockResult;
+    /// Queue a tune for the speaker, or say why it will not sound now.
+    /// `Started` means queued, not heard: a codec that then will not open
+    /// reaches only the log.
+    fn play(&mut self, tune: CoreTune) -> PlayResult;
+    /// Whether a feed can start now, and why not: the one decision both
+    /// the status reports and [`Self::feed`] is asked under. A device with
+    /// no feeding owner is [`Blocked::Unserved`].
+    fn readiness(&mut self) -> Readiness {
+        Readiness::Blocked(Blocked::Unserved)
+    }
+    /// Queue one feed for the feeding owner on `by`'s behalf: the number
+    /// its journal will hold it under. Asked only while
+    /// [`Self::readiness`] is ready; the owner still refuses one that lost
+    /// a race (a join that began since).
+    fn feed(&mut self, portions: u8, by: Source) -> Result<u32, Refusal>;
+    /// Whether the feed `feed` queued is durably reserved yet: `None` while
+    /// it waits, or why it ended before it was.
+    fn feed_reserved(&mut self, feed: u32) -> Option<Result<(), Refusal>>;
+    /// Stop the feed `feed` if it is still running; false once it has ended.
+    fn cancel_feed(&mut self, feed: u32) -> bool;
+    /// One page of feed `feed`'s trace from byte `offset` of its body, read
+    /// when its answer is sealed: `NotFound` when no trace of it is kept,
+    /// `Busy` while it is still recorded, `Invalid` for an offset past the
+    /// body.
+    fn feed_trace(&mut self, feed: u32, offset: u16) -> Result<TracePage<'_>, Refusal>;
     /// The portion calibration; with `Some`, the whole new calibration
-    /// queued for the writer. A device without
-    /// [`Capabilities::CALIBRATION`] keeps none.
+    /// queued for the writer. A feeder without a calibration store keeps
+    /// none.
     fn calibration(&mut self, _change: Option<Calibration>) -> CalibrationResult {
         CalibrationResult::Unserved
     }
     /// The feeding plans; with `Some`, a client's whole new table queued
-    /// for the writer. A device without [`Capabilities::PLANS`] keeps none.
+    /// for the writer. A feeder without a plans store keeps none.
     fn plans(&mut self, _change: Option<Table>) -> PlansResult {
         PlansResult::Unserved
     }
     /// The meal call; with `Some`, an upload's start or a delete queued
-    /// for the writer. A device without [`Capabilities::CALL`] keeps none.
+    /// for the writer. A feeder without a call store keeps none.
     fn call(&mut self, _change: Option<CallChange>) -> CallResult {
         CallResult::Unserved
     }
@@ -179,12 +201,82 @@ pub trait Device {
     fn phase(&self) -> Option<Phase> {
         None
     }
-    /// The logged lines after line `after` (`None`: from the oldest kept)
-    /// that fit `text` whole, each ending in `\n` and printable ASCII.
-    /// `None` when there is nothing new. A device without
-    /// [`Capabilities::LOG`] keeps none.
-    fn log_after(&mut self, _after: Option<u32>, _text: &mut [u8]) -> Option<LogBatch> {
-        None
+}
+
+/// The feeder module of a device of another kind: uninhabited, so
+/// [`Device::feeder`] can only answer `None`, and no feeder request reaches
+/// anything.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoFeeder {}
+
+impl Device for NoFeeder {
+    type Feeder = Self;
+
+    fn feeder(&mut self) -> Option<&mut Self> {
+        match *self {}
+    }
+    fn random(&mut self, _out: &mut [u8; 32]) -> bool {
+        match *self {}
+    }
+    fn build(&self) -> &'static str {
+        match *self {}
+    }
+    fn model(&self) -> Model {
+        match *self {}
+    }
+    fn status(&mut self, _now_ms: u32) -> Status<'static> {
+        match *self {}
+    }
+    fn wifi(&mut self, _change: Option<Option<Credentials>>) -> WifiResult {
+        match *self {}
+    }
+    fn time_sync(&mut self, _fields: TimeFields, _origin: Origin) -> TimeResult {
+        match *self {}
+    }
+    fn keys(&mut self, _change: KeyChange) -> Option<u32> {
+        match *self {}
+    }
+    fn keys_outcome(&mut self, _ticket: u32) -> Option<KeyOutcome> {
+        match *self {}
+    }
+    fn record(&mut self, _now_ms: u32, _body: EventBody) {
+        match *self {}
+    }
+    fn event_after(&mut self, _reader: Reader, _after: Option<u64>) -> EventRead {
+        match *self {}
+    }
+    fn epoch(&self) -> Option<u32> {
+        match *self {}
+    }
+    fn reboot(&mut self) {
+        match *self {}
+    }
+    fn stats(&mut self, _section: StatsSection, _now_ms: u32) -> Stats<'_> {
+        match *self {}
+    }
+}
+
+impl FeederDevice for NoFeeder {
+    fn settings(&mut self, _change: SettingsFields) -> SettingsResult {
+        match *self {}
+    }
+    fn lock(&mut self, _locked: bool) -> LockResult {
+        match *self {}
+    }
+    fn play(&mut self, _tune: CoreTune) -> PlayResult {
+        match *self {}
+    }
+    fn feed(&mut self, _portions: u8, _by: Source) -> Result<u32, Refusal> {
+        match *self {}
+    }
+    fn feed_reserved(&mut self, _feed: u32) -> Option<Result<(), Refusal>> {
+        match *self {}
+    }
+    fn cancel_feed(&mut self, _feed: u32) -> bool {
+        match *self {}
+    }
+    fn feed_trace(&mut self, _feed: u32, _offset: u16) -> Result<TracePage<'_>, Refusal> {
+        match *self {}
     }
 }
 

@@ -44,7 +44,7 @@ use wellfed_formats::bench::lease::{self, Holder};
 use wellfed_formats::bench::live::{BenchState, Session};
 use wellfed_formats::bench::rendezvous;
 use wellfed_formats::owner::OwnerKeyFile;
-use wellfed_model::{Answer, Capabilities, ClientRole, Op, Pushed};
+use wellfed_model::{Answer, ClientRole, DeviceKind, Op, Pushed};
 use wellfed_session::noise::Keypair;
 
 /// How long a lent session may take to open, as the server lets a request
@@ -387,8 +387,8 @@ impl Lent {
         self.opened.role
     }
 
-    pub(crate) fn capabilities(&self) -> Capabilities {
-        self.opened.capabilities
+    pub(crate) fn kind(&self) -> DeviceKind {
+        self.opened.kind
     }
 
     /// Events after `after`, from what the server's subscription kept. A
@@ -670,9 +670,10 @@ mod tests {
             owner: wellfed_formats::hex::encode(keypair.public()),
             identity: wellfed_formats::hex::encode(&feeder.identity),
             opened: Some(Opened {
+                kind: connection.kind(),
+                model: connection.model(),
                 build: connection.build().to_string(),
                 role: connection.role(),
-                capabilities: connection.capabilities(),
             }),
         };
         let stand = Arc::new(Stand {

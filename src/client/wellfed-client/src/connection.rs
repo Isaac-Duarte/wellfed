@@ -157,8 +157,8 @@ impl Ended {
 }
 
 impl Connection {
-    /// Start a session with the feeder whose identity is `feeder`, claiming
-    /// every capability this crate knows; the first bytes are ready in
+    /// Start a session with the feeder whose identity is `feeder`, at this
+    /// crate's protocol version; the first bytes are ready in
     /// [`Self::poll_transmit`]. `ephemeral` comes from the OS generator,
     /// fresh.
     pub fn new(

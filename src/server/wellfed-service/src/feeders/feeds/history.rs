@@ -228,12 +228,11 @@ impl Service {
             .record_status(id, &status, self.shared.clock.now())
             .await?;
         let opened = match status.readiness {
-            Some(Readiness::Ready) => true,
-            Some(Readiness::Blocked(blocked)) => !matches!(
+            Readiness::Ready => true,
+            Readiness::Blocked(blocked) => !matches!(
                 blocked,
                 Blocked::Starting | Blocked::Resolving | Blocked::Feeding
             ),
-            None => false,
         };
         // Held through the live session's newest event, in its epoch.
         let held = store.feeder(id).await?.and_then(|row| row.synced);

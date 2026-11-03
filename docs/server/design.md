@@ -18,7 +18,7 @@ The one idea: **the server is a mirror of each feeder, never a second source of 
 
 ```text
 src/sdk/wellfed-session      no_std, no alloc. Noise, HMAC, the setup code, length-prefixed frames, hex and base64
-src/product/wellfed-proto    no_std, no alloc. Device-protocol messages, framing, versions and capabilities
+src/product/wellfed-proto    no_std, no alloc. Device-protocol messages, framing, versions, and device kinds and models
 src/product/wellfed-device-api no_std, no alloc. The feeder's side: the sans-IO session server, pairing, the setup exchange
 src/client/wellfed-model     owned device API values (status, settings, events, requests, answers) and their conversion from the wire
 src/client/wellfed-client    sans-IO. Noise sessions, pairing, invites, the Connection: keepalive, answers, event cursor, recovery

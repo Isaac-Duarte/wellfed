@@ -163,7 +163,7 @@ async fn sim_idle(owner: &mut wellfed_connect::Connection) -> bool {
     let Ok(Answer::Status(status)) = owner.ask([0x78; 16], &Op::Status).await else {
         return false;
     };
-    status.readiness == Some(wellfed_model::Readiness::Ready)
+    status.readiness == wellfed_model::Readiness::Ready
 }
 
 #[test]

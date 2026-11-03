@@ -455,12 +455,16 @@ async fn the_cached_status_and_settings_read_back() {
         sessions: 1,
         food: FoodLevel::Low,
         feed_fault: None,
-        readiness: Some(Readiness::Blocked(Blocked::Joining)),
+        readiness: Readiness::Blocked(Blocked::Joining),
         desiccant: Desiccant::Remaining {
             days: -2,
             due: true,
         },
-        supply: None,
+        supply: wellfed_api::Supply {
+            adapter: Some(true),
+            battery: wellfed_api::Battery::Absent,
+            below_floor: None,
+        },
     };
     store.record_status(id, &status, at(200)).await.unwrap();
 

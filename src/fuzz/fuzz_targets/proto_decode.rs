@@ -3,7 +3,7 @@
 #![no_main]
 
 use wellfed_proto::api::{
-    ClientMessage, Event, EventBody, FRAME_MAX, FeederMessage, Hello, Join, Joined, Open, Welcome,
+    ClientMessage, DeviceMessage, Event, EventBody, FRAME_MAX, Hello, Join, Joined, Open, Welcome,
 };
 use wellfed_proto::setup::{Answer, Reply, Request};
 use wellfed_proto::{decode, decode_padded, encode};
@@ -25,12 +25,12 @@ libfuzzer_sys::fuzz_target!(|data: &[u8]| {
     stable!(ClientMessage<'_>, data);
     stable!(Welcome<'_>, data);
     stable!(Joined, data);
-    stable!(FeederMessage<'_>, data);
+    stable!(DeviceMessage<'_>, data);
     stable!(Request<'_>, data);
     stable!(Answer<'_>, data);
     stable!(Reply, data);
     let _ = decode_padded::<EventBody>(data);
-    if let Ok(FeederMessage::Events(batch)) = decode::<FeederMessage<'_>>(data) {
+    if let Ok(DeviceMessage::Events(batch)) = decode::<DeviceMessage<'_>>(data) {
         for event in batch.iter() {
             let Ok(event) = event else { break };
             let mut out = [0u8; FRAME_MAX];

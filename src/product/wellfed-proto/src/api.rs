@@ -2,13 +2,13 @@
 //!
 //! A connection starts with one clear [`Open`] frame naming the session:
 //! - [`Open::Session`]: an enrolled client, Noise IK under [`PROLOGUE`]. The
-//!   client knows the feeder's identity key and sends its own encrypted in
-//!   the first message, carrying a [`Hello`]; the feeder answers with a
-//!   [`Welcome`] (or refuses an unknown key, an old major version or a full
-//!   table) in the second.
+//!   client knows the device's identity key and sends its own encrypted in
+//!   the first message, carrying a [`Hello`]; the device answers with a
+//!   [`Welcome`] naming its kind and model (or refuses an unknown key, an
+//!   old major version or a full table) in the second.
 //! - [`Open::Invite`]: a new client redeems an invite, Noise XXpsk3 with the
 //!   invite's secret as the PSK. The third message carries a [`Join`] and
-//!   the feeder's first transport message a [`Joined`]; the client then
+//!   the device's first transport message a [`Joined`]; the client then
 //!   reconnects with [`Open::Session`].
 //! - [`Open::Recovery`]: the button-hold window. The connection runs BLE setup's
 //!   setup exchange ([`crate::setup`]) unchanged, code proof included, so a
@@ -17,30 +17,35 @@
 //! Every frame is a u16 little-endian length and that many bytes
 //! (`wellfed_session::frame`), at most [`FRAME_MAX`]. After the handshake each frame
 //! is one Noise transport message sealing one [`ClientMessage`] or
-//! [`FeederMessage`]. The feeder sends a session one frame per loop pass, so
+//! [`DeviceMessage`]. The device sends a session one frame per loop pass, so
 //! what a client reads in bulk fills a frame: events in an [`EventBatch`],
-//! log lines in a [`FeederMessage::Log`].
+//! log lines in a [`DeviceMessage::Log`].
+//!
+//! The ops are a shared core every kind serves (status, Wi-Fi, clients,
+//! time, updates, the log, statistics) and one typed module per
+//! [`DeviceKind`](crate::device::DeviceKind): [`Op::Feeder`] carries a [`FeederOp`], answered with an
+//! [`Outcome::Feeder`]. A device refuses another kind's module
+//! `Unavailable`.
 //!
 //! Evolution ([device API](../../../../docs/firmware/device-api.md#evolution)):
 //! - [`PROLOGUE`] never changes. A new major is negotiated in
-//!   [`Hello::major`], and a feeder refuses one it does not serve with
+//!   [`Hello::major`], and a device refuses one it does not serve with
 //!   [`OpenRefusal::Version`].
-//! - Within a major, a new op, event body, outcome or refusal is a variant
-//!   appended at the end, gated by a [`Capabilities`] bit both sides claim
-//!   ([`Op::capability`], [`EventBody::capability`]).
-//! - An existing struct or variant never gains, loses, reorders or retypes
-//!   a field: postcard is positional, so an old peer would misread every
-//!   byte after it. New data is a new variant behind a bit.
-//! - While the research unit is the only feeder running Wellfed, a message
-//!   may still change in place when that is simpler: the firmware and every
-//!   client are built from this repository together. The change rewrites
-//!   the message's fixture lines by hand (blessing only appends).
+//! - What a session serves follows from the welcome's kind, model and
+//!   major alone: there are no feature bits. An op a build does not serve
+//!   is refused `Unavailable`.
+//! - Postcard is positional: a field added, removed, reordered or retyped
+//!   changes every byte after it. While the research unit is the only
+//!   device running Wellfed, messages change in place: the firmware and
+//!   every client are built from this repository together. The change
+//!   rewrites the message's fixture lines by hand (blessing only appends).
 //!
 //! The byte fixtures in `tests/fixtures/v1.txt` pin every v1 message, and
 //! their test refuses to re-bless a line that changed.
 
 use serde::{Deserialize, Serialize};
 
+use crate::device::Model;
 pub use crate::setup::Wifi;
 
 /// Bound into the IK and invite handshakes, so a session meant for another
@@ -48,7 +53,7 @@ pub use crate::setup::Wifi;
 pub const PROLOGUE: &[u8] = b"wellfed-api-v1";
 
 pub const PROTOCOL_MAJOR: u16 = 1;
-/// The oldest major this feeder still serves.
+/// The oldest major this device still serves.
 pub const PROTOCOL_MAJOR_MIN: u16 = 1;
 
 /// The largest frame either way, Noise tag included.
@@ -56,9 +61,9 @@ pub const FRAME_MAX: usize = 1024;
 /// The largest message a frame can seal.
 pub const MESSAGE_MAX: usize = FRAME_MAX - 16;
 
-/// The mDNS service the feeder advertises.
+/// The mDNS service the device advertises.
 pub const SERVICE: &str = "_wellfed._tcp";
-/// The TCP port the feeder listens on.
+/// The TCP port the device listens on.
 pub const PORT: u16 = 4747;
 
 /// A client-chosen request id: random, so a retry after a reconnect is
@@ -73,112 +78,21 @@ pub enum Open {
     Recovery,
 }
 
-/// Feature bits within a major version.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Capabilities(pub u32);
-
-impl Capabilities {
-    /// Everything major version 1 first defined.
-    pub const V1: Self = Self(0);
-    /// Feeding: [`Op::Feed`] is served, and [`Op::CancelFeed`],
-    /// [`Outcome::Feeding`] and [`EventBody::Fed`] are in use. A feeder
-    /// pushes `Fed` events only to a session whose hello carries this bit.
-    pub const FEED: Self = Self(1);
-    /// Updates over the device API: [`Op::OfferUpdate`], the chunks and
-    /// the update's state, cancelling it, and the update keys
-    /// ([`Op::EnrollUpdateKey`], [`Op::UpdateKeyStatement`]), with
-    /// [`Outcome::Update`] and [`Refusal::Update`]. Owner sessions only.
-    pub const UPDATE: Self = Self(2);
-    /// Feeding readiness: [`Op::Status`] is answered
-    /// [`Outcome::FeederStatus`], which says whether a feed can start now
-    /// and why not, and [`EventBody::FeedingBlocked`] records each change
-    /// of a lasting reason.
-    pub const READINESS: Self = Self(4);
-    /// The time settings and the clock's state: [`Op::GetTime`],
-    /// [`Op::PutTime`] and [`Outcome::Time`].
-    pub const TIME: Self = Self(8);
-    /// The debug log: [`Op::TailLog`] and the [`FeederMessage::Log`]
-    /// batches it starts. Owner sessions only. The lines are diagnostics,
-    /// not a contract: their text may change with any build.
-    pub const LOG: Self = Self(32);
-    /// Statistics: [`Op::Stats`] and [`Outcome::Stats`], and the live
-    /// [`Metric`]s beyond power and signal, which a feeder sends only to a
-    /// subscriber whose hello carries this bit.
-    pub const STATS: Self = Self(16);
-    /// Per-feed traces: [`Op::FeedTrace`] and [`Outcome::FeedTrace`], and
-    /// the statistics' [`StatsSection::Feeds`]. Served only beside
-    /// [`Self::STATS`] (both bits are needed): a feeder that serves the
-    /// statistics but predates traces could not decode the op.
-    pub const TRACES: Self = Self(64);
-    /// Portion calibration: [`Op::GetCalibration`] and
-    /// [`Op::PutCalibration`] with [`Outcome::Calibration`] and
-    /// [`Refusal::Unverified`], and the [`StatsSection::Portions`]
-    /// statistics.
-    pub const CALIBRATION: Self = Self(256);
-    /// The supply, judged: [`Metric::Supply`] to subscribers, the
-    /// [`EventBody::Supply`] history of its changes, and readiness's
-    /// [`Blocked::Battery`]. A session without the bit sees that reason as
-    /// [`Blocked::Starting`] ([`Blocked::seen_by`]).
-    pub const POWER: Self = Self(128);
-    /// The stock backup: [`Op::ReadBank1`] and [`Outcome::Bank1`]. Owner
-    /// sessions only, and served only by the
-    /// bank-0 recovery role, which can read bank 1 while it holds the
-    /// feeder's only copy of stock.
-    pub const BACKUP: Self = Self(512);
-    /// Feeding plans: [`Op::GetPlans`] and [`Op::PutPlans`] with
-    /// [`Outcome::Plans`], and the [`EventBody::Plans`],
-    /// [`EventBody::MealSoon`] and [`EventBody::Missed`] history.
-    pub const PLANS: Self = Self(1024);
-    /// The desiccant reminder's reset: [`Op::ResetDesiccant`] and
-    /// [`Refusal::NoClock`]. The period ([`Settings::desiccant_days`]) and
-    /// the count ([`Status::desiccant`]) are part of those messages.
-    pub const DESICCANT: Self = Self(2048);
-    /// The meal call: [`Op::GetCall`], [`Op::StartCall`],
-    /// [`Op::CallChunk`] and [`Op::DeleteCall`] with [`Outcome::Call`].
-    /// A plan's [`Plan::call`] is part of the plans either way; without a
-    /// stored clip it plays nothing.
-    pub const CALL: Self = Self(4096);
-    /// Every bit this crate defines: what a current client claims. A
-    /// session then runs on the bits both sides claim, so a client adapts
-    /// to whatever feeder it meets, however old.
-    pub const KNOWN: Self = Self(
-        Self::FEED.0
-            | Self::UPDATE.0
-            | Self::READINESS.0
-            | Self::TIME.0
-            | Self::STATS.0
-            | Self::LOG.0
-            | Self::TRACES.0
-            | Self::CALIBRATION.0
-            | Self::POWER.0
-            | Self::BACKUP.0
-            | Self::PLANS.0
-            | Self::DESICCANT.0
-            | Self::CALL.0,
-    );
-
-    pub const fn union(self, other: Self) -> Self {
-        Self(self.0 | other.0)
-    }
-
-    pub const fn contains(self, other: Self) -> bool {
-        self.0 & other.0 == other.0
-    }
-}
-
 /// The client's IK first-message payload.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hello {
     pub major: u16,
-    pub capabilities: Capabilities,
 }
 
-/// The feeder's IK second-message payload.
+/// The device's IK second-message payload.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Welcome<'a> {
     Open {
         major: u16,
-        capabilities: Capabilities,
+        /// The device's model: its board, the images it installs, and its
+        /// kind ([`Model::kind`]), which names the module of ops it serves
+        /// beside the shared core.
+        model: Model,
         /// The running image's build identity.
         build: &'a str,
         /// The role this key holds.
@@ -196,7 +110,7 @@ pub enum Welcome<'a> {
 pub enum OpenRefusal {
     /// The key is not enrolled (or was revoked).
     Unknown,
-    /// The client's major version is one this feeder no longer serves, or
+    /// The client's major version is one this device no longer serves, or
     /// does not know yet; `supported` is the newest it serves.
     Version { supported: u16 },
     /// Every session slot is taken.
@@ -220,7 +134,7 @@ pub struct Join<'a> {
     pub label: &'a str,
 }
 
-/// The feeder's answer to a [`Join`], sealed; the connection then closes.
+/// The device's answer to a [`Join`], sealed; the connection then closes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Joined {
     Enrolled { role: Role },
@@ -236,34 +150,35 @@ pub enum ClientMessage<'a> {
         op: Op<'a>,
     },
     /// Push every durable event after `after` (`None` for the oldest kept),
-    /// then each new one as it happens, in [`FeederMessage::Events`]
-    /// batches, and the live samples if `samples`.
-    Subscribe { after: Option<u64>, samples: bool },
+    /// then each new one as it happens, in [`DeviceMessage::Events`]
+    /// batches, and the live samples if `samples` is `On`.
+    Subscribe {
+        after: Option<u64>,
+        samples: Samples,
+    },
+}
+
+/// Whether a subscriber is sent the live [`Metric`]s, every kind of them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Samples {
+    Off,
+    On,
 }
 
 /// One operation. Reads may be repeated freely; a write's id makes a retry
-/// return the first answer instead of running again.
+/// return the first answer instead of running again. The shared core
+/// first, then one variant per device kind's module.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Op<'a> {
+    /// Answered [`Outcome::Status`]: the shared status and the kind's.
+    /// Clients send it as a keepalive.
     Status,
-    GetSettings,
-    /// Applies only if the settings are still at `base` generation.
-    PutSettings {
-        base: u32,
-        changes: SettingsChanges,
-    },
     /// Stores credentials for the next join, or clears them with `None`.
     /// Applies only if the Wi-Fi store is still at `base` generation.
     PutWifi {
         base: u32,
         #[serde(borrow)]
         wifi: Option<Wifi<'a>>,
-    },
-    SetLock {
-        locked: bool,
-    },
-    Play {
-        tune: Tune,
     },
     TimeSync(TimeSync),
     /// A single-use invite for a new client, held in RAM for 10 minutes.
@@ -274,27 +189,15 @@ pub enum Op<'a> {
     RevokeClient {
         key: [u8; 32],
     },
-    /// Answered [`Outcome::Feeding`] once the feed is durably reserved; its
-    /// result is a [`EventBody::Fed`] in the history, with the portions
-    /// asked for and those delivered. `portions` outside 1 to
-    /// [`PORTIONS_MAX`] is refused [`Refusal::Portions`] before anything
-    /// else is checked. Refused `Unavailable` by a feeder without
-    /// [`Capabilities::FEED`].
-    Feed {
-        portions: u8,
-    },
+    /// Refused `Busy` while a kind's operation that a restart would cut
+    /// (a feed) is in flight.
     Reboot,
-    /// Stop the feed [`Outcome::Feeding`] named, if it is still running.
-    /// `NotFound` once it has ended (its `Fed` event says how).
-    CancelFeed {
-        feed: u32,
-    },
     /// Offer a signed version 2 manifest, with the downgrade statement it
     /// needs when its version is not above the floor (always, for stock).
     /// Bank 1 checks it, records it and gives way to bank 0
     /// ([`UpdatePhase::GivingWay`]): the client reconnects and offers it
     /// again, and bank 0, which installs only that manifest, starts
-    /// receiving. Refused `Busy` while a feed runs.
+    /// receiving. Refused `Busy` while a feed runs. Owner sessions only.
     OfferUpdate {
         #[serde(borrow)]
         manifest: &'a [u8],
@@ -316,8 +219,8 @@ pub enum Op<'a> {
     /// candidate.
     CancelUpdate,
     /// Enroll an owner's Ed25519 update-signing key. Answered once a
-    /// Dispense press at the feeder confirms it, or refused
-    /// `Update(Unconfirmed)` when nobody presses within the window.
+    /// press at the device confirms it, or refused `Update(Unconfirmed)`
+    /// when nobody presses within the window.
     EnrollUpdateKey {
         key: [u8; 32],
         #[serde(borrow)]
@@ -339,40 +242,20 @@ pub enum Op<'a> {
         #[serde(borrow)]
         changes: TimeChanges<'a>,
     },
-    /// Push the feeder's record lines after line `after` (`None`: from
+    /// Push the device's record lines after line `after` (`None`: from
     /// the oldest its RAM tail keeps), then each new one, as
-    /// [`FeederMessage::Log`] batches. Answered `Done`; asking again moves
+    /// [`DeviceMessage::Log`] batches. Answered `Done`; asking again moves
     /// the cursor. Lines count from 1 each boot, so a cursor past the
-    /// newest line (an earlier boot's) starts from the oldest.
+    /// newest line (an earlier boot's) starts from the oldest. Owner
+    /// sessions only. The lines are diagnostics, not a contract: their
+    /// text may change with any build.
     TailLog {
         after: Option<u32>,
     },
-    /// One section of the feeder's statistics, answered
+    /// One section of the device's statistics, answered
     /// [`Outcome::Stats`]. Each section fits one frame on its own.
     Stats {
         section: StatsSection,
-    },
-    /// The trace of feed `feed` (the number [`Outcome::Feeding`] gave it),
-    /// from byte `offset` of its body: answered [`Outcome::FeedTrace`] with
-    /// at most [`PAGE_MAX`](crate::trace::PAGE_MAX) bytes, so a client asks
-    /// again from where each page ends until it has the whole body.
-    /// `NotFound` when the feeder keeps no trace of it, `Busy` while it
-    /// still runs, `Invalid` for an offset past the body's end.
-    FeedTrace {
-        feed: u32,
-        offset: u16,
-    },
-    /// The portion calibration and where the rotor rests, answered
-    /// [`Outcome::Calibration`].
-    GetCalibration,
-    /// Store `calibration` if the calibration is still at `base`
-    /// generation, answered `Done` once the store holds it. Owner sessions
-    /// only. A bowl mode this feeder has not verified is refused
-    /// [`Refusal::Unverified`], and a portion weight outside
-    /// [`PORTION_MG_MIN`]..=[`PORTION_MG_MAX`] `Invalid`.
-    PutCalibration {
-        base: u32,
-        calibration: Calibration,
     },
     /// Bank 1's bytes from `offset`, answered [`Outcome::Bank1`] with at
     /// most [`BANK1_PAGE_MAX`] bytes, so a client asks again from where
@@ -385,7 +268,63 @@ pub enum Op<'a> {
     ReadBank1 {
         offset: u32,
     },
-    /// The feeding plans, answered [`Outcome::Plans`].
+    /// The feeder's module; refused `Unavailable` by another kind.
+    #[serde(borrow)]
+    Feeder(FeederOp<'a>),
+}
+
+/// The feeder's ops ([`DeviceKind::Feeder`](crate::device::DeviceKind::Feeder)).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FeederOp<'a> {
+    GetSettings,
+    /// Applies only if the settings are still at `base` generation.
+    PutSettings {
+        base: u32,
+        changes: SettingsChanges,
+    },
+    SetLock {
+        locked: bool,
+    },
+    Play {
+        tune: Tune,
+    },
+    /// Answered [`FeederOutcome::Feeding`] once the feed is durably
+    /// reserved; its result is a [`EventBody::Fed`] in the history, with
+    /// the portions asked for and those delivered. `portions` outside 1 to
+    /// [`PORTIONS_MAX`] is refused [`Refusal::Portions`] before anything
+    /// else is checked.
+    Feed {
+        portions: u8,
+    },
+    /// Stop the feed [`FeederOutcome::Feeding`] named, if it is still
+    /// running. `NotFound` once it has ended (its `Fed` event says how).
+    CancelFeed {
+        feed: u32,
+    },
+    /// The trace of feed `feed` (the number [`FeederOutcome::Feeding`] gave
+    /// it), from byte `offset` of its body: answered
+    /// [`FeederOutcome::FeedTrace`] with at most
+    /// [`PAGE_MAX`](crate::trace::PAGE_MAX) bytes, so a client asks again
+    /// from where each page ends until it has the whole body. `NotFound`
+    /// when the feeder keeps no trace of it, `Busy` while it still runs,
+    /// `Invalid` for an offset past the body's end.
+    FeedTrace {
+        feed: u32,
+        offset: u16,
+    },
+    /// The portion calibration and where the rotor rests, answered
+    /// [`FeederOutcome::Calibration`].
+    GetCalibration,
+    /// Store `calibration` if the calibration is still at `base`
+    /// generation, answered `Done` once the store holds it. Owner sessions
+    /// only. A bowl mode this feeder has not verified is refused
+    /// [`Refusal::Unverified`], and a portion weight outside
+    /// [`PORTION_MG_MIN`]..=[`PORTION_MG_MAX`] `Invalid`.
+    PutCalibration {
+        base: u32,
+        calibration: Calibration,
+    },
+    /// The feeding plans, answered [`FeederOutcome::Plans`].
     GetPlans,
     /// Replace every plan slot with `plans` if the plans are still at
     /// `base` generation, answered `Done` once the store holds them. A
@@ -404,7 +343,7 @@ pub enum Op<'a> {
     /// store holds it. Refused [`Refusal::NoClock`] while the clock is
     /// invalid: the feeder never records a date it does not know.
     ResetDesiccant,
-    /// The stored meal call, answered [`Outcome::Call`].
+    /// The stored meal call, answered [`FeederOutcome::Call`].
     GetCall,
     /// Start uploading a new meal call of `bytes` stream bytes (1 to
     /// [`CALL_BYTES_MAX`]) whose CRC-32/ISO-HDLC is `crc`: the clip stored
@@ -419,13 +358,14 @@ pub enum Op<'a> {
     /// Stream bytes at `offset`, which must be where the upload stands
     /// ([`CallClip::Receiving::received`]): [`CALL_CHUNK_MAX`] bytes, or
     /// the rest of the stream when fewer are left. Answered
-    /// [`Outcome::Call`] once queued for the store (its `received` counts
-    /// the chunk once written), `Busy` while the last chunk is still being
-    /// written, `Invalid` for any other offset or length. A chunk at an offset already received is answered with the
-    /// state and changes nothing, so a retry needs no remembered id. Once
-    /// the last chunk is written the feeder reads the whole stream back
-    /// against the CRC and stores the clip ([`CallClip::Stored`]), or
-    /// keeps none ([`CallClip::None`]).
+    /// [`FeederOutcome::Call`] once queued for the store (its `received`
+    /// counts the chunk once written), `Busy` while the last chunk is still
+    /// being written, `Invalid` for any other offset or length. A chunk at
+    /// an offset already received is answered with the state and changes
+    /// nothing, so a retry needs no remembered id. Once the last chunk is
+    /// written the feeder reads the whole stream back against the CRC and
+    /// stores the clip ([`CallClip::Stored`]), or keeps none
+    /// ([`CallClip::None`]).
     CallChunk {
         offset: u32,
         #[serde(borrow)]
@@ -450,7 +390,7 @@ pub enum Op<'a> {
 pub const CALL_RATE_HZ: u32 = 8_000;
 /// The longest stream the feeder stores: about 8 s.
 pub const CALL_BYTES_MAX: u32 = 32_256;
-/// The stream bytes one [`Op::CallChunk`] carries.
+/// The stream bytes one [`FeederOp::CallChunk`] carries.
 pub const CALL_CHUNK_MAX: usize = 512;
 /// The most times one meal plays the call.
 pub const CALL_PLAYS_MAX: u8 = 5;
@@ -474,7 +414,7 @@ pub enum CallClip {
     },
 }
 
-/// [`Op::GetCall`]'s answer.
+/// [`FeederOp::GetCall`]'s answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CallView {
     pub writable: bool,
@@ -518,7 +458,7 @@ pub enum Phase {
     Unknown,
 }
 
-/// [`Op::GetCalibration`]'s answer.
+/// [`FeederOp::GetCalibration`]'s answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CalibrationView {
     pub generation: u32,
@@ -553,7 +493,7 @@ pub struct Plan {
     pub call: u8,
 }
 
-/// [`Op::GetPlans`]'s answer: the plan in each slot.
+/// [`FeederOp::GetPlans`]'s answer: the plan in each slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Plans {
     pub generation: u32,
@@ -570,62 +510,55 @@ pub const WANTED_MAX: usize = 8;
 impl Op<'_> {
     /// Whether the op changes something, so its id is remembered. A chunk
     /// is idempotent by its offset instead, so a whole image does not push
-    /// every other write out of the feeder's memory.
+    /// every other write out of the device's memory. No wildcard, so a new
+    /// op cannot land without its decision.
     pub const fn writes(&self) -> bool {
-        !matches!(
-            self,
-            Self::Status
-                | Self::GetSettings
-                | Self::ListClients
-                | Self::UpdateState
-                | Self::UpdateChunk { .. }
-                | Self::GetTime
-                | Self::TailLog { .. }
-                | Self::Stats { .. }
-                | Self::FeedTrace { .. }
-                | Self::GetCalibration
-                | Self::ReadBank1 { .. }
-                | Self::GetPlans
-                | Self::GetCall
-                | Self::CallChunk { .. }
-        )
-    }
-
-    /// The bits both sides must claim before the op is served. The match
-    /// has no wildcard, so a new op cannot land without its decision.
-    pub const fn capability(&self) -> Capabilities {
         match self {
-            Self::Stats { section } => section.capability(),
-            Self::FeedTrace { .. } => Capabilities::STATS.union(Capabilities::TRACES),
-            Self::Feed { .. } | Self::CancelFeed { .. } => Capabilities::FEED,
-            Self::OfferUpdate { .. }
-            | Self::UpdateChunk { .. }
-            | Self::UpdateState
-            | Self::CancelUpdate
-            | Self::EnrollUpdateKey { .. }
-            | Self::UpdateKeyStatement { .. } => Capabilities::UPDATE,
-            Self::GetTime | Self::PutTime { .. } => Capabilities::TIME,
-            Self::TailLog { .. } => Capabilities::LOG,
-            Self::GetCalibration | Self::PutCalibration { .. } => Capabilities::CALIBRATION,
-            Self::ReadBank1 { .. } => Capabilities::BACKUP,
-            Self::GetPlans | Self::PutPlans { .. } => Capabilities::PLANS,
-            Self::ResetDesiccant => Capabilities::DESICCANT,
-            Self::GetCall
-            | Self::StartCall { .. }
-            | Self::CallChunk { .. }
-            | Self::DeleteCall
-            | Self::PlayCall => Capabilities::CALL,
             Self::Status
-            | Self::GetSettings
-            | Self::PutSettings { .. }
-            | Self::PutWifi { .. }
-            | Self::SetLock { .. }
-            | Self::Play { .. }
+            | Self::ListClients
+            | Self::UpdateState
+            | Self::UpdateChunk { .. }
+            | Self::GetTime
+            | Self::TailLog { .. }
+            | Self::Stats { .. }
+            | Self::ReadBank1 { .. } => false,
+            Self::PutWifi { .. }
             | Self::TimeSync(_)
             | Self::CreateInvite { .. }
-            | Self::ListClients
             | Self::RevokeClient { .. }
-            | Self::Reboot => Capabilities::V1,
+            | Self::Reboot
+            | Self::OfferUpdate { .. }
+            | Self::CancelUpdate
+            | Self::EnrollUpdateKey { .. }
+            | Self::UpdateKeyStatement { .. }
+            | Self::PutTime { .. } => true,
+            Self::Feeder(op) => op.writes(),
+        }
+    }
+}
+
+impl FeederOp<'_> {
+    /// [`Op::writes`] for the feeder's ops; a meal call's chunk is
+    /// idempotent by its offset, as an update's is.
+    pub const fn writes(&self) -> bool {
+        match self {
+            Self::GetSettings
+            | Self::FeedTrace { .. }
+            | Self::GetCalibration
+            | Self::GetPlans
+            | Self::GetCall
+            | Self::CallChunk { .. } => false,
+            Self::PutSettings { .. }
+            | Self::SetLock { .. }
+            | Self::Play { .. }
+            | Self::Feed { .. }
+            | Self::CancelFeed { .. }
+            | Self::PutCalibration { .. }
+            | Self::PutPlans { .. }
+            | Self::ResetDesiccant
+            | Self::StartCall { .. }
+            | Self::DeleteCall
+            | Self::PlayCall => true,
         }
     }
 }
@@ -775,13 +708,13 @@ pub struct TimeSync {
     pub next_offset_s: i32,
 }
 
-/// What the feeder sends once the session is open.
+/// What the device sends once the session is open.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[expect(
     clippy::large_enum_variant,
-    reason = "a wire message, built in place: the feeder cannot box"
+    reason = "a wire message, built in place: the device cannot box"
 )]
-pub enum FeederMessage<'a> {
+pub enum DeviceMessage<'a> {
     Response {
         id: RequestId,
         #[serde(borrow)]
@@ -811,7 +744,7 @@ pub enum FeederMessage<'a> {
     },
 }
 
-/// The most text one [`FeederMessage::Log`] carries: a frame, less the
+/// The most text one [`DeviceMessage::Log`] carries: a frame, less the
 /// message's tag, numbers and the text's length prefix.
 pub const LOG_TEXT_MAX: usize = MESSAGE_MAX - 16;
 
@@ -821,12 +754,12 @@ pub const EVENT_BODY_MAX: usize = 16;
 /// The most bytes an [`Event`] encodes to: a `u64` varint's 10, an
 /// `Option<u32>`'s 6 and the body.
 pub const EVENT_BYTES_MAX: usize = 10 + 6 + EVENT_BODY_MAX;
-/// The most encoded events one [`FeederMessage::Events`] carries: a
+/// The most encoded events one [`DeviceMessage::Events`] carries: a
 /// frame's message, less the message's tag and the bytes' two-byte length.
 pub const EVENTS_BYTES_MAX: usize = MESSAGE_MAX - 3;
 
-/// Events as [`FeederMessage::Events`] carries them: each [`Event`]
-/// encoded in turn, borrowed from the message as [`FeederMessage::Log`]'s
+/// Events as [`DeviceMessage::Events`] carries them: each [`Event`]
+/// encoded in turn, borrowed from the message as [`DeviceMessage::Log`]'s
 /// text is. The feeder fills one with an [`EventBatchWriter`] in a buffer
 /// it already holds, so it never keeps an array of events; a client reads
 /// it with [`Self::iter`].
@@ -943,17 +876,13 @@ pub enum Outcome<'a> {
     Done {
         generation: Option<u32>,
     },
+    /// [`Op::Status`]'s answer: the shared status and the kind's.
+    #[serde(borrow)]
     Status(Status<'a>),
-    Settings(Settings),
     #[serde(borrow)]
     Clients(Clients<'a>),
     Invite(Invite),
     Refused(Refusal),
-    /// The feed is reserved in the journal under `feed` and runs now; a
-    /// retry of the request returns this again rather than feeding twice.
-    Feeding {
-        feed: u32,
-    },
     /// Where the update stands, after an update op.
     Update(UpdateView),
     #[serde(borrow)]
@@ -961,27 +890,32 @@ pub enum Outcome<'a> {
     /// The section [`Op::Stats`] asked for.
     #[serde(borrow)]
     Stats(Stats<'a>),
-    /// [`Op::Status`]'s answer to a session with [`Capabilities::READINESS`]:
-    /// the status, and whether a feed can start now.
-    FeederStatus {
-        #[serde(borrow)]
-        status: Status<'a>,
-        readiness: Readiness,
-        /// The supply as the feeder judges it, to a session that shares
-        /// [`Capabilities::POWER`]; `None` otherwise.
-        supply: Option<Supply>,
-    },
-    /// One page of the trace [`Op::FeedTrace`] asked for.
-    #[serde(borrow)]
-    FeedTrace(TracePage<'a>),
-    /// The calibration, after [`Op::GetCalibration`].
-    Calibration(CalibrationView),
     /// One page of bank 1, after [`Op::ReadBank1`].
     #[serde(borrow)]
     Bank1(Bank1Page<'a>),
-    /// The plans, after [`Op::GetPlans`].
+    /// The answer to an [`Op::Feeder`].
+    #[serde(borrow)]
+    Feeder(FeederOutcome<'a>),
+}
+
+/// The answers only a [`FeederOp`] gets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FeederOutcome<'a> {
+    Settings(Settings),
+    /// The feed is reserved in the journal under `feed` and runs now; a
+    /// retry of the request returns this again rather than feeding twice.
+    Feeding {
+        feed: u32,
+    },
+    /// One page of the trace [`FeederOp::FeedTrace`] asked for.
+    #[serde(borrow)]
+    FeedTrace(TracePage<'a>),
+    /// The calibration, after [`FeederOp::GetCalibration`].
+    Calibration(CalibrationView),
+    /// The plans, after [`FeederOp::GetPlans`].
     Plans(Plans),
-    /// The meal call, after [`Op::GetCall`] or [`Op::CallChunk`].
+    /// The meal call, after [`FeederOp::GetCall`] or
+    /// [`FeederOp::CallChunk`].
     Call(CallView),
 }
 
@@ -996,7 +930,8 @@ pub struct Bank1Page<'a> {
 }
 
 /// Whether the feeder can start a feed now. One decision, which both
-/// [`Op::Status`] reports and [`Op::Feed`] obeys: a feed asked for while
+/// [`Op::Status`] reports ([`FeederStatus::readiness`]) and
+/// [`FeederOp::Feed`] obeys: a feed asked for while
 /// [`Self::Blocked`] is refused with [`Blocked::refusal`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Readiness {
@@ -1031,8 +966,7 @@ pub enum Blocked {
     /// The feeder runs on its batteries and they are below the floor a
     /// feed needs, or unread; or this boot followed a brownout and the
     /// adapter has not been seen since. It clears when the adapter returns
-    /// or the pack recovers past the floor's hysteresis. Only to a session
-    /// that claims [`Capabilities::POWER`].
+    /// or the pack recovers past the floor's hysteresis.
     Battery,
     /// A restart was asked for (a client's reboot, setup mode's end, the
     /// factory reset) and comes within seconds: a feed started now would be
@@ -1054,17 +988,6 @@ impl Blocked {
             | Self::Setup
             | Self::Battery
             | Self::Restarting => Refusal::Busy,
-        }
-    }
-
-    /// The reason as a session with `capabilities` can decode it: one
-    /// without [`Capabilities::POWER`] gets [`Self::Battery`] as
-    /// [`Self::Starting`], the reason that also refuses `Busy`, is not
-    /// lasting, and says only that the feeder will feed again by itself.
-    pub const fn seen_by(self, capabilities: Capabilities) -> Self {
-        match self {
-            Self::Battery if !capabilities.contains(Capabilities::POWER) => Self::Starting,
-            other => other,
         }
     }
 
@@ -1239,6 +1162,7 @@ pub enum UpdateRefusal {
     Battery,
 }
 
+/// What every device reports about itself, and its kind's part.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Status<'a> {
     pub build: &'a str,
@@ -1249,7 +1173,7 @@ pub struct Status<'a> {
     pub faults: u32,
     pub rssi: i32,
     pub wifi: WifiSource,
-    /// Every time this boot a joined link was lost and the feeder went on
+    /// Every time this boot a joined link was lost and the device went on
     /// to rejoin, whatever noticed it.
     pub link_losses: u32,
     /// Those of `link_losses` the link check noticed (the DHCP lease ran out
@@ -1259,12 +1183,24 @@ pub struct Status<'a> {
     /// Unix milliseconds, `None` while the clock is invalid.
     pub clock_ms: Option<u64>,
     pub power: Option<Power>,
-    pub locked: Option<bool>,
-    pub settings_generation: u32,
     pub wifi_generation: u32,
     /// The newest event's sequence number, `None` before the first.
     pub last_event: Option<u64>,
     pub sessions: u8,
+    pub device: DeviceStatus,
+}
+
+/// The part of [`Status`] only one kind of device reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DeviceStatus {
+    Feeder(FeederStatus),
+}
+
+/// What a feeder reports beside the shared status.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeederStatus {
+    pub locked: Option<bool>,
+    pub settings_generation: u32,
     /// The hopper as the food beam last read it.
     pub food: FoodLevel,
     /// The last feed this boot that ended on a fault (`Failed` or
@@ -1272,6 +1208,11 @@ pub struct Status<'a> {
     /// or a sensor that still wants seeing to. Its `Fed` event has the rest.
     pub feed_fault: Option<FeedFault>,
     pub desiccant: Desiccant,
+    /// Whether a feed can start now.
+    pub readiness: Readiness,
+    /// The supply as the feeder judges it: an unread or stale one says
+    /// so ([`Battery`]).
+    pub supply: Supply,
 }
 
 /// The desiccant reminder, counted in the feeder's local calendar days.
@@ -1312,7 +1253,7 @@ pub struct Power {
     pub battery_mv: Option<u32>,
 }
 
-/// The supply as the feeder judges it ([`Capabilities::POWER`]): never an
+/// The supply as the feeder judges it: never an
 /// unknown passed off as a value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Supply {
@@ -1355,7 +1296,7 @@ pub struct Settings {
     /// The desiccant reminder's period in days.
     pub desiccant_days: u8,
     /// The local calendar day (days since 1970-01-01) the desiccant was
-    /// last replaced; `None` before the first [`Op::ResetDesiccant`].
+    /// last replaced; `None` before the first [`FeederOp::ResetDesiccant`].
     pub desiccant_reset: Option<i32>,
     pub meal_reminder: MealReminder,
     pub writable: bool,
@@ -1493,30 +1434,6 @@ pub enum EventBody {
     Food {
         level: FoodLevel,
     },
-}
-
-impl EventBody {
-    /// The bit a session's hello must carry for the feeder to push this
-    /// body; a session without it never sees the event (its cursor moves
-    /// past it). No wildcard, as for [`Op::capability`].
-    pub const fn capability(&self) -> Capabilities {
-        match self {
-            Self::Fed { .. } | Self::DispenseRefused { .. } | Self::Food { .. } => {
-                Capabilities::FEED
-            }
-            Self::FeedingBlocked { .. } => Capabilities::READINESS,
-            Self::Supply(_) => Capabilities::POWER,
-            Self::Plans { .. } | Self::Missed { .. } | Self::MealSoon { .. } => Capabilities::PLANS,
-            Self::Boot { .. }
-            | Self::Lock { .. }
-            | Self::Settings { .. }
-            | Self::Wifi { .. }
-            | Self::Enrolled { .. }
-            | Self::Revoked { .. }
-            | Self::ClockSync { .. }
-            | Self::Lost { .. } => Capabilities::V1,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1677,23 +1594,9 @@ pub enum Metric {
     Supply(Supply),
 }
 
-impl Metric {
-    /// The bit a session's hello must carry for the feeder to send this
-    /// metric; no wildcard, as for [`Op::capability`].
-    pub const fn capability(&self) -> Capabilities {
-        match self {
-            Self::Power(_) | Self::Rssi(_) => Capabilities::V1,
-            Self::Heap { .. } | Self::Loop { .. } | Self::Gateway { .. } | Self::Wifi { .. } => {
-                Capabilities::STATS
-            }
-            Self::Supply(_) => Capabilities::POWER,
-        }
-    }
-}
-
-/// What [`Op::Stats`] asks for. A section added later needs a bit of its
-/// own, since a feeder that predates it cannot decode the request: its
-/// [`Self::capability`] names it.
+/// What [`Op::Stats`] asks for. The food, feeds and portions sections are
+/// the feeder's, and the counters count its feeds: a kind's own sections
+/// move to its module when a second kind keeps statistics.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StatsSection {
     Counters,
@@ -1716,17 +1619,6 @@ impl StatsSection {
         Self::Feeds,
         Self::Portions,
     ];
-
-    /// The bits both sides must claim before this section is served.
-    pub const fn capability(self) -> Capabilities {
-        match self {
-            Self::Counters | Self::Memory | Self::Flash | Self::Power | Self::Food => {
-                Capabilities::STATS
-            }
-            Self::Feeds => Capabilities::STATS.union(Capabilities::TRACES),
-            Self::Portions => Capabilities::CALIBRATION,
-        }
-    }
 }
 
 /// One section of the statistics, each within a frame.
@@ -2015,7 +1907,7 @@ mod tests {
             role: Role::UpdateSigner,
             you: true,
         };
-        let clients = FeederMessage::Response {
+        let clients = DeviceMessage::Response {
             id: [0xff; 16],
             result: Outcome::Clients(Clients {
                 clients: [Some(client); CLIENTS_MAX],
@@ -2023,7 +1915,7 @@ mod tests {
         };
         let mut out = [0; MESSAGE_MAX];
         let len = encode(&clients, &mut out).unwrap();
-        assert_eq!(decode::<FeederMessage<'_>>(&out[..len]), Ok(clients));
+        assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(clients));
 
         let wifi = ClientMessage::Request {
             id: [0xff; 16],
@@ -2060,7 +1952,7 @@ mod tests {
         let len = encode(&chunk, &mut out).unwrap();
         assert_eq!(decode::<ClientMessage<'_>>(&out[..len]), Ok(chunk));
 
-        let view = FeederMessage::Response {
+        let view = DeviceMessage::Response {
             id: [0xff; 16],
             result: Outcome::Update(UpdateView {
                 phase: UpdatePhase::Receiving,
@@ -2075,45 +1967,45 @@ mod tests {
             }),
         };
         let len = encode(&view, &mut out).unwrap();
-        assert_eq!(decode::<FeederMessage<'_>>(&out[..len]), Ok(view));
+        assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(view));
 
         let text = [b'x'; LOG_TEXT_MAX];
-        let log = FeederMessage::Log {
+        let log = DeviceMessage::Log {
             seq: u32::MAX,
             dropped: u32::MAX,
             text: core::str::from_utf8(&text).unwrap(),
         };
         let len = encode(&log, &mut out).unwrap();
-        assert_eq!(decode::<FeederMessage<'_>>(&out[..len]), Ok(log));
+        assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(log));
 
         // The fullest batch: whole bytes, whatever the events.
         let bytes = [0xff; EVENTS_BYTES_MAX];
-        let events = FeederMessage::Events(EventBatch { encoded: &bytes });
+        let events = DeviceMessage::Events(EventBatch { encoded: &bytes });
         let len = encode(&events, &mut out).unwrap();
-        assert_eq!(decode::<FeederMessage<'_>>(&out[..len]), Ok(events));
+        assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(events));
         for stats in largest_stats() {
-            let message = FeederMessage::Response {
+            let message = DeviceMessage::Response {
                 id: [0xff; 16],
                 result: Outcome::Stats(stats),
             };
             let len = encode(&message, &mut out).unwrap();
-            assert_eq!(decode::<FeederMessage<'_>>(&out[..len]), Ok(message));
+            assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(message));
         }
 
-        let page = FeederMessage::Response {
+        let page = DeviceMessage::Response {
             id: [0xff; 16],
-            result: Outcome::FeedTrace(TracePage {
+            result: Outcome::Feeder(FeederOutcome::FeedTrace(TracePage {
                 summary: largest_summary(),
                 stored: true,
                 offset: u16::MAX,
                 total: u16::MAX,
                 bytes: &[0xff; crate::trace::PAGE_MAX],
-            }),
+            })),
         };
         let len = encode(&page, &mut out).unwrap();
-        assert_eq!(decode::<FeederMessage<'_>>(&out[..len]), Ok(page));
+        assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(page));
 
-        let bank1 = FeederMessage::Response {
+        let bank1 = DeviceMessage::Response {
             id: [0xff; 16],
             result: Outcome::Bank1(Bank1Page {
                 offset: u32::MAX,
@@ -2122,7 +2014,7 @@ mod tests {
             }),
         };
         let len = encode(&bank1, &mut out).unwrap();
-        assert_eq!(decode::<FeederMessage<'_>>(&out[..len]), Ok(bank1));
+        assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(bank1));
         // The bank is a whole number of pages.
         assert_eq!(0x15_0000 % BANK1_PAGE_MAX, 0);
 
@@ -2135,46 +2027,46 @@ mod tests {
         });
         let put = ClientMessage::Request {
             id: [0xff; 16],
-            op: Op::PutPlans {
+            op: Op::Feeder(FeederOp::PutPlans {
                 base: u32::MAX,
-                plans: [plan; PLANS_MAX],
-            },
-        };
-        let len = encode(&put, &mut out).unwrap();
-        assert_eq!(decode::<ClientMessage<'_>>(&out[..len]), Ok(put));
-        let plans = FeederMessage::Response {
-            id: [0xff; 16],
-            result: Outcome::Plans(Plans {
-                generation: u32::MAX,
-                writable: true,
                 plans: [plan; PLANS_MAX],
             }),
         };
+        let len = encode(&put, &mut out).unwrap();
+        assert_eq!(decode::<ClientMessage<'_>>(&out[..len]), Ok(put));
+        let plans = DeviceMessage::Response {
+            id: [0xff; 16],
+            result: Outcome::Feeder(FeederOutcome::Plans(Plans {
+                generation: u32::MAX,
+                writable: true,
+                plans: [plan; PLANS_MAX],
+            })),
+        };
         let len = encode(&plans, &mut out).unwrap();
-        assert_eq!(decode::<FeederMessage<'_>>(&out[..len]), Ok(plans));
+        assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(plans));
 
         let chunk = ClientMessage::Request {
             id: [0xff; 16],
-            op: Op::CallChunk {
+            op: Op::Feeder(FeederOp::CallChunk {
                 offset: u32::MAX,
                 data: &[0xff; CALL_CHUNK_MAX],
-            },
+            }),
         };
         let len = encode(&chunk, &mut out).unwrap();
         assert_eq!(decode::<ClientMessage<'_>>(&out[..len]), Ok(chunk));
-        let call = FeederMessage::Response {
+        let call = DeviceMessage::Response {
             id: [0xff; 16],
-            result: Outcome::Call(CallView {
+            result: Outcome::Feeder(FeederOutcome::Call(CallView {
                 writable: true,
                 clip: CallClip::Receiving {
                     bytes: u32::MAX,
                     crc: u32::MAX,
                     received: u32::MAX,
                 },
-            }),
+            })),
         };
         let len = encode(&call, &mut out).unwrap();
-        assert_eq!(decode::<FeederMessage<'_>>(&out[..len]), Ok(call));
+        assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(call));
     }
 
     /// A summary with every field at its largest encoding.
@@ -2303,52 +2195,13 @@ mod tests {
         ]
     }
 
-    /// A metric not sent before the next of its kind is replaced, so the
-    /// feeder holds one of each; each fits a frame many times over.
+    /// A kind's op says whether it writes through its module.
     #[test]
-    fn every_metric_names_its_bit() {
-        let stats = [
-            Metric::Heap { free: 1, min: 1 },
-            Metric::Loop {
-                passes: 1,
-                max_us: 1,
-                p99_us: 1,
-            },
-            Metric::Gateway {
-                round_trip_ms: None,
-            },
-            Metric::Wifi {
-                channel: Some(6),
-                ap_changes: 0,
-            },
-        ];
-        for metric in stats {
-            assert_eq!(metric.capability(), Capabilities::STATS);
-        }
-        assert_eq!(Metric::Rssi(-50).capability(), Capabilities::V1);
-        assert_eq!(
-            Metric::Supply(Supply {
-                adapter: None,
-                battery: Battery::Unread,
-                below_floor: None,
-            })
-            .capability(),
-            Capabilities::POWER
-        );
-        for section in StatsSection::ALL {
-            assert!(Capabilities::KNOWN.contains(section.capability()));
-        }
-        // Traces need both bits: a feeder with the statistics alone
-        // predates them.
-        let trace = Op::FeedTrace { feed: 1, offset: 0 }.capability();
-        assert!(!Capabilities::STATS.contains(trace));
-        assert!(!Capabilities::TRACES.contains(trace));
-        assert!(
-            Capabilities::STATS
-                .union(Capabilities::TRACES)
-                .contains(trace)
-        );
-        assert!(!Capabilities::STATS.contains(StatsSection::Feeds.capability()));
+    fn a_feeder_op_writes_as_its_module_says() {
+        assert!(Op::Feeder(FeederOp::Feed { portions: 1 }).writes());
+        assert!(!Op::Feeder(FeederOp::GetPlans).writes());
+        assert!(!Op::Status.writes());
+        assert!(Op::Reboot.writes());
     }
 
     /// A writer filled with the largest events until it has no room takes
@@ -2376,10 +2229,10 @@ mod tests {
         let written = seq - (u64::MAX - 100);
         assert!(written >= 30, "{written} events");
 
-        let message = FeederMessage::Events(writer.batch());
+        let message = DeviceMessage::Events(writer.batch());
         let mut out = [0; MESSAGE_MAX];
         let len = encode(&message, &mut out).unwrap();
-        let Ok(FeederMessage::Events(batch)) = decode::<FeederMessage<'_>>(&out[..len]) else {
+        let Ok(DeviceMessage::Events(batch)) = decode::<DeviceMessage<'_>>(&out[..len]) else {
             panic!("not a batch");
         };
         let read: Vec<_> = batch.iter().map(Result::unwrap).collect();

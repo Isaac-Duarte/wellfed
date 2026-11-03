@@ -206,8 +206,6 @@ pub enum Error {
     #[error(transparent)]
     Setup(Box<Error>),
 
-    #[error("this build takes no updates over the device API")]
-    RestoreNoUpdates,
     #[error("the feeder was not found on the network")]
     RestoreNotFound,
     /// The update key a restore signs with did not reach the feeder.

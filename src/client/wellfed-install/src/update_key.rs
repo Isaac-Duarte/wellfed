@@ -35,7 +35,7 @@ pub async fn enroll(
     prompter: &mut impl Prompter,
     report: &impl Report,
 ) -> Result<Result<Enrolled, EnrollError>, Error> {
-    let mut enroll = match Enroll::new(public, label, session.role(), session.capabilities()) {
+    let mut enroll = match Enroll::new(public, label, session.role()) {
         Ok(enroll) => enroll,
         Err(error) => return Ok(Err(error)),
     };

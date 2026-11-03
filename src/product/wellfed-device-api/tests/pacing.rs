@@ -8,7 +8,8 @@ mod support;
 use support::Rig;
 use wellfed_device_api::{Reason, STALL_MS};
 use wellfed_proto::api::{
-    ClientMessage, FRAME_MAX, FeederMessage, Op, Outcome, RequestId, SettingsChanges,
+    ClientMessage, DeviceMessage, FRAME_MAX, FeederOp, FeederOutcome, Op, Outcome, RequestId,
+    SettingsChanges,
 };
 use wellfed_session::noise::Transport;
 
@@ -33,8 +34,8 @@ fn answer(rig: &mut Rig, slot: usize, transport: &mut Transport) -> Option<Strin
     let mut plain = [0; FRAME_MAX];
     rig.collect(slot).iter().find_map(|reply| {
         let read = transport.open(reply, &mut plain).unwrap();
-        match wellfed_proto::decode::<FeederMessage<'_>>(&plain[..read]) {
-            Ok(FeederMessage::Response { id, result }) if id == ID => Some(format!("{result:?}")),
+        match wellfed_proto::decode::<DeviceMessage<'_>>(&plain[..read]) {
+            Ok(DeviceMessage::Response { id, result }) if id == ID => Some(format!("{result:?}")),
             _ => None,
         }
     })
@@ -133,7 +134,13 @@ fn a_stalled_feed_answer_is_heard_by_the_retry_and_feeds_once() {
     let mut rig = Rig::new();
     let (slot, mut transport) = rig.open();
     rig.hold_reservations(false);
-    ask(&mut rig, slot, &mut transport, ID, Op::Feed { portions: 1 });
+    ask(
+        &mut rig,
+        slot,
+        &mut transport,
+        ID,
+        Op::Feeder(FeederOp::Feed { portions: 1 }),
+    );
     rig.pass();
     rig.pass();
     assert!(rig.queued(slot) > 0, "the answer waits for its client");
@@ -145,10 +152,19 @@ fn a_stalled_feed_answer_is_heard_by_the_retry_and_feeds_once() {
     assert_eq!(rig.ended_for(), [Reason::Stalled]);
 
     let (slot, mut transport) = rig.open();
-    ask(&mut rig, slot, &mut transport, ID, Op::Feed { portions: 1 });
+    ask(
+        &mut rig,
+        slot,
+        &mut transport,
+        ID,
+        Op::Feeder(FeederOp::Feed { portions: 1 }),
+    );
     rig.pass();
     let heard = answer(&mut rig, slot, &mut transport).expect("the retry's answer");
-    assert_eq!(heard, format!("{:?}", Outcome::Feeding { feed: 1 }));
+    assert_eq!(
+        heard,
+        format!("{:?}", Outcome::Feeder(FeederOutcome::Feeding { feed: 1 }))
+    );
     assert_eq!(rig.feeds(), 1, "the retry queued nothing");
 }
 
@@ -159,7 +175,13 @@ fn a_feed_waiting_for_its_reservation_rests_the_loop_and_keeps_its_session() {
     let mut rig = Rig::new();
     let (slot, mut transport) = rig.open();
     rig.hold_reservations(true);
-    ask(&mut rig, slot, &mut transport, ID, Op::Feed { portions: 1 });
+    ask(
+        &mut rig,
+        slot,
+        &mut transport,
+        ID,
+        Op::Feeder(FeederOp::Feed { portions: 1 }),
+    );
     assert!(rig.pass(), "the request itself is work");
 
     for _ in 0..STALL_PASSES {
@@ -170,7 +192,10 @@ fn a_feed_waiting_for_its_reservation_rests_the_loop_and_keeps_its_session() {
     rig.hold_reservations(false);
     assert!(rig.pass(), "its answer is");
     let heard = answer(&mut rig, slot, &mut transport).expect("the answer");
-    assert_eq!(heard, format!("{:?}", Outcome::Feeding { feed: 1 }));
+    assert_eq!(
+        heard,
+        format!("{:?}", Outcome::Feeder(FeederOutcome::Feeding { feed: 1 }))
+    );
 }
 
 #[test]
@@ -187,7 +212,7 @@ fn a_settings_write_the_writer_has_not_reached_rests_the_loop() {
         slot,
         &mut transport,
         ID,
-        Op::PutSettings { base: 0, changes },
+        Op::Feeder(FeederOp::PutSettings { base: 0, changes }),
     );
     assert!(rig.pass(), "the request itself is work");
     assert_eq!(rig.queued(slot), 0, "held for the writer");

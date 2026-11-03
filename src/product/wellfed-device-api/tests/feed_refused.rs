@@ -6,7 +6,9 @@
 mod support;
 
 use support::Rig;
-use wellfed_proto::api::{ClientMessage, FRAME_MAX, FeederMessage, Op, Outcome, Refusal};
+use wellfed_proto::api::{
+    ClientMessage, DeviceMessage, FRAME_MAX, FeederOp, FeederOutcome, Op, Outcome, Refusal,
+};
 use wellfed_session::noise::Transport;
 
 const FEED_ID: [u8; 16] = [1; 16];
@@ -28,8 +30,8 @@ fn answered(rig: &mut Rig, slot: usize, transport: &mut Transport, expected: &Ou
     let mut plain = [0; FRAME_MAX];
     rig.collect(slot).iter().any(|reply| {
         let read = transport.open(reply, &mut plain).unwrap();
-        match wellfed_proto::decode::<FeederMessage<'_>>(&plain[..read]) {
-            Ok(FeederMessage::Response { id, result }) if id == FEED_ID => {
+        match wellfed_proto::decode::<DeviceMessage<'_>>(&plain[..read]) {
+            Ok(DeviceMessage::Response { id, result }) if id == FEED_ID => {
                 assert_eq!(&result, expected);
                 true
             }
@@ -49,7 +51,7 @@ fn a_session_waiting_for_a_refused_feed_hears_the_refusal_not_the_next_feed() {
         slot,
         &mut transport,
         FEED_ID,
-        Op::Feed { portions: 1 },
+        Op::Feeder(FeederOp::Feed { portions: 1 }),
     );
     for _ in 0..4 {
         assert!(!answered(&mut rig, slot, &mut transport, &REFUSED));
@@ -71,7 +73,7 @@ fn a_retry_after_a_refused_feed_hears_the_refusal_on_any_session() {
         slot,
         &mut transport,
         FEED_ID,
-        Op::Feed { portions: 1 },
+        Op::Feeder(FeederOp::Feed { portions: 1 }),
     );
     rig.pass();
     rig.feed_refused(1, Refusal::Busy);
@@ -83,7 +85,7 @@ fn a_retry_after_a_refused_feed_hears_the_refusal_on_any_session() {
         slot,
         &mut transport,
         FEED_ID,
-        Op::Feed { portions: 1 },
+        Op::Feeder(FeederOp::Feed { portions: 1 }),
     );
     assert!(answered(&mut rig, slot, &mut transport, &REFUSED));
     assert_eq!(rig.feeds(), 1, "the retry queued nothing");
@@ -100,11 +102,11 @@ fn a_refusal_of_another_number_leaves_a_waiting_feed_alone() {
         slot,
         &mut transport,
         FEED_ID,
-        Op::Feed { portions: 1 },
+        Op::Feeder(FeederOp::Feed { portions: 1 }),
     );
     rig.pass();
     rig.feed_refused(9, Refusal::Busy);
-    let feeding = Outcome::Feeding { feed: 1 };
+    let feeding = Outcome::Feeder(FeederOutcome::Feeding { feed: 1 });
     assert!(!answered(&mut rig, slot, &mut transport, &feeding));
 
     rig.hold_reservations(false);

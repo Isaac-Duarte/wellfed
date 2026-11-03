@@ -28,7 +28,7 @@ use wellfed_core::ota::{self, CONFIRM_LEN};
 use wellfed_core::store::slot::SlotIo;
 use wellfed_core::store::update::{State, UpdateStore};
 use wellfed_core::tone::{PlayResult, Tune};
-use wellfed_device_api::Device;
+use wellfed_device_api::FeederDevice;
 use wellfed_device_api::mailbox::KeyResult;
 use wellfed_feeder::feeder::{self, Feeder};
 use wellfed_feeder::panel;

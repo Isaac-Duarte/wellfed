@@ -103,8 +103,8 @@ impl Service {
         if self.mirror.link(id) != Some(Link::Online) {
             return Err(CommandError::Offline.into());
         }
-        // A feeder that predates the op would end the session on it.
-        if !self.mirror.capabilities(id).is_some_and(|c| c.backup) {
+        // With no open session there is nobody to read it from.
+        if !self.mirror.session_open(id) {
             return Err(Error::Refused(FeederRefusal::Unavailable));
         }
         // The feeder answers `busy` while an install holds its flash.
@@ -156,7 +156,7 @@ impl Service {
         if self.mirror.link(id) != Some(Link::Online) {
             return Err(CommandError::Offline.into());
         }
-        if !self.mirror.capabilities(id).is_some_and(|c| c.update) {
+        if !self.mirror.session_open(id) {
             return Err(Error::Refused(FeederRefusal::Unavailable));
         }
 
@@ -190,8 +190,7 @@ impl Service {
     /// which every real server fixes to stock's own: there it is a
     /// `VerifiedBackup`, as the installer's promotion requires.
     pub(crate) async fn keeps_stock(&self, id: FeederId, identity: [u8; 32]) -> Result<()> {
-        // A feeder that predates the op would end the session on it.
-        if !self.mirror.capabilities(id).is_some_and(|c| c.update) {
+        if !self.mirror.session_open(id) {
             return Err(Error::Refused(FeederRefusal::Unavailable));
         }
         let request = self.request_id()?;
@@ -217,8 +216,7 @@ impl Service {
         if self.mirror.link(id) != Some(Link::Online) {
             return None;
         }
-        let capabilities = self.mirror.capabilities(id)?;
-        if !capabilities.update {
+        if !self.mirror.session_open(id) {
             return None;
         }
         let request = self.request_id().ok()?;
@@ -226,7 +224,7 @@ impl Service {
             Ok(Answer::Update(view)) => Some(StockFeeder {
                 bank: view.bank,
                 floor: view.min_version,
-                readable: view.bank == 0 && capabilities.backup,
+                readable: view.bank == 0,
             }),
             Ok(other) => {
                 warn!(feeder = %id, "the update state was answered {other:?}");

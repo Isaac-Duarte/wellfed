@@ -159,7 +159,8 @@ impl Task {
         let resume = connection.subscribe(from, true).await.map_err(End::Lost)?;
         self.opened.send_replace(Some(Opened {
             epoch: connection.epoch(),
-            capabilities: connection.capabilities(),
+            kind: connection.kind(),
+            model: connection.model(),
             boot_count: None,
         }));
         if resume == Resume::Restarted {

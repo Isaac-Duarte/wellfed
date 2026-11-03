@@ -2,21 +2,19 @@
 //! request pending and polls it each pass, then answers it and remembers
 //! the answer once the device is done.
 
+use super::feeder::{self, FeederReply};
 use super::handshake::{find, fingerprint};
 use super::memory::remembered;
-use super::request::{Action, Name, Reply, wire_plans};
+use super::request::{Action, Name, Reply};
 use super::{Pending, Phase, Server, Waiting, slot_id};
 use crate::clients::Role;
-use crate::mailbox::{
-    CalibrationResult, CallChange, CallResult, NtpResult, NtpServer, Origin, PlansResult,
-    SettingsFields, SettingsResult, TimeSettingsResult, WifiResult,
-};
+use crate::mailbox::{NtpResult, NtpServer, Origin, TimeSettingsResult, WifiResult};
 use crate::pairing::{self, Path};
 use crate::{Device, KeyChange, KeyOutcome, Reason, Record, UpdateAnswer, UpdateKeyChange};
 use wellfed_core::ota::offer::key_id;
 use wellfed_proto::api::{
-    self as proto, CallClip, Capabilities, EventBody, FeederMessage, Outcome, Readiness, Refusal,
-    RequestId, Source, TimeView, UpdateRefusal,
+    self as proto, DeviceMessage, EventBody, Outcome, Refusal, RequestId, Source, TimeView,
+    UpdateRefusal,
 };
 
 impl Server {
@@ -58,16 +56,12 @@ impl Server {
         let by = Source::Client(fingerprint(&key));
 
         let outcome = match pending.waiting {
-            Waiting::Settings => match device.settings(SettingsFields::default()) {
-                SettingsResult::Current {
-                    view,
-                    pending: false,
-                } => {
-                    let generation = view.generation;
-                    device.record(now_ms, EventBody::Settings { generation, by });
-                    Reply::Done(Some(generation))
-                }
-                _ => return Ok(None),
+            Waiting::Feeder(wait) => match device.feeder() {
+                Some(feeder) => match feeder::poll(wait, now_ms, by, feeder) {
+                    Some(reply) => reply,
+                    None => return Ok(None),
+                },
+                None => Reply::Refused(Refusal::Unavailable),
             },
             Waiting::Wifi => match device.wifi(None) {
                 WifiResult::Current {
@@ -100,68 +94,6 @@ impl Server {
                     Reply::Refused(Refusal::NotWritable)
                 }
             },
-            // No event either: a calibration has its own generation.
-            Waiting::Calibration { digest } => match device.calibration(None) {
-                CalibrationResult::Current {
-                    view,
-                    pending: false,
-                } if view.calibration.digest() == digest => Reply::Done(Some(view.generation)),
-                CalibrationResult::Current { pending: false, .. } => {
-                    Reply::Refused(Refusal::NotWritable)
-                }
-                CalibrationResult::Current { pending: true, .. } | CalibrationResult::Busy => {
-                    return Ok(None);
-                }
-                CalibrationResult::ReadOnly | CalibrationResult::Unserved => {
-                    Reply::Refused(Refusal::NotWritable)
-                }
-            },
-            // The loop may write the plans right after the client's table
-            // (a plan that runs once disabling itself), so the writer's
-            // record of that write decides, not the table now.
-            Waiting::Plans { revision } => match device.plans(None) {
-                PlansResult::Current {
-                    view,
-                    pending: false,
-                } if view.replaced == revision => {
-                    let generation = revision;
-                    device.record(now_ms, EventBody::Plans { generation, by });
-                    Reply::Done(Some(generation))
-                }
-                PlansResult::Current { pending: false, .. } => Reply::Refused(Refusal::NotWritable),
-                PlansResult::Current { pending: true, .. } | PlansResult::Busy => return Ok(None),
-                PlansResult::ReadOnly | PlansResult::Unserved => {
-                    Reply::Refused(Refusal::NotWritable)
-                }
-            },
-            // A write the writer could not make leaves the store as it
-            // was: refused, never `Done`.
-            Waiting::Call { change } => match device.call(None) {
-                CallResult::Current {
-                    view,
-                    pending: false,
-                } => {
-                    let landed = match (change, view.clip) {
-                        (CallChange::Delete, CallClip::None) => true,
-                        (
-                            CallChange::Start { bytes, crc },
-                            CallClip::Receiving {
-                                bytes: held,
-                                crc: held_crc,
-                                ..
-                            },
-                        ) => held == bytes && held_crc == crc,
-                        _ => false,
-                    };
-                    if landed {
-                        Reply::Done(None)
-                    } else {
-                        Reply::Refused(Refusal::NotWritable)
-                    }
-                }
-                CallResult::Current { pending: true, .. } | CallResult::Busy => return Ok(None),
-                CallResult::ReadOnly | CallResult::Unserved => Reply::Refused(Refusal::NotWritable),
-            },
             Waiting::Keys { ticket, revoked } => match device.keys_outcome(ticket) {
                 None => return Ok(None),
                 Some(KeyOutcome::Done) => {
@@ -175,12 +107,6 @@ impl Server {
                 Some(KeyOutcome::NotFound) => Reply::Refused(Refusal::NotFound),
                 Some(_) => Reply::Refused(Refusal::NotWritable),
             },
-            Waiting::Feed { feed } => match device.feed_reserved(feed) {
-                None => return Ok(None),
-                Some(Ok(())) => Reply::Feeding(feed),
-                Some(Err(refusal)) => Reply::Refused(refusal),
-            },
-            Waiting::FeedRefused(refusal) => Reply::Refused(refusal),
             Waiting::Update { ticket } => match device.update_outcome(ticket) {
                 None => return Ok(None),
                 Some(Ok(UpdateAnswer::View(view))) => Reply::Update(view),
@@ -245,23 +171,6 @@ impl Server {
         Ok(Some((pending.id, pending.op, outcome)))
     }
 
-    /// Whether the session on `index` and the feeder both claim `bit`.
-    fn shares<D: Device>(&self, index: usize, bit: Capabilities, device: &D) -> bool {
-        let Phase::Open { capabilities, .. } = self.slots[index].phase else {
-            return false;
-        };
-        capabilities.contains(bit) && device.capabilities().contains(bit)
-    }
-
-    /// The bits the session at `index` claimed in its hello; none before
-    /// it is open.
-    fn claimed(&self, index: usize) -> Capabilities {
-        match self.slots[index].phase {
-            Phase::Open { capabilities, .. } => capabilities,
-            _ => Capabilities::V1,
-        }
-    }
-
     /// Move a pending request on to its next wait.
     fn waiting(&mut self, index: usize, next: Waiting) {
         if let Phase::Open {
@@ -291,7 +200,7 @@ impl Server {
         // hundred times for one meal call.
         let chunk = op == Action::CHUNK || op == Action::CALL_CHUNK;
         if !(op == Action::CHUNK && matches!(reply, Reply::Update(_)))
-            && !(op == Action::CALL_CHUNK && matches!(reply, Reply::Call))
+            && !(op == Action::CALL_CHUNK && matches!(reply, Reply::Feeder(FeederReply::Call)))
             && !(chunk && matches!(reply, Reply::Refused(Refusal::Busy)))
             && !matches!(reply, Reply::Bank1 { .. })
         {
@@ -330,33 +239,13 @@ impl Server {
             Reply::Clients => Outcome::Refused(Refusal::Unavailable),
             Reply::Done(generation) => Outcome::Done { generation },
             Reply::Refused(refusal) => Outcome::Refused(refusal),
-            Reply::Settings(settings) => Outcome::Settings(settings),
             Reply::Invite(invite) => Outcome::Invite(invite),
-            Reply::Feeding(feed) => Outcome::Feeding { feed },
             Reply::Update(view) => Outcome::Update(view),
+            Reply::Feeder(reply) => return self.seal_feeder(index, id, reply, device.feeder()),
             Reply::Status => {
                 let mut status = device.status(now_ms);
                 status.sessions = u8::try_from(self.sessions()).unwrap_or(u8::MAX);
-                if self.shares(index, Capabilities::READINESS, device) {
-                    let readiness = match device.readiness() {
-                        Readiness::Blocked(blocked) => {
-                            Readiness::Blocked(blocked.seen_by(self.claimed(index)))
-                        }
-                        Readiness::Ready => Readiness::Ready,
-                    };
-                    let supply = if self.shares(index, Capabilities::POWER, device) {
-                        device.supply()
-                    } else {
-                        None
-                    };
-                    Outcome::FeederStatus {
-                        status,
-                        readiness,
-                        supply,
-                    }
-                } else {
-                    Outcome::Status(status)
-                }
+                Outcome::Status(status)
             }
             Reply::Time => match time_view(device, now_ms) {
                 Some((view, text)) => {
@@ -368,58 +257,22 @@ impl Server {
                 }
                 None => Outcome::Refused(Refusal::Unavailable),
             },
-            Reply::Calibration => match device.calibration(None) {
-                CalibrationResult::Current { view, .. } => {
-                    Outcome::Calibration(proto::CalibrationView {
-                        generation: view.generation,
-                        writable: view.writable,
-                        calibration: proto::Calibration {
-                            portion_mg: view.calibration.portion_mg,
-                            bowl: device.bowl(),
-                        },
-                        phase: device.phase(),
-                    })
-                }
-                _ => Outcome::Refused(Refusal::Unavailable),
-            },
-            Reply::Plans => match device.plans(None) {
-                PlansResult::Current { view, .. } => Outcome::Plans(proto::Plans {
-                    generation: view.revision,
-                    writable: view.writable,
-                    plans: wire_plans(&view.table),
-                }),
-                _ => Outcome::Refused(Refusal::Unavailable),
-            },
-            Reply::Call => match device.call(None) {
-                CallResult::Current { view, .. } => Outcome::Call(view),
-                CallResult::Busy => Outcome::Refused(Refusal::Busy),
-                CallResult::ReadOnly | CallResult::Unserved => {
-                    Outcome::Refused(Refusal::Unavailable)
-                }
-            },
             Reply::Stats(section) => {
-                let message = FeederMessage::Response {
+                let message = DeviceMessage::Response {
                     id,
                     result: Outcome::Stats(device.stats(section, now_ms)),
                 };
                 return self.seal_and_send(index, &message);
-            }
-            Reply::FeedTrace { feed, offset } => {
-                let result = match device.feed_trace(feed, offset) {
-                    Ok(page) => Outcome::FeedTrace(page),
-                    Err(refusal) => Outcome::Refused(refusal),
-                };
-                return self.seal_and_send(index, &FeederMessage::Response { id, result });
             }
             Reply::Bank1 { offset } => {
                 let result = match device.bank1_page(offset) {
                     Ok(page) => Outcome::Bank1(page),
                     Err(refusal) => Outcome::Refused(refusal),
                 };
-                return self.seal_and_send(index, &FeederMessage::Response { id, result });
+                return self.seal_and_send(index, &DeviceMessage::Response { id, result });
             }
         };
-        self.seal_and_send(index, &FeederMessage::Response { id, result })
+        self.seal_and_send(index, &DeviceMessage::Response { id, result })
     }
 }
 

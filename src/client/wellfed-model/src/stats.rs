@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{CurrentUnit, TraceSummary};
+use crate::{CurrentUnit, DeviceKind, TraceSummary};
 
 /// What a `Stats` request asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -30,12 +30,13 @@ impl StatsSection {
         Self::Portions,
     ];
 
-    /// Whether a feeder with `capabilities` keeps this section at all.
-    pub const fn served(self, capabilities: crate::Capabilities) -> bool {
+    /// The kind of device that keeps this section, `None` for one every
+    /// kind keeps. No wildcard, so a new section cannot land without its
+    /// decision.
+    pub const fn kind(self) -> Option<DeviceKind> {
         match self {
-            Self::Feeds => capabilities.traces,
-            Self::Portions => capabilities.calibration,
-            Self::Counters | Self::Memory | Self::Flash | Self::Power | Self::Food => true,
+            Self::Food | Self::Feeds | Self::Portions => Some(DeviceKind::Feeder),
+            Self::Counters | Self::Memory | Self::Flash | Self::Power => None,
         }
     }
 }

@@ -29,7 +29,7 @@ impl Service {
     /// current generation, so a copy would only invite a stale write.
     pub async fn calibration(&self, id: FeederId) -> Result<CalibrationView> {
         self.row(id).await?;
-        self.serves(id, |c| c.calibration)?;
+        self.serves(id, &Op::GetCalibration)?;
         self.read_calibration(id).await
     }
 
@@ -54,7 +54,7 @@ impl Service {
             return Err(Invalid::PortionWeight.into());
         }
         self.live_row(id).await?;
-        self.serves(id, |c| c.calibration)?;
+        self.serves(id, &Op::PutCalibration { base, calibration })?;
 
         let recorded = self
             .journaled(Write {

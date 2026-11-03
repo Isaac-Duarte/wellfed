@@ -24,9 +24,10 @@ use crate::clients::{CLIENTS, Client, Label, Role};
 use crate::pairing::{self, Pairing};
 use crate::{Device, Reason, Record, SESSIONS};
 use wellfed_proto::api::{
-    self as proto, Capabilities, Fingerprint, Hello, Open, OpenRefusal, PROLOGUE, PROTOCOL_MAJOR,
+    self as proto, Fingerprint, Hello, Open, OpenRefusal, PROLOGUE, PROTOCOL_MAJOR,
     PROTOCOL_MAJOR_MIN, Welcome,
 };
+use wellfed_proto::device::Model;
 use wellfed_session::noise::{Handshake, Keypair, Pattern, Role as NoiseRole};
 
 impl Server {
@@ -112,7 +113,6 @@ impl Server {
                     open,
                     reply: false,
                     refusal: None,
-                    capabilities: Capabilities::V1,
                 };
                 Ok(true)
             }
@@ -121,7 +121,6 @@ impl Server {
                 open,
                 reply,
                 refusal,
-                capabilities,
             } => {
                 if *reply {
                     if !slot.wire.tx_idle() {
@@ -138,13 +137,8 @@ impl Server {
                             let Some(epoch) = device.epoch() else {
                                 return Ok(false);
                             };
-                            let welcome = welcome(
-                                refusal,
-                                role,
-                                device.capabilities(),
-                                device.build(),
-                                epoch,
-                            );
+                            let welcome =
+                                welcome(refusal, role, device.model(), device.build(), epoch);
                             let len = proto_encode(&welcome, &mut self.plain)?;
                             &self.plain[..len]
                         }
@@ -198,7 +192,6 @@ impl Server {
                     let hello: Hello = wellfed_proto::decode(&self.plain[..read])
                         .map_err(|_| Reason::Malformed)?;
                     *refusal = admit(hello, handshake.remote_static(), &self.clients);
-                    *capabilities = hello.capabilities;
                     // During a feed a refusal is not worth its reply's two
                     // X25519s: the connection just closes.
                     if feeding && let Some(refused) = *refusal {
@@ -212,7 +205,7 @@ impl Server {
         }
     }
 
-    /// After the feeder's handshake message: an IK session opens (or ends
+    /// After the device's handshake message: an IK session opens (or ends
     /// with its refusal).
     fn handshake_written(
         &mut self,
@@ -239,11 +232,8 @@ impl Server {
             return Ok(());
         }
 
-        let Phase::Handshake {
-            handshake,
-            capabilities,
-            ..
-        } = core::mem::replace(&mut slot.phase, Phase::Closing)
+        let Phase::Handshake { handshake, .. } =
+            core::mem::replace(&mut slot.phase, Phase::Closing)
         else {
             return Ok(());
         };
@@ -260,11 +250,10 @@ impl Server {
             transport,
             key,
             role,
-            capabilities,
             memory,
             pending: None,
             events: None,
-            samples: false,
+            samples: proto::Samples::Off,
             sample: Samples::EMPTY,
             log: None,
         };
@@ -298,14 +287,14 @@ fn admit(
 fn welcome(
     refusal: Option<OpenRefusal>,
     role: Option<Role>,
-    capabilities: Capabilities,
+    model: Model,
     build: &str,
     epoch: u32,
 ) -> Welcome<'_> {
     match (refusal, role) {
         (None, Some(role)) => Welcome::Open {
             major: PROTOCOL_MAJOR,
-            capabilities,
+            model,
             build,
             role: proto_role(role),
             epoch,

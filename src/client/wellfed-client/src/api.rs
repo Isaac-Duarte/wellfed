@@ -20,11 +20,11 @@
 //! [`Session`] directly to send what a well-behaved client never would.
 
 use wellfed_model::{
-    Answer, Capabilities, ClientRole, Gap, Hello, Joined, Op, OpenRefusal, Pushed, convert,
+    Answer, ClientRole, DeviceKind, Gap, Hello, Joined, Model, Op, OpenRefusal, Pushed, convert,
 };
 use wellfed_proto::api::{
-    ClientMessage, FRAME_MAX, FeederMessage, Join as JoinRequest, Open, PROLOGUE, RequestId,
-    Welcome,
+    ClientMessage, DeviceMessage, FRAME_MAX, Join as JoinRequest, Open, PROLOGUE, RequestId,
+    Samples, Welcome,
 };
 use wellfed_session::frame::{self, PREFIX};
 use wellfed_session::hex::{self, Lower};
@@ -157,15 +157,18 @@ enum State {
     Ended,
 }
 
-/// The feeder's welcome, owned.
+/// The device's welcome, owned.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Opened {
+    /// Which module of the device API the device serves: its model's
+    /// kind, which the welcome does not repeat.
+    pub kind: DeviceKind,
+    /// The device's model.
+    pub model: Model,
     /// The running image's build identity.
     pub build: String,
-    /// The role the feeder gave this key.
+    /// The role the device gave this key.
     pub role: ClientRole,
-    /// What both sides claimed: the session runs on these features only.
-    pub capabilities: Capabilities,
     /// The epoch the feeder's event numbers count in.
     pub epoch: u32,
 }
@@ -192,7 +195,6 @@ pub struct Session {
     /// The rest of a batch of events, oldest first: they come before
     /// anything still in `inbox`.
     events: std::collections::VecDeque<Pushed>,
-    claimed: Capabilities,
     /// The welcome's epoch, once it has arrived: what pushed events count
     /// in.
     epoch: Option<u32>,
@@ -217,9 +219,8 @@ impl Session {
         Self::connect_with(keys, feeder, ephemeral, Hello::CURRENT)
     }
 
-    /// As [`Self::connect`] with another hello: what a client built before
-    /// some capability, or for another major version, looks like to the
-    /// feeder.
+    /// As [`Self::connect`] with another hello: what a client built for
+    /// another major version looks like to the device.
     pub fn connect_with(
         keys: &Keypair,
         feeder: [u8; 32],
@@ -247,7 +248,6 @@ impl Session {
             deframer: Deframer::default(),
             inbox: std::collections::VecDeque::new(),
             events: std::collections::VecDeque::new(),
-            claimed: hello.capabilities,
             epoch: None,
         };
         Ok((session, out))
@@ -311,16 +311,17 @@ impl Session {
             return Ok(Some(match welcome {
                 Welcome::Open {
                     major: _,
-                    capabilities,
+                    model,
                     build,
                     role,
                     epoch,
                 } => {
                     self.epoch = Some(epoch);
                     Incoming::Opened(Opened {
+                        kind: model.kind(),
+                        model,
                         build: build.to_owned(),
                         role: role.into(),
-                        capabilities: self.claimed.both(capabilities.into()),
                         epoch,
                     })
                 }
@@ -332,17 +333,17 @@ impl Session {
             }));
         };
 
-        let message: FeederMessage<'_> =
+        let message: DeviceMessage<'_> =
             wellfed_proto::decode(&plain).map_err(|_| Error::Malformed(Garbled::of(&plain)))?;
         Ok(Some(match message {
-            FeederMessage::Response { id, result } => Incoming::Answer {
+            DeviceMessage::Response { id, result } => Incoming::Answer {
                 id,
                 answer: result.into(),
             },
             // One batch, one event at a time: the whole batch decodes
             // before any of it is handed on, so a garbled one is refused
             // whole, as any other malformed message is.
-            FeederMessage::Events(batch) => {
+            DeviceMessage::Events(batch) => {
                 let events = batch
                     .iter()
                     .map(|event| event.map(|event| Pushed::Event(convert::event(epoch, event))))
@@ -354,11 +355,11 @@ impl Session {
                 };
                 Incoming::Pushed(first)
             }
-            FeederMessage::Gap { from, to } => {
+            DeviceMessage::Gap { from, to } => {
                 Incoming::Pushed(Pushed::Gap(Gap { epoch, from, to }))
             }
-            FeederMessage::Sample(sample) => Incoming::Pushed(Pushed::Sample(sample.into())),
-            FeederMessage::Log { seq, dropped, text } => {
+            DeviceMessage::Sample(sample) => Incoming::Pushed(Pushed::Sample(sample.into())),
+            DeviceMessage::Log { seq, dropped, text } => {
                 Incoming::Pushed(Pushed::Log(convert::log(seq, dropped, text)))
             }
         }))
@@ -372,9 +373,10 @@ impl Session {
         })
     }
 
-    /// Ask for every event after `after` and then each new one, and the live
-    /// samples if `samples`.
+    /// Ask for every event after `after` and then each new one, and the
+    /// live samples if `samples`.
     pub fn subscribe(&mut self, after: Option<u64>, samples: bool) -> Result<Vec<u8>, Error> {
+        let samples = if samples { Samples::On } else { Samples::Off };
         self.send(&ClientMessage::Subscribe { after, samples })
     }
 
@@ -549,7 +551,8 @@ impl Join {
 
 #[cfg(test)]
 mod tests {
-    use wellfed_proto::api::{Capabilities as Bits, OpenRefusal as WireRefusal, Role as WireRole};
+    use wellfed_proto::api::{OpenRefusal as WireRefusal, Role as WireRole};
+    use wellfed_proto::device::Model;
 
     use super::*;
 
@@ -616,7 +619,7 @@ mod tests {
         let (mut session, hello) = Session::connect(&client, feeder, [0x33; 32]).unwrap();
         let open = Welcome::Open {
             major: 1,
-            capabilities: Bits::KNOWN,
+            model: Model::Plaf103,
             build: "b",
             role: WireRole::Owner,
             epoch: 1,

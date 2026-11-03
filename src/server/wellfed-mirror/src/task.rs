@@ -13,7 +13,7 @@ use tokio_util::task::TaskTracker;
 use tracing::{Instrument, debug, info, info_span, warn};
 use wellfed_api::{Connection as Link, FeederId};
 use wellfed_connect::Connection;
-use wellfed_model::{Capabilities, Plans};
+use wellfed_model::{DeviceKind, Model, Plans};
 use wellfed_session::noise::Keypair;
 
 use crate::collect::Collector;
@@ -67,7 +67,9 @@ pub(crate) struct LongLane {
 pub(crate) struct Opened {
     /// The epoch its history counts in.
     pub(crate) epoch: u32,
-    pub(crate) capabilities: Capabilities,
+    /// Which module of the device API it serves, and its model.
+    pub(crate) kind: DeviceKind,
+    pub(crate) model: Model,
     /// Its boot count, once its status is read.
     pub(crate) boot_count: Option<u32>,
 }
@@ -81,8 +83,12 @@ impl Handle {
         self.opened.borrow().map(|opened| opened.epoch)
     }
 
-    pub(crate) fn capabilities(&self) -> Option<Capabilities> {
-        self.opened.borrow().map(|opened| opened.capabilities)
+    pub(crate) fn is_open(&self) -> bool {
+        self.opened.borrow().is_some()
+    }
+
+    pub(crate) fn kind(&self) -> Option<DeviceKind> {
+        self.opened.borrow().map(|opened| opened.kind)
     }
 
     pub(crate) fn subscribe(&self) -> broadcast::Receiver<MirrorEvent> {

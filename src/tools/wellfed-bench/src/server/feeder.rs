@@ -652,9 +652,10 @@ impl Task {
         }
         if let Some(info) = lock(&self.info).as_mut() {
             info.opened = Some(Opened {
+                kind: connection.kind(),
+                model: connection.model(),
                 build: connection.build().to_string(),
                 role: connection.role(),
-                capabilities: connection.capabilities(),
             });
         }
         Ok((connection, address))

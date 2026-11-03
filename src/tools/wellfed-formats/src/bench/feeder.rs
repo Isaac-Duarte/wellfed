@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use wellfed_model::{Answer, Capabilities, ClientRole, Op, Pushed};
+use wellfed_model::{Answer, ClientRole, DeviceKind, Model, Op, Pushed};
 
 use super::live::Unavailable;
 
@@ -41,7 +41,7 @@ pub struct DeviceUnavailable {
 
 /// `GET /device/session`: whom the server's session speaks as and with,
 /// from its key file, so a client can check its key before asking, and,
-/// once the session is open, the feeder's build and capabilities.
+/// once the session is open, the device's kind, model and build.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionInfo {
     /// The checkout the server runs for.
@@ -59,9 +59,10 @@ pub struct SessionInfo {
 /// What the feeder's welcome said.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Opened {
+    pub kind: DeviceKind,
+    pub model: Model,
     pub build: String,
     pub role: ClientRole,
-    pub capabilities: Capabilities,
 }
 
 /// Which of the session's pushed messages a read takes: the history

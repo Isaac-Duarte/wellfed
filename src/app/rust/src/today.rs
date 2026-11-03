@@ -40,15 +40,15 @@ impl Facts {
         let time: Option<TimeInfo> = self.time.as_ref().map(|read| read.info(Instant::now()));
         let adapter = status
             .supply
-            .and_then(|supply| supply.adapter)
+            .adapter
             .or(status.power.map(|power| power.adapter));
-        let battery_percent = status.supply.and_then(|supply| match supply.battery {
+        let battery_percent = match status.supply.battery {
             Battery::Reading { percent, .. } => Some(percent),
             _ => None,
-        });
+        };
         let blocked = match status.readiness {
-            Some(Readiness::Blocked(reason)) => Some(reason),
-            Some(Readiness::Ready) | None => None,
+            Readiness::Blocked(reason) => Some(reason),
+            Readiness::Ready => None,
         };
         let fault = status.feed_fault.map(|fault| FaultView {
             feed: fault.feed,
@@ -67,7 +67,7 @@ impl Facts {
             build: status.build.clone(),
             food: status.food,
             locked: status.locked,
-            ready: status.readiness == Some(Readiness::Ready),
+            ready: status.readiness == Readiness::Ready,
             blocked,
             adapter,
             battery_percent,

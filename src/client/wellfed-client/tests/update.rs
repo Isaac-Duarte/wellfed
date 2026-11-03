@@ -30,12 +30,14 @@ use wellfed_device_api::mailbox::{
 use wellfed_device_api::pairing::{Config, Pairing};
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_api::{
-    Device, EventRead, KeyChange, KeyOutcome, Pass, Reader, Server, UpdateAnswer, UpdateRequest,
+    Device, EventRead, FeederDevice, KeyChange, KeyOutcome, Pass, Reader, Server, UpdateAnswer,
+    UpdateRequest,
 };
 use wellfed_feeder::update as wire;
 use wellfed_model::{self as model, Answer, Op};
 use wellfed_proto::api::{
-    self as proto, Capabilities, EventBody, FoodLevel, Refusal, RequestId, Status, UpdateView,
+    self as proto, DeviceStatus, EventBody, FeederStatus, FoodLevel, Refusal, RequestId, Status,
+    UpdateView,
 };
 use wellfed_session::noise::Keypair;
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
@@ -351,6 +353,12 @@ impl Feeder {
 }
 
 impl Device for Feeder {
+    type Feeder = Self;
+
+    fn feeder(&mut self) -> Option<&mut Self> {
+        Some(self)
+    }
+
     fn random(&mut self, out: &mut [u8; 32]) -> bool {
         self.ticket = self.ticket.wrapping_add(1);
         *out = [u8::try_from(self.ticket % 251).unwrap(); 32];
@@ -359,6 +367,10 @@ impl Device for Feeder {
 
     fn build(&self) -> &'static str {
         "update-test"
+    }
+
+    fn model(&self) -> wellfed_proto::device::Model {
+        wellfed_proto::device::Model::Plaf103
     }
 
     fn status(&mut self, now_ms: u32) -> Status<'static> {
@@ -375,21 +387,22 @@ impl Device for Feeder {
             dns_losses: 0,
             clock_ms: None,
             power: None,
-            locked: Some(false),
-            settings_generation: 1,
             wifi_generation: 1,
             last_event: None,
             sessions: 0,
-            desiccant: proto::Desiccant::Unset,
-            food: FoodLevel::Unread,
-            feed_fault: None,
-        }
-    }
-
-    fn settings(&mut self, _change: SettingsFields) -> SettingsResult {
-        SettingsResult::Current {
-            view: SettingsView::default(),
-            pending: false,
+            device: DeviceStatus::Feeder(FeederStatus {
+                locked: Some(false),
+                settings_generation: 1,
+                desiccant: proto::Desiccant::Unset,
+                food: FoodLevel::Unread,
+                feed_fault: None,
+                readiness: self.readiness(),
+                supply: proto::Supply {
+                    adapter: None,
+                    battery: proto::Battery::Unread,
+                    below_floor: None,
+                },
+            }),
         }
     }
 
@@ -405,17 +418,6 @@ impl Device for Feeder {
         }
     }
 
-    fn lock(&mut self, locked: bool) -> LockResult {
-        LockResult::Current {
-            locked,
-            pending: false,
-        }
-    }
-
-    fn play(&mut self, _tune: Tune) -> PlayResult {
-        PlayResult::Busy
-    }
-
     fn time_sync(&mut self, _fields: TimeFields, _origin: Origin) -> TimeResult {
         TimeResult::Synced { jump_ms: None }
     }
@@ -428,38 +430,9 @@ impl Device for Feeder {
         None
     }
 
-    fn capabilities(&self) -> Capabilities {
-        Capabilities::FEED.union(Capabilities::UPDATE)
-    }
-
     /// Never asked: this feeder serves no statistics.
     fn stats(&mut self, _section: proto::StatsSection, _now_ms: u32) -> proto::Stats<'_> {
         proto::Stats::Counters(proto::Counters::default())
-    }
-
-    fn feed_trace(&mut self, _feed: u32, _offset: u16) -> Result<proto::TracePage<'_>, Refusal> {
-        Err(Refusal::NotFound)
-    }
-
-    fn readiness(&mut self) -> proto::Readiness {
-        if self.installing() {
-            proto::Readiness::Blocked(proto::Blocked::Updating)
-        } else {
-            proto::Readiness::Ready
-        }
-    }
-
-    fn feed(&mut self, _portions: u8, _by: proto::Source) -> Result<u32, Refusal> {
-        self.feeds += 1;
-        Ok(self.feeds)
-    }
-
-    fn feed_reserved(&mut self, _feed: u32) -> Option<Result<(), Refusal>> {
-        Some(Ok(()))
-    }
-
-    fn cancel_feed(&mut self, _feed: u32) -> bool {
-        false
     }
 
     fn record(&mut self, _now_ms: u32, _body: EventBody) {}
@@ -522,6 +495,51 @@ impl Device for Feeder {
         self.install.as_ref().is_some_and(Install::receiving)
             || self.restart
             || self.restart_on_answer
+    }
+}
+
+impl FeederDevice for Feeder {
+    fn settings(&mut self, _change: SettingsFields) -> SettingsResult {
+        SettingsResult::Current {
+            view: SettingsView::default(),
+            pending: false,
+        }
+    }
+
+    fn lock(&mut self, locked: bool) -> LockResult {
+        LockResult::Current {
+            locked,
+            pending: false,
+        }
+    }
+
+    fn play(&mut self, _tune: Tune) -> PlayResult {
+        PlayResult::Busy
+    }
+
+    fn feed_trace(&mut self, _feed: u32, _offset: u16) -> Result<proto::TracePage<'_>, Refusal> {
+        Err(Refusal::NotFound)
+    }
+
+    fn readiness(&mut self) -> proto::Readiness {
+        if self.installing() {
+            proto::Readiness::Blocked(proto::Blocked::Updating)
+        } else {
+            proto::Readiness::Ready
+        }
+    }
+
+    fn feed(&mut self, _portions: u8, _by: proto::Source) -> Result<u32, Refusal> {
+        self.feeds += 1;
+        Ok(self.feeds)
+    }
+
+    fn feed_reserved(&mut self, _feed: u32) -> Option<Result<(), Refusal>> {
+        Some(Ok(()))
+    }
+
+    fn cancel_feed(&mut self, _feed: u32) -> bool {
+        false
     }
 }
 

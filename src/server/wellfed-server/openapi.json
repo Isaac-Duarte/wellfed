@@ -8334,7 +8334,9 @@
           "wifi_generation",
           "sessions",
           "food",
-          "desiccant"
+          "readiness",
+          "desiccant",
+          "supply"
         ],
         "properties": {
           "bank": {
@@ -8422,15 +8424,8 @@
             ]
           },
           "readiness": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Readiness",
-                "description": "Whether a feed can start now; absent from a feeder that does not\nreport it."
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/Readiness",
+            "description": "Whether a feed can start now."
           },
           "reset_flags": {
             "type": "integer",
@@ -8452,15 +8447,8 @@
             "$ref": "#/components/schemas/Generation"
           },
           "supply": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Supply",
-                "description": "The supply as the feeder judges it, with the pack's charge; absent\nfrom a feeder that does not report it."
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/Supply",
+            "description": "The supply as the feeder judges it, with the pack's charge."
           },
           "uptime_ms": {
             "type": "integer",

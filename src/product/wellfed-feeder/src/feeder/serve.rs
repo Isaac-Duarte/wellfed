@@ -9,14 +9,15 @@
 //!   a revoked key's sessions close;
 //! - the time settings and the NTP exchange ([`super::time`]);
 //! - the live samples (power each time the supply is sampled; Wi-Fi
-//!   signal, and with `Capabilities::STATS` the heap, the loop's pass
-//!   times, the gateway's round trip and the access point, every 30 s) for
-//!   subscribers, and the boot's and lost records' events;
+//!   signal, and the heap, the loop's pass times, the gateway's round trip
+//!   and the access point, every 30 s) for subscribers that asked for them,
+//!   and the boot's and lost records' events;
 //! - the statistics ([`Keeper`]): what the pass sees goes in, and the
 //!   `Stats` op reads it out; the `FeedTrace` op reads a feed's trace from
 //!   the platform a page at a time.
 //!
-//! [`FeederDevice`] is the server's view of the rest of the feeder: the
+//! [`DeviceView`] is the server's view of the rest of the feeder, both the
+//! shared core's ([`Device`]) and the feeder module's ([`FeederDevice`]): the
 //! platform's mailboxes and clock, the panel's lock and the feeding owner.
 //! No record carries a key, a secret or a credential.
 
@@ -31,10 +32,11 @@ use wellfed_core::ota::install::{Answer, Phase};
 use wellfed_core::ota::offer::{KeyStatement, key_id};
 use wellfed_core::tone::Tune;
 use wellfed_proto::api::{
-    self as proto, BANK1_PAGE_MAX, Bank1Page, Battery, Capabilities, Desiccant, EventBody, Metric,
-    PORT, Power, Readiness, Refusal, Sample, Source, Stats, StatsSection, Status, Supply,
-    TASKS_MAX, TaskStack as WireTask, TracePage, UpdateRefusal, UpdateView,
+    self as proto, BANK1_PAGE_MAX, Bank1Page, Battery, Desiccant, DeviceStatus, EventBody,
+    FeederStatus, Metric, PORT, Power, Readiness, Refusal, Sample, Source, Stats, StatsSection,
+    Status, Supply, TASKS_MAX, TaskStack as WireTask, TracePage, UpdateRefusal, UpdateView,
 };
+use wellfed_proto::device::Model;
 use wellfed_proto::trace::PAGE_MAX;
 use wellfed_session::noise::Keypair;
 
@@ -58,8 +60,8 @@ use wellfed_device_api::mailbox::{
 use wellfed_device_api::pairing::{self, Pairing};
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_api::{
-    self as server, Device, EventRead, KeyChange, KeyOutcome, Pass, Reader, SESSIONS, Server,
-    UpdateAnswer, UpdateKeyChange, UpdateRequest,
+    self as server, Device, EventRead, FeederDevice, KeyChange, KeyOutcome, Pass, Reader, SESSIONS,
+    Server, UpdateAnswer, UpdateKeyChange, UpdateRequest,
 };
 
 /// The answer page buffer: a trace's page or a bank-1 page, whichever is
@@ -320,7 +322,7 @@ impl<S: Copy> Serve<S> {
         // The sessions this pass opened, counted once the device lets go of
         // the statistics.
         let mut opened = [None; SESSIONS];
-        let mut device = FeederDevice {
+        let mut device = DeviceView {
             platform: &mut *platform,
             lock,
             feeds,
@@ -646,12 +648,10 @@ impl<S: Copy> Serve<S> {
                     metric: Metric::Power(super::supply::power(power, supply.battery)),
                 });
             }
-            if platform.capabilities().contains(Capabilities::POWER) {
-                self.server.sample(Sample {
-                    at_ms: now_ms,
-                    metric: Metric::Supply(supply),
-                });
-            }
+            self.server.sample(Sample {
+                at_ms: now_ms,
+                metric: Metric::Supply(supply),
+            });
         }
         if wellfed_core::deadline_passed(now_ms, self.next_rssi) {
             self.next_rssi = now_ms.wrapping_add(RSSI_MS);
@@ -663,19 +663,17 @@ impl<S: Copy> Serve<S> {
             });
             // Taken every window whether or not anyone subscribes, so each
             // covers the same 30 s.
-            if platform.capabilities().contains(Capabilities::STATS) {
-                let (free, min) = platform.heap();
-                for metric in [
-                    Metric::Heap { free, min },
-                    self.stats.loop_metric(),
-                    self.stats.gateway_metric(),
-                    self.stats.wifi_metric(),
-                ] {
-                    self.server.sample(Sample {
-                        at_ms: now_ms,
-                        metric,
-                    });
-                }
+            let (free, min) = platform.heap();
+            for metric in [
+                Metric::Heap { free, min },
+                self.stats.loop_metric(),
+                self.stats.gateway_metric(),
+                self.stats.wifi_metric(),
+            ] {
+                self.server.sample(Sample {
+                    at_ms: now_ms,
+                    metric,
+                });
             }
         }
     }
@@ -693,7 +691,7 @@ impl<S: Copy> Default for Serve<S> {
 // rather than left unanswered and applied after the feed.
 
 /// The rest of the feeder, as the server sees it.
-pub struct FeederDevice<'a, P, F> {
+pub struct DeviceView<'a, P, F> {
     pub(super) platform: &'a mut P,
     pub(super) lock: &'a mut LockBox,
     pub(super) feeds: &'a mut F,
@@ -760,7 +758,7 @@ impl TaskCache {
     }
 }
 
-impl<P: Platform, F: Feeds> FeederDevice<'_, P, F> {
+impl<P: Platform, F: Feeds> DeviceView<'_, P, F> {
     /// Whether a change that writes must be refused as during a feed: the
     /// outputs are claimed, or a feed waits for the writes ahead of it, which
     /// this write would join.
@@ -810,13 +808,23 @@ impl<P: Platform, F: Feeds> FeederDevice<'_, P, F> {
     }
 }
 
-impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
+impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
+    type Feeder = Self;
+
+    fn feeder(&mut self) -> Option<&mut Self> {
+        Some(self)
+    }
+
     fn random(&mut self, out: &mut [u8; 32]) -> bool {
         self.platform.random(out)
     }
 
     fn build(&self) -> &'static str {
         self.platform.build()
+    }
+
+    fn model(&self) -> Model {
+        self.platform.model()
     }
 
     fn status(&mut self, now_ms: u32) -> Status<'static> {
@@ -853,27 +861,19 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
                 .platform
                 .power(now_ms)
                 .map(|power| super::supply::power(power, self.supply.battery)),
-            locked: self.locked,
-            settings_generation,
             wifi_generation,
             last_event: self.platform.last_event(),
             sessions: 0,
-            desiccant,
-            food: crate::feed::food_level(self.feeds.food()),
-            feed_fault: self.stats.feed_fault(),
+            device: DeviceStatus::Feeder(FeederStatus {
+                locked: self.locked,
+                settings_generation,
+                desiccant,
+                food: crate::feed::food_level(self.feeds.food()),
+                feed_fault: self.stats.feed_fault(),
+                readiness: FeederDevice::readiness(self),
+                supply: self.supply,
+            }),
         }
-    }
-
-    fn today(&mut self, now_ms: u32) -> Option<i32> {
-        let reading = self.platform.clock_state(now_ms).reading?;
-        desiccant::today(&reading)
-    }
-
-    fn settings(&mut self, change: SettingsFields) -> SettingsResult {
-        if change.changes() && self.outputs_claimed() {
-            return SettingsResult::Busy;
-        }
-        self.platform.settings_request(change)
     }
 
     fn wifi(&mut self, change: Option<Option<Credentials>>) -> WifiResult {
@@ -882,39 +882,6 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
             Some(_) if self.outputs_claimed() => WifiResult::Busy,
             Some(credentials) => self.platform.wifi_change(credentials),
         }
-    }
-
-    fn lock(&mut self, locked: bool) -> LockResult {
-        self.lock.request(LockFields {
-            locked: Some(locked),
-        })
-    }
-
-    /// A client's tune, queued only when nothing else has a claim on the
-    /// moment. A feed is silent by the owner's choice, so with one already
-    /// in flight a client gets `Busy`. A tune already sounding is not cut
-    /// when a feed comes after it (a Dispense press, a client's feed, a meal
-    /// with no call or whose call has ended): it plays on through the drive,
-    /// and its steps, the codec's close and its `done` record among them,
-    /// run inside passes between the owner's steps and count against the
-    /// gap the owner allows them. The meal call shares this path. Setup mode
-    /// owns the speaker for its own tunes, and an install or a restart has
-    /// the feeder's attention. A flash write is no reason to
-    /// wait: a tune writes nothing and reads no sector a writer changes, and
-    /// the meal call plays through writes the same way, at worst with
-    /// underruns the speaker's `done` record counts.
-    ///
-    /// `Muted` stays the speaker's answer: a test sound means what the
-    /// owner's sound settings let through, so the `sound` switch, a volume
-    /// of 0 and the sound window all silence it.
-    fn play(&mut self, tune: Tune) -> PlayResult {
-        let feed = self.feed_active() || self.outputs_claimed();
-        let elsewhere = self.setup || self.platform.installing() || self.platform.restarting();
-        let wall_ms = self.platform.wall_ms(self.now_ms);
-        if feed || elsewhere || call::crowds(self.call_lead, wall_ms, tune.duration_ms()) {
-            return PlayResult::Busy;
-        }
-        self.platform.play(tune)
     }
 
     fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult {
@@ -927,87 +894,6 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
             Some(_) if self.outputs_claimed() => TimeSettingsResult::Busy,
             Some(settings) => self.platform.time_settings_change(settings),
         }
-    }
-
-    fn calibration(&mut self, change: Option<Calibration>) -> CalibrationResult {
-        match change {
-            None => self.platform.calibration(),
-            Some(_) if self.outputs_claimed() => CalibrationResult::Busy,
-            Some(calibration) => self.platform.calibration_change(calibration),
-        }
-    }
-
-    /// A client's table is saved at the wall time now, so a plan it adds
-    /// or moves never runs an occurrence already past.
-    fn plans(&mut self, change: Option<Table>) -> PlansResult {
-        match change {
-            None => self.platform.plans(),
-            Some(_) if self.outputs_claimed() => PlansResult::Busy,
-            Some(table) => {
-                let at_s = self
-                    .platform
-                    .wall_ms(self.now_ms)
-                    .and_then(|ms| u32::try_from(ms / 1000).ok());
-                self.platform
-                    .plans_change(PlansChange::Replace { table, at_s })
-            }
-        }
-    }
-
-    /// A change to the clip waits, as any store write does, while a feed
-    /// holds the outputs.
-    fn call(&mut self, change: Option<CallChange>) -> CallResult {
-        match change {
-            None => self.platform.call(),
-            Some(_) if self.outputs_claimed() => CallResult::Busy,
-            Some(change) => self.platform.call_change(change),
-        }
-    }
-
-    fn call_chunk(&mut self, offset: u32, data: &[u8]) -> Result<(), Refusal> {
-        if self.outputs_claimed() {
-            return Err(Refusal::Busy);
-        }
-        self.platform.call_chunk(offset, data)
-    }
-
-    /// One play of the stored clip, under the same rules as a test tune: it
-    /// is refused `Busy` during a feed, setup, an install or a restart, and
-    /// when it would still be sounding as a meal's call begins. Also while
-    /// an upload or a delete is queued: the writer then has the clip's
-    /// sectors, or would wait out the play to take them.
-    fn play_call(&mut self) -> CallPlay {
-        let bytes = match self.platform.call() {
-            CallResult::Current { pending: true, .. } => return CallPlay::Busy,
-            CallResult::Current {
-                view:
-                    CallView {
-                        clip: CallClip::Stored { bytes, .. },
-                        ..
-                    },
-                ..
-            } => bytes,
-            CallResult::Current { .. } => return CallPlay::NoClip,
-            CallResult::Busy => return CallPlay::Busy,
-            CallResult::ReadOnly | CallResult::Unserved => return CallPlay::Unserved,
-        };
-
-        let feed = self.feed_active() || self.outputs_claimed();
-        let elsewhere = self.setup || self.platform.installing() || self.platform.restarting();
-        let wall_ms = self.platform.wall_ms(self.now_ms);
-        if feed || elsewhere || call::crowds(self.call_lead, wall_ms, clip::ms(bytes)) {
-            return CallPlay::Busy;
-        }
-
-        match self.platform.play_call(1) {
-            PlayResult::Started => CallPlay::Started,
-            PlayResult::Muted => CallPlay::Muted,
-            PlayResult::Busy => CallPlay::Busy,
-        }
-    }
-
-    fn phase(&self) -> Option<proto::Phase> {
-        self.feeds.marks().map(|marks| marks.phase)
     }
 
     fn time_state(&mut self, now_ms: u32) -> Option<TimeState> {
@@ -1045,38 +931,6 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
                 | KeyResult::NotWritable
                 | KeyResult::Io => KeyOutcome::NotWritable,
             })
-    }
-
-    fn capabilities(&self) -> Capabilities {
-        self.platform.capabilities()
-    }
-
-    fn readiness(&mut self) -> Readiness {
-        let ready = feeding::readiness(
-            &*self.feeds,
-            self.platform.restarting(),
-            self.setup,
-            self.platform.installing(),
-            self.battery_hold,
-        );
-        feeding::held(ready, self.meal)
-    }
-
-    fn supply(&mut self) -> Option<Supply> {
-        Some(self.supply)
-    }
-
-    fn feed(&mut self, portions: u8, by: Source) -> Result<u32, Refusal> {
-        let ready = self.readiness();
-        feeding::queue(self.feeds, ready, portions, by)
-    }
-
-    fn feed_reserved(&mut self, feed: u32) -> Option<Result<(), Refusal>> {
-        self.feeds.reserved(feed)
-    }
-
-    fn cancel_feed(&mut self, feed: u32) -> bool {
-        self.feeds.cancel(feed)
     }
 
     fn record(&mut self, now_ms: u32, body: EventBody) {
@@ -1136,21 +990,6 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
                 Stats::Portions(self.stats.portions_stats(self.feeds.marks(), portion_mg))
             }
         }
-    }
-
-    fn feed_trace(&mut self, feed: u32, offset: u16) -> Result<TracePage<'_>, Refusal> {
-        let (page, _) = self
-            .page
-            .split_first_chunk_mut::<PAGE_MAX>()
-            .ok_or(Refusal::Busy)?;
-        let read = self.platform.trace_page(feed, offset, page)?;
-        Ok(TracePage {
-            summary: read.summary,
-            stored: read.stored,
-            offset,
-            total: read.total,
-            bytes: self.page.get(..read.len).unwrap_or(&[]),
-        })
     }
 
     /// Bank 1 as the flash holds it. Only the bank-0 role reads it: there
@@ -1248,11 +1087,178 @@ impl<P: Platform, F: Feeds> Device for FeederDevice<'_, P, F> {
         self.platform.installing()
     }
 
-    fn feed_active(&self) -> bool {
+    fn operating(&self) -> bool {
         self.feeds.busy() || self.claim
     }
 
     fn log_after(&mut self, after: Option<u32>, text: &mut [u8]) -> Option<LogBatch> {
         self.platform.log_after(after, text)
+    }
+}
+
+impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
+    fn today(&mut self, now_ms: u32) -> Option<i32> {
+        let reading = self.platform.clock_state(now_ms).reading?;
+        desiccant::today(&reading)
+    }
+
+    fn settings(&mut self, change: SettingsFields) -> SettingsResult {
+        if change.changes() && self.outputs_claimed() {
+            return SettingsResult::Busy;
+        }
+        self.platform.settings_request(change)
+    }
+
+    fn lock(&mut self, locked: bool) -> LockResult {
+        self.lock.request(LockFields {
+            locked: Some(locked),
+        })
+    }
+
+    /// A client's tune, queued only when nothing else has a claim on the
+    /// moment. A feed is silent by the owner's choice, so with one already
+    /// in flight a client gets `Busy`. A tune already sounding is not cut
+    /// when a feed comes after it (a Dispense press, a client's feed, a meal
+    /// with no call or whose call has ended): it plays on through the drive,
+    /// and its steps, the codec's close and its `done` record among them,
+    /// run inside passes between the owner's steps and count against the
+    /// gap the owner allows them. The meal call shares this path. Setup mode
+    /// owns the speaker for its own tunes, and an install or a restart has
+    /// the feeder's attention. A flash write is no reason to
+    /// wait: a tune writes nothing and reads no sector a writer changes, and
+    /// the meal call plays through writes the same way, at worst with
+    /// underruns the speaker's `done` record counts.
+    ///
+    /// `Muted` stays the speaker's answer: a test sound means what the
+    /// owner's sound settings let through, so the `sound` switch, a volume
+    /// of 0 and the sound window all silence it.
+    fn play(&mut self, tune: Tune) -> PlayResult {
+        let feed = self.operating() || self.outputs_claimed();
+        let elsewhere = self.setup || self.platform.installing() || self.platform.restarting();
+        let wall_ms = self.platform.wall_ms(self.now_ms);
+        if feed || elsewhere || call::crowds(self.call_lead, wall_ms, tune.duration_ms()) {
+            return PlayResult::Busy;
+        }
+        self.platform.play(tune)
+    }
+
+    fn calibration(&mut self, change: Option<Calibration>) -> CalibrationResult {
+        match change {
+            None => self.platform.calibration(),
+            Some(_) if self.outputs_claimed() => CalibrationResult::Busy,
+            Some(calibration) => self.platform.calibration_change(calibration),
+        }
+    }
+
+    /// A client's table is saved at the wall time now, so a plan it adds
+    /// or moves never runs an occurrence already past.
+    fn plans(&mut self, change: Option<Table>) -> PlansResult {
+        match change {
+            None => self.platform.plans(),
+            Some(_) if self.outputs_claimed() => PlansResult::Busy,
+            Some(table) => {
+                let at_s = self
+                    .platform
+                    .wall_ms(self.now_ms)
+                    .and_then(|ms| u32::try_from(ms / 1000).ok());
+                self.platform
+                    .plans_change(PlansChange::Replace { table, at_s })
+            }
+        }
+    }
+
+    /// A change to the clip waits, as any store write does, while a feed
+    /// holds the outputs.
+    fn call(&mut self, change: Option<CallChange>) -> CallResult {
+        match change {
+            None => self.platform.call(),
+            Some(_) if self.outputs_claimed() => CallResult::Busy,
+            Some(change) => self.platform.call_change(change),
+        }
+    }
+
+    fn call_chunk(&mut self, offset: u32, data: &[u8]) -> Result<(), Refusal> {
+        if self.outputs_claimed() {
+            return Err(Refusal::Busy);
+        }
+        self.platform.call_chunk(offset, data)
+    }
+
+    /// One play of the stored clip, under the same rules as a test tune: it
+    /// is refused `Busy` during a feed, setup, an install or a restart, and
+    /// when it would still be sounding as a meal's call begins. Also while
+    /// an upload or a delete is queued: the writer then has the clip's
+    /// sectors, or would wait out the play to take them.
+    fn play_call(&mut self) -> CallPlay {
+        let bytes = match self.platform.call() {
+            CallResult::Current { pending: true, .. } => return CallPlay::Busy,
+            CallResult::Current {
+                view:
+                    CallView {
+                        clip: CallClip::Stored { bytes, .. },
+                        ..
+                    },
+                ..
+            } => bytes,
+            CallResult::Current { .. } => return CallPlay::NoClip,
+            CallResult::Busy => return CallPlay::Busy,
+            CallResult::ReadOnly | CallResult::Unserved => return CallPlay::Unserved,
+        };
+
+        let feed = self.operating() || self.outputs_claimed();
+        let elsewhere = self.setup || self.platform.installing() || self.platform.restarting();
+        let wall_ms = self.platform.wall_ms(self.now_ms);
+        if feed || elsewhere || call::crowds(self.call_lead, wall_ms, clip::ms(bytes)) {
+            return CallPlay::Busy;
+        }
+
+        match self.platform.play_call(1) {
+            PlayResult::Started => CallPlay::Started,
+            PlayResult::Muted => CallPlay::Muted,
+            PlayResult::Busy => CallPlay::Busy,
+        }
+    }
+
+    fn phase(&self) -> Option<proto::Phase> {
+        self.feeds.marks().map(|marks| marks.phase)
+    }
+
+    fn readiness(&mut self) -> Readiness {
+        let ready = feeding::readiness(
+            &*self.feeds,
+            self.platform.restarting(),
+            self.setup,
+            self.platform.installing(),
+            self.battery_hold,
+        );
+        feeding::held(ready, self.meal)
+    }
+
+    fn feed(&mut self, portions: u8, by: Source) -> Result<u32, Refusal> {
+        let ready = self.readiness();
+        feeding::queue(self.feeds, ready, portions, by)
+    }
+
+    fn feed_reserved(&mut self, feed: u32) -> Option<Result<(), Refusal>> {
+        self.feeds.reserved(feed)
+    }
+
+    fn cancel_feed(&mut self, feed: u32) -> bool {
+        self.feeds.cancel(feed)
+    }
+
+    fn feed_trace(&mut self, feed: u32, offset: u16) -> Result<TracePage<'_>, Refusal> {
+        let (page, _) = self
+            .page
+            .split_first_chunk_mut::<PAGE_MAX>()
+            .ok_or(Refusal::Busy)?;
+        let read = self.platform.trace_page(feed, offset, page)?;
+        Ok(TracePage {
+            summary: read.summary,
+            stored: read.stored,
+            offset,
+            total: read.total,
+            bytes: self.page.get(..read.len).unwrap_or(&[]),
+        })
     }
 }

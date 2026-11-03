@@ -125,7 +125,7 @@ proptest! {
 /// answered, so the properties above are not only exercising refusals.
 #[test]
 fn the_session_driver_is_answered() {
-    use wellfed_proto::api::{ClientMessage, Op};
+    use wellfed_proto::api::{ClientMessage, FeederOp, Op};
 
     let mut out = [0; 64];
     let status = ClientMessage::Request {
@@ -135,7 +135,7 @@ fn the_session_driver_is_answered() {
     let len = wellfed_proto::encode(&status, &mut out).unwrap();
     let feed = ClientMessage::Request {
         id: [2; 16],
-        op: Op::Feed { portions: 1 },
+        op: Op::Feeder(FeederOp::Feed { portions: 1 }),
     };
     let mut second = [0; 64];
     let second_len = wellfed_proto::encode(&feed, &mut second).unwrap();
@@ -145,15 +145,15 @@ fn the_session_driver_is_answered() {
 /// A trace's widest page leaves in one frame.
 #[test]
 fn a_trace_page_is_answered_within_a_frame() {
-    use wellfed_proto::api::{ClientMessage, Op};
+    use wellfed_proto::api::{ClientMessage, FeederOp, Op};
 
     let mut out = [0; 64];
     let request = ClientMessage::Request {
         id: [7; 16],
-        op: Op::FeedTrace {
+        op: Op::Feeder(FeederOp::FeedTrace {
             feed: u32::MAX,
             offset: u16::MAX,
-        },
+        }),
     };
     let len = wellfed_proto::encode(&request, &mut out).unwrap();
     assert_eq!(support::session(&[&out[..len]]), 1);

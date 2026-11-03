@@ -12,21 +12,20 @@ use crate::{
 };
 use wellfed_core::deadline_passed;
 use wellfed_proto::api::{
-    self as proto, ClientMessage, Clients, EventBatchWriter, EventBody, FeederMessage, Joined,
+    self as proto, ClientMessage, Clients, DeviceMessage, EventBatchWriter, EventBody, Joined,
     LOG_TEXT_MAX, Open, Outcome, Refusal, RequestId,
 };
 
 /// The most events one pass reads for a session. A batch fills a frame in
 /// fewer from a device whose reads come in batches; the bound keeps a pass
-/// short where reads never wait and the session skips every body it meets.
+/// short where reads never wait.
 const READS_PER_PASS: usize = 64;
 
 /// What a pass's events came to.
 enum Push {
     /// A batch or a gap is sealed.
     Sent,
-    /// Nothing sealed, but the events are not done: a read is on its way,
-    /// or the pass skipped bodies the session cannot decode.
+    /// Nothing sealed, but the events are not done: a read is on its way.
     Busy,
     /// The session's cursor is at the newest event.
     Nothing,
@@ -243,7 +242,7 @@ impl Server {
         self.plain_len = len;
         let message: ClientMessage<'_> =
             wellfed_proto::decode(&self.plain[..len]).map_err(|_| Reason::Malformed)?;
-        let (id, needs, action) = match message {
+        let (id, action) = match message {
             ClientMessage::Subscribe { after, samples } => {
                 if let Phase::Open {
                     events, samples: s, ..
@@ -254,10 +253,10 @@ impl Server {
                 }
                 return Ok(());
             }
-            ClientMessage::Request { id, op } => (id, op.capability(), Action::from(op)),
+            ClientMessage::Request { id, op } => (id, Action::from(op)),
         };
 
-        match self.request(index, id, needs, action, now_ms, device, pairing, record) {
+        match self.request(index, id, action, now_ms, device, pairing, record) {
             Some(reply) => self.answer(index, id, action.name(), reply, now_ms, device, record),
             None => Ok(()),
         }
@@ -280,7 +279,7 @@ impl Server {
                 you: client.key == me,
             });
         }
-        let message = FeederMessage::Response {
+        let message = DeviceMessage::Response {
             id,
             result: Outcome::Clients(Clients { clients }),
         };
@@ -307,7 +306,7 @@ impl Server {
         };
         if let Some(next) = sample.take() {
             return self
-                .seal_and_send(index, &FeederMessage::Sample(next))
+                .seal_and_send(index, &DeviceMessage::Sample(next))
                 .map(|()| true);
         }
         match log {
@@ -319,22 +318,16 @@ impl Server {
     /// The events after `after` that fit one frame, encoded into the
     /// sealing buffer (free until the message is sealed), so no array of
     /// them is kept. The session's cursor moves past each event the batch
-    /// takes, and past each it skips.
+    /// takes.
     fn push_events<D: Device>(
         &mut self,
         index: usize,
         mut after: Option<u64>,
         device: &mut D,
     ) -> Result<Push, Reason> {
-        let Phase::Open {
-            events,
-            capabilities,
-            ..
-        } = &mut self.slots[index].phase
-        else {
+        let Phase::Open { events, .. } = &mut self.slots[index].phase else {
             return Ok(Push::Nothing);
         };
-        let capabilities = *capabilities;
         let mut writer = EventBatchWriter::new(&mut self.out);
         let mut stop = Stop::Bound;
 
@@ -345,15 +338,11 @@ impl Server {
             }
             match device.event_after(Reader::slot(index), after) {
                 EventRead::Event(event) => {
-                    // A body the session's hello did not claim would not
-                    // decode there: skip it, as an old client would want.
                     // An event that does not fit stays for the next batch.
                     // `has_room` leaves room for the largest event, so a
                     // push never fails, and above all never on an empty
                     // batch, which would leave the event for ever.
-                    if capabilities.contains(event.body.capability())
-                        && writer.push(&event).is_err()
-                    {
+                    if writer.push(&event).is_err() {
                         stop = Stop::Full;
                         break;
                     }
@@ -370,7 +359,7 @@ impl Server {
                     }
                     *events = Some(Some(to));
                     return self
-                        .seal_and_send(index, &FeederMessage::Gap { from, to })
+                        .seal_and_send(index, &DeviceMessage::Gap { from, to })
                         .map(|()| Push::Sent);
                 }
                 EventRead::Wait => {
@@ -386,14 +375,13 @@ impl Server {
 
         if writer.is_empty() {
             // Only a cursor at the newest event leaves the frame to the
-            // samples and the log; a read on its way, or a run of skipped
-            // events, carries on next pass.
+            // samples and the log; a read on its way carries on next pass.
             return Ok(match stop {
                 Stop::End => Push::Nothing,
                 Stop::Bound | Stop::Full | Stop::Gap | Stop::Wait => Push::Busy,
             });
         }
-        let len = proto_encode(&FeederMessage::Events(writer.batch()), &mut self.plain)?;
+        let len = proto_encode(&DeviceMessage::Events(writer.batch()), &mut self.plain)?;
         self.seal_plain(index, len).map(|()| Push::Sent)
     }
 
@@ -409,7 +397,7 @@ impl Server {
             return Ok(false);
         };
         let text = self.out.get(..batch.len).ok_or(Reason::Malformed)?;
-        let message = FeederMessage::Log {
+        let message = DeviceMessage::Log {
             seq: batch.seq,
             dropped: batch.dropped,
             text: core::str::from_utf8(text).map_err(|_| Reason::Malformed)?,

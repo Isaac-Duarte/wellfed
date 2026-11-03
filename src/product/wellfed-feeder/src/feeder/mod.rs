@@ -62,9 +62,10 @@ use owner::{Owner, ResetRefusal};
 use platform::DriverRecord;
 use reminder::Reminder;
 use schedule::Schedule;
-use serve::{FeederDevice, Inputs, Serve};
+pub use serve::DeviceView;
+use serve::{Inputs, Serve};
+use wellfed_device_api::Server;
 use wellfed_device_api::mailbox::Lock;
-use wellfed_device_api::{Device, Server};
 
 /// The feeding owner, as the device API reaches it. Generic rather than
 /// `dyn`, so the calls stay direct for the firmware's stack audit.
@@ -681,13 +682,17 @@ impl<P: Platform> Feeder<P> {
 
     /// The device API's view of the feeder at `now_ms`, with the feeding
     /// owner `feeds`, as the server sees it in a pass.
-    pub fn device<'a, F: Feeds>(&'a mut self, now_ms: u32, feeds: &'a mut F) -> impl Device + 'a {
+    pub fn device<'a, F: Feeds>(
+        &'a mut self,
+        now_ms: u32,
+        feeds: &'a mut F,
+    ) -> DeviceView<'a, P, F> {
         let boot = self.serve.boot(&mut self.platform, now_ms);
         let supply = supply::supply(self.platform.supply(now_ms), feeds.below_floor());
         let supply = self.supply.cells(now_ms, supply);
         let ntp_last = self.serve.ntp_last();
         let (stats, tasks, page) = self.serve.stats_parts();
-        FeederDevice {
+        DeviceView {
             platform: &mut self.platform,
             lock: &mut self.lock,
             feeds,

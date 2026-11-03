@@ -23,12 +23,14 @@ use wellfed_device_api::pairing::{Config, Pairing};
 use wellfed_device_api::setup::{Received, Responder};
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_api::{
-    Device, EventRead, KeyChange, KeyOutcome, Pass, Reader, Reason, Record, SESSIONS, Server,
+    Device, EventRead, FeederDevice, KeyChange, KeyOutcome, NoFeeder, Pass, Reader, Reason, Record,
+    SESSIONS, Server,
 };
 use wellfed_proto::api::{
-    self as proto, Capabilities, EventBody, FRAME_MAX, FeederMessage, FoodLevel, Hello,
-    MESSAGE_MAX, Open, PROLOGUE, PROTOCOL_MAJOR, Refusal, Stats, StatsSection, Status, Welcome,
+    self as proto, DeviceMessage, EventBody, FRAME_MAX, FoodLevel, Hello, MESSAGE_MAX, Open,
+    PROLOGUE, PROTOCOL_MAJOR, Refusal, Stats, StatsSection, Status, Welcome,
 };
+use wellfed_proto::device::Model;
 use wellfed_proto::setup::{self, Answer, Reply};
 use wellfed_session::frame;
 use wellfed_session::noise::{Handshake, Keypair, Pattern, Role as NoiseRole, Transport};
@@ -42,7 +44,7 @@ const SETTLE: usize = 8;
 /// The feeder's mailboxes, answering at once: every write is accepted and
 /// lands by the next pass, so a session reaches every answer it can.
 #[derive(Default)]
-struct Fake {
+pub struct Fake {
     counter: u8,
     settings: SettingsView,
     wifi_generation: u32,
@@ -183,6 +185,12 @@ fn widest_summary() -> proto::TraceSummary {
 static TRACE_PAGE: [u8; wellfed_proto::trace::PAGE_MAX] = [0xff; wellfed_proto::trace::PAGE_MAX];
 
 impl Device for Fake {
+    type Feeder = Self;
+
+    fn feeder(&mut self) -> Option<&mut Self> {
+        Some(self)
+    }
+
     fn random(&mut self, out: &mut [u8; 32]) -> bool {
         self.counter = self.counter.wrapping_add(1);
         *out = [self.counter; 32];
@@ -191,6 +199,10 @@ impl Device for Fake {
 
     fn build(&self) -> &'static str {
         "fuzz-build"
+    }
+
+    fn model(&self) -> Model {
+        Model::Plaf103
     }
 
     fn status(&mut self, _now_ms: u32) -> Status<'static> {
@@ -207,36 +219,27 @@ impl Device for Fake {
             dns_losses: 0,
             clock_ms: None,
             power: None,
-            locked: Some(false),
-            settings_generation: self.settings.generation,
             wifi_generation: self.wifi_generation,
             last_event: self.events.last().map(|e| e.seq),
             sessions: 0,
-            // The widest count, so a frame that holds it holds any.
-            desiccant: proto::Desiccant::Remaining { days: i32::MIN },
-            food: FoodLevel::Unread,
-            feed_fault: Some(proto::FeedFault {
-                feed: u32::MAX,
-                outcome: proto::FeedOutcome::Uncertain,
-                reason: proto::FeedReason::MarkStuck,
+            device: proto::DeviceStatus::Feeder(proto::FeederStatus {
+                locked: Some(false),
+                settings_generation: self.settings.generation,
+                // The widest count, so a frame that holds it holds any.
+                desiccant: proto::Desiccant::Remaining { days: i32::MIN },
+                food: FoodLevel::Unread,
+                feed_fault: Some(proto::FeedFault {
+                    feed: u32::MAX,
+                    outcome: proto::FeedOutcome::Uncertain,
+                    reason: proto::FeedReason::MarkStuck,
+                }),
+                readiness: self.readiness(),
+                supply: proto::Supply {
+                    adapter: None,
+                    battery: proto::Battery::Unread,
+                    below_floor: None,
+                },
             }),
-        }
-    }
-
-    fn today(&mut self, _now_ms: u32) -> Option<i32> {
-        Some(20_389)
-    }
-
-    fn settings(&mut self, change: SettingsFields) -> SettingsResult {
-        if change.changes() {
-            self.settings.generation += 1;
-            self.write_queued = true;
-        } else if !self.writes_held {
-            self.write_queued = false;
-        }
-        SettingsResult::Current {
-            view: self.settings,
-            pending: self.write_queued,
         }
     }
 
@@ -255,17 +258,6 @@ impl Device for Fake {
         }
     }
 
-    fn lock(&mut self, locked: bool) -> LockResult {
-        LockResult::Current {
-            locked,
-            pending: false,
-        }
-    }
-
-    fn play(&mut self, _tune: Tune) -> PlayResult {
-        PlayResult::Started
-    }
-
     fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult {
         TimeResult::from_sync(self.clock.sync(1, fields.sync(), origin))
     }
@@ -280,22 +272,6 @@ impl Device for Fake {
             view: self.time,
             pending: false,
         }
-    }
-
-    fn calibration(&mut self, change: Option<Calibration>) -> CalibrationResult {
-        if let Some(calibration) = change {
-            self.calibration.calibration = calibration;
-            self.calibration.generation += 1;
-        }
-        self.calibration.writable = true;
-        CalibrationResult::Current {
-            view: self.calibration,
-            pending: false,
-        }
-    }
-
-    fn phase(&self) -> Option<proto::Phase> {
-        Some(proto::Phase::Unknown)
     }
 
     fn time_state(&mut self, now_ms: u32) -> Option<TimeState> {
@@ -315,48 +291,8 @@ impl Device for Fake {
         Some(KeyOutcome::Done)
     }
 
-    fn readiness(&mut self) -> proto::Readiness {
-        if self.ready {
-            proto::Readiness::Ready
-        } else {
-            proto::Readiness::Blocked(proto::Blocked::Unserved)
-        }
-    }
-
-    fn capabilities(&self) -> Capabilities {
-        Capabilities::FEED
-            .union(Capabilities::TIME)
-            .union(Capabilities::STATS)
-            .union(Capabilities::LOG)
-            .union(Capabilities::TRACES)
-            .union(Capabilities::CALIBRATION)
-    }
-
     fn stats(&mut self, section: StatsSection, _now_ms: u32) -> Stats<'_> {
         widest(section)
-    }
-
-    fn feed_trace(&mut self, _feed: u32, offset: u16) -> Result<proto::TracePage<'_>, Refusal> {
-        Ok(proto::TracePage {
-            summary: widest_summary(),
-            stored: true,
-            offset,
-            total: u16::MAX,
-            bytes: &TRACE_PAGE,
-        })
-    }
-
-    fn feed(&mut self, _portions: u8, _by: proto::Source) -> Result<u32, Refusal> {
-        self.feeds += 1;
-        Ok(self.feeds)
-    }
-
-    fn feed_reserved(&mut self, _feed: u32) -> Option<Result<(), Refusal>> {
-        (!self.unreserved).then_some(Ok(()))
-    }
-
-    fn cancel_feed(&mut self, feed: u32) -> bool {
-        feed != 0 && feed <= self.feeds
     }
 
     fn record(&mut self, _now_ms: u32, body: EventBody) {
@@ -387,10 +323,172 @@ impl Device for Fake {
     }
 }
 
+impl FeederDevice for Fake {
+    fn today(&mut self, _now_ms: u32) -> Option<i32> {
+        Some(20_389)
+    }
+
+    fn settings(&mut self, change: SettingsFields) -> SettingsResult {
+        if change.changes() {
+            self.settings.generation += 1;
+            self.write_queued = true;
+        } else if !self.writes_held {
+            self.write_queued = false;
+        }
+        SettingsResult::Current {
+            view: self.settings,
+            pending: self.write_queued,
+        }
+    }
+
+    fn lock(&mut self, locked: bool) -> LockResult {
+        LockResult::Current {
+            locked,
+            pending: false,
+        }
+    }
+
+    fn play(&mut self, _tune: Tune) -> PlayResult {
+        PlayResult::Started
+    }
+
+    fn calibration(&mut self, change: Option<Calibration>) -> CalibrationResult {
+        if let Some(calibration) = change {
+            self.calibration.calibration = calibration;
+            self.calibration.generation += 1;
+        }
+        self.calibration.writable = true;
+        CalibrationResult::Current {
+            view: self.calibration,
+            pending: false,
+        }
+    }
+
+    fn phase(&self) -> Option<proto::Phase> {
+        Some(proto::Phase::Unknown)
+    }
+
+    fn readiness(&mut self) -> proto::Readiness {
+        if self.ready {
+            proto::Readiness::Ready
+        } else {
+            proto::Readiness::Blocked(proto::Blocked::Unserved)
+        }
+    }
+
+    fn feed_trace(&mut self, _feed: u32, offset: u16) -> Result<proto::TracePage<'_>, Refusal> {
+        Ok(proto::TracePage {
+            summary: widest_summary(),
+            stored: true,
+            offset,
+            total: u16::MAX,
+            bytes: &TRACE_PAGE,
+        })
+    }
+
+    fn feed(&mut self, _portions: u8, _by: proto::Source) -> Result<u32, Refusal> {
+        self.feeds += 1;
+        Ok(self.feeds)
+    }
+
+    fn feed_reserved(&mut self, _feed: u32) -> Option<Result<(), Refusal>> {
+        (!self.unreserved).then_some(Ok(()))
+    }
+
+    fn cancel_feed(&mut self, feed: u32) -> bool {
+        feed != 0 && feed <= self.feeds
+    }
+}
+
+/// A rig's device: the fake, whatever kind it is served as.
+pub trait Faked: Device {
+    fn fake(&mut self) -> &mut Fake;
+    fn fake_ref(&self) -> &Fake;
+}
+
+impl Faked for Fake {
+    fn fake(&mut self) -> &mut Fake {
+        self
+    }
+    fn fake_ref(&self) -> &Fake {
+        self
+    }
+}
+
+/// A device of another kind: the fake's shared core, and no feeder
+/// module ([`NoFeeder`]).
+#[derive(Default)]
+pub struct Fountain(Fake);
+
+impl Faked for Fountain {
+    fn fake(&mut self) -> &mut Fake {
+        &mut self.0
+    }
+    fn fake_ref(&self) -> &Fake {
+        &self.0
+    }
+}
+
+impl Device for Fountain {
+    type Feeder = NoFeeder;
+
+    fn feeder(&mut self) -> Option<&mut NoFeeder> {
+        None
+    }
+    fn random(&mut self, out: &mut [u8; 32]) -> bool {
+        self.0.random(out)
+    }
+    fn build(&self) -> &'static str {
+        self.0.build()
+    }
+    fn model(&self) -> Model {
+        Model::Plwf106
+    }
+    fn status(&mut self, now_ms: u32) -> Status<'static> {
+        self.0.status(now_ms)
+    }
+    fn wifi(&mut self, change: Option<Option<Credentials>>) -> WifiResult {
+        self.0.wifi(change)
+    }
+    fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult {
+        self.0.time_sync(fields, origin)
+    }
+    fn time_settings(&mut self, change: Option<TimeSettings>) -> TimeSettingsResult {
+        self.0.time_settings(change)
+    }
+    fn time_state(&mut self, now_ms: u32) -> Option<TimeState> {
+        self.0.time_state(now_ms)
+    }
+    fn keys(&mut self, change: KeyChange) -> Option<u32> {
+        self.0.keys(change)
+    }
+    fn keys_outcome(&mut self, ticket: u32) -> Option<KeyOutcome> {
+        self.0.keys_outcome(ticket)
+    }
+    fn stats(&mut self, section: StatsSection, now_ms: u32) -> Stats<'_> {
+        self.0.stats(section, now_ms)
+    }
+    fn record(&mut self, now_ms: u32, body: EventBody) {
+        self.0.record(now_ms, body);
+    }
+    fn event_after(&mut self, reader: Reader, after: Option<u64>) -> EventRead {
+        self.0.event_after(reader, after)
+    }
+    fn epoch(&self) -> Option<u32> {
+        self.0.epoch()
+    }
+    fn reboot(&mut self) {
+        self.0.reboot();
+    }
+    fn log_after(&mut self, after: Option<u32>, text: &mut [u8]) -> Option<LogBatch> {
+        self.0.log_after(after, text)
+    }
+}
+
 /// The server with one enrolled owner and the recovery window open.
-pub struct Rig {
+pub struct Rig<D = Fake> {
     server: Box<Server>,
-    device: Fake,
+    device: D,
     pairing: Pairing,
     identity: Keypair,
     now: u32,
@@ -405,9 +503,22 @@ impl Default for Rig {
 
 impl Rig {
     pub fn new() -> Self {
+        Self::with(Fake::default())
+    }
+}
+
+impl Rig<Fountain> {
+    /// A rig whose device is of another kind, with no feeder module.
+    pub fn fountain() -> Self {
+        Self::with(Fountain::default())
+    }
+}
+
+impl<D: Faked> Rig<D> {
+    fn with(device: D) -> Self {
         let mut rig = Self {
             server: Box::new(Server::new()),
-            device: Fake::default(),
+            device,
             pairing: Pairing::new(Config::DEFAULT),
             identity: Keypair::from_secret(FEEDER),
             now: 1_000,
@@ -441,7 +552,7 @@ impl Rig {
             self.now,
             "x".repeat(self.now as usize % 120)
         );
-        self.device.log.push(line.as_bytes());
+        self.device.fake().log.push(line.as_bytes());
         let records = &mut self.records;
         self.server.step(
             Pass {
@@ -460,7 +571,7 @@ impl Rig {
     /// Hold each settings write as the writer not having reached it yet, or
     /// let it finish.
     pub fn hold_writes(&mut self, held: bool) {
-        self.device.writes_held = held;
+        self.device.fake().writes_held = held;
     }
 
     /// Empty the client table, as the writer would publish it: every session
@@ -500,8 +611,16 @@ impl Rig {
     /// Hold each queued feed before its reservation, or let them through.
     /// Either way the device takes feeds from now on.
     pub fn hold_reservations(&mut self, held: bool) {
-        self.device.ready = true;
-        self.device.unreserved = held;
+        self.device.fake().ready = true;
+        self.device.fake().unreserved = held;
+    }
+
+    /// Requests answered from a remembered write id so far.
+    pub fn retried(&self) -> usize {
+        self.records
+            .iter()
+            .filter(|record| matches!(record, Record::Retried { .. }))
+            .count()
     }
 
     /// The device refused the feed it numbered `feed`.
@@ -511,7 +630,7 @@ impl Rig {
 
     /// The feeds the device was asked for.
     pub fn feeds(&self) -> u32 {
-        self.device.feeds
+        self.device.fake_ref().feeds
     }
 
     /// As much of `bytes` as the slot has room for; how much that was.
@@ -567,7 +686,6 @@ impl Rig {
         .expect("IK with the feeder's key");
         let hello = Hello {
             major: PROTOCOL_MAJOR,
-            capabilities: Capabilities::KNOWN,
         };
         let mut payload = [0; 16];
         let len = wellfed_proto::encode(&hello, &mut payload).expect("a hello fits");
@@ -667,7 +785,7 @@ pub fn session(messages: &[&[u8]]) -> usize {
                 let read = transport
                     .open(&reply, &mut plain)
                     .expect("the feeder seals under the session");
-                let decoded = wellfed_proto::decode::<FeederMessage<'_>>(&plain[..read]);
+                let decoded = wellfed_proto::decode::<DeviceMessage<'_>>(&plain[..read]);
                 assert!(decoded.is_ok(), "{:?}", &plain[..read]);
                 answers += 1;
             }

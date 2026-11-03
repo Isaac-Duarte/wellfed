@@ -6,12 +6,14 @@
 //!
 //! `WELLFED_BLESS=1 cargo nextest run -p wellfed-proto` appends the
 //! fixtures of new variants to `fixtures/v1.txt`. It refuses to rewrite a
-//! line already there: v1 is frozen, so a struct that gained a field, or a
-//! variant that moved, fails here even when blessed. The rules are in the
+//! line already there, so a struct that gained a field, or a variant that
+//! moved, fails here even when blessed: a message changed in place has its
+//! lines rewritten by hand, on purpose. The rules are in the
 //! [device API](../../../../docs/firmware/device-api.md#evolution).
 
 use serde::Serialize;
 use wellfed_proto::api::*;
+use wellfed_proto::device::Model;
 use wellfed_proto::{decode, encode};
 use wellfed_session::hex::Lower;
 
@@ -38,12 +40,12 @@ fn messages() -> Vec<Fixture> {
         for event in events {
             writer.push(event).unwrap();
         }
-        entry(&FeederMessage::Events(writer.batch()))
+        entry(&DeviceMessage::Events(writer.batch()))
     }
     let client = |bytes: &[u8]| decode::<ClientMessage<'_>>(bytes).is_ok();
-    let feeder = |bytes: &[u8]| decode::<FeederMessage<'_>>(bytes).is_ok();
+    let feeder = |bytes: &[u8]| decode::<DeviceMessage<'_>>(bytes).is_ok();
     let request = |op| ClientMessage::Request { id: ID, op };
-    let response = |result| FeederMessage::Response { id: ID, result };
+    let response = |result| DeviceMessage::Response { id: ID, result };
     let wifi = Wifi {
         ssid: b"lab",
         psk: "passphrase",
@@ -64,18 +66,34 @@ fn messages() -> Vec<Fixture> {
             adapter: true,
             battery_mv: Some(4_800),
         }),
-        locked: Some(false),
-        settings_generation: 6,
         wifi_generation: 7,
         last_event: Some(8),
         sessions: 1,
-        desiccant: Desiccant::Remaining { days: -3 },
-        food: FoodLevel::Present,
-        feed_fault: Some(FeedFault {
-            feed: 13,
-            outcome: FeedOutcome::Failed,
-            reason: FeedReason::Jammed,
+        device: DeviceStatus::Feeder(FeederStatus {
+            locked: Some(false),
+            settings_generation: 6,
+            desiccant: Desiccant::Remaining { days: -3 },
+            food: FoodLevel::Present,
+            feed_fault: Some(FeedFault {
+                feed: 13,
+                outcome: FeedOutcome::Failed,
+                reason: FeedReason::Jammed,
+            }),
+            readiness: Readiness::Blocked(Blocked::Joining),
+            supply: Supply {
+                adapter: Some(true),
+                battery: Battery::Absent,
+                below_floor: None,
+            },
         }),
+    };
+    let with_feeder = |change: fn(&mut FeederStatus)| {
+        let DeviceStatus::Feeder(mut feeder) = status.device;
+        change(&mut feeder);
+        Status {
+            device: DeviceStatus::Feeder(feeder),
+            ..status
+        }
     };
     let counts = Counts {
         uptime_s: 3_600,
@@ -144,19 +162,14 @@ fn messages() -> Vec<Fixture> {
         ("open-recovery", entry(&Open::Recovery), |b| {
             decode::<Open>(b).is_ok()
         }),
-        (
-            "hello",
-            entry(&Hello {
-                major: 1,
-                capabilities: Capabilities::V1,
-            }),
-            |b| decode::<Hello>(b).is_ok(),
-        ),
+        ("hello", entry(&Hello { major: 1 }), |b| {
+            decode::<Hello>(b).is_ok()
+        }),
         (
             "welcome-open",
             entry(&Welcome::Open {
                 major: 1,
-                capabilities: Capabilities::V1,
+                model: Model::Plaf103,
                 build: "b",
                 role: Role::Member,
                 epoch: 0x1234_5678,
@@ -177,10 +190,14 @@ fn messages() -> Vec<Fixture> {
             |b| decode::<Joined>(b).is_ok(),
         ),
         ("op-status", entry(&request(Op::Status)), client),
-        ("op-get-settings", entry(&request(Op::GetSettings)), client),
+        (
+            "op-get-settings",
+            entry(&request(Op::Feeder(FeederOp::GetSettings))),
+            client,
+        ),
         (
             "op-put-settings",
-            entry(&request(Op::PutSettings {
+            entry(&request(Op::Feeder(FeederOp::PutSettings {
                 base: 9,
                 changes: SettingsChanges {
                     lights: Some(false),
@@ -194,7 +211,7 @@ fn messages() -> Vec<Fixture> {
                     desiccant_days: Some(21),
                     meal_reminder: Some(MealReminder::Before { minutes: 15 }),
                 },
-            })),
+            }))),
             client,
         ),
         (
@@ -207,12 +224,12 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "op-set-lock",
-            entry(&request(Op::SetLock { locked: true })),
+            entry(&request(Op::Feeder(FeederOp::SetLock { locked: true }))),
             client,
         ),
         (
             "op-play",
-            entry(&request(Op::Play { tune: Tune::Meal })),
+            entry(&request(Op::Feeder(FeederOp::Play { tune: Tune::Meal }))),
             client,
         ),
         (
@@ -236,13 +253,17 @@ fn messages() -> Vec<Fixture> {
             entry(&request(Op::RevokeClient { key: [0x33; 32] })),
             client,
         ),
-        ("op-feed", entry(&request(Op::Feed { portions: 2 })), client),
+        (
+            "op-feed",
+            entry(&request(Op::Feeder(FeederOp::Feed { portions: 2 }))),
+            client,
+        ),
         ("op-reboot", entry(&request(Op::Reboot)), client),
         (
             "subscribe",
             entry(&ClientMessage::Subscribe {
                 after: Some(41),
-                samples: true,
+                samples: Samples::On,
             }),
             client,
         ),
@@ -260,21 +281,23 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "outcome-settings",
-            entry(&response(Outcome::Settings(Settings {
-                generation: 10,
-                lights: true,
-                sound: false,
-                volume: 40,
-                lights_window: Window::Always,
-                sound_window: Window::Between {
-                    start: 480,
-                    end: 1200,
+            entry(&response(Outcome::Feeder(FeederOutcome::Settings(
+                Settings {
+                    generation: 10,
+                    lights: true,
+                    sound: false,
+                    volume: 40,
+                    lights_window: Window::Always,
+                    sound_window: Window::Between {
+                        start: 480,
+                        end: 1200,
+                    },
+                    desiccant_days: 21,
+                    desiccant_reset: Some(20_389),
+                    meal_reminder: MealReminder::Before { minutes: 10 },
+                    writable: true,
                 },
-                desiccant_days: 21,
-                desiccant_reset: Some(20_389),
-                meal_reminder: MealReminder::Before { minutes: 10 },
-                writable: true,
-            }))),
+            )))),
             feeder,
         ),
         (
@@ -308,10 +331,10 @@ fn messages() -> Vec<Fixture> {
             }]),
             feeder,
         ),
-        ("gap", entry(&FeederMessage::Gap { from: 1, to: 5 }), feeder),
+        ("gap", entry(&DeviceMessage::Gap { from: 1, to: 5 }), feeder),
         (
             "sample",
-            entry(&FeederMessage::Sample(Sample {
+            entry(&DeviceMessage::Sample(Sample {
                 at_ms: 13,
                 metric: Metric::Rssi(-61),
             })),
@@ -319,12 +342,14 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "op-cancel-feed",
-            entry(&request(Op::CancelFeed { feed: 14 })),
+            entry(&request(Op::Feeder(FeederOp::CancelFeed { feed: 14 }))),
             client,
         ),
         (
             "outcome-feeding",
-            entry(&response(Outcome::Feeding { feed: 14 })),
+            entry(&response(Outcome::Feeder(FeederOutcome::Feeding {
+                feed: 14,
+            }))),
             feeder,
         ),
         (
@@ -348,22 +373,6 @@ fn messages() -> Vec<Fixture> {
             "outcome-fault",
             entry(&response(Outcome::Refused(Refusal::Fault))),
             feeder,
-        ),
-        (
-            "hello-feed",
-            entry(&Hello {
-                major: 1,
-                capabilities: Capabilities::FEED,
-            }),
-            |b| decode::<Hello>(b).is_ok(),
-        ),
-        (
-            "hello-update",
-            entry(&Hello {
-                major: 1,
-                capabilities: Capabilities::FEED.union(Capabilities::UPDATE),
-            }),
-            |b| decode::<Hello>(b).is_ok(),
         ),
         (
             "op-offer-update",
@@ -424,16 +433,6 @@ fn messages() -> Vec<Fixture> {
             )))),
             feeder,
         ),
-        (
-            "hello-time",
-            entry(&Hello {
-                major: 1,
-                capabilities: Capabilities::FEED
-                    .union(Capabilities::UPDATE)
-                    .union(Capabilities::TIME),
-            }),
-            |b| decode::<Hello>(b).is_ok(),
-        ),
         ("op-get-time", entry(&request(Op::GetTime)), client),
         (
             "op-put-time",
@@ -470,40 +469,18 @@ fn messages() -> Vec<Fixture> {
             feeder,
         ),
         (
-            "hello-log",
-            entry(&Hello {
-                major: 1,
-                capabilities: Capabilities::FEED
-                    .union(Capabilities::UPDATE)
-                    .union(Capabilities::TIME)
-                    .union(Capabilities::LOG),
-            }),
-            |b| decode::<Hello>(b).is_ok(),
-        ),
-        (
             "op-tail-log",
             entry(&request(Op::TailLog { after: Some(42) })),
             client,
         ),
         (
             "log",
-            entry(&FeederMessage::Log {
+            entry(&DeviceMessage::Log {
                 seq: 43,
                 dropped: 2,
                 text: "PLAPI1 one\nPLAPI1 two\n",
             }),
             feeder,
-        ),
-        (
-            "hello-stats",
-            entry(&Hello {
-                major: 1,
-                capabilities: Capabilities::FEED
-                    .union(Capabilities::UPDATE)
-                    .union(Capabilities::TIME)
-                    .union(Capabilities::STATS),
-            }),
-            |b| decode::<Hello>(b).is_ok(),
         ),
         (
             "op-stats-counters",
@@ -589,7 +566,7 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "sample-heap",
-            entry(&FeederMessage::Sample(Sample {
+            entry(&DeviceMessage::Sample(Sample {
                 at_ms: 16,
                 metric: Metric::Heap {
                     free: 125_088,
@@ -600,7 +577,7 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "sample-loop",
-            entry(&FeederMessage::Sample(Sample {
+            entry(&DeviceMessage::Sample(Sample {
                 at_ms: 17,
                 metric: Metric::Loop {
                     passes: 3_000,
@@ -612,7 +589,7 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "sample-gateway",
-            entry(&FeederMessage::Sample(Sample {
+            entry(&DeviceMessage::Sample(Sample {
                 at_ms: 18,
                 metric: Metric::Gateway {
                     round_trip_ms: Some(4),
@@ -622,7 +599,7 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "sample-wifi",
-            entry(&FeederMessage::Sample(Sample {
+            entry(&DeviceMessage::Sample(Sample {
                 at_ms: 19,
                 metric: Metric::Wifi {
                     channel: Some(11),
@@ -632,31 +609,10 @@ fn messages() -> Vec<Fixture> {
             feeder,
         ),
         (
-            "hello-readiness",
-            entry(&Hello {
-                major: 1,
-                capabilities: Capabilities::FEED
-                    .union(Capabilities::UPDATE)
-                    .union(Capabilities::READINESS),
-            }),
-            |b| decode::<Hello>(b).is_ok(),
-        ),
-        (
-            "outcome-feeder-status",
-            entry(&response(Outcome::FeederStatus {
-                status,
-                readiness: Readiness::Blocked(Blocked::Joining),
-                supply: None,
-            })),
-            feeder,
-        ),
-        (
             "outcome-feeder-status-ready",
-            entry(&response(Outcome::FeederStatus {
-                status,
-                readiness: Readiness::Ready,
-                supply: None,
-            })),
+            entry(&response(Outcome::Status(with_feeder(|feeder| {
+                feeder.readiness = Readiness::Ready;
+            })))),
             feeder,
         ),
         (
@@ -680,21 +636,11 @@ fn messages() -> Vec<Fixture> {
             feeder,
         ),
         (
-            "hello-traces",
-            entry(&Hello {
-                major: 1,
-                capabilities: Capabilities::FEED
-                    .union(Capabilities::STATS)
-                    .union(Capabilities::TRACES),
-            }),
-            |b| decode::<Hello>(b).is_ok(),
-        ),
-        (
             "op-feed-trace",
-            entry(&request(Op::FeedTrace {
+            entry(&request(Op::Feeder(FeederOp::FeedTrace {
                 feed: 9,
                 offset: 448,
-            })),
+            }))),
             client,
         ),
         (
@@ -706,14 +652,16 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "outcome-feed-trace",
-            entry(&response(Outcome::FeedTrace(TracePage {
-                summary: trace,
-                stored: true,
-                offset: 0,
-                total: 7,
-                // 333 at 17 ms, then a falling mark at 7,840 ms.
-                bytes: &[0x11, 0x9a, 0x05, 0x8f, 0x80, 0x3d, 0x02],
-            }))),
+            entry(&response(Outcome::Feeder(FeederOutcome::FeedTrace(
+                TracePage {
+                    summary: trace,
+                    stored: true,
+                    offset: 0,
+                    total: 7,
+                    // 333 at 17 ms, then a falling mark at 7,840 ms.
+                    bytes: &[0x11, 0x9a, 0x05, 0x8f, 0x80, 0x3d, 0x02],
+                },
+            )))),
             feeder,
         ),
         (
@@ -737,42 +685,34 @@ fn messages() -> Vec<Fixture> {
             feeder,
         ),
         (
-            "hello-calibration",
-            entry(&Hello {
-                major: 1,
-                capabilities: Capabilities::FEED
-                    .union(Capabilities::STATS)
-                    .union(Capabilities::CALIBRATION),
-            }),
-            |b| decode::<Hello>(b).is_ok(),
-        ),
-        (
             "op-get-calibration",
-            entry(&request(Op::GetCalibration)),
+            entry(&request(Op::Feeder(FeederOp::GetCalibration))),
             client,
         ),
         (
             "op-put-calibration",
-            entry(&request(Op::PutCalibration {
+            entry(&request(Op::Feeder(FeederOp::PutCalibration {
                 base: 2,
                 calibration: Calibration {
                     portion_mg: Some(9_800),
                     bowl: Bowl::Single,
                 },
-            })),
+            }))),
             client,
         ),
         (
             "outcome-calibration",
-            entry(&response(Outcome::Calibration(CalibrationView {
-                generation: 3,
-                writable: true,
-                calibration: Calibration {
-                    portion_mg: Some(9_800),
-                    bowl: Bowl::Single,
+            entry(&response(Outcome::Feeder(FeederOutcome::Calibration(
+                CalibrationView {
+                    generation: 3,
+                    writable: true,
+                    calibration: Calibration {
+                        portion_mg: Some(9_800),
+                        bowl: Bowl::Single,
+                    },
+                    phase: Some(Phase::Unknown),
                 },
-                phase: Some(Phase::Unknown),
-            }))),
+            )))),
             feeder,
         ),
         (
@@ -799,18 +739,8 @@ fn messages() -> Vec<Fixture> {
             feeder,
         ),
         (
-            "hello-power",
-            entry(&Hello {
-                major: 1,
-                capabilities: Capabilities::FEED
-                    .union(Capabilities::READINESS)
-                    .union(Capabilities::POWER),
-            }),
-            |b| decode::<Hello>(b).is_ok(),
-        ),
-        (
             "sample-supply",
-            entry(&FeederMessage::Sample(Sample {
+            entry(&DeviceMessage::Sample(Sample {
                 at_ms: 20,
                 metric: Metric::Supply(Supply {
                     adapter: Some(false),
@@ -825,7 +755,7 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "sample-supply-stale",
-            entry(&FeederMessage::Sample(Sample {
+            entry(&DeviceMessage::Sample(Sample {
                 at_ms: 21,
                 metric: Metric::Supply(Supply {
                     adapter: None,
@@ -837,7 +767,7 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "sample-supply-unread",
-            entry(&FeederMessage::Sample(Sample {
+            entry(&DeviceMessage::Sample(Sample {
                 at_ms: 22,
                 metric: Metric::Supply(Supply {
                     adapter: None,
@@ -875,27 +805,18 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "outcome-feeder-status-battery",
-            entry(&response(Outcome::FeederStatus {
-                status,
-                readiness: Readiness::Blocked(Blocked::Battery),
-                supply: Some(Supply {
+            entry(&response(Outcome::Status(with_feeder(|feeder| {
+                feeder.readiness = Readiness::Blocked(Blocked::Battery);
+                feeder.supply = Supply {
                     adapter: Some(false),
                     battery: Battery::Reading {
                         mv: 3713,
                         percent: 30,
                     },
                     below_floor: Some(false),
-                }),
-            })),
+                };
+            })))),
             feeder,
-        ),
-        (
-            "hello-backup",
-            entry(&Hello {
-                major: 1,
-                capabilities: Capabilities::UPDATE.union(Capabilities::BACKUP),
-            }),
-            |b| decode::<Hello>(b).is_ok(),
         ),
         (
             "op-read-bank1",
@@ -913,22 +834,26 @@ fn messages() -> Vec<Fixture> {
             }))),
             feeder,
         ),
-        ("op-get-plans", entry(&request(Op::GetPlans)), client),
+        (
+            "op-get-plans",
+            entry(&request(Op::Feeder(FeederOp::GetPlans))),
+            client,
+        ),
         (
             "op-put-plans",
-            entry(&request(Op::PutPlans {
+            entry(&request(Op::Feeder(FeederOp::PutPlans {
                 base: 4,
                 plans: plans(),
-            })),
+            }))),
             client,
         ),
         (
             "outcome-plans",
-            entry(&response(Outcome::Plans(Plans {
+            entry(&response(Outcome::Feeder(FeederOutcome::Plans(Plans {
                 generation: 5,
                 writable: true,
                 plans: plans(),
-            }))),
+            })))),
             feeder,
         ),
         (
@@ -975,7 +900,7 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "op-reset-desiccant",
-            entry(&request(Op::ResetDesiccant)),
+            entry(&request(Op::Feeder(FeederOp::ResetDesiccant))),
             client,
         ),
         (
@@ -985,18 +910,16 @@ fn messages() -> Vec<Fixture> {
         ),
         (
             "outcome-status-desiccant-unknown",
-            entry(&response(Outcome::Status(Status {
-                desiccant: Desiccant::Unknown,
-                ..status
-            }))),
+            entry(&response(Outcome::Status(with_feeder(|feeder| {
+                feeder.desiccant = Desiccant::Unknown;
+            })))),
             feeder,
         ),
         (
             "outcome-status-desiccant-unset",
-            entry(&response(Outcome::Status(Status {
-                desiccant: Desiccant::Unset,
-                ..status
-            }))),
+            entry(&response(Outcome::Status(with_feeder(|feeder| {
+                feeder.desiccant = Desiccant::Unset;
+            })))),
             feeder,
         ),
         (
@@ -1062,34 +985,42 @@ fn messages() -> Vec<Fixture> {
             }),
             |b| decode::<EventBody>(b).is_ok(),
         ),
-        ("op-get-call", entry(&request(Op::GetCall)), client),
+        (
+            "op-get-call",
+            entry(&request(Op::Feeder(FeederOp::GetCall))),
+            client,
+        ),
         (
             "op-start-call",
-            entry(&request(Op::StartCall {
+            entry(&request(Op::Feeder(FeederOp::StartCall {
                 bytes: 4_000,
                 crc: 0x1234_5678,
-            })),
+            }))),
             client,
         ),
         (
             "op-call-chunk",
-            entry(&request(Op::CallChunk {
+            entry(&request(Op::Feeder(FeederOp::CallChunk {
                 offset: 512,
                 data: &[1, 2, 3],
-            })),
+            }))),
             client,
         ),
-        ("op-delete-call", entry(&request(Op::DeleteCall)), client),
+        (
+            "op-delete-call",
+            entry(&request(Op::Feeder(FeederOp::DeleteCall))),
+            client,
+        ),
         (
             "outcome-call",
-            entry(&response(Outcome::Call(CallView {
+            entry(&response(Outcome::Feeder(FeederOutcome::Call(CallView {
                 writable: true,
                 clip: CallClip::Receiving {
                     bytes: 4_000,
                     crc: 0x1234_5678,
                     received: 512,
                 },
-            }))),
+            })))),
             feeder,
         ),
         (
@@ -1127,7 +1058,11 @@ fn messages() -> Vec<Fixture> {
             }),
             |b| decode::<EventBody>(b).is_ok(),
         ),
-        ("op-play-call", entry(&request(Op::PlayCall)), client),
+        (
+            "op-play-call",
+            entry(&request(Op::Feeder(FeederOp::PlayCall))),
+            client,
+        ),
     ]
 }
 

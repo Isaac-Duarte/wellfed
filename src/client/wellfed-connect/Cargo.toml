@@ -18,3 +18,7 @@ tokio = { workspace = true, features = ["io-util", "net", "time"] }
 
 [lints]
 workspace = true
+
+# The session test runs a client against a fake device on a runtime.
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt"] }

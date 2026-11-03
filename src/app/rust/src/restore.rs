@@ -81,9 +81,6 @@ pub const fn stop_of(error: &Error) -> RestoreStop {
         Error::RestoreEnroll(EnrollError::NotOwner { .. } | EnrollError::Forbidden) => {
             RestoreStop::NotOwner
         }
-        Error::RestoreEnroll(EnrollError::NoUpdates) | Error::RestoreNoUpdates => {
-            RestoreStop::NoUpdates
-        }
         Error::RestoreEnroll(_) => RestoreStop::KeyRefused,
         Error::Connection(_) | Error::RestoreNotFound | Error::NotAnswering { .. } => {
             RestoreStop::NotAnswering

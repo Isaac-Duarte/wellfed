@@ -783,7 +783,8 @@ fn a_reset_hold_during_a_feed_is_refused() {
             }
         }
         sim.control(wellfed_feeder_sim::serve::Control::StallFeeds(false));
-        assert!(status(&mut sim, &mut owner).await.readiness.is_some());
+        // The session still answers.
+        status(&mut sim, &mut owner).await;
         sim.stop().await;
     });
 }
@@ -1100,7 +1101,7 @@ fn an_owner_reads_the_statistics_and_their_live_metrics() {
     paused(async {
         let mut sim = Running::start(&Flash::memory(), true).await;
         let mut owner = sim.open(OWNER).await.unwrap();
-        assert!(owner.capabilities().stats);
+        assert_eq!(owner.model(), wellfed_model::Model::Plaf103);
 
         for section in StatsSection::ALL {
             let answer = sim.ask(&mut owner, &Op::Stats { section }).await;
@@ -1172,7 +1173,7 @@ fn an_owner_stores_the_portion_weight_and_only_the_verified_bowl() {
         let flash = Flash::file(&path).unwrap();
         let mut sim = Running::start(&flash, true).await;
         let mut owner = sim.open(OWNER).await.unwrap();
-        assert!(owner.capabilities().calibration);
+        assert_eq!(owner.model(), wellfed_model::Model::Plaf103);
 
         let before = calibration(&mut sim, &mut owner).await;
         assert_eq!(before.generation, Generation(0));
@@ -1248,7 +1249,7 @@ fn a_member_edits_the_plans_against_the_generation_it_read() {
         let flash = Flash::file(&path).unwrap();
         let mut sim = Running::start(&flash, true).await;
         let mut owner = sim.open(OWNER).await.unwrap();
-        assert!(owner.capabilities().plans);
+        assert_eq!(owner.model(), wellfed_model::Model::Plaf103);
         let mut member = sim.join_member(&mut owner).await;
 
         let empty = plans(&mut sim, &mut member).await;
@@ -1328,7 +1329,7 @@ fn the_desiccant_reminder_counts_from_its_reset_across_a_restart() {
         let flash = Flash::file(&path).unwrap();
         let mut sim = Running::start(&flash, true).await;
         let mut owner = sim.open(OWNER).await.unwrap();
-        assert!(owner.capabilities().desiccant);
+        assert_eq!(owner.model(), wellfed_model::Model::Plaf103);
         assert_eq!(
             status(&mut sim, &mut owner).await.desiccant,
             Desiccant::Unset

@@ -64,7 +64,7 @@ async fn next_fed(connection: &mut Connection) -> EventBody {
     }
 }
 
-async fn readiness(connection: &mut Connection, id: u8) -> Option<Readiness> {
+async fn readiness(connection: &mut Connection, id: u8) -> Readiness {
     match connection.ask([id; 16], &Op::Status).await.unwrap() {
         Answer::Status(status) => status.readiness,
         other => panic!("{other:?}"),
@@ -102,7 +102,7 @@ fn a_feed_is_numbered_by_the_journal_and_ends_in_its_fed_event() {
             FoodLevel::Present,
             "the simulator's hopper starts full"
         );
-        assert_eq!(readiness(&mut owner, 3).await, Some(Readiness::Ready));
+        assert_eq!(readiness(&mut owner, 3).await, Readiness::Ready);
 
         let next = owner.ask([4; 16], &Op::Feed { portions: 1 }).await.unwrap();
         assert_eq!(next, Answer::Feeding { feed: 2 });
@@ -265,7 +265,7 @@ fn a_restart_mid_feed_resolves_it_as_uncertain_under_its_own_number() {
         assert_eq!(answer, Answer::Feeding { feed: 1 });
         assert_eq!(
             readiness(&mut owner, 2).await,
-            Some(Readiness::Blocked(Blocked::Feeding))
+            Readiness::Blocked(Blocked::Feeding)
         );
 
         sim.control(Control::Reboot);
@@ -523,7 +523,7 @@ fn a_feed_behind_a_write_is_answered_once_it_runs_and_the_loop_serves_meanwhile(
             // a change that would queue a write behind it is refused too.
             assert_eq!(
                 readiness(&mut other, 2).await,
-                Some(Readiness::Blocked(Blocked::Feeding))
+                Readiness::Blocked(Blocked::Feeding)
             );
             let second = other.ask([3; 16], &Op::Feed { portions: 1 }).await.unwrap();
             assert_eq!(second, Answer::Refused(Refusal::Busy));
@@ -574,7 +574,7 @@ fn a_feed_past_its_claim_s_deadline_is_refused_and_its_id_stays_refused() {
         assert_eq!(answer, Answer::Refused(Refusal::Busy));
         assert!(begun.elapsed() >= Duration::from_millis(2_900), "its wait");
         assert_eq!(feeding::reserved(&flash), Some(0), "nothing reserved");
-        assert_eq!(readiness(&mut owner, 2).await, Some(Readiness::Ready));
+        assert_eq!(readiness(&mut owner, 2).await, Readiness::Ready);
         sim.control(Control::HoldWrite(false));
 
         // The next feed takes the number the refused one was given.
@@ -677,7 +677,7 @@ fn a_cancel_of_a_feed_waiting_for_its_claim_is_not_found_and_the_feed_runs() {
         };
         assert_eq!((feed, completed, outcome), (1, 2, FeedOutcome::Done));
         assert_eq!(feeding::reserved(&flash), Some(1), "one feed");
-        assert_eq!(readiness(&mut other, 3).await, Some(Readiness::Ready));
+        assert_eq!(readiness(&mut other, 3).await, Readiness::Ready);
         sim.stop().await;
     });
 }

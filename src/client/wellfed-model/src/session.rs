@@ -1,123 +1,23 @@
-//! Opening a session: what a client claims, what the feeder answers, and
-//! how an invite redemption ends.
+//! Opening a session: what a client says, what the device answers, and
+//! how an invite redemption ends. The device's welcome names its kind and
+//! model ([`DeviceKind`], [`Model`]), which say what it serves.
 
 use serde::{Deserialize, Serialize};
 
 use crate::{ClientRole, Refusal};
-
-/// The features a session runs on, beyond what major version 1 first
-/// defined. Each is one bit on the wire; a session runs on the ones both
-/// sides claim, so a client adapts to whatever feeder it meets, however
-/// old.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Capabilities {
-    /// Feeding: the `Feed` and `CancelFeed` ops, the `Feeding` answer and
-    /// `Fed` events.
-    pub feed: bool,
-    /// Updates: the update ops, the `Update` answer and refusals.
-    pub update: bool,
-    /// The time settings and the clock's state: `GetTime`, `PutTime` and
-    /// the `Time` answer.
-    pub time: bool,
-    /// The debug log: the `TailLog` op and the log batches it starts.
-    pub log: bool,
-    /// Statistics: the `Stats` op and answer, and the live samples beyond
-    /// power and signal.
-    pub stats: bool,
-    /// Feeding readiness: [`crate::Status::readiness`] and the
-    /// `FeedingBlocked` events.
-    pub readiness: bool,
-    /// Per-feed traces: the `FeedTrace` op and the statistics' feeds
-    /// section. Shared only with the statistics: the wire needs both bits.
-    pub traces: bool,
-    /// Portion calibration: `GetCalibration`, `PutCalibration`, the
-    /// `Calibration` answer and the portions statistics.
-    pub calibration: bool,
-    /// The supply judged: the `Supply` sample and event, and readiness's
-    /// `Battery` reason.
-    pub power: bool,
-    /// The stock backup: the `ReadBank1` op and the `Bank1` answer, which
-    /// only the bank-0 recovery role serves.
-    pub backup: bool,
-    /// Feeding plans: `GetPlans`, `PutPlans`, the `Plans` answer, and the
-    /// `Plans` and `Missed` events.
-    pub plans: bool,
-    /// The desiccant reminder's `ResetDesiccant` op and the `NoClock`
-    /// refusal.
-    pub desiccant: bool,
-    /// The meal call: `GetCall`, `StartCall`, `CallChunk`, `DeleteCall`,
-    /// `PlayCall` and the `Call` answer.
-    pub call: bool,
-}
-
-impl Capabilities {
-    /// Version 1 as first defined: none of the later features.
-    pub const V1: Self = Self {
-        feed: false,
-        update: false,
-        time: false,
-        log: false,
-        stats: false,
-        readiness: false,
-        traces: false,
-        calibration: false,
-        power: false,
-        backup: false,
-        plans: false,
-        desiccant: false,
-        call: false,
-    };
-    /// Every feature this crate knows: what a current client claims.
-    pub const KNOWN: Self = Self {
-        feed: true,
-        update: true,
-        time: true,
-        log: true,
-        stats: true,
-        readiness: true,
-        traces: true,
-        calibration: true,
-        power: true,
-        backup: true,
-        plans: true,
-        desiccant: true,
-        call: true,
-    };
-
-    /// The features both `self` and `other` claim.
-    #[must_use]
-    pub const fn both(self, other: Self) -> Self {
-        Self {
-            feed: self.feed && other.feed,
-            update: self.update && other.update,
-            time: self.time && other.time,
-            log: self.log && other.log,
-            stats: self.stats && other.stats,
-            readiness: self.readiness && other.readiness,
-            traces: self.traces && other.traces,
-            calibration: self.calibration && other.calibration,
-            power: self.power && other.power,
-            backup: self.backup && other.backup,
-            plans: self.plans && other.plans,
-            desiccant: self.desiccant && other.desiccant,
-            call: self.call && other.call,
-        }
-    }
-}
+pub use wellfed_proto::device::{DeviceKind, Model};
 
 /// What a client says about itself when it opens a session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Hello {
     /// The protocol's major version.
     pub major: u16,
-    pub capabilities: Capabilities,
 }
 
 impl Hello {
-    /// This crate's protocol, claiming every feature it knows.
+    /// This crate's protocol.
     pub const CURRENT: Self = Self {
         major: wellfed_proto::api::PROTOCOL_MAJOR,
-        capabilities: Capabilities::KNOWN,
     };
 }
 

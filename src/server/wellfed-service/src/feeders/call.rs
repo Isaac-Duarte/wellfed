@@ -38,7 +38,7 @@ impl Service {
     /// The stored clip, or the upload under way, read from the feeder.
     pub async fn call(&self, id: FeederId) -> Result<CallView> {
         self.row(id).await?;
-        self.serves(id, |c| c.call)?;
+        self.serves(id, &Op::GetCall)?;
         match self.ask(id, self.request_id()?, Op::GetCall).await? {
             Answer::Call(view) => Ok(view),
             other => Err(refused(&other)),
@@ -61,7 +61,8 @@ impl Service {
     ) -> Result<CallView> {
         let clip = Clip::from_stream(stream).map_err(|_| Invalid::CallLength)?;
         self.live_row(id).await?;
-        self.serves(id, |c| c.call)?;
+        // Every meal call op is the feeder module's, as reading it is.
+        self.serves(id, &Op::GetCall)?;
         // The long lane is the install's until it ends.
         if self.running_on(id).is_some() {
             return Err(InstallError::Running.into());
@@ -137,7 +138,8 @@ impl Service {
         key: Option<IdempotencyKey>,
     ) -> Result<()> {
         self.live_row(id).await?;
-        self.serves(id, |c| c.call)?;
+        // Every meal call op is the feeder module's, as reading it is.
+        self.serves(id, &Op::GetCall)?;
 
         let recorded = self
             .journaled(Write {

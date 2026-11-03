@@ -7,17 +7,18 @@
 
 use jiff::Timestamp;
 use wellfed_proto::api as proto;
+use wellfed_proto::device::DeviceKind;
 use wellfed_proto::setup as proto_setup;
 
 use crate::{
     Answer, Bank1Page, Battery, Blocked, Bowl, Calibration, CalibrationView, CallClip, CallView,
-    Capabilities, Client, ClientRole, Counters, Counts, Desiccant, EnrollPath, Erases, Event,
-    EventBody, FeedFault, FeedOutcome, FeedReason, Flash, Food, FoodLevel, Generation, Hello, Hex,
-    Invite, Joined, LogLines, MealReminder, Memory, MissedReason, NtpResult, NtpServer, Op,
-    OpenRefusal, Phase, Plan, Plans, Portions, Power, PowerStats, Readiness, Refusal, ResetCause,
-    Resets, Sample, SampleValue, Settings, SettingsPatch, Source, Stats, StatsSection, Status,
-    Supply, TaskStack, TimeSource, TimeSync, TimeView, Tune, UpdatePhase, UpdateRefusal,
-    UpdateStop, UpdateView, Weekdays, WifiSource, Window, setup,
+    Client, ClientRole, Counters, Counts, Desiccant, EnrollPath, Erases, Event, EventBody,
+    FeedFault, FeedOutcome, FeedReason, Flash, Food, FoodLevel, Generation, Hello, Hex, Invite,
+    Joined, LogLines, MealReminder, Memory, MissedReason, NtpResult, NtpServer, Op, OpenRefusal,
+    Phase, Plan, Plans, Portions, Power, PowerStats, Readiness, Refusal, ResetCause, Resets,
+    Sample, SampleValue, Settings, SettingsPatch, Source, Stats, StatsSection, Status, Supply,
+    TaskStack, TimeSource, TimeSync, TimeView, Tune, UpdatePhase, UpdateRefusal, UpdateStop,
+    UpdateView, Weekdays, WifiSource, Window, setup,
 };
 use crate::{
     CurrentUnit, FeedStats, Malformed, Trace, TraceEntry, TraceMotor, TracePage, TraceSummary,
@@ -64,15 +65,20 @@ impl From<proto::Status<'_>> for Status {
             dns_losses,
             clock_ms,
             power,
-            locked,
-            settings_generation,
             wifi_generation,
             last_event,
             sessions,
-            desiccant,
+            device,
+        } = status;
+        let proto::DeviceStatus::Feeder(proto::FeederStatus {
+            locked,
+            settings_generation,
             food,
             feed_fault,
-        } = status;
+            desiccant,
+            readiness,
+            supply,
+        }) = device;
         Self {
             build: build.to_owned(),
             bank,
@@ -101,9 +107,9 @@ impl From<proto::Status<'_>> for Status {
                 outcome: fault.outcome.into(),
                 reason: fault.reason.into(),
             }),
-            readiness: None,
+            readiness: readiness.into(),
             desiccant: desiccant.into(),
-            supply: None,
+            supply: supply.into(),
         }
     }
 }
@@ -816,7 +822,9 @@ impl From<proto::Outcome<'_>> for Answer {
                 generation: generation.map(Generation),
             },
             proto::Outcome::Status(status) => Self::Status(status.into()),
-            proto::Outcome::Settings(settings) => Self::Settings(settings.into()),
+            proto::Outcome::Feeder(proto::FeederOutcome::Settings(settings)) => {
+                Self::Settings(settings.into())
+            }
             proto::Outcome::Clients(proto::Clients { clients }) => Self::Clients(
                 clients
                     .iter()
@@ -846,21 +854,18 @@ impl From<proto::Outcome<'_>> for Answer {
                 seconds,
             }),
             proto::Outcome::Refused(refusal) => Self::Refused(refusal.into()),
-            proto::Outcome::Feeding { feed } => Self::Feeding { feed },
+            proto::Outcome::Feeder(proto::FeederOutcome::Feeding { feed }) => {
+                Self::Feeding { feed }
+            }
             proto::Outcome::Update(view) => Self::Update(view.into()),
-            proto::Outcome::FeederStatus {
-                status,
-                readiness,
-                supply,
-            } => Self::Status(Status {
-                readiness: Some(readiness.into()),
-                supply: supply.map(Into::into),
-                ..status.into()
-            }),
             proto::Outcome::Time(view) => Self::Time(view.into()),
             proto::Outcome::Stats(stats) => Self::Stats(stats.into()),
-            proto::Outcome::FeedTrace(page) => Self::FeedTrace(page.into()),
-            proto::Outcome::Calibration(view) => Self::Calibration(view.into()),
+            proto::Outcome::Feeder(proto::FeederOutcome::FeedTrace(page)) => {
+                Self::FeedTrace(page.into())
+            }
+            proto::Outcome::Feeder(proto::FeederOutcome::Calibration(view)) => {
+                Self::Calibration(view.into())
+            }
             proto::Outcome::Bank1(proto::Bank1Page {
                 offset,
                 total,
@@ -870,16 +875,16 @@ impl From<proto::Outcome<'_>> for Answer {
                 total,
                 bytes: bytes.to_vec(),
             }),
-            proto::Outcome::Plans(proto::Plans {
+            proto::Outcome::Feeder(proto::FeederOutcome::Plans(proto::Plans {
                 generation,
                 writable,
                 plans,
-            }) => Self::Plans(Plans {
+            })) => Self::Plans(Plans {
                 generation: Generation(generation),
                 writable,
                 plans: plans.map(|plan| plan.map(Into::into)),
             }),
-            proto::Outcome::Call(view) => Self::Call(view.into()),
+            proto::Outcome::Feeder(proto::FeederOutcome::Call(view)) => Self::Call(view.into()),
         }
     }
 }
@@ -1428,15 +1433,48 @@ impl From<proto::Refusal> for Refusal {
 }
 
 impl Op {
+    /// The kind of device whose module serves the op, `None` for the
+    /// shared core every kind serves: what its wire form says, so the two
+    /// cannot disagree. Another kind refuses it `Unavailable`.
+    pub fn kind(&self) -> Option<DeviceKind> {
+        // A section of the shared statistics op may still be one kind's.
+        if let Self::Stats { section } = self {
+            return section.kind();
+        }
+        match self.to_proto() {
+            proto::Op::Feeder(_) => Some(DeviceKind::Feeder),
+            proto::Op::Status
+            | proto::Op::PutWifi { .. }
+            | proto::Op::TimeSync(_)
+            | proto::Op::CreateInvite { .. }
+            | proto::Op::ListClients
+            | proto::Op::RevokeClient { .. }
+            | proto::Op::Reboot
+            | proto::Op::OfferUpdate { .. }
+            | proto::Op::UpdateChunk { .. }
+            | proto::Op::UpdateState
+            | proto::Op::CancelUpdate
+            | proto::Op::EnrollUpdateKey { .. }
+            | proto::Op::UpdateKeyStatement { .. }
+            | proto::Op::GetTime
+            | proto::Op::PutTime { .. }
+            | proto::Op::TailLog { .. }
+            | proto::Op::Stats { .. }
+            | proto::Op::ReadBank1 { .. } => None,
+        }
+    }
+
     /// The wire form, borrowing this op's strings.
     pub fn to_proto(&self) -> proto::Op<'_> {
         match self {
             Self::Status => proto::Op::Status,
-            Self::GetSettings => proto::Op::GetSettings,
-            Self::PutSettings { base, changes } => proto::Op::PutSettings {
-                base: base.0,
-                changes: (*changes).into(),
-            },
+            Self::GetSettings => proto::Op::Feeder(proto::FeederOp::GetSettings),
+            Self::PutSettings { base, changes } => {
+                proto::Op::Feeder(proto::FeederOp::PutSettings {
+                    base: base.0,
+                    changes: (*changes).into(),
+                })
+            }
             Self::PutWifi { base, wifi } => proto::Op::PutWifi {
                 base: base.0,
                 wifi: wifi.as_ref().map(|wifi| proto::Wifi {
@@ -1444,21 +1482,25 @@ impl Op {
                     psk: &wifi.psk,
                 }),
             },
-            Self::SetLock { locked } => proto::Op::SetLock { locked: *locked },
-            Self::Play { tune } => proto::Op::Play {
+            Self::SetLock { locked } => {
+                proto::Op::Feeder(proto::FeederOp::SetLock { locked: *locked })
+            }
+            Self::Play { tune } => proto::Op::Feeder(proto::FeederOp::Play {
                 tune: (*tune).into(),
-            },
+            }),
             Self::TimeSync(sync) => proto::Op::TimeSync((*sync).into()),
             Self::CreateInvite { role } => proto::Op::CreateInvite {
                 role: (*role).into(),
             },
             Self::ListClients => proto::Op::ListClients,
             Self::RevokeClient { key } => proto::Op::RevokeClient { key: *key },
-            Self::Feed { portions } => proto::Op::Feed {
+            Self::Feed { portions } => proto::Op::Feeder(proto::FeederOp::Feed {
                 portions: *portions,
-            },
+            }),
             Self::Reboot => proto::Op::Reboot,
-            Self::CancelFeed { feed } => proto::Op::CancelFeed { feed: *feed },
+            Self::CancelFeed { feed } => {
+                proto::Op::Feeder(proto::FeederOp::CancelFeed { feed: *feed })
+            }
             Self::OfferUpdate {
                 manifest,
                 downgrade,
@@ -1486,33 +1528,35 @@ impl Op {
             Self::Stats { section } => proto::Op::Stats {
                 section: (*section).into(),
             },
-            Self::FeedTrace { feed, offset } => proto::Op::FeedTrace {
+            Self::FeedTrace { feed, offset } => proto::Op::Feeder(proto::FeederOp::FeedTrace {
                 feed: *feed,
                 offset: *offset,
-            },
-            Self::GetCalibration => proto::Op::GetCalibration,
-            Self::PutCalibration { base, calibration } => proto::Op::PutCalibration {
-                base: base.0,
-                calibration: (*calibration).into(),
-            },
+            }),
+            Self::GetCalibration => proto::Op::Feeder(proto::FeederOp::GetCalibration),
+            Self::PutCalibration { base, calibration } => {
+                proto::Op::Feeder(proto::FeederOp::PutCalibration {
+                    base: base.0,
+                    calibration: (*calibration).into(),
+                })
+            }
             Self::ReadBank1 { offset } => proto::Op::ReadBank1 { offset: *offset },
-            Self::GetPlans => proto::Op::GetPlans,
-            Self::PutPlans { base, plans } => proto::Op::PutPlans {
+            Self::GetPlans => proto::Op::Feeder(proto::FeederOp::GetPlans),
+            Self::PutPlans { base, plans } => proto::Op::Feeder(proto::FeederOp::PutPlans {
                 base: base.0,
                 plans: plans.map(|plan| plan.map(Into::into)),
-            },
-            Self::ResetDesiccant => proto::Op::ResetDesiccant,
-            Self::GetCall => proto::Op::GetCall,
-            Self::StartCall { bytes, crc } => proto::Op::StartCall {
+            }),
+            Self::ResetDesiccant => proto::Op::Feeder(proto::FeederOp::ResetDesiccant),
+            Self::GetCall => proto::Op::Feeder(proto::FeederOp::GetCall),
+            Self::StartCall { bytes, crc } => proto::Op::Feeder(proto::FeederOp::StartCall {
                 bytes: *bytes,
                 crc: *crc,
-            },
-            Self::CallChunk { offset, data } => proto::Op::CallChunk {
+            }),
+            Self::CallChunk { offset, data } => proto::Op::Feeder(proto::FeederOp::CallChunk {
                 offset: *offset,
                 data,
-            },
-            Self::DeleteCall => proto::Op::DeleteCall,
-            Self::PlayCall => proto::Op::PlayCall,
+            }),
+            Self::DeleteCall => proto::Op::Feeder(proto::FeederOp::DeleteCall),
+            Self::PlayCall => proto::Op::Feeder(proto::FeederOp::PlayCall),
         }
     }
 }
@@ -1570,97 +1614,10 @@ impl From<TimeSync> for proto::TimeSync {
     }
 }
 
-impl From<proto::Capabilities> for Capabilities {
-    fn from(bits: proto::Capabilities) -> Self {
-        Self {
-            feed: bits.contains(proto::Capabilities::FEED),
-            update: bits.contains(proto::Capabilities::UPDATE),
-            time: bits.contains(proto::Capabilities::TIME),
-            log: bits.contains(proto::Capabilities::LOG),
-            stats: bits.contains(proto::Capabilities::STATS),
-            readiness: bits.contains(proto::Capabilities::READINESS),
-            traces: bits.contains(proto::Capabilities::TRACES),
-            calibration: bits.contains(proto::Capabilities::CALIBRATION),
-            power: bits.contains(proto::Capabilities::POWER),
-            backup: bits.contains(proto::Capabilities::BACKUP),
-            plans: bits.contains(proto::Capabilities::PLANS),
-            desiccant: bits.contains(proto::Capabilities::DESICCANT),
-            call: bits.contains(proto::Capabilities::CALL),
-        }
-    }
-}
-
-impl From<Capabilities> for proto::Capabilities {
-    fn from(capabilities: Capabilities) -> Self {
-        let Capabilities {
-            feed,
-            update,
-            time,
-            log,
-            stats,
-            readiness,
-            traces,
-            calibration,
-            power,
-            backup,
-            plans,
-            desiccant,
-            call,
-        } = capabilities;
-        let mut bits = proto::Capabilities::V1.0;
-        if feed {
-            bits |= proto::Capabilities::FEED.0;
-        }
-        if update {
-            bits |= proto::Capabilities::UPDATE.0;
-        }
-        if time {
-            bits |= proto::Capabilities::TIME.0;
-        }
-        if log {
-            bits |= proto::Capabilities::LOG.0;
-        }
-        if stats {
-            bits |= proto::Capabilities::STATS.0;
-        }
-        if readiness {
-            bits |= proto::Capabilities::READINESS.0;
-        }
-        if traces {
-            bits |= proto::Capabilities::TRACES.0;
-        }
-        if calibration {
-            bits |= proto::Capabilities::CALIBRATION.0;
-        }
-        if power {
-            bits |= proto::Capabilities::POWER.0;
-        }
-        if backup {
-            bits |= proto::Capabilities::BACKUP.0;
-        }
-        if plans {
-            bits |= proto::Capabilities::PLANS.0;
-        }
-        if desiccant {
-            bits |= proto::Capabilities::DESICCANT.0;
-        }
-        if call {
-            bits |= proto::Capabilities::CALL.0;
-        }
-        Self(bits)
-    }
-}
-
 impl From<Hello> for proto::Hello {
     fn from(hello: Hello) -> Self {
-        let Hello {
-            major,
-            capabilities,
-        } = hello;
-        Self {
-            major,
-            capabilities: capabilities.into(),
-        }
+        let Hello { major } = hello;
+        Self { major }
     }
 }
 
@@ -1865,14 +1822,22 @@ mod tests {
             dns_losses: 0,
             clock_ms: Some(u64::MAX),
             power: None,
-            locked: None,
-            settings_generation: 0,
             wifi_generation: 0,
             last_event: None,
             sessions: 1,
-            desiccant: proto::Desiccant::Unknown,
-            food: proto::FoodLevel::Unread,
-            feed_fault: None,
+            device: proto::DeviceStatus::Feeder(proto::FeederStatus {
+                locked: None,
+                settings_generation: 0,
+                desiccant: proto::Desiccant::Unknown,
+                food: proto::FoodLevel::Unread,
+                feed_fault: None,
+                readiness: proto::Readiness::Ready,
+                supply: proto::Supply {
+                    adapter: None,
+                    battery: proto::Battery::Unread,
+                    below_floor: None,
+                },
+            }),
         };
         assert_eq!(Status::from(status).clock, None);
     }
@@ -1972,19 +1937,6 @@ mod tests {
         let json = serde_json::to_value(&view).unwrap();
         assert_eq!(json["phase"], "receiving");
         assert_eq!(json["digest"], "ab".repeat(32));
-    }
-
-    #[test]
-    fn capabilities_keep_their_bits_and_a_session_runs_on_both_sides() {
-        for capabilities in [Capabilities::V1, Capabilities::KNOWN] {
-            let bits = proto::Capabilities::from(capabilities);
-            assert_eq!(Capabilities::from(bits), capabilities);
-        }
-        assert_eq!(
-            proto::Capabilities::from(Capabilities::KNOWN),
-            proto::Capabilities::KNOWN
-        );
-        assert_eq!(Capabilities::KNOWN.both(Capabilities::V1), Capabilities::V1);
     }
 
     #[test]

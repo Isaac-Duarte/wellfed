@@ -182,10 +182,6 @@ async fn open(shared: &Shared, target: &Target) -> Result<Connection, LogError> 
         target.address.as_deref(),
     )
     .await?;
-    if !connection.capabilities().log {
-        return Err(LogError::Refused(wellfed_model::Refusal::Unavailable));
-    }
-
     let request = shared.random().map_err(crate::ConnectError::from)?;
     match connection.ask(request, &Op::TailLog { after: None }).await {
         Ok(Answer::Done { .. }) => Ok(connection),

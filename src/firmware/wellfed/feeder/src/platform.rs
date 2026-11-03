@@ -39,7 +39,8 @@ use wellfed_feeder::store::events::{BODY_BYTES, Read};
 use wellfed_feeder_runtime::{
     calibration, call, events, keys, network, plans, stats, time, traces,
 };
-use wellfed_proto::api::{Capabilities, Counts, Erases, FLASH_SECTORS, Power, Refusal, TASKS_MAX};
+use wellfed_proto::api::{Counts, Erases, FLASH_SECTORS, Power, Refusal, TASKS_MAX};
+use wellfed_proto::device::Model;
 use wellfed_proto::trace::PAGE_MAX;
 use wellfed_sdk::hal::audio::{self, Speaker};
 use wellfed_sdk::hal::ble::{self, BleSetup, DropReason};
@@ -163,25 +164,8 @@ impl Platform for Plaf103 {
         boot_facts()
     }
 
-    /// The log ships in release images: an owner's feeder has no UART
-    /// wired, so the tail is the only way to see what it logged, and
-    /// keeping the bit costs only the tail's RAM ([device API]).
-    ///
-    /// [device API]: ../../../../../docs/firmware/device-api.md#debug-log
-    fn capabilities(&self) -> Capabilities {
-        Capabilities::FEED
-            .union(Capabilities::UPDATE)
-            .union(Capabilities::TIME)
-            .union(Capabilities::LOG)
-            .union(Capabilities::STATS)
-            .union(Capabilities::READINESS)
-            .union(Capabilities::TRACES)
-            .union(Capabilities::CALIBRATION)
-            .union(Capabilities::POWER)
-            .union(Capabilities::BACKUP)
-            .union(Capabilities::PLANS)
-            .union(Capabilities::DESICCANT)
-            .union(Capabilities::CALL)
+    fn model(&self) -> Model {
+        Model::Plaf103
     }
 
     fn build_wifi(&self) -> BuildWifi {

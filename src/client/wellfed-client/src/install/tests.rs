@@ -699,17 +699,13 @@ fn a_refused_enrollment_ends_the_run_before_any_promotion() {
 #[test]
 fn an_already_enrolled_key_is_skipped() {
     use crate::update_key::{Enroll, Next};
-    use wellfed_model::{Answer, Capabilities, Op};
+    use wellfed_model::{Answer, Op};
 
     let mut install = consumer_on_bank0(0);
     let Step::EnrollKey(key) = install.step() else {
         panic!("the enrollment comes after the bank-0 status");
     };
-    let owner = Capabilities {
-        update: true,
-        ..Capabilities::default()
-    };
-    let mut enroll = Enroll::new(key, "installer", ClientRole::Owner, owner).unwrap();
+    let mut enroll = Enroll::new(key, "installer", ClientRole::Owner).unwrap();
     assert_eq!(enroll.poll(), Next::Send(Op::ListClients));
     enroll.answer(&Answer::Clients(vec![client(
         key,

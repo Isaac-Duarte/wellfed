@@ -16,7 +16,7 @@ A few constraints shape everything below:
 
 ## Updates over the device API
 
-Offers, downloads and key changes go over the [device API](device-api.md), behind `Capabilities::UPDATE`. Both banks run the `feeder` build, and both start the firmware, the settings writer and the update stage (`wellfed_hal::ota::update`) in the service task. The bank decides only what the update stage does with an offer:
+Offers, downloads and key changes go over the [device API](device-api.md)'s shared core, owner sessions only. Both banks run the `feeder` build, and both start the firmware, the settings writer and the update stage (`wellfed_hal::ota::update`) in the service task. The bank decides only what the update stage does with an offer:
 
 | Bank | What it does with an offer |
 | --- | --- |

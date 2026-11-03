@@ -1,18 +1,20 @@
-//! The device protocol's messages ([API design]): what the feeder and its
+//! The device protocol's messages ([API design]): what a device and its
 //! clients say to each other once a Noise session carries their bytes.
 //!
-//! Messages are postcard-encoded serde types, so the feeder (no allocation),
+//! Messages are postcard-encoded serde types, so the device (no allocation),
 //! the host client and the app's generated bindings read one definition.
 //! Nothing here does IO or cryptography: the caller seals and opens the bytes.
 //! The BLE setup exchange ([`setup`]) and the device API ([`api`])
 //! share `wellfed_session::frame`'s length-prefixed frames.
 //! A feed's trace body ([`trace`]) is a compact format of its own,
 //! carried in the device API's pages and kept in the feeder's storage.
+//! What a device is, its kind and model ([`device`]), opens every session.
 //!
 //! [API design]: ../../../../docs/firmware/device-api.md
 #![no_std]
 
 pub mod api;
+pub mod device;
 pub mod setup;
 pub mod trace;
 

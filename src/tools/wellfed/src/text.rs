@@ -73,11 +73,7 @@ pub(crate) fn status(status: &Status, zone: &TimeZone) -> String {
         Some(false) => "unlocked",
         None => "not reported",
     };
-    let power = match (status.supply, status.power) {
-        (Some(supply), _) => self::supply(supply),
-        (None, Some(power)) => self::power(power),
-        (None, None) => "not reported".to_owned(),
-    };
+    let power = self::supply(status.supply);
 
     let mut text = format!(
         "Build {} on bank {}, boot {}, up {}\n\
@@ -121,13 +117,12 @@ pub(crate) fn status(status: &Status, zone: &TimeZone) -> String {
 }
 
 /// Whether a feed can start now, and if not why.
-fn readiness(readiness: Option<Readiness>) -> String {
+fn readiness(readiness: Readiness) -> String {
     match readiness {
-        Some(Readiness::Ready) => "ready".to_owned(),
-        Some(Readiness::Blocked(reason)) => {
+        Readiness::Ready => "ready".to_owned(),
+        Readiness::Blocked(reason) => {
             format!("blocked, {} ({})", reason.code(), blocked(reason))
         }
-        None => "not reported".to_owned(),
     }
 }
 
@@ -501,19 +496,19 @@ mod tests {
                 outcome: FeedOutcome::Uncertain,
                 reason: FeedReason::Interrupted,
             }),
-            readiness: Some(Readiness::Blocked(Blocked::Restarting)),
+            readiness: Readiness::Blocked(Blocked::Restarting),
             desiccant: Desiccant::Remaining {
                 days: -3,
                 due: true,
             },
-            supply: Some(Supply {
+            supply: Supply {
                 adapter: Some(false),
                 battery: Battery::Reading {
                     mv: 4_310,
                     percent: 10,
                 },
                 below_floor: Some(true),
-            }),
+            },
         }
     }
 
@@ -538,18 +533,14 @@ mod tests {
     }
 
     #[test]
-    fn a_status_without_a_fault_or_supply_says_so() {
+    fn a_status_without_a_fault_says_so() {
         let mut quiet = status();
         quiet.feed_fault = None;
-        quiet.supply = None;
-        quiet.readiness = None;
         quiet.clock = Some(Timestamp::from_second(1_793_100_000).unwrap());
 
         let text = super::status(&quiet, &TimeZone::UTC);
 
         assert!(!text.contains("Last fault"), "{text}");
-        assert!(text.contains("Power: not reported"), "{text}");
-        assert!(text.contains("Feeding: not reported"), "{text}");
         assert!(text.contains("Clock: 2026-10-27 11:20:00 +00:00"), "{text}");
     }
 

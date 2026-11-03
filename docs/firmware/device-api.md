@@ -17,7 +17,7 @@ The server inside the firmware is sans-IO: `wellfed_device_api::Server` never to
 - **Opening.** A connection's first frame is a clear `Open`: `Session`, `Invite { id }` or `Recovery`. It only chooses the handshake; tampering with it makes the handshake fail.
 - **Why Noise IK.** An enrolled client already knows the feeder's key, and sends its own encrypted in the first message. So the feeder learns which client is connecting without trying each enrolled key. KK would need up to 8 DH operations per first message, over the loop's 80 ms budget. IK is one round trip, mutually authenticated, with no identity in the clear.
 - **Other handshakes.** An invite is redeemed with **XXpsk3** and the invite's secret. The recovery window runs the setup exchange (XX and the code proof) over the stream. Both sides run `wellfed-session::noise`, checked byte for byte against `snow`.
-- **Hello.** IK's first payload is a `Hello` (`protocol_major`, capabilities). The second is a `Welcome` (major, capabilities, build identity, the client's role, the event history's epoch), or a typed refusal: unknown key, unsupported version, or no free slot. So the app can say "update the app" or "update the feeder". The event cursor travels in `Subscribe`, not the hello, and the client sends it only when it counts in the welcome's epoch.
+- **Hello.** IK's first payload is a `Hello` (`protocol_major`). The second is a `Welcome` (major, the device's model, build identity, the client's role, the event history's epoch), or a typed refusal: unknown key, unsupported version, or no free slot. So the app can say "update the app" or "update the feeder". The model (`Model`: PLAF103, PLWF106) names the board, and its kind (`Model::kind`, a `DeviceKind`: feeder, fountain, litter box) which module of ops the device serves beside the shared core; the client derives the kind rather than reading it twice. There are no feature bits: what a session serves follows from the model and the major. The event cursor travels in `Subscribe`, not the hello, and the client sends it only when it counts in the welcome's epoch.
 - **Keys.** A client's identity is its static X25519 key. There are no separate request keys: the session is the security.
 
 ### Messages
@@ -25,7 +25,7 @@ The server inside the firmware is sans-IO: `wellfed_device_api::Server` never to
 All messages are serde enums in `wellfed-proto`.
 
 ```text
-Client → feeder                       Feeder → client
+Client → device                       Device → client
 Request { id, op }                    Response { id, result }
 Subscribe { after, samples }          Events [{ seq, at, body }, …]   // as many as fit a frame
                                       Gap { from, to }   // events lost to the ring
@@ -35,39 +35,40 @@ Subscribe { after, samples }          Events [{ seq, at, body }, …]   // as ma
 
 - **`id`** is a client-generated 128-bit request ID. The feeder remembers the last 32 write IDs per client key, across reconnects, with their compact outcomes, so a retried request returns the first answer rather than running again. Reads are not remembered; they simply run again. An ID that has left the ring is no longer recognized, which is safe for everything but feeds, whose IDs are handled [below](#feeds).
 - **Results** are typed enums of outcomes and refusals. There is no free-text error.
-- **Subscribe** asks for every event after a cursor (`None`: the oldest kept), then each new one, and the live samples if asked.
+- **Subscribe** asks for every event after a cursor (`None`: the oldest kept), then each new one, and every live sample if its `samples` is `On` (`Off` asks for none). Every subscriber gets every event.
 - **Events** are the durable records described in [data](product-architecture.md#data). `seq` is monotonic across reboots within the ring's epoch. A ring re-created by a storage wipe or the [factory reset](pairing.md#factory-reset) draws a new epoch and counts from 1 again.
 - **`Events`** carries the next events after the session's cursor, oldest first, each postcard-encoded in turn: as many as fit `EVENTS_BYTES_MAX` (1,005 bytes), or as many as the feeder has to hand. A `Gap` always goes in a message of its own. `wellfed-client` hands the events on one at a time, so a client sees one event per `Pushed::Event` either way.
 
-**Ops of major version 1:**
+**The shared core**, which every kind of device serves:
 
 | Op | Notes |
 | --- | --- |
-| `Status` | Behind `READINESS`, answered `FeederStatus { status, readiness, supply }` (`supply` only with `POWER`) |
-| `GetSettings`, `PutSettings { base, changes }` | A stale `base` is refused `Stale { current }` |
+| `Status` | Answered `Status`: the shared fields and the kind's part (`DeviceStatus::Feeder(FeederStatus)`: the lock, the settings' generation, the food beam, the last feed fault, the desiccant count, the readiness and the judged supply). Clients send it as a keepalive |
 | `PutWifi { base, wifi }` | `None` clears |
-| `SetLock`, `Play`, `TimeSync` | An owner's `TimeSync` may step the clock; anyone else's may only narrow it, and is refused `Time` when it disagrees with a valid clock beyond both error bounds |
+| `TimeSync` | An owner's `TimeSync` may step the clock; anyone else's may only narrow it, and is refused `Time` when it disagrees with a valid clock beyond both error bounds |
 | `CreateInvite { role }`, `ListClients`, `RevokeClient { key }` | |
+| `Reboot` | Refused `Busy` while a feed is in flight |
+| `GetTime`, `PutTime { base, changes }` | `GetTime` is answered `Time(TimeView)`: the zone's rule, the NTP server, the clock with its error bound (or `None` while the feeder needs the time), the learned rate, the last source and the last NTP result. `PutTime` is owners only ([clock](clock.md)) |
+| `OfferUpdate`, `UpdateChunk`, `UpdateState`, `CancelUpdate`, `EnrollUpdateKey`, `UpdateKeyStatement` | Owners only; refused `Unavailable` by a build without an installer |
+| `Stats { section }` | One section of the statistics. The food, feeds and portions sections are a feeder's |
+| `ReadBank1 { offset }` | Answered `Bank1(Bank1Page)`, owners only, served only from bank 0 |
+| `TailLog { after }` | Owners only, answered with `Log` batches |
+
+**The feeder's module**, `Op::Feeder(FeederOp)`, answered `Outcome::Feeder(FeederOutcome)` or a refusal. Another kind refuses it `Unavailable`:
+
+| Op | Notes |
+| --- | --- |
+| `GetSettings`, `PutSettings { base, changes }` | A stale `base` is refused `Stale { current }` |
+| `SetLock`, `Play` | |
 | `Feed { portions }` | 1 to 48 portions. Answered `Feeding { feed }` once the owner has reserved it; the result is a `Fed` event. Any other number is refused `Portions { asked }` |
 | `CancelFeed { feed }` | `Done` while that feed runs, `NotFound` once it has ended |
-| `Reboot` | |
+| `FeedTrace { feed, offset }` | Answered `FeedTrace(TracePage)` |
+| `GetCalibration`, `PutCalibration` | `PutCalibration` is owners only |
+| `GetPlans`, `PutPlans { base, plans }` | `GetPlans` is answered `Plans { generation, writable, plans }`; `PutPlans` replaces all ten slots. A plan's `call` is how many times the meal call plays before it, 0 to 5. The `Plans`, `MealSoon` and `Missed` events, and the `Schedule` source of a plan's `Fed` event ([schedules](schedules.md)) |
+| `ResetDesiccant` | Records a desiccant replacement today by the feeder's clock, refused `NoClock` while the clock is invalid ([desiccant reminder](desiccant.md)) |
+| `GetCall`, `StartCall { bytes, crc }`, `CallChunk { offset, data }`, `DeleteCall`, `PlayCall` | The meal call's clip: `GetCall` is answered `Call(CallView)`; the writes are owners only, `PlayCall` any client ([meal call](schedules.md#meal-call)) |
 
-**Ops behind other capability bits:**
-
-| Bit | Ops |
-| --- | --- |
-| `FEED` | The feed ops, the `Feeding` answer, the `Fed`, `DispenseRefused` and `Food` events and the `Fault` and `Portions` refusals. A feeder answers a client whose hello lacks the bit `Unavailable`, and never pushes it a `Fed` event |
-| `TIME` | `GetTime`, answered `Time(TimeView)`: the zone's rule, the NTP server, the clock with its error bound (or `None` while the feeder needs the time), the learned rate, the last source and the last NTP result. `PutTime { base, changes }`, owners only ([clock](clock.md)) |
-| `UPDATE` | `OfferUpdate`, `UpdateChunk`, `UpdateState`, `CancelUpdate`, `EnrollUpdateKey`, `UpdateKeyStatement` |
-| `STATS` | `Stats { section }`, and four more metrics |
-| `TRACES` with `STATS` | `FeedTrace { feed, offset }`, answered `FeedTrace(TracePage)` |
-| `BACKUP` | `ReadBank1 { offset }`, answered `Bank1(Bank1Page)` |
-| `LOG` | `TailLog { after }`, answered with `Log` batches |
-| `CALIBRATION` | `GetCalibration`, `PutCalibration` |
-| `POWER` | The `Supply` metric and event, the supply in `FeederStatus`, and the `Battery` readiness reason |
-| `PLANS` | `GetPlans`, answered `Plans { generation, writable, plans }`, and `PutPlans { base, plans }`, which replaces all ten slots. A plan's `call` is how many times the meal call plays before it, 0 to 5. The `Plans`, `MealSoon` and `Missed` events, and the `Schedule` source of a plan's `Fed` event ([schedules](schedules.md)) |
-| `DESICCANT` | `ResetDesiccant`, which records a desiccant replacement today by the feeder's clock, and the `NoClock` refusal it gets while the clock is invalid ([desiccant reminder](desiccant.md)) |
-| `CALL` | The meal call's clip: `GetCall`, answered `Call(CallView)`; `StartCall { bytes, crc }`, `CallChunk { offset, data }` and `DeleteCall`, owners only; `PlayCall`, any client ([meal call](schedules.md#meal-call)) |
+Events and refusals stay one flat enum each, whatever kind they belong to. An event body is stored in the ring's 16 bytes, and a feeder's `Fed` already takes 15 of them, so a kind's tag in front would not fit.
 
 `Fed` carries the feed's number, the portions asked for (`requested`) and those delivered (`completed`, one per rotor mark the feedback sensor confirmed), an outcome and a reason. The outlet beam's breaks are a lower bound on food passing, not a count, so they stay in the log and the statistics ([calibration](calibration.md#delivered-food-estimate)). The outcome is `Done`, `Cancelled`, `Expired`, `Failed`, or `Uncertain`: the owner stopped without a durable result, or a reset interrupted the feed and the next boot resolved it.
 
@@ -75,7 +76,7 @@ A failed feed's reason names what ended it: `Jammed` (a jam three reversals did 
 
 `Fed` also carries `hopper`, what the food beam read during the feed: `Low` once it read no food, `Present` if it read only food, `Unread` if the feed ended before the beam settled (or a reset interrupted it). A feed runs whatever the beam reads, as stock's does, so a beam that misreads never skips a meal; a low reading is recorded, not refused. The beam is filtered as stock filters its `surplusGrain`: food shows at once, and low only after a second of readings without. Stock counts 20 readings; its poll rate is not recovered, so the second assumes the nominal 50 ms its outlet filter implies. It is also read in a short [window at rest](optical-inputs.md#reading-the-food-beam-at-rest) on the adapter, so `Status.food` is the latest reading of either (`Unread` before the first of a boot). A `Food { level }` event records each change once no feed is in flight: at most one a feed or a window. A boot's first reading records only if a feed took it, so a restart adds nothing to the history.
 
-**Samples** `Power` (every supply sample, 5 s) and `Rssi` (30 s) are major version 1's. `Heap`, `Loop`, `Gateway` and `Wifi` (30 s) go only to a subscriber whose hello claims `STATS`, and `Supply` only to one that claims `POWER`.
+**Samples** `Power` and `Supply` (every supply sample, 5 s), `Rssi` and the diagnostics `Heap`, `Loop`, `Gateway` and `Wifi` (30 s) go to every subscriber that asked for samples.
 
 How the protocol may change is under [Evolution](#evolution).
 
@@ -150,7 +151,7 @@ The loop tries the claim once a pass and never sleeps for it, so it keeps servin
 - Clients never resend a feed whose answer they did not get: an unanswered feed is uncertain, and `Connection` reports it `Unanswered`. An interrupted feed resolves at boot as uncertain under its own number. So nothing resends across a reboot.
 - Making the id durable would change the journal's record, and need a bank-0 refresh first.
 
-**Readiness** (`Capabilities::READINESS`) is one decision that says whether a feed can start now (`wellfed_feeder::feeder::feeding::readiness`).
+**Readiness** is one decision that says whether a feed can start now (`wellfed_feeder::feeder::feeding::readiness`).
 
 | Reason | Means | Feed refused as |
 | --- | --- | --- |
@@ -167,10 +168,10 @@ The loop tries the claim once a pass and never sleeps for it, so it keeps servin
 | `Restarting` | A restart was asked for (a client's reboot, setup mode's end, the [factory reset](pairing.md#factory-reset)) and comes within seconds; a feed started now would be cut | `Busy` |
 
 - It starts from the owner's own reason (`Feeding::blocked`), then adds `Restarting`, `Setup` and `Updating`.
-- A session that claims the bit gets `Status` answered as `FeederStatus { status, readiness, supply }` (the model's `Status.readiness`). `supply` is the judged supply with the pack's charge, for a session that also claims `POWER`, and `None` otherwise.
+- `Status` carries it in the feeder's part, `FeederStatus { readiness, supply, … }` (the model's `Status.readiness`). `supply` is the judged supply with the pack's charge.
 - A `Feed` is asked of the owner only while it is `Ready`. The owner's own checks stand behind that, for a feed that lost a race.
 - A change of a lasting reason (`Journal`, `Fault`, `Updating`, `Setup`) is recorded as a `FeedingBlocked { reason }` event, and `FeedingBlocked { reason: None }` once it clears. Passing reasons (a feed, a join) only go to the log (`PLFEED1 readiness …`), so they never fill the history. Each boot starts with none recorded.
-- `Battery` sits behind `Capabilities::POWER` ([power](power.md)); a session without that bit reads it as `Starting`. A running feed whose pack falls under the floor ends `Failed`/`Power`.
+- `Battery` is the pack's reason ([power](power.md)). A running feed whose pack falls under the floor ends `Failed`/`Power`.
 - The panel lock is not a reason: it holds only the Dispense button.
 
 **The Dispense button** asks for one portion, as stock's does. It goes through the same readiness and the same owner as a client's `Feed`, and its `Fed` event says `by: Panel`. A locked panel ignores it, and a pending pairing confirmation takes the press first. The loop logs `PLFEED1 dispense feed=N` or `dispense refused=…`.
@@ -239,11 +240,11 @@ Every flash lease checks that the outputs are stopped, and fails closed when the
 
 ### Time and calibration
 
-- **Time** (`Capabilities::TIME`). `GetTime` answers the time view. `PutTime` queues the zone's rule and the NTP server for the settings writer (storage sectors 27 and 28). It is answered `Done` once the store holds the settings asked for (or already held them), and refused `NotWritable` when the writer could not write them, with no event. The loop applies a new generation on its next pass, and runs the NTP exchange on one more UDP socket ([clock](clock.md#ntp)).
-- **Plans** (`Capabilities::PLANS`, bit 1024). `PutPlans` is checked against the plans' generation like a settings write, refused `Portions { asked }` for a plan asking for other than 1 to 48 portions and `Invalid` for one with another field outside its limits (a call of more than 5 plays among them), before anything is queued, and `Busy` while the outputs are claimed. It is answered `Done { generation }` once the store holds the table, and records a `Plans` event with its client. The writer saves the table in storage sectors 11 and 12 ([schedules](schedules.md)).
-- **Meal call** (`Capabilities::CALL`, bit 4096). One clip, which a client converts to 8 kHz 4-bit IMA ADPCM and uploads; at most 32,256 bytes, about 8 s. `StartCall { bytes, crc }` erases the stored clip and is answered `Done` once the store waits for the first chunk; `Invalid` for 0 bytes or more than the store holds. `CallChunk { offset, data }` sends the stream from where the upload stands, 512 bytes a chunk (the last may be shorter), and is answered `Call(CallView)` once queued: `Busy` while the chunk before is still being written, `Invalid` for any other offset or length, and a chunk already received is answered without a write, so a retry is safe. After the last chunk the writer reads the stream back against the CRC and stores the clip (`Stored`), or keeps none (`None`); `GetCall` shows which. `DeleteCall` is answered `Done` once no clip is stored. Each write is refused `Busy` while the outputs are claimed, and waits on the writer while a call plays, so the speaker never reads a clip being rewritten. Owners only: the clip is the owner's voice. A restart forgets an upload in progress. `PlayCall` plays the stored clip once, so its owner can hear it, and is answered `Done` once queued: `NotFound` with no clip, `Muted` as a test tune is, and `Busy` under a test tune's rules, including when the clip would still sound as a meal's call begins ([meal call](schedules.md#meal-call)).
-- **Desiccant** (`Capabilities::DESICCANT`, bit 2048). `ResetDesiccant` takes no base: a replacement is a fact about today, whatever the settings hold. It is refused `NoClock` while the clock is invalid, `Busy` while a settings change is queued or the outputs are claimed, and `NotWritable` for a store that cannot be written. Otherwise it queues today's local day for the settings writer, is answered `Done { generation }` once the store holds it, and records a `Settings` event with its client. Owners, members and the server may send it, as they may change the plans ([desiccant reminder](desiccant.md)).
-- **Calibration** (`Capabilities::CALIBRATION`, bit 256). `GetCalibration` answers the stored weight of one portion, the bowl mode the build runs and the rotor's phase. `PutCalibration` (owners only) queues a new weight for the settings writer (storage sectors 34 and 35). It is answered `Done` once stored, `Invalid` outside 1–50 g, and `Unverified` for a bowl mode the build was not verified for. The statistics' `Portions` section needs the same bit. There is no event: the calibration has its own generation ([calibration](calibration.md)).
+- **Time.** `GetTime` answers the time view. `PutTime` queues the zone's rule and the NTP server for the settings writer (storage sectors 27 and 28). It is answered `Done` once the store holds the settings asked for (or already held them), and refused `NotWritable` when the writer could not write them, with no event. The loop applies a new generation on its next pass, and runs the NTP exchange on one more UDP socket ([clock](clock.md#ntp)).
+- **Plans** (feeder). `PutPlans` is checked against the plans' generation like a settings write, refused `Portions { asked }` for a plan asking for other than 1 to 48 portions and `Invalid` for one with another field outside its limits (a call of more than 5 plays among them), before anything is queued, and `Busy` while the outputs are claimed. It is answered `Done { generation }` once the store holds the table, and records a `Plans` event with its client. The writer saves the table in storage sectors 11 and 12 ([schedules](schedules.md)).
+- **Meal call** (feeder). One clip, which a client converts to 8 kHz 4-bit IMA ADPCM and uploads; at most 32,256 bytes, about 8 s. `StartCall { bytes, crc }` erases the stored clip and is answered `Done` once the store waits for the first chunk; `Invalid` for 0 bytes or more than the store holds. `CallChunk { offset, data }` sends the stream from where the upload stands, 512 bytes a chunk (the last may be shorter), and is answered `Call(CallView)` once queued: `Busy` while the chunk before is still being written, `Invalid` for any other offset or length, and a chunk already received is answered without a write, so a retry is safe. After the last chunk the writer reads the stream back against the CRC and stores the clip (`Stored`), or keeps none (`None`); `GetCall` shows which. `DeleteCall` is answered `Done` once no clip is stored. Each write is refused `Busy` while the outputs are claimed, and waits on the writer while a call plays, so the speaker never reads a clip being rewritten. Owners only: the clip is the owner's voice. A restart forgets an upload in progress. `PlayCall` plays the stored clip once, so its owner can hear it, and is answered `Done` once queued: `NotFound` with no clip, `Muted` as a test tune is, and `Busy` under a test tune's rules, including when the clip would still sound as a meal's call begins ([meal call](schedules.md#meal-call)).
+- **Desiccant** (feeder). `ResetDesiccant` takes no base: a replacement is a fact about today, whatever the settings hold. It is refused `NoClock` while the clock is invalid, `Busy` while a settings change is queued or the outputs are claimed, and `NotWritable` for a store that cannot be written. Otherwise it queues today's local day for the settings writer, is answered `Done { generation }` once the store holds it, and records a `Settings` event with its client. Owners, members and the server may send it, as they may change the plans ([desiccant reminder](desiccant.md)).
+- **Calibration** (feeder). `GetCalibration` answers the stored weight of one portion, the bowl mode the build runs and the rotor's phase. `PutCalibration` (owners only) queues a new weight for the settings writer (storage sectors 34 and 35). It is answered `Done` once stored, `Invalid` outside 1–50 g, and `Unverified` for a bowl mode the build was not verified for. The statistics' `Portions` section reports what it delivered. There is no event: the calibration has its own generation ([calibration](calibration.md)).
 
 ### Events and samples
 
@@ -253,7 +254,7 @@ Every flash lease checks that the outputs are stopped, and fails closed when the
 - A read answers up to 32 records from one pass over their unit, about a frame of events. A subscriber catching up takes the whole batch from RAM in one pass and sends it as one `Events` message, and other subscribers inside the same batch share it. Answering one record a read cost a writer poll per record, 200 ms whenever the reader missed the 5 ms window: about 3 events a second (physical, October 29). Batched reads with one event a frame still cost a loop pass per event, so 1,140 events took 16.5 s (physical, v359). A frame of events per pass removes that pass per event (static analysis, not yet measured).
 - Subscribers take turns by session slot. A batch is fetched for one subscriber and stays until that subscriber has taken from it; others whose cursor falls inside it read from it meanwhile. One it cannot answer waits, and the next read goes to the next waiting slot, round robin. So a subscriber catching up goes without a record for at most one pass more than there are subscribers, whatever order the loop visits them in (simulation, up to four subscribers). A subscriber whose session ends gives its turn and its batch up at once. One that stops asking without ending (its last frame still going out) keeps its batch for at most 50 asks from the others: 50 passes, about a second, with one other subscriber waiting, and about 17 with three.
 - A read starts at the cursor's slot in its unit, since a unit's records rise one number a slot, and stops once the batch is full. So it reads about as many slots as it returns, rather than the whole unit.
-- A batch stops before an event that might not fit (`EVENT_BYTES_MAX`, 32 bytes, the largest any event encodes to), at the newest event, when the next read has not come back yet, and before a gap. The session's cursor moves past each event the batch takes, and past each body the session's hello did not claim. A gap behind a batch's events is left for the next pass, which sends it alone.
+- A batch stops before an event that might not fit (`EVENT_BYTES_MAX`, 32 bytes, the largest any event encodes to), at the newest event, when the next read has not come back yet, and before a gap. The session's cursor moves past each event the batch takes. A gap behind a batch's events is left for the next pass, which sends it alone.
 - A ring created empty draws a random epoch from the generator, and every record repeats it in bytes 4–7, the high half of the old 64-bit sequence field. So a ring written before epochs reads as epoch 0, and the layout is unchanged. The welcome carries the epoch, and the feeder welcomes no session until the writer has opened the ring and published it.
 - Recorded today: boot, lock changes (panel, idle relock, or which client), settings, plans and Wi-Fi writes with their client, clock syncs, invites redeemed, recovery and revocations, feeds, refused Dispense presses, meal reminders, missed meals, and blocked feeding.
 
@@ -270,7 +271,7 @@ Every flash lease checks that the outputs are stopped, and fails closed when the
 
 **Samples** go only to subscribers: power every 5 s, Wi-Fi signal every 30 s, the statistics' metrics with `STATS` ([below](#statistics)), and the judged supply beside the power sample with `POWER`. A sample not sent before the next of its kind is replaced.
 
-**Supply** (`Capabilities::POWER`). `Metric::Supply { adapter, battery, below_floor }` names an unread, stale or implausible reading rather than passing it off as a value. A plausible reading is `Battery::Reading { mv, percent }`, its charge on stock's curve. On its batteries the feeder turns Wi-Fi off 5 s after the adapter goes, so sessions end until it returns, and it refuses an update offer `Update(Battery)` ([battery mode](power.md#battery-mode)). `EventBody::Supply` records the adapter's changes and the pack crossing its floor, at most one a minute ([power](power.md)).
+**Supply.** `Metric::Supply { adapter, battery, below_floor }` names an unread, stale or implausible reading rather than passing it off as a value. A plausible reading is `Battery::Reading { mv, percent }`, its charge on stock's curve. On its batteries the feeder turns Wi-Fi off 5 s after the adapter goes, so sessions end until it returns, and it refuses an update offer `Update(Battery)` ([battery mode](power.md#battery-mode)). `EventBody::Supply` records the adapter's changes and the pack crossing its floor, at most one a minute ([power](power.md)).
 
 ### mDNS
 
@@ -284,14 +285,14 @@ Every flash lease checks that the outputs are stopped, and fails closed when the
 
 ### Updates, backups, invites and recovery
 
-- **Updates** (`Capabilities::UPDATE`, owner sessions only): `OfferUpdate`, `UpdateChunk`, `UpdateState`, `CancelUpdate`, `EnrollUpdateKey` and `UpdateKeyStatement`, answered `Outcome::Update` or `Refusal::Update`.
+- **Updates** (owner sessions only): `OfferUpdate`, `UpdateChunk`, `UpdateState`, `CancelUpdate`, `EnrollUpdateKey` and `UpdateKeyStatement`, answered `Outcome::Update` or `Refusal::Update`.
   - The loop never verifies a signature. It copies the request into the update mailbox and answers from what the service task's update stage publishes ([OTA design](ota-design.md#updates-over-the-device-api)).
   - An offer is refused `Busy` while a feed is queued or driven, and a feed while an install holds the flash.
   - A chunk is idempotent by its offset, so it is not a remembered write and is not logged one by one.
   - An update key is enrolled only once someone at the feeder presses Dispense within 60 s. The session's answer waits for it (`wellfed-client` waits 75 s for this op, not its usual 10 s), and a session that leaves cancels the offer. `wellfed update-key enroll` sends it ([OTA design](ota-design.md#keys-and-anti-rollback)). A locked panel still takes this press, and the history records the enrollment (physical, October 31, one real press).
-- **Debug log** (`Capabilities::LOG`, owner sessions only): `TailLog { after }` streams the firmware's record lines from a RAM tail ([below](#debug-log)).
-- **Feed traces** (`Capabilities::TRACES` with `STATS`): `FeedTrace { feed, offset }` reads what a feed's drive measured, a page at a time, from RAM or storage sectors 29–31 ([below](#feed-traces)).
-- **Stock backup** (`Capabilities::BACKUP`, bit 512, owner sessions only): `ReadBank1 { offset }` reads bank 1 a page at a time, served only from bank 0 ([below](#stock-backup)).
+- **Debug log** (owner sessions only): `TailLog { after }` streams the firmware's record lines from a RAM tail ([below](#debug-log)).
+- **Feed traces** (feeder): `FeedTrace { feed, offset }` reads what a feed's drive measured, a page at a time, from RAM or storage sectors 29–31 ([below](#feed-traces)).
+- **Stock backup** (owner sessions only): `ReadBank1 { offset }` reads bank 1 a page at a time, served only from bank 0 ([below](#stock-backup)).
 - **Invites.** `CreateInvite` mints a secret, which is the PSK of the new client's XXpsk3 handshake. Its third message carries the label, and the key enrolls through the keys mailbox.
 - **Recovery.** The recovery window runs the same setup exchange as BLE (XX plus the code proof) over the stream, so the owner keys the client's code in before it becomes an owner. A LAN neighbour cannot slip in while the window is open, and the window closes at the first offer. Recovery takes no Wi-Fi ([pairing](pairing.md)).
 
@@ -312,8 +313,8 @@ An owner can read what the feeder's UART prints without opening the feeder: `wel
   - Text is printable ASCII; any other byte reads `?`.
   - A cursor past the newest line can only be an earlier boot's, and reads from the oldest. One below it cannot be told from this boot's own, so a client resumes with a cursor only within one boot (the status's `boot_count`).
   - Lines dropped after the newest written one show in `dropped` only once the next line is written.
-- **Ships in release images.** The `feeder` firmware claims `LOG` in every build, not only behind a debug feature.
-  - A shipped bit is served for the life of its major ([rule 5](#evolution)). That costs little here: the op's contract is text with no schema, so any later build can keep serving it from whatever it logs.
+- **Ships in release images.** The `feeder` firmware keeps the tail in every build, not only behind a debug feature.
+  - The op's contract is text with no schema, so any later build can keep serving it from whatever it logs.
   - An owner's feeder has no UART wired, so the tail is the only way to see a field fault's lines.
   - It is owner-only, and no record carries a key, a secret or a credential (each record type's rule). The stream shows an owner nothing they could not already change.
   - The other firmwares (`blink`, `bringup`, `qa`) serve no API and build without the `log-tail` feature, so they keep no tail.
@@ -326,14 +327,14 @@ An owner can read what the feeder's UART prints without opening the feeder: `wel
 The intended rules:
 
 1. **The prologue never changes.** `wellfed-api-v1` is bound into every handshake. A new major is negotiated in `Hello.major`. A feeder that does not serve it answers with the typed `OpenRefusal::Version { supported }`, so a client can say which side to update. A changed prologue would instead fail the handshake with no reason. Enforced by `the_prologue_never_changes` (`wellfed-proto/tests/fixtures.rs`) and `a_major_2_hello_gets_the_typed_version_refusal` (`wellfed-client/tests/api.rs`).
-2. **Every new op, event body, outcome or refusal is gated by a `Capabilities` bit both sides claim,** as `FEED` gates feeding and `UPDATE` updates. `Op::capability` and `EventBody::capability` name each variant's bit with no wildcard, so a new variant does not compile without its decision. The feeder serves an op only when the session's hello and the feeder both carry its bit (otherwise `Unavailable`). It pushes an event only when the hello carries its bit (otherwise the session's cursor moves past it, inside a batch as between them). Enforced by `a_v1_only_session_never_receives_a_body_outside_v1`, which records one event of every body, an exhaustive match keeping the list whole.
-3. **Existing messages never gain, lose, reorder or retype a field.** Postcard is positional, so an old peer would misread every byte after a new field. New data is a new variant behind a bit. Enforced by `tests/fixtures/v1.txt`, which pins every v1 message's bytes. `WELLFED_BLESS=1` only appends fixtures for new variants; it refuses to rewrite a pinned line. For now, see the note above.
+2. **What a session serves follows from the welcome alone.** There are no feature bits: the model names the device's board, its images and its kind, the kind the module of ops it serves beside the shared core, and the major the messages. The server is generic over the shared `Device` alone, and reaches a kind's module only through it (`Device::feeder`); a device of another kind refuses the module's ops `Unavailable`, after the same retry and role checks as any write, as does a build that does not serve an op. A client does not send another kind's op at all (`Op::kind`, checked in `wellfed-connect`). Every subscriber is pushed every event. Enforced by `every_subscriber_receives_every_body` (`wellfed-client/tests/api.rs`), which records one event of every body, an exhaustive match keeping the list whole, and `a_device_without_a_feeder_module_refuses_its_ops_and_remembers_the_refusal` (`wellfed-device-api/tests/kinds.rs`).
+3. **Existing messages never gain, lose, reorder or retype a field.** Postcard is positional, so an old peer would misread every byte after a new field. New data is a new variant, appended. Enforced by `tests/fixtures/v1.txt`, which pins every v1 message's bytes. `WELLFED_BLESS=1` only appends fixtures for new variants; it refuses to rewrite a pinned line. For now, see the note above.
 4. **The event history carries an epoch.** `Welcome::Open.epoch` is drawn at random when the ring is created, and kept with it. Event numbers count within an epoch. So a cursor from a re-created ring (a storage wipe, which restarts the numbers at 1) is recognized, rather than freezing a mirror that waits for numbers it already has. `wellfed-client`'s `Connection::subscribe` resumes after a cursor only in the feeder's current epoch, and otherwise starts from the oldest event kept (`Resume::Restarted`). The server keys events and gaps by (feeder, epoch, seq), and keeps an older epoch's history readable (`?epoch=`). Enforced by `a_cursor_resumes_in_its_epoch_and_restarts_from_another`, the event ring's epoch tests, and the store's `a_new_epoch_keeps_its_own_history_and_restarts_the_cursor`.
-5. **Clients adapt to the feeder's capabilities indefinitely.** An owner may hold an update forever, so there is no "N and N−1" window. A client claims every bit it knows (`Capabilities::KNOWN`), runs on the intersection the welcome gives it (`Opened::capabilities`), and keeps speaking every older major it ever spoke. A feeder keeps serving every bit it ever shipped within its major.
+5. **Clients follow the device's kind and major.** A client reads the welcome's model and its kind (`Opened::model`, `Opened::kind`) and speaks only that kind's module. Once outside devices exist, a client keeps speaking every older major it ever spoke.
 
 ## Statistics
 
-`Capabilities::STATS` (bit 16). The loop keeps the figures in RAM as it runs (`wellfed_feeder::stats::Keeper`): no task, no wait and no flash write, a few additions per pass. The lifetime totals are the settings writer's, in storage sectors 32–33.
+The loop keeps the figures in RAM as it runs (`wellfed_feeder::stats::Keeper`): no task, no wait and no flash write, a few additions per pass. The lifetime totals are the settings writer's, in storage sectors 32–33.
 
 **`Stats { section }`** answers one section in one frame, for any role that opens a session (`Memory` for owners only). The widest of each is checked against `MESSAGE_MAX` (`the_largest_messages_fit_a_frame`, and the device API's property test through the server). So is the fullest `Events` batch, and every event body against the ring's 16 bytes (`every_event_body_fits_sixteen_bytes`).
 
@@ -366,7 +367,7 @@ The intended rules:
 - **Lower bounds.** The lifetime counts and `resets` are at least the truth, never more. A power cut loses up to an hour of a boot's counts, and up to 10 minutes of its feeds (the writer saves after a feed, at most every `FEED_SAVE_MS`). While no token is left, a short boot's reset goes uncounted, and so does anything else it counted unless a feed's save took it along. The history is the record of each feed, so the lifetime feeds can read under it. The `missed` flag that says so is in the log, not on the wire.
 - **`None`** comes from a build that keeps no totals, and from a store this build cannot write (a newer record version, or a read error).
 
-**Metrics** go every 30 s, beside the signal, to subscribers whose hello claims the bit (`Metric::capability`):
+**Metrics** go every 30 s, beside the signal, to subscribers that asked for samples:
 - `Heap { free, min }`;
 - `Loop { passes, max_us, p99_us }`: the loop's passes since the last, timed on the 32 kHz system timer around the feeding owner's step and the pass, the percentile from buckets an eighth of an octave wide;
 - `Gateway { round_trip_ms }`: the latest answered probe since the last, `None` if none;
@@ -378,11 +379,11 @@ A session holds one sample of each kind and sends the oldest first, so a kind is
 
 **Records:** `PLAPI1 session … state=open` ends `handshake_ms=`.
 
-**Host:** `wellfed stats [--section …]` prints each section as JSON. It asks only a feeder whose welcome claims the bit, since a feeder that predates the op would end the session on it.
+**Host:** `wellfed stats [--section …]` prints each section as JSON. Without `--section` it asks a device for the sections its kind keeps.
 
 ## Feed traces
 
-`Capabilities::TRACES` (bit 64), served only beside `STATS`: an op needs both bits. The feeder keeps what each feed's drive measured, poll by poll, in RAM and then in its own storage. So an owner can read it without a UART or a server: `wellfed trace <feed>` (`--json` for the whole trace).
+A feeder's op (`FeederOp::FeedTrace`). The feeder keeps what each feed's drive measured, poll by poll, in RAM and then in its own storage. So an owner can read it without a UART or a server: `wellfed trace <feed>` (`--json` for the whole trace).
 
 **Recorded after each owner step, never inside it.** The feeding owner keeps one `Observation` (`wellfed_core::feed::observe`) per poll of a feed being prepared or driven:
 - the current channel (PB1, ADC channel 4);
@@ -426,23 +427,21 @@ Current is in stock's scaled unit (`CurrentUnit::Scaled`) until its scaling to m
 - When the newest sector is full, the oldest is erased. So the ring keeps the last 8 to 12 traces, and each sector is erased once every 12 feeds.
 - A power cut at any mutation of an append, or of its erase, loses at most the trace being written.
 
-**`FeedTrace { feed, offset }`** (op `0x17`) answers `Outcome::FeedTrace` (`0x0b`): `TracePage { summary, stored, offset, total, bytes }`, with at most 432 bytes of body. So a three-portion trace is two pages.
+**`FeedTrace { feed, offset }`** (op `0x12 0x06`, the feeder module's seventh) answers `FeederOutcome::FeedTrace` (`0x09 0x02`): `TracePage { summary, stored, offset, total, bytes }`, with at most 432 bytes of body. So a three-portion trace is two pages.
 - Any role may read it.
 - The loop answers from the latest feed's trace in RAM, otherwise from the ring through mapped flash. A read takes no lease, and a lease holds every other task off the flash.
 - `Busy` while that feed is still recorded, `NotFound` when neither holds it, `Invalid` for an offset past the body.
 - Each page repeats the summary, and `wellfed_client::trace::Pages` refuses a trace that changed between pages, rather than splice two.
 
-**Statistics.** `Stats { section: Feeds }` (section `5`, both bits) sums this boot's traces: traced feeds, drive time, polls, peak and mean current, edges, beam breaks and reversals. It adds the ring's fill, the unsaved count and the latest summary.
+**Statistics.** `Stats { section: Feeds }` (section `5`) sums this boot's traces: traced feeds, drive time, polls, peak and mean current, edges, beam breaks and reversals. It adds the ring's fill, the unsaved count and the latest summary.
 
 **Cost.** About 1.4 KB of `.bss`: the recorder, under 1 KiB, and the page an answer borrows. Recording costs a few comparisons and a two-byte append a poll, and a halving one pass over under a kilobyte. A page read scans twelve slot headers and checks one trace's CRC from mapped flash.
-
-**Why a bit of its own.** A feeder that serves `STATS` but predates traces cannot decode `FeedTrace` (or the new section). An undecodable request ends the session, so a client asks only a feeder whose welcome claims both.
 
 ## Stock backup
 
 After stock installs the replacement into bank 0, bank 1 still holds stock, with only its marker's first word overwritten. Promotion would overwrite it. So the installer reads it first and keeps the owner's own copy ([rollback](consumer-installation.md#rollback)).
 
-- **`ReadBank1 { offset }`** (op `0x1a`) answers `Outcome::Bank1` (`0x0d`): `Bank1Page { offset, total, bytes }`, with at most `BANK1_PAGE_MAX` (768) bytes. The bank's 1,376,256 bytes (`BANK1_BYTES`, stock's payload size) are 1,792 pages. It sits behind `Capabilities::BACKUP` (bit 512): a feeder that predates the op cannot decode it, and an undecodable request ends the session.
+- **`ReadBank1 { offset }`** (op `0x11`) answers `Outcome::Bank1` (`0x08`): `Bank1Page { offset, total, bytes }`, with at most `BANK1_PAGE_MAX` (768) bytes. The bank's 1,376,256 bytes (`BANK1_BYTES`, stock's payload size) are 1,792 pages. A build that is not the bank-0 role refuses it `Unavailable`.
 - **Who and when.**
   - Owners only; a member or the server is refused `Forbidden`. The copy is the owner's to keep.
   - Read-only and not a remembered write, so any page may be asked again.

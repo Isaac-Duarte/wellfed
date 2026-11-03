@@ -50,14 +50,12 @@ pub struct Status {
     /// The last feed this boot that ended on a fault (failed or
     /// uncertain), until a later feed completes.
     pub feed_fault: Option<FeedFault>,
-    /// Whether a feed can start now; absent from a feeder that does not
-    /// report it.
-    pub readiness: Option<Readiness>,
+    /// Whether a feed can start now.
+    pub readiness: Readiness,
     /// The desiccant reminder.
     pub desiccant: Desiccant,
-    /// The supply as the feeder judges it, with the pack's charge; absent
-    /// from a feeder that does not report it.
-    pub supply: Option<Supply>,
+    /// The supply as the feeder judges it, with the pack's charge.
+    pub supply: Supply,
 }
 
 /// The desiccant reminder, counted in the feeder's local calendar days

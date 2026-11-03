@@ -158,7 +158,7 @@ fn a_feed_trace_reads_back_over_the_api_before_and_after_a_restart() {
             let sim =
                 harness::Running::start(&flash, Some(*Keypair::from_secret(OWNER).public())).await;
             let mut owner = open(&sim).await;
-            assert!(owner.capabilities().traces && owner.capabilities().stats);
+            assert_eq!(owner.kind(), wellfed_model::DeviceKind::Feeder);
             let mut ids = 0;
 
             let trace = read(&mut owner, &mut ids, FEED).await.unwrap();

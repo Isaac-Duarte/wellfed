@@ -7,8 +7,8 @@ use wellfed_core::store::slot::SlotIo;
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::mailbox::{SettingsFields, SettingsResult, SettingsView, WifiResult};
 use wellfed_device_api::wifi::Credentials;
-use wellfed_device_api::{Device, KeyChange};
-use wellfed_feeder::feeder::{Feeder, NoFeeds};
+use wellfed_device_api::{Device, FeederDevice, KeyChange};
+use wellfed_feeder::feeder::{DeviceView, Feeder, NoFeeds};
 use wellfed_feeder::store::net::NetStore;
 use wellfed_feeder_runtime::{keys, network};
 use wellfed_fw_feeder::feeding::{ClaimTurn, Claiming, writes_queued};
@@ -43,7 +43,7 @@ impl SlotIo for FakeNet {
 
 /// The device API's view of the feeder on the board's platform, which
 /// reads the outputs' turn from the runtime's interlock.
-fn device<R>(call: impl FnOnce(&mut dyn Device) -> R) -> R {
+fn device<R>(call: impl FnOnce(&mut DeviceView<'_, Plaf103, NoFeeds>) -> R) -> R {
     let mut feeder = Box::new(Feeder::new(Plaf103::new()));
     let mut feeds = NoFeeds;
     let mut device = feeder.device(0, &mut feeds);

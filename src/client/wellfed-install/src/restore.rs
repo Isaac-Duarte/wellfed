@@ -237,7 +237,6 @@ async fn drive(
         address: Cell::new(target.address),
     };
     let mut session = sessions.open().await?;
-    wellfed_formats::require(session.capabilities().update, || Error::RestoreNoUpdates)?;
 
     let fresh;
     let key: &Key = match &target.signing {

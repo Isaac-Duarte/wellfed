@@ -9,7 +9,8 @@
 
 use std::path::{Path, PathBuf};
 
-use wellfed_client::install::{Bank1Reader, StockBackup};
+use wellfed_client::install::{Bank1Reader, ReadError, StockBackup};
+use wellfed_model::Refusal;
 
 use crate::event::Event;
 use crate::platform::Report;
@@ -33,9 +34,6 @@ pub async fn fetch(
         report.event(Event::BackupFound { path: path.clone() });
         return Ok((path, kept));
     }
-    // A feeder that predates the op would end the session on it.
-    wellfed_formats::require(session.capabilities().backup, || Error::NoBackupServed)?;
-
     report.event(Event::ReadingBank1 {
         identity: *identity,
     });
@@ -46,7 +44,12 @@ pub async fn fetch(
             .ask(&reader.next_op())
             .await
             .map_err(Error::Platform)?;
-        if let Some(bank) = reader.take(answer).map_err(Error::Bank1)? {
+        // Only the bank-0 role serves bank 1: any other build refuses it.
+        let taken = reader.take(answer).map_err(|error| match error {
+            ReadError::Refused(Refusal::Unavailable) => Error::NoBackupServed,
+            error => Error::Bank1(error),
+        });
+        if let Some(bank) = taken? {
             break bank;
         }
         if reader.read() / PROGRESS != shown {

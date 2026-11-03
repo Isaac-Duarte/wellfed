@@ -9,7 +9,7 @@ use clap::{Args, ValueEnum};
 use jiff::tz::TimeZone;
 use wellfed_client::history::{Backlog, Entry};
 use wellfed_client::trace::Pages;
-use wellfed_model::{self as model, Answer, Gap, Op, Pushed, StatsSection};
+use wellfed_model::{Answer, Gap, Op, Pushed, StatsSection};
 
 use crate::device::Connection;
 use crate::text::{self, time};
@@ -125,24 +125,16 @@ pub(crate) struct TraceArgs {
 /// Each section asked for, one answer each, as JSON.
 pub(crate) async fn stats_command(args: StatsArgs) -> Result<()> {
     let (_, _, mut connection) = connect(&args.target).await?;
-    // An op the feeder predates would end the session rather than be
-    // refused, so ask only a feeder that claims the statistics.
-    if !connection.capabilities().stats {
-        bail!("this feeder's build serves no statistics; update it first");
-    }
     let sections: Vec<StatsSection> = if args.section.is_empty() {
-        // A feeder that predates a section is not asked for it.
-        let capabilities = connection.capabilities();
+        // The sections the device's kind keeps.
+        let kind = connection.kind();
         StatsSection::ALL
             .into_iter()
-            .filter(|section| section.served(capabilities))
+            .filter(|section| section.kind().is_none_or(|of| of == kind))
             .collect()
     } else {
         args.section.iter().map(|section| section.model()).collect()
     };
-    if sections.contains(&StatsSection::Feeds) && !connection.capabilities().traces {
-        bail!("this feeder's build keeps no feed traces; update it first");
-    }
     for section in sections {
         let answer = connection.ask(&Op::Stats { section }).await?;
         print_answer(&answer)?;
@@ -153,11 +145,6 @@ pub(crate) async fn stats_command(args: StatsArgs) -> Result<()> {
 /// One feed's trace, read a page at a time.
 pub(crate) async fn trace_command(args: TraceArgs) -> Result<()> {
     let (_, _, mut connection) = connect(&args.target).await?;
-    // As for the statistics: a feeder that predates the op would end the
-    // session on it.
-    if !connection.capabilities().traces {
-        bail!("this feeder's build keeps no feed traces; update it first");
-    }
     let mut pages = Pages::new(args.feed);
     let trace = loop {
         let answer = connection.ask(&pages.next_op()).await?;
@@ -295,9 +282,6 @@ pub(crate) async fn logs_command(args: LogsArgs) -> Result<()> {
     let (_, _, mut connection) = connect(&args.target).await?;
     match connection.ask(&Op::TailLog { after: args.after }).await? {
         Answer::Done { .. } => {}
-        Answer::Refused(model::Refusal::Unavailable) => {
-            bail!("this feeder's build keeps no log (it lacks the log capability)")
-        }
         Answer::Refused(refusal) => bail!("refused: {refusal:?}"),
         other => bail!("unexpected answer {other:?}"),
     }

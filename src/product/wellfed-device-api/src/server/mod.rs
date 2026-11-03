@@ -3,9 +3,11 @@
 //! Each kind of work is an `impl Server` block in its own file, so all of
 //! them share the slots' private state: opening a session (`handshake`),
 //! the recovery window (`recovery`), an open session's turn (`session`),
-//! one request (`request`), writes the device finishes later (`pending`)
+//! one request (`request`) and the feeder's module it routes to (`feeder`),
+//! writes the device finishes later (`pending`)
 //! and the write ids a retry is answered from (`memory`).
 
+mod feeder;
 pub(crate) mod handshake;
 mod memory;
 mod pending;
@@ -15,18 +17,18 @@ mod samples;
 mod session;
 mod wire;
 
+use self::feeder::FeederWait;
 use self::memory::Memory;
 use self::recovery::Rescue;
 use self::samples::Samples;
 use self::wire::Wire;
 use crate::clients::{CLIENTS, Client, Label, Role};
-use crate::mailbox::CallChange;
 use crate::pairing::{self, Pairing, Path};
 use crate::setup::Responder;
 use crate::{BUFFER, Device, Reader, Reason, Record, SESSIONS};
 use wellfed_core::deadline_passed;
 use wellfed_proto::api::{
-    Capabilities, FRAME_MAX, FeederMessage, Open, OpenRefusal, Refusal, RequestId, Sample,
+    self as proto, DeviceMessage, FRAME_MAX, Open, OpenRefusal, Refusal, RequestId, Sample,
 };
 
 use wellfed_session::noise::{Handshake, Keypair, Transport};
@@ -52,36 +54,18 @@ pub struct Pass<'a, D> {
 /// A write the device is still completing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Waiting {
-    Settings,
     Wifi,
     /// The digest of the settings asked for: the write succeeded if the
     /// store holds them once nothing is pending.
     Time {
         digest: u32,
     },
-    /// As for the time settings: the digest of the calibration asked for.
-    Calibration {
-        digest: u32,
-    },
-    /// The revision a client's table written over `base` produces; a
-    /// `Plans` event once the writer reports it saved.
-    Plans {
-        revision: u32,
-    },
-    /// A meal call upload's start, or its delete: done once the store
-    /// waits for that upload's first chunk, or holds no clip.
-    Call {
-        change: CallChange,
-    },
     Keys {
         ticket: u32,
         revoked: [u8; 32],
     },
-    Feed {
-        feed: u32,
-    },
-    /// The feed it waited for ended refused, before anything moved.
-    FeedRefused(Refusal),
+    /// A write of the feeder's module.
+    Feeder(FeederWait),
     Update {
         ticket: u32,
     },
@@ -126,19 +110,17 @@ enum Phase {
         reply: bool,
         /// The IK client's hello, once read.
         refusal: Option<OpenRefusal>,
-        capabilities: Capabilities,
     },
     Open {
         transport: Transport,
         key: [u8; 32],
         role: Role,
-        /// What the client's hello said it understands.
-        capabilities: Capabilities,
         memory: usize,
         pending: Option<Pending>,
         /// Push events after this cursor (`Some(None)`: from the oldest).
         events: Option<Option<u64>>,
-        samples: bool,
+        /// The live samples the session subscribed to.
+        samples: proto::Samples,
         /// Samples waiting to go out, one of each kind.
         sample: Samples,
         /// Push log lines after this cursor (`Some(None)`: from the
@@ -361,9 +343,9 @@ impl Server {
                 pending: Some(pending),
                 ..
             } = &mut slot.phase
-                && matches!(pending.waiting, Waiting::Feed { feed: waited } if waited == feed)
+                && matches!(pending.waiting, Waiting::Feeder(FeederWait::Feed { feed: waited }) if waited == feed)
             {
-                pending.waiting = Waiting::FeedRefused(refusal);
+                pending.waiting = Waiting::Feeder(FeederWait::FeedRefused(refusal));
             }
         }
         for memory in &mut self.memories {
@@ -433,18 +415,16 @@ impl Server {
         }
     }
 
-    /// A live sample for subscribers whose hello claimed its bit; one not
+    /// A live sample for subscribers that asked for samples; one not
     /// sent before the next of its kind is replaced by it.
     pub fn sample(&mut self, sample: Sample) {
-        let needs = sample.metric.capability();
         for slot in &mut self.slots {
             if let Phase::Open {
-                samples: true,
+                samples,
                 sample: waiting,
-                capabilities,
                 ..
             } = &mut slot.phase
-                && capabilities.contains(needs)
+                && *samples == proto::Samples::On
             {
                 waiting.put(sample);
             }
@@ -495,7 +475,7 @@ impl Server {
         // restart never leaves a feed uncertain.
         if let Some(at) = self.reboot_at
             && deadline_passed(now_ms, at)
-            && !device.feed_active()
+            && !device.operating()
         {
             self.reboot_at = None;
             device.reboot();
@@ -513,7 +493,7 @@ impl Server {
         busy
     }
 
-    fn seal_and_send(&mut self, index: usize, message: &FeederMessage<'_>) -> Result<(), Reason> {
+    fn seal_and_send(&mut self, index: usize, message: &DeviceMessage<'_>) -> Result<(), Reason> {
         let len = proto_encode(message, &mut self.plain)?;
         self.seal_plain(index, len)
     }

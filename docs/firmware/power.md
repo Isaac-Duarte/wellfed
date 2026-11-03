@@ -19,7 +19,7 @@ The monitor logs `PLBAT1` records, in every firmware that does not claim the ADC
 
 ## The supply on the wire
 
-`Capabilities::POWER` (bit 128) carries the supply as the feeder judges it. An unknown is never passed off as a value.
+The device API carries the supply as the feeder judges it. An unknown is never passed off as a value.
 
 - **`Supply { adapter, battery, below_floor }`.** `adapter` is `None` without a fresh sample. `battery` is one of:
   - `Absent`, no pack;
@@ -29,13 +29,13 @@ The monitor logs `PLBAT1` records, in every firmware that does not claim the ADC
   - `Stale { age_ms }`, older than three monitor periods.
 
   `below_floor` is the feeding owner's verdict on the pack's floor, `None` before it has judged, in a firmware without an owner, and with no pack fitted. The judging is `wellfed_core::supply::classify`, against the board's `power::PACK`.
-- **Status.** A session that claims `POWER` gets the supply in its status (`Outcome::FeederStatus { supply }`), and `wellfed status` prints it.
-- **`Metric::Supply`** goes to subscribers with the bit at each power sample (5 s), beside the version 1 `Power` metric, which is unchanged.
+- **Status.** The feeder's part of the status carries it (`FeederStatus { supply }`), and `wellfed status` prints it.
+- **`Metric::Supply`** goes to subscribers that asked for samples at each power sample (5 s), beside the `Power` metric. The status always carries the judged supply: an unread or stale one says so.
 - **`EventBody::Supply`** records the adapter coming or going and the pack crossing its floor, at most one a minute (`feeder::supply::EVENT_MS`). Changes inside the minute are recorded once it ends, as the supply then stands, so a chattering adapter or a pack hovering at its floor costs one event a minute. A boot's first reading is a baseline, not an event, and a stale sample changes nothing.
-- **Readiness** gains `Blocked::Battery` ([below](#the-floor)), refused `Busy`. A session that claims `READINESS` but not `POWER` sees it as `Blocked::Starting` (`Blocked::seen_by`), the reason that also refuses `Busy` and clears by itself. It is not lasting, so it is never a `FeedingBlocked` event; the `Supply` event records it instead.
+- **Readiness** gains `Blocked::Battery` ([below](#the-floor)), refused `Busy`. It is not lasting, so it is never a `FeedingBlocked` event; the `Supply` event records it instead.
 - **Statistics.** The `Power` section's battery history, least and most take only `Reading` values, so an implausible reading never enters them.
 
-Nothing is stored in a new place: the events go through the existing ring in its existing 16-byte records. Bank 0 runs an older feeder that cannot decode a `Supply` body. It skips such records as a one-event gap, as it does any newer body, so no bank-0 refresh is needed.
+Nothing is stored in a new place: the events go through the existing ring in its existing 16-byte records.
 
 ## Battery mode
 

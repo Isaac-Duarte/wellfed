@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
-use wellfed_model::{Answer, Capabilities, ClientRole, Op};
+use wellfed_model::{Answer, ClientRole, Op};
 
 use crate::Error;
 use crate::platform::PlatformError;
@@ -20,8 +20,6 @@ use crate::platform::PlatformError;
 pub trait Session {
     fn role(&self) -> ClientRole;
 
-    fn capabilities(&self) -> Capabilities;
-
     /// One request under a fresh id, and its answer.
     async fn ask(&mut self, op: &Op) -> Result<Answer, PlatformError>;
 }
@@ -29,10 +27,6 @@ pub trait Session {
 impl Session for wellfed_connect::Connection {
     fn role(&self) -> ClientRole {
         Self::role(self)
-    }
-
-    fn capabilities(&self) -> Capabilities {
-        Self::capabilities(self)
     }
 
     async fn ask(&mut self, op: &Op) -> Result<Answer, PlatformError> {

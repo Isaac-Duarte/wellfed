@@ -11,7 +11,7 @@
 //!   changed under the read, the session ending) leaves the feed to the
 //!   next look. Reads change nothing on the feeder, so asking again is
 //!   always safe.
-//! - **Statistics.** Every section the session's capabilities allow, at
+//! - **Statistics.** Every section the device's kind keeps, at
 //!   each connect and then every [`Diagnostics::Read`]'s `stats_every`, and
 //!   the food section alone after each `Fed` event, ahead of its trace: the
 //!   food beam reaches the server only through it, so a low or
@@ -126,16 +126,16 @@ impl Collector {
         let Some(opened) = *self.opened.borrow() else {
             return;
         };
-        let capabilities = opened.capabilities;
-        if due.food && !due.stats && capabilities.stats {
+        // The food beam and the traces are a feeder's.
+        let feeder = StatsSection::Food.kind() == Some(opened.kind);
+        if due.food && !due.stats && feeder {
             self.stats(opened, Round::Food).await;
         }
-        // A feeder serves traces only beside the statistics, and one from
-        // before either would end the session on an op it does not know.
-        if due.traces && capabilities.stats && capabilities.traces {
+        let traces = Op::FeedTrace { feed: 0, offset: 0 };
+        if due.traces && traces.kind() == Some(opened.kind) {
             self.traces(opened.epoch).await;
         }
-        if due.stats && capabilities.stats {
+        if due.stats {
             self.stats(opened, Round::Every).await;
         }
     }
@@ -237,19 +237,10 @@ impl Collector {
     /// Read and store the round's sections the session serves, on one
     /// turn.
     async fn stats(&self, opened: Opened, round: Round) {
-        let capabilities = opened.capabilities;
         let sections = StatsSection::ALL
             .into_iter()
             .filter(|section| round == Round::Every || *section == StatsSection::Food)
-            .filter(|section| match section {
-                StatsSection::Feeds => capabilities.traces,
-                StatsSection::Portions => capabilities.calibration,
-                StatsSection::Counters
-                | StatsSection::Memory
-                | StatsSection::Flash
-                | StatsSection::Power
-                | StatsSection::Food => true,
-            });
+            .filter(|section| section.kind().is_none_or(|kind| kind == opened.kind));
         let Ok(mut operation) = self
             .long
             .clone()

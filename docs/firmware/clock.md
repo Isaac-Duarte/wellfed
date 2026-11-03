@@ -82,7 +82,7 @@ Without a zone setting, local time comes from the last client sync's offset and 
 
 ## Time settings
 
-`GetTime` and `PutTime { base, changes }` sit behind `Capabilities::TIME` ([device API](device-api.md)). They are a new op pair, a new outcome (`Time(TimeView)`) and new enums, appended with their fixtures; nothing existing changed bytes.
+`GetTime` and `PutTime { base, changes }` are ops of the [device API](device-api.md)'s shared core, answered `Time(TimeView)`.
 
 - `GetTime` is anyone's.
 - `PutTime` is an owner's only, since the NTP server decides which fixes the clock hears. It is answered `Done` once the store holds the settings asked for (or already held them), and refused `NotWritable` when the writer could not write them.

@@ -43,7 +43,9 @@ use wellfed_client::api::{Invite, Join, JoinStep};
 use wellfed_client::connection::{self, Event, Opened, Recovery as Window, Timing};
 pub use wellfed_client::connection::{Cursor, KEEPALIVE_ID, Resume};
 use wellfed_model::setup::Reply;
-use wellfed_model::{Answer, Capabilities, ClientRole, Joined, Op, OpenRefusal, Pushed};
+use wellfed_model::{
+    Answer, ClientRole, DeviceKind, Joined, Model, Op, OpenRefusal, Pushed, Refusal,
+};
 use wellfed_proto::api::{PORT, RequestId, SERVICE};
 use wellfed_session::hex::Lower;
 use wellfed_session::noise::Keypair;
@@ -56,6 +58,8 @@ pub const ANSWER: Duration = Timing::DEFAULT.answer;
 /// Hearing nothing for this long, the feeder is gone.
 pub const SILENCE: Duration = Timing::DEFAULT.silence;
 
+/// What a device answers an op of another kind's module.
+const UNAVAILABLE: Answer = Answer::Refused(Refusal::Unavailable);
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}: not an address or address:port")]
@@ -251,6 +255,12 @@ impl Connection {
         Ok(connection)
     }
 
+    /// Whether the device's kind serves `op`. Another kind's op is never
+    /// sent: it is answered here as the device would answer it.
+    fn serves(&self, op: &Op) -> bool {
+        serves(self.kind(), op)
+    }
+
     fn opened(&self) -> &Opened {
         self.session
             .opened()
@@ -267,10 +277,14 @@ impl Connection {
         self.opened().role
     }
 
-    /// The features both sides claimed: the session runs on these only, and
-    /// an op outside them would end it on a feeder that predates the op.
-    pub fn capabilities(&self) -> Capabilities {
-        self.opened().capabilities
+    /// Which module of the device API the device serves.
+    pub fn kind(&self) -> DeviceKind {
+        self.opened().kind
+    }
+
+    /// The device's model.
+    pub fn model(&self) -> Model {
+        self.opened().model
     }
 
     /// The epoch the feeder's event numbers count in.
@@ -359,6 +373,10 @@ impl Connection {
     /// [`KEEPALIVE_ID`]. Answers go to [`Self::receive`] only: [`Self::ask`]
     /// and [`Self::next`] drop those of other requests.
     pub fn request(&mut self, id: RequestId, op: &Op) -> Result<()> {
+        if !self.serves(op) {
+            self.answers.push_back((id, Some(UNAVAILABLE)));
+            return Ok(());
+        }
         self.session.request(now(), id, op)?;
         while let Some(bytes) = self.session.poll_transmit() {
             self.outbox.0.extend(bytes);
@@ -407,6 +425,9 @@ impl Connection {
     /// meanwhile stay queued for [`Self::next`]. `id` may not be
     /// [`KEEPALIVE_ID`].
     pub async fn ask(&mut self, id: RequestId, op: &Op) -> Result<Answer> {
+        if !self.serves(op) {
+            return Ok(UNAVAILABLE);
+        }
         self.session.request(now(), id, op)?;
         loop {
             while let Some((answered, answer)) = self.answers.pop_front() {
@@ -505,5 +526,151 @@ pub async fn join(
             Some(JoinStep::Send(bytes)) => stream.write_all(&bytes).await?,
             Some(JoinStep::Done(joined)) => return Ok(joined),
         }
+    }
+}
+
+/// Whether a device of `kind` serves `op`: the shared core, or its own
+/// module's.
+fn serves(kind: DeviceKind, op: &Op) -> bool {
+    op.kind().is_none_or(|of| of == kind)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wellfed_model::StatsSection;
+
+    /// Another kind's op, a feeder-only statistics section among them, is
+    /// answered here and never sent; the shared core goes to any kind.
+    #[test]
+    fn another_kind_s_op_is_refused_locally() {
+        let feed = Op::Feed { portions: 1 };
+        let food = Op::Stats {
+            section: StatsSection::Food,
+        };
+        let counters = Op::Stats {
+            section: StatsSection::Counters,
+        };
+        for op in [&feed, &food, &Op::GetPlans] {
+            assert!(serves(DeviceKind::Feeder, op), "{op:?}");
+            assert!(!serves(DeviceKind::Fountain, op), "{op:?}");
+        }
+        for op in [&Op::Status, &counters, &Op::Reboot] {
+            assert!(serves(DeviceKind::Fountain, op), "{op:?}");
+        }
+        assert_eq!(UNAVAILABLE, Answer::Refused(Refusal::Unavailable));
+    }
+
+    /// A fountain's side of one session: the handshake, welcoming the
+    /// client as a PLWF106, then a count of every frame the client sends
+    /// after it, until the client hangs up.
+    fn fountain(listener: &std::net::TcpListener, device: &Keypair) -> usize {
+        use std::io::{Read, Write};
+        use wellfed_proto::api::{
+            FRAME_MAX, Hello, Open, PROLOGUE, PROTOCOL_MAJOR, Role as WireRole, Welcome,
+        };
+        use wellfed_proto::device::Model;
+        use wellfed_session::frame::{self, PREFIX};
+        use wellfed_session::noise::{Handshake, Pattern, Role};
+
+        fn read_frame(stream: &mut std::net::TcpStream) -> Option<Vec<u8>> {
+            let mut prefix = [0; PREFIX];
+            stream.read_exact(&mut prefix).ok()?;
+            let len = frame::parse_prefix(prefix, FRAME_MAX).unwrap();
+            let mut message = vec![0; len];
+            stream.read_exact(&mut message).ok()?;
+            Some(message)
+        }
+
+        let (mut stream, _) = listener.accept().unwrap();
+        let open: Open = wellfed_proto::decode(&read_frame(&mut stream).unwrap()).unwrap();
+        assert_eq!(open, Open::Session);
+        let mut handshake = Handshake::new(
+            Pattern::Ik,
+            Role::Responder,
+            PROLOGUE,
+            device,
+            None,
+            [7; 32],
+        )
+        .unwrap();
+        let mut plain = [0; FRAME_MAX];
+        let len = handshake
+            .read_message(&read_frame(&mut stream).unwrap(), &mut plain)
+            .unwrap();
+        let hello: Hello = wellfed_proto::decode(&plain[..len]).unwrap();
+        assert_eq!(hello.major, PROTOCOL_MAJOR);
+
+        let welcome = Welcome::Open {
+            major: PROTOCOL_MAJOR,
+            model: Model::Plwf106,
+            build: "fountain",
+            role: WireRole::Owner,
+            epoch: 1,
+        };
+        let len = wellfed_proto::encode(&welcome, &mut plain).unwrap();
+        let mut out = [0; FRAME_MAX];
+        let written = handshake.write_message(&plain[..len], &mut out).unwrap();
+        stream
+            .write_all(&frame::prefix(written, FRAME_MAX).unwrap())
+            .unwrap();
+        stream.write_all(&out[..written]).unwrap();
+
+        let mut after = 0;
+        while read_frame(&mut stream).is_some() {
+            after += 1;
+        }
+        after
+    }
+
+    /// A feeder op asked of a fountain over a real session, through both
+    /// `request` and `ask`: answered `Unavailable` here, and not one byte
+    /// of it queued or sent.
+    #[test]
+    fn another_kind_s_op_never_leaves_the_connection() {
+        let device = Keypair::from_secret([0x10; 32]);
+        let identity = *device.public();
+        let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let served = std::thread::spawn(move || fountain(&listener, &device));
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let keys = Keypair::from_secret([0x20; 32]);
+            let mut connection = Connection::open(&keys, identity, address, [9; 32])
+                .await
+                .unwrap();
+            assert_eq!(connection.kind(), DeviceKind::Fountain);
+
+            connection
+                .request([1; 16], &Op::Feed { portions: 1 })
+                .unwrap();
+            let asked = connection.ask([2; 16], &Op::GetPlans).await.unwrap();
+            assert_eq!(asked, UNAVAILABLE);
+            let requested = connection.receive(Duration::ZERO).await.unwrap();
+            assert_eq!(
+                requested,
+                Received::Answer {
+                    id: [1; 16],
+                    answer: Some(UNAVAILABLE),
+                }
+            );
+
+            assert!(
+                connection.outbox.0.is_empty(),
+                "nothing waits to be written"
+            );
+            assert!(
+                connection.session.poll_transmit().is_none(),
+                "the session sealed nothing"
+            );
+        });
+
+        // The connection is dropped: the device saw the handshake and no
+        // frame after it.
+        assert_eq!(served.join().unwrap(), 0);
     }
 }

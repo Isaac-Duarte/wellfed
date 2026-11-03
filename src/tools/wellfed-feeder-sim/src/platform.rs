@@ -74,7 +74,8 @@ use wellfed_hal::ota::mailbox::{self, Request};
 use wellfed_hal::ota::signers;
 use wellfed_hal::power;
 use wellfed_hal::sdk::LOG_TAIL_BYTES;
-use wellfed_proto::api::{self as proto, Capabilities, Counts, FLASH_SECTORS, TASKS_MAX};
+use wellfed_proto::api::{self as proto, Counts, FLASH_SECTORS, TASKS_MAX};
+use wellfed_proto::device::Model;
 use wellfed_proto::trace::PAGE_MAX;
 
 use crate::banks::Banks;
@@ -784,22 +785,8 @@ impl Platform for SimPlatform {
         }
     }
 
-    fn capabilities(&self) -> Capabilities {
-        // No motor, but a feeding owner on the feed journal (`feeding`). It
-        // records no trace, but serves the ones its storage ring holds.
-        Capabilities::FEED
-            .union(Capabilities::UPDATE)
-            .union(Capabilities::READINESS)
-            .union(Capabilities::TIME)
-            .union(Capabilities::LOG)
-            .union(Capabilities::STATS)
-            .union(Capabilities::TRACES)
-            .union(Capabilities::CALIBRATION)
-            .union(Capabilities::POWER)
-            .union(Capabilities::BACKUP)
-            .union(Capabilities::PLANS)
-            .union(Capabilities::CALL)
-            .union(Capabilities::DESICCANT)
+    fn model(&self) -> Model {
+        Model::Plaf103
     }
 
     fn build_wifi(&self) -> BuildWifi {

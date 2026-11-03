@@ -25,14 +25,14 @@ use wellfed_device_api::mailbox::{
 use wellfed_device_api::pairing::{Config, Event as PairingEvent, Pairing};
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_api::{
-    Device, EventRead, KeyChange, KeyOutcome, Pass, Reader, Reason, Record, SESSIONS, Server,
-    UpdateAnswer, UpdateKeyChange, UpdateRequest,
+    Device, EventRead, FeederDevice, KeyChange, KeyOutcome, Pass, Reader, Reason, Record, SESSIONS,
+    Server, UpdateAnswer, UpdateKeyChange, UpdateRequest,
 };
 use wellfed_model as model;
 use wellfed_model::{Answer, Generation, Hello, Joined, Op, OpenRefusal, SettingsPatch};
 use wellfed_proto::api::{
-    self as proto, Capabilities, EventBody, FoodLevel, Metric, Refusal, Sample, Stats,
-    StatsSection, Status, UpdatePhase, UpdateRefusal, UpdateView, WANTED_MAX,
+    self as proto, DeviceStatus, EventBody, FeederStatus, FoodLevel, Metric, Refusal, Sample,
+    Stats, StatsSection, Status, UpdatePhase, UpdateRefusal, UpdateView, WANTED_MAX,
 };
 use wellfed_session::frame;
 use wellfed_session::noise::Keypair;
@@ -78,11 +78,11 @@ struct Fake {
     /// Feeds up to this number are reserved (the owner's turn, by hand).
     reserved: u32,
     cancelled: Vec<u32>,
-    /// Serves `Capabilities::UPDATE`.
+    /// Serves updates.
     update: bool,
     /// An install holds the flash.
     installing: bool,
-    /// Serves `Capabilities::CALL`.
+    /// Serves the meal call's chunks.
     call: bool,
     /// The next chunk's mailbox is full: a chunk is refused `Busy`.
     chunks_busy: bool,
@@ -98,7 +98,7 @@ struct Fake {
     time_pending: Option<TimeSettings>,
     /// The writer's next time save fails, leaving the store as it was.
     time_fails: bool,
-    /// Serves `Capabilities::LOG` from `tail`.
+    /// Keeps a log tail, `tail`.
     log: bool,
     tail: LogTail<4096>,
     /// The feeding owner's own reason not to feed.
@@ -109,8 +109,7 @@ struct Fake {
     /// stored; and a feed still being recorded.
     trace: Option<(proto::TraceSummary, Vec<u8>, bool)>,
     tracing: Option<u32>,
-    /// Bank 1 as the bank-0 role reads it; serves `Capabilities::BACKUP`
-    /// when set.
+    /// Bank 1 as the bank-0 role reads it; served when set.
     bank1: Option<Vec<u8>>,
 }
 
@@ -270,6 +269,12 @@ impl Fake {
 }
 
 impl Device for Fake {
+    type Feeder = Self;
+
+    fn feeder(&mut self) -> Option<&mut Self> {
+        Some(self)
+    }
+
     fn random(&mut self, out: &mut [u8; 32]) -> bool {
         self.counter = self.counter.wrapping_add(1);
         *out = [self.counter; 32];
@@ -278,6 +283,10 @@ impl Device for Fake {
 
     fn build(&self) -> &'static str {
         "test-build"
+    }
+
+    fn model(&self) -> wellfed_proto::device::Model {
+        wellfed_proto::device::Model::Plaf103
     }
 
     fn status(&mut self, _now_ms: u32) -> Status<'static> {
@@ -294,39 +303,26 @@ impl Device for Fake {
             dns_losses: 0,
             clock_ms: None,
             power: None,
-            locked: self.locked,
-            settings_generation: self.settings.generation,
             wifi_generation: self.wifi_generation,
             last_event: self.events.last().map(|e| e.seq),
             sessions: 0,
-            desiccant: match self.settings.desiccant(self.today) {
-                Count::Unset => proto::Desiccant::Unset,
-                Count::Unknown => proto::Desiccant::Unknown,
-                Count::Remaining(days) => proto::Desiccant::Remaining { days },
-            },
-            food: FoodLevel::Unread,
-            feed_fault: None,
-        }
-    }
-
-    fn today(&mut self, _now_ms: u32) -> Option<i32> {
-        self.today
-    }
-
-    fn settings(&mut self, change: SettingsFields) -> SettingsResult {
-        if !change.changes() {
-            return SettingsResult::Current {
-                view: self.settings,
-                pending: self.settings_pending.is_some(),
-            };
-        }
-        if self.settings_pending.is_some() {
-            return SettingsResult::Busy;
-        }
-        self.settings_pending = Some(change);
-        SettingsResult::Current {
-            view: self.settings,
-            pending: true,
+            device: DeviceStatus::Feeder(FeederStatus {
+                locked: self.locked,
+                settings_generation: self.settings.generation,
+                desiccant: match self.settings.desiccant(self.today) {
+                    Count::Unset => proto::Desiccant::Unset,
+                    Count::Unknown => proto::Desiccant::Unknown,
+                    Count::Remaining(days) => proto::Desiccant::Remaining { days },
+                },
+                food: FoodLevel::Unread,
+                feed_fault: None,
+                readiness: self.readiness(),
+                supply: proto::Supply {
+                    adapter: None,
+                    battery: proto::Battery::Unread,
+                    below_floor: None,
+                },
+            }),
         }
     }
 
@@ -348,18 +344,6 @@ impl Device for Fake {
         }
     }
 
-    fn lock(&mut self, locked: bool) -> LockResult {
-        self.locked = Some(locked);
-        LockResult::Current {
-            locked,
-            pending: true,
-        }
-    }
-
-    fn play(&mut self, _tune: Tune) -> PlayResult {
-        PlayResult::Started
-    }
-
     fn time_sync(&mut self, _fields: TimeFields, _origin: Origin) -> TimeResult {
         self.syncs += 1;
         TimeResult::Synced { jump_ms: Some(5) }
@@ -378,29 +362,6 @@ impl Device for Fake {
         self.keys_done
             .filter(|&(done, _)| done == ticket)
             .map(|(_, outcome)| outcome)
-    }
-
-    fn capabilities(&self) -> Capabilities {
-        let mut capabilities = Capabilities::FEED
-            .union(Capabilities::READINESS)
-            .union(Capabilities::TIME)
-            .union(Capabilities::STATS)
-            .union(Capabilities::TRACES)
-            .union(Capabilities::CALIBRATION)
-            .union(Capabilities::DESICCANT);
-        if self.update {
-            capabilities = capabilities.union(Capabilities::UPDATE);
-        }
-        if self.call {
-            capabilities = capabilities.union(Capabilities::CALL);
-        }
-        if self.log {
-            capabilities = capabilities.union(Capabilities::LOG);
-        }
-        if self.bank1.is_some() {
-            capabilities = capabilities.union(Capabilities::BACKUP);
-        }
-        capabilities
     }
 
     /// A small fixed answer per section, each told apart by its values.
@@ -454,25 +415,6 @@ impl Device for Fake {
         }
     }
 
-    fn feed_trace(&mut self, feed: u32, offset: u16) -> Result<proto::TracePage<'_>, Refusal> {
-        if self.tracing == Some(feed) {
-            return Err(Refusal::Busy);
-        }
-        let Some((summary, body, stored)) = self.trace.as_ref().filter(|(s, ..)| s.feed == feed)
-        else {
-            return Err(Refusal::NotFound);
-        };
-        let rest = body.get(usize::from(offset)..).ok_or(Refusal::Invalid)?;
-        let len = rest.len().min(wellfed_proto::trace::PAGE_MAX);
-        Ok(proto::TracePage {
-            summary: *summary,
-            stored: *stored,
-            offset,
-            total: u16::try_from(body.len()).unwrap(),
-            bytes: &rest[..len],
-        })
-    }
-
     fn bank1_page(&mut self, offset: u32) -> Result<proto::Bank1Page<'_>, Refusal> {
         if self.installing {
             return Err(Refusal::Busy);
@@ -491,6 +433,9 @@ impl Device for Fake {
     }
 
     fn log_after(&mut self, after: Option<u32>, text: &mut [u8]) -> Option<LogBatch> {
+        if !self.log {
+            return None;
+        }
         self.tail.read(after, text)
     }
 
@@ -518,18 +463,10 @@ impl Device for Fake {
         })
     }
 
-    fn readiness(&mut self) -> proto::Readiness {
-        let blocked = if self.installing() {
-            Some(proto::Blocked::Updating)
-        } else if self.feed_active() {
-            Some(proto::Blocked::Feeding)
-        } else {
-            self.blocked
-        };
-        blocked.map_or(proto::Readiness::Ready, proto::Readiness::Blocked)
-    }
-
     fn update(&mut self, request: UpdateRequest<'_>) -> Result<u32, Refusal> {
+        if !self.update {
+            return Err(Refusal::Unavailable);
+        }
         self.ticket += 1;
         let answer = match request {
             UpdateRequest::Offer { device, .. } => {
@@ -564,15 +501,10 @@ impl Device for Fake {
             .map(|(_, answer)| answer)
     }
 
-    fn call_chunk(&mut self, _offset: u32, _data: &[u8]) -> Result<(), Refusal> {
-        if self.chunks_busy {
-            Err(Refusal::Busy)
-        } else {
-            Err(Refusal::Invalid)
-        }
-    }
-
     fn update_chunk(&mut self, offset: u32, _data: &[u8]) -> Result<UpdateView, Refusal> {
+        if !self.update {
+            return Err(Refusal::Unavailable);
+        }
         if self.chunks_busy {
             return Err(Refusal::Busy);
         }
@@ -592,28 +524,8 @@ impl Device for Fake {
         self.installing || self.held.is_some()
     }
 
-    fn feed_active(&self) -> bool {
+    fn operating(&self) -> bool {
         self.reserved < u32::try_from(self.feeds.len()).unwrap()
-    }
-
-    fn feed(&mut self, portions: u8, by: proto::Source) -> Result<u32, Refusal> {
-        if self.reserved < u32::try_from(self.feeds.len()).unwrap() {
-            return Err(Refusal::Busy);
-        }
-        self.feeds.push((portions, by));
-        Ok(u32::try_from(self.feeds.len()).unwrap())
-    }
-
-    fn feed_reserved(&mut self, feed: u32) -> Option<Result<(), Refusal>> {
-        (feed <= self.reserved).then_some(Ok(()))
-    }
-
-    fn cancel_feed(&mut self, feed: u32) -> bool {
-        let running = feed != 0 && feed <= self.reserved && !self.cancelled.contains(&feed);
-        if running {
-            self.cancelled.push(feed);
-        }
-        running
     }
 
     fn record(&mut self, _now_ms: u32, body: EventBody) {
@@ -650,6 +562,101 @@ impl Device for Fake {
 
     fn reboot(&mut self) {
         self.rebooted = true;
+    }
+}
+
+impl FeederDevice for Fake {
+    fn today(&mut self, _now_ms: u32) -> Option<i32> {
+        self.today
+    }
+
+    fn settings(&mut self, change: SettingsFields) -> SettingsResult {
+        if !change.changes() {
+            return SettingsResult::Current {
+                view: self.settings,
+                pending: self.settings_pending.is_some(),
+            };
+        }
+        if self.settings_pending.is_some() {
+            return SettingsResult::Busy;
+        }
+        self.settings_pending = Some(change);
+        SettingsResult::Current {
+            view: self.settings,
+            pending: true,
+        }
+    }
+
+    fn lock(&mut self, locked: bool) -> LockResult {
+        self.locked = Some(locked);
+        LockResult::Current {
+            locked,
+            pending: true,
+        }
+    }
+
+    fn play(&mut self, _tune: Tune) -> PlayResult {
+        PlayResult::Started
+    }
+
+    fn feed_trace(&mut self, feed: u32, offset: u16) -> Result<proto::TracePage<'_>, Refusal> {
+        if self.tracing == Some(feed) {
+            return Err(Refusal::Busy);
+        }
+        let Some((summary, body, stored)) = self.trace.as_ref().filter(|(s, ..)| s.feed == feed)
+        else {
+            return Err(Refusal::NotFound);
+        };
+        let rest = body.get(usize::from(offset)..).ok_or(Refusal::Invalid)?;
+        let len = rest.len().min(wellfed_proto::trace::PAGE_MAX);
+        Ok(proto::TracePage {
+            summary: *summary,
+            stored: *stored,
+            offset,
+            total: u16::try_from(body.len()).unwrap(),
+            bytes: &rest[..len],
+        })
+    }
+
+    fn readiness(&mut self) -> proto::Readiness {
+        let blocked = if self.installing() {
+            Some(proto::Blocked::Updating)
+        } else if self.operating() {
+            Some(proto::Blocked::Feeding)
+        } else {
+            self.blocked
+        };
+        blocked.map_or(proto::Readiness::Ready, proto::Readiness::Blocked)
+    }
+
+    fn call_chunk(&mut self, _offset: u32, _data: &[u8]) -> Result<(), Refusal> {
+        if !self.call {
+            Err(Refusal::Unavailable)
+        } else if self.chunks_busy {
+            Err(Refusal::Busy)
+        } else {
+            Err(Refusal::Invalid)
+        }
+    }
+
+    fn feed(&mut self, portions: u8, by: proto::Source) -> Result<u32, Refusal> {
+        if self.reserved < u32::try_from(self.feeds.len()).unwrap() {
+            return Err(Refusal::Busy);
+        }
+        self.feeds.push((portions, by));
+        Ok(u32::try_from(self.feeds.len()).unwrap())
+    }
+
+    fn feed_reserved(&mut self, feed: u32) -> Option<Result<(), Refusal>> {
+        (feed <= self.reserved).then_some(Ok(()))
+    }
+
+    fn cancel_feed(&mut self, feed: u32) -> bool {
+        let running = feed != 0 && feed <= self.reserved && !self.cancelled.contains(&feed);
+        if running {
+            self.cancelled.push(feed);
+        }
+        running
     }
 }
 
@@ -1296,13 +1303,13 @@ fn the_status_says_whether_a_feed_can_start_and_a_feed_obeys_it() {
     };
     assert_eq!(
         readiness(ask(&mut rig, &mut owner, 1, Op::Status)),
-        Some(model::Readiness::Ready)
+        model::Readiness::Ready
     );
 
     rig.device.blocked = Some(proto::Blocked::Fault);
     assert_eq!(
         readiness(ask(&mut rig, &mut owner, 2, Op::Status)),
-        Some(model::Readiness::Blocked(model::Blocked::Fault))
+        model::Readiness::Blocked(model::Blocked::Fault)
     );
     let fed = ask(&mut rig, &mut owner, 3, Op::Feed { portions: 1 });
     assert_eq!(fed, Answer::Refused(model::Refusal::Fault));
@@ -1311,71 +1318,16 @@ fn the_status_says_whether_a_feed_can_start_and_a_feed_obeys_it() {
     assert_eq!(fed, Answer::Refused(model::Refusal::Busy));
     assert!(rig.device.feeds.is_empty(), "nothing reached the owner");
 
-    // A session without the bit reads the version 1 status.
-    let slot = rig.accept().unwrap();
-    let hello = Hello {
-        major: 1,
-        capabilities: model::Capabilities {
-            readiness: false,
-            ..model::Capabilities::KNOWN
-        },
-    };
-    let (session, outbox) = Session::connect_with(
-        &Keypair::from_secret(OWNER),
-        public(FEEDER),
-        [0x78; 32],
-        hello,
-    )
-    .unwrap();
-    let mut old = Client_ {
-        slot,
-        session,
-        outbox,
-    };
-    run(&mut rig, &mut old, |session| {
-        matches!(session.next_incoming(), Ok(Some(Incoming::Opened(_))))
-    });
-    assert_eq!(readiness(ask(&mut rig, &mut old, 1, Op::Status)), None);
-
-    // The battery's reason reaches a session that claims the power bit; a
-    // feed is refused `Busy`, as it clears by itself.
+    // The battery's reason reaches every session; a feed is refused
+    // `Busy`, as it clears by itself.
     rig.device.blocked = Some(proto::Blocked::Battery);
     assert_eq!(
         readiness(ask(&mut rig, &mut owner, 5, Op::Status)),
-        Some(model::Readiness::Blocked(model::Blocked::Battery))
+        model::Readiness::Blocked(model::Blocked::Battery)
     );
     let fed = ask(&mut rig, &mut owner, 6, Op::Feed { portions: 1 });
     assert_eq!(fed, Answer::Refused(model::Refusal::Busy));
 
-    // One that claims readiness but not power could not decode it, and
-    // reads the reason that also refuses `Busy` and clears by itself.
-    let slot = rig.accept().unwrap();
-    let hello = Hello {
-        major: 1,
-        capabilities: model::Capabilities {
-            power: false,
-            ..model::Capabilities::KNOWN
-        },
-    };
-    let (session, outbox) = Session::connect_with(
-        &Keypair::from_secret(OWNER),
-        public(FEEDER),
-        [0x79; 32],
-        hello,
-    )
-    .unwrap();
-    let mut older = Client_ {
-        slot,
-        session,
-        outbox,
-    };
-    run(&mut rig, &mut older, |session| {
-        matches!(session.next_incoming(), Ok(Some(Incoming::Opened(_))))
-    });
-    assert_eq!(
-        readiness(ask(&mut rig, &mut older, 1, Op::Status)),
-        Some(model::Readiness::Blocked(model::Blocked::Starting))
-    );
     assert!(rig.device.feeds.is_empty(), "nothing reached the owner");
 }
 
@@ -1478,61 +1430,6 @@ fn during_a_feed_a_client_cancels_and_a_stranger_costs_one_handshake() {
         opened |= matches!(session.next_incoming(), Ok(Some(Incoming::Opened(_))));
     }
     assert!(opened);
-}
-
-#[test]
-fn a_client_without_the_feed_capability_neither_feeds_nor_sees_feeds() {
-    let mut rig = Rig::new();
-    let fed = EventBody::Fed {
-        feed: 1,
-        requested: 1,
-        completed: 1,
-        outcome: proto::FeedOutcome::Done,
-        reason: proto::FeedReason::Done,
-        hopper: FoodLevel::Present,
-        by: proto::Source::Panel,
-    };
-    rig.device.record(0, fed);
-    rig.device.record(
-        0,
-        EventBody::Lock {
-            locked: true,
-            by: proto::Source::Panel,
-        },
-    );
-
-    let slot = rig.accept().unwrap();
-    let keys = Keypair::from_secret(OWNER);
-    let hello = Hello {
-        major: 1,
-        capabilities: model::Capabilities::V1,
-    };
-    let (session, outbox) =
-        Session::connect_with(&keys, public(FEEDER), [0x77; 32], hello).unwrap();
-    let mut old = Client_ {
-        slot,
-        session,
-        outbox,
-    };
-    run(&mut rig, &mut old, |session| {
-        matches!(session.next_incoming(), Ok(Some(Incoming::Opened(_))))
-    });
-    let feed = ask(&mut rig, &mut old, 1, Op::Feed { portions: 1 });
-    assert_eq!(feed, Answer::Refused(model::Refusal::Unavailable));
-    assert!(rig.device.feeds.is_empty());
-
-    let bytes = old.session.subscribe(None, false).unwrap();
-    old.outbox.extend(bytes);
-    let mut seen = Vec::new();
-    run(&mut rig, &mut old, |session| {
-        while let Some(incoming) = session.next_incoming().unwrap() {
-            if let Incoming::Pushed(model::Pushed::Event(event)) = incoming {
-                seen.push(event.seq);
-            }
-        }
-        !seen.is_empty()
-    });
-    assert_eq!(seen, [2]);
 }
 
 #[test]
@@ -1777,59 +1674,6 @@ fn a_gap_ends_a_batch_and_arrives_next() {
             vec![(7, 0), (8, 0), (9, 0), (10, 0)],
         ]
     );
-}
-
-#[test]
-fn bodies_a_session_cannot_read_are_skipped_inside_a_batch() {
-    let mut rig = Rig::new();
-    let fed = EventBody::Fed {
-        feed: 1,
-        requested: 1,
-        completed: 1,
-        outcome: proto::FeedOutcome::Done,
-        reason: proto::FeedReason::Done,
-        hopper: FoodLevel::Present,
-        by: proto::Source::Panel,
-    };
-    let lock = EventBody::Lock {
-        locked: true,
-        by: proto::Source::Panel,
-    };
-    for body in [lock, fed, lock, fed, lock, fed] {
-        rig.device.record(0, body);
-    }
-
-    let slot = rig.accept().unwrap();
-    let hello = Hello {
-        major: 1,
-        capabilities: model::Capabilities::V1,
-    };
-    let (session, outbox) = Session::connect_with(
-        &Keypair::from_secret(OWNER),
-        public(FEEDER),
-        [0x77; 32],
-        hello,
-    )
-    .unwrap();
-    let mut old = Client_ {
-        slot,
-        session,
-        outbox,
-    };
-    run(&mut rig, &mut old, |session| {
-        matches!(session.next_incoming(), Ok(Some(Incoming::Opened(_))))
-    });
-    let bytes = old.session.subscribe(None, false).unwrap();
-    old.outbox.extend(bytes);
-    assert_eq!(
-        frames(&mut rig, &mut old, 3),
-        [vec![(1, 0), (3, 0), (5, 0)]]
-    );
-
-    // The cursor moved past the skipped feed at the end: the next event
-    // is the only one to arrive.
-    rig.device.record(0, lock);
-    assert_eq!(frames(&mut rig, &mut old, 1), [vec![(7, 0)]]);
 }
 
 #[test]
@@ -2219,10 +2063,7 @@ fn drive(rig: &mut Rig, live: &mut Live, mut done: impl FnMut(&Live) -> bool) ->
 }
 
 fn live(rig: &mut Rig, secret: [u8; 32]) -> Live {
-    let hello = Hello {
-        major: 1,
-        capabilities: model::Capabilities::KNOWN,
-    };
+    let hello = Hello { major: 1 };
     let mut live = live_with(rig, secret, hello);
     drive(rig, &mut live, |live| live.connection.opened().is_some()).unwrap();
     live
@@ -2244,24 +2085,11 @@ fn a_connection_names_the_epoch_and_answers_each_request_once() {
     let mut owner = live(&mut rig, OWNER);
     let opened = owner.connection.opened().unwrap().clone();
     assert_eq!(
-        (opened.role, opened.capabilities, opened.epoch),
+        (opened.role, opened.kind, opened.model, opened.epoch),
         (
             model::ClientRole::Owner,
-            model::Capabilities {
-                feed: true,
-                update: false,
-                time: true,
-                log: false,
-                stats: true,
-                readiness: true,
-                traces: true,
-                calibration: true,
-                power: false,
-                backup: false,
-                plans: false,
-                desiccant: true,
-                call: false,
-            },
+            model::DeviceKind::Feeder,
+            model::Model::Plaf103,
             EPOCH
         )
     );
@@ -2385,10 +2213,7 @@ fn a_shorter_silence_ends_the_session_sooner_and_the_usual_one_comes_back() {
 #[test]
 fn a_major_2_hello_gets_the_typed_version_refusal() {
     let mut rig = Rig::new();
-    let hello = Hello {
-        major: 2,
-        capabilities: model::Capabilities::KNOWN,
-    };
+    let hello = Hello { major: 2 };
     let mut client = live_with(&mut rig, OWNER, hello);
     let ended = drive(&mut rig, &mut client, |_| false);
     assert!(
@@ -2404,10 +2229,7 @@ fn a_major_2_hello_gets_the_typed_version_refusal() {
 fn a_welcome_waits_for_the_event_ring() {
     let mut rig = Rig::new();
     rig.device.epoch = None;
-    let hello = Hello {
-        major: 1,
-        capabilities: model::Capabilities::KNOWN,
-    };
+    let hello = Hello { major: 1 };
     let mut owner = live_with(&mut rig, OWNER, hello);
     let mut passes = 0;
     drive(&mut rig, &mut owner, |_| {
@@ -2551,45 +2373,37 @@ fn every_body() -> Vec<EventBody> {
     bodies
 }
 
+/// Every body reaches every subscriber: what a session is sent does not
+/// depend on what its hello says.
 #[test]
-fn a_v1_only_session_never_receives_a_body_outside_v1() {
+fn every_subscriber_receives_every_body() {
     let mut rig = Rig::new();
     let bodies = every_body();
     for body in &bodies {
         rig.device.record(0, *body);
     }
-    // A last V1 event, so the session knows it has seen everything.
+    // A last event, so the session knows it has seen everything.
     rig.device.record(0, EventBody::Lost { count: 9 });
-    let v1: Vec<EventBody> = bodies
+    let all: Vec<EventBody> = bodies
         .iter()
         .copied()
-        .filter(|body| body.capability() == Capabilities::V1)
         .chain([EventBody::Lost { count: 9 }])
         .collect();
 
-    let hello = Hello {
-        major: 1,
-        capabilities: model::Capabilities::V1,
-    };
-    let mut old = live_with(&mut rig, OWNER, hello);
-    drive(&mut rig, &mut old, |live| {
-        live.connection.opened().is_some()
-    })
-    .unwrap();
-    let now = old.now(&rig);
-    old.connection.subscribe(now, None, false).unwrap();
-    drive(&mut rig, &mut old, |live| {
+    let mut member = live(&mut rig, MEMBER);
+    let now = member.now(&rig);
+    member.connection.subscribe(now, None, false).unwrap();
+    drive(&mut rig, &mut member, |live| {
         pushed(live).last().map(|e| EventBody::from(e.body)) == Some(EventBody::Lost { count: 9 })
     })
     .unwrap();
 
-    let received: Vec<EventBody> = pushed(&old).iter().map(|e| e.body.into()).collect();
-    assert_eq!(received, v1);
-    assert!(v1.len() < bodies.len() + 1, "some body is outside V1");
+    let received: Vec<EventBody> = pushed(&member).iter().map(|e| e.body.into()).collect();
+    assert_eq!(received, all);
 }
 
 #[test]
-fn every_statistics_section_answers_a_session_that_claims_the_bit() {
+fn every_statistics_section_answers_an_owner() {
     let mut rig = Rig::new();
     let mut owner = open(&mut rig, OWNER);
     for (id, section) in (1..).zip(model::StatsSection::ALL) {
@@ -2624,7 +2438,7 @@ fn every_statistics_section_answers_a_session_that_claims_the_bit() {
         assert_eq!(answered, section);
     }
 
-    // A member reads them too; a session whose hello lacks the bit does not.
+    // A member reads them too.
     let mut member = open(&mut rig, MEMBER);
     let section = model::StatsSection::Counters;
     let answer = ask(&mut rig, &mut member, 9, Op::Stats { section });
@@ -2639,43 +2453,13 @@ fn every_statistics_section_answers_a_session_that_claims_the_bit() {
     let answer = ask(&mut rig, &mut owner, 11, Op::Stats { section: memory });
     assert_eq!(answer, Answer::Refused(model::Refusal::Busy));
     rig.feeding = false;
-
-    let hello = Hello {
-        major: 1,
-        capabilities: model::Capabilities {
-            stats: false,
-            ..model::Capabilities::KNOWN
-        },
-    };
-    let mut old = live_with(&mut rig, OWNER, hello);
-    drive(&mut rig, &mut old, |live| {
-        live.connection.opened().is_some()
-    })
-    .unwrap();
-    let now = old.now(&rig);
-    old.connection
-        .request(now, [3; 16], &model::Op::Stats { section })
-        .unwrap();
-    drive(&mut rig, &mut old, |live| !live.events.is_empty()).unwrap();
-    assert!(
-        matches!(
-            &old.events[..],
-            [Event::Answer {
-                answer: Answer::Refused(model::Refusal::Unavailable),
-                ..
-            }]
-        ),
-        "{:?}",
-        old.events
-    );
 }
 
 /// A feed's trace, read a page at a time by any role: the two pages make
-/// the body back, `Busy` while that feed is still recorded, `NotFound` for
-/// a feed with no trace, and only to a session whose hello claims both the
-/// statistics and the traces.
+/// the body back, `Busy` while that feed is still recorded, and `NotFound`
+/// for a feed with no trace.
 #[test]
-fn a_trace_is_read_a_page_at_a_time_with_both_bits() {
+fn a_trace_is_read_a_page_at_a_time() {
     use wellfed_client::trace::{Pages, TraceError};
 
     let mut rig = Rig::new();
@@ -2713,51 +2497,13 @@ fn a_trace_is_read_a_page_at_a_time_with_both_bits() {
         Op::FeedTrace { feed: 7, offset: 0 },
     );
     assert_eq!(answer, Answer::Refused(model::Refusal::NotFound));
-
-    for claimed in [
-        model::Capabilities {
-            traces: false,
-            ..model::Capabilities::KNOWN
-        },
-        model::Capabilities {
-            stats: false,
-            ..model::Capabilities::KNOWN
-        },
-    ] {
-        let hello = Hello {
-            major: 1,
-            capabilities: claimed,
-        };
-        let mut old = live_with(&mut rig, OWNER, hello);
-        drive(&mut rig, &mut old, |live| {
-            live.connection.opened().is_some()
-        })
-        .unwrap();
-        let now = old.now(&rig);
-        old.connection
-            .request(now, [3; 16], &Op::FeedTrace { feed: 5, offset: 0 })
-            .unwrap();
-        drive(&mut rig, &mut old, |live| !live.events.is_empty()).unwrap();
-        assert!(
-            matches!(
-                &old.events[..],
-                [Event::Answer {
-                    answer: Answer::Refused(model::Refusal::Unavailable),
-                    ..
-                }]
-            ),
-            "{claimed:?}: {:?}",
-            old.events
-        );
-    }
 }
 
 /// Bank 1 read whole a page at a time, by an owner only: a member is
-/// forbidden, a session without the bit (or a feeder that does not serve
-/// it) is refused, and so is a read while an install holds the flash or
-/// past the bank's end.
+/// forbidden, a feeder that does not serve it refuses it, and so is a read
+/// while an install holds the flash or past the bank's end.
 #[test]
-fn bank_1_is_read_whole_by_an_owner_with_the_backup_bit() {
+fn bank_1_is_read_whole_by_an_owner() {
     use wellfed_client::install::{Bank1Reader, ReadError, STOCK_PAYLOAD_LEN};
 
     let mut rig = Rig::new();
@@ -2798,35 +2544,6 @@ fn bank_1_is_read_whole_by_an_owner_with_the_backup_bit() {
     let answer = ask(&mut rig, &mut member, 1, Op::ReadBank1 { offset: 0 });
     assert_eq!(answer, Answer::Refused(model::Refusal::Forbidden));
 
-    let hello = Hello {
-        major: 1,
-        capabilities: model::Capabilities {
-            backup: false,
-            ..model::Capabilities::KNOWN
-        },
-    };
-    let mut old = live_with(&mut rig, OWNER, hello);
-    drive(&mut rig, &mut old, |live| {
-        live.connection.opened().is_some()
-    })
-    .unwrap();
-    let now = old.now(&rig);
-    old.connection
-        .request(now, [3; 16], &Op::ReadBank1 { offset: 0 })
-        .unwrap();
-    drive(&mut rig, &mut old, |live| !live.events.is_empty()).unwrap();
-    assert!(
-        matches!(
-            &old.events[..],
-            [Event::Answer {
-                answer: Answer::Refused(model::Refusal::Unavailable),
-                ..
-            }]
-        ),
-        "{:?}",
-        old.events
-    );
-
     // A feeder that serves no backup.
     let mut rig = Rig::new();
     let mut owner = open(&mut rig, OWNER);
@@ -2834,64 +2551,17 @@ fn bank_1_is_read_whole_by_an_owner_with_the_backup_bit() {
     assert_eq!(answer, Answer::Refused(model::Refusal::Unavailable));
 }
 
-/// The calibration ops and the portions section need their own bit: a
-/// feeder that predates them could not decode the request.
-#[test]
-fn calibration_needs_its_bit_on_both_sides() {
-    let mut rig = Rig::new();
-    let hello = Hello {
-        major: 1,
-        capabilities: model::Capabilities {
-            calibration: false,
-            ..model::Capabilities::KNOWN
-        },
-    };
-    let mut old = live_with(&mut rig, OWNER, hello);
-    drive(&mut rig, &mut old, |live| {
-        live.connection.opened().is_some()
-    })
-    .unwrap();
-    let portions = model::Op::Stats {
-        section: model::StatsSection::Portions,
-    };
-    for (id, op) in (1..).zip([model::Op::GetCalibration, portions]) {
-        let now = old.now(&rig);
-        old.events.clear();
-        old.connection.request(now, [id; 16], &op).unwrap();
-        drive(&mut rig, &mut old, |live| !live.events.is_empty()).unwrap();
-        assert!(
-            matches!(
-                &old.events[..],
-                [Event::Answer {
-                    answer: Answer::Refused(model::Refusal::Unavailable),
-                    ..
-                }]
-            ),
-            "{op:?}: {:?}",
-            old.events
-        );
-    }
-}
-
-/// The statistics' metrics go only to subscribers that claimed the bit,
+/// The statistics' metrics go only to subscribers that asked for samples,
 /// and one waiting is replaced by the next of its kind, never by another
 /// kind.
 #[test]
 fn stats_metrics_reach_only_their_subscribers_and_replace_their_own_kind() {
     let mut rig = Rig::new();
-    let hello = |stats| Hello {
-        major: 1,
-        capabilities: model::Capabilities {
-            stats,
-            ..model::Capabilities::KNOWN
-        },
-    };
-    let mut current = live_with(&mut rig, OWNER, hello(true));
-    let mut old = live_with(&mut rig, MEMBER, hello(false));
-    for live in [&mut current, &mut old] {
-        drive(&mut rig, live, |live| live.connection.opened().is_some()).unwrap();
+    let mut current = live(&mut rig, OWNER);
+    let mut old = live(&mut rig, MEMBER);
+    for (live, samples) in [(&mut current, true), (&mut old, false)] {
         let now = live.now(&rig);
-        live.connection.subscribe(now, None, true).unwrap();
+        live.connection.subscribe(now, None, samples).unwrap();
         // A few passes, so the server holds the subscription.
         for _ in 0..3 {
             drive(&mut rig, live, |_| true).unwrap();
@@ -2919,7 +2589,6 @@ fn stats_metrics_reach_only_their_subscribers_and_replace_their_own_kind() {
             .collect()
     };
     drive(&mut rig, &mut current, |live| samples(live).len() == 2).unwrap();
-    drive(&mut rig, &mut old, |live| !samples(live).is_empty()).unwrap();
     for _ in 0..10 {
         drive(&mut rig, &mut current, |_| true).unwrap();
         drive(&mut rig, &mut old, |_| true).unwrap();
@@ -2931,7 +2600,7 @@ fn stats_metrics_reach_only_their_subscribers_and_replace_their_own_kind() {
             model::SampleValue::Heap { free: 2, min: 100 },
         ]
     );
-    assert_eq!(samples(&old), [model::SampleValue::Rssi { dbm: -60 }]);
+    assert_eq!(samples(&old), []);
 }
 
 #[test]
@@ -2988,7 +2657,7 @@ fn enroll_laptop() -> Op {
 }
 
 #[test]
-fn only_an_owner_s_session_with_the_update_bit_may_update() {
+fn only_an_owner_may_update() {
     let mut rig = update_rig();
     let ops = [
         offer(),
@@ -3020,47 +2689,23 @@ fn only_an_owner_s_session_with_the_update_bit_may_update() {
     }
     assert!(rig.device.updates.is_empty() && rig.device.chunks.is_empty());
 
-    // An owner whose hello lacks the bit, or a feeder that does not serve it.
-    let mut rig = update_rig();
-    let hello = Hello {
-        major: 1,
-        capabilities: model::Capabilities {
-            feed: true,
-            update: false,
-            time: false,
-            log: true,
-            stats: true,
-            readiness: true,
-            traces: true,
-            calibration: false,
-            power: true,
-            backup: false,
-            plans: false,
-            desiccant: false,
-            call: false,
-        },
-    };
-    let slot = rig.accept().unwrap();
-    let (session, outbox) =
-        Session::connect_with(&Keypair::from_secret(OWNER), public(FEEDER), [7; 32], hello)
-            .unwrap();
-    let mut old = Client_ {
-        slot,
-        session,
-        outbox,
-    };
-    run(&mut rig, &mut old, |session| {
-        matches!(session.next_incoming(), Ok(Some(Incoming::Opened(_))))
-    });
+    // A feeder that installs nothing refuses the installer's ops. An update
+    // key is its key store's, so it still waits for the press.
     let mut plain = Rig::new();
     let mut owner = open(&mut plain, OWNER);
     for (n, op) in ops.iter().enumerate() {
+        if matches!(op, Op::EnrollUpdateKey { .. }) {
+            continue;
+        }
         let id = u8::try_from(n).unwrap() + 1;
         let unavailable = Answer::Refused(model::Refusal::Unavailable);
-        assert_eq!(ask(&mut rig, &mut old, id, op.clone()), unavailable);
-        assert_eq!(ask(&mut plain, &mut owner, id, op.clone()), unavailable);
+        assert_eq!(
+            ask(&mut plain, &mut owner, id, op.clone()),
+            unavailable,
+            "{op:?}"
+        );
     }
-    assert!(rig.device.updates.is_empty());
+    assert!(plain.device.updates.is_empty());
 }
 
 #[test]
@@ -3587,7 +3232,7 @@ fn lines_the_tail_overwrote_before_they_were_sent_are_counted_dropped() {
 }
 
 #[test]
-fn only_an_owner_whose_session_both_sides_log_may_tail() {
+fn only_an_owner_may_tail_and_a_feeder_without_a_tail_pushes_nothing() {
     let tail = Op::TailLog { after: None };
     let mut rig = log_rig();
     rig.device.tail.push(log_line(1).as_bytes());
@@ -3595,44 +3240,22 @@ fn only_an_owner_whose_session_both_sides_log_may_tail() {
     let answer = ask(&mut rig, &mut member, 1, tail.clone());
     assert_eq!(answer, Answer::Refused(model::Refusal::Forbidden));
 
-    // An owner whose hello lacks the bit, or a feeder that keeps no log.
-    let hello = Hello {
-        major: 1,
-        capabilities: model::Capabilities {
-            log: false,
-            ..model::Capabilities::KNOWN
-        },
-    };
-    let slot = rig.accept().unwrap();
-    let (session, outbox) =
-        Session::connect_with(&Keypair::from_secret(OWNER), public(FEEDER), [7; 32], hello)
-            .unwrap();
-    let mut old = Client_ {
-        slot,
-        session,
-        outbox,
-    };
-    run(&mut rig, &mut old, |session| {
-        matches!(session.next_incoming(), Ok(Some(Incoming::Opened(_))))
-    });
-    let unavailable = Answer::Refused(model::Refusal::Unavailable);
-    assert_eq!(ask(&mut rig, &mut old, 1, tail.clone()), unavailable);
+    // A feeder that keeps no log takes the cursor and pushes nothing.
     let mut plain = Rig::new();
+    plain.device.tail.push(log_line(1).as_bytes());
     let mut owner = open(&mut plain, OWNER);
-    assert_eq!(ask(&mut plain, &mut owner, 1, tail), unavailable);
+    let done = Answer::Done { generation: None };
+    assert_eq!(ask(&mut plain, &mut owner, 1, tail), done);
 
-    // None of them is ever pushed a line.
     for _ in 0..20 {
         rig.pass();
         plain.pass();
-        for client in [&mut member, &mut old] {
-            let bytes = rig.collect(client.slot);
-            client.session.receive(&bytes).unwrap();
-        }
+        let bytes = rig.collect(member.slot);
+        member.session.receive(&bytes).unwrap();
         let bytes = plain.collect(owner.slot);
         owner.session.receive(&bytes).unwrap();
     }
-    for session in [&mut member.session, &mut old.session, &mut owner.session] {
+    for session in [&mut member.session, &mut owner.session] {
         while let Some(incoming) = session.next_incoming().unwrap() {
             assert!(!matches!(incoming, Incoming::Pushed(model::Pushed::Log(_))));
         }

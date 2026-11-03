@@ -13,9 +13,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use wellfed_proto::api::{
-    self as proto, ClientMessage, FRAME_MAX, FeederMessage, FoodLevel, Hello, Op, Outcome,
+    self as proto, ClientMessage, DeviceMessage, FRAME_MAX, FoodLevel, Hello, Op, Outcome,
     PROLOGUE, PROTOCOL_MAJOR, Welcome,
 };
+use wellfed_proto::device::Model;
 use wellfed_session::frame::{self, PREFIX};
 use wellfed_session::noise::{Handshake, Keypair, Pattern, Role, Transport};
 
@@ -218,9 +219,10 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>) -> std::io::Result<()> {
         .read_message(&read_frame(&mut stream)?, &mut plain)
         .unwrap();
     let hello: Hello = wellfed_proto::decode(&plain[..len]).unwrap();
+    assert_eq!(hello.major, PROTOCOL_MAJOR);
     let welcome = Welcome::Open {
         major: PROTOCOL_MAJOR,
-        capabilities: hello.capabilities,
+        model: Model::Plaf103,
         build: "garbled",
         role: proto::Role::Owner,
         epoch: 1,
@@ -260,7 +262,7 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>) -> std::io::Result<()> {
             continue;
         }
         let mut answer = [0; FRAME_MAX];
-        let response = FeederMessage::Response { id, result };
+        let response = DeviceMessage::Response { id, result };
         let len = wellfed_proto::encode(&response, &mut answer).unwrap();
         seal(&mut stream, &mut transport, &answer[..len])?;
     }
@@ -280,14 +282,22 @@ fn status() -> proto::Status<'static> {
         dns_losses: 0,
         clock_ms: None,
         power: None,
-        locked: None,
-        settings_generation: 0,
         wifi_generation: 0,
         last_event: None,
         sessions: 1,
-        desiccant: proto::Desiccant::Unset,
-        food: FoodLevel::Unread,
-        feed_fault: None,
+        device: proto::DeviceStatus::Feeder(proto::FeederStatus {
+            locked: None,
+            settings_generation: 0,
+            desiccant: proto::Desiccant::Unset,
+            food: FoodLevel::Unread,
+            feed_fault: None,
+            readiness: proto::Readiness::Ready,
+            supply: proto::Supply {
+                adapter: None,
+                battery: proto::Battery::Unread,
+                below_floor: None,
+            },
+        }),
     }
 }
 

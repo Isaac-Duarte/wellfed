@@ -2,6 +2,7 @@
 //! so that a retry, even after a reconnect, gets the first answer instead of
 //! running again.
 
+use super::feeder::{FeederMemory, FeederReply};
 use super::request::{Action, Reply};
 use super::{Phase, Server};
 use crate::{REMEMBERED, SESSIONS};
@@ -14,16 +15,8 @@ pub(super) enum Remembered {
     Invite {
         id: u32,
     },
-    Feeding {
-        feed: u32,
-    },
-    /// A feed queued under `feed` and not yet reserved: a retry waits for
-    /// its reservation as the first request did, rather than queueing a
-    /// second feed. Remembered from the moment the feed is queued, so a
-    /// client whose session ended before the answer still gets it.
-    Queued {
-        feed: u32,
-    },
+    /// A feeder write's.
+    Feeder(FeederMemory),
     /// An update op: a retry gets the update's state now.
     Update,
 }
@@ -57,7 +50,7 @@ impl Memory {
     /// A feed remembered as queued was refused: a retry hears that.
     pub(super) fn refuse_queued(&mut self, feed: u32, refusal: Refusal) {
         for (_, result) in self.ids.iter_mut().flatten() {
-            if *result == (Remembered::Queued { feed }) {
+            if *result == (Remembered::Feeder(FeederMemory::Queued { feed })) {
                 *result = Remembered::Refused(refusal);
             }
         }
@@ -80,18 +73,20 @@ pub(super) fn remembered(reply: Reply) -> Remembered {
         Reply::Refused(refusal) => Remembered::Refused(refusal),
         Reply::Done(generation) => Remembered::Done(generation),
         Reply::Invite(invite) => Remembered::Invite { id: invite.id },
-        Reply::Feeding(feed) => Remembered::Feeding { feed },
+        Reply::Feeder(FeederReply::Feeding(feed)) => {
+            Remembered::Feeder(FeederMemory::Feeding { feed })
+        }
         Reply::Update(_) => Remembered::Update,
         Reply::Status
-        | Reply::Settings(_)
+        | Reply::Feeder(FeederReply::Settings(_))
         | Reply::Clients
         | Reply::Time
         | Reply::Stats(_)
-        | Reply::FeedTrace { .. }
+        | Reply::Feeder(FeederReply::FeedTrace { .. })
         | Reply::Bank1 { .. }
-        | Reply::Calibration
-        | Reply::Plans
-        | Reply::Call => Remembered::Done(None),
+        | Reply::Feeder(FeederReply::Calibration)
+        | Reply::Feeder(FeederReply::Plans)
+        | Reply::Feeder(FeederReply::Call) => Remembered::Done(None),
     }
 }
 

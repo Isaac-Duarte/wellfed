@@ -17,7 +17,8 @@ use wellfed_core::log_tail::Batch as LogBatch;
 use wellfed_core::ota::install::{Answer, Progress, Refused};
 use wellfed_core::supply::Reading;
 use wellfed_core::tone::Tune;
-use wellfed_proto::api::{Capabilities, Counts, Erases, Power, Refusal, TASKS_MAX, TraceSummary};
+use wellfed_proto::api::{Counts, Erases, Power, Refusal, TASKS_MAX, TraceSummary};
+use wellfed_proto::device::Model;
 use wellfed_proto::trace::PAGE_MAX;
 
 use super::supply::Radio;
@@ -252,8 +253,8 @@ pub trait Platform {
     /// The build identity, as hex.
     fn build(&self) -> &'static str;
     fn boot(&self) -> Boot;
-    /// What this firmware serves beyond the protocol's first ops.
-    fn capabilities(&self) -> Capabilities;
+    /// The device model this firmware runs on, which the welcome names.
+    fn model(&self) -> Model;
     /// Whether the image has build Wi-Fi to join with nothing stored.
     fn build_wifi(&self) -> BuildWifi;
     /// A reset storm holds this boot: the feeding owner stays closed until
@@ -363,7 +364,7 @@ pub trait Platform {
 
     /// The record lines logged after line `after` (`None`: from the oldest
     /// the RAM tail keeps) that fit `text`; `None` when there are none, or
-    /// the platform keeps no tail (it then claims no `Capabilities::LOG`).
+    /// the platform keeps no tail (then `TailLog` pushes nothing).
     fn log_after(&self, after: Option<u32>, text: &mut [u8]) -> Option<LogBatch>;
 
     // ---- The wall clock.

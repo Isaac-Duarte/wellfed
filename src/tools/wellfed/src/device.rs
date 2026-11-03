@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use anyhow::{Context, Result};
 use wellfed_connect::{Cursor, DISCOVERY};
 use wellfed_formats::private;
-use wellfed_model::{Answer, Capabilities, ClientRole, Op, Pushed};
+use wellfed_model::{Answer, ClientRole, DeviceKind, Op, Pushed};
 use wellfed_proto::api::RequestId;
 
 use crate::bench::Lent;
@@ -62,10 +62,11 @@ impl Connection {
         }
     }
 
-    pub(crate) fn capabilities(&self) -> Capabilities {
+    /// Which module of the device API the device serves.
+    pub(crate) fn kind(&self) -> DeviceKind {
         match self {
-            Self::Direct(connection) => connection.capabilities(),
-            Self::Bench(lent) => lent.capabilities(),
+            Self::Direct(connection) => connection.kind(),
+            Self::Bench(lent) => lent.kind(),
         }
     }
 
@@ -111,10 +112,6 @@ impl Connection {
 impl wellfed_install::session::Session for Connection {
     fn role(&self) -> ClientRole {
         Self::role(self)
-    }
-
-    fn capabilities(&self) -> Capabilities {
-        Self::capabilities(self)
     }
 
     async fn ask(&mut self, op: &Op) -> Result<Answer, wellfed_install::PlatformError> {

@@ -1,4 +1,4 @@
-//! Device API, the feeder's side ([`wellfed_proto::api`]).
+//! Device API, the device's side ([`wellfed_proto::api`]).
 //!
 //! A [`Server`] holds [`SESSIONS`] fixed slots, one per TCP connection, and
 //! never touches a socket: the firmware's driver copies received bytes into
@@ -24,12 +24,10 @@
 //! - **A feed is answered once it is durably reserved,** with the number
 //!   the journal holds it under, or with its refusal if it waits for storage
 //!   writes past their deadline (`Server::feed_refused`), when a later feed
-//!   takes that number; its result is a `Fed` event, which only
-//!   sessions whose hello carries [`Capabilities::FEED`] are sent. A feed
-//!   is asked of the device only while its [`Device::readiness`] is ready,
-//!   which `Status` also reports ([`Capabilities::READINESS`]); a restart
-//!   is refused while a feed is in flight.
-//! - **Updates are an owner's** ([`Capabilities::UPDATE`]). The device
+//!   takes that number; its result is a `Fed` event. A feed is asked of
+//!   the device only while its [`FeederDevice::readiness`] is ready, which
+//!   `Status` also reports; a restart is refused while a feed is in flight.
+//! - **Updates are an owner's.** The device
 //!   checks an offer outside the loop (its signatures need more stack than
 //!   the loop has) and answers on a later pass. An update request waits
 //!   for no feed: an offer, a cancel or a key statement is refused `Busy`
@@ -37,18 +35,25 @@
 //!   request or an install holds the flash. Chunks are
 //!   idempotent by offset, so they are not remembered writes. An update
 //!   key is enrolled only once someone at the feeder presses Dispense.
-//! - **The debug log is an owner's** ([`Capabilities::LOG`]): after
+//! - **The debug log is an owner's:** after
 //!   `TailLog`, a session is pushed the lines the device's RAM tail keeps,
 //!   in batches that fit a frame, only once its last frame is out and
 //!   after any event or sample waiting.
 //!
-//! Sessions authenticate with Noise IK under the feeder's identity, against
+//! Sessions authenticate with Noise IK under the device's identity, against
 //! the enrolled clients the settings writer publishes. A revoked key's
 //! sessions close as soon as the new table arrives. A new client redeems an
 //! invite with XXpsk3 and is enrolled through the keys mailbox.
 //!
-//! The firmware reaches the rest of the feeder through [`Device`], and the
-//! host tests through a fake of it.
+//! The welcome names the device's kind and model ([`Device::model`]). The
+//! shared core (status, Wi-Fi, clients, time, updates, events, the log and
+//! statistics) asks the rest of the device through [`Device`], which the
+//! server is generic over. A feeder request goes to the feeder's module,
+//! which asks through the [`FeederDevice`] that [`Device::feeder`] hands
+//! it, generic so every call stays direct; a device of another kind names
+//! [`NoFeeder`] and hands none, and the module's requests are refused
+//! `Unavailable`. The firmware implements both, and the host tests
+//! a fake of them.
 //!
 //! Beside the server sit what its requests hand the rest of the feeder
 //! ([`mailbox`]), who may become a client and when ([`pairing`]), the setup
@@ -69,7 +74,8 @@ pub mod setup;
 pub mod wifi;
 
 pub use device::{
-    Device, EventRead, KeyChange, KeyOutcome, Reader, UpdateAnswer, UpdateKeyChange, UpdateRequest,
+    Device, EventRead, FeederDevice, KeyChange, KeyOutcome, NoFeeder, Reader, UpdateAnswer,
+    UpdateKeyChange, UpdateRequest,
 };
 pub use record::{Reason, Record};
 pub use server::handshake::fingerprint;

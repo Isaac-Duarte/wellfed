@@ -1,5 +1,5 @@
 //! The feeder's statistics: what the device API's `Stats` op reports and
-//! the live metrics beyond power and signal (behind `Capabilities::STATS`).
+//! the live diagnostic metrics beyond power and signal (`Samples::On`).
 //!
 //! [`Keeper`] lives in the loop and is fed by what the pass already sees:
 //! the feeding owner's results, the server's session records, the panel's

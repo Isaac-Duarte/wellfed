@@ -10,8 +10,8 @@
 //! the feeder in hand, as a setup code is for pairing.
 //!
 //! The steps, driven by [`Enroll::poll`] and [`Enroll::answer`]:
-//! 1. [`Enroll::new`] refuses a session that cannot enroll (not an owner,
-//!    or no updates on either side) before anyone is asked to press.
+//! 1. [`Enroll::new`] refuses a session that cannot enroll (not an owner)
+//!    before anyone is asked to press.
 //! 2. The feeder's client list: a key already an update signer needs
 //!    nothing sent, and a key the feeder holds under another role is a
 //!    session key, never an update signer ([`Enroll::listed`]).
@@ -21,7 +21,7 @@
 //!    admitted before the session ended still writes), so it ends
 //!    [`EnrollError::Uncertain`] and the caller reads the list again.
 
-use wellfed_model::{Answer, Capabilities, Client, ClientRole, Op, Refusal, UpdateRefusal};
+use wellfed_model::{Answer, Client, ClientRole, Op, Refusal, UpdateRefusal};
 pub use wellfed_proto::setup::LABEL_MAX;
 
 /// What [`Enroll::listed`] found.
@@ -62,11 +62,8 @@ pub enum EnrollError {
     Label,
     #[error("only an owner enrolls an update key; this session is a {role:?}")]
     NotOwner { role: ClientRole },
-    #[error("this feeder takes no updates over the device API")]
-    NoUpdates,
-    /// The feeder's own check of the session: owners whose session claimed
-    /// updates only.
-    #[error("the feeder takes update keys from an owner's session with updates only")]
+    /// The feeder's own check of the session: owners only.
+    #[error("the feeder takes update keys from an owner's session only")]
     Forbidden,
     /// The key is enrolled on the feeder as a client that opens sessions.
     /// The feeder itself refuses such a key `Invalid`, but only after the
@@ -123,21 +120,12 @@ pub fn label(text: &str) -> Result<(), EnrollError> {
 }
 
 impl Enroll {
-    /// Enroll the public key `key` as `label` over a session with `role`
-    /// and `capabilities`; refused here when the feeder would refuse it
-    /// `Forbidden`.
-    pub fn new(
-        key: [u8; 32],
-        label_text: &str,
-        role: ClientRole,
-        capabilities: Capabilities,
-    ) -> Result<Self, EnrollError> {
+    /// Enroll the public key `key` as `label` over a session with `role`;
+    /// refused here when the feeder would refuse it `Forbidden`.
+    pub fn new(key: [u8; 32], label_text: &str, role: ClientRole) -> Result<Self, EnrollError> {
         label(label_text)?;
         if role != ClientRole::Owner {
             return Err(EnrollError::NotOwner { role });
-        }
-        if !capabilities.update {
-            return Err(EnrollError::NoUpdates);
         }
         Ok(Self {
             key,
@@ -234,13 +222,6 @@ mod tests {
 
     const KEY: [u8; 32] = [0x5e; 32];
 
-    fn owner() -> Capabilities {
-        Capabilities {
-            update: true,
-            ..Capabilities::default()
-        }
-    }
-
     fn client(key: [u8; 32], role: ClientRole) -> Client {
         Client {
             key: Hex(key),
@@ -251,7 +232,7 @@ mod tests {
     }
 
     fn enroll() -> Enroll {
-        Enroll::new(KEY, "laptop", ClientRole::Owner, owner()).unwrap()
+        Enroll::new(KEY, "laptop", ClientRole::Owner).unwrap()
     }
 
     /// The enrollment after a list without the key.
@@ -269,17 +250,13 @@ mod tests {
     fn a_session_or_label_the_feeder_would_refuse_is_refused_first() {
         for role in [ClientRole::Member, ClientRole::Server] {
             assert_eq!(
-                Enroll::new(KEY, "laptop", role, owner()),
+                Enroll::new(KEY, "laptop", role),
                 Err(EnrollError::NotOwner { role })
             );
         }
-        assert_eq!(
-            Enroll::new(KEY, "laptop", ClientRole::Owner, Capabilities::default()),
-            Err(EnrollError::NoUpdates)
-        );
         for bad in ["", "seventeen-letters", "a\0b"] {
             assert_eq!(
-                Enroll::new(KEY, bad, ClientRole::Owner, owner()),
+                Enroll::new(KEY, bad, ClientRole::Owner),
                 Err(EnrollError::Label)
             );
         }
@@ -303,7 +280,7 @@ mod tests {
                 enroll.listed(&listed),
                 Err(EnrollError::SessionKey { role })
             );
-            let mut again = Enroll::new(KEY, "laptop", ClientRole::Owner, owner()).unwrap();
+            let mut again = Enroll::new(KEY, "laptop", ClientRole::Owner).unwrap();
             again.poll();
             again.answer(&Answer::Clients(listed.to_vec()));
             assert_eq!(again.poll(), Next::Failed(EnrollError::SessionKey { role }));

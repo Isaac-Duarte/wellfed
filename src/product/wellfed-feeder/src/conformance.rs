@@ -16,12 +16,14 @@
 
 use wellfed_core::store::slot::crc32;
 use wellfed_proto::api::{
-    Blocked, Capabilities, CurrentUnit, Desiccant, Event, EventBody, FeedOutcome, FeedReason,
-    FoodLevel, Readiness, Refusal, Resets, Source, Stats, StatsSection, TraceSummary,
+    Blocked, CurrentUnit, Desiccant, DeviceStatus, Event, EventBody, FeedOutcome, FeedReason,
+    FeederStatus, FoodLevel, Readiness, Refusal, Resets, Source, Stats, StatsSection, Status,
+    TraceSummary,
 };
+use wellfed_proto::device::{DeviceKind, Model};
 
 use crate::feeder::owner::{self, ResetRefusal};
-use crate::feeder::{Feeder, Feeds, NoFeeds, Platform, Record};
+use crate::feeder::{DeviceView, Feeder, Feeds, NoFeeds, Platform, Record};
 use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::mailbox::{
@@ -32,7 +34,9 @@ use wellfed_device_api::mailbox::{
 };
 use wellfed_device_api::mailbox::{KeyResult, Requested};
 use wellfed_device_api::wifi::Credentials;
-use wellfed_device_api::{Device, EventRead, KeyChange, KeyOutcome, Reader, UpdateRequest};
+use wellfed_device_api::{
+    Device, EventRead, FeederDevice, KeyChange, KeyOutcome, Reader, UpdateRequest,
+};
 
 /// Writer turns a check waits for one result, at most.
 const TURNS: usize = 64;
@@ -59,7 +63,11 @@ fn pass(rig: &mut impl Rig, now_ms: u32) {
 }
 
 /// One call on the device API's view at `now_ms`.
-fn device<R: Rig, T>(rig: &mut R, now_ms: u32, call: impl FnOnce(&mut dyn Device) -> T) -> T {
+fn device<R: Rig, T>(
+    rig: &mut R,
+    now_ms: u32,
+    call: impl FnOnce(&mut DeviceView<'_, R::Platform, NoFeeds>) -> T,
+) -> T {
     let mut feeds = NoFeeds;
     let mut device = rig.feeder().device(now_ms, &mut feeds);
     call(&mut device)
@@ -145,7 +153,7 @@ pub fn a_settings_change_lands_on_the_writer_turn(rig: &mut impl Rig) {
     assert_eq!(after.volume, target);
     assert_eq!(after.generation, before.generation + 1);
     let status = device(rig, 0, |device| device.status(0));
-    assert_eq!(status.settings_generation, after.generation);
+    assert_eq!(feeder(&status).settings_generation, after.generation);
 
     // Both windows land too, each on its own field.
     let night = Window::Between {
@@ -265,7 +273,11 @@ pub fn the_lock_follows_the_panel_owner(rig: &mut impl Rig) {
 
     pass(rig, 0);
     let status = device(rig, 0, |device| device.status(0));
-    assert_eq!(status.locked, Some(true), "the panel starts locked");
+    assert_eq!(
+        feeder(&status).locked,
+        Some(true),
+        "the panel starts locked"
+    );
     assert_eq!(
         device(rig, 0, |device| device.lock(false)),
         LockResult::Current {
@@ -277,7 +289,7 @@ pub fn the_lock_follows_the_panel_owner(rig: &mut impl Rig) {
 
     pass(rig, 20);
     let status = device(rig, 20, |device| device.status(20));
-    assert_eq!(status.locked, Some(false));
+    assert_eq!(feeder(&status).locked, Some(false));
 }
 
 /// The clock is unknown until a sync, which a bad offset never sets.
@@ -398,7 +410,6 @@ pub fn a_calibration_lands_and_weighs_the_portions(rig: &mut impl Rig) {
     };
     assert!(before.writable, "the store opened writable");
     assert_eq!(before.calibration, Calibration::default());
-    assert!(device(rig, 0, |device| device.capabilities()).contains(Capabilities::CALIBRATION));
 
     let weighed = Calibration {
         portion_mg: Some(9_800),
@@ -442,10 +453,9 @@ pub fn a_calibration_lands_and_weighs_the_portions(rig: &mut impl Rig) {
 pub fn the_desiccant_count_follows_the_clock_and_its_reset(rig: &mut impl Rig) {
     let before = settings_view(rig);
     assert_eq!((before.desiccant_days, before.desiccant_reset), (14, None));
-    assert!(device(rig, 0, |device| device.capabilities()).contains(Capabilities::DESICCANT));
     assert_eq!(device(rig, 0, |device| device.today(0)), None);
     let status = device(rig, 0, |device| device.status(0));
-    assert_eq!(status.desiccant, Desiccant::Unset);
+    assert_eq!(feeder(&status).desiccant, Desiccant::Unset);
 
     // 2026-10-28 23:30 UTC, 17:30 in UTC-6: the local day is the 28th
     // either way, and 2026-10-29 is the next UTC day.
@@ -472,7 +482,7 @@ pub fn the_desiccant_count_follows_the_clock_and_its_reset(rig: &mut impl Rig) {
     assert_eq!(after.desiccant_reset, today);
     assert_eq!(after.generation, before.generation + 1);
     let status = device(rig, 0, |device| device.status(0));
-    assert_eq!(status.desiccant, Desiccant::Remaining { days: 14 });
+    assert_eq!(feeder(&status).desiccant, Desiccant::Remaining { days: 14 });
 }
 
 fn plans(rig: &mut impl Rig, change: Option<Table>) -> PlansResult {
@@ -493,7 +503,6 @@ pub fn a_plans_table_lands_and_starts_from_its_save(rig: &mut impl Rig) {
     };
     assert!(before.writable, "the store opened writable");
     assert_eq!(before.table, [None; PLANS]);
-    assert!(device(rig, 0, |device| device.capabilities()).contains(Capabilities::PLANS));
 
     let sync = TimeFields {
         unix_ms: 1_793_170_800_000,
@@ -554,7 +563,6 @@ fn call_clip(rig: &mut impl Rig) -> CallClip {
 /// claimed.
 pub fn a_meal_call_uploads_in_chunks_and_deletes(rig: &mut impl Rig) {
     assert_eq!(call_clip(rig), CallClip::None);
-    assert!(device(rig, 0, |device| device.capabilities()).contains(Capabilities::CALL));
 
     let stream: [u8; 1_000] = core::array::from_fn(|i| (i * 13) as u8);
     let crc = crc32(&stream);
@@ -652,16 +660,14 @@ pub fn status_reports_the_build_and_the_time(rig: &mut impl Rig) {
 /// Without a feeding owner a feed is refused before it reaches the motor,
 /// whatever the platform claims.
 pub fn a_feeder_without_a_feeding_owner_refuses_feeds(rig: &mut impl Rig) {
-    let (capabilities, readiness, fed) = device(rig, 0, |device| {
+    let (model, readiness, fed) = device(rig, 0, |device| {
         (
-            device.capabilities(),
+            device.model(),
             device.readiness(),
             device.feed(1, Source::Feeder),
         )
     });
-    assert!(capabilities.contains(Capabilities::UPDATE));
-    assert!(capabilities.contains(Capabilities::TIME));
-    assert!(capabilities.contains(Capabilities::READINESS));
+    assert_eq!(model.kind(), DeviceKind::Feeder);
     assert_eq!(readiness, Readiness::Blocked(Blocked::Unserved));
     assert_eq!(fed, Err(Refusal::Unavailable));
     assert_eq!(
@@ -690,7 +696,6 @@ pub fn the_statistics_follow_the_loop(rig: &mut impl Rig) {
     rig.feeder().pass_took(900);
     rig.write();
 
-    assert!(device(rig, 0, |device| device.capabilities()).contains(Capabilities::STATS));
     for section in StatsSection::ALL {
         let answered = device(rig, 61_000, |device| match device.stats(section, 61_000) {
             Stats::Counters(counters) => {
@@ -743,12 +748,12 @@ pub fn the_statistics_follow_the_loop(rig: &mut impl Rig) {
 /// role answers them: running from bank 1, whose image is the running
 /// build, it refuses every page, and stock's plan sectors with them.
 pub fn bank_1_is_read_only_from_bank_0(rig: &mut impl Rig) {
-    let (capabilities, bank, page) = device(rig, 0, |device| {
+    let (model, bank, page) = device(rig, 0, |device| {
         let bank = device.status(0).bank;
         let page = device.bank1_page(0).map(|page| page.offset);
-        (device.capabilities(), bank, page)
+        (device.model(), bank, page)
     });
-    assert!(capabilities.contains(Capabilities::BACKUP));
+    assert_eq!(model, Model::Plaf103);
     assert_eq!(bank, 1, "the suite's rigs run from bank 1");
     assert_eq!(page, Err(Refusal::Unavailable));
 }
@@ -759,8 +764,6 @@ pub fn bank_1_is_read_only_from_bank_0(rig: &mut impl Rig) {
 pub fn traces_are_served_beside_the_statistics(rig: &mut impl Rig) {
     pass(rig, 0);
     rig.write();
-    let both = Capabilities::STATS.union(Capabilities::TRACES);
-    assert!(device(rig, 0, |device| device.capabilities()).contains(both));
     let missing = device(rig, 0, |device| {
         device.feed_trace(77, 0).map(|page| page.total)
     });
@@ -1056,4 +1059,10 @@ macro_rules! conformance {
             }
         )*
     };
+}
+
+/// The feeder's part of a status.
+fn feeder(status: &Status<'_>) -> FeederStatus {
+    let DeviceStatus::Feeder(feeder) = status.device;
+    feeder
 }
