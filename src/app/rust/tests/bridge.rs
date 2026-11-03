@@ -21,7 +21,7 @@ use wellfed_app_bridge::api::feeder::{
 use wellfed_app_bridge::api::join::{JoinAnswer, invite_feeder, join_feeder};
 use wellfed_app_bridge::api::keys::ClientKey;
 use wellfed_app_bridge::api::model::{CallClip, ClientRole, FeedOutcome, StatsSection};
-use wellfed_app_bridge::api::session::{FedBy, FeedRefusal, HistoryBody, SessionUpdate};
+use wellfed_app_bridge::api::session::{Card, FedBy, FeedRefusal, HistoryBody, SessionUpdate};
 use wellfed_app_bridge::api::setup::{
     SetupDriver, SetupStep, recover, setup_control, setup_service,
 };
@@ -1153,6 +1153,397 @@ fn a_recording_uploads_as_the_meal_call_and_a_trace_refused_says_so() {
                 refusal: FeederRefusal::NotFound
             }
         );
+
+        commands.send(Command::Close).unwrap();
+        sim.stop().await;
+    });
+}
+
+/// The newest card already sent, without waiting for another.
+fn card_so_far(heard: &mut mpsc::UnboundedReceiver<SessionUpdate>) -> Option<Card> {
+    let mut card = None;
+    while let Ok(update) = heard.try_recv() {
+        if let SessionUpdate::Status { card: sent } = update {
+            card = Some(sent);
+        }
+    }
+    card
+}
+
+/// A settings, lock or plans write moves the card on its `Done`, by the time
+/// its caller hears it: no event or read again comes between.
+#[test]
+fn a_done_moves_the_card_by_the_time_its_caller_hears_it() {
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, mut heard) = opened(sim.identity, sim.address).await;
+        let ask = |request| requests::run(&commands, sim.identity, request);
+        let FeederReply::Settings { settings } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+        let FeederReply::Plans { plans } = ask(FeederRequest::GetPlans).await else {
+            panic!("no plans");
+        };
+
+        let reply = ask(FeederRequest::EditPlans {
+            plans,
+            edit: PlanEdit::Add {
+                plan: PlanView {
+                    minute: 8 * 60,
+                    portions: 1,
+                    days: vec![],
+                    enabled: true,
+                    call: 0,
+                },
+            },
+        })
+        .await;
+        assert!(matches!(reply, FeederReply::Done { .. }), "{reply:?}");
+        let held = card_so_far(&mut heard)
+            .and_then(|card| card.plans)
+            .expect("the added meal is on the card");
+        assert_eq!(held.plans[0].as_ref().map(|plan| plan.minute), Some(8 * 60));
+
+        let volume = (settings.volume + 17) % 100;
+        let reply = ask(FeederRequest::PutSettings {
+            base: settings.generation,
+            changes: SettingsChanges {
+                volume: Some(volume),
+                ..SettingsChanges::default()
+            },
+        })
+        .await;
+        let FeederReply::Done {
+            generation: Some(moved),
+        } = reply
+        else {
+            panic!("the change did not land: {reply:?}");
+        };
+        let shown = card_so_far(&mut heard)
+            .and_then(|card| card.settings)
+            .expect("the change is on the card");
+        assert_eq!((shown.volume, shown.generation), (volume, moved));
+
+        let reply = ask(FeederRequest::SetLock { locked: true }).await;
+        assert!(matches!(reply, FeederReply::Done { .. }), "{reply:?}");
+        let card = card_so_far(&mut heard).expect("the lock is on the card");
+        assert_eq!(card.locked, Some(true));
+
+        let reply = ask(FeederRequest::EditPlans {
+            plans: held,
+            edit: PlanEdit::Enabled {
+                slot: 0,
+                enabled: false,
+            },
+        })
+        .await;
+        assert!(matches!(reply, FeederReply::Done { .. }), "{reply:?}");
+        let off = card_so_far(&mut heard)
+            .and_then(|card| card.plans)
+            .expect("the meal's switch is on the card");
+        assert_eq!(off.plans[0].as_ref().map(|plan| plan.enabled), Some(false));
+
+        commands.send(Command::Close).unwrap();
+        sim.stop().await;
+    });
+}
+
+/// Two quick changes on the generation the screen showed: the second waits
+/// for the first's answer and goes on its generation, so neither is refused.
+#[test]
+fn a_quick_second_settings_change_goes_on_the_first_s_generation() {
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, mut heard) = opened(sim.identity, sim.address).await;
+        let ask = |request| requests::run(&commands, sim.identity, request);
+        let FeederReply::Settings { settings } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+        let put = |changes| FeederRequest::PutSettings {
+            base: settings.generation,
+            changes,
+        };
+
+        let (first, second) = tokio::join!(
+            ask(put(SettingsChanges {
+                volume: Some(20),
+                ..SettingsChanges::default()
+            })),
+            ask(put(SettingsChanges {
+                lights: Some(!settings.lights),
+                ..SettingsChanges::default()
+            })),
+        );
+        let (
+            FeederReply::Done {
+                generation: Some(first),
+            },
+            FeederReply::Done {
+                generation: Some(second),
+            },
+        ) = (&first, &second)
+        else {
+            panic!("both land: {first:?} {second:?}");
+        };
+        assert_ne!(first, second);
+
+        let FeederReply::Settings { settings: read } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+        assert_eq!(read.generation, *second);
+        assert_eq!((read.volume, read.lights), (20, !settings.lights));
+        let shown = card_so_far(&mut heard)
+            .and_then(|card| card.settings)
+            .expect("the card shows both");
+        assert_eq!((shown.volume, shown.lights), (20, !settings.lights));
+
+        commands.send(Command::Close).unwrap();
+        sim.stop().await;
+    });
+}
+
+/// A change waiting behind one the feeder refused never goes: the generation
+/// it would go on is not known.
+#[test]
+fn a_settings_change_waiting_behind_a_refused_one_is_not_sent() {
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, _heard) = opened(sim.identity, sim.address).await;
+        let ask = |request| requests::run(&commands, sim.identity, request);
+        let FeederReply::Settings { settings } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+        let volume = |volume| SettingsChanges {
+            volume: Some(volume),
+            ..SettingsChanges::default()
+        };
+
+        let (refused, held) = tokio::join!(
+            ask(FeederRequest::PutSettings {
+                base: settings.generation.wrapping_add(100),
+                changes: volume(20),
+            }),
+            ask(FeederRequest::PutSettings {
+                base: settings.generation,
+                changes: volume(40),
+            }),
+        );
+        assert!(
+            matches!(
+                refused,
+                FeederReply::Refused {
+                    refusal: FeederRefusal::Stale { .. }
+                }
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(
+            held,
+            FeederReply::NotAsked {
+                reason: NotAsked::Held
+            }
+        );
+
+        let FeederReply::Settings { settings: read } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+        assert_eq!(read, settings, "nothing was written");
+
+        commands.send(Command::Close).unwrap();
+        sim.stop().await;
+    });
+}
+
+/// The listener goes away at the very card the change moves: the change was
+/// answered, so its caller hears `Done`, never "not sent", which a screen may
+/// send again.
+#[test]
+fn a_write_answered_as_the_listener_leaves_is_heard_as_answered() {
+    const QUIET_VOLUME: u8 = 33;
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, receiver) = mpsc::unbounded_channel();
+        let (updates, mut heard) = mpsc::unbounded_channel();
+        tokio::task::spawn_local(session::run(
+            Keypair::from_secret(OWNER),
+            sim.identity,
+            sim.address,
+            false,
+            receiver,
+            move |update| {
+                let leaving = matches!(
+                    &update,
+                    SessionUpdate::Status { card }
+                        if card.settings.as_ref().is_some_and(|settings| settings.volume == QUIET_VOLUME)
+                );
+                updates.send(update).is_ok() && !leaving
+            },
+        ));
+        next(&mut heard, |update| match update {
+            SessionUpdate::History { caught_up, .. } => caught_up.then_some(()),
+            _ => None,
+        })
+        .await;
+        let ask = |request| requests::run(&commands, sim.identity, request);
+        let FeederReply::Settings { settings } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+        assert_ne!(settings.volume, QUIET_VOLUME);
+
+        let reply = ask(FeederRequest::PutSettings {
+            base: settings.generation,
+            changes: SettingsChanges {
+                volume: Some(QUIET_VOLUME),
+                ..SettingsChanges::default()
+            },
+        })
+        .await;
+        assert!(matches!(reply, FeederReply::Done { .. }), "{reply:?}");
+
+        next(&mut heard, |update| match update {
+            SessionUpdate::Closed { .. } => Some(()),
+            _ => None,
+        })
+        .await;
+        sim.stop().await;
+    });
+}
+
+/// A desiccant reset moves the settings generation, so a change asked while
+/// one is out waits for it and goes on the generation it made.
+#[test]
+fn a_settings_change_behind_a_desiccant_reset_goes_on_the_reset_s_generation() {
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, _heard) = opened(sim.identity, sim.address).await;
+        let ask = |request| requests::run(&commands, sim.identity, request);
+        // A reset is dated from the feeder's clock.
+        let reply = ask(FeederRequest::SyncClock).await;
+        assert!(matches!(reply, FeederReply::Done { .. }), "{reply:?}");
+        let FeederReply::Settings { settings } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+
+        let (reset, change) = tokio::join!(
+            ask(FeederRequest::ResetDesiccant),
+            ask(FeederRequest::PutSettings {
+                base: settings.generation,
+                changes: SettingsChanges {
+                    desiccant_days: Some(60),
+                    ..SettingsChanges::default()
+                },
+            }),
+        );
+        assert!(matches!(reset, FeederReply::Done { .. }), "{reset:?}");
+        assert!(matches!(change, FeederReply::Done { .. }), "{change:?}");
+
+        let FeederReply::Settings { settings: read } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+        assert_eq!(read.desiccant_days, 60);
+        assert!(read.desiccant_replaced.is_some());
+        assert_eq!(read.generation, settings.generation + 2);
+
+        commands.send(Command::Close).unwrap();
+        sim.stop().await;
+    });
+}
+
+/// A reset's `Done` moves the card's settings generation, so a change tapped
+/// before its event's read comes goes on the generation the reset made.
+#[test]
+fn a_change_tapped_after_a_reset_goes_on_its_generation() {
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, mut heard) = opened(sim.identity, sim.address).await;
+        let ask = |request| requests::run(&commands, sim.identity, request);
+        let reply = ask(FeederRequest::SyncClock).await;
+        assert!(matches!(reply, FeederReply::Done { .. }), "{reply:?}");
+        let FeederReply::Settings { settings } = ask(FeederRequest::GetSettings).await else {
+            panic!("no settings");
+        };
+
+        let reply = ask(FeederRequest::ResetDesiccant).await;
+        assert!(matches!(reply, FeederReply::Done { .. }), "{reply:?}");
+        let shown = card_so_far(&mut heard)
+            .and_then(|card| card.settings)
+            .expect("the reset's generation is on the card");
+        assert_eq!(shown.generation, settings.generation + 1);
+
+        let reply = ask(FeederRequest::PutSettings {
+            base: shown.generation,
+            changes: SettingsChanges {
+                volume: Some(12),
+                ..SettingsChanges::default()
+            },
+        })
+        .await;
+        assert!(matches!(reply, FeederReply::Done { .. }), "{reply:?}");
+
+        commands.send(Command::Close).unwrap();
+        sim.stop().await;
+    });
+}
+
+/// Two meals switched within one round trip, each from the table the screen
+/// showed: the second waits and goes as its switch on the table the first
+/// made, so both land.
+#[test]
+fn two_meals_switched_at_once_both_land() {
+    local(async {
+        let owner = *Keypair::from_secret(OWNER).public();
+        let sim = Running::start(&Flash::memory(), Some(owner)).await;
+        let (commands, _heard) = opened(sim.identity, sim.address).await;
+        let ask = |request| requests::run(&commands, sim.identity, request);
+        let meal = |minute| PlanView {
+            minute,
+            portions: 1,
+            days: vec![],
+            enabled: true,
+            call: 0,
+        };
+        for minute in [7 * 60, 18 * 60] {
+            let FeederReply::Plans { plans } = ask(FeederRequest::GetPlans).await else {
+                panic!("no plans");
+            };
+            let reply = ask(FeederRequest::EditPlans {
+                plans,
+                edit: PlanEdit::Add { plan: meal(minute) },
+            })
+            .await;
+            assert!(matches!(reply, FeederReply::Done { .. }), "{reply:?}");
+        }
+        let FeederReply::Plans { plans } = ask(FeederRequest::GetPlans).await else {
+            panic!("no plans");
+        };
+        let off = |slot| FeederRequest::EditPlans {
+            plans: plans.clone(),
+            edit: PlanEdit::Enabled {
+                slot,
+                enabled: false,
+            },
+        };
+
+        let (first, second) = tokio::join!(ask(off(0)), ask(off(1)));
+        assert!(matches!(first, FeederReply::Done { .. }), "{first:?}");
+        assert!(matches!(second, FeederReply::Done { .. }), "{second:?}");
+
+        let FeederReply::Plans { plans: read } = ask(FeederRequest::GetPlans).await else {
+            panic!("no plans");
+        };
+        assert_eq!(read.generation, plans.generation + 2);
+        for slot in [0, 1] {
+            assert_eq!(
+                read.plans[slot].as_ref().map(|plan| plan.enabled),
+                Some(false)
+            );
+        }
 
         commands.send(Command::Close).unwrap();
         sim.stop().await;

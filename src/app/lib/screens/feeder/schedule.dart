@@ -12,7 +12,7 @@ import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
-import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/pending.dart';
 import 'package:wellfed/widgets/when.dart';
 
 /// The most meals a feeder keeps: what Rust reads back, all ten slots.
@@ -40,7 +40,8 @@ String _calls(int plays) => switch (plays) {
 
 /// The feeder's meals (8.1), with its limit and hold (8.3). The table is the
 /// feeder's: this shows the last it said, and each change goes back against
-/// that reading.
+/// that reading. A meal's switch moves on tap and settles on the feeder's
+/// answer.
 class ScheduleTab extends StatefulWidget {
   const ScheduleTab({super.key, required this.feeder});
 
@@ -157,6 +158,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                         children: [
                           for (final (i, (slot, plan)) in meals.indexed)
                             _MealRow(
+                              key: ValueKey(slot),
                               feeder: feeder,
                               plans: plans,
                               slot: slot,
@@ -195,8 +197,9 @@ class _ScheduleTabState extends State<ScheduleTab> {
   }
 }
 
-class _MealRow extends StatefulWidget {
+class _MealRow extends StatelessWidget {
   const _MealRow({
+    super.key,
     required this.feeder,
     required this.plans,
     required this.slot,
@@ -216,36 +219,25 @@ class _MealRow extends StatefulWidget {
   final bool next;
   final bool online;
 
-  @override
-  State<_MealRow> createState() => _MealRowState();
-}
-
-class _MealRowState extends State<_MealRow> {
-  bool _asking = false;
-
-  Future<void> _set(bool enabled) async {
-    setState(() => _asking = true);
-    final FeederReply reply = await widget.feeder.ask(
+  Future<FeederReply> _set(bool enabled) async {
+    final FeederReply reply = await feeder.ask(
       FeederRequest.editPlans(
-        plans: widget.plans,
-        edit: PlanEdit.enabled(slot: widget.slot, enabled: enabled),
+        plans: plans,
+        edit: PlanEdit.enabled(slot: slot, enabled: enabled),
       ),
     );
-    if (!mounted) return;
-    setState(() => _asking = false);
-    showProblem(context, reply);
 
     // Stale says the table moved: a read puts it on the card, and the owner
     // decides again from what it shows. The edit never goes again by itself.
     if (reply is FeederReply_Refused && reply.refusal is FeederRefusal_Stale) {
-      await widget.feeder.ask(const FeederRequest.getPlans());
+      unawaited(feeder.ask(const FeederRequest.getPlans()));
     }
+    return reply;
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final PlanView plan = widget.plan;
     final String time = minuteText(context, plan.minute);
     // Off in words as well as on the switch, so the row says it without it.
     final String parts = [
@@ -255,58 +247,60 @@ class _MealRowState extends State<_MealRow> {
       if (plan.call > 0) _calls(plan.call),
     ].join(' · ');
 
-    // A node of its own: with no tap to tell them apart, as offline, every meal
-    // on the panel would merge into one.
-    return Semantics(
-      container: true,
-      child: InkWell(
-        onTap: widget.online
-            ? () => unawaited(openMealEditor(context, feeder: widget.feeder, held: widget.plans, slot: widget.slot))
-            : null,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: Space.s2),
-          decoration: BoxDecoration(
-            border: widget.first ? null : Border(top: BorderSide(color: c.line)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          time,
-                          style: TextStyle(
-                            fontSize: Sizes.md,
-                            fontWeight: Fonts.semibold,
-                            color: plan.enabled ? c.text : c.textMuted,
+    // On or off as asked from the tap until the card agrees; a refusal moves
+    // it back. A node of its own: with no tap to tell them apart, as offline,
+    // every meal on the panel would merge into one.
+    return Pending<bool>(
+      card: plan.enabled,
+      generation: plans.generation,
+      builder: (context, enabled, write) => Semantics(
+        container: true,
+        child: InkWell(
+          onTap: online ? () => unawaited(openMealEditor(context, feeder: feeder, held: plans, slot: slot)) : null,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: Space.s2),
+            decoration: BoxDecoration(
+              border: first ? null : Border(top: BorderSide(color: c.line)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            time,
+                            style: TextStyle(
+                              fontSize: Sizes.md,
+                              fontWeight: Fonts.semibold,
+                              color: enabled ? c.text : c.textMuted,
+                            ),
                           ),
-                        ),
-                        if (widget.next) ...[
-                          const SizedBox(width: Space.s3),
-                          Flexible(child: StatusChip('Next', color: c.accent)),
+                          if (next) ...[
+                            const SizedBox(width: Space.s3),
+                            Flexible(child: StatusChip('Next', color: c.accent)),
+                          ],
                         ],
-                      ],
-                    ),
-                    Text(
-                      parts,
-                      style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
-                    ),
-                  ],
+                      ),
+                      Text(
+                        parts,
+                        style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Semantics(
-                container: true,
-                label: '$time ${plan.enabled ? 'on' : 'off'}',
-                child: Switch(
-                  // What the feeder last said: an answer moves it.
-                  value: plan.enabled,
-                  onChanged: widget.online && !_asking ? _set : null,
+                Semantics(
+                  container: true,
+                  label: '$time ${enabled ? 'on' : 'off'}',
+                  child: Switch(
+                    value: enabled,
+                    onChanged: online ? (next) => unawaited(write.ask(next, () => _set(next))) : null,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

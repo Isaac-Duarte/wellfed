@@ -26,12 +26,14 @@ use crate::api::feeder::{
     NotAsked, NtpView, PlanEdit, PlanView, PlansView, PortionChange, SettingsView, TimeInfo,
     TraceView, UpdateInfo, ZoneChange,
 };
-use crate::session::Command;
+use crate::session::{Command, Heard};
 
 /// How a request's one op ended, short of an answer.
 enum Lost {
     Unanswered,
     NotSent,
+    /// A settings write asked while another was out, which never went.
+    Held,
 }
 
 impl From<Lost> for FeederReply {
@@ -39,21 +41,31 @@ impl From<Lost> for FeederReply {
         match lost {
             Lost::Unanswered => Self::Unanswered,
             Lost::NotSent => Self::NotSent,
+            Lost::Held => Self::NotAsked {
+                reason: NotAsked::Held,
+            },
         }
     }
 }
 
 /// One op through the session's loop. A session that ended before sending it
-/// drops the reply; one that sent it answers `None` if it heard nothing.
+/// drops the reply; one that sent it says if it heard nothing.
 async fn ask(commands: &mpsc::UnboundedSender<Command>, op: Op) -> Result<Answer, Lost> {
-    let (reply, answer) = oneshot::channel();
-    commands
-        .send(Command::Ask { op, reply })
-        .map_err(|_| Lost::NotSent)?;
-    answer
-        .await
-        .map_err(|_| Lost::NotSent)?
-        .ok_or(Lost::Unanswered)
+    asked(commands, |reply| Command::Ask { op, reply }).await
+}
+
+/// The command `command` makes of its reply, through the session's loop.
+async fn asked(
+    commands: &mpsc::UnboundedSender<Command>,
+    command: impl FnOnce(oneshot::Sender<Heard>) -> Command,
+) -> Result<Answer, Lost> {
+    let (reply, heard) = oneshot::channel();
+    commands.send(command(reply)).map_err(|_| Lost::NotSent)?;
+    match heard.await.map_err(|_| Lost::NotSent)? {
+        Heard::Answer(answer) => Ok(answer),
+        Heard::Unanswered => Err(Lost::Unanswered),
+        Heard::Held => Err(Lost::Held),
+    }
 }
 
 /// Run `request` over the session behind `commands`, with feeder `identity`.
@@ -138,13 +150,24 @@ pub async fn run(
         FeederRequest::GetPlans => Op::GetPlans,
         FeederRequest::EditPlans { plans, edit } => {
             let held = plans_of(&plans);
-            match edit_of(edit).and_then(|edit| plans::edited(&held, edit).map_err(not_edited)) {
-                Ok(plans) => Op::PutPlans {
-                    base: held.generation,
-                    plans,
-                },
+            let edited = edit_of(edit).and_then(|edit| {
+                let table = plans::edited(&held, edit).map_err(not_edited)?;
+                Ok((edit, table))
+            });
+            let (edit, table) = match edited {
+                Ok(edited) => edited,
                 Err(reason) => return not_asked(reason),
-            }
+            };
+            let command = |reply| Command::EditPlans {
+                base: held.generation,
+                plans: table,
+                edit,
+                reply,
+            };
+            return match asked(commands, command).await {
+                Ok(answer) => reply_of(answer),
+                Err(lost) => lost.into(),
+            };
         }
         FeederRequest::GetCall => Op::GetCall,
         FeederRequest::UploadCall { wav } => return upload_call(commands, &wav).await,
@@ -674,7 +697,7 @@ mod tests {
                 panic!("the upload's start comes first");
             };
             reply
-                .send(Some(Answer::Done { generation: None }))
+                .send(Heard::Answer(Answer::Done { generation: None }))
                 .expect("the upload is waiting");
             // The next op, dropped unsent with the session.
             drop(receiver.recv().await);

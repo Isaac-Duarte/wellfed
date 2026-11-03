@@ -115,18 +115,23 @@ void main() {
       expect(find.text('Set the time from this phone'), findsOneWidget);
     });
 
-    testWidgets('a meal is switched once, against what the feeder said', (tester) async {
+    testWidgets('a meal is switched once, against what the feeder said, and moves on tap', (tester) async {
       final PlansView plans = planPlans([planPlan(60)]);
       final FakeSession session = await show(tester, plans);
+      final answer = Completer<FeederReply>();
+      session.answering = (_) => answer.future;
 
       await tapIn(tester, find.byType(Switch));
       expect(session.requests, [
         FeederRequest.editPlans(plans: plans, edit: const PlanEdit.enabled(slot: 0, enabled: false)),
       ]);
-      expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+      expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+      answer.complete(const FeederReply.done(generation: 4));
+      await settle(tester);
+      expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
     });
 
-    testWidgets('switching says why it was refused or may have run', (tester) async {
+    testWidgets('switching says why it was refused or may have run, and moves back', (tester) async {
       final FakeSession session = await show(tester, planPlans([planPlan(60)]));
       session.replies
         ..add(const FeederReply.refused(refusal: FeederRefusal.busy()))
@@ -134,8 +139,10 @@ void main() {
 
       await tapIn(tester, find.byType(Switch));
       expect(find.textContaining("It's busy"), findsOneWidget);
+      expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
       await tapIn(tester, find.byType(Switch));
       expect(find.textContaining('may or may not have'), findsOneWidget);
+      expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
       expect(session.requests, hasLength(2));
     });
 

@@ -19,7 +19,7 @@ import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/feeder_drawing.dart';
 import 'package:wellfed/widgets/icons.dart';
-import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/pending.dart';
 import 'package:wellfed/widgets/when.dart';
 
 /// How the feeder stands today (7.1): the drawing with its food, last feed
@@ -94,30 +94,14 @@ class TodayTab extends StatelessWidget {
   );
 }
 
-class _Summary extends StatefulWidget {
+class _Summary extends StatelessWidget {
   const _Summary({required this.feeder});
 
   final FeederController feeder;
 
   @override
-  State<_Summary> createState() => _SummaryState();
-}
-
-class _SummaryState extends State<_Summary> {
-  bool _locking = false;
-
-  Future<void> _lock(bool locked) async {
-    setState(() => _locking = true);
-    final FeederReply reply = await widget.feeder.ask(FeederRequest.setLock(locked: locked));
-    if (!mounted) return;
-    setState(() => _locking = false);
-    showProblem(context, reply);
-  }
-
-  @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final FeederController feeder = widget.feeder;
     final bool online = feeder.state.connection == Connection.online;
     final api.Card? card = online ? feeder.state.card : null;
     // What the feeder last said, even offline: the drawing dims instead.
@@ -141,21 +125,27 @@ class _SummaryState extends State<_Summary> {
       FoodLevel.unread || null => ('Food not read', c.textMuted, FoodShown.none),
     };
     final bool? locked = read?.locked;
-    final List<Callout> callouts = [
+    // The lock label moves on tap, as a switch does, until the card agrees; a
+    // refusal moves it back.
+    List<Callout> callouts(bool shownLocked, PendingWrite<bool> write) => [
       Callout(anchor: 'window', side: CalloutSide.right, lines: [food], color: foodColor),
       Callout(
         anchor: 'button_lock',
         side: CalloutSide.left,
         lines: [
           switch (locked) {
-            true => 'Buttons locked',
-            false => 'Buttons unlocked',
             null => 'Lock not read',
+            _ when shownLocked => 'Buttons locked',
+            _ => 'Buttons unlocked',
           },
         ],
         color: locked == null ? c.textMuted : null,
-        onTap: online && locked != null && !_locking ? () => unawaited(_lock(!locked)) : null,
-        tapHint: locked ?? false ? 'Unlock the buttons' : 'Lock the buttons',
+        onTap: online && locked != null
+            ? () => unawaited(
+                write.ask(!shownLocked, () => feeder.ask(FeederRequest.setLock(locked: !shownLocked))),
+              )
+            : null,
+        tapHint: shownLocked ? 'Unlock the buttons' : 'Lock the buttons',
       ),
       _lastFed(context, read?.lastFed),
     ];
@@ -184,7 +174,16 @@ class _SummaryState extends State<_Summary> {
         else if (blocked != null && blocked != Blocked.feeding)
           Text('${blockedWords(blocked)}.', style: small),
         const SizedBox(height: Space.s3),
-        FeederDrawing(height: 280, callouts: callouts, food: shown, dimmed: !online, label: 'Drawing of the feeder'),
+        Pending<bool>(
+          card: locked ?? false,
+          builder: (context, shownLocked, write) => FeederDrawing(
+            height: 280,
+            callouts: callouts(shownLocked, write),
+            food: shown,
+            dimmed: !online,
+            label: 'Drawing of the feeder',
+          ),
+        ),
         if (read != null) ...[const SizedBox(height: Space.s3), _NextMeal(card: read)],
       ],
     );

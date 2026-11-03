@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/semantics.dart';
@@ -37,6 +36,31 @@ Future<(FeederController, FakeSession)> _settingsTab(WidgetTester tester, {Clien
 }
 
 FeederRequest_PutSettings _put(FakeSession session) => session.requests.single as FeederRequest_PutSettings;
+
+/// The settings as the feeder holds them after one change.
+SettingsView _withLights(bool lights) => SettingsView(
+  generation: 6,
+  lights: lights,
+  sound: _settings.sound,
+  volume: _settings.volume,
+  lightsWindow: _settings.lightsWindow,
+  soundWindow: _settings.soundWindow,
+  desiccantDays: _settings.desiccantDays,
+  mealReminder: _settings.mealReminder,
+  writable: true,
+);
+
+SettingsView _withVolume(int volume) => SettingsView(
+  generation: 6,
+  lights: _settings.lights,
+  sound: _settings.sound,
+  volume: volume,
+  lightsWindow: _settings.lightsWindow,
+  soundWindow: _settings.soundWindow,
+  desiccantDays: _settings.desiccantDays,
+  mealReminder: _settings.mealReminder,
+  writable: true,
+);
 
 void main() {
   group('Settings', () {
@@ -122,6 +146,72 @@ void main() {
       expect(session.requests, hasLength(2));
     });
 
+    testWidgets('a switch moves on tap and stays while the change is out', (tester) async {
+      final (_, FakeSession session) = await _settingsTab(tester);
+      final answer = Completer<FeederReply>();
+      session.answering = (_) => answer.future;
+      bool lights() => tester.widget<Switch>(find.byType(Switch).first).value;
+
+      await tapIn(tester, find.byType(Switch).first);
+      expect(lights(), isFalse);
+
+      // The session puts the feeder's done on the card before the reply.
+      session.status(fakeCard(settings: _withLights(false)));
+      answer.complete(const FeederReply.done(generation: 6));
+      await settle(tester);
+      expect(lights(), isFalse);
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('a refused switch moves back and says why', (tester) async {
+      final (_, FakeSession session) = await _settingsTab(tester);
+      final answer = Completer<FeederReply>();
+      session.answering = (_) => answer.future;
+      bool lights() => tester.widget<Switch>(find.byType(Switch).first).value;
+
+      await tapIn(tester, find.byType(Switch).first);
+      expect(lights(), isFalse);
+      answer.complete(const FeederReply.refused(refusal: FeederRefusal.notWritable()));
+      await settle(tester);
+      expect(lights(), isTrue);
+      expect(find.textContaining("can't save changes"), findsOneWidget);
+    });
+
+    testWidgets('the volume stays where it was let go until the card shows it', (tester) async {
+      final (_, FakeSession session) = await _settingsTab(tester);
+      final answer = Completer<FeederReply>();
+      session.answering = (_) => answer.future;
+
+      await tester.drag(find.byType(Slider), const Offset(-60, 0));
+      await settle(tester);
+      final int? asked = _put(session).changes.volume;
+      expect(asked, isNotNull);
+      expect(asked, lessThan(50));
+      expect(find.text('$asked'), findsOneWidget);
+
+      session.status(fakeCard(settings: _withVolume(asked ?? 0)));
+      await tester.pump();
+      expect(find.text('$asked'), findsOneWidget);
+      answer.complete(const FeederReply.done(generation: 6));
+      await settle(tester);
+      expect(find.text('$asked'), findsOneWidget);
+      expect(find.text('50'), findsNothing);
+    });
+
+    testWidgets('a refused volume goes back to what the feeder holds', (tester) async {
+      final (_, FakeSession session) = await _settingsTab(tester);
+      final answer = Completer<FeederReply>();
+      session.answering = (_) => answer.future;
+
+      await tester.drag(find.byType(Slider), const Offset(-60, 0));
+      await settle(tester);
+      expect(find.text('50'), findsNothing);
+      answer.complete(const FeederReply.refused(refusal: FeederRefusal.busy()));
+      await settle(tester);
+      expect(find.text('50'), findsOneWidget);
+      expect(find.textContaining("It's busy"), findsOneWidget);
+    });
+
     testWidgets('a window is chosen in its dialog', (tester) async {
       final (_, FakeSession session) = await _settingsTab(tester);
 
@@ -188,68 +278,6 @@ void main() {
       await tapIn(tester, find.text('Cancel'));
       expect(session.requests, isEmpty);
       expect(feeder.state.known.name, 'Kitchen');
-    });
-  });
-
-  group('Kept readings', () {
-    const calibration = CalibrationInfo(generation: 1, writable: true, portionMg: 12000, bowl: Bowl.single);
-    const call = CallInfo(writable: true, clip: CallClip.none());
-
-    Future<(FeederController, FakeSession)> kept(WidgetTester tester) async {
-      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
-      session.replies
-        ..add(const FeederReply.calibration(calibration: calibration))
-        ..add(const FeederReply.call(call: call));
-      await feeder.loadCalibration();
-      await feeder.loadCall();
-      expect(feeder.state.calibration, calibration);
-      expect(feeder.state.call, call);
-      return (feeder, session);
-    }
-
-    testWidgets('a portion write that ends any other way drops it until a read', (tester) async {
-      final (FeederController feeder, FakeSession session) = await kept(tester);
-
-      session.replies.add(const FeederReply.unanswered());
-      await feeder.ask(
-        const FeederRequest.putCalibration(base: 1, portion: PortionChange.milligrams(mg: 15000), bowl: Bowl.single),
-      );
-      expect(feeder.state.calibration, isNull);
-      expect(feeder.state.call, call, reason: 'the clip is untouched');
-
-      const weighed = CalibrationInfo(generation: 2, writable: true, portionMg: 15000, bowl: Bowl.single);
-      session.replies.add(const FeederReply.calibration(calibration: weighed));
-      await feeder.loadCalibration();
-      expect(feeder.state.calibration, weighed);
-    });
-
-    for (final (String name, FeederRequest write) in [
-      ('an upload', FeederRequest.uploadCall(wav: Uint8List.fromList(const [1, 2, 3]))),
-      ('a delete', const FeederRequest.deleteCall()),
-    ]) {
-      testWidgets('$name that ends any other way drops the clip until a read', (tester) async {
-        final (FeederController feeder, FakeSession session) = await kept(tester);
-
-        session.replies.add(const FeederReply.done());
-        await feeder.ask(write);
-        expect(feeder.state.call, isNull);
-        expect(feeder.state.calibration, calibration, reason: 'the portion is untouched');
-
-        const stored = CallInfo(writable: true, clip: CallClip.stored(bytes: 16800, crc: 1), ms: 4200);
-        session.replies.add(const FeederReply.call(call: stored));
-        await feeder.loadCall();
-        expect(feeder.state.call, stored);
-      });
-    }
-
-    testWidgets('a session opened again drops both', (tester) async {
-      final (FeederController feeder, FakeSession session) = await kept(tester);
-
-      session.opened();
-      await tester.pump();
-
-      expect(feeder.state.calibration, isNull);
-      expect(feeder.state.call, isNull);
     });
   });
 

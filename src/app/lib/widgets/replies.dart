@@ -46,6 +46,7 @@ String notAskedWords(NotAsked reason) => switch (reason) {
   NotAsked.badZone => "The feeder can't follow that time zone.",
   NotAsked.badRecording => 'Use a WAV recording of about 8 seconds at most.',
   NotAsked.badKey => "That isn't a client's key.",
+  NotAsked.held => "It waited behind a change that wasn't confirmed, so it wasn't sent.",
 };
 
 /// Say why `reply` came to nothing, if it did; whether it worked.

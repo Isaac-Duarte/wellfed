@@ -313,6 +313,11 @@ enum NotAsked {
 
   /// A key is not 32 bytes.
   badKey,
+
+  /// A settings change asked while another was out, which never went: the
+  /// one out did not land, so the generation it would go on is not known,
+  /// or it was read from another generation than the one out went on.
+  held,
 }
 
 @freezed

@@ -12,17 +12,17 @@ import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
-import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/pending.dart';
 
-/// Change one setting, against the generation the screen shows.
-Future<void> put(BuildContext context, FeederController feeder, SettingsView settings, SettingsChanges changes) async {
-  final FeederReply reply = await feeder.ask(FeederRequest.putSettings(base: settings.generation, changes: changes));
-  if (context.mounted) showProblem(context, reply);
-}
+/// Change one setting, against the generation the screen shows. A change
+/// asked while another is out waits in Rust and goes on that one's generation.
+Future<FeederReply> put(FeederController feeder, SettingsView settings, SettingsChanges changes) =>
+    feeder.ask(FeederRequest.putSettings(base: settings.generation, changes: changes));
 
 /// The feeder's settings (10.1), for a member what a member may change (10.3).
 /// Each change goes back against the generation last read, so one made
-/// meanwhile is refused rather than overwritten.
+/// elsewhere meanwhile is refused rather than overwritten. A control moves on
+/// tap and shows the feeder's answer: see [Pending].
 class SettingsTab extends StatelessWidget {
   const SettingsTab({super.key, required this.feeder});
 
