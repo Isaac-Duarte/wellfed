@@ -21,10 +21,10 @@ impl Service {
     /// that was removed comes back under its id, its history continuing.
     ///
     /// A phone that adopts names the key it already holds on the feeder,
-    /// which is recorded as the caller's phone key once the feeder lists
-    /// it. Whether the caller may hold one is checked before anything is
-    /// enrolled; a key the feeder does not list, or whose listing cannot be
-    /// read, is refused after the adoption, which stands.
+    /// claimed as [`Self::claim_phone`] claims one. Whether the caller may
+    /// hold a key is checked before anything is enrolled; a claim refused
+    /// after enrolling leaves the adoption standing, and the phone settles
+    /// it by claiming the key again.
     ///
     /// Adoptions run one at a time: two racing for one feeder would both
     /// enroll a key, and the loser's would hold a client slot on the feeder
@@ -33,7 +33,7 @@ impl Service {
         let name = feeder_name(&request.name)?;
         let invite = Invite::parse(&request.invite).map_err(FeederError::from)?;
         let phone = match request.phone_key {
-            Some(key) => Some((self.direct_key_holder(caller).await?.0, key.0)),
+            Some(key) => Some((self.direct_key_holder(caller).await?, key.0)),
             None => None,
         };
         let one_at_a_time = self.feeders.adopting.lock().await;
@@ -95,8 +95,8 @@ impl Service {
         // The feeder is stored: the next adoption may start while this one
         // waits for its session.
         drop(one_at_a_time);
-        if let Some((token, key)) = phone {
-            self.claim_phone(caller, token, id, key).await?;
+        if let Some((holder, key)) = phone {
+            self.confirm_phone(caller, holder, id, key).await?;
         }
         Ok(self.view(row))
     }

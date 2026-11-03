@@ -13,7 +13,7 @@ axum = { workspace = true, features = ["macros"] }
 axum-extra = { workspace = true, features = ["cookie", "with-rejection"] }
 clap = { workspace = true, features = ["env"] }
 futures-util.workspace = true
-gethostname.workspace = true
+socket2.workspace = true
 jiff.workspace = true
 mdns-sd.workspace = true
 wellfed-api.workspace = true

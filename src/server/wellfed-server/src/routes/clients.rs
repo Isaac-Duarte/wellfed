@@ -1,12 +1,15 @@
 //! A feeder's clients and the phones' own keys: listing whose each client
-//! is, keeping or revoking one, and an invite for the caller's own phone.
+//! is, keeping or revoking one, an invite for the caller's own phone, and
+//! claiming a key the phone already holds.
 
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum_extra::extract::WithRejection;
 use uuid::Uuid;
-use wellfed_api::{FeederClient, FeederId, Hex, NewPhoneInvite, PhoneInvite, PhoneKey, Problem};
+use wellfed_api::{
+    FeederClient, FeederId, Hex, NewPhoneInvite, PhoneClaim, PhoneInvite, PhoneKey, Problem,
+};
 
 use super::{ApiResult, IdPath, JsonBody, TAG_FEEDERS};
 use crate::AppState;
@@ -125,7 +128,37 @@ pub(crate) async fn invite_phone(
     Ok((StatusCode::CREATED, Json(invite)))
 }
 
-/// The phone keys the server invited: everyone's for an owner, one's own
+/// Claim a key the caller's phone already holds on the feeder (paired
+/// before the server, or named by an adoption whose claim did not settle)
+/// as the caller's phone key, once the feeder lists it. The same rules as
+/// an invite: a phone's token, for an owner or a member with no expiry on
+/// the account or the token. The same token asking again is answered the
+/// record its claim made, so a lost answer or `phone_key_unconfirmed` is
+/// settled by asking again.
+#[utoipa::path(
+    post,
+    path = "/feeders/{id}/phones",
+    tag = TAG_FEEDERS,
+    params(("id" = FeederId, Path)),
+    request_body = PhoneClaim,
+    responses(
+        (status = 200, body = PhoneKey),
+        (status = 400, body = Problem, description = "invalid: the server's own key"),
+        (status = 403, body = Problem, description = "forbidden (a viewer), token_required, direct_key_refused, or phone_key_above_role"),
+        (status = 404, body = Problem),
+        (status = 409, body = Problem, description = "phone_key_not_listed, phone_key_unconfirmed (claim again), phone_key_kept, phone_key_not_a_phone, client_key_taken or feeder_archived"),
+    ),
+)]
+pub(crate) async fn claim_phone(
+    State(state): State<AppState>,
+    Allowed(caller, _): Allowed<need::InviteOwnPhone>,
+    WithRejection(Path(id), _): IdPath,
+    WithRejection(Json(request), _): JsonBody<PhoneClaim>,
+) -> ApiResult<Json<PhoneKey>> {
+    Ok(Json(state.service.claim_phone(&caller, id, request).await?))
+}
+
+/// The phone keys the server recorded: everyone's for an owner, one's own
 /// for anyone else. A key being revoked shows why and what its last
 /// attempt came to, so a feeder that still holds it is reported.
 #[utoipa::path(

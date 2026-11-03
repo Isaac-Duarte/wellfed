@@ -84,8 +84,8 @@ sha2-0-10 = { package = "sha2", version = "0.10" }
 axum-extra = "0.12.6"
 chacha20poly1305 = { version = "0.10.1", default-features = false }
 futures-util = "0.3.34"
-# The server's own mDNS announcement takes the machine's name as its host.
-gethostname = "1.1.0"
+# Which address families the server's listening socket serves, for its mDNS announcement.
+socket2 = "0.6.5"
 getrandom = "0.3.4"
 http-body-util = "0.1.5"
 jiff = "0.2.38"

@@ -59,6 +59,15 @@ pub struct NewPhoneInvite {
     pub key: Hex<32>,
 }
 
+/// A key the caller's phone already holds on the feeder, claimed as the
+/// caller's phone key: one it paired before the server, or one an
+/// adoption named whose claim did not settle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PhoneClaim {
+    #[schema(value_type = String)]
+    pub key: Hex<32>,
+}
+
 /// A single-use invite for the caller's phone. The text holds the secret
 /// the phone's handshake needs, so it is shown once and never stored.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

@@ -1,44 +1,63 @@
 //! Announcing the server on the LAN over mDNS, so the app finds it without
 //! a typed address.
 //!
-//! Anyone on the LAN hears the record, so it carries the HTTP port and the
-//! server's version and nothing else: no household, account or feeder. The
-//! app connects to the address it resolves, which the server always
-//! answers to, since an IP address passes the host check. Announcing is
-//! best effort: a host whose mDNS fails still serves, with a warning.
+//! Anyone on the LAN hears the record, so it carries the HTTP port, the
+//! server's version and its [`ServerId`], and nothing else: no household,
+//! account, feeder or machine name. The instance is the server's `label`;
+//! the host is the label and the id's first digits, so it never collides
+//! with the machine's own mDNS name. The app connects to the address it
+//! resolves, which the server always answers to, since an IP address passes
+//! the host check, and recognises the server by `id` when that address
+//! changes. Announcing is best effort: a host whose mDNS fails still
+//! serves, with a warning.
 
-use std::net::SocketAddr;
+use std::net::IpAddr;
 use std::time::Duration;
 
 use mdns_sd::{IfKind, ServiceDaemon, ServiceInfo};
+use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::config::Advertise;
+use crate::server_id::ServerId;
 
 /// The service type the app browses for.
 pub(crate) const SERVICE: &str = "_wellfed-server._tcp.local.";
 
-/// The instance and host name when the machine's own name is unusable.
+/// The host name's stem when the label leaves no DNS label.
 const FALLBACK: &str = "wellfed-server";
 
 /// How long the goodbye and the daemon's stop may take at shutdown.
 const WITHDRAW: Duration = Duration::from_secs(2);
 
-/// Announce the server listening at `listening` until `cancel`, then
-/// withdraw the record, so the app drops it at once rather than at its
+/// Announce the server listening on `listener` as `label` until `cancel`,
+/// then withdraw the record, so the app drops it at once rather than at its
 /// TTL. `None` when nothing is announced: `advertise` is off, the server
 /// listens on this computer only, or mDNS failed.
 pub fn spawn(
     advertise: Advertise,
-    listening: SocketAddr,
+    listener: &TcpListener,
+    label: &str,
+    id: ServerId,
     cancel: CancellationToken,
 ) -> Option<JoinHandle<()>> {
     if advertise == Advertise::Off {
         return None;
     }
-    let record = match record(listening, &host_label(&gethostname::gethostname())) {
+    let listening = match listener.local_addr() {
+        Ok(listening) => listening,
+        Err(error) => {
+            warn!("not advertised over mDNS: {error}");
+            return None;
+        }
+    };
+    // A socket on `[::]` takes IPv4 too unless it is IPv6-only; an unknown
+    // answer announces IPv6 alone rather than an address family it may not
+    // serve.
+    let v6_only = listening.is_ipv6() && socket2::SockRef::from(listener).only_v6().unwrap_or(true);
+    let record = match record(serves(listening.ip(), v6_only), listening.port(), label, id) {
         Ok(Some(record)) => record,
         Ok(None) => {
             info!("not advertised over mDNS: {listening} is this computer only");
@@ -94,115 +113,184 @@ async fn withdraw(daemon: &ServiceDaemon, fullname: &str) {
     }
 }
 
-/// The record announcing a server listening at `listening` on the host
-/// `label`; `None` for a loopback address, which nothing else could reach.
-/// A wildcard address announces the host's addresses of its family as
-/// they come and go; any other, that address alone.
-fn record(listening: SocketAddr, label: &str) -> Result<Option<ServiceInfo>, mdns_sd::Error> {
-    let ip = listening.ip();
-    if ip.is_loopback() {
-        return Ok(None);
-    }
+/// The addresses a listening socket serves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Serves {
+    /// This computer only.
+    Loopback,
+    One(IpAddr),
+    /// Every address of the host in a family, as they come and go.
+    AllV4,
+    AllV6,
+    AllBoth,
+}
 
-    let host = format!("{label}.local.");
-    let properties = [("version", env!("CARGO_PKG_VERSION"))];
-    let port = listening.port();
-    let (mut record, interfaces) = if !ip.is_unspecified() {
-        let record = ServiceInfo::new(SERVICE, label, &host, ip, port, &properties[..])?;
-        (record, IfKind::Addr(ip))
-    } else {
+/// What a socket bound to `ip` serves; `v6_only` says whether one on `[::]`
+/// refuses IPv4.
+fn serves(ip: IpAddr, v6_only: bool) -> Serves {
+    match ip {
+        _ if ip.is_loopback() => Serves::Loopback,
+        IpAddr::V4(_) if ip.is_unspecified() => Serves::AllV4,
+        IpAddr::V6(_) if ip.is_unspecified() && v6_only => Serves::AllV6,
+        IpAddr::V6(_) if ip.is_unspecified() => Serves::AllBoth,
+        _ => Serves::One(ip),
+    }
+}
+
+/// The record announcing the server as `label`, on `port`; `None` on
+/// loopback, which nothing else could reach.
+fn record(
+    serves: Serves,
+    port: u16,
+    label: &str,
+    id: ServerId,
+) -> Result<Option<ServiceInfo>, mdns_sd::Error> {
+    let host = format!("{}-{}.local.", host_stem(label), id.short());
+    let id = id.to_string();
+    let properties = [("version", env!("CARGO_PKG_VERSION")), ("id", id.as_str())];
+    let auto = |family| -> Result<_, mdns_sd::Error> {
         let record = ServiceInfo::new(SERVICE, label, &host, (), port, &properties[..])?;
-        // `[::]` takes IPv4 too on a dual-stack host; `0.0.0.0` only IPv4.
-        let family = if ip.is_ipv4() {
-            IfKind::IPv4
-        } else {
-            IfKind::All
-        };
-        (record.enable_addr_auto(), family)
+        Ok((record.enable_addr_auto(), family))
+    };
+
+    let (mut record, interfaces) = match serves {
+        Serves::Loopback => return Ok(None),
+        Serves::One(ip) => {
+            let record = ServiceInfo::new(SERVICE, label, &host, ip, port, &properties[..])?;
+            (record, IfKind::Addr(ip))
+        }
+        Serves::AllV4 => auto(IfKind::IPv4)?,
+        Serves::AllV6 => auto(IfKind::IPv6)?,
+        Serves::AllBoth => auto(IfKind::All)?,
     };
     record.set_interfaces(vec![interfaces]);
     Ok(Some(record))
 }
 
-/// The machine's name as one DNS label: its first label, lowercased, with
-/// anything but letters, digits and inner hyphens dropped, at most 63
-/// bytes; [`FALLBACK`] when nothing is left.
-fn host_label(name: &std::ffi::OsStr) -> String {
-    let name = name.to_string_lossy();
-    let first = name.split('.').next().unwrap_or_default();
-    let kept: String = first
+/// The label as one DNS label: lowercased, with anything but letters,
+/// digits and inner hyphens dropped; [`FALLBACK`] when nothing is left. A
+/// label is at most 16 bytes, so the host name stays short.
+fn host_stem(label: &str) -> String {
+    let kept: String = label
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
         .map(|c| c.to_ascii_lowercase())
-        .take(63)
         .collect();
-    let label = kept.trim_matches('-');
-    if label.is_empty() {
+    let stem = kept.trim_matches('-');
+    if stem.is_empty() {
         FALLBACK.to_owned()
     } else {
-        label.to_owned()
+        stem.to_owned()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsStr;
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::net::Ipv4Addr;
 
     use super::*;
 
-    fn at(address: &str) -> Option<ServiceInfo> {
-        record(address.parse().unwrap(), "pantry").unwrap()
+    fn id() -> ServerId {
+        let data = tempfile::tempdir().unwrap();
+        std::fs::write(
+            data.path().join(crate::server_id::ID_FILE),
+            "0123456789abcdef",
+        )
+        .unwrap();
+        crate::server_id::server_id(data.path(), &wellfed_service::SystemRandom).unwrap()
+    }
+
+    fn at(serves: Serves) -> Option<ServiceInfo> {
+        record(serves, 8080, "wellfed-server", id()).unwrap()
     }
 
     #[test]
-    fn a_wildcard_listener_announces_the_hosts_addresses_and_the_version_only() {
-        let record = at("0.0.0.0:8080").unwrap();
+    fn the_record_names_the_label_a_host_of_its_own_the_version_and_the_id() {
+        let record = at(Serves::AllV4).unwrap();
 
         assert_eq!(record.get_type(), SERVICE);
-        assert_eq!(record.get_fullname(), "pantry._wellfed-server._tcp.local.");
-        assert_eq!(record.get_hostname(), "pantry.local.");
+        assert_eq!(
+            record.get_fullname(),
+            "wellfed-server._wellfed-server._tcp.local."
+        );
+        assert_eq!(record.get_hostname(), "wellfed-server-01234567.local.");
         assert_eq!(record.get_port(), 8080);
-        assert!(record.is_addr_auto());
-        assert!(record.get_addresses().is_empty());
         assert_eq!(
             record.get_property_val_str("version"),
             Some(env!("CARGO_PKG_VERSION"))
         );
-        assert_eq!(record.get_properties().len(), 1, "nothing but the version");
+        assert_eq!(record.get_property_val_str("id"), Some("0123456789abcdef"));
+        assert_eq!(
+            record.get_properties().len(),
+            2,
+            "nothing but the version and the id"
+        );
+    }
+
+    #[test]
+    fn a_wildcard_listener_announces_the_hosts_addresses() {
+        for serves in [Serves::AllV4, Serves::AllV6, Serves::AllBoth] {
+            let record = at(serves).unwrap();
+
+            assert!(record.is_addr_auto(), "{serves:?}");
+            assert!(record.get_addresses().is_empty(), "{serves:?}");
+        }
     }
 
     #[test]
     fn a_listener_on_one_address_announces_that_address() {
-        let record = at("192.168.1.20:9000").unwrap();
+        let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20));
 
-        let want = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20));
-        assert_eq!(record.get_addresses().iter().collect::<Vec<_>>(), [&want]);
-        assert_eq!(record.get_port(), 9000);
+        let record = at(Serves::One(ip)).unwrap();
+
+        assert_eq!(record.get_addresses().iter().collect::<Vec<_>>(), [&ip]);
         assert!(!record.is_addr_auto());
     }
 
     #[test]
     fn a_loopback_listener_is_never_announced() {
-        assert!(at("127.0.0.1:8080").is_none());
-        assert!(at("[::1]:8080").is_none());
+        assert!(at(Serves::Loopback).is_none());
+    }
+
+    #[test]
+    fn what_a_socket_serves_follows_its_address_and_family() {
+        let ip = |text: &str| text.parse::<IpAddr>().unwrap();
+
+        assert_eq!(serves(ip("127.0.0.1"), false), Serves::Loopback);
+        assert_eq!(serves(ip("::1"), true), Serves::Loopback);
+        assert_eq!(serves(ip("0.0.0.0"), false), Serves::AllV4);
+        assert_eq!(serves(ip("::"), true), Serves::AllV6);
+        assert_eq!(serves(ip("::"), false), Serves::AllBoth);
+        let lan = ip("192.168.1.20");
+        assert_eq!(serves(lan, false), Serves::One(lan));
     }
 
     #[test]
     fn off_announces_nothing() {
-        let cancel = CancellationToken::new();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
-        let spawned = spawn(Advertise::Off, "0.0.0.0:8080".parse().unwrap(), cancel);
+            let spawned = spawn(
+                Advertise::Off,
+                &listener,
+                "wellfed-server",
+                id(),
+                CancellationToken::new(),
+            );
 
-        assert!(spawned.is_none());
+            assert!(spawned.is_none());
+        });
     }
 
     #[test]
-    fn the_host_name_becomes_one_dns_label() {
-        assert_eq!(host_label(OsStr::new("Kitchen-PC.lan")), "kitchen-pc");
-        assert_eq!(host_label(OsStr::new("isaac's mac")), "isaacsmac");
-        assert_eq!(host_label(OsStr::new("-")), FALLBACK);
-        assert_eq!(host_label(OsStr::new("")), FALLBACK);
-        assert_eq!(host_label(OsStr::new(&"a".repeat(80))).len(), 63);
+    fn the_label_becomes_one_dns_label() {
+        assert_eq!(host_stem("Kitchen Server"), "kitchenserver");
+        assert_eq!(host_stem("-pantry-"), "pantry");
+        assert_eq!(host_stem("über"), "ber");
+        assert_eq!(host_stem("—"), FALLBACK);
     }
 }

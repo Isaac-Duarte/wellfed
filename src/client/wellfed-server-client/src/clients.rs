@@ -5,8 +5,8 @@ use reqwest::header;
 use reqwest::{Method, StatusCode};
 use uuid::Uuid;
 use wellfed_api::{
-    FeederClient, FeederId, Generation, Hex, NewPhoneInvite, PhoneInvite, PhoneKey, PlayRequest,
-    Removal, TuneName, WifiChange,
+    FeederClient, FeederId, Generation, Hex, NewPhoneInvite, PhoneClaim, PhoneInvite, PhoneKey,
+    PlayRequest, Removal, TuneName, WifiChange,
 };
 
 use crate::feeders::IDEMPOTENCY_KEY;
@@ -62,7 +62,19 @@ impl Client {
         decode(response, StatusCode::CREATED).await
     }
 
-    /// The phone keys the server invited: one's own, or everyone's for an
+    /// Claim `phone`, a key this token's phone already holds on the
+    /// feeder, as its phone key. Safe to retry: the same token asking again
+    /// is answered the record its claim made.
+    pub async fn claim_phone(&self, id: FeederId, phone: Hex<32>) -> Result<PhoneKey, Error> {
+        let response = self
+            .api(Method::POST, &format!("/feeders/{id}/phones"))
+            .json(&PhoneClaim { key: phone })
+            .send()
+            .await?;
+        decode(response, StatusCode::OK).await
+    }
+
+    /// The phone keys the server recorded: one's own, or everyone's for an
     /// owner.
     pub async fn phones(&self) -> Result<Vec<PhoneKey>, Error> {
         let response = self.api(Method::GET, "/phones").send().await?;

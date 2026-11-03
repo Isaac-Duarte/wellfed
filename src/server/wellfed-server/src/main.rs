@@ -3,7 +3,8 @@
 //! Everything it keeps is in `--data`: the database (`server.db`), the
 //! settings (`server.toml`, optional; flags and environment variables
 //! override it) and the key the server's feeder keys are sealed with
-//! (`keys/server.key`), the verified releases kept for installs
+//! (`keys/server.key`), the id its mDNS announcement carries
+//! (`server.id`), the verified releases kept for installs
 //! (`releases/`), each feeder's stock backup (`stock/`) and the
 //! database's backups (`backups/`). The first start makes that key; back
 //! it up apart from the database's backups, which leave it out: the
@@ -66,6 +67,8 @@ async fn main() -> Result<()> {
     std::fs::create_dir_all(&cli.data).with_context(|| format!("create {}", cli.data.display()))?;
     let settings = ServerConfig::load(&cli.data, cli.overrides)?;
     let (key, _) = wellfed_server::key::sealing_key(&cli.data, &SystemRandom)?;
+    let id = wellfed_server::server_id::server_id(&cli.data, &SystemRandom)?;
+    let label = settings.label.as_str().to_owned();
     let store = Store::open(&cli.data.join(DATABASE), SystemClock.now())
         .await
         .context("open the database")?;
@@ -128,11 +131,15 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(settings.listen)
         .await
         .with_context(|| format!("listen on {}", settings.listen))?;
-    let listening = listener.local_addr()?;
-    tracing::info!("serving on http://{listening}");
+    tracing::info!("serving on http://{}", listener.local_addr()?);
     let jobs = wellfed_server::jobs::spawn(service.clone(), service.clock(), shutdown.clone());
-    let advertised =
-        wellfed_server::advertise::spawn(settings.advertise, listening, shutdown.clone());
+    let advertised = wellfed_server::advertise::spawn(
+        settings.advertise,
+        &listener,
+        &label,
+        id,
+        shutdown.clone(),
+    );
 
     let stop = shutdown.clone();
     // Each request knows its connection's address: logins are limited by

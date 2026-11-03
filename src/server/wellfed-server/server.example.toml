@@ -18,9 +18,10 @@ label = "wellfed-server"
 # reconnects by address only (a bridged container network).
 discovery = "mdns"
 
-# "mdns" announces the server on the LAN (`_wellfed-server._tcp`, with its
-# port and version only) while it listens beyond this computer, so the app
-# finds it; "off" never does. Apart from `discovery`, which finds feeders.
+# "mdns" announces the server on the LAN (`_wellfed-server._tcp`, named
+# after `label`, with its port, version and server id only) while it
+# listens beyond this computer, so the app finds it; "off" never does.
+# Apart from `discovery`, which finds feeders.
 advertise = "mdns"
 
 # Reverse proxies whose forwarded headers (X-Forwarded-For and

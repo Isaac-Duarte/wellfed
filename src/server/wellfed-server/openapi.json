@@ -353,7 +353,7 @@
           "feeders"
         ],
         "summary": "Adopt a feeder by redeeming an invite its owner made for the server.",
-        "description": "A phone that adopts names the key it already holds on the feeder\n(`phone_key`), and the server records it as the caller's phone key once\nthe feeder lists it, so revoking the account revokes it. Naming one\nneeds a phone's token with no expiry on it or the account, checked\nbefore anything is enrolled. `phone_key_not_listed` and\n`phone_key_unconfirmed` come after the adoption, which stands.",
+        "description": "A phone that adopts names the key it already holds on the feeder\n(`phone_key`), claimed as `POST /feeders/{id}/phones` claims one, so\nrevoking the account revokes it. Naming one needs a phone's token with\nno expiry on it or the account, checked before anything is enrolled.\nA claim refused after enrolling (any `phone_key_*` or\n`client_key_taken`) leaves the adoption standing: claim the key again\nthrough that route.",
         "operationId": "adopt",
         "requestBody": {
           "content": {
@@ -386,7 +386,7 @@
             }
           },
           "403": {
-            "description": "forbidden: owners only; token_required or direct_key_refused for a phone key",
+            "description": "forbidden: owners only; token_required or direct_key_refused for a phone key, checked first",
             "content": {
               "application/json": {
                 "schema": {
@@ -396,7 +396,7 @@
             }
           },
           "409": {
-            "description": "already_adopted, feeder_refused, or, with the feeder adopted, phone_key_not_listed, phone_key_unconfirmed or client_key_taken",
+            "description": "already_adopted, feeder_refused, or, with the feeder adopted, a phone_key_* refusal or client_key_taken",
             "content": {
               "application/json": {
                 "schema": {
@@ -1736,6 +1736,85 @@
             }
           },
           "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feeders/{id}/phones": {
+      "post": {
+        "tags": [
+          "feeders"
+        ],
+        "summary": "Claim a key the caller's phone already holds on the feeder (paired\nbefore the server, or named by an adoption whose claim did not settle)\nas the caller's phone key, once the feeder lists it. The same rules as\nan invite: a phone's token, for an owner or a member with no expiry on\nthe account or the token. The same token asking again is answered the\nrecord its claim made, so a lost answer or `phone_key_unconfirmed` is\nsettled by asking again.",
+        "operationId": "claim_phone",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FeederId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneClaim"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid: the server's own key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden (a viewer), token_required, direct_key_refused, or phone_key_above_role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "phone_key_not_listed, phone_key_unconfirmed (claim again), phone_key_kept, phone_key_not_a_phone, client_key_taken or feeder_archived",
             "content": {
               "application/json": {
                 "schema": {
@@ -4150,7 +4229,7 @@
         "tags": [
           "feeders"
         ],
-        "summary": "The phone keys the server invited: everyone's for an owner, one's own\nfor anyone else. A key being revoked shows why and what its last\nattempt came to, so a feeder that still holds it is reported.",
+        "summary": "The phone keys the server recorded: everyone's for an owner, one's own\nfor anyone else. A key being revoked shows why and what its last\nattempt came to, so a feeder that still holds it is reported.",
         "operationId": "phones",
         "responses": {
           "200": {
@@ -6259,6 +6338,9 @@
           "client_key_taken",
           "phone_key_not_listed",
           "phone_key_unconfirmed",
+          "phone_key_kept",
+          "phone_key_not_a_phone",
+          "phone_key_above_role",
           "invite_expired",
           "unreachable",
           "feeder_offline",
@@ -9066,6 +9148,18 @@
                 "type": "null"
               }
             ]
+          }
+        }
+      },
+      "PhoneClaim": {
+        "type": "object",
+        "description": "A key the caller's phone already holds on the feeder, claimed as the\ncaller's phone key: one it paired before the server, or one an\nadoption named whose claim did not settle.",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
           }
         }
       },

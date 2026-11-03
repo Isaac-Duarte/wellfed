@@ -21,6 +21,7 @@ pub mod key;
 mod proxy;
 mod request_id;
 mod routes;
+pub mod server_id;
 
 use std::sync::Arc;
 
@@ -107,6 +108,7 @@ fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(clients::revoke_client))
         .routes(routes!(clients::keep_client))
         .routes(routes!(clients::invite_phone))
+        .routes(routes!(clients::claim_phone))
         .routes(routes!(clients::phones))
         .routes(routes!(admin::put_wifi))
         .routes(routes!(admin::reboot))

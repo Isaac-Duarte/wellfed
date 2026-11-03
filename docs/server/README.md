@@ -34,7 +34,13 @@ So a client can resolve a lost feed on either path without resending it. Holding
 
 This costs the feeder a client slot per phone. A feeder has 8 slots: the server, the CLI and up to six phones.
 
-A phone that pairs with a feeder before there is a server keeps that key. When the phone adopts the feeder, it names the key in `POST /feeders` (`phone_key`). The server checks that the feeder lists it, then records it as that account's phone key. So deleting, demoting or putting an expiry on the account revokes it, as it revokes a key the server invited. If the feeder doesn't list the key, the request is refused `409 phone_key_not_listed`, and the feeder stays adopted.
+A phone that pairs with a feeder before there is a server keeps that key. It claims the key with `POST /feeders/{id}/phones`, or names it when it adopts the feeder (`phone_key` in `POST /feeders`). The server checks that the feeder lists the key, then records it as that account's phone key. So deleting, demoting or putting an expiry on the account revokes it, as it revokes a key the server invited.
+
+- **A refused claim leaves an adoption standing.** If the feeder doesn't list the key (`409 phone_key_not_listed`) or couldn't be read (`409 phone_key_unconfirmed`), the feeder is still adopted. Claim the key again once it is online.
+- **A claim asked again is answered its record,** so a lost answer is safe to retry.
+- **The same rules as an invite:** a phone's token, for an owner or a member, with no expiry on the account or the token.
+- **What a claim can't take:** the server's own key, a client an owner kept, a key the feeder lists as a server's or an update signer's, a key above the account's role (a member can't claim an owner's key), and another phone's key.
+- **The feeder can't prove which phone holds a key.** So a claim trusts an owner's or member's account to name its own key.
 
 Every device operation the app can make has a server route, or a stated reason it has none, in `wellfed_service::parity`. It is an exhaustive match over the device API's operations, so a new operation doesn't build until it gets one. Some routes need the feeder's owner role: Wi-Fi, reboot, revoking a client, a phone's invite, the time zone rule, installs and the stock backup. They work only when the server was adopted with an owner's invite. With the `server` role, the feeder refuses them `forbidden`.
 

@@ -148,7 +148,9 @@ fn status(code: ErrorCode) -> StatusCode {
         // The adoption stands: asking again is refused `already_adopted`,
         // so neither is a status a client would retry.
         | ErrorCode::PhoneKeyNotListed
-        | ErrorCode::PhoneKeyUnconfirmed => StatusCode::CONFLICT,
+        | ErrorCode::PhoneKeyUnconfirmed
+        | ErrorCode::PhoneKeyKept
+        | ErrorCode::PhoneKeyNotAPhone => StatusCode::CONFLICT,
         ErrorCode::Unauthenticated | ErrorCode::BadCredentials => StatusCode::UNAUTHORIZED,
         ErrorCode::LoginLimited => StatusCode::TOO_MANY_REQUESTS,
         ErrorCode::Forbidden
@@ -156,7 +158,8 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::CrossOrigin
         | ErrorCode::AccountDisabled
         | ErrorCode::TokenRequired
-        | ErrorCode::DirectKeyRefused => StatusCode::FORBIDDEN,
+        | ErrorCode::DirectKeyRefused
+        | ErrorCode::PhoneKeyAboveRole => StatusCode::FORBIDDEN,
         ErrorCode::ZoneUnsupported => StatusCode::UNPROCESSABLE_ENTITY,
         ErrorCode::UnknownHost => StatusCode::MISDIRECTED_REQUEST,
         ErrorCode::NotFound => StatusCode::NOT_FOUND,

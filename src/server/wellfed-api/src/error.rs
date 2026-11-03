@@ -66,14 +66,24 @@ pub enum ErrorCode {
     DirectKeyRefused,
     /// The key is already one of the feeder's clients, or another phone's.
     ClientKeyTaken,
-    /// The feeder is adopted, but it does not list the phone key the
-    /// adoption named, so the key is not recorded as the caller's. The
-    /// adoption stands: the feeder is in `GET /feeders`.
+    /// The feeder does not list the phone key claimed, so it is not
+    /// recorded as the caller's. An adoption that named it stands: the
+    /// feeder is in `GET /feeders`.
     PhoneKeyNotListed,
-    /// The feeder is adopted, but the server could not read its client
-    /// list to confirm the phone key the adoption named, so the key is not
-    /// recorded as the caller's. The adoption stands.
+    /// The server could not read the feeder's clients to confirm the phone
+    /// key claimed (the feeder offline, or slow to connect), so it is not
+    /// recorded yet. An adoption that named it stands; claim the key again
+    /// (`POST /feeders/{id}/phones`).
     PhoneKeyUnconfirmed,
+    /// An owner kept the key claimed as a client of its own (the CLI, say),
+    /// so it is not a phone's to claim.
+    PhoneKeyKept,
+    /// The feeder lists the key claimed with a role no phone holds: a
+    /// server's or an update signer's.
+    PhoneKeyNotAPhone,
+    /// The feeder lists the key claimed with a role above the account's: a
+    /// member claiming an owner's key.
+    PhoneKeyAboveRole,
     /// The feeder dropped the invite unanswered: unknown, used or expired.
     InviteExpired,
     /// The server could not reach the feeder.

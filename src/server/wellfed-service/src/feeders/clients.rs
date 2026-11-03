@@ -30,13 +30,19 @@ pub enum ClientError {
     #[error("that is the server's own key: remove the feeder to revoke it")]
     OwnKey,
     #[error(
-        "the feeder is adopted, but it does not list the phone key named, so that key is not recorded as yours"
+        "the feeder does not list that phone key, so it is not recorded as yours (an adoption that named it stands)"
     )]
     PhoneKeyNotListed,
     #[error(
-        "the feeder is adopted, but its clients could not be read to confirm the phone key named, so that key is not recorded as yours"
+        "the feeder's clients could not be read to confirm that phone key, so it is not recorded as yours yet (an adoption that named it stands); claim it again"
     )]
     PhoneKeyUnconfirmed,
+    #[error("an owner kept that key as a client of its own: it is not a phone's to claim")]
+    PhoneKeyKept,
+    #[error("the feeder lists that key as a server's or an update signer's, not a phone's")]
+    PhoneKeyNotAPhone,
+    #[error("the feeder lists that key with a role above your account's")]
+    PhoneKeyAboveRole,
 }
 
 impl ClientError {
@@ -48,6 +54,9 @@ impl ClientError {
             Self::OwnKey => ErrorCode::Invalid,
             Self::PhoneKeyNotListed => ErrorCode::PhoneKeyNotListed,
             Self::PhoneKeyUnconfirmed => ErrorCode::PhoneKeyUnconfirmed,
+            Self::PhoneKeyKept => ErrorCode::PhoneKeyKept,
+            Self::PhoneKeyNotAPhone => ErrorCode::PhoneKeyNotAPhone,
+            Self::PhoneKeyAboveRole => ErrorCode::PhoneKeyAboveRole,
         }
     }
 }
