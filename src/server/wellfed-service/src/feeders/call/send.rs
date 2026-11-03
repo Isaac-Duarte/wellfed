@@ -6,17 +6,19 @@
 //! entry ([`CallBefore`]). A retry reads it again:
 //!
 //! - An upload whose clip the feeder holds, stored or arriving, ends or
-//!   goes on from there. One that finds the feeder still holding what the
-//!   first send found starts over. Anything else is a later change (another
-//!   upload, or an erase), and the entry settles as `superseded` with
-//!   nothing sent.
+//!   goes on from there. Once the feeder took its start (which erased what
+//!   it held, and is recorded before any chunk goes), anything else is a
+//!   later change: another upload, or an erase of this one. Before then,
+//!   one that finds the feeder still holding what the first send found
+//!   starts over, and anything else is a later change too. A later change
+//!   settles the entry as `superseded`, with nothing sent.
 //! - A delete that finds no clip is done. One that finds the clip the
 //!   first send found erases it again under its request id; another clip
 //!   is a later upload, and the entry settles as `superseded`.
 //!
-//! An upload whose first send erased the old clip and was then lost to a
-//! restart of the feeder finds no clip where it found one first, so it is
-//! superseded too: the caller uploads again under a new key.
+//! An upload the feeder took and then lost to a restart finds no clip of
+//! its own, so it is superseded too: the caller uploads again under a new
+//! key.
 //!
 //! Each read is a read: one that fails left nothing on the feeder, so a
 //! first attempt's entry is dropped and its key is free again.
@@ -80,58 +82,87 @@ impl Service {
             Err(error) => return Err(self.nothing_sent(&key, attempt, read_failed(error)).await),
         };
 
-        let start = match attempt {
+        let resume = match attempt {
+            Attempt::Retry if holds(&view, clip) => Some(CallStart::Resume(view)),
             Attempt::First => {
-                if let Err(error) = self
-                    .shared
-                    .store
-                    .record_call_before(&key, held(&view))
-                    .await
-                {
+                let recorded = self.shared.store.record_call_before(&key, held(&view));
+                if let Err(error) = recorded.await {
                     return Err(self.nothing_sent(&key, attempt, error.into()).await);
                 }
-                CallStart::Fresh
+                None
             }
-            Attempt::Retry if holds(&view, clip) => CallStart::Resume(view),
+            // Once the feeder took this upload's start, a clip not its own
+            // came after it; before that, only what the first send found
+            // is safe to replace.
             Attempt::Retry => {
-                if self.shared.store.call_before(&key).await? != Some(held(&view)) {
+                let write = self.shared.store.call_write(&key).await?;
+                let fresh =
+                    write.is_some_and(|write| !write.started && write.before == Some(held(&view)));
+                if !fresh {
                     return self.superseded(&key).await;
                 }
-                CallStart::Fresh
+                None
             }
         };
-        let uploaded = operation.upload_call(clip, start).await;
-        let now = self.shared.clock.now();
-
-        let outcome = match uploaded {
-            Ok(call) => CommandOutcome::Call { call },
-            Err(CallError::Failed(UploadFailed::Upload(UploadError::Refused(refusal)))) => {
-                CommandOutcome::Refused {
-                    refusal: refusal.into(),
+        let start = match resume {
+            Some(start) => start,
+            None => {
+                if let Err(error) = operation.start_call(clip).await {
+                    return self.upload_failed(&key, attempt, error).await;
                 }
+                if let Err(error) = self.shared.store.record_call_started(&key).await {
+                    self.unknown_best_effort(&key).await;
+                    return Err(error.into());
+                }
+                CallStart::Started
             }
-            // As for one request: a first attempt never sent leaves no
-            // entry, so the key is free for the same upload later.
-            Err(CallError::Unsent(error)) => {
-                return Err(self.nothing_sent(&key, attempt, error.into()).await);
+        };
+
+        match operation.upload_call(clip, start).await {
+            Ok(call) => {
+                let outcome = CommandOutcome::Call { call };
+                self.record_answer(&key, &outcome, self.shared.clock.now())
+                    .await?;
+                Ok(outcome)
             }
-            Err(CallError::Failed(UploadFailed::Upload(UploadError::Unexpected))) => {
-                self.unknown(&key, now).await?;
-                return Err(InternalError::Unexpected.into());
+            Err(error) => self.upload_failed(&key, attempt, error).await,
+        }
+    }
+
+    /// Record what an upload that stopped short leaves of its entry: a
+    /// refusal as its answer, a send that never left as no entry, and
+    /// anything else as unknown, for a retry to read where it stands.
+    async fn upload_failed(
+        &self,
+        key: &IdempotencyKey,
+        attempt: Attempt,
+        error: CallError,
+    ) -> Result<CommandOutcome> {
+        let now = self.shared.clock.now();
+        match error {
+            CallError::Failed(UploadFailed::Upload(UploadError::Refused(refusal))) => {
+                let outcome = CommandOutcome::Refused {
+                    refusal: refusal.into(),
+                };
+                self.record_answer(key, &outcome, now).await?;
+                Ok(outcome)
+            }
+            CallError::Unsent(error) => Err(self.nothing_sent(key, attempt, error.into()).await),
+            CallError::Failed(UploadFailed::Upload(UploadError::Unexpected)) => {
+                self.unknown(key, now).await?;
+                Err(InternalError::Unexpected.into())
             }
             // The feeder holds what it received, or its restart forgot it:
             // a retry under the key reads which and goes on from there.
-            Err(CallError::Lost(_) | CallError::Failed(_)) => {
-                self.unknown(&key, now).await?;
-                return Err(CommandError::Unknown.into());
+            CallError::Lost(_) | CallError::Failed(_) => {
+                self.unknown(key, now).await?;
+                Err(CommandError::Unknown.into())
             }
-            Err(CallError::Random(failed)) => {
-                self.unknown_best_effort(&key).await;
-                return Err(failed.into());
+            CallError::Random(failed) => {
+                self.unknown_best_effort(key).await;
+                Err(failed.into())
             }
-        };
-        self.record_answer(&key, &outcome, now).await?;
-        Ok(outcome)
+        }
     }
 
     /// Erase the meal call, once the feeder's clip is read: as the first
@@ -169,7 +200,8 @@ impl Service {
                 return Ok(outcome);
             }
             Attempt::Retry => {
-                if self.shared.store.call_before(&key).await? != Some(held(&view)) {
+                let write = self.shared.store.call_write(&key).await?;
+                if write.and_then(|write| write.before) != Some(held(&view)) {
                     return self.superseded(&key).await;
                 }
             }

@@ -11,7 +11,7 @@
 
 use tokio::time::{Instant, sleep};
 use wellfed_client::call::{Step, Upload};
-use wellfed_model::{Answer, CallView, Op};
+use wellfed_model::{Answer, CallClip, CallView, Op};
 
 use crate::{AskError, Operation, RandomFailed};
 
@@ -34,27 +34,52 @@ pub enum CallError {
     Random(#[from] RandomFailed),
 }
 
-/// Where an upload begins.
+/// Where an upload's chunks begin.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallStart {
-    /// From the start: the feeder's clip is erased first.
-    Fresh,
+    /// From the first: the feeder answered [`Operation::start_call`].
+    Started,
     /// From where the feeder's view (read with [`Operation::read_call`])
     /// says this upload stands, after an attempt whose answers were lost.
     Resume(CallView),
 }
 
 impl Operation {
-    /// Upload `clip` until the feeder stores it, the upload fails, or a
-    /// step goes unanswered.
+    /// Erase the feeder's clip and announce `clip`, as an upload's first
+    /// step. The caller records that the feeder took it before any chunk
+    /// goes ([`Self::upload_call`]), so a retry can tell an upload that
+    /// began from one that never did.
+    pub async fn start_call(&mut self, clip: &Clip) -> Result<(), CallError> {
+        match self.call_step(clip.start(), &mut false).await? {
+            Answer::Done { .. } => Ok(()),
+            Answer::Refused(refusal) => {
+                Err(UploadFailed::Upload(UploadError::Refused(refusal)).into())
+            }
+            _ => Err(UploadFailed::Upload(UploadError::Unexpected).into()),
+        }
+    }
+
+    /// Send `clip`'s chunks from `start` until the feeder stores it, the
+    /// upload fails, or a step goes unanswered. The upload began, so a
+    /// failure here is never [`CallError::Unsent`].
     pub async fn upload_call(
         &mut self,
         clip: &Clip,
         start: CallStart,
     ) -> Result<CallView, CallError> {
-        let mut sent = false;
+        let mut sent = true;
         let mut upload = match start {
-            CallStart::Fresh => Upload::new(clip),
+            CallStart::Started => {
+                let started = CallView {
+                    writable: true,
+                    clip: CallClip::Receiving {
+                        bytes: clip.bytes(),
+                        crc: clip.crc(),
+                        received: 0,
+                    },
+                };
+                Upload::resume(clip, &started)
+            }
             CallStart::Resume(view) => Upload::resume(clip, &view),
         };
 

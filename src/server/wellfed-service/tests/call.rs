@@ -9,6 +9,7 @@ use std::time::Duration;
 use wellfed_api::{
     CallClip, ClientRole, CommandOutcome, CommandState, Connection as Link, FeederRefusal,
 };
+use wellfed_model::{Answer, CALL_CHUNK_MAX, Op, Refusal};
 use wellfed_server_testkit::feeder::{self, Relay};
 use wellfed_server_testkit::{TestService, ada, config, local, until};
 use wellfed_service::{CommandError, Config, Error, IdempotencyKey, Invalid};
@@ -328,4 +329,98 @@ async fn back(service: &wellfed_service::Service, id: wellfed_api::FeederId) {
         service.call(id).await.is_ok()
     })
     .await;
+}
+
+/// The feeder held no clip; an upload's answers were lost while the
+/// feeder went on to store it (the rest of its chunks arrive over the
+/// owner's own session here); then another client erased it. The retry
+/// finds no clip, as the first send did, but the feeder took the upload's
+/// start since, so that erase came after it: the retry is superseded and
+/// does not bring the clip back.
+#[test]
+fn a_retry_never_restores_a_clip_erased_after_it() {
+    local(async {
+        let sim = feeder::start().await;
+        let relay = Relay::start(sim.address).await;
+        let server = TestService::start_with(quick()).await;
+        let id = server
+            .adopt_as(&sim, &relay.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let service = server.service();
+        let caller = ada().into();
+
+        let key: IdempotencyKey = [0x40; 16];
+        let clip = stream(4_096);
+        relay.hold_answers_after(1_800);
+        let lost = service
+            .upload_call(&caller, id, clip.clone(), Some(key))
+            .await;
+        assert!(
+            matches!(lost, Err(Error::Command(CommandError::Unknown))),
+            "{lost:?}"
+        );
+        relay.cut();
+        relay.resume();
+        back(service, id).await;
+
+        let stored = finish_directly(&sim, &clip).await;
+        assert_eq!(service.call(id).await.unwrap(), stored);
+        service
+            .delete_call(&caller, id, Some([0x41; 16]))
+            .await
+            .unwrap();
+
+        let retried = service.upload_call(&caller, id, clip, Some(key)).await;
+        assert!(
+            matches!(retried, Err(Error::Command(CommandError::Superseded))),
+            "{retried:?}"
+        );
+        assert_eq!(service.call(id).await.unwrap().clip, CallClip::None);
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// Send the rest of `clip`'s upload over the owner's own session, from
+/// where the feeder says it stands, and wait until the feeder stores it.
+async fn finish_directly(sim: &feeder::Running, clip: &[u8]) -> wellfed_api::CallView {
+    let mut owner = feeder::open_owner(sim).await;
+    let mut ids = 0x50u8..;
+    let mut ask = async |op: &Op| {
+        let id = [ids.next().unwrap(); 16];
+        owner.ask(id, op).await.unwrap()
+    };
+
+    let Answer::Call(view) = ask(&Op::GetCall).await else {
+        panic!("no meal call");
+    };
+    let CallClip::Receiving { mut received, .. } = view.clip else {
+        panic!("{view:?}");
+    };
+    while let Some(data) = clip
+        .get(usize::try_from(received).unwrap()..)
+        .filter(|rest| !rest.is_empty())
+    {
+        let data = data[..data.len().min(CALL_CHUNK_MAX)].to_vec();
+        let len = u32::try_from(data.len()).unwrap();
+        let op = Op::CallChunk {
+            offset: received,
+            data,
+        };
+        match ask(&op).await {
+            Answer::Call(_) => received += len,
+            Answer::Refused(Refusal::Busy) => tokio::time::sleep(Duration::from_millis(20)).await,
+            other => panic!("{other:?}"),
+        }
+    }
+    loop {
+        match ask(&Op::GetCall).await {
+            Answer::Call(view) if matches!(view.clip, CallClip::Stored { .. }) => return view,
+            Answer::Call(_) | Answer::Refused(Refusal::Busy) => {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            other => panic!("{other:?}"),
+        }
+    }
 }

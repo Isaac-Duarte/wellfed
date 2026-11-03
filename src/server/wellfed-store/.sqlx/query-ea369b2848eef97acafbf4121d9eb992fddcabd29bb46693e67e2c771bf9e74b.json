@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT call_before, call_started FROM commands WHERE key = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "call_before",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "commands",
+            "name": "call_before"
+          }
+        }
+      },
+      {
+        "name": "call_started",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "commands",
+            "name": "call_started"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "ea369b2848eef97acafbf4121d9eb992fddcabd29bb46693e67e2c771bf9e74b"
+}

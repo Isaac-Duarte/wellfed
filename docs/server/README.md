@@ -68,7 +68,7 @@ Some conventions hold across the API:
 - **Errors** are RFC 9457 `application/problem+json`, with a typed `code` from a closed set. There is no free-text error.
 - **Writes** carry an `Idempotency-Key` header (a UUID). A feed requires one.
 - **Edits** carry `If-Match` with the generation of the settings, plans or calibration they change. A stale one gets `412` with the current settings, plans or calibration.
-- **The meal call** goes up as the feeder's own stream (`PUT /feeders/{id}/call`, `application/octet-stream`), converted on the client. The server converts nothing and checks only its length, as the feeder does. It sends the clip a chunk at a time beside feeds and status reads, and answers once the feeder stores it. A retry under the same key after `outcome_unknown` sends only what the feeder lacks. A retry never undoes a later change: an upload or erase whose retry finds the feeder holding another clip than the first send found is `409 superseded`, and sends nothing.
+- **The meal call** goes up as the feeder's own stream (`PUT /feeders/{id}/call`, `application/octet-stream`), converted on the client. The server converts nothing and checks only its length, as the feeder does. It sends the clip a chunk at a time beside feeds and status reads, and answers once the feeder stores it. A retry under the same key after `outcome_unknown` sends only what the feeder lacks. A retry never undoes a later change. It is `409 superseded`, and sends nothing, when it finds the feeder holding another clip than its first send found, or when it is an upload the feeder had begun and the feeder no longer holds its clip.
 - **The stream** resumes from `Last-Event-ID`. When that id is too old, the server sends `resync` and the client fetches again.
 
 ## Read next

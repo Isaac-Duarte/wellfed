@@ -24,6 +24,7 @@
 #![forbid(unsafe_code)]
 
 mod audit;
+mod call_writes;
 mod commands;
 mod convert;
 mod diagnostics;
@@ -53,7 +54,8 @@ use sqlx::sqlite::{
 };
 
 pub use audit::{AuditFilter, AuditRecord, AuditRow, NewAudit};
-pub use commands::{CallBefore, CommandFilter, CommandRow, Journaled, NewCommand};
+pub use call_writes::{CallBefore, CallWrite};
+pub use commands::{CommandFilter, CommandRow, Journaled, NewCommand};
 pub use diagnostics::{FoodReading, RawTrace, StatsRow, TraceFound, TraceRow};
 pub use export::Snapshot;
 pub use feeders::{FeederRow, FeederState, NewFeeder, SealedKey, Synced};

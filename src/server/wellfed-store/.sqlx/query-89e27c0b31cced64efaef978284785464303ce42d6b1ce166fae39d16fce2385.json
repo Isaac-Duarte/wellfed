@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE commands SET call_started = 1 WHERE key = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "89e27c0b31cced64efaef978284785464303ce42d6b1ce166fae39d16fce2385"
+}
