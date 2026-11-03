@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/feed_sheet.dart';
+import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
@@ -315,6 +316,23 @@ void main() {
         final FeederController feeder = await _feeder(tester);
         await _phone(tester, _shell(feeder, settingsTab), brightness, text: _largeText);
         await _matches('feeder_settings_large_text', brightness);
+      });
+
+      _golden('the meal call', (tester) async {
+        final FeederController feeder = await _feeder(tester);
+        await _phone(tester, MealCallScreen(feeder: feeder, pick: () async => null), brightness);
+        await _matches('meal_call', brightness);
+      });
+
+      _golden('the meal call while recording', (tester) async {
+        final FeederController feeder = await _feeder(tester);
+        await _phone(tester, MealCallScreen(feeder: feeder, pick: () async => null), brightness);
+        await tester.tap(find.byTooltip('Record on this phone'));
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 3));
+        await _matches('meal_call_recording', brightness);
+        await tester.tap(find.text('Cancel'));
+        await settle(tester);
       });
 
       _golden('the feed sheet', (tester) async {

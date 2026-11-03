@@ -12,6 +12,14 @@ import '../support/fakes.dart';
 import '../support/harness.dart';
 import 'schedule_history_support.dart';
 
+/// The button that picks a file, by either of its words.
+TextButton _fileButton(WidgetTester tester) => tester.widget<TextButton>(
+  find.ancestor(
+    of: find.textContaining(RegExp(r'^(Use an audio file instead|Replace with a file)$')),
+    matching: find.byType(TextButton),
+  ),
+);
+
 void main() {
   group('the meal call', () {
     Future<FakeSession> show(WidgetTester tester, CallClip clip, {PickRecording? pick}) async {
@@ -31,16 +39,16 @@ void main() {
         const CallClip.none(),
         pick: () async => Uint8List.fromList([1, 2, 3]),
       );
-      expect(find.text('No recording stored'), findsOneWidget);
+      expect(find.text('No recording yet'), findsOneWidget);
       session.replies
         ..add(planNoRecording)
         ..add(
           const FeederReply.call(call: CallInfo(writable: true, clip: CallClip.stored(bytes: 9, crc: 1), ms: 3500)),
         );
 
-      await tapIn(tester, find.text('Choose a recording'));
+      await tapIn(tester, find.text('Use an audio file instead'));
       expect(session.requests.last, isA<FeederRequest_UploadCall>());
-      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      expect(find.text('3.5 s'), findsOneWidget);
     });
 
     testWidgets('plays the stored clip on the feeder, and says why it did not', (tester) async {
@@ -50,18 +58,18 @@ void main() {
         ..add(const FeederReply.done())
         ..add(const FeederReply.refused(refusal: FeederRefusal.muted()));
 
-      await tapIn(tester, find.text('Play on the feeder'));
+      await tapIn(tester, find.byTooltip('Play on the feeder'));
       expect(session.requests, [const FeederRequest.playCall()]);
       expect(find.text('Sound is off, or outside its hours.'), findsNothing);
 
-      await tapIn(tester, find.text('Play on the feeder'));
+      await tapIn(tester, find.byTooltip('Play on the feeder'));
       expect(session.requests, hasLength(2));
       expect(find.text('Sound is off, or outside its hours.'), findsOneWidget);
     });
 
     testWidgets('offers no play with no clip stored', (tester) async {
       await show(tester, const CallClip.none());
-      expect(find.text('Play on the feeder'), findsNothing);
+      expect(find.byTooltip('Play on the feeder'), findsNothing);
     });
 
     /// The screen on an open session, holding what `first` answers.
@@ -98,15 +106,15 @@ void main() {
         ..add(planNoRecording)
         ..add(storedCall);
 
-      await tapIn(tester, find.text('Record on this phone'));
+      await tapIn(tester, find.byTooltip('Record on this phone'));
       expect(ports.recorder.starts, 1);
       await tester.pump(const Duration(seconds: 2));
-      expect(find.textContaining('Recording… 2 s of 8'), findsOneWidget);
+      expect(find.text('2 s'), findsOneWidget);
 
-      await tapIn(tester, find.text('Stop and upload'));
+      await tapIn(tester, find.byTooltip('Stop and send'));
       expect(ports.recorder.stops, 1);
       expect(session.requests.whereType<FeederRequest_UploadCall>().single.wav, [1, 2, 3]);
-      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      expect(find.text('3.5 s'), findsOneWidget);
     });
 
     testWidgets('a recording stops and uploads by itself at 8 s', (tester) async {
@@ -115,7 +123,7 @@ void main() {
         ..add(planNoRecording)
         ..add(storedCall);
 
-      await tapIn(tester, find.text('Record on this phone'));
+      await tapIn(tester, find.byTooltip('Record on this phone'));
       await tester.pump(const Duration(seconds: 8));
       await settle(tester);
       expect(ports.recorder.stops, 1);
@@ -125,23 +133,23 @@ void main() {
     testWidgets('a cancelled recording sends nothing', (tester) async {
       final (FakeFeederPorts ports, FakeSession session) = await onScreen(tester, planNoRecording);
 
-      await tapIn(tester, find.text('Record on this phone'));
+      await tapIn(tester, find.byTooltip('Record on this phone'));
       await tapIn(tester, find.text('Cancel'));
       expect(ports.recorder.stops, 1);
       expect(session.requests.whereType<FeederRequest_UploadCall>(), isEmpty);
-      expect(find.text('Record on this phone'), findsOneWidget);
+      expect(find.byTooltip('Record on this phone'), findsOneWidget);
     });
 
     testWidgets('a double tap starts one recording, and it runs its full time', (tester) async {
       final (FakeFeederPorts ports, FakeSession session) = await onScreen(tester, planNoRecording);
 
-      await tester.tap(find.text('Record on this phone'));
-      await tester.tap(find.text('Record on this phone'), warnIfMissed: false);
+      await tester.tap(find.byTooltip('Record on this phone'));
+      await tester.tap(find.byTooltip('Record on this phone'), warnIfMissed: false);
       await tester.pump();
       expect(ports.recorder.starts, 1);
 
       await tester.pump(const Duration(seconds: 7));
-      expect(find.textContaining('Recording… 7 s of 8'), findsOneWidget);
+      expect(find.text('7 s'), findsOneWidget);
       expect(ports.recorder.stops, 0);
       await tapIn(tester, find.text('Cancel'));
     });
@@ -150,7 +158,7 @@ void main() {
       final (FakeFeederPorts ports, FakeSession session) = await onScreen(tester, planNoRecording);
       ports.recorder.opening = Completer<void>();
 
-      await tester.tap(find.text('Record on this phone'));
+      await tester.tap(find.byTooltip('Record on this phone'));
       await tester.pump();
       await tester.pumpWidget(const SizedBox());
       ports.recorder.opening!.complete();
@@ -163,8 +171,8 @@ void main() {
     testWidgets('a stored clip offers no play or delete while recording', (tester) async {
       await onScreen(tester, storedCall);
 
-      await tapIn(tester, find.text('Record on this phone'));
-      expect(find.text('Play on the feeder'), findsNothing);
+      await tapIn(tester, find.byTooltip('Record on this phone'));
+      expect(find.byTooltip('Play on the feeder'), findsNothing);
       expect(find.text('Delete the recording'), findsNothing);
       await tapIn(tester, find.text('Cancel'));
       expect(find.text('Delete the recording'), findsOneWidget);
@@ -173,7 +181,7 @@ void main() {
     testWidgets('leaving the app ends the recording and sends nothing', (tester) async {
       final (FakeFeederPorts ports, FakeSession session) = await onScreen(tester, planNoRecording);
 
-      await tapIn(tester, find.text('Record on this phone'));
+      await tapIn(tester, find.byTooltip('Record on this phone'));
       const List<AppLifecycleState> away = [
         AppLifecycleState.inactive,
         AppLifecycleState.hidden,
@@ -199,7 +207,7 @@ void main() {
       final (FakeFeederPorts ports, FakeSession session) = await onScreen(tester, planNoRecording);
       ports.recorder.allowed = false;
 
-      await tapIn(tester, find.text('Record on this phone'));
+      await tapIn(tester, find.byTooltip('Record on this phone'));
       expect(find.textContaining('may not use the microphone'), findsOneWidget);
       expect(session.requests, isEmpty);
     });
@@ -209,7 +217,7 @@ void main() {
     testWidgets('a recording waits for the session, then goes once', (tester) async {
       final (FakeFeederPorts ports, FakeSession first) = await dropped(tester);
 
-      await tester.tap(find.text('Choose a recording'));
+      await tester.tap(find.text('Use an audio file instead'));
       await settle(tester);
       expect(find.text('Reaching the feeder… keep this screen open.'), findsOneWidget);
 
@@ -228,7 +236,7 @@ void main() {
       expect(first.requests, isEmpty);
       expect(second.requests.first, const FeederRequest.getCall());
       expect(second.requests.whereType<FeederRequest_UploadCall>(), hasLength(1));
-      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      expect(find.text('3.5 s'), findsOneWidget);
       expect(find.textContaining('Reaching'), findsNothing);
     });
 
@@ -237,7 +245,7 @@ void main() {
       session.answering = (_) async => const FeederReply.unanswered();
       session.requests.clear();
 
-      await tester.tap(find.text('Choose a recording'));
+      await tester.tap(find.text('Use an audio file instead'));
       await tester.pump(MealCallScreen.reachWait);
       await settle(tester);
 
@@ -249,7 +257,7 @@ void main() {
         'nothing', (tester) async {
       final (FakeFeederPorts ports, FakeSession first) = await dropped(tester);
 
-      await tester.tap(find.text('Choose a recording'));
+      await tester.tap(find.text('Use an audio file instead'));
       for (var second = 0; second < 70; second++) {
         await tester.pump(const Duration(seconds: 1));
       }
@@ -259,7 +267,7 @@ void main() {
       expect(find.text(noReach), findsOneWidget);
       await tester.pump(const Duration(minutes: 1));
       expect(find.text(noReach), findsOneWidget);
-      expect(find.text('Choose a recording'), findsOneWidget);
+      expect(find.text('Use an audio file instead'), findsOneWidget);
     });
 
     const stored = FeederReply.call(call: CallInfo(writable: true, clip: CallClip.stored(bytes: 9, crc: 1), ms: 3500));
@@ -269,7 +277,7 @@ void main() {
       session.answering = (_) => Completer<FeederReply>().future;
       session.requests.clear();
 
-      await tester.tap(find.text('Choose a recording'));
+      await tester.tap(find.text('Use an audio file instead'));
       await tester.pump(MealCallScreen.reachWait);
       await settle(tester);
 
@@ -292,7 +300,7 @@ void main() {
     testWidgets('an upload lost with its session drops the old clip and says '
         'only what it knows', (tester) async {
       final (FakeFeederPorts ports, FakeSession first) = await onScreen(tester, stored);
-      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      expect(find.text('3.5 s'), findsOneWidget);
       dyingOn<FeederRequest_UploadCall>(first);
 
       await tester.tap(find.text('Replace with a file'));
@@ -300,7 +308,7 @@ void main() {
 
       expect(find.textContaining('may or may not have'), findsOneWidget);
       expect(find.textContaining('Nothing changed'), findsNothing);
-      expect(find.text('Stored: 3.5 s a play'), findsNothing);
+      expect(find.text('3.5 s'), findsNothing);
       expect(find.text('Reading…'), findsOneWidget);
 
       await tester.pump(const Duration(seconds: 3));
@@ -309,7 +317,7 @@ void main() {
       second.opened();
       await settle(tester);
 
-      expect(find.text('No recording stored'), findsOneWidget);
+      expect(find.text('No recording yet'), findsOneWidget);
       expect(find.textContaining('Nothing changed'), findsNothing);
       expect(find.textContaining('may or may not have'), findsOneWidget);
       expect(second.requests.whereType<FeederRequest_UploadCall>(), isEmpty);
@@ -339,13 +347,13 @@ void main() {
 
       expect(find.textContaining('may or may not have'), findsOneWidget);
       expect(find.textContaining('Nothing changed'), findsNothing);
-      expect(find.text('Stored: 3.5 s a play'), findsNothing);
+      expect(find.text('3.5 s'), findsNothing);
 
       await tester.pump(const Duration(seconds: 3));
       ports.session.replies.add(stored);
       ports.session.opened();
       await settle(tester);
-      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      expect(find.text('3.5 s'), findsOneWidget);
     });
 
     testWidgets('two quick taps open one picker', (tester) async {
@@ -360,14 +368,14 @@ void main() {
         },
       );
 
-      await tester.tap(find.text('Choose a recording'));
-      await tester.tap(find.text('Choose a recording'));
+      await tester.tap(find.text('Use an audio file instead'));
+      await tester.tap(find.text('Use an audio file instead'));
       await settle(tester);
       expect(picks, 1);
 
       picking.complete(null);
       await settle(tester);
-      final FilledButton button = tester.widget<FilledButton>(find.byType(FilledButton));
+      final TextButton button = _fileButton(tester);
       expect(button.onPressed, isNotNull);
     });
 
@@ -381,7 +389,7 @@ void main() {
       Widget screen() => MealCallScreen(feeder: feeder, pick: () async => Uint8List.fromList([1]));
 
       await showTab(tester, screen());
-      await tester.tap(find.text('Choose a recording'));
+      await tester.tap(find.text('Use an audio file instead'));
       await settle(tester);
       await tester.pumpWidget(themed(const SizedBox()));
       await showTab(tester, screen());
@@ -391,28 +399,28 @@ void main() {
       await settle(tester);
 
       expect(find.text('Reading…'), findsNothing);
-      expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed, isNotNull);
+      expect(_fileButton(tester).onPressed, isNotNull);
     }
 
     testWidgets('a reopened screen says an upload was refused', (tester) async {
       await reopenedUntil(tester, const FeederReply.refused(refusal: FeederRefusal.forbidden()), planNoRecording);
 
       expect(find.textContaining("isn't allowed"), findsOneWidget);
-      expect(find.text('No recording stored'), findsOneWidget);
+      expect(find.text('No recording yet'), findsOneWidget);
     });
 
     testWidgets('a reopened screen says an upload went unanswered', (tester) async {
       await reopenedUntil(tester, const FeederReply.unanswered(), planNoRecording);
 
       expect(find.textContaining('may or may not have'), findsOneWidget);
-      expect(find.text('No recording stored'), findsOneWidget);
+      expect(find.text('No recording yet'), findsOneWidget);
     });
 
     testWidgets('a reopened screen reads even after an upload not sent', (tester) async {
       await reopenedUntil(tester, const FeederReply.notSent(), stored);
 
       expect(find.textContaining('before this went out'), findsOneWidget);
-      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      expect(find.text('3.5 s'), findsOneWidget);
     });
 
     testWidgets('a screen opened during an upload does not start another', (tester) async {
@@ -423,12 +431,12 @@ void main() {
       Widget screen() => MealCallScreen(feeder: feeder, pick: () async => Uint8List.fromList([1]));
 
       await showTab(tester, screen());
-      await tester.tap(find.text('Choose a recording'));
+      await tester.tap(find.text('Use an audio file instead'));
       await settle(tester);
 
       await tester.pumpWidget(themed(const SizedBox()));
       await showTab(tester, screen());
-      final FilledButton button = tester.widget<FilledButton>(find.byType(FilledButton));
+      final TextButton button = _fileButton(tester);
       expect(button.onPressed, isNull);
       expect(find.text('Working… keep this screen open.'), findsOneWidget);
 
@@ -436,9 +444,9 @@ void main() {
       uploading.complete(stored);
       await settle(tester);
 
-      expect(find.text('Stored: 3.5 s a play'), findsOneWidget);
+      expect(find.text('3.5 s'), findsOneWidget);
       expect(session.requests.whereType<FeederRequest_UploadCall>(), hasLength(1));
-      expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed, isNotNull);
+      expect(_fileButton(tester).onPressed, isNotNull);
     });
 
     testWidgets('a recording refused or unanswered says so, then reads', (tester) async {
@@ -446,14 +454,14 @@ void main() {
       session.replies
         ..add(planNoRecording)
         ..add(const FeederReply.refused(refusal: FeederRefusal.forbidden()));
-      await tapIn(tester, find.text('Choose a recording'));
+      await tapIn(tester, find.text('Use an audio file instead'));
       expect(find.textContaining("isn't allowed"), findsOneWidget);
 
       session.requests.clear();
       session.replies
         ..add(planNoRecording)
         ..add(const FeederReply.unanswered());
-      await tapIn(tester, find.text('Choose a recording'));
+      await tapIn(tester, find.text('Use an audio file instead'));
       expect(find.textContaining('may or may not have'), findsOneWidget);
       expect(session.requests.whereType<FeederRequest_UploadCall>(), hasLength(1));
       expect(session.requests.last, const FeederRequest.getCall());

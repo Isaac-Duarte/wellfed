@@ -9,11 +9,15 @@ import 'package:wellfed/state/feeder/call_recording.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
 
-/// The meal call's clip: a plain screen, as no board draws one. Rust converts
+part 'meal_call_view.dart';
+
+/// The meal call's clip: what the feeder holds, and one big button to record
+/// a new one. Rust converts
 /// the recording and sends it, and the feeder keeps one clip; a new one
 /// erases the old as soon as it starts.
 class MealCallScreen extends StatefulWidget {
@@ -278,12 +282,11 @@ class _MealCallScreenState extends State<MealCallScreen> {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final (String words, bool stored) = switch (_call?.clip) {
-      CallClip_Stored() => ('Stored: ${((_call?.ms ?? 0) / 1000).toStringAsFixed(1)} s a play', true),
-      CallClip_Receiving() => ('An upload did not finish', false),
-      CallClip_None() => ('No recording stored', false),
-      null => (_reading ? 'Reading…' : "Can't read it right now", false),
-    };
+    final bool stored = _call?.clip is CallClip_Stored;
+    // Not while recording: a delete would leave the new clip nowhere to go,
+    // and a play would record the feeder's own speaker into it.
+    final bool offerStored = stored && !_recording.busy;
+    final bool free = !(_busy || _picking || _recording.busy);
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
@@ -302,67 +305,58 @@ class _MealCallScreenState extends State<MealCallScreen> {
       body: ListView(
         padding: const EdgeInsets.all(Space.s4),
         children: [
-          Text(
-            words,
-            style: TextStyle(fontSize: Sizes.md, fontWeight: Fonts.semibold, color: c.text),
+          _ClipCard(
+            call: _call,
+            reading: _reading,
+            offerPlay: offerStored,
+            onPlay: _busy || _picking || _playing ? null : () => unawaited(_play()),
           ),
-          const SizedBox(height: Space.s2),
-          Text(
-            'A WAV recording of about 8 seconds at most, which a meal plays '
-            'before the food drops. It only ever plays when sound is on, and '
-            'never delays a meal.',
-            style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
-          ),
-          const SizedBox(height: Space.s4),
           if (_busy) ...[
+            const SizedBox(height: Space.s3),
             Notice(
               tone: Tone.neutral,
               text: _reaching ? 'Reaching the feeder… keep this screen open.' : 'Working… keep this screen open.',
             ),
-            const SizedBox(height: Space.s3),
           ],
           if (_problem case final problem?) ...[
-            Notice(tone: Tone.warning, text: problem),
             const SizedBox(height: Space.s3),
+            Notice(tone: Tone.warning, text: problem),
           ],
           if (_recording.problem case final problem?) ...[
+            const SizedBox(height: Space.s3),
             Notice(tone: Tone.warning, text: _recordingWords(problem)),
-            const SizedBox(height: Space.s3),
           ],
+          const SizedBox(height: Space.s6),
           if (_recording.recording) ...[
-            Notice(
-              tone: Tone.neutral,
-              text:
-                  'Recording… ${_recording.seconds} s of ${CallRecording.most.inSeconds}. '
-                  'It stops by itself at ${CallRecording.most.inSeconds} s.',
-            ),
-            const SizedBox(height: Space.s3),
-            FilledButton(onPressed: () => unawaited(_recording.stop()), child: const Text('Stop and upload')),
-            TextButton(onPressed: () => unawaited(_recording.cancel()), child: const Text('Cancel')),
-          ] else ...[
-            FilledButton(
-              onPressed: _busy || _picking || _recording.busy ? null : _upload,
-              child: Text(stored ? 'Replace with a file' : 'Choose a recording'),
-            ),
+            _Recording(seconds: _recording.seconds, onStop: () => unawaited(_recording.stop())),
             const SizedBox(height: Space.s2),
-            OutlinedButton(
-              onPressed: _busy || _picking || _recording.busy ? null : () => unawaited(_recording.start()),
-              child: const Text('Record on this phone'),
+            Center(
+              child: TextButton(onPressed: () => unawaited(_recording.cancel()), child: const Text('Cancel')),
+            ),
+          ] else ...[
+            _RecordButton(onRecord: free ? () => unawaited(_recording.start()) : null),
+            const SizedBox(height: Space.s2),
+            Center(
+              child: TextButton(
+                onPressed: free ? _upload : null,
+                child: Text(stored ? 'Replace with a file' : 'Use an audio file instead'),
+              ),
             ),
           ],
-          // Not while recording: a delete would leave the new clip nowhere to
-          // go, and a play would record the feeder's own speaker into it.
-          if (stored && !_recording.busy) ...[
-            const SizedBox(height: Space.s2),
-            OutlinedButton(
-              onPressed: _busy || _picking || _playing ? null : () => unawaited(_play()),
-              child: const Text('Play on the feeder'),
-            ),
-            const SizedBox(height: Space.s2),
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(foregroundColor: c.fault),
-              onPressed: _busy || _picking ? null : () => unawaited(_write(const FeederRequest.deleteCall())),
-              child: const Text('Delete the recording'),
+          const SizedBox(height: Space.s5),
+          Text(
+            'Plays before each meal that has a meal call, when sounds are on. It never delays a meal.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: c.textMuted),
+          ),
+          if (offerStored) ...[
+            const SizedBox(height: Space.s4),
+            Center(
+              child: TextButton(
+                style: TextButton.styleFrom(foregroundColor: c.fault),
+                onPressed: _busy || _picking ? null : () => unawaited(_write(const FeederRequest.deleteCall())),
+                child: const Text('Delete the recording'),
+              ),
             ),
           ],
         ],

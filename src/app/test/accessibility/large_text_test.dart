@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/feed_sheet.dart';
+import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/screens/home/home.dart';
@@ -66,6 +67,15 @@ void main() {
       await _show(tester, FeederShell(feeder: feeder, initialTab: tab));
     });
   }
+
+  testWidgets('the meal call', (tester) async {
+    final FeederController feeder = await _feeder(tester);
+    await _show(tester, MealCallScreen(feeder: feeder, pick: () async => null));
+    await tester.tap(find.byTooltip('Record on this phone'));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.tap(find.text('Cancel'));
+    await settle(tester);
+  });
 
   testWidgets('app settings', (tester) async {
     final book = FakeBook()..label = 'My phone';

@@ -186,6 +186,26 @@ void main() {
         });
       }
 
+      testWidgets('the meal call with a clip, and recording', (tester) async {
+        final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+        answerAsFull(session);
+        session.status(fullCard());
+        await _show(
+          tester,
+          Scaffold(
+            body: MealCallScreen(feeder: feeder, pick: () async => null),
+          ),
+          brightness,
+        );
+        await expectAccessible(tester);
+
+        await tester.tap(find.byTooltip('Record on this phone'));
+        await tester.pump(const Duration(seconds: 2));
+        await expectAccessible(tester);
+        await tester.tap(find.text('Cancel'));
+        await settle(tester);
+      });
+
       testWidgets('the feed sheet', (tester) async {
         final FeederController feeder = await _feeder(tester);
         await _show(

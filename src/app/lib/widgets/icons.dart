@@ -29,7 +29,11 @@ enum Glyph {
   food('<rect x="6" y="3" width="12" height="11" rx="3"/><path d="M5 16h14M7 19h10"/>'),
   power('<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'),
   droplet('<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>'),
-  lock('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>');
+  lock('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'),
+  mic('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>'),
+  wave('<path d="M3 11v2M6.5 8v8M10 4.5v15M13.5 7.5v9M17 10v4M20.5 11v2"/>'),
+  play('<path d="M8 5.5v13l10.5-6.5z"/>'),
+  stop('<rect x="6.5" y="6.5" width="11" height="11" rx="2"/>');
 
   const Glyph(this.paths);
 
