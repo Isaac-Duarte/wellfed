@@ -2,11 +2,12 @@
 //! its meal ([`crate::Plan::call`]).
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 pub use wellfed_proto::api::{CALL_BYTES_MAX, CALL_CHUNK_MAX, CALL_PLAYS_MAX, CALL_RATE_HZ};
 
 /// The meal call as the feeder stores it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CallView {
     /// Whether the store can take a write now.
     pub writable: bool,
@@ -14,7 +15,7 @@ pub struct CallView {
 }
 
 /// The stored clip, or the upload under way.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case", tag = "state")]
 pub enum CallClip {
     None,

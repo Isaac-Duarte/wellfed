@@ -66,6 +66,8 @@ impl Service {
             CommandOutcome::Done
             | CommandOutcome::Settings { .. }
             | CommandOutcome::Plans { .. }
+            | CommandOutcome::Calibration { .. }
+            | CommandOutcome::Call { .. }
             | CommandOutcome::Invited { .. } => Err(InternalError::Unexpected.into()),
         }
     }

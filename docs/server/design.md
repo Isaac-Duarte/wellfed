@@ -137,7 +137,7 @@ Releases and stock backups are files in the data directory, not tables.
 
 **One task per feeder.** The mirror's task owns the TCP connection and the `wellfed-client` session. It reconnects with jittered backoff and syncs events from the stored cursor before anything else (from the oldest event when the feeder's epoch is new). Then it sets the feeder's clock, again every 6 h. It records every event, gap and sample raw, each raw row with its projections and the cursor in one transaction. Samples go in small batches: 32, or `Timing::sample_wait` after the first, and at the session's end.
 
-**Two command lanes.** Commands reach the task through a bounded channel per lane: short commands, and the steps of a long operation such as an install. A short command waits at most one step of a long one. Each lane has one request in flight, matched to its answer by id. A command times out as "unknown, retry with the same key", never "failed", because the feeder may have run it. A feeder heard from not at all for 90 s counts as gone, so a feeder that loses power shows offline within that time.
+**Two command lanes.** Commands reach the task through a bounded channel per lane: short commands, and the steps of a long operation such as an install or a meal call's upload. A short command waits at most one step of a long one. Each lane has one request in flight, matched to its answer by id. A command times out as "unknown, retry with the same key", never "failed", because the feeder may have run it. A feeder heard from not at all for 90 s counts as gone, so a feeder that loses power shows offline within that time.
 
 **The hub** is the service's. It merges each feeder's broadcast with command results and install progress, and assigns the stream ids `GET /stream` resumes from. A forwarder that falls behind drops its backlog and publishes `resync`. The SSE `id` is `<epoch>-<seq>`, with the epoch fixed at each start, so an id from before a restart resyncs.
 
@@ -176,7 +176,7 @@ Roles are owner, member and viewer. The service's `Permission` enum and its one 
 | --- | --- | --- | --- | --- |
 | `Read` | Status, history, samples and the food views | Yes | Yes | Yes |
 | `Feed` | Feed, and cancel a feed | Yes | Yes | No |
-| `Control` | Settings, the lock, a tune, a clock sync that doesn't step the clock | Yes | Yes | No |
+| `Control` | Settings, the portion calibration, the lock, a tune, the meal call (upload, play, erase), a clock sync that doesn't step the clock | Yes | Yes | No |
 | `InviteOwnPhone` | An invite for one's own phone | Yes | Yes | No |
 | `OwnHistory`, `OwnAccount` | One's own commands, audit entries, password and tokens | Yes | Yes | Yes |
 | `AllHistory`, `Users` | Everyone's commands and audit entries, and other accounts | Yes | No | No |
@@ -194,7 +194,7 @@ A retry under the same key reads the journal first:
 
 - An **answered** write returns its recorded outcome without reaching the feeder.
 - A **sent** write is still in flight, so a retry is answered `outcome_unknown` and sends nothing. A server that stops first leaves it `sent`, and the next start marks it `unknown`.
-- An **unknown** write is sent again under the same device request ID when its kind allows: settings, lock and a cancel. A feed never is, because the feeder forgets request ids at a reboot.
+- An **unknown** write is sent again under the same device request ID when its kind allows: settings, plans, the calibration, lock and a cancel. A meal call's upload resumes instead: the retry reads where the feeder's upload stands and sends only the rest. A feed never is resent, because the feeder forgets request ids at a reboot.
 - A **refused** write is final for its key, `409 feeder_refused` with the feeder's reason. Trying later is a new request with a new key.
 
 **Feeds.** `POST /feeders/{id}/feed` (`{ "portions": n }`) requires `Idempotency-Key` and answers `202` once the feeder has reserved the feed in its journal. The answer carries the feeder's number for the feed, which keeps counting across restarts. There are no server-side limits: the feeder's refusals (`busy`, `invalid` past its cap) are the policy. The result is the feeder's `Fed` event, which settles the entry.

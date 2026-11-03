@@ -93,6 +93,10 @@ pub enum ServerCommandOutcome {
     Settings,
     /// The plans the write left.
     Plans,
+    /// The calibration the write left.
+    Calibration,
+    /// The meal call the upload stored.
+    Call,
     Refused {
         refusal: ServerRefusal,
     },
@@ -141,6 +145,7 @@ pub enum ServerRefusal {
     Fault,
     Portions,
     NoClock,
+    Unverified,
 }
 
 #[frb(opaque)]

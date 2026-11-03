@@ -98,6 +98,8 @@ impl Service {
             | CommandOutcome::Feeding { .. }
             | CommandOutcome::Fed { .. }
             | CommandOutcome::Invited { .. }
+            | CommandOutcome::Calibration { .. }
+            | CommandOutcome::Call { .. }
             | CommandOutcome::Unrecorded => Err(InternalError::Unexpected.into()),
         }
     }

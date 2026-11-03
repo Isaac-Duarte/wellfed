@@ -1,9 +1,12 @@
 //! The adopted feeders and everything sent to them: adoption, the commands
-//! and the journal every write goes through, the plans, feeds, the feeders' clients
-//! and the phones' own keys, what an owner administers, debug logs, and
-//! each feeder's updates forwarded from the mirror into the hub.
+//! and the journal every write goes through, the plans, the portion
+//! calibration, the meal call, feeds, the feeders' clients and the phones'
+//! own keys, what an owner administers, debug logs, and each feeder's
+//! updates forwarded from the mirror into the hub.
 
 mod admin;
+mod calibration;
+mod call;
 mod clients;
 pub(crate) mod commands;
 mod diagnostics;

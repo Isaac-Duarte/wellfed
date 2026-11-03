@@ -115,6 +115,13 @@ pub(super) fn outcome(outcome: &CommandOutcome) -> String {
         CommandOutcome::Done => "done".to_owned(),
         CommandOutcome::Settings { settings: s } => format!("settings: {}", settings(s)),
         CommandOutcome::Plans { plans } => format!("plans: generation {}", plans.generation),
+        CommandOutcome::Calibration { calibration } => {
+            format!("calibration: generation {}", calibration.generation)
+        }
+        CommandOutcome::Call { call } => match call.clip.ms() {
+            Some(ms) => format!("meal call stored, {ms} ms a play"),
+            None => "meal call: none stored".to_owned(),
+        },
         CommandOutcome::Refused { refusal } => format!("refused: {}", word(refusal)),
         CommandOutcome::Feeding { feed } => format!("feed {feed} running"),
         CommandOutcome::Invited { invite, seconds } => {

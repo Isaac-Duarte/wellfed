@@ -8,7 +8,7 @@ use wellfed_api::{
     CommandKind, CommandOutcome, ErrorCode, FeederDetail, FeederId, FeederRefusal, Generation,
     LockRequest, Settings, SettingsPatch, StatusSnapshot,
 };
-use wellfed_model::{Answer, DESICCANT_DAYS_MAX, DESICCANT_DAYS_MIN, Op, Window};
+use wellfed_model::{Answer, Capabilities, DESICCANT_DAYS_MAX, DESICCANT_DAYS_MIN, Op, Window};
 
 use crate::feeders::journal::Write;
 use crate::{Caller, Error, IdempotencyKey, InternalError, Invalid, RequestId, Result, Service};
@@ -173,6 +173,8 @@ impl Service {
             | CommandOutcome::Feeding { .. }
             | CommandOutcome::Fed { .. }
             | CommandOutcome::Invited { .. }
+            | CommandOutcome::Calibration { .. }
+            | CommandOutcome::Call { .. }
             | CommandOutcome::Unrecorded => Err(InternalError::Unexpected.into()),
         }
     }
@@ -236,6 +238,17 @@ impl Service {
         Ok(settings)
     }
 
+    /// Whether the feeder's open session has `feature`: an op outside its
+    /// features is never sent, since a feeder that predates the op would
+    /// end the session on it.
+    pub(crate) fn serves(&self, id: FeederId, feature: fn(&Capabilities) -> bool) -> Result<()> {
+        match self.mirror.capabilities(id) {
+            None => Err(CommandError::Offline.into()),
+            Some(capabilities) if feature(&capabilities) => Ok(()),
+            Some(_) => Err(Error::Refused(FeederRefusal::Unavailable)),
+        }
+    }
+
     /// Send a read to the feeder through the mirror and wait for its
     /// answer.
     pub(crate) async fn ask(&self, id: FeederId, request: RequestId, op: Op) -> Result<Answer> {
@@ -253,6 +266,8 @@ pub(crate) fn done(outcome: &CommandOutcome) -> Result<()> {
         | CommandOutcome::Feeding { .. }
         | CommandOutcome::Fed { .. }
         | CommandOutcome::Invited { .. }
+        | CommandOutcome::Calibration { .. }
+        | CommandOutcome::Call { .. }
         | CommandOutcome::Unrecorded => Err(InternalError::Unexpected.into()),
     }
 }

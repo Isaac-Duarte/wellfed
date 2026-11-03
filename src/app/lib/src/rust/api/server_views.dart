@@ -28,6 +28,10 @@ enum CommandKind {
   remove,
   desiccant,
   plans,
+  calibration,
+  callUpload,
+  callDelete,
+  callPlay,
 }
 
 enum CommandState { sent, answered, unknown, resolved }

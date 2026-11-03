@@ -4786,6 +4786,10 @@ impl SseDecode for crate::api::server_views::CommandKind {
             9 => crate::api::server_views::CommandKind::Remove,
             10 => crate::api::server_views::CommandKind::Desiccant,
             11 => crate::api::server_views::CommandKind::Plans,
+            12 => crate::api::server_views::CommandKind::Calibration,
+            13 => crate::api::server_views::CommandKind::CallUpload,
+            14 => crate::api::server_views::CommandKind::CallDelete,
+            15 => crate::api::server_views::CommandKind::CallPlay,
             _ => unreachable!("Invalid variant for CommandKind: {}", inner),
         };
     }
@@ -7493,12 +7497,18 @@ impl SseDecode for crate::api::server::ServerCommandOutcome {
                 return crate::api::server::ServerCommandOutcome::Plans;
             }
             3 => {
+                return crate::api::server::ServerCommandOutcome::Calibration;
+            }
+            4 => {
+                return crate::api::server::ServerCommandOutcome::Call;
+            }
+            5 => {
                 let mut var_refusal = <crate::api::server::ServerRefusal>::sse_decode(deserializer);
                 return crate::api::server::ServerCommandOutcome::Refused {
                     refusal: var_refusal,
                 };
             }
-            4 => {
+            6 => {
                 let mut var_invite = <u32>::sse_decode(deserializer);
                 let mut var_seconds = <u16>::sse_decode(deserializer);
                 return crate::api::server::ServerCommandOutcome::Invited {
@@ -7506,11 +7516,11 @@ impl SseDecode for crate::api::server::ServerCommandOutcome {
                     seconds: var_seconds,
                 };
             }
-            5 => {
+            7 => {
                 let mut var_feed = <u32>::sse_decode(deserializer);
                 return crate::api::server::ServerCommandOutcome::Feeding { feed: var_feed };
             }
-            6 => {
+            8 => {
                 let mut var_feed = <u32>::sse_decode(deserializer);
                 let mut var_requested = <u8>::sse_decode(deserializer);
                 let mut var_completed = <u8>::sse_decode(deserializer);
@@ -7524,7 +7534,7 @@ impl SseDecode for crate::api::server::ServerCommandOutcome {
                     reason: var_reason,
                 };
             }
-            7 => {
+            9 => {
                 return crate::api::server::ServerCommandOutcome::Unrecorded;
             }
             _ => {
@@ -7960,6 +7970,7 @@ impl SseDecode for crate::api::server::ServerRefusal {
             10 => crate::api::server::ServerRefusal::Fault,
             11 => crate::api::server::ServerRefusal::Portions,
             12 => crate::api::server::ServerRefusal::NoClock,
+            13 => crate::api::server::ServerRefusal::Unverified,
             _ => unreachable!("Invalid variant for ServerRefusal: {}", inner),
         };
     }
@@ -9641,6 +9652,10 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::server_views::Comm
             crate::api::server_views::CommandKind::Remove => 9.into_dart(),
             crate::api::server_views::CommandKind::Desiccant => 10.into_dart(),
             crate::api::server_views::CommandKind::Plans => 11.into_dart(),
+            crate::api::server_views::CommandKind::Calibration => 12.into_dart(),
+            crate::api::server_views::CommandKind::CallUpload => 13.into_dart(),
+            crate::api::server_views::CommandKind::CallDelete => 14.into_dart(),
+            crate::api::server_views::CommandKind::CallPlay => 15.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -11763,17 +11778,19 @@ impl flutter_rust_bridge::IntoDart for crate::api::server::ServerCommandOutcome 
             crate::api::server::ServerCommandOutcome::Done => [0.into_dart()].into_dart(),
             crate::api::server::ServerCommandOutcome::Settings => [1.into_dart()].into_dart(),
             crate::api::server::ServerCommandOutcome::Plans => [2.into_dart()].into_dart(),
+            crate::api::server::ServerCommandOutcome::Calibration => [3.into_dart()].into_dart(),
+            crate::api::server::ServerCommandOutcome::Call => [4.into_dart()].into_dart(),
             crate::api::server::ServerCommandOutcome::Refused { refusal } => {
-                [3.into_dart(), refusal.into_into_dart().into_dart()].into_dart()
+                [5.into_dart(), refusal.into_into_dart().into_dart()].into_dart()
             }
             crate::api::server::ServerCommandOutcome::Invited { invite, seconds } => [
-                4.into_dart(),
+                6.into_dart(),
                 invite.into_into_dart().into_dart(),
                 seconds.into_into_dart().into_dart(),
             ]
             .into_dart(),
             crate::api::server::ServerCommandOutcome::Feeding { feed } => {
-                [5.into_dart(), feed.into_into_dart().into_dart()].into_dart()
+                [7.into_dart(), feed.into_into_dart().into_dart()].into_dart()
             }
             crate::api::server::ServerCommandOutcome::Fed {
                 feed,
@@ -11782,7 +11799,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server::ServerCommandOutcome 
                 outcome,
                 reason,
             } => [
-                6.into_dart(),
+                8.into_dart(),
                 feed.into_into_dart().into_dart(),
                 requested.into_into_dart().into_dart(),
                 completed.into_into_dart().into_dart(),
@@ -11790,7 +11807,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server::ServerCommandOutcome 
                 reason.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            crate::api::server::ServerCommandOutcome::Unrecorded => [7.into_dart()].into_dart(),
+            crate::api::server::ServerCommandOutcome::Unrecorded => [9.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -12348,6 +12365,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server::ServerRefusal {
             Self::Fault => 10.into_dart(),
             Self::Portions => 11.into_dart(),
             Self::NoClock => 12.into_dart(),
+            Self::Unverified => 13.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -13935,6 +13953,10 @@ impl SseEncode for crate::api::server_views::CommandKind {
                 crate::api::server_views::CommandKind::Remove => 9,
                 crate::api::server_views::CommandKind::Desiccant => 10,
                 crate::api::server_views::CommandKind::Plans => 11,
+                crate::api::server_views::CommandKind::Calibration => 12,
+                crate::api::server_views::CommandKind::CallUpload => 13,
+                crate::api::server_views::CommandKind::CallDelete => 14,
+                crate::api::server_views::CommandKind::CallPlay => 15,
                 _ => {
                     unimplemented!("");
                 }
@@ -16275,17 +16297,23 @@ impl SseEncode for crate::api::server::ServerCommandOutcome {
             crate::api::server::ServerCommandOutcome::Plans => {
                 <i32>::sse_encode(2, serializer);
             }
-            crate::api::server::ServerCommandOutcome::Refused { refusal } => {
+            crate::api::server::ServerCommandOutcome::Calibration => {
                 <i32>::sse_encode(3, serializer);
+            }
+            crate::api::server::ServerCommandOutcome::Call => {
+                <i32>::sse_encode(4, serializer);
+            }
+            crate::api::server::ServerCommandOutcome::Refused { refusal } => {
+                <i32>::sse_encode(5, serializer);
                 <crate::api::server::ServerRefusal>::sse_encode(refusal, serializer);
             }
             crate::api::server::ServerCommandOutcome::Invited { invite, seconds } => {
-                <i32>::sse_encode(4, serializer);
+                <i32>::sse_encode(6, serializer);
                 <u32>::sse_encode(invite, serializer);
                 <u16>::sse_encode(seconds, serializer);
             }
             crate::api::server::ServerCommandOutcome::Feeding { feed } => {
-                <i32>::sse_encode(5, serializer);
+                <i32>::sse_encode(7, serializer);
                 <u32>::sse_encode(feed, serializer);
             }
             crate::api::server::ServerCommandOutcome::Fed {
@@ -16295,7 +16323,7 @@ impl SseEncode for crate::api::server::ServerCommandOutcome {
                 outcome,
                 reason,
             } => {
-                <i32>::sse_encode(6, serializer);
+                <i32>::sse_encode(8, serializer);
                 <u32>::sse_encode(feed, serializer);
                 <u8>::sse_encode(requested, serializer);
                 <u8>::sse_encode(completed, serializer);
@@ -16303,7 +16331,7 @@ impl SseEncode for crate::api::server::ServerCommandOutcome {
                 <crate::api::model::FeedReason>::sse_encode(reason, serializer);
             }
             crate::api::server::ServerCommandOutcome::Unrecorded => {
-                <i32>::sse_encode(7, serializer);
+                <i32>::sse_encode(9, serializer);
             }
             _ => {
                 unimplemented!("");
@@ -16607,6 +16635,7 @@ impl SseEncode for crate::api::server::ServerRefusal {
                 crate::api::server::ServerRefusal::Fault => 10,
                 crate::api::server::ServerRefusal::Portions => 11,
                 crate::api::server::ServerRefusal::NoClock => 12,
+                crate::api::server::ServerRefusal::Unverified => 13,
                 _ => {
                     unimplemented!("");
                 }

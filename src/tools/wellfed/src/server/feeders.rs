@@ -437,6 +437,8 @@ fn settled(entry: &Command) -> Result<Settled> {
             CommandOutcome::Done
             | CommandOutcome::Settings { .. }
             | CommandOutcome::Plans { .. }
+            | CommandOutcome::Calibration { .. }
+            | CommandOutcome::Call { .. }
             | CommandOutcome::Invited { .. },
         ) => Ok(Settled::Known),
         Some(CommandOutcome::Refused { refusal }) => {

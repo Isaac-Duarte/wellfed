@@ -92,7 +92,9 @@ impl From<Error> for ServerError {
                 // The rest a screen shows by the server's own title.
                 _ => ServerErrorKind::Refused,
             },
-            Error::Stale(_) | Error::StalePlans(_) => ServerErrorKind::Refused,
+            Error::Stale(_) | Error::StalePlans(_) | Error::StaleCalibration(_) => {
+                ServerErrorKind::Refused
+            }
             Error::Build(_) | Error::Unexpected { .. } | Error::Decode(_) | Error::NoSession => {
                 ServerErrorKind::Protocol
             }
@@ -281,6 +283,8 @@ impl From<CommandOutcome> for ServerCommandOutcome {
             CommandOutcome::Done => Self::Done,
             CommandOutcome::Settings { .. } => Self::Settings,
             CommandOutcome::Plans { .. } => Self::Plans,
+            CommandOutcome::Calibration { .. } => Self::Calibration,
+            CommandOutcome::Call { .. } => Self::Call,
             CommandOutcome::Refused { refusal } => Self::Refused {
                 refusal: refusal.into(),
             },
@@ -334,6 +338,7 @@ impl From<FeederRefusal> for ServerRefusal {
             FeederRefusal::Fault => Self::Fault,
             FeederRefusal::Portions => Self::Portions,
             FeederRefusal::NoClock => Self::NoClock,
+            FeederRefusal::Unverified => Self::Unverified,
         }
     }
 }

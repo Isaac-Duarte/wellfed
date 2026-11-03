@@ -524,6 +524,566 @@
         }
       }
     },
+    "/api/v1/feeders/{id}/calibration": {
+      "get": {
+        "tags": [
+          "feeders"
+        ],
+        "summary": "The feeder's portion calibration, read from it. The `ETag` is the\ngeneration a change sends back in `If-Match`.",
+        "operationId": "calibration",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FeederId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationView"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "feeder_refused: `unavailable` from a build that keeps no calibration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "feeder_offline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "feeders"
+        ],
+        "summary": "Store the calibration, if it is still at the generation in `If-Match`.\n`portion_mg` is the mean weight of one portion (1-50 g), from a scale's\nreading of counted portions, or `null` to clear it.",
+        "operationId": "put_calibration",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FeederId"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "The generation the change is based on",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "examples": [
+                "\"7\""
+              ],
+              "pattern": "^\"?[0-9]+\"?$"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID; a retry with the same key is answered once",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Calibration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid: a malformed body, If-Match or Idempotency-Key, or a portion weight out of range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: a viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "feeder_archived, or feeder_refused (`unverified`: a bowl mode the feeder has not verified; `forbidden`: the server's key is not an owner's): final for this key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Stale: the current calibration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationView"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "precondition_required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "feeder_offline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "outcome_unknown: retry with the same key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feeders/{id}/call": {
+      "get": {
+        "tags": [
+          "feeders"
+        ],
+        "summary": "The stored clip, or the upload under way, read from the feeder.",
+        "operationId": "call",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FeederId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallView"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "feeder_refused: `unavailable` from a build without the meal call, `busy`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "feeder_offline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "feeders"
+        ],
+        "summary": "Upload a clip as the meal call, in place of the one the feeder holds.\nThe body is the feeder's own stream, converted by the client; the\nserver converts nothing and checks its length. It is sent a chunk at a\ntime beside feeds and status reads, and answered once the feeder has\nread it back and stored it. A retry under the same key after\n`outcome_unknown` sends only what the feeder lacks.",
+        "operationId": "upload_call",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FeederId"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID; a retry with the same key is answered once",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "$ref": "#/components/schemas/CallStream"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "the feeder stored the clip",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid: an empty clip, one past the feeder's length, or a malformed Idempotency-Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: a viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "feeder_archived; install_running; or feeder_refused (`forbidden`: the server's key is not an owner's; `not_writable`, `busy`): final for this key, and the clip the feeder held may be gone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "key_reused: the key names another clip",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "feeder_offline: nothing was sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "outcome_unknown: retry with the same key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "feeders"
+        ],
+        "summary": "Erase the meal call; plans then play none.",
+        "operationId": "delete_call",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FeederId"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID; a retry with the same key is answered once",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "403": {
+            "description": "forbidden: a viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "feeder_archived, or feeder_refused (`forbidden`: the server's key is not an owner's): final for this key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "feeder_offline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "outcome_unknown: retry with the same key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feeders/{id}/call/play": {
+      "post": {
+        "tags": [
+          "feeders"
+        ],
+        "summary": "Play the stored clip once on the feeder, to hear it.",
+        "operationId": "play_call",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FeederId"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID; a retry with the same key is answered once",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "403": {
+            "description": "forbidden: a viewer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "feeder_archived, or feeder_refused (`muted` while sound is off, `busy` while the speaker plays, `not_found` with no clip): final for this key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "feeder_offline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "outcome_unknown: retry with the same key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/feeders/{id}/clients": {
       "get": {
         "tags": [
@@ -5720,6 +6280,167 @@
           "restarting"
         ]
       },
+      "Bowl": {
+        "type": "string",
+        "description": "The bowl mode a feeder runs.",
+        "enum": [
+          "single",
+          "double"
+        ]
+      },
+      "Calibration": {
+        "type": "object",
+        "description": "What the owner measured, as the feeder keeps it.",
+        "required": [
+          "bowl"
+        ],
+        "properties": {
+          "bowl": {
+            "$ref": "#/components/schemas/Bowl"
+          },
+          "portion_mg": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The mean weight of one portion in milligrams, `None` until measured.",
+            "minimum": 0
+          }
+        }
+      },
+      "CalibrationView": {
+        "type": "object",
+        "description": "The calibration as the feeder holds it.",
+        "required": [
+          "generation",
+          "writable",
+          "calibration"
+        ],
+        "properties": {
+          "calibration": {
+            "$ref": "#/components/schemas/Calibration"
+          },
+          "generation": {
+            "$ref": "#/components/schemas/Generation"
+          },
+          "phase": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Phase",
+                "description": "`None` from a feeder with no feeding owner, or before it opens."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "writable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CallClip": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "none"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An upload of `bytes` stream bytes with CRC `crc` has `received` of\nthem; a restart of the feeder forgets it.",
+            "required": [
+              "bytes",
+              "crc",
+              "received",
+              "state"
+            ],
+            "properties": {
+              "bytes": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "crc": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "received": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "receiving"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A clip of `bytes` stream bytes, [`CallClip::ms`] a play.",
+            "required": [
+              "bytes",
+              "crc",
+              "state"
+            ],
+            "properties": {
+              "bytes": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "crc": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "stored"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The stored clip, or the upload under way."
+      },
+      "CallStream": {
+        "type": "string",
+        "format": "binary",
+        "description": "A clip in the feeder's own stream: 4-bit IMA ADPCM at 8 kHz, mono, as\n`wellfed_client::call::Clip::from_wav` converts a recording."
+      },
+      "CallView": {
+        "type": "object",
+        "description": "The meal call as the feeder stores it.",
+        "required": [
+          "writable",
+          "clip"
+        ],
+        "properties": {
+          "clip": {
+            "$ref": "#/components/schemas/CallClip"
+          },
+          "writable": {
+            "type": "boolean",
+            "description": "Whether the store can take a write now."
+          }
+        }
+      },
       "ClientOwner": {
         "oneOf": [
           {
@@ -5918,7 +6639,11 @@
           "play",
           "remove",
           "desiccant",
-          "plans"
+          "plans",
+          "calibration",
+          "call_upload",
+          "call_delete",
+          "call_play"
         ]
       },
       "CommandOutcome": {
@@ -5972,6 +6697,44 @@
                 "type": "string",
                 "enum": [
                   "plans"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A calibration change took effect, and this is the calibration the\nserver read back after it.",
+            "required": [
+              "calibration",
+              "result"
+            ],
+            "properties": {
+              "calibration": {
+                "$ref": "#/components/schemas/CalibrationView"
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "calibration"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The feeder stored the uploaded meal call, as it then said.",
+            "required": [
+              "call",
+              "result"
+            ],
+            "properties": {
+              "call": {
+                "$ref": "#/components/schemas/CallView"
+              },
+              "result": {
+                "type": "string",
+                "enum": [
+                  "call"
                 ]
               }
             }
@@ -7494,7 +8257,8 @@
           "time",
           "fault",
           "portions",
-          "no_clock"
+          "no_clock",
+          "unverified"
         ]
       },
       "FeederSample": {
@@ -9150,6 +9914,14 @@
             ]
           }
         }
+      },
+      "Phase": {
+        "type": "string",
+        "description": "Where the rotor rests between feeds.",
+        "enum": [
+          "at_mark",
+          "unknown"
+        ]
       },
       "PhoneClaim": {
         "type": "object",

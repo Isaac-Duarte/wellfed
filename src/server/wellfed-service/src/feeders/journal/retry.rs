@@ -13,6 +13,9 @@ enum Resend {
     /// The feeder answers a repeated id from memory, and a write that
     /// left it runs again harmlessly or is refused as stale.
     SameId,
+    /// Picked up where the feeder says it stands: what it already holds
+    /// is not sent again.
+    Resume,
     /// Never: an uncertain write of this kind is resolved, not resent.
     Never,
 }
@@ -27,15 +30,25 @@ const fn resend(kind: CommandKind) -> Resend {
         // base, as a settings change does, and so does a plans change. A
         // tune played twice is only heard twice. A desiccant reset run
         // again dates the replacement to the day it runs, which is what a
-        // retry of it asks.
+        // retry of it asks. A calibration change names its base too. The
+        // meal call erased again finds none, or erases the clip it was
+        // asked to, and played twice it is only heard twice.
         CommandKind::Settings
         | CommandKind::Plans
+        | CommandKind::Calibration
+        | CommandKind::CallDelete
+        | CommandKind::CallPlay
         | CommandKind::Desiccant
         | CommandKind::Lock
         | CommandKind::Cancel
         | CommandKind::Revoke
         | CommandKind::Wifi
         | CommandKind::Play => Resend::SameId,
+        // Its chunks are idempotent by offset, and the clip it names (its
+        // length and CRC) tells this upload from another: a retry reads
+        // where the feeder's upload stands and sends only the rest, or
+        // nothing once the feeder stores the clip.
+        CommandKind::CallUpload => Resend::Resume,
         // The feeder's memory of a feed's id ends at a reboot.
         CommandKind::Feed => Resend::Never,
         // An invite's secret is not kept, so a resend could only make a
@@ -70,7 +83,7 @@ pub(super) fn retry(row: &CommandRow) -> Retry {
         // Another attempt in this server is sending it.
         CommandState::Sent => Retry::Unknown,
         CommandState::Unknown => match resend(row.kind) {
-            Resend::SameId => Retry::Resend(row.request_id),
+            Resend::SameId | Resend::Resume => Retry::Resend(row.request_id),
             Resend::Never => Retry::Unknown,
         },
     }
@@ -135,7 +148,7 @@ mod tests {
         for kind in CommandKind::ALL {
             let unknown = entry(kind, CommandState::Unknown, None);
             let want = match resend(kind) {
-                Resend::SameId => Retry::Resend([4; 16]),
+                Resend::SameId | Resend::Resume => Retry::Resend([4; 16]),
                 Resend::Never => Retry::Unknown,
             };
             assert_eq!(retry(&unknown), want, "{kind:?}");
@@ -154,6 +167,10 @@ mod tests {
                 Resend::Never,
                 Resend::SameId,
                 Resend::Never,
+                Resend::SameId,
+                Resend::SameId,
+                Resend::SameId,
+                Resend::Resume,
                 Resend::SameId,
                 Resend::SameId,
             ],

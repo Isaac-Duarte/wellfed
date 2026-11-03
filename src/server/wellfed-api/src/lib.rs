@@ -89,11 +89,12 @@ pub use views::{
     IntakeDay, IntakeFeeder, IntakeQuery, PetIntake, PortionWeight, SinceRefill, WeighedIntake,
 };
 pub use wellfed_model::{
-    Blocked, ClientRole, CurrentUnit, Desiccant, EnrollPath, EventBody, EventKind, FeedOutcome,
-    FeedReason, Food as FoodStats, FoodLevel, Generation, Hex, MealReminder, MetricKind,
-    MissedReason, NextMeal, PLANS, Plan, Plans, Power, Readiness, SampleValue, Settings,
-    SettingsPatch, Source, Stats, StatsSection, Status as FeederStatus, Trace, TraceEntry,
-    TraceSummary, Weekday, Weekdays, WifiSource, Window,
+    Blocked, Bowl, CALL_BYTES_MAX, Calibration, CalibrationView, CallClip, CallView, ClientRole,
+    CurrentUnit, Desiccant, EnrollPath, EventBody, EventKind, FeedOutcome, FeedReason,
+    Food as FoodStats, FoodLevel, Generation, Hex, MealReminder, MetricKind, MissedReason,
+    NextMeal, PLANS, PORTION_MG_MAX, PORTION_MG_MIN, Phase, Plan, Plans, Power, Readiness,
+    SampleValue, Settings, SettingsPatch, Source, Stats, StatsSection, Status as FeederStatus,
+    Trace, TraceEntry, TraceSummary, Weekday, Weekdays, WifiSource, Window,
 };
 
 /// The prefix every resource lives under.

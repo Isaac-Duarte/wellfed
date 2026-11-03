@@ -41,5 +41,9 @@ const fn kind_code(kind: CommandKind) -> u8 {
         CommandKind::Remove => 10,
         CommandKind::Desiccant => 11,
         CommandKind::Plans => 12,
+        CommandKind::Calibration => 13,
+        CommandKind::CallUpload => 14,
+        CommandKind::CallDelete => 15,
+        CommandKind::CallPlay => 16,
     }
 }

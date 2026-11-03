@@ -80,9 +80,9 @@ struct ApiDoc;
 
 fn router() -> OpenApiRouter<AppState> {
     use routes::{
-        admin, audit, auth, backups, clients, commands, diagnostics, events, export, feeders,
-        feeds, foods, health, household, installs, pets, releases, samples, stock, stream, tokens,
-        users,
+        admin, audit, auth, backups, calibration, call, clients, commands, diagnostics, events,
+        export, feeders, feeds, foods, health, household, installs, pets, releases, samples, stock,
+        stream, tokens, users,
     };
 
     let small = OpenApiRouter::new()
@@ -102,6 +102,12 @@ fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(feeders::feeder, admin::remove))
         .routes(routes!(feeders::settings, feeders::put_settings))
         .routes(routes!(feeders::plans, feeders::put_plans))
+        .routes(routes!(
+            calibration::calibration,
+            calibration::put_calibration
+        ))
+        .routes(routes!(call::call, call::upload_call, call::delete_call))
+        .routes(routes!(call::play_call))
         .routes(routes!(feeders::lock))
         .routes(routes!(feeders::reset_desiccant))
         .routes(routes!(clients::clients))

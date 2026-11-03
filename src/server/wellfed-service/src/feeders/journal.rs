@@ -16,7 +16,9 @@
 //!   a kind whose resend rule allows it. A feed never goes out again.
 //!   A settings change resent after the feeder's ring has moved on runs
 //!   again against its base, which the first run moved past, so it comes
-//!   back as a stale refusal although the change was made.
+//!   back as a stale refusal although the change was made. A meal call's
+//!   upload runs on the long lane instead (`feeders/call.rs`), and its
+//!   retry picks up where the feeder's upload stands.
 //!
 //! A key that already names another request is refused and nothing is
 //! sent. The send runs in a task of its own, so the entry reaches its
@@ -28,32 +30,27 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tracing::warn;
 use uuid::Uuid;
-use wellfed_api::{
-    Command, CommandKind, CommandOutcome, CommandPage, CommandQuery, CommandState, FeederId,
-    StreamEvent, User,
-};
+use wellfed_api::{CommandKind, CommandOutcome, CommandState, FeederId, StreamEvent};
 use wellfed_formats::canonical::canonical_of;
-use wellfed_mirror::AskError;
+use wellfed_mirror::{AskError, Clip};
 use wellfed_model::{Answer, Invite, Op};
-use wellfed_store::{CommandFilter, CommandRow, Journaled, NewCommand, Synced};
+use wellfed_store::{Journaled, NewCommand, Synced};
 
 use self::id::write_id;
 use self::retry::{Retry, retry};
 use crate::{
-    Caller, CommandError, Error, IdempotencyKey, InternalError, Invalid, Permission, RequestId,
-    Resource, Result, Service, can,
+    Caller, CommandError, Error, IdempotencyKey, InternalError, RequestId, Result, Service,
 };
 
 mod id;
+mod reads;
 mod retry;
 
-const PAGE: u32 = 100;
-const PAGE_MAX: u32 = 1000;
-/// Past every stored row number (SQLite integers are `i64`).
-const CURSOR_MAX: u64 = i64::MAX.unsigned_abs();
+pub(crate) use self::reads::view;
 
-/// A write to send through the journal.
-pub(crate) struct Write<'a, B> {
+/// A write to send through the journal: `op` is one request, or the meal
+/// call's clip ([`Sending`]).
+pub(crate) struct Write<'a, B, S = Op> {
     /// Who sent it, and the token it came through.
     pub(crate) caller: &'a Caller,
     pub(crate) feeder: FeederId,
@@ -63,7 +60,28 @@ pub(crate) struct Write<'a, B> {
     pub(crate) body: &'a B,
     /// The client's key; the server draws one when it sent none.
     pub(crate) key: Option<IdempotencyKey>,
-    pub(crate) op: Op,
+    pub(crate) op: S,
+}
+
+/// What a journalled write sends the feeder.
+pub(crate) enum Sending {
+    /// One request on the short lane.
+    Ask(Op),
+    /// The meal call's clip, a chunk at a time on the long lane
+    /// (`feeders/call.rs`).
+    Call(Clip),
+}
+
+impl From<Op> for Sending {
+    fn from(op: Op) -> Self {
+        Self::Ask(op)
+    }
+}
+
+impl From<Clip> for Sending {
+    fn from(clip: Clip) -> Self {
+        Self::Call(clip)
+    }
 }
 
 /// A write's journal key and the feeder's answer, fresh or recorded.
@@ -78,66 +96,18 @@ pub(crate) struct Recorded {
 /// Whether this attempt made the entry: only then may a send that never
 /// left drop it.
 #[derive(Clone, Copy)]
-enum Attempt {
+pub(crate) enum Attempt {
     First,
     Retry,
 }
 
 impl Service {
-    /// One entry: the caller's own, or anyone's for an owner. Another
-    /// user's entry is not found, so a member learns nothing of it.
-    pub async fn command(&self, user: &User, key: IdempotencyKey) -> Result<Command> {
-        let row = self.shared.store.command(&key).await?;
-        match row {
-            Some(row) if can(user.role, Permission::AllHistory) || row.user == user.id => {
-                Ok(view(row))
-            }
-            _ => Err(Error::NotFound(Resource::Command)),
-        }
-    }
-
-    /// A page of the journal, oldest first: the caller's own entries, or
-    /// everyone's for an owner.
-    pub async fn commands(&self, user: &User, query: CommandQuery) -> Result<CommandPage> {
-        let limit = query.limit.unwrap_or(PAGE);
-        if !(1..=PAGE_MAX).contains(&limit) {
-            return Err(Invalid::CommandLimit.into());
-        }
-        let after = query
-            .after
-            .map(|after| match after.parse::<u64>() {
-                Ok(after) if after <= CURSOR_MAX => Ok(after),
-                _ => Err(Invalid::CommandCursor),
-            })
-            .transpose()?;
-
-        // One more than the page shows whether another page follows.
-        let mut rows = self
-            .shared
-            .store
-            .commands(CommandFilter {
-                user: (!can(user.role, Permission::AllHistory)).then_some(user.id),
-                feeder: query.feeder,
-                state: query.state,
-                after,
-                limit: limit + 1,
-            })
-            .await?;
-        let more = rows.len() > limit as usize;
-        rows.truncate(limit as usize);
-
-        let next = more
-            .then(|| rows.last().map(|row| row.seq.to_string()))
-            .flatten();
-        Ok(CommandPage {
-            items: rows.into_iter().map(view).collect(),
-            next,
-        })
-    }
-
     /// Send `write` through the journal: record it, or find its key's
     /// entry, then answer from the entry or send it.
-    pub(crate) async fn journaled<B: Serialize>(&self, write: Write<'_, B>) -> Result<Recorded> {
+    pub(crate) async fn journaled<B: Serialize, S: Into<Sending>>(
+        &self,
+        write: Write<'_, B, S>,
+    ) -> Result<Recorded> {
         let key = match write.key {
             Some(key) => key,
             None => uuid::Builder::from_random_bytes(self.shared.random()?)
@@ -209,10 +179,16 @@ impl Service {
 
         let service = self.clone();
         let feeder = write.feeder;
-        let op = write.op;
-        let sending = self
-            .tasks
-            .spawn(async move { service.send(key, feeder, request, op, attempt).await });
+        let sending = write.op.into();
+        let sending = self.tasks.spawn(async move {
+            match sending {
+                Sending::Ask(op) => service.send(key, feeder, request, op, attempt).await,
+                Sending::Call(clip) => service
+                    .send_call(key, feeder, &clip, attempt)
+                    .await
+                    .map(|outcome| (outcome, None)),
+            }
+        });
         let Ok(sent) = sending.await else {
             // The task died with the write possibly sent and nothing
             // recorded: say unknown now rather than leave it `sent`, which
@@ -231,7 +207,7 @@ impl Service {
     /// Mark `key`'s entry unknown after a failure that left it `sent`,
     /// logging rather than returning a failure of its own: the caller
     /// already has the error that matters.
-    async fn unknown_best_effort(&self, key: &IdempotencyKey) {
+    pub(crate) async fn unknown_best_effort(&self, key: &IdempotencyKey) {
         let now = self.shared.clock.now();
         if let Err(error) = self.unknown(key, now).await {
             warn!(key = %Uuid::from_bytes(*key), %error, "a write's entry stays sent until the next start");
@@ -305,18 +281,7 @@ impl Service {
                 return Err(Error::from(unsent));
             }
         };
-        match store.answer_command(&key, &outcome, now).await {
-            Ok(true) => self.published(&key).await,
-            Ok(false) => {
-                warn!(key = %Uuid::from_bytes(key), "the feeder answered a write the journal no longer holds open");
-            }
-            // The answer is lost to the journal; unknown is still true of
-            // it, and a retry resends under the same id.
-            Err(error) => {
-                self.unknown_best_effort(&key).await;
-                return Err(error.into());
-            }
-        }
+        self.record_answer(&key, &outcome, now).await?;
         // The feed's `Fed` event may have been stored before its answer
         // was: look for it now rather than at the next event, beside the
         // answer rather than ahead of it.
@@ -326,6 +291,28 @@ impl Service {
                 .spawn(async move { service.reconcile_best_effort(feeder).await });
         }
         Ok((outcome, invite))
+    }
+
+    /// Record the feeder's answer to `key`'s write, and stream the entry.
+    pub(crate) async fn record_answer(
+        &self,
+        key: &IdempotencyKey,
+        outcome: &CommandOutcome,
+        now: jiff::Timestamp,
+    ) -> Result<()> {
+        match self.shared.store.answer_command(key, outcome, now).await {
+            Ok(true) => self.published(key).await,
+            Ok(false) => {
+                warn!(key = %Uuid::from_bytes(*key), "the feeder answered a write the journal no longer holds open");
+            }
+            // The answer is lost to the journal; unknown is still true of
+            // it, and a retry resends under the same id.
+            Err(error) => {
+                self.unknown_best_effort(key).await;
+                return Err(error.into());
+            }
+        }
+        Ok(())
     }
 
     /// Tell the stream that `key`'s entry changed, as it now stands. A
@@ -345,7 +332,7 @@ impl Service {
 
     /// Mark `key`'s entry unknown. An entry another attempt answered stays
     /// answered; one that is gone is logged.
-    async fn unknown(&self, key: &IdempotencyKey, now: jiff::Timestamp) -> Result<()> {
+    pub(crate) async fn unknown(&self, key: &IdempotencyKey, now: jiff::Timestamp) -> Result<()> {
         if self.shared.store.command_unknown(key, now).await? {
             self.published(key).await;
         } else {
@@ -355,21 +342,5 @@ impl Service {
             }
         }
         Ok(())
-    }
-}
-
-pub(crate) fn view(row: CommandRow) -> Command {
-    Command {
-        key: Uuid::from_bytes(row.key),
-        user: row.user,
-        token: row.token,
-        feeder: row.feeder,
-        kind: row.kind,
-        state: row.state,
-        outcome: row.outcome,
-        feed: row.feed,
-        boot_count: row.boot_count,
-        sent: row.sent,
-        updated: row.updated,
     }
 }

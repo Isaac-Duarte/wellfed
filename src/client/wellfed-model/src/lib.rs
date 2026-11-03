@@ -60,6 +60,8 @@ pub use wellfed_proto::api::{
     DESICCANT_DAYS_DEFAULT, DESICCANT_DAYS_MAX, DESICCANT_DAYS_MIN, MEAL_REMINDER_MINUTES_MAX,
     MEAL_REMINDER_MINUTES_MIN,
 };
+/// The portion weights a calibration may store, in milligrams.
+pub use wellfed_proto::api::{PORTION_MG_MAX, PORTION_MG_MIN};
 
 /// A feeder store's generation: a write names the one it read, and the
 /// feeder refuses it once the store has moved on.

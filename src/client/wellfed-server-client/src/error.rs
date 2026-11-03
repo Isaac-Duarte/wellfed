@@ -1,7 +1,7 @@
 //! Every way a call to the server fails.
 
 use std::time::Duration;
-use wellfed_api::{ErrorCode, Plans, Problem, Settings};
+use wellfed_api::{CalibrationView, ErrorCode, Plans, Problem, Settings};
 
 use reqwest::{StatusCode, Url};
 
@@ -31,6 +31,10 @@ pub enum Error {
     /// are the current plans.
     #[error("the plans moved on to generation {}", .0.generation)]
     StalePlans(Box<Plans>),
+    /// A calibration change named a generation the calibration has moved
+    /// past; this is the current calibration.
+    #[error("the calibration moved on to generation {}", .0.generation)]
+    StaleCalibration(Box<CalibrationView>),
     /// The address answered with a redirect, which is never followed: it
     /// would carry a password or a write's body to another host. The
     /// caller is to use the final URL (`location`, when it names one).

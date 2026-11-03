@@ -10,7 +10,8 @@
 //! scale (the feeder's volume setting then decides how loud it plays), and
 //! encoded as 4-bit IMA ADPCM with the feeder's own encoder
 //! (`wellfed_core::clip`). Other formats are converted to WAV first, for
-//! example with `ffmpeg -i call.m4a call.wav`.
+//! example with `ffmpeg -i call.m4a call.wav`. The owner's server converts
+//! nothing: it takes the stream a client converted ([`Clip::from_stream`]).
 //!
 //! **Upload.** [`Clip::start`] erases the feeder's clip and announces the
 //! new one's length and CRC; [`Clip::chunk`] sends the stream a chunk at a
@@ -61,6 +62,17 @@ pub enum ClipError {
     Silent,
     #[error("the recording plays {ms} ms once trimmed; the feeder keeps at most {max_ms} ms")]
     TooLong { ms: u32, max_ms: u32 },
+}
+
+/// Why bytes already in the feeder's format cannot be its clip: the
+/// feeder's own check of an upload's length. Any bytes decode as ADPCM, so
+/// the length is all there is to check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum StreamError {
+    #[error("the clip is empty")]
+    Empty,
+    #[error("the clip is {bytes} bytes; the feeder keeps at most {max}")]
+    TooLong { bytes: usize, max: u32 },
 }
 
 /// Why an upload stopped.
@@ -116,6 +128,23 @@ impl Clip {
         }
         let mut stream = Vec::with_capacity(samples.len().div_ceil(2));
         clip::encode(&samples, |byte| stream.push(byte));
+        let crc = crc32(&stream);
+        Ok(Self { stream, crc })
+    }
+
+    /// A clip already converted to the feeder's stream, as the owner's
+    /// server takes it from a client that converted it with
+    /// [`Self::from_wav`].
+    pub fn from_stream(stream: Vec<u8>) -> Result<Self, StreamError> {
+        if stream.is_empty() {
+            return Err(StreamError::Empty);
+        }
+        if !u32::try_from(stream.len()).is_ok_and(|bytes| bytes <= CALL_BYTES_MAX) {
+            return Err(StreamError::TooLong {
+                bytes: stream.len(),
+                max: CALL_BYTES_MAX,
+            });
+        }
         let crc = crc32(&stream);
         Ok(Self { stream, crc })
     }
@@ -271,6 +300,28 @@ impl<'a> Upload<'a> {
             wait: None,
             ended: None,
         }
+    }
+
+    /// The upload of `clip` picked up where the feeder's `view` says it
+    /// stands, after an attempt whose answers were lost: done once the
+    /// feeder stores this clip, from its next byte while the feeder still
+    /// receives it, and from the start otherwise (a restart forgot it, or
+    /// another upload took its place). So a retry never sends what the
+    /// feeder already holds.
+    pub fn resume(clip: &'a Clip, view: &CallView) -> Self {
+        let mut upload = Self::new(clip);
+        match view.clip {
+            CallClip::Stored { bytes, crc } if clip.ours(bytes, crc) => {
+                upload.ended = Some(Step::Stored(*view));
+            }
+            CallClip::Receiving {
+                bytes,
+                crc,
+                received,
+            } if clip.ours(bytes, crc) => upload.stage = Stage::Chunk { offset: received },
+            CallClip::None | CallClip::Stored { .. } | CallClip::Receiving { .. } => {}
+        }
+        upload
     }
 
     pub fn poll(&mut self, now: Instant) -> Step {
@@ -876,6 +927,67 @@ mod tests {
         let stored = view(CallClip::Stored { bytes, crc });
         upload.answer(&Answer::Call(stored), now);
         assert_eq!(upload.poll(now), Step::Stored(stored));
+    }
+
+    #[test]
+    fn a_stream_is_taken_as_it_is_within_the_feeders_length() {
+        let clip = Clip::from_stream(vec![7; 600]).unwrap();
+        assert_eq!((clip.bytes(), clip.crc()), (600, crc32(&[7; 600])));
+        assert_eq!(clip.stream(), &[7; 600]);
+
+        assert_eq!(Clip::from_stream(Vec::new()), Err(StreamError::Empty));
+        let most = usize::try_from(CALL_BYTES_MAX).unwrap();
+        assert!(Clip::from_stream(vec![0; most]).is_ok());
+        assert_eq!(
+            Clip::from_stream(vec![0; most + 1]),
+            Err(StreamError::TooLong {
+                bytes: most + 1,
+                max: CALL_BYTES_MAX
+            })
+        );
+    }
+
+    #[test]
+    fn a_resumed_upload_sends_only_what_the_feeder_lacks() {
+        let clip = short_clip();
+        let now = Instant::now();
+        let (bytes, crc) = (clip.bytes(), clip.crc());
+        let view = |clip| CallView {
+            writable: true,
+            clip,
+        };
+
+        let stored = view(CallClip::Stored { bytes, crc });
+        assert_eq!(
+            Upload::resume(&clip, &stored).poll(now),
+            Step::Stored(stored)
+        );
+
+        let receiving = view(CallClip::Receiving {
+            bytes,
+            crc,
+            received: 512,
+        });
+        let mut upload = Upload::resume(&clip, &receiving);
+        assert_eq!(upload.poll(now), Step::Ask(clip.chunk(512).unwrap()));
+
+        // Every byte in: the feeder is reading it back.
+        let read_back = view(CallClip::Receiving {
+            bytes,
+            crc,
+            received: bytes,
+        });
+        let mut upload = Upload::resume(&clip, &read_back);
+        assert_eq!(upload.poll(now), Step::Ask(Op::GetCall));
+
+        let other = view(CallClip::Stored {
+            bytes,
+            crc: crc + 1,
+        });
+        for start in [other, view(CallClip::None)] {
+            let mut upload = Upload::resume(&clip, &start);
+            assert_eq!(upload.poll(now), Step::Ask(clip.start()), "{start:?}");
+        }
     }
 
     #[test]

@@ -168,6 +168,8 @@ pub enum FeederRefusal {
     Portions,
     /// The feeder's clock is invalid, so it cannot date the change.
     NoClock,
+    /// A calibration named a bowl mode the feeder has not verified.
+    Unverified,
 }
 
 impl From<Refusal> for FeederRefusal {
@@ -186,10 +188,11 @@ impl From<Refusal> for FeederRefusal {
             Refusal::Fault => Self::Fault,
             Refusal::Portions { .. } => Self::Portions,
             Refusal::NoClock => Self::NoClock,
-            // Update ops and calibration writes are an owner's, never the
-            // server's: a server session is refused them as `Forbidden`
-            // before these could arrive.
-            Refusal::Update(_) | Refusal::Unverified => Self::Forbidden,
+            Refusal::Unverified => Self::Unverified,
+            // An install reads its own refusals from the update driver;
+            // through a journalled write one could only be a session
+            // without the owner role, refused before these could arrive.
+            Refusal::Update(_) => Self::Forbidden,
         }
     }
 }

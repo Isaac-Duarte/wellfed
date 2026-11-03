@@ -245,6 +245,7 @@ impl Output {
             Error::Problem { problem, .. } => self.body(problem),
             Error::Stale(settings) => self.body(settings),
             Error::StalePlans(plans) => self.body(plans),
+            Error::StaleCalibration(calibration) => self.body(calibration),
             _ => Ok(()),
         };
         if let Err(print) = printed {
@@ -317,6 +318,7 @@ fn uncertain(error: &Error) -> bool {
         | Error::Redirect { .. }
         | Error::Stale(_)
         | Error::StalePlans(_)
+        | Error::StaleCalibration(_)
         | Error::NoSession => false,
     }
 }

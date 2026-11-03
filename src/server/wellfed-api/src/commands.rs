@@ -16,7 +16,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
-use wellfed_model::{Plans, Settings};
+use wellfed_model::{CalibrationView, CallView, Plans, Settings};
 
 use crate::{FeedOutcome, FeedReason, FeederId, FeederRefusal, TokenId, UserId};
 
@@ -50,6 +50,16 @@ pub enum CommandKind {
     Desiccant,
     /// Replacing the feeding plans.
     Plans,
+    /// Storing the portion calibration.
+    Calibration,
+    /// Uploading the meal call's clip, a chunk at a time. One whose
+    /// outcome is unknown is picked up where the feeder says it stands,
+    /// so a retry never sends what the feeder already holds.
+    CallUpload,
+    /// Erasing the meal call.
+    CallDelete,
+    /// Playing the meal call once, to hear it.
+    CallPlay,
 }
 
 impl CommandKind {
@@ -68,11 +78,15 @@ impl CommandKind {
             Self::Remove => "remove",
             Self::Desiccant => "desiccant",
             Self::Plans => "plans",
+            Self::Calibration => "calibration",
+            Self::CallUpload => "call_upload",
+            Self::CallDelete => "call_delete",
+            Self::CallPlay => "call_play",
         }
     }
 
     /// Every kind, in the order they were added.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 16] = [
         Self::Settings,
         Self::Lock,
         Self::Feed,
@@ -85,6 +99,10 @@ impl CommandKind {
         Self::Remove,
         Self::Desiccant,
         Self::Plans,
+        Self::Calibration,
+        Self::CallUpload,
+        Self::CallDelete,
+        Self::CallPlay,
     ];
 
     pub fn from_code(code: &str) -> Option<Self> {
@@ -144,6 +162,11 @@ pub enum CommandOutcome {
     /// A plans change took effect, and these are the plans the server
     /// read back after it.
     Plans { plans: Plans },
+    /// A calibration change took effect, and this is the calibration the
+    /// server read back after it.
+    Calibration { calibration: CalibrationView },
+    /// The feeder stored the uploaded meal call, as it then said.
+    Call { call: CallView },
     /// The feeder refused it; nothing ran.
     Refused { refusal: FeederRefusal },
     /// The feeder made the invite under this number, for this many
@@ -177,6 +200,8 @@ impl CommandOutcome {
             Self::Done
             | Self::Settings { .. }
             | Self::Plans { .. }
+            | Self::Calibration { .. }
+            | Self::Call { .. }
             | Self::Refused { .. }
             | Self::Invited { .. }
             | Self::Unrecorded => None,

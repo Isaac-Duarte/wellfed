@@ -8,7 +8,7 @@
 
 use std::fmt;
 
-use wellfed_api::{ErrorCode, FeederRefusal, Plans, Settings};
+use wellfed_api::{CalibrationView, ErrorCode, FeederRefusal, Plans, Settings};
 use wellfed_mirror::{AskError, ConnectError, RandomFailed, ZoneError};
 
 use crate::{
@@ -34,6 +34,10 @@ pub enum Error {
     /// carries the current plans, which the server answers with.
     #[error("the plans moved on to generation {}", .0.generation)]
     StalePlans(Plans),
+    /// A calibration change named a generation the feeder has moved past;
+    /// it carries the current calibration, which the server answers with.
+    #[error("the calibration moved on to generation {}", .0.generation)]
+    StaleCalibration(CalibrationView),
     #[error(transparent)]
     Zone(#[from] ZoneError),
     #[error(transparent)]
@@ -183,7 +187,12 @@ impl Error {
             Self::Export(export) => return export.reply(),
             // The server answers a stale edit with the current settings or
             // plans, not a problem.
-            Self::Stale(_) | Self::StalePlans(_) | Self::Internal(_) => return Reply::Internal,
+            Self::Stale(_)
+            | Self::StalePlans(_)
+            | Self::StaleCalibration(_)
+            | Self::Internal(_) => {
+                return Reply::Internal;
+            }
         };
         Reply::Code(code)
     }
@@ -271,6 +280,17 @@ pub enum Invalid {
     Ssid,
     #[error("a WPA2 passphrase is 8-63 printable ASCII characters")]
     Psk,
+    #[error(
+        "a portion weighs {}-{} mg",
+        wellfed_api::PORTION_MG_MIN,
+        wellfed_api::PORTION_MG_MAX
+    )]
+    PortionWeight,
+    #[error(
+        "a meal call is 1-{} bytes of the feeder's own stream, converted by the client",
+        wellfed_api::CALL_BYTES_MAX
+    )]
+    CallLength,
 }
 
 /// A mirror refusal in the service's domains. Only `Unknown` may have

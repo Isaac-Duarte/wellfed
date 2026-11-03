@@ -42,7 +42,7 @@ A phone that pairs with a feeder before there is a server keeps that key. It cla
 - **A member's phone that paired before the server** asks for an invite (`POST /feeders/{id}/invites`) and joins with a new key. Its old key shows as unowned, for an owner to revoke.
 - **What a claim can't take:** the server's own key, a client an owner kept, a key the feeder lists as a server's or an update signer's, and another phone's key.
 
-Every device operation the app can make has a server route, or a stated reason it has none, in `wellfed_service::parity`. It is an exhaustive match over the device API's operations, so a new operation doesn't build until it gets one. Some routes need the feeder's owner role: Wi-Fi, reboot, revoking a client, a phone's invite, the time zone rule, installs and the stock backup. They work only when the server was adopted with an owner's invite. With the `server` role, the feeder refuses them `forbidden`.
+Every device operation the app can make has a server route, or a stated reason it has none, in `wellfed_service::parity`. It is an exhaustive match over the device API's operations, so a new operation doesn't build until it gets one. Some routes need the feeder's owner role: Wi-Fi, reboot, revoking a client, a phone's invite, the time zone rule, changing the portion calibration, uploading or erasing the meal call, installs and the stock backup. They work only when the server was adopted with an owner's invite. With the `server` role, the feeder refuses them `forbidden`.
 
 **Adopt with an owner's invite.** That is the supported setup, since it is the only one where every route works. It gives the server the feeder's full authority, as your own CLI has: it can change Wi-Fi, revoke clients and offer updates, including downgrades and update key changes. The feeder still checks the signature on every image. So protect the server's data directory as you would your owner key.
 
@@ -53,7 +53,7 @@ The API lives under `/api/v1`, as JSON. The complete reference is [`openapi.json
 | Group | Routes | What they do |
 | --- | --- | --- |
 | Setup and accounts | `/setup`, `/session`, `/users`, `/tokens`, `/household` | The first owner, logins, people and their roles, phone tokens, the household's name, units and zone |
-| Feeders | `/feeders`, `/feeders/{id}`, `/feeders/{id}/settings`, `/plans`, `/lock`, `/desiccant/reset`, `/wifi`, `/reboot`, `/play`, `/clients`, `/invites`, `/phones` | Adopt and remove feeders, live status and the next meal, settings, feeding plans and administration |
+| Feeders | `/feeders`, `/feeders/{id}`, `/feeders/{id}/settings`, `/plans`, `/calibration`, `/call`, `/call/play`, `/lock`, `/desiccant/reset`, `/wifi`, `/reboot`, `/play`, `/clients`, `/invites`, `/phones` | Adopt and remove feeders, live status and the next meal, settings, feeding plans, the portion calibration, the meal call and administration |
 | Feeding | `/feeders/{id}/feed`, `/feeds/{feed}/cancel`, `/commands`, `/commands/{key}` | Feed, cancel, and the journal of every write |
 | History | `/feeders/{id}/events`, `/samples`, `/feeds/{feed}/trace`, `/stats`, `/log`, `/audit` | Events, samples, feed traces, statistics, the live debug log and the audit log |
 | Owner data | `/pets`, `/foods`, `/pets/{id}/weights`, `/pets/{id}/feeders/{feeder}`, `/feeders/{id}/food`, `/refills`, `/pets/{id}/intake` | Pets, foods, weights, which feeder serves which pet, refills; the food left since the last refill and a pet's intake against its target |
@@ -67,7 +67,8 @@ Some conventions hold across the API:
 
 - **Errors** are RFC 9457 `application/problem+json`, with a typed `code` from a closed set. There is no free-text error.
 - **Writes** carry an `Idempotency-Key` header (a UUID). A feed requires one.
-- **Edits** carry `If-Match` with the generation of the settings or plans they change. A stale one gets `412` with the current settings or plans.
+- **Edits** carry `If-Match` with the generation of the settings, plans or calibration they change. A stale one gets `412` with the current settings, plans or calibration.
+- **The meal call** goes up as the feeder's own stream (`PUT /feeders/{id}/call`, `application/octet-stream`), converted on the client. The server converts nothing and checks only its length, as the feeder does. It sends the clip a chunk at a time beside feeds and status reads, and answers once the feeder stores it. A retry under the same key after `outcome_unknown` sends only what the feeder lacks.
 - **The stream** resumes from `Last-Event-ID`. When that id is too old, the server sends `resync` and the client fetches again.
 
 ## Read next

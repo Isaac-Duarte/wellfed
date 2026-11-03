@@ -291,6 +291,10 @@ pub enum _CommandKind {
     Remove,
     Desiccant,
     Plans,
+    Calibration,
+    CallUpload,
+    CallDelete,
+    CallPlay,
 }
 
 #[frb(mirror(CommandState))]

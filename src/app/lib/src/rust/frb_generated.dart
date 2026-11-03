@@ -5858,17 +5858,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 2:
         return ServerCommandOutcome_Plans();
       case 3:
+        return ServerCommandOutcome_Calibration();
+      case 4:
+        return ServerCommandOutcome_Call();
+      case 5:
         return ServerCommandOutcome_Refused(
           refusal: dco_decode_server_refusal(raw[1]),
         );
-      case 4:
+      case 6:
         return ServerCommandOutcome_Invited(
           invite: dco_decode_u_32(raw[1]),
           seconds: dco_decode_u_16(raw[2]),
         );
-      case 5:
+      case 7:
         return ServerCommandOutcome_Feeding(feed: dco_decode_u_32(raw[1]));
-      case 6:
+      case 8:
         return ServerCommandOutcome_Fed(
           feed: dco_decode_u_32(raw[1]),
           requested: dco_decode_u_8(raw[2]),
@@ -5876,7 +5880,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           outcome: dco_decode_feed_outcome(raw[4]),
           reason: dco_decode_feed_reason(raw[5]),
         );
-      case 7:
+      case 9:
         return ServerCommandOutcome_Unrecorded();
       default:
         throw Exception("unreachable");
@@ -10187,19 +10191,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 2:
         return ServerCommandOutcome_Plans();
       case 3:
+        return ServerCommandOutcome_Calibration();
+      case 4:
+        return ServerCommandOutcome_Call();
+      case 5:
         var var_refusal = sse_decode_server_refusal(deserializer);
         return ServerCommandOutcome_Refused(refusal: var_refusal);
-      case 4:
+      case 6:
         var var_invite = sse_decode_u_32(deserializer);
         var var_seconds = sse_decode_u_16(deserializer);
         return ServerCommandOutcome_Invited(
           invite: var_invite,
           seconds: var_seconds,
         );
-      case 5:
+      case 7:
         var var_feed = sse_decode_u_32(deserializer);
         return ServerCommandOutcome_Feeding(feed: var_feed);
-      case 6:
+      case 8:
         var var_feed = sse_decode_u_32(deserializer);
         var var_requested = sse_decode_u_8(deserializer);
         var var_completed = sse_decode_u_8(deserializer);
@@ -10212,7 +10220,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           outcome: var_outcome,
           reason: var_reason,
         );
-      case 7:
+      case 9:
         return ServerCommandOutcome_Unrecorded();
       default:
         throw UnimplementedError('');
@@ -14500,18 +14508,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(1, serializer);
       case ServerCommandOutcome_Plans():
         sse_encode_i_32(2, serializer);
-      case ServerCommandOutcome_Refused(refusal: final refusal):
+      case ServerCommandOutcome_Calibration():
         sse_encode_i_32(3, serializer);
+      case ServerCommandOutcome_Call():
+        sse_encode_i_32(4, serializer);
+      case ServerCommandOutcome_Refused(refusal: final refusal):
+        sse_encode_i_32(5, serializer);
         sse_encode_server_refusal(refusal, serializer);
       case ServerCommandOutcome_Invited(
         invite: final invite,
         seconds: final seconds,
       ):
-        sse_encode_i_32(4, serializer);
+        sse_encode_i_32(6, serializer);
         sse_encode_u_32(invite, serializer);
         sse_encode_u_16(seconds, serializer);
       case ServerCommandOutcome_Feeding(feed: final feed):
-        sse_encode_i_32(5, serializer);
+        sse_encode_i_32(7, serializer);
         sse_encode_u_32(feed, serializer);
       case ServerCommandOutcome_Fed(
         feed: final feed,
@@ -14520,14 +14532,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         outcome: final outcome,
         reason: final reason,
       ):
-        sse_encode_i_32(6, serializer);
+        sse_encode_i_32(8, serializer);
         sse_encode_u_32(feed, serializer);
         sse_encode_u_8(requested, serializer);
         sse_encode_u_8(completed, serializer);
         sse_encode_feed_outcome(outcome, serializer);
         sse_encode_feed_reason(reason, serializer);
       case ServerCommandOutcome_Unrecorded():
-        sse_encode_i_32(7, serializer);
+        sse_encode_i_32(9, serializer);
     }
   }
 

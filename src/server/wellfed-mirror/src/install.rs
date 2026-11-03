@@ -149,7 +149,7 @@ impl Operation {
         }
     }
 
-    fn request_id(&self) -> Result<crate::RequestId, RandomFailed> {
+    pub(crate) fn request_id(&self) -> Result<crate::RequestId, RandomFailed> {
         let mut id = crate::RequestId::default();
         self.random.fill(&mut id)?;
         Ok(id)

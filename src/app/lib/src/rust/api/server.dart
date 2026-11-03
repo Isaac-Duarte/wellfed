@@ -198,6 +198,13 @@ sealed class ServerCommandOutcome with _$ServerCommandOutcome {
 
   /// The plans the write left.
   const factory ServerCommandOutcome.plans() = ServerCommandOutcome_Plans;
+
+  /// The calibration the write left.
+  const factory ServerCommandOutcome.calibration() =
+      ServerCommandOutcome_Calibration;
+
+  /// The meal call the upload stored.
+  const factory ServerCommandOutcome.call() = ServerCommandOutcome_Call;
   const factory ServerCommandOutcome.refused({required ServerRefusal refusal}) =
       ServerCommandOutcome_Refused;
   const factory ServerCommandOutcome.invited({
@@ -307,6 +314,7 @@ enum ServerRefusal {
   fault,
   portions,
   noClock,
+  unverified,
 }
 
 @freezed

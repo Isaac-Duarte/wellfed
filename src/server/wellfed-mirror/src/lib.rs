@@ -22,7 +22,8 @@
 //!   An install is a long operation: [`Operation::install`] runs the
 //!   update driver the owner's CLI runs, a step at a time on the long lane,
 //!   and so are "Restore stock" ([`Operation::restore`]) and reading the
-//!   stock backup from bank 1 ([`Operation::read_bank1`]).
+//!   stock backup from bank 1 ([`Operation::read_bank1`]), and so is the
+//!   meal call's upload ([`Operation::upload_call`]).
 //! - **What a feeder sends** goes out on its own broadcast of
 //!   [`MirrorEvent`]s (events, gaps, samples and link changes): an event
 //!   or gap after it is stored, a sample as it arrives, ahead of its
@@ -43,6 +44,7 @@
 //! [API design]: ../../../../docs/server/design.md#runtime
 #![forbid(unsafe_code)]
 
+mod call;
 mod collect;
 mod command;
 mod connect;
@@ -69,6 +71,7 @@ use wellfed_model::Capabilities;
 use wellfed_session::noise::Keypair;
 use wellfed_store::Store;
 
+pub use call::{CallError, CallStart, Clip, StreamError, UploadError, UploadFailed};
 pub use command::Operation;
 pub use connect::Enrolled;
 pub use error::{AskError, ConnectError, LogError, Unreachable};

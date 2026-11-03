@@ -36,15 +36,6 @@ pub enum NoRoute {
     /// It needs a press at the feeder, so the owner runs it at the feeder
     /// with the CLI.
     AtTheFeeder,
-    /// A diagnostic read (the record log, statistics, feed traces) the
-    /// owner's CLI makes directly; the server's views of them come later.
-    Diagnostics,
-    /// The portion calibration is measured at the feeder with a scale and
-    /// the owner's CLI.
-    Calibration,
-    /// The meal call's clip, converted on the owner's computer and
-    /// uploaded with the CLI; its route is still to come.
-    CallToCome,
 }
 
 /// The server route for a device operation, or why it has none.
@@ -68,22 +59,27 @@ pub const fn parity(op: &Op) -> Parity {
         Op::CancelFeed { .. } => Route(Post, "/feeders/{id}/feeds/{feed}/cancel"),
         Op::PutTime { .. } => Route(Patch, "/household"),
         Op::TimeSync(_) | Op::GetTime => Without(NoRoute::ClockKeptByServer),
-        Op::OfferUpdate { .. }
-        | Op::UpdateChunk { .. }
-        | Op::UpdateState
-        | Op::CancelUpdate
-        | Op::ReadBank1 { .. } => Without(NoRoute::Install),
-        Op::EnrollUpdateKey { .. } | Op::UpdateKeyStatement { .. } => Without(NoRoute::AtTheFeeder),
-        Op::TailLog { .. } | Op::Stats { .. } | Op::FeedTrace { .. } => {
-            Without(NoRoute::Diagnostics)
+        Op::OfferUpdate { .. } | Op::UpdateChunk { .. } | Op::UpdateState | Op::CancelUpdate => {
+            Without(NoRoute::Install)
         }
-        Op::GetCalibration | Op::PutCalibration { .. } => Without(NoRoute::Calibration),
+        // The stock backup's read, a page per step on the long lane.
+        Op::ReadBank1 { .. } => Route(Post, "/feeders/{id}/stock/read"),
+        Op::EnrollUpdateKey { .. } | Op::UpdateKeyStatement { .. } => Without(NoRoute::AtTheFeeder),
+        // The live debug log, tailed for the owners who follow it.
+        Op::TailLog { .. } => Route(Get, "/feeders/{id}/log"),
+        // The mirror reads these on its long lane and stores them beside
+        // the history; the routes serve what it stored.
+        Op::Stats { .. } => Route(Get, "/feeders/{id}/stats"),
+        Op::FeedTrace { .. } => Route(Get, "/feeders/{id}/feeds/{feed}/trace"),
+        Op::GetCalibration => Route(Get, "/feeders/{id}/calibration"),
+        Op::PutCalibration { .. } => Route(Put, "/feeders/{id}/calibration"),
         Op::GetPlans => Route(Get, "/feeders/{id}/plans"),
         Op::PutPlans { .. } => Route(Put, "/feeders/{id}/plans"),
-        Op::GetCall
-        | Op::StartCall { .. }
-        | Op::CallChunk { .. }
-        | Op::DeleteCall
-        | Op::PlayCall => Without(NoRoute::CallToCome),
+        Op::GetCall => Route(Get, "/feeders/{id}/call"),
+        // The server takes the clip converted, and sends it a chunk at a
+        // time on the long lane.
+        Op::StartCall { .. } | Op::CallChunk { .. } => Route(Put, "/feeders/{id}/call"),
+        Op::DeleteCall => Route(Delete, "/feeders/{id}/call"),
+        Op::PlayCall => Route(Post, "/feeders/{id}/call/play"),
     }
 }

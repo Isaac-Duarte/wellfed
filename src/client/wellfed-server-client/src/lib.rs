@@ -30,6 +30,7 @@
 mod audit;
 mod auth;
 mod backups;
+mod call;
 mod clients;
 mod commands;
 mod diagnostics;

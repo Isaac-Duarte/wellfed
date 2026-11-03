@@ -56,13 +56,15 @@ extension ServerCommandOutcomePatterns on ServerCommandOutcome {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ServerCommandOutcome_Done value)?  done,TResult Function( ServerCommandOutcome_Settings value)?  settings,TResult Function( ServerCommandOutcome_Plans value)?  plans,TResult Function( ServerCommandOutcome_Refused value)?  refused,TResult Function( ServerCommandOutcome_Invited value)?  invited,TResult Function( ServerCommandOutcome_Feeding value)?  feeding,TResult Function( ServerCommandOutcome_Fed value)?  fed,TResult Function( ServerCommandOutcome_Unrecorded value)?  unrecorded,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ServerCommandOutcome_Done value)?  done,TResult Function( ServerCommandOutcome_Settings value)?  settings,TResult Function( ServerCommandOutcome_Plans value)?  plans,TResult Function( ServerCommandOutcome_Calibration value)?  calibration,TResult Function( ServerCommandOutcome_Call value)?  call,TResult Function( ServerCommandOutcome_Refused value)?  refused,TResult Function( ServerCommandOutcome_Invited value)?  invited,TResult Function( ServerCommandOutcome_Feeding value)?  feeding,TResult Function( ServerCommandOutcome_Fed value)?  fed,TResult Function( ServerCommandOutcome_Unrecorded value)?  unrecorded,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case ServerCommandOutcome_Done() when done != null:
 return done(_that);case ServerCommandOutcome_Settings() when settings != null:
 return settings(_that);case ServerCommandOutcome_Plans() when plans != null:
-return plans(_that);case ServerCommandOutcome_Refused() when refused != null:
+return plans(_that);case ServerCommandOutcome_Calibration() when calibration != null:
+return calibration(_that);case ServerCommandOutcome_Call() when call != null:
+return call(_that);case ServerCommandOutcome_Refused() when refused != null:
 return refused(_that);case ServerCommandOutcome_Invited() when invited != null:
 return invited(_that);case ServerCommandOutcome_Feeding() when feeding != null:
 return feeding(_that);case ServerCommandOutcome_Fed() when fed != null:
@@ -85,13 +87,15 @@ return unrecorded(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ServerCommandOutcome_Done value)  done,required TResult Function( ServerCommandOutcome_Settings value)  settings,required TResult Function( ServerCommandOutcome_Plans value)  plans,required TResult Function( ServerCommandOutcome_Refused value)  refused,required TResult Function( ServerCommandOutcome_Invited value)  invited,required TResult Function( ServerCommandOutcome_Feeding value)  feeding,required TResult Function( ServerCommandOutcome_Fed value)  fed,required TResult Function( ServerCommandOutcome_Unrecorded value)  unrecorded,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ServerCommandOutcome_Done value)  done,required TResult Function( ServerCommandOutcome_Settings value)  settings,required TResult Function( ServerCommandOutcome_Plans value)  plans,required TResult Function( ServerCommandOutcome_Calibration value)  calibration,required TResult Function( ServerCommandOutcome_Call value)  call,required TResult Function( ServerCommandOutcome_Refused value)  refused,required TResult Function( ServerCommandOutcome_Invited value)  invited,required TResult Function( ServerCommandOutcome_Feeding value)  feeding,required TResult Function( ServerCommandOutcome_Fed value)  fed,required TResult Function( ServerCommandOutcome_Unrecorded value)  unrecorded,}){
 final _that = this;
 switch (_that) {
 case ServerCommandOutcome_Done():
 return done(_that);case ServerCommandOutcome_Settings():
 return settings(_that);case ServerCommandOutcome_Plans():
-return plans(_that);case ServerCommandOutcome_Refused():
+return plans(_that);case ServerCommandOutcome_Calibration():
+return calibration(_that);case ServerCommandOutcome_Call():
+return call(_that);case ServerCommandOutcome_Refused():
 return refused(_that);case ServerCommandOutcome_Invited():
 return invited(_that);case ServerCommandOutcome_Feeding():
 return feeding(_that);case ServerCommandOutcome_Fed():
@@ -110,13 +114,15 @@ return unrecorded(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ServerCommandOutcome_Done value)?  done,TResult? Function( ServerCommandOutcome_Settings value)?  settings,TResult? Function( ServerCommandOutcome_Plans value)?  plans,TResult? Function( ServerCommandOutcome_Refused value)?  refused,TResult? Function( ServerCommandOutcome_Invited value)?  invited,TResult? Function( ServerCommandOutcome_Feeding value)?  feeding,TResult? Function( ServerCommandOutcome_Fed value)?  fed,TResult? Function( ServerCommandOutcome_Unrecorded value)?  unrecorded,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ServerCommandOutcome_Done value)?  done,TResult? Function( ServerCommandOutcome_Settings value)?  settings,TResult? Function( ServerCommandOutcome_Plans value)?  plans,TResult? Function( ServerCommandOutcome_Calibration value)?  calibration,TResult? Function( ServerCommandOutcome_Call value)?  call,TResult? Function( ServerCommandOutcome_Refused value)?  refused,TResult? Function( ServerCommandOutcome_Invited value)?  invited,TResult? Function( ServerCommandOutcome_Feeding value)?  feeding,TResult? Function( ServerCommandOutcome_Fed value)?  fed,TResult? Function( ServerCommandOutcome_Unrecorded value)?  unrecorded,}){
 final _that = this;
 switch (_that) {
 case ServerCommandOutcome_Done() when done != null:
 return done(_that);case ServerCommandOutcome_Settings() when settings != null:
 return settings(_that);case ServerCommandOutcome_Plans() when plans != null:
-return plans(_that);case ServerCommandOutcome_Refused() when refused != null:
+return plans(_that);case ServerCommandOutcome_Calibration() when calibration != null:
+return calibration(_that);case ServerCommandOutcome_Call() when call != null:
+return call(_that);case ServerCommandOutcome_Refused() when refused != null:
 return refused(_that);case ServerCommandOutcome_Invited() when invited != null:
 return invited(_that);case ServerCommandOutcome_Feeding() when feeding != null:
 return feeding(_that);case ServerCommandOutcome_Fed() when fed != null:
@@ -138,12 +144,14 @@ return unrecorded(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  done,TResult Function()?  settings,TResult Function()?  plans,TResult Function( ServerRefusal refusal)?  refused,TResult Function( int invite,  int seconds)?  invited,TResult Function( int feed)?  feeding,TResult Function( int feed,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)?  fed,TResult Function()?  unrecorded,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  done,TResult Function()?  settings,TResult Function()?  plans,TResult Function()?  calibration,TResult Function()?  call,TResult Function( ServerRefusal refusal)?  refused,TResult Function( int invite,  int seconds)?  invited,TResult Function( int feed)?  feeding,TResult Function( int feed,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)?  fed,TResult Function()?  unrecorded,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case ServerCommandOutcome_Done() when done != null:
 return done();case ServerCommandOutcome_Settings() when settings != null:
 return settings();case ServerCommandOutcome_Plans() when plans != null:
-return plans();case ServerCommandOutcome_Refused() when refused != null:
+return plans();case ServerCommandOutcome_Calibration() when calibration != null:
+return calibration();case ServerCommandOutcome_Call() when call != null:
+return call();case ServerCommandOutcome_Refused() when refused != null:
 return refused(_that.refusal);case ServerCommandOutcome_Invited() when invited != null:
 return invited(_that.invite,_that.seconds);case ServerCommandOutcome_Feeding() when feeding != null:
 return feeding(_that.feed);case ServerCommandOutcome_Fed() when fed != null:
@@ -166,12 +174,14 @@ return unrecorded();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  done,required TResult Function()  settings,required TResult Function()  plans,required TResult Function( ServerRefusal refusal)  refused,required TResult Function( int invite,  int seconds)  invited,required TResult Function( int feed)  feeding,required TResult Function( int feed,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)  fed,required TResult Function()  unrecorded,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  done,required TResult Function()  settings,required TResult Function()  plans,required TResult Function()  calibration,required TResult Function()  call,required TResult Function( ServerRefusal refusal)  refused,required TResult Function( int invite,  int seconds)  invited,required TResult Function( int feed)  feeding,required TResult Function( int feed,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)  fed,required TResult Function()  unrecorded,}) {final _that = this;
 switch (_that) {
 case ServerCommandOutcome_Done():
 return done();case ServerCommandOutcome_Settings():
 return settings();case ServerCommandOutcome_Plans():
-return plans();case ServerCommandOutcome_Refused():
+return plans();case ServerCommandOutcome_Calibration():
+return calibration();case ServerCommandOutcome_Call():
+return call();case ServerCommandOutcome_Refused():
 return refused(_that.refusal);case ServerCommandOutcome_Invited():
 return invited(_that.invite,_that.seconds);case ServerCommandOutcome_Feeding():
 return feeding(_that.feed);case ServerCommandOutcome_Fed():
@@ -190,12 +200,14 @@ return unrecorded();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  done,TResult? Function()?  settings,TResult? Function()?  plans,TResult? Function( ServerRefusal refusal)?  refused,TResult? Function( int invite,  int seconds)?  invited,TResult? Function( int feed)?  feeding,TResult? Function( int feed,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)?  fed,TResult? Function()?  unrecorded,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  done,TResult? Function()?  settings,TResult? Function()?  plans,TResult? Function()?  calibration,TResult? Function()?  call,TResult? Function( ServerRefusal refusal)?  refused,TResult? Function( int invite,  int seconds)?  invited,TResult? Function( int feed)?  feeding,TResult? Function( int feed,  int requested,  int completed,  FeedOutcome outcome,  FeedReason reason)?  fed,TResult? Function()?  unrecorded,}) {final _that = this;
 switch (_that) {
 case ServerCommandOutcome_Done() when done != null:
 return done();case ServerCommandOutcome_Settings() when settings != null:
 return settings();case ServerCommandOutcome_Plans() when plans != null:
-return plans();case ServerCommandOutcome_Refused() when refused != null:
+return plans();case ServerCommandOutcome_Calibration() when calibration != null:
+return calibration();case ServerCommandOutcome_Call() when call != null:
+return call();case ServerCommandOutcome_Refused() when refused != null:
 return refused(_that.refusal);case ServerCommandOutcome_Invited() when invited != null:
 return invited(_that.invite,_that.seconds);case ServerCommandOutcome_Feeding() when feeding != null:
 return feeding(_that.feed);case ServerCommandOutcome_Fed() when fed != null:
@@ -296,6 +308,70 @@ int get hashCode => runtimeType.hashCode;
 @override
 String toString() {
     return 'ServerCommandOutcome.plans()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class ServerCommandOutcome_Calibration extends ServerCommandOutcome {
+  const ServerCommandOutcome_Calibration(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is ServerCommandOutcome_Calibration);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'ServerCommandOutcome.calibration()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class ServerCommandOutcome_Call extends ServerCommandOutcome {
+  const ServerCommandOutcome_Call(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is ServerCommandOutcome_Call);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'ServerCommandOutcome.call()';
 }
 
 
