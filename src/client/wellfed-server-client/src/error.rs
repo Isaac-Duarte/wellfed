@@ -31,6 +31,14 @@ pub enum Error {
     /// are the current plans.
     #[error("the plans moved on to generation {}", .0.generation)]
     StalePlans(Box<Plans>),
+    /// The address answered with a redirect, which is never followed: it
+    /// would carry a password or a write's body to another host. The
+    /// caller is to use the final URL (`location`, when it names one).
+    #[error("the server redirects to {}: use that address instead", location.as_deref().unwrap_or("another address"))]
+    Redirect {
+        status: StatusCode,
+        location: Option<String>,
+    },
     #[error("the server answered {status} where {expected} was expected")]
     Unexpected {
         status: StatusCode,

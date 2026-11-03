@@ -9,12 +9,15 @@
 //! the token's secret in secure storage beside the client secret, and the
 //! [`ServerLink`] in the app's own file.
 
+use std::time::Duration;
+
 use flutter_rust_bridge::frb;
 use tokio::sync::watch;
 use wellfed_api::{
     Credentials, EventQuery, FoodPatch, IntakeQuery, NewFood, NewPet, NewToken, PetPatch,
     StreamQuery, TokenId,
 };
+pub use wellfed_server_client::Timeouts;
 use wellfed_server_client::{Auth, Client, Url};
 
 pub use crate::api::model::{FeedOutcome, FeedReason};
@@ -26,6 +29,15 @@ pub use crate::api::server_views::{
 };
 use crate::frb_generated::StreamSink;
 use crate::server::{date, event_page, ids, stream_event};
+
+/// How long the phone waits on a server that goes quiet, so a half-open
+/// connection ends in an error instead of a screen that waits for good.
+/// A stream hears a keep-alive every 15 s, so three missed is a dead link;
+/// a plain call outlasts the server's own 15 s wait for a feeder's answer.
+const TIMEOUTS: Timeouts = Timeouts {
+    read: Some(Duration::from_secs(45)),
+    request: Some(Duration::from_secs(30)),
+};
 
 /// What [`ServerSession::follow`] hears.
 pub enum ServerUpdate {
@@ -150,7 +162,7 @@ impl ServerSession {
         password: String,
         phone: String,
     ) -> Result<Self, ServerError> {
-        let mut client = open(&url)?;
+        let mut client = open(&url, TIMEOUTS)?;
 
         let user = client.login(&Credentials { name, password }).await?;
         let created = client
@@ -176,7 +188,18 @@ impl ServerSession {
     /// until a call.
     #[frb(sync)]
     pub fn restore(link: ServerLink, secret: String) -> Result<Self, ServerError> {
-        let client = open(&link.url)?;
+        Self::restore_with(link, secret, TIMEOUTS)
+    }
+
+    /// [`Self::restore`] with other timeouts: what Rust tests use to see a
+    /// quiet server end a call in milliseconds.
+    #[frb(ignore)]
+    pub fn restore_with(
+        link: ServerLink,
+        secret: String,
+        timeouts: Timeouts,
+    ) -> Result<Self, ServerError> {
+        let client = open(&link.url, timeouts)?;
         Ok(Self::with_token(client, link, secret))
     }
 
@@ -448,8 +471,8 @@ impl ServerSession {
 }
 
 /// A client of the server at `url`, with no credentials yet.
-fn open(url: &str) -> Result<Client, ServerError> {
+fn open(url: &str, timeouts: Timeouts) -> Result<Client, ServerError> {
     let base = Url::parse(url.trim())
         .map_err(|error| ServerError::new(ServerErrorKind::Address, error))?;
-    Ok(Client::new(&base)?)
+    Ok(Client::with_timeouts(&base, timeouts)?)
 }

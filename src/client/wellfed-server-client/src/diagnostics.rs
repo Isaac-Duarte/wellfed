@@ -39,10 +39,12 @@ impl Client {
 
     /// Follow the feeder's debug log. Owners only.
     pub async fn follow_log(&self, id: FeederId) -> Result<LogBatches, Error> {
-        let request = self.api(Method::GET, &format!("/feeders/{id}/log")).header(
-            header::ACCEPT,
-            HeaderValue::from_static("text/event-stream"),
-        );
+        let request = self
+            .api_stream(Method::GET, &format!("/feeders/{id}/log"))
+            .header(
+                header::ACCEPT,
+                HeaderValue::from_static("text/event-stream"),
+            );
 
         let response = expect_status(request.send().await?, StatusCode::OK).await?;
         let body = response

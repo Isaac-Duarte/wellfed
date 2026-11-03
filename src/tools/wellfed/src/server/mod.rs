@@ -310,8 +310,11 @@ fn uncertain(error: &Error) -> bool {
         }
         Error::Http(error) => !error.is_connect() && !error.is_builder(),
         Error::Unexpected { .. } | Error::Decode(_) => true,
+        // A redirect is the address's answer before any write: it is never
+        // followed, so the write reached no server.
         Error::Base(_)
         | Error::Build(_)
+        | Error::Redirect { .. }
         | Error::Stale(_)
         | Error::StalePlans(_)
         | Error::NoSession => false,

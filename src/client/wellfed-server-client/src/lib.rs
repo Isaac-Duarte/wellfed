@@ -14,6 +14,12 @@
 //! a write that ends in [`Error::Http`] or `outcome_unknown` may have run,
 //! so the caller retries it under the same key or not at all.
 //!
+//! Nothing follows a redirect either: following one would send a login's
+//! password, or a write's body, to whatever host the answer names. A
+//! redirect is [`Error::Redirect`], and the caller names the final URL.
+//! How long a client waits on a server that goes quiet is its
+//! [`Timeouts`]; by default only the connection's opening is bounded.
+//!
 //! [`Client::request`] is the escape hatch for a request the typed methods
 //! cannot make (a malformed one, in a test), with the same base, origin
 //! and credentials.
@@ -62,8 +68,21 @@ pub use wellfed_api as api;
 
 /// How long a connection to the server may take to open. A server on the
 /// LAN answers in milliseconds; a request's own time is the caller's to
-/// bound, since an event stream stays open for good.
+/// bound ([`Timeouts`]), since an event stream stays open for good.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long a client waits on a server that stops answering. `None` waits
+/// for good, as a CLI watching an export or a long stream wants.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Timeouts {
+    /// The longest silence while reading any answer, streams included: a
+    /// half-open connection ends after it instead of never. The server's
+    /// event streams send a keep-alive every 15 s.
+    pub read: Option<Duration>,
+    /// The longest a whole request may take, from sending to the end of
+    /// its answer. Event streams are exempt, since they stay open.
+    pub request: Option<Duration>,
+}
 
 /// How a client proves who it is.
 #[derive(Clone, PartialEq, Eq)]
@@ -94,13 +113,22 @@ pub struct Client {
     /// The base URL's origin, sent with every request.
     origin: HeaderValue,
     auth: Option<Auth>,
+    /// Bounds every request but the event streams.
+    request_timeout: Option<Duration>,
 }
 
 impl Client {
     /// A client of the server at `base`, an `http` or `https` URL such as
     /// `http://192.0.2.7:8080` (a path is kept as a prefix, for a server
-    /// behind a reverse proxy), with no credentials yet.
+    /// behind a reverse proxy), with no credentials yet and no
+    /// [`Timeouts`].
     pub fn new(base: &Url) -> Result<Self, Error> {
+        Self::with_timeouts(base, Timeouts::default())
+    }
+
+    /// [`Self::new`], waiting on a quiet server only as long as `timeouts`
+    /// say.
+    pub fn with_timeouts(base: &Url, timeouts: Timeouts) -> Result<Self, Error> {
         let http_url = matches!(base.scheme(), "http" | "https") && base.host().is_some();
         if !http_url || base.query().is_some() || base.fragment().is_some() {
             return Err(Error::Base(base.clone()));
@@ -108,16 +136,20 @@ impl Client {
         let origin = HeaderValue::from_str(&base.origin().ascii_serialization())
             .map_err(|_| Error::Base(base.clone()))?;
 
-        let http = reqwest::Client::builder()
+        let mut http = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
-            .build()
-            .map_err(Error::Build)?;
+            .redirect(reqwest::redirect::Policy::none());
+        if let Some(read) = timeouts.read {
+            http = http.read_timeout(read);
+        }
+        let http = http.build().map_err(Error::Build)?;
 
         Ok(Self {
             http,
             base: base.as_str().trim_end_matches('/').to_owned(),
             origin,
             auth: None,
+            request_timeout: timeouts.request,
         })
     }
 
@@ -152,6 +184,16 @@ impl Client {
     /// A token-authenticated write needs no `Origin`, and carries it all
     /// the same.
     pub fn request(&self, method: Method, path: &str) -> RequestBuilder {
+        let request = self.open_request(method, path);
+        match self.request_timeout {
+            Some(timeout) => request.timeout(timeout),
+            None => request,
+        }
+    }
+
+    /// [`Self::request`] with no whole-request timeout, for an event stream
+    /// that stays open: only the read timeout ends a quiet one.
+    fn open_request(&self, method: Method, path: &str) -> RequestBuilder {
         let request = self
             .http
             .request(method, self.url(path))
@@ -170,15 +212,28 @@ impl Client {
     fn api(&self, method: Method, path: &str) -> RequestBuilder {
         self.request(method, &format!("{PREFIX}{path}"))
     }
+
+    /// An event stream under the API's prefix.
+    fn api_stream(&self, method: Method, path: &str) -> RequestBuilder {
+        self.open_request(method, &format!("{PREFIX}{path}"))
+    }
 }
 
 /// `response` if its status is `expected`. Any other status is the
-/// server's [`Error::Problem`] when it sent one, else
-/// [`Error::Unexpected`].
+/// server's [`Error::Problem`] when it sent one, a redirect
+/// [`Error::Redirect`], else [`Error::Unexpected`].
 pub async fn expect_status(response: Response, expected: StatusCode) -> Result<Response, Error> {
     let status = response.status();
     if status == expected {
         return Ok(response);
+    }
+    if status.is_redirection() {
+        let location = response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        return Err(Error::Redirect { status, location });
     }
 
     if is_problem(&response) {

@@ -7,6 +7,8 @@
 //! driver loop ([`session`]) and the install's thread and platform adapters
 //! ([`install`]) are plain Rust, so their tests run them without the bridge.
 
+#[cfg(target_os = "android")]
+pub mod android;
 pub mod api;
 // `allow`, not `expect`: `make check-rust`'s production pass fires lints
 // here that its first pass does not enable. Unformatted, so a regeneration

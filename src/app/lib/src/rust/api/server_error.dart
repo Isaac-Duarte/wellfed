@@ -42,11 +42,16 @@ enum ServerErrorKind {
   /// The server's address is not an `http` or `https` URL with a host.
   address,
 
+  /// The address answered with a redirect, which the phone never follows
+  /// (it would carry the password to another host): `message` names
+  /// where, for the owner to enter that address instead.
+  redirected,
+
   /// Nothing answered at the address, or not in time to connect.
   unreachable,
 
-  /// The request broke after it was sent, or its answer was cut off: it
-  /// may have run on the server.
+  /// The request broke after it was sent, its answer was cut off, or the
+  /// server went quiet past the phone's timeouts: it may have run.
   interrupted,
 
   /// The name or the password is wrong.

@@ -90,6 +90,7 @@ check-web:
 # built for arm64 phones and x86_64 emulators only.
 APP = src/app
 FLUTTER_VERSION = 3.47.8
+APP_APK = $(APP)/build/app/outputs/flutter-apk/app-debug.apk
 APP_GENERATED = $(APP)/lib/src/rust $(APP)/rust/src/frb_generated.rs $(APP)/lib/theme/tokens.g.dart
 # The tests run in a zone with DST on any builder: the day-count test only proves
 # anything across a DST day, and Dart's local time cannot be faked. The smoke
@@ -108,6 +109,14 @@ check-app:
 	cd $(APP) && TZ=America/Denver WELLFED_SMOKE_TARGET=$(CURDIR)/target/debug flutter test
 	@if [ "$$(uname)" != Linux ]; then $(MAKE) app-goldens; fi
 	cd $(APP) && flutter build apk --debug --target-platform android-arm64,android-x64
+	@# The https verifier needs both halves on the phone: the JNI hook in the
+	@# bridge and its Kotlin package, or the first https login panics.
+	@for abi in arm64-v8a x86_64; do \
+		unzip -p $(APP_APK) lib/$$abi/libwellfed_app_bridge.so | grep -aq Java_io_github_isaacduarte_wellfed_TlsVerifier_start || \
+			{ echo "the APK's $$abi bridge lacks the TLS verifier's JNI hook"; exit 1; }; \
+	done
+	@unzip -p $(APP_APK) 'classes*.dex' | grep -aq 'Lorg/rustls/platformverifier/CertificateVerifier' || \
+		{ echo "the APK lacks rustls-platform-verifier's Kotlin half"; exit 1; }
 
 # The image the APK installs is a build-time input, from a frozen review and
 # its signed update manifest under private/. This copies them in (they are

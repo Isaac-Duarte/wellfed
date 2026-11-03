@@ -34,7 +34,7 @@ impl Client {
         query: &StreamQuery,
         last_event_id: Option<&str>,
     ) -> Result<Updates, Error> {
-        let mut request = self.api(Method::GET, "/stream").query(query).header(
+        let mut request = self.api_stream(Method::GET, "/stream").query(query).header(
             header::ACCEPT,
             HeaderValue::from_static("text/event-stream"),
         );
