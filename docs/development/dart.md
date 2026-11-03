@@ -67,6 +67,7 @@ The host checks do not prove the app works on a phone. Run these on a real phone
 6. Install Wellfed over stock, then restore stock from the backup.
 7. Update the firmware with the app in the background and the screen off.
 8. Turn on TalkBack and go through Home, a feed and the schedule.
+9. Log in to the owner's server over `https`, once with a certificate from a public CA and once with one from the owner's own CA installed on the phone (Settings, Security, Encryption and credentials). Each should reach the account screen; an `http` URL that redirects to `https` should be refused with the address to use instead.
 
 The integration suite no longer makes the trip through stock, so also make it on the bench with the same build. This needs the owner at the panel, and it is a physical check that no host test stands in for:
 
