@@ -8,6 +8,8 @@ import 'package:wellfed/screens/feeder/people.dart';
 import 'package:wellfed/screens/feeder/settings_tab.dart';
 import 'package:wellfed/screens/feeder/updates.dart';
 import 'package:wellfed/screens/feeder/wifi.dart';
+import 'package:wellfed/src/rust/api/feeder.dart' show CallInfo;
+import 'package:wellfed/src/rust/api/model.dart' show CallClip_None, CallClip_Receiving, CallClip_Stored;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -30,6 +32,7 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
   void initState() {
     super.initState();
     if (feeder.state.clients.isEmpty) unawaited(feeder.loadClients());
+    if (feeder.state.call == null) unawaited(feeder.loadCall());
   }
 
   void _open(BuildContext context, Widget screen) =>
@@ -46,6 +49,13 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
       _ => 'Weak signal',
     };
     final String? people = feeder.state.clients.isEmpty ? null : '${feeder.state.clients.length} of $clientsMost';
+    final CallInfo? call = feeder.state.call;
+    final String? clip = switch (call?.clip) {
+      null => null,
+      CallClip_Stored() => 'Your recording · ${((call?.ms ?? 0) / 1000).round()} s',
+      CallClip_Receiving() => "An upload didn't finish",
+      CallClip_None() => 'None recorded',
+    };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -63,13 +73,23 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
               ),
               _Link(
                 'Meal call',
-                null,
+                clip,
                 MealCallScreen(feeder: feeder, pick: feeder.pickRecording),
                 open: (screen) => _open(context, screen),
               ),
               _Link('People', people, PeopleScreen(feeder: feeder), open: (screen) => _open(context, screen)),
-              _Link('Firmware', null, UpdatesScreen(feeder: feeder), open: (screen) => _open(context, screen)),
-              _Link('Diagnostics', null, DiagnosticsScreen(feeder: feeder), open: (screen) => _open(context, screen)),
+              _Link(
+                'Firmware',
+                card == null ? null : shortBuild(card.build),
+                UpdatesScreen(feeder: feeder),
+                open: (screen) => _open(context, screen),
+              ),
+              _Link(
+                'Diagnostics',
+                card == null ? null : 'Up ${upText(card.uptimeMs ~/ 1000)}',
+                DiagnosticsScreen(feeder: feeder),
+                open: (screen) => _open(context, screen),
+              ),
             ],
           ),
         ),

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:wellfed/app.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/home/home.dart';
+import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart';
@@ -11,6 +12,7 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
+import 'package:wellfed/state/settings/backups.dart';
 import 'package:wellfed/theme/theme.dart';
 
 import '../support/fakes.dart';
@@ -27,7 +29,12 @@ void main() {
       final GoRouter router = wellfedRouter(
         book: FakeBook(),
         root: (context) => HomeScreen(fleet: fleet, earlierInstall: () async => earlier),
-        pages: const {},
+        pages: {
+          '/settings': (context) {
+            final book = FakeBook();
+            return AppSettingsScreen(book: book, newBackups: () => BackupsFlow(book, FakeBackupPorts()));
+          },
+        },
         feeder: (context, identity, tab) => FeederRoute(fleet: fleet, identity: identity, initialTab: tab),
       );
       addTearDown(router.dispose);
@@ -35,6 +42,18 @@ void main() {
       await settle(tester);
       return (fleet, session);
     }
+
+    testWidgets('the gear opens the app settings, and back comes home', (tester) async {
+      await home(tester);
+      expect(find.byType(NavigationBar), findsNothing);
+
+      await feederTap(tester, find.byTooltip('Settings'));
+      expect(find.text('Appearance'.toUpperCase()), findsOneWidget);
+
+      await feederTap(tester, find.byTooltip('Back'));
+      expect(find.text('Feeders'), findsOneWidget);
+      expect(find.byTooltip('Settings'), findsOneWidget);
+    });
 
     testWidgets('says when an earlier install did not finish', (tester) async {
       await home(tester);
@@ -138,9 +157,33 @@ void main() {
       return session;
     }
 
+    testWidgets('speaks in grams once the portion size is known', (tester) async {
+      final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
+      session.answering = (request) async => switch (request) {
+        FeederRequest_GetCalibration() => const FeederReply.calibration(
+          calibration: CalibrationInfo(generation: 1, writable: true, portionMg: 12000, bowl: Bowl.single),
+        ),
+        _ => const FeederReply.done(),
+      };
+      await feederShowShell(tester, fleet);
+      session.status(fakeCard());
+      await settle(tester);
+      await feederTap(tester, find.widgetWithText(FilledButton, 'Feed now'));
+
+      expect(session.requests, contains(const FeederRequest.getCalibration()));
+      expect(find.text('≈ 12 g'), findsOneWidget);
+      expect(find.textContaining('Each portion is about 12 g.'), findsOneWidget);
+      await feederTap(tester, find.byTooltip('One more portion'));
+      expect(find.text('≈ 24 g'), findsOneWidget);
+      await feederTap(tester, find.text('Feed 2 portions · 24 g'));
+      expect(session.feeds, [2]);
+    });
+
     testWidgets('goes out once, and a refusal offers a new start', (tester) async {
       final FakeSession session = await sheet(tester);
       expect(find.textContaining("Today's meals still run."), findsOneWidget);
+      expect(find.textContaining("one turn of the feeder's wheel"), findsOneWidget);
+      expect(find.textContaining('≈'), findsNothing);
 
       await feederTap(tester, find.text('Feed 1 portion'));
       expect(session.feeds, [1]);

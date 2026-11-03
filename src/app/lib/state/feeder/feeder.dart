@@ -149,6 +149,12 @@ class FeederController extends ChangeNotifier {
     if (reply is FeederReply_Clients) _setState(_state.copyWith(clients: reply.clients));
   }
 
+  /// Read the meal call the feeder holds; [state] keeps it.
+  Future<void> loadCall() => ask(const FeederRequest.getCall());
+
+  /// Read the feeder's portion size; [state] keeps it.
+  Future<void> loadCalibration() => ask(const FeederRequest.getCalibration());
+
   /// Take this feeder off this phone.
   Future<void> forgetHere() => _book.forget(_state.known.identity);
 
@@ -177,7 +183,30 @@ class FeederController extends ChangeNotifier {
   Future<FeederReply> ask(FeederRequest request) async {
     final FeederSession? session = _session;
     if (session == null) return const FeederReply.notSent();
-    return session.ask(request: request);
+    final FeederReply reply = await session.ask(request: request);
+    _keep(request, reply);
+    return reply;
+  }
+
+  /// Keep what a reply says of the meal call and the portion size, whichever
+  /// screen asked, so the rows and the feed sheet that show them stay as the
+  /// feeder last said. A write to either that ended any other way may have
+  /// changed it, so the kept one goes until a read says.
+  void _keep(FeederRequest request, FeederReply reply) {
+    switch (reply) {
+      case FeederReply_Call(:final CallInfo call):
+        _setState(_state.copyWith(call: () => call));
+      case FeederReply_Calibration(:final CalibrationInfo calibration):
+        _setState(_state.copyWith(calibration: () => calibration));
+      default:
+        switch (request) {
+          case FeederRequest_UploadCall() || FeederRequest_DeleteCall():
+            _setState(_state.copyWith(call: () => null));
+          case FeederRequest_PutCalibration():
+            _setState(_state.copyWith(calibration: () => null));
+          default:
+        }
+    }
   }
 
   Future<void> _serve() async {

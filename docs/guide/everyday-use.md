@@ -123,7 +123,7 @@ The desiccant reminder counts days from your last change, every 14 days until yo
 
 ### App
 
-Tap **Changed today** on Today or in Settings after you put in a fresh pack. Today shows the days left, or how many days overdue it is. The first time, the count begins when you tap.
+Tap **Mark changed** on Today or in Settings after you put in a fresh pack. Today shows the days left, or how many days overdue it is. The first time, the count begins when you tap.
 
 ### CLI
 

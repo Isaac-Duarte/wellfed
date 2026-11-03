@@ -153,6 +153,8 @@ final class FeederState {
     this.history = const [],
     this.historyRead = false,
     this.clients = const [],
+    this.call,
+    this.calibration,
   });
 
   /// What this phone keeps about the feeder.
@@ -188,6 +190,12 @@ final class FeederState {
   /// The clients the feeder lists, once asked for.
   final List<ClientView> clients;
 
+  /// The meal call the feeder last said it holds, for the settings row.
+  final CallInfo? call;
+
+  /// The portion size the feeder last said, for the feed sheet's grams.
+  final CalibrationInfo? calibration;
+
   /// The card is what this session read, not an earlier one.
   bool get cardIsCurrent => connection == Connection.online && cardFresh;
 
@@ -208,6 +216,8 @@ final class FeederState {
     List<HistoryEntry>? history,
     bool? historyRead,
     List<ClientView>? clients,
+    CallInfo? Function()? call,
+    CalibrationInfo? Function()? calibration,
   }) => FeederState(
     known: known ?? this.known,
     connection: connection ?? this.connection,
@@ -220,5 +230,7 @@ final class FeederState {
     history: history == null ? this.history : List.unmodifiable(history),
     historyRead: historyRead ?? this.historyRead,
     clients: clients == null ? this.clients : List.unmodifiable(clients),
+    call: call == null ? this.call : call(),
+    calibration: calibration == null ? this.calibration : calibration(),
   );
 }

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:wellfed/screens/feeder/settings_owner.dart';
 import 'package:wellfed/screens/feeder/settings_rows.dart';
 import 'package:wellfed/screens/feeder/settings_window.dart';
-import 'package:wellfed/screens/feeder/shell.dart' show confirmRestart;
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -113,25 +112,11 @@ class SettingsTab extends StatelessWidget {
           const SizedBox(height: Space.s4),
           if (owner) SettingsOwnerSection(feeder: feeder) else const SettingsOwnerOnly(),
           const SizedBox(height: Space.s4),
-          Row(
-            children: [
-              if (owner) ...[
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: online ? () => unawaited(confirmRestart(context, feeder)) : null,
-                    child: const Text('Restart'),
-                  ),
-                ),
-                const SizedBox(width: Space.s3),
-              ],
-              Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(foregroundColor: c.fault),
-                  onPressed: () => unawaited(_forget(context, feeder)),
-                  child: const Text('Remove from this phone'),
-                ),
-              ),
-            ],
+          // Restart lives in the screen's menu; this is the one way off the phone.
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: c.fault, minimumSize: const Size.fromHeight(48)),
+            onPressed: () => unawaited(_forget(context, feeder)),
+            child: const Text('Remove from this phone'),
           ),
         ],
       );

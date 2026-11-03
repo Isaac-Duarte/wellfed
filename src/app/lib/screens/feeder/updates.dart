@@ -117,7 +117,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                         // The floor, not what runs: a feeder on bank 0 may run older.
                         if (state != null && state.minVersion > 0)
                           ('Newest confirmed version', Text('${state.minVersion}')),
-                        if (build != null) ('Build', Text(_short(build))),
+                        if (build != null) ('Build', Text(shortBuild(build))),
                         if (card != null) ('Running from', Text('Bank ${card.bank}')),
                       ]),
                       const SizedBox(height: Space.s4),
@@ -137,7 +137,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                       else ...[
                         const SectionLabel('New'),
                         const SizedBox(height: Space.s2),
-                        FactList([('Version', Text('${offered.$2}')), ('Build', Text(_short(offered.$1)))]),
+                        FactList([('Version', Text('${offered.$2}')), ('Build', Text(shortBuild(offered.$1)))]),
                         const SizedBox(height: Space.s3),
                         Text(
                           'Takes a few minutes. Feeding waits while it installs, and meals '
@@ -226,9 +226,10 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
       );
     },
   );
-
-  static String _short(String build) => build.length > 12 ? build.substring(0, 12) : build;
 }
+
+/// A build id as short as the screens show it.
+String shortBuild(String build) => build.length > 12 ? build.substring(0, 12) : build;
 
 class _Line extends StatelessWidget {
   const _Line({required this.done, required this.active, required this.text});

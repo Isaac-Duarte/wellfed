@@ -32,6 +32,7 @@ Future<void> feedNow(BuildContext context, FeederController feeder) {
 Future<void> showFeedSheet(BuildContext context, FeederController feeder) => showModalBottomSheet<void>(
   context: context,
   isScrollControlled: true,
+  barrierColor: context.colors.scrim.withValues(alpha: 0.6),
   builder: (context) => ListenableBuilder(
     listenable: feeder,
     builder: (context, _) => SafeArea(
@@ -51,6 +52,13 @@ TextStyle _title(BuildContext context, {double size = 24}) =>
 
 String _portions(int n) => n == 1 ? 'portion' : 'portions';
 
+/// A weight in grams as the sheet says it: whole grams, or a tenth under 10.
+String _grams(int mg) {
+  if (mg >= 9950) return '${(mg / 1000).round()} g';
+  final String tenths = (mg / 1000).toStringAsFixed(1);
+  return '${tenths.endsWith('.0') ? tenths.substring(0, tenths.length - 2) : tenths} g';
+}
+
 String _time(BuildContext context, DateTime? at) => at == null ? '' : clockText(context, at);
 
 class _Confirm extends StatefulWidget {
@@ -67,8 +75,21 @@ class _ConfirmState extends State<_Confirm> {
   int _portions = 1;
 
   @override
+  void initState() {
+    super.initState();
+    // The portion's weight, for grams beside the count. A feed never waits on
+    // it: without it the sheet speaks in turns of the wheel.
+    if (widget.feeder.state.calibration == null) unawaited(widget.feeder.loadCalibration());
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
+    final int? portionMg = widget.feeder.state.calibration?.portionMg;
+    final String? grams = portionMg == null ? null : _grams(portionMg * _portions);
+    final String portion = portionMg == null
+        ? "One portion is one turn of the feeder's wheel."
+        : 'Each portion is about ${_grams(portionMg)}.';
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -99,6 +120,11 @@ class _ConfirmState extends State<_Confirm> {
                     _portionsWord,
                     style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
                   ),
+                  if (grams != null)
+                    Text(
+                      '≈ $grams',
+                      style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
+                    ),
                 ],
               ),
             ),
@@ -108,8 +134,7 @@ class _ConfirmState extends State<_Confirm> {
         ),
         const SizedBox(height: 20),
         Text(
-          "One portion is one turn of the feeder's wheel, about 9 seconds. "
-          "Up to $_most. Today's meals still run.",
+          "$portion Today's meals still run.",
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: Sizes.base, height: 1.5, color: c.textMuted),
         ),
@@ -123,7 +148,7 @@ class _ConfirmState extends State<_Confirm> {
             Expanded(
               child: FilledButton(
                 onPressed: widget.feeder.state.canFeed ? () => widget.feeder.feedNow(_portions) : null,
-                child: Text('Feed $_portions $_portionsWord'),
+                child: Text('Feed $_portions $_portionsWord${grams == null ? '' : ' · $grams'}'),
               ),
             ),
           ],

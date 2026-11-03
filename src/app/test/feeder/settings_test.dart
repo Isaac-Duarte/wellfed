@@ -141,6 +141,41 @@ void main() {
       expect(find.textContaining('Sound is off'), findsOneWidget);
     });
 
+    testWidgets('the feeder rows say where each stands, with no restart button', (tester) async {
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      session.answering = (request) async => switch (request) {
+        FeederRequest_GetCall() => const FeederReply.call(
+          call: CallInfo(writable: true, clip: CallClip.stored(bytes: 16800, crc: 1), ms: 4200),
+        ),
+        _ => const FeederReply.done(),
+      };
+      session.status(fakeCard(build: '0123456789abcdef', settings: _settings));
+      await showTab(tester, SettingsTab(feeder: feeder));
+
+      expect(session.requests, contains(const FeederRequest.getCall()));
+      expect(find.text('Your recording · 4 s'), findsOneWidget);
+      expect(find.text('0123456789ab'), findsOneWidget);
+      expect(find.text('Up 0 min'), findsOneWidget);
+      expect(find.text('Restart'), findsNothing, reason: "it's in the screen's menu");
+      expect(find.widgetWithText(TextButton, 'Remove from this phone'), findsOneWidget);
+    });
+
+    testWidgets('removing takes the feeder off this phone once confirmed', (tester) async {
+      final book = FakeBook()..feeders = [kitchen];
+      final ports = FakeFeederPorts();
+      final feeder = FeederController(book, ports, kitchen);
+      addTearDown(feeder.dispose);
+      await tester.pump();
+      ports.session.opened();
+      ports.session.status(fakeCard(settings: _settings));
+      await showTab(tester, SettingsTab(feeder: feeder));
+
+      await tapIn(tester, find.widgetWithText(TextButton, 'Remove from this phone'));
+      expect(book.feeders, hasLength(1), reason: 'it asks first');
+      await tapIn(tester, find.widgetWithText(FilledButton, 'Remove'));
+      expect(book.feeders, isEmpty);
+    });
+
     testWidgets('removing asks first, and goes back', (tester) async {
       final (FeederController feeder, FakeSession session) = await _settingsTab(tester);
 

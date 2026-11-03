@@ -59,16 +59,6 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
 
   void _open(Widget screen) => unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen)));
 
-  /// `3 d 4 h`, `4 h 12 min` or `12 min`.
-  static String upText(int seconds) {
-    final int minutes = seconds ~/ 60;
-    final int hours = minutes ~/ 60;
-    final int days = hours ~/ 24;
-    if (days > 0) return '$days d ${hours % 24} h';
-    if (hours > 0) return '$hours h ${minutes % 60} min';
-    return '$minutes min';
-  }
-
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
@@ -208,4 +198,14 @@ class _Link extends StatelessWidget {
     trailing: StrokeIcon(Glyph.chevron, size: 20, color: context.colors.textMuted),
     onTap: () => open(screen),
   );
+}
+
+/// `3 d 4 h`, `4 h 12 min` or `12 min`.
+String upText(int seconds) {
+  final int minutes = seconds ~/ 60;
+  final int hours = minutes ~/ 60;
+  final int days = hours ~/ 24;
+  if (days > 0) return '$days d ${hours % 24} h';
+  if (hours > 0) return '$hours h ${minutes % 60} min';
+  return '$minutes min';
 }

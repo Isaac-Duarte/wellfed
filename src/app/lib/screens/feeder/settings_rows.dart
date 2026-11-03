@@ -180,7 +180,7 @@ class _DesiccantRowState extends State<SettingsDesiccantRow> {
               padding: const EdgeInsets.symmetric(horizontal: Space.s3),
             ),
             onPressed: widget.online && !_asking ? _changed : null,
-            child: const Text('Changed today'),
+            child: const Text('Mark changed'),
           ),
         ],
       ),
