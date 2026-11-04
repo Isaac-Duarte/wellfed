@@ -24,21 +24,21 @@ check: check-rust check-deps check-cross check-virtual-feeder check-docs
 PRODUCTION_LINTS = -D clippy::unwrap_used -D clippy::cast_possible_truncation \
 	-D clippy::needless_pass_by_value -D unreachable_pub
 
-# The last nine lines check the bench variants' injections in wellfed-hal
-# (`stop-fail`, `feed-faults` for `feed-jam` and `sensor-fault`, and
-# `virtual-panel`), which no workspace build enables.
+# The last nine lines check the bench variants' injections, which no
+# workspace build enables: `stop-fail` and `feed-faults` (for `feed-jam` and
+# `sensor-fault`) in the feeder drivers, and `virtual-panel` in the chip HAL.
 check-rust:
 	cargo fmt --all -- --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
 	cargo clippy --locked --workspace --lib --bins -- -D warnings $(PRODUCTION_LINTS)
 	cargo nextest run --locked --workspace --all-targets
 	cargo test --locked --workspace --doc
-	cargo clippy --locked -p wellfed-hal --features stop-fail --all-targets -- -D warnings
-	cargo clippy --locked -p wellfed-hal --features stop-fail --lib -- -D warnings $(PRODUCTION_LINTS)
-	cargo nextest run --locked -p wellfed-hal --features stop-fail --test inject
-	cargo clippy --locked -p wellfed-hal --features feed-faults --all-targets -- -D warnings
-	cargo clippy --locked -p wellfed-hal --features feed-faults --lib -- -D warnings $(PRODUCTION_LINTS)
-	cargo nextest run --locked -p wellfed-hal --features feed-faults --test feed_faults
+	cargo clippy --locked -p wellfed-hal-feeder --features stop-fail --all-targets -- -D warnings
+	cargo clippy --locked -p wellfed-hal-feeder --features stop-fail --lib -- -D warnings $(PRODUCTION_LINTS)
+	cargo nextest run --locked -p wellfed-hal-feeder --features stop-fail --test inject
+	cargo clippy --locked -p wellfed-hal-feeder --features feed-faults --all-targets -- -D warnings
+	cargo clippy --locked -p wellfed-hal-feeder --features feed-faults --lib -- -D warnings $(PRODUCTION_LINTS)
+	cargo nextest run --locked -p wellfed-hal-feeder --features feed-faults --test feed_faults
 	cargo clippy --locked -p wellfed-hal --features virtual-panel --all-targets -- -D warnings
 	cargo clippy --locked -p wellfed-hal --features virtual-panel --lib -- -D warnings $(PRODUCTION_LINTS)
 	cargo nextest run --locked -p wellfed-hal --features virtual-panel --test virtual_panel

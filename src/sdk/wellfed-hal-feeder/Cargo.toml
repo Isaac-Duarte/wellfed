@@ -1,0 +1,42 @@
+[package]
+license.workspace = true
+name = "wellfed-hal-feeder"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Experimental feeder drivers on the AmebaD chip HAL: the motor, optics and sensor board, its input capture, and the feeding owner"
+publish.workspace = true
+
+[features]
+# KM4 target builds, as the chip HAL's.
+km4 = ["wellfed-hal/km4"]
+# Motor STOP writes that do not take while a hold is armed (`inject`).
+# Only the feeder's `stop-fail` bench variant sets it.
+stop-fail = []
+# Jams and sensor faults shown to the board's input capture while armed
+# (`feed_faults`). Only the feeder's `feed-jam` and `sensor-fault` bench
+# variants set it.
+feed-faults = []
+
+[dependencies]
+wellfed-hal.workspace = true
+wellfed-board.workspace = true
+wellfed-core.workspace = true
+
+[dev-dependencies]
+wellfed-testkit.workspace = true
+
+[lints]
+workspace = true
+
+# The injected failed stop, over the owner; `make check-rust` runs it with
+# the feature.
+[[test]]
+name = "inject"
+required-features = ["stop-fail"]
+
+# The injected jams and sensor faults, over the owner; `make check-rust`
+# runs it with the feature.
+[[test]]
+name = "feed_faults"
+required-features = ["feed-faults"]

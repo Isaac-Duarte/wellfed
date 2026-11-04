@@ -39,9 +39,9 @@ use wellfed_hal::interlock::INTERLOCK;
 use wellfed_hal::{link, sdk};
 
 /// The credential slots within the storage region (`0x345000`).
-pub const NET_BASE: u32 = wellfed_hal::plaf103::storage::NET.first;
+pub const NET_BASE: u32 = wellfed_hal::board::storage::NET.first;
 /// The factory reset's marker sector.
-const RESET_BASE: u32 = wellfed_hal::plaf103::storage::RESET.first;
+const RESET_BASE: u32 = wellfed_hal::board::storage::RESET.first;
 /// Consecutive failed joins before the build's credentials take over.
 pub const FALLBACK_AFTER: u32 = 5;
 

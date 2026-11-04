@@ -47,7 +47,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use wellfed_board_plaf103::storage;
+use wellfed_board::storage;
 use wellfed_core::feed::controller::{FeedReason, FeedRequest};
 use wellfed_core::feed::food_read::{FoodReads, FoodStep, FoodView};
 use wellfed_core::feed::progress::{BowlMode, Direction};

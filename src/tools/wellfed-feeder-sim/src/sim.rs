@@ -20,7 +20,7 @@ use std::net::Ipv4Addr;
 use std::rc::Rc;
 
 use tokio::net::{TcpStream, UdpSocket};
-use wellfed_board_plaf103::storage;
+use wellfed_board::storage;
 use wellfed_core::buttons::Gesture;
 use wellfed_core::feed::controller::FeedReason;
 use wellfed_core::ota::offer::ImageKind;

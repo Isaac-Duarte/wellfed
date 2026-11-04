@@ -15,8 +15,8 @@ use core::ffi::{CStr, c_void};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 
-use wellfed_board_plaf103::STORAGE_SECTORS;
-use wellfed_board_plaf103::pins::{self, IR_PA_BIT, IR_PB_BIT, MOTOR_MASK};
+use wellfed_board::STORAGE_SECTORS;
+use wellfed_board::pins::{self, IR_PA_BIT, IR_PB_BIT, MOTOR_MASK};
 
 use super::{
     AUDIO_PAGE_SAMPLES, AUDIO_PAGES, Advertising, BleEvent, BlePoll, BleService, BleStats,

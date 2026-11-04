@@ -17,7 +17,7 @@
 //! - the rest is [`OwnerTask`], which only a step borrows.
 //!
 //! The runtime owns the hardware watchdog. The owner publishes a
-//! [`beat`](crate::supervision::beat) wherever it would have refreshed it,
+//! [`beat`](wellfed_hal::supervision::beat) wherever it would have refreshed it,
 //! and faults itself when its own beat falls overdue.
 //!
 //! [product architecture]: ../../../../../docs/firmware/product-architecture.md
@@ -37,12 +37,12 @@ use wellfed_core::feed::storage::{OwnerRecovery, OwnerResult, OwnerStorage, Roto
 use wellfed_core::flash_coord::{FlashFault, FlashPhase};
 
 use crate::board::{self, Board};
-use crate::interlock::Interlock;
-use crate::sdk::{self, IrqGuard};
-use crate::stopped;
-use crate::supervision::active::active_pointer;
-use crate::supervision::beat;
-use crate::supervision::events::{EDGE_LOG, Events, EventsFault, PinWatch};
+use crate::events::{EDGE_LOG, Events, EventsFault, PinWatch};
+use wellfed_hal::active_pointer;
+use wellfed_hal::interlock::Interlock;
+use wellfed_hal::sdk::{self, IrqGuard};
+use wellfed_hal::stopped;
+use wellfed_hal::supervision::beat;
 
 mod config;
 mod state;
@@ -436,7 +436,7 @@ impl<S> Owner<S> {
         // bank 0 or the new bank 1): no feed starts until it lets go.
         if shared.published.state != OwnerState::Idle
             || shared.mailbox.has_request
-            || crate::ota::mailbox::installing()
+            || wellfed_hal::ota::mailbox::installing()
         {
             return SubmitResult::RejectBusy;
         }
@@ -568,7 +568,7 @@ impl<S> Owner<S> {
             || !at_rest
             || view.optics_enabled
             || board::outputs_blocked(view.flash)
-            || crate::ota::mailbox::installing()
+            || wellfed_hal::ota::mailbox::installing()
         {
             return false;
         }
@@ -646,9 +646,9 @@ impl<S> Owner<S> {
         let held = held
             || !free
             || interlock.holds_reading()
-            || crate::ota::mailbox::installing()
-            || crate::supervision::restart_requested()
-            || crate::supervision::writes_held();
+            || wellfed_hal::ota::mailbox::installing()
+            || wellfed_hal::supervision::restart_requested()
+            || wellfed_hal::supervision::writes_held();
         match reads.step(now_ms, view, held) {
             FoodStep::Rest => {}
             FoodStep::Yield => self.yield_food_read(interlock),

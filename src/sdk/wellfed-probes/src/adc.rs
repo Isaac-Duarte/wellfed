@@ -18,10 +18,9 @@ const SAMPLE_COUNT: u32 = 16;
 const _: () = assert!(SAMPLE_COUNT as usize == SAMPLES);
 use wellfed_core::feed::sensor_inputs::SensorReading;
 
-use wellfed_hal::board::Board;
-use wellfed_hal::plaf103;
 use wellfed_hal::stopped;
 use wellfed_hal::{sdk, startup};
+use wellfed_hal_feeder::board::Board;
 
 const DEADTIME_MS: u32 = 50;
 const LEASE_MS: u32 = 300;
@@ -230,7 +229,7 @@ impl Probe {
         let ok = self.board.capture(&mut reading).is_ok()
             && self
                 .board
-                .sample_channel(plaf103::pins::ADC_SUPPLY, &mut supply);
+                .sample_channel(wellfed_hal::board::pins::ADC_SUPPLY, &mut supply);
         let ticks = sdk::systimer_ticks().wrapping_sub(begin);
         let stopped = stopped::observe().verified();
 

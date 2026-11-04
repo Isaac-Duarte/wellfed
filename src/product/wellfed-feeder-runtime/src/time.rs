@@ -16,7 +16,7 @@ use wellfed_hal::cell::TaskCell;
 use wellfed_hal::sdk::IrqGuard;
 
 /// The time settings' slots within the storage region.
-pub const TIME_BASE: u32 = wellfed_hal::plaf103::storage::TIME.first;
+pub const TIME_BASE: u32 = wellfed_hal::board::storage::TIME.first;
 
 /// Who holds `PENDING`, as `STATE` stores it.
 #[derive(Clone, Copy, PartialEq, Eq)]

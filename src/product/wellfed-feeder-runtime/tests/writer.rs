@@ -97,7 +97,7 @@ impl FlashOps for Armed {
         unsafe { sdk::storage_erase(sector) }
     }
     fn program(sector: u32, offset: u32, data: &[u8]) -> bool {
-        let stats = wellfed_hal::plaf103::storage::STATS;
+        let stats = wellfed_hal::board::storage::STATS;
         let worn = STATS_PROGRAMS_FAIL.with(Cell::get)
             && (stats.first..stats.first + stats.count).contains(&sector);
         if PROGRAM_FAILS.with(Cell::get) || worn {
@@ -1151,7 +1151,7 @@ fn open_all(writer: &mut Writer<Armed>, provider: &mut Provider) -> Option<Recor
 
 /// The stats store's sector pair, as the fake holds it.
 fn stats_sectors() -> Vec<u8> {
-    let first = wellfed_hal::plaf103::storage::STATS.first as usize * 0x1000;
+    let first = wellfed_hal::board::storage::STATS.first as usize * 0x1000;
     fake::with(|h| h.storage[first..first + 0x2000].to_vec())
 }
 
@@ -2190,14 +2190,14 @@ fn an_upload_polls_at_the_read_pace_while_it_runs_and_not_for_ever() {
 fn reset_marked() -> bool {
     use wellfed_feeder::store::reset::{MARKER, marked};
 
-    let first = wellfed_hal::plaf103::storage::RESET.first as usize * 0x1000;
+    let first = wellfed_hal::board::storage::RESET.first as usize * 0x1000;
     let bytes: [u8; MARKER.len()] =
         fake::with(|h| h.storage[first..first + MARKER.len()].try_into().unwrap());
     marked(&bytes)
 }
 
 /// The bytes of `sectors`, as the fake holds them.
-fn sectors(sectors: wellfed_hal::plaf103::storage::Sectors) -> Vec<u8> {
+fn sectors(sectors: wellfed_hal::board::storage::Sectors) -> Vec<u8> {
     let first = sectors.first as usize * 0x1000;
     let end = first + sectors.count as usize * 0x1000;
     fake::with(|h| h.storage[first..end].to_vec())
@@ -2229,7 +2229,7 @@ fn filled_then_reset() -> (MutexGuard<'static, ()>, Provider) {
     use wellfed_device_api::mailbox::{Calibration, PLANS, Plan, PlansChange, Weekdays};
     use wellfed_device_api::wifi::Credentials;
     use wellfed_feeder_runtime::{calibration, plans};
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     let (guard, mut writer, mut provider) = start();
     restart_mailboxes();
@@ -2310,7 +2310,7 @@ fn filled_then_reset() -> (MutexGuard<'static, ()>, Provider) {
 /// any uncertain feed's record), the confirmation record, the update store
 /// and the calibration.
 fn kept() -> Vec<Vec<u8>> {
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     [
         storage::JOURNAL,
@@ -2377,7 +2377,7 @@ fn paired_with_wifi() -> (MutexGuard<'static, ()>, Provider, [u8; 32]) {
     });
     step(&mut writer, &mut provider);
     assert!(
-        sectors(wellfed_hal::plaf103::storage::PLANS)
+        sectors(wellfed_hal::board::storage::PLANS)
             .iter()
             .any(|&b| b != 0xff)
     );
@@ -2397,7 +2397,7 @@ fn plant_handover() {
 }
 
 fn storage_reset_first() -> usize {
-    wellfed_hal::plaf103::storage::RESET.first as usize * 0x1000
+    wellfed_hal::board::storage::RESET.first as usize * 0x1000
 }
 
 /// The boot that finds the handover mark clears the Wi-Fi, plans and clients,
@@ -2405,7 +2405,7 @@ fn storage_reset_first() -> usize {
 /// erases the mark, so a later boot keeps whatever pairing comes next.
 #[test]
 fn a_handover_clears_wifi_and_clients_and_keeps_the_identity() {
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     let (_guard, mut provider, identity) = paired_with_wifi();
     plant_handover();
@@ -2438,7 +2438,7 @@ fn a_handover_clears_wifi_and_clients_and_keeps_the_identity() {
 fn a_handover_forgets_the_update_floor_and_an_ordinary_boot_does_not() {
     use wellfed_core::ota::offer::ImageKind;
     use wellfed_core::store::update::{Candidate, UpdateStore};
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     type Slots = wellfed_sdk::storage::Region<Armed, { storage::UPDATE.first }, 2>;
     let floor = || {
@@ -2479,7 +2479,7 @@ fn a_handover_forgets_the_update_floor_and_an_ordinary_boot_does_not() {
 #[test]
 fn only_a_handover_on_bank_0_forgets_the_confirmation() {
     use wellfed_core::ota::{self, CONFIRM_LEN};
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     let confirmed = ota::confirm_record(&[0x55; 32], 5);
     let plant = || {
@@ -2518,7 +2518,7 @@ fn only_a_handover_on_bank_0_forgets_the_confirmation() {
 #[test]
 fn a_cut_during_a_handover_repeats_it() {
     use wellfed_core::ota::{self, CONFIRM_LEN};
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     let confirmed = ota::confirm_record(&[0x55; 32], 5);
     for bank in [0, 1] {
@@ -2596,7 +2596,7 @@ fn a_handover_that_cannot_finish_waits_for_the_next_boot() {
 fn a_handover_waits_for_an_update_store_it_can_read() {
     use wellfed_core::ota::offer::ImageKind;
     use wellfed_core::store::update::{Candidate, UpdateStore};
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     type Slots = wellfed_sdk::storage::Region<Armed, { storage::UPDATE.first }, 2>;
 
@@ -2648,7 +2648,7 @@ fn assert_cleared(kept_before: &[Vec<u8>], old_epoch: u32) {
         Calibration, CalibrationResult, PLANS, PlansResult, TimeSettingsResult, WifiResult,
     };
     use wellfed_feeder_runtime::{calibration, plans, time};
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     assert!(!reset_marked());
     assert_eq!(current(), (true, true, 50, 0, true), "default settings");
@@ -2745,7 +2745,7 @@ fn a_factory_reset_clears_the_decided_stores_on_the_next_boot_and_keeps_the_rest
 /// with the same result. Nothing is published while it runs.
 #[test]
 fn a_power_cut_at_any_step_of_the_reset_leaves_it_to_the_next_boot() {
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     let (_guard, mut provider) = filled_then_reset();
     let old_epoch = events::epoch().unwrap();
@@ -2797,7 +2797,7 @@ fn a_power_cut_at_any_step_of_the_reset_leaves_it_to_the_next_boot() {
 #[test]
 fn a_torn_marker_is_no_reset() {
     use wellfed_feeder::store::reset::MARKER;
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     let (_guard, mut writer, mut provider) = start();
     for _ in 0..7 {
@@ -2860,7 +2860,7 @@ fn an_unarmed_boot_serves_nothing_and_keeps_the_marker() {
 #[test]
 fn a_reset_that_cannot_finish_asks_for_one_restart_only() {
     use wellfed_feeder::store::reset::{ATTEMPT, MARKER};
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     let (_guard, mut provider) = filled_then_reset();
     let stuck = storage::factory_cleared(3).unwrap();
@@ -2907,7 +2907,7 @@ fn a_reset_that_cannot_finish_asks_for_one_restart_only() {
 #[test]
 fn a_reset_over_an_unwritable_client_store_still_completes() {
     use wellfed_feeder::store::clients::RECORD_BYTES;
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     let (_guard, mut writer, mut provider) = start();
     fake::with(|h| h.adc_noise = 0x3c3c_a5a5);
@@ -3046,7 +3046,7 @@ fn reset_records_format() {
 /// the feeder over and over.
 #[test]
 fn an_attempt_that_does_not_land_asks_for_no_restart() {
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     let (_guard, mut provider) = filled_then_reset();
     PROGRAM_FAILS.with(|f| f.set(true));
@@ -3079,7 +3079,7 @@ fn an_attempt_that_does_not_land_asks_for_no_restart() {
 /// first erase, or after both, still converges on the next boot.
 #[test]
 fn a_worn_statistics_pair_loses_the_wear_counts_but_not_the_reset() {
-    use wellfed_hal::plaf103::storage;
+    use wellfed_hal::board::storage;
 
     let (_guard, mut provider) = filled_then_reset();
     let marked = fake::with(|h| h.storage.clone());

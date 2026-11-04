@@ -33,13 +33,13 @@ use wellfed_core::store::slot::SlotIo;
 use wellfed_hal::interlock::{
     ClaimStep, ClaimWait, INTERLOCK, WRITER_POLL_MS, WriteStep, WriteTurn,
 };
-use wellfed_hal::owner::{Owner, OwnerConfig, OwnerState, Step};
 use wellfed_hal::sdk::fake;
 use wellfed_hal::stopped;
 use wellfed_hal::supervision::beat;
 use wellfed_hal::supervision::config::{FLASH_LIMITS, SYSTIMER_HZ, WATCHDOG};
 use wellfed_hal::supervision::supervise::{self, Inputs, Startup};
 use wellfed_hal::supervision::watchdog::Watchdog;
+use wellfed_hal_feeder::owner::{Owner, OwnerConfig, OwnerState, Step};
 use wellfed_sim::plaf103::{self, FEED_BOUND_MS};
 use wellfed_sim::plant::{Flip, Plant, PlantConfig, Turn};
 use wellfed_sim::protocol::{

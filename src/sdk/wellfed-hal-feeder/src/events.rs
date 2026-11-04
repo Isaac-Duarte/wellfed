@@ -19,11 +19,11 @@ use wellfed_core::feed::sensor_inputs::SensorInputs;
 use wellfed_core::interval_valid;
 
 use crate::board::{self, Board};
-use crate::sdk::{self, Irq, IrqGuard};
-use crate::supervision::active::active_pointer;
+use wellfed_hal::active_pointer;
+use wellfed_hal::sdk::{self, Irq, IrqGuard};
 
-const FEEDBACK_PIN: u32 = crate::plaf103::pins::FEEDBACK;
-const FEEDBACK_MASK: u32 = crate::plaf103::pins::bit(FEEDBACK_PIN);
+const FEEDBACK_PIN: u32 = wellfed_board::pins::FEEDBACK;
+const FEEDBACK_MASK: u32 = wellfed_board::pins::bit(FEEDBACK_PIN);
 const PRIORITY: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -5070,7 +5070,7 @@ version = "0.1.0"
 dependencies = [
  "bindgen 0.72.1",
  "cortex-m",
- "wellfed-board-plaf103",
+ "wellfed-board",
  "wellfed-core",
 ]
 
@@ -5175,6 +5175,13 @@ name = "wellfed-bench-at"
 version = "0.1.0"
 dependencies = [
  "heapless",
+]
+
+[[package]]
+name = "wellfed-board"
+version = "0.1.0"
+dependencies = [
+ "wellfed-board-plaf103",
 ]
 
 [[package]]
@@ -5304,7 +5311,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "wellfed-amebad-sys",
- "wellfed-board-plaf103",
+ "wellfed-board",
  "wellfed-client",
  "wellfed-connect",
  "wellfed-core",
@@ -5382,6 +5389,7 @@ dependencies = [
  "wellfed-device-api",
  "wellfed-feeder",
  "wellfed-feeder-runtime",
+ "wellfed-hal-feeder",
  "wellfed-model",
  "wellfed-proto",
  "wellfed-sdk",
@@ -5406,7 +5414,7 @@ dependencies = [
  "ed25519-dalek",
  "sha2 0.10.9",
  "wellfed-amebad-sys",
- "wellfed-board-plaf103",
+ "wellfed-board",
  "wellfed-core",
  "wellfed-hal-common",
  "wellfed-session",
@@ -5419,9 +5427,19 @@ version = "0.1.0"
 dependencies = [
  "cortex-m",
  "wellfed-amebad-sys",
- "wellfed-board-plaf103",
+ "wellfed-board",
  "wellfed-core",
  "wellfed-session",
+]
+
+[[package]]
+name = "wellfed-hal-feeder"
+version = "0.1.0"
+dependencies = [
+ "wellfed-board",
+ "wellfed-core",
+ "wellfed-hal",
+ "wellfed-testkit",
 ]
 
 [[package]]
@@ -5536,6 +5554,7 @@ version = "0.1.0"
 dependencies = [
  "wellfed-core",
  "wellfed-hal",
+ "wellfed-hal-feeder",
  "wellfed-sdk",
 ]
 
@@ -5768,6 +5787,7 @@ dependencies = [
  "wellfed-core",
  "wellfed-formats",
  "wellfed-hal",
+ "wellfed-hal-feeder",
  "wellfed-testkit",
 ]
 

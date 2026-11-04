@@ -9,9 +9,9 @@ use wellfed_core::clock::tick::TickClock;
 use wellfed_core::flash_coord::FlashCoord;
 use wellfed_core::{HALF_RANGE, interval_valid};
 
-use crate::board::{self, Board};
+use crate::active_pointer;
 use crate::sdk::{self, IrqGuard};
-use crate::supervision::active::active_pointer;
+use crate::stopped::outputs_blocked;
 
 /// The vendor-register fields `open` programs: divisor (bits 0..15), count ID
 /// (bits 25..28), enable and reset mode.
@@ -249,7 +249,7 @@ impl Watchdog {
             return self.fail(WatchdogFault::Progress);
         }
 
-        if flash.is_none_or(|flash| !board::outputs_blocked(flash)) {
+        if flash.is_none_or(|flash| !outputs_blocked(flash)) {
             self.progress = progress;
             self.progress_at = now;
             if now.wrapping_sub(self.refresh_at) >= self.config.min_refresh_ms {
@@ -281,9 +281,11 @@ impl Watchdog {
     }
 
     /// Explicit cooperative shutdown only, after events close and verified
-    /// outputs. Restores only owned scope bits. Failure retains ownership.
+    /// outputs: `outputs_inactive` is the device's driver saying its outputs
+    /// read stopped. Restores only owned scope bits. Failure retains
+    /// ownership.
     #[must_use]
-    pub fn close(&mut self, board: Option<&Board>) -> bool {
+    pub fn close(&mut self, outputs_inactive: bool) -> bool {
         if !context() {
             return false;
         }
@@ -291,7 +293,7 @@ impl Watchdog {
 
         let me = ptr::from_mut(self);
         let mut ok = !self.claimed && active() != me;
-        let inactive = board.is_some_and(Board::inactive);
+        let inactive = outputs_inactive;
 
         if active() == me && self.claimed && inactive {
             ok = self.release();

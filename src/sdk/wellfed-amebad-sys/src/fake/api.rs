@@ -298,7 +298,7 @@ pub fn set_primask(mask: u32) {
 
 /// # Safety
 /// The caller owns every pin it writes or reconfigures. The motor pins
-/// ([`MOTOR_MASK`](wellfed_board_plaf103::pins::MOTOR_MASK)) belong to the HAL's board and
+/// ([`MOTOR_MASK`](wellfed_board::pins::MOTOR_MASK)) belong to the HAL's board and
 /// stopped-output owners, every other output to the port that drives it.
 pub unsafe fn gpio_port_write(port: u32, mask: u32, value: u32) {
     let hook = with(|h| {
@@ -330,7 +330,7 @@ pub fn gpio_no_pull(pin: u32) {
 
 /// # Safety
 /// The caller owns every pin it writes or reconfigures. The motor pins
-/// ([`MOTOR_MASK`](wellfed_board_plaf103::pins::MOTOR_MASK)) belong to the HAL's board and
+/// ([`MOTOR_MASK`](wellfed_board::pins::MOTOR_MASK)) belong to the HAL's board and
 /// stopped-output owners, every other output to the port that drives it.
 pub unsafe fn gpio_init(pin: u32, output: bool) {
     let hook = with(|h| {
@@ -356,7 +356,7 @@ pub unsafe fn gpio_init(pin: u32, output: bool) {
 
 /// # Safety
 /// The caller owns every pin it writes or reconfigures. The motor pins
-/// ([`MOTOR_MASK`](wellfed_board_plaf103::pins::MOTOR_MASK)) belong to the HAL's board and
+/// ([`MOTOR_MASK`](wellfed_board::pins::MOTOR_MASK)) belong to the HAL's board and
 /// stopped-output owners, every other output to the port that drives it.
 pub unsafe fn gpio_enable_outputs(port: u32, mask: u32) {
     let hook = with(|h| {
@@ -422,7 +422,7 @@ pub fn pad_control(pin: u32) -> u32 {
 
 /// # Safety
 /// The caller owns every pin it writes or reconfigures. The motor pins
-/// ([`MOTOR_MASK`](wellfed_board_plaf103::pins::MOTOR_MASK)) belong to the HAL's board and
+/// ([`MOTOR_MASK`](wellfed_board::pins::MOTOR_MASK)) belong to the HAL's board and
 /// stopped-output owners, every other output to the port that drives it.
 pub unsafe fn gpio_write_bit(pin: u32, high: bool) {
     let blocked = with(|h| {

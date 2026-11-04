@@ -20,7 +20,7 @@ use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 use wellfed_core::adc_scale::SAMPLES;
 use wellfed_core::feed::controller::MotorCommand;
 
-use crate::plaf103::pins::{FEEDBACK, OUTLET, bit};
+use wellfed_board::pins::{FEEDBACK, OUTLET, bit};
 
 /// The current channel's raw reading under a jam: about 620 scaled with
 /// the default calibration (offset 2480, gain 12050), twice the 300 jam

@@ -91,11 +91,11 @@ use wellfed_feeder::store::settings::{Settings, SettingsStatus, SettingsStore};
 use wellfed_feeder::store::stats::{SaveKind, StatsStatus, StatsStore};
 use wellfed_feeder::store::time::{TimeStatus, TimeStore};
 use wellfed_feeder::store::traces::TraceRing;
+use wellfed_hal::board::storage::{FACTORY_CLEARED_SECTORS, factory_cleared};
 use wellfed_hal::flash::park::Mmio;
 use wellfed_hal::flash_lock::arming::{self, Arming, Hooks, Poll};
 use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::interlock::{INTERLOCK, WRITER_POLL_MS, WriteStep, WriteTurn};
-use wellfed_hal::plaf103::storage::{FACTORY_CLEARED_SECTORS, factory_cleared};
 use wellfed_hal::{audio, rng, sdk, settings, supervision};
 use wellfed_sdk::storage::{
     CLIENTS_BASE, EVENTS_BASE, EVENTS_UNITS, FlashOps, Region, SEED_BASE, SETTINGS_BASE,
@@ -115,9 +115,9 @@ use crate::traces;
 use wellfed_feeder::feeder::platform::EventsFill;
 
 /// The factory reset's marker sector (`storage::RESET`).
-pub const RESET_BASE: u32 = wellfed_hal::plaf103::storage::RESET.first;
-const UPDATE_BASE: u32 = wellfed_hal::plaf103::storage::UPDATE.first;
-const CONFIRM_SECTOR: u32 = wellfed_hal::plaf103::storage::CONFIRM.first;
+pub const RESET_BASE: u32 = wellfed_hal::board::storage::RESET.first;
+const UPDATE_BASE: u32 = wellfed_hal::board::storage::UPDATE.first;
+const CONFIRM_SECTOR: u32 = wellfed_hal::board::storage::CONFIRM.first;
 
 pub const POLL_MS: u32 = 200;
 /// Between a factory reset's erases, each its own step and write turn.
@@ -751,7 +751,7 @@ fn keep_wear<F: FlashOps>() -> Wear {
         return Wear::Kept;
     }
 
-    let sectors = STATS_BASE..STATS_BASE + wellfed_hal::plaf103::storage::STATS.count;
+    let sectors = STATS_BASE..STATS_BASE + wellfed_hal::board::storage::STATS.count;
     if sectors
         .into_iter()
         .all(|sector| F::erase(sector) && blank::<F>(sector))

@@ -2,9 +2,9 @@
 //! a task stall, then a supervised watchdog reset. A backup-register marker
 //! or a nonzero boot reason must skip the probe, so a reset cannot repeat it.
 
-use wellfed_hal::board::MOTOR_MASK;
 use wellfed_hal::sdk::{self, fake};
 use wellfed_hal::supervision::watchdog::WatchdogFault;
+use wellfed_hal_feeder::board::MOTOR_MASK;
 use wellfed_probes::supervision::{
     FEED_MS, MARKER, Probe, RESET_DEADLINE_MS, Record, SAMPLES, STALL_MS, Sample,
 };

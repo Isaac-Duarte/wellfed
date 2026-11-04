@@ -13,13 +13,6 @@ km4 = ["wellfed-hal/km4", "wellfed-hal/sdk"]
 # Trial test: a candidate whose startup fails on a determined error.
 # Only the bring-up firmware's `fail` variant sets it.
 trial-fail = []
-# A motor STOP that does not take, on demand (`hal::inject`). Only the
-# feeder's `stop-fail` variant sets it.
-stop-fail = ["wellfed-hal/stop-fail"]
-# Jams and sensor faults shown to the board's input capture
-# (`hal::feed_faults`). Only the feeder's `feed-jam` and `sensor-fault`
-# variants set it.
-feed-faults = ["wellfed-hal/feed-faults"]
 # Button presses typed on the log UART. Only the feeder's
 # `virtual-panel` bench variant sets it.
 virtual-panel = ["wellfed-hal/virtual-panel"]

@@ -9,8 +9,8 @@ use common::*;
 use wellfed_core::feed::controller::MotorCommand;
 use wellfed_core::feed::sensor_inputs::SensorReading;
 use wellfed_core::flash_coord::{FlashFault, FlashParty, FlashReply};
-use wellfed_hal::board::{Board, CaptureFault, MOTOR_MASK};
 use wellfed_hal::sdk::{self, fake};
+use wellfed_hal_feeder::board::{Board, CaptureFault, MOTOR_MASK};
 
 #[test]
 fn startup_capture_and_stop() {

@@ -10,11 +10,11 @@ mod common;
 use common::owner::*;
 use common::*;
 use wellfed_core::feed::storage::OwnerOutcome;
-use wellfed_hal::board::MOTOR_MASK;
-use wellfed_hal::inject::{self, Hold, MAX_HOLD_MS};
-use wellfed_hal::owner::{OwnerFault, OwnerState};
 use wellfed_hal::sdk::fake;
 use wellfed_hal::supervision::config::SYSTIMER_HZ;
+use wellfed_hal_feeder::board::MOTOR_MASK;
+use wellfed_hal_feeder::inject::{self, Hold, MAX_HOLD_MS};
+use wellfed_hal_feeder::owner::{OwnerFault, OwnerState};
 
 /// The hold is one static for the process, unlike the per-thread fake, so
 /// the tests take turns when run as threads of one process.

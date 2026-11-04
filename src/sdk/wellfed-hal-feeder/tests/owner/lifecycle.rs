@@ -7,8 +7,8 @@ use crate::common::owner::*;
 use crate::common::*;
 use wellfed_core::feed::progress::BowlMode;
 use wellfed_core::feed::storage::{OwnerOutcome, OwnerRecovery};
-use wellfed_hal::owner::{Owner, OwnerConfig, OwnerFault, OwnerState, SubmitResult};
 use wellfed_hal::sdk::{self, fake};
+use wellfed_hal_feeder::owner::{Owner, OwnerConfig, OwnerFault, OwnerState, SubmitResult};
 
 #[test]
 fn serialized_lifecycle_and_durable_success() {
@@ -421,7 +421,11 @@ fn no_feed_starts_while_an_install_holds_the_lease() {
 
     assert_eq!(f.owner.submit(1, 1), SubmitResult::RejectBusy);
     f.advance(50);
-    assert_eq!(motor_pins(), wellfed_hal::board::MOTOR_MASK, "motor STOP");
+    assert_eq!(
+        motor_pins(),
+        wellfed_hal_feeder::board::MOTOR_MASK,
+        "motor STOP"
+    );
     assert_eq!(f.reserve_calls, 0, "nothing reserved in the journal");
 
     // The stage refuses the offer and lets go: feeding is back.

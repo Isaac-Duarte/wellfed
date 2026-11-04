@@ -10,10 +10,10 @@ use crate::common::owner::*;
 use crate::common::*;
 use wellfed_core::feed::controller::FeedReason;
 use wellfed_core::feed::storage::{OwnerOutcome, OwnerRecovery};
-use wellfed_hal::board::MOTOR_MASK;
-use wellfed_hal::owner::{OwnerConfig, OwnerFault, OwnerState, SubmitResult};
-use wellfed_hal::plaf103::pins::{FOOD, OUTLET, bit};
+use wellfed_hal::board::pins::{FOOD, OUTLET, bit};
 use wellfed_hal::sdk::fake;
+use wellfed_hal_feeder::board::MOTOR_MASK;
+use wellfed_hal_feeder::owner::{OwnerConfig, OwnerFault, OwnerState, SubmitResult};
 
 /// Steps for longer than the rest gap, and the beats published meanwhile.
 fn beats_over_the_gap(f: &mut Fixture) -> u32 {
@@ -249,7 +249,7 @@ fn an_owner_that_resolved_a_feed_and_lost_its_sensors_holds_the_result() {
 mod at_rest {
     use super::*;
     use wellfed_core::adc_scale::SAMPLES;
-    use wellfed_hal::plaf103::pins::{ADAPTER, ADC_BATTERY};
+    use wellfed_hal::board::pins::{ADAPTER, ADC_BATTERY};
     use wellfed_hal::power;
     use wellfed_hal::sdk;
 
@@ -454,14 +454,14 @@ mod at_rest {
 mod food_reads {
     use super::*;
     use wellfed_core::feed::food_read::{FOOD_READ_MS, FoodReads};
+    use wellfed_hal::board::pins::ADAPTER;
     use wellfed_hal::interlock::Interlock;
     use wellfed_hal::ota::mailbox::{self, Request};
-    use wellfed_hal::plaf103::pins::ADAPTER;
     use wellfed_hal::sdk;
     use wellfed_hal::stopped;
     use wellfed_hal::supervision::beat;
-    use wellfed_hal::supervision::events::{EventsFault, OpticsFor};
     use wellfed_hal::supervision::supervise::{self, Inputs, Startup};
+    use wellfed_hal_feeder::events::{EventsFault, OpticsFor};
 
     /// An owner settled on the adapter, its beam reading `food`.
     fn at_rest(food: bool) -> Box<Fixture> {

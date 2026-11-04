@@ -15,10 +15,10 @@ use wellfed_core::feed::feedback::FeedbackFault;
 use wellfed_core::feed::motor_gate::MotorGateFault;
 use wellfed_core::feed::progress::{BowlMode, Direction};
 use wellfed_core::flash_coord::FlashCoord;
-use wellfed_hal::board::{Board, MOTOR_MASK};
 use wellfed_hal::sdk::fake::{self, GPIOA_IRQ, TIMER2_IRQ};
 use wellfed_hal::sdk::{self, Irq, TIM_CR_CNT_STS};
-use wellfed_hal::supervision::events::{Events, EventsConfig, EventsFault};
+use wellfed_hal_feeder::board::{Board, MOTOR_MASK};
+use wellfed_hal_feeder::events::{Events, EventsConfig, EventsFault};
 
 const CONFIG: EventsConfig = EventsConfig {
     ticks_per_second: 32_000,

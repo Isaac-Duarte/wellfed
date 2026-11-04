@@ -11,8 +11,8 @@ use core::ffi::{CStr, c_void};
 use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
-use wellfed_board_plaf103::pins::{IR_PA_BIT, IR_PB_BIT, MOTOR_MASK};
-use wellfed_board_plaf103::{STORAGE_OFFSET, STORAGE_SECTORS};
+use wellfed_board::safe::{PORT_A_HIGH, PORT_A_LOW, PORT_B_LOW};
+use wellfed_board::{STORAGE_OFFSET, STORAGE_SECTORS};
 use wellfed_core::log_ring::Room;
 
 use super::{
@@ -229,7 +229,7 @@ pub fn set_primask(mask: u32) {
 
 /// # Safety
 /// The caller owns every pin it writes or reconfigures. The motor pins
-/// ([`MOTOR_MASK`](wellfed_board_plaf103::pins::MOTOR_MASK)) belong to the HAL's board and
+/// ([`MOTOR_MASK`](wellfed_board::pins::MOTOR_MASK)) belong to the HAL's board and
 /// stopped-output owners, every other output to the port that drives it.
 pub unsafe fn gpio_port_write(port: u32, mask: u32, value: u32) {
     // SAFETY: the pinned SDK routine, with plain-value arguments.
@@ -295,7 +295,7 @@ pub fn gpio_no_pull(pin: u32) {
 
 /// # Safety
 /// The caller owns every pin it writes or reconfigures. The motor pins
-/// ([`MOTOR_MASK`](wellfed_board_plaf103::pins::MOTOR_MASK)) belong to the HAL's board and
+/// ([`MOTOR_MASK`](wellfed_board::pins::MOTOR_MASK)) belong to the HAL's board and
 /// stopped-output owners, every other output to the port that drives it.
 pub unsafe fn gpio_init(pin: u32, output: bool) {
     let mut settings = raw::GPIO_InitTypeDef {
@@ -329,7 +329,7 @@ pub unsafe fn gpio_init(pin: u32, output: bool) {
 ///
 /// # Safety
 /// The caller owns every pin it writes or reconfigures. The motor pins
-/// ([`MOTOR_MASK`](wellfed_board_plaf103::pins::MOTOR_MASK)) belong to the HAL's board and
+/// ([`MOTOR_MASK`](wellfed_board::pins::MOTOR_MASK)) belong to the HAL's board and
 /// stopped-output owners, every other output to the port that drives it.
 pub unsafe fn gpio_enable_outputs(port: u32, mask: u32) {
     assert!(port < 2);
@@ -367,7 +367,7 @@ pub unsafe fn gpio_enable_outputs(port: u32, mask: u32) {
 
 /// # Safety
 /// The caller owns every pin it writes or reconfigures. The motor pins
-/// ([`MOTOR_MASK`](wellfed_board_plaf103::pins::MOTOR_MASK)) belong to the HAL's board and
+/// ([`MOTOR_MASK`](wellfed_board::pins::MOTOR_MASK)) belong to the HAL's board and
 /// stopped-output owners, every other output to the port that drives it.
 pub unsafe fn gpio_write_bit(pin: u32, high: bool) {
     // SAFETY: the pinned SDK routine, with plain-value arguments.
@@ -542,9 +542,9 @@ pub fn panic_outputs_safe() {
     };
 
     // SAFETY: Port A's data register; interrupts are masked above.
-    unsafe { ptr::write_volatile(a, (ptr::read_volatile(a) | MOTOR_MASK) & !IR_PA_BIT) };
+    unsafe { ptr::write_volatile(a, (ptr::read_volatile(a) | PORT_A_HIGH) & !PORT_A_LOW) };
     // SAFETY: Port B's data register, likewise.
-    unsafe { ptr::write_volatile(b, ptr::read_volatile(b) & !IR_PB_BIT) };
+    unsafe { ptr::write_volatile(b, ptr::read_volatile(b) & !PORT_B_LOW) };
 
     cortex_m::asm::dsb();
 }
@@ -1005,9 +1005,9 @@ pub fn ram_outputs_safe() {
         let b = ptr::addr_of_mut!((*port_b).PORT[0].DR);
         // Separate volatile read-modify-writes (motor STOP first) keep the
         // audited RAM code to plain loads, ORR/BIC and stores.
-        ptr::write_volatile(a, ptr::read_volatile(a) | MOTOR_MASK);
-        ptr::write_volatile(a, ptr::read_volatile(a) & !IR_PA_BIT);
-        ptr::write_volatile(b, ptr::read_volatile(b) & !IR_PB_BIT);
+        ptr::write_volatile(a, ptr::read_volatile(a) | PORT_A_HIGH);
+        ptr::write_volatile(a, ptr::read_volatile(a) & !PORT_A_LOW);
+        ptr::write_volatile(b, ptr::read_volatile(b) & !PORT_B_LOW);
         core::arch::asm!("dsb", options(nostack, preserves_flags));
     }
 }

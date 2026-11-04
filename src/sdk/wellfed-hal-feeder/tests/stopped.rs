@@ -3,16 +3,15 @@
 //! blocked write, lost direction, stuck SWD release or later pin drift never
 //! reports stopped.
 
-use wellfed_hal::board::{Board, MOTOR_MASK};
-use wellfed_hal::plaf103;
 use wellfed_hal::sdk::{self, fake};
 use wellfed_hal::stopped::{self, PA_MASK, PB_MASK};
+use wellfed_hal_feeder::board::{Board, MOTOR_MASK};
 
 fn check_preloaded() {
     fake::with(|h| {
         assert_ne!(h.lp_function & wellfed_hal::sdk::GPIO_ENABLE_BIT, 0);
         assert_ne!(h.lp_clock & wellfed_hal::sdk::GPIO_ENABLE_BIT, 0);
-        assert_eq!(h.output[0] & plaf103::pins::IR_PA_BIT, 0);
+        assert_eq!(h.output[0] & wellfed_hal::board::pins::IR_PA_BIT, 0);
         assert_eq!(h.output[1] & PB_MASK, 0);
         assert_eq!(h.interrupts, 1);
     });
@@ -103,7 +102,10 @@ fn board_open_holds_stop_whatever_undriven_inputs_read() {
 fn motor_enable_selects_gpio_on_the_pad() {
     fake::reset_hardware();
     fake::with(|h| {
-        for pin in [plaf103::pins::MOTOR_A, plaf103::pins::MOTOR_B] {
+        for pin in [
+            wellfed_hal::board::pins::MOTOR_A,
+            wellfed_hal::board::pins::MOTOR_B,
+        ] {
             h.pad_control[pin as usize] = 0x8000 | 0x0207;
         }
     });
@@ -111,7 +113,10 @@ fn motor_enable_selects_gpio_on_the_pad() {
     assert!(stopped::initialize().verified());
 
     fake::with(|h| {
-        for pin in [plaf103::pins::MOTOR_A, plaf103::pins::MOTOR_B] {
+        for pin in [
+            wellfed_hal::board::pins::MOTOR_A,
+            wellfed_hal::board::pins::MOTOR_B,
+        ] {
             assert_eq!(h.pad_control[pin as usize], 0x0200);
         }
     });

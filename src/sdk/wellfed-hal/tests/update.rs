@@ -1293,7 +1293,7 @@ fn stock_offer(payload: &[u8]) -> (Vec<u8>, Vec<u8>) {
 }
 
 fn handover_bytes() -> [u8; 16] {
-    let at = wellfed_hal::plaf103::storage::RESET.first as usize * SECTOR;
+    let at = wellfed_hal::board::storage::RESET.first as usize * SECTOR;
     fake::with(|h| h.storage[at..at + 16].try_into().unwrap())
 }
 

@@ -8,8 +8,9 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use crate::board::MOTOR_MASK;
-use crate::plaf103::pins::{IR_PA_BIT, IR_PB_BIT};
+use wellfed_core::flash_coord::FlashCoord;
+
+use crate::board::pins::{IR_PA_BIT, IR_PB_BIT, MOTOR_MASK};
 use crate::sdk::{self, IrqGuard};
 
 pub const PA_MASK: u32 = MOTOR_MASK | IR_PA_BIT;
@@ -108,7 +109,7 @@ pub fn observe() -> Snapshot {
 /// whatever it saw straight to brake. When both are already outputs (the
 /// board opening after stopped startup), the latch write is the whole change,
 /// one port write, so the motor never passes through coast.
-pub(crate) fn enable_motor_stopped() {
+pub fn enable_motor_stopped() {
     // SAFETY: the motor pins, which this module and the board own: called at
     // startup and as the board opens, before its gate can drive them.
     unsafe {
@@ -133,10 +134,22 @@ pub fn initialize() -> Snapshot {
         sdk::gpio_port_write(1, PB_MASK, 0);
     }
     enable_motor_stopped();
-    use crate::plaf103::pins::{IR_PA, IR_PB};
+    use crate::board::pins::{IR_PA, IR_PB};
     for pin in [IR_PA, IR_PB] {
         // SAFETY: as above, with each latch already LOW.
         unsafe { sdk::gpio_init(pin, true) };
     }
     Snapshot { clock, ..observe() }
+}
+
+/// Whether `flash`'s lease blocks the outputs now. A null or not-yet-attached
+/// authority blocks every output: callers pass an attached authority, which
+/// the board's `attach_flash` requires to stay live.
+#[expect(
+    clippy::not_unsafe_ptr_arg_deref,
+    reason = "the authority is null or an attached one, which the board keeps live at a fixed address: the same contract as the board's own callers'"
+)]
+pub fn outputs_blocked(flash: *const FlashCoord) -> bool {
+    // SAFETY: the attached authority stays at a fixed address while in use.
+    unsafe { flash.as_ref() }.is_none_or(FlashCoord::outputs_blocked)
 }

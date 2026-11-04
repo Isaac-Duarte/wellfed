@@ -10,7 +10,7 @@ use wellfed_core::settings::{SettingsView, Window};
 use wellfed_core::tone::PlayResult;
 use wellfed_core::tone::Tune;
 use wellfed_hal::audio::{self, AMP_PIN, Record, Speaker};
-use wellfed_hal::plaf103::storage::CALL;
+use wellfed_hal::board::storage::CALL;
 use wellfed_hal::sdk::fake;
 use wellfed_hal::{clock, settings};
 

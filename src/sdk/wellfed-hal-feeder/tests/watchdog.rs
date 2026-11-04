@@ -8,9 +8,9 @@ mod common;
 
 use common::*;
 use wellfed_core::flash_coord::{FlashParty, FlashReply};
-use wellfed_hal::board::Board;
 use wellfed_hal::sdk::{self, fake};
 use wellfed_hal::supervision::watchdog::{Watchdog, WatchdogConfig, WatchdogFault};
+use wellfed_hal_feeder::board::Board;
 
 const CONFIG: WatchdogConfig = WatchdogConfig {
     systimer_hz: 32_000,
@@ -26,7 +26,7 @@ const CONFIG: WatchdogConfig = WatchdogConfig {
 fn close_port(w: &mut Watchdog) {
     let b = Box::<Board>::default();
     assert!(b.open(2, 12, 8, 0));
-    assert!(w.close(Some(&b)));
+    assert!(w.close(b.inactive()));
     assert!(!w.claimed && !w.armed && sdk::wdg_vendor() & sdk::WDG_BIT_ENABLE == 0);
     b.close();
 }
@@ -223,7 +223,7 @@ fn setup_rollback_and_retained_cleanup() {
     });
     assert!(!w.open(&CONFIG));
     assert!(w.claimed && w.armed);
-    assert!(!w.close(None));
+    assert!(!w.close(false));
     hw(|h| {
         h.watchdog_disable_blocked = false;
         h.watchdog_enable_corrupt = false;
@@ -235,19 +235,19 @@ fn setup_rollback_and_retained_cleanup() {
     assert!(b.open(2, 12, 8, 0));
     let _authority = flash_attach(&b);
     assert!(b.optics(true));
-    assert!(!w.close(Some(&b)) && w.claimed);
+    assert!(!w.close(b.inactive()) && w.claimed);
     assert!(b.optics(false));
     hw(|h| h.watchdog_disable_blocked = true);
-    assert!(!w.close(Some(&b)) && w.claimed && w.armed);
+    assert!(!w.close(b.inactive()) && w.claimed && w.armed);
     hw(|h| h.watchdog_disable_blocked = false);
-    assert!(w.close(Some(&b)));
+    assert!(w.close(b.inactive()));
 
     assert!(w.open(&CONFIG));
     hw(|h| h.watchdog_scope_blocked = true);
-    assert!(!w.close(Some(&b)));
+    assert!(!w.close(b.inactive()));
     assert!(w.claimed && !w.armed); // Disabled, but restoration remains unresolved.
     hw(|h| h.watchdog_scope_blocked = false);
-    assert!(w.close(Some(&b)));
+    assert!(w.close(b.inactive()));
     b.close();
 }
 

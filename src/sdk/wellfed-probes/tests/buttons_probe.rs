@@ -2,9 +2,9 @@
 //! inputs, a bouncing press is one record with its bounce, a floating line
 //! is bounded, and the motor pins never leave STOP.
 
-use wellfed_hal::board::MOTOR_MASK;
 use wellfed_hal::sdk::fake;
 use wellfed_hal::stopped;
+use wellfed_hal_feeder::board::MOTOR_MASK;
 use wellfed_probes::buttons::{
     EVENT_CAP_MS, IDLE_MS, MASK, PINS, POLL_MS, Probe, Record, SETTLE_MS,
 };

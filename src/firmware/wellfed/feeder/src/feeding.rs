@@ -88,14 +88,14 @@ use wellfed_core::feed::sensor_inputs::SensorLimits;
 use wellfed_core::feed::storage::{OwnerResult, RotorPhase};
 use wellfed_core::store::feed_journal::{JournalConfig, JournalError};
 use wellfed_feeder::feed::Durability;
-use wellfed_proto::api::{Blocked, Refusal, Source};
-use wellfed_sdk::hal::interlock::{self, ClaimStep, ClaimWait, Held, Interlock};
-use wellfed_sdk::hal::owner::{
+use wellfed_hal_feeder::events::{EventsConfig, EventsFault, PinWatch};
+use wellfed_hal_feeder::owner::{
     FeedTrace, OwnerConfig, OwnerFault, OwnerState, OwnerStatus, SubmitResult,
 };
+use wellfed_proto::api::{Blocked, Refusal, Source};
+use wellfed_sdk::hal::interlock::{self, ClaimStep, ClaimWait, Held, Interlock};
 use wellfed_sdk::hal::sdk;
 use wellfed_sdk::hal::supervision::config::{SYSTIMER_HZ, WATCHDOG};
-use wellfed_sdk::hal::supervision::events::{EventsConfig, EventsFault, PinWatch};
 use wellfed_sdk::hal::supervision::supervise::{self, LIVENESS_MS};
 
 /// The vendor app's cap on one feed, from the stock inventory. The journal
@@ -591,7 +591,7 @@ const PINS_LISTED: usize = 10;
 /// the 10 ms supervision tick, so a shorter passage can fall between two
 /// samples: a lower bound.
 pub fn outlet_breaks(pins: &PinWatch) -> u32 {
-    let outlet = usize::try_from(wellfed_sdk::hal::plaf103::pins::OUTLET).unwrap_or(usize::MAX);
+    let outlet = usize::try_from(wellfed_sdk::hal::board::pins::OUTLET).unwrap_or(usize::MAX);
     let toggles = pins.toggles[0].get(outlet).copied().unwrap_or(0);
     u32::from(toggles).div_ceil(2)
 }
@@ -792,11 +792,11 @@ mod target {
     use wellfed_feeder::feed::{self, Durability};
     use wellfed_feeder::feeder::{Marks, RefusedClaim};
     use wellfed_feeder_runtime::traces;
-    use wellfed_proto::api::{Blocked, EventBody, Phase, Refusal, Source, TraceSummary};
-    use wellfed_sdk::hal::interlock::{self, INTERLOCK, Turn};
-    use wellfed_sdk::hal::owner::{
+    use wellfed_hal_feeder::owner::{
         Owner, OwnerConfig, OwnerFault, OwnerState, OwnerStatus, Step, SubmitResult,
     };
+    use wellfed_proto::api::{Blocked, EventBody, Phase, Refusal, Source, TraceSummary};
+    use wellfed_sdk::hal::interlock::{self, INTERLOCK, Turn};
     use wellfed_sdk::{JournalSlots, Slot};
 
     use super::{

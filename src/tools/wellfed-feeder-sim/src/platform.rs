@@ -28,7 +28,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use tokio::net::{TcpStream, UdpSocket};
-use wellfed_board_plaf103::storage;
+use wellfed_board::storage;
 use wellfed_core::buttons::Gesture;
 use wellfed_core::clock::wall::{
     Fix, Jump, Origin, State as ClockState, Sync, SyncError, WallClock,
@@ -77,6 +77,13 @@ use wellfed_hal::power;
 use wellfed_hal::sdk::LOG_TAIL_BYTES;
 use wellfed_proto::api::{self as proto, Counts, FLASH_SECTORS, TASKS_MAX};
 use wellfed_proto::device::Model;
+
+/// The model of the board the simulator stands in for, by its code; one that
+/// names no model does not build.
+const MODEL: Model = match Model::from_byte(wellfed_board::MODEL_CODE) {
+    Some(model) => model,
+    None => panic!("the board's code names no model"),
+};
 use wellfed_proto::trace::PAGE_MAX;
 
 use crate::banks::Banks;
@@ -88,7 +95,7 @@ const BINDING: u64 = 0x5046_5731_5349_4d01;
 
 // The stats record counts erases of every sector the region has; growing
 // the region changes the record and takes a new version of it.
-const _: () = assert!(wellfed_board_plaf103::STORAGE_SECTORS as usize == TOTAL_SECTORS);
+const _: () = assert!(wellfed_board::STORAGE_SECTORS as usize == TOTAL_SECTORS);
 
 /// What the simulated board's supply reads: the adapter's detect pin, and
 /// the battery channel's millivolts at the pin (`None` with no pack), on
@@ -810,7 +817,7 @@ impl Platform for SimPlatform {
     }
 
     fn model(&self) -> Model {
-        Model::Plaf103
+        MODEL
     }
 
     fn build_wifi(&self) -> BuildWifi {

@@ -149,7 +149,7 @@ fn a_handover_withholds_stored_wifi_until_it_is_put_off() {
     store(Some(
         Credentials::new(b"stored-net", b"stored-pass").unwrap(),
     ));
-    let at = wellfed_hal::plaf103::storage::RESET.first as usize * 0x1000;
+    let at = wellfed_hal::board::storage::RESET.first as usize * 0x1000;
     fake::with(|h| {
         h.storage[at..at + 16].copy_from_slice(&wellfed_core::store::handover::MARKER);
     });

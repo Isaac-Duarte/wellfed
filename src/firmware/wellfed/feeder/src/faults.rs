@@ -45,7 +45,7 @@ pub const HOLD_LONG_MS: u32 = 8000;
 // The lengths sit where the supervision's bounds say they must: the short
 // ones between the motor lease and the beat, the long ones past the beat
 // plus the configured ceiling on the watchdog's expiry (above its 5.46 s
-// bound), and every hold inside the SDK's 10 s cap (`hal::inject`, built
+// bound), and every hold inside the SDK's 10 s cap (`wellfed_hal_feeder::inject`, built
 // only with the variant).
 const _: () = {
     use wellfed_sdk::hal::supervision::config::WATCHDOG;

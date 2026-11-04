@@ -19,7 +19,7 @@ use wellfed_core::clock::wall::{Origin, Sync};
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::setup::{MAX_MESSAGE, Received, Responder};
 
-use wellfed_board_plaf103::storage;
+use wellfed_board::storage;
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::store::events::Read;
 use wellfed_feeder::store::traces::{TraceError, TraceRing};

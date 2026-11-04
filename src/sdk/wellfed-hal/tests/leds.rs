@@ -273,7 +273,7 @@ fn indicator_pull_removal_preserves_unrelated_pad_flags_and_pins() {
 #[test]
 fn the_indicator_service_drives_lights_while_the_motor_runs_and_emitters_are_lit() {
     use leds::Decision;
-    use wellfed_hal::plaf103::pins::{IR_PA_BIT, MOTOR_A_BIT};
+    use wellfed_hal::board::pins::{IR_PA_BIT, MOTOR_A_BIT};
     ready();
 
     // A feed: one motor pin driven, the outlet emitter lit.

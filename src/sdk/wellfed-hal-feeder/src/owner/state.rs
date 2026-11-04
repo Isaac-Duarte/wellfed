@@ -13,11 +13,11 @@ use wellfed_core::feed::storage::{OwnerOutcome, OwnerResult, OwnerStorage, Rotor
 use wellfed_core::flash_coord::{FlashCoord, FlashFault, FlashPhase};
 
 use crate::board::{self, Board, CaptureFault, Channels};
-use crate::power;
-use crate::sdk::{self, IrqGuard};
-use crate::stopped;
-use crate::supervision::beat;
-use crate::supervision::events::{Events, EventsSnapshot};
+use crate::events::{Events, EventsSnapshot};
+use wellfed_hal::power;
+use wellfed_hal::sdk::{self, IrqGuard};
+use wellfed_hal::stopped;
+use wellfed_hal::supervision::beat;
 
 use super::{FeedTrace, OwnerFault, OwnerState, OwnerStatus, OwnerTask, Shared};
 

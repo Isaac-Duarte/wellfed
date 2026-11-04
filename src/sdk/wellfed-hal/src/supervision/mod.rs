@@ -17,11 +17,10 @@
 //! halted), which is what it exists for, and a withheld reset never needs
 //! to clear it.
 
-pub(crate) mod active;
+pub mod active;
 pub mod beat;
 pub mod config;
 pub mod crumb;
-pub mod events;
 pub mod supervise;
 pub mod trail;
 pub mod watchdog;

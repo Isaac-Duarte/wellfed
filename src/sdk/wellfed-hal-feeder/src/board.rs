@@ -23,14 +23,14 @@ use wellfed_core::feed::motor_gate::{MotorGate, MotorGateFault, MotorPins};
 use wellfed_core::feed::sensor_inputs::SensorReading;
 use wellfed_core::flash_coord::FlashCoord;
 
-use crate::adc;
-use crate::plaf103::pins::{
+use wellfed_board::pins::{
     ADAPTER, ADC_BATTERY, ADC_CURRENT, ADC_SUPPLY, FEEDBACK, FOOD, IR_PA, IR_PB, MOTOR_A_BIT,
     MOTOR_B_BIT, OUTLET, bit,
 };
-use crate::sdk::{self, GPIO_PORT_A, IrqGuard};
+use wellfed_hal::adc;
+use wellfed_hal::sdk::{self, GPIO_PORT_A, IrqGuard};
 
-pub use crate::plaf103::pins::MOTOR_MASK;
+pub use wellfed_board::pins::MOTOR_MASK;
 const SENSOR_MASK: u32 = bit(OUTLET) | bit(FOOD) | bit(ADAPTER);
 const OPTICS: [u32; 2] = [IR_PA, IR_PB];
 
@@ -109,12 +109,7 @@ pub struct Board {
     entered: Cell<bool>,
 }
 
-/// A null or not-yet-attached authority blocks every output. Callers pass an
-/// attached authority, which `Board::attach_flash` requires to stay live.
-pub(crate) fn outputs_blocked(flash: *const FlashCoord) -> bool {
-    // SAFETY: the attached authority stays at a fixed address while in use.
-    unsafe { flash.as_ref() }.is_none_or(FlashCoord::outputs_blocked)
-}
+pub use wellfed_hal::stopped::outputs_blocked;
 
 /// Output latch and pad input of one emitter both at `level`. A LOW input
 /// alone cannot prove OFF: a pad whose input path is dead also reads LOW.
@@ -203,7 +198,7 @@ impl BoardState {
             return false;
         }
 
-        crate::stopped::enable_motor_stopped();
+        wellfed_hal::stopped::enable_motor_stopped();
         let motor_ok =
             self.gate(|gate| gate.init(BoardPins::default(), deadtime_ms, lease_ms, now_ms));
 
@@ -441,7 +436,7 @@ impl Board {
         let _ = self.with(|state| state.trip(now_ms));
     }
 
-    pub(crate) fn inactive(&self) -> bool {
+    pub fn inactive(&self) -> bool {
         self.with(|state| state.inactive()).unwrap_or(false)
     }
 
@@ -598,8 +593,8 @@ mod tests {
     use wellfed_core::flash_coord::FlashReply;
 
     use super::*;
-    use crate::sdk::fake;
-    use crate::supervision::config::FLASH_LIMITS;
+    use wellfed_hal::sdk::fake;
+    use wellfed_hal::supervision::config::FLASH_LIMITS;
 
     #[test]
     fn a_nested_call_is_refused_and_the_board_stays_usable() {

@@ -6,10 +6,10 @@ use wellfed_core::feed::food_read::{
     FOOD_READ_FIRST_MS, FOOD_READ_MS, FoodReads, FoodStep, FoodView,
 };
 use wellfed_fw_feeder::feeding::{InFlight, Opened, PROOF_MS, Proof, food_read_held};
+use wellfed_hal_feeder::events::EventsFault;
+use wellfed_hal_feeder::owner::{OwnerFault, OwnerState, OwnerStatus};
 use wellfed_sdk::Feeding;
 use wellfed_sdk::hal::ota::confirm::HEALTHY_MS;
-use wellfed_sdk::hal::owner::{OwnerFault, OwnerState, OwnerStatus};
-use wellfed_sdk::hal::supervision::events::EventsFault;
 
 fn resting() -> OwnerStatus {
     OwnerStatus {

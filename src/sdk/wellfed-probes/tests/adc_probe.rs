@@ -2,9 +2,9 @@
 //! explicit and verified, a failed enable, efuse read or conversion ends the
 //! probe, and the motor pins never leave STOP.
 
-use wellfed_hal::board::MOTOR_MASK;
 use wellfed_hal::sdk::{ADC_ENABLE_BIT, GPIO_ENABLE_BIT, fake};
 use wellfed_hal::stopped;
+use wellfed_hal_feeder::board::MOTOR_MASK;
 use wellfed_probes::adc::{Channel, Probe, Record, SAMPLE_MS};
 
 fn start() -> Probe {

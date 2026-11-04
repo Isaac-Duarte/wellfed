@@ -26,14 +26,13 @@ use wellfed_core::flash_coord::{FlashCoord, FlashReply};
 
 use crate::elapsed_ms;
 use crate::optics::FEED;
-use wellfed_hal::board::{Board, MOTOR_MASK};
 use wellfed_hal::flash::park::{self, Mmio, Reply};
 use wellfed_hal::flash_lock::provider::BOOT_COUNT_REGISTER;
-use wellfed_hal::plaf103;
 use wellfed_hal::sdk::{self, GPIO_PORT_A};
 use wellfed_hal::stopped;
 use wellfed_hal::supervision::config::{FLASH_LIMITS, SYSTIMER_HZ};
-use wellfed_hal::supervision::events::{Events, EventsConfig, EventsFault};
+use wellfed_hal_feeder::board::{Board, MOTOR_MASK};
+use wellfed_hal_feeder::events::{Events, EventsConfig, EventsFault};
 
 pub const POLL_MS: u32 = 2;
 pub const WAIT_MS: u32 = 10;
@@ -62,7 +61,7 @@ pub const CURRENT_PERIOD_MS: u32 = 10;
 /// Written to the user backup register before driving. It survives a
 /// watchdog reset but not power loss, so the pulse runs once per cold boot.
 pub const MARKER: u32 = 0x5046_5716;
-const FEEDBACK: u32 = plaf103::pins::bit(plaf103::pins::FEEDBACK);
+const FEEDBACK: u32 = wellfed_hal::board::pins::bit(wellfed_hal::board::pins::FEEDBACK);
 
 /// The idle controller's view; only owner-lease renewal reads it.
 const IDLE: FeedSample = FeedSample {
@@ -483,7 +482,7 @@ impl Probe {
             let mut samples = [0u16; SAMPLES];
             if !self
                 .board
-                .sample_channel(plaf103::pins::ADC_CURRENT, &mut samples)
+                .sample_channel(wellfed_hal::board::pins::ADC_CURRENT, &mut samples)
             {
                 return false;
             }

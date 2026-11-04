@@ -41,6 +41,14 @@ use wellfed_feeder_runtime::{
 };
 use wellfed_proto::api::{Counts, Erases, FLASH_SECTORS, Power, Refusal, TASKS_MAX};
 use wellfed_proto::device::Model;
+
+/// The model this image is built for: the board's, by its code. A board
+/// whose code names no model, or another kind than this feeder firmware
+/// drives, does not build.
+const MODEL: Model = match Model::from_byte(wellfed_sdk::hal::board::MODEL_CODE) {
+    Some(model) if matches!(model.kind(), wellfed_proto::device::DeviceKind::Feeder) => model,
+    _ => panic!("the board's model is not a feeder this firmware drives"),
+};
 use wellfed_proto::trace::PAGE_MAX;
 use wellfed_sdk::hal::audio::{self, Speaker};
 use wellfed_sdk::hal::ble::{self, BleSetup, DropReason};
@@ -165,7 +173,7 @@ impl Platform for Plaf103 {
     }
 
     fn model(&self) -> Model {
-        Model::Plaf103
+        MODEL
     }
 
     fn build_wifi(&self) -> BuildWifi {

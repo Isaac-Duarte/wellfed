@@ -11,12 +11,12 @@ use wellfed_core::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult, Owne
 use wellfed_core::flash_coord::{FlashCoord, FlashParty, FlashReply};
 use wellfed_core::store::feed_journal::{FeedJournal, JournalConfig, JournalError};
 use wellfed_core::supply::FloorLimits;
-use wellfed_hal::board::MOTOR_MASK;
-use wellfed_hal::owner::{
+use wellfed_hal::sdk::{self, fake};
+use wellfed_hal_feeder::board::MOTOR_MASK;
+use wellfed_hal_feeder::events::EventsConfig;
+use wellfed_hal_feeder::owner::{
     Owner, OwnerConfig, OwnerState, OwnerStatus, OwnerTask, Step, SubmitResult,
 };
-use wellfed_hal::sdk::{self, fake};
-use wellfed_hal::supervision::events::EventsConfig;
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
 
 pub const CONFIG: OwnerConfig = OwnerConfig {

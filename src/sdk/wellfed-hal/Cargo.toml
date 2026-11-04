@@ -4,7 +4,7 @@ name = "wellfed-hal"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "Experimental PLAF103 AmebaD KM4 ports: board, supervision, owner, transport and updater"
+description = "Experimental AmebaD KM4 chip HAL: supervision, flash leases, transport, updater and the generic panel drivers, on the board contract"
 publish.workspace = true
 build = "build.rs"
 
@@ -15,13 +15,6 @@ sdk = ["wellfed-amebad-sys/sdk"]
 km4 = ["wellfed-hal-common/km4", "wellfed-amebad-sys/km4"]
 # BLE setup; needs a Bluetooth firmware's image.
 bluetooth = ["wellfed-amebad-sys/bluetooth"]
-# Motor STOP writes that do not take while a hold is armed (`inject`).
-# Only the feeder's `stop-fail` bench variant sets it.
-stop-fail = []
-# Jams and sensor faults shown to the board's input capture while armed
-# (`feed_faults`). Only the feeder's `feed-jam` and `sensor-fault` bench
-# variants set it.
-feed-faults = []
 # Button presses typed on the log UART (`wellfed_core::virtual_panel`),
 # for a bench with nobody at it. Only the feeder's `virtual-panel` bench
 # variant sets it.
@@ -32,7 +25,7 @@ log-tail = ["wellfed-amebad-sys/log-tail"]
 [dependencies]
 wellfed-hal-common.workspace = true
 wellfed-amebad-sys.workspace = true
-wellfed-board-plaf103.workspace = true
+wellfed-board.workspace = true
 wellfed-core.workspace = true
 wellfed-session.workspace = true
 # Bank 0's image is hashed before a give-way; the rounds are core's.
@@ -45,15 +38,3 @@ sha2 = "0.10"
 
 [lints]
 workspace = true
-
-# The injected failed stop, over the owner; `make check-rust` runs it with
-# the feature.
-[[test]]
-name = "inject"
-required-features = ["stop-fail"]
-
-# The injected jams and sensor faults, over the owner; `make check-rust`
-# runs it with the feature.
-[[test]]
-name = "feed_faults"
-required-features = ["feed-faults"]

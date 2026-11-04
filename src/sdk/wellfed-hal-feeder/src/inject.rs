@@ -16,8 +16,8 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use crate::sdk;
-use crate::supervision::config::SYSTIMER_HZ;
+use wellfed_hal::sdk;
+use wellfed_hal::supervision::config::SYSTIMER_HZ;
 
 /// The longest hold: past the owner's 1 s beat plus the configured ceiling
 /// on the watchdog's expiry (`WATCHDOG.max_expiry_ms`, 6 s, above its
@@ -31,8 +31,8 @@ const MAX_HOLD_TICKS: u32 = MAX_HOLD_MS / 1000 * SYSTIMER_HZ;
 const _: () = assert!(
     MAX_HOLD_MS.is_multiple_of(1000)
         && MAX_HOLD_MS
-            > crate::supervision::config::WATCHDOG.max_progress_gap_ms
-                + crate::supervision::config::WATCHDOG.max_expiry_ms
+            > wellfed_hal::supervision::config::WATCHDOG.max_progress_gap_ms
+                + wellfed_hal::supervision::config::WATCHDOG.max_expiry_ms
 );
 
 static ARMED: AtomicBool = AtomicBool::new(false);

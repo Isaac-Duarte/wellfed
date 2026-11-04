@@ -167,7 +167,7 @@ impl<H: Hooks> SlotIo for HandoverSector<H> {
         sdk::SECTOR_BYTES
     }
     fn read(&self, slot: u32, offset: u32, bytes: &mut [u8]) -> bool {
-        slot == 0 && sdk::storage_read(crate::plaf103::storage::RESET.first, offset, bytes)
+        slot == 0 && sdk::storage_read(crate::board::storage::RESET.first, offset, bytes)
     }
     fn program(&self, slot: u32, offset: u32, bytes: &[u8]) -> bool {
         // SAFETY: the hooks are armed, and the writer, the sector's other
@@ -175,13 +175,11 @@ impl<H: Hooks> SlotIo for HandoverSector<H> {
         // bank 0 activates an image.
         slot == 0
             && H::armed()
-            && unsafe { sdk::storage_program(crate::plaf103::storage::RESET.first, offset, bytes) }
+            && unsafe { sdk::storage_program(crate::board::storage::RESET.first, offset, bytes) }
     }
     fn erase(&self, slot: u32) -> bool {
         // SAFETY: as in `program`.
-        slot == 0
-            && H::armed()
-            && unsafe { sdk::storage_erase(crate::plaf103::storage::RESET.first) }
+        slot == 0 && H::armed() && unsafe { sdk::storage_erase(crate::board::storage::RESET.first) }
     }
     fn writable(&self) -> bool {
         H::armed()
@@ -198,7 +196,7 @@ impl<H> StoreSlots<H> {
     }
 
     fn sector(slot: u32) -> Option<u32> {
-        let update = crate::plaf103::storage::UPDATE;
+        let update = crate::board::storage::UPDATE;
         (slot < update.count).then_some(update.first + slot)
     }
 }

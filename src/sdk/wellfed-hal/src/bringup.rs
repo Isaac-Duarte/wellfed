@@ -1,7 +1,7 @@
 //! The raw outputs, for bring-up firmwares and the probes they run.
 //!
 //! Product firmware never needs this module. It reaches the motor pins
-//! through [`Board`](crate::board::Board) (inside the feeding owner), the
+//! through its driver crate's board (the feeder's, inside the feeding owner), the
 //! watchdog through the runtime's supervision, and storage through the
 //! settings writer, the update path and the stores' slot I/O. A bring-up
 //! firmware that has to touch a pin, the watchdog or a storage sector

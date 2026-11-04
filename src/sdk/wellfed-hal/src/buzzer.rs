@@ -5,7 +5,7 @@
 
 use crate::sdk::{self, IrqGuard};
 
-const PIN: u32 = crate::plaf103::pins::BUZZER;
+const PIN: u32 = crate::board::pins::BUZZER;
 const PORT: u32 = PIN >> 5;
 const MASK: u32 = 1 << (PIN & 31);
 

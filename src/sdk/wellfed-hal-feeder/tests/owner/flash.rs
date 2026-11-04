@@ -4,8 +4,8 @@ use crate::common::owner::*;
 use crate::common::*;
 use wellfed_core::feed::storage::{OwnerOutcome, OwnerRecovery};
 use wellfed_core::flash_coord::{FlashCoord, FlashFault, FlashLimits, FlashPhase, FlashReply};
-use wellfed_hal::owner::{OwnerFault, OwnerState, SubmitResult};
 use wellfed_hal::sdk::{self, fake};
+use wellfed_hal_feeder::owner::{OwnerFault, OwnerState, SubmitResult};
 
 #[test]
 fn flash_hold_waits_before_outputs_and_release_allows_new_work() {

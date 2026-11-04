@@ -1,5 +1,5 @@
 //! The storage region as one image, in memory or in a file, carved into the
-//! firmware's sector allocation ([`wellfed_board_plaf103::storage`]) so the
+//! firmware's sector allocation ([`wellfed_board::storage`]) so the
 //! real stores run on it unchanged.
 //!
 //! It keeps NOR's rules, as the fake SDK does: an erase sets a whole sector
@@ -17,8 +17,8 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use wellfed_amebad_sys::SECTOR_BYTES;
-use wellfed_board_plaf103::STORAGE_SECTORS;
-use wellfed_board_plaf103::storage::Sectors;
+use wellfed_board::STORAGE_SECTORS;
+use wellfed_board::storage::Sectors;
 use wellfed_core::store::slot::SlotIo;
 
 /// The whole storage region's size.

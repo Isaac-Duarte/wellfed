@@ -1,8 +1,12 @@
 //! Single-instance registration pointers read by interrupt handlers.
 //!
 //! Target builds use one global; host builds use one per thread so tests,
-//! each with its own fake hardware, can run in parallel.
+//! each with its own fake hardware, can run in parallel. Exported, for a
+//! device kind's drivers (the feeder's board capture and owner) to register
+//! theirs the same way.
 
+#[doc(hidden)]
+#[macro_export]
 macro_rules! active_pointer {
     ($ty:ty) => {
         #[cfg(target_os = "none")]
@@ -34,4 +38,3 @@ macro_rules! active_pointer {
         }
     };
 }
-pub(crate) use active_pointer;

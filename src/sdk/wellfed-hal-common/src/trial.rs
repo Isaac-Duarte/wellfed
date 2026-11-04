@@ -73,7 +73,7 @@ use wellfed_core::ota::{self, MARKER, Trial};
 pub const LIMIT: u32 = 3;
 /// Storage sector holding the confirmation record (`0x344000`), the first
 /// of the reserved sectors after the journal and settings pairs.
-pub const CONFIRM_SECTOR: u32 = wellfed_board_plaf103::storage::CONFIRM.first;
+pub const CONFIRM_SECTOR: u32 = wellfed_board::storage::CONFIRM.first;
 /// The backup register KM0 counts in; KM4 reads and settles it.
 pub const REGISTER: u32 = 4;
 pub const BOOT_MASK: u32 = 0xffff;

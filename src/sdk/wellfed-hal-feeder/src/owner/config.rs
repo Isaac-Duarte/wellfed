@@ -11,9 +11,9 @@ use wellfed_core::feed::sensor_inputs::{SensorInputs, SensorLimits};
 use wellfed_core::flash_coord::{FlashCoord, FlashLimits};
 use wellfed_core::interval_valid;
 
-use crate::sdk;
-use crate::supervision::config::WATCHDOG;
-use crate::supervision::events::{self, EventsConfig};
+use crate::events::{self, EventsConfig};
+use wellfed_hal::sdk;
+use wellfed_hal::supervision::config::WATCHDOG;
 
 #[derive(Clone, Copy, Debug)]
 pub struct OwnerConfig {

@@ -7,7 +7,7 @@
 //! [`FOOD_READ_EVERY_MS`].
 //!
 //! This is the schedule alone. The owner lights the emitters and judges the
-//! window (`wellfed_hal::owner::Owner::read_food`), and the interlock keeps
+//! window (`wellfed_hal_feeder::owner::Owner::read_food`), and the interlock keeps
 //! storage writes off it (`wellfed_hal::interlock`). `held` here gathers every
 //! reason a reading must not run now, because a reading always gives way: it
 //! never waits for anything itself, and whatever stopped it costs only a try

@@ -11,10 +11,10 @@ use common::owner::*;
 use common::*;
 use wellfed_core::feed::controller::FeedReason;
 use wellfed_core::feed::storage::{OwnerOutcome, OwnerResult};
-use wellfed_hal::board::MOTOR_MASK;
-use wellfed_hal::feed_faults::{self, Injected};
-use wellfed_hal::owner::{OwnerConfig, OwnerFault, OwnerState, SubmitResult};
 use wellfed_hal::sdk::fake;
+use wellfed_hal_feeder::board::MOTOR_MASK;
+use wellfed_hal_feeder::feed_faults::{self, Injected};
+use wellfed_hal_feeder::owner::{OwnerConfig, OwnerFault, OwnerState, SubmitResult};
 
 /// The armed fault is one static for the process, unlike the per-thread
 /// fake, so the tests take turns when run as threads of one process.

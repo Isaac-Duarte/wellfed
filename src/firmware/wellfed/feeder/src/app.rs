@@ -331,7 +331,7 @@ mod inject {
     mod hold {
         use core::sync::atomic::{AtomicBool, Ordering};
 
-        use wellfed_sdk::hal::inject;
+        use wellfed_hal_feeder::inject;
         use wellfed_sdk::log;
 
         use crate::faults::Injection;
@@ -379,7 +379,7 @@ mod inject {
 /// the image goes back out after the run.
 #[cfg(any(feature = "feed-jam", feature = "sensor-fault"))]
 mod show_faults {
-    use wellfed_sdk::hal::feed_faults::{self, Injected};
+    use wellfed_hal_feeder::feed_faults::{self, Injected};
     use wellfed_sdk::hal::sdk;
     use wellfed_sdk::{Slot, log};
 
