@@ -19,6 +19,7 @@ pub mod canonical;
 pub mod capture;
 pub mod credentials;
 pub mod device;
+#[cfg(feature = "export")]
 pub mod export;
 pub mod flash_plan;
 pub mod hex;
