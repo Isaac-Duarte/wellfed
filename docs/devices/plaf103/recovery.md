@@ -74,5 +74,5 @@ The separate [UART development updater](../../development/uart-development.md) a
 
 ## Evidence
 
-- **Observed:** independent loader entry, bounded body-sector write-back, marker activation with preservation checks, a small stock-image Rust probe, and the UART-only diagnostic's install and boot. Exact stock restoration followed by a normal stock 1.1.15 boot completed the conservative round trip. These ran with the former Python clients, whose plan, journal and wire formats `wellfed-flash stock-recovery --device plaf103` keeps.
-- **Observed, October 23, 2026:** `wellfed-flash stock-recovery --device plaf103` restored bank 1 on the research unit. A give-way came first, then a full read, a reviewed plan and its execution. Stock 1.1.15 booted from bank 1, and the reference build went back over UART.
+- **Observed:** independent loader entry, bounded body-sector write-back, marker activation with preservation checks, a small stock-image Rust probe, and the UART-only diagnostic's install and boot. Exact stock restoration followed by a normal stock 1.1.15 boot completed the conservative round trip. These ran with the former Python clients, whose plan, journal and wire formats `wellfed-flash stock-recovery` keeps.
+- **Observed, October 23, 2026:** `wellfed-flash stock-recovery` restored bank 1 on the research unit. A give-way came first, then a full read, a reviewed plan and its execution. Stock 1.1.15 booted from bank 1, and the reference build went back over UART.

@@ -227,7 +227,7 @@ Limits:
 
 ## Evidence
 
-- **Startup report.** Observed: an artifact-bound startup passed `wellfed-audit startup --device plaf103` on the research unit. This does not establish long-term uptime, persistent boot counters or a verified physical reset cause.
+- **Startup report.** Observed: an artifact-bound startup passed `wellfed-audit startup` on the research unit. This does not establish long-term uptime, persistent boot counters or a verified physical reset cause.
 - **Stopped outputs.** Observed: exact GPIO readback, an artifact-bound normal boot and operator-reported no motion. Independent voltage and infrared-off measurements, repeated measured resets and transient checks belong to the electrical output verification ([motor driver](../devices/plaf103/motor-driver.md)). The single direction-register enable passed 50 cold boots on the analyzer (observed, October 27).
 - **PB3 and SWD.** Observed: before startup released SWD, PB3 was never driven, and its LOW readback was the pad's pull-down ([optical inputs](optical-inputs.md#pb3-is-swd_clk)).
 - **Shared-pad power.** Observed: a capture with the new order showed an intact `PLPWR1` ahead of KM4 output with `after_pad=00000301`, the LDO powered with a zero trim. A later build with the trim and per-step Port A sampling read the same word at every step. The removed `trace-stock-pad-power.py` (in Git history) executed the stock initializer and LDO instructions against modeled registers and delays, and its fixtures distinguished LDO power from the pad-enable bit: recovered, not an electrical measurement.
