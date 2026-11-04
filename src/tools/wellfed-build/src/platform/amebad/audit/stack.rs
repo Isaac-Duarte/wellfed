@@ -45,6 +45,7 @@ use super::writes::{demangle, loaded};
 use super::{HEADING, tool};
 use crate::firmware::Runtime;
 use crate::{Firmware, Repo, Result};
+use wellfed_formats::require;
 
 /// Why the stack audit could not bound a task, or refused how the firmware
 /// starts its tasks. Function names are demangled, as the messages print
@@ -124,6 +125,34 @@ pub enum StackError {
         limit = FIRMWARE_TASKS
     )]
     TooMany { tasks: Vec<String> },
+    /// A firmware declared bare links the SDK runtime anyway: its tasks and
+    /// provider are not in the table a bare firmware is audited against.
+    #[error(
+        "The firmware declares runtime = \"bare\" but its image links the SDK runtime: {}",
+        functions.join(", ")
+    )]
+    BareRuntime { functions: Vec<String> },
+}
+
+/// What a bare firmware's image may not link: any of `wellfed-sdk`'s code
+/// (its runtime's tasks and the provider callbacks it installs). Read from
+/// the linked functions, not the firmware's sources, so a dependency that
+/// pulls the runtime in is caught too. Returns their demangled names.
+fn sdk_runtime_in<'a>(functions: impl Iterator<Item = &'a String>) -> Vec<String> {
+    let mut linked: Vec<String> = functions
+        .filter(|name| {
+            // The fault callback is the chip HAL's, which every image links;
+            // the others are the runtime's.
+            name.contains("11wellfed_sdk")
+                || PROVIDER_CALLBACKS
+                    .iter()
+                    .filter(|end| end.starts_with("7runtime"))
+                    .any(|end| name.ends_with(end))
+        })
+        .map(|name| demangle(name))
+        .collect();
+    linked.sort();
+    linked
 }
 
 /// The SDK runtime's task table.
@@ -718,6 +747,12 @@ fn veneer(name: &str) -> Option<&str> {
 pub(crate) fn audit(elf: &Path, objdump: &Path, sources: &TaskSources) -> Result<StackAudit> {
     // A repeated heading starts that function over, as a later definition.
     let functions = link(frames(&tool(objdump, &["-d"], elf)?).into_iter().collect());
+    if sources.kind == Runtime::Bare {
+        let linked = sdk_runtime_in(functions.keys());
+        require(linked.is_empty(), || StackError::BareRuntime {
+            functions: linked,
+        })?;
+    }
     let data = loaded(elf, objdump)?;
     let graph = Graph::new(&functions, &data);
     let hook = graph.hook_charge(sources.kind)?;
@@ -1352,5 +1387,30 @@ mod tests {
             [("beat_task".to_string(), ("wellfed-boot".to_string(), 4096))].into()
         );
         assert!(sources.firmware().trim().is_empty());
+    }
+
+    /// A bare firmware's image is refused if it links any of the SDK
+    /// runtime, by its own functions or by a provider callback.
+    #[test]
+    fn a_bare_image_linking_the_sdk_runtime_is_found() {
+        let bare = [
+            "_RNvNtCs1_19wellfed_fw_fountain3app9beat_task".to_string(),
+            "wellfed_amebad_flash_provider_fault".to_string(),
+            "_RNvNtCs2_11wellfed_hal7stopped10initialize".to_string(),
+        ];
+        assert!(sdk_runtime_in(bare.iter()).is_empty());
+
+        let runtime = [
+            bare[0].clone(),
+            "_RNvNtCs3_11wellfed_sdk7runtime15diagnostic_task".to_string(),
+            "_RNvNtCs4_5other7runtime12hook_acquire".to_string(),
+        ];
+        assert_eq!(
+            sdk_runtime_in(runtime.iter()),
+            [
+                "other::runtime::hook_acquire",
+                "wellfed_sdk::runtime::diagnostic_task"
+            ]
+        );
     }
 }

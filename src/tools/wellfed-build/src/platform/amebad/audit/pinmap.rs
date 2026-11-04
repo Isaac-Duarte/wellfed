@@ -55,6 +55,8 @@ pub enum PinmapError {
     Differs,
     #[error("The reviewed pad table is not the pinned one: {sha256}")]
     Unpinned { sha256: String },
+    #[error("An override names pin {pin}, which no table row has")]
+    OverridePin { pin: u32 },
 }
 
 /// One of a pad row's settings, as the SDK source lists them after the pin.
@@ -208,14 +210,42 @@ fn expected_table(model: Model, reference: &[u8]) -> Result<(Vec<u8>, Vec<Row>)>
     let (data, mut rows) = stock_table(model, reference)?;
     let mut bytes = data.to_vec();
     for &(pin, value) in reference_overrides(model) {
-        let Ok(at) = usize::try_from(pin) else {
-            continue;
-        };
+        let at = usize::try_from(pin)
+            .ok()
+            .filter(|at| *at < TABLE_ROWS - 1)
+            .ok_or(PinmapError::OverridePin { pin })?;
         rows[at][Field::Active.index()] = value;
         let field = at * ROW_BYTES + 4 * Field::Active.index();
         bytes[field..field + 4].copy_from_slice(&value.to_le_bytes());
     }
     Ok((bytes, rows))
+}
+
+/// How the image's table departs from stock, for the audit's scope:
+/// nothing for none, else `: stock's, but PA30 pulled down` and so on.
+fn departures(overrides: &[(u32, u32)]) -> String {
+    let named: Vec<String> = overrides
+        .iter()
+        .map(|&(pin, value)| {
+            let (port, bit) = if pin < 32 {
+                ("A", pin)
+            } else {
+                ("B", pin - 32)
+            };
+            let pull = match value {
+                NOPULL => "with no pull",
+                DOWN => "pulled down",
+                2 => "pulled up",
+                _ => "pulled otherwise",
+            };
+            format!("P{port}{bit} {pull}")
+        })
+        .collect();
+    if named.is_empty() {
+        String::new()
+    } else {
+        format!(": stock's, but {}", named.join(", "))
+    }
 }
 
 fn reference_overrides(model: Model) -> &'static [(u32, u32)] {
@@ -366,14 +396,10 @@ pub(crate) fn audit_linked_table(
         bytes: actual.len(),
         sha256: sha256(actual),
         matches_stock,
-        scope: if matches_stock {
-            "Pad pull table only; reset levels, GPIO direction and physical behavior unverified"
-                .into()
-        } else {
-            "Pad pull table only: stock's, but PA30 pulled down; reset levels, GPIO direction \
-             and physical behavior unverified"
-                .into()
-        },
+        scope: format!(
+            "Pad pull table only{}; reset levels, GPIO direction and physical behavior unverified",
+            departures(pinned.overrides)
+        ),
     })
 }
 
@@ -524,5 +550,16 @@ mod tests {
             )),
             PinmapError::Header
         ));
+    }
+
+    /// The scope names each departure from stock, and none for the PLAF103.
+    #[test]
+    fn the_scope_names_the_overrides() {
+        assert_eq!(departures(&[]), "");
+        assert_eq!(departures(&[(30, DOWN)]), ": stock's, but PA30 pulled down");
+        assert_eq!(
+            departures(&[(35, NOPULL)]),
+            ": stock's, but PB3 with no pull"
+        );
     }
 }

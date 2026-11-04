@@ -95,6 +95,10 @@ pub enum ReviewError {
     Mapping { bank: u8, core: usize },
     #[error("Single-valid diagnostic bank selection differs")]
     Selection { bank: u8 },
+    /// With the pinned flash's bank 0 left valid and the image in bank 1, as
+    /// an install leaves them, the loader did not choose bank 1.
+    #[error("The loader does not choose the image installed in bank 1")]
+    Installed { stop: Stop, result: u32 },
 }
 
 /// The PLAF103's bank-1 extent; a development image must fit it
@@ -294,6 +298,7 @@ fn review(repo: &Repo, build: &Path) -> Result<(Vec<u8>, Vec<u8>, BuildDetails, 
         }
     };
     let factory_mapping = mapping_cases(&baseline, &rom, &image)?;
+    installed_selection(&baseline, &rom, &image)?;
 
     // Refuse edits made during the (long) audits and emulation.
     require(
@@ -405,6 +410,25 @@ pub fn mapping_cases(current: &[u8], rom: &[u8], image: &[u8]) -> Result<Vec<Map
         });
     }
     Ok(cases)
+}
+
+/// The installed configuration: `current` as pinned, its bank 0 still
+/// valid, with the image in bank 1. The loader tries bank 1 first, so it
+/// must choose the image there.
+pub fn installed_selection(current: &[u8], rom: &[u8], image: &[u8]) -> Result<()> {
+    let payload = container(image)?;
+    let start = BANKS[1] as usize;
+    let mut fixture = current.to_vec();
+    fixture[start..start + payload.len()].copy_from_slice(payload);
+
+    let chosen = factory::execute(&fixture, rom, Entry::Select)?;
+    require(chosen.stop == Stop::Selected && chosen.result == 2, || {
+        ReviewError::Installed {
+            stop: chosen.stop,
+            result: chosen.result,
+        }
+    })?;
+    Ok(())
 }
 
 /// Whether core `index`'s final mapping covers `length` bytes at flash

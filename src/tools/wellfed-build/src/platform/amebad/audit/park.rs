@@ -61,33 +61,63 @@ pub enum ParkError {
     Placement { name: &'static str },
     #[error("Missing retained parking functions in {core}")]
     Missing { core: Core },
-    /// The fault callback sets or clears other bits than the model's safe
-    /// state, as `(mnemonic, mask)` in listing order.
-    #[error("The fault callback's writes are not the safe state: {found:?}")]
-    SafeState { found: Vec<(String, u64)> },
+    /// The fault callback is not the model's pinned instruction sequence,
+    /// listed as found.
+    #[error("The fault callback is not the pinned safe-state writes: {found:?}")]
+    SafeState { found: Vec<String> },
 }
 
-/// The fault callback's read-modify-writes, in order: `orr` sets a mask HIGH,
-/// `bic` clears one LOW, on port A's data register, then port B's.
-fn safe_state(model: Model) -> &'static [(&'static str, u64)] {
+/// The fault callback, instruction for instruction, as each model's image
+/// links it: the GPIO port A data register's address built in r0, then one
+/// read-modify-write per safe mask (`orr` sets the PLAF103's motor pair
+/// HIGH, `bic` clears its emitters LOW, port B's at offset 0x400), a
+/// barrier and the return. Pinning the whole sequence leaves no other way to
+/// store a value: a flag-setting form, a register operand or a constant
+/// moved in would each differ. A new compiler's register choice shows here
+/// too, and is reviewed like any other change.
+fn safe_state(model: Model) -> &'static [&'static str] {
     match model {
-        Model::Plaf103 => &[("orr", 0x6000), ("bic", 0x8000), ("bic", 0x8)],
-        Model::Plwf106 => &[("bic", 0x4000_0000)],
+        Model::Plaf103 => &[
+            "push {r7, lr}",
+            "mov r7, sp",
+            "movw r0, #16384",
+            "movt r0, #18433",
+            "ldr r1, [r0, #0]",
+            "orr.w r1, r1, #24576",
+            "str r1, [r0, #0]",
+            "ldr r1, [r0, #0]",
+            "bic.w r1, r1, #32768",
+            "str r1, [r0, #0]",
+            "ldr.w r1, [r0, #1024]",
+            "bic.w r1, r1, #8",
+            "str.w r1, [r0, #1024]",
+            "dsb sy",
+            "pop {r7, pc}",
+        ],
+        Model::Plwf106 => &[
+            "push {r7, lr}",
+            "mov r7, sp",
+            "movw r0, #16384",
+            "movt r0, #18433",
+            "ldr r1, [r0, #0]",
+            "bic.w r1, r1, #1073741824",
+            "str r1, [r0, #0]",
+            "dsb sy",
+            "pop {r7, pc}",
+        ],
     }
 }
 
-/// The `orr` and `bic` immediates of a listing, in order.
-fn masks(listing: &str) -> Vec<(String, u64)> {
+/// A listing's instructions as `mnemonic operands`, without addresses,
+/// encodings or objdump's comments, whitespace collapsed.
+fn sequence(listing: &str) -> Vec<String> {
     listing
         .lines()
         .filter_map(|line| {
             let m = INSTRUCTION.captures(line)?;
-            let mnemonic = m[2].split('.').next()?;
-            if !["orr", "bic"].contains(&mnemonic) {
-                return None;
-            }
-            let operand = m[3].split(',').next_back()?;
-            Some((mnemonic.to_string(), immediate(operand)?))
+            let operands = m[3].split(';').next().unwrap_or_default();
+            let operands = operands.split_whitespace().collect::<Vec<_>>().join(" ");
+            Some(format!("{} {operands}", &m[2]).trim().to_string())
         })
         .collect()
 }
@@ -331,12 +361,10 @@ pub(crate) fn audit(
             };
             let leaf = check_leaf(&listing, address, size, minimum)?;
             if KM4_SYMBOLS.contains(&name) {
-                let found = masks(&listing);
-                let expected: Vec<(String, u64)> = safe_state(model)
-                    .iter()
-                    .map(|(mnemonic, mask)| ((*mnemonic).to_string(), *mask))
-                    .collect();
-                require(found == expected, || ParkError::SafeState { found })?;
+                let found = sequence(&listing);
+                require(found == safe_state(model), || ParkError::SafeState {
+                    found,
+                })?;
             }
             functions.insert(
                 name.to_string(),
@@ -487,27 +515,36 @@ mod tests {
         }
     }
 
-    /// The fault callback's masks as both models' images link them.
+    /// The fault callbacks as both models' images link them (objdump of the
+    /// November 4 builds), and the changes the pin refuses.
     #[test]
-    fn the_fault_callbacks_masks_are_each_models_safe_state() {
+    fn the_fault_callback_is_each_models_pinned_sequence() {
         let fountain = "\
+100056a6:\tb580      \tpush\t{r7, lr}
+100056a8:\t466f      \tmov\tr7, sp
+100056aa:\tf244 0000 \tmovw\tr0, #16384\t; 0x4000
+100056ae:\tf6c4 0001 \tmovt\tr0, #18433\t; 0x4801
 100056b2:\t6801      \tldr\tr1, [r0, #0]
 100056b4:\tf021 4180 \tbic.w\tr1, r1, #1073741824\t; 0x40000000
 100056b8:\t6001      \tstr\tr1, [r0, #0]
+100056ba:\tf3bf 8f4f \tdsb\tsy
+100056be:\tbd80      \tpop\t{r7, pc}
 ";
-        let feeder = "\
-100056b4:\tf441 41c0 \torr.w\tr1, r1, #24576\t; 0x6000
-100056bc:\tf421 4100 \tbic.w\tr1, r1, #32768\t; 0x8000
-100056c6:\tf021 0108 \tbic.w\tr1, r1, #8
-";
-        let pinned = |model| {
-            safe_state(model)
-                .iter()
-                .map(|(m, v)| ((*m).to_string(), *v))
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(masks(fountain), pinned(Model::Plwf106));
-        assert_eq!(masks(feeder), pinned(Model::Plaf103));
-        assert_ne!(masks(feeder), pinned(Model::Plwf106));
+        assert_eq!(sequence(fountain), safe_state(Model::Plwf106));
+        assert_ne!(sequence(fountain), safe_state(Model::Plaf103));
+
+        // A flag-setting clear, a register operand, or a constant stored
+        // outright each differ from the pin.
+        for changed in [
+            fountain.replace("bic.w\tr1, r1, #1073741824", "bics.w\tr1, r1, #1073741824"),
+            fountain.replace("bic.w\tr1, r1, #1073741824", "orr.w\tr1, r1, r2"),
+            fountain.replace("ldr\tr1, [r0, #0]", "movs\tr1, #0"),
+            fountain.replace(
+                "6001      \tstr\tr1, [r0, #0]\n",
+                "6001      \tstr\tr1, [r0, #0]\n1000:\t6001      \tstr\tr2, [r0, #0]\n",
+            ),
+        ] {
+            assert_ne!(sequence(&changed), safe_state(Model::Plwf106), "{changed}");
+        }
     }
 }
