@@ -11005,7 +11005,7 @@
       },
       "Role": {
         "type": "string",
-        "description": "What a household user may do through the server. Owners do everything;\nmembers also feed and change settings and the lock; viewers read status\nand history and write nothing.",
+        "description": "What a user of the home may do through the server. Owners do everything;\nmembers also feed and change settings and the lock; viewers read status\nand history and write nothing.",
         "enum": [
           "owner",
           "member",

@@ -3,7 +3,7 @@
 
 use jiff::Timestamp;
 use uuid::Uuid;
-use wellfed_api::{Home, Role, User, UserId};
+use wellfed_api::{Home, HomeId, Role, User, UserId};
 
 use crate::convert::{millis, timestamp};
 use crate::homes::insert_home;
@@ -48,9 +48,13 @@ impl Store {
     }
 
     /// Create `user` and the home only while no user exists, in one
-    /// transaction, so two racing setups cannot both win. Whether it was
-    /// created.
-    pub async fn create_first_owner(&self, user: NewUser<'_>, home: &Home) -> Result<bool> {
+    /// transaction, so two racing setups cannot both win. The home's stored
+    /// id once created, `None` when an owner already exists.
+    pub async fn create_first_owner(
+        &self,
+        user: NewUser<'_>,
+        home: &Home,
+    ) -> Result<Option<HomeId>> {
         let (created, expires) = (millis(user.created), user.expires.map(millis));
         let role = user.role.code();
 
@@ -68,11 +72,11 @@ impl Store {
         .execute(&mut *tx)
         .await?;
         if done.rows_affected() != 1 {
-            return Ok(false);
+            return Ok(None);
         }
-        insert_home(&mut *tx, home, user.created).await?;
+        let stored = insert_home(&mut *tx, home, user.created).await?;
         tx.commit().await?;
-        Ok(true)
+        Ok(Some(stored))
     }
 
     pub async fn login(&self, name: &str) -> Result<Option<Login>> {

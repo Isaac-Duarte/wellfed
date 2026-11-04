@@ -1,4 +1,4 @@
-//! Household users, first-owner setup and login.
+//! The home's users, first-owner setup and login.
 
 use std::fmt;
 
@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 
 use crate::UserId;
 
-/// What a household user may do through the server. Owners do everything;
+/// What a user of the home may do through the server. Owners do everything;
 /// members also feed and change settings and the lock; viewers read status
 /// and history and write nothing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]

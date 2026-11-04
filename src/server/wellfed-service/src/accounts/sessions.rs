@@ -130,7 +130,7 @@ impl Service {
                 &home,
             )
             .await?;
-        if !created {
+        if created.is_none() {
             return Err(AccountError::SetupClosed.into());
         }
 

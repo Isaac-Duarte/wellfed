@@ -597,7 +597,7 @@ class ServerPet {
           feeders == other.feeders;
 }
 
-/// A pet's intake, day by day in the household's zone.
+/// A pet's intake, day by day in the home's zone.
 class ServerPetIntake {
   final String pet;
   final String zone;
@@ -682,7 +682,7 @@ class ServerRefill {
           user == other.user;
 }
 
-/// What an account may do in the household.
+/// What an account may do in the home.
 enum ServerRole { owner, member, viewer }
 
 class ServerSinceRefill {

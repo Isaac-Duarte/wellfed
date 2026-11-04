@@ -115,17 +115,19 @@ async fn only_the_first_owner_is_created_by_setup() {
     let (_dir, store) = fresh().await;
     assert!(!store.users_exist().await.unwrap());
 
-    assert!(
+    assert_eq!(
         store
             .create_first_owner(user("ada"), &home())
             .await
-            .unwrap()
+            .unwrap(),
+        Some(HOME)
     );
     assert!(
-        !store
+        store
             .create_first_owner(user("bob"), &home())
             .await
             .unwrap()
+            .is_none()
     );
 
     assert!(store.users_exist().await.unwrap());

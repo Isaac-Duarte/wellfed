@@ -28,7 +28,7 @@ pub enum ErrorCode {
     /// password or adding an account, so a leaked token cannot turn itself
     /// into a login or more tokens that outlive its revocation.
     SessionRequired,
-    /// The change would leave the household without an owner.
+    /// The change would leave the home without an owner.
     LastOwner,
     /// Another account has that name.
     NameTaken,

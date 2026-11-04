@@ -1,4 +1,4 @@
-//! `/users`: the household's accounts, managed by owners.
+//! `/users`: the home's accounts, managed by owners.
 
 use std::fmt;
 
