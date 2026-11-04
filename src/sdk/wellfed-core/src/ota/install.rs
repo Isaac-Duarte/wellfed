@@ -171,6 +171,8 @@ crate::named_enum! {
         Signature = "signature",
         Statement = "statement",
         Manifest = "manifest",
+        /// Signed for another device model.
+        Model = "model",
         Store = "store",
         Busy = "busy",
         Fallback = "fallback",
@@ -190,6 +192,7 @@ impl Refused {
             Self::Offer(OfferError::Key(_)) | Self::Statement(_) => RefusedReason::Key,
             Self::Offer(OfferError::Signature) => RefusedReason::Signature,
             Self::Offer(OfferError::Statement(_)) => RefusedReason::Statement,
+            Self::Offer(OfferError::Model) => RefusedReason::Model,
             Self::Offer(_) => RefusedReason::Manifest,
             Self::Store(_) | Self::Unreadable => RefusedReason::Store,
             Self::Busy => RefusedReason::Busy,
