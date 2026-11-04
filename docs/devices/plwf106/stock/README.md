@@ -142,7 +142,14 @@ Generic event encoder `0x0e00ef68` is reached from communications worker `0x0e00
 
 No radar producer or input driver was established. The photographed RADAR footprints are unpopulated, so this is not a missing driver for a connected module on the inspected unit. Bank 1 has no radar string; absence of a string alone would not prove absence of hardware.
 
-Fountain MQTT envelopes, provisioning, BLE service behavior, authentication and complete request/reply validation need separate work if stock interoperability is required. Do not copy the feeder's topic schema or BLE UUIDs on the strength of a shared SoC.
+The image's strings place it on the same vendor framework as stock PLAF103 1.1.15, beyond the shared SoC:
+
+- **Topics:** the same `dl/%s/%s/device/%s/%s` format, `post` channel suffix and all-device and broadcast subscriptions.
+- **Shared messages:** every message name Wellfed's stock server uses on the feeder exists here too: `BINDING`, `DEVICE_START_EVENT`, `ATTR_PUSH_EVENT`, `ATTR_GET_SERVICE`, `ERROR_EVENT`, `DEVICE_LOG_REPORT_EVENT`, `OTA_INFORM`, `OTA_UPGRADE` and `OTA_PROGRESS`. So does every JSON key of that server's shared core, apart from the feeding-plan keys. The two images also share `ATTR_SET_SERVICE`, `NTP_SYNC`, `DEVICE_CONFIG_SYNC` and the Wi-Fi services.
+- **Fountain-only messages:** `WATER_CAP_EVENT`, `WEIGHT_CAL_SERVICE`, `WEIGHT_CLR_SERVICE`, `DISPLAY_MATRIX_SERVICE`, `DEVICE_FUNCTION_TEST_SERVICE` and `DEVICE_PRINT_LOG_SWITCH_SERVICE`. The feeding, grain and audio messages are absent.
+- **Setup:** the same softAP UDP setup task (`Ap_Config_Udp_Thread`) and the same Bluetooth configuration events (`BLE_CONFIG_NETWORK_BIT`, `BLE_CONFIG_DEV_INFO_BIT`, `BLE_WRITE_DEV_INFO_BIT`).
+
+Matching names are strong grounds for porting the shared core, not proof of identical behavior. The setup frame's parser, each message's required fields and replies, the broker login and the Bluetooth services still need code review or a capture before a stock server serves this model.
 
 ## What a port must change
 
@@ -163,3 +170,4 @@ A full port also needs typed fountain product/settings values and shared-client 
 - **Recovered, 2026-11-03:** direct Ghidra review of stock 0.0.17 task creation, timing, GPIO, scale/filter/calibration, settings, reset, indication and event paths. Instruction-sensitive conclusions were checked in listings; ten setter call sites were also checked against original instruction bytes.
 - **Observed, reviewed 2026-11-03:** retained stock UART logs corroborate stored calibration and thresholds; all recorded weight reports in the two sampled captures are zero. Owner photos show the unmarked U1 and unpopulated RADAR footprints.
 - **Recovered, 2026-11-03:** comparison with the existing feeder SDK identifies pin/storage coupling and missing PA30 stops. No new firmware implementation, simulation result or physical timing/safety test is claimed.
+- **Recovered, 2026-11-04:** a comparison of bank 0's KM4 strings with a stock PLAF103 backup's, and with the message names and JSON keys Wellfed's stock server uses. String analysis only; no code paths were traced.
