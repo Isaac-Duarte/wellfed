@@ -83,6 +83,7 @@ Facts about a **chip** hold for every board built on it. Facts about a **device*
 | [TypeScript standard](development/typescript.md) | Rules for the web frontends |
 | [SDK builds](development/firmware-builds.md) | Full firmware images with the vendor SDK |
 | [Stock server](development/stock-server.md) | The bench's server for stock 1.1.15 |
+| [Bench hardware](development/bench-hardware.md) | The bench board's connectors, feeder wiring and the order of a flash session |
 | [Rust flash client](development/rust-flash.md) | Reading and writing flash over UART |
 | [UART development updates](development/uart-development.md) | Faster region-scoped updates during development |
 | [Optional fixtures](development/fixtures.md) | Checks that need private binary inputs |

@@ -25,7 +25,12 @@ These hold for every command on this page. The sections below give the detail.
 
 ### Wiring
 
-A DSD TECH SH-UR04A USB relay board (CP2102 serial, 9600 8N1) adds four switches to the [UART wiring](uart.md). The [wiring diagram](../../../src/tools/wellfed-bench/wiring.svg) carries reference designators and net names for a bench PCB. That PCB is the [Wellfed Bench board](../../../src/hardware/bench/README.md), which puts the adapter and the four switches on one USB cable. Its first board has passed bring-up without a feeder attached, and the bench tools do not use it yet, so this page still describes the relay board.
+The bench now runs on the [Wellfed Bench board](../../../src/hardware/bench/README.md), which puts the UART bridge and the four switches on one USB cable. Its connectors, its FEEDER UART pinout and how to wire a feeder to it are on the [bench hardware](../../development/bench-hardware.md) page.
+
+> [!NOTE]
+> The bench board's FEEDER UART header names the feeder's pins, so it is wired label to label: feeder TX to the board's TX. The table below is the older relay bench, where a bare adapter's labels name its own pins, so feeder TX goes to adapter RXD.
+
+The older relay bench used a DSD TECH SH-UR04A USB relay board (CP2102 serial, 9600 8N1) to add four switches to the [UART wiring](uart.md) of a bare FT232R adapter. The [wiring diagram](../../../src/tools/wellfed-bench/wiring.svg) draws it. The bench board's channels do the same jobs under the same numbers.
 
 | Relay | Contacts | Connection | Role |
 | --- | --- | --- | --- |
