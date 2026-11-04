@@ -5279,6 +5279,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wellfed-device-runtime"
+version = "0.1.0"
+dependencies = [
+ "wellfed-core",
+ "wellfed-device",
+ "wellfed-device-api",
+ "wellfed-hal",
+ "wellfed-sdk",
+]
+
+[[package]]
 name = "wellfed-emu"
 version = "0.1.0"
 dependencies = [
@@ -5307,6 +5318,7 @@ dependencies = [
  "wellfed-core",
  "wellfed-device",
  "wellfed-device-api",
+ "wellfed-device-runtime",
  "wellfed-feeder",
  "wellfed-hal",
  "wellfed-proto",
@@ -5405,6 +5417,7 @@ dependencies = [
  "wellfed-core",
  "wellfed-device",
  "wellfed-device-api",
+ "wellfed-device-runtime",
  "wellfed-feeder",
  "wellfed-feeder-runtime",
  "wellfed-hal-feeder",

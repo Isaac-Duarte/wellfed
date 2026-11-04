@@ -31,6 +31,7 @@ use wellfed_device_api::mailbox::{
     TimeSettingsResult, WifiResult, WifiSource,
 };
 use wellfed_device_api::wifi::Credentials;
+use wellfed_device_runtime::{events, keys, network, time};
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::platform::{
     Accepted, BleDrop, BleLink, BleStep, Boot, Check, Datagram, DriverRecord, DriverStep,
@@ -38,9 +39,7 @@ use wellfed_feeder::feeder::platform::{
 };
 use wellfed_feeder::feeder::supply::Radio;
 use wellfed_feeder::stats::Totals;
-use wellfed_feeder_runtime::{
-    calibration, call, events, keys, network, plans, stats, time, traces,
-};
+use wellfed_feeder_runtime::{calibration, call, plans, stats, traces};
 use wellfed_proto::api::{Counts, Erases, FLASH_SECTORS, Power, Refusal, TASKS_MAX};
 use wellfed_proto::device::{DeviceKind, Model};
 use wellfed_proto::trace::PAGE_MAX;

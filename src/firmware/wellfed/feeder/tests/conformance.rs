@@ -5,10 +5,11 @@
 
 use std::sync::{Mutex, MutexGuard};
 
+use wellfed_device_runtime::{events, keys, network, time};
 use wellfed_feeder::conformance::Rig;
 use wellfed_feeder::feeder::Feeder;
 use wellfed_feeder_runtime::writer::Writer;
-use wellfed_feeder_runtime::{calibration, call, events, keys, network, plans, time, traces};
+use wellfed_feeder_runtime::{calibration, call, plans, traces};
 use wellfed_fw_feeder::platform::Plaf103;
 use wellfed_proto::api::FoodLevel;
 use wellfed_sdk::hal::flash::park::Mmio;

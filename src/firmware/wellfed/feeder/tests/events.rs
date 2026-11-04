@@ -3,8 +3,8 @@
 //! the feed's `Fed` event still queues.
 
 use wellfed_device_api::Device;
+use wellfed_device_runtime::events::{self, QUEUE, RESERVED};
 use wellfed_feeder::feeder::{Feeder, NoFeeds};
-use wellfed_feeder_runtime::events::{self, QUEUE, RESERVED};
 use wellfed_fw_feeder::platform::Plaf103;
 use wellfed_proto::api::{EventBody, Source};
 use wellfed_sdk::hal::sdk::fake;

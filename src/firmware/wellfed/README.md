@@ -74,7 +74,7 @@ Not yet guaranteed: the runtime does not watch a firmware task's liveness in gen
 
 1. Copy `blink` to `src/firmware/wellfed/<name>`, and name the package `wellfed-fw-<name>`.
 
-   A firmware is a `no_std` KM4 staticlib. It has a `km4` feature that enables `wellfed-sdk/km4` and `wellfed-feeder-runtime/km4`. It depends on `wellfed-feeder-runtime`, because the runtime's settings writer and Wi-Fi join call the record stores that crate defines.
+   A firmware is a `no_std` KM4 staticlib. It has a `km4` feature that enables `wellfed-sdk/km4` and `wellfed-feeder-runtime/km4`. It depends on `wellfed-feeder-runtime`, because the runtime's settings writer and Wi-Fi join call the record stores that crate defines over `wellfed-device-runtime`.
 
 2. Fill in its `[package.metadata.wellfed]` table. It is all the builder knows about the firmware, and `wellfed-build list` prints it:
 

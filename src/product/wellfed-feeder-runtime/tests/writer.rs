@@ -15,13 +15,13 @@ use wellfed_device::store::time::TimeStatus;
 use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::mailbox::{SettingsFields, SettingsResult};
+use wellfed_device_runtime::keys::{self, Change, Requested};
+use wellfed_device_runtime::writer::{self as writer, ErrorStage, Identity, KeyChange, KeyResult};
+use wellfed_device_runtime::{events, network};
 use wellfed_feeder::stats::{EARLY_SAVES, FEED_SAVE_MS, RESTART_SETTLED_MS, SAVE_MS, Totals};
 use wellfed_feeder::store::stats::StatsStatus;
-use wellfed_feeder_runtime::keys::{self, Change, Requested};
-use wellfed_feeder_runtime::writer::{
-    self as writer, ErrorStage, Identity, KeyChange, KeyResult, Record, Writer,
-};
-use wellfed_feeder_runtime::{events, network, stats};
+use wellfed_feeder_runtime::stats;
+use wellfed_feeder_runtime::writer::{FeederRecord, RECEIVE_LINGER_POLLS, Record, Step, Writer};
 use wellfed_hal::flash::park::Mmio;
 use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::flash_lock::arming::Hooks;
@@ -200,19 +200,19 @@ fn changes_are_saved_once_each_inside_a_marked_attempt() {
     );
     assert_eq!(
         step(&mut writer, &mut provider),
-        Some(Record::StatsOpen {
+        Some(Record::Product(FeederRecord::StatsOpen {
             status: StatsStatus::Empty,
             generation: 0,
             early: 0,
             missed: false,
-        })
+        }))
     );
     assert_eq!(
         step(&mut writer, &mut provider),
-        Some(Record::StatsSaved {
+        Some(Record::Product(FeederRecord::StatsSaved {
             generation: 1,
             early: 1
-        }),
+        })),
         "the boot's own save, so its reset counts"
     );
     assert_eq!(
@@ -1079,7 +1079,7 @@ fn store_writes_decode_for_the_bench() {
 #[test]
 fn time_settings_are_saved_inside_a_marked_attempt_and_published() {
     use wellfed_device_api::mailbox::{NtpServer, TimeSettings, TimeSettingsResult, Zone};
-    use wellfed_feeder_runtime::time;
+    use wellfed_device_runtime::time;
 
     let (_guard, mut writer, mut provider) = start();
     time::reset();
@@ -1165,7 +1165,10 @@ fn idle(writer: &mut Writer<Armed>, provider: &mut Provider, n: usize) {
 }
 
 fn saved(generation: u64, early: u8) -> Option<Record> {
-    Some(Record::StatsSaved { generation, early })
+    Some(Record::Product(FeederRecord::StatsSaved {
+        generation,
+        early,
+    }))
 }
 
 /// The stats store's erases so far, both sectors.
@@ -1195,12 +1198,12 @@ fn lifetime_totals_count_the_boot_and_save_at_a_bounded_rate() {
     fake::with(|h| h.boot_reason = 1 << 17);
     assert_eq!(
         open_all(&mut writer, &mut provider),
-        Some(Record::StatsOpen {
+        Some(Record::Product(FeederRecord::StatsOpen {
             status: StatsStatus::Empty,
             generation: 0,
             early: 0,
             missed: false,
-        })
+        }))
     );
     let mut base = Totals::ZERO;
     base.count_boot(wellfed_proto::api::ResetCause::Watchdog);
@@ -1241,12 +1244,12 @@ fn lifetime_totals_count_the_boot_and_save_at_a_bounded_rate() {
     let (_, open, save) = boot(&mut provider);
     assert_eq!(
         open,
-        Some(Record::StatsOpen {
+        Some(Record::Product(FeederRecord::StatsOpen {
             status: StatsStatus::Loaded,
             generation: 3,
             early: 0,
             missed: false,
-        })
+        }))
     );
     assert_eq!(save, saved(4, 1));
     let totals = stats::totals().expect("the stored totals");
@@ -1289,12 +1292,12 @@ fn short_boots_count_their_resets_while_tokens_last() {
     let generation = u64::from(EARLY_SAVES);
     assert_eq!(
         open,
-        Some(Record::StatsOpen {
+        Some(Record::Product(FeederRecord::StatsOpen {
             status: StatsStatus::Loaded,
             generation,
             early: EARLY_SAVES,
             missed: true,
-        })
+        }))
     );
     assert_eq!(save, None, "no token left");
     assert_eq!(stats_sectors(), before);
@@ -1310,7 +1313,13 @@ fn short_boots_count_their_resets_while_tokens_last() {
     );
     let (_, open, save) = boot(&mut provider);
     assert!(
-        matches!(open, Some(Record::StatsOpen { missed: true, .. })),
+        matches!(
+            open,
+            Some(Record::Product(FeederRecord::StatsOpen {
+                missed: true,
+                ..
+            }))
+        ),
         "the flag stays"
     );
     assert_eq!(save, saved(generation + 2, EARLY_SAVES));
@@ -1333,9 +1342,15 @@ fn a_finished_feed_saves_the_totals_at_a_bounded_rate() {
         boot(&mut provider);
     }
     let (mut writer, open, _) = boot(&mut provider);
-    assert!(matches!(open, Some(Record::StatsOpen { missed: true, .. })));
+    assert!(matches!(
+        open,
+        Some(Record::Product(FeederRecord::StatsOpen {
+            missed: true,
+            ..
+        }))
+    ));
     let generation = |record| match record {
-        Some(Record::StatsSaved { generation, early }) => {
+        Some(Record::Product(FeederRecord::StatsSaved { generation, early })) => {
             assert_eq!(early, EARLY_SAVES, "no token moves");
             generation
         }
@@ -1384,7 +1399,7 @@ fn a_mixed_crash_pattern_wears_the_store_at_most_two_erases_an_hour() {
         sdk::delay_ms(SAVE_MS);
         assert!(matches!(
             step(&mut writer, &mut provider),
-            Some(Record::StatsSaved { .. })
+            Some(Record::Product(FeederRecord::StatsSaved { .. }))
         ));
     }
     let settled = rounds;
@@ -1532,9 +1547,9 @@ fn the_totals_are_saved_only_while_armed_and_never_retried() {
     PROGRAM_FAILS.with(|f| f.set(true));
     assert_eq!(
         step(&mut writer, &mut provider),
-        Some(Record::StatsError {
+        Some(Record::Product(FeederRecord::StatsError {
             stage: ErrorStage::Save
-        })
+        }))
     );
     PROGRAM_FAILS.with(|f| f.set(false));
     sdk::delay_ms(SAVE_MS);
@@ -1572,10 +1587,10 @@ fn a_calibration_is_saved_inside_a_marked_attempt_and_published() {
     ));
     assert_eq!(calibration::change(measured), CalibrationResult::Busy);
     ATTEMPT_SEEN.with(|s| s.set(false));
-    let saved = Record::CalibrationSaved {
+    let saved = Record::Product(FeederRecord::CalibrationSaved {
         generation: 1,
         portion_mg: Some(9_800),
-    };
+    });
     assert_eq!(step(&mut writer, &mut provider), Some(saved));
     assert!(ATTEMPT_SEEN.with(Cell::get));
     assert_eq!(sdk::backup_read(MARKER_REGISTER), 0);
@@ -1639,10 +1654,10 @@ fn a_plans_change_is_applied_saved_inside_a_marked_attempt_and_published() {
     ));
     assert_eq!(plans::change(replace), PlansResult::Busy);
     ATTEMPT_SEEN.with(|s| s.set(false));
-    let saved = Record::PlansSaved {
+    let saved = Record::Product(FeederRecord::PlansSaved {
         sequence: 1,
         revision: 1,
-    };
+    });
     assert_eq!(step(&mut writer, &mut provider), Some(saved));
     assert!(ATTEMPT_SEEN.with(Cell::get));
     assert_eq!(sdk::backup_read(MARKER_REGISTER), 0);
@@ -1660,7 +1675,10 @@ fn a_plans_change_is_applied_saved_inside_a_marked_attempt_and_published() {
         PlansResult::Current { pending: true, .. }
     ));
     ATTEMPT_SEEN.with(|s| s.set(false));
-    assert_eq!(step(&mut writer, &mut provider), Some(Record::PlansDropped));
+    assert_eq!(
+        step(&mut writer, &mut provider),
+        Some(Record::Product(FeederRecord::PlansDropped))
+    );
     assert!(!ATTEMPT_SEEN.with(Cell::get));
 
     let current = PlansChange::Claim { claim, revision: 1 };
@@ -1715,7 +1733,7 @@ fn a_meal_call_change_waits_for_a_call_without_holding_up_other_work() {
     };
     assert_eq!(
         step(&mut writer, &mut provider),
-        Some(Record::Call { clip: receiving })
+        Some(Record::Product(FeederRecord::Call { clip: receiving }))
     );
     assert!(ATTEMPT_SEEN.with(Cell::get));
     assert_eq!(call::chunk(0, &stream[..512]), Ok(()));
@@ -1724,7 +1742,7 @@ fn a_meal_call_change_waits_for_a_call_without_holding_up_other_work() {
     let stored = CallClip::Stored { bytes: 600, crc };
     assert_eq!(
         step(&mut writer, &mut provider),
-        Some(Record::Call { clip: stored })
+        Some(Record::Product(FeederRecord::Call { clip: stored }))
     );
 
     // A delete queued, then a call takes the clip before the writer's turn.
@@ -1770,9 +1788,9 @@ fn a_meal_call_change_waits_for_a_call_without_holding_up_other_work() {
     assert!(!audio::call_playing());
     assert_eq!(
         step(&mut writer, &mut provider),
-        Some(Record::Call {
+        Some(Record::Product(FeederRecord::Call {
             clip: CallClip::None
-        })
+        }))
     );
     // Refused, not queued, while a call plays.
     assert!(matches!(
@@ -1791,7 +1809,7 @@ fn a_meal_call_change_waits_for_a_call_without_holding_up_other_work() {
 }
 
 /// One step, whole.
-fn whole_step(writer: &mut Writer<Armed>, provider: &mut Provider) -> writer::Step {
+fn whole_step(writer: &mut Writer<Armed>, provider: &mut Provider) -> Step {
     // SAFETY: the provider outlives the run.
     unsafe { writer.step::<NoMmio, Armed>(provider) }
 }
@@ -1807,7 +1825,8 @@ fn every_mailbox_wakes_the_writer_once_when_queued_and_not_when_refused() {
         PlansResult, TimeSettings, TimeSettingsResult, WifiResult,
     };
     use wellfed_device_api::wifi::Credentials;
-    use wellfed_feeder_runtime::{calibration, call, plans, time};
+    use wellfed_device_runtime::time;
+    use wellfed_feeder_runtime::{calibration, call, plans};
     use wellfed_hal::writer_wake;
 
     let (_guard, mut writer, mut provider) = start();
@@ -2158,7 +2177,7 @@ fn an_upload_polls_at_the_read_pace_while_it_runs_and_not_for_ever() {
     );
 
     // A client that walks away: the pace lapses, with the clip still receiving.
-    for _ in 1..writer::RECEIVE_LINGER_POLLS {
+    for _ in 1..RECEIVE_LINGER_POLLS {
         assert_eq!(
             whole_step(&mut writer, &mut provider).delay_ms,
             writer::EVENTS_POLL_MS
@@ -2205,7 +2224,8 @@ fn sectors(sectors: wellfed_hal::board::storage::Sectors) -> Vec<u8> {
 
 /// Every mailbox the writer publishes to, as a restart leaves them.
 fn restart_mailboxes() {
-    use wellfed_feeder_runtime::{calibration, plans, time, traces};
+    use wellfed_device_runtime::time;
+    use wellfed_feeder_runtime::{calibration, plans, traces};
 
     settings::reset();
     // SAFETY: the test holds `SERIAL` and runs no Wi-Fi task.
@@ -2647,7 +2667,8 @@ fn assert_cleared(kept_before: &[Vec<u8>], old_epoch: u32) {
     use wellfed_device_api::mailbox::{
         Calibration, CalibrationResult, PLANS, PlansResult, TimeSettingsResult, WifiResult,
     };
-    use wellfed_feeder_runtime::{calibration, plans, time};
+    use wellfed_device_runtime::time;
+    use wellfed_feeder_runtime::{calibration, plans};
     use wellfed_hal::board::storage;
 
     assert!(!reset_marked());

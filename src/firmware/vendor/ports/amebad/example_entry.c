@@ -492,7 +492,7 @@ static unsigned int wellfed_ms(TickType_t since)
 
 /* Join credentials, shared with Rust (`network::JoinCredentials`):
  * prefilled with the build's (empty without), replaced by stored ones unless
- * the fallback has taken over (wellfed-feeder-runtime network.rs). */
+ * the fallback has taken over (wellfed-device-runtime network.rs). */
 struct wellfed_join_credentials {
     const unsigned char *ssid;
     unsigned int ssid_len;
@@ -643,7 +643,7 @@ static int wellfed_dhcp_bound(void)
 #define WELLFED_JOIN_NOTHING (-1)
 
 /* The header's WELLFED_BUILD_WIFI says whether the image has a build
- * network; Rust learns the same from the builder (wellfed-feeder-runtime
+ * network; Rust learns the same from the builder (wellfed-device-runtime
  * network.rs) and defines only the matching symbol below. Reading it makes a
  * header and a runtime that disagree fail the link. */
 #ifdef WELLFED_BUILD_WIFI

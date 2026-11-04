@@ -64,6 +64,7 @@ virtual-panel = ["wellfed-sdk/virtual-panel"]
 twin = []
 
 [dependencies]
+wellfed-device-runtime.workspace = true
 wellfed-feeder-runtime.workspace = true
 wellfed-core.workspace = true
 wellfed-device.workspace = true

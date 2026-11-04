@@ -4,7 +4,7 @@ The feeder needs to know the time to run meals on schedule, but it has no batter
 
 Client syncs, the zone setting, NTP and the carry across restarts are observed on our unit. The clock needs a time source after each power-up. Learning the drift rate and the long-uptime expiry are not yet checked on hardware.
 
-Code: `wellfed-core/src/clock/` (`wall.rs`, `zone.rs`, `ntp.rs`), `wellfed-hal/src/clock.rs`, `wellfed-feeder/src/feeder/time.rs` and `src/store/time.rs`, `wellfed-feeder-runtime/src/time.rs`, and `wellfed-client/src/time.rs` for the rule a client sends.
+Code: `wellfed-core/src/clock/` (`wall.rs`, `zone.rs`, `ntp.rs`), `wellfed-hal/src/clock.rs`, `wellfed-feeder/src/feeder/time.rs` and `src/store/time.rs`, `wellfed-device-runtime/src/time.rs`, and `wellfed-client/src/time.rs` for the rule a client sends.
 
 ## Sources
 

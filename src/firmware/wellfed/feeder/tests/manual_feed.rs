@@ -20,11 +20,12 @@ use wellfed_device_api::FeederDevice;
 use wellfed_device_api::mailbox::{
     CallChange, CallClip, CallPlay, CallResult, SettingsFields, SettingsResult, SettingsView,
 };
+use wellfed_device_runtime::events;
 use wellfed_feeder::feeder::owner::POLL_MS;
 use wellfed_feeder::feeder::{Feeder, Feeds, Platform, Record};
 use wellfed_feeder::store::call::CallStore;
 use wellfed_feeder::store::plans::PlansStore;
-use wellfed_feeder_runtime::{call, events, plans};
+use wellfed_feeder_runtime::{call, plans};
 use wellfed_fw_feeder::platform::{Driver, Plaf103};
 use wellfed_proto::api::{
     Battery, Blocked, EventBody, FeedOutcome, FeedReason, FoodLevel, Readiness, Refusal, Source,
