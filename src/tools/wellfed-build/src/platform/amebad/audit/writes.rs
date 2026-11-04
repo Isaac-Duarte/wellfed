@@ -7,6 +7,10 @@
 //! references are direct branches (through veneers too) and 32-bit words
 //! anywhere in loaded bytes equal to a function's address, attributed to the
 //! enclosing symbol. Register-computed calls are not visible here.
+//!
+//! Each model's board has its own pins. The PLWF106's boot test writes no
+//! flash at all: no caller of a write entry may be Wellfed's, KM0 links no
+//! boot trial, and neither core links the WLAN firmware.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -15,6 +19,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use wellfed_formats::audit::{CoreWrites, WritesAudit};
+use wellfed_proto::device::Model;
 
 use super::{Binutils, HEADING, elf, index, parse_hex, tool, word};
 use crate::platform::amebad::Core;
@@ -30,6 +35,12 @@ pub enum WritesError {
     Missing { name: &'static str },
     #[error("Unexpected {name}")]
     Unexpected { name: &'static str },
+    /// A model whose image writes no flash references a writer from code
+    /// of ours.
+    #[error("Wellfed code references a flash/eFuse writer: {references:?}")]
+    Ours {
+        references: BTreeMap<String, Vec<String>>,
+    },
     /// Callers outside the reviewed pins, by write target.
     #[error("Unreviewed flash/eFuse write reference: {references:?}")]
     Unreviewed {
@@ -172,6 +183,71 @@ const EXPECTED_LP: Pins = &[
     ("shell_init_rom", &[]),
     ("shell_task_rom", &[]),
 ];
+
+/// The fountain's KM4: the PLAF103's pins with none of ours. The boot test
+/// links no updater and no store, so nothing of ours erases or programs.
+const FOUNTAIN_HP: Pins = &[
+    // No Wi-Fi driver, so no private-command path to the eFuse map.
+    ("EFUSE_LogicalMap_Write", &["cmd_efuse_protect"]),
+    ("EFUSEWrite8", &["cmd_efuse_protect"]),
+    ("FLASH_Erase", &["FLASH_EraseXIP", "cmd_flash"]),
+    ("FLASH_SetStatus", &["FLASH_SetStatusXIP", "cmd_flash"]),
+    ("FLASH_SetStatusBits", &["FLASH_SetStatusBitsXIP"]),
+    (
+        "FLASH_TxData12B",
+        &["FLASH_TxData12BXIP", "FLASH_WriteStream", "cmd_flash"],
+    ),
+    ("FLASH_TxData256B", &["FLASH_TxData256BXIP"]),
+    ("FLASH_EraseXIP", &["FLASH_EreaseDwordsXIP"]),
+    ("FLASH_TxData256BXIP", &[]),
+    ("FLASH_TxData12BXIP", &["FLASH_EreaseDwordsXIP"]),
+    ("FLASH_EreaseDwordsXIP", &[]),
+    ("cmd_flash", &["shell_cmd_table"]),
+    ("cmd_efuse_protect", &["shell_cmd_table"]),
+    ("shell_cmd_table", &["__libc_init_array", "CmdRamHelp"]),
+    ("CmdRamHelp", &["shell_cmd_table"]),
+];
+
+/// The fountain's KM0: the PLAF103's pins without the boot trial's
+/// marker write. The SDK's own flash setup still writes the status register
+/// at boot, as stock's does, before KM4 runs.
+const FOUNTAIN_LP: Pins = &[
+    ("EFUSE_LogicalMap_Write", &["cmd_efuse_protect"]),
+    (
+        "EFUSEWrite8",
+        &["cmd_efuse_extpath_write", "cmd_efuse_protect"],
+    ),
+    ("EFUSE_PG_Packet", &[]),
+    ("FLASH_Erase", &["FLASH_EraseXIP"]),
+    (
+        "FLASH_SetStatus",
+        &[
+            "FLASH_SetStatusXIP",
+            "flash_operation_config",
+            "flash_rx_mode_switch",
+        ],
+    ),
+    ("FLASH_SetStatusBits", &["FLASH_SetStatusBitsXIP"]),
+    (
+        "FLASH_TxData12B",
+        &["FLASH_TxData12BXIP", "FLASH_WriteStream"],
+    ),
+    ("FLASH_TxData256B", &["FLASH_TxData256BXIP"]),
+    ("FLASH_EraseXIP", &["FLASH_EreaseDwordsXIP"]),
+    ("FLASH_TxData12BXIP", &["FLASH_EreaseDwordsXIP"]),
+    ("FLASH_EreaseDwordsXIP", &[]),
+    ("FLASH_WriteStream", &[]),
+    ("cmd_flash", &["shell_cmd_table"]),
+    ("cmd_efuse_protect", &["shell_cmd_table"]),
+    ("cmd_efuse_extpath_write", &["cmd_efuse_protect"]),
+    ("shell_cmd_table", &["CmdRamHelp"]),
+    ("CmdRamHelp", &["shell_cmd_table"]),
+    ("shell_init_rom", &[]),
+    ("shell_task_rom", &[]),
+];
+
+/// The boot trial's C glue, which a fountain image never links.
+const TRIAL: [&str; 2] = ["wellfed_trial_step", "wellfed_trial_program"];
 
 /// Calls and branches, conditional ones included (`bleq` inside an IT block).
 static BRANCH: LazyLock<Regex> = LazyLock::new(|| {
@@ -448,6 +524,15 @@ fn stored_word(code: &HashMap<u64, u64>, literals: &BTreeSet<u64>, location: u64
     literals.contains(&location) || !one_instruction(code, location)
 }
 
+/// Whether code of ours may reference a write entry at all.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Ours {
+    /// Only as the model's pins name it.
+    Pinned,
+    /// Never: the image writes no flash.
+    Never,
+}
+
 /// What one core's image may and must link.
 struct Rules {
     absent: Vec<&'static str>,
@@ -455,6 +540,12 @@ struct Rules {
     sections: &'static [&'static str],
     required: &'static str,
     present: bool,
+    ours: Ours,
+}
+
+/// A caller in a Wellfed object: a C symbol of ours or a Rust path.
+fn is_ours(caller: &str) -> bool {
+    caller.starts_with("wellfed")
 }
 
 fn audit_core(elf: &Path, objdump: &Path, core: &Rules) -> Result<CoreWrites> {
@@ -495,6 +586,18 @@ fn audit_core(elf: &Path, objdump: &Path, core: &Rules) -> Result<CoreWrites> {
         .cloned()
         .collect();
     let found = references(elf, objdump, &names, &targets, core.sections)?;
+
+    if core.ours == Ours::Never {
+        let ours: BTreeMap<String, Vec<String>> = found
+            .iter()
+            .map(|(target, callers)| {
+                let callers: Vec<String> = callers.iter().filter(|c| is_ours(c)).cloned().collect();
+                (target.clone(), callers)
+            })
+            .filter(|(_, callers)| !callers.is_empty())
+            .collect();
+        require(ours.is_empty(), || WritesError::Ours { references: ours })?;
+    }
 
     let empty = BTreeSet::new();
     let unexpected: BTreeMap<&String, Vec<&String>> = found
@@ -540,31 +643,41 @@ fn audit_core(elf: &Path, objdump: &Path, core: &Rules) -> Result<CoreWrites> {
     })
 }
 
-pub(crate) fn audit(sdk: &Path, binutils: &Binutils) -> Result<WritesAudit> {
+pub(crate) fn audit(sdk: &Path, binutils: &Binutils, model: Model) -> Result<WritesAudit> {
     let objdump = binutils.objdump();
-    let lp_pinned: Vec<&str> = EXPECTED_LP.iter().map(|(t, _)| *t).collect();
-    // KM0 needs the WLAN firmware entry for Wi-Fi; KM4 must not carry it.
+    let (hp_pins, lp_pins, wlan, ours) = match model {
+        Model::Plaf103 => (EXPECTED_HP, EXPECTED_LP, true, Ours::Pinned),
+        Model::Plwf106 => (FOUNTAIN_HP, FOUNTAIN_LP, false, Ours::Never),
+    };
+    let lp_pinned: Vec<&str> = lp_pins.iter().map(|(t, _)| *t).collect();
+    let trial: &[&str] = if ours == Ours::Never { &TRIAL } else { &[] };
+
+    // KM0 needs the WLAN firmware entry for Wi-Fi; KM4 must never carry it,
+    // and a model with no Wi-Fi links it on neither.
     let hp = Rules {
-        absent: ABSENT.to_vec(),
-        expected: EXPECTED_HP,
+        absent: ABSENT.iter().chain(trial).copied().collect(),
+        expected: hp_pins,
         sections: &[".ram_image2.text", ".xip_image2.text"],
         required: "wifi_FW_init_ram",
         present: false,
+        ours,
     };
     let lp = Rules {
         absent: ABSENT
             .iter()
             .filter(|n| !lp_pinned.contains(n))
+            .chain(trial)
             .copied()
             .collect(),
-        expected: EXPECTED_LP,
+        expected: lp_pins,
         sections: &[
             ".ram_image2.text",
             ".xip_image2.text",
             ".ram_retention.text",
         ],
         required: "wifi_FW_init_ram",
-        present: true,
+        present: wlan,
+        ours,
     };
 
     Ok(WritesAudit {

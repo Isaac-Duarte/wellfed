@@ -648,23 +648,26 @@ impl Build<'_> {
                 &self.image_directory().join("OTA_All.bin"),
                 &stock.image,
                 &stock.layout,
+                job.device.model(),
             )
             .map_err(|e| Error::Layout(Box::new(e)))?;
             audits.layout_audit = Some(layout);
             audits.km0_pinmap_audit = Some(audit::pinmap::audit_linked_table(
                 ota,
                 audit::pmap_address(sdk, binutils)?,
+                job.device.model(),
                 &image,
             )?);
         }
         if job.profile.has(Stage::Rust) {
             audit::retained_ram(sdk, binutils)?;
-            audits.ram_park_audit = Some(park::audit(sdk, binutils, archives)?);
+            audits.ram_park_audit = Some(park::audit(sdk, binutils, archives, job.device.model())?);
             audits.sdk_hook_audit = Some(audit::hooks::audit(sdk, binutils, archives)?);
         }
         if job.profile.has(Stage::Firstboot) {
-            audits.firstboot_startup_audit = Some(audit::mains::audit(sdk, binutils)?);
-            audits.wifi_link_audit = Some(audit::writes::audit(sdk, binutils)?);
+            let model = job.device.model();
+            audits.firstboot_startup_audit = Some(audit::mains::audit(sdk, binutils, model)?);
+            audits.wifi_link_audit = Some(audit::writes::audit(sdk, binutils, model)?);
             audits.stack_audit = Some(audit::stack::audit(
                 &self.image_directory().join("target_img2.axf"),
                 &binutils.objdump(),
@@ -732,8 +735,13 @@ impl Amebad {
         let lock = lock(job.repo)?;
         let stock = if job.profile.has(Stage::Stock) {
             let stock = job.device.stock(job.repo)?;
-            audit::layout::audit(&stock.image, &stock.image, &stock.layout)
-                .map_err(|e| Error::Layout(Box::new(e)))?;
+            // The PLAF103's stock OTA is checked against its layout before
+            // anything is staged from it; the fountain's backup is checked
+            // by hash where its pad table is read.
+            if job.device.model() == Model::Plaf103 {
+                audit::layout::audit(&stock.image, &stock.image, &stock.layout, Model::Plaf103)
+                    .map_err(|e| Error::Layout(Box::new(e)))?;
+            }
             Some(stock)
         } else {
             None

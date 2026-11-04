@@ -30,7 +30,7 @@ PRODUCTION_LINTS = -D clippy::unwrap_used -D clippy::cast_possible_truncation \
 # both cores' chip routines and the chip HAL, which is what builds for it.
 FOUNTAIN = WELLFED_BOARD=plwf106 CARGO_TARGET_DIR=target/plwf106
 FOUNTAIN_CRATES = -p wellfed-board -p wellfed-board-plwf106 -p wellfed-amebad-sys \
-	-p wellfed-hal-common -p wellfed-hal
+	-p wellfed-hal-common -p wellfed-hal -p wellfed-fw-fountain
 
 # After the workspace, nine lines check the bench variants' injections,
 # which no workspace build enables: `stop-fail` and `feed-faults` (for

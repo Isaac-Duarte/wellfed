@@ -1,0 +1,32 @@
+[package]
+license.workspace = true
+name = "wellfed-fw-fountain"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Experimental PLWF106 boot test: latches the pump off, reports the build, bank and pump readback over UART and beats, with no network, store or update"
+publish.workspace = true
+build = "build.rs"
+
+# The KM4 archive wellfed-build links into the image.
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[features]
+# KM4 target builds with the pinned SDK bindings.
+km4 = ["wellfed-hal/km4", "wellfed-hal/sdk"]
+
+[dependencies]
+# The board's cfg reaches this crate's build script through its `links`
+# metadata, so the crate is empty on any board but the fountain's.
+wellfed-board.workspace = true
+wellfed-hal.workspace = true
+
+[lints]
+workspace = true
+
+# What wellfed-build reads (see the firmware guide): the boot test builds
+# for the PLWF106 only, and starts its one task itself, with no SDK runtime.
+[package.metadata.wellfed]
+devices = ["plwf106"]
+runtime = "bare"

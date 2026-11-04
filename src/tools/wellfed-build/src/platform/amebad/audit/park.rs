@@ -5,6 +5,10 @@
 //! checks emitted instructions and placement, not MMIO ownership, boot
 //! readiness, interrupt/fault-vector behavior or global SDK flash
 //! interception.
+//!
+//! The KM4 fault callback writes the board's safe state, so its bit masks are
+//! pinned per model: the PLAF103's motor pair HIGH and both emitters LOW, the
+//! PLWF106's pump enable LOW and nothing else.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -14,6 +18,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use wellfed_formats::audit::{Leaf, ParkAudit, ParkFunction, ParkImage};
 use wellfed_image::ota::{container, images};
+use wellfed_proto::device::Model;
 
 use super::packaged;
 use super::{
@@ -56,6 +61,35 @@ pub enum ParkError {
     Placement { name: &'static str },
     #[error("Missing retained parking functions in {core}")]
     Missing { core: Core },
+    /// The fault callback sets or clears other bits than the model's safe
+    /// state, as `(mnemonic, mask)` in listing order.
+    #[error("The fault callback's writes are not the safe state: {found:?}")]
+    SafeState { found: Vec<(String, u64)> },
+}
+
+/// The fault callback's read-modify-writes, in order: `orr` sets a mask HIGH,
+/// `bic` clears one LOW, on port A's data register, then port B's.
+fn safe_state(model: Model) -> &'static [(&'static str, u64)] {
+    match model {
+        Model::Plaf103 => &[("orr", 0x6000), ("bic", 0x8000), ("bic", 0x8)],
+        Model::Plwf106 => &[("bic", 0x4000_0000)],
+    }
+}
+
+/// The `orr` and `bic` immediates of a listing, in order.
+fn masks(listing: &str) -> Vec<(String, u64)> {
+    listing
+        .lines()
+        .filter_map(|line| {
+            let m = INSTRUCTION.captures(line)?;
+            let mnemonic = m[2].split('.').next()?;
+            if !["orr", "bic"].contains(&mnemonic) {
+                return None;
+            }
+            let operand = m[3].split(',').next_back()?;
+            Some((mnemonic.to_string(), immediate(operand)?))
+        })
+        .collect()
 }
 
 pub(crate) const SYMBOLS: [&str; 6] = [
@@ -242,7 +276,12 @@ pub fn check_leaf(
 }
 
 /// `objects` maps KM0/KM4 to the linked Rust archive containing this code.
-pub(crate) fn audit(sdk: &Path, binutils: &Binutils, objects: &Archives) -> Result<ParkAudit> {
+pub(crate) fn audit(
+    sdk: &Path,
+    binutils: &Binutils,
+    objects: &Archives,
+    model: Model,
+) -> Result<ParkAudit> {
     let image = fs::read(ota_image(sdk))?;
     let payload = container(&image)?;
     let regions = images(payload)?;
@@ -291,6 +330,14 @@ pub(crate) fn audit(sdk: &Path, binutils: &Binutils, objects: &Archives) -> Resu
                 3
             };
             let leaf = check_leaf(&listing, address, size, minimum)?;
+            if KM4_SYMBOLS.contains(&name) {
+                let found = masks(&listing);
+                let expected: Vec<(String, u64)> = safe_state(model)
+                    .iter()
+                    .map(|(mnemonic, mask)| ((*mnemonic).to_string(), *mask))
+                    .collect();
+                require(found == expected, || ParkError::SafeState { found })?;
+            }
             functions.insert(
                 name.to_string(),
                 ParkFunction {
@@ -438,5 +485,29 @@ mod tests {
         ] {
             rejection(&[&instruction]);
         }
+    }
+
+    /// The fault callback's masks as both models' images link them.
+    #[test]
+    fn the_fault_callbacks_masks_are_each_models_safe_state() {
+        let fountain = "\
+100056b2:\t6801      \tldr\tr1, [r0, #0]
+100056b4:\tf021 4180 \tbic.w\tr1, r1, #1073741824\t; 0x40000000
+100056b8:\t6001      \tstr\tr1, [r0, #0]
+";
+        let feeder = "\
+100056b4:\tf441 41c0 \torr.w\tr1, r1, #24576\t; 0x6000
+100056bc:\tf421 4100 \tbic.w\tr1, r1, #32768\t; 0x8000
+100056c6:\tf021 0108 \tbic.w\tr1, r1, #8
+";
+        let pinned = |model| {
+            safe_state(model)
+                .iter()
+                .map(|(m, v)| ((*m).to_string(), *v))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(masks(fountain), pinned(Model::Plwf106));
+        assert_eq!(masks(feeder), pinned(Model::Plaf103));
+        assert_ne!(masks(feeder), pinned(Model::Plwf106));
     }
 }

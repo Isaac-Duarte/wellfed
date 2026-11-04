@@ -5455,6 +5455,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wellfed-fw-fountain"
+version = "0.1.0"
+dependencies = [
+ "wellfed-board",
+ "wellfed-hal",
+]
+
+[[package]]
 name = "wellfed-fw-qa"
 version = "0.1.0"
 dependencies = [

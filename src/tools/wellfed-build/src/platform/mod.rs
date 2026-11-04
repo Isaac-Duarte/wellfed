@@ -132,6 +132,7 @@ impl Platform {
             Self::Amebad(_) => Ok(Linked::Amebad(amebad::audit::linked(
                 repo,
                 &device.stock(repo)?,
+                device.model(),
                 build,
                 &amebad::archives(archives)?,
                 firmware,

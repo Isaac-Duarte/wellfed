@@ -23,6 +23,7 @@ use super::{Core, PROJECT, binutils};
 use crate::device::StockPaths;
 use crate::{Firmware, Repo, Result, relative, text};
 use wellfed_formats::require;
+use wellfed_proto::device::Model;
 
 pub mod hooks;
 pub(crate) mod layout;
@@ -201,6 +202,7 @@ pub struct Linked {
 pub(crate) fn linked(
     repo: &Repo,
     stock: &StockPaths,
+    model: Model,
     build: &Path,
     objects: &Archives,
     firmware: &Firmware,
@@ -214,16 +216,17 @@ pub(crate) fn linked(
     let app = stack::task_sources(repo, firmware)?;
 
     Ok(Linked {
-        layout_audit: layout::audit(&ota_image(&sdk), &stock.image, &stock.layout)?,
+        layout_audit: layout::audit(&ota_image(&sdk), &stock.image, &stock.layout, model)?,
         km0_pinmap_audit: pinmap::audit_linked_table(
             &image,
             pmap_address(&sdk, &binutils)?,
+            model,
             &stock_image,
         )?,
-        ram_park_audit: park::audit(&sdk, &binutils, objects)?,
+        ram_park_audit: park::audit(&sdk, &binutils, objects, model)?,
         sdk_hook_audit: hooks::audit(&sdk, &binutils, objects)?,
-        firstboot_startup_audit: mains::audit(&sdk, &binutils)?,
-        wifi_link_audit: writes::audit(&sdk, &binutils)?,
+        firstboot_startup_audit: mains::audit(&sdk, &binutils, model)?,
+        wifi_link_audit: writes::audit(&sdk, &binutils, model)?,
         stack_audit: stack::audit(&elf(&sdk, Core::Hp), &binutils.objdump(), &app)?,
     })
 }

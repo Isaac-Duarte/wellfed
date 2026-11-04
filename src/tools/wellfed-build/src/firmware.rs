@@ -1,7 +1,8 @@
 //! A firmware crate under `src/firmware/wellfed/`, and what its
 //! `[package.metadata.wellfed]` table declares: the devices it builds for,
-//! whether it links the device's Bluetooth stack, the startup policies of its
-//! normal first-boot image and its opt-in image variants.
+//! whether it links the device's Bluetooth stack, whether it runs on the SDK
+//! runtime, the startup policies of its normal first-boot image and its
+//! opt-in image variants.
 //!
 //! That table is the builder's only firmware-specific knowledge, so a new
 //! firmware or variant needs no builder change. `Cargo.toml` is an identity
@@ -75,6 +76,20 @@ pub struct Policies {
     pub adc: Option<String>,
 }
 
+/// What a firmware's image starts from.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Runtime {
+    /// `wellfed-sdk`'s runtime, which starts its own tasks and the
+    /// firmware's declared ones, and installs the flash-lease provider.
+    #[default]
+    Sdk,
+    /// No SDK runtime: the firmware exports the entry and starts its own
+    /// tasks with `task_create`, and nothing installs a flash-lease
+    /// provider, so the flash hooks stay on the vendor lock.
+    Bare,
+}
+
 /// An opt-in image variant: the firmware's Cargo feature of the same name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
@@ -123,6 +138,8 @@ struct Declaration {
     #[serde(default)]
     bluetooth: bool,
     #[serde(default)]
+    runtime: Runtime,
+    #[serde(default)]
     policies: Policies,
     #[serde(default)]
     variants: BTreeMap<String, VariantDeclaration>,
@@ -144,6 +161,7 @@ pub struct Firmware {
     name: String,
     devices: Vec<String>,
     bluetooth: bool,
+    runtime: Runtime,
     policies: Policies,
     variants: Vec<Variant>,
 }
@@ -206,6 +224,7 @@ impl Firmware {
             name: name.to_string(),
             devices: declaration.devices,
             bluetooth: declaration.bluetooth,
+            runtime: declaration.runtime,
             policies: declaration.policies,
             variants,
         })
@@ -233,6 +252,11 @@ impl Firmware {
     /// one firmware's images never differ in whether the radio runs BT.
     pub fn bluetooth(&self) -> bool {
         self.bluetooth
+    }
+
+    /// What its image starts from.
+    pub(crate) fn runtime(&self) -> Runtime {
+        self.runtime
     }
 
     /// Refused unless the firmware declares `device`.
