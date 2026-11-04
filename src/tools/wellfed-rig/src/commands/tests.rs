@@ -64,7 +64,7 @@ fn plan(command: &str) -> String {
             kind: Kind::GiveWay,
             bank: 1,
             offset: 0x186000,
-            fallback_ota_sha256: "f".into(),
+            fallback_ota_sha256: Some("f".into()),
             bank0_region_sha256: "z".into(),
             before_sha256: "b".into(),
             after_sha256: "a".into(),

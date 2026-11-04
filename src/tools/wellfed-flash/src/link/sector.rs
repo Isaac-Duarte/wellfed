@@ -16,6 +16,9 @@ use crate::link::status;
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::require;
 use wellfed_image::bank::BANK1;
+use wellfed_proto::device::Model;
+
+use crate::device;
 
 /// Sector transport and marker-commit refusals. Those after an erase intent
 /// leave flash possibly changed, which the journal's stop record says.
@@ -90,32 +93,94 @@ pub const END: usize = BANK1.end;
 /// Flash addresses as the helper's program frames name them.
 pub const FLASH_BASE: u32 = 0x0800_0000;
 
-/// The pinned original 8 MiB backup; the only accepted baseline.
+/// The pinned original 8 MiB backup of one model's unit; the only accepted
+/// baseline. It carries its model, so every check that compares with it
+/// uses that model's pins.
 #[derive(Clone)]
-pub struct Baseline(Arc<[u8]>);
+pub struct Baseline {
+    data: Arc<[u8]>,
+    model: Model,
+}
 
 impl Baseline {
+    /// The research feeder's backup.
     pub fn pinned(data: Vec<u8>) -> Result<Self> {
+        Self::pinned_for(Model::Plaf103, data)
+    }
+
+    /// The backup of `model`'s unit, and nothing else: another unit's or
+    /// another model's backup does not hash to the pin.
+    pub fn pinned_for(model: Model, data: Vec<u8>) -> Result<Self> {
+        let pins = device::pins(model);
         require(
-            data.len() == CAPACITY && sha256(&data) == BASELINE_SHA256,
+            data.len() == CAPACITY && sha256(&data) == pins.baseline_sha256,
             || SectorError::UnpinnedBaseline { bytes: data.len() },
         )?;
-        Ok(Self(data.into()))
+
+        // The fountain's stock banks are pinned on their own too: what its
+        // give-way and its recovery compare against.
+        let (start, end) = pins.bank1;
+        let banks = pins
+            .stock_bank0
+            .is_none_or(|(at, length, hash)| sha256(&data[at..at + length]) == hash)
+            && pins
+                .stock_bank1_sha256
+                .is_none_or(|hash| sha256(&data[start..end]) == hash);
+        require(banks, || SectorError::UnpinnedBaseline {
+            bytes: data.len(),
+        })?;
+
+        Ok(Self {
+            data: data.into(),
+            model,
+        })
     }
 
     /// Host tests only: a synthetic stand-in that is never the pinned unit.
     #[cfg(test)]
     pub fn synthetic(data: Vec<u8>) -> Self {
+        Self::synthetic_for(Model::Plaf103, data)
+    }
+
+    #[cfg(test)]
+    pub fn synthetic_for(model: Model, data: Vec<u8>) -> Self {
         assert_eq!(data.len(), CAPACITY);
-        Self(data.into())
+        Self {
+            data: data.into(),
+            model,
+        }
     }
 
     pub fn bytes(&self) -> &[u8] {
-        &self.0
+        &self.data
     }
 
     pub fn sha256(&self) -> String {
-        sha256(&self.0)
+        sha256(&self.data)
+    }
+
+    pub fn model(&self) -> Model {
+        self.model
+    }
+
+    pub fn pins(&self) -> &'static device::Pins {
+        device::pins(self.model)
+    }
+
+    /// Bank 1's window on this model: what stock recovery puts back.
+    pub fn bank1(&self) -> (usize, usize) {
+        self.pins().bank1
+    }
+
+    /// Whether bank 1's first eight bytes would still boot, so the bank must
+    /// not be rewritten in place. On the PLAF103 that is its stock marker,
+    /// the baseline's. The fountain's original bank 1 is not bootable (its
+    /// marker is altered), so there it is the loader's marker itself.
+    pub fn bootable(&self, marker: &[u8]) -> bool {
+        match self.model {
+            Model::Plaf103 => *marker == self.data[START..START + 8],
+            Model::Plwf106 => *marker == *crate::writers::development::MARKER,
+        }
     }
 }
 
@@ -153,6 +218,21 @@ pub fn bounded_frame(
 
 pub fn program_frame(number: u8, offset: usize, payload: &[u8]) -> Result<Vec<u8>> {
     bounded_frame(number, offset, payload, START, END, Bank::Stock)
+}
+
+/// A stock-recovery frame: inside the baseline model's bank-1 window and
+/// clear of its preserved ranges. On the PLAF103 that window is
+/// [`program_frame`]'s.
+pub fn bank1_frame(
+    baseline: &Baseline,
+    number: u8,
+    offset: usize,
+    payload: &[u8],
+) -> Result<Vec<u8>> {
+    let (start, end) = baseline.bank1();
+    let frame = bounded_frame(number, offset, payload, start, end, Bank::Stock)?;
+    baseline.pins().writable(offset, offset + payload.len())?;
+    Ok(frame)
 }
 
 pub fn read_sector(port: &mut dyn Port, offset: usize) -> Result<Vec<u8>> {
@@ -237,8 +317,9 @@ pub fn restore_sector(
     expected_before: &str,
     journal: &mut Located,
 ) -> Result<Restored> {
+    let (start, end) = baseline.bank1();
     require(
-        (START..=END - SECTOR).contains(&offset) && offset.is_multiple_of(SECTOR),
+        (start..=end - SECTOR).contains(&offset) && offset.is_multiple_of(SECTOR),
         || SectorError::SectorOutside { offset },
     )?;
     require(wellfed_formats::hex::is_sha256(expected_before), || {
@@ -247,7 +328,9 @@ pub fn restore_sector(
 
     let payload = sector_payload(baseline, offset);
     let after = sha256(&payload);
-    let frames = sector_frames(offset, &payload, program_frame)?;
+    let frames = sector_frames(offset, &payload, |number, at, chunk| {
+        bank1_frame(baseline, number, at, chunk)
+    })?;
     let mut mutation_possible = false;
 
     let mut record = |event: Event| {
@@ -284,7 +367,7 @@ pub fn restore_sector(
         })?;
 
         if offset == START {
-            require(before[..8] != baseline.bytes()[START..START + 8], || {
+            require(!baseline.bootable(&before[..8]), || {
                 SectorError::MarkerStillValid
             })?;
         }
@@ -364,8 +447,9 @@ pub fn commit_marker(
         bytes: current.len(),
     })?;
 
+    let (start, end) = baseline.bank1();
     let mut proposed = current.to_vec();
-    proposed[START..END].copy_from_slice(&baseline.bytes()[START..END]);
+    proposed[start..end].copy_from_slice(&baseline.bytes()[start..end]);
     let mut staged = proposed.clone();
     staged[START..START + 8].fill(0xff);
     let staged_sector = staged[START..START + SECTOR].to_vec();
@@ -404,7 +488,7 @@ pub fn commit_marker(
             &mut record,
         )?;
 
-        let frame = program_frame(1, START, &baseline.bytes()[START..START + 1024])?;
+        let frame = bank1_frame(baseline, 1, START, &baseline.bytes()[START..START + 1024])?;
         record(Event::MarkerCommitIntent {
             proposed_snapshot_sha256: sha256(&proposed),
         })?;

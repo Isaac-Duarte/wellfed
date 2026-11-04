@@ -1,4 +1,6 @@
-//! Prepare or execute exact original bank-1 recovery on the research unit.
+//! Prepare or execute exact original bank-1 recovery on the research unit:
+//! the PLAF103 feeder, or the PLWF106 fountain from its own pinned backup
+//! over its own bank-1 window.
 //!
 //! Port of the `prepare`/`execute` modes of the former
 //! `src/tools/flash/uart-stock-recovery.py`, which did the physical stock
@@ -14,6 +16,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::device;
 use crate::error::Result;
 use crate::evidence;
 use crate::evidence::report::{Session, Status, SummaryStatus, Transport};
@@ -26,6 +29,7 @@ use wellfed_formats::canonical::{canonical, sha256};
 use wellfed_formats::flash_plan::{Kind, ToolHashes};
 use wellfed_formats::require;
 use wellfed_formats::session::Mode;
+use wellfed_proto::device::Model;
 
 /// A stock recovery whose full read or reviewed plan does not bind, or a
 /// snapshot that came back short.
@@ -75,15 +79,19 @@ pub struct Reviewed {
 }
 
 /// All local provenance checks run before serial access or output creation.
-fn prepare_inputs(context: &Context, args: &Args) -> Result<(Baseline, Vec<u8>, Reviewed)> {
+fn prepare_inputs(
+    context: &Context,
+    model: Model,
+    args: &Args,
+) -> Result<(Baseline, Vec<u8>, Reviewed)> {
     let root = &context.root;
     let evidence = &args.evidence;
-    let baseline = context.baseline(&evidence.baseline)?;
+    let baseline = context.baseline_for(model, &evidence.baseline)?;
     let current = root.private_file(&args.current)?;
     let plan = recovery::plan(&baseline, &current)?;
 
     context.helper(evidence.helper.as_deref())?;
-    let rom = session::validate_rom_report(context, &evidence.rom_report)?;
+    let rom = session::validate_rom_report_for(context, model, &evidence.rom_report)?;
     let small =
         session::validate_status_session(context, Some(&evidence.small_report), &evidence.port)?;
 
@@ -115,7 +123,7 @@ fn prepare_inputs(context: &Context, args: &Args) -> Result<(Baseline, Vec<u8>, 
 
     let reviewed = Reviewed {
         schema_version: 1,
-        kind: Kind::StockRecovery,
+        kind: device::recovery_kind(model),
         port: evidence.port.clone(),
         recovery_plan: plan,
         current_report_sha256: sha256(&raw_report),
@@ -152,8 +160,14 @@ struct Prepared<'a> {
     changed_sectors: usize,
 }
 
+/// The research feeder's stock recovery.
 pub fn run(context: &Context, args: &Args) -> Result<Outcome> {
-    let (baseline, current, expected) = prepare_inputs(context, args)?;
+    run_for(context, Model::Plaf103, args)
+}
+
+/// Stock recovery of `model`'s bank 1 from that model's pinned backup.
+pub fn run_for(context: &Context, model: Model, args: &Args) -> Result<Outcome> {
+    let (baseline, current, expected) = prepare_inputs(context, model, args)?;
     let evidence = &args.evidence;
 
     if args.phase == Phase::Prepare {
@@ -161,7 +175,7 @@ pub fn run(context: &Context, args: &Args) -> Result<Outcome> {
         progress(&format!("Prepared bank-1 recovery plan SHA256: {sha}"));
         return Outcome::done(&Prepared {
             status: SummaryStatus::Prepared,
-            operation: Kind::StockRecovery,
+            operation: expected.kind,
             plan: &evidence.output,
             plan_sha256: sha,
             changed_sectors: expected.recovery_plan.changed_sector_count,
@@ -234,6 +248,7 @@ fn execute(
     manifest: &Value,
     raw: &[u8],
 ) -> Result<Outcome> {
+    let operation = device::recovery_kind(baseline.model());
     let directory = context.root.output_directory(&args.evidence.output)?;
     session::keep_plan(&directory, raw)?;
     if let Some(parent) = directory.parent() {
@@ -244,7 +259,7 @@ fn execute(
         directory.join("session.json"),
         Details {
             port: args.evidence.port.clone(),
-            operation: Kind::StockRecovery,
+            operation,
             reviewed_plan_sha256: sha256(raw),
             helper_upload_attempted: false,
             snapshots: Vec::new(),
@@ -327,7 +342,7 @@ fn execute(
 
     let summary = Summary {
         status: state.status,
-        operation: Kind::StockRecovery,
+        operation,
         output: &directory,
         snapshot_sha256: state.details.snapshot_sha256,
         error: state.error,

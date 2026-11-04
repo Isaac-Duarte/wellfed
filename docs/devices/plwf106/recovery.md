@@ -1,6 +1,6 @@
 # UART backup and recovery
 
-This page says what backing up the PLWF106 over UART has shown, and what a restore still needs. It is for developers. **Nothing on this page writes flash, and no writer accepts this model.**
+This page covers backing up the PLWF106 over UART, writing a test image into its bank 1, and putting stock back. It is for developers running a boot test on the fountain. The writers are pinned to our unit's backup, so **they are not general PLWF106 installers**. A backup of another fountain fails their hash checks.
 
 ## What has been shown
 
@@ -11,26 +11,92 @@ On our unit:
 - the first 4 KiB, read three times, matching;
 - a full 8 MiB read, twice, matching byte for byte, with no stock boot in between.
 
-Not shown: any write, a restore, a marker change, or recovery from a power cut.
+Not shown on the fountain: any write, a give-way, a restore, or recovery from a power cut. The fountain writers below have run only against a modeled helper on the host.
 
 ## Take a backup
 
-The steps are the PLAF103's ([recovery](../plaf103/recovery.md), [relay bench](../plaf103/bench.md)): enter download mode, run `read inspect-rom`, then `read small`, then `read full`. A full read takes about 16 minutes.
+The steps are the PLAF103's ([recovery](../plaf103/recovery.md), [relay bench](../plaf103/bench.md)): run `read inspect-rom` while stock runs, then enter download mode and run `read small --device plwf106`, then `read full --device plwf106`. A full read takes about 16 minutes.
+
+`read small`, `full` and `status` accept only a ROM report that names the fountain's stock console. Reports written before `inspect-rom` recorded the model count as the feeder's, so take a fresh `inspect-rom` while stock still runs.
 
 > [!NOTE]
 > Keep your hands off the board during a full read. A bump to the wiring can stop it with "Changed or excessive duplicate packet". The read then refuses rather than retrying, and you start it again.
 
 Take two full reads with no stock boot in between, and compare them. Stock rewrites its settings and log sectors while it runs, so reads with a boot between them differ there and only there. On our unit those were the sectors at `0x3e8000`, `0x3e9000`, `0x3ea000` and `0x3ff000`.
 
-## What a restore needs
+## How a boot test stays recoverable
 
-The PLAF103's writers are pinned to that feeder's baseline, so they refuse this model. A PLWF106 restore needs its own reviewed plan:
+The loader tries bank 1 first, then bank 0 ([flash layout](flash-layout.md#loader-selection-and-failure-behavior)). On our unit, bank 1's marker is altered, so stock runs from bank 0. A boot test uses that order:
 
-- a fountain flash layout and preservation map, starting from the [minimum preservation map](flash-layout.md#minimum-preservation-map);
-- the factory weight calibration at `0x7ce000` and `0x7cf000` preserved, with nothing recalibrating it;
-- a recovery story for stock's loader, which does not fall back from a crashing bank ([flash layout](flash-layout.md#loader-selection-and-failure-behavior));
-- the pinned writer checks unchanged: marker sequencing, preservation and no automatic retry.
+- **Install.** The test image goes into bank 1 only. Its marker is written last, so a stop part-way leaves bank 1 unbootable and stock still boots.
+- **Give way.** If the test image boots but misbehaves, clearing bank 1's first byte sends the loader back to stock bank 0. That is one 1 KiB program with no erase.
+- **Restore.** Stock recovery then puts the backup's bank 1 back exactly, altered marker included.
+
+The ROM enters download mode before the flash loader runs, so a test image that crashes still leaves the fountain reachable over UART. Bank 0 is never written, and neither is anything outside bank 1 ([what the writers allow](flash-layout.md#what-the-writers-allow)).
+
+The writers keep every PLAF103 rule, with the fountain's own pins:
+
+| Pin | The fountain's |
+| --- | --- |
+| Baseline | Our unit's 8 MiB backup, by SHA-256, and its bank 0 and bank 1 by their own hashes |
+| ROM inspection | A report naming the PLWF106's stock console |
+| Writable bytes | `0x186000..0x271000`, clear of every preserved range |
+| Fallback for a give-way | The backup's bank 0, byte for byte. A `--fallback` review is refused |
+| Plan kinds | `plwf106_bank1_development_update`, `plwf106_bank1_give_way`, `plwf106_original_bank1_recovery` |
+| Image review | `plwf106_development_image_review` of a `plwf106` firstboot build |
+
+Marker-last sequencing, the preservation checks and the no-retry stops are the PLAF103's code paths, unchanged. Stock recovery still refuses a bank 1 that can boot.
+
+The status check before each erase and program decodes the registers as the PLAF103's GD25Q64E. The fountain's flash part is **Unknown**, so run `read status --device plwf106` on it first. A status that doesn't decode as unprotected refuses the write; nothing clears it.
+
+> [!NOTE]
+> `wellfed-build review` does not write fountain reviews yet, so there is no candidate to install. The writers are ready for one.
+
+## Run a boot test
+
+Every command takes `--device plwf106` and the evidence of one helper session: `--baseline` (the pinned backup), `--rom-report`, `--small-report` and `--port`. Each writer runs `inspect`, then `prepare`, then `execute` with the plan's SHA-256, as described in the [Rust flash client](../../development/rust-flash.md#how-a-write-works).
+
+1. Run `wellfed-flash update --device plwf106 --help` with no device attached.
+2. While stock runs, run `read inspect-rom`. Then enter download mode and run `read small --device plwf106`.
+3. Run `wellfed-flash update --device plwf106 inspect --target <review>`. With no `--source`, the original bytes come from the backup, and bank 1 must still equal them.
+4. Run `update prepare`, and check the plan: kind `plwf106_bank1_development_update`, bank 1, and sectors from `0x186000` up.
+
+   > [!WARNING]
+   > The next step rewrites bank 1. Keep independent copies of both full backups, and keep the fountain powered until the run ends.
+
+5. Run `update execute` with that plan hash.
+6. Release the strap and power the fountain on. Watch the console.
+
+To replace one test image with another, pass the installed one's review as `--source`.
+
+## Go back to stock
+
+1. Enter download mode, then run `read small --device plwf106` with the ROM report taken while stock ran. The test image's console is not stock's, so `inspect-rom` cannot run on it.
+2. Run `wellfed-flash give-way --device plwf106 inspect`, with no `--fallback`. It checks that bank 0 is exactly the backup's. If an install stopped before its marker, bank 1 cannot boot and there is nothing to give way: skip to step 5.
+3. Run `give-way prepare`, check the plan, then `give-way execute`.
+4. Power the fountain on with the strap released. Stock should boot from bank 0.
+5. To restore bank 1 exactly, enter download mode again and run `read small --device plwf106`, then `read full --device plwf106`.
+6. Run `wellfed-flash stock-recovery --device plwf106 prepare --current <full read>`. Check the plan: kind `plwf106_original_bank1_recovery`, sectors inside `0x186000..0x271000`, bank 1's first sector last.
+
+   > [!WARNING]
+   > The next step rewrites bank 1. Keep the fountain powered until the run ends.
+
+7. Run `stock-recovery execute` with that plan hash. It reads all 8 MiB three times, so allow about an hour.
+
+The boot log holds the unit's serial number, product secret and saved Wi-Fi password. Keep captures under `private/`.
+
+## Common mistakes
+
+- **Naming `--bank 0`.** The fountain has no bank-0 writes, and the refusal comes before the port opens.
+- **Restoring while bank 1 can still boot.** Stock recovery refuses it. Give way first.
+- **Passing the feeder's backup or plans.** They hash to the PLAF103's pins and are refused.
+
+## Next steps
+
+- [Flash layout](flash-layout.md): the banks and what the writers preserve.
+- [Rust flash client](../../development/rust-flash.md): the plan, prepare and execute flow.
 
 ## Evidence
 
 - **Observed, 2026-11-03:** on our unit, two full 8 MiB reads that match, three matching reads of the first 4 KiB, and a passing `inspect-rom`. One full read refused at 7.3 MB with a changed duplicate packet after the wiring was disturbed. A read taken after stock had run differed from the matching pair only in the sectors named above.
+- **Modeled, 2026-11-04:** `cargo test -p wellfed-flash` installed a synthetic image into a synthetic fountain's bank 1, gave way and restored bank 1, changing nothing outside `0x186000..0x271000`. It also refused bank 0, an image past the cap, a frame in a preserved range, another backup and the feeder's layouts. This is simulation only.

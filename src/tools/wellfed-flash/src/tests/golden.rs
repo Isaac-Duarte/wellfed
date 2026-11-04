@@ -298,6 +298,7 @@ fn a_read_session_keeps_its_report_and_summary_fields() {
             small_report: None,
             seconds: 1.0,
             start_core: crate::link::protocol::Core::Km4,
+            device: None,
             press: None,
         },
     )
@@ -403,7 +404,7 @@ fn reviewed_update_and_give_way_bindings_keep_their_canonical_bytes() {
         schema_version: 1,
         kind: Kind::GiveWay,
         port: "/dev/ttyUSB0".into(),
-        fallback_review_sha256: hash("fallback"),
+        fallback_review_sha256: Some(hash("fallback")),
         baseline_sha256: hash("baseline"),
         rom_report_sha256: hash("rom"),
         bounded_read_report_sha256: hash("small"),

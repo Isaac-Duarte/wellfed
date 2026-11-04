@@ -41,13 +41,16 @@ pub enum LayoutError {
 pub(crate) fn audit(image: &Path, stock: &Path, layout: &Path) -> Result<LayoutAudit> {
     let layout: Layout = wellfed_formats::load(layout)?;
     require(
-        layout.schema_version == 1 && layout.stock_sha256 == STOCK_SHA256,
+        layout.schema_version == 1 && layout.stock_sha256.as_deref() == Some(STOCK_SHA256),
         || LayoutError::Identity,
     )?;
+    let Some(table_address) = layout.bank_table_runtime_address else {
+        return Err(LayoutError::Identity.into());
+    };
 
     let stock = fs::read(stock)?;
     require(
-        layout.stock_bytes == stock.len() as u64 && sha256(&stock) == STOCK_SHA256,
+        layout.stock_bytes == Some(stock.len() as u64) && sha256(&stock) == STOCK_SHA256,
         || LayoutError::Reference,
     )?;
     let reference = container(&stock)?;
@@ -57,7 +60,7 @@ pub(crate) fn audit(image: &Path, stock: &Path, layout: &Path) -> Result<LayoutA
         LayoutError::BankOffsets
     })?;
     let mapped = layout.flash_mapping_base.0;
-    let table = (0x17040 + layout.bank_table_runtime_address.0)
+    let table = (0x17040 + table_address.0)
         .checked_sub(0x0E00_0020)
         .and_then(|table| usize::try_from(table).ok())
         .unwrap_or(usize::MAX);

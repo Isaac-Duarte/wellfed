@@ -17,6 +17,7 @@ use wellfed_formats::hex::is_lower_hex;
 use wellfed_formats::manifest::BuildManifest;
 use wellfed_formats::require;
 use wellfed_formats::review::{BuildDetails, Details, ImageKind, ImageReview, ReviewKind};
+use wellfed_proto::device::Model;
 
 /// A frozen review that is incomplete or no longer matches what it froze.
 /// The signer and the rig tell these apart, so each binding is its own
@@ -58,11 +59,21 @@ pub struct Frozen {
     pub manifest: Option<BuildManifest>,
 }
 
+/// The review kind a layout's model installs; another model's review was
+/// frozen against another stock, baseline and loader.
+const fn review_kind(model: Model) -> ReviewKind {
+    match model {
+        Model::Plaf103 => ReviewKind::Plaf103DevelopmentImage,
+        Model::Plwf106 => ReviewKind::Plwf106DevelopmentImage,
+    }
+}
+
 pub fn frozen(root: &Root, directory: &Path, layout: &Layout) -> Result<Frozen> {
+    let model = layout.kind.model();
     let raw = root.private_file(&directory.join("review.json"))?;
     let review: ImageReview = serde_json::from_slice(&raw)?;
     require(
-        review.schema_version == 1 && review.kind == ReviewKind::Plaf103DevelopmentImage,
+        review.schema_version == 1 && review.kind == review_kind(model),
         || ReviewError::Unsupported,
     )?;
 
@@ -76,15 +87,18 @@ pub fn frozen(root: &Root, directory: &Path, layout: &Layout) -> Result<Frozen> 
     )?;
 
     let manifest = match (review.image_kind, &review.review) {
+        // The pinned stock OTA is the feeder's; the fountain has none.
         (ImageKind::Stock, Details::Stock { .. }) => {
             require(
-                sha256(&image) == crate::ota::STOCK_SHA256 && review.manifest_sha256.is_none(),
+                model == Model::Plaf103
+                    && sha256(&image) == crate::ota::STOCK_SHA256
+                    && review.manifest_sha256.is_none(),
                 || ReviewError::NotOriginalStock,
             )?;
             None
         }
         (ImageKind::Build, Details::Build(details)) => {
-            Some(build(root, directory, &review, details, &image)?)
+            Some(build(root, directory, model, &review, details, &image)?)
         }
         _ => return Err(ReviewError::DetailsKind.into()),
     };
@@ -100,6 +114,7 @@ pub fn frozen(root: &Root, directory: &Path, layout: &Layout) -> Result<Frozen> 
 fn build(
     root: &Root,
     directory: &Path,
+    model: Model,
     review: &ImageReview,
     details: &BuildDetails,
     image: &[u8],
@@ -113,9 +128,15 @@ fn build(
     let m: BuildManifest = serde_json::from_slice(&manifest_raw)?;
     // Older builds recorded no device and named the profile
     // `plaf103-firstboot`. Bank 0's recovery image is one, and a give-way or
-    // a reinstall names its review, so those still read.
-    let firstboot = (m.device == "plaf103" && m.profile == "firstboot")
-        || (m.device.is_empty() && m.profile == "plaf103-firstboot");
+    // a reinstall names its review, so those still read. A fountain build
+    // has always recorded its device.
+    let firstboot = match model {
+        Model::Plaf103 => {
+            (m.device == "plaf103" && m.profile == "firstboot")
+                || (m.device.is_empty() && m.profile == "plaf103-firstboot")
+        }
+        Model::Plwf106 => m.device == model.name() && m.profile == "firstboot",
+    };
     require(firstboot, || ReviewError::UnknownProfile)?;
 
     // The reviewer compared these pins with the SDK lock of the checkout

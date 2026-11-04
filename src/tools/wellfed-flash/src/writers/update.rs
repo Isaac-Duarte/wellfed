@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde::de::IgnoredAny;
 
+use crate::device;
 use crate::error::Result;
 use crate::evidence::journal::{Boundary, Event};
 use crate::evidence::report::{Session, Status, SummaryStatus, Transport};
@@ -23,15 +24,16 @@ use crate::link::protocol::{CAPACITY, Port, SECTOR};
 use crate::link::sector::{self, Baseline};
 use crate::link::status;
 use crate::writers::development::{
-    self, Acquired, BANK0, FACTORY, GiveWay, Layout, Transaction, Update,
+    self, Acquired, BANK0, FACTORY, GiveWay, Layout, PinnedGiveWay, Transaction, Update,
 };
 use wellfed_formats::canonical::{canonical_of, sha256};
 use wellfed_formats::flash_plan::{
-    DevelopmentPlan, GiveWayBindings, GiveWayPlan, Kind, Reviewed, UpdateBindings,
+    DevelopmentPlan, GiveWayBindings, GiveWayPlan, Reviewed, UpdateBindings,
 };
 use wellfed_formats::require;
 use wellfed_formats::session::Mode as ReportMode;
 use wellfed_image::review::{Frozen, frozen};
+use wellfed_proto::device::Model;
 
 /// An update or give-way whose inputs, inspection or reviewed plan do not
 /// bind, checked before serial access, or an acquisition that came back
@@ -210,36 +212,47 @@ struct Prepared<'a> {
     erase_sectors: Option<u64>,
 }
 
-/// Session evidence both commands check before any serial access.
-fn continued(context: &Context, evidence: &Evidence) -> Result<(Baseline, Vec<u8>, Vec<u8>)> {
-    let baseline = context.baseline(&evidence.baseline)?;
+/// Session evidence both commands check before any serial access, against
+/// `model`'s pins: its backup and a ROM inspection of its stock console.
+fn continued(
+    context: &Context,
+    model: Model,
+    evidence: &Evidence,
+) -> Result<(Baseline, Vec<u8>, Vec<u8>)> {
+    let baseline = context.baseline_for(model, &evidence.baseline)?;
     context.helper(evidence.helper.as_deref())?;
-    let rom = session::validate_rom_report(context, &evidence.rom_report)?;
+    let rom = session::validate_rom_report_for(context, model, &evidence.rom_report)?;
     let small =
         session::validate_status_session(context, Some(&evidence.small_report), &evidence.port)?;
     Ok((baseline, rom, small))
 }
 
-fn load(context: &Context, args: &Args) -> Result<Loaded> {
+fn load(context: &Context, model: Model, args: &Args) -> Result<Loaded> {
     let root = &context.root;
-    let layout = development::layout(args.bank)?;
+    let layout = device::layout(model, args.bank)?;
+    if model == Model::Plwf106 && args.original_read.is_some() {
+        return Err(device::DeviceError::OriginalRead { model }.into());
+    }
 
-    // Bank 0 may be overwritten from its pinned contents instead of a source review.
+    // An original bank may be overwritten from its pinned contents instead
+    // of a source review: the PLAF103's bank 0 from a full read, the
+    // fountain's bank 1 from its backup.
     let source = args
         .source
         .as_deref()
         .map(|path| frozen(root, path, &layout))
         .transpose()?;
-    require(source.is_some() || layout.bank == 0, || {
-        UpdateError::SourceReviewMissing
-    })?;
+    require(
+        source.is_some() || development::original_source(&layout),
+        || UpdateError::SourceReviewMissing,
+    )?;
 
     let target = frozen(root, &args.target, &layout)?;
-    let (baseline, rom, small) = continued(context, &args.evidence)?;
+    let (baseline, rom, small) = continued(context, model, &args.evidence)?;
 
-    let original = match &source {
-        Some(_) => None,
-        None => {
+    let original = match (&source, model) {
+        (Some(_), _) | (None, Model::Plwf106) => None,
+        (None, Model::Plaf103) => {
             let Some(path) = args.original_read.as_deref() else {
                 return Err(UpdateError::OriginalReadMissing.into());
             };
@@ -269,8 +282,15 @@ fn load(context: &Context, args: &Args) -> Result<Loaded> {
         tool_sha256: context.tools(),
     };
 
+    // Without a source, the bytes the target replaces: the PLAF103's from
+    // its full read, the fountain's from its pinned backup.
+    let original = match (&source, &original) {
+        (Some(_), _) => None,
+        (None, Some(read)) => Some(read.as_slice()),
+        (None, None) => Some(baseline.bytes()),
+    };
     let original = original
-        .map(|read| development::original_region(&read, &target.image, &layout))
+        .map(|read| development::original_region(read, &target.image, &layout))
         .transpose()?;
 
     Ok(Loaded {
@@ -324,8 +344,14 @@ fn inspected(
     Ok((application, other, sha))
 }
 
+/// A PLAF103 update.
 pub fn run(context: &Context, args: &Args) -> Result<Outcome> {
-    let loaded = load(context, args)?;
+    run_for(context, Model::Plaf103, args)
+}
+
+/// An update of `model`, under that model's pins alone.
+pub fn run_for(context: &Context, model: Model, args: &Args) -> Result<Outcome> {
+    let loaded = load(context, model, args)?;
     if args.mode == Mode::Inspect {
         return session_run(context, args, &loaded, None);
     }
@@ -550,37 +576,67 @@ fn finish<B: Serialize>(
 pub struct GiveWayArgs {
     pub mode: Mode,
     pub evidence: Evidence,
-    pub fallback: PathBuf,
+    /// The PLAF103's frozen fallback review. The fountain takes none.
+    pub fallback: Option<PathBuf>,
+}
+
+/// What bank 0 must hold before bank 1 gives way to it.
+enum Fallback {
+    /// The PLAF103: exactly a reviewed image, by its OTA bytes.
+    Review(Vec<u8>),
+    /// The fountain: exactly its stock bank 0, as the pinned backup holds it.
+    Stock,
 }
 
 struct GiveWayLoaded {
     baseline: Baseline,
-    fallback: Vec<u8>,
+    fallback: Fallback,
     bindings: GiveWayBindings,
 }
 
 impl GiveWayLoaded {
     fn extents(&self) -> Result<[(&'static str, usize, usize); 3]> {
+        let bank0 = match &self.fallback {
+            Fallback::Review(image) => development::payload(image, &BANK0)?.len(),
+            Fallback::Stock => development::stock_bank0(&self.baseline)?.len(),
+        };
         Ok([
             ("factory", 0, 0x6000),
-            (
-                "bank0",
-                BANK0.start,
-                development::payload(&self.fallback, &BANK0)?.len(),
-            ),
+            ("bank0", BANK0.start, bank0),
             ("bank1-sector", sector::START, SECTOR),
         ])
     }
+
+    /// The plan the inspected bank 0 and bank-1 sector give.
+    fn plan(&self, bank0: &[u8], bank1: &[u8]) -> Result<GiveWayPlan> {
+        match &self.fallback {
+            Fallback::Review(image) => development::give_way_plan(image, bank0, bank1),
+            Fallback::Stock => development::pinned_give_way_plan(&self.baseline, bank0, bank1),
+        }
+    }
 }
 
-fn give_way_load(context: &Context, args: &GiveWayArgs) -> Result<GiveWayLoaded> {
-    let fallback = frozen(&context.root, &args.fallback, &BANK0)?;
-    let (baseline, rom, small) = continued(context, &args.evidence)?;
+fn give_way_load(context: &Context, model: Model, args: &GiveWayArgs) -> Result<GiveWayLoaded> {
+    let (fallback, review_sha256) = match (model, &args.fallback) {
+        (Model::Plaf103, Some(path)) => {
+            let frozen = frozen(&context.root, path, &BANK0)?;
+            (Fallback::Review(frozen.image), Some(frozen.review_sha256))
+        }
+        (Model::Plaf103, None) => {
+            return Err(device::DeviceError::FallbackMissing { model }.into());
+        }
+        (Model::Plwf106, None) => (Fallback::Stock, None),
+        (Model::Plwf106, Some(_)) => {
+            return Err(device::DeviceError::FallbackReview { model }.into());
+        }
+    };
+
+    let (baseline, rom, small) = continued(context, model, &args.evidence)?;
     let bindings = GiveWayBindings {
         schema_version: 1,
-        kind: Kind::GiveWay,
+        kind: device::give_way_kind(model),
         port: args.evidence.port.clone(),
-        fallback_review_sha256: fallback.review_sha256,
+        fallback_review_sha256: review_sha256,
         baseline_sha256: baseline.sha256(),
         rom_report_sha256: sha256(&rom),
         bounded_read_report_sha256: sha256(&small),
@@ -588,13 +644,19 @@ fn give_way_load(context: &Context, args: &GiveWayArgs) -> Result<GiveWayLoaded>
     };
     Ok(GiveWayLoaded {
         baseline,
-        fallback: fallback.image,
+        fallback,
         bindings,
     })
 }
 
+/// A PLAF103 give-way.
 pub fn give_way(context: &Context, args: &GiveWayArgs) -> Result<Outcome> {
-    let loaded = give_way_load(context, args)?;
+    give_way_for(context, Model::Plaf103, args)
+}
+
+/// A give-way of `model`, under that model's pins alone.
+pub fn give_way_for(context: &Context, model: Model, args: &GiveWayArgs) -> Result<Outcome> {
+    let loaded = give_way_load(context, model, args)?;
     if args.mode == Mode::Inspect {
         return give_way_session(context, args, &loaded, None);
     }
@@ -619,7 +681,7 @@ pub fn give_way(context: &Context, args: &GiveWayArgs) -> Result<Outcome> {
     let reviewed = Reviewed {
         bindings: loaded.bindings.clone(),
         inspection_report_sha256: report_sha,
-        operation_plan: development::give_way_plan(&loaded.fallback, &bank0, &bank1)?,
+        operation_plan: loaded.plan(&bank0, &bank1)?,
     };
 
     if args.mode == Mode::Prepare {
@@ -698,7 +760,7 @@ fn give_way_session(
                 require(factory == loaded.baseline.bytes()[..0x6000], || {
                     development::DevelopmentError::FactoryDiffers
                 })?;
-                development::give_way_plan(&loaded.fallback, &region, &first)?;
+                loaded.plan(&region, &first)?;
 
                 // Written with the report at its next save.
                 let mut record = |event: Event| {
@@ -718,20 +780,41 @@ fn give_way_session(
 
             Some(execution) => {
                 let [bank0, bank1] = &execution.inspected;
-                let give_way = GiveWay {
-                    baseline: &loaded.baseline,
-                    fallback: &loaded.fallback,
-                    bank0,
-                    bank1_sector: bank1,
-                    reviewed: &execution.reviewed.operation_plan,
-                };
-                development::run_give_way(
-                    &mut port,
-                    &context.root,
-                    &give_way,
-                    &mut acquire,
-                    &directory.join("transaction"),
-                )
+                let reviewed = &execution.reviewed.operation_plan;
+                let output = directory.join("transaction");
+                match &loaded.fallback {
+                    Fallback::Review(image) => {
+                        let give_way = GiveWay {
+                            baseline: &loaded.baseline,
+                            fallback: image,
+                            bank0,
+                            bank1_sector: bank1,
+                            reviewed,
+                        };
+                        development::run_give_way(
+                            &mut port,
+                            &context.root,
+                            &give_way,
+                            &mut acquire,
+                            &output,
+                        )
+                    }
+                    Fallback::Stock => {
+                        let give_way = PinnedGiveWay {
+                            baseline: &loaded.baseline,
+                            bank0,
+                            bank1_sector: bank1,
+                            reviewed,
+                        };
+                        development::run_pinned_give_way(
+                            &mut port,
+                            &context.root,
+                            &give_way,
+                            &mut acquire,
+                            &output,
+                        )
+                    }
+                }
                 .map(Some)
             }
         }

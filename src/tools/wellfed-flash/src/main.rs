@@ -24,12 +24,13 @@ use wellfed_flash::link::protocol::{Core, INTERRUPTED};
 use wellfed_flash::writers::{read, stock, update};
 use wellfed_formats::bench::lease::Lease;
 use wellfed_formats::cli::Device;
+use wellfed_proto::device::Model;
 
 #[derive(Parser)]
 #[command(
     version,
-    about = "UART flash reads, development updates and stock recovery for the PLAF103 research unit",
-    long_about = "UART flash reads, development updates and stock recovery for the PLAF103 research unit.\n\n\
+    about = "UART flash reads, development updates and stock recovery for the PLAF103 and PLWF106 research units",
+    long_about = "UART flash reads, development updates and stock recovery for the PLAF103 and PLWF106 research units.\n\n\
         Every device command continues the supervised bench procedure in docs/development/uart-development.md: \
         nothing here enters the loader, controls power, retries or boots. Progress goes to stderr and one JSON \
         summary to stdout. Exit status: 0 complete, 1 stopped after the port opened, 2 refused before serial access."
@@ -135,6 +136,11 @@ fn number<T: TryFrom<u64>>(text: &str) -> Result<T, NumberError> {
 #[derive(Args)]
 struct ReadArgs {
     mode: read::Mode,
+    /// The model whose stock console --rom-report showed. Required by the
+    /// reads that continue a ROM inspection (small, full, status); a report
+    /// of another model's console is refused.
+    #[arg(long, value_enum)]
+    device: Option<Device>,
     #[arg(long)]
     port: String,
     /// New private output directory.
@@ -168,8 +174,9 @@ struct ReadArgs {
 
 #[derive(Args)]
 struct EvidenceArgs {
-    /// The model of the device written. Required: the writers hold pins
-    /// for the plaf103 alone and refuse any other before serial access.
+    /// The model of the device written. Required: each model has its own
+    /// pins (backup, banks, preserved ranges, plan kinds), and nothing of
+    /// one binds a session on the other.
     #[arg(long, value_enum)]
     device: Device,
     #[arg(long)]
@@ -224,10 +231,13 @@ struct UpdateArgs {
     /// Frozen review of the installed image; bank 0 may omit it with --original-read.
     #[arg(long)]
     source: Option<PathBuf>,
-    /// Bank 0 without a source: a private full read pinning bank 0's current bytes.
+    /// Bank 0 without a source: a private full read pinning bank 0's current
+    /// bytes (plaf103). A plwf106 bank 1 without a source is its pinned
+    /// backup's.
     #[arg(long)]
     original_read: Option<PathBuf>,
-    /// Bank to update; 0 is the factory loader's fallback (bank 1 must stay valid).
+    /// Bank to update; 0 is the factory loader's fallback (bank 1 must stay
+    /// valid). The plwf106 writes bank 1 alone.
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(0..=1))]
     bank: u8,
     /// Bank 1 after a give-way: the source with only its first marker byte cleared.
@@ -243,9 +253,10 @@ struct GiveWayArgs {
     phase: update::Mode,
     #[command(flatten)]
     evidence: EvidenceArgs,
-    /// Frozen review of the image bank 0 must hold exactly.
+    /// Frozen review of the image bank 0 must hold exactly (plaf103). The
+    /// plwf106 takes none: its bank 0 must be its pinned backup's.
     #[arg(long)]
-    fallback: PathBuf,
+    fallback: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -275,17 +286,14 @@ fn device(
     }
 }
 
-/// A writer's session: refused before anything else, the port and the
-/// session's context included, for a model this client holds no pins for.
+/// A writer's session, under the pins of the model it names alone.
 fn writer(
     root: &Path,
     device: Device,
-    run: impl FnOnce(&Context) -> wellfed_flash::Result<Outcome>,
+    run: impl FnOnce(&Context, Model) -> wellfed_flash::Result<Outcome>,
 ) -> (u8, Value) {
-    match wellfed_flash::device::writable(device.into()) {
-        Ok(()) => self::device(root, run),
-        Err(error) => refused(&error.into()),
-    }
+    let model = Model::from(device);
+    self::device(root, |context| run(context, model))
 }
 
 #[derive(Serialize)]
@@ -351,6 +359,7 @@ fn main() -> ExitCode {
                     small_report: args.small_report,
                     seconds: args.seconds,
                     start_core: args.start_core,
+                    device: args.device.map(Model::from),
                     press: args.chord.map(|chord| virtual_panel::Press {
                         chord,
                         hold_ms: args.hold_ms,
@@ -359,9 +368,10 @@ fn main() -> ExitCode {
             )
         }),
 
-        Command::Update(args) => writer(root, args.evidence.device, |context| {
-            update::run(
+        Command::Update(args) => writer(root, args.evidence.device, |context, model| {
+            update::run_for(
                 context,
+                model,
                 &update::Args {
                     mode: args.phase,
                     evidence: args.evidence.evidence(),
@@ -375,9 +385,10 @@ fn main() -> ExitCode {
             )
         }),
 
-        Command::GiveWay(args) => writer(root, args.evidence.device, |context| {
-            update::give_way(
+        Command::GiveWay(args) => writer(root, args.evidence.device, |context, model| {
+            update::give_way_for(
                 context,
+                model,
                 &update::GiveWayArgs {
                     mode: args.phase,
                     evidence: args.evidence.evidence(),
@@ -386,9 +397,10 @@ fn main() -> ExitCode {
             )
         }),
 
-        Command::StockRecovery(args) => writer(root, args.evidence.device, |context| {
-            stock::run(
+        Command::StockRecovery(args) => writer(root, args.evidence.device, |context, model| {
+            stock::run_for(
                 context,
+                model,
                 &stock::Args {
                     phase: args.phase,
                     evidence: args.evidence.evidence(),

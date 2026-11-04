@@ -798,6 +798,8 @@ impl Bench {
 
     fn read_args(&self) -> Vec<String> {
         vec![
+            "--device".into(),
+            self.device.name().into(),
             "--port".into(),
             self.config.uart_port.clone(),
             "--rom-report".into(),
@@ -1069,7 +1071,8 @@ impl Bench {
         say!(
             "Give-way plan {}: clears bank 1's first marker byte; bank 0 is {}",
             self.rel(&p.plan),
-            plan.fallback_ota_sha256,
+            // The fountain's fallback is its stock bank 0, not an image.
+            plan.fallback_ota_sha256.unwrap_or(plan.bank0_region_sha256),
         );
         Ok(Some(sha))
     }

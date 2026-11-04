@@ -39,19 +39,22 @@ impl fmt::Display for Hex {
     }
 }
 
+/// The stock fields are the stock OTA image's and the addresses inside it.
+/// A model whose stock was only ever read from flash, the PLWF106, has no
+/// such image, so its layout writes them as `null`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Layout {
     pub schema_version: u32,
     pub model: String,
-    pub stock_version: String,
-    pub stock_bytes: u64,
-    pub stock_sha256: String,
+    pub stock_version: Option<String>,
+    pub stock_bytes: Option<u64>,
+    pub stock_sha256: Option<String>,
     pub flash_mapping_base: Hex,
     pub sector_bytes: u64,
     pub ota_bank_offsets: Vec<Hex>,
     pub candidate_payload_cap_bytes: u64,
-    pub bank_table_runtime_address: Hex,
-    pub bank_selector_entry: Hex,
+    pub bank_table_runtime_address: Option<Hex>,
+    pub bank_selector_entry: Option<Hex>,
     pub known_preserve_ranges: Vec<PreserveRange>,
     pub complete_partition_map: bool,
     pub flash_capacity_verified: bool,
@@ -84,6 +87,23 @@ mod tests {
         assert_eq!(layout.flash_mapping_base, Hex(0x0800_0000));
         assert_eq!(layout.ota_bank_offsets, [Hex(0x6000), Hex(0x18_6000)]);
         assert!(!layout.known_preserve_ranges.is_empty());
+        assert!(layout.stock_sha256.is_some() && layout.bank_table_runtime_address.is_some());
+    }
+
+    /// The fountain has no stock OTA image and nothing proves it boots a
+    /// custom one; its layout says so rather than borrow the feeder's.
+    #[test]
+    fn the_fountain_layout_loads_without_a_stock_image() {
+        let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
+        let layout: Layout = crate::load(&root.join(relative_path(Model::Plwf106))).unwrap();
+        assert_eq!(layout.model, "PLWF106");
+        assert_eq!(layout.ota_bank_offsets, [Hex(0x6000), Hex(0x18_6000)]);
+        assert_eq!(layout.candidate_payload_cap_bytes, 0xeb000);
+        assert_eq!(
+            (layout.stock_sha256, layout.bank_table_runtime_address),
+            (None, None)
+        );
+        assert!(!layout.boot_acceptance_verified && !layout.complete_partition_map);
     }
 
     #[test]

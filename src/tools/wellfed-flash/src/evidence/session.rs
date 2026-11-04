@@ -36,6 +36,8 @@ pub enum SessionError {
     RomInspection,
     #[error("ROM report does not show a PLAF103's stock console")]
     RomModel,
+    #[error("ROM report does not show a {}'s stock console", model.name())]
+    RomOtherModel { model: Model },
     #[error("ROM report does not identify a pinned candidate")]
     RomCandidate,
     #[error("Incomplete ROM sample set")]
@@ -150,12 +152,18 @@ impl Context {
         }
     }
 
+    /// The research feeder's pinned backup.
     pub fn baseline(&self, path: &Path) -> Result<Baseline> {
+        self.baseline_for(Model::Plaf103, path)
+    }
+
+    /// `model`'s pinned backup, refused unless it hashes to that model's pin.
+    pub fn baseline_for(&self, model: Model, path: &Path) -> Result<Baseline> {
         let data = self.root.private_file(path)?;
         match self.pin {
-            Pin::Research => Baseline::pinned(data),
+            Pin::Research => Baseline::pinned_for(model, data),
             #[cfg(test)]
-            Pin::Synthetic => Ok(Baseline::synthetic(data)),
+            Pin::Synthetic => Ok(Baseline::synthetic_for(model, data)),
         }
     }
 
@@ -293,6 +301,15 @@ impl RomResult {
     fn shows_plaf103(&self) -> bool {
         self.stock_model.is_none_or(|model| model == Model::Plaf103)
     }
+
+    /// Whether the console inspected was `model`'s stock one. Every report
+    /// of a fountain console names its model.
+    fn shows(&self, model: Model) -> bool {
+        match model {
+            Model::Plaf103 => self.shows_plaf103(),
+            Model::Plwf106 => self.stock_model == Some(model),
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -377,8 +394,14 @@ where
     Ok(())
 }
 
-/// A successful ROM inspection that identified a pinned SDK ROM.
+/// A successful ROM inspection of a PLAF103 that identified a pinned SDK ROM.
 pub fn validate_rom_report(context: &Context, path: &Path) -> Result<Vec<u8>> {
+    validate_rom_report_for(context, Model::Plaf103, path)
+}
+
+/// A successful ROM inspection of `model`'s stock console that identified a
+/// pinned SDK ROM. Both models run the same C-cut ROM and helper.
+pub fn validate_rom_report_for(context: &Context, model: Model, path: &Path) -> Result<Vec<u8>> {
     let root = &context.root;
     require(root.is_private(path), || {
         SessionError::RomReportNotPrivate {
@@ -394,11 +417,16 @@ pub fn validate_rom_report(context: &Context, path: &Path) -> Result<Vec<u8>> {
             && result.is_some_and(|r| r.returned_to_km4 == Some(true)),
         || SessionError::RomInspection,
     )?;
-    // The sessions this report gates write a PLAF103: a console another
+    // The sessions this report gates write `model`: a console another
     // model's stock printed proves nothing about it.
-    require(result.is_some_and(RomResult::shows_plaf103), || {
-        SessionError::RomModel
-    })?;
+    match model {
+        Model::Plaf103 => require(result.is_some_and(RomResult::shows_plaf103), || {
+            SessionError::RomModel
+        })?,
+        Model::Plwf106 => require(result.is_some_and(|r| r.shows(model)), || {
+            SessionError::RomOtherModel { model }
+        })?,
+    }
 
     let candidates = result.and_then(|r| r.matching_candidates.as_ref());
     require(
@@ -697,6 +725,57 @@ mod tests {
         let mut emulated = complete;
         emulated["transport"] = json!("emulator");
         assert_eq!(small(emulated).transport, Transport::Emulator);
+    }
+
+    /// A complete ROM report validates only for the model whose console it
+    /// names: a fountain's for `plwf106`, a feeder's for `plaf103`, and one
+    /// naming no model (written before the model was recorded) as a
+    /// feeder's alone.
+    #[test]
+    fn a_rom_report_validates_only_for_the_model_it_names() {
+        let checkout = tempfile::tempdir().unwrap();
+        fs::create_dir(checkout.path().join("private")).unwrap();
+        let context = Context {
+            root: Root::new(checkout.path()).unwrap(),
+            tool_sha256: "t".repeat(64),
+            open: Box::new(|_| Err(protocol::ProtocolError::Interrupted.into())),
+            pin: Pin::Synthetic,
+        };
+        let samples: Vec<Value> = protocol::rom_sample_addresses()
+            .iter()
+            .map(|a| json!({"address": format!("0x{a:08x}")}))
+            .collect();
+
+        for (name, named, feeder, fountain) in [
+            ("feeder", json!("plaf103"), true, false),
+            ("fountain", json!("plwf106"), false, true),
+            ("unnamed", Value::Null, true, false),
+        ] {
+            let directory = checkout.path().join("private").join(name);
+            fs::create_dir(&directory).unwrap();
+            fs::write(directory.join("serial-rx.bin"), b"rx").unwrap();
+            fs::write(directory.join("serial-tx.bin"), b"tx").unwrap();
+
+            let mut result = json!({
+                "returned_to_km4": true,
+                "matching_candidates": {"rom.bin": ROM_SHA256[0]},
+                "sampled_words": samples,
+            });
+            if !named.is_null() {
+                result["stock_model"] = named;
+            }
+            let report = json!({
+                "status": "complete", "mode": "inspect-rom", "result": result,
+                "serial-rx.bin_sha256": sha256(b"rx"), "serial-tx.bin_sha256": sha256(b"tx"),
+            });
+            let path = directory.join("report.json");
+            fs::write(&path, report.to_string()).unwrap();
+
+            let valid = |model| validate_rom_report_for(&context, model, &path).is_ok();
+            assert_eq!(valid(Model::Plaf103), feeder, "{name}");
+            assert_eq!(valid(Model::Plwf106), fountain, "{name}");
+            assert_eq!(validate_rom_report(&context, &path).is_ok(), feeder);
+        }
     }
 
     /// Only a PLAF103's stock console is a PLAF103's ROM evidence: a

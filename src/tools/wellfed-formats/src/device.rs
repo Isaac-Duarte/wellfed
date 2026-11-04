@@ -74,7 +74,12 @@ mod tests {
         let devices = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../src/firmware/devices");
         let mut loaded = 0;
         for entry in std::fs::read_dir(devices).unwrap() {
+            // A model with a layout but no board yet (the PLWF106) has no
+            // device.json; the builder lists only directories that do.
             let path = entry.unwrap().path().join("device.json");
+            if !path.is_file() {
+                continue;
+            }
             let device: DeviceConfig = crate::load(&path).unwrap();
             assert_eq!(device.schema_version, 1);
             loaded += 1;

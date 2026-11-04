@@ -1,6 +1,6 @@
 # PLWF106 flash and boot reference
 
-This page records the stock image and preservation constraints for an 8 MiB PLWF106 backup. Use it to review an image or continue loader analysis. It is not a write allowance or an installation procedure, and `src/firmware/devices/` holds no machine-readable layout for this model. Ranges are half-open. Offsets are physical flash offsets unless a table marks them as CPU addresses.
+This page records the stock image and preservation constraints for an 8 MiB PLWF106 backup. Use it to review an image or continue loader analysis. It is not an installation procedure. The machine-readable copy is [`layout.json`](../../../src/firmware/devices/plwf106/layout.json), and [what the writers allow](#what-the-writers-allow) says how `wellfed-flash` uses it. Ranges are half-open. Offsets are physical flash offsets unless a table marks them as CPU addresses.
 
 ## Application segments
 
@@ -66,12 +66,28 @@ The rounded bank-0 image footprint is `0xeb000` bytes from its start, ending at 
 
 Review any expansion against actual segments, FTL, radio material and persistent records. MMU window sizes do not allocate flash. The feeder's store approval at `0x340000` and its payload limit do not transfer to this fountain. No new store allocation is established here.
 
+## What the writers allow
+
+`wellfed-flash --device plwf106` writes the fountain within these bounds alone. Bank 0 is never written, so the stock image the loader falls back to stays intact.
+
+| Range | Writers |
+| --- | --- |
+| `0x186000..0x271000`, bank 1 | `update` installs a candidate here, `give-way` clears its first byte, `stock-recovery` puts the backup's bytes back |
+| `0x006000..0x0f1000`, bank 0 | Read only. A give-way requires it to equal the backup's byte for byte |
+| Every row of the [minimum preservation map](#minimum-preservation-map) | Never written. A frame or sector that touches one is refused |
+| Everything else | Never written |
+
+The bank-1 window is stock bank 0's rounded footprint from bank 1's start, so a candidate's payload may be at most `0xeb000` bytes. In our backup, the window past bank 1's stock image (`0x252000`) is erased. `layout.json` merges adjacent rows of the map, and widens one: `0x3e8000..0x3f0000` also covers `0x3ec000`, which holds data whose role is unknown, and the erased `0x3ef000`.
+
+Every writer is pinned to our unit's backup by its SHA-256, and to the backup's own bank 0 and bank 1. A backup of another unit is refused, even another fountain's. The steps are on the [recovery page](recovery.md).
+
 ## Still unknown
 
-Whether the loader accepts an unsigned custom image, how a failed boot recovers, and where a reviewed PLWF106 image or store may be written.
+Whether the loader accepts an unsigned custom image, how a failed boot recovers on its own, and where a full PLWF106 image or store may be written. The bank-1 window is a conservative bound for a boot test, not the bank's capacity.
 
 ## Evidence
 
 - **Recovered, 2026-11-03:** both application groups and mapped KM0/KM4 loaders analysed in Ghidra. Extracted bodies, empty headers, bank table and initialized memory-block hashes matched the acquired backup.
 - **Recovered, 2026-11-03:** storage reader/writer/reset callers, FTL configuration and garbage collection, and clock block-erase paths traced. Generic console writes prevent treating fixed writer addresses as an exhaustive partition map.
 - **Recovered, 2026-11-04:** a sector-by-sector comparison of `0x000000..0x006000` between the PLWF106 backup and a stock PLAF103 backup. All six 4 KiB sectors are identical.
+- **Recovered, 2026-11-04:** the backup's written ranges. `0x3ec000` holds data, and `0xf1000..0x182000` and `0x252000..0x3e8000` are erased.

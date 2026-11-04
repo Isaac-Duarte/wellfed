@@ -73,7 +73,7 @@ This page tracks what works today and what comes next. It covers the replacement
 | Capability | Status | Notes |
 | --- | --- | --- |
 | Code shared across device kinds | Experimental | Shared device crates with each kind's beside them, the device API's core with a module per kind, one home in the server with each device's model and kind, and a shared simulator. Tested on the host and in the feeder's simulator; the feeder has not yet run a build of the new layout. See [device kinds and models](firmware/device-kinds.md). |
-| Water fountain (PLWF106) | Not started | Its board and stock firmware are recovered ([PLWF106](devices/plwf106/README.md)), and its board crate builds; no Wellfed image for it yet. |
+| Water fountain (PLWF106) | Not started | Its board and stock firmware are recovered ([PLWF106](devices/plwf106/README.md)), and its board crate builds; no Wellfed image for it yet. UART writes of a bank-1 test image and their recovery are tested on the host only ([recovery](devices/plwf106/recovery.md)). |
 
 ## Development hardware
 

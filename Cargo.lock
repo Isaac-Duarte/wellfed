@@ -5523,6 +5523,7 @@ dependencies = [
  "thiserror",
  "wellfed-core",
  "wellfed-formats",
+ "wellfed-proto",
 ]
 
 [[package]]

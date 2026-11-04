@@ -472,7 +472,7 @@ pub fn audit(inputs: &Inputs) -> Result<BackupReport> {
     require(
         layout.schema_version == 1
             && layout.sector_bytes == 4096
-            && layout.stock_sha256 == ota::STOCK_SHA256,
+            && layout.stock_sha256.as_deref() == Some(ota::STOCK_SHA256),
         || BackupError::UnsupportedLayout,
     )?;
 

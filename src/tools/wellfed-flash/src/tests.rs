@@ -25,6 +25,7 @@ use wellfed_image::bank::BANK1;
 use wellfed_image::fixtures::{synthetic_payload, wrap};
 
 mod banks;
+mod fountain;
 mod golden;
 mod recovery;
 mod update;

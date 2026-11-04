@@ -131,6 +131,66 @@ fn reviews_of_builds_before_device_names_still_read() {
     assert!(!freeze(None, "firstboot"));
 }
 
+/// A review installs only on its own model's layout: the feeder's review
+/// kind and device on the feeder's banks, the fountain's on the fountain's
+/// bank 1, and never the other way round.
+#[test]
+fn a_review_installs_only_on_its_own_models_layout() {
+    use crate::bank::PLWF106_BANK1;
+
+    let (checkout, root) = private_root();
+    let image = image(30000, 3);
+    let (directory, review, manifest) = frozen_build(checkout.path(), &image);
+    let unsupported = |result: Result<Frozen>| {
+        matches!(
+            result.err(),
+            Some(crate::Error::Review(ReviewError::Unsupported))
+        )
+    };
+
+    assert!(frozen(&root, &directory, &BANK1).is_ok());
+    assert!(unsupported(frozen(&root, &directory, &PLWF106_BANK1)));
+
+    let freeze = |kind: &str, device: &str| {
+        let mut changed = manifest.clone();
+        changed["device"] = json!(device);
+        let raw = changed.to_string();
+        let mut bound = review.clone();
+        bound["kind"] = json!(kind);
+        bound["manifest_sha256"] = json!(sha256(raw.as_bytes()));
+        write(&directory.join("build-manifest.json"), raw.as_bytes());
+        write(&directory.join("review.json"), bound.to_string().as_bytes());
+    };
+
+    freeze("plwf106_development_image_review", "plwf106");
+    assert!(frozen(&root, &directory, &PLWF106_BANK1).is_ok());
+    assert!(unsupported(frozen(&root, &directory, &BANK1)));
+
+    // A fountain review of a feeder build, or of no device at all.
+    for device in ["plaf103", ""] {
+        freeze("plwf106_development_image_review", device);
+        assert!(matches!(
+            frozen(&root, &directory, &PLWF106_BANK1).err(),
+            Some(crate::Error::Review(ReviewError::UnknownProfile))
+        ));
+    }
+
+    // The feeder's stock OTA is never a fountain image.
+    let stock = json!({
+        "schema_version": 1, "kind": "plwf106_development_image_review", "image_kind": "stock",
+        "ota_sha256": sha256(&image),
+        "payload_sha256": sha256(crate::ota::container(&image).unwrap()),
+        "payload_bytes": crate::ota::container(&image).unwrap().len(),
+        "manifest_sha256": null, "review": {"stock_sha256": sha256(&image)},
+        "reviewer_sha256": "0".repeat(64), "application_boot_verified": false,
+    });
+    write(&directory.join("review.json"), stock.to_string().as_bytes());
+    assert!(matches!(
+        frozen(&root, &directory, &PLWF106_BANK1).err(),
+        Some(crate::Error::Review(ReviewError::NotOriginalStock))
+    ));
+}
+
 #[test]
 fn a_review_outlives_an_sdk_lock_bump_after_it() {
     let (checkout, root) = private_root();

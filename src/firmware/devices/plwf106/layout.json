@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "model": "PLWF106",
+  "stock_version": null,
+  "stock_bytes": null,
+  "stock_sha256": null,
+  "flash_mapping_base": "0x08000000",
+  "sector_bytes": 4096,
+  "ota_bank_offsets": ["0x00006000", "0x00186000"],
+  "candidate_payload_cap_bytes": 962560,
+  "bank_table_runtime_address": null,
+  "bank_selector_entry": null,
+  "known_preserve_ranges": [
+    {"name": "pre_application", "start": "0x00000000", "end_exclusive": "0x00006000"},
+    {"name": "ftl_pages", "start": "0x00182000", "end_exclusive": "0x00185000"},
+    {"name": "settings_and_identity_sectors", "start": "0x003e8000", "end_exclusive": "0x003f0000"},
+    {"name": "clock_checkpoint_block", "start": "0x003f0000", "end_exclusive": "0x00400000"},
+    {"name": "binding_counter_sector", "start": "0x00400000", "end_exclusive": "0x00401000"},
+    {"name": "log_system_and_calibration_sectors", "start": "0x007cb000", "end_exclusive": "0x007d0000"}
+  ],
+  "complete_partition_map": false,
+  "flash_capacity_verified": false,
+  "boot_acceptance_verified": false
+}
