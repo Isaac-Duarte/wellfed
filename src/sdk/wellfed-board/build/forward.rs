@@ -4,10 +4,12 @@
 //! so the choice is made and checked once, in `wellfed-board`'s.
 
 /// Whether a board's crate holds a reviewed storage map.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Store {
     Reviewed,
-    None,
+    /// No allocation reviewed yet: a region of zero sectors, and code that
+    /// names a store does not build for the board.
+    Unreviewed,
 }
 
 /// Emit `cfg(wellfed_board = "<name>")` and, for a board with a reviewed
@@ -39,7 +41,7 @@ pub(crate) fn forward() {
     let store = if read("STORE") == "1" {
         Store::Reviewed
     } else {
-        Store::None
+        Store::Unreviewed
     };
     emit(&read("NAME"), &read("NAMES"), store);
 }

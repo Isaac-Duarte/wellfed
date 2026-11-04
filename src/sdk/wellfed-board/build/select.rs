@@ -1,25 +1,26 @@
 //! Which board a build is for: the one name `WELLFED_BOARD` holds. The build
 //! script decides with it, and the crate's test checks the decision.
 
+use crate::forward::Store;
+
 /// A board this checkout builds for.
 pub(crate) struct Board {
     /// The model's name as `wellfed_proto::device::Model::name` spells it,
     /// which the reviewed build wrapper sets from the device it builds for.
     pub(crate) name: &'static str,
-    /// Its board crate holds a reviewed storage map (`storage`), with the
-    /// stores every device keeps. A board without one has a region of zero
-    /// sectors, and code that names a store does not build for it.
-    pub(crate) store: bool,
+    /// Whether its board crate holds a reviewed storage map (`storage`),
+    /// with the stores every device keeps.
+    pub(crate) store: Store,
 }
 
 pub(crate) static BOARDS: [Board; 2] = [
     Board {
         name: "plaf103",
-        store: true,
+        store: Store::Reviewed,
     },
     Board {
         name: "plwf106",
-        store: false,
+        store: Store::Unreviewed,
     },
 ];
 

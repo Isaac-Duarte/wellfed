@@ -206,8 +206,13 @@ fn forbidden_cargo_key(key: &[String], inline: bool) -> bool {
         // which takes a table (`{ value = …, force = true }` or a
         // `[env.WELLFED_BOARD]` header). A plain string is a default that
         // the board the build sets from its device replaces, as the
-        // repository's own `.cargo/config.toml` is.
-        "env" if key.get(1).is_some_and(|name| name == BOARD_VARIABLE) => inline || key.len() > 2,
+        // repository's own `.cargo/config.toml` is. An inline `env` table is
+        // refused whole, since it may hold a forced board.
+        "env" => {
+            key.len() == 1 && inline
+                || key.get(1).is_some_and(|name| name == BOARD_VARIABLE)
+                    && (inline || key.len() > 2)
+        }
         _ => false,
     }
 }
@@ -330,7 +335,12 @@ mod tests {
         assert!(cargo_config_overrides(allowed).is_empty());
         // An unforced board default, as the repository's own configuration
         // sets, never replaces the one the build sets.
-        assert!(cargo_config_overrides("[env]\nWELLFED_BOARD = \"plaf103\"\n").is_empty());
+        assert!(
+            cargo_config_overrides(
+                "[env]\nWELLFED_BOARD = \"plaf103\"\nOTHER = { value = \"x\" }\n"
+            )
+            .is_empty()
+        );
         let repository = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../.cargo/config.toml");
         assert!(cargo_config_overrides(&fs::read_to_string(repository).unwrap()).is_empty());
 
@@ -361,6 +371,10 @@ mod tests {
             (
                 "[env.WELLFED_BOARD]\nvalue = \"plwf106\"\n",
                 "env.WELLFED_BOARD.value",
+            ),
+            (
+                "env = { WELLFED_BOARD = { value = \"plwf106\", force = true } }\n",
+                "env",
             ),
         ] {
             assert_eq!(cargo_config_overrides(text), [key], "{text}");

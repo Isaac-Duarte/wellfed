@@ -2,8 +2,12 @@
 //! re-exports the board that name chose. Run under each board's
 //! `WELLFED_BOARD` (`make check-rust` runs both).
 
+#[path = "../build/forward.rs"]
+mod forward;
 #[path = "../build/select.rs"]
 mod select;
+
+use forward::Store;
 
 #[test]
 fn exactly_one_known_board_is_chosen() {
@@ -32,8 +36,11 @@ fn exactly_one_known_board_is_chosen() {
 /// still to be reviewed.
 #[test]
 fn only_reviewed_boards_have_a_store() {
-    let stores: Vec<(&str, bool)> = select::BOARDS.iter().map(|b| (b.name, b.store)).collect();
-    assert_eq!(stores, [("plaf103", true), ("plwf106", false)]);
+    let stores: Vec<(&str, Store)> = select::BOARDS.iter().map(|b| (b.name, b.store)).collect();
+    assert_eq!(
+        stores,
+        [("plaf103", Store::Reviewed), ("plwf106", Store::Unreviewed)]
+    );
     assert_eq!(select::names(), ["plaf103", "plwf106"]);
 }
 
