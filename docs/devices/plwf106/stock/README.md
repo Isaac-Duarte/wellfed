@@ -73,6 +73,8 @@ Driver `0x0e024e48` uses PB5 as clock and PB6 as data:
 
 The loop at `0x0e024e6a..0x0e024e96` has consecutive ROM GPIO calls. It has no explicit pulse delay or interrupt masking in that section. GPIO-call overhead contributes to pulse width; replacing it with faster register writes does not preserve timing automatically. No measured timing or gain setting is established, and the unmarked U1 must remain unidentified.
 
+The transaction matches the HX711/HX710 family's two-wire protocol: data falls when a conversion is ready, then 24 bits are read most significant first. On the HX711, the 25th pulse selects channel A at gain 128 for the next conversion. That narrows U1 to this family or a compatible clone; it does not establish the part or its gain.
+
 Stock keeps ten samples, sorts a copy, drops the two highest and two lowest, then averages the middle six. Zero entries are filled during history initialization. A change of at least 400 ADC counts from the previous filtered value clears history; that reset still returns the current filtered result. Do not interpret it as a rejected sample.
 
 Conversion `0x0e024f88` ordinarily returns:
