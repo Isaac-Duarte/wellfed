@@ -173,18 +173,16 @@ void main() {
 
   setUpAll(() async {
     if (target == null) return;
-    await RustLib.init(externalLibrary: ExternalLibrary.open('$target/libwellfed_app_bridge.so'));
+    // Cargo uses the host's shared-library extension for the smoke bridge.
+    final String extension = Platform.isMacOS ? 'dylib' : 'so';
+    await RustLib.init(externalLibrary: ExternalLibrary.open('$target/libwellfed_app_bridge.$extension'));
     owner = ClientKey.generate();
     sim = await _Feeder.start(target, owner);
+    addTearDown(sim.stop);
     final known = KnownFeeder(identity: sim.identity, name: 'Smoke', address: sim.address);
     feeder = FeederController(FakeBook()..feeders = [known], _Ports(owner), known);
+    addTearDown(feeder.dispose);
     await _until(feeder, (state) => state.cardIsCurrent);
-  });
-
-  tearDownAll(() async {
-    if (target == null) return;
-    feeder.dispose();
-    await sim.stop();
   });
 
   test('a session opens and reads the card', skip: absent, () {
