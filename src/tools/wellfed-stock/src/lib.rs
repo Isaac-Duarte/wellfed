@@ -5,6 +5,10 @@
 //! command at most once. The replacement firmware speaks no MQTT; its
 //! updates and status go over its device API.
 //!
+//! [`protocol`] is the PETLIBRO cloud protocol every stock model shares,
+//! with each model's message set beside it ([`protocol::plaf103`], the only
+//! one so far): another model brings its own set, not a fork of the core.
+//!
 //! [`server`] runs stock's side in the caller's process: the broker, the
 //! session with stock and, optionally, the loopback API in [`api`]. [`ota`]'s
 //! image server runs the same way. The Android app (through

@@ -7,8 +7,8 @@ mod common;
 
 use chrono::Utc;
 use serde_json::json;
-use wellfed_stock::protocol;
 use wellfed_stock::protocol::Channel;
+use wellfed_stock::protocol::{self, plaf103};
 
 #[test]
 fn messages_from_other_devices_and_retained_topic_shapes_are_rejected() {
@@ -36,7 +36,7 @@ fn acknowledgements_preserve_event_id_and_step_without_sending_a_feed() {
     )
     .unwrap();
 
-    let reply = protocol::reply(
+    let reply = plaf103::reply(
         &config,
         channel,
         &msg,
@@ -61,7 +61,7 @@ fn stock_ota_report_topic_is_parsed_without_sending_an_acknowledgement_or_comman
         assert_eq!(channel, Channel::Ota);
         assert_eq!(msg.cmd, cmd);
         assert!(
-            protocol::reply(
+            plaf103::reply(
                 &config,
                 channel,
                 &msg,
@@ -86,7 +86,7 @@ fn configuration_reply_uses_its_own_channel_without_an_automatic_response() {
 
     assert_eq!(channel, Channel::Config);
     assert!(
-        protocol::reply(
+        plaf103::reply(
             &config,
             channel,
             &msg,
@@ -116,7 +116,7 @@ fn plan_requests_return_imported_snapshot_and_clock_changes_are_held_for_nonempt
     )
     .unwrap();
 
-    let reply = protocol::reply(
+    let reply = plaf103::reply(
         &config,
         Channel::Event,
         &msg,
@@ -133,7 +133,7 @@ fn plan_requests_return_imported_snapshot_and_clock_changes_are_held_for_nonempt
     )
     .unwrap();
     assert_eq!(
-        protocol::reply(
+        plaf103::reply(
             &config,
             Channel::Ntp,
             &msg,
@@ -163,7 +163,7 @@ fn plans_are_sent_only_as_captured() {
         )
         .unwrap();
         assert_eq!(parsed, channel);
-        protocol::reply(
+        plaf103::reply(
             config,
             channel,
             &msg,
@@ -233,7 +233,7 @@ fn a_seeded_table_replays_as_written_and_removing_it_leaves_stock_s_alone() {
     let ask = |config: &wellfed_stock::config::Config, topic: &str, cmd: &str| {
         let body = serde_json::to_vec(&json!({"cmd": cmd, "msgId": "m", "ts": 0})).unwrap();
         let (channel, msg) = protocol::parse(config, &config.topic(topic), &body).unwrap();
-        protocol::reply(
+        plaf103::reply(
             config,
             channel,
             &msg,
@@ -272,7 +272,7 @@ fn an_installer_sets_the_clock_only_after_the_frame() {
     )
     .unwrap();
     let tag = |plans| {
-        protocol::reply(&config, Channel::Ntp, &msg, Utc::now(), plans)
+        plaf103::reply(&config, Channel::Ntp, &msg, Utc::now(), plans)
             .unwrap()
             .payload["calibrationTag"]
             .clone()

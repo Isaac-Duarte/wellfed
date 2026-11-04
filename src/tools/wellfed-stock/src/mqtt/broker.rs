@@ -301,7 +301,7 @@ impl AuthProvider for DeviceAuth {
 
 /// The topic prefix of `device`'s namespace.
 fn prefix(device: &str) -> String {
-    format!("dl/PLAF103/{device}/device/")
+    crate::protocol::device_topic(crate::protocol::plaf103::PID, device, "")
 }
 
 /// What stock's two identities may publish: each only its side of stock's

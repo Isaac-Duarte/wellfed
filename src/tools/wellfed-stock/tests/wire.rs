@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 use wellfed_stock::{
     ota,
-    protocol::{self, Reply},
+    protocol::{self, Reply, plaf103},
 };
 
 const ID: &str = "6c8e4f8a-0d43-4c4b-9d5e-1f2a3b4c5d6e";
@@ -33,7 +33,7 @@ fn answer(config: &wellfed_stock::config::Config, channel: &str, message: Value)
     .unwrap();
     let now = Utc.with_ymd_and_hms(2026, 10, 17, 21, 17, 41).unwrap();
     bytes(
-        &protocol::reply(
+        &plaf103::reply(
             config,
             channel,
             &message,
@@ -143,7 +143,7 @@ fn commands() {
     let id = Uuid::parse_str(ID).unwrap();
     let now = Utc.with_ymd_and_hms(2026, 10, 17, 21, 17, 41).unwrap();
 
-    let query = protocol::service(&config, protocol::Sent::Attributes, id, now);
+    let query = plaf103::service(&config, plaf103::Sent::Attributes, id, now);
     assert_eq!(query.topic, config.topic("service/sub"));
     assert_eq!(
         bytes(&query),

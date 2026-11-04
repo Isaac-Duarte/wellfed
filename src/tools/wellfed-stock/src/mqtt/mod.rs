@@ -25,7 +25,7 @@ use crate::{
     config::Config,
     controller::{Controller, Rejection, Status},
     ota,
-    protocol::{self, Reply},
+    protocol::{self, Reply, plaf103},
 };
 
 pub type TrialResult = std::result::Result<ota::trial::Record, Rejection>;
@@ -78,9 +78,9 @@ impl Actor {
     }
 
     fn query_attributes(&self, client: &AsyncClient) -> Result<()> {
-        let query = protocol::service(
+        let query = plaf103::service(
             &self.config,
-            protocol::Sent::Attributes,
+            plaf103::Sent::Attributes,
             uuid::Uuid::new_v4(),
             Utc::now(),
         );
@@ -118,7 +118,7 @@ impl Actor {
         let now = Utc::now();
         let first_seen = self.controller.status.last_seen.is_none();
         self.controller.observe(channel, &message, now)?;
-        if let Some(reply) = protocol::reply(&self.config, channel, &message, now, self.stock_plans)
+        if let Some(reply) = plaf103::reply(&self.config, channel, &message, now, self.stock_plans)
         {
             publish(client, reply)?;
         }
