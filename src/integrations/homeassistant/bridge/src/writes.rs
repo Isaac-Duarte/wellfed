@@ -3,7 +3,8 @@
 //! becomes on what the session last read, and what a store's answer means.
 //!
 //! - **Gates.** A write this client's role may not make, or one the
-//!   feeder's kind does not serve ([`Capabilities::of`]), is never sent.
+//!   device's kind does not serve ([`served`], by the op's own kind), is
+//!   never sent.
 //! - **Stores.** A change to the settings, the plans or the calibration
 //!   names the generation it was made on. One goes out at a time per store,
 //!   and it has landed only when the feeder answers the next generation.
@@ -12,10 +13,11 @@
 
 use wellfed_client::plans::{self, Edit};
 use wellfed_model::{
-    Answer, Calibration, CalibrationView, ClientRole, Generation, Op, Refusal, SettingsPatch,
+    Answer, Calibration, CalibrationView, ClientRole, DeviceKind, Generation, Op, Refusal,
+    SettingsPatch,
 };
 
-use crate::api::{Capabilities, NotSent, Tune};
+use crate::api::{NotSent, Tune};
 
 /// The feeder's limits on a portion's weight, in milligrams (1-50 g).
 pub const PORTION_MG: std::ops::RangeInclusive<u32> = 1_000..=50_000;
@@ -68,20 +70,16 @@ pub struct Read<'a> {
     pub calibration: Option<&'a CalibrationView>,
 }
 
-/// Whether this client may send `write` to a feeder that serves
-/// `capabilities`.
-pub fn gate(write: &Write, role: ClientRole, capabilities: &Capabilities) -> Result<(), NotSent> {
-    let served = match write {
-        Write::Feed { .. } | Write::CancelFeed { .. } => capabilities.feed,
-        Write::ResetDesiccant => capabilities.desiccant,
-        Write::PlanEnabled { .. } => capabilities.plans,
-        Write::PortionWeight { .. } => capabilities.calibration,
-        Write::SetLock { .. } | Write::Play { .. } | Write::Settings(_) => true,
-    };
-    // Every write here is a member's: an update signer's key may only sign.
-    let allowed = role != ClientRole::UpdateSigner;
+/// Whether this client's role may send a write at all: every write here is
+/// a member's, and an update signer's key may only sign.
+pub fn gate(role: ClientRole) -> Result<(), NotSent> {
+    wellfed_formats::require(role != ClientRole::UpdateSigner, || NotSent::Forbidden)
+}
 
-    wellfed_formats::require(allowed, || NotSent::Forbidden)?;
+/// Whether a device of `kind` serves `op`: the shared core, or its own
+/// module's ([`Op::kind`]). Another kind's op is never sent.
+pub fn served(op: &Op, kind: DeviceKind) -> Result<(), NotSent> {
+    let served = op.kind().is_none_or(|of| of == kind);
     wellfed_formats::require(served, || NotSent::Unsupported)
 }
 
@@ -169,69 +167,31 @@ mod tests {
 
     use super::*;
 
-    const ALL: Capabilities = Capabilities::of(wellfed_model::DeviceKind::Feeder);
-
     #[test]
     fn a_member_may_make_every_write_and_an_update_signer_none() {
-        let weigh = Write::PortionWeight { mg: 9_000 };
-        assert_eq!(gate(&weigh, ClientRole::Member, &ALL), Ok(()));
-        let feed = Write::Feed { portions: 1 };
-        assert_eq!(gate(&feed, ClientRole::Member, &ALL), Ok(()));
-        assert_eq!(
-            gate(&feed, ClientRole::UpdateSigner, &ALL),
-            Err(NotSent::Forbidden)
-        );
+        assert_eq!(gate(ClientRole::Member), Ok(()));
+        assert_eq!(gate(ClientRole::Server), Ok(()));
+        assert_eq!(gate(ClientRole::UpdateSigner), Err(NotSent::Forbidden));
     }
 
+    /// A write's op goes only to a device whose kind serves it, as the op
+    /// itself says.
     #[test]
-    fn an_op_the_feeder_does_not_serve_is_never_sent() {
-        let without = |capabilities: Capabilities, write: Write| {
-            gate(&write, ClientRole::Owner, &capabilities)
-        };
-        let cases = [
-            (
-                Capabilities {
-                    plans: false,
-                    ..ALL
-                },
-                Write::PlanEnabled {
-                    slot: 0,
-                    enabled: true,
-                },
-            ),
-            (
-                Capabilities {
-                    desiccant: false,
-                    ..ALL
-                },
-                Write::ResetDesiccant,
-            ),
-            (
-                Capabilities {
-                    calibration: false,
-                    ..ALL
-                },
-                Write::PortionWeight { mg: 9_000 },
-            ),
-            (
-                Capabilities { feed: false, ..ALL },
-                Write::CancelFeed { feed: 1 },
-            ),
-        ];
-        for (capabilities, write) in cases {
+    fn an_op_the_device_does_not_serve_is_never_sent() {
+        for op in [
+            Op::Feed { portions: 1 },
+            Op::CancelFeed { feed: 1 },
+            Op::ResetDesiccant,
+            Op::SetLock { locked: true },
+        ] {
+            assert_eq!(served(&op, DeviceKind::Feeder), Ok(()), "{op:?}");
             assert_eq!(
-                without(capabilities, write),
+                served(&op, DeviceKind::Fountain),
                 Err(NotSent::Unsupported),
-                "{write:?}"
+                "{op:?}"
             );
         }
-        assert_eq!(
-            without(
-                Capabilities::of(wellfed_model::DeviceKind::Fountain),
-                Write::SetLock { locked: true }
-            ),
-            Ok(())
-        );
+        assert_eq!(served(&Op::Status, DeviceKind::Fountain), Ok(()));
     }
 
     #[test]

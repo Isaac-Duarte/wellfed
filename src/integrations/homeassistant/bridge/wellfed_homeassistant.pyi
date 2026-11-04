@@ -33,7 +33,8 @@ class By:
 class Capabilities:
     """
     What the feeder serves this session, as Home Assistant chooses its
-    entities by.
+    entities by: hints from the device's kind. A write is gated by its op's
+    own kind (`writes::served`), never by these.
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
@@ -661,9 +662,9 @@ class Status:
         The panel's child lock; `None` before it is known.
         """
     @property
-    def readiness(self, /) -> Readiness | None:
+    def readiness(self, /) -> Readiness:
         """
-        `None` from a feeder that does not report it.
+        Whether a feed can start now.
         """
     @property
     def rssi(self, /) -> int:

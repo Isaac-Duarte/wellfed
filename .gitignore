@@ -6,6 +6,8 @@
 /.aws/
 __pycache__/
 *.py[cod]
+# coverage.py's data file, written by the Home Assistant tests.
+.coverage
 .env
 .env.*
 *.pcap

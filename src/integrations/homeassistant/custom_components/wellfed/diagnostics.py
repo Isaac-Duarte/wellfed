@@ -28,7 +28,7 @@ def _status(status: bridge.Status | None) -> dict[str, Any] | None:
         "clock_ms": status.clock_ms,
         "locked": status.locked,
         "food": status.food.key,
-        "readiness": status.readiness.key if status.readiness is not None else None,
+        "readiness": status.readiness.key,
         "feed_fault": (
             {
                 "feed": status.feed_fault.feed,

@@ -115,7 +115,7 @@ def _next_meal_attributes(session: FeederSession) -> dict[str, Any]:
 
 def _readiness(session: FeederSession) -> str | None:
     status = session.status
-    if status is None or status.readiness is None:
+    if status is None:
         return None
     return status.readiness.key
 

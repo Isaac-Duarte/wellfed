@@ -35,8 +35,8 @@ pub struct Status {
     /// The panel's child lock; `None` before it is known.
     pub locked: Option<bool>,
     pub food: FoodLevel,
-    /// `None` from a feeder that does not report it.
-    pub readiness: Option<Readiness>,
+    /// Whether a feed can start now.
+    pub readiness: Readiness,
     /// The last feed this boot that ended on a fault, until a later feed
     /// completes.
     pub feed_fault: Option<FeedFault>,
@@ -77,7 +77,7 @@ impl From<&model::Status> for Status {
             clock_ms: status.clock.map(|clock| clock.as_millisecond()),
             locked: status.locked,
             food: status.food.into(),
-            readiness: Some(status.readiness.into()),
+            readiness: status.readiness.into(),
             feed_fault: status.feed_fault.map(FeedFault::from),
             adapter: supply.adapter,
             battery_percent,

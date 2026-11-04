@@ -96,7 +96,8 @@ impl From<Portions> for PortionsToday {
 }
 
 /// What the feeder serves this session, as Home Assistant chooses its
-/// entities by.
+/// entities by: hints from the device's kind. A write is gated by its op's
+/// own kind (`writes::served`), never by these.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "python",
