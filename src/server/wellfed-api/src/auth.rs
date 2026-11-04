@@ -41,18 +41,18 @@ impl Role {
 pub struct SetupState {
     pub open: bool,
     /// The server host's IANA zone, when it has one: the setup page offers
-    /// it as the household's zone.
+    /// it as the home's zone.
     pub zone: Option<String>,
 }
 
-/// The first owner and the household's zone.
+/// The first owner and the home's zone.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Setup {
     /// 1-64 characters.
     pub name: String,
     /// At least 10 characters.
     pub password: String,
-    /// The household's IANA zone (`Europe/Berlin`). Every feeder keeps its
+    /// The home's IANA zone (`Europe/Berlin`). Every feeder keeps its
     /// POSIX rule, so a zone the rule cannot describe is refused
     /// `zone_unsupported`.
     pub zone: String,

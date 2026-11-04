@@ -93,9 +93,9 @@ pub struct FeederDetail {
     pub feeder: Feeder,
     /// `None` until the server has read it once.
     pub status: Option<StatusSnapshot>,
-    /// The plans' next meal in the household's zone, from the plans the
+    /// The plans' next meal in the home's zone, from the plans the
     /// server last read; `None` with no enabled plan, no plans read yet,
-    /// or no household.
+    /// or no home.
     pub next_meal: Option<NextMeal>,
 }
 

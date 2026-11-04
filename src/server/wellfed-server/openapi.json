@@ -5799,7 +5799,7 @@
           },
           {
             "type": "object",
-            "description": "The first owner and the household were made.",
+            "description": "The first owner and the home were made.",
             "required": [
               "kind"
             ],
@@ -6021,7 +6021,7 @@
           },
           {
             "type": "object",
-            "description": "The household's settings, as they now stand.",
+            "description": "The home's settings, as they now stand.",
             "required": [
               "home",
               "kind"
@@ -7852,7 +7852,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/NextMeal",
-                "description": "The plans' next meal in the household's zone, from the plans the\nserver last read; `None` with no enabled plan, no plans read yet,\nor no household."
+                "description": "The plans' next meal in the home's zone, from the plans the\nserver last read; `None` with no enabled plan, no plans read yet,\nor no home."
               },
               {
                 "type": "null"
@@ -11331,7 +11331,7 @@
       },
       "Setup": {
         "type": "object",
-        "description": "The first owner and the household's zone.",
+        "description": "The first owner and the home's zone.",
         "required": [
           "name",
           "password",
@@ -11348,7 +11348,7 @@
           },
           "zone": {
             "type": "string",
-            "description": "The household's IANA zone (`Europe/Berlin`). Every feeder keeps its\nPOSIX rule, so a zone the rule cannot describe is refused\n`zone_unsupported`."
+            "description": "The home's IANA zone (`Europe/Berlin`). Every feeder keeps its\nPOSIX rule, so a zone the rule cannot describe is refused\n`zone_unsupported`."
           }
         }
       },
@@ -11367,7 +11367,7 @@
               "string",
               "null"
             ],
-            "description": "The server host's IANA zone, when it has one: the setup page offers\nit as the household's zone."
+            "description": "The server host's IANA zone, when it has one: the setup page offers\nit as the home's zone."
           }
         }
       },

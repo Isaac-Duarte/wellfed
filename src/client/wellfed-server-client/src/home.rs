@@ -1,4 +1,4 @@
-//! The household: its name, units, time format and zone.
+//! The home: its id, name, units, time format and zone.
 
 use reqwest::{Method, StatusCode};
 use wellfed_api::{Home, HomePatch};
@@ -11,7 +11,7 @@ impl Client {
         decode(response, StatusCode::OK).await
     }
 
-    /// Change the household; a new zone goes to every feeder. Owners only.
+    /// Change the home; a new zone goes to every feeder. Owners only.
     pub async fn update_home(&self, patch: &HomePatch) -> Result<Home, Error> {
         let response = self.api(Method::PATCH, "/home").json(patch).send().await?;
         decode(response, StatusCode::OK).await

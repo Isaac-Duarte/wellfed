@@ -1,4 +1,4 @@
-//! `/home`: the home the server serves, and what its household shares.
+//! `/home`: the home the server serves, which its devices belong to.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

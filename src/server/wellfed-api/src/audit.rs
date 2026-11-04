@@ -3,7 +3,7 @@
 //! The log is the command journal (every write sent to a feeder, with its
 //! state and outcome as they stand now) interleaved with the account
 //! changes the server made: logins, failed logins, users, passwords,
-//! tokens and the household. An account change is recorded once it is
+//! tokens and the home. An account change is recorded once it is
 //! made, so a refused one leaves no entry; a failed login is the
 //! exception, recorded against the account whose name was tried. Like the
 //! journal, the log is kept forever, and an entry keeps the name its user
@@ -43,7 +43,7 @@ pub enum AuditAction {
     Command {
         command: Command,
     },
-    /// The first owner and the household were made.
+    /// The first owner and the home were made.
     Setup,
     /// A login from `from`, the client's address.
     Login {
@@ -92,7 +92,7 @@ pub enum AuditAction {
         account: UserId,
         token_name: String,
     },
-    /// The household's settings, as they now stand.
+    /// The home's settings, as they now stand.
     HomeChanged {
         home: Home,
     },
