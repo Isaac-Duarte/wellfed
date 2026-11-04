@@ -1,6 +1,6 @@
 # Firmwares
 
-Each folder here is one firmware for the PLAF103, built on the Wellfed SDK (`src/sdk/wellfed-sdk`). This page lists them, says what the SDK runtime guarantees whichever one runs, and shows how to write your own. Building is covered in [firmware builds](../../../docs/development/firmware-builds.md).
+Each folder here is one firmware. All but `fountain` are the PLAF103's, built on the Wellfed SDK (`src/sdk/wellfed-sdk`); `fountain` is the PLWF106's boot test, which starts its one task itself. This page lists them, says what the SDK runtime guarantees whichever one runs, and shows how to write your own. Building is covered in [firmware builds](../../../docs/development/firmware-builds.md).
 
 ## The firmwares
 
@@ -10,6 +10,7 @@ Each folder here is one firmware for the PLAF103, built on the Wellfed SDK (`src
 | [`feeder`](feeder) | The product firmware every owner runs. See [below](#the-feeder-firmware) |
 | [`bringup`](bringup) | One bring-up area per image variant; the normal image adds nothing. See [below](#bring-up-variants) |
 | [`blink`](blink) | One task that blinks the connection indicator. The smallest firmware, and the template for new ones |
+| [`fountain`](fountain) | The PLWF106's boot test: the pump latched off, then the build, bank and pump readback over UART, and a beat. Not on the SDK runtime ([boot test](../../../docs/devices/plwf106/boot-test.md)) |
 
 Pick one at build time:
 

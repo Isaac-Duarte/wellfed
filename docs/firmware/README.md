@@ -105,6 +105,7 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 | `wellfed-feeder-runtime` | The feeder's stores in the settings writer, their mailboxes, and the writer's settings stage |
 | `wellfed-fw-feeder` | The product firmware |
 | `wellfed-fw-qa`, `wellfed-fw-bringup`, `wellfed-fw-blink` | The self-test, bring-up and minimal firmwares |
+| `wellfed-fw-fountain` | The PLWF106's boot test, with no SDK runtime |
 
 ## Evidence
 

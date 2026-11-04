@@ -73,6 +73,7 @@ The stock loader does not fall back to the other bank when a marked-valid image 
 | Console and loader entry | [UART](uart.md) |
 | Flash layout and boot | [Flash layout](flash-layout.md) |
 | Backup and recovery | [Recovery](recovery.md) |
+| The boot test image | [Boot test](boot-test.md) |
 | Stock firmware: tasks, pump, scale, reset, telemetry | [Stock firmware](stock/README.md) |
 | Stock update request, transfer and activation | [Stock OTA](stock/ota-requirements.md) |
 
