@@ -1665,7 +1665,10 @@ impl From<proto::OpenRefusal> for OpenRefusal {
 impl From<proto::Joined> for Joined {
     fn from(joined: proto::Joined) -> Self {
         match joined {
-            proto::Joined::Enrolled { role } => Self::Enrolled { role: role.into() },
+            proto::Joined::Enrolled { role, model } => Self::Enrolled {
+                role: role.into(),
+                model,
+            },
             proto::Joined::Refused(refusal) => Self::Refused(refusal.into()),
         }
     }

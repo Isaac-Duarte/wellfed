@@ -24,8 +24,8 @@ use wellfed_feeder_sim::sim::Record;
 use wellfed_model::{
     Answer, Bowl, Calibration, CalibrationView, ClientRole, CoreEvent, Desiccant, EventBody,
     FeederEvent, FeederSettings, FeederSettingsPatch, Generation, Joined, MealReminder, MetricKind,
-    NtpResult, NtpServer, Op, PLANS, Plan, Plans, Pushed, Refusal, SampleValue, Settings, Source,
-    Stats, StatsSection, Status, TimeChanges, TimeSource, TimeSync, Tune, Weekdays, Wifi,
+    Model, NtpResult, NtpServer, Op, PLANS, Plan, Plans, Pushed, Refusal, SampleValue, Settings,
+    Source, Stats, StatsSection, Status, TimeChanges, TimeSource, TimeSync, Tune, Weekdays, Wifi,
 };
 use wellfed_proto::api::RequestId;
 use wellfed_session::noise::Keypair;
@@ -401,7 +401,8 @@ fn an_invited_member_joins_and_a_revoke_closes_its_session() {
         assert_eq!(
             joined,
             Joined::Enrolled {
-                role: ClientRole::Member
+                role: ClientRole::Member,
+                model: Model::Plaf103,
             }
         );
 

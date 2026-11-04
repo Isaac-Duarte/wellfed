@@ -1494,7 +1494,9 @@ fn an_invite_enrolls_a_new_client_once() {
     assert_eq!(
         joined,
         Some(Joined::Enrolled {
-            role: model::ClientRole::Member
+            role: model::ClientRole::Member,
+            // The redemption names the model, as the welcome does.
+            model: model::Model::Plaf103,
         })
     );
     rig.publish();

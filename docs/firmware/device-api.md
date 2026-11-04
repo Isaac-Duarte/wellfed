@@ -293,7 +293,7 @@ Every flash lease checks that the outputs are stopped, and fails closed when the
 - **Debug log** (owner sessions only): `TailLog { after }` streams the firmware's record lines from a RAM tail ([below](#debug-log)).
 - **Feed traces** (feeder): `FeedTrace { feed, offset }` reads what a feed's drive measured, a page at a time, from RAM or storage sectors 29–31 ([below](#feed-traces)).
 - **Stock backup** (owner sessions only): `ReadBank1 { offset }` reads bank 1 a page at a time, served only from bank 0 ([below](#stock-backup)).
-- **Invites.** `CreateInvite` mints a secret, which is the PSK of the new client's XXpsk3 handshake. Its third message carries the label, and the key enrolls through the keys mailbox.
+- **Invites.** `CreateInvite` mints a secret, which is the PSK of the new client's XXpsk3 handshake. Its third message carries the label, and the key enrolls through the keys mailbox. The sealed answer, `Joined::Enrolled { role, model }`, names the device's model as a welcome does, so a client that redeems an invite knows what it joined without opening a session.
 - **Recovery.** The recovery window runs the same setup exchange as BLE (XX plus the code proof) over the stream, so the owner keys the client's code in before it becomes an owner. A LAN neighbour cannot slip in while the window is open, and the window closes at the first offer. Recovery takes no Wi-Fi ([pairing](pairing.md)).
 
 ## Debug log

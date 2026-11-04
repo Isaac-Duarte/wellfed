@@ -16,6 +16,8 @@ use crate::{ConnectError, Discovery, Invite, Mirror, Shared, Unreachable};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Enrolled {
     pub role: ClientRole,
+    /// The device's model, as the redemption's answer names it.
+    pub model: Model,
     /// The enrolled key's public half, as the feeder lists it.
     pub public: [u8; 32],
 }
@@ -57,29 +59,13 @@ impl Mirror {
                 other => Unreachable(other).into(),
             })?;
         match joined {
-            Joined::Enrolled { role } => Ok(Enrolled {
+            Joined::Enrolled { role, model } => Ok(Enrolled {
                 role,
+                model,
                 public: *keys.public(),
             }),
             Joined::Refused(refusal) => Err(ConnectError::Refused(refusal)),
         }
-    }
-
-    /// The model of the device `identity` at `address`, from the welcome of
-    /// a session opened with the key `secret`: a redemption names none, so
-    /// an adoption opens one before it stores the device.
-    pub async fn model(
-        &self,
-        identity: [u8; 32],
-        address: SocketAddr,
-        secret: [u8; 32],
-    ) -> Result<Model, ConnectError> {
-        let keys = Keypair::from_secret(secret);
-        let ephemeral = self.shared.random()?;
-        let connection = Connection::open(&keys, identity, address, ephemeral)
-            .await
-            .map_err(Unreachable)?;
-        Ok(connection.model())
     }
 }
 

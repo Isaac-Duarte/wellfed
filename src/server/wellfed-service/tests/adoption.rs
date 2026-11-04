@@ -1,7 +1,10 @@
 //! Adopting a feeder by invite, the connect sequence, and a feeder that
 //! no longer knows the server.
 
-use wellfed_api::{AdoptFeeder, ClientRole, Connection as Link, CoreEvent, EventBody, EventQuery};
+use wellfed_api::{
+    AdoptFeeder, ClientRole, Connection as Link, CoreEvent, DeviceKind, EventBody, EventQuery,
+    Model,
+};
 use wellfed_model::{Answer, Op};
 use wellfed_server_testkit::feeder::{self, invite, open_owner};
 use wellfed_server_testkit::fixed::NOW_MS;
@@ -11,6 +14,38 @@ use wellfed_service::{Caller, CommandError, Error, FeederError, Invalid};
 /// The owner, adopting with no phone key.
 fn owner() -> Caller {
     ada().into()
+}
+
+#[test]
+fn an_adoption_stores_the_model_the_redemption_names_in_the_home() {
+    local(async {
+        let sim = feeder::start().await;
+        let server = TestService::start().await;
+        server.ensure_home().await;
+        let service = server.service();
+
+        // Adoption opens no session of its own: the row names the model
+        // the redemption's answer gave, before the mirror's first session.
+        let invite = invite(&sim, ClientRole::Server).await;
+        let request = AdoptFeeder {
+            invite,
+            name: "kitchen".into(),
+            address: Some(sim.address.to_string()),
+            phone_key: None,
+        };
+        let adopted = service.adopt(&owner(), request).await.unwrap();
+
+        let store = server.store().open().await;
+        let row = store
+            .feeder(adopted.id)
+            .await
+            .unwrap()
+            .expect("the device is stored");
+        assert_eq!(row.model, Model::Plaf103);
+        assert_eq!(row.kind, DeviceKind::Feeder);
+        assert_eq!(row.home, service.home().await.unwrap().id);
+        assert_eq!((adopted.model, adopted.kind), (row.model, row.kind));
+    });
 }
 
 #[test]

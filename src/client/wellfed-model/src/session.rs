@@ -39,9 +39,11 @@ pub enum OpenRefusal {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Joined {
-    /// The new key is enrolled with this role; it opens sessions now.
+    /// The new key is enrolled with this role; it opens sessions now. The
+    /// device names its model, as a session's welcome does.
     Enrolled {
         role: ClientRole,
+        model: Model,
     },
     Refused(Refusal),
 }
