@@ -899,6 +899,22 @@ fn bank_1_needs_a_source_before_any_relay_change() {
 }
 
 #[test]
+fn fountain_bank_1_leaves_its_original_to_wellfed_flash() {
+    let mut rig = rig();
+    rig.bench.device = wellfed_proto::device::Model::Plwf106;
+    rig.tools.0.borrow_mut().flash_codes.extend([0, 1]);
+    let mut args = update("unit");
+    args.source = None;
+
+    assert_eq!(rig.bench.flash_prepare(&args).unwrap(), 1);
+
+    assert_eq!(flash_commands(&rig), ["read small", "update inspect"]);
+    let calls = rig.tools.0.borrow();
+    assert!(!calls.flash[1].iter().any(|a| a == "--source"));
+    assert!(calls.flash[1].iter().any(|a| a == "plwf106"));
+}
+
+#[test]
 fn motion_targets_need_the_attended_flag() {
     let rig = rig();
     let target = rig.bench.root.join("target");

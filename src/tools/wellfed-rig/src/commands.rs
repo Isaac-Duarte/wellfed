@@ -30,6 +30,7 @@ use wellfed_formats::bench::progress::{BenchCommand, Status};
 use wellfed_formats::bench::{CAPTURES, Config, Paths, plain_name, relative};
 use wellfed_formats::require;
 use wellfed_formats::review::{ImageKind, ImageReview};
+use wellfed_proto::device::Model;
 use wellfed_relay::{POWER, Relay, STRAP, Switch, UART};
 
 pub mod ota;
@@ -97,7 +98,7 @@ pub enum CommandsError {
     AnalyzerTimeout,
     #[error("Analyzer failed: {stderr:?}")]
     AnalyzerFailed { stderr: String },
-    #[error("--source is required except when overwriting bank 0")]
+    #[error("--source is required except when overwriting bank 0 or the PLWF106's bank 1")]
     SourceRequired,
     /// A target manifest that cannot be read is not taken as motionless.
     #[error("Cannot read {manifest} to check its motion policy: {error}")]
@@ -131,7 +132,7 @@ pub enum CommandsError {
 pub struct UpdateArgs {
     /// Session name for private evidence paths.
     pub name: String,
-    /// Frozen review of the installed image (bank 0 may omit it to overwrite its baseline).
+    /// Frozen review of the installed image (bank 0, and the PLWF106's bank 1, may omit it to overwrite the baseline's bytes).
     #[arg(long)]
     pub source: Option<PathBuf>,
     /// Bank to update; 0 is the factory loader's fallback.
@@ -283,7 +284,7 @@ pub struct Bench {
     pub root: PathBuf,
     /// The model of the device on the bench, which every `wellfed-flash`
     /// writer and `wellfed-build` build is told (`--device`).
-    pub device: wellfed_proto::device::Model,
+    pub device: Model,
     pub config: Config,
     pub relay: Relay,
     pub status: Status,
@@ -880,7 +881,11 @@ impl Bench {
     }
 
     fn update_args(&self, args: &UpdateArgs, p: &Paths) -> Result<Vec<String>> {
-        require(args.source.is_some() || args.bank == 0, || {
+        // The PLWF106's bank-1 update takes bank 1's original bytes from the
+        // pinned baseline, and wellfed-flash refuses it when bank 1 no longer
+        // equals them; the PLAF103's bank 1 always names what it holds.
+        let original_bank = args.bank == 0 || self.device == Model::Plwf106;
+        require(args.source.is_some() || original_bank, || {
             CommandsError::SourceRequired
         })?;
 
