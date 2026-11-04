@@ -156,12 +156,15 @@ fn a_login_mints_the_phones_token_which_reads_follows_and_logs_out() {
         assert_eq!(feeders[0].name, "kitchen");
 
         // A write by this phone's token is heard as its command and its
-        // history entry, and the history reads it back.
+        // history entry, and the history reads it back. The feeder's
+        // backlog is stored after it shows online, so the write waits for
+        // it: otherwise the backlog may follow the command on the stream.
         let phone = server
             .client()
             .with_auth(Some(Auth::Token(session.secret())));
         let key = Uuid::from_u128(0x0192c5d0_4444_7000_8000_000000000001);
         let feeder_id = feeders[0].id.parse().map(wellfed_api::FeederId).unwrap();
+        server.caught_up(feeder_id).await;
         phone.set_lock(feeder_id, Lock::Locked, key).await.unwrap();
         let resume = heard(&mut updates, "the lock's command", |update| match update {
             ServerUpdate::Event {
