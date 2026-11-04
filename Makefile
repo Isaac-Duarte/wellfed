@@ -111,6 +111,13 @@ check-app:
 	cd $(APP) && TZ=America/Denver WELLFED_SMOKE_TARGET=$(CURDIR)/target/debug flutter test
 	@if [ "$$(uname)" != Linux ]; then $(MAKE) app-goldens; fi
 	cd $(APP) && flutter build apk --debug --target-platform android-arm64,android-x64
+	@# Plugin-only ABI directories advertise support without a runnable app.
+	@for abi in $$(unzip -Z1 "$(APP_APK)" | sed -n 's@^lib/\([^/]*\)/[^/]*\.so$$@\1@p' | sort -u); do \
+		for library in libflutter.so libwellfed_app_bridge.so; do \
+			unzip -Z1 "$(APP_APK)" | grep -Fxq "lib/$$abi/$$library" || \
+				{ echo "the APK's $$abi directory lacks $$library"; exit 1; }; \
+		done; \
+	done
 	@# The https verifier needs both halves on the phone: the JNI hook in the
 	@# bridge and its Kotlin package, or the first https login panics.
 	@for abi in arm64-v8a x86_64; do \
