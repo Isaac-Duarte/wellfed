@@ -20,6 +20,7 @@ pub mod clients;
 pub mod events;
 pub mod net;
 pub mod plans;
+pub mod reads;
 pub mod reset;
 pub mod settings;
 pub mod stats;

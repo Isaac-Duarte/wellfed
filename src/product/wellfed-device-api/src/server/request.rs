@@ -315,11 +315,17 @@ const fn origin(role: Role) -> Origin {
 }
 
 /// Whether `role` may run `action`. Owners do everything; members and the
-/// server feed, change settings and the lock, and read; nobody else opens a
-/// session at all.
+/// server feed, change settings and the lock, and read; members also set the
+/// portion weight, which the people at the feeder weigh, while the server's
+/// key does not; nobody else opens a session at all.
 const fn allowed(role: Role, action: Action) -> bool {
     match role {
         Role::Owner => true,
+        // The server's key never sets the portion weight, which the
+        // people at the feeder weigh.
+        Role::Server if matches!(action, Action::Feeder(FeederAction::PutCalibration { .. })) => {
+            false
+        }
         Role::Member | Role::Server => match action {
             Action::Feeder(action) => !action.owners_only(),
             _ => !matches!(

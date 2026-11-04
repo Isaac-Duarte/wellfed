@@ -65,7 +65,7 @@ A dual-slot store, `PLFCAL01` (`wellfed_feeder::store::calibration`), holds the 
 The ops are the feeder module's (`FeederOp`), with their outcome (`FeederOutcome::Calibration`), a refusal and a statistics section:
 
 - `FeederOp::GetCalibration` returns `FeederOutcome::Calibration(CalibrationView { generation, writable, calibration: Calibration { portion_mg, bowl }, phase })`. `phase` is `None` from a feeder with no feeding owner (the simulator) or before it opens.
-- `FeederOp::PutCalibration { base, calibration }` is for owners only, answered `Done { generation }` once stored. It is refused `Stale` past `base`, `Busy` while the outputs are claimed or a change waits, `Invalid` outside the limits, and `Unverified` for another bowl mode.
+- `FeederOp::PutCalibration { base, calibration }` is for owners and members (not the server's key), answered `Done { generation }` once stored. It is refused `Stale` past `base`, `Busy` while the outputs are claimed or a change waits, `Invalid` outside the limits, and `Unverified` for another bowl mode.
 - `StatsSection::Portions` returns `Stats::Portions(Portions { portions, homed, outlet_breaks, portion_mg, delivered_mg })`, since this boot: credited portions, feeds that began with a homing mark, outlet-beam breaks, the stored weight, and `portions × portion_mg`.
 
 The fixtures in `tests/fixtures/v1.txt` pin the new messages. The server maps `Unverified` to `Forbidden`, as it maps update refusals, so a server session cannot write the calibration.

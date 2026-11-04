@@ -54,7 +54,7 @@ You can lock the buttons and still answer a pairing: the presses for a code, and
 | Role | Can | Can't |
 | --- | --- | --- |
 | Owner | Everything, including Wi-Fi, updates, restart, and removing people | |
-| Member | Feed, edit meals and settings, lock the buttons, and invite members | Change Wi-Fi or time settings, restart, remove people, install updates, enroll update keys, calibrate, upload or delete the meal call, read logs, or read the backup |
+| Member | Feed, edit meals and settings, set the portion weight, lock the buttons, and invite members | Change Wi-Fi or time settings, restart, remove people, install updates, enroll update keys, upload or delete the meal call, read logs, or read the backup |
 | Server | The same as a member, except inviting | The same as a member, and invite anyone |
 | Update key | Sign firmware, once an owner has enrolled it | Open a session |
 

@@ -1,0 +1,13 @@
+# The integration's Python, the only Python under src/ (`make check-homeassistant`).
+line-length = 100
+target-version = "py314"
+# Generated from the bridge by `maturin generate-stubs`; checked for staleness instead.
+extend-exclude = ["bridge/wellfed_homeassistant.pyi"]
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[lint.isort]
+known-first-party = ["custom_components", "wellfed_homeassistant"]
+force-sort-within-sections = true
+combine-as-imports = true

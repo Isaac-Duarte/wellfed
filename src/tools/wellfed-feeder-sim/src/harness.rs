@@ -16,7 +16,6 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinHandle, LocalSet};
 use wellfed_core::clock::wall::{Origin, Sync};
-use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::setup::{MAX_MESSAGE, Received, Responder};
 
@@ -75,7 +74,7 @@ pub fn owner_sync(sim: &mut Sim, now: u32, unix_ms: u64) {
 pub fn events(sim: &mut Sim) -> Vec<EventBody> {
     let mut bodies = Vec::new();
     let mut after = None;
-    while let Some(Read::Record(record)) = sim.platform().event_after(Reader::slot(0), after) {
+    while let Read::Record(record) = sim.platform().ring_after(after) {
         after = Some(record.seq);
         bodies.extend(wellfed_proto::decode_padded::<EventBody>(&record.body));
     }

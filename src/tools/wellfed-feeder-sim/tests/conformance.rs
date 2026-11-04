@@ -45,6 +45,7 @@ impl Rig for SimRig {
 
     fn write(&mut self) {
         self.feeder.platform_mut().write();
+        self.feeder.platform_mut().answer_read();
     }
 
     fn claim_outputs(&mut self, claimed: bool) {

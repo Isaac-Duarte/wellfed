@@ -114,7 +114,7 @@ What stock does with each block, and what Wellfed does with it. The Stock column
 | Indicators | Yes | Which states show is not settled. |
 | Speaker | Yes | Which sounds play when is not settled. |
 | Schedules | Yes ([stock](stock/README.md#clock-and-schedules)) | Up to ten plans, run on the feeder with no server. |
-| Home Assistant | Through the vendor cloud | Paused. |
+| Home Assistant | Through the vendor cloud | Direct over the LAN, with no server; tested in simulation only. |
 
 $1
 - Every finding comes from one research unit. Compare your own board before trusting a pin or an offset.

@@ -1,0 +1,12 @@
+{
+  "domain": "wellfed",
+  "name": "Wellfed",
+  "codeowners": [],
+  "config_flow": true,
+  "zeroconf": ["_wellfed._tcp.local."],
+  "documentation": "https://github.com/Isaac-Duarte/wellfed/tree/master/src/integrations/homeassistant",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "requirements": ["wellfed-homeassistant==0.1.0"],
+  "version": "0.1.0"
+}

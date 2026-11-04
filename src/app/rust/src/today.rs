@@ -1,18 +1,19 @@
 //! What the Home card and the feeder's Today tab show: the status with the
 //! plans, the time settings and the feeding history a session has read. The
-//! reckoning is `wellfed_client`'s, on the feeder's own clock and zone, so
-//! Dart holds no schedule logic and the card says what the feeder will do.
+//! reckoning is `wellfed_client::today`'s, on the feeder's own clock and
+//! zone, so Dart holds no schedule logic, the card says what the feeder will
+//! do, and Home Assistant shows the same day. This file only turns it into
+//! the bindings' views.
 
 use std::time::Instant;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use wellfed_client::history::Feed;
-use wellfed_client::plans::{self, MealState};
-use wellfed_client::time::{feeder_zone, next_meal};
+use wellfed_client::plans::MealState;
+use wellfed_client::today::TimeSettings;
 use wellfed_model::{
-    Battery, ClientRole, Event, EventBody, FeedOutcome, Gap, Plans, Readiness, Settings, Source,
-    Status,
+    Battery, ClientRole, Event, EventBody, FeedOutcome, Gap, Readiness, Source, TimeView,
 };
 
 use crate::api::feeder::TimeInfo;
@@ -22,116 +23,90 @@ use crate::api::session::{
 };
 use crate::requests::{TimeRead, plans_view, settings_view};
 
-/// What a session has read of the feeder.
-#[derive(Default)]
-pub(crate) struct Facts {
-    pub(crate) status: Option<Status>,
-    pub(crate) settings: Option<Settings>,
-    pub(crate) plans: Option<Plans>,
-    pub(crate) time: Option<TimeRead>,
-    /// The history's feeds so far, oldest first.
-    pub(crate) feeds: Vec<Feed>,
+/// What a session has read of the feeder, with the time as this phone read
+/// it.
+pub(crate) type Facts = wellfed_client::today::Facts<TimeRead>;
+
+impl TimeSettings for TimeRead {
+    fn view(&self) -> &TimeView {
+        &self.view
+    }
 }
 
-impl Facts {
-    /// The card, once the status is in.
-    pub(crate) fn card(&self) -> Option<Card> {
-        let status = self.status.as_ref()?;
-        let time: Option<TimeInfo> = self.time.as_ref().map(|read| read.info(Instant::now()));
-        let adapter = status
-            .supply
-            .adapter
-            .or(status.power.map(|power| power.adapter));
-        let battery_percent = match status.supply.battery {
-            Battery::Reading { percent, .. } => Some(percent),
-            _ => None,
-        };
-        let blocked = match status.readiness {
-            Readiness::Blocked(reason) => Some(reason),
-            Readiness::Ready => None,
-        };
-        let fault = status.feed_fault.map(|fault| FaultView {
-            feed: fault.feed,
-            outcome: fault.outcome,
-            reason: fault.reason,
-            result: self
-                .feeds
-                .iter()
-                .rev()
-                .find(|fed| fed.feed == fault.feed)
-                .map(result),
-        });
+/// The card, once the status is in.
+pub(crate) fn card(facts: &Facts) -> Option<Card> {
+    let status = facts.status.as_ref()?;
+    let time: Option<TimeInfo> = facts.time.as_ref().map(|read| read.info(Instant::now()));
+    let adapter = status
+        .supply
+        .adapter
+        .or(status.power.map(|power| power.adapter));
+    let battery_percent = match status.supply.battery {
+        Battery::Reading { percent, .. } => Some(percent),
+        _ => None,
+    };
+    let blocked = match status.readiness {
+        Readiness::Blocked(reason) => Some(reason),
+        Readiness::Ready => None,
+    };
+    let fault = status.feed_fault.map(|fault| FaultView {
+        feed: fault.feed,
+        outcome: fault.outcome,
+        reason: fault.reason,
+        result: facts.fault_feed().map(result),
+    });
 
-        let (next, meals) = self.meals(status);
-        Some(Card {
-            build: status.build.clone(),
-            food: status.food,
-            locked: status.locked,
-            ready: status.readiness == Readiness::Ready,
-            blocked,
-            adapter,
-            battery_percent,
-            clock_set: status.clock.is_some(),
-            rssi: status.rssi,
-            fault,
-            desiccant: status.desiccant,
-            uptime_ms: status.uptime_ms,
-            bank: status.bank,
-            next_meal: next,
-            last_fed: self.feeds.last().map(result),
-            meals,
-            time,
-            settings: self.settings.as_ref().map(settings_view),
-            plans: self.plans.as_ref().map(plans_view),
-            wifi_generation: status.wifi_generation.0,
-        })
-    }
-
-    /// The next meal and today's, by the feeder's clock in its own zone. A
-    /// feeder with no clock holds its meals, so there are neither.
-    fn meals(&self, status: &Status) -> (Option<NextMealView>, Vec<MealView>) {
-        let (Some(plans), Some(now)) = (self.plans.as_ref(), status.clock) else {
-            return (None, Vec::new());
-        };
-        let zone = self.time.as_ref().map_or_else(TimeZone::system, |read| {
-            feeder_zone(&read.view, TimeZone::system())
-        });
-
-        let next = next_meal(plans, now, &zone).map(|meal| NextMealView {
+    let today = facts.today(TimeZone::system());
+    let next_meal = today.next.map(|meal| NextMealView {
+        slot: meal.slot,
+        at_ms: meal.at.as_millisecond(),
+        minute: meal.minute,
+        portions: meal.portions,
+    });
+    let meals = today
+        .meals
+        .into_iter()
+        .map(|meal| MealView {
             slot: meal.slot,
-            at_ms: meal.at.as_millisecond(),
-            minute: minute_of(meal.at, &zone),
+            minute: meal.minute,
             portions: meal.portions,
-        });
-        let meals = plans::today(plans, &self.feeds, now, &zone)
-            .into_iter()
-            .map(|meal| MealView {
-                slot: meal.slot,
-                minute: meal.minute,
-                portions: meal.portions,
-                call: meal.call,
-                standing: match meal.state {
-                    MealState::Fed(feed) => MealStanding::Fed {
-                        result: result(&feed),
-                    },
-                    MealState::Passed => MealStanding::Passed,
-                    MealState::Next { at } => MealStanding::Next {
-                        at_ms: at.as_millisecond(),
-                    },
-                    MealState::Later => MealStanding::Later,
+            call: meal.call,
+            standing: match meal.state {
+                MealState::Fed(feed) => MealStanding::Fed {
+                    result: result(&feed),
                 },
-            })
-            .collect();
-        (next, meals)
-    }
-}
+                MealState::Passed => MealStanding::Passed,
+                MealState::Next { at } => MealStanding::Next {
+                    at_ms: at.as_millisecond(),
+                },
+                MealState::Later => MealStanding::Later,
+            },
+        })
+        .collect();
 
-/// A moment's minute of the local day in `zone`.
-fn minute_of(at: Timestamp, zone: &TimeZone) -> u16 {
-    let local = at.to_zoned(zone.clone());
-    u16::try_from(i32::from(local.hour()) * 60 + i32::from(local.minute())).unwrap_or(0)
+    Some(Card {
+        build: status.build.clone(),
+        food: status.food,
+        locked: status.locked,
+        ready: status.readiness == Readiness::Ready,
+        blocked,
+        adapter,
+        battery_percent,
+        clock_set: status.clock.is_some(),
+        rssi: status.rssi,
+        fault,
+        desiccant: status.desiccant,
+        uptime_ms: status.uptime_ms,
+        bank: status.bank,
+        next_meal,
+        last_fed: facts.last_fed().map(result),
+        meals,
+        time,
+        settings: facts.settings.as_ref().map(settings_view),
+        plans: facts.plans.as_ref().map(plans_view),
+        wifi_generation: status.wifi_generation.0,
+    })
 }
-
 pub(crate) fn result(fed: &Feed) -> FeedResult {
     let (confirmed, at_most) = fed.delivered.bounds();
     FeedResult {

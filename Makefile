@@ -1,4 +1,4 @@
-.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app app-goldens app-installer-input sqlx-prepare server-dist server-image check-server-release
+.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-goldens app-installer-input sqlx-prepare server-dist server-image check-server-release
 
 help:
 	@echo "check: formatting, Clippy, Rust tests, cross-builds, simulator, repository checks"
@@ -7,6 +7,8 @@ help:
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
 	@echo "check-web: the site and docs site: lint, format, licenses, types, unit tests, build, then Playwright (needs Node and pnpm)"
 	@echo "check-app: the Android app's bindings and tokens unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, and a debug APK (needs the pinned Flutter)"
+	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator with 95% coverage, on Home Assistant 2026.10 and Python 3.14 (needs uv)"
+	@echo "homeassistant-wheels: the Home Assistant bridge's release wheels, cross-built for musllinux and manylinux (aarch64, x86_64, armv7 musl), and its sdist (needs uv; adds Rust targets)"
 	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
 	@echo "sqlx-prepare: regenerate the server store's query metadata (.sqlx/) after changing a query or migration"
@@ -186,3 +188,55 @@ server-image:
 check-server-release:
 	WELLFED_RELEASE_SERVER=$(CURDIR)/$(SERVER_DIST)/wellfed-server-$$(uname -m)-unknown-linux-musl cargo nextest run --locked -p wellfed-server --test release
 	WELLFED_RELEASE_IMAGE=$(SERVER_IMAGE) WELLFED_RELEASE_RUNTIME=$(CONTAINER) cargo nextest run --locked -p wellfed-server --test release --run-ignored only
+
+# The Home Assistant integration (src/integrations/homeassistant/). Its Rust
+# bridge's own tests run in `check-rust`, without the PyO3 module; this lints
+# the module, builds the wheel into a venv of pinned test dependencies, and
+# runs Home Assistant's tests against a simulator and the CLI they start.
+# The bridge's stub is generated from the built module and committed, so a
+# Rust change that alters what Python sees fails here until it is
+# regenerated; mypy checks the integration against it. Every wheel ships the
+# committed stub, which maturin finds beside the bridge's Cargo.toml, so a
+# cross-built wheel needs no introspection of a foreign binary.
+HA = src/integrations/homeassistant
+HA_VENV = target/homeassistant-venv
+HA_STUB = $(HA)/bridge/wellfed_homeassistant.pyi
+HA_STUBS = target/homeassistant-stubs
+# This host's wheel alone, so the install never picks up a cross-built one.
+HA_WHEEL = target/homeassistant-wheels/check
+check-homeassistant:
+	cargo clippy --locked -p wellfed-homeassistant --features python --all-targets -- -D warnings
+	cargo clippy --locked -p wellfed-homeassistant --features python --lib -- -D warnings $(PRODUCTION_LINTS)
+	$(HA_VENV)/bin/python -c 'import sys; sys.exit(sys.version_info[:2] != (3, 14))' 2>/dev/null || uv venv --clear --python 3.14 $(HA_VENV)
+	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install -r $(HA)/tests/requirements.txt
+	$(HA_VENV)/bin/ruff check $(HA)
+	$(HA_VENV)/bin/ruff format --check $(HA)
+	rm -rf $(HA_STUBS)
+	$(HA_VENV)/bin/maturin generate-stubs --locked -q -i $(HA_VENV)/bin/python -m $(HA)/bridge/Cargo.toml --out $(HA_STUBS)
+	@diff -u $(HA_STUB) $(HA_STUBS)/wellfed_homeassistant/__init__.pyi || \
+		{ echo "the bridge's stub is stale: copy the generated one over $(HA_STUB)"; exit 1; }
+	cargo build --locked -p wellfed -p wellfed-feeder-sim
+	rm -rf $(HA_WHEEL)
+	$(HA_VENV)/bin/maturin build --locked --release -i $(HA_VENV)/bin/python -m $(HA)/bridge/Cargo.toml -o $(HA_WHEEL)
+	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install --reinstall $(HA_WHEEL)/*.whl
+	cd $(HA) && $(CURDIR)/$(HA_VENV)/bin/mypy
+	cd $(HA) && WELLFED_BIN_DIR=$(CURDIR)/target/debug $(CURDIR)/$(HA_VENV)/bin/python -m pytest -q -p no:cacheprovider \
+		--cov=custom_components/wellfed --cov-report=term-missing --cov-fail-under=95
+
+# The wheels a release ships, cross-built with maturin and zig: musllinux for
+# Home Assistant's own images (Alpine), manylinux for other installs. The
+# Rust targets are added to the pinned toolchain; nothing is published.
+HA_TARGETS = aarch64-unknown-linux-musl x86_64-unknown-linux-musl armv7-unknown-linux-musleabihf \
+	aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
+HA_RELEASE = target/homeassistant-wheels/release
+ZIG = ziglang==0.15.1
+homeassistant-wheels:
+	$(HA_VENV)/bin/python -c 'import sys; sys.exit(sys.version_info[:2] != (3, 14))' 2>/dev/null || uv venv --clear --python 3.14 $(HA_VENV)
+	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install -r $(HA)/tests/requirements.txt $(ZIG)
+	rustup target add $(HA_TARGETS)
+	rm -rf $(HA_RELEASE)
+	for target in $(HA_TARGETS); do \
+		PATH=$(CURDIR)/$(HA_VENV)/bin:$$PATH $(HA_VENV)/bin/maturin build --locked --release --zig \
+			--target $$target -m $(HA)/bridge/Cargo.toml -o $(HA_RELEASE) || exit 1; \
+	done
+	$(HA_VENV)/bin/maturin sdist -m $(HA)/bridge/Cargo.toml -o $(HA_RELEASE)

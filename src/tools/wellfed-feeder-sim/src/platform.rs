@@ -61,9 +61,10 @@ use wellfed_feeder::stats::{SAVE_MS, TOTAL_SECTORS, Totals, reset_cause};
 use wellfed_feeder::store::calibration::CalibrationStore;
 use wellfed_feeder::store::call::CallStore;
 use wellfed_feeder::store::clients::{ClientError, ClientStore};
-use wellfed_feeder::store::events::{BODY_BYTES, EventLog, Read};
+use wellfed_feeder::store::events::{BODY_BYTES, EMPTY, EventLog, Read, Record};
 use wellfed_feeder::store::net::NetStore;
 use wellfed_feeder::store::plans::PlansStore;
+use wellfed_feeder::store::reads::{READ_BATCH, Reads};
 use wellfed_feeder::store::reset;
 use wellfed_feeder::store::settings::{SettingsStatus, SettingsStore};
 use wellfed_feeder::store::stats::{SaveKind, StatsStatus, StatsStore};
@@ -201,6 +202,10 @@ pub struct SimPlatform {
     keys_done: Option<(u32, KeyResult)>,
     ticket: u32,
     events: EventLog<Region>,
+    /// The turns subscribers read the ring in, the firmware's own, and
+    /// the writer's buffer for the batch it answers with.
+    reads: Reads,
+    read_batch: Box<[Record; READ_BATCH]>,
     clock: WallClock,
     reboot: bool,
     /// This process's boots so far, this one included; status reports it as
@@ -363,6 +368,8 @@ impl SimPlatform {
             keys_done: None,
             ticket: 0,
             events,
+            reads: Reads::new(),
+            read_batch: Box::new([EMPTY; READ_BATCH]),
             clock: WallClock::new(),
             reboot: false,
             boot_count,
@@ -559,6 +566,23 @@ impl SimPlatform {
     /// The writer's turn: apply what is queued. A key change bumps the
     /// table's generation, which the next pass copies to the server; its
     /// result, for the log.
+    /// The ring's record after `after`, read directly, for a test to
+    /// inspect without taking a subscriber's turn.
+    pub fn ring_after(&self, after: Option<u64>) -> Read {
+        self.events.read_after(after)
+    }
+
+    /// The writer's half of an event read: answer the one the device API
+    /// asked for, as the settings writer does between the loop's passes.
+    pub fn answer_read(&mut self) {
+        let Some(after) = self.reads.request() else {
+            return;
+        };
+        let batch = self.events.read_batch(after, &mut self.read_batch[..]);
+        self.reads
+            .finish(after, batch, &self.read_batch[..], self.events.last_seq());
+    }
+
     pub fn write(&mut self) -> Option<KeyResult> {
         if let Some(fields) = self.settings_pending.take() {
             let current = self.settings.settings;
@@ -1085,8 +1109,12 @@ impl Platform for SimPlatform {
         0
     }
 
-    fn event_after(&mut self, _reader: Reader, after: Option<u64>) -> Option<Read> {
-        Some(self.events.read_after(after))
+    fn event_after(&mut self, reader: Reader, after: Option<u64>) -> Option<Read> {
+        self.reads.result(reader, after, self.events.last_seq())
+    }
+
+    fn reader_left(&mut self, reader: Reader) {
+        self.reads.left(reader);
     }
 
     fn epoch(&self) -> Option<u32> {

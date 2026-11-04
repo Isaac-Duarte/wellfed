@@ -189,7 +189,7 @@ fn snapshot(snapshot: StatusSnapshot) -> Option<ServerSnapshot> {
     Some(ServerSnapshot {
         at_ms: ms(snapshot.at),
         live: snapshot.live,
-        card: facts.card()?,
+        card: crate::today::card(&facts)?,
     })
 }
 

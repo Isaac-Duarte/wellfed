@@ -191,6 +191,15 @@ pub async fn join_phone(sim: &Running, invite: &str, secret: [u8; 32]) -> Client
     }
 }
 
+/// A session with the simulator as the phone whose secret is `secret`,
+/// once it joined ([`join_phone`]).
+pub async fn open_phone(sim: &Running, secret: [u8; 32]) -> Connection {
+    let keys = Keypair::from_secret(secret);
+    Connection::open(&keys, sim.identity, sim.address, [0x78; 32])
+        .await
+        .expect("a joined phone opens a session with the simulator")
+}
+
 /// The public keys in the simulator's client table, as its owner reads
 /// them.
 pub async fn client_keys(sim: &Running) -> Vec<[u8; 32]> {

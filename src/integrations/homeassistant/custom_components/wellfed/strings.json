@@ -1,0 +1,301 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pair a Wellfed feeder",
+        "description": "Make a member invite on a paired client (`wellfed invite --role member`, or People in the app) and paste it here within 10 minutes. Home Assistant joins as its own client, as a member: it can feed, change the settings, the lock, the plans and the portion weight, and read everything. It needs no server.",
+        "data": {
+          "invite": "Invite",
+          "address": "Address"
+        },
+        "data_description": {
+          "invite": "The `wellfed-invite:` text, single use.",
+          "address": "The feeder's IP address. Leave empty to find it on the network."
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Pair the feeder at {address}",
+        "description": "Make a member invite on a paired client (`wellfed invite --role member`, or People in the app) and paste it here within 10 minutes.",
+        "data": {
+          "invite": "Invite"
+        },
+        "data_description": {
+          "invite": "The `wellfed-invite:` text, single use."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Pair the feeder again",
+        "description": "The feeder no longer knows this Home Assistant: its key was removed. Make a new member invite on a paired client and paste it here. Home Assistant joins with a new key.",
+        "data": {
+          "invite": "Invite"
+        }
+      },
+      "reconfigure": {
+        "title": "Feeder address",
+        "description": "Where Home Assistant finds the feeder.",
+        "data": {
+          "address": "Address"
+        },
+        "data_description": {
+          "address": "The feeder's IP address. Leave empty to find it on the network."
+        }
+      }
+    },
+    "error": {
+      "invalid_invite": "That is not a Wellfed invite.",
+      "join_failed": "The feeder did not accept the invite. It may have expired or been used already, so make a new one.",
+      "wrong_feeder": "That invite is for a different feeder.",
+      "owner_invite": "That was an owner invite. Home Assistant joins only as a member, so it removed the key it was given. Make a member invite instead.",
+      "owner_invite_kept": "That was an owner invite, and Home Assistant could not remove the key it was given. Remove the client named home-assistant from the feeder (People in the app, or `wellfed revoke`), then make a member invite."
+    },
+    "abort": {
+      "already_configured": "This feeder is already paired.",
+      "not_a_feeder": "That device does not look like a Wellfed feeder.",
+      "reauth_successful": "Paired again.",
+      "reconfigure_successful": "Saved."
+    },
+    "flow_title": "{name}"
+  },
+  "entity": {
+    "binary_sensor": {
+      "food_low": {
+        "name": "Food low"
+      },
+      "feed_problem": {
+        "name": "Feed problem",
+        "state_attributes": {
+          "feed": {
+            "name": "Feed"
+          },
+          "outcome": {
+            "name": "Outcome"
+          },
+          "reason": {
+            "name": "Reason"
+          }
+        }
+      },
+      "on_battery": {
+        "name": "On battery"
+      }
+    },
+    "button": {
+      "feed": {
+        "name": "Feed"
+      },
+      "cancel_feed": {
+        "name": "Cancel feed"
+      },
+      "reset_desiccant": {
+        "name": "Desiccant replaced"
+      },
+      "play_chime": {
+        "name": "Play chime"
+      }
+    },
+    "event": {
+      "feed_event": {
+        "name": "Feed",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "fed": "Fed",
+              "cancelled": "Cancelled",
+              "failed": "Failed",
+              "uncertain": "Uncertain",
+              "expired": "Expired"
+            }
+          }
+        }
+      }
+    },
+    "number": {
+      "portions": {
+        "name": "Portions"
+      },
+      "volume": {
+        "name": "Volume"
+      },
+      "portion_weight": {
+        "name": "Portion weight"
+      }
+    },
+    "sensor": {
+      "last_fed": {
+        "name": "Last fed"
+      },
+      "portions_today": {
+        "name": "Portions today",
+        "unit_of_measurement": "portions"
+      },
+      "next_meal": {
+        "name": "Next meal"
+      },
+      "food": {
+        "name": "Food",
+        "state": {
+          "unread": "Not read yet",
+          "present": "Present",
+          "low": "Low"
+        }
+      },
+      "readiness": {
+        "name": "Readiness",
+        "state": {
+          "ready": "Ready",
+          "starting": "Starting",
+          "journal": "Feed journal unreadable",
+          "fault": "Stopped on a fault",
+          "resolving": "Resolving an interrupted feed",
+          "feeding": "Feeding",
+          "joining": "Joining Wi-Fi",
+          "updating": "Updating",
+          "setup": "In setup",
+          "unserved": "No feeding on this build",
+          "battery": "Battery too low",
+          "restarting": "Restarting"
+        }
+      },
+      "desiccant": {
+        "name": "Desiccant days left"
+      }
+    },
+    "switch": {
+      "child_lock": {
+        "name": "Child lock"
+      },
+      "sound": {
+        "name": "Sound"
+      },
+      "lights": {
+        "name": "Lights"
+      },
+      "plan": {
+        "name": "Meal {time}"
+      }
+    }
+  },
+  "services": {
+    "feed": {
+      "name": "Feed",
+      "description": "Dispense portions now. Sent once: a feed whose answer is lost is reported, never retried.",
+      "fields": {
+        "device_id": {
+          "name": "Feeder",
+          "description": "The feeder to feed from."
+        },
+        "portions": {
+          "name": "Portions",
+          "description": "Portions to dispense, 1 to 48."
+        }
+      }
+    },
+    "cancel_feed": {
+      "name": "Cancel feed",
+      "description": "Stop a running feed. Without a number, the feed Home Assistant started.",
+      "fields": {
+        "device_id": {
+          "name": "Feeder",
+          "description": "The feeder running the feed."
+        },
+        "feed": {
+          "name": "Feed",
+          "description": "The feeder's number for the feed."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "write_uncertain": {
+      "message": "The feeder did not answer, so it may have run. It was not sent again: the feeding history will show whether it did."
+    },
+    "not_a_feeder": {
+      "message": "That device is not a Wellfed feeder."
+    },
+    "no_feed": {
+      "message": "No feed from Home Assistant is running to cancel."
+    },
+    "revoked": {
+      "message": "The feeder no longer knows this Home Assistant. Pair it again."
+    },
+    "not_ready": {
+      "message": "The feeder did not answer. Home Assistant will try again."
+    },
+    "not_sent_disconnected": {
+      "message": "Not sent: the feeder is not connected. Nothing reached it, so you can try again."
+    },
+    "not_sent_stopped": {
+      "message": "Not sent: this feeder's session has stopped. Reload the integration, or pair it again if it was removed."
+    },
+    "not_sent_busy": {
+      "message": "Not sent: a change to the same settings is still waiting on the feeder. Try again in a moment."
+    },
+    "not_sent_forbidden": {
+      "message": "Not sent: this client's role may not do that."
+    },
+    "not_sent_unsupported": {
+      "message": "Not sent: the feeder's firmware does not support this."
+    },
+    "not_sent_not_read": {
+      "message": "Not sent: Home Assistant has not read the feeder's settings yet. Try again in a moment."
+    },
+    "not_sent_invalid": {
+      "message": "Not sent: that value is outside what the feeder accepts."
+    },
+    "refused_forbidden": {
+      "message": "The feeder refused: this client's role may not do that."
+    },
+    "refused_stale": {
+      "message": "The feeder refused: the settings changed meanwhile. Home Assistant read them again; check and try again."
+    },
+    "refused_busy": {
+      "message": "The feeder refused: it is busy. Try again in a moment."
+    },
+    "refused_unavailable": {
+      "message": "The feeder refused: this firmware does not serve that."
+    },
+    "refused_invalid": {
+      "message": "The feeder refused: a value failed its checks."
+    },
+    "refused_not_writable": {
+      "message": "The feeder refused: its storage cannot be written now."
+    },
+    "refused_full": {
+      "message": "The feeder refused: it is full."
+    },
+    "refused_not_found": {
+      "message": "The feeder refused: there is no such feed or plan."
+    },
+    "refused_muted": {
+      "message": "The feeder refused: its sound is off or outside its sound window."
+    },
+    "refused_time": {
+      "message": "The feeder refused the time."
+    },
+    "refused_fault": {
+      "message": "The feeder refused: it stopped on a fault and feeds again after a restart."
+    },
+    "refused_update": {
+      "message": "The feeder refused the firmware."
+    },
+    "refused_unverified": {
+      "message": "The feeder refused: that bowl mode is not verified on this feeder."
+    },
+    "refused_portions": {
+      "message": "The feeder refused: a feed is 1 to 48 portions."
+    },
+    "refused_no_clock": {
+      "message": "The feeder refused: its clock is not set yet."
+    }
+  },
+  "issues": {
+    "uncertain_feed": {
+      "title": "A feed on feeder {feeder} may have run",
+      "description": "Home Assistant sent a feed and no answer came, so it may have run. It was not sent again. This clears itself once the feeder's history shows the feed. Check the bowl before feeding again."
+    },
+    "unknown_feed": {
+      "title": "Whether a feed on feeder {feeder} ran is not known",
+      "description": "Home Assistant sent a feed of {portions} portions and no answer came, and the feeder's history holds no record of it. It may have run without being recorded, or never reached the feeder. Check the bowl, then ignore this."
+    }
+  }
+}

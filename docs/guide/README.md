@@ -40,6 +40,7 @@ Not yet, as an owner: there's nothing public to install. Follow the [roadmap](..
 | Check your feeder and what you'll need | [Before you start](before-you-start.md) |
 | See what an install involves | [Install](install.md) |
 | Learn meals, buttons and lights | [Everyday use](everyday-use.md) |
+| Put the feeder in Home Assistant | [Home Assistant](home-assistant.md) |
 | Put the vendor's firmware back | [Going back to stock](going-back.md) |
 | See how the pieces fit | [The system at a glance](how-it-works/system.md) |
 | Know how an install avoids stranding your feeder | [Install and rollback](how-it-works/install-and-rollback.md) |

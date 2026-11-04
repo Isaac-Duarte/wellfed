@@ -1,0 +1,105 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "food_low": {
+        "default": "mdi:food-drumstick",
+        "state": {
+          "on": "mdi:food-drumstick-off"
+        }
+      },
+      "feed_problem": {
+        "default": "mdi:check-circle-outline",
+        "state": {
+          "on": "mdi:alert-circle"
+        }
+      },
+      "on_battery": {
+        "default": "mdi:power-plug",
+        "state": {
+          "on": "mdi:battery"
+        }
+      }
+    },
+    "button": {
+      "feed": {
+        "default": "mdi:bowl-mix"
+      },
+      "cancel_feed": {
+        "default": "mdi:stop-circle-outline"
+      },
+      "reset_desiccant": {
+        "default": "mdi:water-off"
+      },
+      "play_chime": {
+        "default": "mdi:bell-ring"
+      }
+    },
+    "event": {
+      "feed_event": {
+        "default": "mdi:bowl-mix"
+      }
+    },
+    "number": {
+      "portions": {
+        "default": "mdi:counter"
+      },
+      "volume": {
+        "default": "mdi:volume-high"
+      },
+      "portion_weight": {
+        "default": "mdi:scale"
+      }
+    },
+    "sensor": {
+      "last_fed": {
+        "default": "mdi:bowl-mix-outline"
+      },
+      "portions_today": {
+        "default": "mdi:counter"
+      },
+      "next_meal": {
+        "default": "mdi:clock-outline"
+      },
+      "food": {
+        "default": "mdi:food-drumstick"
+      },
+      "readiness": {
+        "default": "mdi:check-circle-outline"
+      },
+      "desiccant": {
+        "default": "mdi:water-percent"
+      }
+    },
+    "switch": {
+      "child_lock": {
+        "default": "mdi:lock-open-variant",
+        "state": {
+          "on": "mdi:lock"
+        }
+      },
+      "sound": {
+        "default": "mdi:volume-off",
+        "state": {
+          "on": "mdi:volume-high"
+        }
+      },
+      "lights": {
+        "default": "mdi:lightbulb-off",
+        "state": {
+          "on": "mdi:lightbulb"
+        }
+      },
+      "plan": {
+        "default": "mdi:calendar-clock"
+      }
+    }
+  },
+  "services": {
+    "feed": {
+      "service": "mdi:bowl-mix"
+    },
+    "cancel_feed": {
+      "service": "mdi:stop-circle-outline"
+    }
+  }
+}

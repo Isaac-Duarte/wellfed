@@ -316,8 +316,9 @@ pub enum FeederOp<'a> {
     /// [`FeederOutcome::Calibration`].
     GetCalibration,
     /// Store `calibration` if the calibration is still at `base`
-    /// generation, answered `Done` once the store holds it. Owner sessions
-    /// only. A bowl mode this feeder has not verified is refused
+    /// generation, answered `Done` once the store holds it. Owner and
+    /// member sessions; the server's is refused `Forbidden`. A bowl mode
+    /// this feeder has not verified is refused
     /// [`Refusal::Unverified`], and a portion weight outside
     /// [`PORTION_MG_MIN`]..=[`PORTION_MG_MAX`] `Invalid`.
     PutCalibration {

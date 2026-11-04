@@ -34,6 +34,7 @@ export const NAV: NavGroup[] = [
       { file: "guide/before-you-start.md", label: "Before you start" },
       { file: "guide/install.md", label: "Install" },
       { file: "guide/everyday-use.md", label: "Everyday use" },
+      { file: "guide/home-assistant.md", label: "Home Assistant" },
       { file: "guide/going-back.md", label: "Going back to stock" },
     ],
   },

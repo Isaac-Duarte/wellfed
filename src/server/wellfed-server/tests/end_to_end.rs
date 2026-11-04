@@ -272,3 +272,81 @@ fn plans_change_over_http_against_their_generation() {
         sim.stop().await;
     });
 }
+
+/// Every event `connection` is pushed, up to and including the first `Fed`.
+async fn direct_until_fed(connection: &mut feeder::Connection) -> Vec<(u64, EventBody)> {
+    let mut seen = Vec::new();
+    loop {
+        match connection.next(WAIT).await.unwrap() {
+            wellfed_model::Pushed::Event(event) => {
+                let fed = matches!(event.body, EventBody::Fed { .. });
+                seen.push((event.seq, event.body));
+                if fed {
+                    return seen;
+                }
+            }
+            wellfed_model::Pushed::Gap(gap) => panic!("events lost: {gap:?}"),
+            _ => {}
+        }
+    }
+}
+
+/// The server and two clients talking to the feeder directly, a phone and
+/// the owner's, follow the events at once, and each sees the phone's feed
+/// end in the same `Fed`: a session of the feeder's own is not starved by
+/// the server's.
+#[test]
+fn the_server_and_two_direct_sessions_each_see_the_same_feed() {
+    local(async {
+        const PHONE: [u8; 32] = [0x44; 32];
+
+        let sim = feeder::start().await;
+        let server = TestServer::start().await;
+        let mut http = server.client();
+        adopted(&mut http, &sim).await;
+        let mut updates = http.stream(&StreamQuery::default(), None).await.unwrap();
+
+        let invite = feeder::invite(&sim, ClientRole::Member).await;
+        assert_eq!(
+            feeder::join_phone(&sim, &invite, PHONE).await,
+            ClientRole::Member
+        );
+        let mut phone = feeder::open_phone(&sim, PHONE).await;
+        let mut owner = feeder::open_owner(&sim).await;
+        phone.subscribe(None, false).await.unwrap();
+        owner.subscribe(None, false).await.unwrap();
+
+        let answer = phone
+            .ask([0x51; 16], &wellfed_model::Op::Feed { portions: 1 })
+            .await
+            .unwrap();
+        assert!(
+            matches!(answer, wellfed_model::Answer::Feeding { .. }),
+            "{answer:?}"
+        );
+
+        let phone_saw = direct_until_fed(&mut phone).await;
+        let owner_saw = direct_until_fed(&mut owner).await;
+        assert_eq!(phone_saw, owner_saw, "both replay the same history");
+        let fed = phone_saw.last().cloned().unwrap();
+
+        let served = tokio::time::timeout(WAIT, async {
+            loop {
+                if let Update {
+                    event: StreamEvent::Event { event, .. },
+                    ..
+                } = next(&mut updates).await
+                    && matches!(event.body, EventBody::Fed { .. })
+                {
+                    return event;
+                }
+            }
+        })
+        .await
+        .expect("the server's stream carries the feed");
+        assert_eq!(served.body, fed.1, "the same Fed the phone saw");
+
+        server.stop().await;
+        sim.stop().await;
+    });
+}

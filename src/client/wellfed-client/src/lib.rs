@@ -12,8 +12,11 @@
 //! the event history records ([`history`]). A release file the owner
 //! keeps until they install it is checked with the feeder's own offer check
 //! ([`release`]). The meal call's clip is converted from the owner's
-//! recording and uploaded a chunk at a time ([`call`]). Editing the plans and what they come to today are
-//! [`plans`], and a portion's weight [`calibration`].
+//! recording and uploaded a chunk at a time ([`call`]). Editing the plans and
+//! what they come to today are [`plans`], and a portion's weight
+//! [`calibration`]. What a client shows of the feeder's day (the last feed,
+//! today's meals, the next one and the portions fed) is [`today`], so the
+//! app and Home Assistant agree.
 //! The consumer installer's steps from stock to a confirmed replacement,
 //! stock's setup frame and the backup gate before promotion are
 //! [`install`].
@@ -38,6 +41,7 @@ pub mod plans;
 pub mod release;
 pub mod setup;
 pub mod time;
+pub mod today;
 pub mod trace;
 pub mod update;
 pub mod update_key;

@@ -38,7 +38,7 @@ test("the sidebar is short, and every link in it opens", async ({ request, page,
   const hrefs = await page.locator("#sidebar a").evaluateAll((links) => links.map((a) => a.getAttribute("href") ?? ""));
 
   expect(hrefs.length).toBeGreaterThan(5);
-  expect(hrefs.length).toBeLessThanOrEqual(15);
+  expect(hrefs.length).toBeLessThanOrEqual(16);
 
   const own = hrefs.filter((href) => new URL(href, origin).origin === origin);
   for (const href of own) expect((await request.get(href)).status(), href).toBe(200);
