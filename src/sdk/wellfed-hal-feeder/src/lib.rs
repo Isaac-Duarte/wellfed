@@ -12,7 +12,6 @@
 //! to the input capture (`feed_faults`, the `feed-faults` feature). Neither
 //! is ever in a product image.
 #![cfg_attr(target_os = "none", no_std)]
-#![allow(clippy::missing_safety_doc)]
 
 pub mod board;
 pub mod events;

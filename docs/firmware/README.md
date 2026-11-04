@@ -88,11 +88,13 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 | `wellfed-session` | Noise, HMAC, the setup code and framing, shared with clients |
 | `wellfed-core` | Controller, portions, sensors, motor gate, clock and the stores |
 | `wellfed-hal-common` | Code both cores link: RAM parking, flash hooks, the boot trial, panics |
-| `wellfed-hal` | KM4 ports: GPIO, ADC, timers, watchdog, flash leases, the update stage |
+| `wellfed-hal` | The chip HAL: KM4 GPIO, ADC, timers, watchdog, flash leases, the update stage, and the buttons, lights, buzzer and audio drivers |
+| `wellfed-hal-feeder` | The feeder's drivers above the chip HAL: the motor, beams and feedback board, its timer events and the feeding owner |
 | `wellfed-sdk` | The KM4 runtime every firmware runs inside |
 | `wellfed-probes` | The bench probes |
 | `wellfed-amebad-sys` | Bindings to the pinned AmebaD SDK, and its host fake |
-| `wellfed-board-plaf103` | The PLAF103's pins, ADC channels and storage map |
+| `wellfed-board` | The board contract: the one board crate its feature selects, checked for every item |
+| `wellfed-board-plaf103` | The PLAF103's pins, ADC channels, storage map and safe output state |
 | `wellfed-testkit`, `wellfed-sim` | Fake NOR storage and the virtual feeder |
 | `wellfed-proto` | The device protocol's messages |
 | `wellfed-device-api` | The feeder's side of the device API and pairing |

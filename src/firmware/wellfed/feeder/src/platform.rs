@@ -40,15 +40,7 @@ use wellfed_feeder_runtime::{
     calibration, call, events, keys, network, plans, stats, time, traces,
 };
 use wellfed_proto::api::{Counts, Erases, FLASH_SECTORS, Power, Refusal, TASKS_MAX};
-use wellfed_proto::device::Model;
-
-/// The model this image is built for: the board's, by its code. A board
-/// whose code names no model, or another kind than this feeder firmware
-/// drives, does not build.
-const MODEL: Model = match Model::from_byte(wellfed_sdk::hal::board::MODEL_CODE) {
-    Some(model) if matches!(model.kind(), wellfed_proto::device::DeviceKind::Feeder) => model,
-    _ => panic!("the board's model is not a feeder this firmware drives"),
-};
+use wellfed_proto::device::{DeviceKind, Model};
 use wellfed_proto::trace::PAGE_MAX;
 use wellfed_sdk::hal::audio::{self, Speaker};
 use wellfed_sdk::hal::ble::{self, BleSetup, DropReason};
@@ -58,6 +50,14 @@ use wellfed_sdk::hal::ota::mailbox::{self, Request};
 use wellfed_sdk::hal::sdk::{self, ApiRecv};
 use wellfed_sdk::hal::{buzzer, clock, link, net_status, power, rng, settings, startup};
 use wellfed_sdk::storage::{TRACES_BASE, TRACES_UNITS};
+
+/// The model this image is built for: the board's, by its code. A board
+/// whose code names no model, or another kind than this feeder firmware
+/// drives, does not build.
+const MODEL: Model = match Model::from_byte(wellfed_sdk::hal::board::MODEL_CODE) {
+    Some(model) if matches!(model.kind(), DeviceKind::Feeder) => model,
+    _ => panic!("the board's model is not a feeder this firmware drives"),
+};
 
 /// What the board's own drivers record: `PLBLE1` for setup mode's link,
 /// `PLAUD1` for its speaker.

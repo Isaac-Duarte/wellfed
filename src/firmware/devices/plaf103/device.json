@@ -1,9 +1,8 @@
 {
   "schema_version": 1,
-  "model": "PLAF103",
+  "model": "plaf103",
   "stock": {
-    "image": "private/firmware/PLAF103_OTA_010115.bin",
-    "layout": "src/firmware/devices/plaf103/layout.json"
+    "image": "private/firmware/PLAF103_OTA_010115.bin"
   },
   "platform": {
     "kind": "amebad",

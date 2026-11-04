@@ -3,18 +3,21 @@
 //! A device names its platform (the chip family whose SDK, overlays and
 //! audits are code in the builder) and the board-level files that platform
 //! takes: the application entry and first-boot mains it stages, the
-//! Bluetooth source a firmware may opt into, and the verified stock image and layout the device profiles derive their flash
-//! banks and pad table from. Every path is root-relative, and the builder
-//! binds every one a profile reads into its identity.
+//! Bluetooth source a firmware may opt into, and the verified stock image
+//! the device profiles derive their flash banks and pad table from, with the
+//! model's layout beside it ([`crate::layout::relative_path`]). Every path is
+//! root-relative, and the builder binds every one a profile reads into its
+//! identity.
 
 use serde::{Deserialize, Serialize};
+use wellfed_proto::device::Model;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeviceConfig {
     pub schema_version: u32,
-    /// The product's model name.
-    pub model: String,
+    /// The product's model, which also names its layout.
+    pub model: Model,
     /// Absent until the board's stock image is verified; the device and
     /// first-boot profiles refuse without it.
     pub stock: Option<Stock>,
@@ -24,10 +27,9 @@ pub struct DeviceConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Stock {
-    /// The verified stock OTA image (ignored private evidence).
+    /// The verified stock OTA image (ignored private evidence). Its
+    /// verified flash layout is the model's ([`crate::layout::relative_path`]).
     pub image: String,
-    /// Its verified flash layout ([`crate::layout::Layout`]).
-    pub layout: String,
 }
 
 /// The chip family, with the board-level files only that platform takes.
@@ -82,7 +84,7 @@ mod tests {
 
     #[test]
     fn the_platform_is_tagged() {
-        let json = r#"{"schema_version": 1, "model": "X", "stock": null,
+        let json = r#"{"schema_version": 1, "model": "plaf103", "stock": null,
             "platform": {"kind": "amebad", "entry": "e.c",
                          "firstboot_mains": {"km0": "a.c", "km4": "b.c"}}}"#;
         let device: DeviceConfig = serde_json::from_str(json).unwrap();

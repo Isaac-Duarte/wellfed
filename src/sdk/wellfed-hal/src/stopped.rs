@@ -10,11 +10,14 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use wellfed_core::flash_coord::FlashCoord;
 
-use crate::board::pins::{IR_PA_BIT, IR_PB_BIT, MOTOR_MASK};
+use crate::board::pins::{IR_PA_BIT, MOTOR_MASK};
+use crate::board::safe::{PORT_A_HIGH, PORT_A_LOW, PORT_B_LOW};
 use crate::sdk::{self, IrqGuard};
 
-pub const PA_MASK: u32 = MOTOR_MASK | IR_PA_BIT;
-pub const PB_MASK: u32 = IR_PB_BIT;
+/// Every output the board's safe state covers, per port: the stopped check
+/// reads exactly the pins a fault or a flash lease writes safe.
+pub const PA_MASK: u32 = PORT_A_HIGH | PORT_A_LOW;
+pub const PB_MASK: u32 = PORT_B_LOW;
 
 /// Emitters held on at rest under an armed supervisor budget: bit 0 PA15,
 /// bit 1 PB3; read by health. Written by the optics probe and by the feeding
@@ -48,7 +51,7 @@ pub struct Snapshot {
 impl Snapshot {
     pub fn verified(self) -> bool {
         self.clock.verified()
-            && self.pa == MOTOR_MASK
+            && self.pa == PORT_A_HIGH
             && self.pb == 0
             && self.dira == PA_MASK
             && self.dirb == PB_MASK

@@ -297,7 +297,7 @@ impl Probe {
 
                 let ms = now.wrapping_sub(self.phase_at);
                 if ms >= RESET_DEADLINE_MS {
-                    let _ = self.watchdog.close(self.board.inactive());
+                    let _ = self.watchdog.close(|| self.board.inactive());
                     if !self.watchdog.claimed {
                         sdk::backup_write(sdk::BACKUP_USER, 0);
                     }

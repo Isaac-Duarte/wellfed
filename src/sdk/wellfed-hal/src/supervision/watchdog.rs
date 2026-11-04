@@ -281,11 +281,12 @@ impl Watchdog {
     }
 
     /// Explicit cooperative shutdown only, after events close and verified
-    /// outputs: `outputs_inactive` is the device's driver saying its outputs
-    /// read stopped. Restores only owned scope bits. Failure retains
-    /// ownership.
+    /// outputs. Restores only owned scope bits. Failure retains ownership.
+    /// `outputs_inactive` is the device driver's check that its outputs read
+    /// stopped; it runs inside the masked section, so no interrupt changes
+    /// the outputs between the check and the release.
     #[must_use]
-    pub fn close(&mut self, outputs_inactive: bool) -> bool {
+    pub fn close(&mut self, outputs_inactive: impl FnOnce() -> bool) -> bool {
         if !context() {
             return false;
         }
@@ -293,7 +294,7 @@ impl Watchdog {
 
         let me = ptr::from_mut(self);
         let mut ok = !self.claimed && active() != me;
-        let inactive = outputs_inactive;
+        let inactive = outputs_inactive();
 
         if active() == me && self.claimed && inactive {
             ok = self.release();

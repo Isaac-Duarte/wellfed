@@ -55,6 +55,9 @@ fn with<R>(f: impl FnOnce(&mut Option<Beat>) -> R) -> R {
 }
 
 /// An owner opened: it counts as fresh until `gap_ms` passes without a beat.
+/// Called only by a device's owner (the feeder's), which the chip HAL does
+/// not know; not for firmware code.
+#[doc(hidden)]
 pub fn open(now_ms: u32, gap_ms: u32) {
     with(|beat| {
         *beat = Some(Beat {
@@ -66,6 +69,10 @@ pub fn open(now_ms: u32, gap_ms: u32) {
     });
 }
 
+/// The owner beat: it counts as fresh for another `gap_ms`.
+/// Called only by a device's owner (the feeder's), which the chip HAL does
+/// not know; not for firmware code.
+#[doc(hidden)]
 pub fn beat(now_ms: u32, gap_ms: u32, supervised: bool) {
     with(|beat| {
         if let Some(beat) = beat {
@@ -78,6 +85,9 @@ pub fn beat(now_ms: u32, gap_ms: u32, supervised: bool) {
 }
 
 /// The owner stopped: the feeder goes back to its own output check.
+/// Called only by a device's owner (the feeder's), which the chip HAL does
+/// not know; not for firmware code.
+#[doc(hidden)]
 pub fn close() {
     with(|beat| *beat = None);
 }

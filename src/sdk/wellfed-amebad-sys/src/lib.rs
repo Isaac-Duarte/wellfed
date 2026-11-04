@@ -1,10 +1,11 @@
-//! The SDK surface used by the PLAF103 AmebaD ports.
+//! The SDK surface used by the AmebaD ports.
 //!
 //! Target builds call the pinned AmebaD SDK through bindgen-generated
 //! declarations; host builds use [`fake`], a deterministic model of the same
 //! calls for tests and the virtual feeder. Both expose identical functions.
-//! The board's pins and storage region are `wellfed-board-plaf103`'s; the
-//! panic and RAM-park output writes and the storage bounds read them there.
+//! The board's safe output state and storage region come from the board
+//! contract, `wellfed-board`: the panic and RAM-park output writes and the
+//! storage bounds read them there.
 #![cfg_attr(target_os = "none", no_std)]
 #![allow(clippy::missing_safety_doc)]
 

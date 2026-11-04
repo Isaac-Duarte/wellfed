@@ -31,6 +31,10 @@ pub enum DeviceError {
     /// With several boards, a build names its own rather than have one guessed.
     #[error("Name the device with --device: {}", names.join(", "))]
     Ambiguous { names: Vec<String> },
+    /// The model's layout lives in its own directory, so a device's
+    /// directory is named for its model.
+    #[error("Device {name} names model {model}, whose directory differs")]
+    Model { name: String, model: &'static str },
     #[error("Device {name} has no verified stock image and layout yet")]
     NoStock { name: String },
 }
@@ -61,6 +65,10 @@ impl Device {
         let config: DeviceConfig = wellfed_formats::load(&path)?;
         require(config.schema_version == 1, || DeviceError::SchemaVersion {
             name: name.into(),
+        })?;
+        require(config.model.name() == name, || DeviceError::Model {
+            name: name.into(),
+            model: config.model.name(),
         })?;
         Ok(Self {
             name: name.to_string(),
@@ -121,7 +129,7 @@ impl Device {
 
     /// Its stock image and layout, which the stock-layout stage needs.
     pub(crate) fn stock(&self, repo: &Repo) -> Result<StockPaths> {
-        let Some(Stock { image, layout }) = &self.config.stock else {
+        let Some(Stock { image }) = &self.config.stock else {
             return Err(DeviceError::NoStock {
                 name: self.name.clone(),
             }
@@ -129,7 +137,9 @@ impl Device {
         };
         Ok(StockPaths {
             image: repo.path(image),
-            layout: repo.path(layout),
+            layout: repo
+                .root
+                .join(wellfed_formats::layout::relative_path(self.config.model)),
         })
     }
 
@@ -150,7 +160,7 @@ impl Device {
     pub fn entry(&self) -> DeviceEntry {
         DeviceEntry {
             name: self.name.clone(),
-            model: self.config.model.clone(),
+            model: self.config.model.name().into(),
             platform: self.config.platform.name().into(),
         }
     }
