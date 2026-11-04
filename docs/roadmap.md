@@ -68,6 +68,13 @@ This page tracks what works today and what comes next. It covers the replacement
 | Windows app | Not started | Waits for a machine to test it on. |
 | Home Assistant | Experimental | Pairs with the feeder directly, with no server, by invite or zeroconf: feeds and cancels, the day's meals and portions, settings, plan switches, repairs for a lost feed, and the portion weight, as a member only. Tested in simulation only. See [the guide](guide/home-assistant.md). |
 
+## More devices
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Code shared across device kinds | Experimental | Shared device crates with each kind's beside them, the device API's core with a module per kind, one home in the server with each device's model and kind, and a shared simulator. Tested on the host and in the feeder's simulator; the feeder has not yet run a build of the new layout. See [device kinds and models](firmware/device-kinds.md). |
+| Water fountain (PLWF106) | Not started | Its board and stock firmware are recovered ([PLWF106](devices/plwf106/README.md)); no Wellfed image for it yet. |
+
 ## Development hardware
 
 | Capability | Status | Notes |

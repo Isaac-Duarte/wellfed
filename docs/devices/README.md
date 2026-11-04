@@ -1,16 +1,16 @@
 # Supported devices
 
-Wellfed runs on one feeder model today: the PETLIBRO Granary PLAF103. This page lists it and the related models we know of, and explains how a new model gets added.
+Wellfed runs on one model today: the PETLIBRO Granary PLAF103, a feeder. Every model is a model of a kind, a feeder or a water fountain for now. This page lists the models we know of, and explains how a new one gets added.
 
 A model counts as supported only when a unit of that model has been through our bench. Sharing a chip is not enough. Boards, pins, flash layouts and stock firmware all differ between models.
 
-| Model | Product | SoC | Status | Notes |
-| --- | --- | --- | --- | --- |
-| [PLAF103](plaf103/README.md) | Granary 5 L | [RTL8721DM](../chips/rtl8721dm/README.md) | **Partial** | Our research device. Feeding, updates and the device API work; see [the roadmap](../roadmap.md). |
-| [PLWF106](plwf106/README.md) | Dockstream 2 Smart Fountain | [RTL8721DM](../chips/rtl8721dm/README.md) | **Not started** | Stock firmware and board reference recovered; no Wellfed fountain image demonstrated. |
-| PLAF108 | Feeder | ESP8266/ESP32 family (External) | Not supported | No unit inspected. A different SoC family. An ESPHome replacement exists outside this project ([references](../references.md#peer-projects)). |
-| PLAF203 | Camera feeder | Embedded Linux with Tuya IPC (External) | Not supported | No unit inspected. Root access and filesystem notes exist outside this project ([references](../references.md#peer-projects)). |
-| AF301 (mainboard PLNF301) | RFID feeder | RTL8721DM (External) | Not supported | Same SoC, reported by a peer project. Its pin map is a lead for our [pin table](../chips/rtl8721dm/pins.md), not a PLAF103 fact. |
+| Model | Kind | Product | SoC | Status | Notes |
+| --- | --- | --- | --- | --- | --- |
+| [PLAF103](plaf103/README.md) | Feeder | Granary 5 L | [RTL8721DM](../chips/rtl8721dm/README.md) | **Partial** | Our research device. Feeding, updates and the device API work; see [the roadmap](../roadmap.md). |
+| [PLWF106](plwf106/README.md) | Fountain | Dockstream 2 Smart Fountain | [RTL8721DM](../chips/rtl8721dm/README.md) | **Not started** | Stock firmware and board reference recovered; no Wellfed fountain image demonstrated. |
+| PLAF108 | Feeder | Feeder | ESP8266/ESP32 family (External) | Not supported | No unit inspected. A different SoC family. An ESPHome replacement exists outside this project ([references](../references.md#peer-projects)). |
+| PLAF203 | Feeder | Camera feeder | Embedded Linux with Tuya IPC (External) | Not supported | No unit inspected. Root access and filesystem notes exist outside this project ([references](../references.md#peer-projects)). |
+| AF301 (mainboard PLNF301) | Feeder | RFID feeder | RTL8721DM (External) | Not supported | Same SoC, reported by a peer project. Its pin map is a lead for our [pin table](../chips/rtl8721dm/pins.md), not a PLAF103 fact. |
 
 **Not supported** means we have done no work on that model. Anything listed for it comes from other projects.
 
@@ -22,3 +22,5 @@ A new model starts as **Not supported**. It moves up once its own unit passes th
 2. Add the model's column to the [chip pin table](../chips/rtl8721dm/pins.md).
 3. Put its machine-readable layout and profile in `src/firmware/devices/<model>/`, next to [`plaf103`](../../src/firmware/devices/plaf103/). The [device layer](../firmware/device-layer.md) explains how firmware picks them up.
 4. Add a row to the table above.
+
+A model of a kind Wellfed already has shares that kind's crates and adds a board crate and a firmware. A new kind also brings its own drivers, policy, stores, device API module and simulator. [Device kinds and models](../firmware/device-kinds.md) follows a fountain through each layer.
