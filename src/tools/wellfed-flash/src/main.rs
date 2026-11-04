@@ -275,6 +275,19 @@ fn device(
     }
 }
 
+/// A writer's session: refused before anything else, the port and the
+/// session's context included, for a model this client holds no pins for.
+fn writer(
+    root: &Path,
+    device: Device,
+    run: impl FnOnce(&Context) -> wellfed_flash::Result<Outcome>,
+) -> (u8, Value) {
+    match wellfed_flash::device::writable(device.into()) {
+        Ok(()) => self::device(root, run),
+        Err(error) => refused(&error.into()),
+    }
+}
+
 #[derive(Serialize)]
 struct Refusal {
     status: SummaryStatus,
@@ -346,8 +359,7 @@ fn main() -> ExitCode {
             )
         }),
 
-        Command::Update(args) => device(root, |context| {
-            wellfed_flash::device::writable(args.evidence.device.into())?;
+        Command::Update(args) => writer(root, args.evidence.device, |context| {
             update::run(
                 context,
                 &update::Args {
@@ -363,8 +375,7 @@ fn main() -> ExitCode {
             )
         }),
 
-        Command::GiveWay(args) => device(root, |context| {
-            wellfed_flash::device::writable(args.evidence.device.into())?;
+        Command::GiveWay(args) => writer(root, args.evidence.device, |context| {
             update::give_way(
                 context,
                 &update::GiveWayArgs {
@@ -375,8 +386,7 @@ fn main() -> ExitCode {
             )
         }),
 
-        Command::StockRecovery(args) => device(root, |context| {
-            wellfed_flash::device::writable(args.evidence.device.into())?;
+        Command::StockRecovery(args) => writer(root, args.evidence.device, |context| {
             stock::run(
                 context,
                 &stock::Args {
