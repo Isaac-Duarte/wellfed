@@ -3,10 +3,17 @@
 //! the board includes this file in its build script and calls [`forward`],
 //! so the choice is made and checked once, in `wellfed-board`'s.
 
+/// Whether a board's crate holds a reviewed storage map.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Store {
+    Reviewed,
+    None,
+}
+
 /// Emit `cfg(wellfed_board = "<name>")` and, for a board with a reviewed
 /// storage map, `cfg(wellfed_board_store)`, with both declared over every
 /// board's name (`names`, space-separated).
-pub(crate) fn emit(name: &str, names: &str, store: bool) {
+pub(crate) fn emit(name: &str, names: &str, store: Store) {
     let values: Vec<String> = names.split(' ').map(|name| format!("\"{name}\"")).collect();
     println!(
         "cargo::rustc-check-cfg=cfg(wellfed_board, values({}))",
@@ -14,7 +21,7 @@ pub(crate) fn emit(name: &str, names: &str, store: bool) {
     );
     println!("cargo::rustc-check-cfg=cfg(wellfed_board_store)");
     println!("cargo::rustc-cfg=wellfed_board=\"{name}\"");
-    if store {
+    if store == Store::Reviewed {
         println!("cargo::rustc-cfg=wellfed_board_store");
     }
 }
@@ -29,5 +36,10 @@ pub(crate) fn forward() {
         let name = format!("DEP_WELLFED_BOARD_{key}");
         std::env::var(&name).unwrap_or_else(|_| panic!("wellfed-board sets {name}"))
     };
-    emit(&read("NAME"), &read("NAMES"), read("STORE") == "1");
+    let store = if read("STORE") == "1" {
+        Store::Reviewed
+    } else {
+        Store::None
+    };
+    emit(&read("NAME"), &read("NAMES"), store);
 }

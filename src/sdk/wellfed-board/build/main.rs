@@ -20,7 +20,12 @@ fn main() {
         panic!("WELLFED_BOARD must name exactly one board of: {names}; it is {value:?}");
     };
 
-    forward::emit(board.name, &names, board.store);
+    let store = if board.store {
+        forward::Store::Reviewed
+    } else {
+        forward::Store::None
+    };
+    forward::emit(board.name, &names, store);
     println!("cargo::metadata=name={}", board.name);
     println!("cargo::metadata=names={names}");
     println!("cargo::metadata=store={}", u8::from(board.store));

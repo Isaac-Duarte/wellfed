@@ -50,6 +50,7 @@ use crate::trial;
 /// The confirmation record's sector, which every board with a store has
 /// (the board contract checks it); `trial::CONFIRM_SECTOR` is it.
 pub const CONFIRM_SECTOR: u32 = crate::board::storage::CONFIRM.first;
+const _: () = assert!(matches!(trial::CONFIRM_SECTOR, Some(sector) if sector == CONFIRM_SECTOR));
 
 pub const POLL_MS: u32 = 500;
 const _: () = assert!(POLL_MS <= WRITER_POLL_MS);

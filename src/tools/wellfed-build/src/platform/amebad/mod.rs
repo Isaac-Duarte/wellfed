@@ -26,7 +26,7 @@ use self::sdk::{Overrides, check_sdk_worktree, prepare, rust_archive};
 use self::toolchain::{toolchain_lock, verify_toolchain};
 use super::{Built, Job};
 use crate::device::StockPaths;
-use crate::environment::Environment;
+use crate::environment::{BOARD_VARIABLE, Environment};
 use crate::{Error, Firmware, Profile, Provisioning, Repo, Result, Stage, digest, relative, text};
 use wellfed_formats::require;
 use wellfed_proto::device::Model;
@@ -80,9 +80,6 @@ const WIFI_CREDENTIALS: &str = "private/hotspot.json";
 /// the feeder runtime reads its presence (`network::BUILD_WIFI`). The
 /// header's presence macro has the same name.
 const BUILD_WIFI_VARIABLE: &str = credentials::PRESENCE;
-/// The board `wellfed-board` builds for, which this sets from the device:
-/// the model's name, never a caller's value.
-const BOARD_VARIABLE: &str = "WELLFED_BOARD";
 
 /// The generated credentials header for `provisioning`, and the private
 /// file it was generated from, if any.

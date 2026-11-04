@@ -80,6 +80,12 @@ pub mod pins {
 /// [`stock::PRESERVED`] first.
 pub const STORAGE_OFFSET: u32 = 0;
 pub const STORAGE_SECTORS: u32 = 0;
+// A region allocated here must stay clear of the stock flash. The empty one
+// is; an allocation that skipped its review fails to build.
+const _: () = assert!(stock::clear_of_preserved(
+    STORAGE_OFFSET,
+    STORAGE_OFFSET + STORAGE_SECTORS * 0x1000
+));
 
 /// The stock flash, as physical offsets: what a replacement image and any
 /// future store must keep clear of. A minimum inventory, recovered from
@@ -157,4 +163,16 @@ pub mod stock {
         true
     }
     const _: () = assert!(sound());
+
+    /// Whether `start..end` overlaps no preserved span.
+    pub(crate) const fn clear_of_preserved(start: u32, end: u32) -> bool {
+        let mut i = 0;
+        while i < PRESERVED.len() {
+            if start < PRESERVED[i].end && PRESERVED[i].start < end {
+                return false;
+            }
+            i += 1;
+        }
+        true
+    }
 }
