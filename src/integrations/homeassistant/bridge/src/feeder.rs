@@ -15,8 +15,9 @@
 //!   reconnect, so a later session replays only what it missed; a history
 //!   that started over is a gap, and its backlog is read from the start.
 //! - **Writes** go out once, under a fresh request id, and are never sent
-//!   again here or by the integration. One the role or the feeder's
-//!   capabilities do not allow is never sent ([`writes::gate`]); one while
+//!   again here or by the integration. One the role does not allow
+//!   ([`writes::gate`]), or whose op the device's kind does not serve
+//!   ([`writes::served`]), is never sent; one while
 //!   no session is open is not sent either, so the owner may simply press
 //!   again. A change to a store goes on the generation last read, one at a
 //!   time per store ([`writes`]).
@@ -313,6 +314,18 @@ enum Read {
     Calibration,
 }
 
+impl Read {
+    const fn op(self) -> Op {
+        match self {
+            Self::Status => Op::Status,
+            Self::Settings => Op::GetSettings,
+            Self::Plans => Op::GetPlans,
+            Self::Time => Op::GetTime,
+            Self::Calibration => Op::GetCalibration,
+        }
+    }
+}
+
 /// What an outstanding request was for.
 #[derive(Debug)]
 enum Pending {
@@ -392,15 +405,10 @@ impl<'a> Session<'a> {
         };
         let newest = status.last_event;
         self.memory.facts.status = Some(status);
-        self.read(Read::Settings)?;
-        if self.capabilities.plans {
-            self.read(Read::Plans)?;
-        }
-        if self.capabilities.time {
-            self.read(Read::Time)?;
-        }
-        if self.capabilities.calibration {
-            self.read(Read::Calibration)?;
+        for read in [Read::Settings, Read::Plans, Read::Time, Read::Calibration] {
+            if self.serves(read) {
+                self.read(read)?;
+            }
         }
 
         // A cursor from another history is a gap: what happened meanwhile
@@ -471,17 +479,19 @@ impl<'a> Session<'a> {
         {
             return Ok(());
         }
-        let op = match read {
-            Read::Status => Op::Status,
-            Read::Settings => Op::GetSettings,
-            Read::Plans => Op::GetPlans,
-            Read::Time => Op::GetTime,
-            Read::Calibration => Op::GetCalibration,
-        };
+        let op = read.op();
         let id = random().map_err(lost)?;
         self.connection.request(id, &op).map_err(lost)?;
         self.pending.insert(id, Pending::Read(read));
         Ok(())
+    }
+
+    /// Whether the device's kind serves `read`, by its op's own kind
+    /// ([`Op::kind`]): one source of truth with the writes.
+    fn serves(&self, read: Read) -> bool {
+        read.op()
+            .kind()
+            .is_none_or(|kind| kind == self.connection.kind())
     }
 
     fn write(&mut self, write: Write, reply: oneshot::Sender<Written>) -> Step {
@@ -671,12 +681,12 @@ impl<'a> Session<'a> {
     fn news(&mut self, body: &EventBody) -> Step {
         match body {
             EventBody::Plans { .. } | EventBody::Fed { .. } | EventBody::Missed { .. }
-                if self.capabilities.plans =>
+                if self.serves(Read::Plans) =>
             {
                 self.read(Read::Plans)?;
             }
             EventBody::Settings { .. } => self.read(Read::Settings)?,
-            EventBody::ClockSync { .. } if self.capabilities.time => self.read(Read::Time)?,
+            EventBody::ClockSync { .. } if self.serves(Read::Time) => self.read(Read::Time)?,
             _ => {}
         }
         self.read(Read::Status)

@@ -284,10 +284,14 @@ pub(crate) struct RomResult {
 }
 
 impl RomResult {
-    /// Whether the console inspected was a PLAF103's stock one: a report
-    /// from before the model was recorded names none, and proves nothing.
+    /// Whether the console inspected was a PLAF103's stock one. A report
+    /// that names no model was written by a wellfed-flash that accepted only
+    /// the PLAF103's KM4 table (`0e11df78`), so it is a PLAF103's: frozen
+    /// evidence that reviewed plans pin by its hash, and that stock recovery
+    /// needs after stock is gone. Only a report naming another model is
+    /// refused.
     fn shows_plaf103(&self) -> bool {
-        self.stock_model == Some(Model::Plaf103)
+        self.stock_model.is_none_or(|model| model == Model::Plaf103)
     }
 }
 
@@ -696,7 +700,9 @@ mod tests {
     }
 
     /// Only a PLAF103's stock console is a PLAF103's ROM evidence: a
-    /// fountain's inspection, or one that names no model, is refused.
+    /// fountain's inspection is refused, and a frozen report from before the
+    /// model was recorded, which only a PLAF103 console could write, still
+    /// validates.
     #[test]
     fn a_rom_report_proves_a_plaf103_console_only() {
         let rom = |model: Value| -> RomResult {
@@ -709,6 +715,6 @@ mod tests {
 
         assert!(rom(json!("plaf103")).shows_plaf103());
         assert!(!rom(json!("plwf106")).shows_plaf103());
-        assert!(!rom(Value::Null).shows_plaf103());
+        assert!(rom(Value::Null).shows_plaf103());
     }
 }
