@@ -73,7 +73,7 @@ To pass, every meal must run once and within 60 s, with no restarts but the ones
 
 The gaps:
 
-- **Lost log lines.** In all three hotspot drops mid-feed, the device log lost that meal's result lines. Its other lines from the feed survived, and the feed history recorded each meal as done. The feeder keeps its recent log lines in a small buffer, and while it was offline, rejoining Wi-Fi logged enough to push them out. The buffer is now four times larger, and the bench's device log marks where lines are missing.
+- **Lost log lines.** In all three hotspot drops mid-feed, the device log lost that meal's result lines. Its other lines from the feed survived, and the feed history recorded each meal as done. The feeder keeps its recent log lines in a small buffer, and while it was offline, rejoining Wi-Fi logged enough to push them out. The buffer is now four times larger, and the bench's device log marks where lines are missing. The same 40 s drop during a meal on the new build (November 4) kept all of the meal's result lines: the outage logged 4,300 B before the bench reconnected, more than the old buffer held.
 - **Uncertain meals without a time.** The feed history shows each uncertain meal as "clock not set". The boot records the meal before the bench computer sets the clock, and the hotspot's time server doesn't answer.
 - **The first day's faults came late.** The bench script scheduled nothing on November 1, because of the clock change that day. A second script cut the power across the 17:00 meal and dropped the hotspot at 19:54, so that day had no mid-feed faults.
 

@@ -153,7 +153,7 @@ Log records as `PL<NAME>1 …` lines.
 - `record.log()` (the `LogRecord` trait) then writes the whole line.
 - A line the attributes cannot express gets a hand-written `Display` and `wellfed_sdk::log(format_args!("PLXXX1 {record}\r\n"))`.
 - Either way, a line longer than the 192-byte buffer is dropped, never truncated.
-- A firmware built with the SDK's `log-tail` feature (the `feeder`) also keeps the newest lines in a 4 KiB RAM tail, which the device API streams to an owner ([debug log](../../../docs/firmware/device-api.md#debug-log)).
+- A firmware built with the SDK's `log-tail` feature (the `feeder`) also keeps the newest lines in a 16 KiB RAM tail, which the device API streams to an owner ([debug log](../../../docs/firmware/device-api.md#debug-log)).
 
 ### What the stack audit needs
 

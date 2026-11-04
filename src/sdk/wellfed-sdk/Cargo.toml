@@ -19,7 +19,7 @@ virtual-panel = ["wellfed-hal/virtual-panel"]
 # The BLE peripheral. A firmware enables it with `bluetooth = true`
 # in its metadata, which links the device's BLE source.
 bluetooth = ["wellfed-hal/bluetooth"]
-# Every logged line also goes into a 4 KiB RAM tail
+# Every logged line also goes into a 16 KiB RAM tail
 # (`wellfed_sdk::log_tail`), which a firmware serving the device API
 # streams to its owner.
 log-tail = ["wellfed-hal/log-tail"]

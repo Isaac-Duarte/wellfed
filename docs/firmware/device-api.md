@@ -321,7 +321,7 @@ An owner can read what the feeder's UART prints without opening the feeder: `wel
   - The other firmwares (`blink`, `bringup`, `qa`) serve no API and build without the `log-tail` feature, so they keep no tail.
 - **Cost.** `.bss` grows by 16,400 bytes (the ring and its state), which comes out of the heap, and flash-resident code by 1,920 bytes. The copy runs in its own 56-byte frame under `log`, and a batch reuses the server's buffers, so every task's stack bound stays within noise.
   - Reading a batch walks the ring's line headers from the oldest line, copies once, then seals like any frame (about 0.9 ms a kilobyte). A pass with nothing new returns before the walk.
-  - The walk is about 280 headers in a full ring of usual lines, some tens of microseconds. Its worst case is a ring of the shortest lines, about 3,300 headers, still under the seal's time. The reader runs with interrupts on, so the walk delays no writer.
+  - The walk is about 280 headers in a full ring of usual lines, some tens of microseconds. Its worst case, a ring of the shortest lines, is about 3,300 headers, roughly 1 ms by static estimate, which is as long as the seal; real records are longer, so a full ring holds far fewer. The reader runs with interrupts on, so the walk delays no writer.
 
 ## Evolution
 

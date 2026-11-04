@@ -967,18 +967,22 @@ impl Open<'_> {
 
         // Once a session, after its first status: the log's line numbers
         // count from each boot, so after a restart the tail starts again
-        // from the oldest line the feeder keeps, and otherwise after the
-        // last line already written.
+        // from the boot's first line, and otherwise after the last line
+        // already written. A boot this server saw follow another is read
+        // after line 0, so lines the feeder overwrote before this session
+        // come back as dropped and get their marker; a server that has
+        // followed no boot yet cannot tell its own lines from a new boot's,
+        // and reads from the oldest line kept.
         if !self.tailing {
             self.tailing = true;
-            let after = match *self.log_after {
-                Some((boot, seq)) if boot == status.boot_count => Some(seq),
-                _ => None,
+            let (after, new_boot) = match *self.log_after {
+                Some((boot, seq)) if boot == status.boot_count => (Some(seq), false),
+                Some(_) => (Some(0), true),
+                None => (None, true),
             };
             *self.log_after = Some((status.boot_count, after.unwrap_or(0)));
-            // A tail from the oldest line is another boot's numbering:
-            // the held log starts again with it.
-            if after.is_none() {
+            // Another boot's numbering: the held log starts again with it.
+            if new_boot {
                 self.logs.reset(None, None);
             }
             self.request(Purpose::Tail, &Op::TailLog { after });
