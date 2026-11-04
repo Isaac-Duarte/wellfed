@@ -5132,6 +5132,7 @@ dependencies = [
  "thiserror",
  "wellfed-formats",
  "wellfed-image",
+ "wellfed-proto",
 ]
 
 [[package]]
@@ -5360,6 +5361,7 @@ dependencies = [
  "thiserror",
  "uuid",
  "wellfed-model",
+ "wellfed-proto",
  "wellfed-session",
 ]
 

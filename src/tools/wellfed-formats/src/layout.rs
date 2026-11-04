@@ -1,7 +1,11 @@
 //! `src/firmware/devices/<device>/layout.json`: a verified stock flash layout the
 //! builder points the SDK's banks at and the audits check images against.
+//! Each model has its own ([`relative_path`]).
 
 use std::fmt;
+use std::path::PathBuf;
+
+use wellfed_proto::device::Model;
 
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize, Serializer};
@@ -54,6 +58,11 @@ pub struct Layout {
     pub boot_acceptance_verified: bool,
 }
 
+/// The model's checked-in layout, relative to the repository's root.
+pub fn relative_path(model: Model) -> PathBuf {
+    PathBuf::from(format!("src/firmware/devices/{}/layout.json", model.name()))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PreserveRange {
     pub name: String,
@@ -67,11 +76,10 @@ mod tests {
 
     #[test]
     fn the_checked_in_layout_loads() {
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../src/firmware/devices/plaf103/layout.json"
-        );
-        let layout: Layout = crate::load(std::path::Path::new(path)).unwrap();
+        let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
+        let path = root.join(relative_path(Model::Plaf103));
+        assert!(path.ends_with("src/firmware/devices/plaf103/layout.json"));
+        let layout: Layout = crate::load(&path).unwrap();
         assert_eq!(layout.schema_version, 1);
         assert_eq!(layout.flash_mapping_base, Hex(0x0800_0000));
         assert_eq!(layout.ota_bank_offsets, [Hex(0x6000), Hex(0x18_6000)]);

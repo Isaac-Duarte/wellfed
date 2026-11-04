@@ -19,6 +19,7 @@ use serde::Serialize;
 use wellfed_formats::layout::{Hex, Layout};
 use wellfed_formats::require;
 use wellfed_image::ota;
+use wellfed_proto::device::Model;
 
 use crate::{Error, Result, digest};
 
@@ -45,7 +46,9 @@ pub enum BackupError {
     SameFile,
 }
 
-pub(crate) const LAYOUT: &str = "src/firmware/devices/plaf103/layout.json";
+/// The model whose layout a backup is audited against: the PLAF103, the one
+/// model this audit reads (its stock image pins are the PLAF103's).
+pub(crate) const MODEL: Model = Model::Plaf103;
 const MAX_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_RUNS: usize = 128;
 /// The bank marker `81958711` as two little-endian words; a valid bank's image
@@ -461,7 +464,9 @@ pub fn audit(inputs: &Inputs) -> Result<BackupReport> {
         || BackupError::UnitLabel,
     )?;
 
-    let layout_path = inputs.root.join(LAYOUT);
+    let layout_path = inputs
+        .root
+        .join(wellfed_formats::layout::relative_path(MODEL));
     let layout_raw = fs::read(&layout_path)?;
     let layout: Layout = serde_json::from_slice(&layout_raw)?;
     require(
