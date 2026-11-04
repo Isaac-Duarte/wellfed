@@ -33,7 +33,8 @@ pub struct Feed {
     /// When the event was recorded, by the feeder's clock; `None` while
     /// that was invalid (after a cold boot, before any source set it). A
     /// feed a reset interrupted is recorded when the next boot resolves
-    /// it, not when it ran.
+    /// it: at its plan's due time if a plan had claimed it, since it ran
+    /// then, and otherwise at the boot's time, often `None`.
     pub at: Option<Timestamp>,
     /// Who asked for it; `None` when that is unknown: a feed a reset
     /// interrupted is resolved at the next boot, and the journal does not

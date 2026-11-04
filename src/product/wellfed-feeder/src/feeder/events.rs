@@ -17,15 +17,30 @@ pub fn record(platform: &mut impl Platform, now_ms: u32, body: EventBody) {
 /// As [`record`] for a feed's `Fed` event, which may take the queue's
 /// reserved slot: appends wait while a feed holds the outputs, so the
 /// events of a long feed pile up, and the feed's own result must not be the
-/// one lost.
-pub fn record_outcome(platform: &mut impl Platform, now_ms: u32, body: EventBody) {
-    queue(platform, now_ms, body, EventSlot::Outcome);
+/// one lost. `ran_s` stamps it with when the feed ran instead of now, for
+/// a feed a restart interrupted.
+pub fn record_outcome(
+    platform: &mut impl Platform,
+    now_ms: u32,
+    ran_s: Option<u32>,
+    body: EventBody,
+) {
+    let at = ran_s.or_else(|| wall_s(platform, now_ms));
+    push(platform, at, body, EventSlot::Outcome);
 }
 
 fn queue(platform: &mut impl Platform, now_ms: u32, body: EventBody, slot: EventSlot) {
-    let at = platform
+    let at = wall_s(platform, now_ms);
+    push(platform, at, body, slot);
+}
+
+fn wall_s(platform: &mut impl Platform, now_ms: u32) -> Option<u32> {
+    platform
         .wall_ms(now_ms)
-        .and_then(|ms| u32::try_from(ms / 1000).ok());
+        .and_then(|ms| u32::try_from(ms / 1000).ok())
+}
+
+fn push(platform: &mut impl Platform, at: Option<u32>, body: EventBody, slot: EventSlot) {
     let mut bytes = [0u8; BODY_BYTES];
     // Every body fits the ring's record; one that did not would be a lost
     // event.
