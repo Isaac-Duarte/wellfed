@@ -18,6 +18,7 @@ use wellfed_formats::canonical::{canonical, canonical_of, sha256};
 use wellfed_formats::flash_plan::ToolHashes;
 use wellfed_formats::require;
 use wellfed_formats::session::Mode;
+use wellfed_proto::device::Model;
 
 /// Saved evidence or a reviewed plan that a session refuses to continue
 /// from, always before the port opens.
@@ -33,6 +34,8 @@ pub enum SessionError {
     RomReportNotPrivate { path: PathBuf },
     #[error("Successful ROM inspection required")]
     RomInspection,
+    #[error("ROM report does not show a PLAF103's stock console")]
+    RomModel,
     #[error("ROM report does not identify a pinned candidate")]
     RomCandidate,
     #[error("Incomplete ROM sample set")]
@@ -274,8 +277,18 @@ impl<R> Saved<R> {
 #[serde(default)]
 pub(crate) struct RomResult {
     pub returned_to_km4: Option<bool>,
+    /// The model whose stock KM4 table the console printed.
+    pub stock_model: Option<Model>,
     pub matching_candidates: Option<BTreeMap<String, String>>,
     pub sampled_words: Option<Vec<SampledWord>>,
+}
+
+impl RomResult {
+    /// Whether the console inspected was a PLAF103's stock one: a report
+    /// from before the model was recorded names none, and proves nothing.
+    fn shows_plaf103(&self) -> bool {
+        self.stock_model == Some(Model::Plaf103)
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -377,6 +390,11 @@ pub fn validate_rom_report(context: &Context, path: &Path) -> Result<Vec<u8>> {
             && result.is_some_and(|r| r.returned_to_km4 == Some(true)),
         || SessionError::RomInspection,
     )?;
+    // The sessions this report gates write a PLAF103: a console another
+    // model's stock printed proves nothing about it.
+    require(result.is_some_and(RomResult::shows_plaf103), || {
+        SessionError::RomModel
+    })?;
 
     let candidates = result.and_then(|r| r.matching_candidates.as_ref());
     require(
@@ -675,5 +693,22 @@ mod tests {
         let mut emulated = complete;
         emulated["transport"] = json!("emulator");
         assert_eq!(small(emulated).transport, Transport::Emulator);
+    }
+
+    /// Only a PLAF103's stock console is a PLAF103's ROM evidence: a
+    /// fountain's inspection, or one that names no model, is refused.
+    #[test]
+    fn a_rom_report_proves_a_plaf103_console_only() {
+        let rom = |model: Value| -> RomResult {
+            let mut result = json!({"returned_to_km4": true});
+            if !model.is_null() {
+                result["stock_model"] = model;
+            }
+            serde_json::from_value(result).unwrap()
+        };
+
+        assert!(rom(json!("plaf103")).shows_plaf103());
+        assert!(!rom(json!("plwf106")).shows_plaf103());
+        assert!(!rom(Value::Null).shows_plaf103());
     }
 }

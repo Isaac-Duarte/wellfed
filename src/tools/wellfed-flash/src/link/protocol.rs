@@ -485,17 +485,21 @@ pub fn read_region(port: &mut dyn Port, offset: usize, length: usize) -> Result<
 }
 
 pub fn collect(port: &mut dyn Port, timeout: Duration) -> Result<Vec<u8>> {
-    collect_until(port, timeout, |_| false)
+    collect_until(port, timeout, |_| false, Duration::ZERO)
 }
 
 /// What `port` sends until `timeout`, or until `done` holds for all of it
-/// so far, whichever comes first.
+/// so far, whichever comes first; then `tail` more of listening, so what the
+/// console prints right after the reply (a fault, a reboot's banner) is in
+/// it too.
 fn collect_until(
     port: &mut dyn Port,
     timeout: Duration,
     done: impl Fn(&[u8]) -> bool,
+    tail: Duration,
 ) -> Result<Vec<u8>> {
-    let deadline = Instant::now() + timeout;
+    let mut deadline = Instant::now() + timeout;
+    let mut ended = false;
     let mut result = Vec::new();
     let mut buffer = [0u8; 4096];
     while Instant::now() < deadline {
@@ -507,8 +511,9 @@ fn collect_until(
                 bytes: result.len(),
             }
         })?;
-        if count > 0 && done(&result) {
-            break;
+        if !ended && count > 0 && done(&result) {
+            ended = true;
+            deadline = Instant::now() + tail;
         }
     }
     Ok(result)
@@ -600,24 +605,30 @@ fn rom_command(command: &[u8]) -> bool {
 }
 
 pub fn console_query(port: &mut dyn Port, command: &[u8], window: Duration) -> Result<Vec<u8>> {
-    console_query_until(port, command, window, |_| false)
+    console_query_until(port, command, window, |_| false, Duration::ZERO)
 }
+
+/// How long the inspection's last query listens after its reply has ended:
+/// no later query would see a fault or a reboot printed right after it.
+const QUIET_TAIL: Duration = Duration::from_millis(200);
 
 /// A console query that returns as soon as `done` holds for the reply so far,
 /// or at `window`. A stock app that logs every few seconds (the PLWF106's
 /// Wi-Fi retries) leaves gaps too short for a fixed-window inspection, so the
 /// replies the inspection can recognize end it early. What a reply must say
-/// is unchanged: `done` only decides when to stop listening.
+/// is unchanged: `done` only decides when to stop listening, `tail` after
+/// it, and the fault checks cover the tail too.
 fn console_query_until(
     port: &mut dyn Port,
     command: &[u8],
     window: Duration,
     done: impl Fn(&[u8]) -> bool,
+    tail: Duration,
 ) -> Result<Vec<u8>> {
     require(rom_command(command), || ProtocolError::ConsoleCommand)?;
 
     send(port, command)?;
-    let reply = collect_until(port, window, done)?;
+    let reply = collect_until(port, window, done, tail)?;
     require(
         !FAULTS
             .iter()
@@ -760,12 +771,24 @@ pub fn inspect_rom(
 
     let mut opened = None;
     if start == Core::Km4 {
-        let high = console_query_until(port, b"?\r\n", Duration::from_secs(1), help_ended)?;
+        let high = console_query_until(
+            port,
+            b"?\r\n",
+            Duration::from_secs(1),
+            help_ended,
+            Duration::ZERO,
+        )?;
         opened = Some(km4_help_model(&high).ok_or(ProtocolError::Km4Table)?);
         console_query(port, b">>\r\n", Duration::from_millis(500))?;
     }
 
-    let low = console_query_until(port, b"?\r\n", Duration::from_secs(1), help_ended)?;
+    let low = console_query_until(
+        port,
+        b"?\r\n",
+        Duration::from_secs(1),
+        help_ended,
+        Duration::ZERO,
+    )?;
     require(is_km0_help(&low), || ProtocolError::Km0Table)?;
 
     let mut samples = Vec::new();
@@ -778,6 +801,7 @@ pub fn inspect_rom(
             command.as_bytes(),
             Duration::from_millis(250),
             |reply| word_ended(reply, address),
+            Duration::ZERO,
         )?;
         let values = dumped_words(&response, address);
         require(values.len() == 1, || ProtocolError::RomWordCount {
@@ -799,7 +823,13 @@ pub fn inspect_rom(
     }
 
     console_query(port, b">>\r\n", Duration::from_millis(500))?;
-    let high = console_query_until(port, b"?\r\n", Duration::from_secs(1), help_ended)?;
+    let high = console_query_until(
+        port,
+        b"?\r\n",
+        Duration::from_secs(1),
+        help_ended,
+        QUIET_TAIL,
+    )?;
     let stock_model = km4_help_model(&high).ok_or(ProtocolError::Km4Return)?;
     // A console that came back as another model's is not the one inspected.
     require(opened.is_none_or(|model| model == stock_model), || {
@@ -824,16 +854,91 @@ mod tests {
 
     #[test]
     fn km4_help_names_the_model_whose_stock_table_it_lists() {
-        let feeder = b"\t>> \r\n\t\t switch shell to KM0 \r\n---- END  12 [0e11df78:0e11e038]----";
-        let fountain =
-            b"\t>> \r\n\t\t switch shell to KM0 \r\n---- END  12 [0e0ba120:0e0ba1e0]----";
-        let unknown = b"\t>> \r\n\t\t switch shell to KM0 \r\n---- END  12 [0e000000:0e0000c0]----";
-        let km0 = b"\t>> \r\n\t\t switch shell to KM4 \r\n---- END  12 [0e0ba120:0e0ba1e0]----";
+        let help = |shell: &str, table: &str| {
+            format!(
+                "\t>> \r\n\t\t switch shell to {shell} \r\n--- TEST COMMAND MODE END  12 [{table}]---\r\n"
+            )
+        };
+        let feeder = help("KM0", "0e11df78:0e11e038");
+        let fountain = help("KM0", "0e0ba120:0e0ba1e0");
+        let unknown = help("KM0", "0e000000:0e0000c0");
+        let km0 = help("KM4", "0e0ba120:0e0ba1e0");
+        let (feeder, fountain, unknown, km0) = (
+            feeder.as_bytes(),
+            fountain.as_bytes(),
+            unknown.as_bytes(),
+            km0.as_bytes(),
+        );
 
         assert_eq!(km4_help_model(feeder), Some(Model::Plaf103));
         assert_eq!(km4_help_model(fountain), Some(Model::Plwf106));
         assert_eq!(km4_help_model(unknown), None);
         assert_eq!(km4_help_model(km0), None);
+    }
+
+    /// A console that prints its reply in timed pieces.
+    struct Scripted {
+        start: Option<Instant>,
+        pieces: Vec<(Duration, &'static [u8])>,
+    }
+
+    impl Port for Scripted {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let due = self.start.is_some_and(|start| {
+                self.pieces
+                    .first()
+                    .is_some_and(|(after, _)| start.elapsed() >= *after)
+            });
+            if !due {
+                std::thread::sleep(Duration::from_millis(5));
+                return Ok(0);
+            }
+            let (_, piece) = self.pieces.remove(0);
+            buffer[..piece.len()].copy_from_slice(piece);
+            Ok(piece.len())
+        }
+
+        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+            self.start = Some(Instant::now());
+            Ok(data.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn in_waiting(&mut self) -> io::Result<usize> {
+            Ok(0)
+        }
+    }
+
+    /// The last help ends at its END line, and a fault printed right after
+    /// it still refuses the inspection; without the tail it would be missed.
+    #[test]
+    fn the_last_reply_watches_its_tail_for_a_fault() {
+        let script = || Scripted {
+            start: None,
+            pieces: vec![
+                (
+                    Duration::ZERO,
+                    b"--- TEST COMMAND MODE END  12 [0e11df78:0e11e038]---\r\n",
+                ),
+                (Duration::from_millis(60), b"Hard Fault\r\n"),
+            ],
+        };
+        let window = Duration::from_secs(1);
+
+        let watched = console_query_until(&mut script(), b"?\r\n", window, help_ended, QUIET_TAIL);
+        assert!(
+            matches!(
+                watched,
+                Err(crate::Error::Protocol(ProtocolError::ConsoleFault))
+            ),
+            "{watched:?}"
+        );
+        let unwatched =
+            console_query_until(&mut script(), b"?\r\n", window, help_ended, Duration::ZERO);
+        assert!(unwatched.is_ok(), "{unwatched:?}");
     }
 
     #[test]
@@ -1031,14 +1136,19 @@ pub fn press(
         std::thread::sleep(PRESS_BYTE_GAP);
     }
     let window = Duration::from_millis(u64::from(press.hold_ms)) + PRESS_MARGIN;
-    let reply = collect_until(port, window, |reply| {
-        // Whole lines only: a release record cut mid-line is not read yet.
-        let whole = reply
-            .iter()
-            .rposition(|&byte| byte == b'\n')
-            .map_or(&reply[..0], |end| &reply[..=end]);
-        Echo::read(whole, press) == Echo::Pressed { released: true }
-    })?;
+    let reply = collect_until(
+        port,
+        window,
+        |reply| {
+            // Whole lines only: a release record cut mid-line is not read yet.
+            let whole = reply
+                .iter()
+                .rposition(|&byte| byte == b'\n')
+                .map_or(&reply[..0], |end| &reply[..=end]);
+            Echo::read(whole, press) == Echo::Pressed { released: true }
+        },
+        Duration::ZERO,
+    )?;
 
     let released = match Echo::read(&reply, press) {
         Echo::Pressed { released } => released,
