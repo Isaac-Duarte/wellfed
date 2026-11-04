@@ -14,10 +14,12 @@ RUN apt-get update \
 	&& rm -rf /var/lib/apt/lists/*
 
 ARG FLUTTER_VERSION
+# Flutter treats only negative artifact flags as the default platform selection.
+# Select universal artifacts explicitly to cache the test runner without platform SDKs.
 RUN test -n "${FLUTTER_VERSION}" \
 	&& git clone --depth 1 --branch "${FLUTTER_VERSION}" https://github.com/flutter/flutter.git /opt/flutter \
 	&& /opt/flutter/bin/flutter --disable-analytics \
-	&& /opt/flutter/bin/flutter precache --no-android --no-ios --no-web --no-linux --no-windows --no-macos --no-fuchsia
+	&& /opt/flutter/bin/flutter precache --universal --no-android --no-ios --no-web --no-linux --no-windows --no-macos --no-fuchsia
 ENV PATH=/opt/flutter/bin:${PATH}
 
 WORKDIR /app
