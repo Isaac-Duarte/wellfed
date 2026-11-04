@@ -189,7 +189,7 @@ When the time returns, a meal less than 15 minutes late runs, and an older one i
 
 Even with your router answering, the clock reads invalid for up to a minute about every 6.6 hours, until the next poll sets it again. A meal due in that minute runs once it's back.
 
-A longer limit, about 22 hours, needs two `wellfed time` syncs from an owner about 11 hours apart. The feeder forgets that on every restart, the app doesn't do it, and we haven't checked it on the feeder.
+A longer limit, about a week, needs two `wellfed time` syncs from an owner about 11 hours apart. The feeder forgets that on every restart, and the app doesn't do it.
 
 An owner chooses where the time comes from, with **Get the time from** on the **Clock and portion size** screen: **Router**, **Address** or **Phones only**. An address has to be an IP address, since names aren't looked up. Many home routers don't answer with the time. When yours doesn't, the feeder's **Today** tab offers Cloudflare's public time server, or phones only. Either choice ends the offer. Out of the box the feeder asks only your router, so it contacts nothing outside your network unless you choose it. **Address** also lists public time servers from Cloudflare and Google to pick with one tap. On the CLI, use `wellfed time --ntp gateway`, and `wellfed time --show` to see the clock.
 

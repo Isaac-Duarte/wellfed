@@ -173,7 +173,7 @@ The event cursor is described under [data](#data).
 
 - **Sources:** NTP when reachable (the gateway by default, or an address the owner sets), plus syncs from the app and the server over the API. An owner's sync may step the clock. NTP and every other client may only narrow a valid clock within its error bound ([clock](clock.md)).
 - **Time zone:** a feeder setting, the zone's POSIX rule, which the feeder evaluates for any year.
-- **Validity is an error bound.** The SDK learns its drift from successive syncs and tracks how far off the clock could be. The clock stops counting as valid when that could exceed 2 minutes: about 6.6 hours after a fix before the drift is learned, about 22 hours after. The measured uncorrected drift is 735 to 2,060 ppm slow ([clock](clock.md)). The learned bound stays wide until the bench shows how much it moves; NTP keeps the clock valid.
+- **Validity is an error bound.** The SDK learns its drift from successive syncs and tracks how far off the clock could be. The clock stops counting as valid when that could exceed 2 minutes: about 6.6 hours after a fix before the drift is learned, about 7 days after. The SysTimer the clock counts on drifted 8 to 18 ppm over a 72-hour run ([clock](clock.md)), and the learned bound is about ten times that; NTP keeps the clock valid.
 - **Warm resets** (watchdog, update activation, trial boots) carry the clock through the always-on RTC. A power cut loses it.
 - **No source.** After a cold boot with no source, or once the bound is exceeded, scheduled meals hold. The feeder shows that it needs the time, through its lights and sound policy, and the Dispense button and app feeds still work. The missed-meal rule decides what happens once time returns.
 

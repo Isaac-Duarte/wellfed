@@ -76,7 +76,7 @@ The UART shows `PLBAT2 radio off|on` and `PLBAT2 install stop queued=1` from the
 
 **Setup mode keeps the radio on.** The vendor's BLE stack runs only while the WLAN driver is up, so BLE setup mode holds Wi-Fi on even on batteries. Setup mode already stops advertising without the adapter ([Bluetooth](bluetooth.md)). Once setup mode ends (with a restart), battery mode turns Wi-Fi off again.
 
-**The clock.** Turning Wi-Fi off does not touch the [clock](clock.md), but nothing syncs it on batteries. It stays valid until its error bound runs out, as it does with no time source: about 6.6 hours after the last sync while its rate is unlearned, about 22 hours once learned. **After that, meals hold** for as long as the feeder stays on batteries: no meal runs until the adapter returns and a time source syncs the clock. The Dispense button still feeds.
+**The clock.** Turning Wi-Fi off does not touch the [clock](clock.md), but nothing syncs it on batteries. It stays valid until its error bound runs out, as it does with no time source: about 6.6 hours after the last sync while its rate is unlearned, about 7 days once learned. **After that, meals hold** for as long as the feeder stays on batteries: no meal runs until the adapter returns and a time source syncs the clock. The Dispense button still feeds.
 
 ## The floor
 
