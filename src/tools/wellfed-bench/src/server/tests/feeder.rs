@@ -775,7 +775,7 @@ async fn after_an_epoch_change_the_history_is_the_new_epoch_s_and_a_feed_reports
             .unwrap();
         let fed = page.messages.iter().find_map(|message| match message {
             Pushed::Event(event)
-                if matches!(event.body, wellfed_model::EventBody::Fed { feed: f, .. } if f == feed) =>
+                if matches!(event.body, wellfed_model::EventBody::Feeder(wellfed_model::FeederEvent::Fed { feed: f, .. }) if f == feed) =>
             {
                 Some(*event)
             }

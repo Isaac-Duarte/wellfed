@@ -322,7 +322,9 @@ const LOGS_BOUND: Duration = Duration::from_secs(10);
 mod tests {
     use jiff::Timestamp;
     use wellfed_client::history::Feed;
-    use wellfed_model::{Event, EventBody, FeedOutcome, FeedReason, FoodLevel, Hex, Source};
+    use wellfed_model::{
+        CoreEvent, Event, EventBody, FeedOutcome, FeedReason, FeederEvent, FoodLevel, Hex, Source,
+    };
 
     use super::*;
 
@@ -331,7 +333,7 @@ mod tests {
             epoch: 1,
             seq: 1175,
             at,
-            body: EventBody::Fed {
+            body: EventBody::Feeder(FeederEvent::Fed {
                 feed: 128,
                 requested: 3,
                 completed: 1,
@@ -339,7 +341,7 @@ mod tests {
                 reason,
                 hopper: FoodLevel::Present,
                 by,
-            },
+            }),
         };
         Entry::Feed(Feed::from_event(&event).unwrap())
     }
@@ -378,10 +380,10 @@ mod tests {
                 epoch: 1,
                 seq,
                 at: None,
-                body: EventBody::Boot {
+                body: EventBody::Core(CoreEvent::Boot {
                     bank: 1,
                     reset_flags: 0,
-                },
+                }),
             })
         };
         assert!(!backlog.ends_at(&event(9)));

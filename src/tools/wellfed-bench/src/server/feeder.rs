@@ -930,7 +930,7 @@ impl Open<'_> {
                 boot_count: status.boot_count,
                 rssi: status.rssi,
                 clock_ms: clock_ms.and_then(|ms| u64::try_from(ms).ok()),
-                locked: status.locked,
+                locked: status.feeder().and_then(|feeder| feeder.locked),
                 last_event: status.last_event,
                 sessions: status.sessions,
             });
@@ -1087,7 +1087,7 @@ impl DeviceLog {
 
 #[cfg(test)]
 mod tests {
-    use wellfed_model::{Event, EventBody};
+    use wellfed_model::{CoreEvent, Event, EventBody};
 
     use super::*;
 
@@ -1096,10 +1096,10 @@ mod tests {
             epoch: 1,
             seq,
             at: None,
-            body: EventBody::Boot {
+            body: EventBody::Core(CoreEvent::Boot {
                 bank: 1,
                 reset_flags: 0,
-            },
+            }),
         })
     }
 

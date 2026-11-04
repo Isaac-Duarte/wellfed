@@ -6,9 +6,9 @@ use jiff::Timestamp;
 use tempfile::TempDir;
 use uuid::Uuid;
 use wellfed_api::{
-    Blocked, ClientRole, Desiccant, EventBody, EventKind, FeederId, FeederStatus, FoodLevel,
-    Generation, Household, MealReminder, Readiness, Role, Settings, Source, TimeFormat, Units,
-    UserId, WifiSource, Window,
+    Blocked, ClientRole, CoreEvent, Desiccant, DeviceStatus, EventBody, EventKind, FeederEvent,
+    FeederId, FeederSettings, FeederStatus, FoodLevel, Generation, Household, MealReminder,
+    Readiness, Role, Settings, Source, Status, TimeFormat, Units, UserId, WifiSource, Window,
 };
 use wellfed_store::{
     Change, Error, FeederRow, NewEvent, NewFeeder, NewUser, SealedKey, Store, Synced,
@@ -80,14 +80,14 @@ const EPOCH: u32 = 7;
 /// keeps as given.
 fn event(seq: u64, kind: EventKind) -> NewEvent<'static> {
     let body = match kind {
-        EventKind::Boot => EventBody::Boot {
+        EventKind::Boot => EventBody::Core(CoreEvent::Boot {
             bank: 1,
             reset_flags: 0,
-        },
-        EventKind::Lock => EventBody::Lock {
+        }),
+        EventKind::Lock => EventBody::Feeder(FeederEvent::Lock {
             locked: true,
             by: Source::Panel,
-        },
+        }),
         other => panic!("no test body for {other:?}"),
     };
     NewEvent {
@@ -419,7 +419,7 @@ async fn the_cached_status_and_settings_read_back() {
     let id = adopt(&store, 2).await;
     assert_eq!(store.state(id).await.unwrap(), Default::default());
 
-    let settings = Settings {
+    let settings = Settings::Feeder(FeederSettings {
         generation: Generation(4),
         lights: true,
         sound: false,
@@ -433,9 +433,9 @@ async fn the_cached_status_and_settings_read_back() {
         desiccant_replaced: Some(jiff::civil::date(2026, 10, 28)),
         meal_reminder: MealReminder::Before { minutes: 5 },
         writable: true,
-    };
+    });
     store.record_settings(id, &settings, at(100)).await.unwrap();
-    let status = FeederStatus {
+    let status = Status {
         build: "feeder-sim".into(),
         bank: 1,
         uptime_ms: 5,
@@ -448,23 +448,25 @@ async fn the_cached_status_and_settings_read_back() {
         dns_losses: 0,
         clock: Some(at(1_700_000_000_000)),
         power: None,
-        locked: Some(true),
-        settings_generation: Generation(4),
         wifi_generation: Generation(0),
         last_event: Some(9),
         sessions: 1,
-        food: FoodLevel::Low,
-        feed_fault: None,
-        readiness: Readiness::Blocked(Blocked::Joining),
-        desiccant: Desiccant::Remaining {
-            days: -2,
-            due: true,
-        },
-        supply: wellfed_api::Supply {
-            adapter: Some(true),
-            battery: wellfed_api::Battery::Absent,
-            below_floor: None,
-        },
+        device: DeviceStatus::Feeder(FeederStatus {
+            locked: Some(true),
+            settings_generation: Generation(4),
+            food: FoodLevel::Low,
+            feed_fault: None,
+            readiness: Readiness::Blocked(Blocked::Joining),
+            desiccant: Desiccant::Remaining {
+                days: -2,
+                due: true,
+            },
+            supply: wellfed_api::Supply {
+                adapter: Some(true),
+                battery: wellfed_api::Battery::Absent,
+                below_floor: None,
+            },
+        }),
     };
     store.record_status(id, &status, at(200)).await.unwrap();
 

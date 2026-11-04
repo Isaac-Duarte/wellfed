@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use wellfed_api::{
-    ClientRole, Connection as Link, EventBody, FeederId, HouseholdPatch, NextMeal, PLANS, Plan,
-    PlansChange, Source, TimeFormat, Units, Weekdays,
+    ClientRole, Connection as Link, EventBody, FeederEvent, FeederId, HouseholdPatch, NextMeal,
+    PLANS, Plan, PlansChange, Source, TimeFormat, Units, Weekdays,
 };
 use wellfed_model::{Answer, Op, Pushed, TimeSync};
 use wellfed_server_testkit::feeder::{self, Connection, Flash, Running, open_owner};
@@ -319,7 +319,8 @@ async fn fed_from(owner: &mut Connection, from: i64) -> Timestamp {
             let Pushed::Event(event) = owner.next(WAIT).await.unwrap() else {
                 continue;
             };
-            if let (EventBody::Fed { by, .. }, Some(at)) = (event.body, event.at)
+            if let (EventBody::Feeder(FeederEvent::Fed { by, .. }), Some(at)) =
+                (event.body, event.at)
                 && by == (Source::Schedule { plan: 0 })
                 && at.as_second() >= from
             {

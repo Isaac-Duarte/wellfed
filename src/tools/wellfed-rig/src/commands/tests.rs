@@ -1729,7 +1729,7 @@ fn device_status(build: &str, bank: u8) -> DeviceStatus {
         wifi: wellfed_model::WifiSource::Build,
         losses: 0,
         clock_ms: Some(1_792_674_000_000),
-        settings_generation: 2,
+        settings_generation: Some(2),
         wifi_generation: 1,
         locked: Some(false),
     }

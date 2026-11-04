@@ -238,24 +238,27 @@ view_enum! {
 
 impl From<&model::EventBody> for EventKind {
     fn from(body: &model::EventBody) -> Self {
-        use model::EventBody as B;
         match body {
-            B::Boot { .. } => Self::Boot,
-            B::Lock { .. } => Self::Lock,
-            B::Settings { .. } => Self::Settings,
-            B::Wifi { .. } => Self::Wifi,
-            B::Enrolled { .. } => Self::Enrolled,
-            B::Revoked { .. } => Self::Revoked,
-            B::ClockSync { .. } => Self::ClockSync,
-            B::Lost { .. } => Self::Lost,
-            B::Fed { .. } => Self::Fed,
-            B::FeedingBlocked { .. } => Self::FeedingBlocked,
-            B::Plans { .. } => Self::Plans,
-            B::Missed { .. } => Self::Missed,
-            B::MealSoon { .. } => Self::MealSoon,
-            B::Supply { .. } => Self::Supply,
-            B::DispenseRefused { .. } => Self::DispenseRefused,
-            B::Food { .. } => Self::Food,
+            model::EventBody::Core(model::CoreEvent::Boot { .. }) => Self::Boot,
+            model::EventBody::Feeder(model::FeederEvent::Lock { .. }) => Self::Lock,
+            model::EventBody::Feeder(model::FeederEvent::Settings { .. }) => Self::Settings,
+            model::EventBody::Core(model::CoreEvent::Wifi { .. }) => Self::Wifi,
+            model::EventBody::Core(model::CoreEvent::Enrolled { .. }) => Self::Enrolled,
+            model::EventBody::Core(model::CoreEvent::Revoked { .. }) => Self::Revoked,
+            model::EventBody::Core(model::CoreEvent::ClockSync { .. }) => Self::ClockSync,
+            model::EventBody::Core(model::CoreEvent::Lost { .. }) => Self::Lost,
+            model::EventBody::Feeder(model::FeederEvent::Fed { .. }) => Self::Fed,
+            model::EventBody::Feeder(model::FeederEvent::FeedingBlocked { .. }) => {
+                Self::FeedingBlocked
+            }
+            model::EventBody::Feeder(model::FeederEvent::Plans { .. }) => Self::Plans,
+            model::EventBody::Feeder(model::FeederEvent::Missed { .. }) => Self::Missed,
+            model::EventBody::Feeder(model::FeederEvent::MealSoon { .. }) => Self::MealSoon,
+            model::EventBody::Feeder(model::FeederEvent::Supply { .. }) => Self::Supply,
+            model::EventBody::Feeder(model::FeederEvent::DispenseRefused { .. }) => {
+                Self::DispenseRefused
+            }
+            model::EventBody::Feeder(model::FeederEvent::Food { .. }) => Self::Food,
         }
     }
 }

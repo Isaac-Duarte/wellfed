@@ -11,7 +11,8 @@
 //! anything changed in between.
 
 use wellfed_model::{
-    MealReminder, OpenRefusal, Refusal, Settings, SettingsPatch, WifiSource, Window,
+    FeederSettings, FeederSettingsPatch, MealReminder, OpenRefusal, Refusal, Settings, WifiSource,
+    Window,
 };
 
 use std::ops::Deref;
@@ -40,7 +41,7 @@ pub enum ScenariosError {
     #[error("The settings read answered {}", compact(answer))]
     SettingsAnswer { answer: Answer },
     #[error("Settings are not writable: {}", compact(settings))]
-    NotWritable { settings: Settings },
+    NotWritable { settings: FeederSettings },
     #[error("The settings change answered {}", compact(answer))]
     SettingsChange { answer: Answer },
     #[error(
@@ -49,15 +50,15 @@ pub enum ScenariosError {
         compact(change)
     )]
     ReadBack {
-        after: Settings,
-        change: SettingsPatch,
+        after: FeederSettings,
+        change: FeederSettingsPatch,
     },
     #[error("An unenrolled key was not refused as unknown: {rebuffed:?}")]
     Unenrolled { rebuffed: Rebuffed },
     #[error("A tampered handshake was not dropped: {rebuffed:?}")]
     Tampered { rebuffed: Rebuffed },
     #[error("After a cold boot the settings read {}", compact(after))]
-    NotPersisted { after: Settings },
+    NotPersisted { after: FeederSettings },
     #[error(
         "A write from stale generation {base} was not refused as stale at {current}: {}",
         compact(answer)
@@ -68,7 +69,7 @@ pub enum ScenariosError {
         answer: Answer,
     },
     #[error("The stale write changed the settings: {}", compact(after))]
-    StaleChanged { after: Settings },
+    StaleChanged { after: FeederSettings },
     #[error("The Wi-Fi change answered {}", compact(answer))]
     WifiChange { answer: Answer },
     #[error("The feeder joined with {wifi:?} credentials, not the build's; clear them first")]
@@ -253,9 +254,9 @@ fn requests(ctx: &mut Ctx) -> Result<()> {
     ctx.note(&format!("  {}", clock_synced(&status, ctx.rig.unix_ms())?));
 
     let before = read_settings(ctx)?;
-    let flipped = SettingsPatch {
+    let flipped = FeederSettingsPatch {
         lights: Some(!before.lights),
-        ..SettingsPatch::default()
+        ..FeederSettingsPatch::default()
     };
     set_settings(ctx, flipped)?;
     set_settings(ctx, changes_to(&before)).map(|_| ())
@@ -273,9 +274,9 @@ fn clock_synced(status: &DeviceStatus, now_ms: i64) -> Result<String> {
     ))
 }
 
-pub(super) fn read_settings(ctx: &mut Ctx) -> Result<Settings> {
+pub(super) fn read_settings(ctx: &mut Ctx) -> Result<FeederSettings> {
     let settings = match ctx.ask(&Ask::GetSettings)? {
-        Answer::Settings(settings) => settings,
+        Answer::Settings(Settings::Feeder(settings)) => settings,
         answer => return Err(ScenariosError::SettingsAnswer { answer }.into()),
     };
     if !settings.writable {
@@ -285,8 +286,8 @@ pub(super) fn read_settings(ctx: &mut Ctx) -> Result<Settings> {
 }
 
 /// The change that sets every setting back to `settings`.
-pub(super) fn changes_to(settings: &Settings) -> SettingsPatch {
-    SettingsPatch {
+pub(super) fn changes_to(settings: &FeederSettings) -> FeederSettingsPatch {
+    FeederSettingsPatch {
         lights: Some(settings.lights),
         sound: Some(settings.sound),
         volume: Some(settings.volume),
@@ -298,7 +299,7 @@ pub(super) fn changes_to(settings: &Settings) -> SettingsPatch {
 }
 
 /// Whether `settings` hold every field `change` sets.
-fn shows(settings: &Settings, change: SettingsPatch) -> bool {
+fn shows(settings: &FeederSettings, change: FeederSettingsPatch) -> bool {
     change.lights.is_none_or(|on| settings.lights == on)
         && change.sound.is_none_or(|on| settings.sound == on)
         && change.volume.is_none_or(|volume| settings.volume == volume)
@@ -315,7 +316,7 @@ fn shows(settings: &Settings, change: SettingsPatch) -> bool {
 
 /// Change settings against the generation just read, see the writer save a
 /// newer one, and read the change back; the generation it was made from.
-pub(super) fn set_settings(ctx: &mut Ctx, change: SettingsPatch) -> Result<u32> {
+pub(super) fn set_settings(ctx: &mut Ctx, change: FeederSettingsPatch) -> Result<u32> {
     let base = read_settings(ctx)?.generation.0;
     let since = ctx.mark()?;
 
@@ -426,7 +427,7 @@ fn other_reminder(reminder: MealReminder) -> MealReminder {
 
 fn settings_persist(ctx: &mut Ctx) -> Result<()> {
     let before = read_settings(ctx)?;
-    let changed = SettingsPatch {
+    let changed = FeederSettingsPatch {
         lights: Some(!before.lights),
         sound: Some(!before.sound),
         volume: Some(if before.volume == 35 { 36 } else { 35 }),
@@ -450,7 +451,7 @@ fn settings_persist(ctx: &mut Ctx) -> Result<()> {
 
 /// A write against `base`, a generation the store has moved past, is
 /// refused as stale and changes nothing.
-fn stale_write(ctx: &mut Ctx, base: u32, change: SettingsPatch) -> Result<()> {
+fn stale_write(ctx: &mut Ctx, base: u32, change: FeederSettingsPatch) -> Result<()> {
     let current = read_settings(ctx)?;
     let answer = ctx.ask(&Ask::PutSettings {
         base,
@@ -755,7 +756,7 @@ fn power_cuts(ctx: &mut Ctx, staged: &super::Staged) -> Result<()> {
 /// set shows only once it takes effect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DeviceState {
-    settings: SettingsPatch,
+    settings: FeederSettingsPatch,
     wifi: WifiSource,
     build: String,
     bank: u8,

@@ -1,7 +1,7 @@
 //! Adopting a feeder by invite, the connect sequence, and a feeder that
 //! no longer knows the server.
 
-use wellfed_api::{AdoptFeeder, ClientRole, Connection as Link, EventBody, EventQuery};
+use wellfed_api::{AdoptFeeder, ClientRole, Connection as Link, CoreEvent, EventBody, EventQuery};
 use wellfed_model::{Answer, Op};
 use wellfed_server_testkit::feeder::{self, invite, open_owner};
 use wellfed_server_testkit::fixed::NOW_MS;
@@ -36,18 +36,21 @@ fn an_adopted_feeder_connects_syncs_its_clock_and_mirrors_its_history() {
         // Boot, the server's enrolment, the clock sync.
         server.synced(id, status.status.last_event.unwrap()).await;
         let history = server.bodies(id).await;
-        assert!(matches!(history[0], EventBody::Boot { .. }));
+        assert!(matches!(
+            history[0],
+            EventBody::Core(CoreEvent::Boot { .. })
+        ));
         assert!(history.iter().any(|body| matches!(
             body,
-            EventBody::Enrolled {
+            EventBody::Core(CoreEvent::Enrolled {
                 role: ClientRole::Server,
                 ..
-            }
+            })
         )));
         assert!(
             history
                 .iter()
-                .any(|body| matches!(body, EventBody::ClockSync { .. }))
+                .any(|body| matches!(body, EventBody::Core(CoreEvent::ClockSync { .. })))
         );
 
         let owner = owner();

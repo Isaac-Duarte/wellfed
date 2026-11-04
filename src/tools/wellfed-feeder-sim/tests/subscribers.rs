@@ -9,7 +9,7 @@ use wellfed_client::api::Invite;
 use wellfed_connect::{Connection, Cursor, join};
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness::{Running, local};
-use wellfed_model::{Answer, ClientRole, EventBody, Op, Pushed, Status};
+use wellfed_model::{Answer, ClientRole, EventBody, FeederEvent, Op, Pushed, Status};
 use wellfed_proto::api::RequestId;
 use wellfed_session::noise::Keypair;
 
@@ -120,7 +120,7 @@ async fn until_fed(connection: &mut Connection, after: Option<u64>) -> Vec<(u64,
                 if let Some(&(last, _)) = events.last() {
                     assert_eq!(event.seq, last + 1, "events arrive in order, none skipped");
                 }
-                let fed = matches!(event.body, EventBody::Fed { .. });
+                let fed = matches!(event.body, EventBody::Feeder(FeederEvent::Fed { .. }));
                 let new = after.is_none_or(|after| event.seq > after);
                 events.push((event.seq, event.body));
                 if fed && new {
@@ -210,7 +210,7 @@ fn a_session_still_reading_the_backlog_and_two_caught_up_each_get_the_feed() {
         assert_eq!(after(&third_saw, newest), owner_saw, "and the same feed");
         let locks = third_saw
             .iter()
-            .filter(|(_, body)| matches!(body, EventBody::Lock { .. }))
+            .filter(|(_, body)| matches!(body, EventBody::Feeder(FeederEvent::Lock { .. })))
             .count();
         assert!(
             locks >= 2 * usize::from(BACKLOG),

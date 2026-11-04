@@ -12,13 +12,14 @@ use wellfed_proto::setup as proto_setup;
 
 use crate::{
     Answer, Bank1Page, Battery, Blocked, Bowl, Calibration, CalibrationView, CallClip, CallView,
-    Client, ClientRole, Counters, Counts, Desiccant, EnrollPath, Erases, Event, EventBody,
-    FeedFault, FeedOutcome, FeedReason, Flash, Food, FoodLevel, Generation, Hello, Hex, Invite,
+    Client, ClientRole, CoreEvent, Counters, Counts, Desiccant, DeviceStatus, EnrollPath, Erases,
+    Event, EventBody, FeedFault, FeedOutcome, FeedReason, FeederEvent, FeederSettings,
+    FeederSettingsPatch, FeederStatus, Flash, Food, FoodLevel, Generation, Hello, Hex, Invite,
     Joined, LogLines, MealReminder, Memory, MissedReason, NtpResult, NtpServer, Op, OpenRefusal,
     Phase, Plan, Plans, Portions, Power, PowerStats, Readiness, Refusal, ResetCause, Resets,
-    Sample, SampleValue, Settings, SettingsPatch, Source, Stats, StatsSection, Status, Supply,
-    TaskStack, TimeSource, TimeSync, TimeView, Tune, UpdatePhase, UpdateRefusal, UpdateStop,
-    UpdateView, Weekdays, WifiSource, Window, setup,
+    Sample, SampleValue, Settings, Source, Stats, StatsSection, Status, Supply, TaskStack,
+    TimeSource, TimeSync, TimeView, Tune, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView,
+    Weekdays, WifiSource, Window, setup,
 };
 use crate::{
     CurrentUnit, FeedStats, Malformed, Trace, TraceEntry, TraceMotor, TracePage, TraceSummary,
@@ -70,15 +71,6 @@ impl From<proto::Status<'_>> for Status {
             sessions,
             device,
         } = status;
-        let proto::DeviceStatus::Feeder(proto::FeederStatus {
-            locked,
-            settings_generation,
-            food,
-            feed_fault,
-            desiccant,
-            readiness,
-            supply,
-        }) = device;
         Self {
             build: build.to_owned(),
             bank,
@@ -96,11 +88,36 @@ impl From<proto::Status<'_>> for Status {
                     .and_then(|ms| Timestamp::from_millisecond(ms).ok())
             }),
             power: power.map(Power::from),
-            locked,
-            settings_generation: Generation(settings_generation),
             wifi_generation: Generation(wifi_generation),
             last_event,
             sessions,
+            device: device.into(),
+        }
+    }
+}
+
+impl From<proto::DeviceStatus> for DeviceStatus {
+    fn from(device: proto::DeviceStatus) -> Self {
+        match device {
+            proto::DeviceStatus::Feeder(feeder) => Self::Feeder(feeder.into()),
+        }
+    }
+}
+
+impl From<proto::FeederStatus> for FeederStatus {
+    fn from(status: proto::FeederStatus) -> Self {
+        let proto::FeederStatus {
+            locked,
+            settings_generation,
+            food,
+            feed_fault,
+            desiccant,
+            readiness,
+            supply,
+        } = status;
+        Self {
+            locked,
+            settings_generation: Generation(settings_generation),
             food: food.into(),
             feed_fault: feed_fault.map(|fault| FeedFault {
                 feed: fault.feed,
@@ -234,7 +251,7 @@ impl From<proto::Supply> for Supply {
     }
 }
 
-impl From<proto::Settings> for Settings {
+impl From<proto::Settings> for FeederSettings {
     fn from(settings: proto::Settings) -> Self {
         let proto::Settings {
             generation,
@@ -311,33 +328,39 @@ impl From<Window> for proto::Window {
 impl From<proto::EventBody> for EventBody {
     fn from(body: proto::EventBody) -> Self {
         match body {
-            proto::EventBody::Boot { bank, reset_flags } => Self::Boot { bank, reset_flags },
-            proto::EventBody::Lock { locked, by } => Self::Lock {
+            proto::EventBody::Boot { bank, reset_flags } => {
+                EventBody::Core(CoreEvent::Boot { bank, reset_flags })
+            }
+            proto::EventBody::Lock { locked, by } => EventBody::Feeder(FeederEvent::Lock {
                 locked,
                 by: by.into(),
-            },
-            proto::EventBody::Settings { generation, by } => Self::Settings {
+            }),
+            proto::EventBody::Settings { generation, by } => {
+                EventBody::Feeder(FeederEvent::Settings {
+                    generation: Generation(generation),
+                    by: by.into(),
+                })
+            }
+            proto::EventBody::Wifi { generation, by } => EventBody::Core(CoreEvent::Wifi {
                 generation: Generation(generation),
                 by: by.into(),
-            },
-            proto::EventBody::Wifi { generation, by } => Self::Wifi {
-                generation: Generation(generation),
-                by: by.into(),
-            },
-            proto::EventBody::Enrolled { client, role, path } => Self::Enrolled {
-                client: Hex(client),
-                role: role.into(),
-                path: path.into(),
-            },
-            proto::EventBody::Revoked { client, by } => Self::Revoked {
+            }),
+            proto::EventBody::Enrolled { client, role, path } => {
+                EventBody::Core(CoreEvent::Enrolled {
+                    client: Hex(client),
+                    role: role.into(),
+                    path: path.into(),
+                })
+            }
+            proto::EventBody::Revoked { client, by } => EventBody::Core(CoreEvent::Revoked {
                 client: Hex(client),
                 by: by.into(),
-            },
-            proto::EventBody::ClockSync { by, jump_ms } => Self::ClockSync {
+            }),
+            proto::EventBody::ClockSync { by, jump_ms } => EventBody::Core(CoreEvent::ClockSync {
                 by: by.into(),
                 jump_ms,
-            },
-            proto::EventBody::Lost { count } => Self::Lost { count },
+            }),
+            proto::EventBody::Lost { count } => EventBody::Core(CoreEvent::Lost { count }),
             proto::EventBody::Fed {
                 feed,
                 requested,
@@ -346,7 +369,7 @@ impl From<proto::EventBody> for EventBody {
                 reason,
                 hopper,
                 by,
-            } => Self::Fed {
+            } => EventBody::Feeder(FeederEvent::Fed {
                 feed,
                 requested,
                 completed,
@@ -354,45 +377,51 @@ impl From<proto::EventBody> for EventBody {
                 reason: reason.into(),
                 hopper: hopper.into(),
                 by: by.into(),
-            },
-            proto::EventBody::FeedingBlocked { reason } => Self::FeedingBlocked {
-                reason: reason.map(Blocked::from),
-            },
+            }),
+            proto::EventBody::FeedingBlocked { reason } => {
+                EventBody::Feeder(FeederEvent::FeedingBlocked {
+                    reason: reason.map(Blocked::from),
+                })
+            }
             proto::EventBody::Supply(proto::Supply {
                 adapter,
                 battery,
                 below_floor,
-            }) => Self::Supply {
+            }) => EventBody::Feeder(FeederEvent::Supply {
                 adapter,
                 battery: battery.into(),
                 below_floor,
-            },
-            proto::EventBody::Plans { generation, by } => Self::Plans {
+            }),
+            proto::EventBody::Plans { generation, by } => EventBody::Feeder(FeederEvent::Plans {
                 generation: Generation(generation),
                 by: by.into(),
-            },
-            proto::EventBody::Missed { plan, due, reason } => Self::Missed {
-                plan,
-                due: seconds(due),
-                reason: reason.into(),
-            },
-            proto::EventBody::DispenseRefused { reason } => Self::DispenseRefused {
-                reason: reason.into(),
-            },
+            }),
+            proto::EventBody::Missed { plan, due, reason } => {
+                EventBody::Feeder(FeederEvent::Missed {
+                    plan,
+                    due: seconds(due),
+                    reason: reason.into(),
+                })
+            }
+            proto::EventBody::DispenseRefused { reason } => {
+                EventBody::Feeder(FeederEvent::DispenseRefused {
+                    reason: reason.into(),
+                })
+            }
             proto::EventBody::MealSoon {
                 plan,
                 due,
                 minute,
                 portions,
-            } => Self::MealSoon {
+            } => EventBody::Feeder(FeederEvent::MealSoon {
                 plan,
                 due: seconds(due),
                 minute,
                 portions,
-            },
-            proto::EventBody::Food { level } => Self::Food {
+            }),
+            proto::EventBody::Food { level } => EventBody::Feeder(FeederEvent::Food {
                 level: level.into(),
-            },
+            }),
         }
     }
 }
@@ -403,34 +432,36 @@ impl From<proto::EventBody> for EventBody {
 impl From<EventBody> for proto::EventBody {
     fn from(body: EventBody) -> Self {
         match body {
-            EventBody::Boot { bank, reset_flags } => Self::Boot { bank, reset_flags },
-            EventBody::Lock { locked, by } => Self::Lock {
+            EventBody::Core(CoreEvent::Boot { bank, reset_flags }) => {
+                Self::Boot { bank, reset_flags }
+            }
+            EventBody::Feeder(FeederEvent::Lock { locked, by }) => Self::Lock {
                 locked,
                 by: by.into(),
             },
-            EventBody::Settings { generation, by } => Self::Settings {
+            EventBody::Feeder(FeederEvent::Settings { generation, by }) => Self::Settings {
                 generation: generation.0,
                 by: by.into(),
             },
-            EventBody::Wifi { generation, by } => Self::Wifi {
+            EventBody::Core(CoreEvent::Wifi { generation, by }) => Self::Wifi {
                 generation: generation.0,
                 by: by.into(),
             },
-            EventBody::Enrolled { client, role, path } => Self::Enrolled {
+            EventBody::Core(CoreEvent::Enrolled { client, role, path }) => Self::Enrolled {
                 client: client.0,
                 role: role.into(),
                 path: path.into(),
             },
-            EventBody::Revoked { client, by } => Self::Revoked {
+            EventBody::Core(CoreEvent::Revoked { client, by }) => Self::Revoked {
                 client: client.0,
                 by: by.into(),
             },
-            EventBody::ClockSync { by, jump_ms } => Self::ClockSync {
+            EventBody::Core(CoreEvent::ClockSync { by, jump_ms }) => Self::ClockSync {
                 by: by.into(),
                 jump_ms,
             },
-            EventBody::Lost { count } => Self::Lost { count },
-            EventBody::Fed {
+            EventBody::Core(CoreEvent::Lost { count }) => Self::Lost { count },
+            EventBody::Feeder(FeederEvent::Fed {
                 feed,
                 requested,
                 completed,
@@ -438,7 +469,7 @@ impl From<EventBody> for proto::EventBody {
                 reason,
                 hopper,
                 by,
-            } => Self::Fed {
+            }) => Self::Fed {
                 feed,
                 requested,
                 completed,
@@ -447,43 +478,43 @@ impl From<EventBody> for proto::EventBody {
                 hopper: hopper.into(),
                 by: by.into(),
             },
-            EventBody::FeedingBlocked { reason } => Self::FeedingBlocked {
+            EventBody::Feeder(FeederEvent::FeedingBlocked { reason }) => Self::FeedingBlocked {
                 reason: reason.map(proto::Blocked::from),
             },
-            EventBody::Supply {
+            EventBody::Feeder(FeederEvent::Supply {
                 adapter,
                 battery,
                 below_floor,
-            } => Self::Supply(proto::Supply {
+            }) => Self::Supply(proto::Supply {
                 adapter,
                 battery: battery.into(),
                 below_floor,
             }),
-            EventBody::Plans { generation, by } => Self::Plans {
+            EventBody::Feeder(FeederEvent::Plans { generation, by }) => Self::Plans {
                 generation: generation.0,
                 by: by.into(),
             },
             // A due time came from the feeder's u32 seconds.
-            EventBody::Missed { plan, due, reason } => Self::Missed {
+            EventBody::Feeder(FeederEvent::Missed { plan, due, reason }) => Self::Missed {
                 plan,
                 due: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
                 reason: reason.into(),
             },
-            EventBody::DispenseRefused { reason } => Self::DispenseRefused {
+            EventBody::Feeder(FeederEvent::DispenseRefused { reason }) => Self::DispenseRefused {
                 reason: reason.into(),
             },
-            EventBody::MealSoon {
+            EventBody::Feeder(FeederEvent::MealSoon {
                 plan,
                 due,
                 minute,
                 portions,
-            } => Self::MealSoon {
+            }) => Self::MealSoon {
                 plan,
                 due: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
                 minute,
                 portions,
             },
-            EventBody::Food { level } => Self::Food {
+            EventBody::Feeder(FeederEvent::Food { level }) => Self::Food {
                 level: level.into(),
             },
         }
@@ -823,7 +854,7 @@ impl From<proto::Outcome<'_>> for Answer {
             },
             proto::Outcome::Status(status) => Self::Status(status.into()),
             proto::Outcome::Feeder(proto::FeederOutcome::Settings(settings)) => {
-                Self::Settings(settings.into())
+                Self::Settings(Settings::Feeder(settings.into()))
             }
             proto::Outcome::Clients(proto::Clients { clients }) => Self::Clients(
                 clients
@@ -1561,9 +1592,9 @@ impl Op {
     }
 }
 
-impl From<SettingsPatch> for proto::SettingsChanges {
-    fn from(patch: SettingsPatch) -> Self {
-        let SettingsPatch {
+impl From<FeederSettingsPatch> for proto::SettingsChanges {
+    fn from(patch: FeederSettingsPatch) -> Self {
+        let FeederSettingsPatch {
             lights,
             sound,
             volume,

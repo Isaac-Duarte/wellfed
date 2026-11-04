@@ -5,8 +5,8 @@
 
 use serde::Serialize;
 use wellfed_api::{
-    CommandKind, CommandOutcome, ErrorCode, FeederDetail, FeederId, FeederRefusal, Generation,
-    LockRequest, Settings, SettingsPatch, StatusSnapshot,
+    CommandKind, CommandOutcome, ErrorCode, FeederDetail, FeederId, FeederRefusal,
+    FeederSettingsPatch, Generation, LockRequest, Settings, StatusSnapshot,
 };
 use wellfed_model::{Answer, DESICCANT_DAYS_MAX, DESICCANT_DAYS_MIN, Op, Window};
 
@@ -44,7 +44,7 @@ impl CommandError {
 #[derive(Serialize)]
 struct SettingsChange {
     base: Generation,
-    changes: SettingsPatch,
+    changes: FeederSettingsPatch,
 }
 
 impl Service {
@@ -106,7 +106,7 @@ impl Service {
         caller: &Caller,
         id: FeederId,
         base: Generation,
-        patch: SettingsPatch,
+        patch: FeederSettingsPatch,
         key: Option<IdempotencyKey>,
     ) -> Result<Settings> {
         if patch.volume.is_some_and(|volume| volume > 100) {

@@ -36,7 +36,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use wellfed_api::{Connection as Link, FeederId, FeederRefusal};
 use wellfed_client::trace::{Pages, TraceError};
-use wellfed_model::{Answer, EventBody, Op, Refusal, StatsSection, Trace};
+use wellfed_model::{Answer, EventBody, FeederEvent, Op, Refusal, StatsSection, Trace};
 use wellfed_store::{RawTrace, TraceFound};
 
 use crate::task::{LongLane, Opened};
@@ -97,7 +97,7 @@ impl Collector {
                 () = self.cancel.cancelled() => return,
                 update = self.updates.recv() => match update {
                     Ok(MirrorEvent::Event(event)) => {
-                        if matches!(event.body, EventBody::Fed { .. }) {
+                        if matches!(event.body, EventBody::Feeder(FeederEvent::Fed { .. })) {
                             due.traces = true;
                             due.food = true;
                         }

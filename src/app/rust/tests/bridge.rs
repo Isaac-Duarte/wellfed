@@ -622,7 +622,10 @@ fn a_feed_whose_answer_never_comes_is_reported_once_and_not_resent() {
         let mut fed = 0;
         while let Ok(pushed) = reader.next(Duration::from_secs(3)).await {
             if let wellfed_model::Pushed::Event(event) = pushed
-                && matches!(event.body, wellfed_model::EventBody::Fed { .. })
+                && matches!(
+                    event.body,
+                    wellfed_model::EventBody::Feeder(wellfed_model::FeederEvent::Fed { .. })
+                )
             {
                 fed += 1;
             }

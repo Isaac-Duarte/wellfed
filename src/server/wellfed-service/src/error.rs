@@ -28,7 +28,7 @@ pub enum Error {
     Refused(FeederRefusal),
     /// An edit named a settings generation the feeder has moved past; it
     /// carries the current settings, which the server answers with.
-    #[error("the settings moved on to generation {}", .0.generation)]
+    #[error("the settings moved on to generation {}", .0.generation())]
     Stale(Settings),
     /// A plans change named a generation the feeder has moved past; it
     /// carries the current plans, which the server answers with.

@@ -26,8 +26,8 @@ pub struct Settings {
     pub meal_reminder_minutes: Option<u8>,
 }
 
-impl From<&model::Settings> for Settings {
-    fn from(settings: &model::Settings) -> Self {
+impl From<&model::FeederSettings> for Settings {
+    fn from(settings: &model::FeederSettings) -> Self {
         Self {
             sound: settings.sound,
             lights: settings.lights,

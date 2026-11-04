@@ -1435,7 +1435,7 @@ where
                         bank: status.bank,
                     },
                     view.min_version,
-                    Some(status.readiness),
+                    status.feeder().map(|feeder| feeder.readiness),
                 );
                 if !matches!(install.step(), Step::AwaitConfirm) {
                     return Ok(());

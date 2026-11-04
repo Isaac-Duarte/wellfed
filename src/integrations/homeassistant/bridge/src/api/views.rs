@@ -58,12 +58,14 @@ pub struct Status {
 
 impl From<&model::Status> for Status {
     fn from(status: &model::Status) -> Self {
-        let supply = status.supply;
+        // The integration serves feeders alone.
+        let model::DeviceStatus::Feeder(feeder) = &status.device;
+        let supply = feeder.supply;
         let battery_percent = match supply.battery {
             model::Battery::Reading { percent, .. } => Some(percent),
             _ => None,
         };
-        let (desiccant_days, desiccant_due) = match status.desiccant {
+        let (desiccant_days, desiccant_due) = match feeder.desiccant {
             model::Desiccant::Remaining { days, due } => (Some(days), due),
             model::Desiccant::Unset | model::Desiccant::Unknown => (None, false),
         };
@@ -75,10 +77,10 @@ impl From<&model::Status> for Status {
             boot_count: status.boot_count,
             rssi: status.rssi,
             clock_ms: status.clock.map(|clock| clock.as_millisecond()),
-            locked: status.locked,
-            food: status.food.into(),
-            readiness: status.readiness.into(),
-            feed_fault: status.feed_fault.map(FeedFault::from),
+            locked: feeder.locked,
+            food: feeder.food.into(),
+            readiness: feeder.readiness.into(),
+            feed_fault: feeder.feed_fault.map(FeedFault::from),
             adapter: supply.adapter,
             battery_percent,
             below_floor: supply.below_floor,
@@ -192,26 +194,29 @@ pub struct Event {
 
 impl From<&model::Event> for Event {
     fn from(event: &model::Event) -> Self {
-        use model::EventBody as B;
-
         let source = match &event.body {
-            B::Lock { by, .. }
-            | B::Settings { by, .. }
-            | B::Wifi { by, .. }
-            | B::Revoked { by, .. }
-            | B::ClockSync { by, .. }
-            | B::Fed { by, .. }
-            | B::Plans { by, .. } => Some(by),
+            model::EventBody::Feeder(model::FeederEvent::Lock { by, .. })
+            | model::EventBody::Feeder(model::FeederEvent::Settings { by, .. })
+            | model::EventBody::Core(model::CoreEvent::Wifi { by, .. })
+            | model::EventBody::Core(model::CoreEvent::Revoked { by, .. })
+            | model::EventBody::Core(model::CoreEvent::ClockSync { by, .. })
+            | model::EventBody::Feeder(model::FeederEvent::Fed { by, .. })
+            | model::EventBody::Feeder(model::FeederEvent::Plans { by, .. }) => Some(by),
             _ => None,
         };
         let (mut client, mut plan) = source.map_or((None, None), source_detail);
         match &event.body {
-            B::Enrolled { client: named, .. } => client = Some(named.to_string()),
-            B::Missed { plan: slot, .. } | B::MealSoon { plan: slot, .. } => plan = Some(*slot),
+            model::EventBody::Core(model::CoreEvent::Enrolled { client: named, .. }) => {
+                client = Some(named.to_string())
+            }
+            model::EventBody::Feeder(model::FeederEvent::Missed { plan: slot, .. })
+            | model::EventBody::Feeder(model::FeederEvent::MealSoon { plan: slot, .. }) => {
+                plan = Some(*slot)
+            }
             _ => {}
         }
         let locked = match event.body {
-            B::Lock { locked, .. } => Some(locked),
+            model::EventBody::Feeder(model::FeederEvent::Lock { locked, .. }) => Some(locked),
             _ => None,
         };
 

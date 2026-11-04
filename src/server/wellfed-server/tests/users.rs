@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use uuid::Uuid;
 use wellfed_api::{
-    AdoptFeeder, Credentials, ErrorCode, FeederId, Generation, HouseholdPatch, NewUser, PLANS,
-    PasswordChange, PlansChange, Role, SettingsPatch, Units, User, UserPatch,
+    AdoptFeeder, Credentials, ErrorCode, FeederId, FeederSettingsPatch, Generation, HouseholdPatch,
+    NewUser, PLANS, PasswordChange, PlansChange, Role, Units, User, UserPatch,
 };
 use wellfed_server_client::{Auth, Client, Lock, StatusCode};
 use wellfed_server_testkit::fixed::ManualClock;
@@ -68,7 +68,7 @@ async fn a_viewer_reads_but_every_write_is_refused() {
 
     let forbidden = StatusCode::FORBIDDEN;
     let code = ErrorCode::Forbidden;
-    let patch = SettingsPatch::default();
+    let patch = FeederSettingsPatch::default();
     refused_for(
         "settings",
         viewer
@@ -135,7 +135,7 @@ async fn a_member_controls_feeders_but_not_accounts_or_the_household() {
     let (member, _) = account(&server, &owner, "bob", Role::Member, None).await;
 
     // Allowed through to the feeder, which this server does not have.
-    let patch = SettingsPatch::default();
+    let patch = FeederSettingsPatch::default();
     refused(
         member
             .put_settings(NOBODY, Generation(1), &patch, key())

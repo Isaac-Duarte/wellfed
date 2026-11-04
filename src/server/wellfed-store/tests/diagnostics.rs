@@ -7,8 +7,8 @@ use jiff::Timestamp;
 use tempfile::TempDir;
 use uuid::Uuid;
 use wellfed_api::{
-    ClientRole, CurrentUnit, EventBody, FeedOutcome, FeedReason, FeederId, FeederRefusal,
-    FoodLevel, FoodStats, Source, Stats, StatsSection, TraceSummary,
+    ClientRole, CurrentUnit, EventBody, FeedOutcome, FeedReason, FeederEvent, FeederId,
+    FeederRefusal, FoodLevel, FoodStats, Source, Stats, StatsSection, TraceSummary,
 };
 use wellfed_store::{NewEvent, NewFeeder, RawTrace, Refresh, SealedKey, Store, TraceFound};
 
@@ -49,7 +49,7 @@ fn decode(raw: &[u8]) -> Option<EventBody> {
 
 /// Feed `feed`'s `Fed` event, as event `seq` of `epoch`.
 async fn fed(store: &Store, epoch: u32, seq: u64, feed: u32) {
-    let body = EventBody::Fed {
+    let body = EventBody::Feeder(FeederEvent::Fed {
         feed,
         requested: 1,
         completed: 1,
@@ -57,7 +57,7 @@ async fn fed(store: &Store, epoch: u32, seq: u64, feed: u32) {
         reason: FeedReason::Done,
         hopper: FoodLevel::Present,
         by: Source::Panel,
-    };
+    });
     let raw = serde_json::to_vec(&body).unwrap();
     store
         .record_event(

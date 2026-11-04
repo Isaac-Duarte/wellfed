@@ -16,9 +16,9 @@ use wellfed_client::plans::{self, EditError};
 use wellfed_client::setup::Credentials;
 use wellfed_client::trace::Pages;
 use wellfed_model::{
-    Answer, Calibration, CalibrationView, CallView, Client, ClientRole, Generation, NtpServer, Op,
-    Plan, Plans, Refusal, Settings, SettingsPatch, TimeChanges, TimeOfDay, TimeView, TraceEntry,
-    TraceMotor, Weekday, Weekdays,
+    Answer, Calibration, CalibrationView, CallView, Client, ClientRole, FeederSettings,
+    FeederSettingsPatch, Generation, NtpServer, Op, Plan, Plans, Refusal, Settings, TimeChanges,
+    TimeOfDay, TimeView, TraceEntry, TraceMotor, Weekday, Weekdays,
 };
 
 use crate::api::feeder::{
@@ -175,8 +175,8 @@ pub async fn run(
 }
 
 /// A settings change as the device API carries it.
-pub(crate) const fn settings_patch(changes: SettingsChanges) -> SettingsPatch {
-    SettingsPatch {
+pub(crate) const fn settings_patch(changes: SettingsChanges) -> FeederSettingsPatch {
+    FeederSettingsPatch {
         lights: changes.lights,
         sound: changes.sound,
         volume: changes.volume,
@@ -405,7 +405,7 @@ pub(crate) fn plans_view(plans: &Plans) -> PlansView {
     }
 }
 
-pub(crate) fn settings_view(settings: &Settings) -> SettingsView {
+pub(crate) fn settings_view(settings: &FeederSettings) -> SettingsView {
     SettingsView {
         generation: settings.generation.0,
         lights: settings.lights,
@@ -590,7 +590,7 @@ pub(crate) fn reply_of(answer: Answer) -> FeederReply {
         Answer::Done { generation } => FeederReply::Done {
             generation: generation.map(|generation| generation.0),
         },
-        Answer::Settings(settings) => FeederReply::Settings {
+        Answer::Settings(Settings::Feeder(settings)) => FeederReply::Settings {
             settings: settings_view(&settings),
         },
         Answer::Time(time) => FeederReply::Time {

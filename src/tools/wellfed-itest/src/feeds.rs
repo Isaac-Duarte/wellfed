@@ -20,7 +20,7 @@ use wellfed_core::feed::owner::OwnerState;
 use wellfed_core::feed::storage::OwnerOutcome;
 use wellfed_core::record::{Confirm, Event, Owner};
 use wellfed_formats::require;
-use wellfed_model::{Refusal, Settings, SettingsPatch};
+use wellfed_model::{FeederSettings, FeederSettingsPatch, Refusal};
 use wellfed_rig::device::{Answer, Ask};
 
 use super::log::events;
@@ -63,7 +63,7 @@ pub enum FeedsError {
         "The settings read {} after the change the feed refused",
         compact(after)
     )]
-    SettingsAfter { after: Settings },
+    SettingsAfter { after: FeederSettings },
     #[error("The lock reads {now:?} after a change to {wanted} during the feed")]
     LockAfter { now: Option<bool>, wanted: bool },
     #[error("The interlock deferred no write during the feed (writes_deferred={after})")]
@@ -160,7 +160,7 @@ pub(super) fn feed_writes(ctx: &mut Ctx) -> Result<()> {
 
 fn held_across_feeds(
     ctx: &mut Ctx,
-    before: &Settings,
+    before: &FeederSettings,
     locked: Option<bool>,
     issued: &mut Option<Issued>,
 ) -> Result<()> {
@@ -202,13 +202,13 @@ pub(super) fn settle(ctx: &mut Ctx, running: Issued) -> Result<usize> {
 /// held one; the change the feed refused.
 fn writes_during_feed(
     ctx: &mut Ctx,
-    before: &Settings,
+    before: &FeederSettings,
     locked: Option<bool>,
     issued: &mut Option<Issued>,
-) -> Result<SettingsPatch> {
-    let change = SettingsPatch {
+) -> Result<FeederSettingsPatch> {
+    let change = FeederSettingsPatch {
         lights: Some(!before.lights),
-        ..SettingsPatch::default()
+        ..FeederSettingsPatch::default()
     };
     let (feed, start) = start_feed(ctx, issued, PORTIONS)?;
     ctx.expect("the motor driving", start, PREPARE_WAIT, |e| {
@@ -508,7 +508,7 @@ fn no_reset(ctx: &mut Ctx, since: usize, boots: u32) -> Result<()> {
 }
 
 /// Put back the settings and the lock as `before` and `locked` had them.
-fn restore(ctx: &mut Ctx, before: &Settings, locked: Option<bool>) -> Result<()> {
+fn restore(ctx: &mut Ctx, before: &FeederSettings, locked: Option<bool>) -> Result<()> {
     if changes_to(&read_settings(ctx)?) != changes_to(before) {
         set_settings(ctx, changes_to(before))?;
     }

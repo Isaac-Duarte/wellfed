@@ -7,7 +7,7 @@
 
 use tracing::{debug, warn};
 use wellfed_connect::Connection;
-use wellfed_model::{Answer, EventBody, Op, Plans, Source};
+use wellfed_model::{Answer, EventBody, FeederEvent, Op, Plans, Source};
 
 use crate::lanes::Lanes;
 use crate::session::End;
@@ -21,14 +21,14 @@ use crate::task::Task;
 /// for no read. With no copy, every such event does.
 fn changes_plans(read: Option<&Plans>, body: &EventBody) -> bool {
     let slot = match *body {
-        EventBody::Plans { generation, .. } => {
+        EventBody::Feeder(FeederEvent::Plans { generation, .. }) => {
             return read.is_none_or(|plans| plans.generation < generation);
         }
-        EventBody::Fed {
+        EventBody::Feeder(FeederEvent::Fed {
             by: Source::Schedule { plan },
             ..
-        }
-        | EventBody::Missed { plan, .. } => plan,
+        })
+        | EventBody::Feeder(FeederEvent::Missed { plan, .. }) => plan,
         _ => return false,
     };
     let Some(plans) = read else {
@@ -123,14 +123,14 @@ mod tests {
     }
 
     fn replaced(generation: u32) -> EventBody {
-        EventBody::Plans {
+        EventBody::Feeder(FeederEvent::Plans {
             generation: Generation(generation),
             by: Source::Feeder,
-        }
+        })
     }
 
     fn fed(plan: u8) -> EventBody {
-        EventBody::Fed {
+        EventBody::Feeder(FeederEvent::Fed {
             feed: 1,
             requested: 1,
             completed: 1,
@@ -138,17 +138,17 @@ mod tests {
             reason: FeedReason::Done,
             hopper: FoodLevel::Present,
             by: Source::Schedule { plan },
-        }
+        })
     }
 
     #[test]
     fn only_a_change_the_copy_does_not_hold_asks_for_a_read() {
         let read = plans(5);
-        let missed = EventBody::Missed {
+        let missed = EventBody::Feeder(FeederEvent::Missed {
             plan: 1,
             due: Timestamp::UNIX_EPOCH,
             reason: MissedReason::Late,
-        };
+        });
         let cases = [
             (
                 "a replayed older generation",
@@ -165,7 +165,12 @@ mod tests {
             ("a once plan already disabled", Some(&read), fed(2), false),
             ("a daily plan's meal", Some(&read), fed(0), false),
             ("an empty slot", Some(&read), fed(7), false),
-            ("anything else", None, EventBody::Lost { count: 1 }, false),
+            (
+                "anything else",
+                None,
+                EventBody::Core(wellfed_model::CoreEvent::Lost { count: 1 }),
+                false,
+            ),
         ];
         for (case, copy, body, read_again) in cases {
             assert_eq!(changes_plans(copy, &body), read_again, "{case}");

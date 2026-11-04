@@ -4,7 +4,7 @@
 use uuid::Uuid;
 use wellfed_api::{
     AdoptFeeder, ClientRole, CommandKind, CommandOutcome, CommandQuery, CommandState, Connection,
-    Desiccant, ErrorCode, PREFIX, SettingsPatch,
+    Desiccant, ErrorCode, FeederSettingsPatch, PREFIX,
 };
 use wellfed_server_client::{Lock, Method, StatusCode};
 use wellfed_server_testkit::{TestServer, ada_setup, feeder, local, refused, refused_for, until};
@@ -162,7 +162,9 @@ fn the_desiccant_reminder_resets_through_the_journal() {
         assert_eq!(entry.outcome, Some(CommandOutcome::Done));
         let detail = http.feeder(kitchen).await.unwrap();
         assert_eq!(
-            detail.status.map(|snapshot| snapshot.status.desiccant),
+            detail
+                .status
+                .map(|snapshot| snapshot.status.feeder().unwrap().desiccant),
             Some(Desiccant::Remaining {
                 days: 14,
                 due: false
@@ -170,26 +172,26 @@ fn the_desiccant_reminder_resets_through_the_journal() {
         );
 
         let settings = http.settings(kitchen).await.unwrap();
-        assert!(settings.desiccant_replaced.is_some());
-        let too_long = SettingsPatch {
+        assert!(settings.feeder().unwrap().desiccant_replaced.is_some());
+        let too_long = FeederSettingsPatch {
             desiccant_days: Some(91),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         refused(
-            http.put_settings(kitchen, settings.generation, &too_long, key(2))
+            http.put_settings(kitchen, settings.generation(), &too_long, key(2))
                 .await,
             StatusCode::BAD_REQUEST,
             ErrorCode::Invalid,
         );
-        let monthly = SettingsPatch {
+        let monthly = FeederSettingsPatch {
             desiccant_days: Some(30),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         let changed = http
-            .put_settings(kitchen, settings.generation, &monthly, key(3))
+            .put_settings(kitchen, settings.generation(), &monthly, key(3))
             .await
             .unwrap();
-        assert_eq!(changed.desiccant_days, 30);
+        assert_eq!(changed.feeder().unwrap().desiccant_days, 30);
         server.stop().await;
         sim.stop().await;
     });

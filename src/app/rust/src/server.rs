@@ -5,9 +5,9 @@
 
 use jiff::Timestamp;
 use wellfed_api::{
-    Command, CommandOutcome, EventPage, FeedAnomaly, Feeder, FeederDetail, FeederEvent, FeederFood,
-    FeederRefusal, Food, FoodLeft, FoodPeriod, Install, IntakeDay, IntakeFeeder, Pet, PetIntake,
-    Refill, Role, SinceRefill, StatusSnapshot, StreamEvent, User,
+    Command, CommandOutcome, EventPage, FeedAnomaly, Feeder, FeederDetail, FeederFood,
+    FeederRefusal, Food, FoodLeft, FoodPeriod, HistoryEvent, Install, IntakeDay, IntakeFeeder, Pet,
+    PetIntake, Refill, Role, SinceRefill, StatusSnapshot, StreamEvent, User,
 };
 use wellfed_model::{Event, Gap};
 use wellfed_server_client::Error;
@@ -193,7 +193,7 @@ fn snapshot(snapshot: StatusSnapshot) -> Option<ServerSnapshot> {
     })
 }
 
-fn entry(event: &FeederEvent) -> ServerEntry {
+fn entry(event: &HistoryEvent) -> ServerEntry {
     let received_ms = ms(event.received);
     let epoch = event.epoch;
     let event = Event {
@@ -532,12 +532,12 @@ mod tests {
     #[test]
     fn a_page_puts_each_gap_where_its_events_would_be() {
         let received = Timestamp::UNIX_EPOCH;
-        let event = |seq| FeederEvent {
+        let event = |seq| HistoryEvent {
             epoch: 1,
             seq,
             at: None,
             received,
-            body: wellfed_model::EventBody::Lost { count: 1 },
+            body: wellfed_model::EventBody::Core(wellfed_model::CoreEvent::Lost { count: 1 }),
         };
         let page = EventPage {
             epoch: Some(1),

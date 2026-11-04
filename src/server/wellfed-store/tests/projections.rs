@@ -15,7 +15,8 @@ use proptest::sample::select;
 use tempfile::TempDir;
 use uuid::Uuid;
 use wellfed_api::{
-    Blocked, ClientRole, EventBody, FeedOutcome, FeedReason, FeederId, FoodLevel, Hex, Source,
+    Blocked, ClientRole, CoreEvent, EventBody, FeedOutcome, FeedReason, FeederEvent, FeederId,
+    FoodLevel, Hex, Source,
 };
 use wellfed_store::{
     Boot, ClockSync, Feed, LockChange, NewEvent, NewFeeder, PROJECTION_VERSION, Projected, Refresh,
@@ -141,7 +142,7 @@ fn expected(events: &[Pushed], feeder: usize) -> Snapshot {
     // In key order, so a later number replaces an earlier one.
     for event in held.values() {
         match event.body {
-            EventBody::Fed {
+            EventBody::Feeder(FeederEvent::Fed {
                 feed,
                 requested,
                 completed,
@@ -149,7 +150,7 @@ fn expected(events: &[Pushed], feeder: usize) -> Snapshot {
                 reason,
                 hopper: _,
                 by,
-            } => {
+            }) => {
                 let value = Feed {
                     feed,
                     by,
@@ -160,16 +161,18 @@ fn expected(events: &[Pushed], feeder: usize) -> Snapshot {
                 };
                 latest.insert((event.epoch, feed), (event, value));
             }
-            EventBody::Lock { locked, by } => {
+            EventBody::Feeder(FeederEvent::Lock { locked, by }) => {
                 snapshot.locks.push(with(event, LockChange { locked, by }));
             }
-            EventBody::Boot { bank, reset_flags } => {
+            EventBody::Core(CoreEvent::Boot { bank, reset_flags }) => {
                 snapshot.boots.push(with(event, Boot { bank, reset_flags }));
             }
-            EventBody::ClockSync { by, jump_ms } => {
+            EventBody::Core(CoreEvent::ClockSync { by, jump_ms }) => {
                 snapshot.clocks.push(with(event, ClockSync { by, jump_ms }));
             }
-            EventBody::FeedingBlocked { reason } => snapshot.blocked.push(with(event, reason)),
+            EventBody::Feeder(FeederEvent::FeedingBlocked { reason }) => {
+                snapshot.blocked.push(with(event, reason))
+            }
             _ => {}
         }
     }
@@ -249,7 +252,7 @@ fn body() -> impl Strategy<Value = EventBody> {
             source(),
         )
             .prop_map(|(feed, requested, completed, outcome, reason, by)| {
-                EventBody::Fed {
+                EventBody::Feeder(FeederEvent::Fed {
                     feed,
                     requested,
                     completed,
@@ -257,16 +260,17 @@ fn body() -> impl Strategy<Value = EventBody> {
                     reason,
                     hopper: FoodLevel::Present,
                     by,
-                }
+                })
             }),
-        (any::<bool>(), source()).prop_map(|(locked, by)| EventBody::Lock { locked, by }),
+        (any::<bool>(), source())
+            .prop_map(|(locked, by)| EventBody::Feeder(FeederEvent::Lock { locked, by })),
         (0u8..2, any::<u32>())
-            .prop_map(|(bank, reset_flags)| EventBody::Boot { bank, reset_flags }),
+            .prop_map(|(bank, reset_flags)| EventBody::Core(CoreEvent::Boot { bank, reset_flags })),
         (source(), proptest::option::of(any::<i32>()))
-            .prop_map(|(by, jump_ms)| EventBody::ClockSync { by, jump_ms }),
+            .prop_map(|(by, jump_ms)| EventBody::Core(CoreEvent::ClockSync { by, jump_ms })),
         proptest::option::of(select(Blocked::ALL.to_vec()))
-            .prop_map(|reason| EventBody::FeedingBlocked { reason }),
-        (0u16..10).prop_map(|count| EventBody::Lost { count }),
+            .prop_map(|reason| EventBody::Feeder(FeederEvent::FeedingBlocked { reason })),
+        (0u16..10).prop_map(|count| EventBody::Core(CoreEvent::Lost { count })),
     ]
 }
 
@@ -347,7 +351,7 @@ async fn a_rebuild_reads_across_its_batches() {
     for n in 0..1_300u64 {
         let feed = u32::try_from(n % 97).unwrap();
         let body = match n % 4 {
-            0 => EventBody::Fed {
+            0 => EventBody::Feeder(FeederEvent::Fed {
                 feed,
                 requested: 1,
                 completed: u8::try_from(n % 2).unwrap(),
@@ -355,16 +359,16 @@ async fn a_rebuild_reads_across_its_batches() {
                 reason: FeedReason::Done,
                 hopper: FoodLevel::Present,
                 by: Source::Feeder,
-            },
-            1 => EventBody::Lock {
+            }),
+            1 => EventBody::Feeder(FeederEvent::Lock {
                 locked: n % 3 == 0,
                 by: Source::Panel,
-            },
-            2 => EventBody::Boot {
+            }),
+            2 => EventBody::Core(CoreEvent::Boot {
                 bank: 0,
                 reset_flags: u32::try_from(n).unwrap(),
-            },
-            _ => EventBody::FeedingBlocked { reason: None },
+            }),
+            _ => EventBody::Feeder(FeederEvent::FeedingBlocked { reason: None }),
         };
         events.push(Pushed {
             feeder: usize::try_from(n % 2).unwrap(),
@@ -412,7 +416,7 @@ async fn a_feed_is_its_latest_event_and_reads_take_a_window() {
         seq,
         at_s: Some(1_700_000_000),
         received_ms,
-        body: EventBody::Fed {
+        body: EventBody::Feeder(FeederEvent::Fed {
             feed: 9,
             requested: 2,
             completed,
@@ -422,7 +426,7 @@ async fn a_feed_is_its_latest_event_and_reads_take_a_window() {
             by: Source::Client {
                 client: Hex([1, 2, 3, 4]),
             },
-        },
+        }),
     };
 
     assert!(ingest(&store, &feeders, &fed(5, 2, FeedOutcome::Done, 2_000)).await);
@@ -482,7 +486,7 @@ async fn a_new_projection_version_rebuilds_from_the_raw_events() {
         seq: 1,
         at_s: None,
         received_ms: 1_000,
-        body: EventBody::Fed {
+        body: EventBody::Feeder(FeederEvent::Fed {
             feed: 1,
             requested: 1,
             completed: 1,
@@ -490,7 +494,7 @@ async fn a_new_projection_version_rebuilds_from_the_raw_events() {
             reason: FeedReason::Done,
             hopper: FoodLevel::Present,
             by: Source::Panel,
-        },
+        }),
     };
     ingest(&store, &feeders, &fed).await;
     let all = |store: Store| async move {
@@ -540,10 +544,10 @@ async fn a_body_that_does_not_decode_is_counted_and_skipped() {
         seq,
         at_s: None,
         received_ms: 1_000,
-        body: EventBody::Lock {
+        body: EventBody::Feeder(FeederEvent::Lock {
             locked,
             by: Source::Feeder,
-        },
+        }),
     };
     ingest(&store, &feeders, &lock(1, true)).await;
     ingest(&store, &feeders, &lock(2, false)).await;

@@ -14,7 +14,7 @@ use clap::{Args, ValueEnum};
 use uuid::Uuid;
 use wellfed_server_client::api::{
     Command, CommandOutcome, CommandQuery, CommandState, EventQuery, FeedOutcome, Feeder, FeederId,
-    MealReminder, SettingsPatch, StreamEvent, StreamQuery, Window,
+    FeederSettingsPatch, MealReminder, StreamEvent, StreamQuery, Window,
 };
 use wellfed_server_client::{Client, Lock, Updates};
 
@@ -199,7 +199,7 @@ pub(super) async fn status(client: &Client, which: &Which, out: Output) -> Resul
 pub(super) async fn settings(client: &Client, args: SettingsArgs, out: Output) -> Result<Settled> {
     let id = args.which.id(client).await?;
     let current = client.settings(id).await?;
-    let patch = SettingsPatch {
+    let patch = FeederSettingsPatch {
         lights: args.lights.map(Toggle::on),
         sound: args.sound.map(Toggle::on),
         volume: args.volume,
@@ -208,13 +208,13 @@ pub(super) async fn settings(client: &Client, args: SettingsArgs, out: Output) -
         desiccant_days: args.desiccant_days,
         meal_reminder: args.meal_reminder,
     };
-    if patch == SettingsPatch::default() {
+    if patch == FeederSettingsPatch::default() {
         out.show(&current, text::settings)?;
         return Ok(Settled::Known);
     }
 
     let key = Uuid::new_v4();
-    let sent = client.put_settings(id, current.generation, &patch, key);
+    let sent = client.put_settings(id, current.generation(), &patch, key);
     let Written::Answered(settings) = write(out, key, sent).await? else {
         return Ok(Settled::Unknown);
     };

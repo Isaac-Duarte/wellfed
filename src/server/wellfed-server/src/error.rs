@@ -67,7 +67,9 @@ impl IntoResponse for ApiError {
         };
         let (code, detail, refusal) = match self {
             Self::Code(code, detail) => (code, detail, None),
-            Self::Service(Error::Stale(settings)) => return stale(&settings, settings.generation),
+            Self::Service(Error::Stale(settings)) => {
+                return stale(&settings, settings.generation());
+            }
             Self::Service(Error::StalePlans(plans)) => return stale(&plans, plans.generation),
             Self::Service(Error::StaleCalibration(calibration)) => {
                 return stale(&calibration, calibration.generation);

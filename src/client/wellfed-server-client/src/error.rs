@@ -25,7 +25,7 @@ pub enum Error {
     },
     /// An edit named a generation the settings have moved past; these are
     /// the current settings.
-    #[error("the settings moved on to generation {}", .0.generation)]
+    #[error("the settings moved on to generation {}", .0.generation())]
     Stale(Box<Settings>),
     /// A plans change named a generation the plans have moved past; these
     /// are the current plans.

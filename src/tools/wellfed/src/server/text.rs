@@ -8,7 +8,7 @@ use jiff::tz::TimeZone;
 use wellfed_client::history::Delivered;
 use wellfed_model::Event;
 use wellfed_server_client::api::{
-    Command, CommandOutcome, Feeder, FeederDetail, FeederEvent, Gap, Install, InstallTarget,
+    Command, CommandOutcome, Feeder, FeederDetail, Gap, HistoryEvent, Install, InstallTarget,
     Release, StockBackup, StockState, Token, User,
 };
 
@@ -61,17 +61,20 @@ pub(super) fn status(detail: &FeederDetail) -> String {
 /// The reminder alone, from a feeder's status.
 pub(super) fn desiccant(detail: &FeederDetail) -> String {
     match &detail.status {
-        Some(snapshot) if snapshot.live => format!("Desiccant: {}", snapshot.status.desiccant),
-        Some(snapshot) => format!(
-            "Desiccant: {} (last read {})",
-            snapshot.status.desiccant, snapshot.at
-        ),
+        Some(snapshot) => match (snapshot.status.feeder(), snapshot.live) {
+            (None, _) => "Not a feeder: it has no desiccant.".to_owned(),
+            (Some(feeder), true) => format!("Desiccant: {}", feeder.desiccant),
+            (Some(feeder), false) => format!(
+                "Desiccant: {} (last read {})",
+                feeder.desiccant, snapshot.at
+            ),
+        },
         None => "No status read yet.".to_owned(),
     }
 }
 
 /// An event as the server mirrored it, in this computer's time zone.
-pub(super) fn event(event: &FeederEvent) -> String {
+pub(super) fn event(event: &HistoryEvent) -> String {
     let zone = TimeZone::system();
     let model = Event {
         epoch: event.epoch,

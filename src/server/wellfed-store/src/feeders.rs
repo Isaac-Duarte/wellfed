@@ -3,7 +3,7 @@
 
 use jiff::Timestamp;
 use uuid::Uuid;
-use wellfed_api::{ClientRole, FeederId, FeederStatus, Plans, Settings};
+use wellfed_api::{ClientRole, FeederId, Plans, Settings, Status};
 
 use crate::convert::{cached, from_i64, millis, timestamp};
 use crate::{Error, Result, Store};
@@ -55,7 +55,7 @@ pub struct Synced {
 /// The last status, settings and plans read, and when.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FeederState {
-    pub status: Option<(FeederStatus, Timestamp)>,
+    pub status: Option<(Status, Timestamp)>,
     pub settings: Option<(Settings, Timestamp)>,
     pub plans: Option<(Plans, Timestamp)>,
 }
@@ -198,12 +198,7 @@ impl Store {
         Ok(())
     }
 
-    pub async fn record_status(
-        &self,
-        id: FeederId,
-        status: &FeederStatus,
-        at: Timestamp,
-    ) -> Result<()> {
+    pub async fn record_status(&self, id: FeederId, status: &Status, at: Timestamp) -> Result<()> {
         let json = serde_json::to_string(status).map_err(|e| Error::Json("status", e))?;
         let at = millis(at);
         sqlx::query!(

@@ -34,8 +34,9 @@ use utoipa::ToSchema;
 
 pub use call::{CALL_BYTES_MAX, CALL_CHUNK_MAX, CALL_PLAYS_MAX, CALL_RATE_HZ, CallClip, CallView};
 pub use event::{
-    ClientRole, EnrollPath, Event, EventBody, EventKind, FeedOutcome, FeedReason, FoodLevel, Gap,
-    LogLines, MetricKind, MissedReason, Pushed, Sample, SampleValue, Source,
+    ClientRole, CoreEvent, EnrollPath, Event, EventBody, EventKind, FeedOutcome, FeedReason,
+    FeederEvent, FoodLevel, Gap, LogLines, MetricKind, MissedReason, Pushed, Sample, SampleValue,
+    Source,
 };
 pub use plan::{
     NextMeal, PLANS, PORTIONS_MAX, Plan, Plans, TimeOfDay, Weekday, Weekdays, WeekdaysError,
@@ -50,8 +51,9 @@ pub use stats::{
     Resets, Stats, StatsSection, TaskStack,
 };
 pub use status::{
-    Battery, Blocked, Desiccant, FeedFault, MealReminder, MealReminderError, Power, Readiness,
-    Settings, SettingsPatch, Status, Supply, WifiSource, Window, WindowError,
+    Battery, Blocked, Desiccant, DeviceStatus, FeedFault, FeederSettings, FeederSettingsPatch,
+    FeederStatus, MealReminder, MealReminderError, Power, Readiness, Settings, Status, Supply,
+    WifiSource, Window, WindowError,
 };
 pub use trace::{CurrentUnit, Malformed, Trace, TraceEntry, TraceMotor, TracePage, TraceSummary};
 pub use update::{Bank1Page, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView};
