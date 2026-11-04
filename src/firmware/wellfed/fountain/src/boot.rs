@@ -59,15 +59,6 @@ impl fmt::Display for Pump {
     }
 }
 
-/// The bank the image runs from, as the boot's flash mapping says.
-fn bank(snapshot: startup::Snapshot) -> &'static str {
-    match snapshot.bank() {
-        Some(0) => "0",
-        Some(1) => "1",
-        _ => "unknown",
-    }
-}
-
 /// `PLBOOT1 start …`: the model, the bank and the pump.
 pub fn start_line(
     report: &mut Report,
@@ -76,7 +67,7 @@ pub fn start_line(
 ) -> Result<&CStr, fmt::Error> {
     report.record(format_args!(
         "{TAG} start model={MODEL} bank={} {pump}\r\n",
-        bank(boot)
+        boot.bank_name()
     ))
 }
 

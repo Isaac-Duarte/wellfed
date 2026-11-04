@@ -36,6 +36,15 @@ impl Snapshot {
         }
         .bank()
     }
+
+    /// The bank as a record names it: `0`, `1` or `unknown`.
+    pub fn bank_name(self) -> &'static str {
+        match self.bank() {
+            Some(0) => "0",
+            Some(1) => "1",
+            _ => "unknown",
+        }
+    }
 }
 
 /// Enough for the fixed schema with a full SHA-256 build ID and raw registers.
@@ -59,11 +68,7 @@ impl Report {
     }
 
     pub fn start(&mut self, snapshot: Snapshot) -> Result<&CStr, fmt::Error> {
-        let bank = match snapshot.bank() {
-            Some(0) => "0",
-            Some(1) => "1",
-            _ => "unknown",
-        };
+        let bank = snapshot.bank_name();
         self.record(format_args!(
             concat!(
                 "PLFW1 start build=",
