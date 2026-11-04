@@ -4,6 +4,7 @@
 //! A refusal is final: nothing here signs a fallback or retries.
 
 use std::path::PathBuf;
+use wellfed_proto::device::Model;
 
 use wellfed_core::ota::offer::OfferError;
 
@@ -76,6 +77,13 @@ pub enum FrozenError {
     /// A motion policy the caller did not name as the one it attends.
     #[error("Image drives the motor ({policy}); sign it only attending that policy")]
     Unattended { policy: String },
+    /// The build names a device no model has.
+    #[error("The review's build is for device {device}, which no model is")]
+    UnknownDevice { device: String },
+    /// A model whose reviews and pins this signer does not hold: its frozen
+    /// review kinds are the PLAF103's.
+    #[error("The review's build is for the {}; only plaf103 reviews are signed", model.name())]
+    OtherModel { model: Model },
 }
 
 /// Bank contents the firmware's own manifest checks would refuse.

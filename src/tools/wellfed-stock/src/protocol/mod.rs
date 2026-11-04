@@ -42,13 +42,6 @@ impl MessageSet {
             Model::Plwf106 => None,
         }
     }
-
-    /// Its product id, which names its topic tree.
-    pub const fn pid(self) -> &'static str {
-        match self {
-            Self::Plaf103 => plaf103::PID,
-        }
-    }
 }
 
 /// The topic under `device`'s namespace in model `pid`'s tree (`PLAF103`):
