@@ -163,7 +163,7 @@ fn build(
     require(
         startup.map(|s| &s.mains) == Some(mains)
             && names == ["hp", "lp"]
-            && audit.is_some_and(|audit| details.pinmap == *audit && audit.matches_stock),
+            && audit.is_some_and(|audit| details.pinmap == *audit && audit.accepted_for(model)),
         || ReviewError::MissingAudits,
     )?;
 

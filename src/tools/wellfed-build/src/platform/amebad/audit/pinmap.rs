@@ -251,6 +251,11 @@ mod tests {
         assert_eq!(report.rows, 65);
         assert_eq!(report.bytes, 1300);
         assert!(report.matches_stock);
+        // The shared pin a review checks names this table.
+        assert_eq!(
+            report.sha256,
+            wellfed_formats::audit::pinmap_sha256(wellfed_proto::device::Model::Plaf103)
+        );
         let (_, rows) = stock_table(&stock).unwrap();
         assert_eq!(rows[13], [13, 0, 255, 255, 1]);
         assert_eq!(rows[33], [33, 0, 255, 255, 0]);

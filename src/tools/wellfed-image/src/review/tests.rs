@@ -191,6 +191,57 @@ fn a_review_installs_only_on_its_own_models_layout() {
     ));
 }
 
+/// A pad table other than stock's is accepted for one model and one table:
+/// the fountain's, with only PA30 pulled down. Any other table that is not
+/// stock's is refused for the fountain, and the feeder still needs stock's.
+#[test]
+fn only_the_fountains_pinned_pad_table_may_differ_from_stock() {
+    use crate::bank::PLWF106_BANK1;
+    use wellfed_formats::audit::pinmap_sha256;
+
+    let (checkout, root) = private_root();
+    let image = image(30000, 3);
+    let directory = checkout.path().join("private/review");
+
+    let freeze = |model: Model, matches_stock: bool, table: &str| {
+        let pinmap = json!({"matches_stock": matches_stock, "runtime_address": "0x3",
+                            "sha256": table});
+        let fields = json!({"device": model.name(), "km0_pinmap_audit": pinmap});
+        let (mut review, manifest) =
+            crate::fixtures::freeze_build(checkout.path(), &directory, &image, &fields).unwrap();
+        review["kind"] = json!(format!("{}_development_image_review", model.name()));
+        review["review"]["pinmap"] = pinmap;
+        review["manifest_sha256"] = json!(sha256(manifest.to_string().as_bytes()));
+        write(
+            &directory.join("review.json"),
+            review.to_string().as_bytes(),
+        );
+
+        let layout = match model {
+            Model::Plaf103 => BANK1,
+            Model::Plwf106 => PLWF106_BANK1,
+        };
+        match frozen(&root, &directory, &layout) {
+            Ok(_) => true,
+            Err(crate::Error::Review(ReviewError::MissingAudits)) => false,
+            Err(other) => panic!("{other:?}"),
+        }
+    };
+
+    let fountain = pinmap_sha256(Model::Plwf106);
+    let feeder = pinmap_sha256(Model::Plaf103);
+    assert_ne!(fountain, feeder);
+
+    assert!(freeze(Model::Plwf106, false, fountain));
+    assert!(freeze(Model::Plwf106, true, feeder));
+    assert!(!freeze(Model::Plwf106, false, feeder));
+    assert!(!freeze(Model::Plwf106, false, &"0".repeat(64)));
+
+    assert!(freeze(Model::Plaf103, true, feeder));
+    assert!(!freeze(Model::Plaf103, false, fountain));
+    assert!(!freeze(Model::Plaf103, false, feeder));
+}
+
 #[test]
 fn a_review_outlives_an_sdk_lock_bump_after_it() {
     let (checkout, root) = private_root();

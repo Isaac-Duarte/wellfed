@@ -74,8 +74,9 @@ mod tests {
         let devices = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../src/firmware/devices");
         let mut loaded = 0;
         for entry in std::fs::read_dir(devices).unwrap() {
-            // A model with a layout but no board yet (the PLWF106) has no
-            // device.json; the builder lists only directories that do.
+            // A model's directory may hold only its layout before it has a
+            // board to build; the builder lists only directories with a
+            // device.json, and so does this.
             let path = entry.unwrap().path().join("device.json");
             if !path.is_file() {
                 continue;
