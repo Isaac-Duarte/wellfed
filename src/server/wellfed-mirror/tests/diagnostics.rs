@@ -12,7 +12,7 @@ use jiff::Timestamp;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::RecvError;
 use wellfed_api::{ClientRole, Connection as Link, FeederRefusal, StatsSection};
-use wellfed_mirror::{Diagnostics, Feeder, LogError, Mirror};
+use wellfed_mirror::{Diagnostics, Feeder, LogError, Mirror, MirrorEvent};
 use wellfed_model::{Answer, LogLines, Op, Refusal, Trace, TraceEntry, TraceMotor};
 use wellfed_server_testkit::feeder::{self, Flash, Relay};
 use wellfed_server_testkit::{TempStore, WAIT, local, until};
@@ -297,6 +297,24 @@ async fn ends(mut log: Receiver<LogLines>, what: &str) {
     assert!(ended.await.is_ok(), "{what}: the follower's log ends");
 }
 
+/// The mirror's own session drops and comes back. Its link reads online
+/// both before the drop is noticed and after the reconnect, so only the
+/// changes tell the two apart.
+async fn reconnected(updates: &mut Receiver<MirrorEvent>) {
+    let mut dropped = false;
+    let back = tokio::time::timeout(WAIT, async {
+        loop {
+            match updates.recv().await {
+                Ok(MirrorEvent::Link(Link::Offline)) => dropped = true,
+                Ok(MirrorEvent::Link(Link::Online)) if dropped => return,
+                Ok(_) | Err(RecvError::Lagged(_)) => {}
+                Err(RecvError::Closed) => panic!("the feeder's task ended"),
+            }
+        }
+    });
+    assert!(back.await.is_ok(), "the mirror reconnects in time");
+}
+
 /// The first batch a follower gets.
 async fn first_batch(log: &mut Receiver<LogLines>) {
     tokio::time::timeout(WAIT, log.recv())
@@ -315,17 +333,16 @@ fn a_followers_log_ends_when_its_tail_does() {
         let address = relay.address.to_string();
         let (mirror, _updates) = mirrored_as(&store, &sim, &address, WAIT, ClientRole::Owner).await;
 
-        // The feeder drops the tail's session.
+        // The feeder drops the tail's session. The cut ends every connection
+        // the relay carries, the mirror's own session too.
         let mut log = mirror.follow_log(ID).await.unwrap();
         first_batch(&mut log).await;
+        let mut links = mirror.subscribe(ID).expect("the feeder's task runs");
         relay.cut();
         ends(log, "a cut session").await;
 
         // A follower after it starts another tail.
-        until("the mirror is back", || async {
-            mirror.link(ID) == Some(Link::Online)
-        })
-        .await;
+        reconnected(&mut links).await;
         let mut log = mirror.follow_log(ID).await.unwrap();
         first_batch(&mut log).await;
         let joined = mirror.follow_log(ID).await.unwrap();
