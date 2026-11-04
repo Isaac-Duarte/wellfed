@@ -130,6 +130,18 @@ class SettingsTab extends StatelessWidget {
                 ),
                 SettingsTile(
                   first: false,
+                  onTap: () => unawaited(_address(context, feeder)),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: SettingsWords('Address', feeder.state.known.manualAddress ?? 'Found on your network'),
+                      ),
+                      StrokeIcon(Glyph.chevron, size: 20, color: c.textMuted),
+                    ],
+                  ),
+                ),
+                SettingsTile(
+                  first: false,
                   onTap: () => unawaited(_forget(context, feeder)),
                   child: Align(
                     alignment: Alignment.centerLeft,
@@ -163,6 +175,34 @@ class SettingsTab extends StatelessWidget {
     final bool saved = await feeder.rename(name);
     if (!saved && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't save the name. Try again.")));
+    }
+  }
+
+  /// Ask where to dial the feeder, for one reached over a VPN's route to the
+  /// home network, where the phone can't find it by itself. Blank goes back
+  /// to finding it.
+  static Future<void> _address(BuildContext context, FeederController feeder) async {
+    final String? text = await askText(
+      context,
+      title: 'Feeder address',
+      label: 'IP address',
+      initial: feeder.state.known.manualAddress ?? '',
+      keyboard: TextInputType.url,
+      note:
+          'For reaching it through a VPN, like a Tailscale subnet route. '
+          'Leave blank to find it on your Wi-Fi.',
+    );
+    if (text == null || !context.mounted) return;
+
+    final AddressChange change = await feeder.setManualAddress(text);
+    if (!context.mounted) return;
+    final String? problem = switch (change) {
+      AddressChange.saved => null,
+      AddressChange.invalid => "That isn't an IP address, like 192.168.1.20 or 192.168.1.20:4747.",
+      AddressChange.notSaved => "Couldn't save the address. Try again.",
+    };
+    if (problem != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(problem)));
     }
   }
 

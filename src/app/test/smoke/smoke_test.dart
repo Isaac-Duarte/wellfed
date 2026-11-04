@@ -108,6 +108,9 @@ class _Ports implements FeederPorts {
   Future<String?> locate(String identity, Duration wait) async => null;
 
   @override
+  String? parseAddress(String text) => throw UnimplementedError();
+
+  @override
   Future<bool> holdProcess(String text) async => true;
 
   @override

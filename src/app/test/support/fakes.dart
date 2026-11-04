@@ -13,19 +13,18 @@ import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/recorder.dart';
 import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/platform/setup_link.dart';
-import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
-import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/api/update.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
-import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/theme/theme.dart';
 
 import 'fake_install.dart';
+
+export 'fake_book.dart';
 
 /// Pump past transitions. Not `pumpAndSettle`: a screen waiting on the feeder
 /// shows a spinner, which never settles.
@@ -44,94 +43,6 @@ mixin FakeOpaque implements RustOpaqueInterface {
 
   @override
   bool get isDisposed => false;
-}
-
-/// The feeders the app knows, in memory.
-class FakeBook extends ChangeNotifier implements FeederBook {
-  FakeBook({this.label = 'Pixel'});
-  @override
-  Appearance appearance = Appearance.system;
-
-  @override
-  Future<void> setAppearance(Appearance next) async {
-    appearance = next;
-    notifyListeners();
-  }
-
-  @override
-  String label;
-
-  @override
-  List<KnownFeeder> feeders = [];
-
-  final remembered = <(KnownFeeder, bool)>[];
-
-  /// What the next save throws, as a full or read-only disk would.
-  Object? saveFails;
-
-  @override
-  Future<void> setLabel(String label) async {
-    // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
-    if (saveFails case final error?) throw error;
-    this.label = label;
-    notifyListeners();
-  }
-
-  @override
-  Future<void> remember(KnownFeeder feeder, {bool paired = false, bool keepName = false}) async {
-    // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
-    if (saveFails case final error?) throw error;
-    remembered.add((feeder, paired));
-    final Iterable<KnownFeeder> known = feeders.where((f) => f.identity == feeder.identity);
-    feeders = [
-      for (final other in feeders)
-        if (other.identity != feeder.identity) other,
-      KnownFeeder(
-        identity: feeder.identity,
-        name: keepName && known.isNotEmpty ? known.first.name : feeder.name,
-        address: feeder.address,
-      ),
-    ];
-    notifyListeners();
-  }
-
-  @override
-  Future<void> answeredAt(String identity, String address) async {}
-
-  @override
-  Future<void> forget(String identity) async {
-    feeders = [
-      for (final feeder in feeders)
-        if (feeder.identity != identity) feeder,
-    ];
-    notifyListeners();
-  }
-
-  /// Set to make the next save fail, as a full disk would.
-  BridgeError? renameFails;
-
-  @override
-  Future<void> rename(String identity, String name) async {
-    if (renameFails case final failure?) throw failure;
-    feeders = [
-      for (final feeder in feeders)
-        if (feeder.identity == identity)
-          KnownFeeder(identity: feeder.identity, name: name, address: feeder.address)
-        else
-          feeder,
-    ];
-    notifyListeners();
-  }
-
-  final _clockDue = <String>{};
-
-  void clockOwed(String identity) => _clockDue.add(identity);
-
-  @override
-  bool clockDue(String identity) => _clockDue.contains(identity);
-
-  @override
-  void clockSynced(String identity) => _clockDue.remove(identity);
 }
 
 /// A recovery the test scripts, as its stream would.
@@ -363,11 +274,30 @@ class FakeFeederPorts implements FeederPorts {
   FeederSession open(String identity, String address, {required bool syncClock}) {
     final session = FakeSession();
     sessions.add(session);
+    dialed.add(address);
     return session;
   }
 
+  /// Where each session dialed, in order.
+  final dialed = <String>[];
+
   @override
-  Future<String?> locate(String identity, Duration wait) async => 'lan:4747';
+  Future<String?> locate(String identity, Duration wait) async {
+    looks++;
+    return 'lan:4747';
+  }
+
+  /// How many times NSD looked.
+  int looks = 0;
+
+  /// The bridge's rule, for the shapes the tests type: an IPv4 address, with
+  /// the device API's port when it names none.
+  @override
+  String? parseAddress(String text) {
+    final RegExpMatch? parts = RegExp(r'^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$').firstMatch(text.trim());
+    if (parts == null) return null;
+    return '${parts[1]}:${parts[2] ?? 4747}';
+  }
 
   /// For a test that leaves a screen and comes back to the same feeder.
   late FeederController controller;

@@ -15,6 +15,11 @@ import 'server_views.dart';
 /// This app's version, as its About screen says it.
 String appVersion() => RustLib.instance.api.crateApiStoreAppVersion();
 
+/// `text` as a feeder address a session dials, `ip:port`: an IP alone takes
+/// the device API's port.
+String feederAddress({required String text}) =>
+    RustLib.instance.api.crateApiStoreFeederAddress(text: text);
+
 /// The store at `path`, or an empty one when the app has never saved.
 Future<AppStore> loadStore({required String path}) =>
     RustLib.instance.api.crateApiStoreLoadStore(path: path);
@@ -91,10 +96,26 @@ class KnownFeeder {
   /// Where it last answered (`ip:port`), tried while NSD looks.
   final String? address;
 
-  const KnownFeeder({required this.identity, required this.name, this.address});
+  /// Where the owner said to dial it (`ip:port`), in place of NSD: for a
+  /// feeder reached over a VPN's route to the home network, where NSD's
+  /// multicast never arrives. The session pins the identity key, so this
+  /// only says where to dial, and a session there never replaces
+  /// `address`, which stays where NSD last found it.
+  final String? manualAddress;
+
+  const KnownFeeder({
+    required this.identity,
+    required this.name,
+    this.address,
+    this.manualAddress,
+  });
 
   @override
-  int get hashCode => identity.hashCode ^ name.hashCode ^ address.hashCode;
+  int get hashCode =>
+      identity.hashCode ^
+      name.hashCode ^
+      address.hashCode ^
+      manualAddress.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -103,5 +124,6 @@ class KnownFeeder {
           runtimeType == other.runtimeType &&
           identity == other.identity &&
           name == other.name &&
-          address == other.address;
+          address == other.address &&
+          manualAddress == other.manualAddress;
 }

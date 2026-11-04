@@ -199,6 +199,12 @@ An owner chooses where the time comes from, with **Get the time from** on the **
 
 A feeder's name is your phone's own: tap **Name** under **On this phone** at the bottom of the feeder's **Settings** tab. It works with the feeder offline, and someone else's phone keeps whatever name they gave it.
 
+## Reaching a feeder away from home
+
+The app finds a feeder by its announcement on your Wi-Fi, and that announcement doesn't cross a VPN. To reach the feeder through one, such as a Tailscale subnet router on a computer at home, give the app its address. Tap **Address** under **On this phone** in the feeder's **Settings** tab, and type its IP address, such as `192.168.1.20`. The app adds the port, 4747, when you leave it out. From then on, this phone dials that address whether you're home or away. Leave the field blank to go back to finding the feeder on your Wi-Fi.
+
+The feeder itself runs no VPN, so the computer at home forwards to it. Its address has to stay the same, so reserve it in your router's DHCP settings. The address only says where to dial: the app still checks the feeder's key, so a wrong address fails to connect and can't pass for your feeder. Firmware updates and going back to the original firmware still need your phone on the same Wi-Fi as the feeder.
+
 ## People and invites
 
 An owner can do everything. A member can feed, edit meals and settings, and lock the buttons. In the app, the Wi-Fi, clock, meal call, people and firmware screens show only for an owner. A feeder lists up to eight phones, computers and keys in all.

@@ -6,6 +6,7 @@ import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/recorder.dart';
 import 'package:wellfed/platform/restore_ports.dart';
+import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/session.dart';
@@ -33,6 +34,10 @@ abstract interface class FeederPorts {
 
   /// Where the feeder answers, within `wait`.
   Future<String?> locate(String identity, Duration wait);
+
+  /// `text` as the `ip:port` a session dials, or `null` when it is neither
+  /// `ip` nor `ip:port`.
+  String? parseAddress(String text);
 
   /// The image this APK carries, unpacked and checked against its pin.
   Future<ImageCheck> updateImage();
@@ -112,6 +117,16 @@ class AppFeederPorts implements FeederPorts {
 
   @override
   Future<String?> locate(String identity, Duration wait) => Discovery.locate(identity, wait);
+
+  @override
+  String? parseAddress(String text) {
+    try {
+      return feederAddress(text: text);
+    } on BridgeError catch (error) {
+      if (error.kind == ErrorKind.address) return null;
+      rethrow;
+    }
+  }
 
   @override
   Future<ImageCheck> updateImage() async => _install.prepareImage(await _install.paths());
