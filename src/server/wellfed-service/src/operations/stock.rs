@@ -153,6 +153,15 @@ impl Service {
         let offer = backup
             .restore_offer(&request.manifest.0)
             .map_err(InstallError::RestoreMismatch)?;
+        // A restore signed for another model is never sent: the device
+        // would refuse it, but only once it arrives.
+        if offer.model != row.model {
+            return Err(InstallError::OtherModel {
+                release: offer.model,
+                device: row.model,
+            }
+            .into());
+        }
         if self.mirror.link(id) != Some(Link::Online) {
             return Err(CommandError::Offline.into());
         }

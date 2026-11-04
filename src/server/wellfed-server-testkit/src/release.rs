@@ -46,10 +46,29 @@ pub fn stock_restore(
     device: [u8; 32],
     floor: u32,
 ) -> StockRestore {
+    stock_restore_for(
+        wellfed_api::Model::Plaf103,
+        key,
+        version,
+        payload,
+        device,
+        floor,
+    )
+}
+
+/// As [`stock_restore`], signed for `model`.
+pub fn stock_restore_for(
+    model: wellfed_api::Model,
+    key: &SigningKey,
+    version: u32,
+    payload: &[u8],
+    device: [u8; 32],
+    floor: u32,
+) -> StockRestore {
     let sha256: [u8; 32] = Sha256::digest(payload).into();
     let signer = key_id(&key.verifying_key().to_bytes());
     let signed = Signed {
-        model: wellfed_api::Model::Plaf103.code(),
+        model: model.code(),
         manifest: Manifest {
             version,
             image_len: u32::try_from(payload.len()).expect("a bank fits a manifest"),
