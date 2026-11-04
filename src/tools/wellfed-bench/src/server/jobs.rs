@@ -281,6 +281,7 @@ pub struct ToolPaths {
 #[derive(Clone)]
 pub(crate) struct Bed {
     pub(crate) root: PathBuf,
+    pub(crate) device: wellfed_proto::device::Model,
     pub(crate) config: Config,
     pub(crate) board: SharedBoard,
     pub(crate) tools: ToolPaths,
@@ -383,6 +384,7 @@ fn open(bed: &Bed, spec: &JobSpec, run: &Run) -> Result<Bench, JobError> {
 
     Ok(Bench {
         root: bed.root.clone(),
+        device: bed.device,
         config: bed.config.clone(),
         relay,
         status: Status::disabled(),
@@ -515,6 +517,7 @@ mod tests {
             notes,
         );
         let bed = Bed {
+            device: wellfed_proto::device::Model::Plaf103,
             root,
             config: serde_json::from_str(
                 r#"{"relay_port": "r", "uart_port": "u", "baseline": "b", "rom_report": "r"}"#,

@@ -237,7 +237,7 @@ How each case plays out:
 
 ### The `gap-probe` variant
 
-`wellfed-build build --profile firstboot --firmware feeder --variant gap-probe` builds the normal `feeder` firmware with two additions (`src/firmware/wellfed/feeder/src/gaps.rs`, wired in `app.rs`):
+`wellfed-build build --device plaf103 --profile firstboot --firmware feeder --variant gap-probe` builds the normal `feeder` firmware with two additions (`src/firmware/wellfed/feeder/src/gaps.rs`, wired in `app.rs`):
 
 - **A probe task,** `wellfed-gap`, at priority 4 with a 256-word stack. It wakes every 10 ms, reads the 32 kHz system timer, and records the gap since its last wake into atomics. It never touches the owner, the board, flash or the watchdog. It is the firmware's third task of four. The stack audit bounds it at 304 B of 1 KiB, and the loop at 5,056 B of 8 KiB in this variant.
 - **The loop measures itself** the same way: each pass's start is a wake, and the delay the previous pass asked for is the expected gap.
@@ -282,7 +282,7 @@ The shim's own `PLWIF3` records (scan, connect, DHCP, loss, backoff, with their 
 
 ### Repeating the measurement
 
-No motor moves. The feeder must be powered and on the replacement firmware, with the hotspot up for the install, which goes over the device API. `wellfed-stock serve` is not needed.
+No motor moves. The feeder must be powered and on the replacement firmware, with the hotspot up for the install, which goes over the device API. `wellfed-stock serve --device plaf103` is not needed.
 
 1. Install over the air: `target/release/wellfed-bench ota NAME-install --build --firmware feeder --variant gap-probe`. It builds and freezes the review, offers it, and captures until the build confirms. Over UART instead, freeze the same build with `wellfed-build review build`, then use `wellfed-bench flash-prepare`/`flash-execute` as the [development updater](../development/uart-development.md) describes.
 2. Capture in back-to-back 180 s segments: `target/release/wellfed-bench capture NAME-01 --seconds 180`, then `-02`, and so on. Each segment holds about two rejoin cycles.

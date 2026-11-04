@@ -162,6 +162,7 @@ esac
     fn options(&self) -> Options {
         let root = self.root();
         Options {
+            device: wellfed_proto::device::Model::Plaf103,
             tools: ToolPaths {
                 flash_bin: root.join("wellfed-flash"),
 

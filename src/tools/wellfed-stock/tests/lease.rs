@@ -38,6 +38,7 @@ impl Drop for Other {
 /// `setup-send` on `config`; refused before it reads a passphrase or sends.
 fn setup_send(config: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_wellfed-stock"))
+        .args(["--device", "plaf103"])
         .args(["setup-send", "--ssid", "s", "--id", "1"])
         .args([
             "--on-feeder-network",

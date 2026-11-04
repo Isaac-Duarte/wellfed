@@ -61,6 +61,9 @@ pub enum ErrorCode {
     /// The request is one kind of device's, and this device is another
     /// kind (`Feeder.kind`): nothing was journaled or sent.
     OtherKind,
+    /// The release is built for another device model than the device's
+    /// (`Release.model`, `Feeder.model`): nothing was offered.
+    OtherModel,
     /// Only a phone's token, not a browser session, gets an invite for a
     /// phone: the key is recorded as that token's.
     TokenRequired,

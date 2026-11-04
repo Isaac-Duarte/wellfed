@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod device;
 pub mod error;
 pub mod evidence;
 pub mod link;

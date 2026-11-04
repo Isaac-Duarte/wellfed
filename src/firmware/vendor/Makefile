@@ -1,9 +1,10 @@
 .PHONY: help bootstrap list baseline bringup device firstboot test
 
-# The board under ../devices/ (empty: the only one), the firmware under
-# ../wellfed/ that the Rust profiles link, and an optional image variant
-# the firmware declares (`make list`).
-DEVICE ?=
+# The device model to build for (its board is ../devices/<model>; every
+# tool takes it, with no default), the firmware under ../wellfed/ that the
+# Rust profiles link, and an optional image variant the firmware declares
+# (`make list`).
+DEVICE ?= plaf103
 FIRMWARE ?= qa
 VARIANT ?=
 # Who the image is for: bench (the bench hotspot and update key) or consumer
@@ -12,7 +13,7 @@ VARIANT ?=
 PROVISION ?= bench
 
 BUILD = ../../../target/release/wellfed-build
-DEVICE_ARG = $(if $(DEVICE),--device $(DEVICE))
+DEVICE_ARG = --device $(DEVICE)
 VARIANT_ARG = $(if $(VARIANT),--variant $(VARIANT))
 PROVISION_ARG = --provisioning $(PROVISION)
 
@@ -24,7 +25,7 @@ help:
 	@echo "device: build/audit the application with the device's stock-derived OTA bank addresses"
 	@echo "firstboot: build/audit UART-only SDK mains and the Rust application"
 	@echo "test: run hardware-independent Rust firmware tests on the host"
-	@echo "DEVICE=<name> FIRMWARE=<name> VARIANT=<name> pick what to build (default: the only device, qa, none)."
+	@echo "DEVICE=<model> FIRMWARE=<name> VARIANT=<name> pick what to build (default: plaf103, qa, none)."
 	@echo "PROVISION=consumer builds an image with no build Wi-Fi that trusts the release key (default: bench)."
 	@echo "These targets only build desktop artifacts; there is no flash target."
 

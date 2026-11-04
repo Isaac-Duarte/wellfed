@@ -11,10 +11,15 @@ use uuid::Uuid;
 use super::{Channel, Message, Plain, Reply, command, link_id, ntp_response};
 use crate::clock::{self, StockPlans};
 use crate::config::Config;
+use wellfed_model::Model;
 
 /// The feeder's product id: its topic tree's name and an install's
 /// `targetPid`.
 pub const PID: &str = "PLAF103";
+
+/// The model this message set is stock's for: a replacement served to it
+/// must be built for this model.
+pub const MODEL: Model = Model::Plaf103;
 
 /// The server's acknowledgement of a device event.
 #[derive(Serialize)]

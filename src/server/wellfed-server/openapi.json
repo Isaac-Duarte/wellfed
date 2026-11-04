@@ -4843,6 +4843,19 @@
               "format": "int32",
               "minimum": 0
             }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "A device model, which names its kind.",
+              "enum": [
+                "plaf103",
+                "plwf106"
+              ]
+            }
           }
         ],
         "responses": {
@@ -7287,6 +7300,7 @@
           "already_adopted",
           "feeder_archived",
           "other_kind",
+          "other_model",
           "token_required",
           "direct_key_refused",
           "client_key_taken",
@@ -10651,6 +10665,7 @@
           "image_len",
           "image_sha256",
           "key_id",
+          "model",
           "signer",
           "source",
           "added"
@@ -10680,6 +10695,14 @@
           "key_id": {
             "type": "string",
             "description": "The signing key's id: the first 8 bytes of SHA-256 over it."
+          },
+          "model": {
+            "type": "string",
+            "description": "A device model, which names its kind.",
+            "enum": [
+              "plaf103",
+              "plwf106"
+            ]
           },
           "signer": {
             "$ref": "#/components/schemas/ReleaseSigner"

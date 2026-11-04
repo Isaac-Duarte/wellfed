@@ -59,7 +59,7 @@ const fn offer(error: OfferError) -> UpdateRefusal {
         }
         OfferError::Key(error) => key(error),
         OfferError::Signature => UpdateRefusal::Signature,
-        OfferError::Bank | OfferError::Size => UpdateRefusal::Target,
+        OfferError::Bank | OfferError::Size | OfferError::Model => UpdateRefusal::Target,
         OfferError::Same => UpdateRefusal::Same,
         OfferError::Downgrade => UpdateRefusal::Downgrade,
         OfferError::Statement(StatementError::Key(error)) => key(error),

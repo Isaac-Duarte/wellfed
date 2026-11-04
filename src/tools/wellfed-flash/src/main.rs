@@ -23,6 +23,7 @@ use wellfed_flash::evidence::session::{Completion, Context, EMULATOR, Outcome};
 use wellfed_flash::link::protocol::{Core, INTERRUPTED};
 use wellfed_flash::writers::{read, stock, update};
 use wellfed_formats::bench::lease::Lease;
+use wellfed_formats::cli::Device;
 
 #[derive(Parser)]
 #[command(
@@ -167,6 +168,10 @@ struct ReadArgs {
 
 #[derive(Args)]
 struct EvidenceArgs {
+    /// The model of the device written. Required: the writers hold pins
+    /// for the plaf103 alone and refuse any other before serial access.
+    #[arg(long, value_enum)]
+    device: Device,
     #[arg(long)]
     port: String,
     /// The pinned original full-flash backup.
@@ -270,6 +275,19 @@ fn device(
     }
 }
 
+/// A writer's session: refused before anything else, the port and the
+/// session's context included, for a model this client holds no pins for.
+fn writer(
+    root: &Path,
+    device: Device,
+    run: impl FnOnce(&Context) -> wellfed_flash::Result<Outcome>,
+) -> (u8, Value) {
+    match wellfed_flash::device::writable(device.into()) {
+        Ok(()) => self::device(root, run),
+        Err(error) => refused(&error.into()),
+    }
+}
+
 #[derive(Serialize)]
 struct Refusal {
     status: SummaryStatus,
@@ -341,7 +359,7 @@ fn main() -> ExitCode {
             )
         }),
 
-        Command::Update(args) => device(root, |context| {
+        Command::Update(args) => writer(root, args.evidence.device, |context| {
             update::run(
                 context,
                 &update::Args {
@@ -357,7 +375,7 @@ fn main() -> ExitCode {
             )
         }),
 
-        Command::GiveWay(args) => device(root, |context| {
+        Command::GiveWay(args) => writer(root, args.evidence.device, |context| {
             update::give_way(
                 context,
                 &update::GiveWayArgs {
@@ -368,7 +386,7 @@ fn main() -> ExitCode {
             )
         }),
 
-        Command::StockRecovery(args) => device(root, |context| {
+        Command::StockRecovery(args) => writer(root, args.evidence.device, |context| {
             stock::run(
                 context,
                 &stock::Args {

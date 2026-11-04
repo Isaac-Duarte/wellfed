@@ -392,6 +392,7 @@ fn rig() -> Rig {
     }
 
     let bench = Bench {
+        device: wellfed_proto::device::Model::Plaf103,
         root: tmp.path().to_path_buf(),
         config: Config {
             relay_port: "relay".into(),
@@ -1157,6 +1158,7 @@ fn signed_by_bench(rig: &Rig, file: &str) -> wellfed_core::ota::Manifest {
     let bytes = fs::read(rig.bench.root.join(VERIFICATION).join(file)).unwrap();
     let built_in = [key.public()];
     let context = Context {
+        model: 1,
         ring: KeyRing {
             built_in: &built_in,
             added: None,
@@ -1794,7 +1796,7 @@ fn ota_build_builds_reviews_offers_and_checks_health_in_order() {
     assert_eq!(
         calls.ran,
         [
-            "build build --profile firstboot --firmware bringup --variant stall",
+            "build build --profile firstboot --device plaf103 --firmware bringup --variant stall",
             "build review build --build private/firmware-build/plaf103/firstboot --output private/verification/unit-review",
             "install private/verification/unit-v1.manifest private/verification/unit-review/image.bin",
             "status private/wellfed-owner.json",
@@ -1857,6 +1859,8 @@ fn ota_build_reuses_a_review_of_the_same_sources() {
         [[
             "source-id",
             "--image",
+            "--device",
+            "plaf103",
             "--firmware",
             "bringup",
             "--variant",

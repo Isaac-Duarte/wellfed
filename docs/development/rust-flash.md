@@ -21,9 +21,9 @@ A passing check here does not authorize a device session. Any session needs a re
 | Command | Does |
 | --- | --- |
 | `wellfed-flash read observe\|inspect-rom\|small\|full\|status` | Restricted reads that never program or erase flash |
-| `wellfed-flash update inspect\|prepare\|execute` | A region-scoped [development update](uart-development.md) of bank 1 (default) or bank 0. Flags: `--bank`, `--interrupted`, `--restore-marker`, `--original-read` |
-| `wellfed-flash give-way inspect\|prepare\|execute` | Clears bank 1's first marker byte so the loader falls back to bank 0 |
-| `wellfed-flash stock-recovery prepare\|execute` | Exact original bank-1 stock recovery from a full read |
+| `wellfed-flash update --device plaf103 inspect\|prepare\|execute` | A region-scoped [development update](uart-development.md) of bank 1 (default) or bank 0. Flags: `--bank`, `--interrupted`, `--restore-marker`, `--original-read` |
+| `wellfed-flash give-way --device plaf103 inspect\|prepare\|execute` | Clears bank 1's first marker byte so the loader falls back to bank 0 |
+| `wellfed-flash stock-recovery --device plaf103 prepare\|execute` | Exact original bank-1 stock recovery from a full read |
 | `wellfed-flash plan-stock-recovery` | Offline: plans stock recovery sectors from a baseline and a current read |
 | `wellfed-flash decode-status` | Offline: decodes GD25Q64E status registers and assesses a write range |
 | `wellfed-flash inspect-journal` | Offline: checks a transaction journal's hash chain; never resumes it |

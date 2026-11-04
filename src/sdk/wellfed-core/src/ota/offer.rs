@@ -42,8 +42,8 @@ pub const DOWNGRADE_MAGIC: [u8; 8] = *b"PLDWN1\0\0";
 pub const SIGNATURE_LEN: usize = 64;
 pub const KEY_ID_LEN: usize = 8;
 
-/// magic, version, image length, target bank, kind and three zero bytes,
-/// key id, image SHA-256, build ID.
+/// magic, version, image length, target bank, kind, model and two zero
+/// bytes, key id, image SHA-256, build ID.
 pub const MANIFEST_BODY: usize = 8 + 4 + 4 + 4 + 4 + KEY_ID_LEN + 32 + 32;
 pub const MANIFEST_LEN: usize = MANIFEST_BODY + SIGNATURE_LEN;
 
@@ -104,6 +104,10 @@ impl ImageKind {
 pub struct Signed {
     pub manifest: Manifest,
     pub kind: ImageKind,
+    /// The device model the image is built for, as
+    /// `wellfed_proto::device::Model::code` numbers it (this crate takes no
+    /// device API type). A feeder admits only its own ([`Context::model`]).
+    pub model: u8,
     /// The key that signed it.
     pub key_id: KeyId,
 }
@@ -118,6 +122,7 @@ pub fn manifest_body(signed: &Signed) -> [u8; MANIFEST_BODY] {
     out[12..16].copy_from_slice(&m.image_len.to_le_bytes());
     out[16..20].copy_from_slice(&m.target_bank.to_le_bytes());
     out[20] = signed.kind.code();
+    out[21] = signed.model;
     out[24..32].copy_from_slice(&signed.key_id);
     out[32..64].copy_from_slice(&m.image_sha256);
     out[64..96].copy_from_slice(&m.build_id);
@@ -248,8 +253,11 @@ pub enum OfferError {
     Signature,
     Bank,
     Size,
-    /// An image kind this firmware does not know, or nonzero padding.
+    /// An image kind this firmware does not know, no model, or nonzero
+    /// padding.
     Kind,
+    /// A signed image for another device model: nothing is written.
+    Model,
     /// The running build: nothing to install.
     Same,
     /// The version is not above the floor (or the image is stock) and no
@@ -290,6 +298,8 @@ pub struct Context<'a> {
     /// since installing its own build into bank 1 is how a feeder returns
     /// to the build bank 0 holds.
     pub running: Option<[u8; 32]>,
+    /// This device's model, as [`Signed::model`] numbers it.
+    pub model: u8,
 }
 
 fn u32_at(bytes: &[u8], at: usize) -> u32 {
@@ -330,7 +340,8 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<Signed, OfferError> {
         return Err(OfferError::Magic);
     }
     let kind = ImageKind::from_byte(bytes[20]).ok_or(OfferError::Kind)?;
-    if bytes[21..24] != [0; 3] {
+    // Model codes start at 1: a zero is a manifest that names none.
+    if bytes[21] == 0 || bytes[22..24] != [0; 2] {
         return Err(OfferError::Kind);
     }
 
@@ -343,12 +354,14 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<Signed, OfferError> {
             build_id: array(&bytes[64..96]),
         },
         kind,
+        model: bytes[21],
         key_id: array(&bytes[24..32]),
     })
 }
 
-/// Accept an offer only if a trusted key signed it, it targets bank 1 and
-/// fits the reviewed bound, it is not the running build, and it is either
+/// Accept an offer only if a trusted key signed it, it is built for this
+/// device's model, it targets bank 1 and fits the reviewed bound, it is not
+/// the running build, and it is either
 /// above the floor or carries a downgrade statement for exactly this
 /// feeder, manifest and floor (always, for stock).
 pub fn admit_offer(
@@ -362,6 +375,10 @@ pub fn admit_offer(
         return Err(OfferError::Signature);
     }
 
+    // A direct compare of one byte, before any bank check or write.
+    if signed.model != context.model {
+        return Err(OfferError::Model);
+    }
     let m = &signed.manifest;
     if m.target_bank != 1 {
         return Err(OfferError::Bank);

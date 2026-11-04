@@ -12,6 +12,8 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 
 use wellfed_audit::{backup, qa, startup, transients, write_report};
+use wellfed_formats::manifest::BuildManifest;
+use wellfed_proto::device::Model;
 
 #[derive(Parser)]
 #[command(
@@ -22,6 +24,10 @@ struct Cli {
     /// Repository checkout whose ignored private/ receives the reports.
     #[arg(long, global = true, default_value = ".")]
     root: PathBuf,
+    /// The model whose evidence is audited. There is no default; every
+    /// audit pins the plaf103's evidence today.
+    #[arg(long, global = true, value_enum)]
+    device: Option<wellfed_formats::cli::Device>,
     #[command(subcommand)]
     command: Command,
 }
@@ -115,6 +121,27 @@ fn run(cli: Cli) -> anyhow::Result<u8> {
         .root
         .canonicalize()
         .with_context(|| format!("Cannot resolve {}", cli.root.display()))?;
+    let Some(device) = cli.device else {
+        anyhow::bail!("name the device with --device (plaf103)");
+    };
+    let model: Model = device.into();
+    // Every pin an audit checks against (the stock image, the bank map, the
+    // startup sequence) is the PLAF103's.
+    anyhow::ensure!(
+        model == Model::Plaf103,
+        "the audits pin the plaf103's evidence alone, not the {}'s",
+        model.name()
+    );
+    let built_for = |manifest: &Path| -> anyhow::Result<()> {
+        let manifest: BuildManifest = wellfed_formats::load(manifest)?;
+        anyhow::ensure!(
+            manifest.device == model.name(),
+            "the build is for {}, not the {}",
+            manifest.device,
+            model.name()
+        );
+        Ok(())
+    };
     match cli.command {
         Command::Startup {
             args,
@@ -125,6 +152,7 @@ fn run(cli: Cli) -> anyhow::Result<u8> {
                 "Observation minimum must be 1-180 seconds"
             );
 
+            built_for(&args.manifest)?;
             let report =
                 startup::verify(&args.capture, &args.manifest, &args.image, minimum_seconds)?;
             write_report(&root, &args.output, &report, &args.inputs())?;
@@ -133,6 +161,7 @@ fn run(cli: Cli) -> anyhow::Result<u8> {
         }
 
         Command::Qa { args } => {
+            built_for(&args.manifest)?;
             let report = qa::verify(&args.capture, &args.manifest, &args.image)?;
             write_report(&root, &args.output, &report, &args.inputs())?;
             println!("{}", serde_json::to_string(&report)?);

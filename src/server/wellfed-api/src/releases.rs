@@ -4,7 +4,7 @@
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
-use wellfed_model::Hex;
+use wellfed_model::{Hex, Model};
 
 /// A verified release in the server's cache.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -23,6 +23,10 @@ pub struct Release {
     /// The signing key's id: the first 8 bytes of SHA-256 over it.
     #[schema(value_type = String)]
     pub key_id: Hex<8>,
+    /// The device model the image is built for: the server installs it on
+    /// a device of that model only.
+    #[schema(schema_with = wellfed_model::schema::model)]
+    pub model: Model,
     pub signer: ReleaseSigner,
     pub source: ReleaseSource,
     /// When the server took it in.
@@ -64,6 +68,10 @@ pub struct ReleaseQuery {
     pub after: Option<String>,
     /// At most this many (1-1000, default 100).
     pub limit: Option<u32>,
+    /// Only the releases built for this device model (`plaf103`): what may
+    /// be installed on a device of it.
+    #[param(schema_with = wellfed_model::schema::model)]
+    pub model: Option<Model>,
 }
 
 /// What one check of the project's releases found.
@@ -99,7 +107,8 @@ pub struct RefusedAsset {
 pub enum ReleaseRefusal {
     /// Shorter than a manifest, or longer than a manifest and a full bank.
     Size,
-    /// It does not start with a version 2 manifest.
+    /// It does not start with a version 2 manifest, or one that names a
+    /// device model.
     Manifest,
     /// A stock image, or one at version 0: each installs only with a
     /// statement made for one feeder.

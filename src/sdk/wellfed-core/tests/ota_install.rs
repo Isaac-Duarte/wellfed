@@ -16,6 +16,7 @@ fn image(len: usize) -> Vec<u8> {
 fn admitted(payload: &[u8]) -> Admitted {
     Admitted {
         signed: Signed {
+            model: 1,
             manifest: Manifest {
                 version: 2,
                 image_len: u32::try_from(payload.len()).unwrap(),

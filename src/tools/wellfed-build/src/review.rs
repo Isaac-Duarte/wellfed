@@ -102,7 +102,7 @@ const ARTIFACTS: [&str; 4] = [
     "km4_image2_all.bin",
 ];
 /// The device whose stock image, baseline and factory loader a review pins.
-const DEVICE: &str = "plaf103";
+const DEVICE: &str = wellfed_proto::device::Model::Plaf103.name();
 const SCOPE: &str =
     "Package, linked code, stock pulls and modeled mapping; application behavior requires review";
 

@@ -104,6 +104,29 @@ async fn a_corrupted_upload_is_refused() {
     assert!(ids(&releases).await.is_empty());
 }
 
+/// A record that names another model than the verified manifest is not the
+/// release an install would offer: it is refused, never believed.
+#[tokio::test]
+async fn a_record_naming_another_model_is_refused_when_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let releases = open(&dir, None).await;
+    let (release, _) = releases
+        .upload(release(&project(), 7), now())
+        .await
+        .unwrap();
+
+    let path = dir.path().join(format!("releases/{}.json", release.id));
+    let record = std::fs::read_to_string(&path).unwrap();
+    assert!(record.contains("\"plaf103\""), "{record}");
+    std::fs::write(&path, record.replace("\"plaf103\"", "\"plwf106\"")).unwrap();
+
+    let error = releases.file(release.id).await.unwrap_err();
+    assert!(
+        matches!(error, wellfed_releases::Error::Changed),
+        "{error:?}"
+    );
+}
+
 #[tokio::test]
 async fn a_cached_file_changed_on_disk_is_refused_when_read() {
     let dir = tempfile::tempdir().unwrap();
@@ -149,6 +172,7 @@ async fn pages_run_newest_first() {
 
     let first = releases
         .list(&ReleaseQuery {
+            model: None,
             after: None,
             limit: Some(2),
         })
@@ -159,6 +183,7 @@ async fn pages_run_newest_first() {
 
     let second = releases
         .list(&ReleaseQuery {
+            model: None,
             after: first.next,
             limit: Some(2),
         })
@@ -170,7 +195,11 @@ async fn pages_run_newest_first() {
 
     for (after, limit) in [(Some("zz".to_owned()), None), (None, Some(0))] {
         let error = releases
-            .list(&ReleaseQuery { after, limit })
+            .list(&ReleaseQuery {
+                after,
+                limit,
+                model: None,
+            })
             .await
             .unwrap_err();
         assert!(
@@ -252,6 +281,7 @@ async fn a_cursor_naming_a_hidden_release_keeps_its_place() {
         .unwrap();
     let first = releases
         .list(&ReleaseQuery {
+            model: None,
             after: None,
             limit: Some(2),
         })
@@ -267,6 +297,7 @@ async fn a_cursor_naming_a_hidden_release_keeps_its_place() {
     let releases = open_with(&dir, without_owner, None).await;
     let second = releases
         .list(&ReleaseQuery {
+            model: None,
             after: first.next,
             limit: Some(2),
         })

@@ -13,13 +13,13 @@ use std::rc::Rc;
 
 use wellfed_api::{
     AdoptFeeder, ClientRole, Connection, Credentials, ErrorCode, FeederId, FeederRefusal,
-    InstallState, InstallTarget, NewUser, Release, Role, StockBackupState, StockSource,
+    InstallState, InstallTarget, Model, NewUser, Release, Role, StockBackupState, StockSource,
     StreamEvent, StreamQuery,
 };
 use wellfed_server_client::{Client, Error, Kept, StatusCode, Uploaded};
 use wellfed_server_testkit::feeder::{self, Banks, Running};
 use wellfed_server_testkit::release::{
-    self, SECTOR, keeping_stock, project, signed, stock_restore,
+    self, SECTOR, keeping_stock, project, signed, stock_restore, stock_restore_for,
 };
 use wellfed_server_testkit::{TestServer, WAIT, ada_setup, config, local, refused, until};
 
@@ -283,6 +283,22 @@ fn only_a_verified_copy_is_kept_and_only_its_own_manifest_restores_it() {
             rig.http.restore_stock(rig.feeder, &other).await,
             StatusCode::UNPROCESSABLE_ENTITY,
             ErrorCode::RestoreMismatch,
+        );
+        assert_eq!(rig.http.stock(rig.feeder).await.unwrap().restore, None);
+
+        // A restore signed for another model is never sent.
+        let fountain = stock_restore_for(
+            Model::Plwf106,
+            &project(),
+            1,
+            &rig.stock,
+            rig.sim.identity,
+            floor,
+        );
+        refused(
+            rig.http.restore_stock(rig.feeder, &fountain).await,
+            StatusCode::CONFLICT,
+            ErrorCode::OtherModel,
         );
         assert_eq!(rig.http.stock(rig.feeder).await.unwrap().restore, None);
 

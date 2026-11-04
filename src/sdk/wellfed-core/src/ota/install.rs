@@ -179,6 +179,8 @@ crate::named_enum! {
         Attempt = "attempt",
         Installing = "installing",
         NotInstalling = "not-installing",
+        /// Signed for another device model.
+        Model = "model",
     }
 }
 
@@ -190,6 +192,7 @@ impl Refused {
             Self::Offer(OfferError::Key(_)) | Self::Statement(_) => RefusedReason::Key,
             Self::Offer(OfferError::Signature) => RefusedReason::Signature,
             Self::Offer(OfferError::Statement(_)) => RefusedReason::Statement,
+            Self::Offer(OfferError::Model) => RefusedReason::Model,
             Self::Offer(_) => RefusedReason::Manifest,
             Self::Store(_) | Self::Unreadable => RefusedReason::Store,
             Self::Busy => RefusedReason::Busy,

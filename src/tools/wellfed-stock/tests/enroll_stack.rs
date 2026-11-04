@@ -46,6 +46,8 @@ async fn admitted(events: &mut EventLoop) -> bool {
 
 fn start(path: &Path, minutes: Option<u64>) -> common::Service {
     let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_wellfed-stock"));
+    // The stock model whose message set every action speaks.
+    command.args(["--device", "plaf103"]);
     command.args(["serve", "--config"]).arg(path);
     if let Some(minutes) = minutes {
         command.args(["--enroll-minutes", &minutes.to_string()]);
@@ -59,6 +61,7 @@ async fn the_first_stock_feeder_enrolls_and_is_then_the_only_one() {
     let path = dir.path().join("server.json");
     let [listen, http] = common::addresses().unwrap();
     let init = std::process::Command::new(env!("CARGO_BIN_EXE_wellfed-stock"))
+        .args(["--device", "plaf103"])
         .args([
             "init-installer",
             "--mqtt-listen",
@@ -79,6 +82,7 @@ async fn the_first_stock_feeder_enrolls_and_is_then_the_only_one() {
 
     // Without a window, an installer's server refuses to start.
     let refused = std::process::Command::new(env!("CARGO_BIN_EXE_wellfed-stock"))
+        .args(["--device", "plaf103"])
         .args(["serve", "--config"])
         .arg(&path)
         .output()

@@ -2,7 +2,7 @@
 
 Before the replacement firmware could feed, each piece of hardware was brought up by a probe: a bounded test that ran after startup, printed fixed UART records and then stopped. This page is the reference for those probes: what each one did, the records it printed, and what a passing capture looks like. It is for contributors reading old captures or rerunning a probe. Owners can skip it.
 
-`wellfed-audit startup` checks every startup policy below, except the flash-coordination probes' ([boot handshake](#boot-handshake) through the [settings power-cut test](#settings-power-cut-test)). Those records are retired from the audit: no current image emits or declares them, so it refuses a manifest naming one of their policies or an image carrying their records, and their sections stay as the record reference. Every other policy is bound both ways to a record format in the image: a manifest that declares the policy needs the marker string in the image, and an image carrying the marker needs the policy in its manifest. Policies for different probes exclude each other, so an image is audited under exactly the probe it carries. The everyday startup is in [startup and diagnostics](startup-diagnostics.md).
+`wellfed-audit startup --device plaf103` checks every startup policy below, except the flash-coordination probes' ([boot handshake](#boot-handshake) through the [settings power-cut test](#settings-power-cut-test)). Those records are retired from the audit: no current image emits or declares them, so it refuses a manifest naming one of their policies or an image carrying their records, and their sections stay as the record reference. Every other policy is bound both ways to a record format in the image: a manifest that declares the policy needs the marker string in the image, and an image carrying the marker needs the policy in its manifest. Policies for different probes exclude each other, so an image is audited under exactly the probe it carries. The everyday startup is in [startup and diagnostics](startup-diagnostics.md).
 
 Most probes no longer run in the normal firmware. The bring-up firmwares and the [QA firmware](qa.md) still run the optics, buttons, ADC, speaker and pulse probes from `src/sdk/wellfed-probes`.
 
@@ -150,7 +150,7 @@ After startup, KM4 opens the board's outputs (motor STOP, emitters OFF, no flash
 - Once a second without end, `PLADC1 sample n=<n> ticks=<n> food=<0|1> outlet=<0|1> dc=<0|1> stopped=<0|1> current=<min,max,mean,scaled> battery=<min,max,mean,scaled>`. v2 appends ` supply=<min,max,mean,scaled>`. `ticks` times the whole capture (32 conversions, 48 under v2) against the SYSTIMER.
 - `PLADC1 error n=<n> ticks=<n> stopped=<0|1>` on a capture timeout or failed stopped readback, which ends the probe with the board tripped.
 
-No audit reads these samples: `wellfed-audit startup` checks only that the policy and its markers agree. What the channels mean is in [power](power.md#inputs).
+No audit reads these samples: `wellfed-audit startup --device plaf103` checks only that the policy and its markers agree. What the channels mean is in [power](power.md#inputs).
 
 ## Wi-Fi scan
 

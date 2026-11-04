@@ -34,6 +34,7 @@ use wellfed_formats::{
 
 use wellfed_core::ota::MARKER;
 
+use crate::protocol::plaf103;
 use crate::{config::Config, storage};
 
 /// Stock's own image size, the most it accepts.
@@ -100,6 +101,14 @@ fn build_identity(review: &Path, frozen: &ImageReview) -> Result<String> {
 
     let manifest: BuildManifest =
         serde_json::from_slice(&raw).context("parse build-manifest.json")?;
+    // Stock takes the image as its own model's (`targetPid`): one built for
+    // another device would install on the wrong board.
+    ensure!(
+        manifest.device == plaf103::MODEL.name(),
+        "the review's build is for {}, not the {} stock this serves",
+        manifest.device,
+        plaf103::MODEL.name()
+    );
     let id = manifest.startup_identity.unwrap_or_default();
     ensure!(
         id.len() == 64 && id.bytes().all(|b| b.is_ascii_hexdigit()),
@@ -547,9 +556,24 @@ mod tests {
     /// A review directory holding `image`, a manifest naming `identity`, and
     /// a review naming `digest` and that manifest.
     fn review_of(image: &[u8], digest: &str, kind: &str, identity: &str) -> tempfile::TempDir {
+        review_for("plaf103", image, digest, kind, identity)
+    }
+
+    /// As [`review_of`], for a build of `device`.
+    fn review_for(
+        device: &str,
+        image: &[u8],
+        digest: &str,
+        kind: &str,
+        identity: &str,
+    ) -> tempfile::TempDir {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("image.bin"), image).unwrap();
-        let manifest = serde_json::json!({"startup_identity": identity, "profile": "firstboot"});
+        let manifest = serde_json::json!({
+            "device": device,
+            "startup_identity": identity,
+            "profile": "firstboot",
+        });
         let manifest = serde_json::to_vec(&manifest).unwrap();
         std::fs::write(directory.path().join("build-manifest.json"), &manifest).unwrap();
         let review = serde_json::json!({
@@ -585,6 +609,9 @@ mod tests {
         assert_eq!(build.build, "ab".repeat(32));
 
         assert!(Build::load(review_of(&image, &digest, "build", "").path()).is_err());
+        // A build for another model is never served to this stock.
+        let fountain = review_for("plwf106", &image, &digest, "build", &"AB".repeat(32));
+        assert!(Build::load(fountain.path()).is_err());
         assert!(Build::load(review_of(&image, &digest, "build", &"g".repeat(64)).path()).is_err());
         let tampered = review(&image, &digest, "build");
         std::fs::write(

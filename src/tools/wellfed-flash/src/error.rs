@@ -40,6 +40,9 @@ pub enum Error {
     Stock(#[from] stock::StockError),
     #[error(transparent)]
     Recovery(#[from] recovery::RecoveryError),
+    /// A model this client holds no pins for (`--device`).
+    #[error(transparent)]
+    Device(#[from] crate::device::DeviceError),
     /// The image, bank and review checks this client shares with the builder.
     #[error(transparent)]
     Image(#[from] wellfed_image::Error),
@@ -107,7 +110,8 @@ impl Error {
             | Self::Update(_)
             | Self::Development(_)
             | Self::Stock(_)
-            | Self::Recovery(_) => ErrorKind::Refused,
+            | Self::Recovery(_)
+            | Self::Device(_) => ErrorKind::Refused,
         }
     }
 }

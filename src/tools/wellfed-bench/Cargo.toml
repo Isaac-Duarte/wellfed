@@ -33,9 +33,10 @@ serde_urlencoded = "0.7.1"
 wellfed-client.workspace = true
 wellfed-connect.workspace = true
 wellfed-core.workspace = true
-wellfed-formats = { workspace = true, features = ["device"] }
+wellfed-formats = { workspace = true, features = ["clap", "device"] }
 wellfed-itest = { path = "../wellfed-itest" }
 wellfed-model.workspace = true
+wellfed-proto.workspace = true
 wellfed-relay = { path = "../wellfed-relay" }
 wellfed-rig = { path = "../wellfed-rig" }
 # `event`: the console waits on its terminal with poll(2) (tui::keys).

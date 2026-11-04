@@ -37,6 +37,7 @@ pub fn release(key: &SigningKey, version: u32) -> Vec<u8> {
         .collect();
     image[..8].copy_from_slice(&MARKER);
     let signed = Signed {
+        model: 1,
         manifest: Manifest {
             version,
             image_len: u32::try_from(image.len()).unwrap(),

@@ -86,6 +86,8 @@ impl Fixture {
     /// The session evidence every device command continues.
     fn evidence(&self, output: &Path) -> Vec<String> {
         [
+            "--device",
+            "plaf103",
             "--port",
             &self.port,
             "--baseline",

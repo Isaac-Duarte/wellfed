@@ -112,6 +112,7 @@ impl Offer {
         let mut payload: Vec<u8> = (0..len).map(|i| (i % 251) as u8 ^ build).collect();
         payload[..8].copy_from_slice(&MARKER);
         let signed = Signed {
+            model: 1,
             manifest: Manifest {
                 version,
                 image_len: u32::try_from(len).unwrap(),
