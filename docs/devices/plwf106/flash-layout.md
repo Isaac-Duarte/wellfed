@@ -31,6 +31,8 @@ If the KM0 marker is valid but KM4 is invalid, stock enters a warning loop inste
 
 The KM4 loader checks RAM address/size and `RTKWin` structures. It also has a hardware-controlled secure-boot gate. Its backing register/eFuse state is not established by a flash backup, so static analysis does not prove acceptance of an unsigned custom image. Keep the original pre-application loader/system region intact.
 
+The whole pre-application region, `0x000000..0x006000`, matches a stock PLAF103 backup byte for byte: both loaders, the bank table and the system data. The fountain therefore runs the [PLAF103's factory loader](../plaf103/flash-layout.md#how-it-boots), whose bank order and fallback the feeder's bank policy already relies on. What a shared loader cannot settle is the secure-boot gate, which each chip's eFuse sets. Reading it over UART, or booting a harmless test image, decides whether this unit accepts a custom image.
+
 ## Minimum preservation map
 
 Preserve complete overlapping erase units, including erased pages within an allocated region. The table is a minimum inventory, not proof that other addresses are free.
@@ -72,3 +74,4 @@ Whether the loader accepts an unsigned custom image, how a failed boot recovers,
 
 - **Recovered, 2026-11-03:** both application groups and mapped KM0/KM4 loaders analysed in Ghidra. Extracted bodies, empty headers, bank table and initialized memory-block hashes matched the acquired backup.
 - **Recovered, 2026-11-03:** storage reader/writer/reset callers, FTL configuration and garbage collection, and clock block-erase paths traced. Generic console writes prevent treating fixed writer addresses as an exhaustive partition map.
+- **Recovered, 2026-11-04:** a sector-by-sector comparison of `0x000000..0x006000` between the PLWF106 backup and a stock PLAF103 backup. All six 4 KiB sectors are identical.
