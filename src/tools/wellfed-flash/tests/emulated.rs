@@ -232,6 +232,8 @@ fn serial_evidence_never_continues_an_emulated_session() {
 
     let mut args = strings(&["update", "inspect"]);
     args.extend(strings(&[
+        "--device",
+        "plaf103",
         "--port",
         &f.port,
         "--baseline",

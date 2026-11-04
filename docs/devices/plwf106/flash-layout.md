@@ -68,7 +68,7 @@ Review any expansion against actual segments, FTL, radio material and persistent
 
 ## What the writers allow
 
-`wellfed-flash --device plwf106` writes the fountain within these bounds alone. Bank 0 is never written, so the stock image the loader falls back to stays intact.
+With `--device plwf106`, the `wellfed-flash` writers write the fountain within these bounds alone. Bank 0 is never written, so the stock image the loader falls back to stays intact.
 
 | Range | Writers |
 | --- | --- |
