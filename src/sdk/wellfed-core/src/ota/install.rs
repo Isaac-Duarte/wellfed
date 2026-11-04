@@ -171,8 +171,6 @@ crate::named_enum! {
         Signature = "signature",
         Statement = "statement",
         Manifest = "manifest",
-        /// Signed for another device model.
-        Model = "model",
         Store = "store",
         Busy = "busy",
         Fallback = "fallback",
@@ -181,6 +179,8 @@ crate::named_enum! {
         Attempt = "attempt",
         Installing = "installing",
         NotInstalling = "not-installing",
+        /// Signed for another device model.
+        Model = "model",
     }
 }
 

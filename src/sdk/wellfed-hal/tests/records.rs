@@ -171,7 +171,8 @@ fn update_words_are_unchanged() {
             "failed",
             "attempt",
             "installing",
-            "not-installing"
+            "not-installing",
+            "model"
         ]
     );
     assert_eq!(

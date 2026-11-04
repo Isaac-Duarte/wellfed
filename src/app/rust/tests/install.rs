@@ -74,6 +74,7 @@ fn image_of(dir: &Path, provisioning: Provisioning, version: u32, build: [u8; 32
     std::fs::write(dir.join("image.bin"), &container).unwrap();
 
     let manifest = BuildManifest {
+        device: "plaf103".into(),
         startup_identity: Some(wellfed_formats::hex::encode(&build)),
         provisioning,
         ..BuildManifest::default()
@@ -999,6 +1000,7 @@ fn the_manifest_must_name_the_review_s_build_and_a_release_a_consumer_image() {
     ));
 
     let manifest = BuildManifest {
+        device: "plaf103".into(),
         startup_identity: Some("cd".repeat(32)),
         ..BuildManifest::default()
     };
