@@ -54,9 +54,11 @@ pub enum SectorError {
     #[error("Program readback differs from exact baseline sector")]
     ProgramReadback { offset: usize },
     #[error(
-        "Preserved bytes {start:#x}..{end:#x} beside bank 1 differ from the pinned backup; an erase may have taken more than its sector"
+        "Preserved bytes {start:#x}..{end:#x} beside bank 1 differ from the plan's read of them; an erase may have taken more than its sector"
     )]
     NeighborsDiffer { start: usize, end: usize },
+    #[error("No plan-bound hash of the preserved bytes {start:#x}..{end:#x} beside bank 1")]
+    NeighborsUnbound { start: usize, end: usize },
 
     #[error("Exact current full snapshot required")]
     PartialCurrent { bytes: usize },
@@ -280,18 +282,25 @@ pub fn erase_sector(port: &mut dyn Port, offset: usize) -> Result<()> {
 }
 
 /// Re-read the preserved bytes sharing an erase block with bank 1 and
-/// require the pinned backup's, so an erase that took more than its sector
-/// stops the session before anything else is written. `erased` is the
-/// sector just erased, or `None` at an acquisition, which always checks.
-/// Nothing to check on a model without such neighbors.
+/// require `expected`, their hash as this session's plan read them before
+/// any write, so an erase that took more than its sector stops the session
+/// before anything else is written. Not the backup's: stock's FTL is live,
+/// and stock runs between the backup and a test. `erased` is the sector
+/// just erased, or `None` at an acquisition, which always checks. Nothing
+/// to check on a model without such neighbors; on one with them, a plan
+/// that binds no hash is refused.
 pub fn check_neighbors(
     port: &mut dyn Port,
     baseline: &Baseline,
+    expected: Option<&str>,
     erased: Option<usize>,
     record: &mut Record,
 ) -> Result<()> {
     let Some((start, end)) = baseline.pins().neighbors else {
         return Ok(());
+    };
+    let Some(expected) = expected else {
+        return Err(SectorError::NeighborsUnbound { start, end }.into());
     };
     let shares_block = |offset: usize| offset / device::BLOCK == start / device::BLOCK;
     if erased.is_some_and(|offset| !shares_block(offset)) {
@@ -299,8 +308,9 @@ pub fn check_neighbors(
     }
 
     let read = protocol::read_region(port, start, end - start)?;
-    require(read == baseline.bytes()[start..end], || {
-        SectorError::NeighborsDiffer { start, end }
+    require(sha256(&read) == expected, || SectorError::NeighborsDiffer {
+        start,
+        end,
     })?;
     record(Event::NeighborsVerified {
         start,
@@ -354,6 +364,7 @@ pub fn restore_sector(
     baseline: &Baseline,
     offset: usize,
     expected_before: &str,
+    neighbors: Option<&str>,
     journal: &mut Located,
 ) -> Result<Restored> {
     let (start, end) = baseline.bank1();
@@ -433,7 +444,7 @@ pub fn restore_sector(
             SectorError::EraseReadback { offset }
         })?;
         record(Event::EraseReadbackVerified {})?;
-        check_neighbors(port, baseline, Some(offset), &mut record)?;
+        check_neighbors(port, baseline, neighbors, Some(offset), &mut record)?;
 
         status::check_status(
             port,

@@ -78,6 +78,10 @@ pub enum DevelopmentError {
 
     #[error("Reviewed development plan differs")]
     PlanDiffers,
+    #[error(
+        "A fountain plan binds the bytes beside bank 1 as its inspection read them; this one does not"
+    )]
+    NeighborsUnbound,
     #[error("Planned sector outside the bank")]
     SectorOutsideBank { offset: u64 },
     #[error("{phase} application region differs")]
@@ -312,6 +316,21 @@ pub fn images(update: &Update, current: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
 /// The reviewed plan; `other` is the inspected other-bank sector, whose hash
 /// it pins.
 pub fn plan(update: &Update, current: &[u8], other: Option<&[u8]>) -> Result<DevelopmentPlan> {
+    plan_bound(update, current, other, None)
+}
+
+/// The reviewed plan, also binding the hash of the erase-block neighbors
+/// the inspection read, which a fountain plan must carry.
+pub fn plan_bound(
+    update: &Update,
+    current: &[u8],
+    other: Option<&[u8]>,
+    neighbors_sha256: Option<String>,
+) -> Result<DevelopmentPlan> {
+    require(
+        neighbors_sha256.is_some() == device::pins(update.layout.kind.model()).neighbors.is_some(),
+        || DevelopmentError::NeighborsUnbound,
+    )?;
     let layout = &update.layout;
     let (proposed, staged) = images(update, current)?;
     let changed = current != proposed;
@@ -374,6 +393,7 @@ pub fn plan(update: &Update, current: &[u8], other: Option<&[u8]>) -> Result<Dev
                 .into(),
         other_bank_sha256: other.map(sha256),
         restore_marker: update.restore,
+        neighbors_sha256,
     })
 }
 
@@ -466,7 +486,11 @@ pub fn run(
     let layout = update.layout;
     let start = layout.start;
     device::same_model(layout.kind.model(), baseline.model())?;
-    let expected = plan(update, current, other)?;
+
+    // The neighbors' hash is the inspection's own read, which the caller
+    // checked the reviewed plan binds; every later read must match it.
+    let expected = plan_bound(update, current, other, reviewed.neighbors_sha256.clone())?;
+    let neighbors = expected.neighbors_sha256.as_deref();
 
     require(same(reviewed, &expected)?, || DevelopmentError::PlanDiffers)?;
     let (proposed, staged) = images(update, current)?;
@@ -520,7 +544,7 @@ pub fn run(
                     event,
                 })
             };
-            sector::check_neighbors(port, baseline, None, &mut record)?;
+            sector::check_neighbors(port, baseline, neighbors, None, &mut record)?;
             journal.append(&Event::RegionVerified {
                 phase,
                 sha256: sha256(want),
@@ -563,7 +587,7 @@ pub fn run(
                 DevelopmentError::EraseReadback { offset }
             })?;
             record(Event::EraseVerified {})?;
-            sector::check_neighbors(port, baseline, Some(offset), &mut record)?;
+            sector::check_neighbors(port, baseline, neighbors, Some(offset), &mut record)?;
 
             status::check_status(
                 port,

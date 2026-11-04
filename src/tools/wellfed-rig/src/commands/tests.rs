@@ -53,6 +53,7 @@ fn development(sectors: usize, packets: u64) -> DevelopmentPlan {
         scope: "test".into(),
         other_bank_sha256: None,
         restore_marker: false,
+        neighbors_sha256: None,
     }
 }
 

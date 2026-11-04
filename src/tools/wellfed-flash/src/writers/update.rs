@@ -62,6 +62,15 @@ pub enum UpdateError {
     #[error("Execution bindings differ before serial access")]
     BindingsDiffer,
 
+    #[error(
+        "A fountain update finished with --interrupted needs --original-plan: the stopped session's reviewed plan"
+    )]
+    OriginalPlanMissing,
+    #[error("--original-plan applies to a fountain update finished with --interrupted only")]
+    OriginalPlanScope,
+    #[error("The original plan is not a reviewed fountain update")]
+    OriginalPlanKind,
+
     #[error("Incomplete region acquisition")]
     IncompleteRegions { count: usize },
     #[error("Incomplete guard acquisition")]
@@ -110,6 +119,10 @@ pub struct Args {
     pub bank: u8,
     pub restore_marker: bool,
     pub interrupted: bool,
+    /// A fountain update finished with `interrupted`: the stopped session's
+    /// reviewed plan, whose read of the bytes beside bank 1 the new
+    /// inspection must still match.
+    pub original_plan: Option<PathBuf>,
 }
 
 struct Loaded {
@@ -173,6 +186,9 @@ struct Details<'a, B> {
     result: Option<development::Verified>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reviewed_plan_sha256: Option<String>,
+    /// A fountain inspection's read of the bytes beside bank 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    neighbors: Option<Region>,
 }
 
 impl<'a, B> Details<'a, B> {
@@ -190,6 +206,7 @@ impl<'a, B> Details<'a, B> {
             scope: None,
             result: None,
             reviewed_plan_sha256: None,
+            neighbors: None,
         }
     }
 }
@@ -321,11 +338,18 @@ fn status_permitted(report: &Saved<IgnoredAny>) -> Result<(), UpdateError> {
 }
 
 /// The inspected application region and the other bank's first sector.
-fn inspected(
-    context: &Context,
-    args: &Args,
-    loaded: &Loaded,
-) -> Result<(Vec<u8>, Vec<u8>, String)> {
+/// What a completed inspection read, and the hashes a plan binds of it.
+struct Inspection {
+    /// The application region.
+    current: Vec<u8>,
+    /// The other bank's first sector.
+    other: Vec<u8>,
+    report_sha256: String,
+    /// The fountain's bytes beside bank 1, by hash.
+    neighbors: Option<String>,
+}
+
+fn inspected(context: &Context, args: &Args, loaded: &Loaded) -> Result<Inspection> {
     let (path, report, sha) = session::inspection(
         context,
         args.evidence.inspection.as_deref(),
@@ -341,7 +365,63 @@ fn inspected(
     development::images(&loaded.update(), &application)?;
     status_permitted(&report)?;
 
-    Ok((application, other, sha))
+    let neighbors = match loaded.baseline.pins().neighbors {
+        None => None,
+        Some((start, end)) => {
+            let bytes = session::inspected_region(
+                &context.root,
+                &path,
+                report.neighbors.as_ref(),
+                (start, end - start),
+            )?;
+            Some(sha256(&bytes))
+        }
+    };
+    original_neighbors(context, args, loaded, neighbors.as_deref())?;
+
+    Ok(Inspection {
+        current: application,
+        other,
+        report_sha256: sha,
+        neighbors,
+    })
+}
+
+/// A fountain update finished after a stop must still see the bytes beside
+/// bank 1 as the stopped session's plan read them before its first write.
+/// So an erase that took them in that session is caught, and so is stock
+/// having run (and rewritten its FTL) in between, which needs review.
+fn original_neighbors(
+    context: &Context,
+    args: &Args,
+    loaded: &Loaded,
+    neighbors: Option<&str>,
+) -> Result<()> {
+    let fountain = loaded.baseline.pins().neighbors.is_some();
+    let Some(path) = args.original_plan.as_deref() else {
+        return Ok(require(!(fountain && args.interrupted), || {
+            UpdateError::OriginalPlanMissing
+        })?);
+    };
+    require(fountain && args.interrupted, || {
+        UpdateError::OriginalPlanScope
+    })?;
+
+    let original: Reviewed<UpdateBindings, DevelopmentPlan> =
+        serde_json::from_slice(&context.root.private_file(path)?)?;
+    let plan = &original.operation_plan;
+    require(
+        plan.kind == loaded.layout.kind && original.bindings.kind == loaded.layout.kind,
+        || UpdateError::OriginalPlanKind,
+    )?;
+
+    let Some((start, end)) = loaded.baseline.pins().neighbors else {
+        return Ok(());
+    };
+    Ok(require(
+        plan.neighbors_sha256.is_some() && plan.neighbors_sha256.as_deref() == neighbors,
+        || sector::SectorError::NeighborsDiffer { start, end },
+    )?)
 }
 
 /// A PLAF103 update.
@@ -356,11 +436,21 @@ pub fn run_for(context: &Context, model: Model, args: &Args) -> Result<Outcome> 
         return session_run(context, args, &loaded, None);
     }
 
-    let (current, other, report_sha) = inspected(context, args, &loaded)?;
+    let Inspection {
+        current,
+        other,
+        report_sha256: report_sha,
+        neighbors,
+    } = inspected(context, args, &loaded)?;
     let reviewed = Reviewed {
         bindings: loaded.bindings.clone(),
         inspection_report_sha256: report_sha,
-        operation_plan: development::plan(&loaded.update(), &current, Some(&other))?,
+        operation_plan: development::plan_bound(
+            &loaded.update(),
+            &current,
+            Some(&other),
+            neighbors.clone(),
+        )?,
     };
 
     if args.mode == Mode::Prepare {
@@ -384,10 +474,11 @@ pub fn run_for(context: &Context, model: Model, args: &Args) -> Result<Outcome> 
     // Recheck the operation and bindings themselves before serial access.
     require(
         canonical_of(&reviewed.operation_plan)?
-            == canonical_of(&development::plan(
+            == canonical_of(&development::plan_bound(
                 &loaded.update(),
                 &current,
                 Some(&other),
+                neighbors,
             )?)?,
         || UpdateError::OperationDiffers,
     )?;
@@ -479,6 +570,20 @@ fn session_run(
                     None,
                 )?;
                 development::images(&update, &acquired.application)?;
+
+                // The fountain's plan binds the bytes beside bank 1 as read
+                // here, before any write.
+                if let Some((start, end)) = loaded.baseline.pins().neighbors {
+                    let (entry, _) = session::acquire_region(
+                        &mut port,
+                        &directory,
+                        "neighbors",
+                        1,
+                        start,
+                        end - start,
+                    )?;
+                    report.update(|r| r.details.neighbors = Some(entry))?;
+                }
 
                 // Written with the report at its next save.
                 let mut record = |event: Event| {

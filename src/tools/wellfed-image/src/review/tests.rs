@@ -151,12 +151,17 @@ fn a_review_installs_only_on_its_own_models_layout() {
     assert!(frozen(&root, &directory, &BANK1).is_ok());
     assert!(unsupported(frozen(&root, &directory, &PLWF106_BANK1)));
 
+    // A fountain build links the fountain's pad table.
+    let pinmap = json!({"matches_stock": false, "runtime_address": "0x3",
+                        "sha256": wellfed_formats::audit::pinmap_sha256(Model::Plwf106)});
     let freeze = |kind: &str, device: &str| {
         let mut changed = manifest.clone();
         changed["device"] = json!(device);
+        changed["km0_pinmap_audit"] = pinmap.clone();
         let raw = changed.to_string();
         let mut bound = review.clone();
         bound["kind"] = json!(kind);
+        bound["review"]["pinmap"] = pinmap.clone();
         bound["manifest_sha256"] = json!(sha256(raw.as_bytes()));
         write(&directory.join("build-manifest.json"), raw.as_bytes());
         write(&directory.join("review.json"), bound.to_string().as_bytes());
@@ -191,9 +196,10 @@ fn a_review_installs_only_on_its_own_models_layout() {
     ));
 }
 
-/// A pad table other than stock's is accepted for one model and one table:
-/// the fountain's, with only PA30 pulled down. Any other table that is not
-/// stock's is refused for the fountain, and the feeder still needs stock's.
+/// Each model's review accepts its pinned pad table alone. The fountain's
+/// is stock's with only PA30 pulled down: stock's own table, which pulls
+/// PA30 up, is refused for it, as is any other. The feeder's is stock's,
+/// marked stock and with stock's hash.
 #[test]
 fn only_the_fountains_pinned_pad_table_may_differ_from_stock() {
     use crate::bank::PLWF106_BANK1;
@@ -232,12 +238,15 @@ fn only_the_fountains_pinned_pad_table_may_differ_from_stock() {
     let feeder = pinmap_sha256(Model::Plaf103);
     assert_ne!(fountain, feeder);
 
+    let other = "0".repeat(64);
     assert!(freeze(Model::Plwf106, false, fountain));
-    assert!(freeze(Model::Plwf106, true, feeder));
+    assert!(!freeze(Model::Plwf106, true, feeder));
+    assert!(!freeze(Model::Plwf106, true, fountain));
     assert!(!freeze(Model::Plwf106, false, feeder));
-    assert!(!freeze(Model::Plwf106, false, &"0".repeat(64)));
+    assert!(!freeze(Model::Plwf106, false, &other));
 
     assert!(freeze(Model::Plaf103, true, feeder));
+    assert!(!freeze(Model::Plaf103, true, &other));
     assert!(!freeze(Model::Plaf103, false, fountain));
     assert!(!freeze(Model::Plaf103, false, feeder));
 }

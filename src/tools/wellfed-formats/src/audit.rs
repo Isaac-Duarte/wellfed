@@ -92,13 +92,15 @@ pub const fn pinmap_sha256(model: Model) -> &'static str {
 }
 
 impl PinmapAudit {
-    /// Whether a review of `model`'s build accepts this table. The PLAF103
-    /// needs stock's table exactly. The PLWF106 takes stock's, or its one
-    /// pinned deviation and nothing else.
+    /// Whether a review of `model`'s build accepts this table: its pinned
+    /// table and nothing else. The PLAF103's is stock's, so it must also be
+    /// marked stock. The PLWF106's is the deviation, never stock's, which
+    /// pulls PA30 up.
     pub fn accepted_for(&self, model: Model) -> bool {
+        let pinned = self.sha256 == pinmap_sha256(model);
         match model {
-            Model::Plaf103 => self.matches_stock,
-            Model::Plwf106 => self.matches_stock || self.sha256 == pinmap_sha256(model),
+            Model::Plaf103 => self.matches_stock && pinned,
+            Model::Plwf106 => !self.matches_stock && pinned,
         }
     }
 }

@@ -140,6 +140,11 @@ pub struct DevelopmentPlan {
     /// Present (and true) only for a bank-1 marker restore.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub restore_marker: bool,
+    /// The fountain only: the bytes sharing an erase block with bank 1
+    /// (its FTL), as the inspection read them before any write. Every
+    /// later read of them in the session must hash to this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub neighbors_sha256: Option<String>,
 }
 
 /// Clearing bank 1's first marker byte so the loader falls back to bank 0.
@@ -208,6 +213,7 @@ mod tests {
             scope: "x".into(),
             other_bank_sha256: None,
             restore_marker: false,
+            neighbors_sha256: None,
         };
 
         let text = String::from_utf8(canonical_of(&plan).unwrap()).unwrap();

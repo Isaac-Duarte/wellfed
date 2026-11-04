@@ -269,6 +269,8 @@ pub(crate) struct Saved<R> {
     /// An inspection's bindings, compared whole in canonical form.
     pub bindings: Option<Value>,
     pub observations: Option<Vec<Vec<Observed>>>,
+    /// A fountain inspection's read of the bytes beside bank 1.
+    pub neighbors: Option<Observed>,
     pub status_checks: Option<Vec<StatusCheck>>,
     #[serde(flatten)]
     pub streams: Streams,
@@ -645,6 +647,33 @@ where
         return Err(incomplete().into());
     };
     Ok(values)
+}
+
+/// The bytes of one recorded transfer beside an inspection, checked against
+/// its expected extent and hash.
+pub(crate) fn inspected_region(
+    root: &Root,
+    path: &Path,
+    observed: Option<&Observed>,
+    (offset, length): (usize, usize),
+) -> Result<Vec<u8>> {
+    let file = observed.and_then(|o| o.file.as_deref()).unwrap_or_default();
+    let differs = || SessionError::InspectionExtent {
+        file: file.to_string(),
+    };
+    let Some(observed) = observed.filter(|_| !file.is_empty() && !file.contains('/')) else {
+        return Err(differs().into());
+    };
+
+    let value = root.private_file(&parent(path).join(file))?;
+    require(
+        observed.offset == u64::try_from(offset).ok()
+            && observed.bytes == u64::try_from(length).ok()
+            && value.len() == length
+            && observed.sha256.as_deref() == Some(&sha256(&value)),
+        differs,
+    )?;
+    Ok(value)
 }
 
 /// A finished inspection whose bindings match this run's: its path, its

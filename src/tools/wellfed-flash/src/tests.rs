@@ -459,7 +459,13 @@ fn develop(
     let length = development::extent(update.source, update.target, &layout)?;
     let current = protocol::read_region(port, layout.start, length)?;
     let other = protocol::read_region(port, layout.other.0, layout.other.1)?;
-    let plan = development::plan(update, &current, Some(&other))?;
+    // A fountain plan binds its own read of the bytes beside bank 1.
+    let neighbors = crate::device::pins(layout.kind.model())
+        .neighbors
+        .map(|(start, end)| protocol::read_region(port, start, end - start))
+        .transpose()?
+        .map(|bytes| sha256(&bytes));
+    let plan = development::plan_bound(update, &current, Some(&other), neighbors)?;
 
     port.0.borrow_mut().tx.clear();
     let mut acquire = acquire_for(layout, length);

@@ -192,14 +192,82 @@ fn an_erase_that_takes_the_ftl_with_it_stops_the_session() {
     let mut port = Fake::new(current);
     port.0.borrow_mut().fault = Fault::BlockErase;
     let before = sha256(&port.0.borrow().flash[START..START + SECTOR]);
+    let neighbors = sha256(&port.0.borrow().flash[0x18_0000..START]);
     let mut journal = |_: crate::evidence::journal::At| Ok(());
     assert!(matches!(
-        sector::restore_sector(&mut port, &unit.baseline, START, &before, &mut journal),
+        sector::restore_sector(
+            &mut port,
+            &unit.baseline,
+            START,
+            &before,
+            Some(&neighbors),
+            &mut journal
+        ),
         Err(crate::Error::Sector(
             sector::SectorError::NeighborsDiffer { .. }
         ))
     ));
     assert_eq!(port.0.borrow().frames, 0);
+}
+
+/// Stock's FTL is live: it changes between the backup and a session, so
+/// the check holds it to the session's own read, not the backup's. A plan
+/// that binds no read, or a stale one (stock ran, or an earlier session's
+/// erase took the FTL), stops before the first erase.
+#[test]
+fn the_ftl_is_held_to_the_plans_read_not_the_backups() {
+    let (_checkout, root) = private_root();
+    let unit = fountain();
+    let target = image(30000, 3);
+    let mut original = Vec::new();
+    let update = install(&unit, &target, &mut original);
+
+    // Stock garbage-collected its FTL after the backup was taken.
+    let mut flash = unit.flash.clone();
+    flash[0x18_3000..0x18_4000].fill(0x5a);
+    let mut port = Fake::new(flash.clone());
+    develop(&root, &unit, &mut port, &update, "live").unwrap();
+    assert!(port.0.borrow().flash[0x18_0000..START] == flash[0x18_0000..START]);
+
+    // A plan without the read, and one with a stale read.
+    let length = development::extent(None, &target, &PLWF106_BANK1).unwrap();
+    let current = flash[START..START + length].to_vec();
+    let other = flash[0x6000..0x7000].to_vec();
+    assert!(matches!(
+        development::plan(&update, &current, Some(&other)),
+        Err(crate::Error::Development(
+            DevelopmentError::NeighborsUnbound
+        ))
+    ));
+
+    let stale = sha256(&unit.flash[0x18_0000..START]);
+    let plan = development::plan_bound(&update, &current, Some(&other), Some(stale)).unwrap();
+    let mut port = Fake::new(flash);
+    let mut acquire = acquire_for(PLWF106_BANK1, length);
+    let transaction = development::Transaction {
+        baseline: &unit.baseline,
+        update: &update,
+        current: &current,
+        other: Some(&other),
+        reviewed: &plan,
+    };
+    let error = development::run(
+        &mut port,
+        &root,
+        &transaction,
+        &mut acquire,
+        &root.join("private/stale"),
+        &mut |_, _| {},
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            crate::Error::Sector(sector::SectorError::NeighborsDiffer { .. })
+        ),
+        "{error}"
+    );
+    assert_eq!(port.0.borrow().erases, 0, "stopped before any erase");
 }
 
 #[test]
@@ -238,6 +306,7 @@ fn fountain_frames_stay_in_its_bank_1_window() {
             &fountain.baseline,
             END,
             &sha256(&fountain.flash[END..END + SECTOR]),
+            Some(&sha256(&fountain.flash[0x18_0000..START])),
             &mut journal,
         ),
         Err(crate::Error::Sector(sector::SectorError::SectorOutside {

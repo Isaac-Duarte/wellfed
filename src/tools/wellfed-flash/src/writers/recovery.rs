@@ -347,6 +347,13 @@ pub fn run_transaction(
             sha256: sha256(current),
         })?;
 
+        // The bytes sharing an erase block with bank 1, as the reviewed
+        // current read holds them: every erase beside them must leave them so.
+        let neighbors = baseline
+            .pins()
+            .neighbors
+            .map(|(start, end)| sha256(&current[start..end]));
+
         let mut results = Vec::new();
         for entry in &expected.ordered_sector_payloads {
             let mut append = |event: crate::evidence::journal::At| journal.append(&event);
@@ -355,6 +362,7 @@ pub fn run_transaction(
                 baseline,
                 entry.offset,
                 &entry.before_sha256,
+                neighbors.as_deref(),
                 &mut append,
             )?;
 

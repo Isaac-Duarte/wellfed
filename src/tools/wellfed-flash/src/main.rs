@@ -246,6 +246,10 @@ struct UpdateArgs {
     /// Finish a stopped update: staged marker, every sector source, staged target or erased.
     #[arg(long)]
     interrupted: bool,
+    /// The stopped update's reviewed plan (plwf106 with --interrupted): the
+    /// bytes beside bank 1 must still be as it read them.
+    #[arg(long)]
+    original_plan: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -381,6 +385,7 @@ fn main() -> ExitCode {
                     bank: args.bank,
                     restore_marker: args.restore_marker,
                     interrupted: args.interrupted,
+                    original_plan: args.original_plan,
                 },
             )
         }),
