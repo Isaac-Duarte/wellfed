@@ -4,7 +4,7 @@ A feed can go wrong: kibble jams the rotor, the mark sensor stops reporting, the
 
 Every case runs on hardware through fault-injection variants, and a taped outlet beam has been tried by hand. A jam with real food and a current reference are still open ([left for the owner](#left-for-the-owner)). The [roadmap](../roadmap.md) has the current status.
 
-The limits are in `feeding::CONFIG` (`src/firmware/wellfed/feeder/src/feeding.rs`). The behavior is the controller's (`wellfed_core::feed::controller`) and the owner's (`wellfed_hal::owner`). The drive itself, its marks and its current are in [motor and feeds](motor-pulse.md#how-a-feed-drives-the-motor).
+The limits are in `feeding::CONFIG` (`src/firmware/wellfed/feeder/src/feeding.rs`). The behavior is the controller's (`wellfed_core::feed::controller`) and the owner's (`wellfed_hal_feeder::owner`). The drive itself, its marks and its current are in [motor and feeds](motor-pulse.md#how-a-feed-drives-the-motor).
 
 ## Jams: bounded reversals
 
