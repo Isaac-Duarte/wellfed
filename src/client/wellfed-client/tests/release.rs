@@ -35,6 +35,7 @@ fn release(key: &SigningKey, version: u32, kind: ImageKind, image: &[u8]) -> Vec
 /// [`release`], aimed at `bank`.
 fn for_bank(key: &SigningKey, version: u32, kind: ImageKind, bank: u32, image: &[u8]) -> Vec<u8> {
     let signed = Signed {
+        model: 1,
         manifest: Manifest {
             version,
             image_len: u32::try_from(image.len()).unwrap(),

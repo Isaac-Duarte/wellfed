@@ -231,6 +231,7 @@ A feed whose answer was lost has no number and is never sent again. It is settle
 
 - **A release file** is the version 2 manifest (160 bytes) followed by the image it names. On GitHub it is a release asset whose name ends in `.plota`. Drafts and pre-releases are skipped.
 - **Verification** is `wellfed_client::release::verify`. It runs the feeder's own `admit_offer`, with the project's keys as built-in keys and the owner's as enrolled ones. Then it checks the image's length and SHA-256 against the manifest, and that it starts with the bank's validity marker. Uploads and fetched assets go through the same call, and an install verifies the release again.
+- **Models.** Each manifest names the device model its image is built for, and a manifest naming no known model is no release. `GET /releases?model=plaf103` lists one model's, and an install refuses a release for another model than the device's `409 other_model` before anything is sent.
 - **Keys** are settings: `releases.project_keys` and `releases.owner_keys`. Nothing is built into the server. A server with neither keeps no release.
 - **The cache** is `releases/` in the data directory: `<id>.plota` and its record `<id>.json`, the id being the manifest's SHA-256 in hex. Each file is written to a `.part`, synced and renamed. The directory is the index.
 - **Fetching** is off unless `releases.fetch`. A check reads the newest 30 releases from the GitHub API and refuses an asset larger than a manifest and a full bank without downloading it.

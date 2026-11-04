@@ -211,6 +211,7 @@ fn manifest_for(
     kind: ImageKind,
 ) -> Vec<u8> {
     let signed = Signed {
+        model: 1,
         manifest: Manifest {
             version,
             image_len: u32::try_from(payload.len()).unwrap(),

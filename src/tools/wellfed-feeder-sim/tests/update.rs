@@ -59,6 +59,7 @@ impl Offer {
         let mut payload: Vec<u8> = (0..len).map(|i| (i % 249) as u8 ^ build).collect();
         payload[..8].copy_from_slice(&MARKER);
         let signed = Signed {
+            model: 1,
             manifest: Manifest {
                 version,
                 image_len: u32::try_from(len).unwrap(),
@@ -271,6 +272,7 @@ fn stock_offer(device: &[u8; 32], floor: u32, build: u8, len: usize) -> (Offer, 
     let mut payload: Vec<u8> = (0..len).map(|i| (i % 241) as u8 ^ build).collect();
     payload[..8].copy_from_slice(&MARKER);
     let signed = Signed {
+        model: 1,
         manifest: Manifest {
             version: 3,
             image_len: u32::try_from(len).unwrap(),

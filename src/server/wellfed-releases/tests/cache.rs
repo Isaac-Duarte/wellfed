@@ -149,6 +149,7 @@ async fn pages_run_newest_first() {
 
     let first = releases
         .list(&ReleaseQuery {
+            model: None,
             after: None,
             limit: Some(2),
         })
@@ -159,6 +160,7 @@ async fn pages_run_newest_first() {
 
     let second = releases
         .list(&ReleaseQuery {
+            model: None,
             after: first.next,
             limit: Some(2),
         })
@@ -170,7 +172,11 @@ async fn pages_run_newest_first() {
 
     for (after, limit) in [(Some("zz".to_owned()), None), (None, Some(0))] {
         let error = releases
-            .list(&ReleaseQuery { after, limit })
+            .list(&ReleaseQuery {
+                after,
+                limit,
+                model: None,
+            })
             .await
             .unwrap_err();
         assert!(
@@ -252,6 +258,7 @@ async fn a_cursor_naming_a_hidden_release_keeps_its_place() {
         .unwrap();
     let first = releases
         .list(&ReleaseQuery {
+            model: None,
             after: None,
             limit: Some(2),
         })
@@ -267,6 +274,7 @@ async fn a_cursor_naming_a_hidden_release_keeps_its_place() {
     let releases = open_with(&dir, without_owner, None).await;
     let second = releases
         .list(&ReleaseQuery {
+            model: None,
             after: first.next,
             limit: Some(2),
         })

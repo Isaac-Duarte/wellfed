@@ -140,6 +140,7 @@ impl Cache {
                 image_len: verified.image_len,
                 image_sha256: Hex(verified.image_sha256),
                 key_id: Hex(verified.key_id),
+                model: verified.model,
                 signer: match verified.signer {
                     Signer::Project => ReleaseSigner::Project,
                     Signer::Owner => ReleaseSigner::Owner,

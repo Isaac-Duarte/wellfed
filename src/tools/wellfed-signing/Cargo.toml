@@ -12,6 +12,7 @@ ed25519-dalek = "2"
 wellfed-core.workspace = true
 wellfed-formats.workspace = true
 wellfed-image.workspace = true
+wellfed-proto.workspace = true
 serde_json.workspace = true
 sha2 = "0.11"
 thiserror.workspace = true

@@ -21,8 +21,8 @@ use std::sync::{Arc, Mutex};
 
 use tracing::{Instrument, info, info_span, warn};
 use wellfed_api::{
-    ClientRole, Connection as Link, ErrorCode, FeederId, FeederRefusal, Install, InstallFailure,
-    InstallId, InstallRequest, InstallState, InstallTarget, StreamEvent,
+    ClientRole, Connection as Link, FeederId, FeederRefusal, Install, InstallFailure, InstallId,
+    InstallRequest, InstallState, InstallTarget, StreamEvent,
 };
 use wellfed_mirror::{PushError, Pushed, Restore, Update, UpdateError};
 use wellfed_model::{Refusal, UpdateView};
@@ -30,29 +30,9 @@ use wellfed_releases::{STOCK_VERSION, StockBackup};
 
 use crate::{Caller, CommandError, Error, Resource, Result, Service, lock};
 
-/// Installs, one at a time per server, a restore of stock among them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum InstallError {
-    #[error("another install is running: one runs at a time")]
-    Running,
-    #[error("the restore does not offer the kept backup: {0}")]
-    RestoreMismatch(wellfed_releases::RestoreError),
-    #[error(
-        "the feeder runs from bank 0 with stock in bank 1, and no verified backup of it is kept: \
-         read it from the feeder or upload the installer's copy before installing"
-    )]
-    StockBackupNeeded,
-}
+mod error;
 
-impl InstallError {
-    pub(crate) fn code(self) -> ErrorCode {
-        match self {
-            Self::Running => ErrorCode::InstallRunning,
-            Self::RestoreMismatch(_) => ErrorCode::RestoreMismatch,
-            Self::StockBackupNeeded => ErrorCode::StockBackupNeeded,
-        }
-    }
-}
+pub use error::InstallError;
 
 /// Progress reaches the stream each time this many more bytes are written.
 const PROGRESS_STEP: u32 = 32 * 1024;
@@ -103,6 +83,15 @@ impl Service {
             return Err(Error::Refused(FeederRefusal::Forbidden));
         }
         let (release, file) = self.release_file(request.release).await?;
+        // An image for another model is never offered: the device would
+        // refuse it too, but only once it is sent.
+        if release.model != row.model {
+            return Err(InstallError::OtherModel {
+                release: release.model,
+                device: row.model,
+            }
+            .into());
+        }
         if self.mirror.link(id) != Some(Link::Online) {
             return Err(CommandError::Offline.into());
         }

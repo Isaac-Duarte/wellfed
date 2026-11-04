@@ -1157,6 +1157,7 @@ fn signed_by_bench(rig: &Rig, file: &str) -> wellfed_core::ota::Manifest {
     let bytes = fs::read(rig.bench.root.join(VERIFICATION).join(file)).unwrap();
     let built_in = [key.public()];
     let context = Context {
+        model: 1,
         ring: KeyRing {
             built_in: &built_in,
             added: None,

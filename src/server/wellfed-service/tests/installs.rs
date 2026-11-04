@@ -5,11 +5,14 @@
 
 use std::time::Duration;
 
-use wellfed_api::{ClientRole, Connection as Link, InstallFailure, InstallRequest, InstallState};
+use wellfed_api::{
+    ClientRole, Connection as Link, InstallFailure, InstallRequest, InstallState, Model,
+    ReleaseQuery,
+};
 use wellfed_server_testkit::feeder::{self, Banks, Relay};
 use wellfed_server_testkit::release::{self, SECTOR, project, signed};
 use wellfed_server_testkit::{TestService, WAIT, ada, config, local, until};
-use wellfed_service::{ReleaseAdded, Service};
+use wellfed_service::{Error, InstallError, ReleaseAdded, Service};
 
 const BUILD: [u8; 32] = [0x77; 32];
 const LEN: usize = 16 * SECTOR;
@@ -88,5 +91,62 @@ fn a_restart_mid_install_fails_it_frees_the_slot_and_the_next_activates() {
 
         server.shutdown().await;
         sim.stop().await;
+    });
+}
+
+/// A release built for another model is listed under its model and never
+/// offered to this device: the install is refused before anything is sent.
+#[test]
+fn a_release_for_another_model_is_refused_and_listed_by_its_model() {
+    local(async {
+        let banks = Banks::new();
+        let sim = feeder::start_updatable(&banks).await;
+        let server = TestService::start_with(release::trusting(config())).await;
+        let id = server
+            .adopt_as(&sim, &sim.address.to_string(), ClientRole::Owner)
+            .await;
+        server.link(id, Link::Online).await;
+        let file = release::signed_for(Model::Plwf106, &project(), 7, BUILD, LEN);
+        let (fountain, _) = server.service().upload_release(file).await.unwrap();
+        assert_eq!(fountain.model, Model::Plwf106);
+
+        let refused = server
+            .service()
+            .install(
+                &ada().into(),
+                id,
+                InstallRequest {
+                    release: fountain.id,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                refused,
+                Error::Install(InstallError::OtherModel {
+                    release: Model::Plwf106,
+                    device: Model::Plaf103,
+                })
+            ),
+            "{refused:?}"
+        );
+
+        let listed = |model| ReleaseQuery {
+            after: None,
+            limit: None,
+            model: Some(model),
+        };
+        let service = server.service();
+        assert!(
+            service
+                .releases(&listed(Model::Plaf103))
+                .await
+                .unwrap()
+                .items
+                .is_empty()
+        );
+        let fountains = service.releases(&listed(Model::Plwf106)).await.unwrap();
+        assert_eq!(fountains.items, vec![fountain]);
     });
 }

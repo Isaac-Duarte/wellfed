@@ -55,6 +55,7 @@ use wellfed_image::bank::BANK1;
 use wellfed_image::ota::STOCK_SHA256;
 use wellfed_image::review::frozen;
 use wellfed_image::root::Root;
+use wellfed_proto::device::Model;
 
 mod error;
 
@@ -333,6 +334,14 @@ impl Frozen {
         self.kind
     }
 
+    /// The device model the image is built for, which its manifest names.
+    /// Every review this reads is a PLAF103 one (its kinds are the frozen
+    /// `plaf103_*` names), and the pinned stock image is the PLAF103's: a
+    /// second model brings review kinds and a stock pin of its own.
+    pub const fn model(&self) -> Model {
+        Model::Plaf103
+    }
+
     /// The build ID the manifest will carry, as lowercase hex.
     pub fn build_id(&self) -> String {
         hex::encode(&self.build_id)
@@ -368,6 +377,7 @@ impl Frozen {
         let signed = Signed {
             manifest,
             kind,
+            model: self.model().code(),
             key_id: key.id(),
         };
         let body = offer::manifest_body(&signed);
@@ -534,6 +544,7 @@ mod tests {
         let built_in = [key.public()];
         let device = [0x42; 32];
         let context = |floor| Context {
+            model: 1,
             ring: KeyRing {
                 built_in: &built_in,
                 added: None,
@@ -624,6 +635,7 @@ mod tests {
         const BENCH: [[u8; 32]; 1] = [[0x0b; 32]];
         fn context(enrolled: &[[u8; 32]]) -> Context<'_> {
             Context {
+                model: 1,
                 ring: KeyRing {
                     built_in: &BENCH,
                     added: None,

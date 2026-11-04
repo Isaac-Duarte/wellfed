@@ -554,6 +554,7 @@ mod tests {
     fn manifest(payload: &[u8], kind: ImageKind, len: usize) -> Vec<u8> {
         let sha256: [u8; 32] = Sha256::digest(payload).into();
         let signed = offer::Signed {
+            model: 1,
             manifest: wellfed_core::ota::Manifest {
                 version: 3,
                 image_len: u32::try_from(len).unwrap(),

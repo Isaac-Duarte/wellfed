@@ -1131,7 +1131,8 @@ pub enum UpdateRefusal {
     /// That key was retired.
     Revoked,
     Signature,
-    /// Not for bank 1, or outside the reviewed size.
+    /// Not for bank 1, outside the reviewed size, or built for another
+    /// device model.
     Target,
     /// That build is already running.
     Same,

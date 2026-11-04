@@ -788,6 +788,7 @@ impl<I: SlotIo + Clone> Update<I> {
             floor: self.min(),
             device,
             running: (self.bank == 1).then_some(self.identity),
+            model: wellfed_board::MODEL_CODE,
         };
         let admitted = match admit_offer(manifest, downgrade.map(|d| &d[..]), &context) {
             Ok(admitted) => admitted,

@@ -99,6 +99,7 @@ fn image_of(dir: &Path, provisioning: Provisioning, version: u32, build: [u8; 32
     std::fs::write(dir.join("review.json"), &review).unwrap();
 
     let body = wellfed_core::ota::offer::manifest_body(&wellfed_core::ota::offer::Signed {
+        model: 1,
         manifest: wellfed_core::ota::Manifest {
             version,
             image_len: 1,

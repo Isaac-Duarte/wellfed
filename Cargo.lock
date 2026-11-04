@@ -5774,6 +5774,7 @@ dependencies = [
  "wellfed-core",
  "wellfed-formats",
  "wellfed-image",
+ "wellfed-proto",
 ]
 
 [[package]]

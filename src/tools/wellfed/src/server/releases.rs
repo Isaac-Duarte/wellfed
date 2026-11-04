@@ -31,7 +31,13 @@ pub(crate) enum Releases {
 pub(super) async fn releases(client: &Client, releases: Releases, out: Output) -> Result<Settled> {
     match releases {
         Releases::List { after, limit } => {
-            let page = client.releases(&ReleaseQuery { after, limit }).await?;
+            let page = client
+                .releases(&ReleaseQuery {
+                    after,
+                    limit,
+                    model: None,
+                })
+                .await?;
             out.show(&page, |page| text::lines(&page.items, text::release))?;
             if let Some(next) = &page.next {
                 eprintln!("More after {next}: --after {next}");
