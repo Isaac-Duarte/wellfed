@@ -13,41 +13,45 @@ The same pin often does different jobs on different boards. `PA25` is the buzzer
 
 ## Table
 
-| Pin | SDK no. | SDK HAL functions | [PLAF103](../../devices/plaf103/board.md) | AF301 (External) |
-| --- | --- | --- | --- | --- |
-| PA0 | 0 | — | Connection/OTA indicator (Observed) | Meal button |
-| PA2 | 2 | — | Low-food indicator (Observed) | Feed button |
-| PA4 | 4 | — | Lock indicator (Observed) | Lid button |
-| PA7 | 7 | UART2 TX (LOGUART) | Console TX; ROM download strap (Recovered; header continuity not established) | Console |
-| PA8 | 8 | UART2 RX (LOGUART) | Console RX (Recovered) | Console |
-| PA12 | 12 | UART3 TX, PWM0 | — | Driven, role unknown |
-| PA13 | 13 | UART3 RX, PWM1 | Motor output A (Recovered) | — |
-| PA14 | 14 | — | Motor output B (Recovered) | — |
-| PA15 | 15 | — | Food emitter enable (Observed) | — |
-| PA16 | 16 | — | Outlet input, LOW when blocked (Observed) | Driven, role unknown |
-| PA17 | 17 | — | Food-level input, LOW when blocked (Observed) | Driven, role unknown |
-| PA18 | 18 | UART0 TX | Portion feedback input, LOW at each mark (Observed) | — |
-| PA19 | 19 | UART0 RX | External-power presence, HIGH on adapter (Observed) | — |
-| PA25 | 25 | UART3 RX, PWM4 | Buzzer output (Recovered) | RFID UART RX |
-| PA26 | 26 | UART3 TX, PWM5 | — | RFID UART TX |
-| PA27 | 27 | — | — | Boot strap (`NORMAL_MODE_SEL`) |
-| PA28 | 28 | PWM6 | — | Driven, role unknown |
-| PA30 | 30 | PWM7 | — | — |
-| PB1 | 33 | UART3 TX, ADC4 | Current estimate, ADC (Recovered) | Analog, role unknown |
-| PB2 | 34 | UART3 RX, ADC5 | Battery/power measurement, ADC (Observed) | Analog, role unknown |
-| PB3 | 35 | ADC6; `SWD_CLK` | Outlet emitter enable, needs SWD released (Observed) | Analog, role unknown |
-| PB4 | 36 | ADC0, PWM8 | Reset button, active LOW (Observed) | Analog, role unknown |
-| PB5 | 37 | ADC1, PWM9 | Mic button, active LOW (Observed) | Analog, role unknown |
-| PB6 | 38 | ADC2 | Dispense button, active LOW (Observed) | Analog, role unknown |
-| PB7 | 39 | ADC3, PWM17 | Lock button, active LOW (Observed) | Analog, role unknown |
-| PB13 | 45 | — | — | ROM-readable only |
-| PB14 | 46 | — | — | ROM-readable only |
-| PB16 | 48 | — | — | ROM-readable only |
-| PB17 | 49 | — | — | ROM-readable only |
-| PB22 | 54 | PWM14 | Warning/fault indicator (Observed) | — |
-| PB23 | 55 | PWM15 | Audio amplifier enable (Observed) | — |
-| PB26 | 58 | — | — | Lock button |
-| PB29 | 61 | — | — | — |
-| PB31 | 63 | — | — | — |
+| Pin | SDK no. | SDK HAL functions | [PLAF103](../../devices/plaf103/board.md) | AF301 (External) | [PLWF106](../../devices/plwf106/board.md) |
+| --- | --- | --- | --- | --- | --- |
+| PA0 | 0 | — | Connection/OTA indicator (Observed) | Meal button | — |
+| PA2 | 2 | — | Low-food indicator (Observed) | Feed button | — |
+| PA4 | 4 | — | Lock indicator (Observed) | Lid button | — |
+| PA7 | 7 | UART2 TX (LOGUART) | Console TX; ROM download strap (Recovered; header continuity not established) | Console | — |
+| PA8 | 8 | UART2 RX (LOGUART) | Console RX (Recovered) | Console | — |
+| PA12 | 12 | UART3 TX, PWM0 | — | Driven, role unknown | — |
+| PA13 | 13 | UART3 RX, PWM1 | Motor output A (Recovered) | — | — |
+| PA14 | 14 | — | Motor output B (Recovered) | — | — |
+| PA15 | 15 | — | Food emitter enable (Observed) | — | Reset button, active LOW (Recovered) |
+| PA16 | 16 | — | Outlet input, LOW when blocked (Observed) | Driven, role unknown | — |
+| PA17 | 17 | — | Food-level input, LOW when blocked (Observed) | Driven, role unknown | — |
+| PA18 | 18 | UART0 TX | Portion feedback input, LOW at each mark (Observed) | — | — |
+| PA19 | 19 | UART0 RX | External-power presence, HIGH on adapter (Observed) | — | Normal-water indication (Recovered) |
+| PA25 | 25 | UART3 RX, PWM4 | Buzzer output (Recovered) | RFID UART RX | Lack-water indication (Recovered) |
+| PA26 | 26 | UART3 TX, PWM5 | — | RFID UART TX | Network indication (Recovered) |
+| PA27 | 27 | — | — | Boot strap (`NORMAL_MODE_SEL`) | — |
+| PA28 | 28 | PWM6 | — | Driven, role unknown | Network indication (Recovered) |
+| PA30 | 30 | PWM7 | — | — | Pump enable, HIGH on (Recovered) |
+| PB1 | 33 | UART3 TX, ADC4 | Current estimate, ADC (Recovered) | Analog, role unknown | — |
+| PB2 | 34 | UART3 RX, ADC5 | Battery/power measurement, ADC (Observed) | Analog, role unknown | — |
+| PB3 | 35 | ADC6; `SWD_CLK` | Outlet emitter enable, needs SWD released (Observed) | Analog, role unknown | Low-water indication; SWD release required (Recovered) |
+| PB4 | 36 | ADC0, PWM8 | Reset button, active LOW (Observed) | Analog, role unknown | — |
+| PB5 | 37 | ADC1, PWM9 | Mic button, active LOW (Observed) | Analog, role unknown | External scale clock (Recovered) |
+| PB6 | 38 | ADC2 | Dispense button, active LOW (Observed) | Analog, role unknown | External scale data (Recovered) |
+| PB7 | 39 | ADC3, PWM17 | Lock button, active LOW (Observed) | Analog, role unknown | Filter reminder (Recovered) |
+| PB13 | 45 | — | — | ROM-readable only | — |
+| PB14 | 46 | — | — | ROM-readable only | — |
+| PB16 | 48 | — | — | ROM-readable only | — |
+| PB17 | 49 | — | — | ROM-readable only | — |
+| PB22 | 54 | PWM14 | Warning/fault indicator (Observed) | — | LED-group output; HIGH at startup, role unknown (Recovered) |
+| PB23 | 55 | PWM15 | Audio amplifier enable (Observed) | — | LED-group output; HIGH at startup, role unknown (Recovered) |
+| PB26 | 58 | — | — | Lock button | LED-group output; HIGH at startup, role unknown (Recovered) |
+| PB29 | 61 | — | — | — | — |
+| PB31 | 63 | — | — | — | — |
 
 A dash in a device column means that device's docs record no role. **It does not mean the pin is unused.** The PLAF103's details, open questions and stock instruction anchors are on its [board page](../../devices/plaf103/board.md).
+
+## Evidence
+
+- **Recovered, 2026-11-03:** PLWF106 stock 0.0.17 initialization and output/input call sites establish the fountain column. Bank 1 agrees on pump, button and LED startup assignments. These are software roles, not electrical continuity or physical-color measurements; see the [fountain board reference](../../devices/plwf106/board.md).
