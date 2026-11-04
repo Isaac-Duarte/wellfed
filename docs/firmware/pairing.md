@@ -55,7 +55,7 @@ We streamed a million one-byte samples from each source over the UART, from a co
 
 ## Keys and the panel
 
-**Carrying keys between tasks** (`wellfed-feeder-runtime::keys`):
+**Carrying keys between tasks** (`wellfed-device-runtime::keys`):
 - The settings writer alone writes the client store. The loop task alone reads the panel and runs the handshakes.
 - The loop queues one change at a time (enroll, revoke or reset) in a one-slot mailbox. A second before the writer takes the first is `busy`.
 - The writer logs each result as `PLCFG1 keys change=… result=… enrolled=…`.

@@ -85,8 +85,10 @@ In code:
 | Part | Where | What it holds |
 | --- | --- | --- |
 | SDK | `src/sdk/` | Mechanisms only: the runtime, clock and time sources, journal, feeding owner, buttons, Noise transport, the BLE link and the updater |
-| Product policy | `src/product/wellfed-feeder` | Schedules, child lock, reminders, history policy, the request and entity model, the product's stores, and the loop itself |
-| Product runtime | `src/product/wellfed-feeder-runtime` | The product's stores on the SDK runtime: the settings writer and its mailboxes |
+| Device policy | `src/product/wellfed-device` | What every device kind keeps: the settings, Wi-Fi, client, time, event and trace stores, the reset marker and the update view |
+| Device runtime | `src/product/wellfed-device-runtime` | Those stores on the SDK runtime: the settings writer, generic over a kind's own stores, and its mailboxes |
+| Product policy | `src/product/wellfed-feeder` | Schedules, child lock, reminders, history policy, the request and entity model, the feeder's own stores, and the loop itself |
+| Product runtime | `src/product/wellfed-feeder-runtime` | The feeder's stores in the settings writer and their mailboxes, and the writer's settings stage |
 | Firmware | `src/firmware/wellfed/feeder` | The PLAF103's wiring, and the feeding owner stepped in the loop |
 | Client core | `wellfed-client` | The sans-IO protocol logic every client shares |
 | Home Assistant | `src/integrations/homeassistant` | The integration's Python, and its PyO3 bridge over `wellfed-connect` |
@@ -95,8 +97,9 @@ In code:
 Some detail on each:
 
 - **SDK.** No SDK crate depends on a product crate. Where the runtime needs the product's stores (its settings writer, the Wi-Fi join's stored credentials), it calls a hook the product's runtime crate defines.
-- **`wellfed-feeder`** is a `no_std` library. Its stores keep the product's records: settings, Wi-Fi credentials, client keys and events. Its loop, `Feeder<P: Platform>::pass`, is the panel's owner, BLE setup mode, the device API's driver and the event recorder, over a `Platform` trait. It is host-tested, and the simulator runs the same pass on its own platform.
-- **`wellfed-feeder-runtime`** is linked by every PLAF103 firmware, so a firmware swap keeps the owner's data.
+- **`wellfed-device`** is a `no_std` library of what every kind keeps: the settings, Wi-Fi credentials, client keys, time settings, events and traces. **`wellfed-device-runtime`** runs those stores on the SDK. Its settings writer is generic over a kind's own stores (`writer::Product`), called statically, so a fountain links the two with its own policy and no feeder crate.
+- **`wellfed-feeder`** is a `no_std` library. Its own stores keep the feeder's records: plans, calibration, the meal call and the lifetime statistics. Its loop, `Feeder<P: Platform>::pass`, is the panel's owner, BLE setup mode, the device API's driver and the event recorder, over a `Platform` trait. It is host-tested, and the simulator runs the same pass on its own platform.
+- **`wellfed-feeder-runtime`** defines the settings stage over the shared writer and the feeder's stores. Every PLAF103 firmware links it, so a firmware swap keeps the owner's data.
 - **The firmware** supplies the `Platform` (pins, drivers, sockets, mailboxes) and steps the feeding owner in one loop task, before the product's pass. Another model gets its own thin firmware.
 - **`wellfed-client`** turns bytes in into bytes out: the Noise handshake, pairing, invites, requests, event-cursor sync and the installer's steps. It never opens a socket or a radio. `wellfed-connect` drives its device API sessions over tokio TCP for the server, the CLI and the Android app alike, and `wellfed-install` drives the install from stock for the CLI and the app, with stock's server in its own process. The app carries its BLE setup bytes in Dart, and WASM can run it later.
 - **`wellfed-server`** links single-purpose libraries for its shared pieces: the Noise client and request types in `wellfed-client` and `wellfed-model`, and its sessions in `wellfed-connect`. It speaks no stock protocol and holds no signing key: it verifies releases, and an owner signs a return to stock on their own computer. The bench's old catch-all server is deleted ([tools](../../src/tools/README.md)).

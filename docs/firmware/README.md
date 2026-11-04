@@ -98,8 +98,10 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 | `wellfed-testkit`, `wellfed-sim` | Fake NOR storage and the virtual feeder |
 | `wellfed-proto` | The device protocol's messages |
 | `wellfed-device-api` | The feeder's side of the device API and pairing |
-| `wellfed-feeder` | Product policy and the loop itself |
-| `wellfed-feeder-runtime` | The product's stores on the SDK runtime |
+| `wellfed-device` | Policy every device shares: the settings, Wi-Fi, client, time, event and trace stores, the reset marker and the update view |
+| `wellfed-device-runtime` | Those stores on the SDK runtime: the settings writer over a kind's own stores, and its mailboxes |
+| `wellfed-feeder` | The feeder's policy, its own stores and the loop itself |
+| `wellfed-feeder-runtime` | The feeder's stores in the settings writer, their mailboxes, and the writer's settings stage |
 | `wellfed-fw-feeder` | The product firmware |
 | `wellfed-fw-qa`, `wellfed-fw-bringup`, `wellfed-fw-blink` | The self-test, bring-up and minimal firmwares |
 
