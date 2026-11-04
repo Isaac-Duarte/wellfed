@@ -239,6 +239,21 @@ pub struct TransientArgs {
     pub samplerate: u64,
 }
 
+/// `rom-inspect`: boot stock and sample its ROM through its console.
+#[derive(Debug, Clone, Args)]
+pub struct RomInspectArgs {
+    /// Session name under private/captures/.
+    pub name: String,
+    /// Pinned SDK ROM image to compare the sampled words with (repeatable),
+    /// root-relative.
+    #[arg(long = "candidate-rom", required = true)]
+    pub candidate_rom: Vec<PathBuf>,
+    /// The boot capture's length: long enough for stock to reach its
+    /// console before the inspection opens the port.
+    #[arg(long, default_value_t = 20.0)]
+    pub seconds: f64,
+}
+
 /// A session name is one plain path component.
 pub fn check_name(name: &str) -> Result<()> {
     require(plain_name(name), || {
@@ -780,6 +795,43 @@ impl Bench {
         say!(
             "Full read in {}; compare it before relying on it",
             self.rel(&p.full)
+        );
+        Ok(0)
+    }
+
+    /// Cold boot into stock, capturing until its console is up, then sample
+    /// the ROM through that console (`read inspect-rom`) into
+    /// `private/captures/NAME/rom`: the report that names the model whose
+    /// stock console answered, which every later read of that model needs.
+    /// The capture ends before the inspection opens the port, so the UART
+    /// has one owner at a time. Nothing is retried, and stock stays
+    /// running afterwards.
+    pub fn rom_inspect(&mut self, args: &RomInspectArgs) -> Result<u8> {
+        let out = self.root.join(CAPTURES).join(&args.name);
+        self.fresh(&out)?;
+        let length = seconds_arg("--seconds", args.seconds)?;
+        let (boot, rom) = (out.join("boot"), out.join("rom"));
+        self.boot(&boot, length)?;
+
+        let mut inspect = vec![
+            "--port".into(),
+            self.config.uart_port.clone(),
+            "--output".into(),
+            self.path_arg(&rom),
+        ];
+        for candidate in &args.candidate_rom {
+            inspect.extend([
+                "--candidate-rom".into(),
+                self.path_arg(&self.root.join(candidate)),
+            ]);
+        }
+        if !self.run_all(&[argv(&["read", "inspect-rom"], &[&inspect])])? {
+            return Ok(1);
+        }
+
+        say!(
+            "ROM report in {}; check the model it names before a read relies on it",
+            self.rel(&rom.join("report.json"))
         );
         Ok(0)
     }
@@ -1392,6 +1444,7 @@ pub fn steps(command: BenchCommand) -> &'static [&'static str] {
     match command {
         BenchCommand::Boot => &["boot capture"],
         BenchCommand::Loader => &["loader entry"],
+        BenchCommand::RomInspect => &["boot capture", "wellfed-flash read inspect-rom"],
         BenchCommand::Dump => &["loader entry", READ_SMALL, "wellfed-flash read full"],
         BenchCommand::FlashPrepare => &[
             "loader entry",
