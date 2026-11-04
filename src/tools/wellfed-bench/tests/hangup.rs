@@ -133,7 +133,7 @@ impl Serving {
 
         let absent = root.join("absent");
         let serve = format!(
-            "'{BENCH}' --root '{root}' serve --flash-bin '{flash}' \
+            "'{BENCH}' --root '{root}' serve --device plaf103 --flash-bin '{flash}' \
              --build-bin '{absent}' --wellfed-bin '{absent}' \
              --feeder-address 127.0.0.1:9 --no-clock-sync",
             root = root.display(),
