@@ -42,6 +42,14 @@ use wellfed_core::store::slot::{SlotIo, crc32};
 use wellfed_core::store::update::UpdateStore;
 use wellfed_core::supply::{self, Reading, Sample};
 use wellfed_core::tone::Tune;
+use wellfed_device::store::clients::{ClientError, ClientStore};
+use wellfed_device::store::events::{BODY_BYTES, EMPTY, EventLog, EventsFill, Read, Record};
+use wellfed_device::store::net::{BuildWifi, NetStore};
+use wellfed_device::store::reads::{READ_BATCH, Reads};
+use wellfed_device::store::reset;
+use wellfed_device::store::settings::{SettingsStatus, SettingsStore};
+use wellfed_device::store::time::TimeStore;
+use wellfed_device::store::traces::{self, TraceRead, TraceRing, TracesFill};
 use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
@@ -53,23 +61,15 @@ use wellfed_device_api::mailbox::{
 use wellfed_device_api::wifi::Credentials;
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::platform::{
-    Accepted, BleDrop, BleLink, BleStep, Boot, BuildWifi, Check, Datagram, DriverStep, EventSlot,
-    EventsFill, Link, Received, TaskCount, TaskStack, TraceRead, TracesFill,
+    Accepted, BleDrop, BleLink, BleStep, Boot, Check, Datagram, DriverStep, EventSlot, Link,
+    Received, TaskCount, TaskStack,
 };
 use wellfed_feeder::feeder::supply::Radio;
 use wellfed_feeder::stats::{SAVE_MS, TOTAL_SECTORS, Totals, reset_cause};
 use wellfed_feeder::store::calibration::CalibrationStore;
 use wellfed_feeder::store::call::CallStore;
-use wellfed_feeder::store::clients::{ClientError, ClientStore};
-use wellfed_feeder::store::events::{BODY_BYTES, EMPTY, EventLog, Read, Record};
-use wellfed_feeder::store::net::NetStore;
 use wellfed_feeder::store::plans::PlansStore;
-use wellfed_feeder::store::reads::{READ_BATCH, Reads};
-use wellfed_feeder::store::reset;
-use wellfed_feeder::store::settings::{SettingsStatus, SettingsStore};
 use wellfed_feeder::store::stats::{SaveKind, StatsStatus, StatsStore};
-use wellfed_feeder::store::time::TimeStore;
-use wellfed_feeder::store::traces::{self, TraceRing};
 use wellfed_hal::interlock::INTERLOCK;
 use wellfed_hal::ota::mailbox::{self, Request};
 use wellfed_hal::ota::signers;
@@ -142,7 +142,7 @@ pub type Random = Box<dyn FnMut() -> Option<[u8; 32]>>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum DeviceError {
     #[error("the client store cannot be written (status {0:?})")]
-    Clients(wellfed_feeder::store::clients::ClientStatus),
+    Clients(wellfed_device::store::clients::ClientStatus),
     #[error("the generator has no output for the identity")]
     Random,
     #[error("enroll the client: {0:?}")]

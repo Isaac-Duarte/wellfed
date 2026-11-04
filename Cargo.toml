@@ -37,7 +37,9 @@ wellfed-session = { path = "src/sdk/wellfed-session" }
 wellfed-probes = { path = "src/sdk/wellfed-probes" }
 wellfed-sdk = { path = "src/sdk/wellfed-sdk" }
 wellfed-sdk-macros = { path = "src/sdk/wellfed-sdk-macros" }
+wellfed-device = { path = "src/product/wellfed-device" }
 wellfed-device-api = { path = "src/product/wellfed-device-api" }
+wellfed-device-runtime = { path = "src/product/wellfed-device-runtime" }
 wellfed-feeder = { path = "src/product/wellfed-feeder" }
 wellfed-feeder-runtime = { path = "src/product/wellfed-feeder-runtime" }
 wellfed-client = { path = "src/client/wellfed-client" }

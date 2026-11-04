@@ -10,8 +10,8 @@
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use wellfed_core::store::slot::SlotIo;
+use wellfed_device::store::time::TimeStore;
 use wellfed_device_api::mailbox::{TimeSettings, TimeSettingsResult, TimeSettingsView};
-use wellfed_feeder::store::time::TimeStore;
 use wellfed_hal::cell::TaskCell;
 use wellfed_hal::sdk::IrqGuard;
 

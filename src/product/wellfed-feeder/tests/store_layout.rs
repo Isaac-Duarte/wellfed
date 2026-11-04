@@ -12,18 +12,18 @@
 
 use wellfed_core::feed::progress::BowlMode;
 use wellfed_core::settings::{MealReminder, Window};
+use wellfed_device::store::clients::{ClientStatus, ClientStore};
+use wellfed_device::store::events::{BODY_BYTES, EventLog, Read, Record};
+use wellfed_device::store::net::{NetStatus, NetStore};
+use wellfed_device::store::settings::{Settings, SettingsStatus, SettingsStore};
+use wellfed_device::store::time::{TimeStatus, TimeStore};
 use wellfed_device_api::clients::{Client, Label, Role};
 use wellfed_device_api::mailbox::{
     Calibration, Claim, NtpServer, PLANS, Plan, PlansChange, TimeSettings, Weekdays, Zone,
 };
 use wellfed_device_api::wifi::Credentials;
 use wellfed_feeder::store::calibration::{CalibrationStatus, CalibrationStore};
-use wellfed_feeder::store::clients::{ClientStatus, ClientStore};
-use wellfed_feeder::store::events::{BODY_BYTES, EventLog, Read, Record};
-use wellfed_feeder::store::net::{NetStatus, NetStore};
 use wellfed_feeder::store::plans::{Plans, PlansStatus, PlansStore};
-use wellfed_feeder::store::settings::{Settings, SettingsStatus, SettingsStore};
-use wellfed_feeder::store::time::{TimeStatus, TimeStore};
 use wellfed_testkit::journal_flash::FakeJournalFlash;
 
 /// `bytes` as lowercase hex, 32 bytes a line.

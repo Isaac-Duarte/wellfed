@@ -17,13 +17,15 @@ use wellfed_core::log_tail::Batch as LogBatch;
 use wellfed_core::ota::install::{Answer, Progress, Refused};
 use wellfed_core::supply::Reading;
 use wellfed_core::tone::Tune;
-use wellfed_proto::api::{Counts, Erases, Power, Refusal, TASKS_MAX, TraceSummary};
+use wellfed_proto::api::{Counts, Erases, Power, Refusal, TASKS_MAX};
 use wellfed_proto::device::Model;
 use wellfed_proto::trace::PAGE_MAX;
 
 use super::supply::Radio;
 use crate::stats::Totals;
-use crate::store::events::{BODY_BYTES, Read};
+use wellfed_device::store::events::{BODY_BYTES, EventsFill, Read};
+use wellfed_device::store::net::BuildWifi;
+use wellfed_device::store::traces::{TraceRead, TracesFill};
 use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{CLIENTS, Client};
 use wellfed_device_api::mailbox::{
@@ -39,16 +41,6 @@ pub struct Boot {
     pub bank: u8,
     pub reset_flags: u32,
     pub boot_count: u32,
-}
-
-/// Whether the image was built with Wi-Fi credentials of its own.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BuildWifi {
-    /// A bench image: the C entry prefills the bench hotspot.
-    Present,
-    /// A consumer image: the only network is the one the owner stores, so
-    /// a boot with none stored starts BLE setup mode on its own.
-    Absent,
 }
 
 /// The Wi-Fi link as status and the statistics report it.
@@ -116,32 +108,6 @@ impl TaskStack {
 pub struct TaskCount {
     pub listed: usize,
     pub total: u32,
-}
-
-/// The event ring's fill, for the statistics.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct EventsFill {
-    pub kept: u32,
-    pub capacity: u32,
-}
-
-/// The trace ring's fill, and the traces that never reached it, for the
-/// statistics.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct TracesFill {
-    pub kept: u32,
-    pub capacity: u32,
-    pub unsaved: u32,
-}
-
-/// What [`Platform::trace_page`] copied: the trace's summary, whether it is
-/// in storage, its body's whole length and the bytes copied.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TraceRead {
-    pub summary: TraceSummary,
-    pub stored: bool,
-    pub total: u16,
-    pub len: usize,
 }
 
 /// What a non-blocking accept found.

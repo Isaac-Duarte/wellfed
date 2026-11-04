@@ -12,7 +12,7 @@ use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 
 use wellfed_core::flash_coord::{FlashFault, FlashPhase, FlashReply};
-use wellfed_feeder::store::settings::{SettingsStatus, SlotState};
+use wellfed_device::store::settings::{SettingsStatus, SlotState};
 use wellfed_feeder_runtime::stress::{EXPECTED_ID, FlashOps, Probe, Record, STRESS_SAVES};
 use wellfed_hal::bringup;
 use wellfed_hal::flash::hooks::HookTicket;

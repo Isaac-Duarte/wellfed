@@ -22,6 +22,7 @@ use wellfed_core::ota::offer::{
 use wellfed_core::ota::{BANK1_OFFSET, MARKER, Manifest, SECTOR};
 use wellfed_core::store::update::{Candidate, State, UpdateStore};
 use wellfed_core::tone::Tune;
+use wellfed_device::update as wire;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
     LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields,
@@ -33,7 +34,6 @@ use wellfed_device_api::{
     Device, EventRead, FeederDevice, KeyChange, KeyOutcome, Pass, Reader, Server, UpdateAnswer,
     UpdateRequest,
 };
-use wellfed_feeder::update as wire;
 use wellfed_model::{self as model, Answer, Op};
 use wellfed_proto::api::{
     self as proto, DeviceStatus, EventBody, FeederStatus, FoodLevel, Refusal, RequestId, Status,

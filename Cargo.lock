@@ -5222,6 +5222,7 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror",
  "wellfed-core",
+ "wellfed-device",
  "wellfed-device-api",
  "wellfed-feeder",
  "wellfed-model",
@@ -5256,6 +5257,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wellfed-device"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "wellfed-core",
+ "wellfed-device-api",
+ "wellfed-proto",
+ "wellfed-testkit",
+]
+
+[[package]]
 name = "wellfed-device-api"
 version = "0.1.0"
 dependencies = [
@@ -5281,6 +5293,7 @@ version = "0.1.0"
 dependencies = [
  "thiserror",
  "wellfed-core",
+ "wellfed-device",
  "wellfed-device-api",
  "wellfed-proto",
  "wellfed-session",
@@ -5292,6 +5305,7 @@ name = "wellfed-feeder-runtime"
 version = "0.1.0"
 dependencies = [
  "wellfed-core",
+ "wellfed-device",
  "wellfed-device-api",
  "wellfed-feeder",
  "wellfed-hal",
@@ -5316,6 +5330,7 @@ dependencies = [
  "wellfed-client",
  "wellfed-connect",
  "wellfed-core",
+ "wellfed-device",
  "wellfed-device-api",
  "wellfed-feeder",
  "wellfed-feeder-sim",
@@ -5388,6 +5403,7 @@ version = "0.1.0"
 dependencies = [
  "wellfed-client",
  "wellfed-core",
+ "wellfed-device",
  "wellfed-device-api",
  "wellfed-feeder",
  "wellfed-feeder-runtime",

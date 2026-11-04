@@ -6,7 +6,7 @@
 use wellfed_proto::api::EventBody;
 
 use super::platform::{EventSlot, Platform};
-use crate::store::events::BODY_BYTES;
+use wellfed_device::store::events::BODY_BYTES;
 
 /// Queue `body` at `now_ms`. A full queue counts it lost, and the loop
 /// records the count as an event of its own.

@@ -29,10 +29,10 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::SlotIo;
+use wellfed_device::store::net::NetStore;
+use wellfed_device::store::reset;
 use wellfed_device_api::mailbox::{WifiResult, WifiSource, WifiView};
 use wellfed_device_api::wifi::Credentials;
-use wellfed_feeder::store::net::NetStore;
-use wellfed_feeder::store::reset;
 
 use wellfed_hal::cell::TaskCell;
 use wellfed_hal::interlock::INTERLOCK;
@@ -45,7 +45,7 @@ const RESET_BASE: u32 = wellfed_hal::board::storage::RESET.first;
 /// Consecutive failed joins before the build's credentials take over.
 pub const FALLBACK_AFTER: u32 = 5;
 
-pub use wellfed_feeder::feeder::platform::BuildWifi;
+pub use wellfed_device::store::net::BuildWifi;
 
 /// This image's build Wi-Fi. `wellfed-build` sets `WELLFED_BUILD_WIFI`
 /// exactly when the generated header the C entry prefills from names a

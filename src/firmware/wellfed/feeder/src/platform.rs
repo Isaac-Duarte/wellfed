@@ -19,6 +19,10 @@ use wellfed_core::ota::install::{Answer, Progress, Refused};
 use wellfed_core::store::slot::SlotIo;
 use wellfed_core::supply::Reading;
 use wellfed_core::tone::Tune;
+use wellfed_device::store;
+use wellfed_device::store::events::{BODY_BYTES, EventsFill, Read};
+use wellfed_device::store::net::BuildWifi;
+use wellfed_device::store::traces::{TraceRead, TracesFill};
 use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{CLIENTS, Client};
 use wellfed_device_api::mailbox::{
@@ -29,13 +33,11 @@ use wellfed_device_api::mailbox::{
 use wellfed_device_api::wifi::Credentials;
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::platform::{
-    Accepted, BleDrop, BleLink, BleStep, Boot, BuildWifi, Check, Datagram, DriverRecord,
-    DriverStep, EventSlot, EventsFill, Link, Received, TaskCount, TaskStack, TraceRead, TracesFill,
+    Accepted, BleDrop, BleLink, BleStep, Boot, Check, Datagram, DriverRecord, DriverStep,
+    EventSlot, Link, Received, TaskCount, TaskStack,
 };
 use wellfed_feeder::feeder::supply::Radio;
 use wellfed_feeder::stats::Totals;
-use wellfed_feeder::store;
-use wellfed_feeder::store::events::{BODY_BYTES, Read};
 use wellfed_feeder_runtime::{
     calibration, call, events, keys, network, plans, stats, time, traces,
 };

@@ -38,9 +38,27 @@ use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{Crc32, SlotIo};
 
-use crate::feeder::platform::TraceRead;
 use wellfed_proto::api::{Refusal, TraceSummary};
 use wellfed_proto::trace::BODY_MAX;
+
+/// The trace ring's fill, and the traces that never reached it, for the
+/// statistics.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TracesFill {
+    pub kept: u32,
+    pub capacity: u32,
+    pub unsaved: u32,
+}
+
+/// What a page read of a trace copied: the trace's summary, whether it is
+/// in storage, its body's whole length and the bytes copied.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TraceRead {
+    pub summary: TraceSummary,
+    pub stored: bool,
+    pub total: u16,
+    pub len: usize,
+}
 
 /// One trace's slot.
 pub const SLOT_BYTES: u32 = 1024;

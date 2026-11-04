@@ -11,7 +11,7 @@
 use wellfed_core::feed::progress::BowlMode;
 use wellfed_core::settings::{MealReminder, Window};
 use wellfed_core::store::slot::{RECORD_BYTES, crc32};
-use wellfed_feeder::store::settings::{
+use wellfed_device::store::settings::{
     Settings, SettingsStatus, SettingsStore, SlotState, VERSION, WEAR_LIMIT,
 };
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, UNIT};

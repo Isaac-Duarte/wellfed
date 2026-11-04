@@ -2,7 +2,7 @@
 //! read back exactly, cleared by an erase, and never pending after a cut
 //! part-way through its program or with anything but the whole pattern.
 
-use wellfed_feeder::store::reset::{self, MARKER};
+use wellfed_device::store::reset::{self, MARKER};
 use wellfed_testkit::journal_flash::{FakeJournalFlash, UNIT};
 
 fn one_unit() -> FakeJournalFlash {

@@ -22,7 +22,8 @@ use wellfed_proto::api::{
 };
 
 use crate::feeder::Marks;
-use crate::feeder::platform::{Link, TracesFill};
+use crate::feeder::platform::Link;
+use wellfed_device::store::traces::TracesFill;
 
 /// One point of the battery's history.
 pub const HISTORY_MS: u32 = 60 * 60_000;

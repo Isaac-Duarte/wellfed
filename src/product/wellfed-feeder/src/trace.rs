@@ -14,7 +14,7 @@
 //! owner's own, the same that `PLOWN1 fed` and `PLOWN1 current` log.
 //!
 //! Nothing is written to flash here: a sealed trace waits in RAM until the
-//! settings writer copies it into the storage ring ([`crate::store::traces`])
+//! settings writer copies it into the storage ring ([`wellfed_device::store::traces`])
 //! once it has the write turn, which a feed never leaves it while the
 //! motor may move.
 
@@ -24,7 +24,7 @@ use wellfed_core::feed::observe::{Beams, Observation};
 use wellfed_proto::api::{CurrentUnit, EventBody, Refusal, TraceSummary};
 use wellfed_proto::trace::{BODY_MAX, Entry, Motor, Pushed, Writer};
 
-use crate::feeder::platform::TraceRead;
+use wellfed_device::store::traces::TraceRead;
 
 /// A battery reading this far from the last one kept is kept too; nearer
 /// ones are the ADC's own wander.

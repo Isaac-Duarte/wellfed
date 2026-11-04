@@ -1,7 +1,7 @@
 //! The latest feed's trace in RAM, carried between the loop, which records
 //! it from the feeding owner's observations, and the settings writer, which
 //! copies it into the storage ring (sectors 29-31,
-//! `wellfed_feeder::store::traces`) once it has the write turn.
+//! `wellfed_device::store::traces`) once it has the write turn.
 //!
 //! One trace, under a kilobyte, passes through these hands:
 //! - **Recording:** the loop's alone, from the feed's submission
@@ -23,7 +23,7 @@
 use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
 use wellfed_core::feed::observe::Observation;
-use wellfed_feeder::feeder::platform::{TraceRead, TracesFill};
+use wellfed_device::store::traces::{TraceRead, TracesFill};
 use wellfed_feeder::trace::{DriveFigures, Recorder};
 use wellfed_hal::cell::TaskCell;
 use wellfed_proto::api::{EventBody, Refusal, TraceSummary};

@@ -7,16 +7,16 @@ use std::sync::{Mutex, MutexGuard};
 use wellfed_core::record::{self, Event, Record as Line, Tag};
 use wellfed_core::store::handover;
 use wellfed_core::store::seed::SeedStatus;
+use wellfed_device::store::clients::ClientStatus;
+use wellfed_device::store::events::Read;
+use wellfed_device::store::net::NetStatus;
+use wellfed_device::store::settings::{Settings, SettingsStatus};
+use wellfed_device::store::time::TimeStatus;
 use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::mailbox::{SettingsFields, SettingsResult};
 use wellfed_feeder::stats::{EARLY_SAVES, FEED_SAVE_MS, RESTART_SETTLED_MS, SAVE_MS, Totals};
-use wellfed_feeder::store::clients::ClientStatus;
-use wellfed_feeder::store::events::Read;
-use wellfed_feeder::store::net::NetStatus;
-use wellfed_feeder::store::settings::{Settings, SettingsStatus};
 use wellfed_feeder::store::stats::StatsStatus;
-use wellfed_feeder::store::time::TimeStatus;
 use wellfed_feeder_runtime::keys::{self, Change, Requested};
 use wellfed_feeder_runtime::writer::{
     self as writer, ErrorStage, Identity, KeyChange, KeyResult, Record, Writer,
@@ -2188,7 +2188,7 @@ fn an_upload_polls_at_the_read_pace_while_it_runs_and_not_for_ever() {
 
 /// Whether the factory reset's marker is down.
 fn reset_marked() -> bool {
-    use wellfed_feeder::store::reset::{MARKER, marked};
+    use wellfed_device::store::reset::{MARKER, marked};
 
     let first = wellfed_hal::board::storage::RESET.first as usize * 0x1000;
     let bytes: [u8; MARKER.len()] =
@@ -2796,7 +2796,7 @@ fn a_power_cut_at_any_step_of_the_reset_leaves_it_to_the_next_boot() {
 /// nothing had been erased, and the stores open as they were.
 #[test]
 fn a_torn_marker_is_no_reset() {
-    use wellfed_feeder::store::reset::MARKER;
+    use wellfed_device::store::reset::MARKER;
     use wellfed_hal::board::storage;
 
     let (_guard, mut writer, mut provider) = start();
@@ -2859,7 +2859,7 @@ fn an_unarmed_boot_serves_nothing_and_keeps_the_marker() {
 /// with its attempts.
 #[test]
 fn a_reset_that_cannot_finish_asks_for_one_restart_only() {
-    use wellfed_feeder::store::reset::{ATTEMPT, MARKER};
+    use wellfed_device::store::reset::{ATTEMPT, MARKER};
     use wellfed_hal::board::storage;
 
     let (_guard, mut provider) = filled_then_reset();
@@ -2906,7 +2906,7 @@ fn a_reset_that_cannot_finish_asks_for_one_restart_only() {
 /// next boot erases the store and draws a new identity.
 #[test]
 fn a_reset_over_an_unwritable_client_store_still_completes() {
-    use wellfed_feeder::store::clients::RECORD_BYTES;
+    use wellfed_device::store::clients::RECORD_BYTES;
     use wellfed_hal::board::storage;
 
     let (_guard, mut writer, mut provider) = start();

@@ -26,7 +26,7 @@
 //! store and the seed are never touched.
 //!
 //! It keeps the time settings too (sectors 27 and 28,
-//! `wellfed_feeder::store::time`): the owner's zone and the NTP server,
+//! `wellfed_device::store::time`): the owner's zone and the NTP server,
 //! published for the loop ([`time`]), the portion calibration (sectors 34
 //! and 35, `wellfed_feeder::store::calibration`, [`calibration`]), and the
 //! feeding plans (sectors 11 and 12, `wellfed_feeder::store::plans`,
@@ -35,14 +35,14 @@
 //! upload a chunk at a time, written only while no call plays from it.
 //!
 //! It also keeps the event history (sectors 13-24,
-//! `wellfed_feeder::store::events`). It appends the records the loop queues
+//! `wellfed_device::store::events`). It appends the records the loop queues
 //! and answers the device API's reads ([`events`]), polling
 //! faster while either waits, so a reconnecting client catches up in
 //! seconds.
 //! It publishes the ring's fill for the statistics ([`stats`]).
 //!
 //! And it keeps the per-feed traces (sectors 29-31,
-//! `wellfed_feeder::store::traces`): a feed's trace, sealed in RAM once the
+//! `wellfed_device::store::traces`): a feed's trace, sealed in RAM once the
 //! feed is over, is appended to the ring on the writer's next turn
 //! ([`traces`]).
 //!
@@ -78,19 +78,19 @@ use wellfed_core::named_enum;
 use wellfed_core::store::handover;
 use wellfed_core::store::seed::{SeedStatus, SeedStore};
 use wellfed_core::store::update::{UpdateStatus, UpdateStore};
+use wellfed_device::store::clients::{ClientError, ClientStatus, ClientStore};
+use wellfed_device::store::events::{self as ring, EMPTY, EventLog};
+use wellfed_device::store::net::{NetStatus, NetStore};
+use wellfed_device::store::reset as reset_marker;
+use wellfed_device::store::settings::{Settings, SettingsStatus, SettingsStore};
+use wellfed_device::store::time::{TimeStatus, TimeStore};
+use wellfed_device::store::traces::TraceRing;
 use wellfed_device_api::mailbox::{CallChange, CallClip};
 use wellfed_feeder::stats::{FEED_SAVE_MS, SAVE_MS, TOTAL_SECTORS, Totals, reset_cause};
 use wellfed_feeder::store::calibration::CalibrationStore;
 use wellfed_feeder::store::call::CallStore;
-use wellfed_feeder::store::clients::{ClientError, ClientStatus, ClientStore};
-use wellfed_feeder::store::events::{self as ring, EMPTY, EventLog};
-use wellfed_feeder::store::net::{NetStatus, NetStore};
 use wellfed_feeder::store::plans::PlansStore;
-use wellfed_feeder::store::reset as reset_marker;
-use wellfed_feeder::store::settings::{Settings, SettingsStatus, SettingsStore};
 use wellfed_feeder::store::stats::{SaveKind, StatsStatus, StatsStore};
-use wellfed_feeder::store::time::{TimeStatus, TimeStore};
-use wellfed_feeder::store::traces::TraceRing;
 use wellfed_hal::board::storage::{FACTORY_CLEARED_SECTORS, factory_cleared};
 use wellfed_hal::flash::park::Mmio;
 use wellfed_hal::flash_lock::arming::{self, Arming, Hooks, Poll};
@@ -112,7 +112,7 @@ use crate::plans::{self, PLANS_BASE};
 use crate::stats::{self, STATS_BASE};
 use crate::time::{self, TIME_BASE};
 use crate::traces;
-use wellfed_feeder::feeder::platform::EventsFill;
+use wellfed_device::store::events::EventsFill;
 
 /// The factory reset's marker sector (`storage::RESET`).
 pub const RESET_BASE: u32 = wellfed_hal::board::storage::RESET.first;

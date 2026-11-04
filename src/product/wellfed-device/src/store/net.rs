@@ -20,6 +20,16 @@ use wellfed_core::store::slot::{
 };
 use wellfed_device_api::wifi::{Credentials, MAX_PSK, MAX_SSID};
 
+/// Whether the image was built with Wi-Fi credentials of its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuildWifi {
+    /// A bench image: the C entry prefills the bench hotspot.
+    Present,
+    /// A consumer image: the only network is the one the owner stores, so
+    /// a boot with none stored starts BLE setup mode on its own.
+    Absent,
+}
+
 pub const VERSION: u16 = 1;
 const LAYOUT: Layout = Layout {
     magic: *b"PLFNET01",

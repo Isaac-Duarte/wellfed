@@ -25,7 +25,7 @@
 use wellfed_core::clock::tick::TickClock;
 use wellfed_core::feed::progress::BowlMode;
 use wellfed_core::flash_coord::{FlashCoord, FlashFault, FlashPhase, FlashReply};
-use wellfed_feeder::store::settings::{Settings, SettingsStatus, SettingsStore, SlotState};
+use wellfed_device::store::settings::{Settings, SettingsStatus, SettingsStore, SlotState};
 
 use wellfed_hal::flash::park::{self, Mmio, Reply};
 use wellfed_hal::flash::peer::MARKER_REGISTER;

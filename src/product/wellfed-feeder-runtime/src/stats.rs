@@ -8,7 +8,7 @@
 //! Every access copies a few hundred bytes at most with the scheduler
 //! paused; both sides are tasks, never interrupt handlers.
 
-use wellfed_feeder::feeder::platform::EventsFill;
+use wellfed_device::store::events::EventsFill;
 use wellfed_feeder::stats::Totals;
 use wellfed_hal::cell::TaskCell;
 use wellfed_hal::sdk;

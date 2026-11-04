@@ -40,6 +40,13 @@ use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{SlotIo, crc32, get_u32, put_u32};
 
+/// The event ring's fill, for the statistics.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EventsFill {
+    pub kept: u32,
+    pub capacity: u32,
+}
+
 pub const RECORD_BYTES: usize = 32;
 /// [`RECORD_BYTES`] as the I/O offsets count.
 const RECORD_U32: u32 = 32;

@@ -4,7 +4,7 @@
 //! erase that makes room.
 
 use wellfed_core::store::slot::crc32;
-use wellfed_feeder::store::events::{
+use wellfed_device::store::events::{
     BODY_BYTES, Batch, EMPTY, EventError, EventLog, RECORD_BYTES, Read,
 };
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};

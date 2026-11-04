@@ -1,6 +1,6 @@
 //! The event history, carried between the loop task and the settings
 //! writer, which alone writes the ring in storage sectors 13-24
-//! (`wellfed_feeder::store::events`).
+//! (`wellfed_device::store::events`).
 //!
 //! - **Appends:** the loop queues a record with [`record`] and goes on; the
 //!   writer drains the queue with [`pending`] and [`finish_pending`]. A full
@@ -13,7 +13,7 @@
 //!   [`read_result`]; the writer takes the request from [`read_request`]
 //!   and answers with [`finish_read`], and the loop collects it with
 //!   [`read_result`] again. One read is outstanding at a time, in the
-//!   turns [`wellfed_feeder::store::reads`] keeps (the simulator runs the
+//!   turns [`wellfed_device::store::reads`] keeps (the simulator runs the
 //!   same turns): a batch per read, fetched for one subscriber's slot and
 //!   shared with any other whose cursor falls in it, round robin among
 //!   those waiting, and given up at once by a subscriber that ends
@@ -25,10 +25,10 @@
 //! Every access copies a few dozen bytes with the scheduler paused; both
 //! sides are tasks, never interrupt handlers.
 
+use wellfed_device::store::events::{BODY_BYTES, Batch, Read, Record};
+use wellfed_device::store::reads::Reads;
+pub use wellfed_device::store::reads::{MISSES_MAX, READ_BATCH};
 use wellfed_device_api::Reader;
-use wellfed_feeder::store::events::{BODY_BYTES, Batch, Read, Record};
-use wellfed_feeder::store::reads::Reads;
-pub use wellfed_feeder::store::reads::{MISSES_MAX, READ_BATCH};
 
 use wellfed_hal::cell::TaskCell;
 use wellfed_hal::sdk;
@@ -169,7 +169,7 @@ pub fn read_request() -> Option<Option<u64>> {
 }
 
 /// The writer's half: the answer to [`read_request`], as
-/// [`EventLog::read_batch`](wellfed_feeder::store::events::EventLog::read_batch)
+/// [`EventLog::read_batch`](wellfed_device::store::events::EventLog::read_batch)
 /// gave it, with its records at the front of `records`.
 pub fn finish_read(after: Option<u64>, batch: Batch, records: &[Record]) {
     with(|shared| shared.reads.finish(after, batch, records, shared.last));

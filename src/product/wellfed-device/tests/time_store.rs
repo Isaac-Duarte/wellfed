@@ -3,8 +3,8 @@
 //! whose fields fail their checks is not read.
 
 use wellfed_core::store::slot::{RECORD_BYTES, crc32};
+use wellfed_device::store::time::{TimeStatus, TimeStore};
 use wellfed_device_api::mailbox::{NtpServer, TimeSettings, Zone};
-use wellfed_feeder::store::time::{TimeStatus, TimeStore};
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, UNIT};
 
 fn open(f: &mut FakeJournalFlash) -> TimeStore<FlashIo> {

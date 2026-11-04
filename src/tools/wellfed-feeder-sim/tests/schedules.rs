@@ -12,13 +12,13 @@ use wellfed_core::clock::zone::Zone;
 use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_core::store::slot::crc32;
 use wellfed_core::tone::{PlayResult, Tune};
+use wellfed_device::store::events::Read;
 use wellfed_device_api::mailbox::{
     CallChange, CallClip, CallResult, MealReminder, PlansChange, PlansResult, PlansView,
     SettingsFields, SettingsResult,
 };
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::{self, schedule};
-use wellfed_feeder::store::events::Read;
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
