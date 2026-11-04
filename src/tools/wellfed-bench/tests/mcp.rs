@@ -85,6 +85,7 @@ fn an_agent_lists_reads_posts_a_job_waits_and_is_refused_motion_and_feeds() {
     )
     .unwrap();
     let options = Options {
+        device: wellfed_proto::device::Model::Plaf103,
         root: root.clone(),
         tools: ToolPaths {
             flash_bin: root.join("absent"),

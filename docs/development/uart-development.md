@@ -39,14 +39,14 @@ These commands are offline and do not open a serial port. Each writes to a new o
 3. List the update's arguments:
 
    ```sh
-   cargo run --locked -p wellfed-flash -- update --help
+   cargo run --locked -p wellfed-flash -- update --device plaf103 --help
    ```
 
 Keep a frozen source that matches the application actually installed. A build snapshot copied from the research archive can be stale against Wellfed's changed source and input hashes. Rebuild and freeze a new target rather than editing manifests or substituting expected hashes.
 
 ## Run the update
 
-The [Rust flash client](rust-flash.md) runs the update as `wellfed-flash update`, in three modes: `inspect`, `prepare` and `execute`. Supply explicit paths each time:
+The [Rust flash client](rust-flash.md) runs the update as `wellfed-flash update --device plaf103`, in three modes: `inspect`, `prepare` and `execute`. Supply explicit paths each time:
 
 - the baseline, and the frozen source and target directories;
 - the port;
@@ -55,11 +55,11 @@ The [Rust flash client](rust-flash.md) runs the update as `wellfed-flash update`
 
 Reports and their companion serial and read files must stay together.
 
-1. Run `wellfed-flash update inspect` with those inputs.
+1. Run `wellfed-flash update --device plaf103 inspect` with those inputs.
 
    It reads the device and writes nothing. You should see an inspection report. The current application must exactly match the frozen source, and the factory range must match the pinned baseline.
 
-2. Run `wellfed-flash update prepare` on that inspection.
+2. Run `wellfed-flash update --device plaf103 prepare` on that inspection.
 
    This step opens no port. It binds the complete inspected source region, the report and the tool hashes into a plan, and prints the plan's SHA-256.
 
@@ -68,7 +68,7 @@ Reports and their companion serial and read files must stay together.
 > [!WARNING]
 > The next step erases and programs flash. A wrong plan, a wrong unit or a stop at the wrong moment can leave the bank unbootable.
 
-4. Run `wellfed-flash update execute` with exactly that plan and its SHA-256.
+4. Run `wellfed-flash update --device plaf103 execute` with exactly that plan and its SHA-256.
 
    You should see the final verification pass and exit 0. Exit 1 means it stopped after the port opened: read the report and journal, and see [finishing an interrupted update](#finish-an-interrupted-update).
 
@@ -105,7 +105,7 @@ Settings, audio and log areas outside the declared application footprint are not
 
 ## Give way to bank 0
 
-`wellfed-flash give-way` makes the loader fall back to bank 0. It runs only when bank 0 holds exactly a frozen, reviewed image, read in full.
+`wellfed-flash give-way --device plaf103` makes the loader fall back to bank 0. It runs only when bank 0 holds exactly a frozen, reviewed image, read in full.
 
 > [!WARNING]
 > Give-way programs flash. Check that bank 0 holds the reviewed image you expect before you execute.

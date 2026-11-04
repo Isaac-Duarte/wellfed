@@ -266,6 +266,9 @@ pub enum UartWhenOff {
 
 pub struct Bench {
     pub root: PathBuf,
+    /// The model of the device on the bench, which every `wellfed-flash`
+    /// writer and `wellfed-build` build is told (`--device`).
+    pub device: wellfed_proto::device::Model,
     pub config: Config,
     pub relay: Relay,
     pub status: Status,
@@ -802,8 +805,15 @@ impl Bench {
         ]
     }
 
+    /// `--device <model>`, which the flash writers and the builds take.
+    pub(crate) fn device_args(&self) -> [String; 2] {
+        ["--device".into(), self.device.name().into()]
+    }
+
     fn evidence_args(&self, p: &Paths) -> Vec<String> {
         vec![
+            "--device".into(),
+            self.device.name().into(),
             "--baseline".into(),
             self.path_arg(&self.root.join(&self.config.baseline)),
             "--rom-report".into(),

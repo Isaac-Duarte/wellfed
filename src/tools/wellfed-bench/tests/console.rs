@@ -100,6 +100,7 @@ fn the_console_refuses_without_a_terminal_or_server_and_q_leaves_the_job_running
     screen.until_shown("No bench server answers");
 
     let options = Options {
+        device: wellfed_proto::device::Model::Plaf103,
         root: root.clone(),
         tools: ToolPaths {
             flash_bin: flash,

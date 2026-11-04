@@ -162,9 +162,10 @@ enum ReviewKind {
 
 #[derive(Args)]
 struct DeviceArgs {
-    /// The board under `src/firmware/devices/` (default: the only one).
-    #[arg(long)]
-    device: Option<String>,
+    /// The device model to build for; its board is
+    /// `src/firmware/devices/<model>`. There is no default.
+    #[arg(long, value_enum)]
+    device: wellfed_formats::cli::Device,
 }
 
 #[derive(Args)]
@@ -218,7 +219,7 @@ struct Resolved {
 
 impl Target {
     fn resolve(&self, repo: &Repo) -> Result<Resolved> {
-        let device = Device::resolve(repo, self.device.device.as_deref())?;
+        let device = Device::for_model(repo, self.device.device.into())?;
         let firmware = Firmware::new(repo, &self.firmware)?;
         let variant = self
             .variant
@@ -390,7 +391,7 @@ fn run(command: Command) -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&catalog)?);
         }
         Command::Bootstrap { device } => {
-            let device = Device::resolve(&repo, device.device.as_deref())?;
+            let device = Device::for_model(&repo, device.device.into())?;
             private_outputs();
             device.bootstrap(&repo)?;
         }

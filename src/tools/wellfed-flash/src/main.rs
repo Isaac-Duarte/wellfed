@@ -23,6 +23,7 @@ use wellfed_flash::evidence::session::{Completion, Context, EMULATOR, Outcome};
 use wellfed_flash::link::protocol::{Core, INTERRUPTED};
 use wellfed_flash::writers::{read, stock, update};
 use wellfed_formats::bench::lease::Lease;
+use wellfed_formats::cli::Device;
 
 #[derive(Parser)]
 #[command(
@@ -167,6 +168,10 @@ struct ReadArgs {
 
 #[derive(Args)]
 struct EvidenceArgs {
+    /// The model of the device written. Required: the writers hold pins
+    /// for the plaf103 alone and refuse any other before serial access.
+    #[arg(long, value_enum)]
+    device: Device,
     #[arg(long)]
     port: String,
     /// The pinned original full-flash backup.
@@ -342,6 +347,7 @@ fn main() -> ExitCode {
         }),
 
         Command::Update(args) => device(root, |context| {
+            wellfed_flash::device::writable(args.evidence.device.into())?;
             update::run(
                 context,
                 &update::Args {
@@ -358,6 +364,7 @@ fn main() -> ExitCode {
         }),
 
         Command::GiveWay(args) => device(root, |context| {
+            wellfed_flash::device::writable(args.evidence.device.into())?;
             update::give_way(
                 context,
                 &update::GiveWayArgs {
@@ -369,6 +376,7 @@ fn main() -> ExitCode {
         }),
 
         Command::StockRecovery(args) => device(root, |context| {
+            wellfed_flash::device::writable(args.evidence.device.into())?;
             stock::run(
                 context,
                 &stock::Args {

@@ -18,7 +18,7 @@ You need the bench set up for UART capture and over-the-air installs, and someon
 6. For each **indicator**, look at the light and answer: press **Dispense for yes** (it lit) or **Lock for no**.
 7. For the **speaker**, listen to the test tune (1 s at 1 kHz) and answer the same way.
 8. Read the last line, `PLQA1 result status=pass|fail …`. You should see `status=pass` and every check named `pass`.
-9. Grade the capture: `wellfed-audit qa --capture private/captures/NAME-01 --manifest … --image … --output private/…/qa.json`. You should see the outcome `pass`.
+9. Grade the capture: `wellfed-audit qa --device plaf103 --capture private/captures/NAME-01 --manifest … --image … --output private/…/qa.json`. You should see the outcome `pass`.
 
 When the result is logged, the QA task ends. The runtime keeps the build confirmed and updatable as usual.
 
@@ -55,7 +55,7 @@ The image carries the optics and ADC probes, so it declares their startup polici
 
 ## How the audit grades
 
-`wellfed-audit qa` loads the capture and its source-bound build as the startup audit does. It requires `firmware: qa` in the manifest and a passing startup. It then reads the `PLQA1` lines and trusts none of the summaries on their own:
+`wellfed-audit qa --device plaf103` loads the capture and its source-bound build as the startup audit does. It requires `firmware: qa` in the manifest and a passing startup. It then reads the `PLQA1` lines and trusts none of the summaries on their own:
 
 - every check must start in order and report one verdict;
 - the result line must repeat those verdicts;
@@ -88,7 +88,7 @@ Buttons, indicators and the tune are graded by what you answered. A lit light an
 ## Evidence
 
 - **Every check passed in one run.** Observed (October 23, 2026, owner answering): `qa-20261023-02-guided`, on `qa` `645c1cd4…` (v92), graded `pass`. This was the first complete passing run.
-- **Two earlier guided runs** of `qa` `ef76b85e…` (v84), each graded by `wellfed-audit qa`, passed every check and item between them:
+- **Two earlier guided runs** of `qa` `ef76b85e…` (v84), each graded by `wellfed-audit qa --device plaf103`, passed every check and item between them:
   - `fw39-qa-03-guided`: optics, power, all four buttons, three indicators and the speaker passed. PA0 failed as `no`: the owner mis-pressed Lock about 0.9 s after the prompt.
   - `fw39-qa-04-guided`: optics, power, all four indicators, the speaker and three buttons passed. Reset timed out with no press on the line; the owner missed the prompt.
 - **Optics fault.** Observed: the starvation figures above (`stall=703`, `stall=702`).

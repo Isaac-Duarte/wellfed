@@ -99,6 +99,9 @@ pub struct Options {
     /// The checkout, canonical: its `private/` holds the config, the
     /// evidence and the socket.
     pub root: PathBuf,
+    /// The model of the device on this bench, which every job's flash
+    /// writer and build is told.
+    pub device: wellfed_proto::device::Model,
     pub tools: ToolPaths,
     pub console: Console,
 }
@@ -208,6 +211,7 @@ impl Server {
         };
         let bed = Bed {
             root: options.root,
+            device: options.device,
             config,
             board,
             tools: options.tools,

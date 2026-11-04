@@ -25,9 +25,9 @@ The diagnostics also showed build-bound startup, physical stop and off requests,
 | --- | --- |
 | `wellfed-flash read` | Restricted inspection and read transport |
 | `wellfed-flash decode-status` | Decodes the flash protection registers |
-| `wellfed-audit backup` | Compares independent backups |
+| `wellfed-audit backup --device plaf103` | Compares independent backups |
 | `wellfed-flash plan-stock-recovery` | Builds a stock-recovery plan offline |
-| `wellfed-flash stock-recovery` | Runs a reviewed plan against bank 1. It refuses a target bank that can still boot. |
+| `wellfed-flash stock-recovery --device plaf103` | Runs a reviewed plan against bank 1. It refuses a target bank that can still boot. |
 | `wellfed-flash inspect-journal` | Verifies a write journal |
 | `wellfed-flash` emulated fixture tests (`wellfed-emu`) | Run the pinned helper on synthetic NOR: update, give-way, stock recovery and a fault mid-recovery. No hardware. |
 
@@ -45,10 +45,10 @@ Do not reach for a blanket chip erase, protection clearing, an arbitrary image o
 
 The [relay bench](bench.md#to-stock-over-uart) wraps these steps as `stock-prepare` and `stock-execute`. Run by hand, they are:
 
-1. Run `wellfed-flash stock-recovery --help` with no device attached, and read the [fixture requirements](../../development/fixtures.md).
+1. Run `wellfed-flash stock-recovery --device plaf103 --help` with no device attached, and read the [fixture requirements](../../development/fixtures.md).
 2. Enter download mode ([UART](uart.md#enter-download-mode)), then take a full read.
 3. Check bank 1's marker. If bank 1 can still boot, give way to bank 0 first, because `stock-recovery` refuses a valid target marker.
-4. Run `wellfed-flash stock-recovery prepare`. It writes a plan from the pinned baseline backup.
+4. Run `wellfed-flash stock-recovery --device plaf103 prepare`. It writes a plan from the pinned baseline backup.
 5. Review the plan and note its SHA-256. This is your last check before anything is written.
 
    > [!WARNING]
@@ -74,5 +74,5 @@ The separate [UART development updater](../../development/uart-development.md) a
 
 ## Evidence
 
-- **Observed:** independent loader entry, bounded body-sector write-back, marker activation with preservation checks, a small stock-image Rust probe, and the UART-only diagnostic's install and boot. Exact stock restoration followed by a normal stock 1.1.15 boot completed the conservative round trip. These ran with the former Python clients, whose plan, journal and wire formats `wellfed-flash stock-recovery` keeps.
-- **Observed, October 23, 2026:** `wellfed-flash stock-recovery` restored bank 1 on the research unit. A give-way came first, then a full read, a reviewed plan and its execution. Stock 1.1.15 booted from bank 1, and the reference build went back over UART.
+- **Observed:** independent loader entry, bounded body-sector write-back, marker activation with preservation checks, a small stock-image Rust probe, and the UART-only diagnostic's install and boot. Exact stock restoration followed by a normal stock 1.1.15 boot completed the conservative round trip. These ran with the former Python clients, whose plan, journal and wire formats `wellfed-flash stock-recovery --device plaf103` keeps.
+- **Observed, October 23, 2026:** `wellfed-flash stock-recovery --device plaf103` restored bank 1 on the research unit. A give-way came first, then a full read, a reviewed plan and its execution. Stock 1.1.15 booted from bank 1, and the reference build went back over UART.

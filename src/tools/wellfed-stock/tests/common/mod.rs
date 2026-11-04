@@ -198,6 +198,8 @@ pub fn addresses_on<const N: usize>(host: Ipv4Addr) -> std::io::Result<[SocketAd
 /// The real `serve` binary on `path`.
 pub fn start(path: &std::path::Path) -> Service {
     let mut command = Command::new(env!("CARGO_BIN_EXE_wellfed-stock"));
+    // The stock model whose message set every action speaks.
+    command.args(["--device", "plaf103"]);
     command.args(["serve", "--config"]).arg(path);
 
     Service(

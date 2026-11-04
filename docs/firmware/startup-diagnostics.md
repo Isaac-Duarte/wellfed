@@ -28,10 +28,10 @@ PLFW1 result diagnostic=pass backend=unopened
 - **`bank`** comes from live RSIP mapping entry 0. Virtual `0x0c000000` mapped to `0x08006000` is bank 0, and to `0x08186000` bank 1. Any other mapping reports unknown.
 - **`mmu`** is the raw mapping, and **`reset`** the factory-preserved reset flags. A zero reset word does not establish a particular physical reset cause.
 
-`wellfed-audit startup` ([src/tools/wellfed-audit](../../src/tools/wellfed-audit)) checks a capture against its build. It verifies the frozen OTA image and manifest, the embedded identity, the finalized receive-only capture hashes, event coverage, the actual bank mapping, ordering and the observation interval. A missing or wrong build, faults, incomplete or malformed records, a repeated startup and each policy's own failures are distinct failing outcomes. It emits fixed fields, never arbitrary device text. With your own complete evidence bundle:
+`wellfed-audit startup --device plaf103` ([src/tools/wellfed-audit](../../src/tools/wellfed-audit)) checks a capture against its build. It verifies the frozen OTA image and manifest, the embedded identity, the finalized receive-only capture hashes, event coverage, the actual bank mapping, ordering and the observation interval. A missing or wrong build, faults, incomplete or malformed records, a repeated startup and each policy's own failures are distinct failing outcomes. It emits fixed fields, never arbitrary device text. With your own complete evidence bundle:
 
 ```sh
-cargo run --locked -p wellfed-audit -- startup \
+cargo run --locked -p wellfed-audit -- startup --device plaf103 \
   --capture private/captures/normal-boot \
   --manifest private/verification/review/build-manifest.json \
   --image private/verification/review/image.bin \
@@ -227,7 +227,7 @@ Limits:
 
 ## Evidence
 
-- **Startup report.** Observed: an artifact-bound startup passed `wellfed-audit startup` on the research unit. This does not establish long-term uptime, persistent boot counters or a verified physical reset cause.
+- **Startup report.** Observed: an artifact-bound startup passed `wellfed-audit startup --device plaf103` on the research unit. This does not establish long-term uptime, persistent boot counters or a verified physical reset cause.
 - **Stopped outputs.** Observed: exact GPIO readback, an artifact-bound normal boot and operator-reported no motion. Independent voltage and infrared-off measurements, repeated measured resets and transient checks belong to the electrical output verification ([motor driver](../devices/plaf103/motor-driver.md)). The single direction-register enable passed 50 cold boots on the analyzer (observed, October 27).
 - **PB3 and SWD.** Observed: before startup released SWD, PB3 was never driven, and its LOW readback was the pad's pull-down ([optical inputs](optical-inputs.md#pb3-is-swd_clk)).
 - **Shared-pad power.** Observed: a capture with the new order showed an intact `PLPWR1` ahead of KM4 output with `after_pad=00000301`, the LDO powered with a zero trim. A later build with the trim and per-step Port A sampling read the same word at every step. The removed `trace-stock-pad-power.py` (in Git history) executed the stock initializer and LDO instructions against modeled registers and delays, and its fixtures distinguished LDO power from the pad-enable bit: recovered, not an electrical measurement.

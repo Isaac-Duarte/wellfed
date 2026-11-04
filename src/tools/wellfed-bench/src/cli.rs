@@ -140,6 +140,10 @@ impl From<Reply> for Answer {
 
 #[derive(Debug, Args)]
 struct ServeArgs {
+    /// The model of the device on this bench, which every job's flash
+    /// writer and build is told. There is no default.
+    #[arg(long, value_enum)]
+    device: wellfed_formats::cli::Device,
     /// The wellfed-flash binary every job runs (default: beside this one).
     #[arg(long)]
     flash_bin: Option<PathBuf>,
@@ -342,6 +346,7 @@ fn serve(root: &Path, args: &ServeArgs, runtime: &tokio::runtime::Runtime) -> an
     };
     let options = Options {
         root: root.to_path_buf(),
+        device: args.device.into(),
         tools: tools.clone(),
         console,
     };

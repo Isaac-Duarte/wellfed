@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 use wellfed_formats::device::{DeviceConfig, Stock};
 use wellfed_formats::require;
+use wellfed_proto::device::Model;
 
 use crate::catalog::DeviceEntry;
 use crate::platform::Platform;
@@ -26,11 +27,6 @@ pub enum DeviceError {
     Unknown { name: String },
     #[error("Device {name} has an unknown schema version")]
     SchemaVersion { name: String },
-    #[error("No devices under {DEVICES}/")]
-    None,
-    /// With several boards, a build names its own rather than have one guessed.
-    #[error("Name the device with --device: {}", names.join(", "))]
-    Ambiguous { names: Vec<String> },
     /// The model's layout lives in its own directory, so a device's
     /// directory is named for its model.
     #[error("Device {name} names model {model}, whose directory differs")]
@@ -90,22 +86,10 @@ impl Device {
         names.iter().map(|name| Self::new(repo, name)).collect()
     }
 
-    /// The named device, or the checkout's only one. With several devices a
-    /// build must name its board rather than have one guessed.
-    pub fn resolve(repo: &Repo, name: Option<&str>) -> Result<Self> {
-        if let Some(name) = name {
-            return Self::new(repo, name);
-        }
-
-        let mut devices = Self::all(repo)?;
-        match devices.len() {
-            1 => Ok(devices.remove(0)),
-            0 => Err(DeviceError::None.into()),
-            _ => {
-                let names = devices.into_iter().map(|d| d.name).collect();
-                Err(DeviceError::Ambiguous { names }.into())
-            }
-        }
+    /// The board of `model` (`--device`): there is no default, so a build
+    /// names the device it is for even while the checkout holds one.
+    pub fn for_model(repo: &Repo, model: Model) -> Result<Self> {
+        Self::new(repo, model.name())
     }
 
     pub fn name(&self) -> &str {
@@ -171,13 +155,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_only_device_is_the_default() {
+    fn a_model_names_its_board() {
         let repo = Repo::here().unwrap();
         let devices = Device::all(&repo).unwrap();
         assert!(devices.iter().any(|d| d.name() == "plaf103"));
-        if devices.len() == 1 {
-            assert_eq!(Device::resolve(&repo, None).unwrap().name(), "plaf103");
-        }
+        let board = Device::for_model(&repo, Model::Plaf103).unwrap();
+        assert_eq!(board.name(), "plaf103");
     }
 
     #[test]

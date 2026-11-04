@@ -4,7 +4,7 @@ The relay bench lets one computer power the feeder, enter its ROM loader, flash 
 
 `wellfed-bench` ([source](../../../src/tools/wellfed-bench)) adds power and strap control only. Every serial read, inspection, plan and write runs as a separate `wellfed-flash` process, so the [flash client's](../../development/rust-flash.md) pinned checks, plan hashes and no-retry stops apply unchanged.
 
-The bench is one server. `wellfed-bench serve` runs in a terminal of its own and holds the bench for as long as it runs. Every other command is its client: it asks the server to run the command as a job, prints the job's output and exits with its code.
+The bench is one server. `wellfed-bench serve --device plaf103` runs in a terminal of its own and holds the bench for as long as it runs. Every other command is its client: it asks the server to run the command as a job, prints the job's output and exits with its code.
 
 Running any bench command is a physical operation on the feeder. Build and check targets never call it: `cargo test` and `make check` never reach the bench.
 
@@ -72,7 +72,7 @@ A DSD TECH SH-UR04A USB relay board (CP2102 serial, 9600 8N1) adds four switches
 4. Start the server in a terminal of its own:
 
    ```sh
-   target/release/wellfed-bench serve
+   target/release/wellfed-bench serve --device plaf103
    ```
 
    You should see the socket, the lease and the four relays. It runs until `q` or Ctrl+C in its [console](#the-console). Run every other command from a second terminal.
@@ -121,7 +121,7 @@ The files and shapes they share (the bench config, a command's progress record, 
 
 `wellfed-bench <command> --help` lists the flags. `flash-prepare` and `flash-execute` take the updater's `--bank`, `--source`, `--original-read`, `--target`, `--interrupted` and `--restore-marker`, and `--attended-motion` for a target whose manifest names a motion policy.
 
-Every command from `on` down is a job: it needs the server running, and refuses otherwise, naming `wellfed-bench serve`.
+Every command from `on` down is a job: it needs the server running, and refuses otherwise, naming `wellfed-bench serve --device plaf103`.
 
 ### Virtual panel
 
@@ -332,22 +332,22 @@ Refused over MCP, before anything is posted, as they need a person at the bench:
 
 Relay state shows that the supply was not switched off between the two commands. It does not rule out a brownout.
 
-Stock recovery keeps its own commands. Use `loader` to enter the ROM, then run `wellfed-flash stock-recovery` directly, or use [`stock-prepare`](#to-stock-over-uart).
+Stock recovery keeps its own commands. Use `loader` to enter the ROM, then run `wellfed-flash stock-recovery --device plaf103` directly, or use [`stock-prepare`](#to-stock-over-uart).
 
 ## Bench lease
 
 One tool drives the bench at a time. Before they touch anything, these take the lease `private/bench.lease`, and remove it when they end, on a stop or Ctrl+C as on success:
 
-- `wellfed-bench serve`, for as long as it runs. The commands that are its jobs take no lease of their own, and `status` only reads it;
+- `wellfed-bench serve --device plaf103`, for as long as it runs. The commands that are its jobs take no lease of their own, and `status` only reads it;
 - every `wellfed-flash` command that opens the serial port (`read`, `update`, `give-way`, `stock-recovery`);
-- `wellfed-stock setup-send`.
+- `wellfed-stock setup-send --device plaf103`.
 
 The server never stops for a restore: its `restore-stock` job runs `wellfed restore-stock` on its lease. Run from another terminal while a server holds the bench, `wellfed restore-stock` is refused with the server named.
 
 The lease names its holder: its pid, its start time and boot (so a reused pid is not mistaken for it), its host, its command line and when it started. A second tool is refused with that holder named, before it opens a port or switches a relay:
 
 ```
-Stopped: The bench is held by pid 81234 (`wellfed-bench serve`, since 2026-10-26 12:00:00 UTC on bench); wait for it to finish or stop it
+Stopped: The bench is held by pid 81234 (`wellfed-bench serve --device plaf103`, since 2026-10-26 12:00:00 UTC on bench); wait for it to finish or stop it
 ```
 
 **Chained tools.** A process descended from the holder runs on the holder's lease and leaves it in place. So the children the server's jobs start (`wellfed-flash` captures, reads and updates; `wellfed restore-stock`) never wait on their own parent. That is checked once, when the child starts, and a job waits for or stops its children before it ends, as the server waits for its job before it releases. Run by hand, `wellfed-flash` takes the lease itself, so a hand-run read cannot open the UART under a running server.
@@ -396,7 +396,7 @@ target/release/wellfed-bench ota stock-01 --review private/verification/<stock r
 
 What a run does:
 
-1. **Build** (`--build` only). Runs two children from the root, their output streamed to the progress log: `wellfed-build build --profile firstboot` (beside the bench binary, or `--build-bin`), then the review `wellfed-build review build --build private/firmware-build/plaf103/firstboot --output private/verification/NAME-review`. A nonzero exit from either stops without signing or offering. The run then continues as with `--review` on that directory.
+1. **Build** (`--build` only). Runs two children from the root, their output streamed to the progress log: `wellfed-build build --device plaf103 --profile firstboot` (beside the bench binary, or `--build-bin`), then the review `wellfed-build review build --build private/firmware-build/plaf103/firstboot --output private/verification/NAME-review`. A nonzero exit from either stops without signing or offering. The run then continues as with `--review` on that directory.
 2. **Sign.** The bench signs the review in process with `wellfed-build`'s signing library and `private/ota-key.json`. It verifies the review as `wellfed-flash` does, refusing a directory with no `review.json`, an image or manifest that differs from it, a non-pinned "stock" image, or an unattended motion policy. It signs a version 2 manifest.
 3. **Push** over the device API as `--keys`: the offer, bank 1's give-way, the offer again to bank 0, the chunks, and a resume after any drop.
 4. **Watch.** Receive-only UART captures run until the new build confirms, falls back, or `--minutes` (20) pass.
@@ -409,7 +409,7 @@ What a run does:
 
 `feed-stall` and `stop-fail` move the motor only for a feed request, like the feeder, and inject a fault into it ([motor pulse](../../firmware/motor-pulse.md)). `owner-fail` never opens its feeding owner, so its trial must fall back. `owner-stall` resets about 3 minutes into every boot once confirmed, a reset storm ([OTA design](../../firmware/ota-design.md)).
 
-The bring-up areas and the trial images are variants of one `bringup` firmware. So `--firmware optics` builds `wellfed-build build --firmware bringup --variant optics` (likewise `buttons`, `adc` and `speaker`), `--firmware trial --variant stall` builds `--firmware bringup --variant stall`, and `--firmware trial` alone builds its normal image. `qa`, `blink` and `feeder` pass through unchanged. The motor pulse (`--firmware motor`, `--variant pulse`) is refused: motion builds stay manual, then go through `--review` with `--attended-motion`.
+The bring-up areas and the trial images are variants of one `bringup` firmware. So `--firmware optics` builds `wellfed-build build --device plaf103 --firmware bringup --variant optics` (likewise `buttons`, `adc` and `speaker`), `--firmware trial --variant stall` builds `--firmware bringup --variant stall`, and `--firmware trial` alone builds its normal image. `qa`, `blink` and `feeder` pass through unchanged. The motor pulse (`--firmware motor`, `--variant pulse`) is refused: motion builds stay manual, then go through `--review` with `--attended-motion`.
 
 **Refused before anything runs:** an existing `NAME-review`, `--firmware` or `--variant` without `--build`, `--variant` without the firmware that declares it, and `--build` with `--review`.
 
@@ -461,7 +461,7 @@ target/release/wellfed-bench itest itest-YYYYMMDD-06 --build --power --destructi
 
 **Tiers.** `--tier smoke` runs `ota-update`, `requests` and `request-auth`, which takes minutes once the build under test is running. `standard`, the default, runs the whole functional suite. `soak` adds the long run, `sustained`. `--only` picks scenarios whatever their tier. The [sustained run](#sustained-run) is meant to run alone.
 
-**Builds.** `--build` first asks `wellfed-build source-id --image` for the identity a build of these sources would embed. That identity covers every source input, the firmware, the variant and the update key. If a complete review with that `startup_identity` is already in `private/verification`, the suite signs it rather than building again. `wellfed-bench ota --build` does the same, and `--rebuild` builds anyway. So after the first run on unchanged sources, neither the build under test nor the trial firmware's `fail` image is rebuilt.
+**Builds.** `--build` first asks `wellfed-build source-id --device plaf103 --image` for the identity a build of these sources would embed. That identity covers every source input, the firmware, the variant and the update key. If a complete review with that `startup_identity` is already in `private/verification`, the suite signs it rather than building again. `wellfed-bench ota --build` does the same, and `--rebuild` builds anyway. So after the first run on unchanged sources, neither the build under test nor the trial firmware's `fail` image is rebuilt.
 
 ### Scenarios
 
@@ -628,7 +628,7 @@ target/release/wellfed-bench stock-execute NAME --expected-plan-sha256 <sha>
 1. enters the loader;
 2. runs `read small`, then `read full`, in one helper session;
 3. refuses if bank 1's marker is still valid, since `stock-recovery` refuses a valid target marker;
-4. runs `wellfed-flash stock-recovery prepare`, which writes the plan from the pinned baseline backup.
+4. runs `wellfed-flash stock-recovery --device plaf103 prepare`, which writes the plan from the pinned baseline backup.
 
 It prints the next command with the plan's hash. With `--fallback`, both commands instead run the give-way to that bank-0 review, under the name `NAME-giveway`, and point back at `stock-prepare`.
 

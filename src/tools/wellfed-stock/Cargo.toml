@@ -27,6 +27,7 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"], optional = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 wellfed-client.workspace = true
+wellfed-model.workspace = true
 wellfed-core.workspace = true
 wellfed-formats.workspace = true
 
@@ -38,6 +39,7 @@ default = ["bench"]
 # (`wellfed-install`, which the Android app links) leaves it out.
 bench = [
     "dep:clap",
+    "wellfed-formats/clap",
     "dep:reqwest",
     "dep:tracing-subscriber",
     "tokio/rt-multi-thread",

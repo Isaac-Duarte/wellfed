@@ -44,8 +44,8 @@ These change the host's firewall, so they are the owner's to run.
 An install needs no capture. `init-installer` writes a config with fresh secrets and the broker address the setup frame names. It needs no device at all.
 
 ```sh
-./target/debug/wellfed-stock init-installer --mqtt-listen 192.168.1.20:1883 --output private/installer.json
-./target/debug/wellfed-stock serve --config private/installer.json --enroll-minutes 15
+./target/debug/wellfed-stock init-installer --device plaf103 --mqtt-listen 192.168.1.20:1883 --output private/installer.json
+./target/debug/wellfed-stock serve --device plaf103 --config private/installer.json --enroll-minutes 15
 ```
 
 - **Enrollment.** With no device known, `serve` starts the broker first and waits. Within the window, it admits the first CONNECT that looks like stock's: a client ID stock's topics can carry (not the server's), with a username and password, from a known relayed address. It records that device beside the config, mode 0600, named for the config (`installer.json`'s is `installer.device.json`). The record holds the client ID (which is the device ID), username, password and the address it connected from. Then the rest of the server starts with that device.
@@ -55,7 +55,7 @@ An install needs no capture. `init-installer` writes a config with fresh secrets
 - **One or the other.** A config that names a captured device and has an enrollment beside it is refused.
 - **The image server** admits the enrolled feeder's address.
 - **Stock's plans are left alone.** An installer's config holds no plan snapshot, so `GET_FEEDING_PLAN_EVENT` goes unanswered. Stock erases and rewrites its plan table on any reply that has a `plans` key, even an empty one. It does not check the code or the message ID, and it takes the message unasked. With no reply it keeps its table; it asks once and does not retry. An empty answer would erase the plans a rollback should find. The server never sends a plan message on its own: the commands it sends unasked are a closed set (`protocol::Sent`). (Static analysis of 1.1.15's KM4 image, with one UART capture of a stock install.)
-- **Stock's clock is set only when no meal can come due.** After the Reset hold and setup frame, which erased its plans, the `NTP` reply sets it (the app's route). With no frame, stock may still hold plans, so the reply leaves its clock as it reads; so does `wellfed-stock serve`, which sends no frame. Stock 1.1.15 refused an install with error 1214 while its clock was two days behind, likely for that reason.
+- **Stock's clock is set only when no meal can come due.** After the Reset hold and setup frame, which erased its plans, the `NTP` reply sets it (the app's route). With no frame, stock may still hold plans, so the reply leaves its clock as it reads; so does `wellfed-stock serve --device plaf103`, which sends no frame. Stock 1.1.15 refused an install with error 1214 while its clock was two days behind, likely for that reason.
   - **The log** says, for every `NTP` request, stock's `ts` (or `unknown`), the skew in seconds, and whether the clock was set.
   - **A captured nonempty table** holds the clock, with a warning: those plans may run any meals that came due in a jump. An empty one sets it. This is the library's rule: `serve` refuses a config with a table, and the app writes its own config, with none.
 - **No binding from a set-up stock.** A set-up stock sends no `BINDING` when it connects (observed). A stock fresh from the setup frame does, and an installer's config answers it with a generic reply built in the server, since it has no captured one ([saving the frame](../firmware/consumer-installation.md#stocks-setup-protocol)).
@@ -70,13 +70,13 @@ Install trials are recorded beside the configuration, under an exclusive lock, i
 - An uncertain or failed trial blocks the next until `ota-trial-resolve` closes it from fresh evidence. Resolving sends no command. Run it against a server with no plan snapshot, since stock replaces its plans with a snapshot as soon as it connects, and `serve` refuses one:
 
   ```sh
-  ./target/debug/wellfed-stock serve --config private/installer.json
-  ./target/debug/wellfed-stock status --config private/installer.json
-  ./target/debug/wellfed-stock ota-trial-resolve --config private/installer.json --request-id <id> --note <what you saw>
+  ./target/debug/wellfed-stock serve --device plaf103 --config private/installer.json
+  ./target/debug/wellfed-stock status --device plaf103 --config private/installer.json
+  ./target/debug/wellfed-stock ota-trial-resolve --device plaf103 --config private/installer.json --request-id <id> --note <what you saw>
   ```
 
-  With no feeder enrolled in `private/installer.json`, `status` and `ota-trial-resolve` stop with an error. Write the config if it is missing (`wellfed-stock init-installer --mqtt-listen 10.42.103.1:1883 --output private/installer.json`) and add `--enroll-minutes 15` to `serve`, so that stock enrolls when it reports. The ledger is named by device ID, so it finds the trial.
-- A replacement install closes instead on `ota-trial-answered`, once the operator's client saw the served build answer its device API from bank 0 and stock has gone quiet ([below](#install-the-replacement)). A replacement speaks no MQTT, so it cannot enroll. With no feeder enrolled in `private/installer.json`, run `serve` and `ota-trial-answered` on a copy of the captured config in the same directory, without its `plans` key and still mode 0600, as `serve`'s refusal says: `wellfed-stock ota-trial-answered --config private/captured.json --request-id <id> --build <identity> --bank 0 --note <what answered>`.
+  With no feeder enrolled in `private/installer.json`, `status` and `ota-trial-resolve` stop with an error. Write the config if it is missing (`wellfed-stock init-installer --device plaf103 --mqtt-listen 10.42.103.1:1883 --output private/installer.json`) and add `--enroll-minutes 15` to `serve`, so that stock enrolls when it reports. The ledger is named by device ID, so it finds the trial.
+- A replacement install closes instead on `ota-trial-answered`, once the operator's client saw the served build answer its device API from bank 0 and stock has gone quiet ([below](#install-the-replacement)). A replacement speaks no MQTT, so it cannot enroll. With no feeder enrolled in `private/installer.json`, run `serve` and `ota-trial-answered` on a copy of the captured config in the same directory, without its `plans` key and still mode 0600, as `serve`'s refusal says: `wellfed-stock ota-trial-answered --device plaf103 --config private/captured.json --request-id <id> --build <identity> --bank 0 --note <what answered>`.
 
 `setup-send` takes the [bench lease](../devices/plaf103/bench.md#bench-lease) for its one frame, and needs `--on-feeder-network <name>`: it refuses a name not starting `PL-AF103-`, but takes your word for it, unlike the app, which joins only a network of that name through Android. `serve` takes none: it only answers, beside the command that drives the feeder.
 
@@ -125,7 +125,7 @@ Operation with a nonempty plan, and stock's time-recovery behavior, are unvalida
 
 ## A fresh bench's `private/server.json`
 
-The bench tools read `private/server.json`: its `hotspot_interface` and `target_mac` find the feeder when mDNS does not, and its `timezone` goes into a clock sync. No tool writes those two fields. The research bench's existing file holds them, edited by hand. On a fresh bench, `wellfed-stock init-installer --output private/server.json` writes a usable file with neither, so the feeder must answer over mDNS, and the host must admit UDP 5353 ([the bench host's firewall](#the-bench-hosts-firewall)).
+The bench tools read `private/server.json`: its `hotspot_interface` and `target_mac` find the feeder when mDNS does not, and its `timezone` goes into a clock sync. No tool writes those two fields. The research bench's existing file holds them, edited by hand. On a fresh bench, `wellfed-stock init-installer --device plaf103 --output private/server.json` writes a usable file with neither, so the feeder must answer over mDNS, and the host must admit UDP 5353 ([the bench host's firewall](#the-bench-hosts-firewall)).
 
 ## The replacement firmware (deleted roles)
 

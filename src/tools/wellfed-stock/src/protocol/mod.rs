@@ -19,9 +19,37 @@ use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
+use wellfed_model::Model;
+
 use crate::config::Config;
 
 pub mod plaf103;
+
+/// A model's stock message set: what its stock firmware speaks over this
+/// core.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MessageSet {
+    /// [`plaf103`].
+    Plaf103,
+}
+
+impl MessageSet {
+    /// The message set of `model`'s stock firmware, `None` while it has
+    /// none: the PLWF106's waits on its reverse engineering.
+    pub const fn of(model: Model) -> Option<Self> {
+        match model {
+            Model::Plaf103 => Some(Self::Plaf103),
+            Model::Plwf106 => None,
+        }
+    }
+
+    /// Its product id, which names its topic tree.
+    pub const fn pid(self) -> &'static str {
+        match self {
+            Self::Plaf103 => plaf103::PID,
+        }
+    }
+}
 
 /// The topic under `device`'s namespace in model `pid`'s tree (`PLAF103`):
 /// what stock's own topics and the broker's checks are built from.

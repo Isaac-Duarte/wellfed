@@ -22,12 +22,12 @@ The builder is `wellfed-build` (`src/tools/wellfed-build`). The make targets bui
 A build is a **profile** of a **firmware** on a **device**:
 
 ```sh
-wellfed-build build --profile firstboot [--device plaf103] [--firmware qa] [--variant fail]
+wellfed-build build --device plaf103 --profile firstboot [--firmware qa] [--variant fail]
 make -C src/firmware/vendor firstboot DEVICE=plaf103 FIRMWARE=bringup VARIANT=fail
 wellfed-build list    # the devices, and each firmware's devices and variants, as JSON
 ```
 
-- **Device:** `src/firmware/devices/<name>/device.json` names the board's platform (the chip family) and the files that platform stages. Those are the application entry and first-boot mains, plus the verified stock image. Its model names the device's directory, which holds the model's [layout](../../src/firmware/devices/plaf103/layout.json); the `device` and `firstboot` profiles derive their banks and pad table from that layout. `--device` defaults to the only device; with several, a build must name one.
+- **Device:** `src/firmware/devices/<name>/device.json` names the board's platform (the chip family) and the files that platform stages. Those are the application entry and first-boot mains, plus the verified stock image. Its model names the device's directory, which holds the model's [layout](../../src/firmware/devices/plaf103/layout.json); the `device` and `firstboot` profiles derive their banks and pad table from that layout. `--device` names the model (`plaf103`), whose board is `src/firmware/devices/<model>`. There is no default, even with one board; the `make` targets pass `DEVICE=plaf103`. Every bench tool takes the same flag: the flash writers (which refuse a model they hold no pins for before opening the port), the audits, `wellfed-stock` (which picks its message set by it) and `wellfed-bench serve` (which tells each job's flash writer and build).
 - **Firmware:** a crate under `src/firmware/wellfed/` ([firmware guide](../../src/firmware/wellfed/README.md)). Its `[package.metadata.wellfed]` table declares the devices it builds for, the startup policies of its normal first-boot image, and its opt-in image variants. A variant is the Cargo feature of the same name, and its policies replace the normal image's. A new firmware or variant needs no builder change.
 - **Platform:** code, not configuration (`wellfed-build`'s `src/platform/`). Its SDK overlays anchor on exact text in the pinned SDK, and its audits read disassembly, so both fail closed. AmebaD is the only platform. Another chip would be a new variant of `Platform` and a module beside `amebad`.
 
@@ -146,7 +146,7 @@ Vendor timestamps mean output is not guaranteed byte-for-byte reproducible.
 
 Every build carries a source identity that binds exactly what it was built from.
 
-- `cargo run -q -p wellfed-build -- source-id` computes the current firstboot-profile source ID offline, without bootstrapping the SDK. `check-cross` supplies that ID to the SDK-independent KM0 port compile.
+- `cargo run -q -p wellfed-build -- source-id --device plaf103` computes the current firstboot-profile source ID offline, without bootstrapping the SDK. `check-cross` supplies that ID to the SDK-independent KM0 port compile.
 - `source-id --image` (with `--variant`, if any) prints the identity a build would embed instead. That one also binds the variant and the update key.
 - Every identity binds the device and profile names and the provisioning. `wellfed-bench` uses it to reuse a review of the same sources.
 
@@ -164,7 +164,7 @@ SDK builds freeze the input map, embed its real identity, and record clock, outp
 
 | Command | Does |
 | --- | --- |
-| `wellfed-build inputs --profile PROFILE` | Prints the current input map |
+| `wellfed-build inputs --device plaf103 --profile PROFILE` | Prints the current input map |
 | `wellfed-build audit --build DIR` | Re-runs a finished build's audits, as JSON |
 | `wellfed-build review` | Checks a build against both before freezing it ([development updates](uart-development.md)) |
 | `cargo test -p wellfed-build -- --ignored` | The builder's fixture tests, in `make check-fixtures`. They fail when an ignored build no longer matches the current sources |

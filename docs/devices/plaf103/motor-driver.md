@@ -118,7 +118,7 @@ Use this to repeat the startup check, or to record resets.
 4. Audit each capture:
 
    ```sh
-   wellfed-audit transients --capture private/captures/NAME --output NEW-REPORT
+   wellfed-audit transients --device plaf103 --capture private/captures/NAME --output NEW-REPORT
    ```
 
 A cycle passes when it starts unpowered, no sample has INA ≠ INB or OUTA ≠ OUTB, there is no LOW, LOW coast when the board opens, and the brake is reached and held after boot (or standby is held throughout a loader entry).
