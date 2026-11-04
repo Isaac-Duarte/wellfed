@@ -46,6 +46,7 @@ wellfed-client = { path = "src/client/wellfed-client" }
 wellfed-model = { path = "src/client/wellfed-model" }
 wellfed-connect = { path = "src/client/wellfed-connect" }
 wellfed-install = { path = "src/client/wellfed-install" }
+wellfed-device-sim = { path = "src/tools/wellfed-device-sim" }
 wellfed-feeder-sim = { path = "src/tools/wellfed-feeder-sim" }
 wellfed-api = { path = "src/server/wellfed-api" }
 wellfed-store = { path = "src/server/wellfed-store" }

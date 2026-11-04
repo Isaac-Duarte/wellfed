@@ -6,8 +6,8 @@
 //! to `0xff`, and a program only clears bits, refusing one that would set a
 //! bit back. A file-backed image is rewritten whole after every erase and
 //! program (192 KiB, atomically), so a stopped simulator restarts with what
-//! it last committed, as a power cut leaves the feeder. An image from a
-//! smaller region is extended with erased sectors, as the feeder's region
+//! it last committed, as a power cut leaves the device. An image from a
+//! smaller region is extended with erased sectors, as the device's region
 //! grows upward into blank flash.
 
 use std::cell::RefCell;
@@ -80,7 +80,7 @@ impl Flash {
     }
 
     /// Erases by sector since the image was opened.
-    pub(crate) fn erases(&self) -> [u32; STORAGE_SECTORS as usize] {
+    pub fn erases(&self) -> [u32; STORAGE_SECTORS as usize] {
         *self.erases.borrow()
     }
 
@@ -99,13 +99,13 @@ impl Flash {
 
 /// One store's sectors, each an erase unit.
 #[derive(Clone, Debug)]
-pub(crate) struct Region {
+pub struct Region {
     flash: Rc<Flash>,
     sectors: Sectors,
 }
 
 impl Region {
-    pub(crate) fn new(flash: &Rc<Flash>, sectors: Sectors) -> Self {
+    pub fn new(flash: &Rc<Flash>, sectors: Sectors) -> Self {
         Self {
             flash: Rc::clone(flash),
             sectors,

@@ -11,7 +11,7 @@
 //!   valid, KM0 clears bank 1's first marker byte and the loader boots bank
 //!   0. A confirmed build that keeps resetting soon after each boot gives
 //!   way the same way once the resets make a storm. A power cut clears the
-//!   counts, as it clears the backup register; a restart the feeder asked
+//!   counts, as it clears the backup register; a restart the device asked
 //!   for, or a boot that ran long enough, ends a storm's count, as the
 //!   runtime does.
 //! - **A build's identity**: the one bank 0 last activated in bank 1, or
@@ -175,7 +175,7 @@ impl Banks {
         self.register = 0;
     }
 
-    /// The feeder restarts on purpose: not a fault, so no storm.
+    /// The device restarts on purpose: not a fault, so no storm.
     pub fn deliberate(&mut self) {
         self.register = trial::deliberate(self.register);
     }
@@ -209,7 +209,7 @@ impl Banks {
     }
 
     /// Bank 0's image as bank 0 records it at boot: the simulator starts as
-    /// a feeder whose bank 0 has run once, built with `key`, as both banks
+    /// a device whose bank 0 has run once, built with `key`, as both banks
     /// are.
     pub fn bank0_record(&self, key: Option<[u8; 32]>) -> Option<Bank0> {
         let len = image::extent(

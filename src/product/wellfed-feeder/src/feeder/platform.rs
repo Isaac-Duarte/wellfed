@@ -23,6 +23,7 @@ use wellfed_proto::trace::PAGE_MAX;
 
 use super::supply::Radio;
 use crate::stats::Totals;
+use wellfed_device::io::{Accepted, BleDrop, BleLink, Datagram, Received};
 use wellfed_device::store::events::{BODY_BYTES, EventsFill, Read};
 use wellfed_device::store::net::BuildWifi;
 use wellfed_device::store::traces::{TraceRead, TracesFill};
@@ -110,34 +111,6 @@ pub struct TaskCount {
     pub total: u32,
 }
 
-/// What a non-blocking accept found.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Accepted<S> {
-    Socket(S),
-    /// No connection waits.
-    None,
-    /// The listener failed; open a new one.
-    Error,
-}
-
-/// What a non-blocking receive found.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Received {
-    Data(usize),
-    /// Nothing waiting now.
-    Empty,
-    /// The peer closed the connection, or the socket failed.
-    Closed,
-}
-
-/// One mDNS datagram, if one waits.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Datagram {
-    Got { len: usize, ip: u32, port: u16 },
-    None,
-    Error,
-}
-
 /// Which of the event queue's slots a record may take.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EventSlot {
@@ -149,26 +122,6 @@ pub enum EventSlot {
 
 /// How a settled indicator level read back.
 pub use wellfed_core::indicator::Check;
-
-/// What setup mode's BLE link asks the loop to act on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BleLink {
-    /// A host connected and enabled notifications: a new session.
-    Opened,
-    /// A whole message waits in [`Platform::ble_message`].
-    Message,
-    /// The host left or was dropped: forget its session.
-    Closed,
-}
-
-/// Why setup mode drops its BLE host.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BleDrop {
-    /// The session ended; its last reply has had time to go out.
-    Done,
-    /// The host broke the protocol.
-    Protocol,
-}
 
 /// One step of a driver the platform owns: the delay it asks for, and its
 /// own record, if it made one.

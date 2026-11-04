@@ -5290,6 +5290,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "wellfed-device-sim"
+version = "0.1.0"
+dependencies = [
+ "sha2 0.10.9",
+ "thiserror",
+ "tokio",
+ "wellfed-amebad-sys",
+ "wellfed-board",
+ "wellfed-core",
+ "wellfed-device",
+ "wellfed-device-api",
+ "wellfed-hal",
+]
+
+[[package]]
 name = "wellfed-emu"
 version = "0.1.0"
 dependencies = [
@@ -5344,6 +5359,7 @@ dependencies = [
  "wellfed-core",
  "wellfed-device",
  "wellfed-device-api",
+ "wellfed-device-sim",
  "wellfed-feeder",
  "wellfed-feeder-sim",
  "wellfed-formats",

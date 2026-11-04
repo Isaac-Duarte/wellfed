@@ -19,6 +19,7 @@ use wellfed_core::ota::install::{Answer, Progress, Refused};
 use wellfed_core::store::slot::SlotIo;
 use wellfed_core::supply::Reading;
 use wellfed_core::tone::Tune;
+use wellfed_device::io::{Accepted, BleDrop, BleLink, Datagram, Received};
 use wellfed_device::store;
 use wellfed_device::store::events::{BODY_BYTES, EventsFill, Read};
 use wellfed_device::store::net::BuildWifi;
@@ -34,8 +35,7 @@ use wellfed_device_api::wifi::Credentials;
 use wellfed_device_runtime::{events, keys, network, time};
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::platform::{
-    Accepted, BleDrop, BleLink, BleStep, Boot, Check, Datagram, DriverRecord, DriverStep,
-    EventSlot, Link, Received, TaskCount, TaskStack,
+    BleStep, Boot, Check, DriverRecord, DriverStep, EventSlot, Link, TaskCount, TaskStack,
 };
 use wellfed_feeder::feeder::supply::Radio;
 use wellfed_feeder::stats::Totals;
