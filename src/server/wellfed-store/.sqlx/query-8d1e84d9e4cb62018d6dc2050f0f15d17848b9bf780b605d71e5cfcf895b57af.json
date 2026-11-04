@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sessions (token_hash, user_id, created_ms, last_used_ms)\n             SELECT ?, id, ?, ? FROM users WHERE id = ? AND password_hash = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "8d1e84d9e4cb62018d6dc2050f0f15d17848b9bf780b605d71e5cfcf895b57af"
+}

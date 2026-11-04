@@ -1131,10 +1131,12 @@ impl Platform for SimPlatform {
 
     /// The simulated uptime never stops.
     fn clock_ms(&mut self, now_ms: u32) -> u32 {
+        self.clock.advance(now_ms);
         now_ms
     }
 
     fn wall_ms(&mut self, now_ms: u32) -> Option<u64> {
+        self.clock.advance(now_ms);
         self.clock.read(now_ms).map(|reading| reading.unix_ms)
     }
 
@@ -1147,6 +1149,7 @@ impl Platform for SimPlatform {
     }
 
     fn clock_state(&mut self, now_ms: u32) -> ClockState {
+        self.clock.advance(now_ms);
         self.clock.state(now_ms)
     }
 

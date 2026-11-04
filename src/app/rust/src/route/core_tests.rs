@@ -6,6 +6,7 @@ use wellfed_model::{FeedOutcome, FeedReason};
 
 use super::*;
 use crate::api::server::ServerRefusal;
+use crate::route::pins::ServerMark;
 
 const NOW: i64 = 1_000_000;
 const MARK: ServerMark = ServerMark {
@@ -263,39 +264,6 @@ fn the_journal_settles_a_write_once_it_is_answered_or_resolved() {
             refusal: ServerRefusal::Busy
         })
     );
-}
-
-#[test]
-fn a_server_write_the_journal_lacks_is_unsent_only_from_its_own_journal_once_old() {
-    let pin = feed_pin(1, "a", RoutePath::Server);
-    let grace = UNFOUND_GRACE_MS;
-    assert_eq!(
-        settled_unfound(&pin, Some(MARK), NOW + grace - 1, grace),
-        None
-    );
-    assert_eq!(
-        settled_unfound(&pin, Some(MARK), NOW + grace, grace),
-        Some(Settlement::NotSent)
-    );
-
-    // Another server (another token) or another account: its journal says
-    // nothing of this write.
-    let other_server = ServerMark {
-        token: Uuid::from_u128(71),
-        ..MARK
-    };
-    let other_user = ServerMark {
-        user: Uuid::from_u128(81),
-        ..MARK
-    };
-    for other in [Some(other_server), Some(other_user), None] {
-        assert_eq!(settled_unfound(&pin, other, NOW + grace, grace), None);
-    }
-    let unmarked = PinRecord {
-        server: None,
-        ..pin
-    };
-    assert_eq!(settled_unfound(&unmarked, None, NOW + grace, grace), None);
 }
 
 #[test]
@@ -566,6 +534,8 @@ enum Step {
     Acknowledge,
     /// The app stops and starts again.
     Restart,
+    /// Restoring a server backup loses the journal, even for feeds that ran.
+    RestoreServer,
 }
 
 fn sent() -> impl Strategy<Value = Sent> {
@@ -598,6 +568,7 @@ fn step() -> impl Strategy<Value = Step> {
         3 => Just(Step::Retry),
         2 => Just(Step::Acknowledge),
         1 => Just(Step::Restart),
+        1 => Just(Step::RestoreServer),
     ]
 }
 
@@ -644,12 +615,7 @@ impl World {
             RetryPlan::ReadJournal if self.journal.contains(&pin.key) => {
                 ran.then_some(Settlement::Started { feed: 1 })
             }
-            RetryPlan::ReadJournal => settled_unfound(
-                pin,
-                Some(MARK),
-                pin.tried_ms + UNFOUND_GRACE_MS,
-                UNFOUND_GRACE_MS,
-            ),
+            RetryPlan::ReadJournal => None,
             RetryPlan::ReadHistory => ran.then_some(Settlement::Started { feed: 1 }),
         }
     }
@@ -712,6 +678,7 @@ proptest! {
                         pin.state = PinState::Uncertain;
                     }
                 }
+                Step::RestoreServer => world.journal.clear(),
             }
 
             for (key, paths) in &world.sent_on {

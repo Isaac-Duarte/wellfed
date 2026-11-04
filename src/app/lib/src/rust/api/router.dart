@@ -351,7 +351,8 @@ sealed class Settlement with _$Settlement {
   /// dispensed is not known, and it is never sent again.
   const factory Settlement.unrecorded() = Settlement_Unrecorded;
 
-  /// The server holds no record of it: it was never sent.
+  /// Explicit evidence confirms it was never sent. A missing server
+  /// journal entry (`404`) alone is not enough to establish this result.
   const factory Settlement.notSent() = Settlement_NotSent;
 
   /// A meal call write another change to the call overtook: final, and

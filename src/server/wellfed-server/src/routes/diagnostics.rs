@@ -73,7 +73,7 @@ pub(crate) async fn stats(
 )]
 pub(crate) async fn log(
     State(state): State<AppState>,
-    _: Allowed<need::FeederAdmin>,
+    Allowed(caller, _): Allowed<need::FeederAdmin>,
     headers: HeaderMap,
     WithRejection(Path(id), _): IdPath,
 ) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
@@ -84,7 +84,7 @@ pub(crate) async fn log(
         Some((Ok(encode(&event)), follow))
     });
     let shutdown = state.shutdown.clone();
-    let session = session_ended(state, auth::credential(&headers));
+    let session = session_ended(state, auth::credential(&headers), caller.user.role);
     let events = batches.take_until(async move {
         tokio::select! {
             () = shutdown.cancelled() => {}

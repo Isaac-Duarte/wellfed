@@ -58,8 +58,8 @@ pub(crate) struct PinRecord {
 }
 
 /// The journal a server write went to: the phone token it went under (a
-/// token belongs to one server) and the account. A journal is trusted to
-/// lack a write only when it is the same one.
+/// token belongs to one server) and the account. These identify the caller,
+/// not a continuous history: a server backup also restores both of them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ServerMark {

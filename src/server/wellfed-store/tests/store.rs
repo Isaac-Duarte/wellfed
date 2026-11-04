@@ -1,5 +1,8 @@
 //! The store against a fresh SQLite file per test.
 
+#[path = "store/passwords.rs"]
+mod passwords;
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use jiff::Timestamp;
@@ -133,8 +136,14 @@ async fn a_session_is_used_idles_out_or_logs_out() {
     let id = new.id;
     store.create_first_owner(new, &household()).await.unwrap();
     let (live, idle) = ([1; 32], [2; 32]);
-    store.create_session(&live, id, at(5_000)).await.unwrap();
-    store.create_session(&idle, id, at(0)).await.unwrap();
+    store
+        .create_session(&live, id, at(5_000), "$argon2id$hash")
+        .await
+        .unwrap();
+    store
+        .create_session(&idle, id, at(0), "$argon2id$hash")
+        .await
+        .unwrap();
 
     let session = store.session(&live).await.unwrap().unwrap();
     assert_eq!((session.user.id, session.last_used), (id, at(5_000)));
@@ -226,8 +235,16 @@ async fn users_are_listed_changed_and_deleted_but_never_the_last_owner() {
         Role::Viewer
     );
 
-    store.create_session(&[4; 32], ada_id, at(0)).await.unwrap();
-    assert!(store.set_password(ada_id, "$argon2id$new").await.unwrap());
+    store
+        .create_session(&[4; 32], ada_id, at(0), "$argon2id$hash")
+        .await
+        .unwrap();
+    assert!(
+        store
+            .set_password(ada_id, "$argon2id$new", None, None)
+            .await
+            .unwrap()
+    );
     assert_eq!(
         store.login("ada").await.unwrap().unwrap().password_hash,
         "$argon2id$new"
@@ -242,7 +259,7 @@ async fn users_are_listed_changed_and_deleted_but_never_the_last_owner() {
         store.update_user(ada_id, Role::Member, None).await.unwrap(),
         Change::NotFound
     );
-    assert!(!store.set_password(ada_id, "x").await.unwrap());
+    assert!(!store.set_password(ada_id, "x", None, None).await.unwrap());
 }
 
 #[tokio::test]
@@ -255,7 +272,10 @@ async fn ending_a_users_sessions_leaves_the_others() {
     let bob_id = bob.id;
     store.create_user(bob).await.unwrap();
     for (token, id) in [([1; 32], ada_id), ([2; 32], ada_id), ([3; 32], bob_id)] {
-        store.create_session(&token, id, at(0)).await.unwrap();
+        store
+            .create_session(&token, id, at(0), "$argon2id$hash")
+            .await
+            .unwrap();
     }
 
     assert_eq!(

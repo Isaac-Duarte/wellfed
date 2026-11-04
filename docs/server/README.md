@@ -32,7 +32,7 @@ The server enforces its half:
 
 So a client can resolve a lost feed on either path without resending it. Holding an uncertain write to its own path is the app's half.
 
-The app goes one step further: it sends each write once, and its retry only reads. The server dedups a key only while its journal holds it. It holds none for a write it never recorded: a `feeder_offline` answer the phone never heard, a failure before the insert, or a request that never reached it. Resending such a key after you fed again would be a new feed. So the app reads `GET /api/v1/commands/{key}`. A `404` settles the write as never sent only when it comes from the same server and account the write went to, ten minutes after its attempt. Anything else leaves it uncertain.
+The app goes one step further: it sends each write once, and its retry only reads. The server dedups a key only while its journal holds it. It holds none for a write it never recorded: a `feeder_offline` answer the phone never heard, a failure before the insert, or a request that never reached it. Resending such a key after you fed again would be a new feed. So the app reads `GET /api/v1/commands/{key}`. A `404` leaves the write uncertain, however old it is. Restoring a server backup can lose a completed write while keeping the same account and phone token. A new feed stays on hold until you check the bowl and put the uncertain write away.
 
 One answer is certain the other way. An attempt answered `503 feeder_offline` never reached the feeder: the server's feeder task never took it, and the server drops its journal entry. The write has run nowhere, so the app sends it on the phone's own session.
 

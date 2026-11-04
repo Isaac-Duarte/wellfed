@@ -92,7 +92,10 @@ async fn idle_sessions_and_an_expired_accounts_sessions_end() {
         ([4; 32], cy_id, 8_000),  // in use, cy not yet expired
     ];
     for (token, user, used) in sessions {
-        store.create_session(&token, user, at(used)).await.unwrap();
+        store
+            .create_session(&token, user, at(used), "$argon2id$hash")
+            .await
+            .unwrap();
     }
 
     let ended = store.delete_ended_sessions(at(1_000), at(9_000)).await;

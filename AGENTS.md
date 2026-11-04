@@ -15,6 +15,7 @@
 - Never weaken pinned recovery hashes, marker sequencing, preservation checks or no-retry behavior to make tests pass. Rebuilt diagnostics are not automatically compatible with the pinned writer.
 - Build and test commands must not flash hardware, operate motors, alter routing or start persistent services. Those need an explicit user task and a reviewed device-specific procedure (or the authorization below).
 - Do not infer authorization to commit, push, publish or resume bench operations from historical notes. Respect the contributor's Git identity.
+- Use English for all outward-facing project content, including documentation, UI copy, code comments, commit messages, pull requests and issues.
 
 ## Rust conventions
 

@@ -7,6 +7,8 @@ use wellfed_api::{Household, Role, TimeFormat, Units, User, UserId};
 use crate::convert::{millis, timestamp};
 use crate::{Error, Result, Store};
 
+mod sessions;
+
 pub struct NewUser<'a> {
     pub id: UserId,
     pub name: &'a str,
@@ -191,16 +193,40 @@ impl Store {
         Ok(Change::Done)
     }
 
-    /// Replace a user's password hash; whether the user exists.
-    pub async fn set_password(&self, id: UserId, password_hash: &str) -> Result<bool> {
+    /// Replace the password and end other sessions in one transaction.
+    /// A self-service change supplies the hash it verified, so a concurrent
+    /// reset cannot be overwritten by a request using the old password.
+    pub async fn set_password(
+        &self,
+        id: UserId,
+        password_hash: &str,
+        expected: Option<&str>,
+        except: Option<&[u8; 32]>,
+    ) -> Result<bool> {
+        let mut tx = self.writer.begin().await?;
         let done = sqlx::query!(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
+            "UPDATE users SET password_hash = ? WHERE id = ?
+             AND (? IS NULL OR password_hash = ?)",
             password_hash,
-            id.0
+            id.0,
+            expected,
+            expected,
         )
-        .execute(&self.writer)
+        .execute(&mut *tx)
         .await?;
-        Ok(done.rows_affected() == 1)
+        if done.rows_affected() != 1 {
+            return Ok(false);
+        }
+        let keep = except.map(<[u8; 32]>::as_slice);
+        sqlx::query!(
+            "DELETE FROM sessions WHERE user_id = ? AND token_hash IS NOT ?",
+            id.0,
+            keep,
+        )
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(true)
     }
 
     pub async fn household(&self) -> Result<Option<Household>> {
@@ -232,109 +258,6 @@ impl Store {
         .execute(&self.writer)
         .await?;
         Ok(())
-    }
-
-    pub async fn create_session(
-        &self,
-        token_hash: &[u8; 32],
-        user: UserId,
-        now: Timestamp,
-    ) -> Result<()> {
-        let hash = token_hash.as_slice();
-        let now = millis(now);
-        sqlx::query!(
-            "INSERT INTO sessions (token_hash, user_id, created_ms, last_used_ms)
-             VALUES (?, ?, ?, ?)",
-            hash,
-            user.0,
-            now,
-            now,
-        )
-        .execute(&self.writer)
-        .await?;
-        Ok(())
-    }
-
-    /// The session with this token, and its user, however long ago it was
-    /// last used: the caller decides whether it still holds.
-    pub async fn session(&self, token_hash: &[u8; 32]) -> Result<Option<SessionRow>> {
-        let hash = token_hash.as_slice();
-        let row = sqlx::query!(
-            r#"SELECT users.id AS "id: Uuid", users.name, users.role, users.expires_ms,
-                      sessions.last_used_ms
-               FROM sessions JOIN users ON users.id = sessions.user_id
-               WHERE sessions.token_hash = ?"#,
-            hash,
-        )
-        .fetch_optional(&self.reader)
-        .await?;
-        row.map(|row| {
-            Ok(SessionRow {
-                user: user(row.id, row.name, &row.role, row.expires_ms)?,
-                last_used: timestamp(row.last_used_ms)?,
-            })
-        })
-        .transpose()
-    }
-
-    /// Record that the session was used at `now`.
-    pub async fn touch_session(&self, token_hash: &[u8; 32], now: Timestamp) -> Result<()> {
-        let hash = token_hash.as_slice();
-        let now = millis(now);
-        sqlx::query!(
-            "UPDATE sessions SET last_used_ms = ? WHERE token_hash = ? AND last_used_ms < ?",
-            now,
-            hash,
-            now,
-        )
-        .execute(&self.writer)
-        .await?;
-        Ok(())
-    }
-
-    pub async fn delete_session(&self, token_hash: &[u8; 32]) -> Result<()> {
-        let hash = token_hash.as_slice();
-        sqlx::query!("DELETE FROM sessions WHERE token_hash = ?", hash)
-            .execute(&self.writer)
-            .await?;
-        Ok(())
-    }
-
-    /// End every session of `user` but `except`; how many there were.
-    pub async fn delete_sessions_of(&self, user: UserId, except: Option<&[u8; 32]>) -> Result<u64> {
-        let keep = except.map(<[u8; 32]>::as_slice);
-        let done = sqlx::query!(
-            "DELETE FROM sessions WHERE user_id = ? AND token_hash IS NOT ?",
-            user.0,
-            keep,
-        )
-        .execute(&self.writer)
-        .await?;
-        Ok(done.rows_affected())
-    }
-
-    /// The hash a user's password is checked against.
-    pub async fn password_hash(&self, id: UserId) -> Result<Option<String>> {
-        let row = sqlx::query!("SELECT password_hash FROM users WHERE id = ?", id.0)
-            .fetch_optional(&self.reader)
-            .await?;
-        Ok(row.map(|row| row.password_hash))
-    }
-
-    /// End every session last used at or before `idle`, and every session
-    /// of an account expired at `now`; how many there were.
-    pub async fn delete_ended_sessions(&self, idle: Timestamp, now: Timestamp) -> Result<u64> {
-        let idle = millis(idle);
-        let now = millis(now);
-        let done = sqlx::query!(
-            "DELETE FROM sessions WHERE last_used_ms <= ? OR user_id IN
-                 (SELECT id FROM users WHERE expires_ms IS NOT NULL AND expires_ms <= ?)",
-            idle,
-            now,
-        )
-        .execute(&self.writer)
-        .await?;
-        Ok(done.rows_affected())
     }
 }
 

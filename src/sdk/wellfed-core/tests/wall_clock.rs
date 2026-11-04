@@ -1,3 +1,4 @@
+use wellfed_core::clock::tick::TickClock;
 use wellfed_core::clock::wall::{
     CARRY_MAX_S, CARRY_WORDS, DISJOINT_LIMIT, Fix, Jump, LEARNED_FLOOR_PPM, MAX_ERROR_MS,
     MIN_UNIX_MS, MISSED_GRACE_MS, NoResume, Occurrence, Origin, Reading, Restart, Resumed, STEP_MS,
@@ -76,6 +77,98 @@ fn an_unlearned_clock_expires_when_its_bound_passes_two_minutes() {
         u32::try_from((MAX_ERROR_MS - 1000) * 1_000_000 / u64::from(UNLEARNED_PPM)).unwrap();
     assert!(clock.read(start.wrapping_add(limit)).is_some());
     assert_eq!(clock.read(start.wrapping_add(limit + 1000)), None);
+}
+
+#[test]
+fn an_expired_anchor_never_revives_across_two_uptime_wraps() {
+    let mut clock = WallClock::new();
+    clock.sync(0, sync(NOON), Origin::Owner).unwrap();
+    let mut count = TickClock::new(32_768, 0, 0).unwrap();
+    let mut raw = 0_u32;
+    let mut expired = false;
+
+    // As in the HAL, the free-running 32 kHz counter is read regularly,
+    // even when the wall clock is invalid and its warm-reset carry empty.
+    for elapsed in (10_000..=2 * (u64::from(u32::MAX) + 1) + 20_000).step_by(10_000) {
+        raw = raw.wrapping_add(327_680);
+        let now = count.read(raw).unwrap();
+        clock.advance(now);
+        let reading = clock.read(now);
+        if expired {
+            assert_eq!(reading, None, "revived after {elapsed} ms");
+            assert_eq!(
+                clock.carry(now, u32::try_from(elapsed / 1000).unwrap()),
+                None
+            );
+        } else if let Some(reading) = reading {
+            honest(reading, NOON + elapsed, "before expiry");
+        } else {
+            expired = true;
+        }
+    }
+    assert!(expired);
+    assert_eq!(clock.syncs(), 1, "maintenance is not a time fix");
+    assert_eq!(clock.state(count.millis).last, None, "no wrapped fix age");
+}
+
+#[test]
+fn an_expired_anchor_still_bounds_ntp_after_uptime_wraps() {
+    let mut clock = WallClock::new();
+    clock.sync(0, sync(NOON), Origin::Owner).unwrap();
+    let days = 50;
+    let day_ms = 24 * u64::from(HOUR_MS);
+    for day in 1..=days {
+        let now = u32::try_from(day * day_ms % (u64::from(u32::MAX) + 1)).unwrap();
+        clock.advance(now);
+        assert_eq!(clock.read(now), None);
+    }
+    let elapsed = days * day_ms;
+    let now = u32::try_from(elapsed % (u64::from(u32::MAX) + 1)).unwrap();
+    let truth = NOON + elapsed;
+
+    // Dropping an expired anchor would admit this one-day lie. Keeping
+    // its old uptime stamp would instead admit the pre-wrap time.
+    assert_eq!(
+        clock.fix(now, ntp(truth + day_ms, 40)),
+        Err(SyncError::Bounded)
+    );
+    assert_eq!(
+        clock.fix(now, ntp(NOON + u64::from(now), 40)),
+        Err(SyncError::Bounded)
+    );
+    assert_eq!(clock.read(now), None);
+    assert_eq!(clock.fix(now, ntp(truth, 40)), Ok(Jump::First));
+    assert_eq!(clock.read(now).unwrap().unix_ms, truth);
+    assert!(!clock.state(now).learned, "NTP teaches no rate");
+
+    clock
+        .fix(now + 1000, fix(truth + 1000, 40, Origin::Owner))
+        .unwrap();
+    assert!(
+        !clock.state(now + 1000).learned,
+        "the old baseline did not wrap"
+    );
+}
+
+#[test]
+fn carrying_an_expired_anchor_preserves_its_learned_rate() {
+    let mut clock = WallClock::new();
+    clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
+    clock
+        .fix(2_000_000, fix(NOON + 2_001_471, 20, Origin::Owner))
+        .unwrap();
+    let before = clock.state(2_000_000);
+    assert!(before.learned);
+
+    for day in 1..=50_u64 {
+        let now = u32::try_from(day * 24 * u64::from(HOUR_MS) % (u64::from(u32::MAX) + 1)).unwrap();
+        clock.advance(now);
+        let after = clock.state(now);
+        assert_eq!(after.reading, None);
+        assert!(after.learned);
+        assert_eq!(after.rate_ppb, before.rate_ppb);
+        assert_eq!(after.rate_bound_ppb, before.rate_bound_ppb);
+    }
 }
 
 #[test]
