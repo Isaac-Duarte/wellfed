@@ -54,7 +54,7 @@ The session table is part of the feeder's state, the `FEEDER` static in the firm
 
 - **No leak:** the normal image held 146,464 free for three more minutes.
 - **BLE:** setup mode costs about 15–19 KB of heap (`PLBLE1 ready heap_free=135136`).
-- **Headroom:** about 120 KB as measured, with the four-client table already counted. The [log ring](#logging), added since, takes 4 KiB of it. lwIP's own pools are separate (see [clients](#clients-request-ids-and-buffers)).
+- **Headroom:** about 120 KB as measured, with the four-client table already counted. The [log ring](#logging), added since, takes 4 KiB of it, and the device API's log tail growing from 4 KiB to 16 KiB takes 12 KiB more. lwIP's own pools are separate (see [clients](#clients-request-ids-and-buffers)).
 - **The device API's cost** (146,464 down to 125,088) is not yet attributed.
 
 ## Tasks
@@ -147,7 +147,7 @@ The task sits under the loop and the service task, so sending takes no time from
 
 **Boot.** Until the task's first pass after the start hook, `log` sends its own line before returning, as a preemptible spin. So does a boot where that pass never comes: a halted boot, or a failed startup. Boot lines are on the wire when `log` returns, as they were.
 
-**Size.** 4 KiB of `.bss`, on every firmware, which takes 4 KiB from the heap; `.ram_image2.bss` went from 66,304 to 70,432 bytes in the first image with it. The feeder's image also keeps the 4 KiB log tail, which holds the same lines for the device API and is not used for this: it drops its oldest lines first, which could be the one being sent.
+**Size.** 4 KiB of `.bss`, on every firmware, which takes 4 KiB from the heap; `.ram_image2.bss` went from 66,304 to 70,432 bytes in the first image with it. The feeder's image also keeps the 16 KiB log tail, which holds the same lines for the device API and is not used for this: it drops its oldest lines first, which could be the one being sent.
 
 Replaying the timed UART bytes of 1,116 recent captures through a model of the ring, boot's synchronous part and crash dumps left out (modeled, October 31):
 

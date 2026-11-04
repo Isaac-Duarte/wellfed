@@ -346,8 +346,12 @@ pub enum Irq {
     GpioA,
 }
 
-/// The log tail's size: about 70 record lines of the usual length.
-pub const LOG_TAIL_BYTES: usize = 4096;
+/// The log tail's size: about 280 record lines of the usual length. A
+/// Wi-Fi rejoin logs about 3 KB in its first 90 s (scans, backoffs and the
+/// feed readiness flipping), and a 4 KiB tail lost a feed's result lines
+/// to it before the owner reconnected. This holds several minutes of a
+/// rejoin's logging, so the lines before a typical outage survive it.
+pub const LOG_TAIL_BYTES: usize = 16384;
 
 /// The newest lines [`log`] took, for the device API to stream. A line goes
 /// in with interrupts masked, so no writer finds another mid-copy. On the

@@ -300,7 +300,8 @@ Every flash lease checks that the outputs are stopped, and fails closed when the
 
 An owner can read what the feeder's UART prints without opening the feeder: `wellfed logs` (`--follow` for new lines, `--after N` to resume).
 
-- **The tail.** Every record line goes through `wellfed_amebad_sys::log` (`wellfed_sdk::log`, the `Record` derive and the runtime's own lines). It prints the line as before, then copies it into a 4 KiB RAM ring, `LOG_TAIL` (`wellfed_core::log_tail`): about 70 lines of the usual 56 bytes.
+- **The tail.** Every record line goes through `wellfed_amebad_sys::log` (`wellfed_sdk::log`, the `Record` derive and the runtime's own lines). It prints the line as before, then copies it into a 16 KiB RAM ring, `LOG_TAIL` (`wellfed_core::log_tail`): about 280 lines of the usual 56 bytes.
+  - A Wi-Fi rejoin logs about 3 KB in its first 90 s, so a 4 KiB ring lost the lines from just before an outage before the owner was back. 16 KiB holds several minutes of a rejoin's lines, so a feed's result lines survive a typical outage.
   - The copy happens inside the same scheduler suspension as the print, after it. So the UART sees each line at the same moment as before, and tasks never contend for the ring.
   - Vendor C prints (`_rtl_printf`, `DiagPrintf`, the panic record) do not go through `log` and are not in the tail.
   - Nothing is written to flash. The tail starts empty each boot and numbers its lines from 1.
@@ -318,7 +319,9 @@ An owner can read what the feeder's UART prints without opening the feeder: `wel
   - An owner's feeder has no UART wired, so the tail is the only way to see a field fault's lines.
   - It is owner-only, and no record carries a key, a secret or a credential (each record type's rule). The stream shows an owner nothing they could not already change.
   - The other firmwares (`blink`, `bringup`, `qa`) serve no API and build without the `log-tail` feature, so they keep no tail.
-- **Cost.** `.bss` grows by 4,112 bytes (the ring and its state) and flash-resident code by 1,920 bytes. The copy runs in its own 56-byte frame under `log`, and a batch reuses the server's buffers, so every task's stack bound stays within noise. Reading a batch scans at most the ring's headers and copies once, then seals like any frame (about 0.9 ms a kilobyte).
+- **Cost.** `.bss` grows by 16,400 bytes (the ring and its state), which comes out of the heap, and flash-resident code by 1,920 bytes. The copy runs in its own 56-byte frame under `log`, and a batch reuses the server's buffers, so every task's stack bound stays within noise.
+  - Reading a batch walks the ring's line headers from the oldest line, copies once, then seals like any frame (about 0.9 ms a kilobyte). A pass with nothing new returns before the walk.
+  - The walk is about 280 headers in a full ring of usual lines, some tens of microseconds. Its worst case is a ring of the shortest lines, about 3,300 headers, still under the seal's time. The reader runs with interrupts on, so the walk delays no writer.
 
 ## Evolution
 
