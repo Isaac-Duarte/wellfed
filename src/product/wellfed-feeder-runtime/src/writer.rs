@@ -669,8 +669,8 @@ impl<F: FlashOps> Product<F> for FeederStores<F> {
         None
     }
 
-    fn keep_on_reset() -> (u32, Wear) {
-        (STATS_BASE, keep_wear::<F>())
+    fn keep_on_reset() -> Option<(u32, Wear)> {
+        Some((STATS_BASE, keep_wear::<F>()))
     }
 }
 

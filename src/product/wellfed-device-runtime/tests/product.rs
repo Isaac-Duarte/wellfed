@@ -7,19 +7,21 @@ use std::cell::Cell;
 use std::fmt;
 
 use wellfed_device::store::events::EventsFill;
+use wellfed_device::store::reset;
 use wellfed_device::store::settings::SettingsStatus;
 use wellfed_device_api::mailbox::{SettingsFields, SettingsResult};
 use wellfed_device_runtime::writer::{
-    self as writer, Core, Describe, POLL_MS, Product, Record, Step, Wear, Writer,
+    self as writer, Core, Describe, POLL_MS, Product, RESET_BASE, Record, Step, Wear, Writer,
 };
 use wellfed_device_runtime::{events, keys, network};
+use wellfed_hal::board::storage::FACTORY_CLEARED_SECTORS;
 use wellfed_hal::flash::park::Mmio;
 use wellfed_hal::flash_lock::arming::Hooks;
 use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::interlock::INTERLOCK;
 use wellfed_hal::sdk::{self, fake};
 use wellfed_hal::{settings, supervision};
-use wellfed_sdk::storage::FlashOps;
+use wellfed_sdk::storage::{FlashOps, Region};
 
 thread_local! {
     /// What the product saw of the writer's order.
@@ -74,8 +76,8 @@ impl<F: FlashOps> Product<F> for Bare {
         None
     }
 
-    fn keep_on_reset() -> (u32, Wear) {
-        (writer::RESET_BASE, Wear::Kept)
+    fn keep_on_reset() -> Option<(u32, Wear)> {
+        None
     }
 }
 
@@ -140,8 +142,8 @@ fn step(writer: &mut Writer<Armed, Bare>, provider: &mut Provider) -> Option<Rec
     unsafe { writer.step::<NoMmio, Armed>(provider) }.record
 }
 
-#[test]
-fn a_product_without_stores_keeps_the_devices() {
+/// The fake hardware and the runtime's mailboxes at boot, and a writer.
+fn boot() -> (Writer<Armed, Bare>, Provider) {
     fake::reset_hardware();
     settings::reset();
     // SAFETY: this test runs alone in its process and no Wi-Fi task runs.
@@ -151,8 +153,12 @@ fn a_product_without_stores_keeps_the_devices() {
     INTERLOCK.reset();
     supervision::reset();
     wellfed_hal::writer_wake::reset();
-    let mut writer = Writer::<Armed, Bare>::default();
-    let mut provider = Provider::default();
+    (Writer::default(), Provider::default())
+}
+
+#[test]
+fn a_product_without_stores_keeps_the_devices() {
+    let (mut writer, mut provider) = boot();
 
     assert!(matches!(
         step(&mut writer, &mut provider),
@@ -203,4 +209,28 @@ fn a_product_without_stores_keeps_the_devices() {
     // SAFETY: as above.
     let idle = unsafe { writer.step::<NoMmio, Armed>(&mut provider) };
     assert_eq!((idle.delay_ms, idle.record), (POLL_MS, None));
+}
+
+#[test]
+fn a_factory_reset_with_nothing_kept_erases_the_marker_after_the_cleared_sectors() {
+    let (mut writer, mut provider) = boot();
+    assert!(reset::mark(&Region::<Armed, RESET_BASE, 1>::new()));
+
+    assert_eq!(step(&mut writer, &mut provider), Some(Record::ResetPending));
+    for index in 0..FACTORY_CLEARED_SECTORS {
+        assert_eq!(
+            step(&mut writer, &mut provider),
+            None,
+            "cleared sector {index} erases as its own step"
+        );
+        assert!(reset::pending(&Region::<Armed, RESET_BASE, 1>::new()));
+    }
+    assert_eq!(
+        step(&mut writer, &mut provider),
+        Some(Record::ResetDone {
+            erased: FACTORY_CLEARED_SECTORS
+        }),
+        "with no keep step the marker goes next"
+    );
+    assert!(!reset::pending(&Region::<Armed, RESET_BASE, 1>::new()));
 }

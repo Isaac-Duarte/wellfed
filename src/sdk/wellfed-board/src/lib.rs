@@ -44,4 +44,10 @@ mod contract {
     const _: [u32; 3] = [safe::PORT_A_HIGH, safe::PORT_A_LOW, safe::PORT_B_LOW];
     // The boot confirmation record, which the OTA trial on both cores keeps.
     const _: Sectors = super::storage::CONFIRM;
+    // What the settings writer's factory reset and handover reach: the
+    // reset's marker, the update store, and the sectors the reset clears,
+    // erased one step each by index.
+    const _: [Sectors; 2] = [super::storage::RESET, super::storage::UPDATE];
+    const _: u32 = super::storage::FACTORY_CLEARED_SECTORS;
+    const _: fn(u32) -> Option<u32> = super::storage::factory_cleared;
 }

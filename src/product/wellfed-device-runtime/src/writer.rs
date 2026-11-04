@@ -21,7 +21,7 @@
 //! restarts. A boot that finds the marker opens and publishes nothing the
 //! reset clears, erases each cleared sector (`storage::FACTORY_CLEARED`) as
 //! its own step, lets the product rewrite what it keeps of a cleared store
-//! ([`Product::keep_on_reset`]), erases the marker last, and only then
+//! if it keeps any ([`Product::keep_on_reset`]), erases the marker last, and only then
 //! opens the stores, empty. The feed journal, the update store and the seed
 //! are never touched, nor any store the product opens as kept.
 //!
@@ -488,8 +488,9 @@ pub trait Product<F: FlashOps>: Default {
     fn rest(&mut self, core: &mut Core<F>, writable: bool) -> Option<Step<Self::Record>>;
 
     /// The factory reset's step after the cleared sectors: rewrite what it
-    /// keeps of a cleared store, which it names by its first sector.
-    fn keep_on_reset() -> (u32, Wear);
+    /// keeps of a cleared store, named by its first sector, or `None` when
+    /// it keeps nothing, and the marker's erase follows at once.
+    fn keep_on_reset() -> Option<(u32, Wear)>;
 }
 
 /// Whether `sector` reads erased, in small reads to spare the stack: an
@@ -1022,16 +1023,28 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         let noted = core.reset_attempted || reset_marker::note_attempt(&marker);
         let mut wear = Wear::Kept;
         let mut keeping = None;
+        // Past the cleared sectors: the product's keep step, if it has one
+        // (asked once, at its index), then the marker.
+        let kept = if noted && index == FACTORY_CLEARED_SECTORS {
+            P::keep_on_reset()
+        } else {
+            None
+        };
+        let mut marked = false;
         let step = match factory_cleared(index) {
             _ if !noted => None,
             Some(sector) => Some((sector, F::erase(sector) && blank::<F>(sector))),
-            None if index == FACTORY_CLEARED_SECTORS => {
-                let (sector, kept) = P::keep_on_reset();
-                wear = kept;
-                keeping = Some(sector);
-                Some((sector, wear != Wear::Failed))
-            }
-            None => Some((RESET_BASE, F::erase(RESET_BASE) && blank::<F>(RESET_BASE))),
+            None => match kept {
+                Some((sector, result)) => {
+                    wear = result;
+                    keeping = Some(sector);
+                    Some((sector, wear != Wear::Failed))
+                }
+                None => {
+                    marked = true;
+                    Some((RESET_BASE, F::erase(RESET_BASE) && blank::<F>(RESET_BASE)))
+                }
+            },
         };
         arming::clear_attempt();
         drop(turn);
@@ -1052,7 +1065,7 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             };
             return core.reset_stop(stage, Some(sector));
         }
-        if index <= FACTORY_CLEARED_SECTORS {
+        if !marked {
             core.resetting = Some(index + 1);
             let record = (wear == Wear::Lost).then_some(Record::ResetWearLost);
             return next(RESET_POLL_MS, record);
