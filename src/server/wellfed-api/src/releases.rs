@@ -70,7 +70,7 @@ pub struct ReleaseQuery {
     pub limit: Option<u32>,
     /// Only the releases built for this device model (`plaf103`): what may
     /// be installed on a device of it.
-    #[param(value_type = Option<String>)]
+    #[param(schema_with = wellfed_model::schema::model)]
     pub model: Option<Model>,
 }
 

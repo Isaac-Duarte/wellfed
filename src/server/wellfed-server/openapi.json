@@ -4847,10 +4847,14 @@
           {
             "name": "model",
             "in": "query",
-            "description": "Only the releases built for this device model (`plaf103`): what may\nbe installed on a device of it.",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "description": "A device model, which names its kind.",
+              "enum": [
+                "plaf103",
+                "plwf106"
+              ]
             }
           }
         ],

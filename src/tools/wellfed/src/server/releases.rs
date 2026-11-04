@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Subcommand;
+use wellfed_formats::cli::Device;
 use wellfed_server_client::api::ReleaseQuery;
 use wellfed_server_client::{Client, Uploaded};
 
@@ -20,6 +21,10 @@ pub(crate) enum Releases {
         /// At most this many (1-1000, default 100).
         #[arg(long)]
         limit: Option<u32>,
+        /// Only the releases built for this device model, which may be
+        /// installed on a device of it.
+        #[arg(long, value_enum)]
+        model: Option<Device>,
     },
     /// Upload a release file; the server verifies it before keeping it.
     Upload { file: PathBuf },
@@ -30,12 +35,16 @@ pub(crate) enum Releases {
 
 pub(super) async fn releases(client: &Client, releases: Releases, out: Output) -> Result<Settled> {
     match releases {
-        Releases::List { after, limit } => {
+        Releases::List {
+            after,
+            limit,
+            model,
+        } => {
             let page = client
                 .releases(&ReleaseQuery {
                     after,
                     limit,
-                    model: None,
+                    model: model.map(Into::into),
                 })
                 .await?;
             out.show(&page, |page| text::lines(&page.items, text::release))?;
