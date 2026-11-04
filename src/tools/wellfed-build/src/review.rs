@@ -302,7 +302,7 @@ fn review(repo: &Repo, build: &Path) -> Result<(Vec<u8>, Vec<u8>, BuildDetails, 
         }
     };
     let factory_mapping = mapping_cases(&baseline, &rom, &image)?;
-    installed_selection(&baseline, &rom, &image)?;
+    installed_selection(&baseline, &rom, &image, model)?;
 
     // Refuse edits made during the (long) audits and emulation.
     require(
@@ -416,24 +416,29 @@ pub fn mapping_cases(current: &[u8], rom: &[u8], image: &[u8]) -> Result<Vec<Map
     Ok(cases)
 }
 
-/// The installed configuration: `current` as pinned, its bank 0 still
-/// valid, with the image in bank 1. The loader tries bank 1 first, so it
-/// must choose the image there.
-pub fn installed_selection(current: &[u8], rom: &[u8], image: &[u8]) -> Result<()> {
+/// The installed configuration: `current` as pinned, with the image in bank
+/// 1. The loader tries bank 1 first, so it must choose the image there.
+///
+/// On the PLWF106 the pinned backup's bank 0 is stock, which every fountain
+/// install keeps exactly (a give-way back to it requires that), so bank 0
+/// must also pass the loader's own check: bank 1 wins over valid stock, not
+/// over an empty bank. The PLAF103's pinned baseline holds no bank 0 the
+/// loader accepts, so its case shows only the selection.
+pub fn installed_selection(current: &[u8], rom: &[u8], image: &[u8], model: Model) -> Result<()> {
     let payload = container(image)?;
     let start = BANKS[1] as usize;
     let mut fixture = current.to_vec();
     fixture[start..start + payload.len()].copy_from_slice(payload);
 
-    // Bank 0 must still pass the loader's own check, so the selection below
-    // proves bank 1 wins over a valid stock bank, not over an empty one.
-    let stock = factory::execute(&fixture, rom, Entry::Check(0))?;
-    require(stock.stop == Stop::Returned && stock.result == 1, || {
-        ReviewError::InstalledStock {
-            stop: stock.stop,
-            result: stock.result,
-        }
-    })?;
+    if model == Model::Plwf106 {
+        let stock = factory::execute(&fixture, rom, Entry::Check(0))?;
+        require(stock.stop == Stop::Returned && stock.result == 1, || {
+            ReviewError::InstalledStock {
+                stop: stock.stop,
+                result: stock.result,
+            }
+        })?;
+    }
     let chosen = factory::execute(&fixture, rom, Entry::Select)?;
     require(chosen.stop == Stop::Selected && chosen.result == 2, || {
         ReviewError::Installed {

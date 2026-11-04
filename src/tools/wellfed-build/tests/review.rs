@@ -16,6 +16,7 @@ use wellfed_formats::manifest::BuildManifest;
 use wellfed_formats::review::{Details, ImageKind};
 use wellfed_image::bank::BANK1;
 use wellfed_image::root::Root;
+use wellfed_proto::device::Model;
 use wellfed_signing::{Frozen, Key, Motion};
 
 fn repo() -> Repo {
@@ -99,7 +100,7 @@ fn the_factory_loader_accepts_the_first_boot_build_in_both_banks_of_the_current_
     let results: Vec<u32> = cases.iter().map(|case| case.selection.result).collect();
     assert_eq!(results, [1, 2]);
     assert!(bank_payload(&image).is_ok());
-    installed_selection(&current, &rom, &image).unwrap();
+    installed_selection(&current, &rom, &image, Model::Plaf103).unwrap();
 }
 
 /// The fountain boot test as an install leaves it: stock still valid in
@@ -120,7 +121,7 @@ fn the_factory_loader_chooses_the_fountain_boot_test_in_bank_1() {
     .unwrap();
     let rom = factory::rom(&repo.root).unwrap();
 
-    installed_selection(&backup, &rom, &image).unwrap();
+    installed_selection(&backup, &rom, &image, Model::Plwf106).unwrap();
     let cases = mapping_cases(&backup, &rom, &image).unwrap();
     let results: Vec<u32> = cases.iter().map(|case| case.selection.result).collect();
     assert_eq!(results, [1, 2]);
