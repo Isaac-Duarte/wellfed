@@ -8077,6 +8077,17 @@ impl SseDecode for Option<crate::api::feeder::ZoneChange> {
     }
 }
 
+impl SseDecode for Option<crate::api::feeder::ZoneView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::feeder::ZoneView>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<Vec<u8>> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -9765,6 +9776,9 @@ impl SseDecode for crate::api::feeder::TimeInfo {
         let mut var_generation = <u32>::sse_decode(deserializer);
         let mut var_writable = <bool>::sse_decode(deserializer);
         let mut var_zone = <Option<String>>::sse_decode(deserializer);
+        let mut var_zoneNow = <Option<crate::api::feeder::ZoneView>>::sse_decode(deserializer);
+        let mut var_phoneZone = <Option<String>>::sse_decode(deserializer);
+        let mut var_sameAsPhone = <Option<bool>>::sse_decode(deserializer);
         let mut var_ntp = <crate::api::feeder::NtpView>::sse_decode(deserializer);
         let mut var_clockMs = <Option<i64>>::sse_decode(deserializer);
         let mut var_errorMs = <Option<u32>>::sse_decode(deserializer);
@@ -9777,6 +9791,9 @@ impl SseDecode for crate::api::feeder::TimeInfo {
             generation: var_generation,
             writable: var_writable,
             zone: var_zone,
+            zone_now: var_zoneNow,
+            phone_zone: var_phoneZone,
+            same_as_phone: var_sameAsPhone,
             ntp: var_ntp,
             clock_ms: var_clockMs,
             error_ms: var_errorMs,
@@ -10318,6 +10335,20 @@ impl SseDecode for crate::api::feeder::ZoneChange {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseDecode for crate::api::feeder::ZoneView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_abbreviation = <String>::sse_decode(deserializer);
+        let mut var_offsetS = <i32>::sse_decode(deserializer);
+        let mut var_seasonal = <bool>::sse_decode(deserializer);
+        return crate::api::feeder::ZoneView {
+            abbreviation: var_abbreviation,
+            offset_s: var_offsetS,
+            seasonal: var_seasonal,
+        };
     }
 }
 
@@ -14530,6 +14561,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::feeder::TimeInfo {
             self.generation.into_into_dart().into_dart(),
             self.writable.into_into_dart().into_dart(),
             self.zone.into_into_dart().into_dart(),
+            self.zone_now.into_into_dart().into_dart(),
+            self.phone_zone.into_into_dart().into_dart(),
+            self.same_as_phone.into_into_dart().into_dart(),
             self.ntp.into_into_dart().into_dart(),
             self.clock_ms.into_into_dart().into_dart(),
             self.error_ms.into_into_dart().into_dart(),
@@ -15158,6 +15192,25 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::feeder::ZoneChange>
     for crate::api::feeder::ZoneChange
 {
     fn into_into_dart(self) -> crate::api::feeder::ZoneChange {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::feeder::ZoneView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.abbreviation.into_into_dart().into_dart(),
+            self.offset_s.into_into_dart().into_dart(),
+            self.seasonal.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::feeder::ZoneView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::feeder::ZoneView>
+    for crate::api::feeder::ZoneView
+{
+    fn into_into_dart(self) -> crate::api::feeder::ZoneView {
         self
     }
 }
@@ -17663,6 +17716,16 @@ impl SseEncode for Option<crate::api::feeder::ZoneChange> {
     }
 }
 
+impl SseEncode for Option<crate::api::feeder::ZoneView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::feeder::ZoneView>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<Vec<u8>> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -19071,6 +19134,9 @@ impl SseEncode for crate::api::feeder::TimeInfo {
         <u32>::sse_encode(self.generation, serializer);
         <bool>::sse_encode(self.writable, serializer);
         <Option<String>>::sse_encode(self.zone, serializer);
+        <Option<crate::api::feeder::ZoneView>>::sse_encode(self.zone_now, serializer);
+        <Option<String>>::sse_encode(self.phone_zone, serializer);
+        <Option<bool>>::sse_encode(self.same_as_phone, serializer);
         <crate::api::feeder::NtpView>::sse_encode(self.ntp, serializer);
         <Option<i64>>::sse_encode(self.clock_ms, serializer);
         <Option<u32>>::sse_encode(self.error_ms, serializer);
@@ -19588,6 +19654,15 @@ impl SseEncode for crate::api::feeder::ZoneChange {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::api::feeder::ZoneView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.abbreviation, serializer);
+        <i32>::sse_encode(self.offset_s, serializer);
+        <bool>::sse_encode(self.seasonal, serializer);
     }
 }
 

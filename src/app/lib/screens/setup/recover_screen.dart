@@ -91,7 +91,7 @@ class _PickState extends State<_Pick> {
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
     return StepScaffold(
-      appBarTitle: 'Recover a feeder',
+      title: 'Recover a feeder',
       body:
           'Lost every phone that could open it? If the feeder is still on '
           'your Wi-Fi, you can add this phone as an owner without erasing '

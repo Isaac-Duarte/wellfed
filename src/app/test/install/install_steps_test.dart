@@ -234,6 +234,7 @@ void main() {
       run.event(const InstallEvent.stockProgress(percent: 62));
       await settle(tester);
       expect(find.text('Installing Wellfed'), findsOneWidget);
+      expect(find.text('Step 3 of 5'), findsOneWidget);
       expect(find.text('Sending firmware'), findsOneWidget);
       expect(find.textContaining('62%'), findsOneWidget);
       expect(find.textContaining('Keep Wellfed open.', findRichText: true), findsOneWidget);
@@ -248,7 +249,8 @@ void main() {
 
       run.event(const InstallEvent.stockRestarting());
       await settle(tester);
-      expect(find.text('The feeder is restarting'), findsOneWidget);
+      expect(find.text('Restarting into Wellfed'), findsOneWidget);
+      expect(find.textContaining('%'), findsNothing, reason: 'the send is done');
     });
   });
 

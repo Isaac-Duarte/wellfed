@@ -10,6 +10,7 @@ import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
+import 'package:wellfed/state/wifi/networks.dart';
 
 export 'package:wellfed/platform/discovery.dart' show FoundFeeder;
 export 'package:wellfed/src/rust/api/setup.dart' show WifiCredentials;
@@ -109,6 +110,9 @@ class SetupFlow extends ChangeNotifier {
 
   /// The Wi-Fi this phone is on, when Android will say.
   Future<String?> currentNetwork() => _phone.currentNetwork();
+
+  /// The networks this phone hears, for the feeder's Wi-Fi.
+  Future<NetworkScan> scanNetworks() => _phone.scanNetworks();
 
   /// The phone's model, for a name.
   Future<String?> phoneModel() => _phone.model();

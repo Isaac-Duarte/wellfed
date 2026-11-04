@@ -569,6 +569,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ZoneChange dco_decode_box_autoadd_zone_change(dynamic raw);
 
   @protected
+  ZoneView dco_decode_box_autoadd_zone_view(dynamic raw);
+
+  @protected
   BridgeError dco_decode_bridge_error(dynamic raw);
 
   @protected
@@ -959,6 +962,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ZoneChange? dco_decode_opt_box_autoadd_zone_change(dynamic raw);
 
   @protected
+  ZoneView? dco_decode_opt_box_autoadd_zone_view(dynamic raw);
+
+  @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
 
   @protected
@@ -1245,6 +1251,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ZoneChange dco_decode_zone_change(dynamic raw);
+
+  @protected
+  ZoneView dco_decode_zone_view(dynamic raw);
 
   @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
@@ -1794,6 +1803,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ZoneChange sse_decode_box_autoadd_zone_change(SseDeserializer deserializer);
 
   @protected
+  ZoneView sse_decode_box_autoadd_zone_view(SseDeserializer deserializer);
+
+  @protected
   BridgeError sse_decode_bridge_error(SseDeserializer deserializer);
 
   @protected
@@ -2252,6 +2264,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ZoneView? sse_decode_opt_box_autoadd_zone_view(SseDeserializer deserializer);
+
+  @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
@@ -2548,6 +2563,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ZoneChange sse_decode_zone_change(SseDeserializer deserializer);
+
+  @protected
+  ZoneView sse_decode_zone_view(SseDeserializer deserializer);
 
   @protected
   void sse_encode_AnyhowException(
@@ -3265,6 +3283,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_zone_view(
+    ZoneView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bridge_error(BridgeError self, SseSerializer serializer);
 
   @protected
@@ -3826,6 +3850,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_zone_view(
+    ZoneView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
     SseSerializer serializer,
@@ -4181,6 +4211,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_zone_change(ZoneChange self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_zone_view(ZoneView self, SseSerializer serializer);
 }
 
 // Section: wire_class

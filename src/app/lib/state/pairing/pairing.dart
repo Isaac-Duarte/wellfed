@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart' show DiscoveredDevice;
@@ -281,7 +282,7 @@ class PairingFlow extends ChangeNotifier {
     _set(
       PairingCode(
         code: List.unmodifiable(_code),
-        deadline: DateTime.now().add(Duration(seconds: seconds)),
+        deadline: clock.now().add(Duration(seconds: seconds)),
         feederName: _feederName,
         network: _network,
       ),

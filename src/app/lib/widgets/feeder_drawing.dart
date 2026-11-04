@@ -3,32 +3,43 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_parsing/path_parsing.dart';
 import 'package:wellfed/theme/theme.dart';
 
-part 'feeder_lines.dart';
+part 'feeder_render.dart';
 
-/// Which traced drawing to show. Both come from assets/model/lineart.py, the
-/// same files the website's hero draws, so the app and the site show one
-/// feeder.
+/// Which render of the 3D model to show, with the hotspots its render script
+/// wrote beside it, so a label points at the part it names.
 enum FeederView {
   /// The whole feeder at three quarters, as the feeder cards show it.
-  card('assets/renders/card-lines.json'),
+  card(
+    light: 'assets/renders/card-cutout.png',
+    dark: 'assets/renders/card-dark-cutout.png',
+    hotspots: 'assets/renders/card.json',
+    // The feeder itself within the square render, without the empty margin.
+    box: Rect.fromLTRB(305 / 1024, 106 / 1024, 802 / 1024, 923 / 1024),
+  ),
 
   /// Straight on to the control panel, for finding a button or a light.
-  panel('assets/renders/panel-lines.json');
+  panel(
+    light: 'assets/renders/panel.png',
+    dark: 'assets/renders/panel.png',
+    hotspots: 'assets/renders/panel.json',
+    box: Rect.fromLTRB(0, 0, 1, 1),
+  );
 
-  const FeederView(this.asset);
+  const FeederView({required this.light, required this.dark, required this.hotspots, required this.box});
 
-  final String asset;
+  final String light;
+  final String dark;
+  final String hotspots;
+
+  /// The part worth showing, in fractions of the render.
+  final Rect box;
 }
 
 /// Where a callout's leader runs: out to an edge, or down under the drawing
 /// for parts too near an edge to lead out sideways.
 enum CalloutSide { left, right, below }
-
-/// How much food the hopper shows through its window.
-enum FoodShown { full, low, none }
 
 /// A label pinned to a part of the feeder by a leader line.
 @immutable
@@ -64,8 +75,7 @@ class Callout {
   String get text => summary ?? lines.join(' · ');
 }
 
-/// The feeder as a technical line drawing in the theme's colors, over a
-/// drafting table's dot grid, with callouts led out to either side.
+/// The feeder's 3D render, with callouts led out to either side.
 ///
 /// When a label won't fit beside the drawing in three lines, or two labels on
 /// one side would overlap, every label moves into a list under it: the site's
@@ -77,7 +87,6 @@ class FeederDrawing extends StatefulWidget {
     required this.height,
     this.callouts = const [],
     this.highlights = const {},
-    this.food = FoodShown.full,
     this.dimmed = false,
     this.label,
     this.crop,
@@ -89,14 +98,14 @@ class FeederDrawing extends StatefulWidget {
 
   /// Anchors ringed in the accent color, for "press this one".
   final Set<String> highlights;
-  final FoodShown food;
   final bool dimmed;
 
   /// What the picture shows, for a screen reader. The callouts read out on
   /// their own.
   final String? label;
 
-  /// The part of the drawing to show, in its units; all of it when null.
+  /// The part of the render to show, in fractions of it; the feeder's own
+  /// bounds when null.
   final Rect? crop;
 
   @override
@@ -104,27 +113,27 @@ class FeederDrawing extends StatefulWidget {
 }
 
 class _FeederDrawingState extends State<FeederDrawing> {
-  late Future<_Lines> _lines;
+  late Future<_Render> _render;
 
   @override
   void initState() {
     super.initState();
-    _lines = _Lines.load(widget.view);
+    _render = _Render.load(widget.view);
   }
 
   @override
   void didUpdateWidget(FeederDrawing old) {
     super.didUpdateWidget(old);
-    if (old.view != widget.view) _lines = _Lines.load(widget.view);
+    if (old.view != widget.view) _render = _Render.load(widget.view);
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<_Lines>(
-    future: _lines,
-    initialData: _Lines.ready[widget.view],
+  Widget build(BuildContext context) => FutureBuilder<_Render>(
+    future: _render,
+    initialData: _Render.ready[widget.view],
     builder: (context, snapshot) => switch (snapshot.data) {
       null => SizedBox(height: widget.height),
-      final _Lines lines => _Laid(lines: lines, drawing: widget),
+      final _Render render => _Laid(render: render, drawing: widget),
     },
   );
 }
@@ -142,14 +151,13 @@ const double _lift = 3;
 /// More lines than this and a label reads as a paragraph: it goes to the list.
 const int _maxLines = 4;
 
-/// Lines in logical pixels at any scale: the site's strokes are in drawing
-/// units, which a phone shrinks past seeing.
+/// The leaders' width, in logical pixels.
 const double _stroke = 1.2;
 
 class _Laid extends StatelessWidget {
-  const _Laid({required this.lines, required this.drawing});
+  const _Laid({required this.render, required this.drawing});
 
-  final _Lines lines;
+  final _Render render;
   final FeederDrawing drawing;
 
   @override
@@ -163,7 +171,7 @@ class _Laid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, box) {
         final double height = drawing.height;
-        final Rect shown = drawing.crop ?? lines.box;
+        final Rect shown = drawing.crop ?? drawing.view.box;
         final double width = box.hasBoundedWidth ? box.maxWidth : shown.width * height / shown.height;
         final size = Size(width, height);
         // Labels under the drawing take a band off its height.
@@ -171,23 +179,44 @@ class _Laid extends StatelessWidget {
             .where((callout) => callout.side == CalloutSide.below)
             .map((callout) => _measure(callout, c, style, scaler, direction, _belowWidth).height + 2 * _gap)
             .fold<double>(0, math.max);
-        final frame = _Frame(lines, shown, Size(width, math.max(1.0, height - band)));
+        final frame = _Frame(render, shown, Size(width, math.max(1.0, height - band)));
         final List<_Placed>? placed = _place(frame, size, drawing.callouts, c, style, scaler, direction);
 
-        final picture = Opacity(
-          opacity: drawing.dimmed ? 0.5 : 1,
-          child: RepaintBoundary(
-            child: CustomPaint(
-              size: size,
-              painter: _Painter(
-                frame: frame,
-                colors: c,
-                food: drawing.food,
-                highlights: drawing.highlights,
-                placed: placed ?? const [],
+        final Rect image = frame.image;
+        final picture = Stack(
+          children: [
+            // Only the part shown: a crop cuts the render, not the labels.
+            Positioned.fromRect(
+              rect: frame.shown,
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.topLeft,
+                  minWidth: image.width,
+                  maxWidth: image.width,
+                  minHeight: image.height,
+                  maxHeight: image.height,
+                  child: Transform.translate(
+                    offset: image.topLeft - frame.shown.topLeft,
+                    child: Opacity(
+                      opacity: drawing.dimmed ? 0.5 : 1,
+                      child: Image.asset(
+                        context.isDark ? drawing.view.dark : drawing.view.light,
+                        width: image.width,
+                        height: image.height,
+                        fit: BoxFit.fill,
+                        excludeFromSemantics: true,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _Painter(frame: frame, colors: c, highlights: drawing.highlights, placed: placed ?? const []),
+              ),
+            ),
+          ],
         );
         final figure = SizedBox(
           width: width,
@@ -211,12 +240,35 @@ class _Laid extends StatelessWidget {
           children: [
             figure,
             const SizedBox(height: Space.s2),
-            Wrap(
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: Space.s4,
-              children: [for (final callout in drawing.callouts) _Listed(callout, style: style)],
-            ),
+            // Labels that do nothing read as one line of words; any that act
+            // keep a tap target each.
+            if (drawing.callouts.every((callout) => callout.onTap == null))
+              Text.rich(
+                TextSpan(
+                  children: [
+                    for (final (index, callout) in drawing.callouts.indexed) ...[
+                      if (index > 0)
+                        TextSpan(
+                          text: '\u00a0\u00a0·  ',
+                          style: style.copyWith(color: context.colors.textMuted),
+                        ),
+                      // Breaks only between labels, never inside one.
+                      TextSpan(
+                        text: callout.text.replaceAll(' ', '\u00a0'),
+                        style: _labelStyle(context.colors, callout, style),
+                      ),
+                    ],
+                  ],
+                ),
+                textAlign: TextAlign.center,
+              )
+            else
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: Space.s4,
+                children: [for (final callout in drawing.callouts) _Listed(callout, style: style)],
+              ),
           ],
         );
       },

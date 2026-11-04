@@ -83,6 +83,7 @@ class _InstallScreenState extends State<InstallScreen> {
         InstallWifi() => WifiStep(
           initial: null,
           currentNetwork: _flow.currentNetwork,
+          scanNetworks: _flow.scanNetworks,
           stepLabel: 'Steps 1–2 of 5',
           progress: 0.1,
           mayKeep: false,

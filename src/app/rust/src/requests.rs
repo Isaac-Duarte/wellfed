@@ -24,7 +24,7 @@ use wellfed_model::{
 use crate::api::feeder::{
     CalibrationInfo, CallInfo, ClientView, FeederRefusal, FeederReply, FeederRequest, InviteView,
     NotAsked, NtpView, PlanEdit, PlanView, PlansView, PortionChange, SettingsChanges, SettingsView,
-    TimeInfo, TraceView, UpdateInfo, ZoneChange,
+    TimeInfo, TraceView, UpdateInfo, ZoneChange, ZoneView,
 };
 use crate::session::{Command, Heard};
 
@@ -464,10 +464,23 @@ impl TimeRead {
         let elapsed = now.saturating_duration_since(self.read_mono);
         let elapsed_ms = i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX);
 
+        let rule = view.zone.as_deref().filter(|rule| !rule.is_empty());
+        let phone = TimeZone::system();
+        let phone_zone = phone.iana_name().map(str::to_owned);
+        // The phone's zone as the rule the feeder would keep for it, so a
+        // feeder set from this phone reads as the same zone.
+        let same_as_phone = phone_zone.as_deref().map(|name| {
+            wellfed_client::time::rule(name, self.read_at, Some(&phone))
+                .is_ok_and(|phone_rule| Some(phone_rule.as_str()) == rule)
+        });
+
         TimeInfo {
             generation: view.generation.0,
             writable: view.writable,
             zone: view.zone.clone(),
+            zone_now: rule.and_then(|rule| zone_now(rule, self.read_at)),
+            phone_zone,
+            same_as_phone,
             ntp,
             clock_ms: view
                 .clock_ms
@@ -485,6 +498,17 @@ impl TimeRead {
             ntp_last: view.ntp_last,
         }
     }
+}
+
+/// A POSIX rule's abbreviation and offset at `at`.
+fn zone_now(rule: &str, at: Timestamp) -> Option<ZoneView> {
+    let zone = TimeZone::posix(rule).ok()?;
+    let info = zone.to_offset_info(at);
+    Some(ZoneView {
+        abbreviation: info.abbreviation().to_owned(),
+        offset_s: info.offset().seconds(),
+        seasonal: rule.contains(','),
+    })
 }
 
 /// What `bound_ppb` adds to the error over `elapsed_ms`, rounded up as the
@@ -726,6 +750,24 @@ mod tests {
         };
         let (reply, ()) = tokio::join!(upload_call(&commands, &wav), feeder);
         assert!(matches!(reply, FeederReply::Unanswered));
+    }
+
+    #[test]
+    fn a_zone_reads_as_its_abbreviation_and_offset_now() {
+        // 2 November 2026, after the US's fall back: standard time.
+        let winter = Timestamp::from_second(1_793_664_000).expect("in range");
+        let mountain = zone_now("MST7MDT,M3.2.0,M11.1.0", winter).expect("a valid rule");
+        assert_eq!(mountain.abbreviation, "MST");
+        assert_eq!(mountain.offset_s, -7 * 3600);
+        assert!(mountain.seasonal);
+
+        // A rule with no name for its zone, and no daylight saving.
+        let fixed = zone_now("<+03>-3", winter).expect("a valid rule");
+        assert_eq!(fixed.abbreviation, "+03");
+        assert_eq!(fixed.offset_s, 3 * 3600);
+        assert!(!fixed.seasonal);
+
+        assert_eq!(zone_now("not a rule", winter), None);
     }
 
     #[test]

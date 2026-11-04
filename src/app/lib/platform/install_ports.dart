@@ -16,6 +16,7 @@ import 'package:wellfed/src/rust/api/install.dart' as rust;
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/wifi/networks.dart';
 
 /// Where the installer's files live on this phone.
 class InstallPaths {
@@ -95,6 +96,9 @@ abstract interface class InstallPorts {
 
   /// The Wi-Fi this phone is on, when Android will say.
   Future<String?> currentNetwork();
+
+  /// The networks this phone hears, for the feeder's Wi-Fi.
+  Future<NetworkScan> scanNetworks();
 
   /// One run, which goes once.
   InstallRun newRun(InstallSpec spec);
@@ -208,6 +212,9 @@ class AppInstallPorts implements InstallPorts {
 
   @override
   Future<String?> currentNetwork() => const AppPhonePorts().currentNetwork();
+
+  @override
+  Future<NetworkScan> scanNetworks() => scanNearbyNetworks();
 
   @override
   Future<bool> askPermissions({required bool bluetooth}) async {

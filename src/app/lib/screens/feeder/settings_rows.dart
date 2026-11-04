@@ -9,6 +9,7 @@ import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/pending.dart';
 import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/settings_list.dart';
 
 class SettingsVolumeRow extends StatelessWidget {
   const SettingsVolumeRow({super.key, required this.feeder, required this.settings, required this.online});

@@ -188,12 +188,30 @@ pub enum NtpView {
     Address { ip: String, port: u16 },
 }
 
+/// A zone rule as it stands now.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ZoneView {
+    /// The abbreviation in force ("MST", "CEST"), or the offset for a rule
+    /// that names none ("+03").
+    pub abbreviation: String,
+    /// Seconds east of UTC.
+    pub offset_s: i32,
+    /// Whether the rule moves for daylight saving.
+    pub seasonal: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TimeInfo {
     pub generation: u32,
     pub writable: bool,
     /// The zone's POSIX rule.
     pub zone: Option<String>,
+    /// The zone as an owner reads it, when the feeder keeps one.
+    pub zone_now: Option<ZoneView>,
+    /// This phone's zone (an IANA name), when it has one.
+    pub phone_zone: Option<String>,
+    /// Whether the feeder keeps the same rule as this phone's zone.
+    pub same_as_phone: Option<bool>,
     pub ntp: NtpView,
     /// `None` while the clock is invalid: scheduled meals hold.
     pub clock_ms: Option<i64>,

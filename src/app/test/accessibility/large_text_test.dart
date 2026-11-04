@@ -2,8 +2,10 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
+import 'package:wellfed/screens/feeder/meal_editor.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
+import 'package:wellfed/screens/feeder/wifi.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/home/welcome.dart';
@@ -16,6 +18,7 @@ import 'package:wellfed/state/settings/backups.dart';
 import 'package:wellfed/state/setup/setup.dart';
 
 import '../feeder/feeder_support.dart';
+import '../feeder/schedule_history_support.dart';
 import '../install/install_support.dart';
 import '../restore/restore_support.dart';
 import '../support/fake_install.dart';
@@ -71,6 +74,14 @@ void main() {
     });
   }
 
+  testWidgets('Wi-Fi settings, and its network picker', (tester) async {
+    final (FeederController feeder, FakeSession session) = await oneFeeder(tester, phone: fixturePhone());
+    session.status(fullCard());
+    await _show(tester, WifiScreen(feeder: feeder));
+    await tester.tap(find.text('Home'));
+    await settle(tester);
+  });
+
   testWidgets('the meal call', (tester) async {
     final FeederController feeder = await _feeder(tester);
     await _show(tester, MealCallScreen(feeder: feeder, pick: () async => null));
@@ -78,6 +89,11 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.tap(find.text('Cancel'));
     await settle(tester);
+  });
+
+  testWidgets('the meal editor', (tester) async {
+    final FeederController feeder = await _feeder(tester);
+    await _show(tester, MealEditor(feeder: feeder, held: planPlans([planPlan(60)]), slot: 0));
   });
 
   testWidgets('app settings', (tester) async {

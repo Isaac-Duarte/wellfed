@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart' hide Card;
-import 'package:wellfed/screens/feeder/clock_portion.dart';
 import 'package:wellfed/screens/feeder/live_log.dart';
 import 'package:wellfed/screens/feeder/motor_trace.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
@@ -14,6 +13,7 @@ import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/settings_list.dart';
 
 /// The feeder's own numbers, for an owner (13.1). Reads only, each once when
 /// the screen opens.
@@ -137,9 +137,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           Panel(
             child: Column(
               children: [
-                _Link('Motor traces', 'Recent feeds', MotorTracesScreen(feeder: feeder), _open),
+                _Link('Motor traces', 'Recent feeds', MotorTracesScreen(feeder: feeder), _open, first: true),
                 _Link('Live log', null, LiveLogScreen(feeder: feeder), _open),
-                _Link('Clock and portion size', null, ClockPortionScreen(feeder: feeder), _open),
               ],
             ),
           ),
@@ -180,24 +179,16 @@ class _Tile extends StatelessWidget {
 }
 
 class _Link extends StatelessWidget {
-  const _Link(this.name, this.note, this.screen, this.open);
+  const _Link(this.name, this.note, this.screen, this.open, {this.first = false});
 
   final String name;
   final String? note;
   final Widget screen;
   final void Function(Widget) open;
+  final bool first;
 
   @override
-  Widget build(BuildContext context) => ListTile(
-    contentPadding: const EdgeInsets.symmetric(horizontal: Space.s4),
-    title: Text(name),
-    subtitle: switch (note) {
-      final String note? => Text(note),
-      null => null,
-    },
-    trailing: StrokeIcon(Glyph.chevron, size: 20, color: context.colors.textMuted),
-    onTap: () => open(screen),
-  );
+  Widget build(BuildContext context) => SettingsLink(name, note, first: first, onTap: () => open(screen));
 }
 
 /// `3 d 4 h`, `4 h 12 min` or `12 min`.

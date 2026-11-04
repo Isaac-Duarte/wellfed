@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/platform/feeder_ports.dart';
@@ -14,6 +15,7 @@ import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/restore/restore.dart';
 import 'package:wellfed/state/update/update.dart';
+import 'package:wellfed/state/wifi/networks.dart';
 
 /// Where a recording comes from.
 typedef PickRecording = Future<Uint8List?> Function();
@@ -81,6 +83,12 @@ class FeederController extends ChangeNotifier {
 
   /// The phone's microphone, for recording the meal call here.
   Recorder get recorder => _ports.recorder;
+
+  /// The Wi-Fi this phone is on, when Android will say.
+  Future<String?> currentNetwork() => _ports.currentNetwork();
+
+  /// The networks this phone hears, for the feeder's Wi-Fi.
+  Future<NetworkScan> scanNetworks() => _ports.scanNetworks();
 
   /// Run `pick`: what it gave, and whether the file could be read.
   Future<(Uint8List?, bool)> readRecording(PickRecording pick) async {
@@ -371,7 +379,7 @@ class FeederController extends ChangeNotifier {
             }
           }
         case SessionUpdate_Status(card: final Card card):
-          _setState(_state.copyWith(card: card, cardAt: DateTime.now(), cardFresh: true));
+          _setState(_state.copyWith(card: card, cardAt: clock.now(), cardFresh: true));
         case SessionUpdate_FeedStarted(:final int feed, :final int portions, :final int dueSeconds):
           _feedDue?.cancel();
           _feedDue = Timer(Duration(seconds: dueSeconds), _feedOverdue);

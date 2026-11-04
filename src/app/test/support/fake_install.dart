@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
+import 'package:wellfed/state/wifi/networks.dart';
 
 import 'fakes.dart';
 
@@ -170,6 +171,9 @@ class FakeInstallPorts implements InstallPorts {
 
   @override
   Future<String?> currentNetwork() async => null;
+
+  @override
+  Future<NetworkScan> scanNetworks() async => const NetworksUnread(ScanProblem.unavailable);
 
   @override
   Future<bool> askPermissions({required bool bluetooth}) async {

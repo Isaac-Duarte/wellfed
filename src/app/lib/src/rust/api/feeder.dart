@@ -10,7 +10,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'feeder.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 class CalibrationInfo {
   final int generation;
@@ -538,6 +538,15 @@ class TimeInfo {
 
   /// The zone's POSIX rule.
   final String? zone;
+
+  /// The zone as an owner reads it, when the feeder keeps one.
+  final ZoneView? zoneNow;
+
+  /// This phone's zone (an IANA name), when it has one.
+  final String? phoneZone;
+
+  /// Whether the feeder keeps the same rule as this phone's zone.
+  final bool? sameAsPhone;
   final NtpView ntp;
 
   /// `None` while the clock is invalid: scheduled meals hold.
@@ -555,6 +564,9 @@ class TimeInfo {
     required this.generation,
     required this.writable,
     this.zone,
+    this.zoneNow,
+    this.phoneZone,
+    this.sameAsPhone,
     required this.ntp,
     this.clockMs,
     this.errorMs,
@@ -570,6 +582,9 @@ class TimeInfo {
       generation.hashCode ^
       writable.hashCode ^
       zone.hashCode ^
+      zoneNow.hashCode ^
+      phoneZone.hashCode ^
+      sameAsPhone.hashCode ^
       ntp.hashCode ^
       clockMs.hashCode ^
       errorMs.hashCode ^
@@ -587,6 +602,9 @@ class TimeInfo {
           generation == other.generation &&
           writable == other.writable &&
           zone == other.zone &&
+          zoneNow == other.zoneNow &&
+          phoneZone == other.phoneZone &&
+          sameAsPhone == other.sameAsPhone &&
           ntp == other.ntp &&
           clockMs == other.clockMs &&
           errorMs == other.errorMs &&
@@ -687,4 +705,36 @@ sealed class ZoneChange with _$ZoneChange {
   /// An IANA name.
   const factory ZoneChange.named({required String name}) = ZoneChange_Named;
   const factory ZoneChange.clear() = ZoneChange_Clear;
+}
+
+/// A zone rule as it stands now.
+class ZoneView {
+  /// The abbreviation in force ("MST", "CEST"), or the offset for a rule
+  /// that names none ("+03").
+  final String abbreviation;
+
+  /// Seconds east of UTC.
+  final int offsetS;
+
+  /// Whether the rule moves for daylight saving.
+  final bool seasonal;
+
+  const ZoneView({
+    required this.abbreviation,
+    required this.offsetS,
+    required this.seasonal,
+  });
+
+  @override
+  int get hashCode =>
+      abbreviation.hashCode ^ offsetS.hashCode ^ seasonal.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ZoneView &&
+          runtimeType == other.runtimeType &&
+          abbreviation == other.abbreviation &&
+          offsetS == other.offsetS &&
+          seasonal == other.seasonal;
 }

@@ -25,7 +25,7 @@ void main() {
     session.status(fakeCard());
     await settle(tester);
 
-    expect(find.text('No meal set'), findsOneWidget);
+    expect(find.text('No meals today'), findsOneWidget);
     await feederTap(tester, find.text('Add a meal'));
     expect(DefaultTabController.of(tester.element(find.byType(TabBar))).index, scheduleTab);
   });

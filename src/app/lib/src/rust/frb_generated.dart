@@ -4857,6 +4857,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ZoneView dco_decode_box_autoadd_zone_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_zone_view(raw);
+  }
+
+  @protected
   BridgeError dco_decode_bridge_error(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -6352,6 +6358,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ZoneView? dco_decode_opt_box_autoadd_zone_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_zone_view(raw);
+  }
+
+  @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_list_prim_u_8_strict(raw);
@@ -7473,20 +7485,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TimeInfo dco_decode_time_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 14)
+      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
     return TimeInfo(
       generation: dco_decode_u_32(arr[0]),
       writable: dco_decode_bool(arr[1]),
       zone: dco_decode_opt_String(arr[2]),
-      ntp: dco_decode_ntp_view(arr[3]),
-      clockMs: dco_decode_opt_box_autoadd_i_64(arr[4]),
-      errorMs: dco_decode_opt_box_autoadd_u_32(arr[5]),
-      offsetS: dco_decode_opt_box_autoadd_i_32(arr[6]),
-      syncs: dco_decode_u_32(arr[7]),
-      last: dco_decode_opt_box_autoadd_time_source(arr[8]),
-      lastAtMs: dco_decode_opt_box_autoadd_i_64(arr[9]),
-      ntpLast: dco_decode_opt_box_autoadd_ntp_result(arr[10]),
+      zoneNow: dco_decode_opt_box_autoadd_zone_view(arr[3]),
+      phoneZone: dco_decode_opt_String(arr[4]),
+      sameAsPhone: dco_decode_opt_box_autoadd_bool(arr[5]),
+      ntp: dco_decode_ntp_view(arr[6]),
+      clockMs: dco_decode_opt_box_autoadd_i_64(arr[7]),
+      errorMs: dco_decode_opt_box_autoadd_u_32(arr[8]),
+      offsetS: dco_decode_opt_box_autoadd_i_32(arr[9]),
+      syncs: dco_decode_u_32(arr[10]),
+      last: dco_decode_opt_box_autoadd_time_source(arr[11]),
+      lastAtMs: dco_decode_opt_box_autoadd_i_64(arr[12]),
+      ntpLast: dco_decode_opt_box_autoadd_ntp_result(arr[13]),
     );
   }
 
@@ -7806,6 +7821,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw Exception("unreachable");
     }
+  }
+
+  @protected
+  ZoneView dco_decode_zone_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ZoneView(
+      abbreviation: dco_decode_String(arr[0]),
+      offsetS: dco_decode_i_32(arr[1]),
+      seasonal: dco_decode_bool(arr[2]),
+    );
   }
 
   @protected
@@ -8872,6 +8900,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ZoneChange sse_decode_box_autoadd_zone_change(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_zone_change(deserializer));
+  }
+
+  @protected
+  ZoneView sse_decode_box_autoadd_zone_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_zone_view(deserializer));
   }
 
   @protected
@@ -10930,6 +10964,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ZoneView? sse_decode_opt_box_autoadd_zone_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_zone_view(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -12242,6 +12287,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_generation = sse_decode_u_32(deserializer);
     var var_writable = sse_decode_bool(deserializer);
     var var_zone = sse_decode_opt_String(deserializer);
+    var var_zoneNow = sse_decode_opt_box_autoadd_zone_view(deserializer);
+    var var_phoneZone = sse_decode_opt_String(deserializer);
+    var var_sameAsPhone = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_ntp = sse_decode_ntp_view(deserializer);
     var var_clockMs = sse_decode_opt_box_autoadd_i_64(deserializer);
     var var_errorMs = sse_decode_opt_box_autoadd_u_32(deserializer);
@@ -12254,6 +12302,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       generation: var_generation,
       writable: var_writable,
       zone: var_zone,
+      zoneNow: var_zoneNow,
+      phoneZone: var_phoneZone,
+      sameAsPhone: var_sameAsPhone,
       ntp: var_ntp,
       clockMs: var_clockMs,
       errorMs: var_errorMs,
@@ -12620,6 +12671,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw UnimplementedError('');
     }
+  }
+
+  @protected
+  ZoneView sse_decode_zone_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_abbreviation = sse_decode_String(deserializer);
+    var var_offsetS = sse_decode_i_32(deserializer);
+    var var_seasonal = sse_decode_bool(deserializer);
+    return ZoneView(
+      abbreviation: var_abbreviation,
+      offsetS: var_offsetS,
+      seasonal: var_seasonal,
+    );
   }
 
   @protected
@@ -13894,6 +13958,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_zone_change(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_zone_view(
+    ZoneView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_zone_view(self, serializer);
   }
 
   @protected
@@ -15703,6 +15776,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_zone_view(
+    ZoneView? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_zone_view(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
     SseSerializer serializer,
@@ -16755,6 +16841,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.generation, serializer);
     sse_encode_bool(self.writable, serializer);
     sse_encode_opt_String(self.zone, serializer);
+    sse_encode_opt_box_autoadd_zone_view(self.zoneNow, serializer);
+    sse_encode_opt_String(self.phoneZone, serializer);
+    sse_encode_opt_box_autoadd_bool(self.sameAsPhone, serializer);
     sse_encode_ntp_view(self.ntp, serializer);
     sse_encode_opt_box_autoadd_i_64(self.clockMs, serializer);
     sse_encode_opt_box_autoadd_u_32(self.errorMs, serializer);
@@ -17055,6 +17144,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case ZoneChange_Clear():
         sse_encode_i_32(2, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_zone_view(ZoneView self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.abbreviation, serializer);
+    sse_encode_i_32(self.offsetS, serializer);
+    sse_encode_bool(self.seasonal, serializer);
   }
 }
 

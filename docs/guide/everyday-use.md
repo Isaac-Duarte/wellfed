@@ -50,7 +50,7 @@ A few rules are worth knowing:
 
 ### Before a meal
 
-**Meal call** plays your own recording before a meal, up to five times, and ends as the meal is due. Uploading a recording takes an owner. In the app, open **Settings**, then **Meal call** (or the meal editor), and either tap **Record on this phone** or choose a WAV file. A recording stops by itself at 8 seconds, and the app asks for the microphone the first time. Another file format, such as MP3, needs converting to WAV first, for example with `ffmpeg -i call.mp3 call.wav`. **Play on the feeder** plays it once so you can hear it; anyone with the feeder can do that. On the CLI, it's `wellfed call upload dinner.wav`, then `wellfed plans edit 0 --call 2`. With sound off or outside its hours, the meal runs silently.
+**Meal call** plays your own recording before a meal, up to five times, and ends as the meal is due. Uploading a recording takes an owner. In the app, open **Settings**, then **Meal call** (or the meal editor), and either tap the round record button or **Use an audio file instead** to choose a WAV file. Tap it again to stop and send; a recording stops by itself at 8 seconds, and the app asks for the microphone the first time. Another file format, such as MP3, needs converting to WAV first, for example with `ffmpeg -i call.mp3 call.wav`. The play button beside your recording plays it once on the feeder so you can hear it; anyone with the feeder can do that. On the CLI, it's `wellfed call upload dinner.wav`, then `wellfed plans edit 0 --call 2`. With sound off or outside its hours, the meal runs silently.
 
 **Before each meal**, under Settings and Reminders, adds a **Meal coming** entry to History up to 60 minutes ahead. On the CLI, it's `wellfed settings --meal-reminder 10`. It's only a history entry: it plays nothing and sends no notification. Phone alerts are planned for the app, but they haven't been designed or built.
 
@@ -147,7 +147,7 @@ Feed one portion first and throw it away, so the rotor starts from a known place
 
 ### App
 
-This takes an owner. Open **Settings**, then **Clock and portion size**. Tap **I weighed 10 portions** and enter the grams.
+This takes an owner. Open **Settings**, then **Portion size**. Tap **Enter what 10 portions weighed** and enter the grams, or step the size a gram at a time with **−** and **+**.
 
 ### CLI
 
@@ -183,7 +183,7 @@ Your feeder needs the time to run meals, and it has no battery-backed clock. "No
 
 After a power cut, your plans come back but the clock doesn't. If your router answers, the clock is set soon after the feeder rejoins Wi-Fi. Otherwise, open the app on the same Wi-Fi: it gives the feeder your phone's time when it connects to a feeder with no clock, and Today offers **Set the time from this phone**. On the CLI, run `wellfed time`.
 
-The feeder also needs your time zone, since meals are set in local time. The app stores your phone's zone when you set a feeder up; you can change it on **Clock and portion size**. Without one, the feeder uses the offset a phone last gave it, which a power cut erases: the clock comes back right from the router or a time server, but every meal holds until a phone gives the offset again. The app does that as soon as it connects, and the **Today** tab says **Meals are on hold** until then.
+The feeder also needs your time zone, since meals are set in local time. The app stores your phone's zone when you set a feeder up; **Settings** → **Clock** shows it, and offers **Use this phone's zone** when the feeder keeps a different one. Without one, the feeder uses the offset a phone last gave it, which a power cut erases: the clock comes back right from the router or a time server, but every meal holds until a phone gives the offset again. The app does that as soon as it connects, and the **Today** tab says **Meals are on hold** until then.
 
 When the time returns, a meal less than 15 minutes late runs, and an older one is skipped. On a day with a long outage, feed your pet another way.
 
@@ -191,7 +191,7 @@ Even with your router answering, the clock reads invalid for up to a minute abou
 
 A longer limit, about a week, needs two `wellfed time` syncs from an owner about 11 hours apart. The feeder forgets that on every restart, and the app doesn't do it.
 
-An owner chooses where the time comes from, with **Get the time from** on the **Clock and portion size** screen: **Router**, **Address** or **Phones only**. An address has to be an IP address, since names aren't looked up. Many home routers don't answer with the time. When yours doesn't, the feeder's **Today** tab offers Cloudflare's public time server, or phones only. Either choice ends the offer. Out of the box the feeder asks only your router, so it contacts nothing outside your network unless you choose it. **Address** also lists public time servers from Cloudflare and Google to pick with one tap. On the CLI, use `wellfed time --ntp gateway`, and `wellfed time --show` to see the clock.
+An owner chooses where the time comes from, with **Get the time from** on the **Clock** screen: **Your router**, **A time server** or **Phones only**. An address has to be an IP address, since names aren't looked up. Many home routers don't answer with the time. When yours doesn't, the feeder's **Today** tab offers Cloudflare's public time server, or phones only. Either choice ends the offer. Out of the box the feeder asks only your router, so it contacts nothing outside your network unless you choose it. **A time server** also lists public time servers from Cloudflare and Google to pick with one tap. On the CLI, use `wellfed time --ntp gateway`, and `wellfed time --show` to see the clock.
 
 **Phones only** needs something to set the clock at least every 6 hours or so, such as a timer that runs `wellfed time`. The app doesn't do this by itself: it sets the clock only once it's lost, when you open the app, and by then meals are already holding.
 
