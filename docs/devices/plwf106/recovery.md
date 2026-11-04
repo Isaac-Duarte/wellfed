@@ -51,10 +51,10 @@ The status check before each erase and program decodes the registers as the PLAF
 
 An unknown part might also erase a whole 64 KiB block where a 4 KiB sector was asked for. Bank 1's first block, `0x180000..0x190000`, also holds the FTL pages at `0x182000..0x185000`. So the writers read `0x180000..0x186000` before any write: an update's inspection reads it and its plan binds the hash, and stock recovery takes it from the reviewed full read. After every erase in that block, and at every region check of an update, they read it back. It must match that hash, or the session stops there without retrying. The journal records each pass as `neighbors_verified`. The backup is no reference here: stock's FTL is live, and stock runs between the backup and a test.
 
-To finish a stopped fountain update with `--interrupted`, also pass `--original-plan` with the stopped session's reviewed plan. The new inspection must still read the bytes that plan bound. If stock booted in between, its FTL has moved on and the finish refuses; go back to stock with a full read and stock recovery instead.
+To finish a stopped fountain update with `--interrupted`, also pass `--stopped-session` with the stopped session's output directory. Its reviewed plan must be this update's (the same baseline, source and target), and its journal must open with that plan and not have verified. The new inspection must still read the bytes that plan bound, and the finish's plan records which plan it was checked against. If stock booted in between, its FTL has moved on and the finish refuses; go back to stock with a full read and stock recovery instead.
 
 > [!WARNING]
-> A stop naming bytes beside bank 1 (`NeighborsDiffer`) means the FTL may be damaged. No writer here rewrites it, so restoring it needs its own reviewed plan. Don't boot stock until that review, since stock would act on a damaged FTL.
+> A stop naming bytes beside bank 1 (`NeighborsDiffer`) means the FTL may be damaged. No writer here rewrites it, so restoring it needs its own reviewed plan. The advice above does not apply: a finish of that session refuses, and so does stock recovery while the FTL pages read erased. Don't boot stock until that review, since stock would act on a damaged FTL.
 
 The helper session has no reviewed way to read the part's JEDEC ID, so nothing pins the part itself yet.
 

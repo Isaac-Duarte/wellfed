@@ -15,6 +15,7 @@ use serde::de::IgnoredAny;
 
 use crate::device;
 use crate::error::Result;
+use crate::evidence::Root;
 use crate::evidence::journal::{Boundary, Event};
 use crate::evidence::report::{Session, Status, SummaryStatus, Transport};
 use crate::evidence::session::{
@@ -63,13 +64,23 @@ pub enum UpdateError {
     BindingsDiffer,
 
     #[error(
-        "A fountain update finished with --interrupted needs --original-plan: the stopped session's reviewed plan"
+        "A fountain update finished with --interrupted needs --stopped-session: the stopped session's output"
     )]
-    OriginalPlanMissing,
-    #[error("--original-plan applies to a fountain update finished with --interrupted only")]
-    OriginalPlanScope,
-    #[error("The original plan is not a reviewed fountain update")]
-    OriginalPlanKind,
+    StoppedSessionMissing,
+    #[error("--stopped-session applies to a fountain update finished with --interrupted only")]
+    StoppedSessionScope,
+    #[error(
+        "The stopped session's reviewed plan is not this update's: its kind, baseline, source or target differs"
+    )]
+    StoppedSessionDiffers,
+    #[error("The stopped session's journal does not open with its reviewed plan")]
+    StoppedJournalPlan,
+    #[error("The stopped session's journal is verified; there is nothing to finish")]
+    StoppedJournalVerified,
+    #[error(
+        "The stopped session found the bytes beside bank 1 changed: the FTL may be damaged and needs its own reviewed restore"
+    )]
+    StoppedOnNeighbors,
 
     #[error("Incomplete region acquisition")]
     IncompleteRegions { count: usize },
@@ -120,9 +131,9 @@ pub struct Args {
     pub restore_marker: bool,
     pub interrupted: bool,
     /// A fountain update finished with `interrupted`: the stopped session's
-    /// reviewed plan, whose read of the bytes beside bank 1 the new
-    /// inspection must still match.
-    pub original_plan: Option<PathBuf>,
+    /// output directory, whose reviewed plan and journal the finish is
+    /// checked against.
+    pub stopped_session: Option<PathBuf>,
 }
 
 struct Loaded {
@@ -132,6 +143,8 @@ struct Loaded {
     target: Frozen,
     original: Option<Vec<u8>>,
     bindings: UpdateBindings,
+    /// The stopped session's reviewed plan, which a fountain finish binds.
+    stopped: Option<DevelopmentPlan>,
 }
 
 impl Loaded {
@@ -297,6 +310,13 @@ fn load(context: &Context, model: Model, args: &Args) -> Result<Loaded> {
         rom_report_sha256: sha256(&rom),
         bounded_read_report_sha256: sha256(&small),
         tool_sha256: context.tools(),
+        stopped_plan_sha256: None,
+    };
+    let (stopped, stopped_plan_sha256) =
+        stopped_session(root, args.stopped_session.as_deref(), &bindings)?.unzip();
+    let bindings = UpdateBindings {
+        stopped_plan_sha256,
+        ..bindings
     };
 
     // Without a source, the bytes the target replaces: the PLAF103's from
@@ -317,7 +337,70 @@ fn load(context: &Context, model: Model, args: &Args) -> Result<Loaded> {
         target,
         original,
         bindings,
+        stopped,
     })
+}
+
+/// A fountain update finished after a stop is checked against that stopped
+/// session, before any serial access: its reviewed plan must be this
+/// update's (the same kind, baseline, source and target), its journal's
+/// chain must check and open with exactly that plan, it must not have
+/// verified, and it must not have stopped on the bytes beside bank 1. The
+/// plan and its SHA-256, which the finish's bindings record.
+pub(crate) fn stopped_session(
+    root: &Root,
+    directory: Option<&Path>,
+    bindings: &UpdateBindings,
+) -> Result<Option<(DevelopmentPlan, String)>> {
+    let fountain = bindings.kind == wellfed_formats::flash_plan::Kind::FountainBank1Update;
+    let Some(directory) = directory else {
+        require(!(fountain && bindings.interrupted), || {
+            UpdateError::StoppedSessionMissing
+        })?;
+        return Ok(None);
+    };
+    require(fountain && bindings.interrupted, || {
+        UpdateError::StoppedSessionScope
+    })?;
+
+    let raw = root.private_file(&directory.join("reviewed-plan.json"))?;
+    let reviewed: Reviewed<UpdateBindings, DevelopmentPlan> = serde_json::from_slice(&raw)?;
+    let theirs = &reviewed.bindings;
+    require(
+        theirs.kind == bindings.kind
+            && reviewed.operation_plan.kind == bindings.kind
+            && theirs.baseline_sha256 == bindings.baseline_sha256
+            && theirs.source_review_sha256 == bindings.source_review_sha256
+            && theirs.target_review_sha256 == bindings.target_review_sha256,
+        || UpdateError::StoppedSessionDiffers,
+    )?;
+
+    let journal = root.private_file(&directory.join("transaction/journal.jsonl"))?;
+    let (_, events) = crate::evidence::journal::verified_events(&journal)?;
+    let opening = events
+        .first()
+        .and_then(|(name, body)| (name == "transaction_start").then(|| body.get("plan")))
+        .flatten();
+    require(
+        opening.is_some_and(|plan| {
+            serde_json::to_value(&reviewed.operation_plan).is_ok_and(|ours| *plan == ours)
+        }),
+        || UpdateError::StoppedJournalPlan,
+    )?;
+    require(
+        events
+            .last()
+            .is_none_or(|(name, _)| name != "transaction_verified"),
+        || UpdateError::StoppedJournalVerified,
+    )?;
+    require(
+        !events.iter().any(|(_, body)| {
+            body.get("event").and_then(serde_json::Value::as_str) == Some("neighbors_differ")
+        }),
+        || UpdateError::StoppedOnNeighbors,
+    )?;
+
+    Ok(Some((reviewed.operation_plan, sha256(&raw))))
 }
 
 /// The one permitted status pair an inspection must have recorded.
@@ -377,7 +460,7 @@ fn inspected(context: &Context, args: &Args, loaded: &Loaded) -> Result<Inspecti
             Some(sha256(&bytes))
         }
     };
-    original_neighbors(context, args, loaded, neighbors.as_deref())?;
+    stopped_neighbors(loaded, neighbors.as_deref())?;
 
     Ok(Inspection {
         current: application,
@@ -387,39 +470,17 @@ fn inspected(context: &Context, args: &Args, loaded: &Loaded) -> Result<Inspecti
     })
 }
 
-/// A fountain update finished after a stop must still see the bytes beside
-/// bank 1 as the stopped session's plan read them before its first write.
-/// So an erase that took them in that session is caught, and so is stock
-/// having run (and rewritten its FTL) in between, which needs review.
-fn original_neighbors(
-    context: &Context,
-    args: &Args,
-    loaded: &Loaded,
-    neighbors: Option<&str>,
-) -> Result<()> {
-    let fountain = loaded.baseline.pins().neighbors.is_some();
-    let Some(path) = args.original_plan.as_deref() else {
-        return Ok(require(!(fountain && args.interrupted), || {
-            UpdateError::OriginalPlanMissing
-        })?);
-    };
-    require(fountain && args.interrupted, || {
-        UpdateError::OriginalPlanScope
-    })?;
-
-    let original: Reviewed<UpdateBindings, DevelopmentPlan> =
-        serde_json::from_slice(&context.root.private_file(path)?)?;
-    let plan = &original.operation_plan;
-    require(
-        plan.kind == loaded.layout.kind && original.bindings.kind == loaded.layout.kind,
-        || UpdateError::OriginalPlanKind,
-    )?;
-
-    let Some((start, end)) = loaded.baseline.pins().neighbors else {
+/// A fountain finish must still see the bytes beside bank 1 as the stopped
+/// session's plan read them before its first write. So an erase that took
+/// them in that session is caught, and so is stock having run (and
+/// rewritten its FTL) in between, which needs review.
+fn stopped_neighbors(loaded: &Loaded, neighbors: Option<&str>) -> Result<()> {
+    let (Some(stopped), Some((start, end))) = (&loaded.stopped, loaded.baseline.pins().neighbors)
+    else {
         return Ok(());
     };
     Ok(require(
-        plan.neighbors_sha256.is_some() && plan.neighbors_sha256.as_deref() == neighbors,
+        stopped.neighbors_sha256.is_some() && stopped.neighbors_sha256.as_deref() == neighbors,
         || sector::SectorError::NeighborsDiffer { start, end },
     )?)
 }

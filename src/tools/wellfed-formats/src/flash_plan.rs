@@ -79,6 +79,13 @@ pub struct UpdateBindings {
     pub rom_report_sha256: String,
     pub bounded_read_report_sha256: String,
     pub tool_sha256: ToolHashes,
+    /// A fountain update finished with `interrupted`: the SHA-256 of the
+    /// stopped session's reviewed plan, which the finish was checked
+    /// against.
+    // `default` because only that finish carries the field, not to read an
+    // older format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped_plan_sha256: Option<String>,
 }
 
 /// What a give-way's inspection and plan are bound to.
@@ -143,6 +150,8 @@ pub struct DevelopmentPlan {
     /// The fountain only: the bytes sharing an erase block with bank 1
     /// (its FTL), as the inspection read them before any write. Every
     /// later read of them in the session must hash to this.
+    // `default` because a PLAF103 plan never carries the field, not to read
+    // an older format.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub neighbors_sha256: Option<String>,
 }

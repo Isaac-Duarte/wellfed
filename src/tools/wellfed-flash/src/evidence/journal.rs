@@ -183,6 +183,13 @@ pub enum Event {
         end_exclusive: usize,
         sha256: String,
     },
+    /// They differ: the stop that follows means the FTL may be damaged, and
+    /// a later finish of this session must see it.
+    NeighborsDiffer {
+        start: usize,
+        end_exclusive: usize,
+        sha256: String,
+    },
     ProgramPacketIntent {
         sequence: usize,
         frame_sha256: String,
@@ -436,6 +443,35 @@ pub struct Receipt {
 /// Entries stay maps: each hash covers exactly what its writer (Python or
 /// Rust) stored, including fields this client never writes.
 pub fn inspect(data: &[u8]) -> Result<Receipt> {
+    let (head, events) = verified_events(data)?;
+    let (Some((first, opening)), Some((last, terminal))) = (events.first(), events.last()) else {
+        return Err(JournalError::Empty.into());
+    };
+
+    Ok(Receipt {
+        records: events.len(),
+        head_sha256: head.clone(),
+        first_event: first.clone(),
+        transaction_id: opening.get("transaction_id").cloned(),
+        verified_terminal: last == "transaction_verified",
+        terminal_event: last.clone(),
+        terminal_snapshot_sha256: terminal.get("snapshot_sha256").cloned(),
+        mutation_intent_recorded: events
+            .iter()
+            .any(|(name, _)| MUTATIONS.contains(&name.as_str())),
+        erase_order: events
+            .iter()
+            .filter(|(name, _)| name == "erase_intent")
+            .map(|(_, event)| event.get("offset").cloned().unwrap_or(Value::Null))
+            .collect(),
+    })
+}
+
+/// A journal's events, by name and body, once its whole hash chain checks;
+/// and its head.
+pub(crate) type Events = Vec<(String, Map<String, Value>)>;
+
+pub(crate) fn verified_events(data: &[u8]) -> Result<(String, Events)> {
     let Some(lines) = data
         .strip_suffix(b"\n")
         .filter(|_| data.len() <= 4 * 1024 * 1024)
@@ -476,28 +512,7 @@ pub fn inspect(data: &[u8]) -> Result<Receipt> {
         head = supplied;
         events.push((name, event));
     }
-
-    let (Some((first, opening)), Some((last, terminal))) = (events.first(), events.last()) else {
-        return Err(JournalError::Empty.into());
-    };
-
-    Ok(Receipt {
-        records: events.len(),
-        head_sha256: head.clone(),
-        first_event: first.clone(),
-        transaction_id: opening.get("transaction_id").cloned(),
-        verified_terminal: last == "transaction_verified",
-        terminal_event: last.clone(),
-        terminal_snapshot_sha256: terminal.get("snapshot_sha256").cloned(),
-        mutation_intent_recorded: events
-            .iter()
-            .any(|(name, _)| MUTATIONS.contains(&name.as_str())),
-        erase_order: events
-            .iter()
-            .filter(|(name, _)| name == "erase_intent")
-            .map(|(_, event)| event.get("offset").cloned().unwrap_or(Value::Null))
-            .collect(),
-    })
+    Ok((head, events))
 }
 
 #[cfg(test)]

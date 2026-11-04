@@ -10,6 +10,7 @@ use super::*;
 use crate::device::{self, DeviceError};
 use crate::writers::development::DevelopmentError;
 use crate::writers::recovery::{self, RecoveryError};
+use wellfed_formats::flash_plan::{Kind, Reviewed, ToolHashes, UpdateBindings};
 
 /// Bank 1's end on the fountain: stock bank 0's rounded footprint past it.
 const END: usize = 0x27_1000;
@@ -418,4 +419,137 @@ fn a_fountain_install_needs_stock_bank_0() {
             model: Model::Plaf103
         }))
     ));
+}
+
+/// A stopped install of `unit`, under `fault`, as its session directory
+/// holds it: the journal in `transaction/`, the reviewed plan beside it.
+/// Returns the plan file's bindings.
+fn stopped_install(root: &Root, unit: &Unit, fault: Fault, name: &str) -> UpdateBindings {
+    let target = image(30000, 3);
+    let mut original = Vec::new();
+    let update = install(unit, &target, &mut original);
+    let mut port = Fake::new(unit.flash.clone());
+
+    let length = development::extent(None, &target, &PLWF106_BANK1).unwrap();
+    let current = protocol::read_region(&mut port, START, length).unwrap();
+    let other = protocol::read_region(&mut port, 0x6000, SECTOR).unwrap();
+    let neighbors = protocol::read_region(&mut port, 0x18_0000, START - 0x18_0000).unwrap();
+    let plan =
+        development::plan_bound(&update, &current, Some(&other), Some(sha256(&neighbors))).unwrap();
+
+    fs::create_dir_all(root.join("private").join(name)).unwrap();
+    port.0.borrow_mut().fault = fault;
+    let output = format!("{name}/transaction");
+    assert!(develop(root, unit, &mut port, &update, &output).is_err());
+
+    let bindings = UpdateBindings {
+        schema_version: 1,
+        kind: Kind::FountainBank1Update,
+        port: "/dev/fake".into(),
+        interrupted: false,
+        original_read_sha256: None,
+        restore_marker: false,
+        source_review_sha256: None,
+        target_review_sha256: sha256(b"target review"),
+        baseline_sha256: unit.baseline.sha256(),
+        rom_report_sha256: sha256(b"rom"),
+        bounded_read_report_sha256: sha256(b"small"),
+        tool_sha256: ToolHashes {
+            wellfed_flash: sha256(b"tool"),
+        },
+        stopped_plan_sha256: None,
+    };
+    let reviewed = Reviewed {
+        bindings: bindings.clone(),
+        inspection_report_sha256: sha256(b"inspection"),
+        operation_plan: plan,
+    };
+    write(
+        &root.join("private").join(name).join("reviewed-plan.json"),
+        &wellfed_formats::canonical::canonical_of(&reviewed).unwrap(),
+    );
+    bindings
+}
+
+/// Finishing a stopped fountain install is checked against that session:
+/// it must have stopped (not on the bytes beside bank 1), its reviewed plan
+/// must be this update's, and its journal must open with that plan.
+#[test]
+fn a_finish_is_held_to_the_session_that_stopped() {
+    use crate::writers::update::{UpdateError, stopped_session};
+
+    let (_checkout, root) = private_root();
+    let unit = fountain();
+    let finish = |bindings: &UpdateBindings| UpdateBindings {
+        interrupted: true,
+        ..bindings.clone()
+    };
+    let check = |name: &str, bindings: &UpdateBindings| {
+        let directory = root.join("private").join(name);
+        stopped_session(&root, Some(&directory), &finish(bindings))
+    };
+
+    // A session that stopped on a lost ACK may be finished; its plan's hash
+    // goes into the finish's bindings.
+    let stopped = stopped_install(&root, &unit, Fault::LostProgramAck(2), "lost");
+    let (plan, sha) = check("lost", &stopped).unwrap().unwrap();
+    assert!(plan.neighbors_sha256.is_some());
+    let path = root.join("private/lost/reviewed-plan.json");
+    assert_eq!(sha, sha256(&fs::read(&path).unwrap()));
+
+    // One that stopped because an erase took the FTL may not.
+    let blocked = stopped_install(&root, &unit, Fault::BlockErase, "block");
+    assert!(matches!(
+        check("block", &blocked),
+        Err(crate::Error::Update(UpdateError::StoppedOnNeighbors))
+    ));
+
+    // Another update's plan, or a hand-made one the journal never opened.
+    let other = UpdateBindings {
+        target_review_sha256: sha256(b"another target"),
+        ..stopped.clone()
+    };
+    assert!(matches!(
+        check("lost", &other),
+        Err(crate::Error::Update(UpdateError::StoppedSessionDiffers))
+    ));
+    let mut edited: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    edited["operation_plan"]["erase_sectors"] = json!(0);
+    fs::write(&path, edited.to_string()).unwrap();
+    assert!(matches!(
+        check("lost", &stopped),
+        Err(crate::Error::Update(UpdateError::StoppedJournalPlan))
+    ));
+
+    // A fountain finish needs the session; nothing else takes one.
+    assert!(matches!(
+        stopped_session(&root, None, &finish(&stopped)),
+        Err(crate::Error::Update(UpdateError::StoppedSessionMissing))
+    ));
+    assert!(matches!(
+        stopped_session(&root, Some(&root.join("private/lost")), &stopped),
+        Err(crate::Error::Update(UpdateError::StoppedSessionScope))
+    ));
+}
+
+/// Stock recovery binds the current read as it is, so after an erase that
+/// took the FTL it would put bank 1 back over a wiped FTL and boot stock on
+/// it. It refuses instead.
+#[test]
+fn stock_recovery_refuses_a_wiped_ftl() {
+    let unit = fountain();
+    let mut current = unit.flash.clone();
+    current[0x18_0000..0x19_0000].fill(0xff);
+    assert!(matches!(
+        recovery::plan(&unit.baseline, &current),
+        Err(crate::Error::Recovery(RecoveryError::FtlErased {
+            start: 0x18_2000,
+            end: 0x18_5000
+        }))
+    ));
+
+    // Bank 1's first sector alone erased is an ordinary recovery.
+    let mut current = unit.flash.clone();
+    current[START..START + SECTOR].fill(0xff);
+    assert!(recovery::plan(&unit.baseline, &current).is_ok());
 }

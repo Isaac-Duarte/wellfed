@@ -308,14 +308,20 @@ pub fn check_neighbors(
     }
 
     let read = protocol::read_region(port, start, end - start)?;
-    require(sha256(&read) == expected, || SectorError::NeighborsDiffer {
-        start,
-        end,
-    })?;
+    let actual = sha256(&read);
+    if actual != expected {
+        // Journaled by name, so a later finish of this session refuses it.
+        record(Event::NeighborsDiffer {
+            start,
+            end_exclusive: end,
+            sha256: actual,
+        })?;
+        return Err(SectorError::NeighborsDiffer { start, end }.into());
+    }
     record(Event::NeighborsVerified {
         start,
         end_exclusive: end,
-        sha256: sha256(&read),
+        sha256: actual,
     })
 }
 

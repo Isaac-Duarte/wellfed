@@ -31,6 +31,10 @@ pub enum RecoveryError {
     SnapshotLength { bytes: usize },
     #[error("Factory/pre-application bytes differ; stop for investigation")]
     FactoryDiffers,
+    #[error(
+        "The FTL pages {start:#x}..{end:#x} are erased but the backup's are not; they need their own reviewed restore before stock runs"
+    )]
+    FtlErased { start: usize, end: usize },
     #[error("Proposed bytes escape application bank 1")]
     EscapesBank,
     #[error("Proposed bank is not exact baseline stock")]
@@ -144,6 +148,16 @@ pub fn plan(pinned: &Baseline, current: &[u8]) -> Result<Plan> {
     require(current[..0x6000] == baseline[..0x6000], || {
         RecoveryError::FactoryDiffers
     })?;
+
+    // A recovery binds the current read as it is, so a wiped FTL (an erase
+    // that took more than its sector) would pass unnoticed and be booted.
+    if let Some((start, end)) = pinned.pins().ftl {
+        let erased = |bytes: &[u8]| bytes.iter().all(|b| *b == 0xff);
+        require(
+            !erased(&current[start..end]) || erased(&baseline[start..end]),
+            || RecoveryError::FtlErased { start, end },
+        )?;
+    }
 
     let mut sectors = Vec::new();
     let mut proposed = current.to_vec();

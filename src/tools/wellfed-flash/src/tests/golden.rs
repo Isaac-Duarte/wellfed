@@ -373,6 +373,7 @@ fn reviewed_update_and_give_way_bindings_keep_their_canonical_bytes() {
             rom_report_sha256: hash("rom"),
             bounded_read_report_sha256: hash("small"),
             tool_sha256: tools(),
+            stopped_plan_sha256: None,
         };
         let legacy = json!({
             "schema_version": 1, "kind": "plaf103_bank1_development_update", "port": "/dev/ttyUSB0",

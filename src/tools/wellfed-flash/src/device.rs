@@ -84,6 +84,10 @@ pub struct Pins {
     /// `0x182000` sit in bank 1's first block. `None` for the PLAF103,
     /// whose GD25Q64E sector erase is reviewed.
     pub neighbors: Option<(usize, usize)>,
+    /// The fountain's FTL pages, which stock recovery never rewrites. A
+    /// recovery that finds them erased while the backup's hold data refuses:
+    /// an erase took them, and they need their own reviewed restore.
+    pub ftl: Option<(usize, usize)>,
 }
 
 /// The erase unit a part may use beyond its 4 KiB sector.
@@ -97,6 +101,7 @@ pub const PLAF103: Pins = Pins {
     stock_bank0: None,
     stock_bank1_sha256: None,
     neighbors: None,
+    ftl: None,
     preserve: &[
         preserve("pre_application", 0x0, 0x6000),
         preserve("observed_settings_sectors", 0x3e_8000, 0x3f_0000),
@@ -126,6 +131,7 @@ pub const PLWF106: Pins = Pins {
     // `0x270000..0x280000`, holds only erased flash past `0x271000`, which
     // a block erase would leave as it is.
     neighbors: Some((0x18_0000, 0x18_6000)),
+    ftl: Some((0x18_2000, 0x18_5000)),
     preserve: &[
         preserve("pre_application", 0x0, 0x6000),
         preserve("ftl_pages", 0x18_2000, 0x18_5000),
