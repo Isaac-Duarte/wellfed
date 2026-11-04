@@ -76,15 +76,17 @@ impl Import {
             }
             Row::Feeders(feeder) => {
                 // No key, only a nonce of the stored width: the feeder is
-                // archived, and adopting it again stores its new key.
+                // archived, and adopting it again stores its new key. The
+                // kind is the model's; an unknown model never parsed.
+                let (kind, model) = (feeder.model.kind().name(), feeder.model.name());
                 sqlx::query!(
                     "INSERT INTO feeders (id, home_id, kind, model, identity, name, role, address,
                                           key_nonce, key_sealed, synced, epoch, created_ms)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, zeroblob(12), X'', ?, ?, ?)",
                     feeder.id,
                     feeder.home_id,
-                    feeder.kind,
-                    feeder.model,
+                    kind,
+                    model,
                     feeder.identity,
                     feeder.name,
                     feeder.role,

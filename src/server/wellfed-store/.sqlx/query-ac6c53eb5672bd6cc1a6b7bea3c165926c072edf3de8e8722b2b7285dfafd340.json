@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id: Uuid\", home_id AS \"home_id: Uuid\", kind, model, identity, name,\n                              role, address, synced, epoch, created_ms\n                       FROM feeders ORDER BY id",
+  "query": "SELECT id AS \"id: Uuid\", home_id AS \"home_id: Uuid\", model, identity, name,\n                          role, address, synced, epoch, created_ms\n                   FROM feeders ORDER BY id",
   "describe": {
     "columns": [
       {
@@ -26,19 +26,8 @@
         }
       },
       {
-        "name": "kind",
-        "ordinal": 2,
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "feeders",
-            "name": "kind"
-          }
-        }
-      },
-      {
         "name": "model",
-        "ordinal": 3,
+        "ordinal": 2,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -49,7 +38,7 @@
       },
       {
         "name": "identity",
-        "ordinal": 4,
+        "ordinal": 3,
         "type_info": "Blob",
         "origin": {
           "Table": {
@@ -60,7 +49,7 @@
       },
       {
         "name": "name",
-        "ordinal": 5,
+        "ordinal": 4,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -71,7 +60,7 @@
       },
       {
         "name": "role",
-        "ordinal": 6,
+        "ordinal": 5,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -82,7 +71,7 @@
       },
       {
         "name": "address",
-        "ordinal": 7,
+        "ordinal": 6,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -93,7 +82,7 @@
       },
       {
         "name": "synced",
-        "ordinal": 8,
+        "ordinal": 7,
         "type_info": "Integer",
         "origin": {
           "Table": {
@@ -104,7 +93,7 @@
       },
       {
         "name": "epoch",
-        "ordinal": 9,
+        "ordinal": 8,
         "type_info": "Integer",
         "origin": {
           "Table": {
@@ -115,7 +104,7 @@
       },
       {
         "name": "created_ms",
-        "ordinal": 10,
+        "ordinal": 9,
         "type_info": "Integer",
         "origin": {
           "Table": {
@@ -135,12 +124,11 @@
       false,
       false,
       false,
-      false,
       true,
       true,
       true,
       false
     ]
   },
-  "hash": "beb9465dfdbf7d8489167ca2cda7577af66a1de70ae63d39e7328bd521098a3d"
+  "hash": "ac6c53eb5672bd6cc1a6b7bea3c165926c072edf3de8e8722b2b7285dfafd340"
 }

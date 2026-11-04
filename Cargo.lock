@@ -5353,6 +5353,7 @@ dependencies = [
  "thiserror",
  "uuid",
  "wellfed-model",
+ "wellfed-proto",
  "wellfed-session",
 ]
 

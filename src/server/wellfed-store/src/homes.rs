@@ -10,20 +10,23 @@ use wellfed_api::{Home, HomeId, TimeFormat, Units};
 use crate::convert::millis;
 use crate::{Error, Result, Store};
 
-/// Write `home`, made at `created`. The server has one home, so over one
-/// already there this writes its settings and keeps its id and age.
+/// Write `home`, made at `created`, and answer the id stored. The server
+/// has one home, so over one already there this writes its settings and
+/// keeps that home's id and age: the id answered is the stored one, which
+/// is then not `home.id`.
 pub(crate) async fn insert_home<'e>(
     executor: impl SqliteExecutor<'e>,
     home: &Home,
     created: Timestamp,
-) -> Result<()> {
+) -> Result<HomeId> {
     let (units, format) = (home.units.code(), home.time_format.code());
     let created = millis(created);
-    sqlx::query!(
-        "INSERT INTO homes (id, name, units, time_format, zone, created_ms)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (single) DO UPDATE SET name = excluded.name, units = excluded.units,
-             time_format = excluded.time_format, zone = excluded.zone",
+    let stored = sqlx::query!(
+        r#"INSERT INTO homes (id, name, units, time_format, zone, created_ms)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (single) DO UPDATE SET name = excluded.name, units = excluded.units,
+               time_format = excluded.time_format, zone = excluded.zone
+           RETURNING id AS "id: Uuid""#,
         home.id.0,
         home.name,
         units,
@@ -31,9 +34,9 @@ pub(crate) async fn insert_home<'e>(
         home.zone,
         created,
     )
-    .execute(executor)
+    .fetch_one(executor)
     .await?;
-    Ok(())
+    Ok(HomeId(stored.id))
 }
 
 impl Store {
@@ -41,7 +44,7 @@ impl Store {
     /// owner ([`Self::create_first_owner`]), and takes over one written
     /// here, so this is for a store that starts from its devices, as the
     /// tests do.
-    pub async fn create_home(&self, home: &Home, created: Timestamp) -> Result<()> {
+    pub async fn create_home(&self, home: &Home, created: Timestamp) -> Result<HomeId> {
         insert_home(&self.writer, home, created).await
     }
 
@@ -67,10 +70,11 @@ impl Store {
         .transpose()
     }
 
-    /// Store a change to `home`, by its id.
+    /// Store a change to `home`, by its id: [`Error::Missing`] when no
+    /// stored home has it, and nothing is written.
     pub async fn set_home(&self, home: &Home) -> Result<()> {
         let (units, format) = (home.units.code(), home.time_format.code());
-        sqlx::query!(
+        let done = sqlx::query!(
             "UPDATE homes SET name = ?, units = ?, time_format = ?, zone = ? WHERE id = ?",
             home.name,
             units,
@@ -80,6 +84,6 @@ impl Store {
         )
         .execute(&self.writer)
         .await?;
-        Ok(())
+        wellfed_formats::require(done.rows_affected() == 1, || Error::Missing("home"))
     }
 }

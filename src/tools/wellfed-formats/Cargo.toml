@@ -11,6 +11,7 @@ publish.workspace = true
 clap = { workspace = true, optional = true }
 chrono = { version = "0.4.45", default-features = false, features = ["std", "serde"] }
 wellfed-session.workspace = true
+wellfed-proto.workspace = true
 wellfed-model = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true

@@ -137,6 +137,26 @@ fn every_table_has_columns() {
     assert!(!Table::Feeders.columns().contains(&"key_sealed"));
 }
 
+/// A device's kind is its model's, so the archive keeps the model alone:
+/// a model no device has does not read, and nor does a kind beside it.
+#[test]
+fn a_device_row_reads_only_a_known_model() {
+    let line = |model: &str, extra: &str| {
+        format!(
+            r#"{{"id":"00000000-0000-0000-0000-000000000003","home_id":"00000000-0000-0000-0000-000000000005","model":"{model}"{extra},"identity":"01","name":"kitchen","role":"server","address":null,"synced":null,"epoch":null,"created_ms":3}}"#
+        )
+    };
+
+    let Ok(Row::Feeders(device)) = Row::parse(Table::Feeders, line("plaf103", "").as_bytes())
+    else {
+        panic!("a PLAF103 row reads");
+    };
+    assert_eq!(device.model, wellfed_proto::device::Model::Plaf103);
+    assert!(Row::parse(Table::Feeders, line("plaf999", "").as_bytes()).is_err());
+    let kind = line("plaf103", r#","kind":"feeder""#);
+    assert!(Row::parse(Table::Feeders, kind.as_bytes()).is_err());
+}
+
 #[test]
 fn a_csv_archive_does_not_import() {
     let bytes = archive(&[user(1, "ada")], Encoding::Csv);
