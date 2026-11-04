@@ -1,10 +1,12 @@
-//! Users, the household they share, and their browser sessions.
+//! Users, the home they share (written with the first owner), and their
+//! browser sessions.
 
 use jiff::Timestamp;
 use uuid::Uuid;
-use wellfed_api::{Household, Role, TimeFormat, Units, User, UserId};
+use wellfed_api::{Home, HomeId, Role, User, UserId};
 
 use crate::convert::{millis, timestamp};
+use crate::homes::insert_home;
 use crate::{Error, Result, Store};
 
 pub struct NewUser<'a> {
@@ -45,17 +47,16 @@ impl Store {
         Ok(row.exists)
     }
 
-    /// Create `user` and the household only while no user exists, in one
-    /// transaction, so two racing setups cannot both win. Whether it was
-    /// created.
+    /// Create `user` and the home only while no user exists, in one
+    /// transaction, so two racing setups cannot both win. The home's stored
+    /// id once created, `None` when an owner already exists.
     pub async fn create_first_owner(
         &self,
         user: NewUser<'_>,
-        household: &Household,
-    ) -> Result<bool> {
+        home: &Home,
+    ) -> Result<Option<HomeId>> {
         let (created, expires) = (millis(user.created), user.expires.map(millis));
         let role = user.role.code();
-        let (units, format) = (household.units.code(), household.time_format.code());
 
         let mut tx = self.writer.begin().await?;
         let done = sqlx::query!(
@@ -71,20 +72,11 @@ impl Store {
         .execute(&mut *tx)
         .await?;
         if done.rows_affected() != 1 {
-            return Ok(false);
+            return Ok(None);
         }
-        sqlx::query!(
-            "INSERT OR REPLACE INTO household (id, name, units, time_format, zone)
-             VALUES (1, ?, ?, ?, ?)",
-            household.name,
-            units,
-            format,
-            household.zone,
-        )
-        .execute(&mut *tx)
-        .await?;
+        let stored = insert_home(&mut *tx, home, user.created).await?;
         tx.commit().await?;
-        Ok(true)
+        Ok(Some(stored))
     }
 
     pub async fn login(&self, name: &str) -> Result<Option<Login>> {
@@ -201,37 +193,6 @@ impl Store {
         .execute(&self.writer)
         .await?;
         Ok(done.rows_affected() == 1)
-    }
-
-    pub async fn household(&self) -> Result<Option<Household>> {
-        let row = sqlx::query!("SELECT name, units, time_format, zone FROM household")
-            .fetch_optional(&self.reader)
-            .await?;
-        row.map(|row| {
-            Ok(Household {
-                name: row.name,
-                units: Units::from_code(&row.units).ok_or(Error::Corrupt("units"))?,
-                time_format: TimeFormat::from_code(&row.time_format)
-                    .ok_or(Error::Corrupt("time format"))?,
-                zone: row.zone,
-            })
-        })
-        .transpose()
-    }
-
-    pub async fn set_household(&self, household: &Household) -> Result<()> {
-        let (units, format) = (household.units.code(), household.time_format.code());
-        sqlx::query!(
-            "INSERT OR REPLACE INTO household (id, name, units, time_format, zone)
-             VALUES (1, ?, ?, ?, ?)",
-            household.name,
-            units,
-            format,
-            household.zone,
-        )
-        .execute(&self.writer)
-        .await?;
-        Ok(())
     }
 
     pub async fn create_session(

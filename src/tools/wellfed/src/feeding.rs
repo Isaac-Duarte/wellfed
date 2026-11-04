@@ -96,7 +96,7 @@ pub(crate) async fn cancel_feed_command(args: CancelFeedArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use clap::Parser;
-    use wellfed_model::{EventBody, FeedOutcome, FeedReason, FoodLevel, Source};
+    use wellfed_model::{EventBody, FeedOutcome, FeedReason, FeederEvent, FoodLevel, Source};
 
     use super::*;
 
@@ -138,7 +138,7 @@ mod tests {
             epoch: 1,
             seq: 40,
             at: None,
-            body: EventBody::Fed {
+            body: EventBody::Feeder(FeederEvent::Fed {
                 feed: 7,
                 requested: 3,
                 completed,
@@ -146,7 +146,7 @@ mod tests {
                 reason,
                 hopper,
                 by: Source::Feeder,
-            },
+            }),
         };
 
         let failed = fed_event(

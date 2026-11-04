@@ -33,7 +33,7 @@ use uuid::Uuid;
 use wellfed_api::{CommandKind, CommandOutcome, CommandState, FeederId, StreamEvent};
 use wellfed_formats::canonical::canonical_of;
 use wellfed_mirror::{AskError, Clip};
-use wellfed_model::{Answer, Invite, Op};
+use wellfed_model::{Answer, DeviceKind, Invite, Op};
 use wellfed_store::{Journaled, NewCommand, Synced};
 
 use self::id::write_id;
@@ -75,6 +75,17 @@ pub(crate) enum Sending {
     DeleteCall,
 }
 
+impl Sending {
+    /// The kind of device that serves it ([`Op::kind`]): the meal call's
+    /// upload and erase are the call's ops.
+    fn kind(&self) -> Option<DeviceKind> {
+        match self {
+            Self::Ask(op) => op.kind(),
+            Self::Call(_) | Self::DeleteCall => Op::DeleteCall.kind(),
+        }
+    }
+}
+
 impl From<Op> for Sending {
     fn from(op: Op) -> Self {
         Self::Ask(op)
@@ -111,6 +122,10 @@ impl Service {
         &self,
         write: Write<'_, B, S>,
     ) -> Result<Recorded> {
+        // Another kind's write is refused before it is journaled.
+        let sending: Sending = write.op.into();
+        self.serves(write.feeder, sending.kind()).await?;
+
         let key = match write.key {
             Some(key) => key,
             None => uuid::Builder::from_random_bytes(self.shared.random()?)
@@ -182,7 +197,6 @@ impl Service {
 
         let service = self.clone();
         let feeder = write.feeder;
-        let sending = write.op.into();
         let sending = self.tasks.spawn(async move {
             match sending {
                 Sending::Ask(op) => service.send(key, feeder, request, op, attempt).await,

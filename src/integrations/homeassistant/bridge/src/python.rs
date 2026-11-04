@@ -10,7 +10,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
 use crate::Error;
-use wellfed_model::SettingsPatch;
+use wellfed_model::FeederSettingsPatch;
 
 use crate::api::{Tune, Update, Written};
 use crate::feeder::{self, Target};
@@ -138,12 +138,12 @@ impl Feeder {
         volume: Option<u8>,
         desiccant_days: Option<u8>,
     ) -> Written {
-        let changes = SettingsPatch {
+        let changes = FeederSettingsPatch {
             sound,
             lights,
             volume,
             desiccant_days,
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         py.detach(|| self.0.put_settings(changes))
     }

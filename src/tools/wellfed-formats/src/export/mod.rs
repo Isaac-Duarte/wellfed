@@ -27,7 +27,7 @@
 //! - **job runs** are not exported: they are this server's schedule, and an
 //!   imported server runs each job when it is next due.
 //!
-//! Everything else is: the household, each feeder's cached state, the
+//! Everything else is: the home, each device's cached state, the
 //! phone keys the server invited and the clients an owner kept, raw
 //! events, gaps, samples and their rollups, the projections, the command
 //! journal and the audit log, installs, pets, foods and refills.
@@ -46,7 +46,7 @@ pub use tar::{BLOCK, END, header, padding};
 
 /// The archive layout this build writes and reads. A change to a row's
 /// columns or to the layout is a new version.
-pub const FORMAT_VERSION: u32 = 2;
+pub const FORMAT_VERSION: u32 = 3;
 
 /// The manifest's path in the archive.
 pub const MANIFEST: &str = "manifest.json";

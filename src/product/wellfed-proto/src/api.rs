@@ -135,9 +135,11 @@ pub struct Join<'a> {
 }
 
 /// The device's answer to a [`Join`], sealed; the connection then closes.
+/// An enrollment names the device's model, as a session's welcome does, so
+/// a client that redeems an invite knows what it joined without opening one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Joined {
-    Enrolled { role: Role },
+    Enrolled { role: Role, model: Model },
     Refused(Refusal),
 }
 

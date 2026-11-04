@@ -24,7 +24,7 @@ use wellfed_homeassistant::api::{
 use wellfed_homeassistant::feeder::{Feeder, Target};
 use wellfed_homeassistant::key::{ClientKey, invite_feeder, join, join_member};
 use wellfed_model::{
-    Answer, ClientRole, Generation, Op, PLANS, Plan, Pushed, SettingsPatch, Weekdays,
+    Answer, ClientRole, FeederSettingsPatch, Generation, Op, PLANS, Plan, Pushed, Weekdays,
 };
 use wellfed_session::noise::Keypair;
 
@@ -184,7 +184,10 @@ fn the_backlog_sets_the_last_feed_and_is_not_news() {
         connection.subscribe(None, false).await.unwrap();
         loop {
             if let Pushed::Event(event) = connection.next(WAIT).await.unwrap()
-                && matches!(event.body, wellfed_model::EventBody::Fed { .. })
+                && matches!(
+                    event.body,
+                    wellfed_model::EventBody::Feeder(wellfed_model::FeederEvent::Fed { .. })
+                )
             {
                 break;
             }
@@ -256,10 +259,10 @@ fn settings_change_on_the_generation_read_and_one_at_a_time() {
     assert_eq!(state.settings.map(|settings| settings.volume), Some(25));
 }
 
-fn volume(volume: u8) -> SettingsPatch {
-    SettingsPatch {
+fn volume(volume: u8) -> FeederSettingsPatch {
+    FeederSettingsPatch {
         volume: Some(volume),
-        ..SettingsPatch::default()
+        ..FeederSettingsPatch::default()
     }
 }
 

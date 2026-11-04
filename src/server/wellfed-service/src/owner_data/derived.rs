@@ -11,8 +11,8 @@
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use wellfed_api::{
-    EventBody, EventKind, FOOD_VIEW_DAYS, FeederFood, FeederId, FoodPeriod, INTAKE_DAYS,
-    INTAKE_DAYS_MAX, IntakeQuery, PetId, PetIntake, PortionWeight, Stats,
+    EventBody, EventKind, FOOD_VIEW_DAYS, FeederEvent, FeederFood, FeederId, FoodPeriod,
+    INTAKE_DAYS, INTAKE_DAYS_MAX, IntakeQuery, PetId, PetIntake, PortionWeight, Stats,
 };
 
 use super::views::{self, FeedRow, MissedRow, Served};
@@ -179,7 +179,7 @@ impl Service {
         for (epoch, row) in &rows {
             let event = wellfed_mirror::stored_event(*epoch, row)
                 .ok_or(Error::Internal(InternalError::Undecodable(row.seq)))?;
-            if let EventBody::Missed { plan, due, reason } = event.body {
+            if let EventBody::Feeder(FeederEvent::Missed { plan, due, reason }) = event.body {
                 missed.push(MissedRow {
                     feeder,
                     plan,

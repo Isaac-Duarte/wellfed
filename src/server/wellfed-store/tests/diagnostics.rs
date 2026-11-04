@@ -7,8 +7,9 @@ use jiff::Timestamp;
 use tempfile::TempDir;
 use uuid::Uuid;
 use wellfed_api::{
-    ClientRole, CurrentUnit, EventBody, FeedOutcome, FeedReason, FeederId, FeederRefusal,
-    FoodLevel, FoodStats, Source, Stats, StatsSection, TraceSummary,
+    ClientRole, CurrentUnit, EventBody, FeedOutcome, FeedReason, FeederEvent, FeederId,
+    FeederRefusal, FoodLevel, FoodStats, Home, HomeId, Model, Source, Stats, StatsSection,
+    TimeFormat, TraceSummary, Units,
 };
 use wellfed_store::{NewEvent, NewFeeder, RawTrace, Refresh, SealedKey, Store, TraceFound};
 
@@ -24,10 +25,13 @@ async fn fresh() -> (TempDir, Store) {
     let store = Store::open(&dir.path().join(DATABASE), at(0))
         .await
         .unwrap();
+    home(&store).await;
     store.refresh_projections(decode).await.unwrap();
     store
         .insert_feeder(NewFeeder {
             id: ID,
+            home: HOME,
+            model: Model::Plaf103,
             identity: [1; 32],
             name: "kitchen",
             role: ClientRole::Server,
@@ -49,7 +53,7 @@ fn decode(raw: &[u8]) -> Option<EventBody> {
 
 /// Feed `feed`'s `Fed` event, as event `seq` of `epoch`.
 async fn fed(store: &Store, epoch: u32, seq: u64, feed: u32) {
-    let body = EventBody::Fed {
+    let body = EventBody::Feeder(FeederEvent::Fed {
         feed,
         requested: 1,
         completed: 1,
@@ -57,7 +61,7 @@ async fn fed(store: &Store, epoch: u32, seq: u64, feed: u32) {
         reason: FeedReason::Done,
         hopper: FoodLevel::Present,
         by: Source::Panel,
-    };
+    });
     let raw = serde_json::to_vec(&body).unwrap();
     store
         .record_event(
@@ -232,4 +236,21 @@ async fn a_projection_rebuild_leaves_the_traces_and_statistics() {
     assert_eq!(store.latest_stats(ID).await.unwrap().len(), 1);
     let readings = store.food_readings(ID, at(0), at(10)).await.unwrap();
     assert_eq!(readings.len(), 1);
+}
+
+/// The home every device here belongs to.
+const HOME: HomeId = HomeId(Uuid::from_u128(0x40));
+
+async fn home(store: &Store) {
+    let home = Home {
+        id: HOME,
+        name: "Home".into(),
+        units: Units::Grams,
+        time_format: TimeFormat::H24,
+        zone: "UTC".into(),
+    };
+    store
+        .create_home(&home, jiff::Timestamp::UNIX_EPOCH)
+        .await
+        .unwrap();
 }

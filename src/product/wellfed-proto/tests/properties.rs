@@ -334,7 +334,7 @@ proptest! {
         round_trip!(Open, open);
         round_trip!(Hello, Hello { major });
         round_trip!(Join<'_>, Join { label });
-        round_trip!(Joined, Joined::Enrolled { role });
+        round_trip!(Joined, Joined::Enrolled { role, model });
         round_trip!(
             Welcome<'_>,
             Welcome::Open { major, model, build, role, epoch }

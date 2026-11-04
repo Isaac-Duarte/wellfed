@@ -17,7 +17,9 @@ pub(crate) use read::FeedRow;
 use jiff::Timestamp;
 use sqlx::SqliteConnection;
 use uuid::Uuid;
-use wellfed_api::{Blocked, EventBody, FeedOutcome, FeedReason, FeederId, Source};
+use wellfed_api::{
+    Blocked, CoreEvent, EventBody, FeedOutcome, FeedReason, FeederEvent, FeederId, Source,
+};
 
 use crate::convert::source_columns;
 use crate::{Error, Result, Store};
@@ -192,7 +194,7 @@ pub(crate) async fn project(
     } = place;
 
     match body {
-        EventBody::Fed {
+        EventBody::Feeder(FeederEvent::Fed {
             feed,
             requested,
             completed,
@@ -201,7 +203,7 @@ pub(crate) async fn project(
             // The raw event keeps the hopper; the feeds table does not.
             hopper: _,
             by,
-        } => {
+        }) => {
             let (source, client) = source_columns(by);
             let client = client.as_deref();
             let (outcome, reason) = (outcome.code(), reason.code());
@@ -235,7 +237,7 @@ pub(crate) async fn project(
             .await?;
         }
 
-        EventBody::Lock { locked, by } => {
+        EventBody::Feeder(FeederEvent::Lock { locked, by }) => {
             let (source, client) = source_columns(by);
             let client = client.as_deref();
             sqlx::query!(
@@ -255,7 +257,7 @@ pub(crate) async fn project(
             .await?;
         }
 
-        EventBody::Boot { bank, reset_flags } => {
+        EventBody::Core(CoreEvent::Boot { bank, reset_flags }) => {
             sqlx::query!(
                 "INSERT INTO boots (feeder_id, epoch, seq, bank, reset_flags, at_s, received_ms)
                  VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
@@ -271,7 +273,7 @@ pub(crate) async fn project(
             .await?;
         }
 
-        EventBody::ClockSync { by, jump_ms } => {
+        EventBody::Core(CoreEvent::ClockSync { by, jump_ms }) => {
             let (source, client) = source_columns(by);
             let client = client.as_deref();
             sqlx::query!(
@@ -291,7 +293,7 @@ pub(crate) async fn project(
             .await?;
         }
 
-        EventBody::FeedingBlocked { reason } => {
+        EventBody::Feeder(FeederEvent::FeedingBlocked { reason }) => {
             let reason = reason.map(Blocked::code);
             sqlx::query!(
                 "INSERT INTO blocked_changes (feeder_id, epoch, seq, reason, at_s, received_ms)
@@ -312,17 +314,17 @@ pub(crate) async fn project(
         // and supply changes: nothing a view reads yet. A view that needs
         // one adds its table and bumps the version, and the rebuild fills it
         // from the history already held.
-        EventBody::Settings { .. }
-        | EventBody::Plans { .. }
-        | EventBody::Missed { .. }
-        | EventBody::MealSoon { .. }
-        | EventBody::DispenseRefused { .. }
-        | EventBody::Food { .. }
-        | EventBody::Wifi { .. }
-        | EventBody::Enrolled { .. }
-        | EventBody::Revoked { .. }
-        | EventBody::Lost { .. }
-        | EventBody::Supply { .. } => {}
+        EventBody::Feeder(FeederEvent::Settings { .. })
+        | EventBody::Feeder(FeederEvent::Plans { .. })
+        | EventBody::Feeder(FeederEvent::Missed { .. })
+        | EventBody::Feeder(FeederEvent::MealSoon { .. })
+        | EventBody::Feeder(FeederEvent::DispenseRefused { .. })
+        | EventBody::Feeder(FeederEvent::Food { .. })
+        | EventBody::Core(CoreEvent::Wifi { .. })
+        | EventBody::Core(CoreEvent::Enrolled { .. })
+        | EventBody::Core(CoreEvent::Revoked { .. })
+        | EventBody::Core(CoreEvent::Lost { .. })
+        | EventBody::Feeder(FeederEvent::Supply { .. }) => {}
     }
     Ok(())
 }

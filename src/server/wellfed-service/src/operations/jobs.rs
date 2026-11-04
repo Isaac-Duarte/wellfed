@@ -70,7 +70,7 @@ impl Service {
 
     /// The zone the household's daily jobs run in: the feeders' zone, or
     /// UTC before there is a household.
-    pub fn household_zone(&self) -> TimeZone {
+    pub fn home_zone(&self) -> TimeZone {
         self.mirror
             .zone()
             .map_or(TimeZone::UTC, |zone| zone.tz().clone())

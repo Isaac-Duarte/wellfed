@@ -1,7 +1,9 @@
-//! `/household`: what the whole household shares.
+//! `/home`: the home the server serves, which its devices belong to.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::HomeId;
 
 /// How weights are shown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -52,8 +54,11 @@ impl TimeFormat {
     }
 }
 
+/// The home the server serves: one per server for now. Its devices
+/// belong to it (each names it as `home`), and its zone is theirs.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct Household {
+pub struct Home {
+    pub id: HomeId,
     /// 1-64 characters.
     pub name: String,
     pub units: Units,
@@ -63,10 +68,10 @@ pub struct Household {
     pub zone: String,
 }
 
-/// A change to the household; an absent field is left as it is. A new
+/// A change to the home; an absent field is left as it is. A new
 /// zone goes to every feeder: those offline get it when they reconnect.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct HouseholdPatch {
+pub struct HomePatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

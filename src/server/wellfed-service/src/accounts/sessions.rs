@@ -21,7 +21,7 @@ use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, Salt
 use jiff::Timestamp;
 use sha2::{Digest, Sha256};
 use wellfed_api::{
-    AuditAction, Credentials, Household, LoginFailure, PasswordChange, Role, Setup, SetupState,
+    AuditAction, Credentials, Home, HomeId, LoginFailure, PasswordChange, Role, Setup, SetupState,
     TimeFormat, Units, User, UserId,
 };
 use wellfed_formats::hex;
@@ -42,8 +42,8 @@ const PASSWORD_MIN: usize = 10;
 /// again, so a busy page does not write on every request.
 pub(crate) const TOUCH: Duration = Duration::from_secs(60);
 
-/// The household a setup makes, besides its zone.
-const HOUSEHOLD: &str = "Home";
+/// The name a setup gives the home it makes.
+const HOME_NAME: &str = "Home";
 
 /// A browser session's secret, as its cookie carries it.
 #[derive(Clone, PartialEq, Eq)]
@@ -101,15 +101,16 @@ impl Service {
         }
 
         let hash = self.hash_password(setup.password).await?;
-        let _one_at_a_time = self.owner_data.household.lock().await;
+        let _one_at_a_time = self.owner_data.home.lock().await;
         let user = User {
             id: UserId(self.shared.new_id()?),
             name: name.to_owned(),
             role: Role::Owner,
             expires: None,
         };
-        let household = Household {
-            name: HOUSEHOLD.into(),
+        let home = Home {
+            id: HomeId(self.shared.new_id()?),
+            name: HOME_NAME.into(),
             units: Units::Grams,
             time_format: TimeFormat::H24,
             zone: zone.name().to_owned(),
@@ -126,10 +127,10 @@ impl Service {
                     expires: None,
                     created: now,
                 },
-                &household,
+                &home,
             )
             .await?;
-        if !created {
+        if created.is_none() {
             return Err(AccountError::SetupClosed.into());
         }
 

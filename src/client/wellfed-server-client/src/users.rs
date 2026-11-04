@@ -1,4 +1,4 @@
-//! The household's accounts, which owners manage.
+//! The home's accounts, which owners manage.
 
 use reqwest::{Method, StatusCode};
 use wellfed_api::{NewUser, User, UserId, UserPatch};

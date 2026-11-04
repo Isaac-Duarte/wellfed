@@ -48,8 +48,12 @@ impl Service {
             .locate(identity, request.address.as_deref())
             .await?;
 
+        // Every device belongs to the home, which setup made.
+        let home = self.home().await?.id;
         let secret = self.shared.random::<32>()?;
         let label = &self.shared.config.label;
+        // The redemption's answer names the model, so no second session
+        // stands between the key's enrollment and its storing.
         let enrolled = self.mirror.enroll(invite, label, address, secret).await?;
 
         let id = match archived {
@@ -61,6 +65,8 @@ impl Service {
         let address = address.to_string();
         let feeder = NewFeeder {
             id,
+            home,
+            model: enrolled.model,
             identity,
             name,
             role: enrolled.role,
@@ -174,6 +180,9 @@ impl Service {
         let connection = self.links().get(&row.id).copied().unwrap_or(Link::Offline);
         Feeder {
             id: row.id,
+            home: row.home,
+            kind: row.kind,
+            model: row.model,
             name: row.name,
             identity: Hex(row.identity),
             role: row.role,

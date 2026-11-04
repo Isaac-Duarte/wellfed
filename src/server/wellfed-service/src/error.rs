@@ -28,7 +28,7 @@ pub enum Error {
     Refused(FeederRefusal),
     /// An edit named a settings generation the feeder has moved past; it
     /// carries the current settings, which the server answers with.
-    #[error("the settings moved on to generation {}", .0.generation)]
+    #[error("the settings moved on to generation {}", .0.generation())]
     Stale(Settings),
     /// A plans change named a generation the feeder has moved past; it
     /// carries the current plans, which the server answers with.
@@ -68,7 +68,7 @@ pub enum Resource {
     User,
     Token,
     /// The household is made at setup, so before it there is none.
-    Household,
+    Home,
     Feeder,
     /// A feed the server never journalled nor saw in the feeder's history.
     FeedTrace,
@@ -87,7 +87,7 @@ impl fmt::Display for Resource {
         f.write_str(match self {
             Self::User => "no such user",
             Self::Token => "no such token",
-            Self::Household => "the household is made at setup",
+            Self::Home => "the home is made at setup",
             Self::Feeder => "no such feeder",
             Self::FeedTrace => "the server holds no trace of that feed",
             Self::Pet => "no such pet",
@@ -215,8 +215,8 @@ pub enum Invalid {
     Password,
     #[error("an owner's account does not expire: remove the expiry, or pick another role")]
     OwnerExpires,
-    #[error("a household name is 1-64 characters")]
-    HouseholdName,
+    #[error("a home name is 1-64 characters")]
+    HomeName,
     #[error("a feeder name is 1-64 characters")]
     FeederName,
     #[error("the address is not an IP or IP:port")]

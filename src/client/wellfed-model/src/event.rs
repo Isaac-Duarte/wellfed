@@ -9,7 +9,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{Battery, Blocked, Generation, Hex};
+use crate::{Battery, Blocked, DeviceKind, Generation, Hex};
 
 /// What the feeder pushes to a subscribed session, or to one that asked
 /// for its log.
@@ -57,20 +57,24 @@ pub struct Gap {
     pub to: u64,
 }
 
+/// What an event says: one of the shared core's, which every kind of
+/// device records, or one of its own kind's. The JSON is flat, tagged by
+/// the event's `kind` alone, as the history stores it; [`Self::device`]
+/// names the kind whose module records it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum EventBody {
+    Core(CoreEvent),
+    Feeder(FeederEvent),
+}
+
+/// An event every kind of device records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum EventBody {
+pub enum CoreEvent {
     Boot {
         bank: u8,
         reset_flags: u32,
-    },
-    Lock {
-        locked: bool,
-        by: Source,
-    },
-    Settings {
-        generation: Generation,
-        by: Source,
     },
     Wifi {
         generation: Generation,
@@ -96,6 +100,20 @@ pub enum EventBody {
     /// Events the feeder could not record (its queue overflowed).
     Lost {
         count: u16,
+    },
+}
+
+/// An event only a feeder records.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FeederEvent {
+    Lock {
+        locked: bool,
+        by: Source,
+    },
+    Settings {
+        generation: Generation,
+        by: Source,
     },
     /// A feed ended.
     Fed {
@@ -307,23 +325,45 @@ impl FeedReason {
 impl EventBody {
     pub const fn kind(&self) -> EventKind {
         match self {
-            Self::Boot { .. } => EventKind::Boot,
-            Self::Lock { .. } => EventKind::Lock,
-            Self::Settings { .. } => EventKind::Settings,
-            Self::Wifi { .. } => EventKind::Wifi,
-            Self::Enrolled { .. } => EventKind::Enrolled,
-            Self::Revoked { .. } => EventKind::Revoked,
-            Self::ClockSync { .. } => EventKind::ClockSync,
-            Self::Lost { .. } => EventKind::Lost,
-            Self::Fed { .. } => EventKind::Fed,
-            Self::FeedingBlocked { .. } => EventKind::FeedingBlocked,
-            Self::Supply { .. } => EventKind::Supply,
-            Self::Plans { .. } => EventKind::Plans,
-            Self::Missed { .. } => EventKind::Missed,
-            Self::DispenseRefused { .. } => EventKind::DispenseRefused,
-            Self::MealSoon { .. } => EventKind::MealSoon,
-            Self::Food { .. } => EventKind::Food,
+            Self::Core(event) => match event {
+                CoreEvent::Boot { .. } => EventKind::Boot,
+                CoreEvent::Wifi { .. } => EventKind::Wifi,
+                CoreEvent::Enrolled { .. } => EventKind::Enrolled,
+                CoreEvent::Revoked { .. } => EventKind::Revoked,
+                CoreEvent::ClockSync { .. } => EventKind::ClockSync,
+                CoreEvent::Lost { .. } => EventKind::Lost,
+            },
+            Self::Feeder(event) => match event {
+                FeederEvent::Lock { .. } => EventKind::Lock,
+                FeederEvent::Settings { .. } => EventKind::Settings,
+                FeederEvent::Fed { .. } => EventKind::Fed,
+                FeederEvent::FeedingBlocked { .. } => EventKind::FeedingBlocked,
+                FeederEvent::Plans { .. } => EventKind::Plans,
+                FeederEvent::Missed { .. } => EventKind::Missed,
+                FeederEvent::MealSoon { .. } => EventKind::MealSoon,
+                FeederEvent::Supply { .. } => EventKind::Supply,
+                FeederEvent::DispenseRefused { .. } => EventKind::DispenseRefused,
+                FeederEvent::Food { .. } => EventKind::Food,
+            },
         }
+    }
+
+    /// The kind of device whose module records it, `None` for the shared
+    /// core's.
+    pub const fn device(&self) -> Option<DeviceKind> {
+        self.kind().device()
+    }
+}
+
+impl From<CoreEvent> for EventBody {
+    fn from(event: CoreEvent) -> Self {
+        Self::Core(event)
+    }
+}
+
+impl From<FeederEvent> for EventBody {
+    fn from(event: FeederEvent) -> Self {
+        Self::Feeder(event)
     }
 }
 
@@ -393,6 +433,29 @@ impl EventKind {
 
     pub fn from_code(code: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.code() == code)
+    }
+
+    /// The kind of device whose module records it, `None` for the shared
+    /// core's: a filter for one kind's events reads only these.
+    pub const fn device(self) -> Option<DeviceKind> {
+        match self {
+            Self::Boot
+            | Self::Wifi
+            | Self::Enrolled
+            | Self::Revoked
+            | Self::ClockSync
+            | Self::Lost => None,
+            Self::Lock
+            | Self::Settings
+            | Self::Fed
+            | Self::FeedingBlocked
+            | Self::Plans
+            | Self::Missed
+            | Self::MealSoon
+            | Self::Supply
+            | Self::DispenseRefused
+            | Self::Food => Some(DeviceKind::Feeder),
+        }
     }
 }
 

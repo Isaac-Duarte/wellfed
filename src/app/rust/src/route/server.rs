@@ -3,7 +3,7 @@
 //! [`super::core`].
 
 use uuid::Uuid;
-use wellfed_api::{ErrorCode, FeederId, Generation, PlansChange};
+use wellfed_api::{ErrorCode, FeederId, Generation, PlansChange, Settings};
 use wellfed_server_client::{Client, Error, Lock};
 
 use crate::api::feeder::{FeederRefusal, FeederReply, FeederRequest};
@@ -33,7 +33,7 @@ pub(crate) async fn send(
         PinnedWrite::Settings { base, changes } => client
             .put_settings(id, Generation(base), &changes, key)
             .await
-            .map(|settings| done(Some(settings.generation.0))),
+            .map(|settings| done(Some(settings.generation().0))),
         PinnedWrite::Lock { locked } => {
             let lock = if locked { Lock::Locked } else { Lock::Unlocked };
             client.set_lock(id, lock, key).await.map(|()| done(None))
@@ -71,14 +71,11 @@ pub(crate) async fn read(
     request: &FeederRequest,
 ) -> Option<Result<FeederReply, Error>> {
     let read = match request {
-        FeederRequest::GetSettings => {
-            client
-                .settings(id)
-                .await
-                .map(|settings| FeederReply::Settings {
-                    settings: settings_view(&settings),
-                })
-        }
+        FeederRequest::GetSettings => client.settings(id).await.map(|settings| match settings {
+            Settings::Feeder(settings) => FeederReply::Settings {
+                settings: settings_view(&settings),
+            },
+        }),
         FeederRequest::GetPlans => client.plans(id).await.map(|plans| FeederReply::Plans {
             plans: plans_view(&plans),
         }),
@@ -133,7 +130,7 @@ pub(crate) fn refusal(error: &Error) -> Option<FeederRefusal> {
     use wellfed_api::FeederRefusal as Api;
     match error {
         Error::Stale(settings) => Some(FeederRefusal::Stale {
-            current: settings.generation.0,
+            current: settings.generation().0,
         }),
         Error::StalePlans(plans) => Some(FeederRefusal::Stale {
             current: plans.generation.0,

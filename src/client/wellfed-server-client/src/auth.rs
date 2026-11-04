@@ -8,13 +8,13 @@ use crate::{Auth, Client, Error, decode, expect_status};
 
 impl Client {
     /// Whether the server is waiting for its first owner, and the zone to
-    /// offer for the household.
+    /// offer for the home.
     pub async fn setup_state(&self) -> Result<SetupState, Error> {
         let response = self.api(Method::GET, "/setup").send().await?;
         decode(response, StatusCode::OK).await
     }
 
-    /// Create the first owner and the household, and hold the owner's
+    /// Create the first owner and the home, and hold the owner's
     /// session.
     pub async fn setup(&mut self, setup: &Setup) -> Result<User, Error> {
         let response = self.api(Method::POST, "/setup").json(setup).send().await?;

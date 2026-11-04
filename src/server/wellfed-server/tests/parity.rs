@@ -2,8 +2,8 @@
 //! the API document serves, with that method.
 
 use wellfed_model::{
-    Bowl, Calibration, ClientRole, Generation, Op, PLANS, SettingsPatch, StatsSection, TimeChanges,
-    TimeSync, Tune,
+    Bowl, Calibration, ClientRole, FeederSettingsPatch, Generation, Op, PLANS, StatsSection,
+    TimeChanges, TimeSync, Tune,
 };
 use wellfed_service::{Method, Parity, parity};
 
@@ -21,7 +21,7 @@ fn every_op() -> Vec<Op> {
         Op::GetSettings,
         Op::PutSettings {
             base: Generation(0),
-            changes: SettingsPatch::default(),
+            changes: FeederSettingsPatch::default(),
         },
         Op::PutWifi {
             base: Generation(0),

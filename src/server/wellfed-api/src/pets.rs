@@ -1,4 +1,4 @@
-//! `/pets`: the household's pets, their weight logs and which feeders
+//! `/pets`: the home's pets, their weight logs and which feeders
 //! serve them. Owners write them; everyone reads them.
 
 use jiff::Timestamp;

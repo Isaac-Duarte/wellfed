@@ -22,10 +22,10 @@ use wellfed_feeder_sim::harness::{self, local};
 use wellfed_feeder_sim::serve::{Control, Event};
 use wellfed_feeder_sim::sim::Record;
 use wellfed_model::{
-    Answer, Bowl, Calibration, CalibrationView, ClientRole, Desiccant, EventBody, Generation,
-    Joined, MealReminder, MetricKind, NtpResult, NtpServer, Op, PLANS, Plan, Plans, Pushed,
-    Refusal, SampleValue, Settings, SettingsPatch, Source, Stats, StatsSection, Status,
-    TimeChanges, TimeSource, TimeSync, Tune, Weekdays, Wifi,
+    Answer, Bowl, Calibration, CalibrationView, ClientRole, CoreEvent, Desiccant, EventBody,
+    FeederEvent, FeederSettings, FeederSettingsPatch, Generation, Joined, MealReminder, MetricKind,
+    Model, NtpResult, NtpServer, Op, PLANS, Plan, Plans, Pushed, Refusal, SampleValue, Settings,
+    Source, Stats, StatsSection, Status, TimeChanges, TimeSource, TimeSync, Tune, Weekdays, Wifi,
 };
 use wellfed_proto::api::RequestId;
 use wellfed_session::noise::Keypair;
@@ -142,9 +142,9 @@ async fn status(sim: &mut Running, connection: &mut Connection) -> Status {
     status
 }
 
-async fn settings(sim: &mut Running, connection: &mut Connection) -> Settings {
+async fn settings(sim: &mut Running, connection: &mut Connection) -> FeederSettings {
     let answer = sim.ask(connection, &Op::GetSettings).await;
-    let Answer::Settings(settings) = answer else {
+    let Answer::Settings(Settings::Feeder(settings)) = answer else {
         panic!("{answer:?}");
     };
     settings
@@ -170,12 +170,16 @@ fn an_owner_reads_and_writes_the_feeder() {
         assert_eq!(owner.role(), ClientRole::Owner);
 
         let before = status(&mut sim, &mut owner).await;
-        assert_eq!(before.locked, Some(true), "the panel boots locked");
+        assert_eq!(
+            before.feeder().unwrap().locked,
+            Some(true),
+            "the panel boots locked"
+        );
         assert_eq!(before.clock, None, "no clock before a sync");
 
-        let changes = SettingsPatch {
+        let changes = FeederSettingsPatch {
             volume: Some(20),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         let put = Op::PutSettings {
             base: Generation(0),
@@ -199,7 +203,7 @@ fn an_owner_reads_and_writes_the_feeder() {
         let synced = sim.ask(&mut owner, &Op::TimeSync(sync)).await;
         assert_eq!(synced, Answer::Done { generation: None });
         let status = status(&mut sim, &mut owner).await;
-        assert_eq!(status.locked, Some(false));
+        assert_eq!(status.feeder().unwrap().locked, Some(false));
         let synced_at = i64::try_from(NOW_MS).unwrap();
         assert!(
             status
@@ -254,9 +258,9 @@ fn an_owner_sets_the_meal_reminder_within_its_hour() {
         for minutes in [0, 61] {
             let put = Op::PutSettings {
                 base: before.generation,
-                changes: SettingsPatch {
+                changes: FeederSettingsPatch {
                     meal_reminder: Some(MealReminder::Before { minutes }),
-                    ..SettingsPatch::default()
+                    ..FeederSettingsPatch::default()
                 },
             };
             let refused = sim.ask(&mut owner, &put).await;
@@ -264,9 +268,9 @@ fn an_owner_sets_the_meal_reminder_within_its_hour() {
         }
         let put = Op::PutSettings {
             base: before.generation,
-            changes: SettingsPatch {
+            changes: FeederSettingsPatch {
                 meal_reminder: Some(MealReminder::Before { minutes: 15 }),
-                ..SettingsPatch::default()
+                ..FeederSettingsPatch::default()
             },
         };
         let done = sim.ask(&mut owner, &put).await;
@@ -358,9 +362,9 @@ fn an_owner_sets_the_zone_and_the_ntp_server_and_the_clock_follows() {
 fn a_retried_write_gets_its_first_answer_even_after_a_reconnect() {
     local(async {
         let mut sim = Running::start(&Flash::memory(), true).await;
-        let changes = SettingsPatch {
+        let changes = FeederSettingsPatch {
             sound: Some(false),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         let put = Op::PutSettings {
             base: Generation(0),
@@ -397,7 +401,8 @@ fn an_invited_member_joins_and_a_revoke_closes_its_session() {
         assert_eq!(
             joined,
             Joined::Enrolled {
-                role: ClientRole::Member
+                role: ClientRole::Member,
+                model: Model::Plaf103,
             }
         );
 
@@ -473,9 +478,9 @@ fn the_flash_keeps_the_identity_clients_and_history_across_restarts() {
             matches!(
                 history.as_slice(),
                 [
-                    EventBody::Boot { .. },
-                    EventBody::Lock { locked: false, .. },
-                    EventBody::Boot { .. },
+                    EventBody::Core(CoreEvent::Boot { .. }),
+                    EventBody::Feeder(FeederEvent::Lock { locked: false, .. }),
+                    EventBody::Core(CoreEvent::Boot { .. }),
                 ]
             ),
             "{history:?}"
@@ -500,11 +505,15 @@ fn a_reboot_drops_the_sessions_and_boots_again() {
         let after = status(&mut sim, &mut owner).await;
         assert_eq!((before.boot_count, after.boot_count), (1, 2));
         assert!(after.uptime_ms < before.uptime_ms, "uptime starts over");
-        assert_eq!(after.locked, Some(true), "the panel boots locked again");
+        assert_eq!(
+            after.feeder().unwrap().locked,
+            Some(true),
+            "the panel boots locked again"
+        );
         let boots = backlog(&mut owner)
             .await
             .iter()
-            .filter(|body| matches!(body, EventBody::Boot { .. }))
+            .filter(|body| matches!(body, EventBody::Core(CoreEvent::Boot { .. })))
             .count();
         assert_eq!(boots, 2);
 
@@ -573,22 +582,25 @@ fn the_panel_buttons_unlock_and_the_idle_panel_relocks() {
         let locks: Vec<EventBody> = backlog(&mut owner)
             .await
             .into_iter()
-            .filter(|body| matches!(body, EventBody::Lock { .. }))
+            .filter(|body| matches!(body, EventBody::Feeder(FeederEvent::Lock { .. })))
             .collect();
         assert_eq!(
             locks,
             [
-                EventBody::Lock {
+                EventBody::Feeder(FeederEvent::Lock {
                     locked: false,
                     by: Source::Panel
-                },
-                EventBody::Lock {
+                }),
+                EventBody::Feeder(FeederEvent::Lock {
                     locked: true,
                     by: Source::Feeder
-                },
+                }),
             ]
         );
-        assert_eq!(status(&mut sim, &mut owner).await.locked, Some(true));
+        assert_eq!(
+            status(&mut sim, &mut owner).await.feeder().unwrap().locked,
+            Some(true)
+        );
         sim.stop().await;
     });
 }
@@ -642,9 +654,9 @@ fn a_reset_hold_clears_the_decided_stores_and_keeps_the_calibration_and_journal(
 
         let settings = Op::PutSettings {
             base: Generation(0),
-            changes: SettingsPatch {
+            changes: FeederSettingsPatch {
                 volume: Some(20),
-                ..SettingsPatch::default()
+                ..FeederSettingsPatch::default()
             },
         };
         let wifi = Op::PutWifi {
@@ -691,7 +703,7 @@ fn a_reset_hold_clears_the_decided_stores_and_keeps_the_calibration_and_journal(
         };
         loop {
             if let Pushed::Event(event) = owner.next(WAIT).await.unwrap()
-                && matches!(event.body, EventBody::Fed { .. })
+                && matches!(event.body, EventBody::Feeder(FeederEvent::Fed { .. }))
             {
                 break;
             }
@@ -729,7 +741,9 @@ fn a_reset_hold_clears_the_decided_stores_and_keeps_the_calibration_and_journal(
         assert!(
             !history.iter().any(|body| matches!(
                 body,
-                EventBody::Fed { .. } | EventBody::Plans { .. } | EventBody::Wifi { .. }
+                EventBody::Feeder(FeederEvent::Fed { .. })
+                    | EventBody::Feeder(FeederEvent::Plans { .. })
+                    | EventBody::Core(CoreEvent::Wifi { .. })
             )),
             "nothing from before the reset: {history:?}"
         );
@@ -847,7 +861,7 @@ fn wifi_credentials_are_stored_and_cleared_by_an_owner_only() {
         let wifi: Vec<u32> = history
             .iter()
             .filter_map(|body| match body {
-                EventBody::Wifi { generation, .. } => Some(generation.0),
+                EventBody::Core(CoreEvent::Wifi { generation, .. }) => Some(generation.0),
                 _ => None,
             })
             .collect();
@@ -872,7 +886,7 @@ fn events_that_arrive_while_a_request_waits_are_kept_for_next() {
         let message = owner.next(WAIT).await.unwrap();
         assert_matches!(
             message,
-            Pushed::Event(event) if matches!(event.body, EventBody::Boot { .. })
+            Pushed::Event(event) if matches!(event.body, EventBody::Core(CoreEvent::Boot { .. }))
         );
         assert!(matches!(
             owner.ask(wellfed_connect::KEEPALIVE_ID, &Op::Status).await,
@@ -965,7 +979,7 @@ fn a_session_polled_with_dropped_next_futures_stays_alive() {
                 message = follower.next(limit) => {
                     let message = message.expect("the session stays open");
                     if let Pushed::Event(event) = message
-                        && matches!(event.body, EventBody::Boot { .. })
+                        && matches!(event.body, EventBody::Core(CoreEvent::Boot { .. }))
                     {
                         boots += 1;
                     }
@@ -1290,10 +1304,10 @@ fn a_member_edits_the_plans_against_the_generation_it_read() {
         let changed = backlog(&mut owner).await.into_iter().any(|body| {
             matches!(
                 body,
-                EventBody::Plans {
+                EventBody::Feeder(FeederEvent::Plans {
                     generation: Generation(1),
                     by: Source::Client { .. }
-                }
+                })
             )
         });
         assert!(changed, "the history records the change");
@@ -1331,7 +1345,11 @@ fn the_desiccant_reminder_counts_from_its_reset_across_a_restart() {
         let mut owner = sim.open(OWNER).await.unwrap();
         assert_eq!(owner.model(), wellfed_model::Model::Plaf103);
         assert_eq!(
-            status(&mut sim, &mut owner).await.desiccant,
+            status(&mut sim, &mut owner)
+                .await
+                .feeder()
+                .unwrap()
+                .desiccant,
             Desiccant::Unset
         );
 
@@ -1343,7 +1361,11 @@ fn the_desiccant_reminder_counts_from_its_reset_across_a_restart() {
         let reset = sim.ask(&mut owner, &Op::ResetDesiccant).await;
         assert_eq!(reset, written(1));
         assert_eq!(
-            status(&mut sim, &mut owner).await.desiccant,
+            status(&mut sim, &mut owner)
+                .await
+                .feeder()
+                .unwrap()
+                .desiccant,
             Desiccant::Remaining {
                 days: 14,
                 due: false
@@ -1351,9 +1373,9 @@ fn the_desiccant_reminder_counts_from_its_reset_across_a_restart() {
         );
         let period = Op::PutSettings {
             base: Generation(1),
-            changes: SettingsPatch {
+            changes: FeederSettingsPatch {
                 desiccant_days: Some(3),
-                ..SettingsPatch::default()
+                ..FeederSettingsPatch::default()
             },
         };
         let changed = sim.ask(&mut owner, &period).await;
@@ -1372,7 +1394,11 @@ fn the_desiccant_reminder_counts_from_its_reset_across_a_restart() {
             (3, Some("2026-09-21"))
         );
         assert_eq!(
-            status(&mut sim, &mut owner).await.desiccant,
+            status(&mut sim, &mut owner)
+                .await
+                .feeder()
+                .unwrap()
+                .desiccant,
             Desiccant::Unknown
         );
 
@@ -1381,7 +1407,11 @@ fn the_desiccant_reminder_counts_from_its_reset_across_a_restart() {
         let synced = owner.ask(sim.id(), &Op::TimeSync(sync(later))).await;
         assert_eq!(synced.unwrap(), Answer::Done { generation: None });
         assert_eq!(
-            status(&mut sim, &mut owner).await.desiccant,
+            status(&mut sim, &mut owner)
+                .await
+                .feeder()
+                .unwrap()
+                .desiccant,
             Desiccant::Remaining {
                 days: -2,
                 due: true

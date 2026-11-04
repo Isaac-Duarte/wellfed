@@ -29,7 +29,7 @@ use wellfed_device_api::{
     Server, UpdateAnswer, UpdateKeyChange, UpdateRequest,
 };
 use wellfed_model as model;
-use wellfed_model::{Answer, Generation, Hello, Joined, Op, OpenRefusal, SettingsPatch};
+use wellfed_model::{Answer, FeederSettingsPatch, Generation, Hello, Joined, Op, OpenRefusal};
 use wellfed_proto::api::{
     self as proto, DeviceStatus, EventBody, FeederStatus, FoodLevel, Metric, Refusal, Sample,
     Stats, StatsSection, Status, UpdatePhase, UpdateRefusal, UpdateView, WANTED_MAX,
@@ -840,17 +840,17 @@ fn an_owner_opens_a_session_and_reads_status_and_settings() {
     let Answer::Status(status) = status else {
         panic!("{status:?}");
     };
-    assert_eq!(status.settings_generation, Generation(7));
+    assert_eq!(status.feeder().unwrap().settings_generation, Generation(7));
     assert_eq!(status.sessions, 1);
 
     let settings = ask(&mut rig, &mut owner, 2, Op::GetSettings);
     assert!(matches!(
         settings,
-        Answer::Settings(model::Settings {
+        Answer::Settings(model::Settings::Feeder(model::FeederSettings {
             generation: Generation(7),
             volume: 40,
             ..
-        })
+        }))
     ));
 }
 
@@ -879,9 +879,9 @@ fn an_unknown_key_and_the_wrong_feeder_are_refused() {
 fn a_stale_settings_write_is_refused_and_a_current_one_applies() {
     let mut rig = Rig::new();
     let mut owner = open(&mut rig, OWNER);
-    let changes = SettingsPatch {
+    let changes = FeederSettingsPatch {
         volume: Some(60),
-        ..SettingsPatch::default()
+        ..FeederSettingsPatch::default()
     };
 
     let done = ask(
@@ -941,9 +941,9 @@ fn a_window_is_written_and_read_back_and_a_bad_one_refused() {
         1,
         Op::PutSettings {
             base: Generation(7),
-            changes: SettingsPatch {
+            changes: FeederSettingsPatch {
                 sound_window: Some(night),
-                ..SettingsPatch::default()
+                ..FeederSettingsPatch::default()
             },
         },
     );
@@ -956,8 +956,11 @@ fn a_window_is_written_and_read_back_and_a_bad_one_refused() {
     let Answer::Settings(settings) = ask(&mut rig, &mut owner, 2, Op::GetSettings) else {
         panic!("no settings");
     };
-    assert_eq!(settings.sound_window, night);
-    assert_eq!(settings.lights_window, model::Window::Always);
+    assert_eq!(settings.feeder().unwrap().sound_window, night);
+    assert_eq!(
+        settings.feeder().unwrap().lights_window,
+        model::Window::Always
+    );
 
     let refused = ask(
         &mut rig,
@@ -965,12 +968,12 @@ fn a_window_is_written_and_read_back_and_a_bad_one_refused() {
         3,
         Op::PutSettings {
             base: Generation(8),
-            changes: SettingsPatch {
+            changes: FeederSettingsPatch {
                 lights_window: Some(model::Window::Between {
                     start: 0,
                     end: 1440,
                 }),
-                ..SettingsPatch::default()
+                ..FeederSettingsPatch::default()
             },
         },
     );
@@ -989,7 +992,7 @@ fn a_desiccant_reset_needs_the_clock_and_starts_the_count() {
     let Answer::Status(status) = ask(&mut rig, &mut member, 1, Op::Status) else {
         panic!("no status");
     };
-    assert_eq!(status.desiccant, model::Desiccant::Unset);
+    assert_eq!(status.feeder().unwrap().desiccant, model::Desiccant::Unset);
 
     let refused = ask(&mut rig, &mut member, 2, Op::ResetDesiccant);
     assert_eq!(refused, Answer::Refused(model::Refusal::NoClock));
@@ -1008,10 +1011,10 @@ fn a_desiccant_reset_needs_the_clock_and_starts_the_count() {
         panic!("no settings");
     };
     assert_eq!(
-        settings.desiccant_replaced,
+        settings.feeder().unwrap().desiccant_replaced,
         Some(jiff::civil::date(2025, 10, 28))
     );
-    assert_eq!(settings.desiccant_days, 14);
+    assert_eq!(settings.feeder().unwrap().desiccant_days, 14);
 
     // Fifteen days on, one past due; then the clock is lost.
     rig.device.today = Some(20_389 + 15);
@@ -1019,7 +1022,7 @@ fn a_desiccant_reset_needs_the_clock_and_starts_the_count() {
         panic!("no status");
     };
     assert_eq!(
-        status.desiccant,
+        status.feeder().unwrap().desiccant,
         model::Desiccant::Remaining {
             days: -1,
             due: true
@@ -1029,7 +1032,10 @@ fn a_desiccant_reset_needs_the_clock_and_starts_the_count() {
     let Answer::Status(status) = ask(&mut rig, &mut member, 6, Op::Status) else {
         panic!("no status");
     };
-    assert_eq!(status.desiccant, model::Desiccant::Unknown);
+    assert_eq!(
+        status.feeder().unwrap().desiccant,
+        model::Desiccant::Unknown
+    );
 }
 
 /// The period is a setting like any other, checked against its limits.
@@ -1044,9 +1050,9 @@ fn the_desiccant_period_is_a_setting_within_its_limits() {
             id,
             Op::PutSettings {
                 base: Generation(7),
-                changes: SettingsPatch {
+                changes: FeederSettingsPatch {
                     desiccant_days: Some(days),
-                    ..SettingsPatch::default()
+                    ..FeederSettingsPatch::default()
                 },
             },
         );
@@ -1059,9 +1065,9 @@ fn the_desiccant_period_is_a_setting_within_its_limits() {
         3,
         Op::PutSettings {
             base: Generation(7),
-            changes: SettingsPatch {
+            changes: FeederSettingsPatch {
                 desiccant_days: Some(90),
-                ..SettingsPatch::default()
+                ..FeederSettingsPatch::default()
             },
         },
     );
@@ -1074,16 +1080,16 @@ fn the_desiccant_period_is_a_setting_within_its_limits() {
     let Answer::Settings(settings) = ask(&mut rig, &mut owner, 4, Op::GetSettings) else {
         panic!("no settings");
     };
-    assert_eq!(settings.desiccant_days, 90);
+    assert_eq!(settings.feeder().unwrap().desiccant_days, 90);
 }
 
 #[test]
 fn a_retried_write_gets_its_first_answer_even_after_a_reconnect() {
     let mut rig = Rig::new();
     let mut owner = open(&mut rig, OWNER);
-    let changes = SettingsPatch {
+    let changes = FeederSettingsPatch {
         lights: Some(false),
-        ..SettingsPatch::default()
+        ..FeederSettingsPatch::default()
     };
     let first = ask(
         &mut rig,
@@ -1298,7 +1304,7 @@ fn the_status_says_whether_a_feed_can_start_and_a_feed_obeys_it() {
     let mut rig = Rig::new();
     let mut owner = open(&mut rig, OWNER);
     let readiness = |answer: Answer| match answer {
-        Answer::Status(status) => status.readiness,
+        Answer::Status(status) => status.feeder().unwrap().readiness,
         other => panic!("{other:?}"),
     };
     assert_eq!(
@@ -1488,7 +1494,9 @@ fn an_invite_enrolls_a_new_client_once() {
     assert_eq!(
         joined,
         Some(Joined::Enrolled {
-            role: model::ClientRole::Member
+            role: model::ClientRole::Member,
+            // The redemption names the model, as the welcome does.
+            model: model::Model::Plaf103,
         })
     );
     rig.publish();
@@ -2810,9 +2818,9 @@ fn chunks_are_answered_with_the_state_and_never_push_out_a_remembered_write() {
     let mut owner = open(&mut rig, OWNER);
     let put = Op::PutSettings {
         base: Generation(7),
-        changes: SettingsPatch {
+        changes: FeederSettingsPatch {
             volume: Some(50),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         },
     };
     let first = ask(&mut rig, &mut owner, 200, put.clone());

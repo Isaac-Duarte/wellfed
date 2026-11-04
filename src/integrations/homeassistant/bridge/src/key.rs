@@ -90,7 +90,7 @@ pub async fn join(
 
     let joined = wellfed_connect::join(key.keypair(), invite, label, address, random()?).await?;
     match joined {
-        Enrollment::Enrolled { role } => Ok(role),
+        Enrollment::Enrolled { role, .. } => Ok(role),
         Enrollment::Refused(refusal) => Err(Error::Refused(refusal)),
     }
 }

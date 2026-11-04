@@ -12,11 +12,12 @@ use sqlx::{Sqlite, Transaction};
 use uuid::Uuid;
 use wellfed_formats::export::{
     AuditEntry, BlockedChange, Boot, ClockSync, Command, Event, Feed, FeedTrace, Feeder,
-    FeederFood, FeederStat, FeederState, Food, FoodReading, Gap, Household, Install, KeptClient,
+    FeederFood, FeederStat, FeederState, Food, FoodReading, Gap, Home, Install, KeptClient,
     LockChange, Pet, PetFeeder, PetWeight, PhoneKey, ProjectionVersion, Refill, Row, Sample,
     SampleMarks, SampleRollup, Table, User,
 };
 
+use crate::convert::model;
 use crate::{Error, Result, Store};
 
 /// One consistent view of the database, read table by table.
@@ -43,22 +44,38 @@ impl Snapshot {
                 )
                 .fetch(tx),
             ),
-            Table::Household => rows(
+            Table::Homes => rows(
                 sqlx::query_as!(
-                    Household,
-                    "SELECT name, units, time_format, zone FROM household ORDER BY id"
+                    Home,
+                    r#"SELECT id AS "id: Uuid", name, units, time_format, zone, created_ms
+                       FROM homes ORDER BY id"#
                 )
                 .fetch(tx),
             ),
-            Table::Feeders => rows(
-                sqlx::query_as!(
-                    Feeder,
-                    r#"SELECT id AS "id: Uuid", identity, name, role, address, synced, epoch,
-                              created_ms
-                       FROM feeders ORDER BY id"#
-                )
-                .fetch(tx),
-            ),
+            // The model is read as the device's: a stored name no model has
+            // is corrupt, not exported.
+            Table::Feeders => sqlx::query!(
+                r#"SELECT id AS "id: Uuid", home_id AS "home_id: Uuid", model, identity, name,
+                          role, address, synced, epoch, created_ms
+                   FROM feeders ORDER BY id"#
+            )
+            .fetch(tx)
+            .map(|row| {
+                let row = row?;
+                Ok(Row::from(Feeder {
+                    id: row.id,
+                    home_id: row.home_id,
+                    model: model(&row.model)?,
+                    identity: row.identity,
+                    name: row.name,
+                    role: row.role,
+                    address: row.address,
+                    synced: row.synced,
+                    epoch: row.epoch,
+                    created_ms: row.created_ms,
+                }))
+            })
+            .boxed(),
             Table::FeederState => rows(
                 sqlx::query_as!(
                     FeederState,

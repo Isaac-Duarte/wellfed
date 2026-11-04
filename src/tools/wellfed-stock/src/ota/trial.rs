@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::{
     config::Config,
     ota::image,
-    protocol::{self, Channel, Reply},
+    protocol::{self, Channel, Reply, plaf103},
 };
 
 /// The stock application an install starts from.
@@ -55,7 +55,7 @@ struct Upgrade<'a> {
 pub fn command(record: &Record, config: &Config) -> Reply {
     let upgrade = Upgrade {
         sha256: &record.image_sha256,
-        target_pid: "PLAF103",
+        target_pid: plaf103::PID,
         target_software_version: REPLACEMENT_VERSION,
         upgrade_type: 1,
         url: format!(
@@ -70,7 +70,7 @@ pub fn command(record: &Record, config: &Config) -> Reply {
     protocol::command(
         config,
         Channel::Service,
-        protocol::Sent::Upgrade,
+        plaf103::Sent::Upgrade.cmd(),
         record.input.request_id,
         record.created_at,
         &upgrade,

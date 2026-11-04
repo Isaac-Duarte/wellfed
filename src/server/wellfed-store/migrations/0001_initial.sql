@@ -19,14 +19,34 @@ CREATE TABLE sessions (
     expires_ms INTEGER NOT NULL
 ) STRICT;
 
--- The server's own key for each feeder is sealed with the config file's
--- key, so the database alone cannot impersonate the server. `synced` is
--- the newest event held: the cursor a reconnect subscribes after. It
--- counts in `epoch`, the feeder's ring epoch, which a new ring draws at
--- random: a ring re-created by a storage wipe counts from 1 again under
--- another epoch.
+-- The home the server serves, written with the first owner, which every
+-- device belongs to. `zone` is an IANA name. `single` holds a server to one
+-- home for now; dropping it lets one serve more.
+CREATE TABLE homes (
+    id BLOB PRIMARY KEY NOT NULL,
+    single INTEGER NOT NULL DEFAULT 1 UNIQUE CHECK (single = 1),
+    name TEXT NOT NULL,
+    units TEXT NOT NULL,
+    time_format TEXT NOT NULL,
+    zone TEXT NOT NULL,
+    created_ms INTEGER NOT NULL
+) STRICT;
+
+-- The home's devices, of every kind: the table keeps its first kind's
+-- name. `kind` and `model` are the spellings `wellfed_proto::device`
+-- gives them, from the session the server opens at adoption; `kind` is
+-- `model`'s, kept beside it so a query can filter by it. The server's own
+-- key for each device is sealed with the config file's key, so the
+-- database alone cannot impersonate the server. `synced` is the newest
+-- event held: the cursor a reconnect subscribes after. It counts in
+-- `epoch`, the device's ring epoch, which a new ring draws at random: a
+-- ring re-created by a storage wipe counts from 1 again under another
+-- epoch.
 CREATE TABLE feeders (
     id BLOB PRIMARY KEY NOT NULL,
+    home_id BLOB NOT NULL REFERENCES homes (id),
+    kind TEXT NOT NULL,
+    model TEXT NOT NULL,
     identity BLOB NOT NULL UNIQUE,
     name TEXT NOT NULL,
     role TEXT NOT NULL,

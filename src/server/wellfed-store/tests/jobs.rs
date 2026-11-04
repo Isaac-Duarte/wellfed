@@ -3,7 +3,7 @@
 use jiff::Timestamp;
 use tempfile::TempDir;
 use uuid::Uuid;
-use wellfed_api::{Household, Job, JobOutcome, JobRun, Role, TimeFormat, Units, UserId};
+use wellfed_api::{Home, HomeId, Job, JobOutcome, JobRun, Role, TimeFormat, Units, UserId};
 use wellfed_store::{NewUser, Store};
 
 async fn fresh() -> (TempDir, Store) {
@@ -69,7 +69,8 @@ async fn a_jobs_last_run_replaces_the_one_before() {
 #[tokio::test]
 async fn idle_sessions_and_an_expired_accounts_sessions_end() {
     let (_dir, store) = fresh().await;
-    let household = Household {
+    let home = Home {
+        id: HomeId(Uuid::from_u128(0x40)),
         name: "Home".into(),
         units: Units::Grams,
         time_format: TimeFormat::H24,
@@ -77,7 +78,7 @@ async fn idle_sessions_and_an_expired_accounts_sessions_end() {
     };
     let ada = user(1, "ada", Role::Owner, None);
     let ada_id = ada.id;
-    store.create_first_owner(ada, &household).await.unwrap();
+    store.create_first_owner(ada, &home).await.unwrap();
     let bob = user(2, "bob", Role::Member, Some(at(5_000)));
     let bob_id = bob.id;
     store.create_user(bob).await.unwrap();

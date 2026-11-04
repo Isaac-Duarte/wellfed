@@ -20,8 +20,8 @@ use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::{Instrument, info, info_span, warn};
 use wellfed_api::{
-    CommandOutcome, Connection as Link, EventBody, FeederId, RevokeAttempt, RevokeReason, Role,
-    User,
+    CommandOutcome, Connection as Link, CoreEvent, EventBody, FeederId, RevokeAttempt,
+    RevokeReason, Role, User,
 };
 use wellfed_formats::hex;
 use wellfed_mirror::{AskError, MirrorEvent};
@@ -177,7 +177,7 @@ impl Service {
                         service.revoke_owed(id).await;
                     }
                     Ok(MirrorEvent::Event(event))
-                        if matches!(event.body, EventBody::Enrolled { .. }) =>
+                        if matches!(event.body, EventBody::Core(CoreEvent::Enrolled { .. })) =>
                     {
                         service.revoke_owed(id).await;
                     }

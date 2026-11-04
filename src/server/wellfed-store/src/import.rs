@@ -60,26 +60,33 @@ impl Import {
                 .execute(tx)
                 .await?;
             }
-            Row::Household(household) => {
+            Row::Homes(home) => {
                 sqlx::query!(
-                    "INSERT INTO household (id, name, units, time_format, zone)
-                     VALUES (1, ?, ?, ?, ?)",
-                    household.name,
-                    household.units,
-                    household.time_format,
-                    household.zone,
+                    "INSERT INTO homes (id, name, units, time_format, zone, created_ms)
+                     VALUES (?, ?, ?, ?, ?, ?)",
+                    home.id,
+                    home.name,
+                    home.units,
+                    home.time_format,
+                    home.zone,
+                    home.created_ms,
                 )
                 .execute(tx)
                 .await?;
             }
             Row::Feeders(feeder) => {
                 // No key, only a nonce of the stored width: the feeder is
-                // archived, and adopting it again stores its new key.
+                // archived, and adopting it again stores its new key. The
+                // kind is the model's; an unknown model never parsed.
+                let (kind, model) = (feeder.model.kind().name(), feeder.model.name());
                 sqlx::query!(
-                    "INSERT INTO feeders (id, identity, name, role, address, key_nonce, key_sealed,
-                                          synced, epoch, created_ms)
-                     VALUES (?, ?, ?, ?, ?, zeroblob(12), X'', ?, ?, ?)",
+                    "INSERT INTO feeders (id, home_id, kind, model, identity, name, role, address,
+                                          key_nonce, key_sealed, synced, epoch, created_ms)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, zeroblob(12), X'', ?, ?, ?)",
                     feeder.id,
+                    feeder.home_id,
+                    kind,
+                    model,
                     feeder.identity,
                     feeder.name,
                     feeder.role,

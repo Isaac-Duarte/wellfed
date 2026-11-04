@@ -21,8 +21,8 @@ use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness::{Running, local};
 use wellfed_feeder_sim::serve::Control;
 use wellfed_model::{
-    Answer, Blocked, EventBody, FeedFault, FeedOutcome, FeedReason, FoodLevel, Generation, Op,
-    Pushed, Readiness, Refusal, SettingsPatch, Source,
+    Answer, Blocked, EventBody, FeedFault, FeedOutcome, FeedReason, FeederEvent,
+    FeederSettingsPatch, FoodLevel, Generation, Op, Pushed, Readiness, Refusal, Source,
 };
 use wellfed_session::noise::Keypair;
 
@@ -57,7 +57,7 @@ async fn next_fed(connection: &mut Connection) -> EventBody {
     loop {
         let pushed = connection.next(Duration::from_secs(5)).await.unwrap();
         if let Pushed::Event(event) = pushed
-            && matches!(event.body, EventBody::Fed { .. })
+            && matches!(event.body, EventBody::Feeder(FeederEvent::Fed { .. }))
         {
             return event.body;
         }
@@ -66,7 +66,7 @@ async fn next_fed(connection: &mut Connection) -> EventBody {
 
 async fn readiness(connection: &mut Connection, id: u8) -> Readiness {
     match connection.ask([id; 16], &Op::Status).await.unwrap() {
-        Answer::Status(status) => status.readiness,
+        Answer::Status(status) => status.feeder().unwrap().readiness,
         other => panic!("{other:?}"),
     }
 }
@@ -83,7 +83,7 @@ fn a_feed_is_numbered_by_the_journal_and_ends_in_its_fed_event() {
         let busy = owner.ask([2; 16], &Op::Feed { portions: 1 }).await.unwrap();
         assert_eq!(busy, Answer::Refused(Refusal::Busy), "one feed at a time");
 
-        let EventBody::Fed {
+        let EventBody::Feeder(FeederEvent::Fed {
             feed,
             requested,
             completed,
@@ -91,7 +91,7 @@ fn a_feed_is_numbered_by_the_journal_and_ends_in_its_fed_event() {
             reason,
             hopper,
             by: Source::Client { .. },
-        } = next_fed(&mut owner).await
+        }) = next_fed(&mut owner).await
         else {
             panic!("a feed by the client");
         };
@@ -140,9 +140,9 @@ fn a_feed_outside_one_to_48_portions_is_refused_by_name() {
         assert_eq!(during, Answer::Refused(Refusal::Portions { asked: 0 }));
         let cancel = owner.ask([6; 16], &Op::CancelFeed { feed: 1 }).await;
         assert_matches!(cancel, Ok(Answer::Done { .. }));
-        let EventBody::Fed {
+        let EventBody::Feeder(FeederEvent::Fed {
             feed, requested, ..
-        } = next_fed(&mut owner).await
+        }) = next_fed(&mut owner).await
         else {
             unreachable!("next_fed returns a feed")
         };
@@ -163,21 +163,24 @@ fn a_dispense_press_feeds_one_portion_and_one_during_a_feed_is_recorded_not_queu
         loop {
             let pushed = owner.next(Duration::from_secs(10)).await.unwrap();
             if let Pushed::Event(event) = pushed
-                && matches!(event.body, EventBody::Lock { locked: false, .. })
+                && matches!(
+                    event.body,
+                    EventBody::Feeder(FeederEvent::Lock { locked: false, .. })
+                )
             {
                 break;
             }
         }
 
         sim.type_line("press dispense").unwrap();
-        let EventBody::Fed {
+        let EventBody::Feeder(FeederEvent::Fed {
             feed,
             requested,
             completed,
             outcome,
             by,
             ..
-        } = next_fed(&mut owner).await
+        }) = next_fed(&mut owner).await
         else {
             unreachable!("next_fed returns a feed")
         };
@@ -202,20 +205,20 @@ fn a_dispense_press_feeds_one_portion_and_one_during_a_feed_is_recorded_not_queu
         let fed: Vec<u32> = bodies
             .iter()
             .filter_map(|body| match body {
-                EventBody::Fed { feed, .. } => Some(*feed),
+                EventBody::Feeder(FeederEvent::Fed { feed, .. }) => Some(*feed),
                 _ => None,
             })
             .collect();
         assert_eq!(fed, [2], "the presses queued no feed");
         let refused: Vec<&EventBody> = bodies
             .iter()
-            .filter(|body| matches!(body, EventBody::DispenseRefused { .. }))
+            .filter(|body| matches!(body, EventBody::Feeder(FeederEvent::DispenseRefused { .. })))
             .collect();
         assert_eq!(
             refused,
-            [&EventBody::DispenseRefused {
+            [&EventBody::Feeder(FeederEvent::DispenseRefused {
                 reason: Blocked::Feeding
-            }],
+            })],
             "one event for the reason"
         );
 
@@ -240,7 +243,8 @@ fn a_cancel_ends_the_feed_and_finds_nothing_once_it_has_ended() {
         assert_eq!(answer, Answer::Feeding { feed: 1 });
         let cancel = owner.ask([2; 16], &Op::CancelFeed { feed: 1 }).await;
         assert_matches!(cancel, Ok(Answer::Done { .. }));
-        let EventBody::Fed { feed, outcome, .. } = next_fed(&mut owner).await else {
+        let EventBody::Feeder(FeederEvent::Fed { feed, outcome, .. }) = next_fed(&mut owner).await
+        else {
             unreachable!("next_fed returns a feed")
         };
         assert_eq!((feed, outcome), (1, FeedOutcome::Cancelled));
@@ -276,7 +280,7 @@ fn a_restart_mid_feed_resolves_it_as_uncertain_under_its_own_number() {
         let fed = next_fed(&mut owner).await;
         assert_eq!(
             fed,
-            EventBody::Fed {
+            EventBody::Feeder(FeederEvent::Fed {
                 feed: 1,
                 requested: 2,
                 completed: 0,
@@ -284,7 +288,7 @@ fn a_restart_mid_feed_resolves_it_as_uncertain_under_its_own_number() {
                 reason: FeedReason::Interrupted,
                 hopper: FoodLevel::Unread,
                 by: Source::Feeder,
-            }
+            })
         );
 
         // The id the feed went out under is forgotten with the boot, so it
@@ -301,7 +305,7 @@ async fn next_food(connection: &mut Connection) -> FoodLevel {
     loop {
         let pushed = connection.next(Duration::from_secs(5)).await.unwrap();
         if let Pushed::Event(event) = pushed
-            && let EventBody::Food { level } = event.body
+            && let EventBody::Feeder(FeederEvent::Food { level }) = event.body
         {
             return level;
         }
@@ -310,7 +314,7 @@ async fn next_food(connection: &mut Connection) -> FoodLevel {
 
 async fn food(connection: &mut Connection, id: u8) -> FoodLevel {
     match connection.ask([id; 16], &Op::Status).await.unwrap() {
-        Answer::Status(status) => status.food,
+        Answer::Status(status) => status.feeder().unwrap().food,
         other => panic!("{other:?}"),
     }
 }
@@ -364,12 +368,12 @@ fn a_feed_on_an_empty_hopper_runs_and_records_that_it_read_empty() {
             }
             let answer = owner.ask([id; 16], &Op::Feed { portions: 2 }).await;
             assert_matches!(answer, Ok(Answer::Feeding { .. }));
-            let EventBody::Fed {
+            let EventBody::Feeder(FeederEvent::Fed {
                 completed,
                 outcome,
                 hopper,
                 ..
-            } = next_fed(&mut owner).await
+            }) = next_fed(&mut owner).await
             else {
                 unreachable!("next_fed returns a feed")
             };
@@ -384,7 +388,7 @@ fn a_feed_on_an_empty_hopper_runs_and_records_that_it_read_empty() {
 
 async fn feed_fault(connection: &mut Connection, id: u8) -> Option<FeedFault> {
     match connection.ask([id; 16], &Op::Status).await.unwrap() {
-        Answer::Status(status) => status.feed_fault,
+        Answer::Status(status) => status.feeder().unwrap().feed_fault,
         other => panic!("{other:?}"),
     }
 }
@@ -408,14 +412,14 @@ fn a_blocked_outlet_or_a_jam_ends_the_feed_by_name_with_its_portions_so_far() {
             let Ok(Answer::Feeding { feed }) = answer else {
                 panic!("{answer:?}");
             };
-            let EventBody::Fed {
+            let EventBody::Feeder(FeederEvent::Fed {
                 feed: ended,
                 requested,
                 completed,
                 outcome,
                 reason: ended_by,
                 ..
-            } = next_fed(&mut owner).await
+            }) = next_fed(&mut owner).await
             else {
                 unreachable!("next_fed returns a feed")
             };
@@ -434,7 +438,7 @@ fn a_blocked_outlet_or_a_jam_ends_the_feed_by_name_with_its_portions_so_far() {
         // clears the fault.
         let answer = owner.ask([id; 16], &Op::Feed { portions: 1 }).await;
         assert_eq!(answer.unwrap(), Answer::Feeding { feed: 3 });
-        let EventBody::Fed { outcome, .. } = next_fed(&mut owner).await else {
+        let EventBody::Feeder(FeederEvent::Fed { outcome, .. }) = next_fed(&mut owner).await else {
             unreachable!("next_fed returns a feed")
         };
         assert_eq!(outcome, FeedOutcome::Done);
@@ -531,9 +535,9 @@ fn a_feed_behind_a_write_is_answered_once_it_runs_and_the_loop_serves_meanwhile(
             assert_eq!(reboot, Answer::Refused(Refusal::Busy));
             let change = Op::PutSettings {
                 base: Generation(0),
-                changes: SettingsPatch {
+                changes: FeederSettingsPatch {
                     volume: Some(21),
-                    ..SettingsPatch::default()
+                    ..FeederSettingsPatch::default()
                 },
             };
             let change = other.ask([5; 16], &change).await.unwrap();
@@ -548,9 +552,9 @@ fn a_feed_behind_a_write_is_answered_once_it_runs_and_the_loop_serves_meanwhile(
         assert_eq!(feeding::reserved(&flash), Some(1));
         let again = owner.ask([1; 16], &Op::Feed { portions: 1 }).await.unwrap();
         assert_eq!(again, Answer::Feeding { feed: 1 }, "the same feed");
-        let EventBody::Fed {
+        let EventBody::Feeder(FeederEvent::Fed {
             feed, requested, ..
-        } = next_fed(&mut owner).await
+        }) = next_fed(&mut owner).await
         else {
             panic!("a feed");
         };
@@ -666,12 +670,12 @@ fn a_cancel_of_a_feed_waiting_for_its_claim_is_not_found_and_the_feed_runs() {
         let (answer, ()) = tokio::join!(feed, cancel);
         assert_eq!(answer.unwrap(), Answer::Feeding { feed: 1 });
 
-        let EventBody::Fed {
+        let EventBody::Feeder(FeederEvent::Fed {
             feed,
             completed,
             outcome,
             ..
-        } = next_fed(&mut owner).await
+        }) = next_fed(&mut owner).await
         else {
             panic!("a feed");
         };

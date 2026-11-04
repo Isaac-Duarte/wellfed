@@ -13,8 +13,8 @@
 
 use wellfed_client::plans::{self, Edit};
 use wellfed_model::{
-    Answer, Calibration, CalibrationView, ClientRole, DeviceKind, Generation, Op, Refusal,
-    SettingsPatch,
+    Answer, Calibration, CalibrationView, ClientRole, DeviceKind, FeederSettingsPatch, Generation,
+    Op, Refusal,
 };
 
 use crate::api::{NotSent, Tune};
@@ -33,7 +33,7 @@ pub enum Write {
     SetLock { locked: bool },
     ResetDesiccant,
     Play { tune: Tune },
-    Settings(SettingsPatch),
+    Settings(FeederSettingsPatch),
     PlanEnabled { slot: u8, enabled: bool },
     PortionWeight { mg: u32 },
 }
@@ -201,9 +201,9 @@ mod tests {
             plans: None,
             calibration: None,
         };
-        let patch = SettingsPatch {
+        let patch = FeederSettingsPatch {
             volume: Some(40),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         for write in [
             Write::Settings(patch),
@@ -233,13 +233,13 @@ mod tests {
             plans: None,
             calibration: Some(&calibration),
         };
-        let loud = SettingsPatch {
+        let loud = FeederSettingsPatch {
             volume: Some(101),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
-        let never = SettingsPatch {
+        let never = FeederSettingsPatch {
             desiccant_days: Some(0),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         for write in [
             Write::Feed { portions: 0 },

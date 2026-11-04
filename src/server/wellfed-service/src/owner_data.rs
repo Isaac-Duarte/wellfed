@@ -4,7 +4,7 @@
 
 mod derived;
 mod foods;
-mod household;
+mod home;
 mod pets;
 mod samples;
 mod views;
@@ -18,7 +18,7 @@ use wellfed_api::ErrorCode;
 pub(crate) struct State {
     /// Household changes run one at a time, so the stored zone and the
     /// mirror's are always the last change's.
-    pub(crate) household: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) home: Arc<tokio::sync::Mutex<()>>,
 }
 
 /// Pets, foods and refills: the owner data the feeders do not hold.

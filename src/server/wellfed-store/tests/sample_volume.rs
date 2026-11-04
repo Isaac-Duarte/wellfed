@@ -11,7 +11,7 @@ use std::time::Duration;
 use jiff::Timestamp;
 use tokio::time::Instant;
 use uuid::Uuid;
-use wellfed_api::{ClientRole, FeederId, MetricKind};
+use wellfed_api::{ClientRole, FeederId, Home, HomeId, MetricKind, Model, TimeFormat, Units};
 use wellfed_store::{NewFeeder, SealedKey, Span, Store};
 
 const FEEDERS: u8 = 5;
@@ -43,12 +43,15 @@ async fn a_month_of_five_feeders_reads_quickly() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("server.db");
     let store = Store::open(&path, at(0)).await.unwrap();
+    home(&store).await;
     let mut feeders = Vec::new();
     for n in 1..=FEEDERS {
         let id = FeederId(Uuid::from_u128(u128::from(n)));
         store
             .insert_feeder(NewFeeder {
                 id,
+                home: HOME,
+                model: Model::Plaf103,
                 identity: [n; 32],
                 name: "feeder",
                 role: ClientRole::Server,
@@ -167,4 +170,21 @@ async fn a_month_of_five_feeders_reads_quickly() {
         hours.last().map(|hour| (hour.count, hour.min)),
         Some((720, 4000))
     );
+}
+
+/// The home every device here belongs to.
+const HOME: HomeId = HomeId(Uuid::from_u128(0x40));
+
+async fn home(store: &Store) {
+    let home = Home {
+        id: HOME,
+        name: "Home".into(),
+        units: Units::Grams,
+        time_format: TimeFormat::H24,
+        zone: "UTC".into(),
+    };
+    store
+        .create_home(&home, jiff::Timestamp::UNIX_EPOCH)
+        .await
+        .unwrap();
 }

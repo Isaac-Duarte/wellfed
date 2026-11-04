@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use jiff::Timestamp;
 use wellfed_api::{
-    ClientRole, Connection as Link, EventBody, FeederId, HouseholdPatch, NextMeal, PLANS, Plan,
-    PlansChange, Source, TimeFormat, Units, Weekdays,
+    ClientRole, Connection as Link, EventBody, FeederEvent, FeederId, HomePatch, NextMeal, PLANS,
+    Plan, PlansChange, Source, TimeFormat, Units, Weekdays,
 };
 use wellfed_model::{Answer, Op, Pushed, TimeSync};
 use wellfed_server_testkit::feeder::{self, Connection, Flash, Running, open_owner};
@@ -65,38 +65,38 @@ fn setup_makes_the_household_and_an_owner_changes_it() {
         let server = TestService::start().await;
         let service = server.service();
         assert!(matches!(
-            service.household().await,
-            Err(Error::NotFound(Resource::Household))
+            service.home().await,
+            Err(Error::NotFound(Resource::Home))
         ));
         let state = service.setup_state().await.unwrap();
         assert_eq!((state.open, state.zone.as_deref()), (true, Some("UTC")));
 
         service.setup(ada_setup()).await.unwrap();
-        let household = service.household().await.unwrap();
-        assert_eq!(household.zone, ZONE);
+        let home = service.home().await.unwrap();
+        assert_eq!(home.zone, ZONE);
         assert_eq!(
-            (household.units, household.time_format),
+            (home.units, home.time_format),
             (Units::Grams, TimeFormat::H24)
         );
 
-        let patch = HouseholdPatch {
+        let patch = HomePatch {
             name: Some(" Lovelace ".into()),
             units: Some(Units::Ounces),
             time_format: Some(TimeFormat::H12),
             zone: Some("america/denver".into()),
         };
-        let changed = service.update_household(&owner(), patch).await.unwrap();
+        let changed = service.update_home(&owner(), patch).await.unwrap();
         assert_eq!(changed.name, "Lovelace");
         assert_eq!(changed.zone, "America/Denver", "the canonical name");
-        assert_eq!(service.household().await.unwrap(), changed);
+        assert_eq!(service.home().await.unwrap(), changed);
 
-        let unnamed = HouseholdPatch {
+        let unnamed = HomePatch {
             name: Some(" ".into()),
-            ..HouseholdPatch::default()
+            ..HomePatch::default()
         };
         assert!(matches!(
-            service.update_household(&owner(), unnamed).await,
-            Err(Error::Invalid(Invalid::HouseholdName))
+            service.update_home(&owner(), unnamed).await,
+            Err(Error::Invalid(Invalid::HomeName))
         ));
         server.shutdown().await;
     });
@@ -115,15 +115,15 @@ fn an_unknown_zone_is_refused_by_name() {
         ));
         assert!(service.setup_open().await.unwrap(), "nothing was made");
         service.setup(ada_setup()).await.unwrap();
-        let unknown = HouseholdPatch {
+        let unknown = HomePatch {
             zone: Some("Mars/Olympus".into()),
-            ..HouseholdPatch::default()
+            ..HomePatch::default()
         };
         assert!(matches!(
-            service.update_household(&owner(), unknown).await,
+            service.update_home(&owner(), unknown).await,
             Err(Error::Zone(ZoneError::Unknown(_)))
         ));
-        assert_eq!(service.household().await.unwrap().zone, ZONE);
+        assert_eq!(service.home().await.unwrap().zone, ZONE);
         // A zone that changes irregularly is refused the same way, by the
         // mirror's `Zone`; its tests find one in the bundled tzdb.
         server.shutdown().await;
@@ -138,13 +138,13 @@ fn every_feeder_keeps_the_households_zone_and_a_change_reaches_it() {
         adopted(&server, &sim).await;
         holds(&sim, BERLIN).await;
 
-        let denver = HouseholdPatch {
+        let denver = HomePatch {
             zone: Some("America/Denver".into()),
-            ..HouseholdPatch::default()
+            ..HomePatch::default()
         };
         server
             .service()
-            .update_household(&owner(), denver)
+            .update_home(&owner(), denver)
             .await
             .unwrap();
         holds(&sim, DENVER).await;
@@ -166,13 +166,13 @@ fn a_feeder_offline_at_the_change_gets_the_zone_when_it_returns() {
 
         sim.stop().await;
         server.link(id, Link::Offline).await;
-        let denver = HouseholdPatch {
+        let denver = HomePatch {
             zone: Some("America/Denver".into()),
-            ..HouseholdPatch::default()
+            ..HomePatch::default()
         };
         server
             .service()
-            .update_household(&owner(), denver)
+            .update_home(&owner(), denver)
             .await
             .unwrap();
 
@@ -234,13 +234,13 @@ fn the_zone_is_kept_across_a_server_restart() {
         let sim = feeder::start_on(&flash).await;
         let server = TestService::start().await;
         let id = adopted(&server, &sim).await;
-        let denver = HouseholdPatch {
+        let denver = HomePatch {
             zone: Some("America/Denver".into()),
-            ..HouseholdPatch::default()
+            ..HomePatch::default()
         };
         server
             .service()
-            .update_household(&owner(), denver)
+            .update_home(&owner(), denver)
             .await
             .unwrap();
         holds(&sim, DENVER).await;
@@ -319,7 +319,8 @@ async fn fed_from(owner: &mut Connection, from: i64) -> Timestamp {
             let Pushed::Event(event) = owner.next(WAIT).await.unwrap() else {
                 continue;
             };
-            if let (EventBody::Fed { by, .. }, Some(at)) = (event.body, event.at)
+            if let (EventBody::Feeder(FeederEvent::Fed { by, .. }), Some(at)) =
+                (event.body, event.at)
                 && by == (Source::Schedule { plan: 0 })
                 && at.as_second() >= from
             {
@@ -340,12 +341,12 @@ fn meals_keep_their_local_time_across_a_dst_change_with_the_server_down() {
         let sim = feeder::start().await;
         let server = TestService::start().await;
         let id = adopted(&server, &sim).await;
-        let denver = HouseholdPatch {
+        let denver = HomePatch {
             zone: Some("America/Denver".into()),
-            ..HouseholdPatch::default()
+            ..HomePatch::default()
         };
         let service = server.service();
-        service.update_household(&owner(), denver).await.unwrap();
+        service.update_home(&owner(), denver).await.unwrap();
         holds(&sim, DENVER).await;
 
         let breakfast = Plan {

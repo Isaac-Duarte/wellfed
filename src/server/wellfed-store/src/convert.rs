@@ -4,7 +4,7 @@
 //! range is reported on the way out ([`Error::Corrupt`]).
 
 use jiff::Timestamp;
-use wellfed_api::{Hex, Source};
+use wellfed_api::{Hex, Model, Source};
 
 use crate::{Error, Result};
 
@@ -14,6 +14,14 @@ pub(crate) fn millis(at: Timestamp) -> i64 {
 
 pub(crate) fn timestamp(ms: i64) -> Result<Timestamp> {
     Timestamp::from_millisecond(ms).map_err(|_| Error::Corrupt("time"))
+}
+
+/// A device model by the name `wellfed_proto::device` gives it.
+pub(crate) fn model(name: &str) -> Result<Model> {
+    Model::ALL
+        .into_iter()
+        .find(|model| model.name() == name)
+        .ok_or(Error::Corrupt("device model"))
 }
 
 /// A feeder clock time, stored in whole seconds; `None` while that clock

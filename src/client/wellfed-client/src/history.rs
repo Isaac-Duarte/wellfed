@@ -17,7 +17,10 @@
 
 use jiff::Timestamp;
 use serde::Serialize;
-use wellfed_model::{Event, EventBody, FeedOutcome, FeedReason, FoodLevel, Gap, Pushed, Source};
+use wellfed_model::{
+    CoreEvent, Event, EventBody, FeedOutcome, FeedReason, FeederEvent, FoodLevel, Gap, Pushed,
+    Source,
+};
 
 /// One feed, from its `Fed` event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -129,7 +132,7 @@ impl Entry {
                 epoch,
                 seq,
                 at,
-                body: EventBody::Lost { count },
+                body: EventBody::Core(CoreEvent::Lost { count }),
             }) => Some(Self::Lost {
                 epoch: *epoch,
                 seq: *seq,
@@ -174,7 +177,7 @@ impl Backlog {
 impl Feed {
     /// The feed `event` records the end of, if it is a `Fed` event.
     pub fn from_event(event: &Event) -> Option<Self> {
-        let EventBody::Fed {
+        let EventBody::Feeder(FeederEvent::Fed {
             feed,
             requested,
             completed,
@@ -182,7 +185,7 @@ impl Feed {
             reason,
             hopper,
             by,
-        } = event.body
+        }) = event.body
         else {
             return None;
         };
@@ -231,7 +234,7 @@ mod tests {
             epoch: 3,
             seq: 41,
             at: Some(Timestamp::from_second(1_793_000_000).unwrap()),
-            body: EventBody::Fed {
+            body: EventBody::Feeder(FeederEvent::Fed {
                 feed: 9,
                 requested: 3,
                 completed,
@@ -239,7 +242,7 @@ mod tests {
                 reason,
                 hopper: FoodLevel::Present,
                 by,
-            },
+            }),
         }
     }
 
@@ -331,13 +334,13 @@ mod tests {
             epoch: 3,
             seq: 42,
             at: None,
-            body: EventBody::Boot {
+            body: EventBody::Core(CoreEvent::Boot {
                 bank: 1,
                 reset_flags: 0,
-            },
+            }),
         };
         let lost = Event {
-            body: EventBody::Lost { count: 2 },
+            body: EventBody::Core(CoreEvent::Lost { count: 2 }),
             ..boot
         };
 

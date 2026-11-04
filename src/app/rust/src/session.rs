@@ -39,7 +39,9 @@ use tokio::sync::{mpsc, oneshot};
 use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::plans::Edit;
 use wellfed_connect::{Connection, Received};
-use wellfed_model::{Answer, EventBody, Generation, Op, PLANS, Plan, Pushed};
+use wellfed_model::{
+    Answer, CoreEvent, EventBody, FeederEvent, Generation, Op, PLANS, Plan, Pushed, Settings,
+};
 use wellfed_session::noise::Keypair;
 
 use crate::api::error::{BridgeError, ErrorKind};
@@ -656,7 +658,7 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
                 self.facts.status = Some(status);
                 Ok(self.card())
             }
-            (Asked::Settings, Some(Answer::Settings(settings))) => {
+            (Asked::Settings, Some(Answer::Settings(Settings::Feeder(settings)))) => {
                 self.facts.settings = Some(settings);
                 Ok(self.card())
             }
@@ -793,8 +795,12 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         if let Pushed::Event(event) = pushed {
             match event.body {
                 ref body if moves_plans(body) => self.request(&Op::GetPlans, Asked::Plans)?,
-                EventBody::Settings { .. } => self.request(&Op::GetSettings, Asked::Settings)?,
-                EventBody::ClockSync { .. } => self.request(&Op::GetTime, Asked::Time)?,
+                EventBody::Feeder(FeederEvent::Settings { .. }) => {
+                    self.request(&Op::GetSettings, Asked::Settings)?
+                }
+                EventBody::Core(CoreEvent::ClockSync { .. }) => {
+                    self.request(&Op::GetTime, Asked::Time)?
+                }
                 _ => {}
             }
         }
@@ -844,7 +850,9 @@ fn feed_answered(what: Asked, answer: Option<Answer>) -> Option<SessionUpdate> {
 const fn moves_plans(body: &EventBody) -> bool {
     matches!(
         body,
-        EventBody::Plans { .. } | EventBody::Fed { .. } | EventBody::Missed { .. }
+        EventBody::Feeder(FeederEvent::Plans { .. })
+            | EventBody::Feeder(FeederEvent::Fed { .. })
+            | EventBody::Feeder(FeederEvent::Missed { .. })
     )
 }
 
@@ -963,7 +971,7 @@ mod tests {
 
     #[test]
     fn a_feed_or_a_missed_meal_reads_the_plans_again() {
-        let fed = EventBody::Fed {
+        let fed = EventBody::Feeder(FeederEvent::Fed {
             feed: 1,
             requested: 1,
             completed: 1,
@@ -971,18 +979,18 @@ mod tests {
             reason: FeedReason::Done,
             hopper: FoodLevel::Present,
             by: Source::Schedule { plan: 0 },
-        };
-        let missed = EventBody::Missed {
+        });
+        let missed = EventBody::Feeder(FeederEvent::Missed {
             plan: 0,
             due: Timestamp::UNIX_EPOCH,
             reason: MissedReason::Late,
-        };
+        });
 
         assert!(moves_plans(&fed));
         assert!(moves_plans(&missed));
-        assert!(!moves_plans(&EventBody::Settings {
+        assert!(!moves_plans(&EventBody::Feeder(FeederEvent::Settings {
             generation: Generation(1),
             by: Source::Feeder,
-        }));
+        })));
     }
 }

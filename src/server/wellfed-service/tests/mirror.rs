@@ -4,7 +4,10 @@
 
 use std::time::Duration;
 
-use wellfed_api::{Connection as Link, EventBody, EventQuery, Source, StreamEvent, sample_number};
+use wellfed_api::{
+    Connection as Link, CoreEvent, EventBody, EventQuery, FeederEvent, Source, StreamEvent,
+    sample_number,
+};
 use wellfed_model::{Answer, Op};
 use wellfed_server_testkit::feeder::{self, Flash, open_owner};
 use wellfed_server_testkit::{TestService, WAIT, ada, config, local, until};
@@ -50,7 +53,7 @@ fn history_recorded_while_the_server_was_down_arrives_on_restart() {
             .events
             .iter()
             .filter_map(|event| match event.body {
-                EventBody::Lock { locked, .. } => Some(locked),
+                EventBody::Feeder(FeederEvent::Lock { locked, .. }) => Some(locked),
                 _ => None,
             })
             .collect();
@@ -127,10 +130,10 @@ fn the_clock_is_set_again_on_schedule_and_samples_are_kept() {
                     StreamEvent::Event { event, .. }
                         if matches!(
                             event.body,
-                            EventBody::ClockSync {
+                            EventBody::Core(CoreEvent::ClockSync {
                                 by: Source::Client { .. },
                                 ..
-                            }
+                            })
                         ) =>
                     {
                         syncs += 1;

@@ -22,7 +22,7 @@ mod updates;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use wellfed_api::{Connection as Link, ErrorCode, FeederId};
+use wellfed_api::{Connection as Link, DeviceKind, ErrorCode, FeederId};
 use wellfed_mirror::{InviteText, Unreachable};
 
 pub use clients::ClientError;
@@ -73,6 +73,13 @@ pub enum FeederError {
     Unreachable(#[from] Unreachable),
     #[error("the feeder did not answer the log request in time")]
     LogUnanswered,
+    /// The op is one kind's and the device is another's: nothing was
+    /// journaled or sent.
+    #[error("the device is a {}, and only a {} serves that", device.name(), needs.name())]
+    OtherKind {
+        device: DeviceKind,
+        needs: DeviceKind,
+    },
 }
 
 impl FeederError {
@@ -83,6 +90,7 @@ impl FeederError {
             Self::Invite(_) => ErrorCode::Invalid,
             Self::InviteExpired => ErrorCode::InviteExpired,
             Self::Unreachable(_) | Self::LogUnanswered => ErrorCode::Unreachable,
+            Self::OtherKind { .. } => ErrorCode::OtherKind,
         }
     }
 }

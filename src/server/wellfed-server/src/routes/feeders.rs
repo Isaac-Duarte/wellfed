@@ -7,8 +7,8 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum_extra::extract::WithRejection;
 use wellfed_api::{
-    AdoptFeeder, Feeder, FeederDetail, FeederId, Generation, LockRequest, Plans, PlansChange,
-    Problem, Settings, SettingsPatch,
+    AdoptFeeder, Feeder, FeederDetail, FeederId, FeederSettingsPatch, Generation, LockRequest,
+    Plans, PlansChange, Problem, Settings,
 };
 
 use super::{ApiResult, IdPath, JsonBody, TAG_FEEDERS, insert};
@@ -107,7 +107,7 @@ pub(crate) async fn settings(
     path = "/feeders/{id}/settings",
     tag = TAG_FEEDERS,
     params(("id" = FeederId, Path), IfMatch, OptionalIdempotencyKey),
-    request_body = SettingsPatch,
+    request_body = FeederSettingsPatch,
     responses(
         (status = 200, body = Settings, headers(("ETag" = String))),
         (status = 400, body = Problem, description = "invalid: a malformed body, If-Match or Idempotency-Key"),
@@ -124,7 +124,7 @@ pub(crate) async fn put_settings(
     WithRejection(Path(id), _): IdPath,
     IfMatch(base): IfMatch,
     OptionalIdempotencyKey(key): OptionalIdempotencyKey,
-    WithRejection(Json(patch), _): JsonBody<SettingsPatch>,
+    WithRejection(Json(patch), _): JsonBody<FeederSettingsPatch>,
 ) -> ApiResult<Response> {
     let settings = state
         .service
@@ -250,7 +250,7 @@ pub(crate) fn etag(generation: Generation) -> String {
 
 fn tagged(settings: Settings) -> Response {
     let mut response = Json(settings).into_response();
-    insert(&mut response, header::ETAG, &etag(settings.generation));
+    insert(&mut response, header::ETAG, &etag(settings.generation()));
     response
 }
 

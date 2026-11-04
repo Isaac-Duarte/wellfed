@@ -7,7 +7,7 @@ use std::num::NonZeroU32;
 use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 use wellfed_api::{
-    ClientRole, FeederId, HourSample, Job, JobOutcome, MetricKind, Resolution, SamplePage,
+    ClientRole, FeederId, HourSample, Job, JobOutcome, MetricKind, Model, Resolution, SamplePage,
     SampleQuery, SampleValue,
 };
 use wellfed_server_testkit::fixed::FixedClock;
@@ -29,8 +29,14 @@ fn ago(hours: i64) -> Timestamp {
 async fn feeder_with(store: &Store, times: &[(Timestamp, i32)]) -> FeederId {
     let id = FeederId(Uuid::from_u128(0x5a));
     store
+        .create_home(&wellfed_server_testkit::home(), FixedClock.now())
+        .await
+        .unwrap();
+    store
         .insert_feeder(NewFeeder {
             id,
+            home: wellfed_server_testkit::home().id,
+            model: Model::Plaf103,
             identity: [5; 32],
             name: "kitchen",
             role: ClientRole::Server,

@@ -3152,7 +3152,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SettingsPatch"
+                "$ref": "#/components/schemas/FeederSettingsPatch"
               }
             }
           },
@@ -4037,19 +4037,19 @@
         }
       }
     },
-    "/api/v1/household": {
+    "/api/v1/home": {
       "get": {
         "tags": [
-          "household"
+          "home"
         ],
         "summary": "The household, as every user's pages show it.",
-        "operationId": "household",
+        "operationId": "home",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Household"
+                  "$ref": "#/components/schemas/Home"
                 }
               }
             }
@@ -4067,15 +4067,15 @@
       },
       "patch": {
         "tags": [
-          "household"
+          "home"
         ],
         "summary": "Change the household. A new zone goes to every feeder as its POSIX rule:\nthe online ones now, the others when they reconnect.",
-        "operationId": "update_household",
+        "operationId": "update_home",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/HouseholdPatch"
+                "$ref": "#/components/schemas/HomePatch"
               }
             }
           },
@@ -4086,7 +4086,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Household"
+                  "$ref": "#/components/schemas/Home"
                 }
               }
             }
@@ -5799,7 +5799,7 @@
           },
           {
             "type": "object",
-            "description": "The first owner and the household were made.",
+            "description": "The first owner and the home were made.",
             "required": [
               "kind"
             ],
@@ -6021,19 +6021,19 @@
           },
           {
             "type": "object",
-            "description": "The household's settings, as they now stand.",
+            "description": "The home's settings, as they now stand.",
             "required": [
-              "household",
+              "home",
               "kind"
             ],
             "properties": {
-              "household": {
-                "$ref": "#/components/schemas/Household"
+              "home": {
+                "$ref": "#/components/schemas/Home"
               },
               "kind": {
                 "type": "string",
                 "enum": [
-                  "household_changed"
+                  "home_changed"
                 ]
               }
             }
@@ -6923,6 +6923,155 @@
           "refused"
         ]
       },
+      "CoreEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "bank",
+              "reset_flags",
+              "kind"
+            ],
+            "properties": {
+              "bank": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "boot"
+                ]
+              },
+              "reset_flags": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "generation",
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "generation": {
+                "$ref": "#/components/schemas/Generation"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "wifi"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "client",
+              "role",
+              "path",
+              "kind"
+            ],
+            "properties": {
+              "client": {
+                "type": "string",
+                "description": "The new client's fingerprint (its key's first 4 bytes)."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "enrolled"
+                ]
+              },
+              "path": {
+                "$ref": "#/components/schemas/EnrollPath"
+              },
+              "role": {
+                "$ref": "#/components/schemas/ClientRole"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "client",
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "client": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "revoked"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "jump_ms": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "description": "How far the clock moved, when it was valid before."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "clock_sync"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Events the feeder could not record (its queue overflowed).",
+            "required": [
+              "count",
+              "kind"
+            ],
+            "properties": {
+              "count": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "lost"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "An event every kind of device records."
+      },
       "CounterStats": {
         "type": "object",
         "required": [
@@ -7077,6 +7226,32 @@
         ],
         "description": "The desiccant reminder, counted in the feeder's local calendar days\nfrom the last replacement."
       },
+      "DeviceStatus": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FeederStatus"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "feeder"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "description": "The part of [`Status`] only one kind of device reports, tagged by the\nkind in JSON (`\"kind\": \"feeder\"`)."
+      },
       "EnrollPath": {
         "type": "string",
         "description": "How a client enrolled.",
@@ -7111,6 +7286,7 @@
           "too_large",
           "already_adopted",
           "feeder_archived",
+          "other_kind",
           "token_required",
           "direct_key_refused",
           "client_key_taken",
@@ -7144,438 +7320,13 @@
       "EventBody": {
         "oneOf": [
           {
-            "type": "object",
-            "required": [
-              "bank",
-              "reset_flags",
-              "kind"
-            ],
-            "properties": {
-              "bank": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "boot"
-                ]
-              },
-              "reset_flags": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
-              }
-            }
+            "$ref": "#/components/schemas/CoreEvent"
           },
           {
-            "type": "object",
-            "required": [
-              "locked",
-              "by",
-              "kind"
-            ],
-            "properties": {
-              "by": {
-                "$ref": "#/components/schemas/Source"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "lock"
-                ]
-              },
-              "locked": {
-                "type": "boolean"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "generation",
-              "by",
-              "kind"
-            ],
-            "properties": {
-              "by": {
-                "$ref": "#/components/schemas/Source"
-              },
-              "generation": {
-                "$ref": "#/components/schemas/Generation"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "settings"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "generation",
-              "by",
-              "kind"
-            ],
-            "properties": {
-              "by": {
-                "$ref": "#/components/schemas/Source"
-              },
-              "generation": {
-                "$ref": "#/components/schemas/Generation"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "wifi"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "client",
-              "role",
-              "path",
-              "kind"
-            ],
-            "properties": {
-              "client": {
-                "type": "string",
-                "description": "The new client's fingerprint (its key's first 4 bytes)."
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "enrolled"
-                ]
-              },
-              "path": {
-                "$ref": "#/components/schemas/EnrollPath"
-              },
-              "role": {
-                "$ref": "#/components/schemas/ClientRole"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "client",
-              "by",
-              "kind"
-            ],
-            "properties": {
-              "by": {
-                "$ref": "#/components/schemas/Source"
-              },
-              "client": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "revoked"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "by",
-              "kind"
-            ],
-            "properties": {
-              "by": {
-                "$ref": "#/components/schemas/Source"
-              },
-              "jump_ms": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "format": "int32",
-                "description": "How far the clock moved, when it was valid before."
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "clock_sync"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Events the feeder could not record (its queue overflowed).",
-            "required": [
-              "count",
-              "kind"
-            ],
-            "properties": {
-              "count": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "lost"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A feed ended.",
-            "required": [
-              "feed",
-              "requested",
-              "completed",
-              "outcome",
-              "reason",
-              "hopper",
-              "by",
-              "kind"
-            ],
-            "properties": {
-              "by": {
-                "$ref": "#/components/schemas/Source"
-              },
-              "completed": {
-                "type": "integer",
-                "format": "int32",
-                "description": "The portions the feedback sensor confirmed.",
-                "minimum": 0
-              },
-              "feed": {
-                "type": "integer",
-                "format": "int32",
-                "description": "The feeder's number for the feed.",
-                "minimum": 0
-              },
-              "hopper": {
-                "$ref": "#/components/schemas/FoodLevel",
-                "description": "What the food beam read during the feed. A feed runs whatever\nit reads, so low food is recorded here, not refused."
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "fed"
-                ]
-              },
-              "outcome": {
-                "$ref": "#/components/schemas/FeedOutcome"
-              },
-              "reason": {
-                "$ref": "#/components/schemas/FeedReason"
-              },
-              "requested": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The lasting reason the feeder cannot feed changed: the new reason,\nor none once it can feed again.",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "feeding_blocked"
-                ]
-              },
-              "reason": {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/Blocked"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A client replaced the feeding plans.",
-            "required": [
-              "generation",
-              "by",
-              "kind"
-            ],
-            "properties": {
-              "by": {
-                "$ref": "#/components/schemas/Source"
-              },
-              "generation": {
-                "$ref": "#/components/schemas/Generation"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "plans"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A plan's occurrence did not run, and never will.",
-            "required": [
-              "plan",
-              "due",
-              "reason",
-              "kind"
-            ],
-            "properties": {
-              "due": {
-                "type": "string",
-                "format": "date-time",
-                "description": "When it was due."
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "missed"
-                ]
-              },
-              "plan": {
-                "type": "integer",
-                "format": "int32",
-                "description": "The plan's slot.",
-                "minimum": 0
-              },
-              "reason": {
-                "$ref": "#/components/schemas/MissedReason"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A plan's occurrence is expected: sent the meal reminder's lead\nahead of it. A feeder restart inside the lead may send it again,\nwith the same `plan` and `due`. It is never withdrawn: the meal may\nstill be missed, or the plan disabled, deleted or moved, so the\n`fed` or `missed` event for that `plan` and `due` (or the plans) say\nwhat happened.",
-            "required": [
-              "plan",
-              "due",
-              "minute",
-              "portions",
-              "kind"
-            ],
-            "properties": {
-              "due": {
-                "type": "string",
-                "format": "date-time",
-                "description": "When it is due."
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "meal_soon"
-                ]
-              },
-              "minute": {
-                "type": "integer",
-                "format": "int32",
-                "description": "The minute of the feeder's local day it is due at (0-1439).",
-                "minimum": 0
-              },
-              "plan": {
-                "type": "integer",
-                "format": "int32",
-                "description": "The plan's slot.",
-                "minimum": 0
-              },
-              "portions": {
-                "type": "integer",
-                "format": "int32",
-                "description": "The portions it will ask for.",
-                "minimum": 0
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The adapter came or went, or the pack crossed its floor (at most\none a minute, as the supply stood at its end).",
-            "required": [
-              "battery",
-              "kind"
-            ],
-            "properties": {
-              "adapter": {
-                "type": [
-                  "boolean",
-                  "null"
-                ]
-              },
-              "battery": {
-                "$ref": "#/components/schemas/Battery"
-              },
-              "below_floor": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Whether the feeding owner judged the pack below its floor."
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "supply"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Dispense was pressed on an unlocked panel while a feed could not\nstart, during a feed among them: it started nothing and was not\nqueued.",
-            "required": [
-              "reason",
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "dispense_refused"
-                ]
-              },
-              "reason": {
-                "$ref": "#/components/schemas/Blocked"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The food beam's level changed (at most once a feed or a reading at\nrest). A boot's first reading counts as one only if a feed took it.",
-            "required": [
-              "level",
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "food"
-                ]
-              },
-              "level": {
-                "$ref": "#/components/schemas/FoodLevel"
-              }
-            }
+            "$ref": "#/components/schemas/FeederEvent"
           }
-        ]
+        ],
+        "description": "What an event says: one of the shared core's, which every kind of\ndevice records, or one of its own kind's. The JSON is flat, tagged by\nthe event's `kind` alone, as the history stores it; [`Self::device`]\nnames the kind whose module records it."
       },
       "EventPage": {
         "type": "object",
@@ -7597,7 +7348,7 @@
           "events": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/FeederEvent"
+              "$ref": "#/components/schemas/HistoryEvent"
             }
           },
           "gaps": {
@@ -7977,8 +7728,12 @@
       },
       "Feeder": {
         "type": "object",
+        "description": "A device the server mirrors. The API names every one a feeder for now;\n`kind` says which it is, and an op of another kind is refused\n`not_this_kind` before it is sent.",
         "required": [
           "id",
+          "home",
+          "kind",
+          "model",
           "name",
           "identity",
           "role",
@@ -8012,12 +7767,33 @@
             "description": "The feeder's history epoch `synced` counts in.",
             "minimum": 0
           },
+          "home": {
+            "$ref": "#/components/schemas/HomeId",
+            "description": "The home it belongs to."
+          },
           "id": {
             "$ref": "#/components/schemas/FeederId"
           },
           "identity": {
             "type": "string",
             "description": "The feeder's identity key."
+          },
+          "kind": {
+            "type": "string",
+            "description": "A kind of device, which one module of the device API serves.",
+            "enum": [
+              "feeder",
+              "fountain",
+              "litter_box"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "description": "A device model, which names its kind.",
+            "enum": [
+              "plaf103",
+              "plwf106"
+            ]
           },
           "name": {
             "type": "string"
@@ -8076,7 +7852,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/NextMeal",
-                "description": "The plans' next meal in the household's zone, from the plans the\nserver last read; `None` with no enabled plan, no plans read yet,\nor no household."
+                "description": "The plans' next meal in the home's zone, from the plans the\nserver last read; `None` with no enabled plan, no plans read yet,\nor no home."
               },
               {
                 "type": "null"
@@ -8097,44 +7873,297 @@
         }
       },
       "FeederEvent": {
-        "type": "object",
-        "description": "One event the feeder recorded.",
-        "required": [
-          "epoch",
-          "seq",
-          "received",
-          "body"
-        ],
-        "properties": {
-          "at": {
-            "type": [
-              "string",
-              "null"
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "locked",
+              "by",
+              "kind"
             ],
-            "format": "date-time",
-            "description": "The feeder's clock when it happened; `None` while that was invalid."
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "lock"
+                ]
+              },
+              "locked": {
+                "type": "boolean"
+              }
+            }
           },
-          "body": {
-            "$ref": "#/components/schemas/EventBody"
+          {
+            "type": "object",
+            "required": [
+              "generation",
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "generation": {
+                "$ref": "#/components/schemas/Generation"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "settings"
+                ]
+              }
+            }
           },
-          "epoch": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The history the event belongs to.",
-            "minimum": 0
+          {
+            "type": "object",
+            "description": "A feed ended.",
+            "required": [
+              "feed",
+              "requested",
+              "completed",
+              "outcome",
+              "reason",
+              "hopper",
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "completed": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The portions the feedback sensor confirmed.",
+                "minimum": 0
+              },
+              "feed": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The feeder's number for the feed.",
+                "minimum": 0
+              },
+              "hopper": {
+                "$ref": "#/components/schemas/FoodLevel",
+                "description": "What the food beam read during the feed. A feed runs whatever\nit reads, so low food is recorded here, not refused."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "fed"
+                ]
+              },
+              "outcome": {
+                "$ref": "#/components/schemas/FeedOutcome"
+              },
+              "reason": {
+                "$ref": "#/components/schemas/FeedReason"
+              },
+              "requested": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
           },
-          "received": {
-            "type": "string",
-            "format": "date-time",
-            "description": "When the server received it."
+          {
+            "type": "object",
+            "description": "The lasting reason the feeder cannot feed changed: the new reason,\nor none once it can feed again.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "feeding_blocked"
+                ]
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Blocked"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
           },
-          "seq": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The feeder's sequence number: monotonic across its reboots, within\nthe epoch.",
-            "minimum": 0
+          {
+            "type": "object",
+            "description": "A client replaced the feeding plans.",
+            "required": [
+              "generation",
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "generation": {
+                "$ref": "#/components/schemas/Generation"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "plans"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A plan's occurrence did not run, and never will.",
+            "required": [
+              "plan",
+              "due",
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "due": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When it was due."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "missed"
+                ]
+              },
+              "plan": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The plan's slot.",
+                "minimum": 0
+              },
+              "reason": {
+                "$ref": "#/components/schemas/MissedReason"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A plan's occurrence is expected: sent the meal reminder's lead\nahead of it. A feeder restart inside the lead may send it again,\nwith the same `plan` and `due`. It is never withdrawn: the meal may\nstill be missed, or the plan disabled, deleted or moved, so the\n`fed` or `missed` event for that `plan` and `due` (or the plans) say\nwhat happened.",
+            "required": [
+              "plan",
+              "due",
+              "minute",
+              "portions",
+              "kind"
+            ],
+            "properties": {
+              "due": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When it is due."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "meal_soon"
+                ]
+              },
+              "minute": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The minute of the feeder's local day it is due at (0-1439).",
+                "minimum": 0
+              },
+              "plan": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The plan's slot.",
+                "minimum": 0
+              },
+              "portions": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The portions it will ask for.",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The adapter came or went, or the pack crossed its floor (at most\none a minute, as the supply stood at its end).",
+            "required": [
+              "battery",
+              "kind"
+            ],
+            "properties": {
+              "adapter": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "battery": {
+                "$ref": "#/components/schemas/Battery"
+              },
+              "below_floor": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Whether the feeding owner judged the pack below its floor."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "supply"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Dispense was pressed on an unlocked panel while a feed could not\nstart, during a feed among them: it started nothing and was not\nqueued.",
+            "required": [
+              "reason",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "dispense_refused"
+                ]
+              },
+              "reason": {
+                "$ref": "#/components/schemas/Blocked"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The food beam's level changed (at most once a feed or a reading at\nrest). A boot's first reading counts as one only if a feed took it.",
+            "required": [
+              "level",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "food"
+                ]
+              },
+              "level": {
+                "$ref": "#/components/schemas/FoodLevel"
+              }
+            }
           }
-        }
+        ],
+        "description": "An event only a feeder records."
       },
       "FeederFood": {
         "type": "object",
@@ -8301,6 +8330,136 @@
           }
         }
       },
+      "FeederSettings": {
+        "type": "object",
+        "description": "The feeder's settings. Its `generation` goes back in `If-Match` with a\nchange, and is the `ETag` of a read.",
+        "required": [
+          "generation",
+          "lights",
+          "sound",
+          "volume",
+          "lights_window",
+          "sound_window",
+          "desiccant_days",
+          "meal_reminder",
+          "writable"
+        ],
+        "properties": {
+          "desiccant_days": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The desiccant reminder's period: days from a replacement until the\nnext is due.",
+            "maximum": 90,
+            "minimum": 1
+          },
+          "desiccant_replaced": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "The feeder's local date of the last desiccant replacement; `None`\nbefore the first."
+          },
+          "generation": {
+            "$ref": "#/components/schemas/Generation"
+          },
+          "lights": {
+            "type": "boolean"
+          },
+          "lights_window": {
+            "$ref": "#/components/schemas/Window",
+            "description": "When the lights may show while `lights` is on."
+          },
+          "meal_reminder": {
+            "$ref": "#/components/schemas/MealReminder",
+            "description": "The `meal_soon` event ahead of each scheduled meal."
+          },
+          "sound": {
+            "type": "boolean"
+          },
+          "sound_window": {
+            "$ref": "#/components/schemas/Window",
+            "description": "When sounds may play while `sound` is on and `volume` is above 0."
+          },
+          "volume": {
+            "type": "integer",
+            "format": "int32",
+            "description": "0-100.",
+            "minimum": 0
+          },
+          "writable": {
+            "type": "boolean",
+            "description": "Whether the settings store can take a write now."
+          }
+        }
+      },
+      "FeederSettingsPatch": {
+        "type": "object",
+        "description": "The feeder's settings to change; absent fields stay as they are.",
+        "properties": {
+          "desiccant_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The desiccant reminder's period in days, 1-90.",
+            "maximum": 90,
+            "minimum": 1
+          },
+          "lights": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "lights_window": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Window"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meal_reminder": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MealReminder"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sound": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "sound_window": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Window"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "volume": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "0-100.",
+            "minimum": 0
+          }
+        }
+      },
       "FeederStats": {
         "type": "object",
         "description": "The latest read of each statistics section the feeder serves the\nserver.",
@@ -8318,63 +8477,18 @@
       },
       "FeederStatus": {
         "type": "object",
-        "description": "What the feeder reports about itself.",
+        "description": "What a feeder reports beside the shared status.",
         "required": [
-          "build",
-          "bank",
-          "uptime_ms",
-          "boot_count",
-          "reset_flags",
-          "faults",
-          "rssi",
-          "wifi",
-          "link_losses",
-          "dns_losses",
           "settings_generation",
-          "wifi_generation",
-          "sessions",
           "food",
           "readiness",
           "desiccant",
           "supply"
         ],
         "properties": {
-          "bank": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The flash bank it booted from.",
-            "minimum": 0
-          },
-          "boot_count": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "build": {
-            "type": "string"
-          },
-          "clock": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time",
-            "description": "The feeder's clock; `None` while it is invalid."
-          },
           "desiccant": {
             "$ref": "#/components/schemas/Desiccant",
             "description": "The desiccant reminder."
-          },
-          "dns_losses": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Those of `link_losses` the feeder's link check noticed (its DHCP\nlease ran out or its gateway stopped answering) rather than the\nassociation. The name is from the internet DNS check that check\nreplaced.",
-            "minimum": 0
-          },
-          "faults": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
           },
           "feed_fault": {
             "oneOf": [
@@ -8391,21 +8505,6 @@
             "$ref": "#/components/schemas/FoodLevel",
             "description": "The hopper as the food beam last read it, in a feed or at rest."
           },
-          "last_event": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "The newest event's sequence number on the feeder.",
-            "minimum": 0
-          },
-          "link_losses": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Every time this boot a joined link was lost and the feeder went on\nto rejoin, whatever noticed it.",
-            "minimum": 0
-          },
           "locked": {
             "type": [
               "boolean",
@@ -8413,35 +8512,9 @@
             ],
             "description": "The panel's child lock; `None` before it is known."
           },
-          "power": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Power"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "readiness": {
             "$ref": "#/components/schemas/Readiness",
             "description": "Whether a feed can start now."
-          },
-          "reset_flags": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "rssi": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Wi-Fi signal, dBm."
-          },
-          "sessions": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Open device API sessions, the server's included.",
-            "minimum": 0
           },
           "settings_generation": {
             "$ref": "#/components/schemas/Generation"
@@ -8449,17 +8522,6 @@
           "supply": {
             "$ref": "#/components/schemas/Supply",
             "description": "The supply as the feeder judges it, with the pack's charge."
-          },
-          "uptime_ms": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "wifi": {
-            "$ref": "#/components/schemas/WifiSource"
-          },
-          "wifi_generation": {
-            "$ref": "#/components/schemas/Generation"
           }
         }
       },
@@ -8778,50 +8840,60 @@
           }
         }
       },
-      "HourSample": {
+      "HistoryEvent": {
         "type": "object",
-        "description": "One UTC hour of a metric's numbers. Samples with no number are not\ncounted, and an hour with none is left out.",
+        "description": "One event the feeder recorded.",
         "required": [
-          "hour",
-          "count",
-          "min",
-          "max",
-          "mean"
+          "epoch",
+          "seq",
+          "received",
+          "body"
         ],
         "properties": {
-          "count": {
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "The feeder's clock when it happened; `None` while that was invalid."
+          },
+          "body": {
+            "$ref": "#/components/schemas/EventBody"
+          },
+          "epoch": {
             "type": "integer",
             "format": "int32",
+            "description": "The history the event belongs to.",
             "minimum": 0
           },
-          "hour": {
+          "received": {
             "type": "string",
             "format": "date-time",
-            "description": "The hour's start."
+            "description": "When the server received it."
           },
-          "max": {
+          "seq": {
             "type": "integer",
-            "format": "int64"
-          },
-          "mean": {
-            "type": "number",
-            "format": "double"
-          },
-          "min": {
-            "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "The feeder's sequence number: monotonic across its reboots, within\nthe epoch.",
+            "minimum": 0
           }
         }
       },
-      "Household": {
+      "Home": {
         "type": "object",
+        "description": "The home the server serves: one per server for now. Its devices\nbelong to it (each names it as `home`), and its zone is theirs.",
         "required": [
+          "id",
           "name",
           "units",
           "time_format",
           "zone"
         ],
         "properties": {
+          "id": {
+            "$ref": "#/components/schemas/HomeId"
+          },
           "name": {
             "type": "string",
             "description": "1-64 characters."
@@ -8838,9 +8910,14 @@
           }
         }
       },
-      "HouseholdPatch": {
+      "HomeId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "The home the server serves, which its devices belong to."
+      },
+      "HomePatch": {
         "type": "object",
-        "description": "A change to the household; an absent field is left as it is. A new\nzone goes to every feeder: those offline get it when they reconnect.",
+        "description": "A change to the home; an absent field is left as it is. A new\nzone goes to every feeder: those offline get it when they reconnect.",
         "properties": {
           "name": {
             "type": [
@@ -8874,6 +8951,41 @@
               "null"
             ],
             "description": "An IANA zone; one a POSIX rule cannot describe is refused\n`zone_unsupported`."
+          }
+        }
+      },
+      "HourSample": {
+        "type": "object",
+        "description": "One UTC hour of a metric's numbers. Samples with no number are not\ncounted, and an hour with none is left out.",
+        "required": [
+          "hour",
+          "count",
+          "min",
+          "max",
+          "mean"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "hour": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The hour's start."
+          },
+          "max": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "mean": {
+            "type": "number",
+            "format": "double"
+          },
+          "min": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -10893,7 +11005,7 @@
       },
       "Role": {
         "type": "string",
-        "description": "What a household user may do through the server. Owners do everything;\nmembers also feed and change settings and the lock; viewers read status\nand history and write nothing.",
+        "description": "What a user of the home may do through the server. Owners do everything;\nmembers also feed and change settings and the lock; viewers read status\nand history and write nothing.",
         "enum": [
           "owner",
           "member",
@@ -11192,138 +11304,34 @@
         }
       },
       "Settings": {
-        "type": "object",
-        "description": "The feeder's settings. Its `generation` goes back in `If-Match` with a\nchange, and is the `ETag` of a read.",
-        "required": [
-          "generation",
-          "lights",
-          "sound",
-          "volume",
-          "lights_window",
-          "sound_window",
-          "desiccant_days",
-          "meal_reminder",
-          "writable"
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FeederSettings"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "feeder"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
         ],
-        "properties": {
-          "desiccant_days": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The desiccant reminder's period: days from a replacement until the\nnext is due.",
-            "maximum": 90,
-            "minimum": 1
-          },
-          "desiccant_replaced": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date",
-            "description": "The feeder's local date of the last desiccant replacement; `None`\nbefore the first."
-          },
-          "generation": {
-            "$ref": "#/components/schemas/Generation"
-          },
-          "lights": {
-            "type": "boolean"
-          },
-          "lights_window": {
-            "$ref": "#/components/schemas/Window",
-            "description": "When the lights may show while `lights` is on."
-          },
-          "meal_reminder": {
-            "$ref": "#/components/schemas/MealReminder",
-            "description": "The `meal_soon` event ahead of each scheduled meal."
-          },
-          "sound": {
-            "type": "boolean"
-          },
-          "sound_window": {
-            "$ref": "#/components/schemas/Window",
-            "description": "When sounds may play while `sound` is on and `volume` is above 0."
-          },
-          "volume": {
-            "type": "integer",
-            "format": "int32",
-            "description": "0-100.",
-            "minimum": 0
-          },
-          "writable": {
-            "type": "boolean",
-            "description": "Whether the settings store can take a write now."
-          }
-        }
-      },
-      "SettingsPatch": {
-        "type": "object",
-        "description": "The settings to change; absent fields stay as they are.",
-        "properties": {
-          "desiccant_days": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "The desiccant reminder's period in days, 1-90.",
-            "maximum": 90,
-            "minimum": 1
-          },
-          "lights": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "lights_window": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Window"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "meal_reminder": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/MealReminder"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "sound": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "sound_window": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Window"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "volume": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "description": "0-100.",
-            "minimum": 0
-          }
-        }
+        "description": "A device's settings, by its kind, tagged by the kind in JSON (`\"kind\":\n\"feeder\"`). Each kind reads and writes its own through its own ops; this\nis what a host holds and serves without caring which kind it is."
       },
       "Setup": {
         "type": "object",
-        "description": "The first owner and the household's zone.",
+        "description": "The first owner and the home's zone.",
         "required": [
           "name",
           "password",
@@ -11340,7 +11348,7 @@
           },
           "zone": {
             "type": "string",
-            "description": "The household's IANA zone (`Europe/Berlin`). Every feeder keeps its\nPOSIX rule, so a zone the rule cannot describe is refused\n`zone_unsupported`."
+            "description": "The home's IANA zone (`Europe/Berlin`). Every feeder keeps its\nPOSIX rule, so a zone the rule cannot describe is refused\n`zone_unsupported`."
           }
         }
       },
@@ -11359,7 +11367,7 @@
               "string",
               "null"
             ],
-            "description": "The server host's IANA zone, when it has one: the setup page offers\nit as the household's zone."
+            "description": "The server host's IANA zone, when it has one: the setup page offers\nit as the home's zone."
           }
         }
       },
@@ -11741,6 +11749,116 @@
           "portions"
         ]
       },
+      "Status": {
+        "type": "object",
+        "description": "What a device reports about itself: the shared core every kind\nreports, then its own kind's part.",
+        "required": [
+          "build",
+          "bank",
+          "uptime_ms",
+          "boot_count",
+          "reset_flags",
+          "faults",
+          "rssi",
+          "wifi",
+          "link_losses",
+          "dns_losses",
+          "wifi_generation",
+          "sessions",
+          "device"
+        ],
+        "properties": {
+          "bank": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The flash bank it booted from.",
+            "minimum": 0
+          },
+          "boot_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "build": {
+            "type": "string"
+          },
+          "clock": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "The device's clock; `None` while it is invalid."
+          },
+          "device": {
+            "$ref": "#/components/schemas/DeviceStatus",
+            "description": "What only this kind of device reports."
+          },
+          "dns_losses": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Those of `link_losses` the device's link check noticed (its DHCP\nlease ran out or its gateway stopped answering) rather than the\nassociation. The name is from the internet DNS check that check\nreplaced.",
+            "minimum": 0
+          },
+          "faults": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "last_event": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The newest event's sequence number on the device.",
+            "minimum": 0
+          },
+          "link_losses": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Every time this boot a joined link was lost and the device went on\nto rejoin, whatever noticed it.",
+            "minimum": 0
+          },
+          "power": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Power"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reset_flags": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "rssi": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Wi-Fi signal, dBm."
+          },
+          "sessions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Open device API sessions, the server's included.",
+            "minimum": 0
+          },
+          "uptime_ms": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "wifi": {
+            "$ref": "#/components/schemas/WifiSource"
+          },
+          "wifi_generation": {
+            "$ref": "#/components/schemas/Generation"
+          }
+        }
+      },
       "StatusSnapshot": {
         "type": "object",
         "required": [
@@ -11759,7 +11877,7 @@
             "description": "Read for this request, rather than the last copy from before the\nfeeder went offline."
           },
           "status": {
-            "$ref": "#/components/schemas/FeederStatus"
+            "$ref": "#/components/schemas/Status"
           }
         }
       },
@@ -11931,7 +12049,7 @@
             ],
             "properties": {
               "event": {
-                "$ref": "#/components/schemas/FeederEvent"
+                "$ref": "#/components/schemas/HistoryEvent"
               },
               "feeder": {
                 "$ref": "#/components/schemas/FeederId"
@@ -12834,8 +12952,8 @@
       "description": "Bearer tokens for phones and the CLI, each user's own"
     },
     {
-      "name": "household",
-      "description": "The household's name, units, time format and zone"
+      "name": "home",
+      "description": "The home the server serves: its name, units, time format and zone"
     },
     {
       "name": "feeders",

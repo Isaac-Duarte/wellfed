@@ -29,7 +29,7 @@ use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::serve::Control;
 use wellfed_model::{
-    Answer, Client, ClientRole, Joined, Op, Refusal, UpdatePhase, UpdateRefusal, UpdateStop,
+    Answer, Client, ClientRole, Joined, Model, Op, Refusal, UpdatePhase, UpdateRefusal, UpdateStop,
     UpdateView,
 };
 use wellfed_proto::api::RequestId;
@@ -746,7 +746,8 @@ fn only_an_owner_enrolls_an_update_key() {
         assert_eq!(
             joined,
             Joined::Enrolled {
-                role: ClientRole::Member
+                role: ClientRole::Member,
+                model: Model::Plaf103,
             }
         );
 

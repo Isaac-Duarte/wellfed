@@ -54,7 +54,7 @@ pub async fn join_feeder(
             error => error.into(),
         })?;
     Ok(match joined {
-        Joined::Enrolled { role } => JoinAnswer::Joined { role },
+        Joined::Enrolled { role, .. } => JoinAnswer::Joined { role },
         Joined::Refused(refusal) => JoinAnswer::Refused {
             refusal: refusal_of(refusal),
         },

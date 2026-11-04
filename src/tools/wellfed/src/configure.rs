@@ -9,8 +9,8 @@ use clap::Args;
 use wellfed_client::calibration::{mean_mg, parse_grams};
 use wellfed_client::setup::Credentials;
 use wellfed_model::{
-    self as model, Answer, DESICCANT_DAYS_MAX, DESICCANT_DAYS_MIN, Desiccant, MealReminder,
-    NtpServer, Op, SettingsPatch, StatsSection, TimeChanges, Window,
+    self as model, Answer, DESICCANT_DAYS_MAX, DESICCANT_DAYS_MIN, Desiccant, FeederSettingsPatch,
+    MealReminder, NtpServer, Op, Settings, StatsSection, TimeChanges, Window,
 };
 
 use crate::{Target, Toggle, ask_and_print, connect, passphrase, print_answer, print_json, text};
@@ -175,7 +175,7 @@ pub(crate) struct CalibrateArgs {
 }
 
 pub(crate) async fn settings_command(args: SettingsArgs) -> Result<()> {
-    let changes = SettingsPatch {
+    let changes = FeederSettingsPatch {
         lights: args.lights.map(Toggle::on),
         sound: args.sound.map(Toggle::on),
         volume: args.volume,
@@ -186,17 +186,17 @@ pub(crate) async fn settings_command(args: SettingsArgs) -> Result<()> {
     };
     let (_, _, mut connection) = connect(&args.target).await?;
     let answer = connection.ask(&Op::GetSettings).await?;
-    let Answer::Settings(settings) = answer else {
+    let Answer::Settings(Settings::Feeder(settings)) = answer else {
         // A refusal fails here; any other answer is no settings to write
         // against, so a change fails too rather than exit as if it ran.
         print_answer(&answer)?;
         bail!("the feeder did not return its settings");
     };
-    if changes == SettingsPatch::default() {
+    if changes == FeederSettingsPatch::default() {
         return match args.json {
-            true => print_answer(&Answer::Settings(settings)),
+            true => print_answer(&Answer::Settings(Settings::Feeder(settings))),
             false => {
-                println!("{}", text::settings(&settings));
+                println!("{}", text::feeder_settings(&settings));
                 Ok(())
             }
         };
@@ -237,12 +237,16 @@ pub(crate) async fn desiccant_command(args: DesiccantArgs) -> Result<()> {
     let Answer::Status(status) = connection.ask(&Op::Status).await? else {
         bail!("the feeder did not return its status");
     };
-    let Answer::Settings(settings) = connection.ask(&Op::GetSettings).await? else {
+    let Answer::Settings(Settings::Feeder(settings)) = connection.ask(&Op::GetSettings).await?
+    else {
         bail!("the feeder did not return its settings");
     };
+    let Some(feeder) = status.feeder() else {
+        bail!("the device is not a feeder, which has no desiccant");
+    };
     let view = DesiccantView {
-        count: status.desiccant,
-        text: status.desiccant.to_string(),
+        count: feeder.desiccant,
+        text: feeder.desiccant.to_string(),
         period_days: settings.desiccant_days,
         replaced: settings.desiccant_replaced,
     };

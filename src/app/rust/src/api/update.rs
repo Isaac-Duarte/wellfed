@@ -280,7 +280,11 @@ async fn confirm(
             if status.bank == 0 || !status.build.eq_ignore_ascii_case(served) {
                 return UpdateEnd::WentBack;
             }
-            if view.min_version >= version || status.readiness == Readiness::Ready {
+            if view.min_version >= version
+                || status
+                    .feeder()
+                    .is_some_and(|feeder| feeder.readiness == Readiness::Ready)
+            {
                 return UpdateEnd::Confirmed;
             }
         }

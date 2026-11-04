@@ -24,7 +24,7 @@ mod export;
 mod feeders;
 mod foods;
 mod health;
-mod household;
+mod home;
 mod installs;
 mod pets;
 mod releases;
@@ -54,7 +54,7 @@ pub use commands::{
 };
 pub use diagnostics::{FeedTrace, FeederStats, LogEvent, StatsRead, TraceQuery, TraceRecord};
 pub use error::{ErrorCode, FeederRefusal, Problem};
-pub use events::{EventPage, EventQuery, FeederEvent, Gap};
+pub use events::{EventPage, EventQuery, Gap, HistoryEvent};
 pub use export::{ExportFormat, ExportQuery, Imported, ImportedTable};
 pub use feeders::{
     AdoptFeeder, Connection, Feeder, FeederDetail, LockRequest, PlansChange, StatusSnapshot,
@@ -64,7 +64,7 @@ pub use foods::{
     Refill, RefillPage,
 };
 pub use health::{FeederLink, Health, Job, JobOutcome, JobRun, ServerStatus, StoreState};
-pub use household::{Household, HouseholdPatch, TimeFormat, Units};
+pub use home::{Home, HomePatch, TimeFormat, Units};
 pub use installs::{Install, InstallFailure, InstallRequest, InstallState, InstallTarget};
 // The feeder's own values are the model's, served as they are; the HTTP
 // API adds only what the server knows (when it received them, its own ids).
@@ -90,11 +90,12 @@ pub use views::{
 };
 pub use wellfed_model::{
     Battery, Blocked, Bowl, CALL_BYTES_MAX, Calibration, CalibrationView, CallClip, CallView,
-    ClientRole, CurrentUnit, Desiccant, EnrollPath, EventBody, EventKind, FeedOutcome, FeedReason,
-    Food as FoodStats, FoodLevel, Generation, Hex, MealReminder, MetricKind, MissedReason,
-    NextMeal, PLANS, PORTION_MG_MAX, PORTION_MG_MIN, Phase, Plan, Plans, Power, Readiness,
-    SampleValue, Settings, SettingsPatch, Source, Stats, StatsSection, Status as FeederStatus,
-    Supply, Trace, TraceEntry, TraceSummary, Weekday, Weekdays, WifiSource, Window,
+    ClientRole, CoreEvent, CurrentUnit, Desiccant, DeviceKind, DeviceStatus, EnrollPath, EventBody,
+    EventKind, FeedOutcome, FeedReason, FeederEvent, FeederSettings, FeederSettingsPatch,
+    FeederStatus, Food as FoodStats, FoodLevel, Generation, Hex, MealReminder, MetricKind,
+    MissedReason, Model, NextMeal, PLANS, PORTION_MG_MAX, PORTION_MG_MIN, Phase, Plan, Plans,
+    Power, Readiness, SampleValue, Settings, Source, Stats, StatsSection, Status, Supply, Trace,
+    TraceEntry, TraceSummary, Weekday, Weekdays, WifiSource, Window,
 };
 
 /// The prefix every resource lives under.
@@ -138,6 +139,8 @@ macro_rules! ids {
 }
 
 ids!(
+    /// The home the server serves, which its devices belong to.
+    HomeId,
     UserId,
     PetId,
     /// One entry of a pet's weight log.

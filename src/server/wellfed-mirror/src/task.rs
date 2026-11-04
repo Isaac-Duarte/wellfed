@@ -87,10 +87,6 @@ impl Handle {
         self.opened.borrow().is_some()
     }
 
-    pub(crate) fn kind(&self) -> Option<DeviceKind> {
-        self.opened.borrow().map(|opened| opened.kind)
-    }
-
     pub(crate) fn subscribe(&self) -> broadcast::Receiver<MirrorEvent> {
         self.updates.subscribe()
     }

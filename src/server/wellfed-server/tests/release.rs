@@ -223,10 +223,7 @@ fn release_check(launch: &Launch) {
             owner.health().await.expect("liveness answers").version,
             env!("CARGO_PKG_VERSION")
         );
-        owner
-            .setup(&ada_setup())
-            .await
-            .expect("the household sets up");
+        owner.setup(&ada_setup()).await.expect("the home sets up");
         let kitchen = owner
             .adopt(&AdoptFeeder {
                 invite: feeder::invite(&sim, ClientRole::Server).await,

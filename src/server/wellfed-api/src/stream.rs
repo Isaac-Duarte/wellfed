@@ -12,7 +12,7 @@ use wellfed_model::{Sample, SampleValue};
 
 use crate::FeederId;
 use crate::commands::Command;
-use crate::events::{FeederEvent, Gap};
+use crate::events::{Gap, HistoryEvent};
 use crate::feeders::Connection;
 use crate::installs::Install;
 
@@ -21,7 +21,7 @@ use crate::installs::Install;
 pub enum StreamEvent {
     Event {
         feeder: FeederId,
-        event: FeederEvent,
+        event: HistoryEvent,
     },
     Gap {
         feeder: FeederId,

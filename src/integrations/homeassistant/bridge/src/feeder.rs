@@ -40,8 +40,8 @@ use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::today::Facts;
 use wellfed_connect::{Connection, Cursor, Received};
 use wellfed_model::{
-    Answer, Blocked, CalibrationView, ClientRole, EventBody, Generation, Op, Pushed, Readiness,
-    SettingsPatch, Source, Status,
+    Answer, Blocked, CalibrationView, ClientRole, CoreEvent, EventBody, FeederEvent,
+    FeederSettingsPatch, Generation, Op, Pushed, Readiness, Settings, Source, Status,
 };
 
 use crate::Error;
@@ -143,7 +143,7 @@ impl Feeder {
     }
 
     /// Change the settings `changes` names, on the settings last read.
-    pub fn put_settings(&self, changes: SettingsPatch) -> Written {
+    pub fn put_settings(&self, changes: FeederSettingsPatch) -> Written {
         self.write(Write::Settings(changes))
     }
 
@@ -589,7 +589,7 @@ impl<'a> Session<'a> {
                 {
                     settings.apply(*changes);
                     settings.generation = next(*base);
-                    if let Some(status) = facts.status.as_mut() {
+                    if let Some(status) = facts.status.as_mut().and_then(Status::feeder_mut) {
                         status.settings_generation = settings.generation;
                     }
                 }
@@ -632,7 +632,9 @@ impl<'a> Session<'a> {
         let facts = &mut self.memory.facts;
         match (read, answer) {
             (Read::Status, Some(Answer::Status(status))) => facts.status = Some(status),
-            (Read::Settings, Some(Answer::Settings(settings))) => facts.settings = Some(settings),
+            (Read::Settings, Some(Answer::Settings(Settings::Feeder(settings)))) => {
+                facts.settings = Some(settings);
+            }
             (Read::Plans, Some(Answer::Plans(plans))) => facts.plans = Some(plans),
             (Read::Time, Some(Answer::Time(time))) => facts.time = Some(time),
             (Read::Calibration, Some(Answer::Calibration(view))) => {
@@ -680,13 +682,17 @@ impl<'a> Session<'a> {
     /// settings, the plans or the time, so those are read again.
     fn news(&mut self, body: &EventBody) -> Step {
         match body {
-            EventBody::Plans { .. } | EventBody::Fed { .. } | EventBody::Missed { .. }
+            EventBody::Feeder(FeederEvent::Plans { .. })
+            | EventBody::Feeder(FeederEvent::Fed { .. })
+            | EventBody::Feeder(FeederEvent::Missed { .. })
                 if self.serves(Read::Plans) =>
             {
                 self.read(Read::Plans)?;
             }
-            EventBody::Settings { .. } => self.read(Read::Settings)?,
-            EventBody::ClockSync { .. } if self.serves(Read::Time) => self.read(Read::Time)?,
+            EventBody::Feeder(FeederEvent::Settings { .. }) => self.read(Read::Settings)?,
+            EventBody::Core(CoreEvent::ClockSync { .. }) if self.serves(Read::Time) => {
+                self.read(Read::Time)?
+            }
             _ => {}
         }
         self.read(Read::Status)
@@ -744,7 +750,9 @@ impl<'a> Session<'a> {
 
 /// Whether the feeder reports a feed running now.
 fn feeding_now(status: &Status) -> bool {
-    status.readiness == Readiness::Blocked(Blocked::Feeding)
+    status
+        .feeder()
+        .is_some_and(|feeder| feeder.readiness == Readiness::Blocked(Blocked::Feeding))
 }
 
 /// The generation a store moves to from `base`.

@@ -186,7 +186,10 @@ fn messages() -> Vec<Fixture> {
         }),
         (
             "joined",
-            entry(&Joined::Enrolled { role: Role::Server }),
+            entry(&Joined::Enrolled {
+                role: Role::Server,
+                model: Model::Plaf103,
+            }),
             |b| decode::<Joined>(b).is_ok(),
         ),
         ("op-status", entry(&request(Op::Status)), client),
