@@ -99,6 +99,10 @@ pub enum ReviewError {
     /// an install leaves them, the loader did not choose bank 1.
     #[error("The loader does not choose the image installed in bank 1")]
     Installed { stop: Stop, result: u32 },
+    /// Beside the installed image, bank 0 no longer passes the loader's own
+    /// check, so the case would not show bank 1 winning over valid stock.
+    #[error("Bank 0 fails the loader's check beside the installed image")]
+    InstalledStock { stop: Stop, result: u32 },
 }
 
 /// The PLAF103's bank-1 extent; a development image must fit it
@@ -421,6 +425,15 @@ pub fn installed_selection(current: &[u8], rom: &[u8], image: &[u8]) -> Result<(
     let mut fixture = current.to_vec();
     fixture[start..start + payload.len()].copy_from_slice(payload);
 
+    // Bank 0 must still pass the loader's own check, so the selection below
+    // proves bank 1 wins over a valid stock bank, not over an empty one.
+    let stock = factory::execute(&fixture, rom, Entry::Check(0))?;
+    require(stock.stop == Stop::Returned && stock.result == 1, || {
+        ReviewError::InstalledStock {
+            stop: stock.stop,
+            result: stock.result,
+        }
+    })?;
     let chosen = factory::execute(&fixture, rom, Entry::Select)?;
     require(chosen.stop == Stop::Selected && chosen.result == 2, || {
         ReviewError::Installed {
