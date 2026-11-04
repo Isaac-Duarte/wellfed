@@ -2,7 +2,7 @@
 
 This page is the physical reference for the bench: what plugs into what, which pin is which, how to check the wiring, and the order of a flash session. It is for contributors and agents who touch the bench. The commands themselves are on the [relay bench](../devices/plaf103/bench.md) page, and the board's design is on the [Wellfed Bench board](../../src/hardware/bench/README.md) page.
 
-Running anything on this page beyond reading it is a physical operation. It needs an owner-assigned task, as the repository's contributor instructions set out.
+Everything on this page beyond reading it is a physical operation on the device under test.
 
 ## Wire TX to TX
 
@@ -22,7 +22,7 @@ Nothing ever connects to a feeder's 3V3 or VCC pin. The feeder runs from its own
 
 | Part | Job |
 | --- | --- |
-| The host, a Mac | Runs `wellfed-bench serve` and every other tool |
+| A host computer | Runs `wellfed-bench serve` and every other tool |
 | Wellfed Bench board, Rev B | One USB cable to the host. Switches feeder 5 V, holds the loader strap, bridges the feeder's UART and isolates it while the feeder is off |
 | The feeder (PLAF103) or the fountain (PLWF106) | The device under test, one at a time |
 
@@ -65,13 +65,13 @@ Each pin's silkscreen label and net name is the feeder's signal on that pin.
 
 The console header `CON5` is labelled **RX, TX, GND** ([UART page](../devices/plaf103/uart.md#the-console-header)).
 
-| CON5 pad on our unit | Label | Bench J2 |
+| CON5 pad | Label | Bench J2 |
 | --- | --- | --- |
 | Square pad | RX | Pin 1, RX |
 | Middle round pad | TX | Pin 2, TX |
 | Round pad nearest the mounting screw | GND | Pin 3, GND |
 
-Pin 1 is RX on both ends, so a three-wire cable runs straight across, pin 1 to pin 1. Go by the silkscreen on your own unit, since pad positions can differ.
+Pin 1 is RX on both ends, so a three-wire cable runs straight across, pin 1 to pin 1. Pad positions can differ between units, so go by the silkscreen.
 
 Plug the feeder's USB power cable into FEEDER 5V. Keep the D cells out: then FEEDER 5V is the feeder's only supply, and cutting it is the kill switch. With the cells in, the board's RECOVER refuses and the bench cannot power the feeder off.
 
@@ -86,18 +86,18 @@ The fountain's header is labelled **GND, TX, RX, 3V3** ([UART page](../devices/p
 | RX | Pin 1, RX |
 | 3V3 | Not connected |
 
-On our bench the fountain's 5 V supply runs through FEEDER 5V, so the bench switches it.
+Run the fountain's 5 V supply through FEEDER 5V, so the bench can switch it.
 
 ## Find the ports
 
 The board shows up as two USB serial ports. `private/bench.json` names both.
 
-| Interface | Port on macOS | Port on Linux | `bench.json` key | Answers `AT` |
-| --- | --- | --- | --- | --- |
-| 0, the feeder UART bridge | `/dev/cu.usbmodem…1` | `/dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if00` | `uart_port` | No |
-| 2, the relay port | `/dev/cu.usbmodem…3` | `…-if02` | `relay_port` | Yes, with `OK` |
+| USB interface | Port | `bench.json` key | Answers `AT` |
+| --- | --- | --- | --- |
+| 0 | The feeder UART bridge, `…-if00` | `uart_port` | No |
+| 2 | The relay port, `…-if02` | `relay_port` | Yes, with `OK` |
 
-macOS names each port after the USB socket plus the interface number plus one, so the UART ends in 1 and the relay port in 3. The names change when the cable moves to another socket or hub. Use the `cu.` path, not `tty.`, which waits for carrier detect. The [bench firmware](../../src/firmware/bench/README.md#use-it-with-the-bench) page has the full `bench.json`.
+Name each port by a path that stays the same when the board is replugged, such as `/dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if00`. If you are unsure which port is which, send `AT`: only the relay port answers. The [bench firmware](../../src/firmware/bench/README.md#use-it-with-the-bench) page has the full `bench.json` and the port names on each host.
 
 ## Check the wiring
 
@@ -187,7 +187,7 @@ This is the order of a session that writes a feeder's flash over UART. Each step
 
 10. For the other bank, repeat from step 6 with `--bank 0` and its own source. Write one bank at a time: the bank you are not writing must hold a valid image, except that bank 1 may also be written over a bank 0 that is still the pinned baseline ([what the updater writes](uart-development.md#what-the-updater-writes)). `wellfed-bench banks` shows what the bench last saw in each.
 
-11. Finish: `wellfed-bench off`, stop the server with `q`, put the network and services back as they were, and record what ran.
+11. Finish: `wellfed-bench off`, stop the server with `q`, put back any network or service you changed, and record what ran.
 
 If a step stops, nothing is retried. Don't run `flash-execute` again. Start a fresh `flash-prepare … --interrupted` session ([finish an interrupted update](uart-development.md#finish-an-interrupted-update)). Going back to stock has its own commands ([stock and back](../devices/plaf103/bench.md#stock-and-back)).
 
@@ -201,7 +201,6 @@ The board's own firmware is separate from the feeder's. Stop `wellfed-bench serv
 - **Connecting a 3V3 or VCC pin.** The feeder powers itself, and the bench header has no power pin.
 - **Leaving the D cells in.** The feeder stays powered when FEEDER 5V is cut, so power-off, loader entry and RECOVER don't work.
 - **Swapping `uart_port` and `relay_port`.** Only the relay port answers `AT`.
-- **Using `/dev/tty.usbmodem…` on macOS.** Use `cu.`.
 - **Rewiring with power on.** Unplug FEEDER 5V first.
 - **Rebuilding `wellfed-flash` between prepare and execute**, or re-running `flash-execute` after a stop.
 
@@ -210,4 +209,4 @@ The board's own firmware is separate from the feeder's. Stop `wellfed-bench serv
 - **Recovered, November 4, 2026:** the J2 pinout, silkscreen, nets and internal paths, and the J4 and J5 connections, from the Rev B KiCad schematic and board in `src/hardware/bench/kicad/`.
 - **Observed, November 2, 2026:** with a stock PLAF103 on the board, `wellfed-bench` drove `status`, `on`, `off` and `loader` through it, RECOVER reached the ROM loader, and `wellfed-flash` read the whole 8 MiB flash through its bridge, wired label to label.
 - **Observed, November 3, 2026:** the fountain's stock boot output, loader entry and a passing `inspect-rom` through the bench.
-- **Observed:** the PLAF103's `CON5` labels and pad positions on our unit ([UART page](../devices/plaf103/uart.md#evidence)).
+- **Observed:** the PLAF103's `CON5` labels and pad positions on the research unit ([UART page](../devices/plaf103/uart.md#evidence)).
