@@ -1,8 +1,11 @@
 //! The fountain's pins, safe state and stock flash as recovered from stock
 //! 0.0.17. Each value is pinned, so a change here is a deliberate one.
 
+use std::collections::BTreeSet;
+
 use wellfed_board_plwf106::stock::{self, Span};
 use wellfed_board_plwf106::{MODEL_CODE, STORAGE_OFFSET, STORAGE_SECTORS, pins, safe};
+use wellfed_formats::layout::{Hex, Layout};
 
 #[test]
 fn pins_are_pinned() {
@@ -56,8 +59,7 @@ fn the_stock_flash_is_pinned() {
             at(0x00_6000, 0x0f_1000),
             at(0x18_2000, 0x18_5000),
             at(0x18_6000, 0x27_1000),
-            at(0x3e_8000, 0x3e_c000),
-            at(0x3e_d000, 0x3e_f000),
+            at(0x3e_8000, 0x3f_0000),
             at(0x3f_0000, 0x40_0000),
             at(0x40_0000, 0x40_1000),
             at(0x7c_b000, 0x7c_e000),
@@ -68,48 +70,44 @@ fn the_stock_flash_is_pinned() {
 }
 
 /// The flash writers' copy of the stock flash, the model's `layout.json`,
-/// describes the same flash as [`stock::PRESERVED`]. The writers keep the
-/// banks by their own bounds instead (bank 0 is never written, bank 1 is
-/// what they write), so every other span lies in one of the layout's
-/// preserved ranges. Those ranges add only two sectors the board leaves out:
-/// `0x3ec000`, which holds data of unknown role, and the erased `0x3ef000`,
-/// so the settings sectors stay one range.
+/// keeps exactly the sectors [`stock::PRESERVED`] does, apart from the two
+/// banks: the writers keep those by their own bounds instead (bank 0 is
+/// never written, bank 1 is what they write). The cap is the board's
+/// reference footprint.
 #[test]
 fn the_flash_writers_layout_keeps_the_same_stock_flash() {
-    let text = include_str!("../../../firmware/devices/plwf106/layout.json");
-    let hex = |field: &str| -> Vec<u32> {
-        text.split(&format!("\"{field}\": \"0x"))
-            .skip(1)
-            .map(|rest| u32::from_str_radix(&rest[..8], 16).unwrap())
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../firmware/devices/plwf106/layout.json"
+    );
+    let layout: Layout = wellfed_formats::load(std::path::Path::new(path)).unwrap();
+    assert_eq!(layout.model, "PLWF106");
+    assert_eq!(
+        layout.candidate_payload_cap_bytes,
+        u64::from(stock::IMAGE_FOOTPRINT)
+    );
+    assert_eq!(
+        layout.ota_bank_offsets,
+        [Hex(u64::from(stock::BANK0)), Hex(u64::from(stock::BANK1))]
+    );
+
+    let sectors = |spans: &mut dyn Iterator<Item = (u64, u64)>| -> BTreeSet<u64> {
+        spans
+            .flat_map(|(start, end)| (start..end).step_by(0x1000))
             .collect()
     };
-    let ranges: Vec<(u32, u32)> = hex("start").into_iter().zip(hex("end_exclusive")).collect();
-    assert_eq!(ranges.len(), text.matches("\"name\"").count());
-    assert!(text.contains(&format!(
-        "\"candidate_payload_cap_bytes\": {},",
-        stock::IMAGE_FOOTPRINT
-    )));
-
     let banks = [stock::BANK0, stock::BANK1];
-    let spans: Vec<Span> = stock::PRESERVED
-        .into_iter()
-        .filter(|span| !banks.contains(&span.start))
-        .collect();
-    assert_eq!(spans.len(), stock::PRESERVED.len() - 2);
-
-    for span in &spans {
-        assert!(
-            ranges
-                .iter()
-                .any(|(s, e)| *s <= span.start && span.end <= *e),
-            "{span:?}"
-        );
-    }
-    let extra = [0x3e_c000, 0x3e_f000];
-    for (start, end) in ranges {
-        for sector in (start..end).step_by(0x1000) {
-            let kept = spans.iter().any(|s| s.start <= sector && sector < s.end);
-            assert!(kept || extra.contains(&sector), "{sector:#x}");
-        }
-    }
+    let board = sectors(
+        &mut stock::PRESERVED
+            .into_iter()
+            .filter(|span| !banks.contains(&span.start))
+            .map(|span| (u64::from(span.start), u64::from(span.end))),
+    );
+    let writers = sectors(
+        &mut layout
+            .known_preserve_ranges
+            .iter()
+            .map(|range| (range.start.0, range.end_exclusive.0)),
+    );
+    assert_eq!(board, writers);
 }

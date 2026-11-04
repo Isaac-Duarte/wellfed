@@ -122,18 +122,18 @@ pub mod stock {
     /// size and every record its readers, writers and erases reach. The
     /// clock writer erases the whole 64 KiB block, so that block is kept
     /// whole.
-    pub const PRESERVED: [Span; 11] = [
+    pub const PRESERVED: [Span; 10] = [
         // The loaders, the bank table and the system data.
         at(0x00_0000, BANK0),
         at(BANK0, BANK0 + IMAGE_FOOTPRINT),
         // The flash translation layer's three pages.
         at(0x18_2000, 0x18_5000),
         at(BANK1, BANK1 + IMAGE_FOOTPRINT),
-        // The sector cleared on a Wi-Fi reset, the Wi-Fi settings and the
-        // attributes' two sectors.
-        at(0x3e_8000, 0x3e_c000),
-        // The identity and its backup.
-        at(0x3e_d000, 0x3e_f000),
+        // The settings sectors, whole: the sector cleared on a Wi-Fi reset,
+        // the Wi-Fi settings, the attributes' two sectors, the identity and
+        // its backup, and `0x3ec000`, which holds stock data whose role is
+        // unknown.
+        at(0x3e_8000, 0x3f_0000),
         // The block holding the clock checkpoint.
         at(0x3f_0000, 0x40_0000),
         // The binding counter.

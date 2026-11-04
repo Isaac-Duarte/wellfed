@@ -77,7 +77,17 @@ pub struct Pins {
     /// The fountain's original bank-1 window, as its backup holds it.
     pub stock_bank1_sha256: Option<&'static str>,
     pub preserve: &'static [Preserve],
+    /// Preserved bytes that share a 64 KiB erase block with bank 1's
+    /// window, re-read after every erase in that block and at every
+    /// acquisition. The fountain's flash part is unknown, so nothing proves
+    /// its sector erase never takes a whole block; its FTL pages at
+    /// `0x182000` sit in bank 1's first block. `None` for the PLAF103,
+    /// whose GD25Q64E sector erase is reviewed.
+    pub neighbors: Option<(usize, usize)>,
 }
+
+/// The erase unit a part may use beyond its 4 KiB sector.
+pub const BLOCK: usize = 0x1_0000;
 
 pub const PLAF103: Pins = Pins {
     model: Model::Plaf103,
@@ -86,6 +96,7 @@ pub const PLAF103: Pins = Pins {
     writes: (BANK0.start, BANK1.end),
     stock_bank0: None,
     stock_bank1_sha256: None,
+    neighbors: None,
     preserve: &[
         preserve("pre_application", 0x0, 0x6000),
         preserve("observed_settings_sectors", 0x3e_8000, 0x3f_0000),
@@ -110,6 +121,11 @@ pub const PLWF106: Pins = Pins {
         "453c05d76e03293c3ac993f22ea6b2ead7b8d217451902ce132738bc7b61cf58",
     )),
     stock_bank1_sha256: Some("c390bc2933cdb020f1bac2f361188a96a61e42ddc793059c2aaa31a051758005"),
+    // The whole of bank 1's first block below the bank: erased flash, the
+    // FTL's three pages and an erased sector. The window's last block,
+    // `0x270000..0x280000`, holds only erased flash past `0x271000`, which
+    // a block erase would leave as it is.
+    neighbors: Some((0x18_0000, 0x18_6000)),
     preserve: &[
         preserve("pre_application", 0x0, 0x6000),
         preserve("ftl_pages", 0x18_2000, 0x18_5000),

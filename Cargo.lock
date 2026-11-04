@@ -5194,6 +5194,9 @@ version = "0.1.0"
 [[package]]
 name = "wellfed-board-plwf106"
 version = "0.1.0"
+dependencies = [
+ "wellfed-formats",
+]
 
 [[package]]
 name = "wellfed-build"

@@ -26,6 +26,10 @@ use crate::device;
 pub enum SectorError {
     #[error("Pinned full baseline required")]
     UnpinnedBaseline { bytes: usize },
+    /// The backup hashes to its pin, but one stock bank does not: the two
+    /// pins in this client disagree, and neither is to be trusted.
+    #[error("The baseline's stock bank {bank} differs from its own pin")]
+    UnpinnedStockBank { bank: u8 },
     #[error("Packet number must be 1-4")]
     PacketNumber { number: u8 },
     #[error("Packet outside aligned {bank}")]
@@ -49,6 +53,10 @@ pub enum SectorError {
     EraseReadback { offset: usize },
     #[error("Program readback differs from exact baseline sector")]
     ProgramReadback { offset: usize },
+    #[error(
+        "Preserved bytes {start:#x}..{end:#x} beside bank 1 differ from the pinned backup; an erase may have taken more than its sector"
+    )]
+    NeighborsDiffer { start: usize, end: usize },
 
     #[error("Exact current full snapshot required")]
     PartialCurrent { bytes: usize },
@@ -120,15 +128,16 @@ impl Baseline {
         // The fountain's stock banks are pinned on their own too: what its
         // give-way and its recovery compare against.
         let (start, end) = pins.bank1;
-        let banks = pins
-            .stock_bank0
-            .is_none_or(|(at, length, hash)| sha256(&data[at..at + length]) == hash)
-            && pins
-                .stock_bank1_sha256
-                .is_none_or(|hash| sha256(&data[start..end]) == hash);
-        require(banks, || SectorError::UnpinnedBaseline {
-            bytes: data.len(),
-        })?;
+        require(
+            pins.stock_bank0
+                .is_none_or(|(at, length, hash)| sha256(&data[at..at + length]) == hash),
+            || SectorError::UnpinnedStockBank { bank: 0 },
+        )?;
+        require(
+            pins.stock_bank1_sha256
+                .is_none_or(|hash| sha256(&data[start..end]) == hash),
+            || SectorError::UnpinnedStockBank { bank: 1 },
+        )?;
 
         Ok(Self {
             data: data.into(),
@@ -270,6 +279,36 @@ pub fn erase_sector(port: &mut dyn Port, offset: usize) -> Result<()> {
     protocol::expect(port, ACK)
 }
 
+/// Re-read the preserved bytes sharing an erase block with bank 1 and
+/// require the pinned backup's, so an erase that took more than its sector
+/// stops the session before anything else is written. `erased` is the
+/// sector just erased, or `None` at an acquisition, which always checks.
+/// Nothing to check on a model without such neighbors.
+pub fn check_neighbors(
+    port: &mut dyn Port,
+    baseline: &Baseline,
+    erased: Option<usize>,
+    record: &mut Record,
+) -> Result<()> {
+    let Some((start, end)) = baseline.pins().neighbors else {
+        return Ok(());
+    };
+    let shares_block = |offset: usize| offset / device::BLOCK == start / device::BLOCK;
+    if erased.is_some_and(|offset| !shares_block(offset)) {
+        return Ok(());
+    }
+
+    let read = protocol::read_region(port, start, end - start)?;
+    require(read == baseline.bytes()[start..end], || {
+        SectorError::NeighborsDiffer { start, end }
+    })?;
+    record(Event::NeighborsVerified {
+        start,
+        end_exclusive: end,
+        sha256: sha256(&read),
+    })
+}
+
 /// The baseline's bank-1 sector, with the marker withheld in the first.
 pub fn sector_payload(baseline: &Baseline, offset: usize) -> Vec<u8> {
     let mut payload = baseline.bytes()[offset..offset + SECTOR].to_vec();
@@ -394,6 +433,7 @@ pub fn restore_sector(
             SectorError::EraseReadback { offset }
         })?;
         record(Event::EraseReadbackVerified {})?;
+        check_neighbors(port, baseline, Some(offset), &mut record)?;
 
         status::check_status(
             port,

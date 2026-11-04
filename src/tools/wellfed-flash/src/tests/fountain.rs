@@ -151,6 +151,57 @@ fn a_candidate_installs_gives_way_and_is_recovered_inside_bank_1() {
     assert!(receipt(&root, "recovery").verified_terminal);
 }
 
+/// The fountain's part is unknown, so an erase that takes its whole 64 KiB
+/// block would wipe the FTL pages beside bank 1. The install and the
+/// restore re-read them after the erase and stop there, without a program
+/// frame or a retry; a healthy install journals that it checked.
+#[test]
+fn an_erase_that_takes_the_ftl_with_it_stops_the_session() {
+    let (_checkout, root) = private_root();
+    let unit = fountain();
+    let target = image(30000, 3);
+    let mut original = Vec::new();
+    let update = install(&unit, &target, &mut original);
+
+    let mut port = Fake::new(unit.flash.clone());
+    develop(&root, &unit, &mut port, &update, "healthy").unwrap();
+    let journal = fs::read_to_string(root.join("private/healthy/journal.jsonl")).unwrap();
+    assert!(journal.contains("\"event\":\"neighbors_verified\""));
+
+    let mut port = Fake::new(unit.flash.clone());
+    port.0.borrow_mut().fault = Fault::BlockErase;
+    let error = develop(&root, &unit, &mut port, &update, "block").unwrap_err();
+    assert!(
+        matches!(
+            error,
+            crate::Error::Sector(sector::SectorError::NeighborsDiffer {
+                start: 0x18_0000,
+                end: START
+            })
+        ),
+        "{error}"
+    );
+    assert_eq!(port.0.borrow().erases, 1, "nothing after the first erase");
+    assert_eq!(port.0.borrow().frames, 0, "no program frame");
+    assert!(!receipt(&root, "block").verified_terminal);
+
+    // Stock recovery's sector erase is checked the same way.
+    let mut current = unit.flash.clone();
+    current[START..START + 8].fill(0);
+    current[START + 0x100] ^= 1;
+    let mut port = Fake::new(current);
+    port.0.borrow_mut().fault = Fault::BlockErase;
+    let before = sha256(&port.0.borrow().flash[START..START + SECTOR]);
+    let mut journal = |_: crate::evidence::journal::At| Ok(());
+    assert!(matches!(
+        sector::restore_sector(&mut port, &unit.baseline, START, &before, &mut journal),
+        Err(crate::Error::Sector(
+            sector::SectorError::NeighborsDiffer { .. }
+        ))
+    ));
+    assert_eq!(port.0.borrow().frames, 0);
+}
+
 #[test]
 fn an_image_past_the_fountains_cap_is_refused() {
     let oversize = wrap(&synthetic_payload(9000, 0xeb000, 1));

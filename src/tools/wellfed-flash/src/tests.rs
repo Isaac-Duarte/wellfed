@@ -38,6 +38,8 @@ enum Fault {
     LostEraseAck(usize),
     /// The nth program frame is written but its ACK is lost.
     LostProgramAck(usize),
+    /// Every sector erase takes the whole 64 KiB block around it.
+    BlockErase,
 }
 
 enum State {
@@ -151,7 +153,12 @@ impl Helper {
                         let at = self.address();
                         assert_eq!(&self.input[4..6], &[1, 0]);
                         assert!(at >= 0x6000, "the factory region is never erased");
-                        self.flash[at..at + SECTOR].fill(0xff);
+                        if self.fault == Fault::BlockErase {
+                            let block = at & !0xffff;
+                            self.flash[block..block + 0x1_0000].fill(0xff);
+                        } else {
+                            self.flash[at..at + SECTOR].fill(0xff);
+                        }
                         self.erased.push(at);
                         self.erases += 1;
                         if self.fault != Fault::LostEraseAck(self.erases) {

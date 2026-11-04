@@ -75,9 +75,10 @@ With `--device plwf106`, the `wellfed-flash` writers write the fountain within t
 | `0x186000..0x271000`, bank 1 | `update` installs a candidate here, `give-way` clears its first byte, `stock-recovery` puts the backup's bytes back |
 | `0x006000..0x0f1000`, bank 0 | Read only. A give-way requires it to equal the backup's byte for byte |
 | Every row of the [minimum preservation map](#minimum-preservation-map) | Never written. A frame or sector that touches one is refused |
+| `0x180000..0x186000`, bank 1's first block below the bank, with the FTL | Read back after every erase in that block and at every region check, and required to equal the backup's, in case the part erases whole blocks |
 | Everything else | Never written |
 
-The bank-1 window is stock bank 0's rounded footprint from bank 1's start, so a candidate's payload may be at most `0xeb000` bytes. In our backup, the window past bank 1's stock image (`0x252000`) is erased. `layout.json` merges adjacent rows of the map, and widens one: `0x3e8000..0x3f0000` also covers `0x3ec000`, which holds data whose role is unknown, and the erased `0x3ef000`.
+The bank-1 window is stock bank 0's rounded footprint from bank 1's start, so a candidate's payload may be at most `0xeb000` bytes. In our backup, the window past bank 1's stock image (`0x252000`) is erased. `layout.json` and the board crate's stock spans merge adjacent rows of the map, and widen one: `0x3e8000..0x3f0000` also covers `0x3ec000`, which holds data whose role is unknown, and the erased `0x3ef000`. A test holds the two to the same sectors.
 
 Every writer is pinned to our unit's backup by its SHA-256, and to the backup's own bank 0 and bank 1. A backup of another unit is refused, even another fountain's. The steps are on the [recovery page](recovery.md).
 

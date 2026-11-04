@@ -513,6 +513,14 @@ pub fn run(
             require(acquired.application == want, || {
                 DevelopmentError::RegionDiffers { phase }
             })?;
+            let mut record = |event: Event| {
+                journal.append(&At {
+                    offset: layout.start,
+                    phase: Some(phase),
+                    event,
+                })
+            };
+            sector::check_neighbors(port, baseline, None, &mut record)?;
             journal.append(&Event::RegionVerified {
                 phase,
                 sha256: sha256(want),
@@ -555,6 +563,7 @@ pub fn run(
                 DevelopmentError::EraseReadback { offset }
             })?;
             record(Event::EraseVerified {})?;
+            sector::check_neighbors(port, baseline, Some(offset), &mut record)?;
 
             status::check_status(
                 port,

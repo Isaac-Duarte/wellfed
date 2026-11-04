@@ -7,5 +7,9 @@ rust-version.workspace = true
 description = "The PLWF106 fountain board: its pins and polarities, its outputs' safe state, and the stock flash a replacement must preserve"
 publish.workspace = true
 
+# Host tests only: the cross-check against the flash writers' layout.json.
+[dev-dependencies]
+wellfed-formats.workspace = true
+
 [lints]
 workspace = true

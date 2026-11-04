@@ -176,6 +176,13 @@ pub enum Event {
     },
     EraseVerified {},
     EraseReadbackVerified {},
+    /// The fountain's FTL pages, which share an erase block with bank 1's
+    /// first sector, still equal the pinned backup.
+    NeighborsVerified {
+        start: usize,
+        end_exclusive: usize,
+        sha256: String,
+    },
     ProgramPacketIntent {
         sequence: usize,
         frame_sha256: String,
