@@ -4037,19 +4037,19 @@
         }
       }
     },
-    "/api/v1/household": {
+    "/api/v1/home": {
       "get": {
         "tags": [
-          "household"
+          "home"
         ],
         "summary": "The household, as every user's pages show it.",
-        "operationId": "household",
+        "operationId": "home",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Household"
+                  "$ref": "#/components/schemas/Home"
                 }
               }
             }
@@ -4067,15 +4067,15 @@
       },
       "patch": {
         "tags": [
-          "household"
+          "home"
         ],
         "summary": "Change the household. A new zone goes to every feeder as its POSIX rule:\nthe online ones now, the others when they reconnect.",
-        "operationId": "update_household",
+        "operationId": "update_home",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/HouseholdPatch"
+                "$ref": "#/components/schemas/HomePatch"
               }
             }
           },
@@ -4086,7 +4086,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Household"
+                  "$ref": "#/components/schemas/Home"
                 }
               }
             }
@@ -6023,17 +6023,17 @@
             "type": "object",
             "description": "The household's settings, as they now stand.",
             "required": [
-              "household",
+              "home",
               "kind"
             ],
             "properties": {
-              "household": {
-                "$ref": "#/components/schemas/Household"
+              "home": {
+                "$ref": "#/components/schemas/Home"
               },
               "kind": {
                 "type": "string",
                 "enum": [
-                  "household_changed"
+                  "home_changed"
                 ]
               }
             }
@@ -7286,6 +7286,7 @@
           "too_large",
           "already_adopted",
           "feeder_archived",
+          "other_kind",
           "token_required",
           "direct_key_refused",
           "client_key_taken",
@@ -7727,8 +7728,12 @@
       },
       "Feeder": {
         "type": "object",
+        "description": "A device the server mirrors. The API names every one a feeder for now;\n`kind` says which it is, and an op of another kind is refused\n`not_this_kind` before it is sent.",
         "required": [
           "id",
+          "home",
+          "kind",
+          "model",
           "name",
           "identity",
           "role",
@@ -7762,12 +7767,33 @@
             "description": "The feeder's history epoch `synced` counts in.",
             "minimum": 0
           },
+          "home": {
+            "$ref": "#/components/schemas/HomeId",
+            "description": "The home it belongs to."
+          },
           "id": {
             "$ref": "#/components/schemas/FeederId"
           },
           "identity": {
             "type": "string",
             "description": "The feeder's identity key."
+          },
+          "kind": {
+            "type": "string",
+            "description": "A kind of device, which one module of the device API serves.",
+            "enum": [
+              "feeder",
+              "fountain",
+              "litter_box"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "description": "A device model, which names its kind.",
+            "enum": [
+              "plaf103",
+              "plwf106"
+            ]
           },
           "name": {
             "type": "string"
@@ -8854,50 +8880,20 @@
           }
         }
       },
-      "HourSample": {
+      "Home": {
         "type": "object",
-        "description": "One UTC hour of a metric's numbers. Samples with no number are not\ncounted, and an hour with none is left out.",
+        "description": "The home the server serves: one per server for now. Its devices\nbelong to it (each names it as `home`), and its zone is theirs.",
         "required": [
-          "hour",
-          "count",
-          "min",
-          "max",
-          "mean"
-        ],
-        "properties": {
-          "count": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "hour": {
-            "type": "string",
-            "format": "date-time",
-            "description": "The hour's start."
-          },
-          "max": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "mean": {
-            "type": "number",
-            "format": "double"
-          },
-          "min": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
-      "Household": {
-        "type": "object",
-        "required": [
+          "id",
           "name",
           "units",
           "time_format",
           "zone"
         ],
         "properties": {
+          "id": {
+            "$ref": "#/components/schemas/HomeId"
+          },
           "name": {
             "type": "string",
             "description": "1-64 characters."
@@ -8914,9 +8910,14 @@
           }
         }
       },
-      "HouseholdPatch": {
+      "HomeId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "The home the server serves, which its devices belong to."
+      },
+      "HomePatch": {
         "type": "object",
-        "description": "A change to the household; an absent field is left as it is. A new\nzone goes to every feeder: those offline get it when they reconnect.",
+        "description": "A change to the home; an absent field is left as it is. A new\nzone goes to every feeder: those offline get it when they reconnect.",
         "properties": {
           "name": {
             "type": [
@@ -8950,6 +8951,41 @@
               "null"
             ],
             "description": "An IANA zone; one a POSIX rule cannot describe is refused\n`zone_unsupported`."
+          }
+        }
+      },
+      "HourSample": {
+        "type": "object",
+        "description": "One UTC hour of a metric's numbers. Samples with no number are not\ncounted, and an hour with none is left out.",
+        "required": [
+          "hour",
+          "count",
+          "min",
+          "max",
+          "mean"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "hour": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The hour's start."
+          },
+          "max": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "mean": {
+            "type": "number",
+            "format": "double"
+          },
+          "min": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -12916,8 +12952,8 @@
       "description": "Bearer tokens for phones and the CLI, each user's own"
     },
     {
-      "name": "household",
-      "description": "The household's name, units, time format and zone"
+      "name": "home",
+      "description": "The home the server serves: its name, units, time format and zone"
     },
     {
       "name": "feeders",

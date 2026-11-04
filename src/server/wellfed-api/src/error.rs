@@ -58,6 +58,9 @@ pub enum ErrorCode {
     /// The feeder was removed from the server: its history stays readable,
     /// and adopting it again brings it back.
     FeederArchived,
+    /// The request is one kind of device's, and this device is another
+    /// kind (`Feeder.kind`): nothing was journaled or sent.
+    OtherKind,
     /// Only a phone's token, not a browser session, gets an invite for a
     /// phone: the key is recorded as that token's.
     TokenRequired,

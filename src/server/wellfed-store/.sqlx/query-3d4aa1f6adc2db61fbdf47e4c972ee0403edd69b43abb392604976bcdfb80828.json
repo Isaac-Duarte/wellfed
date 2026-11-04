@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO homes (id, name, units, time_format, zone, created_ms)\n         VALUES (?, ?, ?, ?, ?, ?)\n         ON CONFLICT (single) DO UPDATE SET name = excluded.name, units = excluded.units,\n             time_format = excluded.time_format, zone = excluded.zone",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "3d4aa1f6adc2db61fbdf47e4c972ee0403edd69b43abb392604976bcdfb80828"
+}

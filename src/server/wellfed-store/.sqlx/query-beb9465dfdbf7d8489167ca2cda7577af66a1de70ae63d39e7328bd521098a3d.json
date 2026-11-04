@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id: Uuid\", identity, name, role, address, key_nonce, key_sealed, synced, epoch, archived_ms\n               FROM feeders ORDER BY created_ms, id",
+  "query": "SELECT id AS \"id: Uuid\", home_id AS \"home_id: Uuid\", kind, model, identity, name,\n                              role, address, synced, epoch, created_ms\n                       FROM feeders ORDER BY id",
   "describe": {
     "columns": [
       {
@@ -15,8 +15,41 @@
         }
       },
       {
-        "name": "identity",
+        "name": "home_id: Uuid",
         "ordinal": 1,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "feeders",
+            "name": "home_id"
+          }
+        }
+      },
+      {
+        "name": "kind",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "feeders",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "name": "model",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "feeders",
+            "name": "model"
+          }
+        }
+      },
+      {
+        "name": "identity",
+        "ordinal": 4,
         "type_info": "Blob",
         "origin": {
           "Table": {
@@ -27,7 +60,7 @@
       },
       {
         "name": "name",
-        "ordinal": 2,
+        "ordinal": 5,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -38,7 +71,7 @@
       },
       {
         "name": "role",
-        "ordinal": 3,
+        "ordinal": 6,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -49,7 +82,7 @@
       },
       {
         "name": "address",
-        "ordinal": 4,
+        "ordinal": 7,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -59,30 +92,8 @@
         }
       },
       {
-        "name": "key_nonce",
-        "ordinal": 5,
-        "type_info": "Blob",
-        "origin": {
-          "Table": {
-            "table": "feeders",
-            "name": "key_nonce"
-          }
-        }
-      },
-      {
-        "name": "key_sealed",
-        "ordinal": 6,
-        "type_info": "Blob",
-        "origin": {
-          "Table": {
-            "table": "feeders",
-            "name": "key_sealed"
-          }
-        }
-      },
-      {
         "name": "synced",
-        "ordinal": 7,
+        "ordinal": 8,
         "type_info": "Integer",
         "origin": {
           "Table": {
@@ -93,7 +104,7 @@
       },
       {
         "name": "epoch",
-        "ordinal": 8,
+        "ordinal": 9,
         "type_info": "Integer",
         "origin": {
           "Table": {
@@ -103,13 +114,13 @@
         }
       },
       {
-        "name": "archived_ms",
-        "ordinal": 9,
+        "name": "created_ms",
+        "ordinal": 10,
         "type_info": "Integer",
         "origin": {
           "Table": {
             "table": "feeders",
-            "name": "archived_ms"
+            "name": "created_ms"
           }
         }
       }
@@ -122,13 +133,14 @@
       false,
       false,
       false,
-      true,
       false,
       false,
+      false,
       true,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "6e6ea0ba9ef5b76c2dfc3fb7c48ecb7c240910a428c4ca2f88712dc1f4331e8c"
+  "hash": "beb9465dfdbf7d8489167ca2cda7577af66a1de70ae63d39e7328bd521098a3d"
 }

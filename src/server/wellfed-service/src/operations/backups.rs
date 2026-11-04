@@ -252,7 +252,7 @@ fn list(dir: &Path) -> Result<Vec<Backup>, BackupError> {
 /// What the backups directory says about itself.
 const README_TEXT: &str = "\
 These are copies of this Wellfed server's database (server.db), taken
-daily at 03:30 household time and whenever an owner asks (POST
+daily at 03:30 home time and whenever an owner asks (POST
 /api/v1/backups). The newest are kept, as many as backups.keep in
 server.toml says (7 unless set).
 

@@ -24,7 +24,7 @@ mod export;
 mod feeders;
 mod foods;
 mod health;
-mod household;
+mod home;
 mod installs;
 mod pets;
 mod releases;
@@ -64,7 +64,7 @@ pub use foods::{
     Refill, RefillPage,
 };
 pub use health::{FeederLink, Health, Job, JobOutcome, JobRun, ServerStatus, StoreState};
-pub use household::{Household, HouseholdPatch, TimeFormat, Units};
+pub use home::{Home, HomePatch, TimeFormat, Units};
 pub use installs::{Install, InstallFailure, InstallRequest, InstallState, InstallTarget};
 // The feeder's own values are the model's, served as they are; the HTTP
 // API adds only what the server knows (when it received them, its own ids).
@@ -139,6 +139,8 @@ macro_rules! ids {
 }
 
 ids!(
+    /// The home the server serves, which its devices belong to.
+    HomeId,
     UserId,
     PetId,
     /// One entry of a pet's weight log.

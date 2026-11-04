@@ -1,11 +1,12 @@
-//! Adopted feeders, their sealed keys and cursors, and the last status,
-//! settings and plans read from each.
+//! The home's adopted devices (the table keeps its first kind's name), with
+//! each one's kind and model, its sealed key and cursor, and the last
+//! status, settings and plans read from it.
 
 use jiff::Timestamp;
 use uuid::Uuid;
-use wellfed_api::{ClientRole, FeederId, Plans, Settings, Status};
+use wellfed_api::{ClientRole, DeviceKind, FeederId, HomeId, Model, Plans, Settings, Status};
 
-use crate::convert::{cached, from_i64, millis, timestamp};
+use crate::convert::{cached, from_i64, millis, model, timestamp};
 use crate::{Error, Result, Store};
 
 /// The server's feeder key, sealed by the service.
@@ -23,6 +24,9 @@ impl std::fmt::Debug for SealedKey {
 
 pub struct NewFeeder<'a> {
     pub id: FeederId,
+    pub home: HomeId,
+    /// What its session at adoption named; its kind is the model's.
+    pub model: Model,
     pub identity: [u8; 32],
     pub name: &'a str,
     pub role: ClientRole,
@@ -34,6 +38,10 @@ pub struct NewFeeder<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FeederRow {
     pub id: FeederId,
+    pub home: HomeId,
+    /// Which module of the device API it serves: `model`'s kind.
+    pub kind: DeviceKind,
+    pub model: Model,
     pub identity: [u8; 32],
     pub name: String,
     pub role: ClientRole,
@@ -65,13 +73,18 @@ impl Store {
     /// already adopted.
     pub async fn insert_feeder(&self, feeder: NewFeeder<'_>) -> Result<()> {
         let identity = feeder.identity.as_slice();
+        let (kind, model) = (feeder.model.kind().name(), feeder.model.name());
         let role = feeder.role.code();
         let nonce = feeder.key.nonce.as_slice();
         let created = millis(feeder.created);
         let done = sqlx::query!(
-            "INSERT INTO feeders (id, identity, name, role, address, key_nonce, key_sealed, created_ms)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO feeders (id, home_id, kind, model, identity, name, role, address,
+                                  key_nonce, key_sealed, created_ms)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             feeder.id.0,
+            feeder.home.0,
+            kind,
+            model,
             identity,
             feeder.name,
             role,
@@ -93,55 +106,30 @@ impl Store {
     }
 
     pub async fn feeders(&self) -> Result<Vec<FeederRow>> {
-        let rows = sqlx::query!(
-            r#"SELECT id AS "id: Uuid", identity, name, role, address, key_nonce, key_sealed, synced, epoch, archived_ms
+        let rows = sqlx::query_as!(
+            Selected,
+            r#"SELECT id AS "id: Uuid", home_id AS "home_id: Uuid", kind, model, identity, name,
+                      role, address, key_nonce, key_sealed, synced, epoch, archived_ms
                FROM feeders ORDER BY created_ms, id"#
         )
         .fetch_all(&self.reader)
         .await?;
 
-        rows.into_iter()
-            .map(|row| {
-                feeder_row(
-                    row.id,
-                    &row.identity,
-                    row.name,
-                    &row.role,
-                    row.address,
-                    &row.key_nonce,
-                    row.key_sealed,
-                    row.synced,
-                    row.epoch,
-                    row.archived_ms,
-                )
-            })
-            .collect()
+        rows.into_iter().map(feeder_row).collect()
     }
 
     pub async fn feeder(&self, id: FeederId) -> Result<Option<FeederRow>> {
-        let row = sqlx::query!(
-            r#"SELECT id AS "id: Uuid", identity, name, role, address, key_nonce, key_sealed, synced, epoch, archived_ms
+        let row = sqlx::query_as!(
+            Selected,
+            r#"SELECT id AS "id: Uuid", home_id AS "home_id: Uuid", kind, model, identity, name,
+                      role, address, key_nonce, key_sealed, synced, epoch, archived_ms
                FROM feeders WHERE id = ?"#,
             id.0
         )
         .fetch_optional(&self.reader)
         .await?;
 
-        row.map(|row| {
-            feeder_row(
-                row.id,
-                &row.identity,
-                row.name,
-                &row.role,
-                row.address,
-                &row.key_nonce,
-                row.key_sealed,
-                row.synced,
-                row.epoch,
-                row.archived_ms,
-            )
-        })
-        .transpose()
+        row.map(feeder_row).transpose()
     }
 
     /// The feeder with this identity, adopted or archived.
@@ -159,12 +147,16 @@ impl Store {
     /// Bring an archived feeder back under a new key: its id, history and
     /// journal continue. Whether an archived feeder was there to take it.
     pub async fn readopt_feeder(&self, feeder: NewFeeder<'_>) -> Result<bool> {
+        let (kind, model) = (feeder.model.kind().name(), feeder.model.name());
         let role = feeder.role.code();
         let nonce = feeder.key.nonce.as_slice();
         let done = sqlx::query!(
-            "UPDATE feeders SET name = ?, role = ?, address = ?, key_nonce = ?, key_sealed = ?,
-                 archived_ms = NULL
+            "UPDATE feeders SET home_id = ?, kind = ?, model = ?, name = ?, role = ?, address = ?,
+                 key_nonce = ?, key_sealed = ?, archived_ms = NULL
              WHERE id = ? AND archived_ms IS NOT NULL",
+            feeder.home.0,
+            kind,
+            model,
             feeder.name,
             role,
             feeder.address,
@@ -268,35 +260,52 @@ impl Store {
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "one argument per selected column"
-)]
-fn feeder_row(
+/// A device's columns, as both reads select them.
+struct Selected {
     id: Uuid,
-    identity: &[u8],
+    home_id: Uuid,
+    kind: String,
+    model: String,
+    identity: Vec<u8>,
     name: String,
-    role: &str,
+    role: String,
     address: Option<String>,
-    nonce: &[u8],
-    sealed: Vec<u8>,
+    key_nonce: Vec<u8>,
+    key_sealed: Vec<u8>,
     synced: Option<i64>,
     epoch: Option<i64>,
-    archived: Option<i64>,
-) -> Result<FeederRow> {
+    archived_ms: Option<i64>,
+}
+
+fn feeder_row(row: Selected) -> Result<FeederRow> {
+    let model = model(&row.model)?;
+    // The kind is the model's, kept beside it for queries.
+    if row.kind != model.kind().name() {
+        return Err(Error::Corrupt("device kind"));
+    }
+
     Ok(FeederRow {
-        id: FeederId(id),
-        identity: identity
+        id: FeederId(row.id),
+        home: HomeId(row.home_id),
+        kind: model.kind(),
+        model,
+        identity: row
+            .identity
+            .as_slice()
             .try_into()
             .map_err(|_| Error::Corrupt("identity"))?,
-        name,
-        role: ClientRole::from_code(role).ok_or(Error::Corrupt("feeder role"))?,
-        address,
+        name: row.name,
+        role: ClientRole::from_code(&row.role).ok_or(Error::Corrupt("feeder role"))?,
+        address: row.address,
         key: SealedKey {
-            nonce: nonce.try_into().map_err(|_| Error::Corrupt("key nonce"))?,
-            sealed,
+            nonce: row
+                .key_nonce
+                .as_slice()
+                .try_into()
+                .map_err(|_| Error::Corrupt("key nonce"))?,
+            sealed: row.key_sealed,
         },
-        synced: match (synced, epoch) {
+        synced: match (row.synced, row.epoch) {
             (Some(seq), Some(epoch)) => Some(Synced {
                 epoch: u32::try_from(epoch).map_err(|_| Error::Corrupt("epoch"))?,
                 seq: from_i64(seq, "cursor")?,
@@ -304,6 +313,6 @@ fn feeder_row(
             (None, _) => None,
             (Some(_), None) => return Err(Error::Corrupt("cursor without its epoch")),
         },
-        archived: archived.map(timestamp).transpose()?,
+        archived: row.archived_ms.map(timestamp).transpose()?,
     })
 }

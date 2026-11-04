@@ -148,6 +148,20 @@ impl TestService {
         Self { store, service }
     }
 
+    /// Write the home setup would have made, unless there is one: a
+    /// device belongs to the home, and a test may adopt without a setup.
+    /// A setup after it takes it on.
+    pub async fn ensure_home(&self) {
+        let store = self.store.open().await;
+        if store.home().await.expect("read the home").is_none() {
+            store
+                .create_home(&crate::home(), FixedClock.now())
+                .await
+                .expect("write the home");
+        }
+        store.close().await;
+    }
+
     /// Stop, keeping the database for [`Self::reopen`].
     pub async fn stop(self) -> TempStore {
         self.service.shutdown().await;
@@ -186,6 +200,7 @@ impl TestService {
     /// Adopt `sim` at `address` by an invite for `role`: an owner's key is
     /// one the feeder lets set its time settings.
     pub async fn adopt_as(&self, sim: &Running, address: &str, role: ClientRole) -> FeederId {
+        self.ensure_home().await;
         let feeder = self
             .service
             .adopt(
@@ -200,6 +215,9 @@ impl TestService {
             .await
             .expect("the service adopts the simulator");
         assert_eq!(feeder.role, role);
+        // The session at adoption names the simulator's model.
+        assert_eq!(feeder.model, wellfed_api::Model::Plaf103);
+        assert_eq!(feeder.kind, wellfed_api::DeviceKind::Feeder);
         feeder.id
     }
 

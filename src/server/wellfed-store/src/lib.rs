@@ -33,6 +33,7 @@ mod feeders;
 mod feeds;
 mod foods;
 mod history;
+mod homes;
 mod import;
 mod installs;
 mod jobs;

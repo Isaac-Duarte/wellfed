@@ -16,7 +16,7 @@ use tempfile::TempDir;
 use uuid::Uuid;
 use wellfed_api::{
     Blocked, ClientRole, CoreEvent, EventBody, FeedOutcome, FeedReason, FeederEvent, FeederId,
-    FoodLevel, Hex, Source,
+    FoodLevel, Hex, Home, HomeId, Model, Source, TimeFormat, Units,
 };
 use wellfed_store::{
     Boot, ClockSync, Feed, LockChange, NewEvent, NewFeeder, PROJECTION_VERSION, Projected, Refresh,
@@ -30,6 +30,7 @@ async fn fresh() -> (TempDir, Store) {
     let store = Store::open(&dir.path().join(DATABASE), at(0))
         .await
         .unwrap();
+    home(&store).await;
     (dir, store)
 }
 
@@ -42,6 +43,8 @@ async fn adopt(store: &Store, n: u8) -> FeederId {
     store
         .insert_feeder(NewFeeder {
             id,
+            home: HOME,
+            model: Model::Plaf103,
             identity: [n; 32],
             name: "kitchen",
             role: ClientRole::Server,
@@ -568,4 +571,21 @@ async fn a_body_that_does_not_decode_is_counted_and_skipped() {
         .unwrap();
     assert_eq!(locks.len(), 1);
     assert_eq!((locks[0].seq, locks[0].value.locked), (2, false));
+}
+
+/// The home every device here belongs to.
+const HOME: HomeId = HomeId(Uuid::from_u128(0x40));
+
+async fn home(store: &Store) {
+    let home = Home {
+        id: HOME,
+        name: "Home".into(),
+        units: Units::Grams,
+        time_format: TimeFormat::H24,
+        zone: "UTC".into(),
+    };
+    store
+        .create_home(&home, jiff::Timestamp::UNIX_EPOCH)
+        .await
+        .unwrap();
 }

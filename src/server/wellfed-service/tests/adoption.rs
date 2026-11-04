@@ -112,6 +112,7 @@ fn an_invite_for_a_member_is_adopted_with_that_role_and_bad_input_is_refused() {
     local(async {
         let sim = feeder::start().await;
         let server = TestService::start().await;
+        server.ensure_home().await;
         let service = server.service();
 
         let member = service

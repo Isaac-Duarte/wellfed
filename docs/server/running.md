@@ -78,7 +78,7 @@ The first start makes the key. If you start the server on a `server.db` with no 
 
 ## Back it up
 
-The server copies its database into `backups/` every day at 03:30 household time. An owner can take one any time with `POST /api/v1/backups`. The newest 7 are kept (`backups.keep`).
+The server copies its database into `backups/` every day at 03:30 in the home's zone. An owner can take one any time with `POST /api/v1/backups`. The newest 7 are kept (`backups.keep`).
 
 > [!WARNING]
 > The backups leave out `keys/server.key`. A restored `server.db` opens only with its key, and without it the server can no longer reach your feeders. Copy `keys/server.key` somewhere off the machine once, and copy `backups/` off the machine regularly. Or back up the whole data directory.
@@ -92,7 +92,7 @@ To restore from a backup:
 
 ## Settings
 
-`server.toml` in the data directory holds what is neither a secret nor a household setting. The household's time zone lives in the database. [`server.example.toml`](../../src/server/wellfed-server/server.example.toml) lists every key with its default and a comment. Copy it and keep only the keys you change.
+`server.toml` in the data directory holds what is neither a secret nor a setting of the home. The home's time zone lives in the database. [`server.example.toml`](../../src/server/wellfed-server/server.example.toml) lists every key with its default and a comment. Copy it and keep only the keys you change.
 
 | Key | Default | What |
 | --- | --- | --- |
@@ -169,7 +169,7 @@ A request's own `x-request-id` is kept when it is one plain id: at most 64 bytes
 A fresh server has no accounts. The first visitor creates the first owner. The server has no web UI, so you do this over the API.
 
 1. Run `curl http://127.0.0.1:8080/api/v1/setup`. You should see `"open": true`, and the host's time zone as `zone` if it has one.
-2. Create the owner with a name, a password of at least 10 characters, and the household's IANA zone:
+2. Create the owner with a name, a password of at least 10 characters, and the home's IANA zone:
 
    ```sh
    curl -X POST http://127.0.0.1:8080/api/v1/setup \

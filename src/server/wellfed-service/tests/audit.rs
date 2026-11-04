@@ -6,7 +6,7 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use wellfed_api::{
     AuditAction, AuditEntry, CommandOutcome, CommandState, Connection as Link, Credentials,
-    HouseholdPatch, LoginFailure, NewToken, NewUser, PageQuery, Role, User, UserPatch,
+    HomePatch, LoginFailure, NewToken, NewUser, PageQuery, Role, User, UserPatch,
 };
 use wellfed_server_testkit::feeder;
 use wellfed_server_testkit::fixed::FixedClock;
@@ -74,14 +74,11 @@ fn account_changes_are_recorded_with_their_actor_and_token() {
             user: ada.clone(),
             token: Some(created.token.id),
         };
-        let renamed = HouseholdPatch {
+        let renamed = HomePatch {
             name: Some("Flat".into()),
-            ..HouseholdPatch::default()
+            ..HomePatch::default()
         };
-        let household = service
-            .update_household(&through_phone, renamed)
-            .await
-            .unwrap();
+        let home = service.update_home(&through_phone, renamed).await.unwrap();
         service
             .revoke_token(&through_phone, created.token.id)
             .await
@@ -128,7 +125,7 @@ fn account_changes_are_recorded_with_their_actor_and_token() {
                     account: ada.id,
                     token_name: "phone".into(),
                 },
-                &AuditAction::HouseholdChanged { household },
+                &AuditAction::HomeChanged { home },
                 &AuditAction::TokenRevoked {
                     token: created.token.id,
                     account: ada.id,

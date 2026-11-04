@@ -40,7 +40,7 @@ mod feeders;
 mod feeds;
 mod foods;
 mod health;
-mod household;
+mod home;
 mod pets;
 mod releases;
 mod stock;

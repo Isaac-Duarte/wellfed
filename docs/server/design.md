@@ -9,7 +9,7 @@ The one idea: **the server is a mirror of each feeder, never a second source of 
 - **REST JSON with Server-Sent Events, OpenAPI generated from code.** Server-to-client is all the live view needs, so SSE beats a WebSocket's custom reconnect and auth. GraphQL would need per-field authorization, and gRPC needs a proxy in browsers.
 - **SQLite through sqlx, with compile-time-checked queries.** Self-hosters shouldn't have to run Postgres, and supporting both would mean writing every query twice.
 - **Household accounts, plus a revocable token per phone.** One admin password gives no per-person audit. A proxy or OIDC alone is too hard for most owners, and can come later on top.
-- **One household per server.** Multiple households would scope every query and every authorization check.
+- **One home per server, many devices in it.** The server serves one home: setup makes it, and every device it adopts belongs to it, whatever its kind. Pets join it later. Several homes would scope every query and every authorization check, so the schema holds a server to one for now.
 - **Layered crates, so the compiler enforces the boundaries.** One server crate would keep its layers only by review, and the HTTP types couldn't be shared with the app.
 - **A concrete `Store`, tested against a fresh SQLite per test.** Repository traits with mocks are boilerplate, and mocks drift from real SQL.
 - **`jiff` for times.** Zoned times, daylight-saving changes and schedules are easy to get wrong with chrono and chrono-tz.
@@ -36,7 +36,7 @@ src/server/wellfed-mirror    the per-feeder runtime: connect, sync, ingest and p
                               install, a stock restore or a read of bank 1 on the long one), and a typed broadcast of
                               each feeder's mirror events
 src/server/wellfed-releases  fetch, upload and verify releases, the release cache, and each feeder's verified stock backup
-src/server/wellfed-service   the use cases: accounts and auth, household, commands and their journal, pets and food,
+src/server/wellfed-service   the use cases: accounts and auth, the home, commands and their journal, pets and food,
                               derived views, audit, export, and the hub. No axum, no SQL
 src/server/wellfed-server    the binary: config, axum routers per resource, the auth extractors, SSE, the jobs
                               supervisor
@@ -52,7 +52,7 @@ The server's crates follow one rule: **a crate per runtime or dependency boundar
 | Crate | What it owns |
 | --- | --- |
 | `wellfed-api` | Every HTTP body, a module per resource. It builds for every target, including the app's Android library, so it carries no server dependencies. `wellfed-service` returns these bodies directly until a second API version exists. |
-| `wellfed-store` | All SQL, a module per table group (`users`, `feeders`, `history`, `projections`, `samples`, `owner`, `commands`, `releases`, `jobs`). One crate, so the sqlx offline metadata and the migrations stay in one place. |
+| `wellfed-store` | All SQL, a module per table group (`users`, `homes`, `feeders`, `history`, `projections`, `samples`, `owner`, `commands`, `releases`, `jobs`). One crate, so the sqlx offline metadata and the migrations stay in one place. |
 | `wellfed-mirror` | Every task that holds a feeder session: connect, sync, clock sync, ingest, reconnect and the command lanes. It also holds the injected `Clock` and `Random` every server crate uses. It never sees a user or a stream id. |
 | `wellfed-releases` | Fetching, uploading and verifying releases, the release cache, and each feeder's stock backup. |
 | `wellfed-service` | The use cases, a module per domain, each with its own error enum wrapped in the crate's `Error`. It owns the auth rules, the hub and each job's body. It never sees a socket or an HTTP type. |
@@ -121,8 +121,8 @@ The tables:
 
 | Group | Tables |
 | --- | --- |
-| Accounts | `household` (one row: name, units, time format, the IANA zone), `users` (with an optional expiry), `sessions` (with their last use), `tokens` |
-| Feeders | `feeders` (identity, sealed key, cursor), `feeder_state` (cached plans, settings and status, with generation), `phone_keys` (the phones' keys the server invited, or an adopting phone named), `kept_clients` |
+| Accounts | `homes` (one row for now: its id, name, units, time format and IANA zone), `users` (with an optional expiry), `sessions` (with their last use), `tokens` |
+| Devices | `feeders` (every adopted device whatever its kind: its home, kind, model, identity, sealed key and cursor), `feeder_state` (cached plans, settings and status, with generation), `phone_keys` (the phones' keys the server invited, or an adopting phone named), `kept_clients` |
 | History | `events`, raw, keyed by feeder, epoch and `seq`, so the cursor sync is idempotent and a re-created ring's history stays apart; `gaps` |
 | Projections | `feeds` (one row per feed, its latest event), `lock_changes`, `boots`, `clock_syncs`, `blocked_changes`: written in the raw insert's transaction, and rebuilt from `events` when `projection_version` changes |
 | Samples | `samples` (feeder, metric, time, the raw value and its number), `sample_rollups` (count, min, max and sum per feeder, metric and UTC hour), `sample_marks` (the newest sample rolled up, and the number code's version) |
@@ -136,6 +136,8 @@ Releases and stock backups are files in the data directory, not tables.
 ## Runtime
 
 **One task per feeder.** The mirror's task owns the TCP connection and the `wellfed-client` session. It reconnects with jittered backoff and syncs events from the stored cursor before anything else (from the oldest event when the feeder's epoch is new). Then it sets the feeder's clock, again every 6 h. It records every event, gap and sample raw, each raw row with its projections and the cursor in one transaction. Samples go in small batches: 32, or `Timing::sample_wait` after the first, and at the session's end.
+
+**Device kinds.** Each adopted device is stored with its home, its model and its model's kind. The invite redemption names no model, so the adoption opens one session with the new key and stores the model its welcome names. Every op says which kind serves it (`wellfed_model::Op::kind`, `None` for the shared core), and the service refuses another kind's read or write `409 other_kind` by the stored kind, before it is journaled or sent, online or not. The mirror's task ends a session whose welcome names another model than the one adopted, before it reads or sends anything, and `wellfed-connect` refuses another kind's op on the wire as well. The API and the tables still name every device a feeder.
 
 **Two command lanes.** Commands reach the task through a bounded channel per lane: short commands, and the steps of a long operation such as an install or a meal call's upload. A short command waits at most one step of a long one. Each lane has one request in flight, matched to its answer by id. A command times out as "unknown, retry with the same key", never "failed", because the feeder may have run it. A feeder heard from not at all for 90 s counts as gone, so a feeder that loses power shows offline within that time.
 
@@ -157,9 +159,9 @@ Releases and stock backups are files in the data directory, not tables.
 | `backup` | 03:30 | Copies the database into `backups/` |
 | `release_check` | 04:00 | Checks GitHub releases, while `releases.fetch` is on |
 
-Daily times are in the household's zone (UTC before there is one).
+Daily times are in the home's zone (UTC before there is one).
 
-**Health and logs.** `GET /health` is liveness: it reads nothing and answers the version. `GET /api/v1/status` is readiness for an owner: whether the store answers on its writer and a reader, each feeder's link, and each job's last run. Every log line from a feeder's task sits under a `feeder{id=…}` span, and every HTTP request under a `request{id=… method=… path=…}` span. The id comes back in `x-request-id`. The query string isn't logged. There is no metrics endpoint, since a household has no scraper to feed.
+**Health and logs.** `GET /health` is liveness: it reads nothing and answers the version. `GET /api/v1/status` is readiness for an owner: whether the store answers on its writer and a reader, each feeder's link, and each job's last run. Every log line from a feeder's task sits under a `feeder{id=…}` span, and every HTTP request under a `request{id=… method=… path=…}` span. The id comes back in `x-request-id`. The query string isn't logged. There is no metrics endpoint, since a home has no scraper to feed.
 
 ## Accounts and roles
 
@@ -180,11 +182,11 @@ Roles are owner, member and viewer. The service's `Permission` enum and its one 
 | `InviteOwnPhone` | An invite for one's own phone | Yes | Yes | No |
 | `OwnHistory`, `OwnAccount` | One's own commands, audit entries, password and tokens | Yes | Yes | Yes |
 | `AllHistory`, `Users` | Everyone's commands and audit entries, and other accounts | Yes | No | No |
-| `Household`, `OwnerData` | The household and feeders' time settings; pets, foods and refills | Yes | No | No |
+| `Home`, `OwnerData` | The home and the feeders' time settings; pets, foods and refills | Yes | No | No |
 | `FeederAdmin`, `Adopt` | Wi-Fi, reboot, a feeder's clients and its debug log; adopting and removing feeders | Yes | No | No |
 | `ServerData` | Releases, installs, the stock backup, backups, export and import | Yes | No | No |
 
-**The audit log** (`GET /audit`) is the command journal interleaved with account changes: setup, logins and failed logins with the client's address, users created, changed and deleted, passwords set, tokens made and revoked, and household changes. A journal row joins the log through a trigger in the statement that records it, so no write reaches a feeder unlogged. Owner data and adoptions aren't in it yet. It's kept forever.
+**The audit log** (`GET /audit`) is the command journal interleaved with account changes: setup, logins and failed logins with the client's address, users created, changed and deleted, passwords set, tokens made and revoked, and changes to the home. A journal row joins the log through a trigger in the statement that records it, so no write reaches a feeder unlogged. Owner data and adoptions aren't in it yet. It's kept forever.
 
 ## Commands and feeds
 
@@ -205,7 +207,7 @@ A feed whose answer was lost has no number and is never sent again. It is settle
 
 **Settings** are always read from the feeder, never from the cache, because a change must name the current generation. An offline feeder's settings are `503 feeder_offline`.
 
-**The zone.** The household stores its IANA zone by its canonical name. Every feeder keeps it twice: each clock sync carries its offset and next change, and the feeder's time settings hold its POSIX rule. So the feeder's clock and plans follow daylight saving with the server down. The rule comes from the tzdb bundled with `wellfed-client`, and is written whenever the feeder holds a different one.
+**The zone.** The home stores its IANA zone by its canonical name. Every feeder keeps it twice: each clock sync carries its offset and next change, and the feeder's time settings hold its POSIX rule. So the feeder's clock and plans follow daylight saving with the server down. The rule comes from the tzdb bundled with `wellfed-client`, and is written whenever the feeder holds a different one.
 
 ## The CLI on the server
 

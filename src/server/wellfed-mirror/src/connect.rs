@@ -7,7 +7,7 @@ use std::time::Duration;
 use tracing::{debug, warn};
 use wellfed_api::FeederId;
 use wellfed_connect::Connection;
-use wellfed_model::{ClientRole, Joined};
+use wellfed_model::{ClientRole, Joined, Model};
 use wellfed_session::noise::Keypair;
 
 use crate::{ConnectError, Discovery, Invite, Mirror, Shared, Unreachable};
@@ -63,6 +63,23 @@ impl Mirror {
             }),
             Joined::Refused(refusal) => Err(ConnectError::Refused(refusal)),
         }
+    }
+
+    /// The model of the device `identity` at `address`, from the welcome of
+    /// a session opened with the key `secret`: a redemption names none, so
+    /// an adoption opens one before it stores the device.
+    pub async fn model(
+        &self,
+        identity: [u8; 32],
+        address: SocketAddr,
+        secret: [u8; 32],
+    ) -> Result<Model, ConnectError> {
+        let keys = Keypair::from_secret(secret);
+        let ephemeral = self.shared.random()?;
+        let connection = Connection::open(&keys, identity, address, ephemeral)
+            .await
+            .map_err(Unreachable)?;
+        Ok(connection.model())
     }
 }
 

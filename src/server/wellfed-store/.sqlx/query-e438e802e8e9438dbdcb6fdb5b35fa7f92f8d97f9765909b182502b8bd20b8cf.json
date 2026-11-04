@@ -1,48 +1,59 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT name, units, time_format, zone FROM household",
+  "query": "SELECT id AS \"id: Uuid\", name, units, time_format, zone\n               FROM homes ORDER BY created_ms, id LIMIT 1",
   "describe": {
     "columns": [
       {
-        "name": "name",
+        "name": "id: Uuid",
         "ordinal": 0,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "homes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "household",
+            "table": "homes",
             "name": "name"
           }
         }
       },
       {
         "name": "units",
-        "ordinal": 1,
+        "ordinal": 2,
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "household",
+            "table": "homes",
             "name": "units"
           }
         }
       },
       {
         "name": "time_format",
-        "ordinal": 2,
+        "ordinal": 3,
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "household",
+            "table": "homes",
             "name": "time_format"
           }
         }
       },
       {
         "name": "zone",
-        "ordinal": 3,
+        "ordinal": 4,
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "household",
+            "table": "homes",
             "name": "zone"
           }
         }
@@ -55,8 +66,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "876d0e92bb9b22783cef48825b236cfc2b4788c6bfe61b1ef453a538e5f621bb"
+  "hash": "e438e802e8e9438dbdcb6fdb5b35fa7f92f8d97f9765909b182502b8bd20b8cf"
 }

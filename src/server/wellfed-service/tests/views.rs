@@ -13,8 +13,8 @@ use jiff::Timestamp;
 use uuid::Uuid;
 use wellfed_api::{
     ClientRole, EventBody, FeedAnomaly, FeedOutcome, FeedReason, FeederEvent, FeederId,
-    FeederPortions, FoodLevel, FoodStats, IntakeQuery, MissedReason, NewFood, NewPet, NewRefill,
-    PetId, PortionWeight, Source, Species, Stats,
+    FeederPortions, FoodLevel, FoodStats, IntakeQuery, MissedReason, Model, NewFood, NewPet,
+    NewRefill, PetId, PortionWeight, Source, Species, Stats,
 };
 use wellfed_server_testkit::fixed::{ManualClock, NOW_MS};
 use wellfed_server_testkit::{TestService, ada, ada_setup, stored_body};
@@ -38,6 +38,8 @@ async fn start() -> (TestService, ManualClock, Store) {
     store
         .insert_feeder(NewFeeder {
             id: KITCHEN,
+            home: store.home().await.unwrap().expect("set up").id,
+            model: Model::Plaf103,
             identity: [4; 32],
             name: "kitchen",
             role: ClientRole::Server,

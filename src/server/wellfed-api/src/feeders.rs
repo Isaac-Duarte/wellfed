@@ -5,9 +5,9 @@ use std::fmt;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use wellfed_model::{ClientRole, Hex, NextMeal, PLANS, Plan, Status};
+use wellfed_model::{ClientRole, DeviceKind, Hex, Model, NextMeal, PLANS, Plan, Status};
 
-use crate::FeederId;
+use crate::{FeederId, HomeId};
 
 /// Adopt a feeder by redeeming an invite its owner created for the server
 /// (`wellfed invite --role server`), or one the owner's phone made with its
@@ -56,9 +56,20 @@ pub enum Connection {
     Refused,
 }
 
+/// A device the server mirrors. The API names every one a feeder for now;
+/// `kind` says which it is, and an op of another kind is refused
+/// `not_this_kind` before it is sent.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Feeder {
     pub id: FeederId,
+    /// The home it belongs to.
+    pub home: HomeId,
+    /// Which module of the device API it serves: its model's kind.
+    #[schema(schema_with = wellfed_model::schema::device_kind)]
+    pub kind: DeviceKind,
+    /// Its model, as the welcome of the session at adoption named it.
+    #[schema(schema_with = wellfed_model::schema::model)]
+    pub model: Model,
     pub name: String,
     /// The feeder's identity key.
     #[schema(value_type = String)]

@@ -48,9 +48,25 @@ impl Service {
             .locate(identity, request.address.as_deref())
             .await?;
 
+        // Every device belongs to the home, which setup made.
+        let home = self.home().await?.id;
         let secret = self.shared.random::<32>()?;
         let label = &self.shared.config.label;
         let enrolled = self.mirror.enroll(invite, label, address, secret).await?;
+        let model = match self.mirror.model(identity, address, secret).await {
+            Ok(model) => model,
+            Err(error) => {
+                // The device holds the key now, but the server cannot say
+                // what kind of device it is, so it stores nothing.
+                warn!(
+                    "device {} enrolled this server's key ({}) but its model could not be \
+                     read: {error}; revoke that client on the device",
+                    hex::encode(&identity[..4]),
+                    hex::encode(&enrolled.public[..4]),
+                );
+                return Err(error.into());
+            }
+        };
 
         let id = match archived {
             Some(id) => id,
@@ -61,6 +77,8 @@ impl Service {
         let address = address.to_string();
         let feeder = NewFeeder {
             id,
+            home,
+            model,
             identity,
             name,
             role: enrolled.role,
@@ -174,6 +192,9 @@ impl Service {
         let connection = self.links().get(&row.id).copied().unwrap_or(Link::Offline);
         Feeder {
             id: row.id,
+            home: row.home,
+            kind: row.kind,
+            model: row.model,
             name: row.name,
             identity: Hex(row.identity),
             role: row.role,

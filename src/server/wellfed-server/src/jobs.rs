@@ -67,7 +67,7 @@ impl Runner for Service {
     }
 
     fn zone(&self) -> TimeZone {
-        self.household_zone()
+        self.home_zone()
     }
 }
 

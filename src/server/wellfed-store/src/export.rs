@@ -12,7 +12,7 @@ use sqlx::{Sqlite, Transaction};
 use uuid::Uuid;
 use wellfed_formats::export::{
     AuditEntry, BlockedChange, Boot, ClockSync, Command, Event, Feed, FeedTrace, Feeder,
-    FeederFood, FeederStat, FeederState, Food, FoodReading, Gap, Household, Install, KeptClient,
+    FeederFood, FeederStat, FeederState, Food, FoodReading, Gap, Home, Install, KeptClient,
     LockChange, Pet, PetFeeder, PetWeight, PhoneKey, ProjectionVersion, Refill, Row, Sample,
     SampleMarks, SampleRollup, Table, User,
 };
@@ -43,18 +43,19 @@ impl Snapshot {
                 )
                 .fetch(tx),
             ),
-            Table::Household => rows(
+            Table::Homes => rows(
                 sqlx::query_as!(
-                    Household,
-                    "SELECT name, units, time_format, zone FROM household ORDER BY id"
+                    Home,
+                    r#"SELECT id AS "id: Uuid", name, units, time_format, zone, created_ms
+                       FROM homes ORDER BY id"#
                 )
                 .fetch(tx),
             ),
             Table::Feeders => rows(
                 sqlx::query_as!(
                     Feeder,
-                    r#"SELECT id AS "id: Uuid", identity, name, role, address, synced, epoch,
-                              created_ms
+                    r#"SELECT id AS "id: Uuid", home_id AS "home_id: Uuid", kind, model, identity, name,
+                              role, address, synced, epoch, created_ms
                        FROM feeders ORDER BY id"#
                 )
                 .fetch(tx),

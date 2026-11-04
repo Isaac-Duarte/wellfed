@@ -8,7 +8,9 @@ use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
-use wellfed_api::{ClientRole, Connection as Link, FeederId};
+use wellfed_api::{
+    ClientRole, Connection as Link, FeederId, Home, HomeId, Model, TimeFormat, Units,
+};
 use wellfed_mirror::{Config, Diagnostics, Discovery, Feeder, Invite, Mirror, MirrorEvent, Timing};
 use wellfed_server_testkit::WAIT;
 use wellfed_server_testkit::feeder::{self, Running};
@@ -100,9 +102,12 @@ pub async fn mirrored_with(
 
     // The mirror reads the cursor from the feeder's row; the key it uses
     // is the one it is given, so the stored one is a stand-in.
+    home(store).await;
     store
         .insert_feeder(NewFeeder {
             id: ID,
+            home: HOME,
+            model: Model::Plaf103,
             identity,
             name: "kitchen",
             role: enrolled.role,
@@ -139,4 +144,18 @@ pub async fn next(updates: &mut Receiver<MirrorEvent>) -> MirrorEvent {
         .await
         .expect("an update in time")
         .expect("the broadcast is open")
+}
+
+/// The home every device here belongs to.
+pub const HOME: HomeId = HomeId(Uuid::from_u128(0x40));
+
+async fn home(store: &Store) {
+    let home = Home {
+        id: HOME,
+        name: "Home".into(),
+        units: Units::Grams,
+        time_format: TimeFormat::H24,
+        zone: "UTC".into(),
+    };
+    store.create_home(&home, FixedClock.now()).await.unwrap();
 }

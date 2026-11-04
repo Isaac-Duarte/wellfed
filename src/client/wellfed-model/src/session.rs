@@ -45,3 +45,32 @@ pub enum Joined {
     },
     Refused(Refusal),
 }
+
+/// OpenAPI schemas for the wire's device names, which `wellfed-proto`
+/// (`no_std`, with no schema derive) cannot carry itself: a field of
+/// either type names its function in `#[schema(schema_with = ..)]`.
+pub mod schema {
+    use utoipa::openapi::schema::{Object, ObjectBuilder, Type};
+
+    use super::{DeviceKind, Model};
+
+    /// [`DeviceKind`] as its JSON spells it.
+    pub fn device_kind() -> Object {
+        ObjectBuilder::new()
+            .schema_type(Type::String)
+            .enum_values(Some(DeviceKind::ALL.map(DeviceKind::name)))
+            .description(Some(
+                "A kind of device, which one module of the device API serves.",
+            ))
+            .build()
+    }
+
+    /// [`Model`] as its JSON spells it.
+    pub fn model() -> Object {
+        ObjectBuilder::new()
+            .schema_type(Type::String)
+            .enum_values(Some(Model::ALL.map(Model::name)))
+            .description(Some("A device model, which names its kind."))
+            .build()
+    }
+}

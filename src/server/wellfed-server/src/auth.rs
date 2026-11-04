@@ -144,7 +144,7 @@ pub(crate) mod need {
         OwnHistory,
         OwnAccount,
         Users,
-        Household,
+        Home,
         OwnerData,
         FeederAdmin,
         Adopt,

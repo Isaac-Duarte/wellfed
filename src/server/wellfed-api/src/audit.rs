@@ -15,7 +15,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{Command, Household, Role, TokenId, UserId};
+use crate::{Command, Home, Role, TokenId, UserId};
 
 /// One thing that happened.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -93,8 +93,8 @@ pub enum AuditAction {
         token_name: String,
     },
     /// The household's settings, as they now stand.
-    HouseholdChanged {
-        household: Household,
+    HomeChanged {
+        home: Home,
     },
 }
 

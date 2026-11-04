@@ -57,7 +57,7 @@ pub const fn parity(op: &Op) -> Parity {
         Op::Feed { .. } => Route(Post, "/feeders/{id}/feed"),
         Op::Reboot => Route(Post, "/feeders/{id}/reboot"),
         Op::CancelFeed { .. } => Route(Post, "/feeders/{id}/feeds/{feed}/cancel"),
-        Op::PutTime { .. } => Route(Patch, "/household"),
+        Op::PutTime { .. } => Route(Patch, "/home"),
         Op::TimeSync(_) | Op::GetTime => Without(NoRoute::ClockKeptByServer),
         Op::OfferUpdate { .. } | Op::UpdateChunk { .. } | Op::UpdateState | Op::CancelUpdate => {
             Without(NoRoute::Install)
