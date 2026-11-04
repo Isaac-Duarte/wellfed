@@ -22,6 +22,9 @@ pub type TaskStep = unsafe extern "C" fn(context: *mut c_void) -> u32;
 pub const GPIO_ENABLE_BIT: u32 = 1 << 20;
 /// Pinned LP ADC function and clock enable bits, in the same two registers.
 pub const ADC_ENABLE_BIT: u32 = 1 << 8;
+/// The ADC channel of the chip's own supply (`VBAT_MEAS`'s internal input),
+/// the same on every AmebaD board: the random generator's noise source.
+pub const ADC_SUPPLY_CHANNEL: u32 = 10;
 /// `REG_SWD_PMUX_EN` bit 0 (reset 1): the SWD function holds PA27 and PB3
 /// (SWD_CLK). While set, GPIO writes to PB3 do not reach the pad.
 pub const SWD_PMUX_BIT: u32 = 1;

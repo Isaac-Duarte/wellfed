@@ -9,8 +9,14 @@
 //! - **Running bank:** bank 1 is running exactly when its physical marker is
 //!   intact. If its signatures had failed, the loader would have chosen bank
 //!   0, and clearing an unbootable bank's marker changes nothing.
-//! - **Confirmation:** a record in storage sector `CONFIRM_SECTOR` naming
-//!   this build's identity. KM4 writes it once the image proves it can feed.
+//! - **Confirmation:** a record in the board's storage sector
+//!   [`CONFIRM_SECTOR`] naming this build's identity. KM4 writes it once the
+//!   image proves itself with its outputs verified stopped (the board's
+//!   safe state: the feeder's motor at STOP and emitters off, the fountain's
+//!   pump off) and, on a feeder, that it can feed. A board with no reviewed
+//!   store has no such sector, so no build there is ever confirmed: KM0
+//!   reads no record ([`confirmation`]), and a bank-1 build always runs out
+//!   its trial and gives way.
 //! - **Count:** backup register 4 ([`REGISTER`]), which survives a watchdog
 //!   reset but not power loss. Bits 0-15 hold the KM0 boot count (the peer
 //!   session), bits 16-19 the trial count on a trial boot, or, with bit 19
@@ -71,9 +77,25 @@ use wellfed_core::ota::{self, MARKER, Trial};
 
 /// Unconfirmed boots per power-on before giving way.
 pub const LIMIT: u32 = 3;
-/// Storage sector holding the confirmation record (`0x344000`), the first
-/// of the reserved sectors after the journal and settings pairs.
-pub const CONFIRM_SECTOR: u32 = wellfed_board::storage::CONFIRM.first;
+/// Storage sector holding the confirmation record, chosen by the board: on
+/// the PLAF103 `0x344000`, the first of the reserved sectors after the
+/// journal and settings pairs; `None` on a board with no reviewed store.
+pub const CONFIRM_SECTOR: Option<u32> = wellfed_board::CONFIRM_SECTOR;
+
+/// An erased record, which confirms nothing.
+static BLANK: [u8; ota::CONFIRM_LEN] = [u8::MAX; ota::CONFIRM_LEN];
+
+/// The confirmation record the trial decides on, from the bytes KM0's glue
+/// read at its fixed offset: those bytes on a board with a confirmation
+/// sector, an erased record on one without, since whatever the glue finds
+/// there is not a record of this firmware's and must never confirm a build.
+pub fn confirmation(read: &[u8; ota::CONFIRM_LEN]) -> &[u8; ota::CONFIRM_LEN] {
+    if CONFIRM_SECTOR.is_some() {
+        read
+    } else {
+        &BLANK
+    }
+}
 /// The backup register KM0 counts in; KM4 reads and settles it.
 pub const REGISTER: u32 = 4;
 pub const BOOT_MASK: u32 = 0xffff;
@@ -415,8 +437,10 @@ mod exported {
         };
 
         // SAFETY: the caller's contract.
+        let record = super::confirmation(unsafe { &*record });
+        // SAFETY: as above.
         let (decision, value) =
-            unsafe { super::decide_after(&*bank1, &*bank0, &*record, *register, &identity, reset) };
+            unsafe { super::decide_after(&*bank1, &*bank0, record, *register, &identity, reset) };
         // SAFETY: as above.
         unsafe { *register = value };
         decision.code()

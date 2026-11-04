@@ -2,6 +2,9 @@
 //! from a verified stopped state with their latches preloaded LOW; only PB22
 //! can be input-verified (Port A indicators are output-only); and a failed
 //! write, direction, pad or stopped check aborts to all LOW.
+//!
+//! The PLAF103's panel drivers, which build for no other board.
+#![cfg(wellfed_board = "plaf103")]
 
 use wellfed_hal::leds::{self, Led};
 use wellfed_hal::sdk::fake;

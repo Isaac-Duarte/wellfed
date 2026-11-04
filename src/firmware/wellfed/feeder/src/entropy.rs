@@ -33,7 +33,7 @@ const PACE_MS: u32 = 25;
 /// record may skip before its source is given up.
 const MISS_LIMIT: u32 = 1_000;
 /// The chip's internal supply channel: every AmebaD board has it.
-const ADC_CHANNEL: u32 = wellfed_sdk::hal::board::pins::ADC_SUPPLY;
+const ADC_CHANNEL: u32 = wellfed_sdk::hal::sdk::ADC_SUPPLY_CHANNEL;
 const ADC_POLLS: u32 = 10_000;
 
 named_enum! {

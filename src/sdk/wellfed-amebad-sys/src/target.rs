@@ -517,12 +517,15 @@ pub fn gpioa_eoi(mask: u32) {
 }
 
 /// Best-effort output stop for the panic handler. Masks interrupts, then, only
-/// when the LP GPIO block reads clocked and enabled, sets the motor latches
-/// PA13/PA14 HIGH (STOP) and the infrared latches PA15/PB3 LOW with direct
-/// read-modify-write of the data registers. It makes no SDK/ROM call, takes no
-/// lock and has no panic path; directions are left unchanged, so a pad not
-/// yet configured as an output is not newly driven. KM0 can still race these
-/// registers, and nothing is verified: the caller stops here regardless.
+/// when the LP GPIO block reads clocked and enabled, writes the board's safe
+/// state (`wellfed_board::safe`) with direct read-modify-write of the data
+/// registers: on the PLAF103 the motor latches PA13/PA14 HIGH (STOP) and the
+/// infrared latches PA15/PB3 LOW, on the PLWF106 the pump enable PA30 LOW and
+/// nothing else. A port with no safe bits is not written at all. It makes no
+/// SDK/ROM call, takes no lock and has no panic path; directions are left
+/// unchanged, so a pad not yet configured as an output is not newly driven.
+/// KM0 can still race these registers, and nothing is verified: the caller
+/// stops here regardless.
 pub fn panic_outputs_safe() {
     cortex_m::interrupt::disable();
     let clock = gpio_clock_state();
@@ -541,10 +544,14 @@ pub fn panic_outputs_safe() {
         )
     };
 
-    // SAFETY: Port A's data register; interrupts are masked above.
-    unsafe { ptr::write_volatile(a, (ptr::read_volatile(a) | PORT_A_HIGH) & !PORT_A_LOW) };
-    // SAFETY: Port B's data register, likewise.
-    unsafe { ptr::write_volatile(b, ptr::read_volatile(b) & !PORT_B_LOW) };
+    if PORT_A_HIGH | PORT_A_LOW != 0 {
+        // SAFETY: Port A's data register; interrupts are masked above.
+        unsafe { ptr::write_volatile(a, (ptr::read_volatile(a) | PORT_A_HIGH) & !PORT_A_LOW) };
+    }
+    if PORT_B_LOW != 0 {
+        // SAFETY: Port B's data register, likewise.
+        unsafe { ptr::write_volatile(b, ptr::read_volatile(b) & !PORT_B_LOW) };
+    }
 
     cortex_m::asm::dsb();
 }
@@ -743,17 +750,24 @@ pub fn flash_read_jedec() -> [u8; 3] {
     id
 }
 
+// The board crate checks its region against its own stock flash (the
+// PLAF103's lies between a full bank 1 and stock's settings); a board with
+// no reviewed store has zero sectors, which `storage_span` always refuses.
 const _: () = assert!(
     STORAGE_OFFSET.is_multiple_of(SECTOR_BYTES)
-        && STORAGE_OFFSET >= 0x30_6000
-        && STORAGE_OFFSET + STORAGE_SECTORS * SECTOR_BYTES <= 0x3e_8000
+        && STORAGE_OFFSET
+            .checked_add(STORAGE_SECTORS * SECTOR_BYTES)
+            .is_some()
 );
 
 const _: () = assert!(k::WELLFED_SPI_FLASH_BASE == 0x0800_0000 && k::WELLFED_ERASE_SECTOR == 2);
 
+/// The flash address of `len` bytes at `offset` in storage sector `sector`,
+/// if they lie inside it. On a board with no store the range is empty, so
+/// every sector is refused.
 fn storage_span(sector: u32, offset: u32, len: usize) -> Option<u32> {
     let end = offset.checked_add(u32::try_from(len).ok()?)?;
-    (sector < STORAGE_SECTORS && end <= SECTOR_BYTES)
+    ((0..STORAGE_SECTORS).contains(&sector) && end <= SECTOR_BYTES)
         .then(|| STORAGE_OFFSET + sector * SECTOR_BYTES + offset)
 }
 
@@ -992,9 +1006,12 @@ pub fn storage_read(sector: u32, offset: u32, bytes: &mut [u8]) -> bool {
     true
 }
 
-/// Raw latch writes requesting motor STOP (PA13/PA14 HIGH) and infrared OFF
-/// (PA15/PB3 LOW). Always inlined so a RAM-resident caller stays leaf code
-/// with no call or flash literal (audited).
+/// Raw latch writes requesting the board's safe state (`wellfed_board::safe`):
+/// on the PLAF103 motor STOP (PA13/PA14 HIGH) and infrared OFF (PA15/PB3
+/// LOW), on the PLWF106 the pump off (PA30 LOW). A write with no bits is
+/// left out, so no register is rewritten for nothing. Always inlined so a
+/// RAM-resident caller stays leaf code with no call or flash literal
+/// (audited).
 #[inline(always)]
 pub fn ram_outputs_safe() {
     let port_a = k::WELLFED_GPIOA_BASE as usize as *mut raw::GPIO_TypeDef;
@@ -1003,11 +1020,18 @@ pub fn ram_outputs_safe() {
     unsafe {
         let a = ptr::addr_of_mut!((*port_a).PORT[0].DR);
         let b = ptr::addr_of_mut!((*port_b).PORT[0].DR);
-        // Separate volatile read-modify-writes (motor STOP first) keep the
-        // audited RAM code to plain loads, ORR/BIC and stores.
-        ptr::write_volatile(a, ptr::read_volatile(a) | PORT_A_HIGH);
-        ptr::write_volatile(a, ptr::read_volatile(a) & !PORT_A_LOW);
-        ptr::write_volatile(b, ptr::read_volatile(b) & !PORT_B_LOW);
+        // Separate volatile read-modify-writes (the bits set HIGH first, the
+        // PLAF103's motor STOP) keep the audited RAM code to plain loads,
+        // ORR/BIC and stores.
+        if PORT_A_HIGH != 0 {
+            ptr::write_volatile(a, ptr::read_volatile(a) | PORT_A_HIGH);
+        }
+        if PORT_A_LOW != 0 {
+            ptr::write_volatile(a, ptr::read_volatile(a) & !PORT_A_LOW);
+        }
+        if PORT_B_LOW != 0 {
+            ptr::write_volatile(b, ptr::read_volatile(b) & !PORT_B_LOW);
+        }
         core::arch::asm!("dsb", options(nostack, preserves_flags));
     }
 }

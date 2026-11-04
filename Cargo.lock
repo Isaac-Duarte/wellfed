@@ -5184,10 +5184,15 @@ name = "wellfed-board"
 version = "0.1.0"
 dependencies = [
  "wellfed-board-plaf103",
+ "wellfed-board-plwf106",
 ]
 
 [[package]]
 name = "wellfed-board-plaf103"
+version = "0.1.0"
+
+[[package]]
+name = "wellfed-board-plwf106"
 version = "0.1.0"
 
 [[package]]

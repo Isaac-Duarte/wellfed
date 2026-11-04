@@ -24,8 +24,8 @@ use wellfed_core::feed::sensor_inputs::SensorReading;
 use wellfed_core::flash_coord::FlashCoord;
 
 use wellfed_board::pins::{
-    ADAPTER, ADC_BATTERY, ADC_CURRENT, ADC_SUPPLY, FEEDBACK, FOOD, IR_PA, IR_PB, MOTOR_A_BIT,
-    MOTOR_B_BIT, OUTLET, bit,
+    ADAPTER, ADC_BATTERY, ADC_CURRENT, FEEDBACK, FOOD, IR_PA, IR_PB, MOTOR_A_BIT, MOTOR_B_BIT,
+    OUTLET, bit,
 };
 use wellfed_hal::adc;
 use wellfed_hal::sdk::{self, GPIO_PORT_A, IrqGuard};
@@ -493,7 +493,7 @@ impl Board {
     /// 16 bounded conversions of `channel`: 4 (current), 5 (battery) or 10
     /// (the chip's internal supply measurement). Exclusive ADC ownership required.
     pub fn sample_channel(&self, channel: u32, samples: &mut [u16; SAMPLES]) -> bool {
-        let known = [ADC_CURRENT, ADC_BATTERY, ADC_SUPPLY].contains(&channel);
+        let known = [ADC_CURRENT, ADC_BATTERY, sdk::ADC_SUPPLY_CHANNEL].contains(&channel);
         let limit = self.with(|state| {
             (state.opened && !state.faulted && state.sensors_ready).then_some(state.adc_poll_limit)
         });

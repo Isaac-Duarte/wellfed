@@ -16,12 +16,41 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 
 use wellfed_board::STORAGE_SECTORS;
-use wellfed_board::pins::{self, IR_PA_BIT, IR_PB_BIT, MOTOR_MASK};
+#[cfg(wellfed_board = "plaf103")]
+use wellfed_board::pins::{IR_PB, MOTOR_MASK};
+use wellfed_board::safe::{PORT_A_HIGH, PORT_A_LOW, PORT_B_LOW};
 
 use super::{
     AUDIO_PAGE_SAMPLES, AUDIO_PAGES, Advertising, BleEvent, BlePoll, BleService, BleStats,
     GpioRouting, Irq, Isr, LpClock, SECTOR_BYTES, Systick, TaskStep, WifiEvent, WifiPoll,
 };
+
+/// What the fake models of the chosen board beyond its pins: its inputs'
+/// reset levels and the one pin whose interrupt the ports configure.
+#[cfg(wellfed_board = "plaf103")]
+mod board {
+    use wellfed_board::pins::{self, ADAPTER, FEEDBACK, OUTLET};
+
+    /// Port A's inputs at reset: the outlet beam clear and DC present.
+    pub(super) const PORT_A_INPUT: u32 = pins::bit(OUTLET) | pins::bit(ADAPTER);
+    /// The portion feedback switch.
+    pub(super) const INTERRUPT_PIN: u32 = FEEDBACK;
+}
+
+#[cfg(wellfed_board = "plwf106")]
+mod board {
+    use wellfed_board::pins::{self, BUTTON};
+
+    /// Port A's inputs at reset: the button released, since it reads LOW
+    /// when held.
+    pub(super) const PORT_A_INPUT: u32 = pins::bit(BUTTON);
+    /// The button, whose both edges stock takes as an interrupt.
+    pub(super) const INTERRUPT_PIN: u32 = BUTTON;
+}
+
+/// PB3 is SWD_CLK on every AmebaD board: while SWD holds it, its GPIO latch
+/// never reaches the pad.
+const SWD_CLK_PB_BIT: u32 = 1 << 3;
 
 pub const GPIOA_IRQ: usize = 4;
 pub const TIMER2_IRQ: usize = 19;
@@ -129,6 +158,8 @@ pub struct Hardware {
     pub trigger: bool,
     pub stuck: bool,
     pub efuse_fail: bool,
+    /// The PLAF103's motor pair and emitter refuse writes; no other board
+    /// reads these.
     pub blocked_motor_write: bool,
     pub blocked_optics_write: bool,
 
@@ -259,7 +290,7 @@ impl Default for Hardware {
             blocked_gpio_clock: false,
 
             output: [0; 2],
-            input: [pins::bit(pins::OUTLET) | pins::bit(pins::ADAPTER), 0],
+            input: [board::PORT_A_INPUT, 0],
             direction: [0; 2],
             interrupts: 0,
             polls: 0,
@@ -505,7 +536,7 @@ fn pad_input(h: &Hardware, p: usize) -> u32 {
         ((h.output[p] & h.direction[p]) | (h.input[p] & !h.direction[p])) & !h.dead_input[p];
     if p == 1 && h.swd_pmux & crate::SWD_PMUX_BIT != 0 {
         // SWD owns PB3 (SWD_CLK): the GPIO latch never reaches the pad.
-        normal &= !IR_PB_BIT;
+        normal &= !SWD_CLK_PB_BIT;
     }
     (normal & !h.readback_override_mask[p]) | (h.readback_override[p] & h.readback_override_mask[p])
 }

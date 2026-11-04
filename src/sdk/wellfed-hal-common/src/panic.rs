@@ -3,10 +3,11 @@
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
-    // KM4 owns the motor and infrared GPIO: mask interrupts and request motor
-    // STOP and infrared OFF with raw register writes before halting, then
-    // send the lines still queued and say where. KM0 drives neither and has
-    // no print here, so it only halts.
+    // KM4 owns the outputs: mask interrupts and request the board's safe
+    // state (the feeder's motor STOP and infrared OFF, the fountain's pump
+    // off) with raw register writes before halting, then send the lines
+    // still queued and say where. KM0 drives none and has no print here, so
+    // it only halts.
     #[cfg(feature = "km4")]
     {
         wellfed_amebad_sys::panic_outputs_safe();

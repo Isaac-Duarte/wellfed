@@ -229,7 +229,7 @@ impl Probe {
         let ok = self.board.capture(&mut reading).is_ok()
             && self
                 .board
-                .sample_channel(wellfed_hal::board::pins::ADC_SUPPLY, &mut supply);
+                .sample_channel(wellfed_hal::sdk::ADC_SUPPLY_CHANNEL, &mut supply);
         let ticks = sdk::systimer_ticks().wrapping_sub(begin);
         let stopped = stopped::observe().verified();
 

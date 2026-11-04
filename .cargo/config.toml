@@ -2,3 +2,12 @@
 # Repository maintenance tasks (src/tools/xtask): `cargo xtask check-repository`,
 # `cargo xtask fuzz <target>`.
 xtask = "run --quiet --locked -p xtask --"
+
+[env]
+# The board every build in the repository is for unless it says otherwise
+# (`wellfed-board`'s build script): the PLAF103 feeder, so a workspace build
+# and its tests are the feeder's. A firmware image's board is set by the
+# reviewed build wrapper from its device; a fountain host check sets
+# `WELLFED_BOARD=plwf106` itself (`make check-rust`), which this never
+# overrides.
+WELLFED_BOARD = "plaf103"

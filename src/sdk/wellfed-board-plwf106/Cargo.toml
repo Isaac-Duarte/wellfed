@@ -1,0 +1,11 @@
+[package]
+license.workspace = true
+name = "wellfed-board-plwf106"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "The PLWF106 fountain board: its pins and polarities, its outputs' safe state, and the stock flash a replacement must preserve"
+publish.workspace = true
+
+[lints]
+workspace = true

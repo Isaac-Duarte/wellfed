@@ -1,6 +1,9 @@
 //! Button service against the fake SDK: the pins open as inputs, a
 //! press and a hold come out as gestures in order, the reader takes them from
 //! the queue, and a full queue drops new gestures rather than old ones.
+//!
+//! The PLAF103's panel drivers, which build for no other board.
+#![cfg(wellfed_board = "plaf103")]
 
 use std::sync::{Mutex, MutexGuard};
 

@@ -6,6 +6,9 @@
 //!
 //! Every way an install can fail stops it before bank 1's marker is
 //! written, so the loader keeps booting bank 0.
+//!
+//! The updater keeps its records in the board's store.
+#![cfg(wellfed_board_store)]
 
 use std::cell::{Cell, RefCell};
 use std::sync::{Mutex, MutexGuard};

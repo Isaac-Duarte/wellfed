@@ -29,6 +29,7 @@ use crate::device::StockPaths;
 use crate::environment::Environment;
 use crate::{Error, Firmware, Profile, Provisioning, Repo, Result, Stage, digest, relative, text};
 use wellfed_formats::require;
+use wellfed_proto::device::Model;
 
 pub mod audit;
 pub(crate) mod credentials;
@@ -79,6 +80,9 @@ const WIFI_CREDENTIALS: &str = "private/hotspot.json";
 /// the feeder runtime reads its presence (`network::BUILD_WIFI`). The
 /// header's presence macro has the same name.
 const BUILD_WIFI_VARIABLE: &str = credentials::PRESENCE;
+/// The board `wellfed-board` builds for, which this sets from the device:
+/// the model's name, never a caller's value.
+const BOARD_VARIABLE: &str = "WELLFED_BOARD";
 
 /// The generated credentials header for `provisioning`, and the private
 /// file it was generated from, if any.
@@ -228,9 +232,11 @@ fn archive_symbols(core: Core) -> Vec<&'static str> {
 }
 
 /// The cargo environment of the archive builds: the checked environment
-/// plus what the SDK crates' build scripts read.
+/// plus what the SDK crates' build scripts read, the board among them, so
+/// both cores' archives are built for the device's model and no other.
 fn cargo_environment(
     environment: &Environment,
+    model: Model,
     sdk: &Path,
     toolchain: &Path,
     identity: &str,
@@ -238,6 +244,7 @@ fn cargo_environment(
     provisioning: Provisioning,
 ) -> Environment {
     let mut environment = environment.clone();
+    environment.insert(BOARD_VARIABLE.into(), model.name().into());
     environment.insert("WELLFED_BUILD_ID".into(), identity.into());
     environment.insert("WELLFED_SDK_DIR".into(), sdk.display().to_string());
     environment.insert(
@@ -476,6 +483,7 @@ impl Build<'_> {
             println!("Building Rust firmware archives...");
             let environment = cargo_environment(
                 &rust.environment,
+                job.device.model(),
                 &self.sdk,
                 job.toolchain,
                 job.identity,
@@ -797,6 +805,7 @@ mod tests {
             let (header, source) = credentials_header(&repo, provisioning).unwrap();
             let environment = cargo_environment(
                 &inherited,
+                Model::Plaf103,
                 Path::new("sdk"),
                 Path::new("toolchain"),
                 &"00".repeat(32),
@@ -813,6 +822,29 @@ mod tests {
             );
             assert_eq!(header.contains(&presence), told, "{provisioning:?}");
             assert_eq!(source.is_some(), told, "{provisioning:?}");
+        }
+    }
+
+    /// Both cores' archives are built for the device's model, whatever
+    /// board the builder's own environment names.
+    #[test]
+    fn the_board_is_the_device_model() {
+        let inherited = Environment::from([(BOARD_VARIABLE.to_string(), "plwf106".to_string())]);
+
+        for model in Model::ALL {
+            let environment = cargo_environment(
+                &inherited,
+                model,
+                Path::new("sdk"),
+                Path::new("toolchain"),
+                &"00".repeat(32),
+                None,
+                Provisioning::Consumer,
+            );
+            assert_eq!(
+                environment.get(BOARD_VARIABLE).map(String::as_str),
+                Some(model.name())
+            );
         }
     }
 }

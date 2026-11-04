@@ -2,6 +2,9 @@
 //! the settings and honors `sound`, one tune plays at a time with the
 //! amplifier enabled only while the codec is open, and the ring drains
 //! before everything closes.
+//!
+//! The PLAF103's panel drivers, which build for no other board.
+#![cfg(wellfed_board = "plaf103")]
 
 use std::sync::{Mutex, MutexGuard};
 

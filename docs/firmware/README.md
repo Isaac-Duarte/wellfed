@@ -93,8 +93,9 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 | `wellfed-sdk` | The KM4 runtime every firmware runs inside |
 | `wellfed-probes` | The bench probes |
 | `wellfed-amebad-sys` | Bindings to the pinned AmebaD SDK, and its host fake |
-| `wellfed-board` | The board contract: the one board crate its feature selects, checked for every item |
+| `wellfed-board` | The board contract: the one board crate `WELLFED_BOARD` names, checked for every item |
 | `wellfed-board-plaf103` | The PLAF103's pins, ADC channels, storage map and safe output state |
+| `wellfed-board-plwf106` | The PLWF106's pins, safe output state and stock flash; no store yet |
 | `wellfed-testkit`, `wellfed-sim` | Fake NOR storage and the virtual feeder |
 | `wellfed-proto` | The device protocol's messages |
 | `wellfed-device-api` | The feeder's side of the device API and pairing |

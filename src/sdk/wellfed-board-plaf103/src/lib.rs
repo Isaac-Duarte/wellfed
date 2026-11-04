@@ -55,10 +55,10 @@ pub mod pins {
     /// 200 ms, and the feeder beeps it for each button press.
     pub const BUZZER: u32 = 25;
     /// ADC channels: motor current and the battery pack. Channel 10, the
-    /// chip's own supply, is the AmebaD's, not the board's.
+    /// chip's own supply, is the AmebaD's, not the board's
+    /// (`wellfed_amebad_sys::ADC_SUPPLY_CHANNEL`).
     pub const ADC_CURRENT: u32 = 4;
     pub const ADC_BATTERY: u32 = 5;
-    pub const ADC_SUPPLY: u32 = 10;
 
     /// The pin's bit in its port register.
     pub const fn bit(pin: u32) -> u32 {
@@ -88,6 +88,8 @@ pub mod pins {
 /// Callers name a sector index; nothing takes a flash address.
 pub const STORAGE_OFFSET: u32 = 0x34_0000;
 pub const STORAGE_SECTORS: u32 = 48;
+const _: () =
+    assert!(STORAGE_OFFSET >= 0x30_6000 && STORAGE_OFFSET + STORAGE_SECTORS * 0x1000 <= 0x3e_8000);
 
 /// Who owns each sector of the storage region, in one place. Each
 /// store keeps its sectors to itself, so a torn record is always its own.

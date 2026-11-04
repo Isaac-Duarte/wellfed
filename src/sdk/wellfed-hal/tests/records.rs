@@ -2,6 +2,9 @@
 //! host parser (`wellfed_core::record`) decodes them back. Each line is
 //! built the way the first-boot app writes it, tag and all, after SDK noise,
 //! so a renamed field or a changed word fails here rather than on the bench.
+//!
+//! The PLAF103's records, the updater's and the audio's among them.
+#![cfg(wellfed_board = "plaf103")]
 
 use std::fmt;
 

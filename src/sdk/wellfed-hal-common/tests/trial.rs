@@ -3,8 +3,9 @@
 
 use wellfed_core::ota::{CONFIRM_LEN, MARKER, confirm_record};
 use wellfed_hal_common::trial::{
-    Decision, HALT_LIMIT, HALT_MS, LIMIT, MAX_LEVEL, STABLE_MS, STORM_LIMIT, STORM_STATE, Storm,
-    decide, deliberate, halt_over, hold_ms, level, past_trial, released, resets, settled,
+    CONFIRM_SECTOR, Decision, HALT_LIMIT, HALT_MS, LIMIT, MAX_LEVEL, STABLE_MS, STORM_LIMIT,
+    STORM_STATE, Storm, confirmation, decide, deliberate, halt_over, hold_ms, level, past_trial,
+    released, resets, settled,
 };
 
 const ID: [u8; 32] = [0x5a; 32];
@@ -399,4 +400,38 @@ fn a_forgotten_confirmation_changes_only_the_next_bank_1_boot() {
     }
     let (decision, _) = decide(&MARKER, &MARKER, &whole, register, &ID);
     assert_eq!(decision, Decision::Confirmed { resets: 0 });
+}
+
+/// KM0 decides on the record its glue read only on a board with a
+/// confirmation sector; on a board with none, nothing read can confirm a
+/// build, so a bank-1 build always runs its trial.
+#[test]
+fn only_a_board_with_a_store_can_confirm() {
+    let whole = confirm_record(&ID, 5);
+    let (decision, _) = decide(&MARKER, &MARKER, confirmation(&whole), 0, &ID);
+
+    match CONFIRM_SECTOR {
+        Some(_) => assert_eq!(decision, Decision::Confirmed { resets: 0 }),
+        None => assert_eq!(decision, Decision::Counted(1)),
+    }
+}
+
+/// KM0's glue reads the record at a fixed flash offset, which must be the
+/// board's confirmation sector. A board with no store ignores what it reads.
+#[test]
+fn the_glue_reads_the_boards_confirmation_sector() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../firmware/vendor/ports/amebad/firstboot_km0.c"
+    );
+    let source = std::fs::read_to_string(path).expect("the KM0 glue's source");
+    let offset = source
+        .lines()
+        .find_map(|line| line.strip_prefix("#define WELLFED_CONFIRM_OFFSET 0x"))
+        .and_then(|value| u32::from_str_radix(value.trim_end_matches('U'), 16).ok())
+        .expect("the glue defines its confirmation offset");
+
+    if let Some(sector) = CONFIRM_SECTOR {
+        assert_eq!(offset, wellfed_board::STORAGE_OFFSET + sector * 0x1000);
+    }
 }

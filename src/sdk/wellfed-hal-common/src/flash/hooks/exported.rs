@@ -186,8 +186,9 @@ pub unsafe extern "C" fn FLASH_Write_IPC_Int(data: *mut c_void, status: u32, cha
 }
 
 /// Lease provider fault callback: runs from RAM inside `hook_fail`, so it is
-/// leaf code with no call or flash literal (audited). It requests motor STOP
-/// and infrared OFF; the caller then halts in RAM for the watchdog.
+/// leaf code with no call or flash literal (audited). It requests the
+/// board's safe state (the feeder's motor STOP and infrared OFF, the
+/// fountain's pump off); the caller then halts in RAM for the watchdog.
 #[cfg(feature = "km4")]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".image2.ram.text.wellfed_park")]

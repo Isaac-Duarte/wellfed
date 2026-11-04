@@ -96,6 +96,11 @@ impl Device {
         &self.name
     }
 
+    /// The model its `device.json` names, which the directory is named for.
+    pub(crate) fn model(&self) -> Model {
+        self.config.model
+    }
+
     /// Its root-relative `device.json`.
     pub(crate) fn config_path(&self) -> String {
         format!("{DEVICES}/{}/device.json", self.name)

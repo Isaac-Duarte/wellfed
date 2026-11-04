@@ -1,6 +1,12 @@
-//! Exposes the reviewed build wrapper's source identity as `WELLFED_BUILD_ID`.
+//! Exposes the reviewed build wrapper's source identity as `WELLFED_BUILD_ID`,
+//! and forwards the board `wellfed-board` chose, which gates the drivers only
+//! one board can run.
+
+#[path = "../wellfed-board/build/forward.rs"]
+mod board;
 
 fn main() {
+    board::forward();
     println!("cargo:rerun-if-env-changed=WELLFED_BUILD_ID");
     // The built-in update-signing key (`ota::update::public_key`).
     println!("cargo:rerun-if-env-changed=WELLFED_OTA_PUBLIC_KEY");

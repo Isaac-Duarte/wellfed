@@ -21,7 +21,9 @@ Each fact is one of three kinds:
 
 **Three layers.** The chip HAL (`wellfed-hal`) holds what any AmebaD device needs, plus the generic drivers (buttons, LEDs, buzzer, audio, ADC) that take their pins from the board. The board crate (`wellfed-board-plaf103`) holds the pins, polarities, the outputs' safe state, the storage map and the model. The feeder's own hardware sits above the chip HAL in `wellfed-hal-feeder`: the motor, optics and sensor board, its timer tick and feedback capture, the feeding owner, and the bench variants' injected stop failures, jams and sensor faults.
 
-**One source for pins: the board contract.** Nothing reads a board crate directly: the SDK, both drivers and the product read `wellfed-board`, which re-exports the one board its feature selects (`plaf103` for now) and checks at compile time that it has every item the contract names. The contract is plain constants, not a trait: every value is used in a constant context (a static's length, a compile-time check, the RAM-resident code of a flash lease), and a trait's associated constants would need a generic parameter through each, which a static cannot take. A second board is a second crate of the same shape and a second feature. Nothing reads the board at run time.
+**One source for pins: the board contract.** Nothing reads a board crate directly: the SDK, both drivers and the product read `wellfed-board`, which re-exports the one board `WELLFED_BOARD` names and checks at compile time that it has every item the contract names. The build wrapper sets the variable from the device it builds for. The repository's `.cargo/config.toml` sets `plaf103` for every other build, so the workspace and its tests are the feeder's. A name that is not exactly one known board stops the build. The contract is plain constants, not a trait: every value is used in a constant context (a static's length, a compile-time check, the RAM-resident code of a flash lease), and a trait's associated constants would need a generic parameter through each, which a static cannot take. A second board is a second crate of the same shape and a name in `wellfed-board`'s build script. Nothing reads the board at run time.
+
+**Code only one board runs** is gated on `cfg(wellfed_board = "<name>")`, and code that keeps a store on `cfg(wellfed_board_store)`. `wellfed-board`'s build script emits both and hands them to the crates that gate code, so one check decides for every crate. A Cargo feature would not do: features unify across a workspace build, which would turn on two boards at once.
 
 **Why not `device.json`.** The pins are compile-time constants inside `no_std` firmware, and several feed audited code: the stopped-output check, the panic and RAM-park output writes, and the KM0 pad-table audit. Generating them from JSON would put a code generator in front of audited binaries, for no gain while there is one board. `device.json` stays the description of what the builder needs.
 
@@ -36,7 +38,7 @@ These facts stay where they are, and are listed here instead. A second model wou
 - **Rust interfaces between Rust crates.** The motor pins (`MotorPins`), a store's flash (`store::slot::SlotIo`) and the owner's journal (`feed::storage::OwnerStorage`) are traits the caller's types implement. Each call is direct: the build's stack audit follows it, and no context pointer crosses it. Only what C or the SDK calls stays `extern "C"`: the flash-lock hook provider the RAM interposer installs, the interrupt handlers, and the `wellfed_*` exports.
 - **Motor driver.** The TC118AH's truth table is split between two crates: `wellfed_core::feed::motor_gate` makes both inputs HIGH its STOP (the driver's brake), and the board's `MotorPins` implementation, `wellfed_hal_feeder::board::BoardPins`, refuses both LOW. The dispensing direction is clockwise, `Drive0`, with PA13 HIGH ([motor pulse](motor-pulse.md)).
 - **Beams.** `wellfed_core::feed::sensor_inputs` holds their polarity, and which is food and which is outlet.
-- **Stopped outputs.** `wellfed_hal::stopped` defines stopped as motor HIGH, emitters LOW and SWD released, and checks exactly the pins the board's `safe` state covers. The raw-register copies in `target.rs` (`panic_outputs_safe`, `ram_outputs_safe`) write the board's `safe` state. The RAM-park audit checks `ram_outputs_safe` as leaf code.
+- **Stopped outputs.** `wellfed_hal::stopped` checks exactly the pins the board's `safe` state covers. On the PLAF103 stopped is motor HIGH, emitters LOW and SWD released; on the PLWF106 it is the pump LOW. The raw-register copies in `target.rs` (`panic_outputs_safe`, `ram_outputs_safe`) write the board's `safe` state. The RAM-park audit checks `ram_outputs_safe` as leaf code.
 - **Raw outputs are `unsafe`.** In `wellfed-amebad-sys` these are `unsafe fn`s whose contract is ownership:
   - the GPIO writers (`gpio_port_write`, `gpio_write_bit`, `gpio_init`): the motor pins belong to `board` and `stopped`;
   - the watchdog (`wdg_init`, `wdg_cmd`, `wdg_refresh`): it belongs to the runtime's supervision;
@@ -71,7 +73,7 @@ These facts stay where they are, and are listed here instead. A second model wou
 
 ### Chip facts
 
-ADC channel 10 (the internal supply), the ADC eFuse calibration, SWD pad muxing, the audio codec rates, and the `81958711` bank marker.
+ADC channel 10 (the internal supply, `wellfed_amebad_sys::ADC_SUPPLY_CHANNEL`), the ADC eFuse calibration, SWD pad muxing, the audio codec rates, and the `81958711` bank marker.
 
 ## For a second model
 

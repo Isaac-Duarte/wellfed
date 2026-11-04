@@ -24,9 +24,18 @@ check: check-rust check-deps check-cross check-virtual-feeder check-docs
 PRODUCTION_LINTS = -D clippy::unwrap_used -D clippy::cast_possible_truncation \
 	-D clippy::needless_pass_by_value -D unreachable_pub
 
-# The last nine lines check the bench variants' injections, which no
-# workspace build enables: `stop-fail` and `feed-faults` (for `feed-jam` and
-# `sensor-fault`) in the feeder drivers, and `virtual-panel` in the chip HAL.
+# The fountain's board, which no workspace build chooses (they are the
+# PLAF103's, `.cargo/config.toml`), in its own target directory so neither
+# board's build replaces the other's: the board crates, the SDK bindings,
+# both cores' chip routines and the chip HAL, which is what builds for it.
+FOUNTAIN = WELLFED_BOARD=plwf106 CARGO_TARGET_DIR=target/plwf106
+FOUNTAIN_CRATES = -p wellfed-board -p wellfed-board-plwf106 -p wellfed-amebad-sys \
+	-p wellfed-hal-common -p wellfed-hal
+
+# After the workspace, nine lines check the bench variants' injections,
+# which no workspace build enables: `stop-fail` and `feed-faults` (for
+# `feed-jam` and `sensor-fault`) in the feeder drivers, and `virtual-panel`
+# in the chip HAL. The last three check the fountain's board.
 check-rust:
 	cargo fmt --all -- --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -42,6 +51,9 @@ check-rust:
 	cargo clippy --locked -p wellfed-hal --features virtual-panel --all-targets -- -D warnings
 	cargo clippy --locked -p wellfed-hal --features virtual-panel --lib -- -D warnings $(PRODUCTION_LINTS)
 	cargo nextest run --locked -p wellfed-hal --features virtual-panel --test virtual_panel
+	$(FOUNTAIN) cargo clippy --locked $(FOUNTAIN_CRATES) --all-targets -- -D warnings
+	$(FOUNTAIN) cargo clippy --locked $(FOUNTAIN_CRATES) --lib -- -D warnings $(PRODUCTION_LINTS)
+	$(FOUNTAIN) cargo nextest run --locked $(FOUNTAIN_CRATES) --all-targets
 
 # Licenses, advisories, duplicate versions and sources (deny.toml), then the
 # out-of-workspace fuzz and bench board crates' own lockfiles under their own
@@ -52,9 +64,11 @@ check-deps:
 	cargo deny --manifest-path $(BENCH_BOARD)/Cargo.toml --locked check --config $(BENCH_BOARD)/deny.toml
 
 # A consumer identity, because a bench one hashes the ignored build Wi-Fi file
-# and this check needs no private file. The build only needs a well-formed id.
+# and this check needs no private file. The build only needs a well-formed id,
+# so the fountain's KM0 archive, which has no device directory yet, takes it.
 check-cross: check-bench-board
 	WELLFED_BUILD_ID=$$(cargo run --quiet --locked --release -p wellfed-build -- source-id --device plaf103 --provisioning consumer) cargo build --locked -p wellfed-hal-common --release --target thumbv8m.base-none-eabi --features km0
+	WELLFED_BUILD_ID=$$(cargo run --quiet --locked --release -p wellfed-build -- source-id --device plaf103 --provisioning consumer) $(FOUNTAIN) cargo build --locked -p wellfed-hal-common --release --target thumbv8m.base-none-eabi --features km0
 
 # The bench board's firmware is its own workspace, built from its folder so
 # its .cargo/config.toml (target, linker script, UF2 runner) applies. It only
