@@ -10,6 +10,7 @@ use std::fmt;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+use wellfed_proto::device::Model;
 
 use serde::Serialize;
 
@@ -599,10 +600,24 @@ fn rom_command(command: &[u8]) -> bool {
 }
 
 pub fn console_query(port: &mut dyn Port, command: &[u8], window: Duration) -> Result<Vec<u8>> {
+    console_query_until(port, command, window, |_| false)
+}
+
+/// A console query that returns as soon as `done` holds for the reply so far,
+/// or at `window`. A stock app that logs every few seconds (the PLWF106's
+/// Wi-Fi retries) leaves gaps too short for a fixed-window inspection, so the
+/// replies the inspection can recognize end it early. What a reply must say
+/// is unchanged: `done` only decides when to stop listening.
+fn console_query_until(
+    port: &mut dyn Port,
+    command: &[u8],
+    window: Duration,
+    done: impl Fn(&[u8]) -> bool,
+) -> Result<Vec<u8>> {
     require(rom_command(command), || ProtocolError::ConsoleCommand)?;
 
     send(port, command)?;
-    let reply = collect(port, window)?;
+    let reply = collect_until(port, window, done)?;
     require(
         !FAULTS
             .iter()
@@ -628,8 +643,26 @@ pub fn is_km0_help(reply: &[u8]) -> bool {
         && !contains(reply, b"switch shell to KM0")
 }
 
-fn is_km4_help(reply: &[u8]) -> bool {
-    contains(reply, b"switch shell to KM0") && contains(reply, b"0e11df78")
+/// The command-table address each model's stock application prints in its
+/// KM4 help, which ties a console to a stock build we have observed: the
+/// PLAF103 feeder's (1.1.15) at 0e11df78, the PLWF106 fountain's (0.0.17) at
+/// 0e0ba120. No wildcard, so a new model cannot land without its table. The
+/// ROM words sampled afterwards stay the check that gates a helper upload.
+const fn stock_km4_table(model: Model) -> &'static [u8] {
+    match model {
+        Model::Plaf103 => b"0e11df78",
+        Model::Plwf106 => b"0e0ba120",
+    }
+}
+
+/// The model whose stock KM4 help `reply` is, if it is one.
+fn km4_help_model(reply: &[u8]) -> Option<Model> {
+    if !contains(reply, b"switch shell to KM0") {
+        return None;
+    }
+    Model::ALL
+        .into_iter()
+        .find(|&model| contains(reply, stock_km4_table(model)))
 }
 
 /// Every `ADDRESS:<spaces>XXXXXXXX` word in a `DW` reply.
@@ -668,6 +701,20 @@ fn dumped_words(reply: &[u8], address: u32) -> Vec<u32> {
     values
 }
 
+/// A help table has printed its closing line.
+fn help_ended(reply: &[u8]) -> bool {
+    let marker = b"TEST COMMAND MODE END";
+    reply
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .is_some_and(|at| reply[at..].contains(&b'\n'))
+}
+
+/// A `DW` reply holds its one word and the line it is on has ended.
+fn word_ended(reply: &[u8], address: u32) -> bool {
+    reply.ends_with(b"\n") && dumped_words(reply, address).len() == 1
+}
+
 pub fn rom_sample_addresses() -> Vec<u32> {
     ROM_POINTS
         .iter()
@@ -695,6 +742,8 @@ pub struct RomInspection {
     /// Candidate path to its SHA-256.
     pub matching_candidates: BTreeMap<String, String>,
     pub returned_to_km4: bool,
+    /// The model whose stock KM4 command table the console printed.
+    pub stock_model: Model,
     pub limit: &'static str,
 }
 
@@ -709,13 +758,14 @@ pub fn inspect_rom(
         ProtocolError::PreexistingFault
     })?;
 
+    let mut opened = None;
     if start == Core::Km4 {
-        let high = console_query(port, b"?\r\n", Duration::from_secs(1))?;
-        require(is_km4_help(&high), || ProtocolError::Km4Table)?;
+        let high = console_query_until(port, b"?\r\n", Duration::from_secs(1), help_ended)?;
+        opened = Some(km4_help_model(&high).ok_or(ProtocolError::Km4Table)?);
         console_query(port, b">>\r\n", Duration::from_millis(500))?;
     }
 
-    let low = console_query(port, b"?\r\n", Duration::from_secs(1))?;
+    let low = console_query_until(port, b"?\r\n", Duration::from_secs(1), help_ended)?;
     require(is_km0_help(&low), || ProtocolError::Km0Table)?;
 
     let mut samples = Vec::new();
@@ -723,7 +773,12 @@ pub fn inspect_rom(
 
     for address in rom_sample_addresses() {
         let command = format!("DW {address:08X}\r\n");
-        let response = console_query(port, command.as_bytes(), Duration::from_millis(250))?;
+        let response = console_query_until(
+            port,
+            command.as_bytes(),
+            Duration::from_millis(250),
+            |reply| word_ended(reply, address),
+        )?;
         let values = dumped_words(&response, address);
         require(values.len() == 1, || ProtocolError::RomWordCount {
             address,
@@ -744,8 +799,12 @@ pub fn inspect_rom(
     }
 
     console_query(port, b">>\r\n", Duration::from_millis(500))?;
-    let high = console_query(port, b"?\r\n", Duration::from_secs(1))?;
-    require(is_km4_help(&high), || ProtocolError::Km4Return)?;
+    let high = console_query_until(port, b"?\r\n", Duration::from_secs(1), help_ended)?;
+    let stock_model = km4_help_model(&high).ok_or(ProtocolError::Km4Return)?;
+    // A console that came back as another model's is not the one inspected.
+    require(opened.is_none_or(|model| model == stock_model), || {
+        ProtocolError::Km4Return
+    })?;
 
     Ok(RomInspection {
         sampled_words: samples,
@@ -754,6 +813,7 @@ pub fn inspect_rom(
             .map(|(name, rom)| (name.clone(), sha256(rom)))
             .collect(),
         returned_to_km4: true,
+        stock_model,
         limit: "Sampled ROM identity only; not whole-ROM or all-side-effect verification",
     })
 }
@@ -761,6 +821,40 @@ pub fn inspect_rom(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn km4_help_names_the_model_whose_stock_table_it_lists() {
+        let feeder = b"\t>> \r\n\t\t switch shell to KM0 \r\n---- END  12 [0e11df78:0e11e038]----";
+        let fountain =
+            b"\t>> \r\n\t\t switch shell to KM0 \r\n---- END  12 [0e0ba120:0e0ba1e0]----";
+        let unknown = b"\t>> \r\n\t\t switch shell to KM0 \r\n---- END  12 [0e000000:0e0000c0]----";
+        let km0 = b"\t>> \r\n\t\t switch shell to KM4 \r\n---- END  12 [0e0ba120:0e0ba1e0]----";
+
+        assert_eq!(km4_help_model(feeder), Some(Model::Plaf103));
+        assert_eq!(km4_help_model(fountain), Some(Model::Plwf106));
+        assert_eq!(km4_help_model(unknown), None);
+        assert_eq!(km4_help_model(km0), None);
+    }
+
+    #[test]
+    fn console_replies_end_only_once_their_line_is_whole() {
+        assert!(help_ended(
+            b"--- TEST COMMAND MODE END  12 [0e0ba120:0e0ba1e0]---\r\n"
+        ));
+        assert!(!help_ended(b"--- TEST COMMAND MODE END  12 [0e0ba1"));
+        assert!(!help_ended(b"\t>> \r\n\t\t switch shell to KM0 \r\n"));
+
+        assert!(word_ended(
+            b"DW 00001298\r\n00001298: 4B0FB40F \r\n",
+            0x1298
+        ));
+        assert!(!word_ended(b"DW 00001298\r\n00001298: 4B0F", 0x1298));
+        assert!(!word_ended(b"DW 00001298\r\n00001298: 4B0FB40F ", 0x1298));
+        assert!(!word_ended(
+            b"DW 00001298\r\n0000129C: 4B0FB40F \r\n",
+            0x1298
+        ));
+    }
 
     #[test]
     fn requests_are_aligned_and_bounded() {

@@ -5336,6 +5336,7 @@ dependencies = [
  "wellfed-emu",
  "wellfed-formats",
  "wellfed-image",
+ "wellfed-proto",
 ]
 
 [[package]]
