@@ -4,7 +4,7 @@ Before the replacement firmware could feed, a probe brought up each piece of har
 
 The bring-up firmwares and the [QA firmware](qa.md) still run the optics, buttons, ADC, speaker and pulse probes from `src/sdk/wellfed-probes`. The normal firmware runs none of them.
 
-**How the audit binds them.** `wellfed-audit startup --device plaf103` binds each live policy both ways to a record format in the image: a manifest that declares the policy needs the marker string in the image, and an image carrying the marker needs the policy. Policies for different probes exclude each other, so an image is audited under exactly the probe it carries. The retired probes below (the supervision probe, the flash-coordination probes from the [boot handshake](#boot-handshake) to the [settings power-cut test](#settings-power-cut-test), and the health transport) are refused: no current image carries them, so a manifest naming one of their policies, or an image carrying their start record, fails. Their sections stay as the record reference.
+**How the audit binds them.** `wellfed-audit startup --device plaf103` binds each live policy both ways to a record format in the image: a manifest that declares the policy needs the marker string in the image, and an image carrying the marker needs the policy. Policies for different probes exclude each other, so an image is audited under exactly the probe it carries. The retired probes below (the supervision probe, the flash-coordination probes from the [boot handshake](#boot-handshake) to the [settings power-cut test](#settings-power-cut-test), ) are refused: no current image carries them, so a manifest naming one of their policies fails, and an image carrying the supervision probe's `PLTMR1 open board=` fails too. The health transport's policy is still accepted, bound both ways to its start record. Their sections stay as the record reference.
 
 | Probe | Policy | Records | In the audit |
 | --- | --- | --- | --- |
@@ -14,7 +14,7 @@ The bring-up firmwares and the [QA firmware](qa.md) still run the optics, button
 | [Power input](#power-input-probe) | `fw14-adc-v1`, `-v2` | `PLADC1` | Yes |
 | [Wi-Fi scan](#wi-fi-scan), [join](#wi-fi-join) | `fw07-scan-v1`, `fw07-join-v1` | `PLWIF1`, `PLWIF2` | Yes |
 | [Wi-Fi DNS check](#wi-fi-dns-check-retired) | `fw07-dns-v1` | `PLWIF3` | Yes, until no frozen review declares it |
-| [Health transport](#health-transport-deleted) | `fw08-transport-v1` | `PLMQT1` | Refused |
+| [Health transport](#health-transport-deleted) | `fw08-transport-v1` | `PLMQT1` | Yes, bound to `PLMQT1 start created=` and the `Keep` Wi-Fi policy |
 | [Optics](#optics-probe) | `fw13-optics-v1`, `-v2` | `PLOPT1` | Yes |
 
 ## Indicator probe
@@ -30,14 +30,14 @@ The controller preloaded the indicator latches LOW, selected the stock-derived G
 
 ## Supervision probe
 
-Policy `fw05-probe-v1`, retired. It proved the stop timer and the watchdog with motion disabled. After the indicator probe, a cold boot opened the stopped board (motor STOP, emitters OFF, no sensor inputs, efuse or ADC) and TIM2, then:
+Policy `fw05-probe-v1`, retired. It proved the stop timer and the watchdog with motion disabled. After the indicator probe, a cold boot opened the stopped board (motor STOP, emitters OFF, no sensor inputs, efuse or ADC) and TIM2, requesting no drive or emitter, then:
 
 1. logged 13 `PLTMR1 sample` snapshots: SYSTIMER raw, supervision ms, accepted TIM2 interrupts, and ready, healthy and stopped;
 2. ran a 2 s busy stall;
 3. armed the watchdog (`PLWDG1 arm`) and fed it 15 s (`fed`);
 4. withheld progress (`stall_begin`, `stalled`) until one watchdog reset.
 
-The next boot printed only `PLWDG1 skip`; the auditor treated the two-boot capture as `repeated_startup`. Before arming, the probe wrote a marker to SDK user backup register 1 and read it back, and any boot that saw a marker or a boot reason cleared it and skipped. Had both guards failed, the probe would have repeated about every 100 s until power-off; the UART loader stays available at power-on.
+The next boot repeated startup and the indicator probe, then printed only `PLWDG1 skip`; the auditor treated the two-boot capture as `repeated_startup`. Before arming, the probe wrote a marker to SDK user backup register 1 and read it back, and any boot that saw a marker or a boot reason cleared it and skipped, so a reset could not repeat the watchdog test until power was removed. Had both guards failed, the probe would have repeated about every 100 s until power-off; the UART loader stays available at power-on.
 
 Nominal clocks: SYSTIMER and TIM2 at 32 768 Hz (SDK: 31 µs ticks), and a watchdog of 4095 × 32 counts at about 33.3 kHz (`WDG_Scalar`), bounded to 2.9–5.3 s by 25–45 kHz limits.
 
@@ -70,7 +70,7 @@ A pass needs `marker=00000000 watchdog=pass installed=1`; every batch with JEDEC
 
 ## Scratch-sector write
 
-Policy `fw06-write-v1`, retired, on one owner-approved 4 KiB scratch sector at `0x185000`. One boot, HELLO and READY as above, none of the other probes' records. Then `PLWRS1 start marker=<hex8> watchdog=<pass|fail> installed=<0|1>`, `PLWRS1 preimage id=<6 hex> blank=<n>`, three `PLWRS1 cycle n=<n> erase_ticks=<ticks> blank=<n> program_max=<ticks> errors=<n>`, `PLWRS1 restore erase_ticks=<ticks> blank=<n>` and `PLWRS1 done cycles=<n> leases=<n> phase=<n> fault=<n> park_max=<ticks> release_max=<ticks> frozen=<n>`, in 32 768 Hz ticks. Failures: `PLWRS1 skip marker=<hex8>` or `PLFLS1 error ...`.
+Policy `fw06-write-v1`, retired, on one owner-approved 4 KiB scratch sector at `0x185000`. One boot, HELLO and READY as above, with no `PLPRK1`, `PLRDS1`, `PLFLS1 peer` or `PLFLS1 done`. Then `PLWRS1 start marker=<hex8> watchdog=<pass|fail> installed=<0|1>`, `PLWRS1 preimage id=<6 hex> blank=<n>`, three `PLWRS1 cycle n=<n> erase_ticks=<ticks> blank=<n> program_max=<ticks> errors=<n>`, `PLWRS1 restore erase_ticks=<ticks> blank=<n>` and `PLWRS1 done cycles=<n> leases=<n> phase=<n> fault=<n> park_max=<ticks> release_max=<ticks> frozen=<n>`, in 32 768 Hz ticks. Failures: `PLWRS1 skip marker=<hex8>` or `PLFLS1 error ...`.
 
 A pass needs:
 
@@ -84,7 +84,7 @@ It covers one sector, not writes elsewhere or under power loss.
 
 ## Journal on NOR
 
-Policy `fw15-journal-v1`, retired, on the owner-approved 64 KiB region `0x340000`–`0x350000` (16 sectors). Each boot prints HELLO and READY, none of the other probes' records, then:
+Policy `fw15-journal-v1`, retired, on the owner-approved 64 KiB region `0x340000`–`0x350000` (16 sectors). Each boot prints HELLO and READY, with no `PLPRK1`, `PLRDS1`, `PLWRS1`, `PLFLS1 peer` or `PLFLS1 done`, then:
 
 - `PLJNL1 start mode=<0|1|2> marker=<hex8> watchdog=<pass|fail> installed=<0|1>`;
 - in mode 0, `PLJNL1 preimage id=<6 hex> blank_sectors=<n>`;
@@ -103,7 +103,7 @@ Every operation needs `ok=1 error=0`. Reserve, finish and wipe need nonzero tick
 
 ## Settings power-cut test
 
-Policies `fw15-settings-v1` and `-v2`, retired. HELLO and READY as above, none of the other probes' records. These `PLSET1 start marker=` records are not setup mode's `PLSET1 start cause=`.
+Policies `fw15-settings-v1` and `-v2`, retired. HELLO and READY as above, with no `PLPRK1`, `PLRDS1`, `PLWRS1`, `PLJNL1`, `PLFLS1 peer` or `PLFLS1 done`. These `PLSET1 start marker=` records are not setup mode's `PLSET1 start cause=`.
 
 Each boot prints `PLSET1 start marker=<hex8> watchdog=<pass|fail> installed=<0|1>` and `PLSET1 open status=<n> generation=<n> volume=<n> lights=<0|1> slot=<n> consistent=<0|1>` (status 0 LOADED, 1 EMPTY, 2 RECOVERED, 3 CORRUPT, 4 FUTURE, 5 IO, 6 WORN). It then saves settings, printing `PLSET1 batch saves=<n> generation=<n> ticks_max=<n>` every 25 saves, and in place of the last batch `PLSET1 end saves=<n> generation=<n> leases=<n> frozen=<n> phase=<n> fault=<n>`.
 
@@ -181,7 +181,7 @@ All observed on the research unit over the UART, unless marked.
 - **Supervision probe.** One receive-only cold-boot capture passed every startup policy on both boots, and the operator saw the indicator sequence twice.
   - SYSTIMER about 32 752 Hz against host receive times over 60 s, −475 ppm, within the host timestamps' ±0.1 %; it only moved forward. TIM2: 10.015 ms against 10.010 ms nominal for 328 ticks.
   - The 2 s stall (65 536 ticks) kept TIM2 interrupts running, and supervision stayed ready, healthy and stopped.
-  - The watchdog armed with vendor word `5601001f` and was fed 15 s with 60 checkpoints. The stalled loop latched fault 4 (PROGRESS) and never refreshed again. The reset came about 3.0–3.1 s after the last refresh, but `stalled` printed once a second, so `ms=3015` bounds it only to about 3.0–4.3 s.
+  - The watchdog armed with vendor word `5601001f` and was fed 15 s with 60 checkpoints, without a reset. The stalled loop latched fault 4 (PROGRESS) and never refreshed again. The reset came about 3.0–3.1 s after the last refresh, but `stalled` printed once a second, so `ms=3015` bounds it only to about 3.0–4.3 s.
   - The next boot reported boot reason `00100000` (`BIT_BOOT_KM4WDG_RESET_HAPPEN`) and the marker, and skipped: both guards worked.
   - Owner-lease expiry under a stall was not exercised; real motion showed it later ([motor pulse](motor-pulse.md#a-stalled-loop-and-a-failed-stop-during-a-feed)).
 - **Watchdog clock.** The handshake runs' resets came about 4.0–4.2 s after the last rate-limited refresh, near 31–33 kHz. On October 25, five resets from the `feeder` runtime came 3.97–4.05 s after the logged last refresh (`PLSUP1 stop … fed_ms=`), by the host's UART chunks: about 32.8 kHz, the SDK's SDM 32.768 kHz clock, which KM0 calibrates every boot (recovered).
@@ -190,7 +190,7 @@ All observed on the research unit over the UART, unless marked.
 - **Park round trip.** One power-on gave three boots, as designed: the withheld ACK reset 3.91 s later; after the withheld RELEASE, KM0 published TIMEOUT at 705 ms and the platform reset; a clean run followed. All 300 leases showed KM0's heartbeat frozen while parked and advancing between. Worst park 6 SYSTIMER ticks, release 2.
 - **Mediated read.** Passed on one cold boot. With the lease provider in the SDK flash-lock hooks, 100 `FLASH_RxCmdXIP` JEDEC reads returned `c84017`, each in its own lease with KM0 frozen. Worst park 4 ticks, release 2, 2.06 s in total; the coordinator ended idle and unfaulted. This shows one read-only SDK path through the hooks, not exclusive ownership for every SDK user.
 - **Scratch write.** Passed on one cold boot, on `0x185000`: ID `c84017`, blank preimage, three cycles with zero errors, a final erase back to blank, all 53 leases freezing KM0. Erase 27–35 ms including the lease, a page program at most 0.7 ms. It covers the hooked read, sector-erase and page-program paths only; KM0's own SDK flash users and other KM4 users (Wi-Fi, OTA) were then unmediated.
-- **Power inputs, adapter only.** One cold boot, no batteries, motor stopped. Startup had already set the ADC function and clock bits (`001115f7`, `00131557`), and the explicit enable read back unchanged. The efuse holds programmed calibration. 93 samples came 1.02 s apart, each 32-conversion capture in at most 10.1 ms. PA19 read 1, PA16 and PA17 0 with emitters off. Channels 4 and 5 read raw 239–243 (mean 240, scaled 16): no battery, no motor current.
+- **Power inputs, adapter only.** One cold boot, no batteries, motor stopped. Startup had already set the ADC function and clock bits (`001115f7`, `00131557`), and the explicit enable read back unchanged. The efuse holds programmed calibration. 93 samples came 1.02 s apart, each 32-conversion capture in at most 10.1 ms. PA19 read 1, PA16 and PA17 0 with emitters off. Channels 4 and 5 read raw 239–243 (mean 240, scaled 16): consistent with no battery and no motor current.
 - **Supply channel.** A `fw14-adc-v2` boot (95 samples) read channel 10 at raw 3911–3924, stock-scaled 3315–3317, while channels 4 and 5 stayed 239–244, so the select works. Channel 10 is the I/O supply (the SDK's 3.3 V detection reads it), and the idle UART TX at that supply measured about 3.29 V on a meter ([UART notes](../devices/plaf103/uart.md)): stock scaling gives millivolts within about 1 %, for this channel at least. Each 48-conversion capture took at most 15.1 ms.
 - **Batteries** (October 23, UART and meter): the `adc` probe over the air (v64), confirmed. A cold boot with no batteries passed `wellfed-audit adc` (58 samples, `fw14-batt-01-baseline`). The owner then inserted three D cells and pulled and replugged the adapter without a reboot ([power](power.md#evidence)). Captures `fw14-batt-02-both`, `-04-unplug` and `-05-meter` have no startup, so they were read, not audited.
 - **Wi-Fi scan.** Two cold boots on the adapter. `wifi_on(STA)` took 234–236 ms, and the three scans completed in 4.0–4.3 s with stopped outputs, hearing 51–63 networks. The driver printed `FW Enable failed` up to three times a boot, then suspected to come from the WLAN firmware not running on KM0. In the first boot that print split `PLWIF1 start` and the capture was rejected; the second, with scheduler-suspended logging and strongest-32 retention, passed. The owner's hotspot was not among those kept; whether it was broadcasting was not recorded.

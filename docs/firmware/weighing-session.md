@@ -11,6 +11,7 @@ You need food, a kitchen scale reading to 0.1 g (1 g works over more portions) a
 3. **Low hopper.** Feed until the hopper is near empty: `wellfed stats --section food` reports `present: false`, or the level is just above the rotor. Repeat step 2's 10 portions into the tared bowl.
 4. **Phase effect (optional).** Run `wellfed feed --portions 3`, and about 5 s into its drive run `wellfed cancel-feed N` from a second terminal, with the number `wellfed feed` printed. Discard what falls. Then run `wellfed feed --portions 1` into the tared bowl. `PLOWN1 marks` (or `wellfed stats --section portions`) shows the homing, and the weight shows what a homed feed drops against a normal portion.
 5. **Enter the result.** Use the full-hopper run, unless the two runs differ by more than about 10 %; then enter their mean and report both. `wellfed calibrate --weighed 98.4 --portions 10` stores the mean, here 9,840 mg.
+6. **Check.** Run `wellfed calibrate`. It should show the weight you stored, here `"portion_mg": 9840`.
 
 Other forms: `wellfed calibrate --portion 9.8` enters one portion directly, `--clear` forgets it, and `wellfed calibrate` alone prints the calibration, the phase and the portions statistics.
 
@@ -20,7 +21,7 @@ Record per run the hopper level, each feed's `completed`, `outlet_breaks` and `d
 
 1. After an install, `wellfed calibrate` answers `"portion_mg": null`, `"bowl": "single"` and a phase.
 2. A ten-portion low-hopper run, if the owner wants one. The run-down in the [evidence](calibration.md#evidence) already shows portions near 7 g until the last few.
-3. Bank 0's role install leaves sectors 34–35 alone. A give-way and an install over the air kept the weight (October 29).
+3. Bank 0's role install leaves sectors 34–35 alone. This is still open. A give-way and an install over the air already kept the weight (October 29).
 
 ## Next steps
 

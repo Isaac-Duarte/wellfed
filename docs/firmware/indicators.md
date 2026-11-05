@@ -31,7 +31,7 @@ Port A's low pads read LOW whatever is driven on our unit, so only PB22 can be r
 
 ## Never in a feed's way
 
-The service runs in the loop task and adds no task. A step is a few comparisons over at most a dozen slots; each light that changes costs one masked port write under the interrupt lock and, a settle later, one readback. It takes no motor or flash lease.
+The service runs in the loop task and adds no task: the product firmware uses two of the four a firmware gets. A step is a few comparisons over at most a dozen slots; each light that changes costs one masked port write under the interrupt lock and, a settle later, one readback. It takes no motor or flash lease.
 
 The board's indicator writes (`wellfed_hal::leds::show`, checked by `leds::shown`) do not require stopped outputs, unlike the probe's `leds::request`, because the lights must work while a feed runs the motor and emitters. What keeps that safe:
 
