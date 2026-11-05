@@ -58,6 +58,7 @@ void main() {
 
     await feederTap(tester, find.text('Skip'));
     expect(find.text('Skip the 6:00 PM meal today?'), findsOneWidget);
+    expect(find.textContaining("Tomorrow's meal runs as usual."), findsOneWidget);
     await feederTap(tester, find.text('Keep it'));
     expect(session.requests, isEmpty, reason: 'kept, nothing is sent');
 
@@ -66,19 +67,60 @@ void main() {
     final skip = session.requests.single as FeederRequest_SkipMeal;
     expect((skip.slot, skip.dueMs), (0, feederTodayAt(18, 0)));
     expect(find.byType(SnackBar), findsNothing);
+    expect(
+      tester.widget<TextButton>(find.widgetWithText(TextButton, 'Skip')).onPressed,
+      isNull,
+      reason: 'a done skip holds its button until the card shows it',
+    );
   });
 
-  testWidgets('an undo goes at once, and one too late says the skip stays', (tester) async {
+  testWidgets('an undo goes at once, and its button waits for the card to show the meal back on', (tester) async {
     final FakeSession session = await today(tester);
 
     await feederTap(tester, find.text('Undo'));
     final undo = session.requests.single as FeederRequest_UnskipMeal;
     expect((undo.slot, undo.dueMs), (1, feederTodayAt(23, 0)));
 
-    session.replies.add(const FeederReply.refused(refusal: FeederRefusal.invalid()));
+    // The feeder took it, but the plans' re-read hasn't come: the row still
+    // shows the skip, and a second tap sends nothing.
+    expect(find.text('Undo'), findsOneWidget);
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton, 'Undo')).onPressed, isNull);
     await feederTap(tester, find.text('Undo'));
-    expect(find.textContaining('already due, so it stays skipped'), findsOneWidget);
-    expect(session.requests, hasLength(2), reason: 'the refused undo went once, and is not sent again');
+    expect(session.requests, hasLength(1), reason: 'the second tap went nowhere');
+    expect(find.byType(SnackBar), findsNothing);
+
+    // The re-read shows the meal back on: the row offers a skip again.
+    final int snack = feederTodayAt(23, 0);
+    session.status(
+      fakeCard(
+        meals: [
+          MealView(
+            slot: 1,
+            minute: 23 * 60,
+            portions: 1,
+            call: 0,
+            standing: const MealStanding.later(),
+            action: MealAction.skip(dueMs: snack),
+          ),
+        ],
+      ),
+    );
+    await settle(tester);
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton, 'Skip')).onPressed, isNotNull);
+  });
+
+  testWidgets("a refused undo doesn't claim the meal stays skipped, and leaves the button on", (tester) async {
+    final FakeSession session = await today(tester);
+    session.replies.add(const FeederReply.refused(refusal: FeederRefusal.invalid()));
+
+    await feederTap(tester, find.text('Undo'));
+    expect(
+      find.text("Couldn't undo. The meal may already be back on, or its time has come: look at Today again."),
+      findsOneWidget,
+    );
+    expect(find.textContaining('stays skipped'), findsNothing);
+    expect(session.requests, hasLength(1), reason: 'the refused undo went once, and is not sent again');
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton, 'Undo')).onPressed, isNotNull);
   });
 
   testWidgets('a refused skip says why in plain words', (tester) async {

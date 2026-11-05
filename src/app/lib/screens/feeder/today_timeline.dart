@@ -214,7 +214,18 @@ class _Rows extends StatelessWidget {
       child: Column(
         children: [
           for (final (i, moment) in moments.indexed)
-            _Row(feeder: feeder, moment: moment, first: i == 0, timeWidth: widest.ceilToDouble()),
+            _Row(
+              // A meal's row keeps its state (a skip waiting on the card) by
+              // its slot, wherever the day's order puts it.
+              key: switch (moment.meal) {
+                final api.MealView meal => ValueKey<int>(meal.slot),
+                null => null,
+              },
+              feeder: feeder,
+              moment: moment,
+              first: i == 0,
+              timeWidth: widest.ceilToDouble(),
+            ),
         ],
       ),
     );
@@ -229,7 +240,7 @@ TextStyle _timeStyle(BuildContext context) => TextStyle(
 );
 
 class _Row extends StatelessWidget {
-  const _Row({required this.feeder, required this.moment, required this.first, required this.timeWidth});
+  const _Row({super.key, required this.feeder, required this.moment, required this.first, required this.timeWidth});
 
   final FeederController feeder;
   final _Moment moment;
