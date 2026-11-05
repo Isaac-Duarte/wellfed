@@ -24,7 +24,7 @@ use wellfed_core::buttons::Gesture;
 use wellfed_core::feed::controller::FeedReason;
 use wellfed_core::tone::{PlayResult, Tune};
 use wellfed_device_api::FeederDevice;
-use wellfed_device_api::mailbox::KeyResult;
+use wellfed_device_api::mailbox::{KeyResult, MealSkip};
 pub use wellfed_device_sim::updates::TRIAL_MS;
 use wellfed_device_sim::updates::{Booted, Updates};
 use wellfed_feeder::feeder::{self, Feeder};
@@ -170,6 +170,21 @@ impl Sim {
     /// `Busy` means the loop refused it first.
     pub fn play(&mut self, now_ms: u32, tune: Tune) -> PlayResult {
         self.feeder.device(now_ms, &mut self.feeds).play(tune)
+    }
+
+    /// A client's skip of slot `slot`'s meal due at `due_s`, or its undo,
+    /// as the device API asks it at `now_ms`: checked and queued for the
+    /// writer, or refused.
+    pub fn skip_meal(
+        &mut self,
+        now_ms: u32,
+        slot: u8,
+        due_s: u32,
+        skip: MealSkip,
+    ) -> Result<(), wellfed_proto::api::Refusal> {
+        self.feeder
+            .device(now_ms, &mut self.feeds)
+            .skip_meal(slot, due_s, skip, now_ms)
     }
 
     /// Whether the feeder asked for a restart, taken once: the driver drops

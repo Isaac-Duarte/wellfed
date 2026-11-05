@@ -395,11 +395,10 @@ fn a_skip_moves_the_mark_up_to_its_occurrence_and_an_undo_moves_it_back() {
     let unskip = PlansChange::Unskip {
         plan: 0,
         due_s: 90_000,
-        back_s: 3_600,
         revision: skipped.revision,
     };
     let undone = skipped.changed(&unskip).unwrap();
-    assert_eq!(undone.marks[0], 3_600);
+    assert_eq!(undone.marks[0], 89_999, "the second before the meal");
     assert_eq!(undone.table, plans.table);
     assert_eq!(undone.changed(&unskip), None, "undone once");
 }
@@ -427,12 +426,11 @@ fn skipping_a_plan_that_runs_once_disables_it_and_the_undo_enables_it() {
     let unskip = |revision| PlansChange::Unskip {
         plan: 2,
         due_s: 90_000,
-        back_s: 3_600,
         revision,
     };
     assert_eq!(skipped.changed(&unskip(plans.revision)), None);
     let undone = skipped.changed(&unskip(skipped.revision)).unwrap();
-    assert_eq!(undone.marks[2], 3_600);
+    assert_eq!(undone.marks[2], 89_999);
     assert!(undone.table[2].unwrap().enabled);
     assert_eq!(undone.revision, skipped.revision + 1);
 }
@@ -467,18 +465,16 @@ fn a_skip_or_undo_that_no_longer_fits_the_store_is_dropped() {
         .unwrap();
     assert_eq!(disabled.changed(&skip(0, 90_000, disabled.revision)), None);
 
-    // An undo needs the mark exactly at the skipped occurrence, a mark to
-    // go back to below it, and a repeating plan still enabled.
+    // An undo needs the mark exactly at the skipped occurrence and a
+    // repeating plan still enabled.
     let skipped = plans.changed(&skip(0, 90_000, plans.revision)).unwrap();
-    let unskip = |due_s, back_s| PlansChange::Unskip {
+    let unskip = |due_s| PlansChange::Unskip {
         plan: 0,
         due_s,
-        back_s,
         revision: skipped.revision,
     };
-    assert_eq!(skipped.changed(&unskip(80_000, 3_600)), None);
-    assert_eq!(skipped.changed(&unskip(90_000, 90_000)), None);
-    assert_eq!(plans.changed(&unskip(90_000, 3_600)), None, "never skipped");
+    assert_eq!(skipped.changed(&unskip(80_000)), None);
+    assert_eq!(plans.changed(&unskip(90_000)), None, "never skipped");
     let off = skipped
         .changed(&PlansChange::Replace {
             table: table(&[(
@@ -495,7 +491,6 @@ fn a_skip_or_undo_that_no_longer_fits_the_store_is_dropped() {
     let unskip_off = PlansChange::Unskip {
         plan: 0,
         due_s: 90_000,
-        back_s: 3_600,
         revision: off.revision,
     };
     assert_eq!(off.changed(&unskip_off), None);

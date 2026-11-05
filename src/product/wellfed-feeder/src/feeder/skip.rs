@@ -14,17 +14,18 @@
 //! valid clock has no mark, and its occurrence before the clock returned
 //! passes unreported anyway, so it counts as settled.
 //!
-//! **The undo.** It moves the mark back to the plan's occurrence before the
-//! skipped one, only while the skipped one is still to come and the mark
-//! is still exactly it (a change to the plan's minute or days resets the
-//! mark, and with it the skip). Before the skip the mark was at or after
-//! that occurrence, and below the skipped one; consecutive occurrences of
-//! one plan are a day or more apart, less an hour at most across a daylight
-//! change, so no occurrence lies between the two, and a mark anywhere in
-//! that gap runs and reminds exactly the same occurrences. The undo
-//! therefore never lets an occurrence run that would not have run without
-//! the skip. A plan that runs once is disabled by its skip and enabled by
-//! its undo, as a claim and its release do.
+//! **The undo.** It moves the mark back to the second before the skipped
+//! occurrence, only while that occurrence is still to come, is still the
+//! plan's next, and the mark is still exactly it (a change to the plan's
+//! minute or days resets the mark, and with it the skip). Before the skip
+//! the mark was at or after the plan's occurrence before the skipped one
+//! (the skip waits for that one to settle) and below the skipped one, so
+//! the undo's mark is never lower than it was; and since no occurrence of
+//! the plan lies between the two (consecutive ones are a day apart, 23
+//! hours at least across a daylight change), it runs and reminds exactly
+//! the occurrences the mark before the skip did. A plan that runs once is
+//! disabled by its skip and enabled by its undo, as a claim and its
+//! release do.
 //!
 //! **Never racing a claim.** The skipped occurrence is still to come when
 //! the change is queued, so no claim of it can exist; and while the change
@@ -93,17 +94,15 @@ pub fn change(
             if view.marks.get(index) != Some(&due_s) {
                 return Err(Refusal::Invalid);
             }
-            let before = due_ms - 1000;
-            let back = latest_due(&plan, before, &offset_at).ok_or(Refusal::NoClock)?;
             // The offsets moved since the skip, so another occurrence now
-            // comes first: the mark would skip that one instead.
-            if back > wall_ms {
+            // comes first: the undo's mark would skip that one instead.
+            let next = next_due(&plan, wall_ms, &offset_at).ok_or(Refusal::NoClock)?;
+            if next != due_ms {
                 return Err(Refusal::Invalid);
             }
             Ok(PlansChange::Unskip {
                 plan: slot,
                 due_s,
-                back_s: u32::try_from(back / 1000).map_err(|_| Refusal::Invalid)?,
                 revision: view.revision,
             })
         }

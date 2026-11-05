@@ -25,7 +25,7 @@
 //! or a client saves the plan; the loop never runs an occurrence at or
 //! before it, whatever the clock does after. A client's skip moves a mark
 //! up to an occurrence still to come, and its undo moves it back to the
-//! occurrence before, so a skip needs no field of its own.
+//! second before that occurrence, so a skip needs no field of its own.
 //!
 //! The two sectors were reserved for plans before this store, so a record
 //! here is ours; the newest valid one wins, and a torn newer slot falls
@@ -172,21 +172,23 @@ impl Plans {
             PlansChange::Unskip {
                 plan,
                 due_s,
-                back_s,
                 revision,
             } => {
                 let found = (*self.table.get(usize::from(plan))?)?;
                 // A skipped plan that runs once is the disabled one; any
                 // other must still be enabled.
                 let skipped = found.enabled != found.days.once();
-                if revision != self.revision || !skipped || back_s >= due_s {
+                if revision != self.revision || !skipped {
                     return None;
                 }
                 let mark = next.marks.get_mut(usize::from(plan))?;
                 if *mark != due_s {
                     return None;
                 }
-                *mark = back_s;
+                // The mark before the skip was below `due_s`, so this is
+                // never lower than it, and no occurrence of the plan lies
+                // between the two: the meal runs, and nothing else does.
+                *mark = due_s - 1;
                 if found.days.once() {
                     next.set_enabled(plan, true);
                 }

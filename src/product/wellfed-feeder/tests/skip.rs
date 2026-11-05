@@ -77,8 +77,8 @@ fn judged(view: &PlansView, due_ms: u64, wall_ms: u64) -> Occurrence {
 }
 
 /// Skip `due_ms` at `now_ms` with the mark at the plan's occurrence before
-/// it, `before_ms`; check it never runs; undo it; check the mark is back
-/// at `before_ms` and the meal runs when due.
+/// it, `before_ms`; check it never runs; undo it; check the mark is above
+/// where it was, below the meal, and the meal runs when due.
 fn skip_and_undo(plan: Plan, before_ms: u64, due_ms: u64, now_ms: u64) {
     let due_s = seconds(due_ms);
     let start = view(plan, seconds(before_ms));
@@ -104,12 +104,17 @@ fn skip_and_undo(plan: Plan, before_ms: u64, due_ms: u64, now_ms: u64) {
         PlansChange::Unskip {
             plan: 0,
             due_s,
-            back_s: seconds(before_ms),
             revision: REVISION
         }
     );
     let undone = apply(&skipped, &unskip);
-    assert_eq!(undone.marks, start.marks, "the mark is back where it was");
+    assert_eq!(undone.marks[0], due_s - 1);
+    assert!(
+        undone.marks[0] >= start.marks[0],
+        "never below the mark before"
+    );
+    // No occurrence between: the one before the meal stays spent.
+    assert_eq!(judged(&undone, before_ms, now_ms), Occurrence::Evaluated);
     assert_eq!(judged(&undone, due_ms, due_ms - 1), Occurrence::Later);
     assert_eq!(judged(&undone, due_ms, due_ms), Occurrence::Run);
 }
@@ -127,7 +132,7 @@ fn a_skipped_meal_never_runs_and_an_undone_one_runs_on_a_plain_day() {
 }
 
 #[test]
-fn the_spring_change_leaves_23_hours_between_the_meals_and_the_undo_finds_the_one_before() {
+fn the_spring_change_leaves_23_hours_between_the_meals_and_a_skip_and_its_undo_hold() {
     // 08:00 local: 07:00 UTC on the Saturday, 06:00 UTC on the Sunday.
     let due_ms = 1_774_764_000_000;
     let before_ms = 1_774_681_200_000;
@@ -181,7 +186,7 @@ fn the_autumn_change_leaves_25_hours_between_the_meals_and_a_repeated_minute_ski
 }
 
 #[test]
-fn a_weekday_plan_skips_only_today_s_meal_and_its_undo_goes_back_to_the_last_weekday() {
+fn a_weekday_plan_skips_only_today_s_meal_and_its_undo_feeds_it() {
     // Mondays and Wednesdays at 18:00 local; Wednesday 2026-11-04 17:00 UTC.
     let weekdays = plan(18 * 60, Weekdays(0b101));
     let wednesday_ms = 1_793_811_600_000;
@@ -208,7 +213,7 @@ fn a_weekday_plan_skips_only_today_s_meal_and_its_undo_goes_back_to_the_last_wee
 }
 
 #[test]
-fn a_plan_saved_without_a_clock_can_be_skipped_and_its_undo_marks_the_meal_before() {
+fn a_plan_saved_without_a_clock_can_be_skipped_and_its_undo_lets_the_meal_run() {
     let due_ms = 1_793_811_600_000;
     let now_ms = due_ms - 5 * HOUR_MS;
     let start = view(plan(18 * 60, Weekdays::EVERY_DAY), 0);
@@ -218,8 +223,8 @@ fn a_plan_saved_without_a_clock_can_be_skipped_and_its_undo_marks_the_meal_befor
     let skipped = apply(&start, &skip);
     assert_eq!(judged(&skipped, due_ms, due_ms), Occurrence::Evaluated);
 
-    // The undo leaves the mark the schedule would have set by passing the
-    // meal before, unreported, so this one runs.
+    // The undo leaves a mark, so this meal runs, as it would once the
+    // schedule passed the one before, unreported.
     let unskip = change(
         &skipped,
         0,
@@ -229,7 +234,7 @@ fn a_plan_saved_without_a_clock_can_be_skipped_and_its_undo_marks_the_meal_befor
         europe,
     );
     let undone = apply(&skipped, &unskip.unwrap());
-    assert_eq!(undone.marks[0], seconds(due_ms - 24 * HOUR_MS));
+    assert_eq!(undone.marks[0], seconds(due_ms) - 1);
     assert_eq!(judged(&undone, due_ms, due_ms), Occurrence::Run);
 }
 
@@ -360,4 +365,52 @@ fn a_meal_before_the_skipped_one_still_unsettled_holds_the_skip() {
     };
     let skip = change(&claimed, 0, seconds(due_ms), MealSkip::Skip, now_ms, europe);
     assert!(skip.is_ok());
+}
+
+#[test]
+fn an_undo_never_lowers_a_mark_a_save_left_above_the_meal_before() {
+    // Saved this morning, after yesterday's meal: the mark is the save.
+    let due_ms = 1_793_811_600_000;
+    let now_ms = due_ms - 2 * HOUR_MS;
+    let saved_s = seconds(due_ms - 5 * HOUR_MS);
+    let start = view(plan(18 * 60, Weekdays::EVERY_DAY), saved_s);
+
+    let skip = change(&start, 0, seconds(due_ms), MealSkip::Skip, now_ms, europe);
+    let skipped = apply(&start, &skip.unwrap());
+    let unskip = change(
+        &skipped,
+        0,
+        seconds(due_ms),
+        MealSkip::Unskip,
+        now_ms,
+        europe,
+    );
+    let undone = apply(&skipped, &unskip.unwrap());
+    assert!(undone.marks[0] > saved_s);
+    assert_eq!(judged(&undone, due_ms, due_ms), Occurrence::Run);
+}
+
+#[test]
+fn an_undo_after_the_offsets_moved_the_plan_s_next_meal_is_refused() {
+    let due_ms = 1_793_811_600_000;
+    let now_ms = due_ms - 5 * HOUR_MS;
+    let start = view(
+        plan(18 * 60, Weekdays::EVERY_DAY),
+        seconds(due_ms - 24 * HOUR_MS),
+    );
+    let skip = change(&start, 0, seconds(due_ms), MealSkip::Skip, now_ms, europe);
+    let skipped = apply(&start, &skip.unwrap());
+
+    // A zone two hours further east: 18:00 local now comes two hours
+    // sooner, so the meal skipped is no longer the plan's next.
+    let moved = |unix_ms| europe(unix_ms).map(|offset| offset + 7_200);
+    let undo = change(
+        &skipped,
+        0,
+        seconds(due_ms),
+        MealSkip::Unskip,
+        now_ms,
+        moved,
+    );
+    assert_eq!(undo, Err(Refusal::Invalid));
 }

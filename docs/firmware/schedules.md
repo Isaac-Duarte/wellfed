@@ -2,7 +2,7 @@
 
 The feeder keeps up to ten feeding plans and runs them itself, with no server. This page explains what a plan is, when one runs, and how the feeder makes sure a meal runs at most once through restarts, clock jumps and daylight changes. It is for owners who want to know what to expect and for anyone changing the schedule code.
 
-Plans, the meal reminder and the meal call have all run on our feeder. The autumn daylight change has too: on November 1, 2026 a 01:30 meal ran once, in daylight time, and not again in standard time. The spring change and power cuts between a claim and its feed are tested in simulation only. The [roadmap](../roadmap.md) has the current status.
+Plans, the meal reminder and the meal call have all run on our feeder. The autumn daylight change has too: on November 1, 2026 a 01:30 meal ran once, in daylight time, and not again in standard time. The spring change, power cuts between a claim and its feed, and skipping a meal are tested in simulation only. The [roadmap](../roadmap.md) has the current status.
 
 ## Plans
 
@@ -52,6 +52,22 @@ A feed a plan started is a `Fed` event by `schedule` with the plan's slot. A mis
 | `interrupted` | The feeder stopped after taking the occurrence and before the feed was reserved |
 
 A plan you saved while the feeder had no time has no starting point, so it starts once the clock returns. An occurrence that falls before then, late or not, passes without a `Missed` event: it may have fallen before the save.
+
+## Skipping a meal
+
+You can skip one of today's meals that hasn't come due yet, and undo the skip until it does. A skipped meal doesn't feed, isn't reminded, plays no call and isn't reported missed. The plan itself doesn't change: tomorrow's meal runs as usual. Owners and members may skip, as they may change the plans.
+
+A client sends `SkipMeal { slot, due_s }`, naming the plan's slot and the instant the meal is due, and `UnskipMeal` with the same two to undo it ([device API](device-api.md#time-and-calibration)). Each is answered once the store holds it and recorded as a `Skipped` or `Unskipped` event with its client.
+
+- **Only today's next meal.** The meal must be the plan's next occurrence, still to come, on today's date by the feeder's clock and zone. A meal already due belongs to the schedule: it runs, or is missed. So an undo at or after the meal's minute is refused, and the meal stays skipped.
+- **One meal at a time.** Each skip names one meal. Skipping a meal twice, or undoing one that wasn't skipped, is refused.
+- **After the last one settles.** While the plan's previous meal is still running or waiting (up to its 15 minutes), a skip is refused `Busy`: it would spend that meal unseen.
+- **A plan that runs once** is disabled by the skip, as running it would, and enabled again by the undo.
+- **Changing the plan drops the skip.** Saving a new time or new days starts the plan afresh from the save, as any such change does, so the skip goes with it, and so does enabling a disabled plan again. Changing only the portions or the meal call, or disabling the plan, keeps it.
+
+The skip needs no stored field of its own. It moves the plan's mark ([below](#at-most-once)) up to the skipped meal, so the schedule, the reminder and the call all treat the meal as already run. The undo moves the mark back to the second before the meal. Before the skip the mark was below the meal and at or after the meal before it, and no occurrence of the plan lies between the two: consecutive ones are a day apart, and at least 23 hours across a daylight change. So an undo never lets a meal run that wouldn't have run without the skip.
+
+A skip never races the meal it skips. It is checked while the meal is still to come, and while it waits for the writer the schedule decides nothing, so a meal that comes due meanwhile is judged against the mark the skip leaves.
 
 ## Meal reminder
 
@@ -106,7 +122,7 @@ This is the rule RFC 5545 and JavaScript's Temporal call "compatible". Half-hour
 
 ## At most once
 
-The feeder never runs an occurrence twice, even if power fails at any moment. Each plan keeps a mark: the latest occurrence already run, missed or before the plan was saved. Nothing at or before the mark runs.
+The feeder never runs an occurrence twice, even if power fails at any moment. Each plan keeps a mark: the latest occurrence already run, missed, skipped or before the plan was saved. Nothing at or before the mark runs.
 
 Running an occurrence takes two steps:
 
@@ -130,12 +146,15 @@ A plans store the feeder cannot write runs nothing, since it could not keep the 
 | A one-off plan after it runs | Deleted | Kept, disabled |
 | A sound before the meal | Per plan; plays first, then the motor runs | Per plan; ends as the meal is due, never delaying it |
 | A reminder before the meal | The vendor's cloud and app; nothing in the firmware | A `MealSoon` event on the feeder's event stream, 1 to 60 minutes ahead |
+| Skipping one meal | Not offered | Today's next meal of a plan, undone until it is due |
 
 ## Storage
 
 The plans live in storage sectors 11 and 12 (`wellfed_feeder::store::plans`): one 128-byte record holding the ten plans (a plan's meal call in its flag byte), each plan's mark and the last claim. Only the settings writer writes it, inside a marked attempt, after a feed has released the outputs. A save happens for each change you make and for each occurrence run or missed. A record of a newer format makes the store read-only with no plans, so this build runs nothing it cannot read. The record is version 2, which added the meal call; a version 1 record is not read, so plans saved by a build from before the meal call are entered again. The [factory reset](pairing.md#factory-reset) erases it, last claim included; the feed journal it keeps still stops a claimed feed from running twice.
 
 ## Evidence
+
+- **Simulated, November 5, 2026.** Skipping a meal, on the simulator's loop: a skipped breakfast neither fed, nor was reminded, nor called, nor reported missed, and the next day's fed; an undone skip fed, reminded and called once; an undo at the meal's minute was refused and the meal stayed unfed; a skip still waiting for the writer when the meal came due held the schedule, and the meal never fed. The skip's checks were run against both of 2026's Central European daylight changes, with 23 and 25 hours between meals and a repeated minute's second pass refused, a weekday plan, a plan saved without a clock and a plan that runs once.
 
 - **Observed, October 29, 2026** (owner listening, hopper empty): the meal call at volumes 10, 50 and 100, each played before its meal, which then fed on time ([speaker](audio.md#evidence)). A settings write made during a feed was refused `Busy`.
 - **Observed, October 28, 2026** (evening, unattended, hopper empty): a meal reminder set 5 minutes ahead of a plan arrived on time, a reboot inside the lead repeated it once, and the meal fed on time. A plan calling a clip twice played it and then fed on time. With sound off, the next plan logged `result=muted` and fed on time.

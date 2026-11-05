@@ -15,9 +15,10 @@ use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
 use wellfed_core::tone::Tune;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
-    Calibration, CalibrationResult, CalibrationView, LockResult, Origin, PlayResult,
-    SettingsFields, SettingsResult, SettingsView, TimeFields, TimeResult, TimeSettings,
-    TimeSettingsResult, TimeSettingsView, TimeState, WifiResult, WifiSource, WifiView,
+    Calibration, CalibrationResult, CalibrationView, LockResult, MealSkip, Origin, PlansResult,
+    PlansView, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields, TimeResult,
+    TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState, WifiResult, WifiSource,
+    WifiView,
 };
 use wellfed_device_api::pairing::{Config, Pairing};
 use wellfed_device_api::setup::{Received, Responder};
@@ -64,6 +65,13 @@ pub struct Fake {
     writes_held: bool,
     /// A settings write is queued.
     write_queued: bool,
+    plans: PlansView,
+    /// Skips (and undos) the device was asked for.
+    skips: u32,
+    /// Why the device refuses a skip, if it does.
+    skip_refusal: Option<Refusal>,
+    /// The writer drops a queued skip: the store is left as it was.
+    skip_dropped: bool,
 }
 
 /// Every section at its widest, so a frame that holds these holds any.
@@ -368,6 +376,39 @@ impl FeederDevice for Fake {
         Some(proto::Phase::Unknown)
     }
 
+    fn plans(&mut self, _change: Option<wellfed_device_api::mailbox::Table>) -> PlansResult {
+        self.plans.writable = true;
+        PlansResult::Current {
+            view: self.plans,
+            pending: false,
+        }
+    }
+
+    /// The writer lands it at once: the mark moves to the meal, or back a
+    /// day.
+    fn skip_meal(
+        &mut self,
+        slot: u8,
+        due_s: u32,
+        skip: MealSkip,
+        _now_ms: u32,
+    ) -> Result<(), Refusal> {
+        if let Some(refusal) = self.skip_refusal {
+            return Err(refusal);
+        }
+        self.skips += 1;
+        let Some(mark) = self.plans.marks.get_mut(usize::from(slot)) else {
+            return Err(Refusal::NotFound);
+        };
+        if !self.skip_dropped {
+            *mark = match skip {
+                MealSkip::Skip => due_s,
+                MealSkip::Unskip => due_s - 86_400,
+            };
+        }
+        Ok(())
+    }
+
     fn readiness(&mut self) -> proto::Readiness {
         if self.ready {
             proto::Readiness::Ready
@@ -631,6 +672,36 @@ impl<D: Faked> Rig<D> {
     /// The feeds the device was asked for.
     pub fn feeds(&self) -> u32 {
         self.device.fake_ref().feeds
+    }
+
+    /// The skips and undos the device was asked for.
+    pub fn skips(&self) -> u32 {
+        self.device.fake_ref().skips
+    }
+
+    /// The device refuses every skip with `refusal`, or takes them.
+    pub fn refuse_skips(&mut self, refusal: Option<Refusal>) {
+        self.device.fake().skip_refusal = refusal;
+    }
+
+    /// The writer drops every skip it is handed, or saves them.
+    pub fn drop_skips(&mut self, dropped: bool) {
+        self.device.fake().skip_dropped = dropped;
+    }
+
+    /// Slot `slot`'s mark.
+    pub fn mark(&self, slot: usize) -> u32 {
+        self.device.fake_ref().plans.marks[slot]
+    }
+
+    /// Every event the device recorded, oldest first.
+    pub fn events(&self) -> Vec<EventBody> {
+        self.device
+            .fake_ref()
+            .events
+            .iter()
+            .map(|e| e.body)
+            .collect()
     }
 
     /// As much of `bytes` as the slot has room for; how much that was.

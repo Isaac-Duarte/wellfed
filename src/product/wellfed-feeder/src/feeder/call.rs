@@ -12,9 +12,9 @@
 //! **Which occurrence.** Each enabled plan with a call, at its next
 //! occurrence (`wellfed_core::schedule::next_due`, worked out once a
 //! wall-clock minute), once the wall clock is within the call's lead and
-//! before the meal is due. A plan whose mark is at or past the occurrence,
-//! or with none, is skipped, as the reminder skips it: its meal may not
-//! run. With no valid clock, a plans store that cannot be written, no clip,
+//! before the meal is due. A plan whose mark is at or past the occurrence
+//! (a client's skip among them), or with none, is passed over, as the
+//! reminder passes it over: its meal may not run. With no valid clock, a plans store that cannot be written, no clip,
 //! a feeding owner stopped on a fault or a journal that did not open (no
 //! meal runs this boot), or BLE setup mode running (whose own tunes use
 //! the speaker), no call plays.

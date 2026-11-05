@@ -13,8 +13,8 @@
 //! schedule runs by), worked out once a wall-clock minute, is reminded
 //! once the wall clock is within the lead of it and before it is due. A
 //! plan with no mark (saved without a valid clock), or whose mark is at or
-//! past the occurrence (a backward clock jump), is not reminded: its
-//! occurrence may not run. Without a valid clock with an offset, or with a
+//! past the occurrence (a backward clock jump, or a client's skip), is not
+//! reminded: its occurrence may not run. Without a valid clock with an offset, or with a
 //! plans store that cannot be written (which runs nothing), nothing is
 //! reminded.
 //!

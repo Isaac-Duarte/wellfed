@@ -8175,6 +8175,70 @@
                 "$ref": "#/components/schemas/FoodLevel"
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A client skipped a plan's meal still to come: it does not feed\nunless the skip is undone before it is due.",
+            "required": [
+              "plan",
+              "due",
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "due": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the meal is due."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "skipped"
+                ]
+              },
+              "plan": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The plan's slot.",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A client undid the skip of a plan's meal: it feeds as planned.",
+            "required": [
+              "plan",
+              "due",
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "due": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the meal is due."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unskipped"
+                ]
+              },
+              "plan": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The plan's slot.",
+                "minimum": 0
+              }
+            }
           }
         ],
         "description": "An event only a feeder records."

@@ -443,15 +443,10 @@ pub enum PlansChange {
     /// enabled at `revision` or the mark already covers `due_s`.
     Skip { plan: u8, due_s: u32, revision: u32 },
     /// A client undoes the skip of `due_s`, still to come: the mark goes
-    /// back to `back_s`, the plan's occurrence before it, and a plan that
-    /// runs once is enabled again. The writer drops it unless the mark is
-    /// still exactly `due_s` at `revision`.
-    Unskip {
-        plan: u8,
-        due_s: u32,
-        back_s: u32,
-        revision: u32,
-    },
+    /// back to the second before it, and a plan that runs once is enabled
+    /// again. The writer drops it unless the mark is still exactly `due_s`
+    /// at `revision`.
+    Unskip { plan: u8, due_s: u32, revision: u32 },
 }
 
 /// What a client asks of a scheduled meal still to come today.
