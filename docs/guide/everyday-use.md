@@ -150,9 +150,11 @@ Feed one portion first and throw it away, so the rotor starts from a known place
 
 ### App
 
-This takes an owner. Open **Settings**, then **Portion size**. Tap **Enter what 10 portions weighed** and enter the grams, or step the size a gram at a time with **−** and **+**.
+In the app this takes an owner. Open **Settings**, then **Portion size**. Tap **Enter what 10 portions weighed** and enter the grams, or step the size a gram at a time with **−** and **+**.
 
 ### CLI
+
+An owner or a member can run this.
 
 ```sh
 wellfed calibrate --weighed 71.1 --portions 10

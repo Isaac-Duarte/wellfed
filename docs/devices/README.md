@@ -7,7 +7,7 @@ A model counts as supported only once a unit of it has been through our bench. S
 | Model | Kind | Product | SoC | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
 | [PLAF103](plaf103/README.md) | Feeder | Granary 5 L | [RTL8721DM](../chips/rtl8721dm/README.md) | **Partial** | Our research device. Feeding, updates and the device API work; see [the roadmap](../roadmap.md). |
-| [PLWF106](plwf106/README.md) | Fountain | Dockstream 2 Smart Fountain | [RTL8721DM](../chips/rtl8721dm/README.md) | **Not started** | Stock firmware and board reference recovered; no Wellfed fountain image demonstrated. |
+| [PLWF106](plwf106/README.md) | Fountain | Dockstream 2 Smart Fountain | [RTL8721DM](../chips/rtl8721dm/README.md) | **Experimental** | Stock firmware and board reference recovered. A [boot-test image](plwf106/boot-test.md) builds and passes its audits, but has not run on a fountain. |
 | PLAF108 | Feeder | Feeder | ESP8266/ESP32 family (External) | Not supported | No unit inspected. A different SoC family. An ESPHome replacement exists outside this project ([references](../references.md#peer-projects)). |
 | PLAF203 | Feeder | Camera feeder | Embedded Linux with Tuya IPC (External) | Not supported | No unit inspected. Root access and filesystem notes exist outside this project ([references](../references.md#peer-projects)). |
 | AF301 (mainboard PLNF301) | Feeder | RFID feeder | RTL8721DM (External) | Not supported | Same SoC, reported by a peer project. Its pin map is a lead for our [pin table](../chips/rtl8721dm/pins.md), not a PLAF103 fact. |

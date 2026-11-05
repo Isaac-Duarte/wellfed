@@ -74,13 +74,13 @@ What works today and what comes next, for the replacement firmware, the tools ar
 | Capability | Status | Notes |
 | --- | --- | --- |
 | Code shared across device kinds | Experimental | Shared device crates with each kind's beside them, the device API's core with a module per kind, one server home storing each device's model and kind, and a shared simulator. Tested on the host and in the feeder's simulator; the feeder has not run a build of the new layout. See [device kinds and models](firmware/device-kinds.md). |
-| Water fountain (PLWF106) | Not started | Board and stock firmware recovered ([PLWF106](devices/plwf106/README.md)). A [boot-test image](devices/plwf106/boot-test.md) builds and passes its audits but has not run on a fountain. UART writes of it into bank 1, and their recovery, are tested on the host only ([recovery](devices/plwf106/recovery.md)). |
+| Water fountain (PLWF106) | Experimental | Board and stock firmware recovered ([PLWF106](devices/plwf106/README.md)). A [boot-test image](devices/plwf106/boot-test.md) builds and passes its audits but has not run on a fountain. UART writes of it into bank 1, and their recovery, are tested on the host only ([recovery](devices/plwf106/recovery.md)). |
 
 ## Development hardware
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Wellfed Bench board | Not started | One batch of Rev B built. On November 2, 2026 one board passed bring-up and drove a stock feeder's power, loader entry and a full flash read, apart from the D-cell refusal; its current is unchecked against a meter. See [the bench board](../src/hardware/bench/README.md). |
+| Wellfed Bench board | Works | One batch of Rev B built. On November 2, 2026 one board passed bring-up and drove a stock feeder's power, loader entry and a full flash read, apart from the D-cell refusal; its current is unchecked against a meter. See [the bench board](../src/hardware/bench/README.md). |
 
 ## What's next
 
