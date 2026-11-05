@@ -11,7 +11,9 @@ use uuid::Uuid;
 use wellfed_api::{
     ClientRole, Connection as Link, FeederId, Home, HomeId, Model, TimeFormat, Units,
 };
-use wellfed_mirror::{Config, Diagnostics, Discovery, Feeder, Invite, Mirror, MirrorEvent, Timing};
+use wellfed_mirror::{
+    Config, Diagnostics, Discovery, Feeder, Invite, Mirror, MirrorEvent, Pace, Timing,
+};
 use wellfed_server_testkit::WAIT;
 use wellfed_server_testkit::feeder::{self, Running};
 use wellfed_server_testkit::fixed::{FixedClock, SeededRandom};
@@ -21,17 +23,22 @@ pub const ID: FeederId = FeederId(Uuid::from_u128(7));
 /// The mirror's key on the feeder.
 pub const SECRET: [u8; 32] = [0x33; 32];
 
-fn config(answer: Duration, diagnostics: Diagnostics) -> Config {
-    Config {
-        discovery: Discovery::Off,
-        timing: Timing {
-            retry_min: Duration::from_millis(50),
-            retry_max: Duration::from_millis(400),
-            time_sync: Duration::from_secs(3600),
-            answer,
-            sample_wait: Duration::from_millis(100),
+/// The tests' clocks, with callers waiting `answer` for a command. The
+/// simulator writes a sector within a pass or two, and restarts a second
+/// after it answers a give-way, as the update stage does, where the board
+/// takes seconds more.
+pub fn timing(answer: Duration) -> Timing {
+    Timing {
+        retry_min: Duration::from_millis(50),
+        retry_max: Duration::from_millis(400),
+        time_sync: Duration::from_secs(3600),
+        answer,
+        sample_wait: Duration::from_millis(100),
+        session: wellfed_connect::Timing::DEFAULT,
+        pace: Pace {
+            settle: Duration::from_millis(20),
+            restart: Duration::from_millis(1_500),
         },
-        diagnostics,
     }
 }
 
@@ -67,9 +74,39 @@ pub async fn mirrored_with(
     role: ClientRole,
     diagnostics: Diagnostics,
 ) -> (Mirror, Receiver<MirrorEvent>) {
+    let config = Config {
+        discovery: Discovery::Off,
+        timing: timing(answer),
+        diagnostics,
+    };
+    start(store, sim, address, config, role).await
+}
+
+/// [`mirrored`], on `timing`: a session answer window of a test's own.
+pub async fn mirrored_timed(
+    store: &Store,
+    sim: &Running,
+    address: &str,
+    timing: Timing,
+) -> (Mirror, Receiver<MirrorEvent>) {
+    let config = Config {
+        discovery: Discovery::Off,
+        timing,
+        diagnostics: Diagnostics::Off,
+    };
+    start(store, sim, address, config, ClientRole::Server).await
+}
+
+async fn start(
+    store: &Store,
+    sim: &Running,
+    address: &str,
+    config: Config,
+    role: ClientRole,
+) -> (Mirror, Receiver<MirrorEvent>) {
     let mirror = Mirror::new(
         store.clone(),
-        config(answer, diagnostics),
+        config,
         Arc::new(FixedClock),
         Arc::new(SeededRandom::fresh()),
         CancellationToken::new(),

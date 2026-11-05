@@ -160,7 +160,7 @@ impl Collector {
             let Ok(mut operation) = self
                 .long
                 .clone()
-                .operation(self.answer(), Arc::clone(&self.shared.random))
+                .operation(self.shared.config.timing, Arc::clone(&self.shared.random))
                 .await
             else {
                 return;
@@ -244,7 +244,7 @@ impl Collector {
         let Ok(mut operation) = self
             .long
             .clone()
-            .operation(self.answer(), Arc::clone(&self.shared.random))
+            .operation(self.shared.config.timing, Arc::clone(&self.shared.random))
             .await
         else {
             return;
@@ -281,10 +281,6 @@ impl Collector {
                 return;
             }
         }
-    }
-
-    fn answer(&self) -> Duration {
-        self.shared.config.timing.answer
     }
 
     /// A fresh request id. Without randomness the read cannot go out, and

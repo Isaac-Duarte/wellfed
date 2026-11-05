@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use tempfile::TempDir;
 use wellfed_api::{AdoptFeeder, ClientRole, Connection, EventBody, EventQuery, FeederId};
+use wellfed_connect::update::Pace;
 use wellfed_service::{
     Backups, Clock, Config, Diagnostics, Discovery, ReleaseKeys, ReleasesConfig, Service,
     StockConfig, StockPins, Timing,
@@ -18,7 +19,7 @@ use crate::fixed::{FixedClock, SeededRandom};
 use crate::until;
 
 /// The config every test server starts with: no discovery, reconnects
-/// fast enough for a test to watch, no trusted release key and no release
+/// and installs paced for the simulator, no trusted release key and no release
 /// fetching, samples written within a tenth of a second and kept raw
 /// forever, and seven backups. Its release cache and backup directories
 /// are placeholders: a [`TestService`] keeps both beside its database.
@@ -36,6 +37,13 @@ pub fn config() -> Config {
             sample_wait: Duration::from_millis(100),
             session: Duration::from_secs(3600),
             upload_idle: Duration::from_secs(30),
+            // The simulator writes a sector within a pass or two, and
+            // restarts a second after it answers a give-way, as the update
+            // stage does, where the board takes seconds more.
+            pace: Pace {
+                settle: Duration::from_millis(20),
+                restart: Duration::from_millis(1_500),
+            },
         },
         // The diagnostics' own tests turn them on: elsewhere their reads
         // would share the lanes and the seeded ids with what is tested.

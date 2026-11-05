@@ -1438,9 +1438,11 @@ mod press_tests {
         assert!(press(&mut feeder, DISPENSE).unwrap().released);
     }
 
+    /// Each wrong answer waits out the whole press window, so the cases
+    /// run side by side, each against a feeder of its own.
     #[test]
     fn each_wrong_answer_is_its_own_refusal_and_is_never_resent() {
-        for (answer, refusal) in [
+        let cases = [
             (&b""[..], "unanswered"),
             (b"PLKEY1 virtual refused\r\n", "refused"),
             (
@@ -1455,18 +1457,33 @@ mod press_tests {
                 b"PLKEY1 virtual refused\r\nPLKEY1 virtual press=mic hold_ms=150\r\n",
                 "mismatch",
             ),
-        ] {
-            let mut feeder = Feeder::new(answer);
-            let error = press(&mut feeder, DISPENSE).unwrap_err();
-            let matched = match &error {
-                crate::Error::Protocol(ProtocolError::PressUnanswered { .. }) => "unanswered",
-                crate::Error::Protocol(ProtocolError::PressRefused) => "refused",
-                crate::Error::Protocol(ProtocolError::PressMismatch { .. }) => "mismatch",
-                crate::Error::Protocol(ProtocolError::PressNotReleased) => "not released",
-                _ => "other",
-            };
-            assert_eq!(matched, refusal, "{error}");
-            assert_eq!(feeder.sent, LINE, "sent once");
-        }
+        ];
+
+        std::thread::scope(|scope| {
+            let cases: Vec<_> = cases
+                .into_iter()
+                .map(|(answer, refusal)| {
+                    let pressed = scope.spawn(move || {
+                        let mut feeder = Feeder::new(answer);
+                        let error = press(&mut feeder, DISPENSE).unwrap_err();
+                        (error, feeder.sent)
+                    });
+                    (pressed, refusal)
+                })
+                .collect();
+
+            for (pressed, refusal) in cases {
+                let (error, sent) = pressed.join().unwrap();
+                let matched = match &error {
+                    crate::Error::Protocol(ProtocolError::PressUnanswered { .. }) => "unanswered",
+                    crate::Error::Protocol(ProtocolError::PressRefused) => "refused",
+                    crate::Error::Protocol(ProtocolError::PressMismatch { .. }) => "mismatch",
+                    crate::Error::Protocol(ProtocolError::PressNotReleased) => "not released",
+                    _ => "other",
+                };
+                assert_eq!(matched, refusal, "{error}");
+                assert_eq!(sent, LINE, "sent once");
+            }
+        });
     }
 }

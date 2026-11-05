@@ -310,6 +310,8 @@ fn push(feeder: &Feeder, cancel: bool) -> (Result<(), DeviceError>, Vec<String>)
         crate::device::Owner::of(OWNER, feeder.identity),
         feeder.address,
     );
+    // The scripted feeder is listening the whole time.
+    device.retry = std::time::Duration::from_millis(50);
     let offer = Offer::new(2, 0x22);
     let stop = AtomicBool::new(false);
     let mut notes = Vec::new();

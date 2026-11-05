@@ -817,6 +817,7 @@ fn plan(
     spec: InstallSpec,
     keypair: Keypair,
     pin: Option<&Pin>,
+    poll: Duration,
 ) -> Result<(Plan, AppKeys, bool), NotPlanned> {
     match check_image(Path::new(&spec.image_dir), pin) {
         ImageCheck::Ready { .. } => {}
@@ -926,6 +927,7 @@ fn plan(
             },
             stock_plans: plans,
         },
+        poll,
     };
     let known: Vec<([u8; 32], Option<SocketAddr>)> = spec
         .known_feeders
@@ -958,6 +960,7 @@ pub struct Run {
     asks: Arc<Asks>,
     stop: watch::Sender<bool>,
     pin: Option<Pin>,
+    poll: Duration,
 }
 
 impl Run {
@@ -967,7 +970,15 @@ impl Run {
             asks: Arc::new(Asks::new()),
             stop: watch::channel(false).0,
             pin,
+            poll: wellfed_install::POLL,
         }
+    }
+
+    /// This run, looking at stock and the replacement every `poll` rather
+    /// than every [`wellfed_install::POLL`]: for a test whose stand-ins on
+    /// loopback answer at once.
+    pub fn polling_every(self, poll: Duration) -> Self {
+        Self { poll, ..self }
     }
 
     /// Start `spec` on its own thread. `deliver` hears the run to its end
@@ -983,6 +994,7 @@ impl Run {
         let asks = self.asks.clone();
         let stop = self.stop.subscribe();
         let pin = self.pin;
+        let poll = self.poll;
 
         let thread = std::thread::Builder::new()
             .name("wellfed-install".into())
@@ -991,7 +1003,7 @@ impl Run {
                 let end = guarded(
                     || match spec {
                         Some(spec) => {
-                            run_on_this_thread(spec, keys, pin.as_ref(), asks.clone(), stop)
+                            run_on_this_thread(spec, keys, pin.as_ref(), poll, asks.clone(), stop)
                         }
                         None => InstallEnd::Stopped {
                             case: StopCase::Other,
@@ -1054,6 +1066,7 @@ fn run_on_this_thread(
     spec: InstallSpec,
     keypair: Keypair,
     pin: Option<&Pin>,
+    poll: Duration,
     asks: Arc<Asks>,
     stop: watch::Receiver<bool>,
 ) -> InstallEnd {
@@ -1094,7 +1107,7 @@ fn run_on_this_thread(
     } else {
         Resume::FromStart
     };
-    let (plan, keys, from_stock) = match plan(spec, keypair, pin) {
+    let (plan, keys, from_stock) = match plan(spec, keypair, pin, poll) {
         Ok(planned) => planned,
         Err(NotPlanned::Spec { case, detail }) => {
             return InstallEnd::Stopped {

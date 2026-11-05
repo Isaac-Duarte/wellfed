@@ -57,6 +57,9 @@ const DISCOVERY: Duration = Duration::from_secs(4);
 const CONNECT: Duration = Duration::from_secs(5);
 /// A request is answered at once, or after its store write.
 const ANSWER: Duration = Duration::from_secs(10);
+/// Between a lost session and the next try, and between tries: the
+/// feeder's restart and its Wi-Fi rejoin take seconds.
+const RETRY: Duration = Duration::from_secs(2);
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeviceError {
@@ -560,6 +563,10 @@ pub struct Device {
     connection: Option<Connection>,
     /// [`Self::hold`]'s session, apart from `connection`.
     held: Option<Connection>,
+    /// How long [`Self::install`] waits before reaching for the feeder
+    /// again: [`RETRY`], or less for the simulator, which restarts and
+    /// listens again sooner than the board.
+    retry: Duration,
 }
 
 fn random<const N: usize>() -> Result<[u8; N], DeviceError> {
@@ -576,6 +583,7 @@ impl Device {
             pinned: false,
             connection: None,
             held: None,
+            retry: RETRY,
         })
     }
 
@@ -589,6 +597,7 @@ impl Device {
             pinned: true,
             connection: None,
             held: None,
+            retry: RETRY,
         }
     }
 
@@ -719,7 +728,7 @@ impl Device {
                 Err(error @ (DeviceError::Refused(_) | DeviceError::Keys { .. })) => {
                     return Err(error);
                 }
-                Err(_) if Instant::now() < deadline => std::thread::sleep(Duration::from_secs(2)),
+                Err(_) if Instant::now() < deadline => std::thread::sleep(self.retry),
                 Err(_) => return Err(DeviceError::Gone(wait)),
             }
         }
@@ -942,7 +951,7 @@ impl Device {
                 // wait. A connection the feeder already dropped has nothing
                 // left to close.
                 let _ = connection.stream.shutdown(Shutdown::Both);
-                std::thread::sleep(Duration::from_secs(2));
+                std::thread::sleep(self.retry);
                 connection = match cancelling {
                     // The stop is what the cancel answers, so it does not
                     // end the reconnect: the cancel goes again, within its

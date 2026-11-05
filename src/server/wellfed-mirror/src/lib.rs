@@ -78,6 +78,7 @@ pub use ingest::{stored_event, stored_sample};
 pub use install::{BankReadError, PushError, Pushed, ReadError, Restore, Update, UpdateError};
 pub use time::{Clock, Random, RandomFailed, SystemClock, SystemRandom};
 pub use wellfed_client::api::{Invite, InviteText};
+pub use wellfed_connect::update::Pace;
 /// HMAC-SHA256, for the service's keyed digests: the workspace's one
 /// implementation, which the service reaches through the mirror.
 pub use wellfed_session::mac::hmac_sha256;
@@ -136,6 +137,12 @@ pub struct Timing {
     /// The longest a sample waits in its batch before the batch is
     /// written.
     pub sample_wait: Duration,
+    /// Each session's own clocks: how long the feeder has to answer a
+    /// request, and the keepalive and silence limits.
+    pub session: wellfed_connect::Timing,
+    /// How an install waits between its steps: while bank 0 writes a
+    /// sector, and after bank 1 gives way.
+    pub pace: Pace,
 }
 
 impl Default for Timing {
@@ -146,6 +153,8 @@ impl Default for Timing {
             time_sync: Duration::from_secs(6 * 3600),
             answer: wellfed_connect::ANSWER + Duration::from_secs(5),
             sample_wait: Duration::from_secs(10),
+            session: wellfed_connect::Timing::DEFAULT,
+            pace: Pace::DEFAULT,
         }
     }
 }

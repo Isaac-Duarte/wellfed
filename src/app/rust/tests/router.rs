@@ -290,8 +290,10 @@ fn uncertain(routed: RoutedFeed) -> PendingWrite {
 }
 
 /// How long the phone's own wait for the server is cut to, where a test
-/// drops the server's answer to the phone.
-const GIVE_UP: Duration = Duration::from_secs(3);
+/// drops the server's answer to the phone: each dropped answer costs a
+/// test this long, and an answer that is not dropped comes over loopback
+/// in milliseconds.
+const GIVE_UP: Duration = Duration::from_secs(1);
 
 /// The phone's wait before a server write its journal lacks counts as
 /// never sent, in tests that do not drop one.
