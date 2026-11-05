@@ -135,6 +135,10 @@ impl<P: Port> Port for EvidencePort<P> {
     fn in_waiting(&mut self) -> io::Result<usize> {
         self.port.in_waiting()
     }
+
+    fn ready_naks(&self) -> usize {
+        self.port.ready_naks()
+    }
 }
 
 #[cfg(test)]

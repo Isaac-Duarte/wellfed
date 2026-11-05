@@ -195,6 +195,10 @@ impl<P: Port + ?Sized> Port for Box<P> {
     fn in_waiting(&mut self) -> std::io::Result<usize> {
         (**self).in_waiting()
     }
+
+    fn ready_naks(&self) -> usize {
+        (**self).ready_naks()
+    }
 }
 
 /// Whether a session ran to its end once its port was opened.

@@ -294,7 +294,8 @@ pub fn run(context: &Context, args: &Args) -> Result<Outcome> {
     )?;
 
     let result = (|| -> Result<Reading> {
-        let mut port = context.record(&args.port, &directory)?;
+        // One idle-ready NAK per command: see `Prompt`.
+        let mut port = protocol::Prompt(context.record(&args.port, &directory)?);
         report.update(|r| r.status = Status::Running)?;
 
         progress(&format!(
