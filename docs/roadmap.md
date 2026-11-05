@@ -31,7 +31,7 @@ What works today and what comes next, for the replacement firmware, the tools ar
 | Jam and sensor fault handling | Works | A jam, blocked outlet or sensor fault ends the feed by name, never retried, and shows in the status and history. On the feeder, simulated jams end as `jammed` and `mark_stuck` and a blocked outlet stops the motor within about a second; kibble pressed into the rotor by hand did not jam it. |
 | Schedules | Works | Up to ten plans, run on the feeder with no server. |
 | Feeding history | Partial | `wellfed feeds` lists each feed the feeder keeps, across reboots; a long history needs the server. |
-| Food level | Partial | The status and low-food light show the hopper's latest reading, taken by each feed and, on the adapter, soon after a boot and every minute, so a refill shows with no feed. A feed on low food still runs, as stock's does, and its history says so. Checked on the feeder with and without food, and at rest with the beam clear and blocked by hand; the emitter current is unmeasured. The beam is a low warning, reading empty with about five portions left. |
+| Food level | Partial | The status and low-food light show the hopper's latest reading, taken by each feed and, on the adapter, a short window soon after a boot and every minute, so a refill shows with no feed. A feed on low food still runs, as stock's does, and its history says so. Checked on the feeder with and without food, and at rest with the beam clear and blocked by hand; the emitter current is unmeasured. The beam is a low warning, reading empty with about five portions left. |
 
 ## The feeder itself
 
@@ -80,7 +80,7 @@ What works today and what comes next, for the replacement firmware, the tools ar
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Wellfed Bench board | Not started | One batch of Rev B built. On November 2, 2026 one board passed bring-up and drove a stock feeder's power, loader entry and a full flash read; its current is unchecked against a meter. See [the bench board](../src/hardware/bench/README.md). |
+| Wellfed Bench board | Not started | One batch of Rev B built. On November 2, 2026 one board passed bring-up and drove a stock feeder's power, loader entry and a full flash read, apart from the D-cell refusal; its current is unchecked against a meter. See [the bench board](../src/hardware/bench/README.md). |
 
 ## What's next
 

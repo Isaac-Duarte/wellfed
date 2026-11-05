@@ -27,7 +27,7 @@ src/client/wellfed-connect   tokio loop over wellfed-client's Connection: locate
 src/client/wellfed-install   tokio driver of wellfed-client's install from stock: stock's server in-process (wellfed-stock),
                               pairing, the backup, the promotion; the Android app runs it, the CLI its restore
 src/client/wellfed-server-client  a typed async client of the server's HTTP API over wellfed-api (reqwest with rustls,
-                              the SSE stream included): the CLI and the server's own tests
+                              the SSE stream included): the app, the CLI and the server's own tests
 src/tools/wellfed-feeder-sim the host-simulated feeder: wellfed-feeder's loop pass and stores over real TCP,
                               on wellfed-device-sim, which every simulated device kind shares
 src/server/wellfed-api       HTTP bodies, error codes, OpenAPI schemas; a module per resource. No axum. Builds for Android
@@ -58,7 +58,7 @@ The server's crates follow one rule: **a crate per runtime or dependency boundar
 | `wellfed-releases` | Fetching, uploading and verifying releases, the release cache, and each feeder's stock backup. |
 | `wellfed-service` | The use cases, a module per domain, each with its own error enum wrapped in the crate's `Error`, plus the auth rules, the hub and each job's body. It never sees a socket or an HTTP type. |
 | `wellfed-server` | The binary and the jobs supervisor. A handler parses, authorizes through an axum extractor, calls one service method and maps the result. It never sees SQL. |
-| `wellfed-server-client` | The typed client the CLI's `wellfed server` commands and the server's own tests go through, so neither can disagree with the routes. Nothing in it retries. |
+| `wellfed-server-client` | The typed client the app, the CLI's `wellfed server` commands and the server's own tests go through, so neither can disagree with the routes. Nothing in it retries. |
 | `wellfed-server-testkit` | The service on a temporary store with a fixed `Clock` and a seeded `Random`, the simulated feeder, and the HTTP server in process. |
 
 A few crates outside `src/server/` matter here:
@@ -112,7 +112,7 @@ Beyond the [Rust standard](../development/rust.md): a change that wants SQL in a
 ## Storage
 
 - **SQLite in WAL mode.** One writer connection, through which every write goes so writes never contend, beside a small read pool. A household's one to five feeders need no writer task in front of it.
-- **Migrations** are sqlx's, embedded in the binary and applied at startup, after `VACUUM INTO` copies the database beside itself as `server.db.before-<version>-<unix ms>`. Until the first server release they are squashed freely, since no owner's database has run them; from then on they are append-only, and a released migration is never edited.
+- **Migrations** are sqlx's, embedded in the binary and applied at startup. Before pending migrations run on an existing database, `VACUUM INTO` copies it beside itself as `server.db.before-<version>-<unix ms>`. Until the first server release they are squashed freely, since no owner's database has run them; from then on they are append-only, and a released migration is never edited.
 - **Queries** use `sqlx::query!` and `query_as!`, with the offline metadata (`src/server/wellfed-store/.sqlx/`) committed, so builds need no database. `make sqlx-prepare` regenerates it from a scratch database that the `sqlite3` command line builds from the migrations.
 - **Time** is stored as integer Unix milliseconds (UTC), with zones as IANA names, converted by `jiff` at the store boundary. The store never reads the wall clock: `Store::open` is given the time.
 - **Secrets.** The sealing key lives in `keys/server.key`, outside the database, and seals each feeder key with ChaCha20-Poly1305, bound to the feeder's row ID and identity, so a copied database alone can't impersonate the server.
@@ -225,7 +225,7 @@ A feed whose answer was lost has no number and is never sent again. The one `Fed
 `wellfed server …` speaks this API through `wellfed-server-client` alone, beside the device commands. Each command takes one path ([two paths, one feed](README.md#two-paths-one-feed)).
 
 - **Login.** `wellfed server login --server URL --name NAME` reads the password from standard input, opens a session, makes a token, keeps it in `private/wellfed-server.json` (`--token-file`) with mode 0600, beside the device API's key file, and ends the session. `logout` revokes the token and deletes the file.
-- **Verbs.** `feeders`, `status`, `settings`, `plans`, `lock`, `desiccant`, `feed` and `cancel-feed` take `--feeder` with an id or a name when the server holds more than one. Then there are `events` (`--follow` over the stream), `command <key>` and `commands`, `users`, `tokens`, `releases`, `install`, `stock`, `clients`, `revoke` (a client by at least 8 hex digits of its key), `reboot`, and `export <file>` (`--csv` for spreadsheets).
+- **Verbs.** `status`, `settings`, `plans`, `lock`, `desiccant`, `feed`, `cancel-feed`, `clients` and `reboot` take `--feeder` with an id or a name when the server holds more than one. Then there are `events` (`--follow` over the stream), `command <key>` and `commands`, `users`, `tokens`, `releases`, `install`, `stock`, `clients`, `revoke` (a client by at least 8 hex digits of its key), `reboot`, and `export <file>` (`--csv` for spreadsheets).
 - **Output.** Text by default; with `--json`, the API's bodies, one per line, a refusal's problem included. The exit status is 0 on success, 1 on an error and 3 when an outcome is unknown.
 - **Uncertain writes.** A write goes out once under a fresh `Idempotency-Key`. When its outcome is unknown, the command prints the key and `wellfed server command <key>`, exits 3, and sends nothing more: not under a new key, and never over the device API. A feed waits on the stream for its result, opened before the feed is sent. An `uncertain` or `unrecorded` result exits 3 too.
 

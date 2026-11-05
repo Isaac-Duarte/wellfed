@@ -84,10 +84,10 @@ The server copies its database into `backups/` every day at 03:30 in the home's 
 To restore from a backup:
 
 1. Stop the server.
-2. Check that the backup you picked is the one you want, and copy the current `server.db` aside: the next step replaces it.
+2. Run `ls -l backups/` and pick the copy by its date. Then `cp server.db server.db.before-restore`: the next step replaces it.
 3. Copy the backup to `server.db`, and delete any `server.db-wal` and `server.db-shm` beside it.
 4. Put `keys/server.key` back.
-5. Start the server, then run `curl http://127.0.0.1:8080/health`. You should see the server's version.
+5. Start the server, then run `curl http://127.0.0.1:8080/health` (or your `listen` address). You should see the server's version.
 
 ## Settings
 
@@ -208,7 +208,7 @@ This part is for whoever builds the release.
 - **`make server-image`** builds the container image. Set `CONTAINER=podman` for podman.
 - **Publishing** the binaries to a GitHub release, and pushing the image to a registry, is the owner's step. Nothing in the repository does it.
 
-Both run [`packaging/Containerfile`](../../src/server/wellfed-server/packaging/Containerfile), whose `rust:1.99.1-alpine3.24` stage on the build machine's own platform links both targets with zig (`cargo zigbuild`), so the aarch64 binary and the arm64 image build on an x86_64 host with no emulation, rustls with its aws-lc provider and the bundled SQLite included. `docker buildx build --platform linux/amd64,linux/arm64` builds a multi-arch image.
+Both run [`packaging/Containerfile`](../../src/server/wellfed-server/packaging/Containerfile), whose `rust:1.99.1-alpine3.24` stage on the build machine's own platform links both targets with zig (`cargo zigbuild`), so the aarch64 binary and the arm64 image build on an x86_64 host with no emulation. rustls with its aws-lc provider and the bundled SQLite both build for musl this way. `docker buildx build --platform linux/amd64,linux/arm64` builds a multi-arch image.
 
 Without a container, a host with zig and `cargo-zigbuild` runs the same build after `rustup target add` for both targets:
 

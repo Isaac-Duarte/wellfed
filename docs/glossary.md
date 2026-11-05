@@ -26,7 +26,7 @@ The words the rest of the docs use without stopping to explain them.
 
 **Give-way.** Clearing bank 1's first marker byte, so the factory loader falls back to bank 0. A failed trial gives way on its own, and the bench can do it over UART. See [give way to bank 0](development/uart-development.md#give-way-to-bank-0).
 
-**Promotion.** The last step of an install from stock: stock's updater puts the replacement in bank 0, and once your stock backup is kept, the installer writes the replacement into bank 1 over the device API, where it is confirmed. See [consumer installation](firmware/consumer-installation.md).
+**Promotion.** The last step of an install from stock: stock's updater puts the replacement in the other bank (bank 0 on the research unit; which bank stock runs from is an open question), and once your stock backup is kept, the installer writes the replacement into bank 1 over the device API, where it is confirmed. See [consumer installation](firmware/consumer-installation.md).
 
 **Review.** A build or the pinned stock image, checked and frozen by `wellfed-build review`. The flash writers and the update signer accept only a review. See [freeze the images](development/uart-development.md#freeze-the-images).
 
