@@ -18,7 +18,7 @@ This page tracks what works today and what comes next. It covers the replacement
 | Guided installer (the Android app) | Works | Run from stock on the research unit: the setup frame, stock's install, Bluetooth setup, the kept backup, promotion and confirmation. |
 | Roll back to your feeder's own stock image | Works | Run from the CLI and the app, then set up in the vendor's app; checked on the feeder once |
 | UART backup and recovery | Works | For developers. See [recovery](devices/plaf103/recovery.md). |
-| Updates over the air, with automatic rollback | Works | A new image that fails to start or hangs gives way to the previous one. |
+| Updates over the air, with automatic rollback | Works | A new image that fails to start or hangs gives way to the previous one. At every boot the feeder checks its recovery copy in bank 0 and reports in its status (and the CLI and app) why an update would be refused. After a UART write of bank 0, the bench tools finish the job so updates install again. Both ran on the research unit, followed by an update. |
 
 ## Feeding
 
