@@ -22,21 +22,23 @@
 //! clock jump it would look like a skip still to come, so undoing a mark
 //! without the bit could run a meal twice. Every change that moves the
 //! mark otherwise clears the bit (a change to the plan's minute or days
-//! among them, which drops the skip). Before the skip
-//! the mark was at or after the plan's occurrence before the skipped one
-//! (the skip waits for that one to settle) and below the skipped one, so
-//! the undo's mark is never lower than it was; and since no occurrence of
-//! the plan lies between the two (consecutive ones are a day apart, 23
-//! hours at least across a daylight change), it runs and reminds exactly
-//! the occurrences the mark before the skip did. A plan that runs once is
-//! disabled by its skip and enabled by its undo, as a claim and its
-//! release do.
+//! among them, which drops the skip).
+//!
+//! Before the skip the mark was at or after the plan's occurrence before
+//! the skipped one (the skip waits for that one to settle) and below the
+//! skipped one, so the undo's mark is never lower than it was. No
+//! occurrence of the plan lies between the two (consecutive ones are a day
+//! apart, 23 hours at least across a daylight change), so it runs and
+//! reminds exactly the occurrences the mark before the skip did. A plan
+//! that runs once is disabled by its skip and enabled by its undo, as a
+//! claim and its release do.
 //!
 //! **Never racing a claim.** The skipped occurrence is still to come when
 //! the change is queued, so no claim of it can exist; and while the change
-//! waits for the writer, the schedule decides nothing (it waits for every
-//! pending plans change), so even an occurrence that comes due meanwhile
-//! is judged against the mark the change leaves.
+//! waits for the writer, the schedule, the reminder and the meal call
+//! decide nothing (each waits for every pending plans change), so even an
+//! occurrence that comes due meanwhile is judged against the mark the
+//! change leaves.
 //!
 //! [schedules]: ../../../../../docs/firmware/schedules.md
 

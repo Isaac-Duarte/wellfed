@@ -1614,6 +1614,16 @@ impl Op {
             }),
             Self::DeleteCall => proto::Op::Feeder(proto::FeederOp::DeleteCall),
             Self::PlayCall => proto::Op::Feeder(proto::FeederOp::PlayCall),
+            // A time past the feeder's u32 seconds is no meal it holds: it
+            // is refused `Invalid`.
+            Self::SkipMeal { slot, due } => proto::Op::Feeder(proto::FeederOp::SkipMeal {
+                slot: *slot,
+                due_s: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
+            }),
+            Self::UnskipMeal { slot, due } => proto::Op::Feeder(proto::FeederOp::UnskipMeal {
+                slot: *slot,
+                due_s: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
+            }),
         }
     }
 }

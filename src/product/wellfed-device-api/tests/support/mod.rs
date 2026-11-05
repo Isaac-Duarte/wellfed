@@ -401,9 +401,10 @@ impl FeederDevice for Fake {
             return Err(Refusal::NotFound);
         };
         if !self.skip_dropped {
-            *mark = match skip {
-                MealSkip::Skip => due_s,
-                MealSkip::Unskip => due_s - 86_400,
+            let bit = 1 << slot;
+            (*mark, self.plans.skips) = match skip {
+                MealSkip::Skip => (due_s, self.plans.skips | bit),
+                MealSkip::Unskip => (due_s - 1, self.plans.skips & !bit),
             };
         }
         Ok(())

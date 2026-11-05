@@ -390,24 +390,35 @@ pub enum FeederOp<'a> {
     /// Answered `Done` once the store holds the skip, recorded as
     /// [`EventBody::Skipped`]; the meal then never feeds, and no reminder
     /// or meal call comes for it. A plan that runs once is disabled with it.
-    /// Owner and member sessions, as for [`Self::PutPlans`]. Refused
-    /// [`Refusal::NoClock`] without a valid clock and zone offset,
+    /// Owner, member and server sessions, as for [`Self::PutPlans`].
+    /// Refused [`Refusal::NoClock`] without a valid clock and zone offset,
     /// [`Refusal::NotFound`] for an empty or disabled slot,
     /// [`Refusal::Invalid`] when `due_s` is not that occurrence (already
-    /// due, tomorrow's, or already skipped), and [`Refusal::Busy`] while
+    /// due, tomorrow's, or already skipped), [`Refusal::Busy`] while
     /// another plans change is being written, a feed holds the outputs, a
     /// meal is being claimed or the plan's last occurrence is still
-    /// running or waiting. A change to the plan's minute or days drops the
-    /// skip.
+    /// running or waiting, and [`Refusal::NotWritable`] when the store
+    /// cannot be written or the writer could not save it. A change to the
+    /// plan's minute or days drops the skip. [`Plans::skipped`] names the
+    /// skip while it stands.
     SkipMeal {
         slot: u8,
         due_s: u32,
     },
     /// Undo the skip of plan `slot`'s meal due at `due_s`, while it is
     /// still to come: answered `Done` once the store holds it, recorded as
-    /// [`EventBody::Unskipped`], and the meal feeds as planned. Refused as
-    /// [`Self::SkipMeal`] is, and [`Refusal::Invalid`] when that meal is not
-    /// the one skipped, or is already due.
+    /// [`EventBody::Unskipped`], and the meal feeds as planned. Owner,
+    /// member and server sessions. A disabled plan is no refusal: a plan
+    /// that runs once is disabled by its skip, and enabled again by the
+    /// undo. Refused [`Refusal::NoClock`] without a valid clock and zone
+    /// offset, [`Refusal::NotFound`] for an empty slot,
+    /// [`Refusal::Invalid`] when the store holds no skip of that meal (a
+    /// meal that ran or was missed among them, even after the clock moved
+    /// back before it), or the meal is already due or no longer the plan's
+    /// next, [`Refusal::Busy`] while another plans change is being written,
+    /// a feed holds the outputs or a meal is being claimed, and
+    /// [`Refusal::NotWritable`] when the store cannot be written or the
+    /// writer could not save it.
     UnskipMeal {
         slot: u8,
         due_s: u32,
@@ -532,6 +543,8 @@ pub struct Plans {
     /// Each slot's skipped meal (Unix seconds) while its skip stands
     /// ([`FeederOp::SkipMeal`]): `None` once it is undone, or once the
     /// plan's next meal is taken or passed, or its minute or days change.
+    /// A skip stays named after its meal's time, until that next meal, so
+    /// a client compares it with the time: one in the past is spent.
     pub skipped: [Option<u32>; PLANS_MAX],
 }
 

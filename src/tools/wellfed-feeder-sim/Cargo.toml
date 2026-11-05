@@ -38,6 +38,7 @@ ed25519-dalek = "2"
 wellfed-feeder-sim = { path = ".", features = ["harness"] }
 sha2 = "0.10"
 wellfed-connect.workspace = true
+jiff.workspace = true
 wellfed-model.workspace = true
 # The measured mechanism, for a trace shaped like a real feed's.
 wellfed-sim.workspace = true

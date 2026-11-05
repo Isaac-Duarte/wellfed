@@ -88,6 +88,14 @@ fn every_op() -> Vec<Op> {
         },
         Op::DeleteCall,
         Op::PlayCall,
+        Op::SkipMeal {
+            slot: 0,
+            due: jiff::Timestamp::UNIX_EPOCH,
+        },
+        Op::UnskipMeal {
+            slot: 0,
+            due: jiff::Timestamp::UNIX_EPOCH,
+        },
     ];
     let mut kinds: Vec<_> = ops.iter().map(kind).collect();
     kinds.sort_unstable();
@@ -134,6 +142,8 @@ fn kind(op: &Op) -> u8 {
         Op::CallChunk { .. } => 32,
         Op::DeleteCall => 33,
         Op::PlayCall => 34,
+        Op::SkipMeal { .. } => 35,
+        Op::UnskipMeal { .. } => 36,
     }
 }
 

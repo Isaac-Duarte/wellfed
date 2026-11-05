@@ -179,6 +179,26 @@ fn an_older_record_is_not_read() {
     }
 }
 
+/// A version 3 record wins over an older one in the other sector, even
+/// one whose save count is higher: the older is not read at all.
+#[test]
+fn a_current_record_wins_over_an_older_version_with_a_higher_sequence() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    let current = skipped_breakfast();
+    assert!(s.save(&breakfast(1_000)));
+    assert!(s.save(&current));
+    // Sector 0's record: a version 2 save with a higher count.
+    rewrite(&mut f, |record| {
+        record[8] = 2;
+        record[12..16].copy_from_slice(&9u32.to_le_bytes());
+    });
+
+    let r = open(&mut f);
+    assert_eq!((r.status, r.sequence, r.slot), (PlansStatus::Loaded, 2, 1));
+    assert_eq!(r.plans, current);
+}
+
 #[test]
 fn records_that_fail_their_checks_are_not_read() {
     type Change = fn(&mut [u8]);

@@ -842,19 +842,22 @@ pub(super) fn poll<F: FeederDevice>(
             PlansResult::Current { pending: true, .. } | PlansResult::Busy => return None,
             PlansResult::ReadOnly | PlansResult::Unserved => Reply::Refused(Refusal::NotWritable),
         },
-        // Only a skip puts a mark ahead of the clock, and the meal is still
-        // to come, so the slot's mark tells whether the store holds it.
+        // The slot's stored skip decides, never its mark with the claim
+        // folded in: an undo that lands just before its meal is due is
+        // followed at once by the schedule's claim of that meal, which
+        // marks it as the skip did. Only a skip sets the bit and only an
+        // undo clears it before the meal is due; a change the writer could
+        // not save leaves it as it was. A skip that lands is never claimed
+        // over (its mark covers the meal), so its bit stands until polled.
         FeederWait::Skip { slot, due_s, skip } => match device.plans(None) {
             PlansResult::Current {
                 view,
                 pending: false,
             } => {
-                let covered = view
-                    .mark(usize::from(slot))
-                    .is_some_and(|mark| mark >= due_s);
+                let held = view.skipped(usize::from(slot)) == Some(due_s);
                 let (landed, body) = match skip {
                     MealSkip::Skip => (
-                        covered,
+                        held,
                         EventBody::Skipped {
                             plan: slot,
                             due: due_s,
@@ -862,7 +865,7 @@ pub(super) fn poll<F: FeederDevice>(
                         },
                     ),
                     MealSkip::Unskip => (
-                        !covered,
+                        !held,
                         EventBody::Unskipped {
                             plan: slot,
                             due: due_s,

@@ -1402,3 +1402,66 @@ fn a_skip_survives_a_restart_and_its_undo_then_feeds_the_meal() {
     feeder.run_until(BREAKFAST + MINUTE_MS);
     assert_eq!(feeder.fed(), [FED_PLAN_0]);
 }
+
+#[test]
+fn a_skip_queued_as_the_reminder_s_lead_begins_gives_no_reminder_while_it_is_written() {
+    let mut feeder = announced_breakfast();
+    feeder.run_until(BREAKFAST - 10 * MINUTE_MS - 1_000);
+
+    // The skip waits for a slow writer across the lead's start.
+    feeder.sim.platform().hold_plans(true);
+    assert_eq!(feeder.skip(BREAKFAST, MealSkip::Skip), Ok(()));
+    feeder.run(5_000);
+    assert!(
+        feeder.soon().is_empty(),
+        "nothing while the skip is written"
+    );
+
+    feeder.sim.platform().hold_plans(false);
+    feeder.run_until(BREAKFAST + 5 * MINUTE_MS);
+    assert!(feeder.soon().is_empty());
+    assert!(feeder.calls.is_empty());
+    assert!(feeder.fed().is_empty());
+}
+
+#[test]
+fn a_change_that_is_no_skip_only_delays_the_reminder_by_its_write() {
+    let mut feeder = reminded_breakfast(10);
+    feeder.run_until(BREAKFAST - 10 * MINUTE_MS - 1_000);
+
+    // More portions, the same times: the meal keeps its occurrence.
+    feeder.sim.platform().hold_plans(true);
+    let more = PlansChange::Replace {
+        table: table(&[(0, plan(7 * 60 + 30, 3))]),
+        at_s: Some(seconds(BREAKFAST - 10 * MINUTE_MS)),
+    };
+    let queued = feeder.sim.platform().plans_change(more);
+    assert!(matches!(queued, PlansResult::Current { pending: true, .. }));
+    feeder.run(5_000);
+    assert!(feeder.soon().is_empty(), "held while the change is written");
+
+    feeder.sim.platform().hold_plans(false);
+    feeder.run(2_000);
+    assert_eq!(feeder.soon().len(), 1, "reminded once the write lands");
+    feeder.run_until(BREAKFAST + MINUTE_MS);
+    assert_eq!(
+        feeder.fed(),
+        [(1, 3, FeedOutcome::Done, Source::Schedule(0))]
+    );
+}
+
+#[test]
+fn a_skip_queued_as_the_call_s_lead_begins_plays_no_call() {
+    let mut feeder = called_breakfast();
+    feeder.run_until(BREAKFAST - 3_000);
+
+    feeder.sim.platform().hold_plans(true);
+    assert_eq!(feeder.skip(BREAKFAST, MealSkip::Skip), Ok(()));
+    feeder.run(5_000);
+    assert!(feeder.calls.is_empty(), "no call while the skip is written");
+
+    feeder.sim.platform().hold_plans(false);
+    feeder.run(MINUTE_MS);
+    assert!(feeder.calls.is_empty());
+    assert_eq!(feeder.claims, 0, "plan 0's meal never fed");
+}

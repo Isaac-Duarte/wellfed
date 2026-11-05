@@ -14,10 +14,13 @@
 //! wall-clock minute), once the wall clock is within the call's lead and
 //! before the meal is due. A plan whose mark is at or past the occurrence
 //! (a client's skip among them), or with none, is passed over, as the
-//! reminder passes it over: its meal may not run. With no valid clock, a plans store that cannot be written, no clip,
-//! a feeding owner stopped on a fault or a journal that did not open (no
-//! meal runs this boot), or BLE setup mode running (whose own tunes use
-//! the speaker), no call plays.
+//! reminder passes it over: its meal may not run. With no valid clock, a
+//! plans store that cannot be written, no clip, a feeding owner stopped on
+//! a fault or a journal that did not open (no meal runs this boot), or BLE
+//! setup mode running (whose own tunes use the speaker), no call plays.
+//! While a plans change is being written, which may be a skip, no call
+//! starts. A call already playing when a skip lands plays on: it never
+//! feeds or delays a meal, so it is not stopped.
 //!
 //! **Once.** The occurrence last called is kept per slot in RAM. A speaker
 //! busy with something else is asked again each pass until the meal is
@@ -26,8 +29,9 @@
 //!
 //! **A client's tune gives way.** A tune still sounding as a lead begins
 //! would push the call past its meal, so the device API refuses one that
-//! would ([`crowds`]), and so does the clip played once on request. The call's own speaker request has no such check: it
-//! comes first, and only waits for a tune already under way.
+//! would ([`crowds`]), and so does the clip played once on request. The
+//! call's own speaker request has no such check: it comes first, and only
+//! waits for a tune already under way.
 //!
 //! [schedules]: ../../../../../docs/firmware/schedules.md
 
@@ -123,7 +127,7 @@ impl Call {
         quiet: bool,
         mut record: impl FnMut(Record),
     ) {
-        self.lead_at = None;
+        let previous = self.lead_at.take();
         if quiet {
             return;
         }
@@ -138,9 +142,16 @@ impl Call {
         else {
             return;
         };
-        let PlansResult::Current { view, .. } = platform.plans() else {
+        let PlansResult::Current { view, pending } = platform.plans() else {
             return;
         };
+        // A change being written may be a skip of the meal about to be
+        // called: wait for it, as the schedule does, keeping the last lead
+        // so a client's tune still gives way meanwhile.
+        if pending {
+            self.lead_at = previous;
+            return;
+        }
         // A store the schedule cannot write runs nothing.
         if !view.writable {
             return;

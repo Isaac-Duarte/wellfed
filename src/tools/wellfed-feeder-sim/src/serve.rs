@@ -54,6 +54,9 @@ pub enum Control {
     StallFeeds(bool),
     /// Hold a storage write in the way of a feed's claim (`true`), or end it.
     HoldWrite(bool),
+    /// Leave a queued plans change in the writer's slot (`true`), as a slow
+    /// flash write would, or let the writer take it.
+    HoldPlans(bool),
     /// The adapter fitted (`true`) or pulled, from now on and across
     /// restarts.
     Adapter(bool),
@@ -166,6 +169,7 @@ pub async fn serve(
                 }
                 Some(Control::StallFeeds(stalled)) => booted.sim.stall_feeds(stalled),
                 Some(Control::HoldWrite(held)) => booted.sim.hold_write(held),
+                Some(Control::HoldPlans(held)) => booted.sim.platform().hold_plans(held),
                 Some(Control::Adapter(adapter)) => {
                     supply.adapter = adapter;
                     booted.sim.platform().set_supply(supply);
