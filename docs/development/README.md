@@ -11,7 +11,7 @@ This guide takes you from a fresh checkout to a passing `make check`, then shows
    - a firmware image: [firmware builds](firmware-builds.md);
    - the bench: [bench hardware](bench-hardware.md) before any wiring, then the [relay bench](../devices/plaf103/bench.md);
    - docs: the [writing guide](writing.md).
-3. Run `make check` before you hand a change over ([contribution guidance](../../CONTRIBUTING.md)).
+3. Run `make check`, plus the check target for your area (`check-app`, `check-web` or `check-homeassistant`), before you hand a change over ([contribution guidance](../../CONTRIBUTING.md)).
 
 ## Prerequisites
 

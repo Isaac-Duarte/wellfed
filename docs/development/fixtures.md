@@ -23,7 +23,7 @@ The update-signing tests of `wellfed-build` and `wellfed-bench` freeze the pinne
 | `private/toolchains/`, `private/firmware-build/` | SDK build artifacts and audited tools. A build whose manifest inputs differ from the current sources is stale, and its tests fail until you rebuild. Both `firstboot` and `firstboot-consumer` are needed: the consumer test scans the consumer OTA for the hotspot's SSID and passphrase and the bench key, and the bench OTA for them as a control, never printing them |
 | `private/fixtures/baseline.bin` | The exact historical 8 MiB research baseline the pinned recovery checks require |
 | `private/fixtures/current-read/flash-read.bin` | A recorded current full snapshot, into which the first-boot mapping test places the build |
-| `private/fixtures/rom-inspection/report.json` | A finalized ROM report, with its linked serial evidence beside it |
+| `private/fixtures/rom-inspection/report.json` | A finalized ROM report. Its linked serial evidence must stay beside it |
 | `private/fixtures/development-source/`, `development-target/` | Intact frozen review bundles for the helper-model and CLI tests |
 | `private/fixtures/development-bounded-read/report.json` | The bounded-read evidence that goes with them |
 

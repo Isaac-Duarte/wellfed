@@ -49,7 +49,7 @@ The [Rust flash client](rust-flash.md) runs the update as `wellfed-flash update 
 - the pinned ROM report and a fresh bounded-read report;
 - new private output locations.
 
-Reports and their companion serial and read files stay together.
+Reports and their companion serial and read files must stay together.
 
 1. Run `wellfed-flash update --device plaf103 inspect` with those inputs. It reads the device and writes nothing. You should see an inspection report; the current application must exactly match the frozen source, and the factory range the pinned baseline.
 2. Run `wellfed-flash update --device plaf103 prepare` on that inspection. It opens no port, binds the complete inspected source region, the report and the tool hashes into a plan, and prints the plan's SHA-256.
@@ -130,5 +130,5 @@ Anything else is refused: a partial erase, a second partial program, stray bytes
 
 ## Evidence
 
-- **Observed:** changed-build updates and their following boots on the research unit. One small-image iteration took about **2m22s** for inspection plus execution, excluding build, manual setup and normal boot; timing depends on the image changes and hardware, and a small source edit can move many linked sectors.
+- **Observed:** changed-build updates and their following boots were demonstrated on the research unit. One small-image iteration took about **2m22s** for inspection plus execution, excluding build, manual setup and normal boot; timing depends on the image changes and hardware, and a small source edit can move many linked sectors.
 - **Observed:** the conservative full-image stock restoration and a following stock 1.1.15 boot were completed separately, not through this updater.

@@ -47,7 +47,7 @@ Each model has its own review kind, so a feeder review never installs on the fou
 
 ### Each model's pins
 
-`--device` names the model whose pins every check in the session uses. Plans and journals record a kind naming the model, and a layout or plan of the other model is refused before anything is written.
+`--device` names the model whose pins every check in the session uses. Nothing of one model binds a session on the other: plans and journals record a kind naming the model, and a layout or plan of the other model is refused before anything is written.
 
 | Pin | `plaf103` | `plwf106` |
 | --- | --- | --- |

@@ -69,7 +69,7 @@ The console header `CON5` is labelled **RX, TX, GND** ([UART page](../devices/pl
 | Middle round pad | TX | Pin 2, TX |
 | Round pad nearest the mounting screw | GND | Pin 3, GND |
 
-Pin 1 is RX on both ends, so a three-wire cable runs straight across. Pad positions can differ between units, so go by the silkscreen.
+Pin 1 is RX on both ends, so a three-wire cable runs straight across, pin 1 to pin 1. Pad positions can differ between units, so go by the silkscreen.
 
 Plug the feeder's USB power cable into FEEDER 5V. Keep the D cells out, so FEEDER 5V is the only supply and cutting it is the kill switch. With the cells in, the board's RECOVER refuses and the bench cannot power the feeder off.
 

@@ -2,7 +2,7 @@
 
 `wellfed-stock` is the server a feeder running stock 1.1.15 installs the replacement from. This guide, for developers, says how it is built and how to run its binary at the bench; the Android app, the owner's installer, runs it for you.
 
-The server exists only for stock: an embedded authenticated broker, the stock protocol as far as an install needs it, the image server stock downloads from, and a bearer-authenticated loopback API. It does not control feeding on stock, which the product uses only to install from and roll back to. The replacement firmware speaks no MQTT: its updates and status go over its [device API](../firmware/device-api.md), which `wellfed-bench ota` pushes and the owner's `wellfed` CLI uses directly.
+The server exists only for stock: an embedded authenticated broker, the stock protocol as far as an install needs it, the image server stock downloads from, and a bearer-authenticated loopback API. It does not control feeding on stock, which the product uses only to install from and roll back to. The replacement firmware speaks no MQTT: its updates and status go over its [device API](../firmware/device-api.md), which `wellfed-bench` and the owner's `wellfed` CLI use directly.
 
 ## How the crate is laid out
 
@@ -15,7 +15,7 @@ The one crate that links the library is the install driver, [`wellfed-install`](
 
 ## The bench host's firewall
 
-Stock must reach two ports on this host from the hotspot: the broker on TCP 1883 and the image server on TCP 8088. No tool here changes the firewall, so the bench host needs a permanent rule of the owner's in `/etc/computer-security.nft`, in the input chain of `inet computer_security`, loaded and checked with `sudo nft list chain inet computer_security input`:
+Stock must reach two ports on this host from the hotspot: the broker on TCP 1883 and the image server on TCP 8088. No tool here changes the firewall, so the bench host needs a permanent rule of the owner's in `/etc/computer-security.nft`, in the input chain of `inet computer_security`:
 
 ```text
 iifname "wlan1" ip daddr 10.42.103.1 tcp dport { 1883, 8088 } accept
