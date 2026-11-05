@@ -75,7 +75,9 @@ The install and the settings writer share the service task, so their flash write
 
 Bank 1 gives way only to a bank 0 that recorded its own image (length, SHA-256 and built-in key id) in the update store. Bank 0 does that at its first boot.
 
-So after a UART install of bank 0, bank 1 refuses every offer `Fallback` until bank 0 has booted once. The reviewed UART install boots bank 1, so the bank-0 record comes with the first give-way through UART (`give-way-execute --fallback`), or with a failed trial.
+So after a UART install of bank 0, bank 1 refuses every offer `Fallback` until bank 0 has booted once. A UART write never boots bank 0, so `wellfed-flash update --bank 0` exits 3 (incomplete) rather than 0. The bench's `flash-execute --bank 0` finishes the write itself: it gives way to the image just written, boots bank 0 so it records itself, restores bank 1's marker and boots bank 1 ([finish a bank-0 write](../devices/plaf103/bench.md#finish-a-bank-0-write)).
+
+A bank-0 write is finished only when bank 1, booted again, logs `PLOTA1 bank0 check=match`, or `UpdateView.bank0` reads `Match`. Bank 0's own `bank0 bytes=… recorded=…` is the step before that, not the proof.
 
 A refusal names the check that failed: `marker` (bank 0's loader marker is invalid), `unrecorded` (no record), `key` (bank 0's built-in key is not the offer's), `extent` (bank 0's headers give no image), `changed` (its length or hash differs from the record) or `read` (bank 0 could not be read). The reason goes on the wire as `UpdateRefusal::Fallback { reason }` and in `PLWCH1 refused give_way reason=…`, with the recorded and found lengths and the first four bytes of each hash where the check got that far. A failed give-way write after every check passed is a different line, `PLWCH1 error stage=give_way_write`.
 

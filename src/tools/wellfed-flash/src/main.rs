@@ -19,7 +19,7 @@ use wellfed_core::virtual_panel;
 
 use wellfed_flash::error::ErrorKind;
 use wellfed_flash::evidence::report::SummaryStatus;
-use wellfed_flash::evidence::session::{Completion, Context, EMULATOR, Outcome};
+use wellfed_flash::evidence::session::{Context, EMULATOR, Outcome};
 use wellfed_flash::link::protocol::{Core, INTERRUPTED};
 use wellfed_flash::writers::{read, stock, update};
 use wellfed_formats::bench::lease::Lease;
@@ -284,10 +284,7 @@ fn device(
         Err(error) => return refused(&error),
     };
     match run(&context) {
-        Ok(outcome) => (
-            u8::from(outcome.completion == Completion::Stopped),
-            outcome.summary,
-        ),
+        Ok(outcome) => (outcome.completion.code(), outcome.summary),
         Err(error) => refused(&error),
     }
 }

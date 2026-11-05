@@ -421,6 +421,9 @@ fn record_start(
         JobCommand::StockPrepare(args) if args.fallback.is_some() => {
             commands::steps(BenchCommand::GiveWayPrepare).to_vec()
         }
+        JobCommand::FlashExecute(args) if args.update.bank == 0 => {
+            commands::BANK0_EXECUTE_STEPS.to_vec()
+        }
         JobCommand::StockExecute(args) if args.stock.fallback.is_some() => {
             commands::steps(BenchCommand::GiveWayExecute).to_vec()
         }

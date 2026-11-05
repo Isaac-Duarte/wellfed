@@ -83,6 +83,26 @@ fn plan(command: &str) -> String {
     json!({"operation_plan": operation}).to_string()
 }
 
+/// What the fake's `prepare` writes: [`plan`], with a give-way's fallback and
+/// a marker restore's target as the test set them.
+fn plan_for(calls: &Calls, args: &[String]) -> String {
+    let restore = args.iter().any(|a| a == "--restore-marker");
+    match args[0].as_str() {
+        "give-way" if calls.fallback_sha256.is_some() => {
+            let mut plan: Value = serde_json::from_str(&plan("give-way")).unwrap();
+            plan["operation_plan"]["fallback_ota_sha256"] = json!(calls.fallback_sha256);
+            plan.to_string()
+        }
+        "update" if restore => {
+            let mut plan = development(1, 4);
+            plan.restore_marker = true;
+            plan.target_ota_sha256 = calls.restore_target.clone().unwrap_or("t".into());
+            json!({"operation_plan": plan}).to_string()
+        }
+        command => plan(command),
+    }
+}
+
 fn loader_result() -> Observation {
     Observation {
         bytes: 120,
@@ -147,6 +167,10 @@ struct Calls {
     cancel_answer: Option<Answer>,
     /// The keys the feeder lists as update signers.
     signers: Vec<[u8; 32]>,
+    /// The bank-0 image a prepared give-way pins, when not the default.
+    fallback_sha256: Option<String>,
+    /// The image a prepared marker restore targets, when not the default.
+    restore_target: Option<String>,
 }
 
 /// A push that ends at once, as scripted.
@@ -240,7 +264,7 @@ impl Tools for FakeTools {
         // A successful prepare writes its plan to --output.
         if code == 0 && args[1] == "prepare" {
             let at = args.iter().position(|a| a == "--output").unwrap();
-            fs::write(&args[at + 1], plan(&args[0]))?;
+            fs::write(&args[at + 1], plan_for(&calls, args))?;
         }
         // A full read writes the image up to bank 1's marker.
         if code == 0 && args[..2] == ["read", "full"] {
@@ -431,6 +455,7 @@ fn update(name: &str) -> UpdateArgs {
         interrupted: false,
         restore_marker: false,
         attended_motion: false,
+        bank1_source: None,
     }
 }
 
@@ -2284,4 +2309,232 @@ fn rom_inspect_never_reuses_a_session() {
     assert!(rig.bench.rom_inspect(&rom_inspect("unit")).is_err());
     assert!(rig.tools.0.borrow().observed.is_empty());
     assert!(rig.board.log().is_empty());
+}
+
+const BANK0_OTA: &str = "aa00000000000000000000000000000000000000000000000000000000000000";
+const BANK1_OTA: &str = "bb00000000000000000000000000000000000000000000000000000000000000";
+
+/// A frozen stock-kind review pinning `ota`, enough for the job's own
+/// check of each plan.
+fn frozen(rig: &Rig, name: &str, ota: &str) {
+    let review = rig.bench.root.join(name);
+    fs::create_dir_all(&review).unwrap();
+    let frozen = json!({
+        "schema_version": 1, "kind": "plaf103_development_image_review",
+        "image_kind": "stock", "ota_sha256": ota, "payload_sha256": "p",
+        "payload_bytes": 1, "manifest_sha256": null, "review": {"stock_sha256": "s"},
+        "reviewer_sha256": "r", "application_boot_verified": false,
+    });
+    fs::write(review.join("review.json"), frozen.to_string()).unwrap();
+}
+
+/// A powered rig with a prepared bank-0 write of `b0` over a bank 1 holding
+/// `b1`, its write verified (exit 3), and the four captures of the finish:
+/// the give-way's loader, bank 0's boot (`bank0_rx`), the restore's loader
+/// and bank 1's boot (`bank1_rx`).
+fn bank0_rig(bank0_rx: &str, bank1_rx: &str) -> (Rig, ExecuteArgs) {
+    let mut rig = rig();
+    rig.bench.status = Status::new(&rig.bench.root, rig.bench.root.join("status"));
+    rig.bench
+        .status
+        .begin(BenchCommand::FlashExecute, Some("unit"), &[])
+        .unwrap();
+    fs::create_dir_all(rig.bench.root.join(VERIFICATION)).unwrap();
+    frozen(&rig, "b0", BANK0_OTA);
+    frozen(&rig, "b1", BANK1_OTA);
+    rig.bench.on().unwrap();
+    prepare_plan(&rig, "unit");
+    {
+        let mut calls = rig.tools.0.borrow_mut();
+        // The write itself: verified, unrecorded.
+        calls.flash_codes.push_back(3);
+        calls.fallback_sha256 = Some(BANK0_OTA.to_uppercase());
+        calls.restore_target = Some(BANK1_OTA.into());
+        calls.results.extend([
+            loader_result(),
+            boot_result(),
+            loader_result(),
+            boot_result(),
+        ]);
+        calls.rx.extend([
+            Vec::new(),
+            bank0_rx.as_bytes().to_vec(),
+            Vec::new(),
+            bank1_rx.as_bytes().to_vec(),
+        ]);
+    }
+
+    let mut args = execute("unit");
+    args.update.bank = 0;
+    args.update.source = None;
+    args.update.target = "b0".into();
+    args.update.bank1_source = Some("b1".into());
+    (rig, args)
+}
+
+const RECORDED: &str = "[sdk] PLOTA1 bank0 bytes=1081344 recorded=1\r\n";
+const MATCH: &str = "PLOTA1 bank0 check=match recorded_len=1081344 found_len=1081344 \
+                     recorded=abcd0123 found=abcd0123\r\n";
+
+fn next(rig: &Rig) -> String {
+    rig.bench
+        .status
+        .state()
+        .unwrap()
+        .next
+        .clone()
+        .unwrap_or_default()
+}
+
+/// The finish runs the reviewed steps in order, each plan checked to pin the
+/// image it must, and counts as done only on bank 1's `check=match`.
+#[test]
+fn a_bank_0_write_finishes_through_the_give_way_and_the_marker_restore() {
+    let (mut rig, args) = bank0_rig(RECORDED, MATCH);
+
+    assert_eq!(rig.bench.flash_execute(&args).unwrap(), 0);
+
+    assert_eq!(
+        flash_commands(&rig),
+        [
+            "update execute",
+            "read small",
+            "give-way inspect",
+            "give-way prepare",
+            "give-way execute",
+            "read small",
+            "update inspect",
+            "update prepare",
+            "update execute",
+        ]
+    );
+    let calls = rig.tools.0.borrow();
+    let give_way = &calls.flash[4];
+    assert_eq!(flag(give_way, "--fallback"), "b0");
+    let restore = calls.flash.last().unwrap();
+    assert!(restore.contains(&"--restore-marker".to_string()));
+    assert_eq!(
+        (
+            flag(restore, "--bank"),
+            flag(restore, "--source"),
+            flag(restore, "--target")
+        ),
+        ("1", "b1", "b1")
+    );
+    // Each execute carries the hash of the plan its own prepare wrote.
+    for execute in [give_way, restore] {
+        assert_eq!(
+            flag(execute, "--expected-plan-sha256"),
+            sha256(plan_for(&calls, execute).as_bytes())
+        );
+    }
+    // The bank-0 write itself boots nothing: the give-way's boot is bank 0's.
+    assert_eq!(calls.observed.len(), 4);
+    drop(calls);
+
+    assert_eq!(
+        rig.bench
+            .written
+            .iter()
+            .map(|w| (w.bank, w.content.clone()))
+            .collect::<Vec<_>>(),
+        [
+            (Bank::Zero, Content::Stock),
+            (Bank::One, Content::Invalid),
+            (Bank::One, Content::Stock),
+        ]
+    );
+}
+
+#[test]
+fn a_bank_1_check_that_is_not_match_is_not_done() {
+    for (bank1, expected) in [
+        (
+            "PLOTA1 bank0 check=changed recorded_len=8 found_len=8\r\n",
+            "giveway2",
+        ),
+        ("PLOTA1 bank0 check=read\r\n", "dump unit-reread"),
+        ("PLFW1 start build=x bank=1\r\n", "capture unit-check"),
+    ] {
+        let (mut rig, args) = bank0_rig(RECORDED, bank1);
+        assert_eq!(rig.bench.flash_execute(&args).unwrap(), 1, "{bank1}");
+        assert!(next(&rig).contains(expected), "{bank1}: {}", next(&rig));
+        assert_eq!(flash_commands(&rig).len(), 9, "{bank1}: every step ran");
+    }
+}
+
+#[test]
+fn a_bank_0_that_did_not_record_itself_stops_before_the_marker_restore() {
+    for bank0 in ["", "PLOTA1 bank0 recorded=0 error=store\r\n"] {
+        let (mut rig, args) = bank0_rig(bank0, MATCH);
+        assert_eq!(rig.bench.flash_execute(&args).unwrap(), 1, "{bank0}");
+        assert_eq!(
+            flash_commands(&rig).last().map(String::as_str),
+            Some("give-way execute"),
+            "{bank0}"
+        );
+        assert!(
+            next(&rig).contains("--restore-marker"),
+            "{bank0}: {}",
+            next(&rig)
+        );
+    }
+}
+
+#[test]
+fn a_plan_that_pins_another_image_is_never_executed() {
+    let (mut rig, args) = bank0_rig(RECORDED, MATCH);
+    rig.tools.0.borrow_mut().fallback_sha256 = Some("cc".into());
+    assert_eq!(rig.bench.flash_execute(&args).unwrap(), 1);
+    assert!(!flash_commands(&rig).contains(&"give-way execute".to_string()));
+    assert!(next(&rig).contains("give-way-prepare unit-giveway2 --fallback b0"));
+
+    let (mut rig, args) = bank0_rig(RECORDED, MATCH);
+    rig.tools.0.borrow_mut().restore_target = Some(BANK0_OTA.into());
+    assert_eq!(rig.bench.flash_execute(&args).unwrap(), 1);
+    assert_eq!(
+        flash_commands(&rig).last().map(String::as_str),
+        Some("update prepare")
+    );
+}
+
+#[test]
+fn a_stopped_bank_0_step_never_goes_on() {
+    // The give-way's write stops: nothing after it, nothing booted.
+    let (mut rig, args) = bank0_rig(RECORDED, MATCH);
+    rig.tools.0.borrow_mut().flash_codes.extend([0, 0, 0, 1]);
+    assert_eq!(rig.bench.flash_execute(&args).unwrap(), 1);
+    assert_eq!(
+        flash_commands(&rig).last().map(String::as_str),
+        Some("give-way execute")
+    );
+    assert_eq!(rig.tools.0.borrow().observed.len(), 1, "the loader only");
+
+    // A bank-0 write that exits 0 is not the updater's answer for bank 0:
+    // the job treats it as a stop.
+    let (mut rig, args) = bank0_rig(RECORDED, MATCH);
+    rig.tools.0.borrow_mut().flash_codes = [0].into();
+    assert_eq!(rig.bench.flash_execute(&args).unwrap(), 1);
+    assert_eq!(flash_commands(&rig), ["update execute"]);
+}
+
+#[test]
+fn bank_0_needs_bank_1_s_review_before_anything_moves() {
+    let mut rig = rig();
+    let mut args = update("unit");
+    args.bank = 0;
+    let error = rig.bench.flash_prepare(&args).unwrap_err();
+    assert_matches!(error, Error::Command(CommandsError::Bank1SourceRequired));
+
+    let mut args = update("unit");
+    args.bank1_source = Some("b1".into());
+    let error = rig.bench.flash_prepare(&args).unwrap_err();
+    assert_matches!(error, Error::Command(CommandsError::Bank1SourceUnused));
+    assert!(rig.board.log().is_empty());
+    assert!(rig.tools.0.borrow().flash.is_empty());
+
+    let mut args = update("unit");
+    args.bank = 0;
+    args.bank1_source = Some("b1".into());
+    assert!(execute_line(&args, "ab").contains("--bank 0 --source s --target t --bank1-source b1"));
 }

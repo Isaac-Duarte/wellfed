@@ -33,6 +33,7 @@ use wellfed_formats::review::{ImageKind, ImageReview};
 use wellfed_proto::device::Model;
 use wellfed_relay::{POWER, Relay, STRAP, Switch, UART};
 
+mod bank0;
 pub mod ota;
 pub use ota::{Firmware, Image, OtaArgs, Variant};
 
@@ -100,6 +101,17 @@ pub enum CommandsError {
     AnalyzerFailed { stderr: String },
     #[error("--source is required except when overwriting bank 0 or the PLWF106's bank 1")]
     SourceRequired,
+    /// A bank-0 write finishes by restoring bank 1's marker against its
+    /// review, so it needs that review before anything is written.
+    #[error("--bank 0 needs --bank1-source, the frozen review of what bank 1 holds")]
+    Bank1SourceRequired,
+    #[error("--bank1-source applies only to --bank 0")]
+    Bank1SourceUnused,
+    #[error("Cannot read the frozen review {review}: {error}")]
+    ReviewUnreadable {
+        review: String,
+        error: wellfed_formats::Error,
+    },
     /// A target manifest that cannot be read is not taken as motionless.
     #[error("Cannot read {manifest} to check its motion policy: {error}")]
     MotionPolicyUnreadable {
@@ -154,6 +166,12 @@ pub struct UpdateArgs {
     /// Allow a target whose manifest names a motion policy (owner present).
     #[arg(long)]
     pub attended_motion: bool,
+    /// Bank 0 only: the frozen review of what bank 1 holds. After the write
+    /// the job gives way, boots bank 0 so it records itself, restores bank
+    /// 1's marker against this review and boots bank 1, which must report
+    /// `PLOTA1 bank0 check=match`.
+    #[arg(long)]
+    pub bank1_source: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -888,6 +906,12 @@ impl Bench {
         require(args.source.is_some() || original_bank, || {
             CommandsError::SourceRequired
         })?;
+        require(args.bank != 0 || args.bank1_source.is_some(), || {
+            CommandsError::Bank1SourceRequired
+        })?;
+        require(args.bank == 0 || args.bank1_source.is_none(), || {
+            CommandsError::Bank1SourceUnused
+        })?;
 
         let mut out = self.evidence_args(p);
         out.extend([
@@ -961,6 +985,27 @@ impl Bench {
 
     /// Loader, helper bounded read, inspection and plan; stop for plan review.
     pub fn flash_prepare(&mut self, args: &UpdateArgs) -> Result<u8> {
+        let Some((sha, plan)) = self.update_plan(args)? else {
+            return Ok(1);
+        };
+        say!(
+            "Plan {}: bank {}, {} sectors staged, {} erases, target {}",
+            self.rel(&Paths::new(&self.root, &args.name).plan),
+            plan.bank,
+            plan.ordered_sectors.len(),
+            plan.erase_sectors,
+            plan.target_ota_sha256,
+        );
+
+        let next = execute_line(args, &sha);
+        say!("Review it, then: {next}");
+        self.status.next(next);
+        Ok(0)
+    }
+
+    /// The update plan's SHA-256 and operation once prepared; `None` if a
+    /// step failed.
+    fn update_plan(&mut self, args: &UpdateArgs) -> Result<Option<(String, DevelopmentPlan)>> {
         let p = Paths::new(&self.root, &args.name);
         self.require_attended_motion(args)?;
         let update = self.update_args(args, &p)?;
@@ -985,26 +1030,14 @@ impl Bench {
             ),
         ];
         if !self.run_all(&steps)? {
-            return Ok(1);
+            return Ok(None);
         }
 
         let (raw, sha) = self.prepared(&p)?;
         let Prepared {
             operation_plan: plan,
         } = serde_json::from_slice::<Prepared<DevelopmentPlan>>(&raw)?;
-        say!(
-            "Plan {}: bank {}, {} sectors staged, {} erases, target {}",
-            self.rel(&p.plan),
-            plan.bank,
-            plan.ordered_sectors.len(),
-            plan.erase_sectors,
-            plan.target_ota_sha256,
-        );
-
-        let next = execute_line(args, &sha);
-        say!("Review it, then: {next}");
-        self.status.next(next);
-        Ok(0)
+        Ok(Some((sha, plan)))
     }
 
     /// Execute a reviewed plan in the still-powered helper session, then boot.
@@ -1042,8 +1075,10 @@ impl Bench {
                 &self.out(&p.execute),
             ],
         );
+        // A verified bank-0 write exits 3: written, but not yet recorded.
+        let written = if args.update.bank == 0 { 3 } else { 0 };
         match self.run(&command) {
-            Ok(0) => {}
+            Ok(code) if code == written => {}
             Ok(_) => {
                 say!("Update stopped; the feeder stays powered and is not booted. No retry.");
                 self.stopped_write(args.update.bank, Source::FlashExecute);
@@ -1063,6 +1098,9 @@ impl Bench {
             self.wrote(bank, content, Source::FlashExecute);
         }
         self.status.transfer(None, 0, 0);
+        if args.update.bank == 0 {
+            return self.finish_bank0(args);
+        }
         self.boot(&p.boot, boot)?;
         Ok(0)
     }
@@ -1390,6 +1428,9 @@ fn execute_line(args: &UpdateArgs, sha: &str) -> String {
             line += flag;
         }
     }
+    if let Some(bank1) = &args.bank1_source {
+        line += &format!(" --bank1-source {}", bank1.display());
+    }
     line + &format!(" --expected-plan-sha256 {sha}")
 }
 
@@ -1443,9 +1484,28 @@ struct Prepared<P> {
     operation_plan: P,
 }
 
+const READ_SMALL: &str = "wellfed-flash read small";
+
+/// A bank-0 `flash-execute`'s steps: the write, then the give-way that boots
+/// bank 0, then bank 1's marker restore that boots bank 1 (`bank0`).
+pub const BANK0_EXECUTE_STEPS: &[&str] = &[
+    "wellfed-flash update execute",
+    "loader entry",
+    READ_SMALL,
+    "wellfed-flash give-way inspect",
+    "wellfed-flash give-way prepare",
+    "wellfed-flash give-way execute",
+    "boot capture",
+    "loader entry",
+    READ_SMALL,
+    "wellfed-flash update inspect",
+    "wellfed-flash update prepare",
+    "wellfed-flash update execute",
+    "boot capture",
+];
+
 /// Labels for the overall-progress steps of each command.
 pub fn steps(command: BenchCommand) -> &'static [&'static str] {
-    const READ_SMALL: &str = "wellfed-flash read small";
     match command {
         BenchCommand::Boot => &["boot capture"],
         BenchCommand::Loader => &["loader entry"],

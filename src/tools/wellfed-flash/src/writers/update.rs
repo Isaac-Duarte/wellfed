@@ -553,7 +553,43 @@ pub fn run_for(context: &Context, model: Model, args: &Args) -> Result<Outcome> 
         reviewed,
         raw,
     };
-    session_run(context, args, &loaded, Some(&execution))
+    let outcome = session_run(context, args, &loaded, Some(&execution))?;
+    if args.bank == 0 && outcome.completion == Completion::Complete {
+        return Ok(unrecorded(outcome, &args.target));
+    }
+    Ok(outcome)
+}
+
+/// Bank 1 gives way for an update only to a bank 0 that booted and recorded
+/// its own image, which a UART write never does. So a verified bank-0 write
+/// is not finished: it exits 3, never 0, and says what finishes it. The
+/// write is done only once bank 1, booted again, reports `PLOTA1 bank0
+/// check=match`.
+fn unrecorded(mut outcome: Outcome, target: &Path) -> Outcome {
+    let target = target.display();
+    let steps = [
+        format!(
+            "give way to the image just written: wellfed-flash give-way inspect, prepare and \
+             execute with --fallback {target}"
+        ),
+        "boot bank 0 and wait for its `PLOTA1 bank0 bytes=… recorded=…` line".to_owned(),
+        "restore bank 1's marker: wellfed-flash update inspect, prepare and execute with \
+         --bank 1 --source <bank-1 review> --target <bank-1 review> --restore-marker"
+            .to_owned(),
+        "boot bank 1 and wait for `PLOTA1 bank0 check=match`".to_owned(),
+    ];
+    progress(
+        "Incomplete: bank 0 is written and verified but has not recorded itself; bank 1 \
+         refuses every update until bank 0 boots once and bank 1's boot check says match. \
+         On the bench, wellfed-bench flash-execute --bank 0 --bank1-source <bank-1 review> \
+         runs these steps itself:",
+    );
+    for (n, step) in steps.iter().enumerate() {
+        progress(&format!("  {}. {step}", n + 1));
+    }
+    outcome.summary["bank0"] = serde_json::json!({ "recorded": false, "next": steps });
+    outcome.completion = Completion::Unrecorded;
+    outcome
 }
 
 fn session_run(
@@ -722,7 +758,10 @@ fn finish<B: Serialize>(
         }
 
         progress(match completion {
-            Completion::Complete => "Completed; application boot remains a separate bench check",
+            // A bank-0 write's own line follows (`unrecorded`).
+            Completion::Complete | Completion::Unrecorded => {
+                "Completed; application boot remains a separate bench check"
+            }
             Completion::Stopped => {
                 "Stopped without replay; keep application boot excluded and inspect evidence"
             }
@@ -1075,6 +1114,33 @@ mod tests {
             json!({"status": "verified", "mode": "execute", "output": directory,
                    "result": result, "error": null})
         );
+    }
+
+    /// A verified bank-0 write never exits as a plain success: bank 1 refuses
+    /// every update until bank 0 records itself, so the summary names the
+    /// steps that finish it, down to bank 1's `check=match`.
+    #[test]
+    fn a_verified_bank_0_write_is_unrecorded_and_names_what_finishes_it() {
+        let outcome = Outcome {
+            completion: Completion::Complete,
+            summary: json!({"status": "verified"}),
+        };
+        let outcome = super::unrecorded(outcome, Path::new("private/verification/b0-review"));
+
+        assert_eq!(outcome.completion, Completion::Unrecorded);
+        assert_eq!(outcome.completion.code(), 3);
+        assert_eq!(outcome.summary["status"], "verified");
+        assert_eq!(outcome.summary["bank0"]["recorded"], false);
+        let next: Vec<&str> = outcome.summary["bank0"]["next"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|step| step.as_str().unwrap())
+            .collect();
+        assert_eq!(next.len(), 4);
+        assert!(next[0].contains("--fallback private/verification/b0-review"));
+        assert!(next[2].contains("--restore-marker"));
+        assert!(next[3].contains("check=match"));
     }
 
     #[test]

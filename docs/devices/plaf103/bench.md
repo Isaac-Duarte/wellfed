@@ -118,14 +118,14 @@ The files and shapes they share (the bench config, a command's progress record, 
 | `transients NAME` | Repeated logic-analyzer captures (`sigrok-cli`, fx2lafw) of relay power-ons or, with `--mode loader`, loader entries. Each cycle arms the analyzer before power-on and ends powered off. No UART, no flash. See [motor driver](motor-driver.md#capture-startup-transients). |
 | `dump NAME` | `loader`, then `read small` and `read full` in one helper session |
 | `flash-prepare NAME` | `loader`, `read small`, `update inspect` and `update prepare`. Prints the plan summary and the exact `flash-execute` line, then stops. |
-| `flash-execute NAME` | Checks relay 1 stayed on and the strap is released, runs `update execute` with the reviewed hash, then `boot` |
+| `flash-execute NAME` | Checks relay 1 stayed on and the strap is released, runs `update execute` with the reviewed hash, then `boot`. With `--bank 0` it goes on to [finish the bank-0 write](#finish-a-bank-0-write) instead. |
 | `give-way-prepare NAME`, `give-way-execute NAME` | The same pair for `give-way`. `--fallback` names bank 0's frozen review. |
 | `stock-prepare NAME`, `stock-execute NAME` | UART return to stock ([below](#to-stock-over-uart)) |
 | `ota NAME` | One over-the-air update of the running feeder ([below](#over-the-air-updates)). Never touches power or opens the relay board. |
 | `restore-stock` | `wellfed restore-stock` as a job: a fresh update key enrolled with a Dispense press (unless `--key` names one the feeder trusts), then stock over the device API. With `--virtual-panel` it presses Dispense itself on a running virtual-panel build, and a failed press stops it. Nothing is offered again, and a feeder gone after the offer ends it uncertain ([rollback](../../firmware/consumer-installation.md#rollback)) |
 | `itest NAME` | The real-device [integration suite](#integration-suite). Runs its own hotspot and receive-only UART capture, installs over the air, and restores the bench at the end. Opens the relay board only with `--power`, for cold boots. |
 
-`wellfed-bench <command> --help` lists the flags. `flash-prepare` and `flash-execute` take the updater's `--bank`, `--source`, `--original-read`, `--target`, `--interrupted` and `--restore-marker`, and `--attended-motion` for a target whose manifest names a motion policy.
+`wellfed-bench <command> --help` lists the flags. `flash-prepare` and `flash-execute` take the updater's `--bank`, `--source`, `--original-read`, `--target`, `--interrupted` and `--restore-marker`, and `--attended-motion` for a target whose manifest names a motion policy. With `--bank 0` both need `--bank1-source`, the frozen review of what bank 1 holds.
 
 Every command from `on` down is a job: it needs the server running, and refuses otherwise, naming `wellfed-bench serve --device plaf103`.
 
@@ -337,6 +337,21 @@ Refused over MCP, before anything is posted, as they need a person at the bench:
 `flash-prepare` and `flash-execute` are separate on purpose, so you review the plan between them. A failed step stops without retry and leaves the feeder powered for inspection. A stopped update is never followed by a boot. Finish it with a fresh `flash-prepare … --interrupted` session, as the [development updater](../../development/uart-development.md) describes.
 
 Relay state shows that the supply was not switched off between the two commands. It does not rule out a brownout.
+
+### Finish a bank-0 write
+
+Bank 1 gives way for an update only to a bank 0 that booted and recorded its own image, and a UART write never boots it. So after a bank-0 write, bank 1 refuses every offer `Fallback` (reason `unrecorded`, or `changed` when bank 0 was rewritten) until bank 0 has booted once ([OTA design](../../firmware/ota-design.md#bootstrap)). `wellfed-flash update --bank 0` therefore exits 3, never 0, and names the steps that finish it.
+
+`flash-execute NAME --bank 0 --bank1-source REVIEW` runs those steps itself after the verified write, each through its usual prepare, under session names beside `NAME`:
+
+1. **Give way** (`NAME-giveway`) to the image just written, as `give-way-execute --fallback` does, then boot. That boot is bank 0's.
+2. **Bank 0 records itself:** its capture must show `PLOTA1 bank0 bytes=… recorded=…` (`recorded=0` when the same image was already recorded). This is a step, not the proof.
+3. **Restore bank 1's marker** (`NAME-restore`) against `REVIEW`, as `flash-execute --restore-marker` does, then boot for 170 s. That boot is bank 1's.
+4. **Bank 1's check:** its capture must show `PLOTA1 bank0 check=match`.
+
+Before executing a plan, the job checks that it pins exactly that step's image: the give-way's bank 0 must be the target review's OTA image, and the restore's target must be `REVIEW`'s, with the marker restore set. The updater checks the rest, as for any plan. A plan that pins anything else is not executed.
+
+**A bank-0 write is finished only when bank 1, booted after the marker restore, logs `PLOTA1 bank0 check=match`**, or `UpdateView.bank0` reads `Match` over the device API. Nothing else counts, bank 0's own record included. If any step stops, or bank 1 reports `check=` anything else, or nothing within the capture, the job stops without a retry (exit 1). It says where the feeder stands and lists the commands that go on from there: a fresh give-way and restore for `unrecorded` or `changed`, a fresh read and bank-0 write for `marker`, `extent` or `read`, or another capture when nothing came.
 
 Stock recovery keeps its own commands. Use `loader` to enter the ROM, then run `wellfed-flash stock-recovery --device plaf103` directly, or use [`stock-prepare`](#to-stock-over-uart).
 

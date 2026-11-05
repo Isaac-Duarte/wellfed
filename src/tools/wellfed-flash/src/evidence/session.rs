@@ -203,6 +203,22 @@ pub enum Completion {
     Complete,
     /// Stopped terminally; the evidence says how far it got.
     Stopped,
+    /// Bank 0 was written and verified, but it has not recorded itself in
+    /// the update store, so bank 1 refuses every update until it boots
+    /// once: a step of a bank-0 write, not its end.
+    Unrecorded,
+}
+
+impl Completion {
+    /// The process's exit status: 0 complete, 1 stopped, 3 written but
+    /// unrecorded (2 is a refusal before serial access).
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::Complete => 0,
+            Self::Stopped => 1,
+            Self::Unrecorded => 3,
+        }
+    }
 }
 
 /// How a session ended: the completion and the one JSON summary the CLI
