@@ -1,6 +1,6 @@
 # Glossary
 
-These are the words the rest of the docs use without stopping to explain them.
+The words the rest of the docs use without stopping to explain them.
 
 **AmebaD.** Realtek's family of Wi-Fi and Bluetooth chips, and the vendor SDK we build on. The PLAF103 uses the RTL8721DM. See [the chip page](chips/rtl8721dm/README.md).
 
@@ -24,6 +24,14 @@ These are the words the rest of the docs use without stopping to explain them.
 
 **Trial and confirmation.** A freshly installed image runs on trial. It becomes the image the feeder boots by confirming that it started cleanly. One that crashes or hangs during its trial is abandoned.
 
+**Give-way.** Clearing bank 1's first marker byte, so the factory loader falls back to bank 0. A failed trial gives way on its own, and the bench can do it over UART. See [give way to bank 0](development/uart-development.md#give-way-to-bank-0).
+
+**Promotion.** The last step of an install from stock: stock's updater puts the replacement in bank 0, and once your stock backup is kept, the installer writes the replacement into bank 1 over the device API, where it is confirmed. See [consumer installation](firmware/consumer-installation.md).
+
+**Review.** A build or the pinned stock image, checked and frozen by `wellfed-build review`. The flash writers and the update signer accept only a review. See [freeze the images](development/uart-development.md#freeze-the-images).
+
+**Update key.** A key whose signature the feeder requires on an update: a key built into the image (the project's release key, or the bench key on development builds), one a built-in key added to the image's release slot, or an update key the owner enrolled with a Dispense press. See [keys and anti-rollback](firmware/ota-design.md#keys-and-anti-rollback).
+
 **Stock.** The firmware the feeder shipped with, version 1.1.15 on our unit. See [stock firmware](devices/plaf103/stock/README.md).
 
 **Feeding owner.** The one piece of firmware allowed to turn the motor. Every feed, from a button or an app, is a request to it. It stops the motor on time and records every feed before it starts.
@@ -38,7 +46,15 @@ These are the words the rest of the docs use without stopping to explain them.
 
 **Pairing.** How a phone or computer first gets its key onto the feeder, over Bluetooth, while you are standing next to it. See [pairing](firmware/pairing.md).
 
+**Setup mode.** The Bluetooth window in which a feeder takes its first owner and its Wi-Fi. It opens from the buttons, or by itself when the feeder has no network to join. See [Bluetooth](firmware/bluetooth.md).
+
+**Generation.** The counter on the feeder's settings, plans and calibration. A change names the generation it was based on, and is refused as stale if the store has moved since. See [device API](firmware/device-api.md#writes-roles-and-generations).
+
 **The server.** The optional self-hosted Wellfed server. It keeps long history and serves several feeders and people. The feeder works without it. See [the server](server/README.md).
+
+**Uncertain write.** A request whose answer was lost, so nobody knows whether the feeder ran it. It is settled from the feeder's history or the server's journal, and never sent again on another path. See [two paths, one feed](server/README.md#two-paths-one-feed).
+
+**Bench.** Our test rig: a host computer and the Wellfed Bench board, which powers the feeder, holds its loader strap and bridges its UART. See [bench hardware](development/bench-hardware.md) and [the relay bench](devices/plaf103/bench.md).
 
 **SDK.** Here, usually the Wellfed SDK: the Rust runtime every Wellfed firmware runs inside. "Vendor SDK" means Realtek's AmebaD SDK underneath it.
 

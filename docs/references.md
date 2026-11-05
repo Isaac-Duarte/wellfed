@@ -1,6 +1,6 @@
 # References
 
-These are the outside sources the docs cite. They are leads and comparison material, never authority over what a unit actually shows. Anything taken from a peer project is labelled **External** ([evidence levels](evidence.md)) until it is observed on our own unit.
+The outside sources the docs cite: leads and comparison material, never authority over what a unit actually shows. Anything from a peer project is labelled **External** ([evidence levels](evidence.md)) until observed on our own unit.
 
 ## Datasheets and filings
 

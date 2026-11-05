@@ -1,12 +1,12 @@
 # Documentation
 
-Start here to find the right page. The docs are grouped by what you want to do: use Wellfed, understand how it works, learn the hardware, or help build it.
+Start here to find the right page, grouped by what you want to do: use Wellfed, understand how it works, learn the hardware, or help build it.
 
-Every finding carries an [evidence level](evidence.md) that says how we know it. Outside sources are listed in [references](references.md). A documented finding is not a request to repeat an experiment. Historical bench diaries and raw evidence live outside this repository.
+Every finding carries an [evidence level](evidence.md) saying how we know it, and outside sources are in [references](references.md). A documented finding is not a request to repeat an experiment. Historical bench diaries and raw evidence live outside this repository.
 
 ## Using Wellfed
 
-The [owner guide](guide/README.md) is the place to start if you own a feeder. It is also what [docs.well-fed.dev](web/docs-site.md) publishes, along with a few of the pages below. This index lists everything.
+If you own a feeder, start with the [owner guide](guide/README.md), which [docs.well-fed.dev](web/docs-site.md) publishes with a few of the pages below. This index lists everything.
 
 | Page | What it covers |
 | --- | --- |
@@ -65,7 +65,7 @@ Feeder components:
 
 ## Hardware
 
-Facts about a **chip** hold for every board built on it. Facts about a **device** hold for one feeder model and its stock firmware. Adding a model adds a folder under `devices/` and reuses the rest.
+Facts about a **chip** hold for every board built on it; facts about a **device** hold for one model and its stock firmware. Adding a model adds a folder under `devices/` and reuses the rest.
 
 | Page | What it covers |
 | --- | --- |
@@ -80,6 +80,14 @@ Facts about a **chip** hold for every board built on it. Facts about a **device*
 | [Integration suite](devices/plaf103/integration-suite.md) | Real-device tests on the bench, and the sustained run |
 | [Stock behavior and protocol](devices/plaf103/stock/README.md) | What stock firmware 1.1.15 does |
 | [Stock OTA requirements](devices/plaf103/stock/ota-requirements.md) | What stock's updater accepts |
+| [PLWF106](devices/plwf106/README.md) | The Dockstream 2 fountain, its board and stock firmware, for a port (Wellfed does not run on it) |
+| [PLWF106 board signals](devices/plwf106/board.md) | What each of the fountain's chip pins connects to |
+| [PLWF106 UART](devices/plwf106/uart.md) | How the fountain's console and loader entry differ from the feeder's |
+| [PLWF106 flash layout](devices/plwf106/flash-layout.md) | The fountain's stock image and what the writers must preserve |
+| [PLWF106 recovery](devices/plwf106/recovery.md) | Backing up the fountain, writing a test image and putting stock back |
+| [PLWF106 boot test](devices/plwf106/boot-test.md) | The smallest image that shows the fountain's loader runs our firmware |
+| [PLWF106 stock firmware](devices/plwf106/stock/README.md) | What the fountain's stock 0.0.17 does |
+| [PLWF106 stock OTA](devices/plwf106/stock/ota-requirements.md) | Stock 0.0.17's update request, transfer and activation |
 | [RTL8721DM (AmebaD)](chips/rtl8721dm/README.md) | The SoC and its SDK |
 | [RTL8721DM pins](chips/rtl8721dm/pins.md) | Each pin's job on each device |
 | [Device template](devices/_template/README.md) | The starting point for a new device folder |
@@ -92,6 +100,8 @@ Facts about a **chip** hold for every board built on it. Facts about a **device*
 | [Writing docs](development/writing.md) | How these docs are written |
 | [Rust standard](development/rust.md) | Rules for every Rust crate |
 | [TypeScript standard](development/typescript.md) | Rules for the web frontends |
+| [Dart standard](development/dart.md) | Rules for the Android app |
+| [Python standard](development/python.md) | Rules for the Home Assistant integration |
 | [SDK builds](development/firmware-builds.md) | Full firmware images with the vendor SDK |
 | [Stock server](development/stock-server.md) | The bench's server for stock 1.1.15 |
 | [Bench hardware](development/bench-hardware.md) | The bench board's connectors, feeder wiring and the order of a flash session |
