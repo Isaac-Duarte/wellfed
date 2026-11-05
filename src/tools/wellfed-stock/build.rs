@@ -42,15 +42,26 @@ fn main() {
     }
 
     // A commit or index change alters the recorded commit or clean flag without
-    // touching a build input, so watch the git state too.
+    // touching a build input, so watch the git state too. Cargo reruns a build
+    // script on every build while a watched file is missing, and a fresh
+    // repository has no `packed-refs` until refs are first packed, so only
+    // existing files are watched. Packing moves refs out of `refs/heads`,
+    // which the directory watch sees.
     if let (Some(dir), Some(common)) = (
         git(&["rev-parse", "--git-dir"]),
         git(&["rev-parse", "--git-common-dir"]),
     ) {
-        println!("cargo:rerun-if-changed={dir}/HEAD");
-        println!("cargo:rerun-if-changed={dir}/index");
-        println!("cargo:rerun-if-changed={common}/refs/heads");
-        println!("cargo:rerun-if-changed={common}/packed-refs");
+        let watched = [
+            format!("{dir}/HEAD"),
+            format!("{dir}/index"),
+            format!("{common}/refs/heads"),
+            format!("{common}/packed-refs"),
+        ];
+        for path in watched {
+            if std::path::Path::new(&path).exists() {
+                println!("cargo:rerun-if-changed={path}");
+            }
+        }
     }
 
     let commit = git(&["rev-parse", "HEAD"]).filter(|c| c.len() == 40);
