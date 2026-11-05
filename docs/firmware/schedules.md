@@ -70,7 +70,7 @@ A skip moves the plan's mark ([below](#at-most-once)) up to the skipped meal, so
 
 Before the skip the mark was below the meal and at or after the meal before it, and no occurrence of the plan lies between the two: consecutive ones are a day apart, and at least 23 hours across a daylight change. So an undo never lets a meal run that wouldn't have run without the skip.
 
-A skip never races the meal it skips. It is checked while the meal is still to come, and while it waits for the writer the schedule, the reminder and the meal call all wait too, so a meal that comes due meanwhile is judged against the mark the skip leaves. Any plans change being written holds them, which costs a reminder or a call at most one write's delay. A call already playing when a skip lands plays to its end; the meal doesn't feed.
+A skip never races the meal it skips. It is checked while the meal is still to come, and while it waits for the writer the schedule, the reminder and the meal call all wait too, so a meal that comes due meanwhile is judged against the mark the skip leaves. Any plans change being written holds them until it lands. That is usually one write, but a change queued behind a feed waits for the feed too, and a reminder or call whose lead passes in that time is not given for that meal; the meal still feeds once, within its grace. A call already playing when a skip lands plays to its end; the meal doesn't feed.
 
 ## Meal reminder
 
