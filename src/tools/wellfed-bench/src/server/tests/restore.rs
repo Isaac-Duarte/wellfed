@@ -33,10 +33,15 @@ echo "Restored" >&2
 
 /// A tool that asks one question and waits, never reading the answer, until
 /// a signal stops it.
+///
+/// It waits in short sleeps, never one long one: a TERM that reaches a
+/// forked `sleep` before it execs is caught by the shell's handler it still
+/// has and lost at the exec, and a 30 s sleep would then hold the job's
+/// output open, and the test, for its whole length.
 const WAITS: &str = r#"#!/bin/sh
-trap 'echo TERM > signal; kill $! 2>/dev/null; exit 1' TERM
+trap 'echo TERM > signal; exit 1' TERM
 echo '{"kind":"press-dispense","purpose":"enroll-update-key"}'
-sleep 30 & wait $!
+i=0; while [ $i -lt 300 ]; do sleep 0.1; i=$((i+1)); done
 "#;
 
 fn read(checkout: &Checkout, name: &str) -> String {
@@ -202,13 +207,14 @@ async fn a_line_that_is_no_prompt_stops_the_tool_and_its_own_error_ends_the_job(
     }
     let _one = ONE_SERVER.lock().await;
     let checkout = Checkout::new(0.0);
+    // It waits in short sleeps, as [`WAITS`] does and for the same reason.
     stand_in(
         &checkout,
         "wellfed",
         r#"#!/bin/sh
-trap 'echo TERM > signal; kill $! 2>/dev/null; exit 1' TERM
+trap 'echo TERM > signal; exit 1' TERM
 echo 'Press Dispense now'
-sleep 30 & wait $!
+i=0; while [ $i -lt 300 ]; do sleep 0.1; i=$((i+1)); done
 "#,
     );
     let server = Running::start(checkout.open());
