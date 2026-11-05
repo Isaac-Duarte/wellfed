@@ -48,7 +48,7 @@ Every crate sets `license.workspace = true` and `publish.workspace = true`, and 
 
 ## Tests
 
-`make check-rust` runs the suite with [cargo-nextest](https://nexte.st). Each test runs in its own process, and every failure is reported in one run. A test still running after 60 s is named, then killed after 180 s ([.config/nextest.toml](../../.config/nextest.toml)). Doctests run separately with `cargo test --doc`, which nextest does not cover.
+`make check-rust` runs the suite with [cargo-nextest](https://nexte.st). Each test runs in its own process, and every failure is reported in one run. A test still running after 60 s is named, then killed after 180 s ([.config/nextest.toml](../../.config/nextest.toml)). It runs twice as many tests at once as the machine has cores, since most wait on a socket or a timer rather than a core (`make check-rust TEST_THREADS=n` sets another count), and starts the longest first. No doctests run: nextest skips them, and `cargo xtask check-repository` refuses a doc example rustdoc would compile, so an example is fenced `ignore` or `text`, and code that should run is a test.
 
 - Tests may `unwrap`, `expect` and `dbg!` ([clippy.toml](../../clippy.toml)). A panic there is a failed test.
 - Hardware and fixture evidence tests are `#[ignore]`d. They run only from `make check-fixtures`, which stays on `cargo test` for its `--ignored --exact` selection. An ignored or skipped test is never a pass.

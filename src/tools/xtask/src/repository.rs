@@ -224,6 +224,11 @@ fn check_file(root: &Path, name: &str, summary: &mut Summary) {
         if let Some(error) = oversized(name, &content) {
             summary.errors.push(error);
         }
+        if let Some(line) = compiled_doc_example(&content) {
+            summary.errors.push(format!(
+                "{name}:{line}: rustdoc would compile this doc example, and `make check` runs no doctests; fence it `ignore` or `text`, or make it a test"
+            ));
+        }
     }
     if first == "src" && relative.file_name().is_some_and(|f| f == "Cargo.toml") {
         if ![STOCK_SERVER, STOCK_INSTALLER].contains(&name) && STOCK_DEPENDENCY.is_match(&content) {
@@ -424,6 +429,54 @@ fn oversized(name: &str, source: &str) -> Option<String> {
             "{name}: {lines} lines, over the {limit} a server source may have; split it by domain"
         )
     })
+}
+
+/// The line of the first code block in a `///` or `//!` comment that rustdoc
+/// would compile as a doctest. `make check` runs none: nextest skips them,
+/// and `cargo test --doc` cost every crate a rustdoc pass on each check
+/// while no example in the workspace was compiled. So a compiled example
+/// would go unchecked; one that shows code fences it `ignore` or `text`.
+fn compiled_doc_example(source: &str) -> Option<usize> {
+    let mut open = false;
+    for (index, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        let Some(doc) = trimmed
+            .strip_prefix("///")
+            .or_else(|| trimmed.strip_prefix("//!"))
+        else {
+            continue;
+        };
+        let Some(info) = doc.trim_start().strip_prefix("```") else {
+            continue;
+        };
+        if open {
+            open = false;
+            continue;
+        }
+
+        open = true;
+        if compiled_fence(info) {
+            return Some(index + 1);
+        }
+    }
+    None
+}
+
+/// Whether rustdoc compiles a block with this fence: it does unless a word
+/// is `ignore` or names something other than Rust or a rustdoc attribute.
+fn compiled_fence(info: &str) -> bool {
+    const RUSTDOC: [&str; 6] = [
+        "rust",
+        "no_run",
+        "should_panic",
+        "compile_fail",
+        "test_harness",
+        "standalone_crate",
+    ];
+    let mut words = info
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|word| !word.is_empty());
+    words.all(|word| RUSTDOC.contains(&word) || word.starts_with("edition"))
 }
 
 /// Product code names no raw writer and no `bringup`; bring-up code names a
@@ -632,6 +685,33 @@ mod tests {
             ),
             None,
             "a module of an integration test is a test too"
+        );
+    }
+
+    #[test]
+    fn a_doc_example_rustdoc_would_compile_is_named_by_its_line() {
+        let fenced =
+            |info: &str| format!("//! Intro.\n//!\n//! ```{info}\n//! let x = 1;\n//! ```\n");
+
+        for compiled in ["", "rust", "no_run", "should_panic", "rust,edition2024"] {
+            assert_eq!(
+                compiled_doc_example(&fenced(compiled)),
+                Some(3),
+                "{compiled:?}"
+            );
+        }
+        for shown in ["ignore", "text", "rust,ignore", "sh", "mermaid", "toml"] {
+            assert_eq!(compiled_doc_example(&fenced(shown)), None, "{shown:?}");
+        }
+        assert_eq!(
+            compiled_doc_example("/// ```text\n/// a\n/// ```\n///\n/// ```\n/// b();\n/// ```\n"),
+            Some(5),
+            "a closing fence is not an opening one"
+        );
+        assert_eq!(
+            compiled_doc_example("// ```\nlet s = \"```\";\n"),
+            None,
+            "only doc comments hold doctests"
         );
     }
 

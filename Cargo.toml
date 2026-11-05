@@ -129,6 +129,15 @@ todo = "deny"
 undocumented_unsafe_blocks = "deny"
 unimplemented = "deny"
 
+# Host builds and tests optimize their dependencies a little. The simulator
+# tests step the feeder tens of thousands of times through hashing, Noise and
+# serialization in other crates, and unoptimized that code made the slowest
+# tests six times slower. Dependencies rebuild only when the lockfile
+# changes, so this costs a cold build, not an edit; the workspace's own
+# crates stay unoptimized and quick to rebuild.
+[profile.dev.package."*"]
+opt-level = 1
+
 # Firmware staticlibs: size-optimized, one LTO object per core so the linker
 # script can retain the RAM park section; unwinding is never generated.
 [profile.firmware]

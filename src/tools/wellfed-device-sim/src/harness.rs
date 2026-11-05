@@ -147,6 +147,12 @@ impl Relay {
                 let Ok(device) = TcpStream::connect(target).await else {
                     continue;
                 };
+                // Small frames each way, sent at once as the client and the
+                // simulator send theirs. With Nagle on, a frame can wait
+                // for a delayed ACK (40 ms on Linux), and a test on a paused
+                // clock lets the simulator run seconds ahead meanwhile.
+                let _ = client.set_nodelay(true);
+                let _ = device.set_nodelay(true);
                 let (client_in, client_out) = client.into_split();
                 let (device_in, device_out) = device.into_split();
                 let forward = relay(

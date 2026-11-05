@@ -25,11 +25,23 @@ check: check-rust check-deps check-cross check-virtual-feeder check-docs
 PRODUCTION_LINTS = -D clippy::unwrap_used -D clippy::cast_possible_truncation \
 	-D clippy::needless_pass_by_value -D unreachable_pub
 
+# Clippy re-checks every crate whose lint flags differ from its last run, so
+# the production pass and the all-targets pass, sharing a target directory,
+# would each undo the other's results and re-check the whole workspace on
+# every `make check`. The production pass keeps its own.
+PRODUCTION = --target-dir $(or $(CARGO_TARGET_DIR),target)/production
+
+# Many tests wait on a socket, a timer or the simulator's 20 ms pace rather
+# than a core, so twice as many run as there are cores: on a 29-core builder
+# the suite took 48 s at one per core, 31 s at two, and no less at more.
+TEST_THREADS ?= $(shell n=$$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4); echo $$((n * 2)))
+
 # The fountain's board, which no workspace build chooses (they are the
 # PLAF103's, `.cargo/config.toml`), in its own target directory so neither
 # board's build replaces the other's: the board crates, the SDK bindings,
 # both cores' chip routines and the chip HAL, which is what builds for it.
 FOUNTAIN = WELLFED_BOARD=plwf106 CARGO_TARGET_DIR=target/plwf106
+FOUNTAIN_PRODUCTION = --target-dir target/plwf106/production
 FOUNTAIN_CRATES = -p wellfed-board -p wellfed-board-plwf106 -p wellfed-amebad-sys \
 	-p wellfed-hal-common -p wellfed-hal -p wellfed-fw-fountain
 
@@ -40,20 +52,19 @@ FOUNTAIN_CRATES = -p wellfed-board -p wellfed-board-plwf106 -p wellfed-amebad-sy
 check-rust:
 	cargo fmt --all -- --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
-	cargo clippy --locked --workspace --lib --bins -- -D warnings $(PRODUCTION_LINTS)
-	cargo nextest run --locked --workspace --all-targets
-	cargo test --locked --workspace --doc
+	cargo clippy --locked $(PRODUCTION) --workspace --lib --bins -- -D warnings $(PRODUCTION_LINTS)
+	cargo nextest run --locked --workspace --all-targets --test-threads $(TEST_THREADS)
 	cargo clippy --locked -p wellfed-hal-feeder --features stop-fail --all-targets -- -D warnings
-	cargo clippy --locked -p wellfed-hal-feeder --features stop-fail --lib -- -D warnings $(PRODUCTION_LINTS)
+	cargo clippy --locked $(PRODUCTION) -p wellfed-hal-feeder --features stop-fail --lib -- -D warnings $(PRODUCTION_LINTS)
 	cargo nextest run --locked -p wellfed-hal-feeder --features stop-fail --test inject
 	cargo clippy --locked -p wellfed-hal-feeder --features feed-faults --all-targets -- -D warnings
-	cargo clippy --locked -p wellfed-hal-feeder --features feed-faults --lib -- -D warnings $(PRODUCTION_LINTS)
+	cargo clippy --locked $(PRODUCTION) -p wellfed-hal-feeder --features feed-faults --lib -- -D warnings $(PRODUCTION_LINTS)
 	cargo nextest run --locked -p wellfed-hal-feeder --features feed-faults --test feed_faults
 	cargo clippy --locked -p wellfed-hal --features virtual-panel --all-targets -- -D warnings
-	cargo clippy --locked -p wellfed-hal --features virtual-panel --lib -- -D warnings $(PRODUCTION_LINTS)
+	cargo clippy --locked $(PRODUCTION) -p wellfed-hal --features virtual-panel --lib -- -D warnings $(PRODUCTION_LINTS)
 	cargo nextest run --locked -p wellfed-hal --features virtual-panel --test virtual_panel
 	$(FOUNTAIN) cargo clippy --locked $(FOUNTAIN_CRATES) --all-targets -- -D warnings
-	$(FOUNTAIN) cargo clippy --locked $(FOUNTAIN_CRATES) --lib -- -D warnings $(PRODUCTION_LINTS)
+	$(FOUNTAIN) cargo clippy --locked $(FOUNTAIN_PRODUCTION) $(FOUNTAIN_CRATES) --lib -- -D warnings $(PRODUCTION_LINTS)
 	$(FOUNTAIN) cargo nextest run --locked $(FOUNTAIN_CRATES) --all-targets
 
 # Licenses, advisories, duplicate versions and sources (deny.toml), then the
@@ -237,7 +248,7 @@ HA_STUBS = target/homeassistant-stubs
 HA_WHEEL = target/homeassistant-wheels/check
 check-homeassistant:
 	cargo clippy --locked -p wellfed-homeassistant --features python --all-targets -- -D warnings
-	cargo clippy --locked -p wellfed-homeassistant --features python --lib -- -D warnings $(PRODUCTION_LINTS)
+	cargo clippy --locked $(PRODUCTION) -p wellfed-homeassistant --features python --lib -- -D warnings $(PRODUCTION_LINTS)
 	$(HA_VENV)/bin/python -c 'import sys; sys.exit(sys.version_info[:2] != (3, 14))' 2>/dev/null || uv venv --clear --python 3.14 $(HA_VENV)
 	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install -r $(HA)/tests/requirements.txt
 	$(HA_VENV)/bin/ruff check $(HA)

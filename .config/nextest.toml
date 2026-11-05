@@ -18,3 +18,22 @@ app-install-broker = { max-threads = 1 }
 [[profile.default.overrides]]
 filter = 'package(wellfed-app-bridge) & binary(install)'
 test-group = 'app-install-broker'
+
+# The longest tests start first. Each waits out a real timeout or the
+# simulator's 20 ms pace, so it takes as long on any machine; started last,
+# one would run on alone after the rest of the suite had finished (the suite
+# took 27.5 s rather than 22 s). Add a test here when it takes more than
+# about 8 s.
+[[profile.default.overrides]]
+filter = '''
+    (package(wellfed-server) & test(=bank_1_read_from_bank_0_is_kept_exported_and_restored_after_promotion))
+    | (package(wellfed-server) & test(=samples_read_raw_in_pages_and_by_the_hour))
+    | (package(wellfed-homeassistant) & test(/^(a_feed_whose_answer_is_lost_is_uncertain_sent_once_and_then_settled|a_revoked_key_stops_the_session_for_good|a_feed_that_never_reached_the_feeder_is_still_unknown_after_the_backlog)$/))
+    | (package(wellfed-bench) & test(/an_enrollment_answered_by_a_late_press_comes_back_through_the_server|a_watcher_nobody_reads_stops_fetching/))
+    | (package(wellfed-mirror) & test(=the_tasks_own_request_unanswered_in_time_keeps_the_session))
+    | (package(wellfed-app-bridge) & test(/^(another_feeder_is_served_after_the_owner_said_no_to_the_first|an_adoption_whose_answer_is_lost_is_settled_by_reading_and_never_invited_twice)$/))
+    | (package(wellfed-flash) & test(/each_wrong_answer_is_its_own_refusal_and_is_never_resent/))
+    | (package(wellfed-rig) & test(/a_clean_push_and_a_dropped_one_both_activate/))
+    | (package(wellfed-install) & test(/stock_coming_back_says_it_stayed_and_hears_no_install/))
+'''
+priority = 100
