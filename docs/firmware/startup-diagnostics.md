@@ -68,7 +68,7 @@ With the trim applied the low Port A pads still read LOW. Raw Port A input sampl
 
 ## What the UART records mean
 
-Every record starts with a fixed prefix. The ones a current firmware prints:
+Every record starts with a fixed prefix. The ones a current firmware prints, with the page that documents each:
 
 | Prefix | Written by | Meaning |
 | --- | --- | --- |
@@ -86,7 +86,20 @@ Every record starts with a fixed prefix. The ones a current firmware prints:
 | `PLOTA1`, `PLWCH1` | Update stage | Updates over the device API |
 | `PLBAT1` | Power monitor | Power samples ([power](power.md#inputs)) |
 | `PLBTN1` | Button probe | Raw button changes ([buttons](buttons.md#the-raw-probe)) |
-| `PLKEY1` | Button service | Gestures ([buttons](buttons.md#the-service)) |
+| `PLKEY1` | Button service | Gestures ([buttons](buttons.md#the-service)). Not to be confused with `PLKEY1\0\0`, the 8-byte magic of an update-key statement ([keys](ota-design.md#keys-and-anti-rollback)) |
+| `PLTRL1` | KM0 | Trial counts, reset storms, give-way and brownout forgiveness ([reset storms](ota-design.md#reset-storms)) |
+| `PLCNF1` | SDK runtime | Boot confirmation ([boot confirmation](ota-design.md#boot-confirmation-and-fallback)) |
+| `PLCFG1` | Settings writer | Settings, key and Wi-Fi changes ([device API](device-api.md)) |
+| `PLTIM1` | Clock | Syncs and the carry across restarts ([clock](clock.md)) |
+| `PLAPI1` | Device API | Sessions and resources ([device API](device-api.md)) |
+| `PLOWN1` | Feeding owner | Feeds, states and faults ([motor and feeds](motor-pulse.md)) |
+| `PLINJ1` | Fault-injection variants | What a variant injected ([jams and sensor faults](jams-and-sensor-faults.md#fault-injection-variants)) |
+| `PLBAT2` | The loop | Battery mode and the brownout hold ([power](power.md#battery-mode)) |
+| `PLBLE1`, `PLSET1` | Bluetooth setup mode | The BLE stack and setup mode ([Bluetooth](bluetooth.md)) |
+| `PLIND1` | Indicator service | Panel lights ([indicators](indicators.md)) |
+| `PLAUD1` | Speaker | Tunes and the meal call ([audio](audio.md)) |
+
+The bring-up probes' records (`PLADC1`, `PLOPT1`, `PLMOT1`, `PLGAP1` and the rest) are in [bring-up probes](bring-up-probes.md) and the guide pages that run them.
 
 - **`PLPWR1` policies.** `before-km4-v1` requires one intact record before any KM4 report; `v2` adds the LDO trim, and `v3` the raw Port A input after each supply step. An image linking the `v3` record format is refused unless its manifest declares `before-km4-v3`.
 - **`PLIO1`.** `read-only-v2` adds KM4's view of the shared-pad supply control and the raw Port A input word.
