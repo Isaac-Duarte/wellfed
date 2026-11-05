@@ -91,7 +91,7 @@ pub fn radio_off() -> bool {
 }
 
 /// Both wishes, as the Wi-Fi task reads them before each step.
-pub fn wishes() -> Wishes {
+fn wishes() -> Wishes {
     Wishes {
         restarting: restarting(),
         radio: if radio_off() { Radio::Off } else { Radio::On },

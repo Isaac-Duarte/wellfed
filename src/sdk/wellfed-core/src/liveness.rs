@@ -35,9 +35,6 @@ pub const PROBE_PERIOD_MS: u32 = 5_000;
 /// is ordinary; three in a row are not.
 pub const GATEWAY_MISSES: u8 = 3;
 
-/// [`Verdict::code`] of a leave is this plus the [`Cause::code`].
-pub const LEAVE: i32 = 0x100;
-
 /// One gateway probe's outcome, as the task reports it with the next step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Probe {
@@ -53,21 +50,6 @@ pub enum Probe {
     /// taken by the device API's sessions and mDNS) or the send failed. That
     /// says nothing about the gateway, so it is no observation, never a miss.
     Unsent,
-}
-
-impl Probe {
-    /// The probe's code: 0 none, 1 answered, 2 silent, 3 no gateway, 4
-    /// unsent. An unknown code carries no observation and reads as none, so
-    /// a mismatch can never make the feeder leave a working network.
-    pub const fn from_code(code: i32) -> Self {
-        match code {
-            1 => Self::Answered,
-            2 => Self::Silent,
-            3 => Self::NoGateway,
-            4 => Self::Unsent,
-            _ => Self::None,
-        }
-    }
 }
 
 /// Why a link was left: the `result` of the task's `lost` event.
@@ -139,32 +121,6 @@ pub enum Verdict {
     Settled,
     /// Leave the network and rejoin after the backoff.
     Leave(Cause),
-}
-
-impl Verdict {
-    /// The verdict's code: 0 hold, 1 probe, 2 settled, [`LEAVE`] plus the
-    /// cause for a leave.
-    pub const fn code(self) -> i32 {
-        match self {
-            Self::Hold => 0,
-            Self::Probe => 1,
-            Self::Settled => 2,
-            Self::Leave(cause) => LEAVE + cause.code() as i32,
-        }
-    }
-
-    /// The verdict a [`Verdict::code`] names, or `None` for any other value.
-    pub const fn from_code(code: i32) -> Option<Self> {
-        Some(match code {
-            0 => Self::Hold,
-            1 => Self::Probe,
-            2 => Self::Settled,
-            _ => match Cause::from_code(code.wrapping_sub(LEAVE)) {
-                Some(cause) => Self::Leave(cause),
-                None => return None,
-            },
-        })
-    }
 }
 
 /// One join's liveness; a new join starts a new machine.

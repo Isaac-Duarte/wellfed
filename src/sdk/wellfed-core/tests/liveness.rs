@@ -1,8 +1,6 @@
 //! Link liveness from association, lease and gateway: no internet needed.
 
-use wellfed_core::liveness::{
-    Cause, GATEWAY_MISSES, LEAVE, Liveness, PROBE_PERIOD_MS, Probe, Verdict,
-};
+use wellfed_core::liveness::{Cause, GATEWAY_MISSES, Liveness, PROBE_PERIOD_MS, Probe, Verdict};
 
 /// A link sampled every watch tick, probing whenever the machine asks.
 struct Link {
@@ -58,46 +56,6 @@ impl Link {
             }
         }
         None
-    }
-}
-
-#[test]
-fn codes_match_the_shim() {
-    assert_eq!(Verdict::Hold.code(), 0);
-    assert_eq!(Verdict::Probe.code(), 1);
-    assert_eq!(Verdict::Settled.code(), 2);
-    assert_eq!(Verdict::Leave(Cause::Link).code(), LEAVE);
-    assert_eq!(Verdict::Leave(Cause::Lease).code(), LEAVE + 2);
-    assert_eq!(Verdict::Leave(Cause::Gateway).code(), LEAVE + 3);
-    assert_eq!(Verdict::Leave(Cause::Restart).code(), LEAVE + 4);
-    assert_eq!(Verdict::Leave(Cause::Radio).code(), LEAVE + 5);
-
-    for verdict in [
-        Verdict::Hold,
-        Verdict::Probe,
-        Verdict::Settled,
-        Verdict::Leave(Cause::Link),
-        Verdict::Leave(Cause::Lease),
-        Verdict::Leave(Cause::Gateway),
-        Verdict::Leave(Cause::Restart),
-        Verdict::Leave(Cause::Radio),
-    ] {
-        assert_eq!(Verdict::from_code(verdict.code()), Some(verdict));
-    }
-    for code in [-1, 3, LEAVE - 1, LEAVE + 1, LEAVE + 6, i32::MIN] {
-        assert_eq!(Verdict::from_code(code), None, "{code}");
-    }
-
-    for (code, probe) in [
-        (0, Probe::None),
-        (1, Probe::Answered),
-        (2, Probe::Silent),
-        (3, Probe::NoGateway),
-        (4, Probe::Unsent),
-        (-1, Probe::None),
-        (99, Probe::None),
-    ] {
-        assert_eq!(Probe::from_code(code), probe, "{code}");
     }
 }
 

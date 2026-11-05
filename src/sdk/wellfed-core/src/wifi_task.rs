@@ -1,8 +1,8 @@
 //! The Wi-Fi task's whole flow: joining the network, keeping it, leaving
 //! it, and battery mode's radio off and on, as a machine that does no IO.
 //!
-//! The task runs in the vendor driver's own task (`wellfed_wifi`, its stack
-//! sized for the driver's calls). Its driver ([`step`](WifiTask::step) in a
+//! The task runs on the shim's `wellfed_wifi` task (its stack sized for
+//! the vendor driver's calls). Its driver ([`step`](WifiTask::step) in a
 //! loop, in wellfed-hal's `link`) performs each [`Action`] with the shim's
 //! vendor calls and hands back what it got ([`Done`]), with the time and
 //! the two wishes the rest of the firmware holds ([`Wishes`]): a restart
