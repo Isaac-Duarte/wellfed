@@ -55,6 +55,20 @@ pub(crate) enum Keys {
     ServerOnly,
 }
 
+impl Keys {
+    /// The keys the account may use while the server is `reach`. A server
+    /// that refuses this phone's token (revoked, or the account disabled)
+    /// closes the phone's own keys too: the server took this phone's
+    /// standing away, so the router does not route around it on the LAN.
+    /// Logging in again, or removing the server, opens them again.
+    pub(crate) const fn under(self, reach: ServerReach) -> Self {
+        match reach {
+            ServerReach::Refused => Self::ServerOnly,
+            ServerReach::Up | ServerReach::Down { .. } => self,
+        }
+    }
+}
+
 impl Access {
     /// The access to a feeder the server lists (`on_server`) and the phone
     /// holds a session for (`direct`); `None` when it may use neither. An
@@ -79,9 +93,8 @@ pub(crate) enum ServerReach {
         since_ms: i64,
     },
     /// It answers, but no longer for this phone's token (revoked, expired,
-    /// or the account disabled): the server path is closed, not down. An
-    /// account with keys of its own reaches its feeders directly, where
-    /// the feeder itself refuses a key the server revoked.
+    /// or the account disabled): the server path is closed, not down, and
+    /// the phone's own keys close with it ([`Keys::under`]).
     Refused,
 }
 

@@ -115,19 +115,24 @@ fn a_viewer_or_an_expiring_account_goes_through_the_server_only() {
 #[test]
 fn a_token_the_server_no_longer_takes_closes_the_server_path_and_opens_nothing() {
     let refused = ServerReach::Refused;
-    // An owner's own key: the feeder itself refuses a key the server revoked.
+    // An owner's own key closes with the token: nothing routes around the
+    // account on the LAN, to a feeder the server lists or one it does not.
+    let keys = Keys::Own.under(refused);
+    assert_eq!(keys, Keys::ServerOnly);
+    assert_eq!(Access::of(true, true, keys), Some(Access::ServerOnly));
+    assert_eq!(Access::of(false, true, keys), None);
     assert_eq!(
         choose(
-            Access::Both,
-            reach(refused, Some(true), true),
+            Access::ServerOnly,
+            reach(refused, Some(false), true),
             NOW + RECHECK_MS
         ),
-        RoutePath::Direct
-    );
-    assert_eq!(
-        choose(Access::ServerOnly, reach(refused, Some(true), true), NOW),
         RoutePath::Server
     );
+    // A server that is only down leaves the phone's own keys alone.
+    let down = ServerReach::Down { since_ms: NOW };
+    assert_eq!(Keys::Own.under(down), Keys::Own);
+    assert_eq!(Keys::Own.under(ServerReach::Up), Keys::Own);
     assert_eq!(reach_after(ServerFailure::Unauthorized, NOW), refused);
     assert_eq!(
         reach_after(ServerFailure::Connect, NOW),

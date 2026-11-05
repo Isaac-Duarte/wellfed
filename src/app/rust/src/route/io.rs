@@ -116,7 +116,10 @@ impl State {
     fn access(&self, feeder: &str) -> Option<Access> {
         let entry = self.feeders.get(feeder)?;
         let on_server = self.server.is_some() && entry.server.is_some();
-        let keys = self.server.as_ref().map_or(Keys::Own, |server| server.keys);
+        let keys = self
+            .server
+            .as_ref()
+            .map_or(Keys::Own, |server| server.keys.under(self.reach));
         Access::of(on_server, entry.direct.is_some(), keys)
     }
 
