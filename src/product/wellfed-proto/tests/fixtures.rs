@@ -1066,6 +1066,40 @@ fn messages() -> Vec<Fixture> {
             entry(&request(Op::Feeder(FeederOp::PlayCall))),
             client,
         ),
+        (
+            "op-skip-meal",
+            entry(&request(Op::Feeder(FeederOp::SkipMeal {
+                slot: 2,
+                due_s: 1_793_200_000,
+            }))),
+            client,
+        ),
+        (
+            "op-unskip-meal",
+            entry(&request(Op::Feeder(FeederOp::UnskipMeal {
+                slot: 2,
+                due_s: 1_793_200_000,
+            }))),
+            client,
+        ),
+        (
+            "event-skipped",
+            entry(&EventBody::Skipped {
+                plan: 2,
+                due: 1_793_200_000,
+                by: Source::Client([1, 2, 3, 4]),
+            }),
+            |b| decode::<EventBody>(b).is_ok(),
+        ),
+        (
+            "event-unskipped",
+            entry(&EventBody::Unskipped {
+                plan: 2,
+                due: 1_793_200_000,
+                by: Source::Client([1, 2, 3, 4]),
+            }),
+            |b| decode::<EventBody>(b).is_ok(),
+        ),
     ]
 }
 

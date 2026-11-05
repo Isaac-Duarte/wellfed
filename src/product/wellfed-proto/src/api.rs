@@ -385,6 +385,33 @@ pub enum FeederOp<'a> {
     /// speaker or the store, or when the clip would still sound as a meal's
     /// call is due to begin.
     PlayCall,
+    /// Skip the meal of plan `slot` due at `due_s` (Unix seconds): its next
+    /// occurrence, still to come today by the feeder's local calendar.
+    /// Answered `Done` once the store holds the skip, recorded as
+    /// [`EventBody::Skipped`]; the meal then never feeds, and no reminder
+    /// or meal call comes for it. A plan that runs once is disabled with it.
+    /// Owner and member sessions, as for [`Self::PutPlans`]. Refused
+    /// [`Refusal::NoClock`] without a valid clock and zone offset,
+    /// [`Refusal::NotFound`] for an empty or disabled slot,
+    /// [`Refusal::Invalid`] when `due_s` is not that occurrence (already
+    /// due, tomorrow's, or already skipped), and [`Refusal::Busy`] while
+    /// another plans change is being written, a feed holds the outputs, a
+    /// meal is being claimed or the plan's last occurrence is still
+    /// running or waiting. A change to the plan's minute or days drops the
+    /// skip.
+    SkipMeal {
+        slot: u8,
+        due_s: u32,
+    },
+    /// Undo the skip of plan `slot`'s meal due at `due_s`, while it is
+    /// still to come: answered `Done` once the store holds it, recorded as
+    /// [`EventBody::Unskipped`], and the meal feeds as planned. Refused as
+    /// [`Self::SkipMeal`] is, and [`Refusal::Invalid`] when that meal is not
+    /// the one skipped, or is already due.
+    UnskipMeal {
+        slot: u8,
+        due_s: u32,
+    },
 }
 
 /// The meal call's stream: 8 kHz mono, 4-bit IMA ADPCM, two samples a
@@ -561,7 +588,9 @@ impl FeederOp<'_> {
             | Self::ResetDesiccant
             | Self::StartCall { .. }
             | Self::DeleteCall
-            | Self::PlayCall => true,
+            | Self::PlayCall
+            | Self::SkipMeal { .. }
+            | Self::UnskipMeal { .. } => true,
         }
     }
 }
@@ -1437,6 +1466,21 @@ pub enum EventBody {
     /// only if a feed took it.
     Food {
         level: FoodLevel,
+    },
+    /// `by` skipped the occurrence of plan `plan` due at `due` (Unix
+    /// seconds): it will not feed unless the skip is undone before it is
+    /// due ([`Self::Unskipped`]).
+    Skipped {
+        plan: u8,
+        due: u32,
+        by: Source,
+    },
+    /// `by` undid the skip of plan `plan`'s occurrence due at `due`: it
+    /// feeds as planned.
+    Unskipped {
+        plan: u8,
+        due: u32,
+        by: Source,
     },
 }
 
@@ -2359,6 +2403,16 @@ mod tests {
             },
             EventBody::Food {
                 level: FoodLevel::Low,
+            },
+            EventBody::Skipped {
+                plan: u8::MAX,
+                due: u32::MAX,
+                by: Source::Client(client),
+            },
+            EventBody::Unskipped {
+                plan: u8::MAX,
+                due: u32::MAX,
+                by: Source::Client(client),
             },
         ] {
             let mut out = [0; EVENT_BODY_MAX];

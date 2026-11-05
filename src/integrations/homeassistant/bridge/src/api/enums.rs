@@ -233,6 +233,8 @@ view_enum! {
         Supply => "supply",
         DispenseRefused => "dispense_refused",
         Food => "food",
+        Skipped => "skipped",
+        Unskipped => "unskipped",
     }
 }
 
@@ -259,6 +261,8 @@ impl From<&model::EventBody> for EventKind {
                 Self::DispenseRefused
             }
             model::EventBody::Feeder(model::FeederEvent::Food { .. }) => Self::Food,
+            model::EventBody::Feeder(model::FeederEvent::Skipped { .. }) => Self::Skipped,
+            model::EventBody::Feeder(model::FeederEvent::Unskipped { .. }) => Self::Unskipped,
         }
     }
 }

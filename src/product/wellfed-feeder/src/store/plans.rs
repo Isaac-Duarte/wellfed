@@ -23,7 +23,9 @@
 //! **Marks** make each occurrence run at most once. A mark is written when
 //! the loop takes an occurrence (the claim), passes one it will never run,
 //! or a client saves the plan; the loop never runs an occurrence at or
-//! before it, whatever the clock does after.
+//! before it, whatever the clock does after. A client's skip moves a mark
+//! up to an occurrence still to come, and its undo moves it back to the
+//! occurrence before, so a skip needs no field of its own.
 //!
 //! The two sectors were reserved for plans before this store, so a record
 //! here is ours; the newest valid one wins, and a torn newer slot falls
@@ -150,6 +152,43 @@ impl Plans {
                 *mark = (*mark).max(due_s);
                 if found.days.once() && expected {
                     next.set_enabled(plan, false);
+                }
+            }
+            PlansChange::Skip {
+                plan,
+                due_s,
+                revision,
+            } => {
+                let found = self.plan(plan, revision)?;
+                let mark = next.marks.get_mut(usize::from(plan))?;
+                if *mark >= due_s {
+                    return None;
+                }
+                *mark = due_s;
+                if found.days.once() {
+                    next.set_enabled(plan, false);
+                }
+            }
+            PlansChange::Unskip {
+                plan,
+                due_s,
+                back_s,
+                revision,
+            } => {
+                let found = (*self.table.get(usize::from(plan))?)?;
+                // A skipped plan that runs once is the disabled one; any
+                // other must still be enabled.
+                let skipped = found.enabled != found.days.once();
+                if revision != self.revision || !skipped || back_s >= due_s {
+                    return None;
+                }
+                let mark = next.marks.get_mut(usize::from(plan))?;
+                if *mark != due_s {
+                    return None;
+                }
+                *mark = back_s;
+                if found.days.once() {
+                    next.set_enabled(plan, true);
                 }
             }
         }

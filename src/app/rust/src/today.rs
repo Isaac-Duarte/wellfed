@@ -198,6 +198,9 @@ pub(crate) fn event_entry(event: &Event) -> HistoryEntry {
             HistoryBody::DispenseRefused { reason }
         }
         EventBody::Feeder(FeederEvent::Food { level }) => HistoryBody::Food { level },
+        EventBody::Feeder(FeederEvent::Skipped { .. } | FeederEvent::Unskipped { .. }) => {
+            HistoryBody::Other
+        }
     };
     HistoryEntry {
         seq: event.seq,

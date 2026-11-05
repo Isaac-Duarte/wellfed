@@ -155,6 +155,10 @@ fn op() -> impl Strategy<Value = Op<'static>> {
             .prop_map(|(offset, data)| Op::Feeder(FeederOp::CallChunk { offset, data })),
         Just(Op::Feeder(FeederOp::DeleteCall)),
         Just(Op::Feeder(FeederOp::PlayCall)),
+        (any::<u8>(), any::<u32>())
+            .prop_map(|(slot, due_s)| Op::Feeder(FeederOp::SkipMeal { slot, due_s })),
+        (any::<u8>(), any::<u32>())
+            .prop_map(|(slot, due_s)| Op::Feeder(FeederOp::UnskipMeal { slot, due_s })),
     ]
 }
 

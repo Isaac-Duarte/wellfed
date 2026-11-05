@@ -12,7 +12,7 @@
 
 use crate::clients::{Label, Role};
 use crate::mailbox::{
-    Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult, Origin,
+    Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult, MealSkip, Origin,
     PlansResult, PlayResult, SettingsFields, SettingsResult, Table, TimeFields, TimeResult,
     TimeSettings, TimeSettingsResult, TimeState, WifiResult,
 };
@@ -168,6 +168,19 @@ pub trait FeederDevice: Device {
     /// for the writer. A feeder without a plans store keeps none.
     fn plans(&mut self, _change: Option<Table>) -> PlansResult {
         PlansResult::Unserved
+    }
+    /// Queue a client's skip of slot `slot`'s meal due at `due_s` (Unix
+    /// seconds), or its undo, for the plans' writer, after checking it is
+    /// that plan's meal still to come today (`Invalid`), with a valid clock
+    /// and offset (`NoClock`). A feeder without a plans store keeps none.
+    fn skip_meal(
+        &mut self,
+        _slot: u8,
+        _due_s: u32,
+        _skip: MealSkip,
+        _now_ms: u32,
+    ) -> Result<(), Refusal> {
+        Err(Refusal::Unavailable)
     }
     /// The meal call; with `Some`, an upload's start or a delete queued
     /// for the writer. A feeder without a call store keeps none.

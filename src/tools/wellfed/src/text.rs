@@ -427,6 +427,16 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
             reason.code()
         ),
         EventBody::Feeder(FeederEvent::Food { level }) => format!("hopper {}", word(&level)),
+        EventBody::Feeder(FeederEvent::Skipped { plan, due, by }) => format!(
+            "plan {plan}'s meal due {} skipped by {}",
+            time(Some(due), zone),
+            source(Some(by))
+        ),
+        EventBody::Feeder(FeederEvent::Unskipped { plan, due, by }) => format!(
+            "plan {plan}'s meal due {} unskipped by {}",
+            time(Some(due), zone),
+            source(Some(by))
+        ),
     }
 }
 

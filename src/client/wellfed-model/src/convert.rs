@@ -422,6 +422,20 @@ impl From<proto::EventBody> for EventBody {
             proto::EventBody::Food { level } => EventBody::Feeder(FeederEvent::Food {
                 level: level.into(),
             }),
+            proto::EventBody::Skipped { plan, due, by } => {
+                EventBody::Feeder(FeederEvent::Skipped {
+                    plan,
+                    due: seconds(due),
+                    by: by.into(),
+                })
+            }
+            proto::EventBody::Unskipped { plan, due, by } => {
+                EventBody::Feeder(FeederEvent::Unskipped {
+                    plan,
+                    due: seconds(due),
+                    by: by.into(),
+                })
+            }
         }
     }
 }
@@ -516,6 +530,16 @@ impl From<EventBody> for proto::EventBody {
             },
             EventBody::Feeder(FeederEvent::Food { level }) => Self::Food {
                 level: level.into(),
+            },
+            EventBody::Feeder(FeederEvent::Skipped { plan, due, by }) => Self::Skipped {
+                plan,
+                due: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
+                by: by.into(),
+            },
+            EventBody::Feeder(FeederEvent::Unskipped { plan, due, by }) => Self::Unskipped {
+                plan,
+                due: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
+                by: by.into(),
             },
         }
     }

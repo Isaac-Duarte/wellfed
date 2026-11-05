@@ -372,3 +372,178 @@ fn a_settle_and_a_pass_spend_the_occurrence() {
         .unwrap();
     assert_eq!(behind.marks[0], 9_000);
 }
+
+#[test]
+fn a_skip_moves_the_mark_up_to_its_occurrence_and_an_undo_moves_it_back() {
+    let plans = breakfast(1_000);
+    let skip = PlansChange::Skip {
+        plan: 0,
+        due_s: 90_000,
+        revision: plans.revision,
+    };
+    let skipped = plans.changed(&skip).unwrap();
+    assert_eq!(skipped.marks[0], 90_000);
+    assert_eq!(
+        skipped.revision, plans.revision,
+        "a mark is no table change"
+    );
+    assert!(skipped.table[0].unwrap().enabled);
+
+    // Skipped once, so a second skip of it changes nothing.
+    assert_eq!(skipped.changed(&skip), None);
+
+    let unskip = PlansChange::Unskip {
+        plan: 0,
+        due_s: 90_000,
+        back_s: 3_600,
+        revision: skipped.revision,
+    };
+    let undone = skipped.changed(&unskip).unwrap();
+    assert_eq!(undone.marks[0], 3_600);
+    assert_eq!(undone.table, plans.table);
+    assert_eq!(undone.changed(&unskip), None, "undone once");
+}
+
+#[test]
+fn skipping_a_plan_that_runs_once_disables_it_and_the_undo_enables_it() {
+    let plans = Plans::default()
+        .changed(&PlansChange::Replace {
+            table: table(&[(2, ONCE)]),
+            at_s: Some(1_000),
+        })
+        .unwrap();
+    let skipped = plans
+        .changed(&PlansChange::Skip {
+            plan: 2,
+            due_s: 90_000,
+            revision: plans.revision,
+        })
+        .unwrap();
+    assert_eq!(skipped.marks[2], 90_000);
+    assert!(!skipped.table[2].unwrap().enabled);
+    assert_eq!(skipped.revision, plans.revision + 1);
+
+    // The undo names the revision the skip left.
+    let unskip = |revision| PlansChange::Unskip {
+        plan: 2,
+        due_s: 90_000,
+        back_s: 3_600,
+        revision,
+    };
+    assert_eq!(skipped.changed(&unskip(plans.revision)), None);
+    let undone = skipped.changed(&unskip(skipped.revision)).unwrap();
+    assert_eq!(undone.marks[2], 3_600);
+    assert!(undone.table[2].unwrap().enabled);
+    assert_eq!(undone.revision, skipped.revision + 1);
+}
+
+#[test]
+fn a_skip_or_undo_that_no_longer_fits_the_store_is_dropped() {
+    let plans = breakfast(1_000);
+    let skip = |plan, due_s, revision| PlansChange::Skip {
+        plan,
+        due_s,
+        revision,
+    };
+
+    // A table that moved on, an empty slot, a disabled plan, a mark at or
+    // past the occurrence, and a slot out of range.
+    assert_eq!(plans.changed(&skip(0, 90_000, plans.revision + 1)), None);
+    assert_eq!(plans.changed(&skip(1, 90_000, plans.revision)), None);
+    assert_eq!(plans.changed(&skip(0, 1_000, plans.revision)), None);
+    assert_eq!(plans.changed(&skip(0, 900, plans.revision)), None);
+    assert_eq!(plans.changed(&skip(10, 90_000, plans.revision)), None);
+    let disabled = Plans::default()
+        .changed(&PlansChange::Replace {
+            table: table(&[(
+                0,
+                Plan {
+                    enabled: false,
+                    ..BREAKFAST
+                },
+            )]),
+            at_s: Some(1_000),
+        })
+        .unwrap();
+    assert_eq!(disabled.changed(&skip(0, 90_000, disabled.revision)), None);
+
+    // An undo needs the mark exactly at the skipped occurrence, a mark to
+    // go back to below it, and a repeating plan still enabled.
+    let skipped = plans.changed(&skip(0, 90_000, plans.revision)).unwrap();
+    let unskip = |due_s, back_s| PlansChange::Unskip {
+        plan: 0,
+        due_s,
+        back_s,
+        revision: skipped.revision,
+    };
+    assert_eq!(skipped.changed(&unskip(80_000, 3_600)), None);
+    assert_eq!(skipped.changed(&unskip(90_000, 90_000)), None);
+    assert_eq!(plans.changed(&unskip(90_000, 3_600)), None, "never skipped");
+    let off = skipped
+        .changed(&PlansChange::Replace {
+            table: table(&[(
+                0,
+                Plan {
+                    enabled: false,
+                    ..BREAKFAST
+                },
+            )]),
+            at_s: Some(2_000),
+        })
+        .unwrap();
+    assert_eq!(off.marks[0], 90_000, "disabling keeps the mark");
+    let unskip_off = PlansChange::Unskip {
+        plan: 0,
+        due_s: 90_000,
+        back_s: 3_600,
+        revision: off.revision,
+    };
+    assert_eq!(off.changed(&unskip_off), None);
+}
+
+#[test]
+fn a_replace_that_moves_a_skipped_plan_drops_the_skip_and_one_that_keeps_its_times_keeps_it() {
+    let plans = breakfast(1_000);
+    let skipped = plans
+        .changed(&PlansChange::Skip {
+            plan: 0,
+            due_s: 90_000,
+            revision: plans.revision,
+        })
+        .unwrap();
+    let replace = |plan| PlansChange::Replace {
+        table: table(&[(0, plan)]),
+        at_s: Some(2_000),
+    };
+
+    let more = skipped
+        .changed(&replace(Plan {
+            portions: 5,
+            ..BREAKFAST
+        }))
+        .unwrap();
+    assert_eq!(more.marks[0], 90_000);
+    let moved = skipped
+        .changed(&replace(Plan {
+            minute: 8 * 60,
+            ..BREAKFAST
+        }))
+        .unwrap();
+    assert_eq!(moved.marks[0], 2_000);
+}
+
+#[test]
+fn a_skip_saves_and_reloads_with_its_mark() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    assert!(s.save(&breakfast(1_000)));
+    let skip = PlansChange::Skip {
+        plan: 0,
+        due_s: 90_000,
+        revision: s.plans.revision,
+    };
+    assert_eq!(s.apply(&skip), Some(true));
+    assert_eq!(s.replaced, 0, "a skip is no client table");
+
+    assert_eq!(open(&mut f).plans.marks[0], 90_000);
+}

@@ -386,8 +386,9 @@ pub struct Claim {
 pub struct PlansView {
     pub table: Table,
     /// Each slot's mark: the latest occurrence (Unix seconds) already run,
-    /// missed or before the plan's save, which never runs; 0 for none. The
-    /// claim's occurrence counts too ([`Self::mark`]).
+    /// missed, skipped or before the plan's save, which never runs; 0 for
+    /// none. The claim's occurrence counts too ([`Self::mark`]). Only a skip
+    /// puts a mark ahead of the clock.
     pub marks: [u32; PLANS],
     pub claim: Option<Claim>,
     /// Bumped by every change to the table (a client's, or a plan that
@@ -435,6 +436,30 @@ pub enum PlansChange {
     /// Slot `plan`'s occurrence `due_s` will never run: its mark moves
     /// there, and a plan that runs once is disabled.
     Pass { plan: u8, due_s: u32, revision: u32 },
+    /// A client skips slot `plan`'s occurrence `due_s`, still to come: the
+    /// mark moves up to it, so it never runs, and a plan that runs once is
+    /// disabled until the skip is undone. The device checks the occurrence
+    /// before queueing this; the writer drops it if the plan is no longer
+    /// enabled at `revision` or the mark already covers `due_s`.
+    Skip { plan: u8, due_s: u32, revision: u32 },
+    /// A client undoes the skip of `due_s`, still to come: the mark goes
+    /// back to `back_s`, the plan's occurrence before it, and a plan that
+    /// runs once is enabled again. The writer drops it unless the mark is
+    /// still exactly `due_s` at `revision`.
+    Unskip {
+        plan: u8,
+        due_s: u32,
+        back_s: u32,
+        revision: u32,
+    },
+}
+
+/// What a client asks of a scheduled meal still to come today.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MealSkip {
+    Skip,
+    /// Undo a skip, while the meal is still to come.
+    Unskip,
 }
 
 /// How a plans request ended.
