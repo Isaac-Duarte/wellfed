@@ -27,7 +27,8 @@ Some refusals:
 
 - Until bank 1's build confirms, its hooks are unarmed and every offer is refused `Busy`. A bank 1 on trial writes nothing.
 - Bank 1 refuses (`Fallback`) an offer signed by a built-in key that bank 0's record doesn't name.
-- Bank 0 refuses a manifest that was activated and failed its trial, and every offer after a reset mid-install, until power is lost.
+- Bank 0 refuses a manifest that was activated and failed its trial.
+- Bank 0 refuses every offer after a reset mid-install, until power is lost.
 - A build with battery mode refuses an offer (`Battery`) while the adapter reads absent, since the feeder then turns Wi-Fi off 5 s later ([power](power.md#battery-mode)), and stops an install that is receiving when Wi-Fi goes off. An older bank 0 without battery mode takes the offer.
 
 The bench and the simulator drive the same client steps (`wellfed_client::update`).
