@@ -57,7 +57,8 @@ pub use error::{ErrorCode, FeederRefusal, Problem};
 pub use events::{EventPage, EventQuery, Gap, HistoryEvent};
 pub use export::{ExportFormat, ExportQuery, Imported, ImportedTable};
 pub use feeders::{
-    AdoptFeeder, Connection, Feeder, FeederDetail, LockRequest, PlansChange, StatusSnapshot,
+    AdoptFeeder, Connection, Feeder, FeederDetail, LockRequest, MealRequest, PlansChange,
+    StatusSnapshot,
 };
 pub use foods::{
     FeederFood, Food, FoodChoice, FoodHistoryPage, FoodPatch, FoodPeriod, NewFood, NewRefill,

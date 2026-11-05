@@ -238,6 +238,8 @@ pub enum Invalid {
         wellfed_model::CALL_PLAYS_MAX
     )]
     Plan { slot: u8 },
+    #[error("a meal names a plan slot 0-{} and an instant the feeder's clock holds", wellfed_model::PLANS - 1)]
+    Meal,
     #[error("a page holds 1-500 events")]
     Limit,
     #[error("the server's label is 1-16 bytes with no NUL")]

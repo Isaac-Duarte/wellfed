@@ -1,12 +1,12 @@
-//! Adopted feeders: the list, adoption, status, settings, plans, the panel
-//! lock, the history and the samples.
+//! Adopted feeders: the list, adoption, status, settings, plans, a skip of
+//! one of today's meals, the panel lock, the history and the samples.
 
 use reqwest::header;
 use reqwest::{Method, StatusCode};
 use uuid::Uuid;
 use wellfed_api::{
     AdoptFeeder, EventPage, EventQuery, Feeder, FeederDetail, FeederId, FeederSettingsPatch,
-    Generation, LockRequest, Plans, PlansChange, SamplePage, SampleQuery, Settings,
+    Generation, LockRequest, MealRequest, Plans, PlansChange, SamplePage, SampleQuery, Settings,
 };
 
 use crate::{Client, Error, decode, expect_status, is_problem};
@@ -117,6 +117,40 @@ impl Client {
             return Err(Error::StalePlans(Box::new(current)));
         }
         decode(response, StatusCode::OK).await
+    }
+
+    /// Skip one of today's meals, named by its plan's slot and its instant.
+    /// A retry carries the same `key`.
+    pub async fn skip_meal(&self, id: FeederId, meal: MealRequest, key: Uuid) -> Result<(), Error> {
+        self.meal(id, "skip", meal, key).await
+    }
+
+    /// Undo a meal's skip while it is still to come. A retry carries the
+    /// same `key`.
+    pub async fn unskip_meal(
+        &self,
+        id: FeederId,
+        meal: MealRequest,
+        key: Uuid,
+    ) -> Result<(), Error> {
+        self.meal(id, "unskip", meal, key).await
+    }
+
+    async fn meal(
+        &self,
+        id: FeederId,
+        verb: &str,
+        meal: MealRequest,
+        key: Uuid,
+    ) -> Result<(), Error> {
+        let response = self
+            .api(Method::POST, &format!("/feeders/{id}/meals/{verb}"))
+            .header(IDEMPOTENCY_KEY, key.to_string())
+            .json(&meal)
+            .send()
+            .await?;
+        expect_status(response, StatusCode::NO_CONTENT).await?;
+        Ok(())
     }
 
     /// Lock or unlock the feeder's panel. A retry carries the same `key`.

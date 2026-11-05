@@ -45,5 +45,7 @@ const fn kind_code(kind: CommandKind) -> u8 {
         CommandKind::CallUpload => 14,
         CommandKind::CallDelete => 15,
         CommandKind::CallPlay => 16,
+        CommandKind::Skip => 17,
+        CommandKind::Unskip => 18,
     }
 }

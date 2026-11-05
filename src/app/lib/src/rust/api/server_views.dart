@@ -32,6 +32,8 @@ enum CommandKind {
   callUpload,
   callDelete,
   callPlay,
+  skip,
+  unskip,
 }
 
 enum CommandState { sent, answered, unknown, resolved }

@@ -1,6 +1,7 @@
 //! The feeding plans: read from the feeder and replaced as one table
 //! against the generation read, as the settings are, and the next meal the
-//! server reckons from the copy it holds.
+//! server reckons from the copy it holds. A skip of one of today's meals,
+//! and its undo, name the meal's instant and are journalled like any write.
 //!
 //! The copy is the mirror's alone (`wellfed-mirror`): it reads the plans on
 //! every connect and after each event that may have changed them, a change
@@ -9,11 +10,12 @@
 
 use serde::Serialize;
 use wellfed_api::{
-    CommandKind, CommandOutcome, FeederId, FeederRefusal, Generation, NextMeal, Plans, PlansChange,
+    CommandKind, CommandOutcome, FeederId, FeederRefusal, Generation, MealRequest, NextMeal, Plans,
+    PlansChange,
 };
 use wellfed_model::{Answer, Op, PLANS, Plan};
 
-use crate::feeders::commands::{CommandError, refused};
+use crate::feeders::commands::{CommandError, done, refused};
 use crate::feeders::journal::Write;
 use crate::{Caller, Error, IdempotencyKey, InternalError, Invalid, Result, Service};
 
@@ -103,6 +105,69 @@ impl Service {
             | CommandOutcome::Superseded
             | CommandOutcome::Unrecorded => Err(InternalError::Unexpected.into()),
         }
+    }
+
+    /// Skip one of today's meals: the feeder refuses `invalid` unless it is
+    /// the plan's next, still to come, and not skipped already.
+    pub async fn skip_meal(
+        &self,
+        caller: &Caller,
+        id: FeederId,
+        meal: MealRequest,
+        key: Option<IdempotencyKey>,
+    ) -> Result<()> {
+        let op = Op::SkipMeal {
+            slot: meal.slot,
+            due: meal.due,
+        };
+        self.meal_write(caller, id, meal, (CommandKind::Skip, op), key)
+            .await
+    }
+
+    /// Undo a meal's skip: the feeder refuses `invalid` once the meal is
+    /// due, or when it holds no skip of it.
+    pub async fn unskip_meal(
+        &self,
+        caller: &Caller,
+        id: FeederId,
+        meal: MealRequest,
+        key: Option<IdempotencyKey>,
+    ) -> Result<()> {
+        let op = Op::UnskipMeal {
+            slot: meal.slot,
+            due: meal.due,
+        };
+        self.meal_write(caller, id, meal, (CommandKind::Unskip, op), key)
+            .await
+    }
+
+    async fn meal_write(
+        &self,
+        caller: &Caller,
+        id: FeederId,
+        meal: MealRequest,
+        (kind, op): (CommandKind, Op),
+        key: Option<IdempotencyKey>,
+    ) -> Result<()> {
+        // The wire carries whole seconds of the feeder's clock: an instant
+        // it would round or clamp names no meal.
+        let in_clock = u32::try_from(meal.due.as_second()).is_ok();
+        if usize::from(meal.slot) >= PLANS || !in_clock || meal.due.subsec_nanosecond() != 0 {
+            return Err(Invalid::Meal.into());
+        }
+        self.live_row(id).await?;
+
+        let recorded = self
+            .journaled(Write {
+                caller,
+                feeder: id,
+                kind,
+                body: &meal,
+                key,
+                op,
+            })
+            .await?;
+        done(&recorded.outcome)
     }
 
     /// The next meal of `plans`, the copy the server holds, in the

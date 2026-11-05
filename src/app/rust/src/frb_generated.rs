@@ -6664,6 +6664,8 @@ impl SseDecode for crate::api::server_views::CommandKind {
             13 => crate::api::server_views::CommandKind::CallUpload,
             14 => crate::api::server_views::CommandKind::CallDelete,
             15 => crate::api::server_views::CommandKind::CallPlay,
+            16 => crate::api::server_views::CommandKind::Skip,
+            17 => crate::api::server_views::CommandKind::Unskip,
             _ => unreachable!("Invalid variant for CommandKind: {}", inner),
         };
     }
@@ -12196,6 +12198,8 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::server_views::Comm
             crate::api::server_views::CommandKind::CallUpload => 13.into_dart(),
             crate::api::server_views::CommandKind::CallDelete => 14.into_dart(),
             crate::api::server_views::CommandKind::CallPlay => 15.into_dart(),
+            crate::api::server_views::CommandKind::Skip => 16.into_dart(),
+            crate::api::server_views::CommandKind::Unskip => 17.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -17039,6 +17043,8 @@ impl SseEncode for crate::api::server_views::CommandKind {
                 crate::api::server_views::CommandKind::CallUpload => 13,
                 crate::api::server_views::CommandKind::CallDelete => 14,
                 crate::api::server_views::CommandKind::CallPlay => 15,
+                crate::api::server_views::CommandKind::Skip => 16,
+                crate::api::server_views::CommandKind::Unskip => 17,
                 _ => {
                     unimplemented!("");
                 }

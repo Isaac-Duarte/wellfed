@@ -1,5 +1,5 @@
 //! Adopted feeders: the list, adoption, one feeder's status, its settings,
-//! its plans and its panel lock.
+//! its plans, a skip of one of today's meals and its panel lock.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -8,7 +8,7 @@ use axum::response::{IntoResponse, Response};
 use axum_extra::extract::WithRejection;
 use wellfed_api::{
     AdoptFeeder, Feeder, FeederDetail, FeederId, FeederSettingsPatch, Generation, LockRequest,
-    Plans, PlansChange, Problem, Settings,
+    MealRequest, Plans, PlansChange, Problem, Settings,
 };
 
 use super::{ApiResult, IdPath, JsonBody, TAG_FEEDERS, insert};
@@ -187,6 +187,63 @@ pub(crate) async fn put_plans(
         .put_plans(&caller, id, base, change, key)
         .await?;
     Ok(tagged_plans(plans))
+}
+
+/// Skip one of today's meals: it does not feed, remind or call. The meal
+/// is its plan's next, still to come and on the feeder's today, named by
+/// the instant `GET /feeders/{id}/plans` reckons for it; any other is
+/// refused `invalid`, and one while a feed or a plans change is under way
+/// `busy`.
+#[utoipa::path(
+    post,
+    path = "/feeders/{id}/meals/skip",
+    tag = TAG_FEEDERS,
+    params(("id" = FeederId, Path), OptionalIdempotencyKey),
+    request_body = MealRequest,
+    responses(
+        (status = 204),
+        (status = 400, body = Problem, description = "invalid: a malformed body or Idempotency-Key, or a slot or instant out of range"),
+        (status = 409, body = Problem, description = "feeder_refused (invalid, busy, not_found, no_clock): final for this key; a later attempt needs a new key"),
+        (status = 503, body = Problem, description = "feeder_offline"),
+        (status = 504, body = Problem, description = "outcome_unknown: retry with the same key"),
+    ),
+)]
+pub(crate) async fn skip_meal(
+    State(state): State<AppState>,
+    Allowed(caller, _): Allowed<need::Control>,
+    WithRejection(Path(id), _): IdPath,
+    OptionalIdempotencyKey(key): OptionalIdempotencyKey,
+    WithRejection(Json(meal), _): JsonBody<MealRequest>,
+) -> ApiResult<StatusCode> {
+    state.service.skip_meal(&caller, id, meal, key).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Undo a meal's skip while the meal is still to come, so it feeds after
+/// all. Once it is due the skip stays: refused `invalid`.
+#[utoipa::path(
+    post,
+    path = "/feeders/{id}/meals/unskip",
+    tag = TAG_FEEDERS,
+    params(("id" = FeederId, Path), OptionalIdempotencyKey),
+    request_body = MealRequest,
+    responses(
+        (status = 204),
+        (status = 400, body = Problem, description = "invalid: a malformed body or Idempotency-Key, or a slot or instant out of range"),
+        (status = 409, body = Problem, description = "feeder_refused (invalid, busy, not_found, no_clock): final for this key; a later attempt needs a new key"),
+        (status = 503, body = Problem, description = "feeder_offline"),
+        (status = 504, body = Problem, description = "outcome_unknown: retry with the same key"),
+    ),
+)]
+pub(crate) async fn unskip_meal(
+    State(state): State<AppState>,
+    Allowed(caller, _): Allowed<need::Control>,
+    WithRejection(Path(id), _): IdPath,
+    OptionalIdempotencyKey(key): OptionalIdempotencyKey,
+    WithRejection(Json(meal), _): JsonBody<MealRequest>,
+) -> ApiResult<StatusCode> {
+    state.service.unskip_meal(&caller, id, meal, key).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Lock or unlock the feeder's panel.

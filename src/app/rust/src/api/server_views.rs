@@ -363,6 +363,8 @@ pub enum _CommandKind {
     CallUpload,
     CallDelete,
     CallPlay,
+    Skip,
+    Unskip,
 }
 
 #[frb(mirror(CommandState))]

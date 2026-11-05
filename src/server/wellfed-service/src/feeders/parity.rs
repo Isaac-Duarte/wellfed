@@ -36,9 +36,6 @@ pub enum NoRoute {
     /// It needs a press at the feeder, so the owner runs it at the feeder
     /// with the CLI.
     AtTheFeeder,
-    /// The feeder serves it, and the server's route comes with the clients
-    /// that use it.
-    NotYetRouted,
 }
 
 /// The server route for a device operation, or why it has none.
@@ -84,6 +81,7 @@ pub const fn parity(op: &Op) -> Parity {
         Op::StartCall { .. } | Op::CallChunk { .. } => Route(Put, "/feeders/{id}/call"),
         Op::DeleteCall => Route(Delete, "/feeders/{id}/call"),
         Op::PlayCall => Route(Post, "/feeders/{id}/call/play"),
-        Op::SkipMeal { .. } | Op::UnskipMeal { .. } => Without(NoRoute::NotYetRouted),
+        Op::SkipMeal { .. } => Route(Post, "/feeders/{id}/meals/skip"),
+        Op::UnskipMeal { .. } => Route(Post, "/feeders/{id}/meals/unskip"),
     }
 }
