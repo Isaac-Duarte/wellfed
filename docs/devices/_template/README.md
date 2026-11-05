@@ -1,20 +1,20 @@
 # MODEL (product name)
 
-One or two sentences: what this device is, which kind it is (a feeder, a fountain), and whether Wellfed runs on it today.
+One or two sentences: what this device is, its kind (a feeder, a fountain), and whether Wellfed runs on it.
 
-> Copy this folder to `docs/devices/<model>/` and fill in every section below, in this order. Write **Unknown** rather than leaving a section out. Give each finding its [evidence level](../../evidence.md). A claim from another project stays **External** until your own unit shows it. Then delete this note. See [adding a device](../README.md#adding-a-device).
+> Copy this folder to `docs/devices/<model>/` and fill in every section below, in this order, writing **Unknown** rather than leaving one out. Give each finding its [evidence level](../../evidence.md); a claim from another project stays **External** until your own unit shows it. Then delete this note. See [adding a device](../README.md#adding-a-device).
 
 ## Sold as
 
-The brand, product name, capacity and any variants or regional names. Say which variant your unit is.
+The brand, product name, capacity, and any variants or regional names. Say which variant your unit is.
 
 ## How to identify it
 
-What tells this model apart from look-alikes: the label on the base, the FCC ID, the PCB marking and revision, and the flash ID as read over UART. Link the public filings in [references](../../references.md). Name the models that look similar but are not covered, and why.
+What tells this model apart from look-alikes: the label on the base, the FCC ID, the PCB marking and revision, and the flash ID read over UART. Link the public filings in [references](../../references.md). Name the similar models not covered, and why.
 
 ## SoC and flash
 
-The SoC, linked to its page under [docs/chips/](../../chips/), and the flash part and size. List the other parts that matter: the drivers and sensors its kind has (a feeder's motor driver and beams, a fountain's pump and scale), connectors and test points. The signal map goes in `board.md`, and the model gets a column in the chip's pin table.
+The SoC, linked to its page under [docs/chips/](../../chips/), and the flash part and size. List the other parts that matter: its kind's drivers and sensors (a feeder's motor driver and beams, a fountain's pump and scale), connectors and test points. The signal map goes in `board.md`, and the model gets a column in the chip's pin table.
 
 ## UART access
 
@@ -22,11 +22,11 @@ Where the console header is, its voltage and baud rate, and how ROM download mod
 
 ## Recovery
 
-Whether you can back up and restore this unit, and what a restore has been shown to do. Matching full backups come first. The details go in `recovery.md`, and the flash map in `flash-layout.md`, backed by `src/firmware/devices/<model>/layout.json`. Unknown gaps in the flash are not free space.
+Whether you can back up and restore this unit, and what a restore has been shown to do; matching full backups come first. The details go in `recovery.md`, and the flash map in `flash-layout.md`, backed by `src/firmware/devices/<model>/layout.json`. Unknown gaps in the flash are not free space.
 
 ## Hardware blocks
 
-One row per hardware block: first the blocks every device has, then those of its kind. The Stock column says in a few words what the stock firmware does. The Wellfed column says what Wellfed does with it. Status words stay out of this table: where each capability stands goes on the [roadmap](../../roadmap.md).
+One row per block: those every device has, then its kind's. Stock says in a few words what the stock firmware does; Wellfed, what Wellfed does with it. Status words stay out: where each capability stands goes on the [roadmap](../../roadmap.md).
 
 | Block | Stock | Wellfed |
 | --- | --- | --- |
@@ -41,11 +41,11 @@ One row per hardware block: first the blocks every device has, then those of its
 | Clock | | |
 | Each block of its kind, one row each | | |
 
-The kind's rows name its own hardware. A feeder has its motor and feeding, food and outlet sensors, child lock, speaker and schedules. A fountain has its pump, water level and scale.
+A feeder's own rows are its motor and feeding, food and outlet sensors, child lock, speaker and schedules; a fountain's, its pump, water level and scale.
 
 ## Notes
 
-Anything a reader must know before trusting the pages: what was never checked, which unit the findings come from, and warnings that apply to the whole model.
+What a reader must know before trusting the pages: what was never checked, which unit the findings come from, and warnings for the whole model.
 
 ## Pages
 
@@ -59,4 +59,4 @@ Anything a reader must know before trusting the pages: what was never checked, w
 
 ## Evidence
 
-How the claims above are known: each entry with its evidence level, the date, and the photo, capture or review that backs it.
+How the claims above are known: each entry with its evidence level, the date, and the photo, capture or review behind it.

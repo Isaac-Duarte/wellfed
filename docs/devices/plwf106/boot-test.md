@@ -1,9 +1,9 @@
 # Boot test image
 
-This page describes the smallest Wellfed image for the PLWF106: one that tells us whether the factory loader runs our firmware from bank 1. It is for developers bringing Wellfed up on the fountain. Installing it is covered in [backup and recovery](recovery.md#run-a-boot-test).
+The smallest Wellfed image for the PLWF106: one that shows whether the factory loader runs our firmware from bank 1. It is for developers bringing Wellfed up on the fountain; [backup and recovery](recovery.md#run-a-boot-test) installs it.
 
 > [!WARNING]
-> Keep the pump unplugged for this test. The image never drives the pump on, and its KM0 pad table pulls the pump enable down. Before that table applies, the ROM and the factory loader run as on stock, and we have not measured what PA30 does then.
+> Keep the pump unplugged for this test. The image never drives the pump on, and its KM0 pad table pulls the pump enable down. Before that table applies, the ROM and the factory loader run as on stock, and we haven't measured what PA30 does then.
 
 ## What it does
 
@@ -22,23 +22,23 @@ PLBOOT1 start model=plwf106 bank=1 pump=off latch=0 pad=0 output=1
 PLBOOT1 beat n=1 uptime_ms=<ms> pump=off latch=0 pad=0 output=1 relatched=0
 ```
 
-`pump=off` means the latch, the pad and the direction all read the pump stopped. Anything else prints `pump=unverified`.
+`pump=off` means the latch, the pad and the direction all read the pump stopped; anything else prints `pump=unverified`.
 
 ## What it never does
 
-- **No other pin.** It configures PA30 and nothing else. The indicators, the button, the scale, the three outputs of unknown role and the radar footprint keep whatever stock's startup leaves.
-- **No network, Bluetooth, store, update or trial.** The firmware is not on the SDK runtime. It links no Wi-Fi, BLE, settings, store or updater code, and arms no watchdog.
-- **No flash array writes or erases.** The build's write audit refuses the image if any Wellfed code on either core references a flash or eFuse writer. The KM0 main boots KM4 and nothing else: no boot trial, so it never reads a confirmation record or clears bank 1's marker. The build's startup audit pins that call list.
-- **The status register is the SDK's.** The SDK's KM0 flash setup (`flash_operation_config` and `flash_rx_mode_switch`, which call `FLASH_SetStatus`) may write the flash status register at boot, as every AmebaD image built on it does. Stock's KM0 runs the same setup family. Whether the bits it writes match stock's is not established.
+- **No other pin.** It configures PA30 only. The indicators, the button, the scale, the three outputs of unknown role and the radar footprint keep whatever stock's startup leaves.
+- **No network, Bluetooth, store, update or trial.** The firmware is not on the SDK runtime: it links no Wi-Fi, BLE, settings, store or updater code, and arms no watchdog.
+- **No flash array writes or erases.** The build's write audit refuses the image if any Wellfed code on either core references a flash or eFuse writer. The KM0 main boots KM4 and nothing else, with no boot trial, so it never reads a confirmation record or clears bank 1's marker. The build's startup audit pins that call list.
+- **The status register is the SDK's.** The SDK's KM0 flash setup (`flash_operation_config` and `flash_rx_mode_switch`, which call `FLASH_SetStatus`) may write the flash status register at boot, as every AmebaD image built on it does. Stock's KM0 runs the same setup family; whether the bits match stock's is not established.
 - **No fallback.** Nothing gives way to bank 0. A bank-1 boot that fails stays failed until the bench recovers it over UART.
 
-A panic clears PA30 again, and the flash-lease fault path clears PA30 and nothing else. The build pins that path's instructions.
+A panic clears PA30 again, and the flash-lease fault path clears PA30 and nothing else; the build pins that path's instructions.
 
 ## The pad table
 
-Stock's KM0 pad table pulls PA30 up. So, until stock's KM4 latches the pump LOW, the pump enable sits weakly HIGH. The test image uses stock's table with one deliberate change: PA30 is pulled down. Every other pad matches stock, including PA22, which stock pulls up and keeps in sleep, unlike the SDK's default table.
+Stock's KM0 pad table pulls PA30 up, so the pump enable sits weakly HIGH until stock's KM4 latches it LOW. The test image uses stock's table with one change: PA30 is pulled down. Every other pad matches stock, including PA22, which stock pulls up and keeps in sleep, unlike the SDK's default table.
 
-The build checks the linked table byte for byte and pins its SHA-256. Its audit records `matches_stock: false` because of the PA30 change. The window before our table applies is not ours: the ROM and the factory loader run first, exactly as on stock.
+The build checks the linked table byte for byte and pins its SHA-256; its audit records `matches_stock: false` because of PA30. The window before our table applies is not ours: the ROM and the factory loader run first, exactly as on stock.
 
 ## Build and review it
 
