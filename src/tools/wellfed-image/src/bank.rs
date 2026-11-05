@@ -48,6 +48,19 @@ pub const BANK0: Layout = Layout {
     other: (BANK1.start, SECTOR),
 };
 
+/// The PLWF106 fountain's bank 1, the only bank a fountain candidate goes
+/// into: bank 0 keeps the stock image its loader falls back to. The window
+/// is stock bank 0's rounded footprint (`0xeb000`), a conservative cap
+/// rather than the bank's capacity; the fountain's `layout.json` records it.
+/// Its guard sector is bank 0's first.
+pub const PLWF106_BANK1: Layout = Layout {
+    kind: Kind::FountainBank1Update,
+    bank: 1,
+    start: 0x186000,
+    end: 0x271000,
+    other: (0x6000, SECTOR),
+};
+
 pub fn layout(bank: u8) -> Result<Layout> {
     match bank {
         0 => Ok(BANK0),

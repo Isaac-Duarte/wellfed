@@ -2,10 +2,28 @@
 //! channels its ports use, and who owns each sector of the storage region.
 //! These are facts of this feeder model, not of the AmebaD SoC, so the SoC
 //! bindings (`wellfed-amebad-sys`) and every store read them from here;
-//! a second model would be a second crate of the same shape, chosen at build
-//! time. Everything is a compile-time constant: nothing reads the board at
-//! run time.
+//! a second model is a second crate of the same shape, chosen at build
+//! time through `wellfed-board`, which checks that it holds the contract.
+//! Everything is a compile-time constant: nothing reads the board at run
+//! time.
 #![no_std]
+
+/// The model this board is, as `wellfed_proto::device::Model::code` numbers
+/// it: the PLAF103. The SDK takes no product schema, so the board names its
+/// model by code and the firmware checks it against `Model`.
+pub const MODEL_CODE: u8 = 1;
+
+/// The outputs' safe state, which a fault or a flash lease writes straight
+/// to the data registers without asking any driver: bits set HIGH on port A
+/// (the motor's STOP), then bits cleared LOW on ports A and B (the emitters
+/// OFF).
+pub mod safe {
+    use super::pins;
+
+    pub const PORT_A_HIGH: u32 = pins::MOTOR_MASK;
+    pub const PORT_A_LOW: u32 = pins::IR_PA_BIT;
+    pub const PORT_B_LOW: u32 = pins::IR_PB_BIT;
+}
 
 /// Every GPIO and ADC channel the ports use, in one place.
 /// A GPIO is `port * 32 + bit` (PA13 is 13, PB3 is 35). Roles and
@@ -37,10 +55,10 @@ pub mod pins {
     /// 200 ms, and the feeder beeps it for each button press.
     pub const BUZZER: u32 = 25;
     /// ADC channels: motor current and the battery pack. Channel 10, the
-    /// chip's own supply, is the AmebaD's, not the board's.
+    /// chip's own supply, is the AmebaD's, not the board's
+    /// (`wellfed_amebad_sys::ADC_SUPPLY_CHANNEL`).
     pub const ADC_CURRENT: u32 = 4;
     pub const ADC_BATTERY: u32 = 5;
-    pub const ADC_SUPPLY: u32 = 10;
 
     /// The pin's bit in its port register.
     pub const fn bit(pin: u32) -> u32 {
@@ -70,6 +88,8 @@ pub mod pins {
 /// Callers name a sector index; nothing takes a flash address.
 pub const STORAGE_OFFSET: u32 = 0x34_0000;
 pub const STORAGE_SECTORS: u32 = 48;
+const _: () =
+    assert!(STORAGE_OFFSET >= 0x30_6000 && STORAGE_OFFSET + STORAGE_SECTORS * 0x1000 <= 0x3e_8000);
 
 /// Who owns each sector of the storage region, in one place. Each
 /// store keeps its sectors to itself, so a torn record is always its own.

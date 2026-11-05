@@ -1,8 +1,8 @@
 //! The identity in the loop: the public key derived from what the
 //! settings writer publishes, once per generation, logged by fingerprint.
 
+use wellfed_device_runtime::keys;
 use wellfed_feeder::feeder::identity::{Identity, Record, describe};
-use wellfed_feeder_runtime::keys;
 use wellfed_fw_feeder::platform::Plaf103;
 
 /// RFC 7748 section 6.1: Alice's private and public keys.

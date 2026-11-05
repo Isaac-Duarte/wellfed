@@ -19,7 +19,7 @@ use wellfed_itest::ItestArgs;
 use wellfed_relay::Relay;
 use wellfed_rig::Cancel;
 use wellfed_rig::commands::{
-    self, Bench, ExecuteArgs, GiveWayArgs, GiveWayExecuteArgs, OtaArgs, StockArgs,
+    self, Bench, ExecuteArgs, GiveWayArgs, GiveWayExecuteArgs, OtaArgs, RomInspectArgs, StockArgs,
     StockExecuteArgs, TransientArgs, UartWhenOff, UpdateArgs, seconds_arg,
 };
 use wellfed_rig::tools::{Children, Processes};
@@ -70,6 +70,9 @@ pub enum JobCommand {
         /// Capture name under private/captures/.
         name: String,
     },
+    /// Cold boot into stock, then sample its ROM through its console
+    /// (`wellfed-flash read inspect-rom`) into private/captures/NAME/rom.
+    RomInspect(RomInspectArgs),
     /// Repeated logic-analyzer captures of power-ons or loader entries.
     Transients(TransientArgs),
 
@@ -115,6 +118,7 @@ impl JobCommand {
             Self::Press { .. } => BenchCommand::Press,
             Self::Boot { .. } => BenchCommand::Boot,
             Self::Loader { .. } => BenchCommand::Loader,
+            Self::RomInspect(_) => BenchCommand::RomInspect,
             Self::Transients(_) => BenchCommand::Transients,
             Self::Dump { .. } => BenchCommand::Dump,
             Self::FlashPrepare(_) => BenchCommand::FlashPrepare,
@@ -136,6 +140,7 @@ impl JobCommand {
             | Self::Boot { name, .. }
             | Self::Loader { name }
             | Self::Dump { name } => Some(name),
+            Self::RomInspect(args) => Some(&args.name),
             Self::Transients(args) => Some(&args.name),
             Self::FlashPrepare(args) => Some(&args.name),
             Self::FlashExecute(args) => Some(&args.update.name),
@@ -167,6 +172,7 @@ impl JobCommand {
             | Self::Press { .. }
             | Self::Boot { .. }
             | Self::Loader { .. }
+            | Self::RomInspect(_)
             | Self::Transients(_)
             | Self::Dump { .. }
             | Self::FlashPrepare(_)
@@ -281,6 +287,7 @@ pub struct ToolPaths {
 #[derive(Clone)]
 pub(crate) struct Bed {
     pub(crate) root: PathBuf,
+    pub(crate) device: wellfed_proto::device::Model,
     pub(crate) config: Config,
     pub(crate) board: SharedBoard,
     pub(crate) tools: ToolPaths,
@@ -383,6 +390,7 @@ fn open(bed: &Bed, spec: &JobSpec, run: &Run) -> Result<Bench, JobError> {
 
     Ok(Bench {
         root: bed.root.clone(),
+        device: bed.device,
         config: bed.config.clone(),
         relay,
         status: Status::disabled(),
@@ -465,6 +473,7 @@ fn dispatch(
             .and_then(|length| bench.boot(&captures.join(name), length))
             .map(|_| 0),
         JobCommand::Loader { name } => bench.loader(&captures.join(name)).map(|_| 0),
+        JobCommand::RomInspect(args) => bench.rom_inspect(args),
         JobCommand::Transients(args) => bench.transients(args),
         JobCommand::Dump { name } => bench.dump(name),
         JobCommand::FlashPrepare(args) => bench.flash_prepare(args),
@@ -515,6 +524,7 @@ mod tests {
             notes,
         );
         let bed = Bed {
+            device: wellfed_proto::device::Model::Plaf103,
             root,
             config: serde_json::from_str(
                 r#"{"relay_port": "r", "uart_port": "u", "baseline": "b", "rom_report": "r"}"#,

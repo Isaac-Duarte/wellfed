@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:wellfed/platform/install_ports.dart';
@@ -9,6 +10,7 @@ import 'package:wellfed/src/rust/api/setup.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/install/install_state.dart';
+import 'package:wellfed/state/wifi/networks.dart';
 
 export 'package:wellfed/state/install/install_state.dart';
 
@@ -281,6 +283,9 @@ class InstallFlow extends ChangeNotifier {
 
   /// The Wi-Fi this phone is on, when Android will say.
   Future<String?> currentNetwork() => _ports.currentNetwork();
+
+  /// The networks this phone hears, for the feeder's Wi-Fi.
+  Future<NetworkScan> scanNetworks() => _ports.scanNetworks();
 
   /// Take the Wi-Fi for Bluetooth setup, or null to keep the feeder's own.
   void setHome(WifiCredentials? home) {

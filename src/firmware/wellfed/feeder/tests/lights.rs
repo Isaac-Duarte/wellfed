@@ -10,13 +10,13 @@ use wellfed_core::clock::wall::{Origin, Sync};
 use wellfed_core::indicator::{Check, Failure, Light};
 use wellfed_core::settings::Window;
 use wellfed_device_api::mailbox::SettingsView;
+use wellfed_device_runtime::events;
 use wellfed_feeder::feeder::lights::{Lights, REFUSED_MS, Record, State, States, describe};
 use wellfed_feeder::feeder::{Feeder, Feeds, Record as PassRecord};
-use wellfed_feeder_runtime::events;
 use wellfed_fw_feeder::platform::{Driver, Plaf103};
 use wellfed_proto::api::{Blocked, EventBody, FoodLevel, Refusal, Source};
+use wellfed_sdk::hal::board::pins::{IR_PA_BIT, MOTOR_A_BIT};
 use wellfed_sdk::hal::leds::{self, Led};
-use wellfed_sdk::hal::plaf103::pins::{IR_PA_BIT, MOTOR_A_BIT};
 use wellfed_sdk::hal::sdk::fake;
 use wellfed_sdk::hal::{buttons, clock, settings, stopped};
 

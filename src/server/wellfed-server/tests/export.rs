@@ -25,7 +25,7 @@ use wellfed_store::NewSample;
 /// A server with rows in most tables: two accounts and a token, a feeder
 /// that fed once and was locked, a pet with a weight on that feeder, and a
 /// food with a refill. The owner's client comes with it.
-async fn household(sim: &Running) -> (TestServer, Client) {
+async fn home(sim: &Running) -> (TestServer, Client) {
     let server = TestServer::start().await;
     let mut owner = server.client();
     owner.setup(&ada_setup()).await.unwrap();
@@ -157,7 +157,7 @@ fn rows(manifest: &Manifest, table: Table) -> u64 {
 fn an_archive_imports_onto_an_empty_server_and_exports_again_byte_for_byte() {
     local(async {
         let sim = feeder::start().await;
-        let (first, owner) = household(&sim).await;
+        let (first, owner) = home(&sim).await;
 
         let archive = export(&owner, ExportFormat::Json).await;
         let written = manifest(&archive);
@@ -249,7 +249,7 @@ fn an_archive_imports_onto_an_empty_server_and_exports_again_byte_for_byte() {
 fn the_archive_carries_no_secret() {
     local(async {
         let sim = feeder::start().await;
-        let (server, owner) = household(&sim).await;
+        let (server, owner) = home(&sim).await;
         let token = owner
             .create_token(&NewToken {
                 name: "the CLI".into(),
@@ -305,7 +305,7 @@ fn the_archive_carries_no_secret() {
 fn a_csv_archive_has_a_header_and_a_record_per_row() {
     local(async {
         let sim = feeder::start().await;
-        let (server, owner) = household(&sim).await;
+        let (server, owner) = home(&sim).await;
 
         let archive = export(&owner, ExportFormat::Csv).await;
 
@@ -352,7 +352,7 @@ fn a_csv_archive_has_a_header_and_a_record_per_row() {
 fn an_import_needs_a_server_with_no_account_and_a_whole_archive() {
     local(async {
         let sim = feeder::start().await;
-        let (server, owner) = household(&sim).await;
+        let (server, owner) = home(&sim).await;
         let archive = export(&owner, ExportFormat::Json).await;
 
         // Not onto a server with an account: not anonymously, and not by
@@ -416,7 +416,7 @@ fn an_import_needs_a_server_with_no_account_and_a_whole_archive() {
 fn setup_and_an_import_racing_end_with_one_household() {
     local(async {
         let sim = feeder::start().await;
-        let (server, owner) = household(&sim).await;
+        let (server, owner) = home(&sim).await;
         let archive = export(&owner, ExportFormat::Json).await;
 
         for _ in 0..4 {
@@ -456,7 +456,7 @@ fn setup_and_an_import_racing_end_with_one_household() {
 fn one_export_runs_at_a_time_and_none_holds_up_a_stop() {
     local(async {
         let sim = feeder::start().await;
-        let (server, owner) = household(&sim).await;
+        let (server, owner) = home(&sim).await;
         // Far more than the export's queue holds, so its writer waits on
         // the reader.
         let feeder = owner.feeders().await.unwrap()[0].id;

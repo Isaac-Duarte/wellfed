@@ -55,6 +55,9 @@ const RUST_ENVIRONMENT: [&str; 13] = [
     "CARGO_BUILD_INCREMENTAL",
 ];
 const RUST_ENVIRONMENT_PREFIXES: [&str; 2] = ["CARGO_PROFILE_", "CARGO_UNSTABLE_"];
+/// The board `wellfed-board` builds for, which a firmware build sets from
+/// its device's model, never from the caller.
+pub(crate) const BOARD_VARIABLE: &str = "WELLFED_BOARD";
 
 pub(crate) type Environment = BTreeMap<String, String>;
 
@@ -199,6 +202,17 @@ fn forbidden_cargo_key(key: &[String], inline: bool) -> bool {
             firmware && ((key.len() == 2 && inline) || (key.len() > 2 && key[2] == "rustflags"))
         }
         "target" => inline,
+        // Cargo's `[env]` replaces a variable already set only when forced,
+        // which takes a table (`{ value = …, force = true }` or a
+        // `[env.WELLFED_BOARD]` header). A plain string is a default that
+        // the board the build sets from its device replaces, as the
+        // repository's own `.cargo/config.toml` is. An inline `env` table is
+        // refused whole, since it may hold a forced board.
+        "env" => {
+            key.len() == 1 && inline
+                || key.get(1).is_some_and(|name| name == BOARD_VARIABLE)
+                    && (inline || key.len() > 2)
+        }
         _ => false,
     }
 }
@@ -319,6 +333,16 @@ mod tests {
                        linker = \"clang\"\nrustflags = [\"-Clink-arg=--ld-path=mold\"]\n[build]\njobs = 4\n\
                        [target.'thumbv8m.main-none-eabihf']\nrunner = \"probe\"\n";
         assert!(cargo_config_overrides(allowed).is_empty());
+        // An unforced board default, as the repository's own configuration
+        // sets, never replaces the one the build sets.
+        assert!(
+            cargo_config_overrides(
+                "[env]\nWELLFED_BOARD = \"plaf103\"\nOTHER = { value = \"x\" }\n"
+            )
+            .is_empty()
+        );
+        let repository = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../.cargo/config.toml");
+        assert!(cargo_config_overrides(&fs::read_to_string(repository).unwrap()).is_empty());
 
         for (text, key) in [
             (
@@ -340,6 +364,18 @@ mod tests {
                 "target.cfg(target_os = \"none\").rustflags",
             ),
             ("[unstable]\nbuild-std = [\"core\"]\n", "unstable.build-std"),
+            (
+                "[env]\nWELLFED_BOARD = { value = \"plwf106\", force = true }\n",
+                "env.WELLFED_BOARD",
+            ),
+            (
+                "[env.WELLFED_BOARD]\nvalue = \"plwf106\"\n",
+                "env.WELLFED_BOARD.value",
+            ),
+            (
+                "env = { WELLFED_BOARD = { value = \"plwf106\", force = true } }\n",
+                "env",
+            ),
         ] {
             assert_eq!(cargo_config_overrides(text), [key], "{text}");
         }

@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:wellfed/state/clock/clock.dart';
@@ -118,7 +121,7 @@ class _CodeWindowState extends State<CodeWindow> {
 
   int _left() {
     final DateTime? deadline = widget.deadline;
-    return deadline == null ? 0 : deadline.difference(DateTime.now()).inSeconds.clamp(0, 999);
+    return deadline == null ? 0 : deadline.difference(clock.now()).inSeconds.clamp(0, 999);
   }
 
   void _ticked() => setState(() {});
@@ -219,6 +222,9 @@ class PanelPhoto extends StatelessWidget {
   static const _height = 190.0;
   static const _top = -88.0;
 
+  /// A ring's 44 px, and a gap, so a label starts under the ring.
+  static const _below = 52.0;
+
   /// Each button's ring on the uncropped render.
   static const _rings = {1: Offset(12, 157), 2: Offset(50, 163), 3: Offset(270, 164), 4: Offset(308, 157)};
 
@@ -274,18 +280,19 @@ class PanelPhoto extends StatelessWidget {
                           ),
                         ),
                       ),
+                    // Under the lowest ring, clear of every ring's edge.
                     if (caption case final caption?)
                       Positioned(
-                        left: at(held.first, 53).dx,
-                        top: at(held.first, 53).dy,
-                        child: Text(caption, style: label),
+                        left: at(held.first, _below).dx,
+                        top: held.map((p) => at(p, _below).dy).reduce(math.max),
+                        child: _PhotoLabel(caption, style: label),
                       )
                     else
                       for (final position in held)
                         Positioned(
-                          left: at(position, 53).dx,
-                          top: at(position, 53).dy,
-                          child: Text(buttonNames[position - 1], style: label),
+                          left: at(position, _below).dx,
+                          top: at(position, _below).dy,
+                          child: _PhotoLabel(buttonNames[position - 1], style: label),
                         ),
                   ],
                 ),
@@ -296,4 +303,25 @@ class PanelPhoto extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A label on the photo, on a dark plate so the render's highlights behind it
+/// don't eat the letters.
+class _PhotoLabel extends StatelessWidget {
+  const _PhotoLabel(this.text, {required this.style});
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: darkTokens.background.withValues(alpha: 0.75),
+      borderRadius: BorderRadius.circular(Radii.pill),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Space.s2, vertical: 2),
+      child: Text(text, style: style),
+    ),
+  );
 }

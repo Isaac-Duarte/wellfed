@@ -32,8 +32,15 @@ fn ota_takes_its_flags_and_serve_its_tools() {
     assert!(!args.attended_motion && !args.build);
     assert_eq!(args.config, PathBuf::from("private/server.json"));
 
-    let cli = Cli::try_parse_from(["wellfed-bench", "serve", "--flash-bin", "bin/wellfed-flash"])
-        .unwrap();
+    let cli = Cli::try_parse_from([
+        "wellfed-bench",
+        "serve",
+        "--device",
+        "plaf103",
+        "--flash-bin",
+        "bin/wellfed-flash",
+    ])
+    .unwrap();
     let Command::Serve(args) = &cli.command else {
         panic!("not serve")
     };
@@ -228,7 +235,7 @@ fn a_held_bench_refuses_a_server_before_it_opens_anything() {
     let holder = hold(root.path());
 
     // There is no bench.json either: the lease refuses first.
-    let refused = lease_error(run_in(root.path(), &["serve"]));
+    let refused = lease_error(run_in(root.path(), &["serve", "--device", "plaf103"]));
     assert_matches!(refused, lease::LeaseError::Held(_));
 
     // A live holder's flash client is its own: the break is refused for
@@ -341,7 +348,7 @@ fn a_killed_holder_is_reported_until_status_breaks_it() {
     holder.0.kill().unwrap();
     holder.0.wait().unwrap();
 
-    let refused = lease_error(run_in(root.path(), &["serve"]));
+    let refused = lease_error(run_in(root.path(), &["serve", "--device", "plaf103"]));
     assert_matches!(refused, lease::LeaseError::Stale(_));
 
     // Breaking frees the bench; the status itself then finds no server and
@@ -355,7 +362,7 @@ fn a_server_frees_the_lease_it_took_when_it_stops() {
     let root = tempfile::tempdir().unwrap();
 
     // Taken, then the missing bench.json stops the server.
-    assert!(run_in(root.path(), &["serve"]).is_err());
+    assert!(run_in(root.path(), &["serve", "--device", "plaf103"]).is_err());
 
     assert!(root.path().join("private/bench.lease.lock").is_file());
     assert!(lease::inspect(root.path()).unwrap().is_none());

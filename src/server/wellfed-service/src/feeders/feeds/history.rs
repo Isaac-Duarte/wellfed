@@ -227,7 +227,11 @@ impl Service {
         store
             .record_status(id, &status, self.shared.clock.now())
             .await?;
-        let opened = match status.readiness {
+        // Only a feeder resolves feeds; another kind has none to settle.
+        let Some(feeder) = status.feeder() else {
+            return Ok(());
+        };
+        let opened = match feeder.readiness {
             Readiness::Ready => true,
             Readiness::Blocked(blocked) => !matches!(
                 blocked,

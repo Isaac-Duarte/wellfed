@@ -131,6 +131,126 @@ fn reviews_of_builds_before_device_names_still_read() {
     assert!(!freeze(None, "firstboot"));
 }
 
+/// A review installs only on its own model's layout: the feeder's review
+/// kind and device on the feeder's banks, the fountain's on the fountain's
+/// bank 1, and never the other way round.
+#[test]
+fn a_review_installs_only_on_its_own_models_layout() {
+    use crate::bank::PLWF106_BANK1;
+
+    let (checkout, root) = private_root();
+    let image = image(30000, 3);
+    let (directory, review, manifest) = frozen_build(checkout.path(), &image);
+    let unsupported = |result: Result<Frozen>| {
+        matches!(
+            result.err(),
+            Some(crate::Error::Review(ReviewError::Unsupported))
+        )
+    };
+
+    assert!(frozen(&root, &directory, &BANK1).is_ok());
+    assert!(unsupported(frozen(&root, &directory, &PLWF106_BANK1)));
+
+    // A fountain build links the fountain's pad table.
+    let pinmap = json!({"matches_stock": false, "runtime_address": "0x3",
+                        "sha256": wellfed_formats::audit::pinmap_sha256(Model::Plwf106)});
+    let freeze = |kind: &str, device: &str| {
+        let mut changed = manifest.clone();
+        changed["device"] = json!(device);
+        changed["km0_pinmap_audit"] = pinmap.clone();
+        let raw = changed.to_string();
+        let mut bound = review.clone();
+        bound["kind"] = json!(kind);
+        bound["review"]["pinmap"] = pinmap.clone();
+        bound["manifest_sha256"] = json!(sha256(raw.as_bytes()));
+        write(&directory.join("build-manifest.json"), raw.as_bytes());
+        write(&directory.join("review.json"), bound.to_string().as_bytes());
+    };
+
+    freeze("plwf106_development_image_review", "plwf106");
+    assert!(frozen(&root, &directory, &PLWF106_BANK1).is_ok());
+    assert!(unsupported(frozen(&root, &directory, &BANK1)));
+
+    // A fountain review of a feeder build, or of no device at all.
+    for device in ["plaf103", ""] {
+        freeze("plwf106_development_image_review", device);
+        assert!(matches!(
+            frozen(&root, &directory, &PLWF106_BANK1).err(),
+            Some(crate::Error::Review(ReviewError::UnknownProfile))
+        ));
+    }
+
+    // The feeder's stock OTA is never a fountain image.
+    let stock = json!({
+        "schema_version": 1, "kind": "plwf106_development_image_review", "image_kind": "stock",
+        "ota_sha256": sha256(&image),
+        "payload_sha256": sha256(crate::ota::container(&image).unwrap()),
+        "payload_bytes": crate::ota::container(&image).unwrap().len(),
+        "manifest_sha256": null, "review": {"stock_sha256": sha256(&image)},
+        "reviewer_sha256": "0".repeat(64), "application_boot_verified": false,
+    });
+    write(&directory.join("review.json"), stock.to_string().as_bytes());
+    assert!(matches!(
+        frozen(&root, &directory, &PLWF106_BANK1).err(),
+        Some(crate::Error::Review(ReviewError::NotOriginalStock))
+    ));
+}
+
+/// Each model's review accepts its pinned pad table alone. The fountain's
+/// is stock's with only PA30 pulled down: stock's own table, which pulls
+/// PA30 up, is refused for it, as is any other. The feeder's is stock's,
+/// marked stock and with stock's hash.
+#[test]
+fn only_the_fountains_pinned_pad_table_may_differ_from_stock() {
+    use crate::bank::PLWF106_BANK1;
+    use wellfed_formats::audit::pinmap_sha256;
+
+    let (checkout, root) = private_root();
+    let image = image(30000, 3);
+    let directory = checkout.path().join("private/review");
+
+    let freeze = |model: Model, matches_stock: bool, table: &str| {
+        let pinmap = json!({"matches_stock": matches_stock, "runtime_address": "0x3",
+                            "sha256": table});
+        let fields = json!({"device": model.name(), "km0_pinmap_audit": pinmap});
+        let (mut review, manifest) =
+            crate::fixtures::freeze_build(checkout.path(), &directory, &image, &fields).unwrap();
+        review["kind"] = json!(format!("{}_development_image_review", model.name()));
+        review["review"]["pinmap"] = pinmap;
+        review["manifest_sha256"] = json!(sha256(manifest.to_string().as_bytes()));
+        write(
+            &directory.join("review.json"),
+            review.to_string().as_bytes(),
+        );
+
+        let layout = match model {
+            Model::Plaf103 => BANK1,
+            Model::Plwf106 => PLWF106_BANK1,
+        };
+        match frozen(&root, &directory, &layout) {
+            Ok(_) => true,
+            Err(crate::Error::Review(ReviewError::MissingAudits)) => false,
+            Err(other) => panic!("{other:?}"),
+        }
+    };
+
+    let fountain = pinmap_sha256(Model::Plwf106);
+    let feeder = pinmap_sha256(Model::Plaf103);
+    assert_ne!(fountain, feeder);
+
+    let other = "0".repeat(64);
+    assert!(freeze(Model::Plwf106, false, fountain));
+    assert!(!freeze(Model::Plwf106, true, feeder));
+    assert!(!freeze(Model::Plwf106, true, fountain));
+    assert!(!freeze(Model::Plwf106, false, feeder));
+    assert!(!freeze(Model::Plwf106, false, &other));
+
+    assert!(freeze(Model::Plaf103, true, feeder));
+    assert!(!freeze(Model::Plaf103, true, &other));
+    assert!(!freeze(Model::Plaf103, false, fountain));
+    assert!(!freeze(Model::Plaf103, false, feeder));
+}
+
 #[test]
 fn a_review_outlives_an_sdk_lock_bump_after_it() {
     let (checkout, root) = private_root();

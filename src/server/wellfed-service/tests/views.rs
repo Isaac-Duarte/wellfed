@@ -12,9 +12,9 @@ use std::sync::Arc;
 use jiff::Timestamp;
 use uuid::Uuid;
 use wellfed_api::{
-    ClientRole, EventBody, FeedAnomaly, FeedOutcome, FeedReason, FeederId, FeederPortions,
-    FoodLevel, FoodStats, IntakeQuery, MissedReason, NewFood, NewPet, NewRefill, PetId,
-    PortionWeight, Source, Species, Stats,
+    ClientRole, EventBody, FeedAnomaly, FeedOutcome, FeedReason, FeederEvent, FeederId,
+    FeederPortions, FoodLevel, FoodStats, IntakeQuery, MissedReason, Model, NewFood, NewPet,
+    NewRefill, PetId, PortionWeight, Source, Species, Stats,
 };
 use wellfed_server_testkit::fixed::{ManualClock, NOW_MS};
 use wellfed_server_testkit::{TestService, ada, ada_setup, stored_body};
@@ -38,6 +38,8 @@ async fn start() -> (TestService, ManualClock, Store) {
     store
         .insert_feeder(NewFeeder {
             id: KITCHEN,
+            home: store.home().await.unwrap().expect("set up").id,
+            model: Model::Plaf103,
             identity: [4; 32],
             name: "kitchen",
             role: ClientRole::Server,
@@ -77,7 +79,7 @@ async fn fed(
     } else {
         FeedOutcome::Uncertain
     };
-    let body = EventBody::Fed {
+    let body = EventBody::Feeder(FeederEvent::Fed {
         feed: u32::try_from(seq).unwrap(),
         requested,
         completed,
@@ -85,7 +87,7 @@ async fn fed(
         reason: FeedReason::Done,
         hopper: FoodLevel::Present,
         by: Source::Feeder,
-    };
+    });
     record(store, seq, at, received, body).await;
 }
 
@@ -171,18 +173,18 @@ async fn a_recorded_refill_resets_the_count_and_the_beam_only_asks() {
         .await
         .unwrap();
     fed(&store, 2, Some(at(70)), at(70), (4, 1)).await;
-    let missed = EventBody::Missed {
+    let missed = EventBody::Feeder(FeederEvent::Missed {
         plan: 2,
         due: at(80),
         reason: MissedReason::Late,
-    };
+    });
     record(&store, 3, Some(at(95)), at(95), missed).await;
     // A meal due before the week the view looks back over, reported now.
-    let stale = EventBody::Missed {
+    let stale = EventBody::Feeder(FeederEvent::Missed {
         plan: 3,
         due: at(-8 * 24 * 60),
         reason: MissedReason::Late,
-    };
+    });
     record(&store, 4, Some(at(100)), at(100), stale).await;
     clock.advance_to(at(120));
     let view = service.feeder_food(KITCHEN).await.unwrap();

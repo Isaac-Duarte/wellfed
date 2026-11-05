@@ -34,7 +34,9 @@ use std::time::Duration;
 
 use tokio::task::LocalSet;
 use uuid::Uuid;
-use wellfed_api::{Credentials, ErrorCode, EventBody, Role, Setup, User, UserId};
+use wellfed_api::{
+    Credentials, ErrorCode, EventBody, Home, HomeId, Role, Setup, TimeFormat, Units, User, UserId,
+};
 use wellfed_server_client::StatusCode;
 
 pub use server::TestServer;
@@ -82,6 +84,18 @@ where
 /// from.
 pub fn ada() -> User {
     owner_user(1, "ada")
+}
+
+/// The home a test server serves when a test adopts without a setup, as
+/// setup would make it in UTC.
+pub fn home() -> Home {
+    Home {
+        id: HomeId(Uuid::from_u128(0x40)),
+        name: "Home".into(),
+        units: Units::Grams,
+        time_format: TimeFormat::H24,
+        zone: "UTC".into(),
+    }
 }
 
 /// The first owner's login.

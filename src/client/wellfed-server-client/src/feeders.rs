@@ -5,8 +5,8 @@ use reqwest::header;
 use reqwest::{Method, StatusCode};
 use uuid::Uuid;
 use wellfed_api::{
-    AdoptFeeder, EventPage, EventQuery, Feeder, FeederDetail, FeederId, Generation, LockRequest,
-    Plans, PlansChange, SamplePage, SampleQuery, Settings, SettingsPatch,
+    AdoptFeeder, EventPage, EventQuery, Feeder, FeederDetail, FeederId, FeederSettingsPatch,
+    Generation, LockRequest, Plans, PlansChange, SamplePage, SampleQuery, Settings,
 };
 
 use crate::{Client, Error, decode, expect_status, is_problem};
@@ -64,7 +64,7 @@ impl Client {
         &self,
         id: FeederId,
         base: Generation,
-        patch: &SettingsPatch,
+        patch: &FeederSettingsPatch,
         key: Uuid,
     ) -> Result<Settings, Error> {
         let response = self

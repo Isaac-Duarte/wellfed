@@ -186,7 +186,7 @@ pub async fn join_phone(sim: &Running, invite: &str, secret: [u8; 32]) -> Client
         .await
         .expect("the phone redeems the invite");
     match joined {
-        Joined::Enrolled { role } => role,
+        Joined::Enrolled { role, .. } => role,
         Joined::Refused(refusal) => panic!("the feeder refused the phone: {refusal:?}"),
     }
 }

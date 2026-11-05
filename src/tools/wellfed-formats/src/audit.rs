@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::layout::Hex;
+use wellfed_proto::device::Model;
 
 /// The candidate OTA image's structure against the stock layout.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,6 +76,33 @@ pub struct PinmapAudit {
     pub sha256: String,
     pub matches_stock: bool,
     pub scope: String,
+}
+
+/// SHA-256 of the KM0 pad table each model's build links: the builder pins
+/// the linked table to it, and a frozen review accepts it.
+///
+/// The PLAF103's is stock's table, unchanged. The PLWF106's is stock's with
+/// one approved deviation: PA30, the pump enable, pulls down instead of up,
+/// so the pump is not held weakly on until KM4 drives the pin.
+pub const fn pinmap_sha256(model: Model) -> &'static str {
+    match model {
+        Model::Plaf103 => "23fe78b44b34acd91b550e4f41ce64958e82859b98532045c7e5b5bdb6c4fdc8",
+        Model::Plwf106 => "23722b67054ccb55ca45000d300a63dfb3f711d6c7c6fc0d20e9b0179d28c2b1",
+    }
+}
+
+impl PinmapAudit {
+    /// Whether a review of `model`'s build accepts this table: its pinned
+    /// table and nothing else. The PLAF103's is stock's, so it must also be
+    /// marked stock. The PLWF106's is the deviation, never stock's, which
+    /// pulls PA30 up.
+    pub fn accepted_for(&self, model: Model) -> bool {
+        let pinned = self.sha256 == pinmap_sha256(model);
+        match model {
+            Model::Plaf103 => self.matches_stock && pinned,
+            Model::Plwf106 => !self.matches_stock && pinned,
+        }
+    }
 }
 
 /// A core's archive, as the hook and park audits record it.

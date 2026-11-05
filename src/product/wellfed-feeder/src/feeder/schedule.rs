@@ -506,19 +506,15 @@ impl Schedule {
         self.computed = Some(key);
     }
 
-    /// The source a feed's outcome names: the claim's plan for the feed
-    /// that followed it, which a restart's uncertain resolution reports as
-    /// the feeder's own.
-    pub fn source<P: Platform>(platform: &mut P, feed: u32, by: Source) -> Source {
+    /// The stored claim behind a restart's uncertain feed, which the
+    /// resolution reports as the feeder's own: the feed that followed the
+    /// claim's high water is the claimed occurrence's.
+    pub fn claim_behind<P: Platform>(platform: &mut P, feed: u32, by: Source) -> Option<Claim> {
         let PlansResult::Current { view, .. } = platform.plans() else {
-            return by;
+            return None;
         };
-        match (by, view.claim) {
-            (Source::Feeder, Some(claim)) if claim.high_water.wrapping_add(1) == feed => {
-                Source::Schedule(claim.plan)
-            }
-            _ => by,
-        }
+        view.claim
+            .filter(|claim| by == Source::Feeder && claim.high_water.wrapping_add(1) == feed)
     }
 }
 

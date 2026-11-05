@@ -15,7 +15,7 @@ Seen from the front, the icons run low food, lock, Wi-Fi, error/warning from lef
 | `lock` | Lock | White | PA4 | None |
 | `fault` | Error/warning | Red | PB22 | Yes |
 
-Port A's low pads read LOW whatever is driven on our unit, so only PB22 can be read back ([startup](startup-diagnostics.md#shared-pad-power)). The pads come from `wellfed_board_plaf103::pins` ([device layer](device-layer.md)).
+Port A's low pads read LOW whatever is driven on our unit, so only PB22 can be read back ([startup](startup-diagnostics.md#shared-pad-power)). The pads come from the board's `pins` (`wellfed_board::pins`) ([device layer](device-layer.md)).
 
 ## How the service decides
 

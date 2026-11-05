@@ -5,8 +5,8 @@
 use std::time::Duration;
 
 use wellfed_api::{
-    Connection as Link, EventBody, EventKind, EventQuery, Generation, MealReminder, SettingsPatch,
-    Source, StreamEvent, Window,
+    Connection as Link, EventBody, EventKind, EventQuery, FeederEvent, FeederSettingsPatch,
+    Generation, MealReminder, Source, StreamEvent, Window,
 };
 use wellfed_server_testkit::feeder::{self, Relay};
 use wellfed_server_testkit::fixed::NOW_MS;
@@ -30,56 +30,77 @@ fn settings_change_against_the_current_generation_only() {
         let service = server.service();
 
         let settings = service.settings(id).await.unwrap();
-        let patch = SettingsPatch {
+        let patch = FeederSettingsPatch {
             volume: Some(30),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         let changed = service
-            .put_settings(&ada().into(), id, settings.generation, patch, Some([1; 16]))
+            .put_settings(
+                &ada().into(),
+                id,
+                settings.generation(),
+                patch,
+                Some([1; 16]),
+            )
             .await
             .unwrap();
-        assert_eq!(changed.volume, 30);
-        assert_eq!(changed.generation, Generation(settings.generation.0 + 1));
+        assert_eq!(changed.feeder().unwrap().volume, 30);
+        assert_eq!(
+            changed.generation(),
+            Generation(settings.generation().0 + 1)
+        );
 
         // A retry under the same id is answered once, not applied again.
         let retried = service
-            .put_settings(&ada().into(), id, settings.generation, patch, Some([1; 16]))
+            .put_settings(
+                &ada().into(),
+                id,
+                settings.generation(),
+                patch,
+                Some([1; 16]),
+            )
             .await
             .unwrap();
         assert_eq!(retried, changed);
 
         let stale = service
-            .put_settings(&ada().into(), id, settings.generation, patch, Some([2; 16]))
+            .put_settings(
+                &ada().into(),
+                id,
+                settings.generation(),
+                patch,
+                Some([2; 16]),
+            )
             .await;
         let Err(Error::Stale(current)) = stale else {
             panic!("{stale:?}");
         };
         assert_eq!(current, changed);
 
-        let loud = SettingsPatch {
+        let loud = FeederSettingsPatch {
             volume: Some(101),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         assert!(matches!(
             service
-                .put_settings(&ada().into(), id, changed.generation, loud, Some([3; 16]))
+                .put_settings(&ada().into(), id, changed.generation(), loud, Some([3; 16]))
                 .await,
             Err(Error::Invalid(Invalid::Volume))
         ));
 
-        let past_midnight = SettingsPatch {
+        let past_midnight = FeederSettingsPatch {
             sound_window: Some(Window::Between {
                 start: 0,
                 end: 1440,
             }),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         assert!(matches!(
             service
                 .put_settings(
                     &ada().into(),
                     id,
-                    changed.generation,
+                    changed.generation(),
                     past_midnight,
                     Some([4; 16])
                 )
@@ -87,16 +108,16 @@ fn settings_change_against_the_current_generation_only() {
             Err(Error::Invalid(Invalid::Window))
         ));
 
-        let too_early = SettingsPatch {
+        let too_early = FeederSettingsPatch {
             meal_reminder: Some(MealReminder::Before { minutes: 61 }),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         assert!(matches!(
             service
                 .put_settings(
                     &ada().into(),
                     id,
-                    changed.generation,
+                    changed.generation(),
                     too_early,
                     Some([5; 16])
                 )
@@ -113,16 +134,16 @@ fn settings_change_against_the_current_generation_only() {
             Err(Error::Command(CommandError::KeyReused))
         ));
         let bob = owner_user(2, "bob");
-        let louder = SettingsPatch {
+        let louder = FeederSettingsPatch {
             volume: Some(40),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         assert!(matches!(
             service
                 .put_settings(
                     &bob.clone().into(),
                     id,
-                    changed.generation,
+                    changed.generation(),
                     louder,
                     Some([1; 16])
                 )
@@ -133,13 +154,13 @@ fn settings_change_against_the_current_generation_only() {
             .put_settings(
                 &bob.clone().into(),
                 id,
-                changed.generation,
+                changed.generation(),
                 louder,
                 Some([4; 16]),
             )
             .await
             .unwrap();
-        assert_eq!(theirs.generation, Generation(changed.generation.0 + 1));
+        assert_eq!(theirs.generation(), Generation(changed.generation().0 + 1));
         server.shutdown().await;
         sim.stop().await;
     });
@@ -175,7 +196,7 @@ fn a_lock_change_is_recorded_once_and_published_live() {
                     "the clock's start"
                 );
                 if let StreamEvent::Event { feeder, event } = &stamped.event
-                    && matches!(event.body, EventBody::Lock { .. })
+                    && matches!(event.body, EventBody::Feeder(FeederEvent::Lock { .. }))
                 {
                     assert_eq!(*feeder, id);
                     return event.clone();
@@ -184,7 +205,7 @@ fn a_lock_change_is_recorded_once_and_published_live() {
         })
         .await
         .unwrap();
-        let EventBody::Lock { locked, by } = event.body else {
+        let EventBody::Feeder(FeederEvent::Lock { locked, by }) = event.body else {
             unreachable!();
         };
         assert!(!locked);

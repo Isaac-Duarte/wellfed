@@ -1,0 +1,22 @@
+[package]
+license.workspace = true
+name = "wellfed-board"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "The board a firmware is built for, chosen per build by WELLFED_BOARD: the one crate the SDK and the product read pins, polarities and the storage map from"
+publish.workspace = true
+build = "build/main.rs"
+# Hands the chosen board to the build scripts of the crates that gate code
+# on it (`DEP_WELLFED_BOARD_NAME`), so one check decides it for every crate.
+links = "wellfed_board"
+
+# Both boards are always dependencies: each is a module tree of constants,
+# so the one not chosen adds nothing to an image. A feature per board would
+# unify across a workspace build and turn both on at once.
+[dependencies]
+wellfed-board-plaf103.workspace = true
+wellfed-board-plwf106.workspace = true
+
+[lints]
+workspace = true

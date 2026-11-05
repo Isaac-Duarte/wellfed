@@ -541,7 +541,7 @@ mod tests {
     use wellfed_feeder_sim::harness::Threaded;
     use wellfed_formats::bench::live::{Pause, Unavailable};
     use wellfed_formats::bench::rendezvous::Rendezvous;
-    use wellfed_model::{Event, EventBody};
+    use wellfed_model::{CoreEvent, Event, EventBody, FeederEvent};
 
     use super::*;
     use crate::device::Connection;
@@ -730,10 +730,10 @@ mod tests {
             epoch,
             seq,
             at: None,
-            body: EventBody::Boot {
+            body: EventBody::Core(CoreEvent::Boot {
                 bank: 1,
                 reset_flags: 0,
-            },
+            }),
         })
     }
 
@@ -742,7 +742,7 @@ mod tests {
             epoch,
             seq,
             at: None,
-            body: EventBody::Fed {
+            body: EventBody::Feeder(FeederEvent::Fed {
                 feed,
                 requested: 1,
                 completed: 1,
@@ -750,7 +750,7 @@ mod tests {
                 reason: wellfed_model::FeedReason::Done,
                 hopper: wellfed_model::FoodLevel::Present,
                 by: wellfed_model::Source::Feeder,
-            },
+            }),
         })
     }
 

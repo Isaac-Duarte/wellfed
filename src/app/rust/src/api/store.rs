@@ -49,6 +49,19 @@ pub struct KnownFeeder {
     pub name: String,
     /// Where it last answered (`ip:port`), tried while NSD looks.
     pub address: Option<String>,
+    /// Where the owner said to dial it (`ip:port`), in place of NSD: for a
+    /// feeder reached over a VPN's route to the home network, where NSD's
+    /// multicast never arrives. The session pins the identity key, so this
+    /// only says where to dial, and a session there never replaces
+    /// `address`, which stays where NSD last found it.
+    pub manual_address: Option<String>,
+}
+
+/// `text` as a feeder address a session dials, `ip:port`: an IP alone takes
+/// the device API's port.
+#[flutter_rust_bridge::frb(sync)]
+pub fn feeder_address(text: &str) -> Result<String, BridgeError> {
+    Ok(wellfed_connect::parse_address(text.trim())?.to_string())
 }
 
 /// The store at `path`, or an empty one when the app has never saved.

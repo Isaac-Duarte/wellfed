@@ -19,6 +19,11 @@ use wellfed_core::ota::install::{Answer, Progress, Refused};
 use wellfed_core::store::slot::SlotIo;
 use wellfed_core::supply::Reading;
 use wellfed_core::tone::Tune;
+use wellfed_device::io::{Accepted, BleDrop, BleLink, Datagram, Received};
+use wellfed_device::store;
+use wellfed_device::store::events::{BODY_BYTES, EventsFill, Read};
+use wellfed_device::store::net::BuildWifi;
+use wellfed_device::store::traces::{TraceRead, TracesFill};
 use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{CLIENTS, Client};
 use wellfed_device_api::mailbox::{
@@ -27,20 +32,16 @@ use wellfed_device_api::mailbox::{
     TimeSettingsResult, WifiResult, WifiSource,
 };
 use wellfed_device_api::wifi::Credentials;
+use wellfed_device_runtime::{events, keys, network, time};
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::platform::{
-    Accepted, BleDrop, BleLink, BleStep, Boot, BuildWifi, Check, Datagram, DriverRecord,
-    DriverStep, EventSlot, EventsFill, Link, Received, TaskCount, TaskStack, TraceRead, TracesFill,
+    BleStep, Boot, Check, DriverRecord, DriverStep, EventSlot, Link, TaskCount, TaskStack,
 };
 use wellfed_feeder::feeder::supply::Radio;
 use wellfed_feeder::stats::Totals;
-use wellfed_feeder::store;
-use wellfed_feeder::store::events::{BODY_BYTES, Read};
-use wellfed_feeder_runtime::{
-    calibration, call, events, keys, network, plans, stats, time, traces,
-};
+use wellfed_feeder_runtime::{calibration, call, plans, stats, traces};
 use wellfed_proto::api::{Counts, Erases, FLASH_SECTORS, Power, Refusal, TASKS_MAX};
-use wellfed_proto::device::Model;
+use wellfed_proto::device::{DeviceKind, Model};
 use wellfed_proto::trace::PAGE_MAX;
 use wellfed_sdk::hal::audio::{self, Speaker};
 use wellfed_sdk::hal::ble::{self, BleSetup, DropReason};
@@ -50,6 +51,14 @@ use wellfed_sdk::hal::ota::mailbox::{self, Request};
 use wellfed_sdk::hal::sdk::{self, ApiRecv};
 use wellfed_sdk::hal::{buzzer, clock, link, net_status, power, rng, settings, startup};
 use wellfed_sdk::storage::{TRACES_BASE, TRACES_UNITS};
+
+/// The model this image is built for: the board's, by its code. A board
+/// whose code names no model, or another kind than this feeder firmware
+/// drives, does not build.
+const MODEL: Model = match Model::from_byte(wellfed_sdk::hal::board::MODEL_CODE) {
+    Some(model) if matches!(model.kind(), DeviceKind::Feeder) => model,
+    _ => panic!("the board's model is not a feeder this firmware drives"),
+};
 
 /// What the board's own drivers record: `PLBLE1` for setup mode's link,
 /// `PLAUD1` for its speaker.
@@ -165,7 +174,7 @@ impl Platform for Plaf103 {
     }
 
     fn model(&self) -> Model {
-        Model::Plaf103
+        MODEL
     }
 
     fn build_wifi(&self) -> BuildWifi {

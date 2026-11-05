@@ -1,4 +1,4 @@
-//! The feeder's own values as text for a person: its status, settings,
+//! A device's values as text for a person: its status, settings,
 //! plans, events and samples. Both paths print them, the device API's
 //! commands and `wellfed server`'s (whose bodies are the same model
 //! values), so a value reads alike on either; `--json` prints them as the
@@ -15,9 +15,9 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use wellfed_client::history::Feed;
 use wellfed_model::{
-    Battery, Blocked, EnrollPath, Event, EventBody, FeedFault, FoodLevel, MealReminder,
-    MissedReason, Plans, Power, Pushed, Readiness, Sample, SampleValue, Settings, Source, Status,
-    Supply, TimeOfDay,
+    Battery, Blocked, CoreEvent, DeviceStatus, EnrollPath, Event, EventBody, FeedFault,
+    FeederEvent, FeederSettings, FeederStatus, FoodLevel, MealReminder, MissedReason, Plans, Power,
+    Pushed, Readiness, Sample, SampleValue, Settings, Source, Status, Supply, TimeOfDay,
 };
 
 /// The feeder's time in `zone`, with its offset so a line reads the same
@@ -61,51 +61,37 @@ pub(crate) fn fed(feed: &Feed) -> String {
     )
 }
 
-/// The status, a line a topic. A field the feeder did not report reads
-/// `not reported`.
+/// The status, a line a topic: the shared core's, with the kind's own
+/// lines after the clock. A field the device did not report reads `not
+/// reported`.
 pub(crate) fn status(status: &Status, zone: &TimeZone) -> String {
     let clock = match status.clock {
         Some(at) => time(Some(at), zone),
         None => "not set: scheduled meals hold until a sync".to_owned(),
     };
-    let panel = match status.locked {
-        Some(true) => "locked",
-        Some(false) => "unlocked",
-        None => "not reported",
-    };
-    let power = self::supply(status.supply);
 
     let mut text = format!(
         "Build {} on bank {}, boot {}, up {}\n\
-         Clock: {clock}\n\
-         Feeding: {}\n\
-         Food: {}\n",
+         Clock: {clock}\n",
         status.build,
         status.bank,
         status.boot_count,
         uptime(status.uptime_ms),
-        readiness(status.readiness),
-        food(status.food),
     );
-    if let Some(fault) = status.feed_fault {
-        // Writing to a String cannot fail.
-        let _ = writeln!(text, "Last fault: {}", feed_fault(fault));
+    match &status.device {
+        DeviceStatus::Feeder(feeder) => feeder_status(&mut text, feeder),
     }
+    // Writing to a String cannot fail.
     let _ = write!(
         text,
-        "Power: {power}\n\
-         Desiccant: {}\n\
-         Panel: {panel}\n\
-         Wi-Fi: {} dBm ({} credentials), {} link losses ({} noticed by the gateway or lease check)\n\
-         Sessions {}, settings generation {}, Wi-Fi generation {}, last event {}\n\
+        "Wi-Fi: {} dBm ({} credentials), {} link losses ({} noticed by the gateway or lease check)\n\
+         Sessions {}, Wi-Fi generation {}, last event {}\n\
          Faults {}, reset flags {:#x}",
-        status.desiccant,
         status.rssi,
         word(&status.wifi),
         status.link_losses,
         status.dns_losses,
         status.sessions,
-        status.settings_generation,
         status.wifi_generation,
         status
             .last_event
@@ -114,6 +100,37 @@ pub(crate) fn status(status: &Status, zone: &TimeZone) -> String {
         status.reset_flags,
     );
     text
+}
+
+/// A feeder's own status lines: feeding, food, its last fault, power, the
+/// desiccant, the panel and its settings generation.
+fn feeder_status(text: &mut String, feeder: &FeederStatus) {
+    let panel = match feeder.locked {
+        Some(true) => "locked",
+        Some(false) => "unlocked",
+        None => "not reported",
+    };
+
+    // Writing to a String cannot fail.
+    let _ = writeln!(
+        text,
+        "Feeding: {}\nFood: {}",
+        readiness(feeder.readiness),
+        food(feeder.food)
+    );
+    if let Some(fault) = feeder.feed_fault {
+        let _ = writeln!(text, "Last fault: {}", feed_fault(fault));
+    }
+    let _ = writeln!(
+        text,
+        "Power: {}\n\
+         Desiccant: {}\n\
+         Panel: {panel}\n\
+         Settings generation {}",
+        supply(feeder.supply),
+        feeder.desiccant,
+        feeder.settings_generation,
+    );
 }
 
 /// Whether a feed can start now, and if not why.
@@ -220,6 +237,12 @@ fn uptime(ms: u32) -> String {
 }
 
 pub(crate) fn settings(settings: &Settings) -> String {
+    match settings {
+        Settings::Feeder(settings) => feeder_settings(settings),
+    }
+}
+
+pub(crate) fn feeder_settings(settings: &FeederSettings) -> String {
     format!(
         "Generation {}: lights {} ({}), sound {} ({}), volume {}, meal reminder {}, desiccant \
          every {} days (replaced {}){}",
@@ -307,25 +330,25 @@ pub(crate) fn pushed(pushed: &Pushed, zone: &TimeZone) -> String {
 /// What an event says, without its number or time.
 pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
     match event.body {
-        EventBody::Boot { bank, reset_flags } => {
+        EventBody::Core(CoreEvent::Boot { bank, reset_flags }) => {
             format!("booted from bank {bank} (reset flags {reset_flags:#x})")
         }
-        EventBody::Lock { locked, by } => format!(
+        EventBody::Feeder(FeederEvent::Lock { locked, by }) => format!(
             "panel {} by {}",
             if locked { "locked" } else { "unlocked" },
             source(Some(by))
         ),
-        EventBody::Settings { generation, by } => {
+        EventBody::Feeder(FeederEvent::Settings { generation, by }) => {
             format!(
                 "settings changed to generation {generation} by {}",
                 source(Some(by))
             )
         }
-        EventBody::Wifi { generation, by } => format!(
+        EventBody::Core(CoreEvent::Wifi { generation, by }) => format!(
             "Wi-Fi credentials changed to generation {generation} by {}",
             source(Some(by))
         ),
-        EventBody::Enrolled { client, role, path } => {
+        EventBody::Core(CoreEvent::Enrolled { client, role, path }) => {
             let path = match path {
                 EnrollPath::Setup => "setup",
                 EnrollPath::Invite => "an invite",
@@ -334,35 +357,37 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
             };
             format!("client {client} enrolled as {} through {path}", role.code())
         }
-        EventBody::Revoked { client, by } => {
+        EventBody::Core(CoreEvent::Revoked { client, by }) => {
             format!("client {client} revoked by {}", source(Some(by)))
         }
-        EventBody::ClockSync { by, jump_ms } => {
+        EventBody::Core(CoreEvent::ClockSync { by, jump_ms }) => {
             let jump = jump_ms.map_or_else(
                 || "it was not set".to_owned(),
                 |ms| format!("moved {ms} ms"),
             );
             format!("clock set by {} ({jump})", source(Some(by)))
         }
-        EventBody::Lost { count } => {
+        EventBody::Core(CoreEvent::Lost { count }) => {
             format!("the feeder could not record {count} events; feeds among them are gone")
         }
-        EventBody::Fed { .. } => {
+        EventBody::Feeder(FeederEvent::Fed { .. }) => {
             Feed::from_event(event).map_or_else(String::new, |feed| fed(&feed))
         }
-        EventBody::FeedingBlocked {
+        EventBody::Feeder(FeederEvent::FeedingBlocked {
             reason: Some(reason),
-        } => {
+        }) => {
             format!("feeding blocked, {} ({})", reason.code(), blocked(reason))
         }
-        EventBody::FeedingBlocked { reason: None } => "feeding ready again".to_owned(),
-        EventBody::Plans { generation, by } => {
+        EventBody::Feeder(FeederEvent::FeedingBlocked { reason: None }) => {
+            "feeding ready again".to_owned()
+        }
+        EventBody::Feeder(FeederEvent::Plans { generation, by }) => {
             format!(
                 "plans changed to generation {generation} by {}",
                 source(Some(by))
             )
         }
-        EventBody::Missed { plan, due, reason } => {
+        EventBody::Feeder(FeederEvent::Missed { plan, due, reason }) => {
             let why = match reason {
                 MissedReason::Late => "more than 15 minutes late".to_owned(),
                 MissedReason::Blocked { reason } => {
@@ -375,21 +400,21 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
                 time(Some(due), zone)
             )
         }
-        EventBody::MealSoon {
+        EventBody::Feeder(FeederEvent::MealSoon {
             plan,
             due,
             minute,
             portions,
-        } => format!(
+        }) => format!(
             "meal soon: plan {plan}, {portions} portions at {} ({})",
             TimeOfDay(minute),
             time(Some(due), zone)
         ),
-        EventBody::Supply {
+        EventBody::Feeder(FeederEvent::Supply {
             adapter,
             battery,
             below_floor,
-        } => format!(
+        }) => format!(
             "supply: {}",
             supply(Supply {
                 adapter,
@@ -397,11 +422,11 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
                 below_floor,
             })
         ),
-        EventBody::DispenseRefused { reason } => format!(
+        EventBody::Feeder(FeederEvent::DispenseRefused { reason }) => format!(
             "Dispense pressed while feeding was blocked, {}: nothing started",
             reason.code()
         ),
-        EventBody::Food { level } => format!("hopper {}", word(&level)),
+        EventBody::Feeder(FeederEvent::Food { level }) => format!("hopper {}", word(&level)),
     }
 }
 
@@ -485,30 +510,32 @@ mod tests {
             dns_losses: 0,
             clock: None,
             power: None,
-            locked: Some(false),
-            settings_generation: Generation(7),
             wifi_generation: Generation(3),
             last_event: Some(1175),
             sessions: 1,
-            food: FoodLevel::Low,
-            feed_fault: Some(FeedFault {
-                feed: 128,
-                outcome: FeedOutcome::Uncertain,
-                reason: FeedReason::Interrupted,
-            }),
-            readiness: Readiness::Blocked(Blocked::Restarting),
-            desiccant: Desiccant::Remaining {
-                days: -3,
-                due: true,
-            },
-            supply: Supply {
-                adapter: Some(false),
-                battery: Battery::Reading {
-                    mv: 4_310,
-                    percent: 10,
+            device: DeviceStatus::Feeder(FeederStatus {
+                locked: Some(false),
+                settings_generation: Generation(7),
+                food: FoodLevel::Low,
+                feed_fault: Some(FeedFault {
+                    feed: 128,
+                    outcome: FeedOutcome::Uncertain,
+                    reason: FeedReason::Interrupted,
+                }),
+                readiness: Readiness::Blocked(Blocked::Restarting),
+                desiccant: Desiccant::Remaining {
+                    days: -3,
+                    due: true,
                 },
-                below_floor: Some(true),
-            },
+                supply: Supply {
+                    adapter: Some(false),
+                    battery: Battery::Reading {
+                        mv: 4_310,
+                        percent: 10,
+                    },
+                    below_floor: Some(true),
+                },
+            }),
         }
     }
 
@@ -535,7 +562,7 @@ mod tests {
     #[test]
     fn a_status_without_a_fault_says_so() {
         let mut quiet = status();
-        quiet.feed_fault = None;
+        quiet.feeder_mut().unwrap().feed_fault = None;
         quiet.clock = Some(Timestamp::from_second(1_793_100_000).unwrap());
 
         let text = super::status(&quiet, &TimeZone::UTC);
@@ -559,76 +586,78 @@ mod tests {
         let due = Timestamp::from_second(1_793_100_000).unwrap();
 
         assert_eq!(
-            event(EventBody::MealSoon {
+            event(EventBody::Feeder(FeederEvent::MealSoon {
                 plan: 3,
                 due,
                 minute: 11 * 60 + 20,
                 portions: 2
-            }),
+            })),
             "meal soon: plan 3, 2 portions at 11:20 (2026-10-27 11:20:00 +00:00)"
         );
         assert_eq!(
-            event(EventBody::Missed {
+            event(EventBody::Feeder(FeederEvent::Missed {
                 plan: 0,
                 due,
                 reason: MissedReason::Blocked {
                     reason: Blocked::Battery
                 }
-            }),
+            })),
             "plan 0's meal due 2026-10-27 11:20:00 +00:00 missed: blocked for 15 minutes, battery"
         );
         assert_eq!(
-            event(EventBody::FeedingBlocked {
+            event(EventBody::Feeder(FeederEvent::FeedingBlocked {
                 reason: Some(Blocked::Restarting)
-            }),
+            })),
             "feeding blocked, restarting (a restart is coming within seconds)"
         );
         assert_eq!(
-            event(EventBody::FeedingBlocked { reason: None }),
+            event(EventBody::Feeder(FeederEvent::FeedingBlocked {
+                reason: None
+            })),
             "feeding ready again"
         );
         assert_eq!(
-            event(EventBody::Food {
+            event(EventBody::Feeder(FeederEvent::Food {
                 level: FoodLevel::Low
-            }),
+            })),
             "hopper low"
         );
         assert_eq!(
-            event(EventBody::Supply {
+            event(EventBody::Feeder(FeederEvent::Supply {
                 adapter: Some(true),
                 battery: Battery::Absent,
                 below_floor: None
-            }),
+            })),
             "supply: adapter; no batteries"
         );
         assert_eq!(
-            event(EventBody::Enrolled {
+            event(EventBody::Core(CoreEvent::Enrolled {
                 client: wellfed_model::Hex([0xaa, 0xbb, 0xcc, 0xdd]),
                 role: wellfed_model::ClientRole::UpdateSigner,
                 path: EnrollPath::Press,
-            }),
+            })),
             "client aabbccdd enrolled as update_signer through a press on the panel"
         );
         assert_eq!(
-            event(EventBody::DispenseRefused {
+            event(EventBody::Feeder(FeederEvent::DispenseRefused {
                 reason: Blocked::Feeding
-            }),
+            })),
             "Dispense pressed while feeding was blocked, feeding: nothing started"
         );
         assert_eq!(
-            event(EventBody::Lock {
+            event(EventBody::Feeder(FeederEvent::Lock {
                 locked: true,
                 by: Source::Client {
                     client: Hex([0xab, 0xcd, 1, 2])
                 }
-            }),
+            })),
             "panel locked by client abcd0102"
         );
     }
 
     #[test]
     fn an_uncertain_feed_event_reads_as_a_range() {
-        let text = event(EventBody::Fed {
+        let text = event(EventBody::Feeder(FeederEvent::Fed {
             feed: 130,
             requested: 3,
             completed: 0,
@@ -636,7 +665,7 @@ mod tests {
             reason: FeedReason::Interrupted,
             hopper: FoodLevel::Unread,
             by: Source::Feeder,
-        });
+        }));
 
         assert_eq!(
             text,
@@ -650,9 +679,9 @@ mod tests {
             epoch: 1,
             seq: 1175,
             at: None,
-            body: EventBody::Food {
+            body: EventBody::Feeder(FeederEvent::Food {
                 level: FoodLevel::Present,
-            },
+            }),
         });
         let gap = Pushed::Gap(Gap {
             epoch: 1,
@@ -672,7 +701,7 @@ mod tests {
 
     #[test]
     fn settings_and_plans_read_as_lines() {
-        let settings = Settings {
+        let settings = Settings::Feeder(FeederSettings {
             generation: Generation(7),
             lights: true,
             sound: false,
@@ -686,7 +715,7 @@ mod tests {
             desiccant_replaced: None,
             meal_reminder: MealReminder::Before { minutes: 5 },
             writable: true,
-        };
+        });
         assert_eq!(
             super::settings(&settings),
             "Generation 7: lights on (always), sound off (08:00-21:00), volume 40, meal reminder \

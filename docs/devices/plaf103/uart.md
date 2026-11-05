@@ -15,6 +15,8 @@ The board has a three-hole header, `CON5`, labelled **RX, TX, GND**.
 
 Pad positions can differ. Go by the silkscreen and a measured ground on your own board.
 
+The table below is for a bare USB serial adapter, whose labels name its own pins, so the lines cross. The Wellfed Bench board's header names the feeder's pins instead, so it is wired label to label, TX to TX ([bench hardware](../../development/bench-hardware.md#wire-tx-to-tx)).
+
 | Feeder | Receive-only | Two-way |
 | --- | --- | --- |
 | GND | Adapter GND | Adapter GND |

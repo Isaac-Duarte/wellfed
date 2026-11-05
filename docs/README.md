@@ -32,6 +32,7 @@ The firmware docs describe Wellfed's own replacement, which isn't tied to one de
 | [QA firmware](firmware/qa.md) | The guided self-test image |
 | [Resource budget](firmware/resource-budget.md) | Flash, RAM and task limits of the product image |
 | [Device layer](firmware/device-layer.md) | Where the board's assumptions live, so a second model can be added |
+| [Device kinds and models](firmware/device-kinds.md) | How the code splits by chip, board, kind and model, and how a fountain would slot in |
 | [Bring-up probes](firmware/bring-up-probes.md) | The bounded tests that first brought each piece of hardware up |
 | [The server](server/README.md) | What the optional server adds, [running it](server/running.md), and [how it's built](server/design.md) |
 | [well-fed.dev](web/site.md) | The project's landing page |
@@ -82,6 +83,7 @@ Facts about a **chip** hold for every board built on it. Facts about a **device*
 | [TypeScript standard](development/typescript.md) | Rules for the web frontends |
 | [SDK builds](development/firmware-builds.md) | Full firmware images with the vendor SDK |
 | [Stock server](development/stock-server.md) | The bench's server for stock 1.1.15 |
+| [Bench hardware](development/bench-hardware.md) | The bench board's connectors, feeder wiring and the order of a flash session |
 | [Rust flash client](development/rust-flash.md) | Reading and writing flash over UART |
 | [UART development updates](development/uart-development.md) | Faster region-scoped updates during development |
 | [Optional fixtures](development/fixtures.md) | Checks that need private binary inputs |

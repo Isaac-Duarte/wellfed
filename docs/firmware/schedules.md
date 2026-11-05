@@ -113,7 +113,7 @@ Running an occurrence takes two steps:
 1. **The claim.** The writer saves the occurrence, the plan's slot and the feed journal's newest number. The claimed occurrence counts as the plan's mark from then on.
 2. **The feed.** Only once the claim is on flash does the loop hand the feed to the feeding owner. Every other feed waits meanwhile, so the claimed feed is the very next number the journal reserves. A storage write still in its way delays the feed for at most 3 s; refused past that, the occurrence is given back and tried again, like any refused feed.
 
-A cut between the two leaves a claim whose feed was never reserved. The next boot finds the journal where the claim left it, records the occurrence `interrupted`, and does not feed. A cut during the feed is the journal's usual case: the next boot resolves it `uncertain` and never runs it again. The event names the plan, since the claim says the feed was the plan's.
+A cut between the two leaves a claim whose feed was never reserved. The next boot finds the journal where the claim left it, records the occurrence `interrupted`, and does not feed. A cut during the feed is the journal's usual case: the next boot resolves it `uncertain` and never runs it again. The event names the plan, since the claim says the feed was the plan's, and carries the occurrence's due time. The boot resolves the feed before any source has set the clock after a power cut, and the claim is the only time it still has; the feed began within the grace after it.
 
 If the feeding owner refuses the claimed feed (a join began in between, say), the loop gives the occurrence back and claims it again 5 seconds later, until the 15 minutes run out.
 

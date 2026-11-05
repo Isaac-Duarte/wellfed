@@ -8,8 +8,10 @@
 //! client adds conditionally are skipped when absent.
 
 use serde::{Deserialize, Serialize};
+use wellfed_proto::device::Model;
 
-/// The transaction a plan or binding authorizes.
+/// The transaction a plan or binding authorizes. Each names its model, so a
+/// plan reviewed against one model's pins never binds a session on another.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Kind {
     #[serde(rename = "plaf103_bank1_development_update")]
@@ -20,6 +22,29 @@ pub enum Kind {
     GiveWay,
     #[serde(rename = "original_stock_bank1_recovery")]
     StockRecovery,
+    /// A candidate image into the fountain's bank 1, the only bank it writes.
+    #[serde(rename = "plwf106_bank1_development_update")]
+    FountainBank1Update,
+    /// Clearing the fountain's bank-1 marker so its loader boots stock bank 0.
+    #[serde(rename = "plwf106_bank1_give_way")]
+    FountainGiveWay,
+    /// The fountain's original bank 1, put back from its pinned backup.
+    #[serde(rename = "plwf106_original_bank1_recovery")]
+    FountainStockRecovery,
+}
+
+impl Kind {
+    /// The model whose pins this transaction is planned against.
+    pub const fn model(self) -> Model {
+        match self {
+            Self::Bank1Update | Self::Bank0Update | Self::GiveWay | Self::StockRecovery => {
+                Model::Plaf103
+            }
+            Self::FountainBank1Update | Self::FountainGiveWay | Self::FountainStockRecovery => {
+                Model::Plwf106
+            }
+        }
+    }
 }
 
 /// The executables a plan was prepared by, by name.
@@ -54,6 +79,13 @@ pub struct UpdateBindings {
     pub rom_report_sha256: String,
     pub bounded_read_report_sha256: String,
     pub tool_sha256: ToolHashes,
+    /// A fountain update finished with `interrupted`: the SHA-256 of the
+    /// stopped session's reviewed plan, which the finish was checked
+    /// against.
+    // `default` because only that finish carries the field, not to read an
+    // older format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped_plan_sha256: Option<String>,
 }
 
 /// What a give-way's inspection and plan are bound to.
@@ -62,7 +94,10 @@ pub struct GiveWayBindings {
     pub schema_version: u32,
     pub kind: Kind,
     pub port: String,
-    pub fallback_review_sha256: String,
+    /// The frozen review of the image bank 0 must hold. `null` for the
+    /// fountain, whose fallback is its stock bank 0 as the pinned backup
+    /// holds it (`baseline_sha256`).
+    pub fallback_review_sha256: Option<String>,
     pub baseline_sha256: String,
     pub rom_report_sha256: String,
     pub bounded_read_report_sha256: String,
@@ -112,6 +147,13 @@ pub struct DevelopmentPlan {
     /// Present (and true) only for a bank-1 marker restore.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub restore_marker: bool,
+    /// The fountain only: the bytes sharing an erase block with bank 1
+    /// (its FTL), as the inspection read them before any write. Every
+    /// later read of them in the session must hash to this.
+    // `default` because a PLAF103 plan never carries the field, not to read
+    // an older format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub neighbors_sha256: Option<String>,
 }
 
 /// Clearing bank 1's first marker byte so the loader falls back to bank 0.
@@ -121,7 +163,9 @@ pub struct GiveWayPlan {
     pub kind: Kind,
     pub bank: u8,
     pub offset: u64,
-    pub fallback_ota_sha256: String,
+    /// The reviewed fallback OTA image. `null` for the fountain, whose bank 0
+    /// must equal its pinned backup's (`bank0_region_sha256`).
+    pub fallback_ota_sha256: Option<String>,
     pub bank0_region_sha256: String,
     pub before_sha256: String,
     pub after_sha256: String,
@@ -178,6 +222,7 @@ mod tests {
             scope: "x".into(),
             other_bank_sha256: None,
             restore_marker: false,
+            neighbors_sha256: None,
         };
 
         let text = String::from_utf8(canonical_of(&plan).unwrap()).unwrap();

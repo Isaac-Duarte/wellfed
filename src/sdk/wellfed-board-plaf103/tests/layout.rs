@@ -110,10 +110,7 @@ fn pins_are_pinned() {
         [0, 2, 4, 54]
     );
     assert_eq!(pins::AMP, 55);
-    assert_eq!(
-        [pins::ADC_CURRENT, pins::ADC_BATTERY, pins::ADC_SUPPLY],
-        [4, 5, 10]
-    );
+    assert_eq!([pins::ADC_CURRENT, pins::ADC_BATTERY], [4, 5]);
 
     assert_eq!(pins::MOTOR_MASK, 0x6000);
     assert_eq!([pins::MOTOR_A_BIT, pins::MOTOR_B_BIT], [1 << 13, 1 << 14]);

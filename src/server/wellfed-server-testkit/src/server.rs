@@ -4,6 +4,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 
 use std::sync::Arc;
+use wellfed_api::FeederId;
 use wellfed_server::{Hosts, TrustedProxies};
 use wellfed_server_client::{Client, Url};
 
@@ -115,6 +116,13 @@ impl TestServer {
     /// The service's data directory.
     pub fn store(&self) -> &TempStore {
         self.service.store()
+    }
+
+    /// Wait until the server holds the feeder's backlog, as
+    /// [`TestService::caught_up`] does: a stream position taken before it
+    /// may precede the backlog's events.
+    pub async fn caught_up(&self, id: FeederId) {
+        self.service.caught_up(id).await;
     }
 
     /// End the open streams, stop serving, and stop the service, keeping

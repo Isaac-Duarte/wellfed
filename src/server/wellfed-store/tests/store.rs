@@ -9,9 +9,10 @@ use jiff::Timestamp;
 use tempfile::TempDir;
 use uuid::Uuid;
 use wellfed_api::{
-    Blocked, ClientRole, Desiccant, EventBody, EventKind, FeederId, FeederStatus, FoodLevel,
-    Generation, Household, MealReminder, Readiness, Role, Settings, Source, TimeFormat, Units,
-    UserId, WifiSource, Window,
+    Blocked, ClientRole, CoreEvent, Desiccant, DeviceKind, DeviceStatus, EventBody, EventKind,
+    FeederEvent, FeederId, FeederSettings, FeederStatus, FoodLevel, Generation, Home, HomeId,
+    MealReminder, Model, Readiness, Role, Settings, Source, Status, TimeFormat, Units, UserId,
+    WifiSource, Window,
 };
 use wellfed_store::{
     Change, Error, FeederRow, NewEvent, NewFeeder, NewUser, SealedKey, Store, Synced,
@@ -47,8 +48,11 @@ fn user(name: &str) -> NewUser<'_> {
     }
 }
 
-fn household() -> Household {
-    Household {
+const HOME: HomeId = HomeId(Uuid::from_u128(0x40));
+
+fn home() -> Home {
+    Home {
+        id: HOME,
         name: "Home".into(),
         units: Units::Grams,
         time_format: TimeFormat::H24,
@@ -57,10 +61,16 @@ fn household() -> Household {
 }
 
 async fn adopt(store: &Store, identity: u8) -> FeederId {
+    // Every device belongs to the home.
+    if store.home().await.unwrap().is_none() {
+        store.create_home(&home(), at(0)).await.unwrap();
+    }
     let id = FeederId(fresh_id());
     store
         .insert_feeder(NewFeeder {
             id,
+            home: HOME,
+            model: Model::Plaf103,
             identity: [identity; 32],
             name: "kitchen",
             role: ClientRole::Server,
@@ -83,14 +93,14 @@ const EPOCH: u32 = 7;
 /// keeps as given.
 fn event(seq: u64, kind: EventKind) -> NewEvent<'static> {
     let body = match kind {
-        EventKind::Boot => EventBody::Boot {
+        EventKind::Boot => EventBody::Core(CoreEvent::Boot {
             bank: 1,
             reset_flags: 0,
-        },
-        EventKind::Lock => EventBody::Lock {
+        }),
+        EventKind::Lock => EventBody::Feeder(FeederEvent::Lock {
             locked: true,
             by: Source::Panel,
-        },
+        }),
         other => panic!("no test body for {other:?}"),
     };
     NewEvent {
@@ -108,17 +118,19 @@ async fn only_the_first_owner_is_created_by_setup() {
     let (_dir, store) = fresh().await;
     assert!(!store.users_exist().await.unwrap());
 
-    assert!(
+    assert_eq!(
         store
-            .create_first_owner(user("ada"), &household())
+            .create_first_owner(user("ada"), &home())
             .await
-            .unwrap()
+            .unwrap(),
+        Some(HOME)
     );
     assert!(
-        !store
-            .create_first_owner(user("bob"), &household())
+        store
+            .create_first_owner(user("bob"), &home())
             .await
             .unwrap()
+            .is_none()
     );
 
     assert!(store.users_exist().await.unwrap());
@@ -134,7 +146,7 @@ async fn a_session_is_used_idles_out_or_logs_out() {
     let (_dir, store) = fresh().await;
     let new = user("ada");
     let id = new.id;
-    store.create_first_owner(new, &household()).await.unwrap();
+    store.create_first_owner(new, &home()).await.unwrap();
     let (live, idle) = ([1; 32], [2; 32]);
     store
         .create_session(&live, id, at(5_000), "$argon2id$hash")
@@ -166,24 +178,53 @@ async fn a_session_is_used_idles_out_or_logs_out() {
 }
 
 #[tokio::test]
-async fn setup_writes_the_household_with_the_owner() {
+async fn the_one_home_keeps_its_id_and_a_change_to_another_is_refused() {
     let (_dir, store) = fresh().await;
-    assert_eq!(store.household().await.unwrap(), None);
+    assert_eq!(store.create_home(&home(), at(0)).await.unwrap(), HOME);
+
+    // A second write takes on the stored home: its id is the one answered.
+    let other = Home {
+        id: HomeId(Uuid::from_u128(0x41)),
+        zone: "America/Denver".into(),
+        ..home()
+    };
+    assert_eq!(store.create_home(&other, at(1)).await.unwrap(), HOME);
+    let stored = store.home().await.unwrap().unwrap();
+    assert_eq!((stored.id, stored.zone.as_str()), (HOME, "America/Denver"));
+
+    // A change naming a home the store does not hold writes nothing.
+    let refused = store
+        .set_home(&Home {
+            zone: "UTC".into(),
+            ..other
+        })
+        .await;
+    assert!(
+        matches!(refused, Err(Error::Missing("home"))),
+        "{refused:?}"
+    );
+    assert_eq!(store.home().await.unwrap(), Some(stored));
+}
+
+#[tokio::test]
+async fn setup_writes_the_home_with_the_owner() {
+    let (_dir, store) = fresh().await;
+    assert_eq!(store.home().await.unwrap(), None);
 
     store
-        .create_first_owner(user("ada"), &household())
+        .create_first_owner(user("ada"), &home())
         .await
         .unwrap();
-    assert_eq!(store.household().await.unwrap(), Some(household()));
+    assert_eq!(store.home().await.unwrap(), Some(home()));
 
-    let changed = Household {
+    let changed = Home {
         units: Units::Ounces,
         time_format: TimeFormat::H12,
         zone: "America/Denver".into(),
-        ..household()
+        ..home()
     };
-    store.set_household(&changed).await.unwrap();
-    assert_eq!(store.household().await.unwrap(), Some(changed));
+    store.set_home(&changed).await.unwrap();
+    assert_eq!(store.home().await.unwrap(), Some(changed));
 }
 
 #[tokio::test]
@@ -191,7 +232,7 @@ async fn users_are_listed_changed_and_deleted_but_never_the_last_owner() {
     let (_dir, store) = fresh().await;
     let ada = user("ada");
     let ada_id = ada.id;
-    store.create_first_owner(ada, &household()).await.unwrap();
+    store.create_first_owner(ada, &home()).await.unwrap();
     let bob = NewUser {
         role: Role::Member,
         expires: Some(at(50_000)),
@@ -267,7 +308,7 @@ async fn ending_a_users_sessions_leaves_the_others() {
     let (_dir, store) = fresh().await;
     let ada = user("ada");
     let ada_id = ada.id;
-    store.create_first_owner(ada, &household()).await.unwrap();
+    store.create_first_owner(ada, &home()).await.unwrap();
     let bob = user("bob");
     let bob_id = bob.id;
     store.create_user(bob).await.unwrap();
@@ -312,6 +353,8 @@ async fn a_feeder_is_adopted_once_and_reads_back_whole() {
     let again = store
         .insert_feeder(NewFeeder {
             id: FeederId(fresh_id()),
+            home: HOME,
+            model: Model::Plaf103,
             identity: [0xaa; 32],
             name: "again",
             role: ClientRole::Member,
@@ -328,6 +371,9 @@ async fn a_feeder_is_adopted_once_and_reads_back_whole() {
     store.set_address(id, "192.0.2.8:4747").await.unwrap();
     let want = FeederRow {
         id,
+        home: HOME,
+        kind: DeviceKind::Feeder,
+        model: Model::Plaf103,
         identity: [0xaa; 32],
         name: "kitchen".into(),
         role: ClientRole::Server,
@@ -439,7 +485,7 @@ async fn the_cached_status_and_settings_read_back() {
     let id = adopt(&store, 2).await;
     assert_eq!(store.state(id).await.unwrap(), Default::default());
 
-    let settings = Settings {
+    let settings = Settings::Feeder(FeederSettings {
         generation: Generation(4),
         lights: true,
         sound: false,
@@ -453,9 +499,9 @@ async fn the_cached_status_and_settings_read_back() {
         desiccant_replaced: Some(jiff::civil::date(2026, 10, 28)),
         meal_reminder: MealReminder::Before { minutes: 5 },
         writable: true,
-    };
+    });
     store.record_settings(id, &settings, at(100)).await.unwrap();
-    let status = FeederStatus {
+    let status = Status {
         build: "feeder-sim".into(),
         bank: 1,
         uptime_ms: 5,
@@ -468,23 +514,25 @@ async fn the_cached_status_and_settings_read_back() {
         dns_losses: 0,
         clock: Some(at(1_700_000_000_000)),
         power: None,
-        locked: Some(true),
-        settings_generation: Generation(4),
         wifi_generation: Generation(0),
         last_event: Some(9),
         sessions: 1,
-        food: FoodLevel::Low,
-        feed_fault: None,
-        readiness: Readiness::Blocked(Blocked::Joining),
-        desiccant: Desiccant::Remaining {
-            days: -2,
-            due: true,
-        },
-        supply: wellfed_api::Supply {
-            adapter: Some(true),
-            battery: wellfed_api::Battery::Absent,
-            below_floor: None,
-        },
+        device: DeviceStatus::Feeder(FeederStatus {
+            locked: Some(true),
+            settings_generation: Generation(4),
+            food: FoodLevel::Low,
+            feed_fault: None,
+            readiness: Readiness::Blocked(Blocked::Joining),
+            desiccant: Desiccant::Remaining {
+                days: -2,
+                due: true,
+            },
+            supply: wellfed_api::Supply {
+                adapter: Some(true),
+                battery: wellfed_api::Battery::Absent,
+                below_floor: None,
+            },
+        }),
     };
     store.record_status(id, &status, at(200)).await.unwrap();
 
@@ -499,7 +547,7 @@ async fn reopening_keeps_the_data_and_runs_no_migration_again() {
     let path = dir.path().join("server.db");
     let store = Store::open(&path, at(0)).await.unwrap();
     store
-        .create_first_owner(user("ada"), &household())
+        .create_first_owner(user("ada"), &home())
         .await
         .unwrap();
     store.close().await;

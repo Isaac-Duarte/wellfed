@@ -3,7 +3,7 @@
 This is the RP2040 firmware for the [Wellfed Bench board](../../hardware/bench/README.md). Over USB the board enumerates as two serial ports that stand in for the relay bench's FT232R UART adapter and SH-UR04A relay board. This page covers building and flashing the firmware, the relay port's protocol, and the checks to run on the first boards.
 
 > [!NOTE]
-> The firmware has run on one Rev B board (November 2, 2026): checklist steps 1–4 below pass with nothing attached to the feeder side. That run found replies of exactly 64 bytes held back by the host until the next packet, now ended with a zero-length packet on both ports (confirmed on the relay port; the bridge's needs a feeder). Steps 5–7 need a feeder and have not run. The bench tools do not know the board yet.
+> The firmware has run on one Rev B board (November 2, 2026). Checklist steps 1–4 below passed with nothing attached to the feeder side. That run found replies of exactly 64 bytes held back by the host until the next packet, now ended with a zero-length packet on both ports. The same day, with a stock feeder attached, steps 5–7 passed apart from the D-cell refusal, and `wellfed-flash` read the whole flash through the bridge. The bench tools drive it as the relay board. How to wire a feeder to it, TX to TX, is on the [bench hardware](../../../docs/development/bench-hardware.md) page.
 
 | USB interface | by-id suffix | Replaces | Job |
 | --- | --- | --- | --- |
@@ -58,7 +58,7 @@ printf 'AT+BOOTSEL\r\n' > /dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-i
    }
    ```
 
-   `baseline` is this feeder's full flash read and `rom_report` its ROM inspection. A new feeder gets both by hand first: `wellfed-flash read inspect-rom` while stock runs (it fails if a stock log line lands inside a reply, so run it while the feeder is quiet), then RECOVER's long press into the loader, `wellfed-flash read small` and `read full`.
+   `baseline` is this feeder's full flash read and `rom_report` its ROM inspection. A new feeder gets both by hand first: `wellfed-flash read inspect-rom` while stock runs (it fails if a stock log line lands inside a reply, so run it while the feeder is quiet), then RECOVER's long press into the loader, `wellfed-flash read small --device plaf103` and `read full --device plaf103`. Those two refuse a ROM report of another model's console.
 
 3. On Linux your user needs serial access: the `uucp` group on Arch, `dialout` on Debian and Ubuntu. macOS needs no group.
 

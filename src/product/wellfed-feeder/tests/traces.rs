@@ -5,7 +5,7 @@
 
 use wellfed_core::feed::controller::MotorCommand;
 use wellfed_core::feed::observe::{Beams, Observation};
-use wellfed_feeder::store::traces::{self, MAX_UNITS, TraceRing};
+use wellfed_device::store::traces::{self, MAX_UNITS, TraceRing};
 use wellfed_feeder::trace::{DriveFigures, Recorder};
 use wellfed_proto::api::{
     CurrentUnit, EventBody, FeedOutcome, FeedReason, FoodLevel, Refusal, Source, TraceSummary,

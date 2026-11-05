@@ -1389,6 +1389,7 @@ impl Bench {
             return Ok(None);
         }
         let mut query = vec!["source-id".to_string(), "--image".into()];
+        query.extend(self.device_args());
         query.extend(args.image().args());
         let answer = self.tools.build_query(&query)?;
         let identity = answer.stdout.trim();
@@ -1422,6 +1423,7 @@ impl Bench {
         let mut build = ["build", "--profile", "firstboot"]
             .map(String::from)
             .to_vec();
+        build.extend(self.device_args());
         build.extend(args.image().args());
         timing.ran = true;
         let (code, took) = self.run_step(BUILD_STEPS[0], &build)?;

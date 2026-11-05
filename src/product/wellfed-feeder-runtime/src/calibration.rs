@@ -17,7 +17,7 @@ use wellfed_hal::cell::TaskCell;
 use wellfed_hal::sdk::IrqGuard;
 
 /// The calibration's slots within the storage region.
-pub const CALIBRATION_BASE: u32 = wellfed_hal::plaf103::storage::CALIBRATION.first;
+pub const CALIBRATION_BASE: u32 = wellfed_hal::board::storage::CALIBRATION.first;
 
 /// Who holds `PENDING`, as `STATE` stores it.
 #[derive(Clone, Copy, PartialEq, Eq)]

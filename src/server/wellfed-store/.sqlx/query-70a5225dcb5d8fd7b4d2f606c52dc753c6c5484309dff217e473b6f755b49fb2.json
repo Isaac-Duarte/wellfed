@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO homes (id, name, units, time_format, zone, created_ms)\n           VALUES (?, ?, ?, ?, ?, ?)\n           ON CONFLICT (single) DO UPDATE SET name = excluded.name, units = excluded.units,\n               time_format = excluded.time_format, zone = excluded.zone\n           RETURNING id AS \"id: Uuid\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob",
+        "origin": {
+          "Table": {
+            "table": "homes",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "70a5225dcb5d8fd7b4d2f606c52dc753c6c5484309dff217e473b6f755b49fb2"
+}

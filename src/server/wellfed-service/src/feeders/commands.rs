@@ -5,13 +5,15 @@
 
 use serde::Serialize;
 use wellfed_api::{
-    CommandKind, CommandOutcome, ErrorCode, FeederDetail, FeederId, FeederRefusal, Generation,
-    LockRequest, Settings, SettingsPatch, StatusSnapshot,
+    CommandKind, CommandOutcome, ErrorCode, FeederDetail, FeederId, FeederRefusal,
+    FeederSettingsPatch, Generation, LockRequest, Settings, StatusSnapshot,
 };
-use wellfed_model::{Answer, DESICCANT_DAYS_MAX, DESICCANT_DAYS_MIN, Op, Window};
+use wellfed_model::{Answer, DESICCANT_DAYS_MAX, DESICCANT_DAYS_MIN, DeviceKind, Op, Window};
 
 use crate::feeders::journal::Write;
-use crate::{Caller, Error, IdempotencyKey, InternalError, Invalid, RequestId, Result, Service};
+use crate::{
+    Caller, Error, FeederError, IdempotencyKey, InternalError, Invalid, RequestId, Result, Service,
+};
 
 /// A command sent to a feeder, and its answer.
 #[derive(Debug, thiserror::Error)]
@@ -44,7 +46,7 @@ impl CommandError {
 #[derive(Serialize)]
 struct SettingsChange {
     base: Generation,
-    changes: SettingsPatch,
+    changes: FeederSettingsPatch,
 }
 
 impl Service {
@@ -106,7 +108,7 @@ impl Service {
         caller: &Caller,
         id: FeederId,
         base: Generation,
-        patch: SettingsPatch,
+        patch: FeederSettingsPatch,
         key: Option<IdempotencyKey>,
     ) -> Result<Settings> {
         if patch.volume.is_some_and(|volume| volume > 100) {
@@ -244,19 +246,26 @@ impl Service {
         Ok(settings)
     }
 
-    /// Whether the device's open session serves `op` ([`Op::kind`]):
-    /// another kind's op is never sent.
-    pub(crate) fn serves(&self, id: FeederId, op: &Op) -> Result<()> {
-        match self.mirror.kind(id) {
-            None => Err(CommandError::Offline.into()),
-            Some(served) if op.kind().is_none_or(|kind| kind == served) => Ok(()),
-            Some(_) => Err(Error::Refused(FeederRefusal::Unavailable)),
+    /// Whether the device serves ops of `kind` ([`Op::kind`], `None` for
+    /// the shared core's), by the kind stored at its adoption: another
+    /// kind's op is refused [`FeederError::OtherKind`] before anything is
+    /// journaled or sent, online or not.
+    pub(crate) async fn serves(&self, id: FeederId, kind: Option<DeviceKind>) -> Result<()> {
+        let row = self.row(id).await?;
+        match kind {
+            Some(needs) if needs != row.kind => Err(FeederError::OtherKind {
+                device: row.kind,
+                needs,
+            }
+            .into()),
+            _ => Ok(()),
         }
     }
 
-    /// Send a read to the feeder through the mirror and wait for its
-    /// answer.
+    /// Send a read to the device through the mirror and wait for its
+    /// answer, once its kind serves the op.
     pub(crate) async fn ask(&self, id: FeederId, request: RequestId, op: Op) -> Result<Answer> {
+        self.serves(id, op.kind()).await?;
         Ok(self.mirror.ask(id, request, op).await?)
     }
 }

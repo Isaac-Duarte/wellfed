@@ -8,6 +8,7 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/wifi/networks.dart';
 
 import 'fakes.dart';
 
@@ -48,6 +49,9 @@ Card fullCard() => fakeCard(
     generation: 1,
     writable: true,
     zone: 'MST7MDT,M3.2.0,M11.1.0',
+    zoneNow: const ZoneView(abbreviation: 'MST', offsetS: -7 * 3600, seasonal: true),
+    phoneZone: 'America/Denver',
+    sameAsPhone: true,
     ntp: const NtpView.gateway(port: 123),
     syncs: 4,
     last: TimeSource.ntp,
@@ -74,6 +78,19 @@ Card fullCard() => fakeCard(
     writable: true,
   ),
 );
+
+/// What the fixture's phone hears: its own network on both bands, two
+/// neighbours, an open network, and one on 5 GHz alone.
+FakeFeederPorts fixturePhone() => FakeFeederPorts()
+  ..network = '"Home"'
+  ..scan = const NetworksSeen([
+    SeenNetwork(ssid: 'Home', frequencyMhz: 2437, level: -55, secured: true),
+    SeenNetwork(ssid: 'Home', frequencyMhz: 5180, level: -48, secured: true),
+    SeenNetwork(ssid: 'Neighbour 2.4', frequencyMhz: 2412, level: -68, secured: true),
+    SeenNetwork(ssid: 'Garden', frequencyMhz: 2462, level: -78, secured: true),
+    SeenNetwork(ssid: 'Library guest', frequencyMhz: 2437, level: -74, secured: false),
+    SeenNetwork(ssid: 'Neighbour 5G', frequencyMhz: 5745, level: -62, secured: true),
+  ]);
 
 /// The rest of what the full feeder says when asked: two phones, a
 /// calibrated 12 g portion and a recorded 4 s meal call.
@@ -106,9 +123,9 @@ void answerAsFull(FakeSession session) => session.answering = (request) async =>
 };
 
 /// One feeder's controller, its session opened.
-Future<(FeederController, FakeSession)> oneFeeder(WidgetTester tester) async {
+Future<(FeederController, FakeSession)> oneFeeder(WidgetTester tester, {FakeFeederPorts? phone}) async {
   final book = FakeBook()..feeders = [kitchen];
-  final ports = FakeFeederPorts();
+  final FakeFeederPorts ports = phone ?? FakeFeederPorts();
   final feeder = FeederController(book, ports, kitchen);
   addTearDown(feeder.dispose);
   await tester.pump();

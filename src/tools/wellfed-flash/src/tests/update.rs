@@ -68,6 +68,7 @@ fn the_cli_refuses_an_unpinned_helper_before_any_serial_access() {
         bank: 1,
         restore_marker: false,
         interrupted: false,
+        stopped_session: None,
     };
 
     // A synthetic image is not the pinned stock image.

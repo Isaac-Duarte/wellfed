@@ -6,6 +6,8 @@ This page shows how we reach the PLWF106's console and the ROM's download mode o
 
 The main board has a four-pin header labelled **GND, TX, RX, 3V3**.
 
+The table below is for a bare USB serial adapter. On the Wellfed Bench board, wire label to label (TX to TX, RX to RX, GND to GND), and leave 3V3 unconnected ([bench hardware](../../development/bench-hardware.md#plwf106)).
+
 | Fountain | Receive-only | Two-way |
 | --- | --- | --- |
 | GND | Adapter GND | Adapter GND |

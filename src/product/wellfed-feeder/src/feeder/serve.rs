@@ -46,11 +46,12 @@ use super::events;
 use super::feeding;
 use super::lock::LockBox;
 use super::owner::{self, POLL_MS};
-use super::platform::{Accepted, Boot, Datagram, Platform, Received, TaskCount, TaskStack};
+use super::platform::{Boot, Platform, TaskCount, TaskStack};
 use super::time::{self, Time};
 use crate::stats::Keeper;
-use crate::store::events::Read;
-use crate::update as wire;
+use wellfed_device::io::{Accepted, Datagram, Received};
+use wellfed_device::store::events::Read;
+use wellfed_device::update as wire;
 use wellfed_device_api::mailbox::{
     Calibration, CalibrationResult, CallChange, CallClip, CallPlay, CallResult, CallView,
     ClientChange, KeyResult, LockFields, LockResult, NtpResult, Origin, PlansChange, PlansResult,

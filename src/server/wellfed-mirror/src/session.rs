@@ -27,7 +27,7 @@ use tokio::time::Instant;
 use tracing::{debug, info, warn};
 use wellfed_api::Connection as Link;
 use wellfed_connect::{Connection, Cursor, Received, Resume};
-use wellfed_model::{Answer, Op, Refusal, TimeChanges};
+use wellfed_model::{Answer, Model, Op, Refusal, TimeChanges};
 
 use crate::RandomFailed;
 use crate::lanes::{Lane, Lanes};
@@ -54,6 +54,8 @@ pub(crate) enum Failure {
     Random(#[from] RandomFailed),
     #[error("the feeder sent a value that does not encode")]
     Encode,
+    #[error("the device welcomed as a {}, not the {} it was adopted as", welcomed.name(), adopted.name())]
+    OtherModel { adopted: Model, welcomed: Model },
 }
 
 impl From<wellfed_store::Error> for End {
@@ -152,6 +154,14 @@ impl Task {
         let Some(row) = self.shared.store.feeder(self.id).await? else {
             return Err(End::Cancelled);
         };
+        // A device is the model it was adopted as. One welcomed as another
+        // is not the device the server holds: nothing is read or sent.
+        if connection.model() != row.model {
+            return Err(End::Failed(Failure::OtherModel {
+                adopted: row.model,
+                welcomed: connection.model(),
+            }));
+        }
         let from = row.synced.map(|synced| Cursor {
             epoch: synced.epoch,
             seq: synced.seq,

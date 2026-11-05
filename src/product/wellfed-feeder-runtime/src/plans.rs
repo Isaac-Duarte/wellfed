@@ -17,7 +17,7 @@ use wellfed_hal::cell::TaskCell;
 use wellfed_hal::sdk::IrqGuard;
 
 /// The plans' slots within the storage region.
-pub const PLANS_BASE: u32 = wellfed_hal::plaf103::storage::PLANS.first;
+pub const PLANS_BASE: u32 = wellfed_hal::board::storage::PLANS.first;
 
 /// Who holds `PENDING`, as `STATE` stores it.
 #[derive(Clone, Copy, PartialEq, Eq)]

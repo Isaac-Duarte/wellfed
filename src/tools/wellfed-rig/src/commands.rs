@@ -30,6 +30,7 @@ use wellfed_formats::bench::progress::{BenchCommand, Status};
 use wellfed_formats::bench::{CAPTURES, Config, Paths, plain_name, relative};
 use wellfed_formats::require;
 use wellfed_formats::review::{ImageKind, ImageReview};
+use wellfed_proto::device::Model;
 use wellfed_relay::{POWER, Relay, STRAP, Switch, UART};
 
 pub mod ota;
@@ -97,7 +98,7 @@ pub enum CommandsError {
     AnalyzerTimeout,
     #[error("Analyzer failed: {stderr:?}")]
     AnalyzerFailed { stderr: String },
-    #[error("--source is required except when overwriting bank 0")]
+    #[error("--source is required except when overwriting bank 0 or the PLWF106's bank 1")]
     SourceRequired,
     /// A target manifest that cannot be read is not taken as motionless.
     #[error("Cannot read {manifest} to check its motion policy: {error}")]
@@ -131,7 +132,7 @@ pub enum CommandsError {
 pub struct UpdateArgs {
     /// Session name for private evidence paths.
     pub name: String,
-    /// Frozen review of the installed image (bank 0 may omit it to overwrite its baseline).
+    /// Frozen review of the installed image (bank 0, and the PLWF106's bank 1, may omit it to overwrite the baseline's bytes).
     #[arg(long)]
     pub source: Option<PathBuf>,
     /// Bank to update; 0 is the factory loader's fallback.
@@ -239,6 +240,21 @@ pub struct TransientArgs {
     pub samplerate: u64,
 }
 
+/// `rom-inspect`: boot stock and sample its ROM through its console.
+#[derive(Debug, Clone, Args)]
+pub struct RomInspectArgs {
+    /// Session name under private/captures/.
+    pub name: String,
+    /// Pinned SDK ROM image to compare the sampled words with (repeatable),
+    /// root-relative.
+    #[arg(long = "candidate-rom", required = true)]
+    pub candidate_rom: Vec<PathBuf>,
+    /// The boot capture's length: long enough for stock to reach its
+    /// console before the inspection opens the port.
+    #[arg(long, default_value_t = 20.0)]
+    pub seconds: f64,
+}
+
 /// A session name is one plain path component.
 pub fn check_name(name: &str) -> Result<()> {
     require(plain_name(name), || {
@@ -266,6 +282,9 @@ pub enum UartWhenOff {
 
 pub struct Bench {
     pub root: PathBuf,
+    /// The model of the device on the bench, which every `wellfed-flash`
+    /// writer and `wellfed-build` build is told (`--device`).
+    pub device: Model,
     pub config: Config,
     pub relay: Relay,
     pub status: Status,
@@ -781,6 +800,43 @@ impl Bench {
         Ok(0)
     }
 
+    /// Cold boot into stock, capturing until its console is up, then sample
+    /// the ROM through that console (`read inspect-rom`) into
+    /// `private/captures/NAME/rom`: the report that names the model whose
+    /// stock console answered, which every later read of that model needs.
+    /// The capture ends before the inspection opens the port, so the UART
+    /// has one owner at a time. Nothing is retried, and stock stays
+    /// running afterwards.
+    pub fn rom_inspect(&mut self, args: &RomInspectArgs) -> Result<u8> {
+        let out = self.root.join(CAPTURES).join(&args.name);
+        self.fresh(&out)?;
+        let length = seconds_arg("--seconds", args.seconds)?;
+        let (boot, rom) = (out.join("boot"), out.join("rom"));
+        self.boot(&boot, length)?;
+
+        let mut inspect = vec![
+            "--port".into(),
+            self.config.uart_port.clone(),
+            "--output".into(),
+            self.path_arg(&rom),
+        ];
+        for candidate in &args.candidate_rom {
+            inspect.extend([
+                "--candidate-rom".into(),
+                self.path_arg(&self.root.join(candidate)),
+            ]);
+        }
+        if !self.run_all(&[argv(&["read", "inspect-rom"], &[&inspect])])? {
+            return Ok(1);
+        }
+
+        say!(
+            "ROM report in {}; check the model it names before a read relies on it",
+            self.rel(&rom.join("report.json"))
+        );
+        Ok(0)
+    }
+
     fn path_arg(&self, path: &Path) -> String {
         path.display().to_string()
     }
@@ -795,6 +851,8 @@ impl Bench {
 
     fn read_args(&self) -> Vec<String> {
         vec![
+            "--device".into(),
+            self.device.name().into(),
             "--port".into(),
             self.config.uart_port.clone(),
             "--rom-report".into(),
@@ -802,8 +860,15 @@ impl Bench {
         ]
     }
 
+    /// `--device <model>`, which the flash writers and the builds take.
+    pub(crate) fn device_args(&self) -> [String; 2] {
+        ["--device".into(), self.device.name().into()]
+    }
+
     fn evidence_args(&self, p: &Paths) -> Vec<String> {
         vec![
+            "--device".into(),
+            self.device.name().into(),
             "--baseline".into(),
             self.path_arg(&self.root.join(&self.config.baseline)),
             "--rom-report".into(),
@@ -816,7 +881,11 @@ impl Bench {
     }
 
     fn update_args(&self, args: &UpdateArgs, p: &Paths) -> Result<Vec<String>> {
-        require(args.source.is_some() || args.bank == 0, || {
+        // The PLWF106's bank-1 update takes bank 1's original bytes from the
+        // pinned baseline, and wellfed-flash refuses it when bank 1 no longer
+        // equals them; the PLAF103's bank 1 always names what it holds.
+        let original_bank = args.bank == 0 || self.device == Model::Plwf106;
+        require(args.source.is_some() || original_bank, || {
             CommandsError::SourceRequired
         })?;
 
@@ -1059,7 +1128,8 @@ impl Bench {
         say!(
             "Give-way plan {}: clears bank 1's first marker byte; bank 0 is {}",
             self.rel(&p.plan),
-            plan.fallback_ota_sha256,
+            // The fountain's fallback is its stock bank 0, not an image.
+            plan.fallback_ota_sha256.unwrap_or(plan.bank0_region_sha256),
         );
         Ok(Some(sha))
     }
@@ -1379,6 +1449,7 @@ pub fn steps(command: BenchCommand) -> &'static [&'static str] {
     match command {
         BenchCommand::Boot => &["boot capture"],
         BenchCommand::Loader => &["loader entry"],
+        BenchCommand::RomInspect => &["boot capture", "wellfed-flash read inspect-rom"],
         BenchCommand::Dump => &["loader entry", READ_SMALL, "wellfed-flash read full"],
         BenchCommand::FlashPrepare => &[
             "loader entry",

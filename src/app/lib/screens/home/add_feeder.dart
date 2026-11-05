@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:wellfed/screens/feeder/settings_tab.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/feeder_drawing.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/settings_list.dart';
 
 /// The ways in, the common one first: most feeders arrive on the vendor's
 /// firmware. A reset or a lost owner is rare, so those sit below as plain rows.
@@ -31,13 +31,17 @@ class AddFeederScreen extends StatelessWidget {
         last: true,
         Column(
           children: [
-            _Way(
+            SettingsLink(
               'Set up a reset feeder',
               'Already runs Wellfed, but was reset or lost its Wi-Fi',
               first: true,
               onTap: () => context.push('/setup'),
             ),
-            _Way('Recover a feeder', 'On your Wi-Fi, but no phone can open it', onTap: () => context.push('/recover')),
+            SettingsLink(
+              'Recover a feeder',
+              'On your Wi-Fi, but no phone can open it',
+              onTap: () => context.push('/recover'),
+            ),
           ],
         ),
       ),
@@ -85,27 +89,4 @@ class _InstallCard extends StatelessWidget {
       ),
     );
   }
-}
-
-/// A rare way in: a name, a line, and a chevron.
-class _Way extends StatelessWidget {
-  const _Way(this.name, this.note, {required this.onTap, this.first = false});
-
-  final String name;
-  final String note;
-  final VoidCallback onTap;
-  final bool first;
-
-  @override
-  Widget build(BuildContext context) => SettingsTile(
-    first: first,
-    onTap: onTap,
-    child: Row(
-      children: [
-        Expanded(child: SettingsWords(name, note)),
-        const SizedBox(width: Space.s2),
-        StrokeIcon(Glyph.chevron, size: 20, color: context.colors.textMuted),
-      ],
-    ),
-  );
 }

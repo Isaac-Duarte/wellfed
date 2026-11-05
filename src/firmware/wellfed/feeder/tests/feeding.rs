@@ -246,7 +246,7 @@ fn a_waiting_claim_ends_once_and_a_new_reason_stops_it() {
 #[test]
 fn the_outputs_turn_is_released_only_at_rest() {
     use wellfed_fw_feeder::feeding::{InFlight, may_release};
-    use wellfed_sdk::hal::owner::{OwnerState, OwnerStatus};
+    use wellfed_hal_feeder::owner::{OwnerState, OwnerStatus};
 
     let at = |state| OwnerStatus {
         state,
@@ -297,9 +297,9 @@ fn owner_records_decode_for_the_bench() {
     use wellfed_core::record::{Event, Owner, Record as Line, Tag};
     use wellfed_feeder::feed::Durability;
     use wellfed_fw_feeder::feeding::Record;
+    use wellfed_hal_feeder::events::EventsFault;
+    use wellfed_hal_feeder::owner::{FeedTrace, OwnerFault, OwnerState, SubmitResult};
     use wellfed_sdk::hal::interlock::{self, Held};
-    use wellfed_sdk::hal::owner::{FeedTrace, OwnerFault, OwnerState, SubmitResult};
-    use wellfed_sdk::hal::supervision::events::EventsFault;
 
     fn decodes(record: Record, expected: Option<Event<'_>>) {
         let line = format!("{} {record}", Tag::Owner);
@@ -414,7 +414,7 @@ fn a_feeds_result_and_its_current_are_logged() {
     use wellfed_core::feed::storage::{OwnerOutcome, OwnerResult};
     use wellfed_feeder::feed::Durability;
     use wellfed_fw_feeder::feeding::Record;
-    use wellfed_sdk::hal::owner::FeedTrace;
+    use wellfed_hal_feeder::owner::FeedTrace;
 
     let trace = FeedTrace {
         drive_ms: 9_000,
@@ -475,9 +475,9 @@ fn a_feeds_records_fit_a_log_line_at_their_widest() {
     use wellfed_core::store::feed_journal::JournalError;
     use wellfed_feeder::feed::Durability;
     use wellfed_fw_feeder::feeding::Record;
+    use wellfed_hal_feeder::events::{EDGE_LOG, EventsFault, PinWatch};
+    use wellfed_hal_feeder::owner::{FeedTrace, OwnerFault, OwnerState, SubmitResult};
     use wellfed_sdk::hal::interlock::{self, Held};
-    use wellfed_sdk::hal::owner::{FeedTrace, OwnerFault, OwnerState, SubmitResult};
-    use wellfed_sdk::hal::supervision::events::{EDGE_LOG, EventsFault, PinWatch};
 
     // The log's buffer, which holds the line, its CRLF and a NUL.
     const LINE: usize = 192;
@@ -593,7 +593,7 @@ fn a_feeds_records_fit_a_log_line_at_their_widest() {
 fn a_feeds_marks_and_outlet_breaks_are_logged() {
     use wellfed_core::feed::storage::RotorPhase;
     use wellfed_fw_feeder::feeding::{Record, outlet_breaks};
-    use wellfed_sdk::hal::supervision::events::PinWatch;
+    use wellfed_hal_feeder::events::PinWatch;
 
     let marks = Record::Marks {
         feed: 7,

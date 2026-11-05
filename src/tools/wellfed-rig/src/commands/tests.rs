@@ -53,6 +53,7 @@ fn development(sectors: usize, packets: u64) -> DevelopmentPlan {
         scope: "test".into(),
         other_bank_sha256: None,
         restore_marker: false,
+        neighbors_sha256: None,
     }
 }
 
@@ -64,7 +65,7 @@ fn plan(command: &str) -> String {
             kind: Kind::GiveWay,
             bank: 1,
             offset: 0x186000,
-            fallback_ota_sha256: "f".into(),
+            fallback_ota_sha256: Some("f".into()),
             bank0_region_sha256: "z".into(),
             before_sha256: "b".into(),
             after_sha256: "a".into(),
@@ -392,6 +393,7 @@ fn rig() -> Rig {
     }
 
     let bench = Bench {
+        device: wellfed_proto::device::Model::Plaf103,
         root: tmp.path().to_path_buf(),
         config: Config {
             relay_port: "relay".into(),
@@ -897,6 +899,22 @@ fn bank_1_needs_a_source_before_any_relay_change() {
 }
 
 #[test]
+fn fountain_bank_1_leaves_its_original_to_wellfed_flash() {
+    let mut rig = rig();
+    rig.bench.device = wellfed_proto::device::Model::Plwf106;
+    rig.tools.0.borrow_mut().flash_codes.extend([0, 1]);
+    let mut args = update("unit");
+    args.source = None;
+
+    assert_eq!(rig.bench.flash_prepare(&args).unwrap(), 1);
+
+    assert_eq!(flash_commands(&rig), ["read small", "update inspect"]);
+    let calls = rig.tools.0.borrow();
+    assert!(!calls.flash[1].iter().any(|a| a == "--source"));
+    assert!(calls.flash[1].iter().any(|a| a == "plwf106"));
+}
+
+#[test]
 fn motion_targets_need_the_attended_flag() {
     let rig = rig();
     let target = rig.bench.root.join("target");
@@ -1157,6 +1175,7 @@ fn signed_by_bench(rig: &Rig, file: &str) -> wellfed_core::ota::Manifest {
     let bytes = fs::read(rig.bench.root.join(VERIFICATION).join(file)).unwrap();
     let built_in = [key.public()];
     let context = Context {
+        model: 1,
         ring: KeyRing {
             built_in: &built_in,
             added: None,
@@ -1729,7 +1748,7 @@ fn device_status(build: &str, bank: u8) -> DeviceStatus {
         wifi: wellfed_model::WifiSource::Build,
         losses: 0,
         clock_ms: Some(1_792_674_000_000),
-        settings_generation: 2,
+        settings_generation: Some(2),
         wifi_generation: 1,
         locked: Some(false),
     }
@@ -1794,7 +1813,7 @@ fn ota_build_builds_reviews_offers_and_checks_health_in_order() {
     assert_eq!(
         calls.ran,
         [
-            "build build --profile firstboot --firmware bringup --variant stall",
+            "build build --profile firstboot --device plaf103 --firmware bringup --variant stall",
             "build review build --build private/firmware-build/plaf103/firstboot --output private/verification/unit-review",
             "install private/verification/unit-v1.manifest private/verification/unit-review/image.bin",
             "status private/wellfed-owner.json",
@@ -1857,6 +1876,8 @@ fn ota_build_reuses_a_review_of_the_same_sources() {
         [[
             "source-id",
             "--image",
+            "--device",
+            "plaf103",
             "--firmware",
             "bringup",
             "--variant",
@@ -2176,4 +2197,90 @@ fn a_missing_or_wrong_status_is_waited_out_until_it_matches() {
     assert!(has("the feeder runs from bank 0"), "{lines:?}");
     // A review run has nothing to report for the build.
     assert!(has("skipped (--review)"), "{lines:?}");
+}
+
+fn rom_inspect(name: &str) -> RomInspectArgs {
+    RomInspectArgs {
+        name: name.into(),
+        candidate_rom: vec!["private/rom/a.bin".into(), "private/rom/b.bin".into()],
+        seconds: 20.0,
+    }
+}
+
+/// A ROM inspection boots stock with the strap released, ends the capture,
+/// then hands the port to one `read inspect-rom` naming every candidate,
+/// and leaves stock running.
+#[test]
+fn rom_inspect_boots_stock_then_inspects_its_console() {
+    let mut rig = rig();
+    rig.tools.0.borrow_mut().results.push_back(boot_result());
+
+    assert_eq!(rig.bench.rom_inspect(&rom_inspect("unit")).unwrap(), 0);
+
+    let out = rig.bench.root.join(CAPTURES).join("unit");
+    let calls = rig.tools.0.borrow();
+    assert_eq!(calls.observed, [out.join("boot")]);
+    let [args] = &calls.flash[..] else {
+        panic!("{:?}", calls.flash);
+    };
+    let candidate = |name: &str| {
+        rig.bench
+            .root
+            .join("private/rom")
+            .join(name)
+            .display()
+            .to_string()
+    };
+    assert_eq!(
+        args,
+        &[
+            "read".to_string(),
+            "inspect-rom".into(),
+            "--port".into(),
+            "uart".into(),
+            "--output".into(),
+            out.join("rom").display().to_string(),
+            "--candidate-rom".into(),
+            candidate("a.bin"),
+            "--candidate-rom".into(),
+            candidate("b.bin"),
+        ]
+    );
+    assert!(
+        rig.board.log().iter().all(|(relay, on)| *relay != 2 || !on),
+        "the strap is never held"
+    );
+    assert_eq!(rig.board.state(), [true, false, true, true]);
+}
+
+/// A boot that lands in the loader is no stock console: nothing inspects.
+#[test]
+fn rom_inspect_refuses_a_boot_that_reached_the_loader() {
+    let mut rig = rig();
+    rig.tools.0.borrow_mut().results.push_back(loader_result());
+
+    assert!(rig.bench.rom_inspect(&rom_inspect("unit")).is_err());
+    assert!(rig.tools.0.borrow().flash.is_empty());
+}
+
+/// A failed inspection stops, powered, with nothing retried.
+#[test]
+fn a_failed_rom_inspection_is_not_retried() {
+    let mut rig = rig();
+    rig.tools.0.borrow_mut().results.push_back(boot_result());
+    rig.tools.0.borrow_mut().flash_codes.push_back(1);
+
+    assert_eq!(rig.bench.rom_inspect(&rom_inspect("unit")).unwrap(), 1);
+    assert_eq!(flash_commands(&rig), ["read inspect-rom"]);
+    assert!(rig.board.state()[0]);
+}
+
+#[test]
+fn rom_inspect_never_reuses_a_session() {
+    let mut rig = rig();
+    fs::create_dir_all(rig.bench.root.join(CAPTURES).join("unit")).unwrap();
+
+    assert!(rig.bench.rom_inspect(&rom_inspect("unit")).is_err());
+    assert!(rig.tools.0.borrow().observed.is_empty());
+    assert!(rig.board.log().is_empty());
 }

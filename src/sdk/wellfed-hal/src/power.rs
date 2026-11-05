@@ -73,8 +73,8 @@ pub const PACK: PackLimits = PackLimits {
     },
 };
 
-const BATTERY_CHANNEL: u32 = crate::plaf103::pins::ADC_BATTERY;
-const ADAPTER_PIN: u32 = crate::plaf103::pins::ADAPTER;
+const BATTERY_CHANNEL: u32 = crate::board::pins::ADC_BATTERY;
+const ADAPTER_PIN: u32 = crate::board::pins::ADAPTER;
 /// Polls per conversion; a conversion takes well under 1 ms.
 const ADC_POLLS: u32 = 10_000;
 
@@ -190,7 +190,7 @@ impl Monitor {
 /// The time is the start of the conversion, so its duration counts toward
 /// the age. The sample is withdrawn while its time changes, so a reader
 /// never pairs one sample's value with another's time.
-pub(crate) fn publish(pin_mv: u32, adapter: bool, at_ms: u32) {
+pub fn publish(pin_mv: u32, adapter: bool, at_ms: u32) {
     let packed = HELD | if adapter { ADAPTER } else { 0 } | pin_mv.min(MV_MASK);
     SAMPLE.store(0, Ordering::Release);
     SAMPLED_AT_MS.store(at_ms, Ordering::Release);

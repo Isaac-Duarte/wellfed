@@ -124,14 +124,7 @@ class _Before extends StatelessWidget {
           "on the vendor firmware, this app can't help from here.",
         ),
         const SizedBox(height: Space.s2),
-        // Under what it agrees to, its box in the warnings' glyph column.
-        CheckboxListTile(
-          value: state.understood,
-          onChanged: (value) => flow.setUnderstood(value ?? false),
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
-          title: const Text('I understand'),
-        ),
+        _Understood(state.understood, onChanged: flow.setUnderstood),
       ],
       actions: [
         FilledButton(
@@ -174,6 +167,50 @@ class _Warning extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The agreement under the warnings: its box in their glyph column and its
+/// words in their text column, the whole row one tap target.
+class _Understood extends StatelessWidget {
+  const _Understood(this.value, {required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => MergeSemantics(
+    child: InkWell(
+      onTap: () => onChanged(!value),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Row(
+          children: [
+            // The box is drawn 18 wide, as the warning glyph is; its own
+            // tap area spills past that, inside the row's.
+            SizedBox.square(
+              dimension: 18,
+              child: OverflowBox(
+                maxWidth: 40,
+                maxHeight: 40,
+                child: Checkbox(
+                  value: value,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (checked) => onChanged(checked ?? false),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'I understand',
+                style: TextStyle(fontSize: Sizes.base, height: 1.5, color: context.colors.text),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 /// 12.2's steps, for the way back.

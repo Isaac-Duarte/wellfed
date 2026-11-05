@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
+use crate::protocol::{self, plaf103};
 use crate::{enroll::Enrollment, storage};
 
 /// The field a config with a captured device has, and an installer's lacks.
@@ -157,7 +158,7 @@ impl Config {
     }
 
     pub fn topic(&self, suffix: &str) -> String {
-        format!("dl/PLAF103/{}/device/{suffix}", self.device_id)
+        protocol::device_topic(plaf103::PID, &self.device_id, suffix)
     }
 
     pub fn server_client_id(&self) -> String {

@@ -1,7 +1,11 @@
 //! `src/firmware/devices/<device>/layout.json`: a verified stock flash layout the
 //! builder points the SDK's banks at and the audits check images against.
+//! Each model has its own ([`relative_path`]).
 
 use std::fmt;
+use std::path::PathBuf;
+
+use wellfed_proto::device::Model;
 
 use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize, Serializer};
@@ -35,23 +39,31 @@ impl fmt::Display for Hex {
     }
 }
 
+/// The stock fields are the stock OTA image's and the addresses inside it.
+/// A model whose stock was only ever read from flash, the PLWF106, has no
+/// such image, so its layout writes them as `null`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Layout {
     pub schema_version: u32,
     pub model: String,
-    pub stock_version: String,
-    pub stock_bytes: u64,
-    pub stock_sha256: String,
+    pub stock_version: Option<String>,
+    pub stock_bytes: Option<u64>,
+    pub stock_sha256: Option<String>,
     pub flash_mapping_base: Hex,
     pub sector_bytes: u64,
     pub ota_bank_offsets: Vec<Hex>,
     pub candidate_payload_cap_bytes: u64,
-    pub bank_table_runtime_address: Hex,
-    pub bank_selector_entry: Hex,
+    pub bank_table_runtime_address: Option<Hex>,
+    pub bank_selector_entry: Option<Hex>,
     pub known_preserve_ranges: Vec<PreserveRange>,
     pub complete_partition_map: bool,
     pub flash_capacity_verified: bool,
     pub boot_acceptance_verified: bool,
+}
+
+/// The model's checked-in layout, relative to the repository's root.
+pub fn relative_path(model: Model) -> PathBuf {
+    PathBuf::from(format!("src/firmware/devices/{}/layout.json", model.name()))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,15 +79,31 @@ mod tests {
 
     #[test]
     fn the_checked_in_layout_loads() {
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../src/firmware/devices/plaf103/layout.json"
-        );
-        let layout: Layout = crate::load(std::path::Path::new(path)).unwrap();
+        let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
+        let path = root.join(relative_path(Model::Plaf103));
+        assert!(path.ends_with("src/firmware/devices/plaf103/layout.json"));
+        let layout: Layout = crate::load(&path).unwrap();
         assert_eq!(layout.schema_version, 1);
         assert_eq!(layout.flash_mapping_base, Hex(0x0800_0000));
         assert_eq!(layout.ota_bank_offsets, [Hex(0x6000), Hex(0x18_6000)]);
         assert!(!layout.known_preserve_ranges.is_empty());
+        assert!(layout.stock_sha256.is_some() && layout.bank_table_runtime_address.is_some());
+    }
+
+    /// The fountain has no stock OTA image and nothing proves it boots a
+    /// custom one; its layout says so rather than borrow the feeder's.
+    #[test]
+    fn the_fountain_layout_loads_without_a_stock_image() {
+        let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
+        let layout: Layout = crate::load(&root.join(relative_path(Model::Plwf106))).unwrap();
+        assert_eq!(layout.model, "PLWF106");
+        assert_eq!(layout.ota_bank_offsets, [Hex(0x6000), Hex(0x18_6000)]);
+        assert_eq!(layout.candidate_payload_cap_bytes, 0xeb000);
+        assert_eq!(
+            (layout.stock_sha256, layout.bank_table_runtime_address),
+            (None, None)
+        );
+        assert!(!layout.boot_acceptance_verified && !layout.complete_partition_map);
     }
 
     #[test]

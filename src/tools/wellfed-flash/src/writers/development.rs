@@ -4,7 +4,9 @@
 //! factory loader's preferred bank) is the default; bank 0 (`0x6000`, the
 //! fallback) has its own transaction kind and layout. Neither ever writes the
 //! factory region `0x0-0x6000`, which is only read and compared with the
-//! pinned baseline.
+//! pinned baseline. The PLWF106 fountain has bank 1 alone, within its
+//! narrower window, from its pinned original bytes or a reviewed source;
+//! its bank 0 must stay exactly stock.
 //!
 //! An interrupted transaction is finished from a fresh acquisition, never
 //! from the stopped journal: the marker sector must already be staged, and
@@ -19,6 +21,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use crate::device;
 use crate::error::Result;
 use crate::evidence::Root;
 use crate::evidence::journal::{At, Boundary, Event, Journal, Phase};
@@ -29,7 +32,7 @@ use crate::link::status;
 use wellfed_formats::canonical::{canonical_of, sha256};
 use wellfed_formats::flash_plan::{DevelopmentPlan, GiveWayPlan, Kind, PlannedSector, Region};
 use wellfed_formats::require;
-pub(crate) use wellfed_image::bank::{BANK0, Layout, layout, payload};
+pub(crate) use wellfed_image::bank::{BANK0, Layout, payload};
 
 /// A development update or give-way that does not match its guards, its
 /// reviewed plan or its readback. Offsets are flash addresses.
@@ -45,6 +48,8 @@ pub enum DevelopmentError {
     Bank0Unknown,
     #[error("Bank 1 must be valid while bank 0 is written")]
     Bank1Invalid,
+    #[error("The fountain's bank 0 is not its pinned stock image; investigate before update")]
+    Bank0NotStock,
     #[error("Other bank changed since inspection")]
     OtherBankChanged,
 
@@ -73,6 +78,10 @@ pub enum DevelopmentError {
 
     #[error("Reviewed development plan differs")]
     PlanDiffers,
+    #[error(
+        "A fountain plan binds the bytes beside bank 1 as its inspection read them; this one does not"
+    )]
+    NeighborsUnbound,
     #[error("Planned sector outside the bank")]
     SectorOutsideBank { offset: u64 },
     #[error("{phase} application region differs")]
@@ -115,13 +124,21 @@ pub const FACTORY: (usize, usize) = (0, 0x6000);
 /// see docs/firmware/bank-policy.md.
 pub const MARKER: &[u8; 8] = b"81958711";
 
-/// The acquired application extent. Without a source (bank 0 only) it covers
-/// the target alone.
+/// Whether a layout's bank may be overwritten from its pinned original bytes
+/// instead of a reviewed source image: the PLAF103's bank 0, from a full
+/// read, and the fountain's bank 1, from its pinned backup. Neither holds an
+/// image a review could describe.
+pub fn original_source(layout: &Layout) -> bool {
+    matches!(layout.kind, Kind::Bank0Update | Kind::FountainBank1Update)
+}
+
+/// The acquired application extent. Without a source (an original bank
+/// only) it covers the target alone.
 pub fn extent(source: Option<&[u8]>, target: &[u8], layout: &Layout) -> Result<usize> {
     let new = payload(target, layout)?.len();
     match source {
         None => {
-            require(layout.bank == 0, || {
+            require(original_source(layout), || {
                 DevelopmentError::SourceReviewRequired { bank: layout.bank }
             })?;
             Ok(new)
@@ -144,6 +161,7 @@ pub fn guards(
     layout: &Layout,
     other_sha256: Option<&str>,
 ) -> Result<()> {
+    device::same_model(layout.kind.model(), baseline.model())?;
     require(
         factory == &baseline.bytes()[FACTORY.0..FACTORY.0 + FACTORY.1],
         || DevelopmentError::FactoryDiffers,
@@ -157,7 +175,12 @@ pub fn guards(
         }
     })?;
 
-    if layout.bank == 1 {
+    // Nothing writes the fountain's bank 0, so it is still exactly stock.
+    if layout.kind == Kind::FountainBank1Update {
+        require(other == &baseline.bytes()[at..at + length], || {
+            DevelopmentError::Bank0NotStock
+        })?;
+    } else if layout.bank == 1 {
         require(
             other == &baseline.bytes()[at..at + length] || &other[..8] == MARKER,
             || DevelopmentError::Bank0Unknown,
@@ -197,7 +220,7 @@ pub fn images(update: &Update, current: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
     let new = payload(update.target, layout)?;
     let old: &[u8] = match update.source {
         None => {
-            require(layout.bank == 0, || {
+            require(original_source(layout), || {
                 DevelopmentError::SourceReviewRequired { bank: layout.bank }
             })?;
             let Some(original) = update.original.filter(|o| o.len() == new.len()) else {
@@ -293,6 +316,21 @@ pub fn images(update: &Update, current: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
 /// The reviewed plan; `other` is the inspected other-bank sector, whose hash
 /// it pins.
 pub fn plan(update: &Update, current: &[u8], other: Option<&[u8]>) -> Result<DevelopmentPlan> {
+    plan_bound(update, current, other, None)
+}
+
+/// The reviewed plan, also binding the hash of the erase-block neighbors
+/// the inspection read, which a fountain plan must carry.
+pub fn plan_bound(
+    update: &Update,
+    current: &[u8],
+    other: Option<&[u8]>,
+    neighbors_sha256: Option<String>,
+) -> Result<DevelopmentPlan> {
+    require(
+        neighbors_sha256.is_some() == device::pins(update.layout.kind.model()).neighbors.is_some(),
+        || DevelopmentError::NeighborsUnbound,
+    )?;
     let layout = &update.layout;
     let (proposed, staged) = images(update, current)?;
     let changed = current != proposed;
@@ -355,6 +393,7 @@ pub fn plan(update: &Update, current: &[u8], other: Option<&[u8]>) -> Result<Dev
                 .into(),
         other_bank_sha256: other.map(sha256),
         restore_marker: update.restore,
+        neighbors_sha256,
     })
 }
 
@@ -374,14 +413,19 @@ pub fn original_region(full_read: &[u8], target: &[u8], layout: &Layout) -> Resu
     Ok(full_read[layout.start..layout.start + length].to_vec())
 }
 
-/// A program packet bounded to this layout's bank; never the factory region.
+/// A program packet bounded to this layout's bank; never the factory region,
+/// and never outside the model's writable window or inside a range it
+/// preserves. Every planned sector's frames are built here before its erase
+/// is journaled, so the same bounds cover its erase.
 pub fn frame(layout: &Layout, number: u8, offset: usize, data: &[u8]) -> Result<Vec<u8>> {
     let bank = sector::Bank::Development(layout.bank);
     require(offset >= FACTORY.1, || sector::SectorError::PacketOutside {
         bank,
         offset,
     })?;
-    sector::bounded_frame(number, offset, data, layout.start, layout.end, bank)
+    let frame = sector::bounded_frame(number, offset, data, layout.start, layout.end, bank)?;
+    device::pins(layout.kind.model()).writable(offset, offset + data.len())?;
+    Ok(frame)
 }
 
 /// One acquisition: the application union, the factory region, and the
@@ -441,7 +485,12 @@ pub fn run(
     } = *transaction;
     let layout = update.layout;
     let start = layout.start;
-    let expected = plan(update, current, other)?;
+    device::same_model(layout.kind.model(), baseline.model())?;
+
+    // The neighbors' hash is the inspection's own read, which the caller
+    // checked the reviewed plan binds; every later read must match it.
+    let expected = plan_bound(update, current, other, reviewed.neighbors_sha256.clone())?;
+    let neighbors = expected.neighbors_sha256.as_deref();
 
     require(same(reviewed, &expected)?, || DevelopmentError::PlanDiffers)?;
     let (proposed, staged) = images(update, current)?;
@@ -488,6 +537,14 @@ pub fn run(
             require(acquired.application == want, || {
                 DevelopmentError::RegionDiffers { phase }
             })?;
+            let mut record = |event: Event| {
+                journal.append(&At {
+                    offset: layout.start,
+                    phase: Some(phase),
+                    event,
+                })
+            };
+            sector::check_neighbors(port, baseline, neighbors, None, &mut record)?;
             journal.append(&Event::RegionVerified {
                 phase,
                 sha256: sha256(want),
@@ -530,6 +587,7 @@ pub fn run(
                 DevelopmentError::EraseReadback { offset }
             })?;
             record(Event::EraseVerified {})?;
+            sector::check_neighbors(port, baseline, neighbors, Some(offset), &mut record)?;
 
             status::check_status(
                 port,
@@ -620,7 +678,43 @@ pub fn run(
 pub fn give_way_plan(fallback: &[u8], bank0: &[u8], bank1_sector: &[u8]) -> Result<GiveWayPlan> {
     let want = payload(fallback, &BANK0)?;
     require(bank0 == want, || DevelopmentError::FallbackDiffers)?;
-    require(&want[..8] == MARKER, || DevelopmentError::FallbackUnmarked)?;
+    given_way_plan(Kind::GiveWay, Some(sha256(fallback)), want, bank1_sector)
+}
+
+/// The fountain's stock bank 0, as its pinned backup holds it: the only
+/// fallback its give-way accepts. It was read from flash, never shipped as
+/// an image, so no review describes it.
+pub fn stock_bank0(baseline: &Baseline) -> Result<&[u8]> {
+    let model = baseline.model();
+    let Some((at, length, _)) = baseline.pins().stock_bank0 else {
+        return Err(device::DeviceError::FallbackMissing { model }.into());
+    };
+    Ok(&baseline.bytes()[at..at + length])
+}
+
+/// A fountain give-way: bank 0 must be exactly its pinned stock bank 0.
+pub fn pinned_give_way_plan(
+    baseline: &Baseline,
+    bank0: &[u8],
+    bank1_sector: &[u8],
+) -> Result<GiveWayPlan> {
+    let want = stock_bank0(baseline)?;
+    require(bank0 == want, || DevelopmentError::FallbackDiffers)?;
+    given_way_plan(
+        device::give_way_kind(baseline.model()),
+        None,
+        want,
+        bank1_sector,
+    )
+}
+
+fn given_way_plan(
+    kind: Kind,
+    fallback_ota_sha256: Option<String>,
+    bank0: &[u8],
+    bank1_sector: &[u8],
+) -> Result<GiveWayPlan> {
+    require(&bank0[..8] == MARKER, || DevelopmentError::FallbackUnmarked)?;
     require(
         bank1_sector.len() == SECTOR && &bank1_sector[..8] == MARKER,
         || DevelopmentError::NothingToGiveWay,
@@ -629,10 +723,10 @@ pub fn give_way_plan(fallback: &[u8], bank0: &[u8], bank1_sector: &[u8]) -> Resu
     let after = given_way(bank1_sector);
     Ok(GiveWayPlan {
         schema_version: 1,
-        kind: Kind::GiveWay,
+        kind,
         bank: 1,
         offset: wide(sector::START),
-        fallback_ota_sha256: sha256(fallback),
+        fallback_ota_sha256,
         bank0_region_sha256: sha256(bank0),
         before_sha256: sha256(bank1_sector),
         after_sha256: sha256(&after),
@@ -674,13 +768,82 @@ pub fn run_give_way(
         bank1_sector,
         reviewed,
     } = *give_way;
+    device::same_model(Kind::GiveWay.model(), baseline.model())?;
     let expected = give_way_plan(fallback, bank0, bank1_sector)?;
-    require(same(reviewed, &expected)?, || {
+    let inspected = Inspected {
+        baseline,
+        bank0,
+        bank1_sector,
+        expected: &expected,
+        reviewed,
+    };
+    give_way_transaction(port, root, &inspected, acquire, output)
+}
+
+/// A reviewed fountain give-way, whose fallback is the pinned stock bank 0.
+pub struct PinnedGiveWay<'a> {
+    pub baseline: &'a Baseline,
+    pub bank0: &'a [u8],
+    pub bank1_sector: &'a [u8],
+    pub reviewed: &'a GiveWayPlan,
+}
+
+pub fn run_pinned_give_way(
+    port: &mut dyn Port,
+    root: &Root,
+    give_way: &PinnedGiveWay,
+    acquire: &mut AcquireGuards,
+    output: &Path,
+) -> Result<Verified> {
+    let PinnedGiveWay {
+        baseline,
+        bank0,
+        bank1_sector,
+        reviewed,
+    } = *give_way;
+    let expected = pinned_give_way_plan(baseline, bank0, bank1_sector)?;
+    let inspected = Inspected {
+        baseline,
+        bank0,
+        bank1_sector,
+        expected: &expected,
+        reviewed,
+    };
+    give_way_transaction(port, root, &inspected, acquire, output)
+}
+
+/// A give-way's inspected bytes, the plan recomputed from them and the
+/// reviewed plan it must equal.
+struct Inspected<'a> {
+    baseline: &'a Baseline,
+    bank0: &'a [u8],
+    bank1_sector: &'a [u8],
+    expected: &'a GiveWayPlan,
+    reviewed: &'a GiveWayPlan,
+}
+
+/// Clear bank 1's first marker byte, once the recomputed plan is exactly
+/// the reviewed one.
+fn give_way_transaction(
+    port: &mut dyn Port,
+    root: &Root,
+    inspected: &Inspected,
+    acquire: &mut AcquireGuards,
+    output: &Path,
+) -> Result<Verified> {
+    let Inspected {
+        baseline,
+        bank0,
+        bank1_sector,
+        expected,
+        reviewed,
+    } = *inspected;
+    require(same(reviewed, expected)?, || {
         DevelopmentError::GiveWayPlanDiffers
     })?;
 
     let after = given_way(bank1_sector);
-    let packet = sector::program_frame(1, sector::START, &after[..1024])?;
+    let packet = sector::bank1_frame(baseline, 1, sector::START, &after[..1024])?;
     let mut journal = Journal::create(root, output)?;
 
     let result = (|| -> Result<Verified> {

@@ -9,7 +9,7 @@ use std::time::Duration;
 use futures_util::{StreamExt, TryStreamExt};
 use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
-use wellfed_api::{ClientRole, ExportFormat, FeederId, SampleValue};
+use wellfed_api::{ClientRole, ExportFormat, FeederId, Model, SampleValue};
 use wellfed_formats::export::{Manifest, Table};
 use wellfed_server_testkit::fixed::FixedClock;
 use wellfed_server_testkit::{TestService, config};
@@ -22,8 +22,14 @@ const SAMPLES: usize = 100_000;
 async fn feeder(store: &Store) -> FeederId {
     let id = FeederId(Uuid::from_u128(0x5a));
     store
+        .create_home(&wellfed_server_testkit::home(), FixedClock.now())
+        .await
+        .unwrap();
+    store
         .insert_feeder(NewFeeder {
             id,
+            home: wellfed_server_testkit::home().id,
+            model: Model::Plaf103,
             identity: [5; 32],
             name: "kitchen",
             role: ClientRole::Server,

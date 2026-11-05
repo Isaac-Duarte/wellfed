@@ -152,7 +152,7 @@ extension InstallRunning on InstallFlow {
         _stage = InstallStage.claim;
         _code = shown;
         _foundOverBluetooth();
-        _deadline = DateTime.now().add(Duration(seconds: seconds));
+        _deadline = clock.now().add(Duration(seconds: seconds));
         _windowAsk = null;
       case InstallEvent_PressDispense():
         _pressDispense = true;

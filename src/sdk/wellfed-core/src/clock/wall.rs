@@ -49,7 +49,7 @@
 //! the trusted interval, which a later trusted fix resets.
 //!
 //! **Validity.** The clock reads invalid once its error passes
-//! [`MAX_ERROR_MS`]: about 6.6 h after a trusted fix unlearned, about 22 h
+//! [`MAX_ERROR_MS`]: about 6.6 h after a trusted fix unlearned, about 7 days
 //! learned. Then the next fix sets it again: an owner's or a client's
 //! freely, an NTP answer only inside the expired anchor's interval grown
 //! without the two-minute cap (so each re-set moves the clock by at most
@@ -83,11 +83,11 @@ pub const MAX_OFFSET_S: i32 = 14 * 3600;
 /// worst. The cost is the validity window, `MAX_ERROR_MS` over the bound:
 /// about 6.6 h after a trusted fix.
 pub const UNLEARNED_PPM: u32 = 5000;
-/// The least rate bound once learned. The same unit's rate moved 1,325 ppm
-/// between two measurements, so a learned correction is not trusted any
-/// tighter than that until the bench shows how much it moves within a
-/// boot: about 22 h of validity.
-pub const LEARNED_FLOOR_PPM: u32 = 1500;
+/// The least rate bound once learned. Over a 72-hour run with five boots the
+/// SysTimer ran 8 to 18 ppm slow and learned 13 ppm, so this is about ten
+/// times the worst measured, leaving room for temperature and other units:
+/// about 7 days of validity.
+pub const LEARNED_FLOOR_PPM: u32 = 200;
 /// A rate is learned only from a baseline measuring it this well.
 pub const LEARN_MAX_PPM: u32 = 50;
 /// A measured rate beyond this (1 %) is a bad fix, not the oscillator.

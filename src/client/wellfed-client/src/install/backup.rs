@@ -32,7 +32,7 @@
 use sha2::{Digest, Sha256};
 use wellfed_core::ota::MARKER;
 use wellfed_core::ota::offer::{self, ImageKind};
-use wellfed_model::{Answer, Bank1Page, Op, Refusal};
+use wellfed_model::{Answer, Bank1Page, Model, Op, Refusal};
 
 /// The stock release an install starts from and a backup restores.
 pub const STOCK_VERSION: &str = "1.1.15";
@@ -290,8 +290,11 @@ impl StockBackup {
         if !names_it {
             return Err(RestoreError::OtherImage);
         }
+        let model =
+            Model::from_byte(signed.model).ok_or(RestoreError::Model { code: signed.model })?;
         Ok(RestoreOffer {
             version: m.version,
+            model,
             digest: offer::manifest_digest(manifest),
         })
     }
@@ -302,6 +305,9 @@ impl StockBackup {
 pub struct RestoreOffer {
     /// The version it installs as.
     pub version: u32,
+    /// The device model the manifest is signed for: a restore goes only to
+    /// a device of it.
+    pub model: Model,
     /// SHA-256 over the manifest, signature included: what its downgrade
     /// statement names.
     pub digest: [u8; 32],
@@ -316,6 +322,8 @@ pub enum RestoreError {
     NotStock,
     #[error("the manifest names another image than the kept backup")]
     OtherImage,
+    #[error("the manifest names model code {code}, which no device has")]
+    Model { code: u8 },
 }
 
 /// [`StockBackup::from_bank`] against the given pins: the vendor's
@@ -554,6 +562,7 @@ mod tests {
     fn manifest(payload: &[u8], kind: ImageKind, len: usize) -> Vec<u8> {
         let sha256: [u8; 32] = Sha256::digest(payload).into();
         let signed = offer::Signed {
+            model: 1,
             manifest: wellfed_core::ota::Manifest {
                 version: 3,
                 image_len: u32::try_from(len).unwrap(),
@@ -579,7 +588,16 @@ mod tests {
         let good = manifest(&original, ImageKind::Stock, original.len());
         let offer = backup.restore_offer(&good).unwrap();
         assert_eq!(offer.version, 3);
+        assert_eq!(offer.model, Model::Plaf103);
         assert_eq!(offer.digest, offer::manifest_digest(&good));
+        // A model code no device has is no restore (the signature is not
+        // checked here, so the byte is patched in place).
+        let mut unknown = good.clone();
+        unknown[21] = 0x7f;
+        assert_eq!(
+            backup.restore_offer(&unknown),
+            Err(RestoreError::Model { code: 0x7f })
+        );
 
         let replacement = manifest(&original, ImageKind::Replacement, original.len());
         assert_eq!(

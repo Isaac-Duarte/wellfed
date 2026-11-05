@@ -62,7 +62,7 @@ fn ota_reports_keep_distinct_phases_with_shared_ids_and_bound_history() {
 
     // Observations cannot manufacture an outgoing command or imply a boot.
     assert!(
-        wellfed_stock::protocol::reply(
+        wellfed_stock::protocol::plaf103::reply(
             &c.config,
             Channel::System,
             &serde_json::from_value(json!({"cmd":"OTA_INFORM","state":5})).unwrap(),

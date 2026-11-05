@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use jiff::Timestamp;
 use tempfile::TempDir;
 use uuid::Uuid;
-use wellfed_api::{Household, Role, TimeFormat, Token, TokenId, Units, UserId};
+use wellfed_api::{Home, HomeId, Role, TimeFormat, Token, TokenId, Units, UserId};
 use wellfed_store::{NewToken, NewUser, Store};
 
 async fn fresh() -> (TempDir, Store) {
@@ -37,8 +37,9 @@ fn user(name: &str) -> NewUser<'_> {
     }
 }
 
-fn household() -> Household {
-    Household {
+fn home() -> Home {
+    Home {
+        id: HomeId(Uuid::from_u128(0x40)),
         name: "Home".into(),
         units: Units::Grams,
         time_format: TimeFormat::H24,
@@ -51,7 +52,7 @@ async fn a_token_is_found_by_its_hash_with_its_user_as_they_are_now() {
     let (_dir, store) = fresh().await;
     let ada = user("ada");
     let ada_id = ada.id;
-    store.create_first_owner(ada, &household()).await.unwrap();
+    store.create_first_owner(ada, &home()).await.unwrap();
     let bob = user("bob");
     let bob_id = bob.id;
     store.create_user(bob).await.unwrap();

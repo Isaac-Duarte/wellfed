@@ -7,7 +7,7 @@ use std::time::Duration;
 use tracing::{debug, warn};
 use wellfed_api::FeederId;
 use wellfed_connect::Connection;
-use wellfed_model::{ClientRole, Joined};
+use wellfed_model::{ClientRole, Joined, Model};
 use wellfed_session::noise::Keypair;
 
 use crate::{ConnectError, Discovery, Invite, Mirror, Shared, Unreachable};
@@ -16,6 +16,8 @@ use crate::{ConnectError, Discovery, Invite, Mirror, Shared, Unreachable};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Enrolled {
     pub role: ClientRole,
+    /// The device's model, as the redemption's answer names it.
+    pub model: Model,
     /// The enrolled key's public half, as the feeder lists it.
     pub public: [u8; 32],
 }
@@ -57,8 +59,9 @@ impl Mirror {
                 other => Unreachable(other).into(),
             })?;
         match joined {
-            Joined::Enrolled { role } => Ok(Enrolled {
+            Joined::Enrolled { role, model } => Ok(Enrolled {
                 role,
+                model,
                 public: *keys.public(),
             }),
             Joined::Refused(refusal) => Err(ConnectError::Refused(refusal)),

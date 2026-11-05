@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
-    Bank1Page, CallView, ClientRole, Generation, Hex, PLANS, Plan, Plans, Settings, SettingsPatch,
-    Stats, StatsSection, Status, TracePage, UpdateRefusal, UpdateView,
+    Bank1Page, CallView, ClientRole, FeederSettingsPatch, Generation, Hex, PLANS, Plan, Plans,
+    Settings, Stats, StatsSection, Status, TracePage, UpdateRefusal, UpdateView,
 };
 
 /// One operation. Reads may be repeated freely; a write's request id makes
@@ -26,7 +26,7 @@ pub enum Op {
     /// Applies only if the settings are still at `base`.
     PutSettings {
         base: Generation,
-        changes: SettingsPatch,
+        changes: FeederSettingsPatch,
     },
     /// Stores credentials for the next join, or clears them with `None`.
     /// Applies only if the Wi-Fi store is still at `base`.
@@ -51,7 +51,7 @@ pub enum Op {
         key: [u8; 32],
     },
     /// Answered [`Answer::Feeding`] once the feed is durably reserved; its
-    /// result is a [`crate::EventBody::Fed`] in the history, with the
+    /// result is a [`crate::FeederEvent::Fed`] in the history, with the
     /// portions asked for and those delivered. `portions` outside 1 to
     /// [`PORTIONS_MAX`](crate::PORTIONS_MAX) is refused
     /// [`Refusal::Portions`].

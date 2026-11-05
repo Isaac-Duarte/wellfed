@@ -94,7 +94,8 @@ pub fn freeze_build(
     )?;
 
     let mains = json!({"hp": {"address": "0x1"}, "lp": {"address": "0x2"}});
-    let pinmap = json!({"matches_stock": true, "runtime_address": "0x3"});
+    let table = wellfed_formats::audit::pinmap_sha256(wellfed_proto::device::Model::Plaf103);
+    let pinmap = json!({"matches_stock": true, "runtime_address": "0x3", "sha256": table});
     let mut manifest = json!({
         "device": "plaf103", "profile": "firstboot", "sdk_revision": revision, "toolchain_sha256": toolchain,
         "artifacts": [{"path": "image/OTA_All.bin", "sha256": sha256(image), "bytes": image.len()}],

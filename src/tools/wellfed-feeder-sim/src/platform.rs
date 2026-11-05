@@ -22,73 +22,69 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::convert::Infallible;
-use std::io;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::Ipv4Addr;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use tokio::net::{TcpStream, UdpSocket};
-use wellfed_board_plaf103::storage;
+use wellfed_board::storage;
 use wellfed_core::buttons::Gesture;
-use wellfed_core::clock::wall::{
-    Fix, Jump, Origin, State as ClockState, Sync, SyncError, WallClock,
-};
+use wellfed_core::clock::wall::{Fix, Jump, Origin, State as ClockState, Sync, SyncError};
 use wellfed_core::clock::zone::Rule;
 use wellfed_core::indicator::Light;
 use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
 use wellfed_core::ota::install::{Answer, Progress, Refused};
-use wellfed_core::store::handover;
-use wellfed_core::store::slot::{SlotIo, crc32};
-use wellfed_core::store::update::UpdateStore;
 use wellfed_core::supply::{self, Reading, Sample};
 use wellfed_core::tone::Tune;
+use wellfed_device::io::{Accepted, BleDrop, Datagram, Received};
+use wellfed_device::store::events::{BODY_BYTES, EventsFill, Read};
+use wellfed_device::store::net::BuildWifi;
+use wellfed_device::store::traces::{self, TraceRead, TraceRing, TracesFill};
 use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
     Calibration, CalibrationResult, CalibrationView, CallChange, CallResult, ClientChange,
     KeyResult, PlansChange, PlansResult, PlayResult, Requested, SettingsFields, SettingsResult,
-    SettingsView, TimeSettings, TimeSettingsResult, TimeSettingsView, WifiResult, WifiSource,
-    WifiView, chunk_wanted,
+    SettingsView, TimeSettings, TimeSettingsResult, WifiResult, WifiSource, chunk_wanted,
 };
 use wellfed_device_api::wifi::Credentials;
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::platform::{
-    Accepted, BleDrop, BleLink, BleStep, Boot, BuildWifi, Check, Datagram, DriverStep, EventSlot,
-    EventsFill, Link, Received, TaskCount, TaskStack, TraceRead, TracesFill,
+    BleStep, Boot, Check, DriverStep, EventSlot, Link, TaskCount, TaskStack,
 };
 use wellfed_feeder::feeder::supply::Radio;
 use wellfed_feeder::stats::{SAVE_MS, TOTAL_SECTORS, Totals, reset_cause};
 use wellfed_feeder::store::calibration::CalibrationStore;
 use wellfed_feeder::store::call::CallStore;
-use wellfed_feeder::store::clients::{ClientError, ClientStore};
-use wellfed_feeder::store::events::{BODY_BYTES, EMPTY, EventLog, Read, Record};
-use wellfed_feeder::store::net::NetStore;
 use wellfed_feeder::store::plans::PlansStore;
-use wellfed_feeder::store::reads::{READ_BATCH, Reads};
-use wellfed_feeder::store::reset;
-use wellfed_feeder::store::settings::{SettingsStatus, SettingsStore};
 use wellfed_feeder::store::stats::{SaveKind, StatsStatus, StatsStore};
-use wellfed_feeder::store::time::TimeStore;
-use wellfed_feeder::store::traces::{self, TraceRing};
 use wellfed_hal::interlock::INTERLOCK;
 use wellfed_hal::ota::mailbox::{self, Request};
-use wellfed_hal::ota::signers;
 use wellfed_hal::power;
 use wellfed_hal::sdk::LOG_TAIL_BYTES;
 use wellfed_proto::api::{self as proto, Counts, FLASH_SECTORS, TASKS_MAX};
 use wellfed_proto::device::Model;
+
+/// The model of the board the simulator stands in for, by its code; one that
+/// names no model does not build.
+const MODEL: Model = match Model::from_byte(wellfed_board::MODEL_CODE) {
+    Some(model) => model,
+    None => panic!("the board's code names no model"),
+};
 use wellfed_proto::trace::PAGE_MAX;
+
+use wellfed_device_sim::ble::Ble;
+pub use wellfed_device_sim::sockets::Socket;
+use wellfed_device_sim::sockets::Sockets;
+use wellfed_device_sim::stores::{self, DeviceStores};
+pub use wellfed_device_sim::stores::{DeviceError, Random};
 
 use crate::banks::Banks;
 use crate::flash::{Flash, Region};
 
-/// This simulator's settings binding: a store written by one installation
-/// is not read as another's.
-const BINDING: u64 = 0x5046_5731_5349_4d01;
-
 // The stats record counts erases of every sector the region has; growing
 // the region changes the record and takes a new version of it.
-const _: () = assert!(wellfed_board_plaf103::STORAGE_SECTORS as usize == TOTAL_SECTORS);
+const _: () = assert!(wellfed_board::STORAGE_SECTORS as usize == TOTAL_SECTORS);
 
 /// What the simulated board's supply reads: the adapter's detect pin, and
 /// the battery channel's millivolts at the pin (`None` with no pack), on
@@ -129,51 +125,17 @@ const POWER_SAMPLE_MS: u32 = 5_000;
 /// Setup mode's link waits this long between steps: there is no radio.
 const NO_RADIO_MS: u32 = 1_000;
 
-/// 32 bytes from the generator, or `None` when it has none.
-pub type Random = Box<dyn FnMut() -> Option<[u8; 32]>>;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum DeviceError {
-    #[error("the client store cannot be written (status {0:?})")]
-    Clients(wellfed_feeder::store::clients::ClientStatus),
-    #[error("the generator has no output for the identity")]
-    Random,
-    #[error("enroll the client: {0:?}")]
-    Enroll(ClientError),
-    #[error("the client store holds no identity")]
-    NoIdentity,
-    #[error("the key is already enrolled as {0:?}; it keeps that role")]
-    EnrolledAs(Role),
-}
-
-/// A socket the loop's driver holds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Socket {
-    /// The serve loop's listener.
-    Listener,
-    /// The mDNS socket, which drops everything when the simulator does not
-    /// advertise.
-    Mdns,
-    /// The NTP exchange's socket.
-    Ntp,
-    /// One accepted connection.
-    Stream(u32),
-}
-
 pub struct SimPlatform {
-    random: Random,
-    /// Every client's window is shut: a send takes nothing.
-    sends_blocked: bool,
+    /// The stores every device keeps, and their mailboxes.
+    device: DeviceStores,
+    /// The device API's sockets on the host.
+    sockets: Sockets,
+    /// Setup mode's BLE link.
+    ble: Ble,
     flash: Rc<Flash>,
     /// The image's erases when this boot opened it: the statistics count
     /// this boot's.
     erases_before: [u32; TOTAL_SECTORS],
-    settings: SettingsStore<Region>,
-    settings_pending: Option<SettingsFields>,
-    net: NetStore<Region>,
-    wifi_pending: Option<Option<Credentials>>,
-    time: TimeStore<Region>,
-    time_pending: Option<TimeSettings>,
     /// The lifetime statistics, as the writer keeps them: the stored
     /// totals with this boot counted, this boot's counts as the loop last
     /// handed them, and when the next save is due.
@@ -191,22 +153,6 @@ pub struct SimPlatform {
     /// An upload's start or a delete, or a chunk at its offset with its
     /// bytes, as the writer's one slot holds them.
     call_pending: Option<CallWork>,
-    /// The NTP exchange's socket, on an ephemeral loopback-reachable port.
-    ntp: Option<std::net::UdpSocket>,
-    clients: ClientStore<Region>,
-    /// Bumped on every change, as the writer's published table is.
-    clients_generation: u32,
-    /// Bumped when the identity changes, as the writer publishes it.
-    identity_generation: u32,
-    keys_pending: Option<(u32, ClientChange)>,
-    keys_done: Option<(u32, KeyResult)>,
-    ticket: u32,
-    events: EventLog<Region>,
-    /// The turns subscribers read the ring in, the firmware's own, and
-    /// the writer's buffer for the batch it answers with.
-    reads: Reads,
-    read_batch: Box<[Record; READ_BATCH]>,
-    clock: WallClock,
     reboot: bool,
     /// This process's boots so far, this one included; status reports it as
     /// the feeder reports its boot count.
@@ -216,17 +162,6 @@ pub struct SimPlatform {
     build: &'static str,
     /// Gestures from the operator's console, for the loop to take.
     gestures: VecDeque<Gesture>,
-    /// Connections the serve loop accepted, not yet taken by the driver,
-    /// and whether the last accept failed.
-    accepted: VecDeque<TcpStream>,
-    accept_failed: bool,
-    /// The driver holds the listener open.
-    listening: bool,
-    streams: Vec<(u32, TcpStream)>,
-    next_stream: u32,
-    mdns: Option<UdpSocket>,
-    /// The address the A record gives.
-    ip: Ipv4Addr,
     /// The lines this boot logged, as the firmware's RAM tail keeps them;
     /// the simulator copies its records in ([`crate::sim::Sim::pass`]).
     log: Rc<LogTail<LOG_TAIL_BYTES>>,
@@ -244,31 +179,12 @@ pub struct SimPlatform {
     /// A bench image's build network, unless a test boots it as a
     /// consumer image ([`Self::set_build_wifi`]).
     build_wifi: BuildWifi,
-    /// Setup mode's BLE link.
-    ble: SimBle,
-}
-
-/// Setup mode's BLE link: the phone's side is the test's, the feeder's the
-/// loop's, as the firmware's driver hands it whole messages.
-#[derive(Debug, Default)]
-struct SimBle {
-    advertising: bool,
-    connected: bool,
-    /// What the loop has not been told yet: a host connected or left.
-    link: Option<BleLink>,
-    /// The phone's messages, not yet taken by the loop.
-    from_host: VecDeque<Vec<u8>>,
-    /// The message the loop holds until it consumes it.
-    held: Option<Vec<u8>>,
-    /// The feeder's notifications, not yet read by the phone.
-    to_host: VecDeque<Vec<u8>>,
 }
 
 impl std::fmt::Debug for SimPlatform {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SimPlatform")
-            .field("clients", &self.clients)
-            .field("last_event", &self.events.last_seq())
+            .field("device", &self.device)
             .finish_non_exhaustive()
     }
 }
@@ -279,20 +195,15 @@ impl SimPlatform {
     /// device API is advertised on it as `ip`.
     pub fn open(
         flash: &Rc<Flash>,
-        mut random: Random,
+        random: Random,
         boot_count: u32,
         bank: u8,
         build: [u8; 32],
         mdns: Option<(UdpSocket, Ipv4Addr)>,
     ) -> Result<Self, DeviceError> {
-        finish_reset(flash);
-        finish_handover(flash, bank);
-        let mut settings = SettingsStore::default();
-        settings.open(Region::new(flash, storage::SETTINGS), BINDING);
-        let mut net = NetStore::default();
-        net.open(Region::new(flash, storage::NET));
-        let mut time = TimeStore::default();
-        time.open(Region::new(flash, storage::TIME));
+        stores::finish_reset(flash, keep_wear);
+        stores::finish_handover(flash, bank, &[storage::PLANS]);
+        let device = DeviceStores::open(flash, random)?;
         let mut stats = StatsStore::default();
         stats.open(Region::new(flash, storage::STATS));
         let mut stats_base = stats.totals;
@@ -304,51 +215,13 @@ impl SimPlatform {
         plans.open(Region::new(flash, storage::PLANS));
         let mut call = CallStore::default();
         call.open(Region::new(flash, storage::CALL));
-        let mut clients = ClientStore::default();
-        clients.open(Region::new(flash, storage::CLIENTS));
-        if clients.identity().is_none() {
-            if !clients.writable() {
-                return Err(DeviceError::Clients(clients.status));
-            }
-            let secret = random().ok_or(DeviceError::Random)?;
-            clients
-                .set_identity(&secret)
-                .map_err(|_| DeviceError::Clients(clients.status))?;
-        }
-        // A new ring's epoch, drawn as the writer draws it: every word of
-        // the draw folded in, so a test's counting generator, which varies
-        // only some bytes, still gives each new ring its own.
-        let fresh = random()
-            .map(|bytes| {
-                bytes
-                    .as_chunks::<4>()
-                    .0
-                    .iter()
-                    .fold(0, |epoch, &word| epoch ^ u32::from_le_bytes(word))
-            })
-            .map_or(1, |epoch: u32| epoch.max(1));
-        let mut events = EventLog::default();
-        events.open(
-            Region::new(flash, storage::EVENTS),
-            storage::EVENTS.count as usize,
-            fresh,
-        );
-        let (mdns, ip) = match mdns {
-            Some((socket, ip)) => (Some(socket), ip),
-            None => (None, Ipv4Addr::LOCALHOST),
-        };
 
-        let platform = Self {
-            random,
-            sends_blocked: false,
+        let mut platform = Self {
+            device,
+            sockets: Sockets::new(mdns),
+            ble: Ble::default(),
             flash: Rc::clone(flash),
             erases_before: flash.erases(),
-            settings,
-            settings_pending: None,
-            net,
-            wifi_pending: None,
-            time,
-            time_pending: None,
             stats,
             stats_base,
             counts: Counts::default(),
@@ -360,17 +233,6 @@ impl SimPlatform {
             plans_pending: None,
             call,
             call_pending: None,
-            ntp: None,
-            clients,
-            clients_generation: 1,
-            identity_generation: 1,
-            keys_pending: None,
-            keys_done: None,
-            ticket: 0,
-            events,
-            reads: Reads::new(),
-            read_batch: Box::new([EMPTY; READ_BATCH]),
-            clock: WallClock::new(),
             reboot: false,
             boot_count,
             bank,
@@ -381,24 +243,14 @@ impl SimPlatform {
                     .into_boxed_str(),
             ),
             gestures: VecDeque::new(),
-            accepted: VecDeque::new(),
-            accept_failed: false,
-            listening: false,
-            streams: Vec::new(),
-            next_stream: 0,
-            mdns,
-            ip,
             log: Rc::new(LogTail::new()),
             banks: None,
             supply: SimSupply::MAINS,
             reset_flags: 0,
             radio: Radio::On,
             build_wifi: BuildWifi::Present,
-            ble: SimBle::default(),
         };
-        platform.publish_signers();
         // The boot's own early save, so its reset counts however short it is.
-        let mut platform = platform;
         platform.save_now(SaveKind::Early);
         Ok(platform)
     }
@@ -411,7 +263,7 @@ impl SimPlatform {
 
     /// Every client's window shut (`true`), so no send takes a byte, or open.
     pub fn block_sends(&mut self, blocked: bool) {
-        self.sends_blocked = blocked;
+        self.sockets.block_sends(blocked);
     }
 
     /// What the supply reads from now on.
@@ -433,30 +285,23 @@ impl SimPlatform {
 
     /// Whether setup mode advertises, so a phone can connect.
     pub fn ble_advertising(&self) -> bool {
-        self.ble.advertising
+        self.ble.advertising()
     }
 
     /// A phone connects and subscribes, as the firmware's driver reports
     /// both; false while nothing advertises or a phone is connected.
     pub fn ble_connect(&mut self) -> bool {
-        if !self.ble.advertising || self.ble.connected {
-            return false;
-        }
-        self.ble.connected = true;
-        self.ble.link = Some(BleLink::Opened);
-        true
+        self.ble.connect()
     }
 
     /// The connected phone writes one whole message.
     pub fn ble_write(&mut self, message: &[u8]) {
-        if self.ble.connected {
-            self.ble.from_host.push_back(message.to_vec());
-        }
+        self.ble.write(message);
     }
 
     /// What the feeder notified since the last call, one message each.
     pub fn ble_notified(&mut self) -> Vec<Vec<u8>> {
-        self.ble.to_host.drain(..).collect()
+        self.ble.notified()
     }
 
     /// What the supply reads.
@@ -476,24 +321,14 @@ impl SimPlatform {
 
     /// The identity secret the client store holds.
     pub fn identity(&self) -> Option<&[u8; 32]> {
-        self.clients.identity()
+        self.device.identity()
     }
 
     /// Enroll `key` straight into the store, outside the protocol: how the
-    /// simulator admits its first owner without BLE setup. A key already
-    /// enrolled keeps the role it has, as the protocol never changes one;
-    /// a different role is refused so the operator learns why.
+    /// simulator admits its first owner without BLE setup
+    /// ([`DeviceStores::enroll`]).
     pub fn enroll(&mut self, key: [u8; 32], label: Label, role: Role) -> Result<(), DeviceError> {
-        match self.clients.find(&key) {
-            Some(client) if client.role == role => return Ok(()),
-            Some(client) => return Err(DeviceError::EnrolledAs(client.role)),
-            None => {}
-        }
-        self.clients
-            .enroll(key, label, role)
-            .map_err(DeviceError::Enroll)?;
-        self.clients_changed();
-        Ok(())
+        self.device.enroll(key, label, role)
     }
 
     /// A gesture from the buttons, for the next pass.
@@ -504,18 +339,18 @@ impl SimPlatform {
     /// Whether the serve loop should take connections: the driver holds
     /// the listener open.
     pub(crate) fn listening(&self) -> bool {
-        self.listening && self.radio == Radio::On
+        self.sockets.listening()
     }
 
     /// A connection the serve loop accepted, for the driver's next accept.
     pub(crate) fn accepted(&mut self, stream: TcpStream) {
-        self.accepted.push_back(stream);
+        self.sockets.accepted(stream);
     }
 
     /// The serve loop's accept failed: the driver's next accept reports it
     /// and pauses the listener.
     pub(crate) fn accept_failed(&mut self) {
-        self.accept_failed = true;
+        self.sockets.accept_failed();
     }
 
     /// Save the lifetime totals as the writer does: a restart's save
@@ -563,42 +398,22 @@ impl SimPlatform {
         self.reboot = true;
     }
 
-    /// The writer's turn: apply what is queued. A key change bumps the
-    /// table's generation, which the next pass copies to the server; its
-    /// result, for the log.
     /// The ring's record after `after`, read directly, for a test to
     /// inspect without taking a subscriber's turn.
     pub fn ring_after(&self, after: Option<u64>) -> Read {
-        self.events.read_after(after)
+        self.device.ring_after(after)
     }
 
-    /// The writer's half of an event read: answer the one the device API
-    /// asked for, as the settings writer does between the loop's passes.
+    /// The writer's half of an event read, between the loop's passes.
     pub fn answer_read(&mut self) {
-        let Some(after) = self.reads.request() else {
-            return;
-        };
-        let batch = self.events.read_batch(after, &mut self.read_batch[..]);
-        self.reads
-            .finish(after, batch, &self.read_batch[..], self.events.last_seq());
+        self.device.answer_read();
     }
 
+    /// The writer's turn: apply what is queued, the device's settings
+    /// first, then the feeder's stores, then a client change, whose result
+    /// it gives for the log.
     pub fn write(&mut self) -> Option<KeyResult> {
-        if let Some(fields) = self.settings_pending.take() {
-            let current = self.settings.settings;
-            let target = current.changed(fields);
-            // A failed save leaves the generation where it was; the client
-            // sees no change, as on the feeder.
-            if target != current {
-                self.settings.save(&target);
-            }
-        }
-        if let Some(credentials) = self.wifi_pending.take() {
-            self.net.save(credentials.as_ref());
-        }
-        if let Some(settings) = self.time_pending.take() {
-            self.time.save(&settings);
-        }
+        self.device.apply_settings();
         self.save_stats(false);
         if let Some(change) = self.calibration_pending.take() {
             self.calibration.save(&change);
@@ -620,78 +435,7 @@ impl SimPlatform {
             }
             None => {}
         }
-
-        let (ticket, change) = self.keys_pending.take()?;
-        let result = match change {
-            ClientChange::Enroll { key, label, role } => {
-                applied(self.clients.enroll(key, label, role))
-            }
-            ClientChange::Revoke { key } => applied(self.clients.revoke(&key)),
-            // The factory reset, as the writer's: it draws its identity from
-            // the generator or does not happen, marks the reset, then
-            // forgets every client; the loop restarts and the next boot
-            // ([`Self::open`]) erases the cleared stores.
-            ClientChange::Reset => match (self.random)() {
-                Some(_) if !reset::mark(&Region::new(&self.flash, storage::RESET)) => KeyResult::Io,
-                // Marked, so committed: `Done` whatever the client store
-                // took, and the next boot erases it.
-                Some(secret) => {
-                    if applied(self.clients.reset(&secret)) == KeyResult::Done {
-                        self.identity_generation += 1;
-                    }
-                    KeyResult::Done
-                }
-                None => KeyResult::NoGenerator,
-            },
-        };
-        self.keys_done = Some((ticket, result));
-        self.clients_changed();
-        Some(result)
-    }
-
-    /// The client table changed: the loop copies it on its next pass, and
-    /// the update stage reads the owners' update keys where the firmware's
-    /// settings writer publishes them.
-    fn clients_changed(&mut self) {
-        self.clients_generation += 1;
-        self.publish_signers();
-    }
-
-    fn publish_signers(&self) {
-        signers::publish(
-            self.clients
-                .clients()
-                .filter(|client| client.role == Role::UpdateSigner)
-                .map(|client| client.key),
-        );
-    }
-
-    fn settings_view(&self) -> SettingsView {
-        let writable = matches!(
-            self.settings.status,
-            SettingsStatus::Loaded | SettingsStatus::Empty | SettingsStatus::Recovered
-        );
-        self.settings
-            .settings
-            .view(self.settings.generation, writable)
-    }
-
-    fn wifi_view(&self) -> WifiView {
-        let stored = self.net.credentials.as_ref();
-        WifiView {
-            stored_ssid_crc: stored.map(|c| crc32(c.ssid())),
-            generation: u32::try_from(self.net.generation).unwrap_or(u32::MAX),
-            writable: self.net.writable(),
-            source: self.wifi_source(),
-        }
-    }
-
-    fn time_view(&self) -> TimeSettingsView {
-        TimeSettingsView {
-            settings: self.time.settings,
-            generation: u32::try_from(self.time.generation).unwrap_or(u32::MAX),
-            writable: self.time.writable(),
-        }
+        self.device.apply_keys()
     }
 
     fn calibration_view(&self) -> CalibrationView {
@@ -706,81 +450,20 @@ impl SimPlatform {
     pub(crate) fn log_tail(&self) -> Rc<LogTail<LOG_TAIL_BYTES>> {
         Rc::clone(&self.log)
     }
-
-    fn stream(&mut self, id: u32) -> Option<&mut TcpStream> {
-        self.streams
-            .iter_mut()
-            .find(|(stream, _)| *stream == id)
-            .map(|(_, stream)| stream)
-    }
 }
 
-/// A client store write's result, as the writer reports it.
-fn applied(result: Result<(), ClientError>) -> KeyResult {
-    result.map_or_else(KeyResult::from, |()| KeyResult::Done)
-}
-
-/// Finish a factory reset an earlier boot marked, before any store opens,
-/// as the writer does: erase every cleared store in the board's order,
-/// rewrite the statistics keeping only the flash erase counts, then erase
-/// the marker. The simulator's image cannot lose power part-way through a
-/// boot's erases; the firmware's writer, which can, is tested for it.
-fn finish_reset(flash: &Rc<Flash>) {
-    let marker = Region::new(flash, storage::RESET);
-    if !reset::pending(&marker) {
-        return;
-    }
-    for store in storage::FACTORY_CLEARED {
-        let region = Region::new(flash, store);
-        for unit in 0..store.count {
-            region.erase(unit);
-        }
-    }
+/// A factory reset's keep step, as the writer's: rewrite the statistics
+/// keeping only the flash erase counts. A save that fails erases the pair
+/// instead, losing only the wear counts, as the writer does.
+fn keep_wear(flash: &Rc<Flash>) {
     let mut stats = StatsStore::default();
     stats.open(Region::new(flash, storage::STATS));
     if stats.status == StatsStatus::Loaded && stats.writable() {
         let wear = stats.totals.wear_only();
-        // A save that fails erases the pair instead, losing only the
-        // wear counts, as the writer does.
         if stats.totals != wear && !stats.save(&wear, SaveKind::Restart) {
-            let region = Region::new(flash, storage::STATS);
-            for unit in 0..storage::STATS.count {
-                region.erase(unit);
-            }
+            stores::erase(flash, storage::STATS);
         }
     }
-    reset::clear(&marker);
-}
-
-/// A handover from stock's activation, as the settings writer finishes it: a
-/// consumer image's, for the simulator has no build Wi-Fi. A cut in the middle
-/// repeats it, since the mark goes last.
-fn finish_handover(flash: &Rc<Flash>, bank: u8) {
-    let marker = Region::new(flash, storage::RESET);
-    if !handover::pending(&marker) {
-        return;
-    }
-    let net = Region::new(flash, storage::NET);
-    for unit in 0..storage::NET.count {
-        net.erase(unit);
-    }
-    let plans = Region::new(flash, storage::PLANS);
-    for unit in 0..storage::PLANS.count {
-        plans.erase(unit);
-    }
-    let mut clients = ClientStore::default();
-    clients.open(Region::new(flash, storage::CLIENTS));
-    if let Some(identity) = clients.identity().copied() {
-        let _ = clients.reset(&identity);
-    }
-    let mut update = UpdateStore::default();
-    update.open(Region::new(flash, storage::UPDATE));
-    let _ = update.start_over();
-    wellfed_hal::ota::update::store_started_over();
-    if bank == 0 {
-        Region::new(flash, storage::CONFIRM).erase(0);
-    }
-    handover::clear(&marker);
 }
 
 /// The meal call's work waiting for the writer's turn.
@@ -810,7 +493,7 @@ impl Platform for SimPlatform {
     }
 
     fn model(&self) -> Model {
-        Model::Plaf103
+        MODEL
     }
 
     fn build_wifi(&self) -> BuildWifi {
@@ -837,7 +520,7 @@ impl Platform for SimPlatform {
     }
 
     fn random(&mut self, out: &mut [u8; 32]) -> bool {
-        match (self.random)() {
+        match self.device.random() {
             Some(bytes) => {
                 *out = bytes;
                 true
@@ -847,8 +530,7 @@ impl Platform for SimPlatform {
     }
 
     fn identity_since(&mut self, seen: u32) -> Option<(u32, [u8; 32])> {
-        let secret = self.clients.identity()?;
-        (self.identity_generation != seen).then_some((self.identity_generation, *secret))
+        self.device.identity_since(seen)
     }
 
     fn gesture(&mut self) -> Option<Gesture> {
@@ -879,11 +561,7 @@ impl Platform for SimPlatform {
     /// Off drops every connection and the NTP socket, and takes no new
     /// one until it is on again, as the network leaving does.
     fn radio(&mut self, radio: Radio) {
-        if radio == Radio::Off && self.radio == Radio::On {
-            self.streams.clear();
-            self.accepted.clear();
-            self.ntp = None;
-        }
+        self.sockets.radio(radio == Radio::On);
         self.radio = radio;
     }
 
@@ -896,7 +574,7 @@ impl Platform for SimPlatform {
     }
 
     fn ipv4(&mut self) -> Option<u32> {
-        (self.radio == Radio::On).then(|| u32::from(self.ip))
+        self.sockets.ipv4()
     }
 
     /// The simulator has no router: an NTP setting names an address.
@@ -905,25 +583,11 @@ impl Platform for SimPlatform {
     }
 
     fn time_settings(&mut self) -> TimeSettingsResult {
-        TimeSettingsResult::Current {
-            view: self.time_view(),
-            pending: self.time_pending.is_some(),
-        }
+        self.device.time_settings()
     }
 
     fn time_settings_change(&mut self, settings: TimeSettings) -> TimeSettingsResult {
-        let view = self.time_view();
-        if !view.writable {
-            return TimeSettingsResult::ReadOnly;
-        }
-        if self.time_pending.is_some() {
-            return TimeSettingsResult::Busy;
-        }
-        self.time_pending = Some(settings);
-        TimeSettingsResult::Current {
-            view,
-            pending: true,
-        }
+        self.device.time_settings_change(settings)
     }
 
     fn calibration(&mut self) -> CalibrationResult {
@@ -1012,97 +676,50 @@ impl Platform for SimPlatform {
     }
 
     fn settings(&mut self) -> Option<SettingsView> {
-        Some(self.settings_view())
+        Some(self.device.settings())
     }
 
     fn settings_request(&mut self, change: SettingsFields) -> SettingsResult {
-        let view = self.settings_view();
-        if !change.changes() {
-            let pending = self.settings_pending.is_some();
-            return SettingsResult::Current { view, pending };
-        }
-        if !view.writable {
-            return SettingsResult::ReadOnly;
-        }
-        if self.settings_pending.is_some() {
-            return SettingsResult::Busy;
-        }
-        self.settings_pending = Some(change);
-        SettingsResult::Current {
-            view,
-            pending: true,
-        }
+        self.device.settings_request(change)
     }
 
     fn wifi(&mut self) -> WifiResult {
-        WifiResult::Current {
-            view: self.wifi_view(),
-            pending: self.wifi_pending.is_some(),
-        }
+        self.device.wifi()
     }
 
     fn wifi_change(&mut self, credentials: Option<Credentials>) -> WifiResult {
-        let view = self.wifi_view();
-        if !view.writable {
-            return WifiResult::ReadOnly;
-        }
-        if self.wifi_pending.is_some() {
-            return WifiResult::Busy;
-        }
-        self.wifi_pending = Some(credentials);
-        WifiResult::Current {
-            view,
-            pending: true,
-        }
+        self.device.wifi_change(credentials)
     }
 
     fn wifi_saving(&self) -> bool {
-        self.wifi_pending.is_some()
+        self.device.wifi_saving()
     }
 
     /// The feeder reports the source of its last join, which follows a save
     /// only at the next join; there is no join here, so the store stands in
     /// for it.
     fn wifi_source(&self) -> WifiSource {
-        if self.net.credentials.is_some() {
-            WifiSource::Stored
-        } else {
-            WifiSource::Build
-        }
+        self.device.wifi_source()
     }
 
     fn keys_request(&mut self, change: ClientChange) -> Requested {
-        if self.keys_pending.is_some() {
-            return Requested::Busy;
-        }
-        self.ticket = self.ticket.wrapping_add(1).max(1);
-        self.keys_pending = Some((self.ticket, change));
-        Requested::Queued
+        self.device.keys_request(change)
     }
 
     fn keys_ticket(&self) -> u32 {
-        self.ticket
+        self.device.keys_ticket()
     }
 
     fn keys_outcome(&self, ticket: u32) -> Option<KeyResult> {
-        self.keys_done
-            .filter(|&(done, _)| done == ticket)
-            .map(|(_, result)| result)
+        self.device.keys_outcome(ticket)
     }
 
     fn clients_since(&mut self, seen: u32, table: &mut [Option<Client>; CLIENTS]) -> Option<u32> {
-        if self.clients_generation == seen {
-            return None;
-        }
-        *table = [None; CLIENTS];
-        for (slot, client) in table.iter_mut().zip(self.clients.clients()) {
-            *slot = Some(*client);
-        }
-        Some(self.clients_generation)
+        self.device.clients_since(seen, table)
     }
 
-    fn queue_event(&mut self, at: Option<u32>, body: [u8; BODY_BYTES], _slot: EventSlot) -> bool {
-        self.events.append(at, &body).is_ok()
+    fn queue_event(&mut self, at: Option<u32>, body: [u8; BODY_BYTES], _: EventSlot) -> bool {
+        self.device.queue_event(at, &body)
     }
 
     fn take_lost(&mut self) -> u32 {
@@ -1110,19 +727,19 @@ impl Platform for SimPlatform {
     }
 
     fn event_after(&mut self, reader: Reader, after: Option<u64>) -> Option<Read> {
-        self.reads.result(reader, after, self.events.last_seq())
+        self.device.event_after(reader, after)
     }
 
     fn reader_left(&mut self, reader: Reader) {
-        self.reads.left(reader);
+        self.device.reader_left(reader);
     }
 
     fn epoch(&self) -> Option<u32> {
-        Some(self.events.epoch())
+        Some(self.device.epoch())
     }
 
     fn last_event(&self) -> Option<u64> {
-        self.events.last_seq()
+        self.device.last_event()
     }
 
     fn log_after(&self, after: Option<u32>, text: &mut [u8]) -> Option<LogBatch> {
@@ -1131,34 +748,36 @@ impl Platform for SimPlatform {
 
     /// The simulated uptime never stops.
     fn clock_ms(&mut self, now_ms: u32) -> u32 {
-        self.clock.advance(now_ms);
+        self.device.clock().advance(now_ms);
         now_ms
     }
 
     fn wall_ms(&mut self, now_ms: u32) -> Option<u64> {
-        self.clock.advance(now_ms);
-        self.clock.read(now_ms).map(|reading| reading.unix_ms)
+        let clock = self.device.clock();
+        clock.advance(now_ms);
+        clock.read(now_ms).map(|reading| reading.unix_ms)
     }
 
     fn time_sync(&mut self, now_ms: u32, sync: Sync, origin: Origin) -> Result<Jump, SyncError> {
-        self.clock.sync(now_ms, sync, origin)
+        self.device.clock().sync(now_ms, sync, origin)
     }
 
     fn time_fix(&mut self, now_ms: u32, fix: Fix) -> Result<Jump, SyncError> {
-        self.clock.fix(now_ms, fix)
+        self.device.clock().fix(now_ms, fix)
     }
 
     fn clock_state(&mut self, now_ms: u32) -> ClockState {
-        self.clock.advance(now_ms);
-        self.clock.state(now_ms)
+        let clock = self.device.clock();
+        clock.advance(now_ms);
+        clock.state(now_ms)
     }
 
     fn offset_at(&self, unix_ms: u64) -> Option<i32> {
-        self.clock.offset_at(unix_ms)
+        self.device.wall().offset_at(unix_ms)
     }
 
     fn set_zone_rule(&mut self, rule: Option<Rule>) {
-        self.clock.set_rule(rule);
+        self.device.clock().set_rule(rule);
     }
 
     fn outputs_claimed(&self) -> bool {
@@ -1216,65 +835,25 @@ impl Platform for SimPlatform {
         true
     }
 
-    fn listen(&mut self, _port: u16) -> Option<Socket> {
+    fn listen(&mut self, _: u16) -> Option<Socket> {
         // The serve loop bound its listener before the first boot.
-        self.listening = true;
-        Some(Socket::Listener)
+        Some(self.sockets.listen())
     }
 
-    fn accept(&mut self, _listener: Socket) -> Accepted<Socket> {
-        if self.radio == Radio::Off {
-            self.accepted.clear();
-            return Accepted::None;
-        }
-        if core::mem::take(&mut self.accept_failed) {
-            return Accepted::Error;
-        }
-        let Some(stream) = self.accepted.pop_front() else {
-            return Accepted::None;
-        };
-        let id = self.next_stream;
-        self.next_stream = self.next_stream.wrapping_add(1);
-        self.streams.push((id, stream));
-        Accepted::Socket(Socket::Stream(id))
+    fn accept(&mut self, _: Socket) -> Accepted<Socket> {
+        self.sockets.accept()
     }
 
     fn receive(&mut self, socket: Socket, into: &mut [u8]) -> Received {
-        let Socket::Stream(id) = socket else {
-            return Received::Closed;
-        };
-        let Some(stream) = self.stream(id) else {
-            return Received::Closed;
-        };
-        match stream.try_read(into) {
-            Ok(0) => Received::Closed,
-            Ok(n) => Received::Data(n),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Received::Empty,
-            Err(_) => Received::Closed,
-        }
+        self.sockets.receive(socket, into)
     }
 
     fn send(&mut self, socket: Socket, bytes: &[u8]) -> Option<usize> {
-        let Socket::Stream(id) = socket else {
-            return None;
-        };
-        if self.sends_blocked {
-            return Some(0);
-        }
-        match self.stream(id)?.try_write(bytes) {
-            Ok(n) => Some(n),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Some(0),
-            Err(_) => None,
-        }
+        self.sockets.send(socket, bytes)
     }
 
     fn close(&mut self, socket: Socket) {
-        match socket {
-            Socket::Listener => self.listening = false,
-            Socket::Mdns => {}
-            Socket::Ntp => self.ntp = None,
-            Socket::Stream(id) => self.streams.retain(|(stream, _)| *stream != id),
-        }
+        self.sockets.close(socket);
     }
 
     fn mdns_open(&mut self) -> Option<Socket> {
@@ -1282,63 +861,25 @@ impl Platform for SimPlatform {
     }
 
     /// A failed send is only a lost answer: the asker asks again.
-    fn mdns_send(&mut self, _socket: Socket, bytes: &[u8], ip: u32, port: u16) -> bool {
-        if let Some(mdns) = self.mdns.as_ref().filter(|_| self.radio == Radio::On) {
-            let to = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::from(ip), port));
-            let _ = mdns.try_send_to(bytes, to);
-        }
-        true
+    fn mdns_send(&mut self, _: Socket, bytes: &[u8], ip: u32, port: u16) -> bool {
+        self.sockets.mdns_send(bytes, ip, port)
     }
 
     fn mdns_receive(&mut self, _socket: Socket, into: &mut [u8]) -> Datagram {
-        let Some(mdns) = self.mdns.as_ref().filter(|_| self.radio == Radio::On) else {
-            return Datagram::None;
-        };
-        match mdns.try_recv_from(into) {
-            Ok((len, SocketAddr::V4(from))) => Datagram::Got {
-                len,
-                ip: u32::from(*from.ip()),
-                port: from.port(),
-            },
-            Ok(_) | Err(_) => Datagram::None,
-        }
+        self.sockets.mdns_receive(into)
     }
 
     fn ntp_open(&mut self) -> Option<Socket> {
-        if self.radio == Radio::Off {
-            return None;
-        }
-        let socket = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
-        socket.set_nonblocking(true).ok()?;
-        self.ntp = Some(socket);
-        Some(Socket::Ntp)
+        self.sockets.ntp_open()
     }
 
     /// A failed send is only a lost request: the exchange asks again.
     fn ntp_send(&mut self, _socket: Socket, bytes: &[u8], ip: u32, port: u16) -> bool {
-        let Some(ntp) = self.ntp.as_ref().filter(|_| self.radio == Radio::On) else {
-            return false;
-        };
-        let to = SocketAddrV4::new(Ipv4Addr::from(ip), port);
-        ntp.send_to(bytes, to).is_ok()
+        self.sockets.ntp_send(bytes, ip, port)
     }
 
     fn ntp_receive(&mut self, _socket: Socket, into: &mut [u8]) -> Datagram {
-        let Some(ntp) = &self.ntp else {
-            return Datagram::Error;
-        };
-        match ntp.recv_from(into) {
-            Ok((len, SocketAddr::V4(from))) => Datagram::Got {
-                len,
-                ip: u32::from(*from.ip()),
-                port: from.port(),
-            },
-            Ok(_) => Datagram::None,
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Datagram::None,
-            // A refused port (nothing listens yet) is not the socket's end.
-            Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => Datagram::None,
-            Err(_) => Datagram::Error,
-        }
+        self.sockets.ntp_receive(into)
     }
 
     fn heap(&self) -> (u32, u32) {
@@ -1360,10 +901,7 @@ impl Platform for SimPlatform {
     }
 
     fn events_fill(&self) -> EventsFill {
-        EventsFill {
-            kept: self.events.kept(),
-            capacity: self.events.capacity(),
-        }
+        self.device.events_fill()
     }
 
     fn traces_fill(&self) -> TracesFill {
@@ -1395,49 +933,33 @@ impl Platform for SimPlatform {
     }
 
     fn ble_restart(&mut self) {
-        self.ble = SimBle::default();
+        self.ble = Ble::default();
     }
 
     /// A connection or a leave first, then the phone's next message once
     /// the loop has consumed the one it holds, as the driver reports them.
     fn ble_step(&mut self, advertise: bool) -> BleStep<Infallible> {
-        self.ble.advertising = advertise && !self.ble.connected;
-        let link = self.ble.link.take().or_else(|| {
-            if self.ble.held.is_some() {
-                return None;
-            }
-            self.ble.held = Some(self.ble.from_host.pop_front()?);
-            Some(BleLink::Message)
-        });
         BleStep {
             delay_ms: NO_RADIO_MS,
             record: None,
-            link,
+            link: self.ble.step(advertise),
         }
     }
 
     fn ble_message(&self) -> Option<&[u8]> {
-        self.ble.held.as_deref()
+        self.ble.message()
     }
 
     fn ble_consume(&mut self) {
-        self.ble.held = None;
+        self.ble.consume();
     }
 
     fn ble_send(&mut self, body: &[u8]) -> bool {
-        if self.ble.connected {
-            self.ble.to_host.push_back(body.to_vec());
-        }
-        self.ble.connected
+        self.ble.send(body)
     }
 
-    fn ble_close(&mut self, _reason: BleDrop) -> Option<Infallible> {
-        if self.ble.connected {
-            self.ble.connected = false;
-            self.ble.from_host.clear();
-            self.ble.held = None;
-            self.ble.link = Some(BleLink::Closed);
-        }
+    fn ble_close(&mut self, _: BleDrop) -> Option<Infallible> {
+        self.ble.close();
         None
     }
 

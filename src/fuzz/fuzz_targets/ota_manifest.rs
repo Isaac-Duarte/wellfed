@@ -18,6 +18,7 @@ libfuzzer_sys::fuzz_target!(|data: &[u8]| {
         floor: 0,
         device: [0; 32],
         running: None,
+        model: 1,
     };
     assert!(offer::admit_offer(data, None, &context).is_err());
     if let Some(head) = data.get(..offer::MANIFEST_LEN) {

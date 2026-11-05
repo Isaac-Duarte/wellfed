@@ -77,7 +77,7 @@ Some crates may not be linked at all. cargo-deny cannot ban every dependent with
 - `wellfed-flash`, the flash client. Every read and write runs it as a process. The image, bank and review checks other crates share live in `wellfed-image`.
 - `wellfed-stock`, the stock server.
 
-The same bans keep the SDK below the product. `wellfed-feeder`, `wellfed-feeder-runtime` and `wellfed-proto` are linked only by the product, firmware and host crates that use them today, so no `src/sdk` crate can take one on.
+The same bans keep the SDK below the product. `wellfed-device`, `wellfed-device-runtime`, `wellfed-feeder`, `wellfed-feeder-runtime` and `wellfed-proto` are linked only by the product, firmware and host crates that use them today, so no `src/sdk` crate can take one on.
 
 `cargo xtask check-repository` also checks the server's layering from `cargo metadata`:
 

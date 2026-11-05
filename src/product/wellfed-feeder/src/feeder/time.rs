@@ -22,7 +22,8 @@ use wellfed_device_api::mailbox::{NtpResult, NtpServer, TimeSettingsResult};
 use wellfed_proto::api::{EventBody, Source};
 
 use super::events;
-use super::platform::{Datagram, Platform};
+use super::platform::Platform;
+use wellfed_device::io::Datagram;
 
 /// A socket that failed is opened again after this.
 const RETRY_MS: u32 = 2_000;

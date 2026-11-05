@@ -1,4 +1,5 @@
-//! What the feeder reports about itself, and its settings.
+//! What a device reports about itself, and its settings: the shared core
+//! every kind has, and each kind's own part.
 
 use std::fmt;
 use std::str::FromStr;
@@ -8,13 +9,13 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
-    FeedOutcome, FeedReason, FoodLevel, Generation, MEAL_REMINDER_MINUTES_MAX,
+    DeviceKind, FeedOutcome, FeedReason, FoodLevel, Generation, MEAL_REMINDER_MINUTES_MAX,
     MEAL_REMINDER_MINUTES_MIN,
 };
 
-/// What the feeder reports about itself.
+/// What a device reports about itself: the shared core every kind
+/// reports, then its own kind's part.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[schema(as = FeederStatus)]
 pub struct Status {
     pub build: String,
     /// The flash bank it booted from.
@@ -26,25 +27,69 @@ pub struct Status {
     /// Wi-Fi signal, dBm.
     pub rssi: i32,
     pub wifi: WifiSource,
-    /// Every time this boot a joined link was lost and the feeder went on
+    /// Every time this boot a joined link was lost and the device went on
     /// to rejoin, whatever noticed it.
     pub link_losses: u32,
-    /// Those of `link_losses` the feeder's link check noticed (its DHCP
+    /// Those of `link_losses` the device's link check noticed (its DHCP
     /// lease ran out or its gateway stopped answering) rather than the
     /// association. The name is from the internet DNS check that check
     /// replaced.
     pub dns_losses: u32,
-    /// The feeder's clock; `None` while it is invalid.
+    /// The device's clock; `None` while it is invalid.
     pub clock: Option<Timestamp>,
     pub power: Option<Power>,
-    /// The panel's child lock; `None` before it is known.
-    pub locked: Option<bool>,
-    pub settings_generation: Generation,
     pub wifi_generation: Generation,
-    /// The newest event's sequence number on the feeder.
+    /// The newest event's sequence number on the device.
     pub last_event: Option<u64>,
     /// Open device API sessions, the server's included.
     pub sessions: u8,
+    /// What only this kind of device reports.
+    pub device: DeviceStatus,
+}
+
+impl Status {
+    /// The kind of device that reported it.
+    pub const fn kind(&self) -> DeviceKind {
+        self.device.kind()
+    }
+
+    /// The feeder's part, when a feeder reported it.
+    pub const fn feeder(&self) -> Option<&FeederStatus> {
+        match &self.device {
+            DeviceStatus::Feeder(feeder) => Some(feeder),
+        }
+    }
+
+    /// The feeder's part to change in place, when a feeder reported it.
+    pub const fn feeder_mut(&mut self) -> Option<&mut FeederStatus> {
+        match &mut self.device {
+            DeviceStatus::Feeder(feeder) => Some(feeder),
+        }
+    }
+}
+
+/// The part of [`Status`] only one kind of device reports, tagged by the
+/// kind in JSON (`"kind": "feeder"`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DeviceStatus {
+    Feeder(FeederStatus),
+}
+
+impl DeviceStatus {
+    pub const fn kind(&self) -> DeviceKind {
+        match self {
+            Self::Feeder(_) => DeviceKind::Feeder,
+        }
+    }
+}
+
+/// What a feeder reports beside the shared status.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct FeederStatus {
+    /// The panel's child lock; `None` before it is known.
+    pub locked: Option<bool>,
+    pub settings_generation: Generation,
     /// The hopper as the food beam last read it, in a feed or at rest.
     pub food: FoodLevel,
     /// The last feed this boot that ended on a fault (failed or
@@ -230,10 +275,42 @@ pub enum Battery {
     Stale { age_ms: u32 },
 }
 
+/// A device's settings, by its kind, tagged by the kind in JSON (`"kind":
+/// "feeder"`). Each kind reads and writes its own through its own ops; this
+/// is what a host holds and serves without caring which kind it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Settings {
+    Feeder(FeederSettings),
+}
+
+impl Settings {
+    pub const fn kind(&self) -> DeviceKind {
+        match self {
+            Self::Feeder(_) => DeviceKind::Feeder,
+        }
+    }
+
+    /// The settings store's generation: it goes back in `If-Match` with a
+    /// change, and is the `ETag` of a read.
+    pub const fn generation(&self) -> Generation {
+        match self {
+            Self::Feeder(settings) => settings.generation,
+        }
+    }
+
+    /// The feeder's, when a feeder holds them.
+    pub const fn feeder(&self) -> Option<&FeederSettings> {
+        match self {
+            Self::Feeder(settings) => Some(settings),
+        }
+    }
+}
+
 /// The feeder's settings. Its `generation` goes back in `If-Match` with a
 /// change, and is the `ETag` of a read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct Settings {
+pub struct FeederSettings {
     pub generation: Generation,
     pub lights: bool,
     pub sound: bool,
@@ -257,12 +334,12 @@ pub struct Settings {
     pub writable: bool,
 }
 
-impl Settings {
+impl FeederSettings {
     /// These settings with `changes` applied, as the feeder applies a
     /// patch: what it does not name stays. A client that saw a change land
     /// puts it on what it holds this way, rather than waiting on a re-read.
-    pub fn apply(&mut self, changes: SettingsPatch) {
-        let SettingsPatch {
+    pub fn apply(&mut self, changes: FeederSettingsPatch) {
+        let FeederSettingsPatch {
             lights,
             sound,
             volume,
@@ -295,9 +372,9 @@ impl Settings {
     }
 }
 
-/// The settings to change; absent fields stay as they are.
+/// The feeder's settings to change; absent fields stay as they are.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct SettingsPatch {
+pub struct FeederSettingsPatch {
     #[serde(default)]
     pub lights: Option<bool>,
     #[serde(default)]

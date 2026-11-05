@@ -1,6 +1,6 @@
 # Firmwares
 
-Each folder here is one firmware for the PLAF103, built on the Wellfed SDK (`src/sdk/wellfed-sdk`). This page lists them, says what the SDK runtime guarantees whichever one runs, and shows how to write your own. Building is covered in [firmware builds](../../../docs/development/firmware-builds.md).
+Each folder here is one firmware. All but `fountain` are the PLAF103's, built on the Wellfed SDK (`src/sdk/wellfed-sdk`); `fountain` is the PLWF106's boot test, which starts its one task itself. This page lists them, says what the SDK runtime guarantees whichever one runs, and shows how to write your own. Building is covered in [firmware builds](../../../docs/development/firmware-builds.md).
 
 ## The firmwares
 
@@ -10,6 +10,7 @@ Each folder here is one firmware for the PLAF103, built on the Wellfed SDK (`src
 | [`feeder`](feeder) | The product firmware every owner runs. See [below](#the-feeder-firmware) |
 | [`bringup`](bringup) | One bring-up area per image variant; the normal image adds nothing. See [below](#bring-up-variants) |
 | [`blink`](blink) | One task that blinks the connection indicator. The smallest firmware, and the template for new ones |
+| [`fountain`](fountain) | The PLWF106's boot test: the pump latched off, then the build, bank and pump readback over UART, and a beat. Not on the SDK runtime ([boot test](../../../docs/devices/plwf106/boot-test.md)) |
 
 Pick one at build time:
 
@@ -74,7 +75,7 @@ Not yet guaranteed: the runtime does not watch a firmware task's liveness in gen
 
 1. Copy `blink` to `src/firmware/wellfed/<name>`, and name the package `wellfed-fw-<name>`.
 
-   A firmware is a `no_std` KM4 staticlib. It has a `km4` feature that enables `wellfed-sdk/km4` and `wellfed-feeder-runtime/km4`. It depends on `wellfed-feeder-runtime`, because the runtime's settings writer and Wi-Fi join call the record stores that crate defines.
+   A firmware is a `no_std` KM4 staticlib. It has a `km4` feature that enables `wellfed-sdk/km4` and `wellfed-feeder-runtime/km4`. It depends on `wellfed-feeder-runtime`, because the runtime's settings writer and Wi-Fi join call the record stores that crate defines over `wellfed-device-runtime`.
 
 2. Fill in its `[package.metadata.wellfed]` table. It is all the builder knows about the firmware, and `wellfed-build list` prints it:
 
@@ -152,7 +153,7 @@ Log records as `PL<NAME>1 …` lines.
 - `record.log()` (the `LogRecord` trait) then writes the whole line.
 - A line the attributes cannot express gets a hand-written `Display` and `wellfed_sdk::log(format_args!("PLXXX1 {record}\r\n"))`.
 - Either way, a line longer than the 192-byte buffer is dropped, never truncated.
-- A firmware built with the SDK's `log-tail` feature (the `feeder`) also keeps the newest lines in a 4 KiB RAM tail, which the device API streams to an owner ([debug log](../../../docs/firmware/device-api.md#debug-log)).
+- A firmware built with the SDK's `log-tail` feature (the `feeder`) also keeps the newest lines in a 16 KiB RAM tail, which the device API streams to an owner ([debug log](../../../docs/firmware/device-api.md#debug-log)).
 
 ### What the stack audit needs
 

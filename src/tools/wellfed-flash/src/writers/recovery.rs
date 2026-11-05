@@ -1,4 +1,6 @@
-//! Sector-scoped original-stock recovery of bank 1.
+//! Sector-scoped original-stock recovery of bank 1, over the baseline
+//! model's bank-1 window: the PLAF103's whole bank, or the fountain's
+//! narrower write window.
 //!
 //! Port of `src/tools/flash/plan-stock-recovery.py` and `run_transaction` in
 //! `src/tools/flash/recovery-transaction.py`. Every byte outside bank 1 is
@@ -16,7 +18,7 @@ use crate::evidence::journal::{Event, Journal};
 use crate::evidence::report::SummaryStatus;
 use crate::evidence::{Root, utc};
 use crate::link::protocol::{CAPACITY, Port, SECTOR};
-use crate::link::sector::{self, Baseline, END, MarkerCommit, Restored, START};
+use crate::link::sector::{self, Baseline, MarkerCommit, Restored, START};
 use wellfed_formats::canonical::{canonical, sha256};
 use wellfed_formats::require;
 
@@ -29,6 +31,10 @@ pub enum RecoveryError {
     SnapshotLength { bytes: usize },
     #[error("Factory/pre-application bytes differ; stop for investigation")]
     FactoryDiffers,
+    #[error(
+        "The FTL pages {start:#x}..{end:#x} are erased but the backup's are not; they need their own reviewed restore before stock runs"
+    )]
+    FtlErased { start: usize, end: usize },
     #[error("Proposed bytes escape application bank 1")]
     EscapesBank,
     #[error("Proposed bank is not exact baseline stock")]
@@ -130,8 +136,10 @@ const REQUIRED_BEFORE_ANY_WRITE: [&str; 9] = [
 
 /// The offline recovery plan: no executable command, only sector payload
 /// hashes and the preconditions every write must meet.
-pub fn plan(baseline: &Baseline, current: &[u8]) -> Result<Plan> {
-    let baseline = baseline.bytes();
+pub fn plan(pinned: &Baseline, current: &[u8]) -> Result<Plan> {
+    let baseline = pinned.bytes();
+    // Bank 1 starts at `START` on every model; where it ends is the model's.
+    let end = pinned.bank1().1;
     require(current.len() == CAPACITY, || {
         RecoveryError::SnapshotLength {
             bytes: current.len(),
@@ -141,10 +149,20 @@ pub fn plan(baseline: &Baseline, current: &[u8]) -> Result<Plan> {
         RecoveryError::FactoryDiffers
     })?;
 
+    // A recovery binds the current read as it is, so a wiped FTL (an erase
+    // that took more than its sector) would pass unnoticed and be booted.
+    if let Some((start, end)) = pinned.pins().ftl {
+        let erased = |bytes: &[u8]| bytes.iter().all(|b| *b == 0xff);
+        require(
+            !erased(&current[start..end]) || erased(&baseline[start..end]),
+            || RecoveryError::FtlErased { start, end },
+        )?;
+    }
+
     let mut sectors = Vec::new();
     let mut proposed = current.to_vec();
 
-    for offset in (START..END).step_by(SECTOR) {
+    for offset in (START..end).step_by(SECTOR) {
         let (before, after) = (
             &current[offset..offset + SECTOR],
             &baseline[offset..offset + SECTOR],
@@ -172,21 +190,26 @@ pub fn plan(baseline: &Baseline, current: &[u8]) -> Result<Plan> {
     }
 
     require(
-        proposed[..START] == current[..START] && proposed[END..] == current[END..],
+        proposed[..START] == current[..START] && proposed[end..] == current[end..],
         || RecoveryError::EscapesBank,
     )?;
-    require(proposed[START..END] == baseline[START..END], || {
+    require(proposed[START..end] == baseline[START..end], || {
         RecoveryError::NotBaseline
     })?;
     require(
-        sectors.is_empty() || current[START..START + 8] != baseline[START..START + 8],
+        sectors.is_empty() || !pinned.bootable(&current[START..START + 8]),
         || RecoveryError::MarkerStillValid,
     )?;
+    for entry in &sectors {
+        pinned
+            .pins()
+            .writable(entry.offset, entry.offset + SECTOR)?;
+    }
 
     // The marker sector goes last; activation is a separate no-erase pass.
     sectors.sort_by_key(|entry| (entry.offset == START, entry.offset));
 
-    let preserved = [(0, START), (END, CAPACITY)]
+    let preserved = [(0, START), (end, CAPACITY)]
         .into_iter()
         .map(|(start, end_exclusive)| Preserved {
             start,
@@ -218,7 +241,7 @@ pub fn plan(baseline: &Baseline, current: &[u8]) -> Result<Plan> {
         target_bank: 1,
         target_range: Range {
             start: START,
-            end_exclusive: END,
+            end_exclusive: end,
         },
         sector_bytes: SECTOR,
         changed_sector_count: sectors.len(),
@@ -338,6 +361,13 @@ pub fn run_transaction(
             sha256: sha256(current),
         })?;
 
+        // The bytes sharing an erase block with bank 1, as the reviewed
+        // current read holds them: every erase beside them must leave them so.
+        let neighbors = baseline
+            .pins()
+            .neighbors
+            .map(|(start, end)| sha256(&current[start..end]));
+
         let mut results = Vec::new();
         for entry in &expected.ordered_sector_payloads {
             let mut append = |event: crate::evidence::journal::At| journal.append(&event);
@@ -346,6 +376,7 @@ pub fn run_transaction(
                 baseline,
                 entry.offset,
                 &entry.before_sha256,
+                neighbors.as_deref(),
                 &mut append,
             )?;
 
@@ -382,12 +413,13 @@ pub fn run_transaction(
         let Some(after) = last.borrow().clone() else {
             return Err(RecoveryError::NoFinalSnapshot.into());
         };
+        let end = baseline.bank1().1;
         require(
-            after[..START] == current[..START] && after[END..] == current[END..],
+            after[..START] == current[..START] && after[end..] == current[end..],
             || RecoveryError::PreservedDiffer,
         )?;
         require(
-            after[START..END] == baseline.bytes()[START..END]
+            after[START..end] == baseline.bytes()[START..end]
                 && sha256(&after) == expected.proposed_snapshot_sha256,
             || RecoveryError::FinalDiffers,
         )?;

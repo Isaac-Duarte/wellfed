@@ -160,15 +160,20 @@ fn carrying_an_expired_anchor_preserves_its_learned_rate() {
     let before = clock.state(2_000_000);
     assert!(before.learned);
 
+    let mut expired = false;
     for day in 1..=50_u64 {
         let now = u32::try_from(day * 24 * u64::from(HOUR_MS) % (u64::from(u32::MAX) + 1)).unwrap();
         clock.advance(now);
         let after = clock.state(now);
-        assert_eq!(after.reading, None);
+        if expired {
+            assert_eq!(after.reading, None, "an expired clock revived on day {day}");
+        }
+        expired |= after.reading.is_none();
         assert!(after.learned);
         assert_eq!(after.rate_ppb, before.rate_ppb);
         assert_eq!(after.rate_bound_ppb, before.rate_bound_ppb);
     }
+    assert!(expired, "the test must exercise the expired learned clock");
 }
 
 #[test]
@@ -382,7 +387,7 @@ fn ntp_polls_stay_inside_the_bound_at_the_measured_worst_drift() {
 }
 
 #[test]
-fn the_rate_is_learned_from_owner_syncs_and_the_clock_holds_for_a_day() {
+fn the_rate_is_learned_from_owner_syncs_and_the_clock_holds_for_six_days() {
     let mut clock = WallClock::default();
     clock.fix(0, fix(NOON, 20, Origin::Owner)).unwrap();
     assert!(!clock.state(0).learned);
@@ -405,24 +410,24 @@ fn the_rate_is_learned_from_owner_syncs_and_the_clock_holds_for_a_day() {
     );
     assert_eq!(state.rate_bound_ppb, LEARNED_FLOOR_PPM * 1000);
 
-    // 21 hours with no source: the corrected clock is within a second of
+    // Six days with no source: the corrected clock is within a second of
     // the truth, and still valid with a bound under two minutes.
-    let truth = 7 * step + 21 * u64::from(HOUR_MS);
+    let truth = 7 * step + 144 * u64::from(HOUR_MS);
     let reading = clock.read(slow(truth)).unwrap();
     let off = reading.unix_ms.abs_diff(NOON + truth);
     assert!(off < 1_000, "off by {off} ms");
     assert!(reading.error_ms <= MAX_ERROR_MS);
 
-    // 23 hours is past the learned floor's 22.
-    let truth = 7 * step + 23 * u64::from(HOUR_MS);
+    // Seven days is past the learned floor's 6.9.
+    let truth = 7 * step + 168 * u64::from(HOUR_MS);
     assert_eq!(clock.read(slow(truth)), None);
 }
 
 /// The final review's scenario: after a cold boot an attacker's NTP answer
 /// sets the clock 100 s behind, and an owner's sync six hours later falls
 /// inside its interval. Measured from the attacker's fix that sync would
-/// teach +4,630 ppm with a 1,500 ppm bound, and 20 h on the clock would be
-/// 333 s off while claiming 109 s. A free NTP set is no baseline: the
+/// teach +4,630 ppm with a 200 ppm bound, and 20 h on the clock would be
+/// 333 s off while claiming about 15 s. A free NTP set is no baseline: the
 /// owner's sync becomes it, and the clock stays honest or expires.
 #[test]
 fn an_attackers_boot_fix_is_no_baseline_for_an_owners_rate() {

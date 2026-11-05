@@ -1,5 +1,5 @@
 //! UART flash reads, region-scoped development updates, give-ways and
-//! original-stock recovery for the PLAF103 research unit.
+//! original-stock recovery for the PLAF103 and PLWF106 research units.
 //!
 //! Ported from the Python clients formerly under `src/tools/flash/`, keeping
 //! their report, plan and journal formats. Every writer keeps the pinned helper,
@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod device;
 pub mod error;
 pub mod evidence;
 pub mod link;

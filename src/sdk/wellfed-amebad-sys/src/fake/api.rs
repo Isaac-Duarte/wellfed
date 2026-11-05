@@ -85,7 +85,7 @@ pub fn boot_reason() -> u32 {
 
 fn storage_span(sector: u32, offset: u32, len: usize) -> Option<usize> {
     let end = offset as usize + len;
-    (sector < STORAGE_SECTORS && end <= SECTOR_BYTES as usize)
+    ((0..STORAGE_SECTORS).contains(&sector) && end <= SECTOR_BYTES as usize)
         .then(|| (sector * SECTOR_BYTES + offset) as usize)
 }
 
@@ -298,11 +298,12 @@ pub fn set_primask(mask: u32) {
 
 /// # Safety
 /// The caller owns every pin it writes or reconfigures. The motor pins
-/// ([`MOTOR_MASK`](wellfed_board_plaf103::pins::MOTOR_MASK)) belong to the HAL's board and
+/// ([`MOTOR_MASK`](wellfed_board::pins::MOTOR_MASK)) belong to the HAL's board and
 /// stopped-output owners, every other output to the port that drives it.
 pub unsafe fn gpio_port_write(port: u32, mask: u32, value: u32) {
     let hook = with(|h| {
         assert!(port < 2);
+        #[cfg(wellfed_board = "plaf103")]
         if port == 0 && mask == MOTOR_MASK && h.blocked_motor_write {
             return None;
         }
@@ -330,7 +331,7 @@ pub fn gpio_no_pull(pin: u32) {
 
 /// # Safety
 /// The caller owns every pin it writes or reconfigures. The motor pins
-/// ([`MOTOR_MASK`](wellfed_board_plaf103::pins::MOTOR_MASK)) belong to the HAL's board and
+/// ([`MOTOR_MASK`](wellfed_board::pins::MOTOR_MASK)) belong to the HAL's board and
 /// stopped-output owners, every other output to the port that drives it.
 pub unsafe fn gpio_init(pin: u32, output: bool) {
     let hook = with(|h| {
@@ -356,7 +357,7 @@ pub unsafe fn gpio_init(pin: u32, output: bool) {
 
 /// # Safety
 /// The caller owns every pin it writes or reconfigures. The motor pins
-/// ([`MOTOR_MASK`](wellfed_board_plaf103::pins::MOTOR_MASK)) belong to the HAL's board and
+/// ([`MOTOR_MASK`](wellfed_board::pins::MOTOR_MASK)) belong to the HAL's board and
 /// stopped-output owners, every other output to the port that drives it.
 pub unsafe fn gpio_enable_outputs(port: u32, mask: u32) {
     let hook = with(|h| {
@@ -422,13 +423,13 @@ pub fn pad_control(pin: u32) -> u32 {
 
 /// # Safety
 /// The caller owns every pin it writes or reconfigures. The motor pins
-/// ([`MOTOR_MASK`](wellfed_board_plaf103::pins::MOTOR_MASK)) belong to the HAL's board and
+/// ([`MOTOR_MASK`](wellfed_board::pins::MOTOR_MASK)) belong to the HAL's board and
 /// stopped-output owners, every other output to the port that drives it.
 pub unsafe fn gpio_write_bit(pin: u32, high: bool) {
-    let blocked = with(|h| {
-        pin == pins::IR_PB && ((high && h.blocked_optics_write) || (!high && h.blocked_optics_off))
-    });
-    if blocked {
+    #[cfg(wellfed_board = "plaf103")]
+    if with(|h| {
+        pin == IR_PB && ((high && h.blocked_optics_write) || (!high && h.blocked_optics_off))
+    }) {
         return;
     }
     let mask = 1u32 << (pin & 31);
@@ -543,7 +544,7 @@ pub fn heap_min_free() -> u32 {
 pub fn gtimer_clock_enable() {}
 
 pub fn gpio_int_config(pin: u32, enabled: bool) {
-    assert_eq!(pin, pins::FEEDBACK);
+    assert_eq!(pin, board::INTERRUPT_PIN);
     with(|h| {
         if enabled {
             h.gpio.int_mask &= !(1 << pin);
@@ -554,7 +555,7 @@ pub fn gpio_int_config(pin: u32, enabled: bool) {
 }
 
 pub fn gpio_int_mode(pin: u32, enabled: bool) {
-    assert_eq!(pin, pins::FEEDBACK);
+    assert_eq!(pin, board::INTERRUPT_PIN);
     with(|h| {
         if enabled {
             h.gpio.int_en |= 1 << pin;
@@ -781,8 +782,8 @@ pub fn panic_outputs_safe() {
         if h.lp_function & enabled == 0 || h.lp_clock & enabled == 0 {
             return;
         }
-        h.output[0] = (h.output[0] | MOTOR_MASK) & !IR_PA_BIT;
-        h.output[1] &= !IR_PB_BIT;
+        h.output[0] = (h.output[0] | PORT_A_HIGH) & !PORT_A_LOW;
+        h.output[1] &= !PORT_B_LOW;
     });
 }
 

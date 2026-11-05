@@ -156,6 +156,7 @@ impl Server {
         let joined = match outcome {
             KeyOutcome::Done | KeyOutcome::Duplicate => Joined::Enrolled {
                 role: proto_role(*role),
+                model: device.model(),
             },
             KeyOutcome::Full => Joined::Refused(Refusal::Full),
             KeyOutcome::NotFound | KeyOutcome::NotWritable => Joined::Refused(Refusal::NotWritable),

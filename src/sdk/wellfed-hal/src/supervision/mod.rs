@@ -1,6 +1,7 @@
-//! KM4 supervision: the TIM2 tick and feedback capture, the feeding owner's
-//! beat, the watchdog and when it is fed, the breadcrumb and call trail a
-//! silent reset leaves, and the bench-derived constants they run with.
+//! KM4 supervision: a device owner's beat, the watchdog and when it is fed,
+//! the breadcrumb and call trail a silent reset leaves, and the
+//! bench-derived constants they run with. The feeder's TIM2 tick and
+//! feedback capture are its drivers', in `wellfed-hal-feeder`.
 //!
 //! **No store write starts into a reset.** Every store write sets the flash
 //! attempt marker for its duration, and a boot that finds the marker set
@@ -17,11 +18,10 @@
 //! halted), which is what it exists for, and a withheld reset never needs
 //! to clear it.
 
-pub(crate) mod active;
+mod active;
 pub mod beat;
 pub mod config;
 pub mod crumb;
-pub mod events;
 pub mod supervise;
 pub mod trail;
 pub mod watchdog;

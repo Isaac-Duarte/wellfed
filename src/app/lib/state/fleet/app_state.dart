@@ -35,6 +35,11 @@ abstract interface class FeederBook implements Listenable {
   /// NSD has looked.
   Future<void> answeredAt(String identity, String address);
 
+  /// Dial `identity` at `address` (`ip:port`) instead of looking for it with
+  /// NSD, or look again when `null`. For a feeder reached over a VPN's route
+  /// to the home network, where NSD's multicast never arrives.
+  Future<void> setManualAddress(String identity, String? address);
+
   /// Remove `identity` from this phone. It leaves the feeder's list as it
   /// is: only an owner's revocation takes a key off a feeder.
   Future<void> forget(String identity);
@@ -130,6 +135,9 @@ class AppState extends ChangeNotifier implements FeederBook {
             identity: feeder.identity,
             name: keepName && known.isNotEmpty ? known.first.name : feeder.name,
             address: feeder.address,
+            // A flow that adds a feeder again doesn't know the owner's
+            // address, so the one they typed stays.
+            manualAddress: feeder.manualAddress ?? known.firstOrNull?.manualAddress,
           ),
         ],
         appearance: store.appearance,
@@ -158,7 +166,28 @@ class AppState extends ChangeNotifier implements FeederBook {
       feeders: [
         for (final feeder in store.feeders)
           if (feeder.identity == identity)
-            KnownFeeder(identity: feeder.identity, name: name, address: feeder.address)
+            KnownFeeder(
+              identity: feeder.identity,
+              name: name,
+              address: feeder.address,
+              manualAddress: feeder.manualAddress,
+            )
+          else
+            feeder,
+      ],
+      appearance: store.appearance,
+      server: store.server,
+    ),
+  );
+
+  @override
+  Future<void> setManualAddress(String identity, String? address) => _update(
+    (store) => AppStore(
+      label: store.label,
+      feeders: [
+        for (final feeder in store.feeders)
+          if (feeder.identity == identity)
+            KnownFeeder(identity: feeder.identity, name: feeder.name, address: feeder.address, manualAddress: address)
           else
             feeder,
       ],

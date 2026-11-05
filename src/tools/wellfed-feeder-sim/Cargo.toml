@@ -11,9 +11,11 @@ publish.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 wellfed-amebad-sys.workspace = true
-wellfed-board-plaf103.workspace = true
+wellfed-board.workspace = true
 wellfed-client.workspace = true
 wellfed-core.workspace = true
+wellfed-device.workspace = true
+wellfed-device-sim.workspace = true
 wellfed-device-api.workspace = true
 wellfed-feeder.workspace = true
 wellfed-formats.workspace = true
@@ -28,7 +30,7 @@ tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "r
 [features]
 # The test harness other crates' tests start simulators with; never built
 # into the binary.
-harness = []
+harness = ["wellfed-device-sim/harness"]
 
 [dev-dependencies]
 wellfed-feeder = { workspace = true, features = ["conformance"] }

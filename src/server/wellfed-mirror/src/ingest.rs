@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use tokio::time::Instant;
 use tracing::{info, warn};
-use wellfed_api::{FeederEvent, FeederSample, Gap, SampleValue};
+use wellfed_api::{FeederSample, Gap, HistoryEvent, SampleValue};
 use wellfed_model::{Event, EventBody, Pushed};
 use wellfed_proto::api as proto;
 use wellfed_store::{EventRow, NewEvent, NewSample, Refresh, SampleRefresh};
@@ -52,14 +52,14 @@ impl Batch {
 
 /// A stored event of `epoch` as the feeder sent it, or `None` when its
 /// body does not decode.
-pub fn stored_event(epoch: u32, row: &EventRow) -> Option<FeederEvent> {
+pub fn stored_event(epoch: u32, row: &EventRow) -> Option<HistoryEvent> {
     let event = Event {
         epoch,
         seq: row.seq,
         at: row.at,
         body: stored_body(&row.body)?,
     };
-    Some(FeederEvent::new(event, row.received))
+    Some(HistoryEvent::new(event, row.received))
 }
 
 /// A stored body as the event it encodes, or `None` when it does not
@@ -151,7 +151,7 @@ impl Task {
                 if self.changes_plans(&event.body) {
                     self.plans_stale = true;
                 }
-                MirrorEvent::Event(FeederEvent::new(event, received))
+                MirrorEvent::Event(HistoryEvent::new(event, received))
             }
             Pushed::Gap(gap) => {
                 let (epoch, from, to) = (gap.epoch, gap.from, gap.to);

@@ -12,13 +12,13 @@ use wellfed_core::clock::zone::Zone;
 use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_core::store::slot::crc32;
 use wellfed_core::tone::{PlayResult, Tune};
+use wellfed_device::store::events::Read;
 use wellfed_device_api::mailbox::{
     CallChange, CallClip, CallResult, MealReminder, PlansChange, PlansResult, PlansView,
     SettingsFields, SettingsResult,
 };
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::{self, schedule};
-use wellfed_feeder::store::events::Read;
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
@@ -164,6 +164,21 @@ impl Feeder {
     /// Every event the ring holds, oldest first.
     fn events(&mut self) -> Vec<EventBody> {
         harness::events(&mut self.sim)
+    }
+
+    /// Each `Fed` event's feed and recorded time.
+    fn fed_at(&mut self) -> Vec<(u32, Option<u32>)> {
+        let mut fed = Vec::new();
+        let mut after = None;
+        while let Read::Record(record) = self.sim.platform().ring_after(after) {
+            after = Some(record.seq);
+            if let Some(EventBody::Fed { feed, .. }) =
+                wellfed_proto::decode_padded::<EventBody>(&record.body)
+            {
+                fed.push((feed, record.at));
+            }
+        }
+        fed
     }
 
     /// The `Fed` events: feed, requested portions, outcome and source.
@@ -408,6 +423,7 @@ fn a_cut_mid_feed_resolves_as_the_plans_uncertain_feed_and_never_runs_again() {
     feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 100);
     feeder.sim.stall_feeds(true);
     feeder.run(2000);
+    let claim = feeder.plans().claim.unwrap();
     feeder.restart();
     feeder.run(100);
     feeder.sync(WEDNESDAY + 7 * HOUR_MS + 32 * MINUTE_MS);
@@ -418,6 +434,9 @@ fn a_cut_mid_feed_resolves_as_the_plans_uncertain_feed_and_never_runs_again() {
         [(1, 2, FeedOutcome::Uncertain, Source::Schedule(0))]
     );
     assert!(feeder.missed().is_empty());
+    // The boot resolved it before the sync, with no clock: it keeps the
+    // occurrence's time.
+    assert_eq!(feeder.fed_at(), [(1, Some(claim.due_s))]);
 }
 
 #[test]

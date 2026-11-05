@@ -8,19 +8,19 @@
 //! Every access copies a few hundred bytes at most with the scheduler
 //! paused; both sides are tasks, never interrupt handlers.
 
-use wellfed_feeder::feeder::platform::EventsFill;
+use wellfed_device::store::events::EventsFill;
 use wellfed_feeder::stats::Totals;
 use wellfed_hal::cell::TaskCell;
 use wellfed_hal::sdk;
 use wellfed_proto::api::Counts;
 
 /// The lifetime statistics' slots within the storage region.
-pub const STATS_BASE: u32 = wellfed_hal::plaf103::storage::STATS.first;
+pub const STATS_BASE: u32 = wellfed_hal::board::storage::STATS.first;
 
 // The totals count erases of every sector the region has; growing the
 // region changes the stats record and takes a new version of it.
 const _: () =
-    assert!(wellfed_hal::plaf103::STORAGE_SECTORS as usize == wellfed_feeder::stats::TOTAL_SECTORS);
+    assert!(wellfed_hal::board::STORAGE_SECTORS as usize == wellfed_feeder::stats::TOTAL_SECTORS);
 
 struct Shared {
     fill: EventsFill,

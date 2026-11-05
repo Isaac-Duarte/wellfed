@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE feeders SET home_id = ?, kind = ?, model = ?, name = ?, role = ?, address = ?,\n                 key_nonce = ?, key_sealed = ?, archived_ms = NULL\n             WHERE id = ? AND archived_ms IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "7a5346ef4a618646d6d06c5ae70f202a394f1e08f3da45639ee40e26e3fe4167"
+}

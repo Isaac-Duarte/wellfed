@@ -62,7 +62,7 @@ The device API's `Play` request carries a tune, which the `feeder` firmware's lo
 
 `Started` means queued, not heard. The speaker opens the codec on its next step, after the device API has answered `Done`, so a codec that will not open reaches only the log (`error stage=open`).
 
-To build the speaker firmware, run `wellfed-build build --profile firstboot --firmware bringup --variant speaker`, or `wellfed-bench ota NAME --build --firmware speaker` to install it. It runs the tune task and plays the startup chime. It does not touch motion, and OTA, recovery and confirmation work as in every firmware.
+To build the speaker firmware, run `wellfed-build build --device plaf103 --profile firstboot --firmware bringup --variant speaker`, or `wellfed-bench ota NAME --build --firmware speaker` to install it. It runs the tune task and plays the startup chime. It does not touch motion, and OTA, recovery and confirmation work as in every firmware.
 
 ## Records
 

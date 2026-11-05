@@ -6,6 +6,9 @@
 //!
 //! Every way an install can fail stops it before bank 1's marker is
 //! written, so the loader keeps booting bank 0.
+//!
+//! The updater keeps its records in the board's store.
+#![cfg(wellfed_board_store)]
 
 use std::cell::{Cell, RefCell};
 use std::sync::{Mutex, MutexGuard};
@@ -203,6 +206,9 @@ fn image(len: usize) -> Vec<u8> {
     out
 }
 
+/// The board's own model: what `wellfed_board::MODEL_CODE` names.
+const MODEL: u8 = wellfed_board::MODEL_CODE;
+
 fn manifest_for(
     key: &SigningKey,
     version: u32,
@@ -210,7 +216,20 @@ fn manifest_for(
     build: u8,
     kind: ImageKind,
 ) -> Vec<u8> {
+    manifest_of(MODEL, key, version, payload, build, kind)
+}
+
+/// As [`manifest_for`], signed for the model `model`.
+fn manifest_of(
+    model: u8,
+    key: &SigningKey,
+    version: u32,
+    payload: &[u8],
+    build: u8,
+    kind: ImageKind,
+) -> Vec<u8> {
     let signed = Signed {
+        model,
         manifest: Manifest {
             version,
             image_len: u32::try_from(payload.len()).unwrap(),
@@ -1293,7 +1312,7 @@ fn stock_offer(payload: &[u8]) -> (Vec<u8>, Vec<u8>) {
 }
 
 fn handover_bytes() -> [u8; 16] {
-    let at = wellfed_hal::plaf103::storage::RESET.first as usize * SECTOR;
+    let at = wellfed_hal::board::storage::RESET.first as usize * SECTOR;
     fake::with(|h| h.storage[at..at + 16].try_into().unwrap())
 }
 
@@ -1444,4 +1463,41 @@ fn record_text(record: Record) -> String {
     let mut text = String::new();
     describe(record, &mut text).unwrap();
     text
+}
+
+/// An authentic offer signed for another model is refused before anything
+/// is written: no install starts, bank 1 and its marker stay erased, no
+/// offer is recorded, and the store takes the right model's offer after.
+#[test]
+fn an_offer_for_another_model_leaves_the_store_banks_and_marker_untouched() {
+    let _guard = start(0);
+    let payload = image(LEN);
+    let mut rig = Rig::bench(0);
+    let other = manifest_of(
+        MODEL + 1,
+        &bench(),
+        3,
+        &payload,
+        0x22,
+        ImageKind::Replacement,
+    );
+
+    assert_eq!(
+        rig.offer(&other, None),
+        Err(Refused::Offer(OfferError::Model))
+    );
+    assert!(!mailbox::installing());
+    assert!(fake::with(|h| h.bank1.iter().all(|&b| b == 0xff)));
+    assert!(rig.marker_never_written());
+    assert!(
+        !rig.records
+            .iter()
+            .any(|r| matches!(r, Record::Offer { .. })),
+        "{:?}",
+        rig.records
+    );
+
+    // Nothing is pending for it: the same build for this model installs.
+    let progress = progress(rig.offer(&manifest(3, &payload), None));
+    assert_eq!(progress.phase, Phase::Receiving);
 }

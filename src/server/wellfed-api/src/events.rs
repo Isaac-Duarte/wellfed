@@ -11,7 +11,7 @@ use wellfed_model::{Event, EventBody, EventKind};
 
 /// One event the feeder recorded.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct FeederEvent {
+pub struct HistoryEvent {
     /// The history the event belongs to.
     pub epoch: u32,
     /// The feeder's sequence number: monotonic across its reboots, within
@@ -24,7 +24,7 @@ pub struct FeederEvent {
     pub body: EventBody,
 }
 
-impl FeederEvent {
+impl HistoryEvent {
     /// The feeder's `event`, as the server received it at `received`.
     pub const fn new(event: Event, received: Timestamp) -> Self {
         Self {
@@ -51,7 +51,7 @@ pub struct Gap {
 pub struct EventPage {
     /// The history read; `None` before the server holds any.
     pub epoch: Option<u32>,
-    pub events: Vec<FeederEvent>,
+    pub events: Vec<HistoryEvent>,
     /// The gaps that end inside the page's span.
     pub gaps: Vec<Gap>,
     /// The `after` for the next page; `None` at the newest.

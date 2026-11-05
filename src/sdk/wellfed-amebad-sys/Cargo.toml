@@ -23,7 +23,7 @@ bluetooth = []
 log-tail = []
 
 [dependencies]
-wellfed-board-plaf103.workspace = true
+wellfed-board.workspace = true
 wellfed-core.workspace = true
 
 [target.'cfg(target_os = "none")'.dependencies]

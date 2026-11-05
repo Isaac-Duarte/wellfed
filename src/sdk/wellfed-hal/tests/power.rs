@@ -1,6 +1,9 @@
 //! Power monitor against the fake ADC: health reports a fresh sample
 //! with its age, nothing once it is stale or the ADC fails, and no pack
 //! voltage when the channel reads near zero.
+//!
+//! The PLAF103's power monitor, which builds for no other board.
+#![cfg(wellfed_board = "plaf103")]
 
 use std::sync::{Mutex, MutexGuard};
 use wellfed_core::adc_scale::AdcCalibration;

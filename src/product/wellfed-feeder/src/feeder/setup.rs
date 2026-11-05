@@ -37,7 +37,8 @@ use wellfed_proto::setup::{Enrolled, Refusal, Reply, WifiSaved};
 use wellfed_session::noise::Keypair;
 use wellfed_session::setup_code::Code;
 
-use super::platform::{BleDrop, BleLink, Platform};
+use super::platform::Platform;
+use wellfed_device::io::{BleDrop, BleLink};
 use wellfed_device_api::clients::Role;
 use wellfed_device_api::mailbox::{ClientChange, KeyResult, PlayResult, Requested, WifiResult};
 use wellfed_device_api::pairing::{self, Pairing, Path};

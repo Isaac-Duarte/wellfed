@@ -13,7 +13,8 @@ use wellfed_client::history::Feed;
 use wellfed_client::plans::MealState;
 use wellfed_client::today::TimeSettings;
 use wellfed_model::{
-    Battery, ClientRole, Event, EventBody, FeedOutcome, Gap, Readiness, Source, TimeView,
+    Battery, ClientRole, CoreEvent, Event, EventBody, FeedOutcome, FeederEvent, Gap, Readiness,
+    Source, TimeView,
 };
 
 use crate::api::feeder::TimeInfo;
@@ -36,20 +37,22 @@ impl TimeSettings for TimeRead {
 /// The card, once the status is in.
 pub(crate) fn card(facts: &Facts) -> Option<Card> {
     let status = facts.status.as_ref()?;
+    // The card is a feeder's: the app serves no other kind yet.
+    let feeder = status.feeder()?;
     let time: Option<TimeInfo> = facts.time.as_ref().map(|read| read.info(Instant::now()));
-    let adapter = status
+    let adapter = feeder
         .supply
         .adapter
         .or(status.power.map(|power| power.adapter));
-    let battery_percent = match status.supply.battery {
+    let battery_percent = match feeder.supply.battery {
         Battery::Reading { percent, .. } => Some(percent),
         _ => None,
     };
-    let blocked = match status.readiness {
+    let blocked = match feeder.readiness {
         Readiness::Blocked(reason) => Some(reason),
         Readiness::Ready => None,
     };
-    let fault = status.feed_fault.map(|fault| FaultView {
+    let fault = feeder.feed_fault.map(|fault| FaultView {
         feed: fault.feed,
         outcome: fault.outcome,
         reason: fault.reason,
@@ -86,16 +89,16 @@ pub(crate) fn card(facts: &Facts) -> Option<Card> {
 
     Some(Card {
         build: status.build.clone(),
-        food: status.food,
-        locked: status.locked,
-        ready: status.readiness == Readiness::Ready,
+        food: feeder.food,
+        locked: feeder.locked,
+        ready: feeder.readiness == Readiness::Ready,
         blocked,
         adapter,
         battery_percent,
         clock_set: status.clock.is_some(),
         rssi: status.rssi,
         fault,
-        desiccant: status.desiccant,
+        desiccant: feeder.desiccant,
         uptime_ms: status.uptime_ms,
         bank: status.bank,
         next_meal,
@@ -142,47 +145,59 @@ fn source_of(source: Source) -> FedBy {
 /// One event as the History tab reads it.
 pub(crate) fn event_entry(event: &Event) -> HistoryEntry {
     let body = match event.body {
-        EventBody::Fed { .. } => {
+        EventBody::Feeder(FeederEvent::Fed { .. }) => {
             Feed::from_event(event).map_or(HistoryBody::Other, |fed| HistoryBody::Fed {
                 result: result(&fed),
             })
         }
-        EventBody::Missed { plan, due, reason } => HistoryBody::Missed {
+        EventBody::Feeder(FeederEvent::Missed { plan, due, reason }) => HistoryBody::Missed {
             slot: plan,
             due_ms: due.as_millisecond(),
             reason,
         },
-        EventBody::Boot { .. } => HistoryBody::Restarted,
-        EventBody::Lock { locked, by } => HistoryBody::Lock {
+        EventBody::Core(CoreEvent::Boot { .. }) => HistoryBody::Restarted,
+        EventBody::Feeder(FeederEvent::Lock { locked, by }) => HistoryBody::Lock {
             locked,
             by: source_of(by),
         },
-        EventBody::Settings { by, .. } => HistoryBody::SettingsChanged { by: source_of(by) },
-        EventBody::Wifi { by, .. } => HistoryBody::WifiChanged { by: source_of(by) },
-        EventBody::Plans { by, .. } => HistoryBody::PlansChanged { by: source_of(by) },
-        EventBody::Enrolled {
+        EventBody::Feeder(FeederEvent::Settings { by, .. }) => {
+            HistoryBody::SettingsChanged { by: source_of(by) }
+        }
+        EventBody::Core(CoreEvent::Wifi { by, .. }) => {
+            HistoryBody::WifiChanged { by: source_of(by) }
+        }
+        EventBody::Feeder(FeederEvent::Plans { by, .. }) => {
+            HistoryBody::PlansChanged { by: source_of(by) }
+        }
+        EventBody::Core(CoreEvent::Enrolled {
             client,
             role: ClientRole::UpdateSigner,
             ..
-        } => HistoryBody::UpdateKeyAdded {
+        }) => HistoryBody::UpdateKeyAdded {
             fingerprint: client.to_string(),
         },
-        EventBody::Enrolled { client, .. } => HistoryBody::Joined {
+        EventBody::Core(CoreEvent::Enrolled { client, .. }) => HistoryBody::Joined {
             fingerprint: client.to_string(),
         },
-        EventBody::Revoked { client, by } => HistoryBody::Revoked {
+        EventBody::Core(CoreEvent::Revoked { client, by }) => HistoryBody::Revoked {
             fingerprint: client.to_string(),
             by: source_of(by),
         },
-        EventBody::ClockSync { by, .. } => HistoryBody::ClockSet { by: source_of(by) },
-        EventBody::Lost { count } => HistoryBody::Lost { count },
-        EventBody::FeedingBlocked { reason } => HistoryBody::FeedingBlocked { reason },
-        EventBody::MealSoon {
+        EventBody::Core(CoreEvent::ClockSync { by, .. }) => {
+            HistoryBody::ClockSet { by: source_of(by) }
+        }
+        EventBody::Core(CoreEvent::Lost { count }) => HistoryBody::Lost { count },
+        EventBody::Feeder(FeederEvent::FeedingBlocked { reason }) => {
+            HistoryBody::FeedingBlocked { reason }
+        }
+        EventBody::Feeder(FeederEvent::MealSoon {
             minute, portions, ..
-        } => HistoryBody::MealSoon { minute, portions },
-        EventBody::Supply { adapter, .. } => HistoryBody::Supply { adapter },
-        EventBody::DispenseRefused { reason } => HistoryBody::DispenseRefused { reason },
-        EventBody::Food { level } => HistoryBody::Food { level },
+        }) => HistoryBody::MealSoon { minute, portions },
+        EventBody::Feeder(FeederEvent::Supply { adapter, .. }) => HistoryBody::Supply { adapter },
+        EventBody::Feeder(FeederEvent::DispenseRefused { reason }) => {
+            HistoryBody::DispenseRefused { reason }
+        }
+        EventBody::Feeder(FeederEvent::Food { level }) => HistoryBody::Food { level },
     };
     HistoryEntry {
         seq: event.seq,
@@ -216,11 +231,11 @@ mod tests {
                 epoch: 1,
                 seq: 1,
                 at: None,
-                body: EventBody::Enrolled {
+                body: EventBody::Core(CoreEvent::Enrolled {
                     client: Hex([0xaa, 0xbb, 0xcc, 0xdd]),
                     role,
                     path,
-                },
+                }),
             })
             .body
         };

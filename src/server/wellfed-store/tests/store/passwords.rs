@@ -7,7 +7,7 @@ async fn a_password_rotation_rejects_stale_sessions_and_changes() {
     let (_dir, store) = fresh().await;
     let ada = user("ada");
     let id = ada.id;
-    store.create_first_owner(ada, &household()).await.unwrap();
+    store.create_first_owner(ada, &home()).await.unwrap();
     for token in [[1; 32], [2; 32]] {
         assert!(
             store

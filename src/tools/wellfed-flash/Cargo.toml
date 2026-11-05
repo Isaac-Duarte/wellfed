@@ -4,7 +4,7 @@ name = "wellfed-flash"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "UART flash reads, region-scoped updates and stock recovery for the PLAF103 research unit"
+description = "UART flash reads, region-scoped updates and stock recovery for the PLAF103 and PLWF106 research units"
 publish.workspace = true
 
 [dependencies]
@@ -12,7 +12,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 clap.workspace = true
 ctrlc.workspace = true
 wellfed-core.workspace = true
-wellfed-formats.workspace = true
+wellfed-formats = { workspace = true, features = ["clap"] }
 wellfed-image.workspace = true
 wellfed-proto.workspace = true
 serde.workspace = true

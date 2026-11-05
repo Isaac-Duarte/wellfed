@@ -74,6 +74,7 @@ fn image_of(dir: &Path, provisioning: Provisioning, version: u32, build: [u8; 32
     std::fs::write(dir.join("image.bin"), &container).unwrap();
 
     let manifest = BuildManifest {
+        device: "plaf103".into(),
         startup_identity: Some(wellfed_formats::hex::encode(&build)),
         provisioning,
         ..BuildManifest::default()
@@ -99,6 +100,7 @@ fn image_of(dir: &Path, provisioning: Provisioning, version: u32, build: [u8; 32
     std::fs::write(dir.join("review.json"), &review).unwrap();
 
     let body = wellfed_core::ota::offer::manifest_body(&wellfed_core::ota::offer::Signed {
+        model: 1,
         manifest: wellfed_core::ota::Manifest {
             version,
             image_len: 1,
@@ -499,6 +501,7 @@ fn a_resumed_run_tries_where_home_last_reached_its_feeder_first() {
             identity: wellfed_formats::hex::encode(&sim.identity),
             name: "Kitchen".into(),
             address: Some(sim.address.to_string()),
+            manual_address: None,
         }];
         let data = Path::new(&spec.data_dir).to_path_buf();
         std::fs::create_dir_all(data.join("backups")).unwrap();
@@ -998,6 +1001,7 @@ fn the_manifest_must_name_the_review_s_build_and_a_release_a_consumer_image() {
     ));
 
     let manifest = BuildManifest {
+        device: "plaf103".into(),
         startup_identity: Some("cd".repeat(32)),
         ..BuildManifest::default()
     };
@@ -1280,6 +1284,7 @@ async fn known_feeder_is_left_alone(ip: &str) {
         identity: wellfed_formats::hex::encode(&[0x76; 32]),
         name: "Kitchen".into(),
         address: Some(known_at.to_string()),
+        manual_address: None,
     }];
     let store = spec.store_path.clone();
 
@@ -1314,6 +1319,7 @@ fn a_known_feeder_goes_on_from_bank_0_after_forgetting() {
             identity: wellfed_formats::hex::encode(&sim.identity),
             name: "Kitchen".into(),
             address: Some(sim.address.to_string()),
+            manual_address: None,
         }];
         spec.feeder = Some(wellfed_formats::hex::encode(&sim.identity));
         let data = Path::new(&spec.data_dir).to_path_buf();
@@ -1515,6 +1521,7 @@ fn a_picked_feeder_leaves_another_devices_record_and_trial() {
                 identity: hex.clone(),
                 name: "Kitchen".into(),
                 address: Some(sim.address.to_string()),
+                manual_address: None,
             }];
             spec.feeder = Some(hex.clone());
             spec

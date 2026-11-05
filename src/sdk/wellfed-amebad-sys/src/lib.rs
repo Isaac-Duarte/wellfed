@@ -1,10 +1,11 @@
-//! The SDK surface used by the PLAF103 AmebaD ports.
+//! The SDK surface used by the AmebaD ports.
 //!
 //! Target builds call the pinned AmebaD SDK through bindgen-generated
 //! declarations; host builds use [`fake`], a deterministic model of the same
 //! calls for tests and the virtual feeder. Both expose identical functions.
-//! The board's pins and storage region are `wellfed-board-plaf103`'s; the
-//! panic and RAM-park output writes and the storage bounds read them there.
+//! The board's safe output state and storage region come from the board
+//! contract, `wellfed-board`: the panic and RAM-park output writes and the
+//! storage bounds read them there.
 #![cfg_attr(target_os = "none", no_std)]
 #![allow(clippy::missing_safety_doc)]
 
@@ -21,6 +22,9 @@ pub type TaskStep = unsafe extern "C" fn(context: *mut c_void) -> u32;
 pub const GPIO_ENABLE_BIT: u32 = 1 << 20;
 /// Pinned LP ADC function and clock enable bits, in the same two registers.
 pub const ADC_ENABLE_BIT: u32 = 1 << 8;
+/// The ADC channel of the chip's own supply (`VBAT_MEAS`'s internal input),
+/// the same on every AmebaD board: the random generator's noise source.
+pub const ADC_SUPPLY_CHANNEL: u32 = 10;
 /// `REG_SWD_PMUX_EN` bit 0 (reset 1): the SWD function holds PA27 and PB3
 /// (SWD_CLK). While set, GPIO writes to PB3 do not reach the pad.
 pub const SWD_PMUX_BIT: u32 = 1;
@@ -342,8 +346,12 @@ pub enum Irq {
     GpioA,
 }
 
-/// The log tail's size: about 70 record lines of the usual length.
-pub const LOG_TAIL_BYTES: usize = 4096;
+/// The log tail's size: about 280 record lines of the usual length. A
+/// Wi-Fi rejoin logs about 3 KB in its first 90 s (scans, backoffs and the
+/// feed readiness flipping), and a 4 KiB tail lost a feed's result lines
+/// to it before the owner reconnected. This holds several minutes of a
+/// rejoin's logging, so the lines before a typical outage survive it.
+pub const LOG_TAIL_BYTES: usize = 16384;
 
 /// The newest lines [`log`] took, for the device API to stream. A line goes
 /// in with interrupts masked, so no writer finds another mid-copy. On the

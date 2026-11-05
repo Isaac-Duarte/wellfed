@@ -9,7 +9,7 @@ use std::time::Duration;
 use jiff::Timestamp;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::TryRecvError;
-use wellfed_api::{Connection as Link, EventBody, EventKind, FeederEvent, Source};
+use wellfed_api::{Connection as Link, EventBody, EventKind, FeederEvent, HistoryEvent, Source};
 use wellfed_mirror::{AskError, MirrorEvent};
 use wellfed_model::{Answer, Op};
 use wellfed_server_testkit::feeder::{self, Relay};
@@ -19,7 +19,7 @@ use wellfed_store::Store;
 use support::{ID, mirrored, next};
 
 /// The next new event the mirror broadcasts.
-async fn next_event(updates: &mut Receiver<MirrorEvent>) -> FeederEvent {
+async fn next_event(updates: &mut Receiver<MirrorEvent>) -> HistoryEvent {
     loop {
         if let MirrorEvent::Event(event) = next(updates).await {
             return event;
@@ -34,7 +34,7 @@ async fn locks(store: &Store, epoch: u32) -> Vec<bool> {
         .unwrap();
     rows.iter()
         .filter_map(|row| match wellfed_mirror::stored_event(epoch, row)?.body {
-            EventBody::Lock { locked, .. } => Some(locked),
+            EventBody::Feeder(FeederEvent::Lock { locked, .. }) => Some(locked),
             _ => None,
         })
         .collect()
@@ -54,7 +54,7 @@ fn an_answered_command_and_its_event_are_stored_before_they_are_broadcast() {
         assert_eq!(answer, Answer::Done { generation: None });
         let event = loop {
             let event = next_event(&mut updates).await;
-            if matches!(event.body, EventBody::Lock { .. }) {
+            if matches!(event.body, EventBody::Feeder(FeederEvent::Lock { .. })) {
                 break event;
             }
         };
@@ -106,7 +106,7 @@ fn a_command_whose_caller_left_is_never_sent() {
         // answered, the abandoned write has had its turn.
         let event = loop {
             let event = next_event(&mut updates).await;
-            if matches!(event.body, EventBody::Lock { .. }) {
+            if matches!(event.body, EventBody::Feeder(FeederEvent::Lock { .. })) {
                 break event;
             }
         };

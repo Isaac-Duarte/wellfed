@@ -121,7 +121,7 @@ You should see, for every feed, one drive on the analyzer (D3 HIGH, clockwise) t
 
 ## The first-pulse probe
 
-Before feeds existed, the motor was brought up by one supervised 100 ms pulse. `wellfed-build build --profile firstboot --firmware bringup --variant pulse` builds it. The manifest records `startup_motion_policy: fw16-pulse-v1` (declared in `src/firmware/wellfed/bringup/Cargo.toml`) and `variant: pulse`, and the build gets its own build ID. The builder refuses a motion policy outside a variant, and the bring-up firmware's other images start no motor task, so nothing else can drive the motor. The bench never builds it.
+Before feeds existed, the motor was brought up by one supervised 100 ms pulse. `wellfed-build build --device plaf103 --profile firstboot --firmware bringup --variant pulse` builds it. The manifest records `startup_motion_policy: fw16-pulse-v1` (declared in `src/firmware/wellfed/bringup/Cargo.toml`) and `variant: pulse`, and the build gets its own build ID. The builder refuses a motion policy outside a variant, and the bring-up firmware's other images start no motor task, so nothing else can drive the motor. The bench never builds it.
 
 After startup, the pulse probe (`src/sdk/wellfed-probes/src/pulse.rs`):
 

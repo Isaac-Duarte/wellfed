@@ -1,5 +1,5 @@
 //! When the `feed-jam` and `sensor-fault` variants show a feed its fault,
-//! and which. The SDK's `hal::feed_faults` shows it to the board's input
+//! and which. The SDK's `wellfed_hal_feeder::feed_faults` shows it to the board's input
 //! capture; everything after that is the product's own handling, so a
 //! bench run with the hopper empty shows on hardware what a real jam or a
 //! failed sensor would do: the reversals, the stop, the reason, and the

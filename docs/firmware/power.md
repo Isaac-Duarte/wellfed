@@ -76,7 +76,7 @@ The UART shows `PLBAT2 radio off|on` and `PLBAT2 install stop queued=1` from the
 
 **Setup mode keeps the radio on.** The vendor's BLE stack runs only while the WLAN driver is up, so BLE setup mode holds Wi-Fi on even on batteries. Setup mode already stops advertising without the adapter ([Bluetooth](bluetooth.md)). Once setup mode ends (with a restart), battery mode turns Wi-Fi off again.
 
-**The clock.** Turning Wi-Fi off does not touch the [clock](clock.md), but nothing syncs it on batteries. It stays valid until its error bound runs out, as it does with no time source: about 6.6 hours after the last sync while its rate is unlearned, about 22 hours once learned. **After that, meals hold** for as long as the feeder stays on batteries: no meal runs until the adapter returns and a time source syncs the clock. The Dispense button still feeds.
+**The clock.** Turning Wi-Fi off does not touch the [clock](clock.md), but nothing syncs it on batteries. It stays valid until its error bound runs out, as it does with no time source: about 6.6 hours after the last sync while its rate is unlearned, about 7 days once learned. **After that, meals hold** for as long as the feeder stays on batteries: no meal runs until the adapter returns and a time source syncs the clock. The Dispense button still feeds.
 
 ## The floor
 
@@ -190,7 +190,7 @@ Physical acceptance needs the cells in, which is the owner's call. The order kee
 - **Battery mode, the charge and the hold's release.** Modeled (October 28):
   - Core: `wellfed-core/tests/supply.rs` (stock's steps at every boundary, a reading's charge).
   - Product: `wellfed-feeder/tests/supply.rs` (the 5 s wait, the radio back at once, a short loss, the radio's minute back on, a boot on batteries across the uptime's wrap, unknown or implausible packs that neither start nor end the wait, setup mode, the rail at a cut, the hold lifted by the adapter or by 3 minutes at 50 %, and every interruption restarting it).
-  - HAL and runtime: `wellfed-hal/tests/link.rs` (the radio's leave, a restart winning over it, a radio change refusing a feed and waiting for a claimed one, and a radio that will not come back restarting the feeder) and `wellfed-feeder-runtime/tests/network.rs` (joins cut short never count toward the fallback).
+  - HAL and runtime: `wellfed-hal/tests/link.rs` (the radio's leave, a restart winning over it, a radio change refusing a feed and waiting for a claimed one, and a radio that will not come back restarting the feeder) and `wellfed-device-runtime/tests/network.rs` (joins cut short never count toward the fallback).
   - Updates: `wellfed-feeder-sim/tests/update.rs` (battery mode stops an install mid-transfer, bank 1 stays invalid, and the next offer installs).
   - Simulation: `wellfed-feeder-sim/tests/battery.rs`. In the loop: the radio and the address gone, breakfast fed on batteries, a meal missed as blocked on a flat pack, the hold lifted on fresh cells, the rail at a cut. Over TCP: the status's supply and charge, an offer refused `Battery`, the session lost and back. The simulator's console takes `adapter in|out` and `pack <mV>|out`.
   - The C task's `wifi_off` and `wifi_on` path is static analysis only.

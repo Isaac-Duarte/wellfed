@@ -1,4 +1,4 @@
-//! The household's pets, their weight logs and the feeders that serve
+//! The home's pets, their weight logs and the feeders that serve
 //! them. Everyone reads them; owners write them.
 
 use reqwest::{Method, StatusCode};
@@ -10,7 +10,7 @@ use wellfed_api::{
 use crate::{Client, Error, decode, expect_status};
 
 impl Client {
-    /// What the pet ate on each of the last `query.days` household days,
+    /// What the pet ate on each of the last `query.days` days in the home's zone,
     /// against its target, and what went wrong on its feeders.
     pub async fn pet_intake(&self, pet: PetId, query: &IntakeQuery) -> Result<PetIntake, Error> {
         let response = self

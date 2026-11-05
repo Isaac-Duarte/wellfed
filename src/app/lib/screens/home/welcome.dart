@@ -21,7 +21,7 @@ const List<({String anchor, String label, CalloutSide side})> _claims = [
 
 /// The drawing takes what the rest of the screen leaves: about this much at
 /// normal text, growing with it. Bounded so it stays a drawing.
-const double _restOfScreen = 540;
+const double _restOfScreen = 556;
 const double _drawingLeast = 160;
 const double _drawingMost = 340;
 
@@ -52,7 +52,7 @@ class WelcomeScreen extends StatelessWidget {
                         excludeFromSemantics: true,
                       ),
                       const SizedBox(width: 10),
-                      Flexible(
+                      Expanded(
                         child: Text(
                           'Wellfed',
                           style: TextStyle(
@@ -63,12 +63,13 @@ class WelcomeScreen extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const Spacer(),
-                      const SettingsButton(),
+                      // The gear's glyph, not its tap target, lines up with
+                      // the page's edge.
+                      Transform.translate(offset: const Offset(12, 0), child: const SettingsButton()),
                     ],
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: Space.s4),
+                    padding: const EdgeInsets.only(top: Space.s4, bottom: Space.s6),
                     child: FeederDrawing(
                       height: (viewport.maxHeight - MediaQuery.textScalerOf(context).scale(_restOfScreen)).clamp(
                         _drawingLeast,

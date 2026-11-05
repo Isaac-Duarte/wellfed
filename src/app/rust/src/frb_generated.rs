@@ -47,7 +47,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -432434169;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 626654671;
 
 // Section: executor
 
@@ -4197,6 +4197,36 @@ fn wire__crate__api__install__check_image_impl(
         },
     )
 }
+fn wire__crate__api__store__feeder_address_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "feeder_address",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_text = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, crate::api::error::BridgeError>((move || {
+                let output_ok = crate::api::store::feeder_address(&api_text)?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__install__feeder_answered_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -6982,10 +7012,12 @@ impl SseDecode for crate::api::store::KnownFeeder {
         let mut var_identity = <String>::sse_decode(deserializer);
         let mut var_name = <String>::sse_decode(deserializer);
         let mut var_address = <Option<String>>::sse_decode(deserializer);
+        let mut var_manualAddress = <Option<String>>::sse_decode(deserializer);
         return crate::api::store::KnownFeeder {
             identity: var_identity,
             name: var_name,
             address: var_address,
+            manual_address: var_manualAddress,
         };
     }
 }
@@ -8039,6 +8071,17 @@ impl SseDecode for Option<crate::api::feeder::ZoneChange> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<crate::api::feeder::ZoneChange>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::feeder::ZoneView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::feeder::ZoneView>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -9733,6 +9776,9 @@ impl SseDecode for crate::api::feeder::TimeInfo {
         let mut var_generation = <u32>::sse_decode(deserializer);
         let mut var_writable = <bool>::sse_decode(deserializer);
         let mut var_zone = <Option<String>>::sse_decode(deserializer);
+        let mut var_zoneNow = <Option<crate::api::feeder::ZoneView>>::sse_decode(deserializer);
+        let mut var_phoneZone = <Option<String>>::sse_decode(deserializer);
+        let mut var_sameAsPhone = <Option<bool>>::sse_decode(deserializer);
         let mut var_ntp = <crate::api::feeder::NtpView>::sse_decode(deserializer);
         let mut var_clockMs = <Option<i64>>::sse_decode(deserializer);
         let mut var_errorMs = <Option<u32>>::sse_decode(deserializer);
@@ -9745,6 +9791,9 @@ impl SseDecode for crate::api::feeder::TimeInfo {
             generation: var_generation,
             writable: var_writable,
             zone: var_zone,
+            zone_now: var_zoneNow,
+            phone_zone: var_phoneZone,
+            same_as_phone: var_sameAsPhone,
             ntp: var_ntp,
             clock_ms: var_clockMs,
             error_ms: var_errorMs,
@@ -10289,6 +10338,20 @@ impl SseDecode for crate::api::feeder::ZoneChange {
     }
 }
 
+impl SseDecode for crate::api::feeder::ZoneView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_abbreviation = <String>::sse_decode(deserializer);
+        let mut var_offsetS = <i32>::sse_decode(deserializer);
+        let mut var_seasonal = <bool>::sse_decode(deserializer);
+        return crate::api::feeder::ZoneView {
+            abbreviation: var_abbreviation,
+            offset_s: var_offsetS,
+            seasonal: var_seasonal,
+        };
+    }
+}
+
 fn pde_ffi_dispatcher_primary_impl(
     func_id: i32,
     port: flutter_rust_bridge::for_generated::MessagePort,
@@ -10391,14 +10454,14 @@ fn pde_ffi_dispatcher_primary_impl(
         ),
         76 => wire__crate__api__store__app_store_default_impl(port, ptr, rust_vec_len, data_len),
         78 => wire__crate__api__store__appearance_default_impl(port, ptr, rust_vec_len, data_len),
-        88 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
-        91 => wire__crate__api__join__join_feeder_impl(port, ptr, rust_vec_len, data_len),
-        93 => wire__crate__api__store__load_store_impl(port, ptr, rust_vec_len, data_len),
-        95 => {
+        89 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
+        92 => wire__crate__api__join__join_feeder_impl(port, ptr, rust_vec_len, data_len),
+        94 => wire__crate__api__store__load_store_impl(port, ptr, rust_vec_len, data_len),
+        96 => {
             wire__crate__api__restore__read_restore_feeder_impl(port, ptr, rust_vec_len, data_len)
         }
-        96 => wire__crate__api__store__save_store_impl(port, ptr, rust_vec_len, data_len),
-        99 => wire__crate__api__feeder__settings_changes_default_impl(
+        97 => wire__crate__api__store__save_store_impl(port, ptr, rust_vec_len, data_len),
+        100 => wire__crate__api__feeder__settings_changes_default_impl(
             port,
             ptr,
             rust_vec_len,
@@ -10472,20 +10535,21 @@ fn pde_ffi_dispatcher_sync_impl(
         79 => wire__crate__api__restore__check_backup_impl(ptr, rust_vec_len, data_len),
         80 => wire__crate__api__install__check_build_impl(ptr, rust_vec_len, data_len),
         81 => wire__crate__api__install__check_image_impl(ptr, rust_vec_len, data_len),
-        82 => wire__crate__api__install__feeder_answered_impl(ptr, rust_vec_len, data_len),
-        83 => wire__crate__api__store__fingerprint_impl(ptr, rust_vec_len, data_len),
-        84 => wire__crate__api__install__forget_install_impl(ptr, rust_vec_len, data_len),
-        85 => wire__crate__api__restore__forget_restore_key_impl(ptr, rust_vec_len, data_len),
-        86 => wire__crate__api__store__identity_bytes_impl(ptr, rust_vec_len, data_len),
-        87 => wire__crate__api__store__identity_hex_impl(ptr, rust_vec_len, data_len),
-        89 => wire__crate__api__install__install_request_open_impl(ptr, rust_vec_len, data_len),
-        90 => wire__crate__api__join__invite_feeder_impl(ptr, rust_vec_len, data_len),
-        92 => wire__crate__api__install__kept_backup_impl(ptr, rust_vec_len, data_len),
-        94 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
-        97 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
-        98 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
-        100 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
-        101 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
+        82 => wire__crate__api__store__feeder_address_impl(ptr, rust_vec_len, data_len),
+        83 => wire__crate__api__install__feeder_answered_impl(ptr, rust_vec_len, data_len),
+        84 => wire__crate__api__store__fingerprint_impl(ptr, rust_vec_len, data_len),
+        85 => wire__crate__api__install__forget_install_impl(ptr, rust_vec_len, data_len),
+        86 => wire__crate__api__restore__forget_restore_key_impl(ptr, rust_vec_len, data_len),
+        87 => wire__crate__api__store__identity_bytes_impl(ptr, rust_vec_len, data_len),
+        88 => wire__crate__api__store__identity_hex_impl(ptr, rust_vec_len, data_len),
+        90 => wire__crate__api__install__install_request_open_impl(ptr, rust_vec_len, data_len),
+        91 => wire__crate__api__join__invite_feeder_impl(ptr, rust_vec_len, data_len),
+        93 => wire__crate__api__install__kept_backup_impl(ptr, rust_vec_len, data_len),
+        95 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
+        98 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
+        99 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
+        101 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
+        102 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -12257,6 +12321,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::store::KnownFeeder {
             self.identity.into_into_dart().into_dart(),
             self.name.into_into_dart().into_dart(),
             self.address.into_into_dart().into_dart(),
+            self.manual_address.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -14496,6 +14561,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::feeder::TimeInfo {
             self.generation.into_into_dart().into_dart(),
             self.writable.into_into_dart().into_dart(),
             self.zone.into_into_dart().into_dart(),
+            self.zone_now.into_into_dart().into_dart(),
+            self.phone_zone.into_into_dart().into_dart(),
+            self.same_as_phone.into_into_dart().into_dart(),
             self.ntp.into_into_dart().into_dart(),
             self.clock_ms.into_into_dart().into_dart(),
             self.error_ms.into_into_dart().into_dart(),
@@ -15124,6 +15192,25 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::feeder::ZoneChange>
     for crate::api::feeder::ZoneChange
 {
     fn into_into_dart(self) -> crate::api::feeder::ZoneChange {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::feeder::ZoneView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.abbreviation.into_into_dart().into_dart(),
+            self.offset_s.into_into_dart().into_dart(),
+            self.seasonal.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::feeder::ZoneView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::feeder::ZoneView>
+    for crate::api::feeder::ZoneView
+{
+    fn into_into_dart(self) -> crate::api::feeder::ZoneView {
         self
     }
 }
@@ -16731,6 +16818,7 @@ impl SseEncode for crate::api::store::KnownFeeder {
         <String>::sse_encode(self.identity, serializer);
         <String>::sse_encode(self.name, serializer);
         <Option<String>>::sse_encode(self.address, serializer);
+        <Option<String>>::sse_encode(self.manual_address, serializer);
     }
 }
 
@@ -17624,6 +17712,16 @@ impl SseEncode for Option<crate::api::feeder::ZoneChange> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::feeder::ZoneChange>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::feeder::ZoneView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::feeder::ZoneView>::sse_encode(value, serializer);
         }
     }
 }
@@ -19036,6 +19134,9 @@ impl SseEncode for crate::api::feeder::TimeInfo {
         <u32>::sse_encode(self.generation, serializer);
         <bool>::sse_encode(self.writable, serializer);
         <Option<String>>::sse_encode(self.zone, serializer);
+        <Option<crate::api::feeder::ZoneView>>::sse_encode(self.zone_now, serializer);
+        <Option<String>>::sse_encode(self.phone_zone, serializer);
+        <Option<bool>>::sse_encode(self.same_as_phone, serializer);
         <crate::api::feeder::NtpView>::sse_encode(self.ntp, serializer);
         <Option<i64>>::sse_encode(self.clock_ms, serializer);
         <Option<u32>>::sse_encode(self.error_ms, serializer);
@@ -19553,6 +19654,15 @@ impl SseEncode for crate::api::feeder::ZoneChange {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::api::feeder::ZoneView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.abbreviation, serializer);
+        <i32>::sse_encode(self.offset_s, serializer);
+        <bool>::sse_encode(self.seasonal, serializer);
     }
 }
 

@@ -10,12 +10,13 @@ use std::fs;
 use std::path::PathBuf;
 
 use wellfed_build::Repo;
-use wellfed_build::review::{bank_payload, freeze, mapping_cases};
+use wellfed_build::review::{bank_payload, freeze, installed_selection, mapping_cases};
 use wellfed_emu::factory;
 use wellfed_formats::manifest::BuildManifest;
 use wellfed_formats::review::{Details, ImageKind};
 use wellfed_image::bank::BANK1;
 use wellfed_image::root::Root;
+use wellfed_proto::device::Model;
 use wellfed_signing::{Frozen, Key, Motion};
 
 fn repo() -> Repo {
@@ -99,4 +100,29 @@ fn the_factory_loader_accepts_the_first_boot_build_in_both_banks_of_the_current_
     let results: Vec<u32> = cases.iter().map(|case| case.selection.result).collect();
     assert_eq!(results, [1, 2]);
     assert!(bank_payload(&image).is_ok());
+    installed_selection(&current, &rom, &image, Model::Plaf103).unwrap();
+}
+
+/// The fountain boot test as an install leaves it: stock still valid in
+/// bank 0 of the fountain's backup and the image in bank 1. The loader
+/// picks bank 1; with the image alone in either bank, it picks that bank.
+#[test]
+#[ignore = "needs the fountain's first-boot build, its pinned backup and the SDK ROM"]
+fn the_factory_loader_chooses_the_fountain_boot_test_in_bank_1() {
+    let repo = repo();
+    let build = repo.root.join("private/firmware-build/plwf106/firstboot");
+    let manifest: BuildManifest = wellfed_formats::load(&build.join("manifest.json")).unwrap();
+    let ota = manifest.artifact("OTA_All.bin").unwrap();
+    let image = fs::read(build.join(&ota.path)).unwrap();
+    let backup = fs::read(
+        repo.root
+            .join("private/flash-backups/plwf106-full-3/flash-read.bin"),
+    )
+    .unwrap();
+    let rom = factory::rom(&repo.root).unwrap();
+
+    installed_selection(&backup, &rom, &image, Model::Plwf106).unwrap();
+    let cases = mapping_cases(&backup, &rom, &image).unwrap();
+    let results: Vec<u32> = cases.iter().map(|case| case.selection.result).collect();
+    assert_eq!(results, [1, 2]);
 }

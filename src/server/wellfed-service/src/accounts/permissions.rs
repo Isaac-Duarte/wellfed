@@ -29,7 +29,7 @@ pub enum Permission {
     /// Users and other users' tokens.
     Users,
     /// The household and the feeders' time settings.
-    Household,
+    Home,
     /// Pets, foods and refills.
     OwnerData,
     /// Wi-Fi, reboot, and listing and revoking a feeder's clients.
@@ -43,7 +43,7 @@ pub enum Permission {
 /// Whether `role` may do `permission`.
 pub const fn can(role: Role, permission: Permission) -> bool {
     use Permission::{
-        Adopt, AllHistory, Control, Feed, FeederAdmin, Household, InviteOwnPhone, OwnAccount,
+        Adopt, AllHistory, Control, Feed, FeederAdmin, Home, InviteOwnPhone, OwnAccount,
         OwnHistory, OwnerData, Read, ServerData, Users,
     };
 
@@ -51,11 +51,11 @@ pub const fn can(role: Role, permission: Permission) -> bool {
         Role::Owner => true,
         Role::Member => match permission {
             Read | Feed | Control | InviteOwnPhone | OwnHistory | OwnAccount => true,
-            AllHistory | Users | Household | OwnerData | FeederAdmin | Adopt | ServerData => false,
+            AllHistory | Users | Home | OwnerData | FeederAdmin | Adopt | ServerData => false,
         },
         Role::Viewer => match permission {
             Read | OwnHistory | OwnAccount => true,
-            Feed | Control | InviteOwnPhone | AllHistory | Users | Household | OwnerData
+            Feed | Control | InviteOwnPhone | AllHistory | Users | Home | OwnerData
             | FeederAdmin | Adopt | ServerData => false,
         },
     }
@@ -79,7 +79,7 @@ mod tests {
             (OwnAccount, [true, true, true]),
             (AllHistory, [true, false, false]),
             (Users, [true, false, false]),
-            (Household, [true, false, false]),
+            (Home, [true, false, false]),
             (OwnerData, [true, false, false]),
             (FeederAdmin, [true, false, false]),
             (Adopt, [true, false, false]),

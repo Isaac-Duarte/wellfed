@@ -15,6 +15,8 @@ use wellfed_stock::{
 
 fn init(listen: &str, output: &Path, zone: Option<&str>) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_wellfed-stock"));
+    // The stock model whose message set every action speaks.
+    command.args(["--device", "plaf103"]);
     command
         .args(["init-installer", "--mqtt-listen", listen, "--output"])
         .arg(output);

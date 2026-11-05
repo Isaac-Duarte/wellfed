@@ -109,9 +109,15 @@ pub fn inputs(root: &Path) -> Result<(Vec<u8>, Vec<u8>)> {
         baseline.len() == FLASH_BYTES && sha256(&baseline) == BASELINE_SHA256,
         || FactoryError::UnverifiedBaseline,
     )?;
+    Ok((baseline, rom(root)?))
+}
+
+/// The pinned candidate ROM alone, for a model whose flash fixture is its
+/// own backup: every RTL8721DM board runs the same C-cut ROM.
+pub fn rom(root: &Path) -> Result<Vec<u8>> {
     let rom = read(root, ROM)?;
     require(sha256(&rom) == ROM_SHA256, || FactoryError::UnreviewedRom)?;
-    Ok((baseline, rom))
+    Ok(rom)
 }
 
 fn read(root: &Path, name: &'static str) -> Result<Vec<u8>> {

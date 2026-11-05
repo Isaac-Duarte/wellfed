@@ -55,7 +55,7 @@ We streamed a million one-byte samples from each source over the UART, from a co
 
 ## Keys and the panel
 
-**Carrying keys between tasks** (`wellfed-feeder-runtime::keys`):
+**Carrying keys between tasks** (`wellfed-device-runtime::keys`):
 - The settings writer alone writes the client store. The loop task alone reads the panel and runs the handshakes.
 - The loop queues one change at a time (enroll, revoke or reset) in a one-slot mailbox. A second before the writer takes the first is `busy`.
 - The writer logs each result as `PLCFG1 keys change=… result=… enrolled=…`.
@@ -82,7 +82,7 @@ The Reset hold restores the feeder to a new owner's state. Stock's own restore w
 | The meal call's clip | |
 | The rest of the lifetime statistics: uptime, feeds, portions, presses, sessions, link figures and boots by cause | |
 
-`wellfed_board_plaf103::storage::FACTORY_CLEARED` lists the erased stores in the order they are erased. The statistics are not erased but rewritten, as one atomic save, with only the erase counts (`Totals::wear_only`).
+`wellfed_board::storage::FACTORY_CLEARED` lists the erased stores in the order they are erased. The statistics are not erased but rewritten, as one atomic save, with only the erase counts (`Totals::wear_only`).
 
 **How it runs.** A reset erases 33 sectors and rewrites one store, so it is built to survive a power cut at any point:
 1. **The hold.** The loop refuses the hold by name while a feed is queued or runs (`PLPANEL1 reset refused=feeding`) or an install is under way (`reset refused=updating`). Otherwise it queues the reset for the settings writer (`reset keys=queued`). From then until the restart, an install offer is refused `busy`, so the reset's boot never becomes an update's trial boot.
@@ -105,7 +105,7 @@ The Reset hold restores the feeder to a new owner's state. Stock's own restore w
 
 ## Storage sectors
 
-All storage-region sectors are named in one table, `wellfed_board_plaf103::storage`. A compile-time check keeps the ranges disjoint and inside the region, and the other constants read from it. The region is 48 sectors, 0x340000–0x370000 ([resource budget](resource-budget.md#the-storage-region)).
+All storage-region sectors are named in one table, `wellfed_board::storage` (the PLAF103 board's). A compile-time check keeps the ranges disjoint and inside the region, and the other constants read from it. The region is 48 sectors, 0x340000–0x370000 ([resource budget](resource-budget.md#the-storage-region)).
 
 | Sectors | Owner |
 | --- | --- |
@@ -191,4 +191,4 @@ Every free KM0 backup register is taken, so no boot can ask the next one to star
 - **Observed** (October 24), setup and recovery: BLE setup mode end to end, first with a Dispense press and then with the setup code, and recovery over the LAN with the code ([Bluetooth](bluetooth.md#evidence), [device API](device-api.md#evidence)). An invite's redemption and a revocation ran on hardware the same day.
 - **Not yet covered:** battery power and temperature; the full restart test.
 - **Modeled:** the invite, signer and recovery paths, a wrong recovery code, and the client store under a power cut at every mutation are host-tested.
-- **Modeled** (October 28), the factory reset: the settings writer against the SDK fake clears exactly the decided stores and keeps the journal, confirmation, update store and calibration byte for byte, with a power cut after every erase (the cut one torn) and after the marker's (`wellfed-feeder-runtime/tests/writer.rs`). The marker is never pending after a cut part-way through its program (`wellfed-feeder/tests/reset_marker.rs`). Both platforms' conformance suites refuse a hold during a feed and mark one at rest. In the simulator, an owner and a member pair, set everything and feed; after the hold, the member is gone, every cleared store writes from generation 0, the history has a new epoch, the calibration stays, feed numbers carry on, and the recovery window admits a new owner (`wellfed-feeder-sim/tests/serve.rs`). **Not yet on hardware:** the hold with the clearing and the restart.
+- **Modeled** (October 28), the factory reset: the settings writer against the SDK fake clears exactly the decided stores and keeps the journal, confirmation, update store and calibration byte for byte, with a power cut after every erase (the cut one torn) and after the marker's (`wellfed-feeder-runtime/tests/writer.rs`). The marker is never pending after a cut part-way through its program (`wellfed-device/tests/reset_marker.rs`). Both platforms' conformance suites refuse a hold during a feed and mark one at rest. In the simulator, an owner and a member pair, set everything and feed; after the hold, the member is gone, every cleared store writes from generation 0, the history has a new epoch, the calibration stays, feed numbers carry on, and the recovery window admits a new owner (`wellfed-feeder-sim/tests/serve.rs`). **Not yet on hardware:** the hold with the clearing and the restart.

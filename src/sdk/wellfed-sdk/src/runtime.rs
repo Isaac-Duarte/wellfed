@@ -290,7 +290,7 @@ fn startup_failed() -> u32 {
 fn on_trial() -> bool {
     let mut record = [0u8; wellfed_core::ota::CONFIRM_LEN];
     startup::snapshot().bank() == Some(1)
-        && sdk::storage_read(trial::CONFIRM_SECTOR, 0, &mut record)
+        && sdk::storage_read(confirm::CONFIRM_SECTOR, 0, &mut record)
         && wellfed_core::ota::confirmed(&record, &trial::identity()).is_none()
 }
 unsafe extern "C" fn hook_ready(context: *mut c_void) -> bool {

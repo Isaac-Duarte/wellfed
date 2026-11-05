@@ -13,20 +13,13 @@ km4 = ["wellfed-hal/km4", "wellfed-hal/sdk"]
 # Trial test: a candidate whose startup fails on a determined error.
 # Only the bring-up firmware's `fail` variant sets it.
 trial-fail = []
-# A motor STOP that does not take, on demand (`hal::inject`). Only the
-# feeder's `stop-fail` variant sets it.
-stop-fail = ["wellfed-hal/stop-fail"]
-# Jams and sensor faults shown to the board's input capture
-# (`hal::feed_faults`). Only the feeder's `feed-jam` and `sensor-fault`
-# variants set it.
-feed-faults = ["wellfed-hal/feed-faults"]
 # Button presses typed on the log UART. Only the feeder's
 # `virtual-panel` bench variant sets it.
 virtual-panel = ["wellfed-hal/virtual-panel"]
 # The BLE peripheral. A firmware enables it with `bluetooth = true`
 # in its metadata, which links the device's BLE source.
 bluetooth = ["wellfed-hal/bluetooth"]
-# Every logged line also goes into a 4 KiB RAM tail
+# Every logged line also goes into a 16 KiB RAM tail
 # (`wellfed_sdk::log_tail`), which a firmware serving the device API
 # streams to its owner.
 log-tail = ["wellfed-hal/log-tail"]

@@ -21,6 +21,7 @@
 use sha2::{Digest, Sha256};
 use wellfed_core::ota::offer::{self, Context, ImageKind, KeyError, KeyRing, Trust};
 use wellfed_core::ota::{BANK1_BYTES, MARKER};
+use wellfed_model::Model;
 
 pub use wellfed_core::ota::offer::{KeyId, OfferError};
 
@@ -55,6 +56,9 @@ pub struct Verified {
     pub build_id: [u8; 32],
     pub image_sha256: [u8; 32],
     pub key_id: KeyId,
+    /// The device model the image is built for: only a device of that model
+    /// is offered it.
+    pub model: Model,
     pub signer: Signer,
     /// SHA-256 over the manifest, signature included: the name a feeder's
     /// update state and a downgrade statement give it.
@@ -72,6 +76,8 @@ pub enum ReleaseError {
     Manifest(OfferError),
     #[error("a stock image installs only with a statement for one feeder")]
     Stock,
+    #[error("the manifest names model code {code}, which no device has")]
+    Model { code: u8 },
     #[error("no trusted key has the id the manifest names")]
     UnknownKey,
     #[error("the manifest's signature does not verify")]
@@ -100,6 +106,7 @@ pub fn verify(file: &[u8], keys: &Keys<'_>) -> Result<Verified, ReleaseError> {
     if signed.kind == ImageKind::Stock {
         return Err(ReleaseError::Stock);
     }
+    let model = Model::from_byte(signed.model).ok_or(ReleaseError::Model { code: signed.model })?;
 
     let context = Context {
         ring: KeyRing {
@@ -111,6 +118,9 @@ pub fn verify(file: &[u8], keys: &Keys<'_>) -> Result<Verified, ReleaseError> {
         floor: 0,
         device: [0; 32],
         running: None,
+        // A release is checked for its own model; an install offers it
+        // only to a device of that model.
+        model: signed.model,
     };
     let admitted = offer::admit_offer(manifest, None, &context).map_err(|error| match error {
         OfferError::Key(KeyError::Unknown | KeyError::Revoked) => ReleaseError::UnknownKey,
@@ -138,6 +148,7 @@ pub fn verify(file: &[u8], keys: &Keys<'_>) -> Result<Verified, ReleaseError> {
         build_id: m.build_id,
         image_sha256: m.image_sha256,
         key_id: admitted.signed.key_id,
+        model,
         signer: match admitted.trust {
             Trust::Enrolled => Signer::Owner,
             Trust::BuiltIn | Trust::Added => Signer::Project,

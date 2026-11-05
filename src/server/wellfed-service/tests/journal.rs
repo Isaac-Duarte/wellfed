@@ -8,7 +8,7 @@ use std::time::Duration;
 use uuid::Uuid;
 use wellfed_api::{
     CommandKind, CommandOutcome, CommandQuery, CommandState, Connection as Link, EventKind,
-    EventQuery, FeederId, Role, SettingsPatch, User, UserId,
+    EventQuery, FeederId, FeederSettingsPatch, Role, User, UserId,
 };
 use wellfed_server_testkit::feeder::{self, Relay};
 use wellfed_server_testkit::{TestService, ada, config, local, owner_user, until};
@@ -301,15 +301,15 @@ fn a_key_reused_for_another_request_is_refused_unsent() {
             .await
             .unwrap();
         let settings = service.settings(id).await.unwrap();
-        let patch = SettingsPatch {
+        let patch = FeederSettingsPatch {
             volume: Some(10),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
 
         let reused = [
             service.set_lock(&ada().into(), id, false, Some(key)).await,
             service
-                .put_settings(&ada().into(), id, settings.generation, patch, Some(key))
+                .put_settings(&ada().into(), id, settings.generation(), patch, Some(key))
                 .await
                 .map(drop),
             service

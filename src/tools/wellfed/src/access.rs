@@ -93,7 +93,7 @@ pub(crate) async fn join_command(args: JoinArgs) -> Result<()> {
         other => other.into(),
     })?;
     match joined {
-        Joined::Enrolled { role } => {
+        Joined::Enrolled { role, .. } => {
             key.remember(&invite.feeder)?;
             println!("Joined feeder {} as {role:?}.", fingerprint(&invite.feeder));
             Ok(())

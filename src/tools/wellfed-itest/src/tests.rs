@@ -5,8 +5,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use wellfed_model::{
-    Counters, Counts, Generation, MealReminder, Memory, NtpServer, OpenRefusal, Refusal,
-    ResetCause, Settings, Stats, StatsSection, TimeView, WifiSource, Window,
+    Counters, Counts, FeederSettings, Generation, MealReminder, Memory, NtpServer, OpenRefusal,
+    Refusal, ResetCause, Settings, Stats, StatsSection, TimeView, WifiSource, Window,
 };
 
 use super::log::Log;
@@ -333,7 +333,7 @@ impl Feeder {
     }
 
     fn settings(&self) -> Settings {
-        Settings {
+        Settings::Feeder(FeederSettings {
             generation: Generation(self.generation),
             lights: self.lights,
             sound: self.sound,
@@ -344,7 +344,7 @@ impl Feeder {
             desiccant_replaced: None,
             meal_reminder: self.meal_reminder,
             writable: true,
-        }
+        })
     }
 
     fn device_status(&self) -> DeviceStatus {
@@ -357,7 +357,7 @@ impl Feeder {
             losses: self.losses,
             // As the firmware keeps it: 300 ms behind the host after a sync.
             clock_ms: self.clock_ms(),
-            settings_generation: self.generation,
+            settings_generation: Some(self.generation),
             wifi_generation: self.wifi_generation,
             locked: Some(self.locked),
         }

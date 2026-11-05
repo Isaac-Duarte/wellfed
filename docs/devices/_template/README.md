@@ -1,6 +1,6 @@
 # MODEL (product name)
 
-One or two sentences: what this feeder is, and whether Wellfed runs on it today.
+One or two sentences: what this device is, which kind it is (a feeder, a fountain), and whether Wellfed runs on it today.
 
 > Copy this folder to `docs/devices/<model>/` and fill in every section below, in this order. Write **Unknown** rather than leaving a section out. Give each finding its [evidence level](../../evidence.md). A claim from another project stays **External** until your own unit shows it. Then delete this note. See [adding a device](../README.md#adding-a-device).
 
@@ -14,7 +14,7 @@ What tells this model apart from look-alikes: the label on the base, the FCC ID,
 
 ## SoC and flash
 
-The SoC, linked to its page under [docs/chips/](../../chips/), and the flash part and size. List the other parts that matter: the motor driver, sensors, connectors and test points. The signal map goes in `board.md`, and the model gets a column in the chip's pin table.
+The SoC, linked to its page under [docs/chips/](../../chips/), and the flash part and size. List the other parts that matter: the drivers and sensors its kind has (a feeder's motor driver and beams, a fountain's pump and scale), connectors and test points. The signal map goes in `board.md`, and the model gets a column in the chip's pin table.
 
 ## UART access
 
@@ -26,7 +26,7 @@ Whether you can back up and restore this unit, and what a restore has been shown
 
 ## Hardware blocks
 
-One row per hardware block. The Stock column says in a few words what the stock firmware does. The Wellfed column says what Wellfed does with it. Status words stay out of this table: where each capability stands goes on the [roadmap](../../roadmap.md).
+One row per hardware block: first the blocks every device has, then those of its kind. The Stock column says in a few words what the stock firmware does. The Wellfed column says what Wellfed does with it. Status words stay out of this table: where each capability stands goes on the [roadmap](../../roadmap.md).
 
 | Block | Stock | Wellfed |
 | --- | --- | --- |
@@ -35,13 +35,13 @@ One row per hardware block. The Stock column says in a few words what the stock 
 | Wi-Fi | | |
 | Bluetooth LE | | |
 | Over-the-air updates | | |
-| Motor and feeding | | |
-| Food and outlet sensors | | |
 | Power and battery | | |
-| Buttons and child lock | | |
+| Buttons | | |
 | Indicators | | |
-| Speaker | | |
-| Clock and schedules | | |
+| Clock | | |
+| Each block of its kind, one row each | | |
+
+The kind's rows name its own hardware. A feeder has its motor and feeding, food and outlet sensors, child lock, speaker and schedules. A fountain has its pump, water level and scale.
 
 ## Notes
 

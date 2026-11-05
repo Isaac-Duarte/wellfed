@@ -21,7 +21,7 @@ use std::sync::{Mutex, PoisonError};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use wellfed_formats::private;
-use wellfed_model::{Calibration, PLANS, Plan, SettingsPatch};
+use wellfed_model::{Calibration, FeederSettingsPatch, PLANS, Plan};
 
 use crate::api::error::{BridgeError, ErrorKind};
 use crate::api::router::{PendingWrite, RoutePath, WriteKind};
@@ -90,7 +90,7 @@ pub(crate) enum PinnedWrite {
     },
     Settings {
         base: u32,
-        changes: SettingsPatch,
+        changes: FeederSettingsPatch,
     },
     Lock {
         locked: bool,
@@ -321,9 +321,9 @@ mod tests {
             server: None,
             write: PinnedWrite::Settings {
                 base: 4,
-                changes: SettingsPatch {
+                changes: FeederSettingsPatch {
                     volume: Some(30),
-                    ..SettingsPatch::default()
+                    ..FeederSettingsPatch::default()
                 },
             },
             state: PinState::Uncertain,

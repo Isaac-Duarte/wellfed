@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use uuid::Uuid;
 use wellfed_api::{
-    AdoptFeeder, Credentials, ErrorCode, FeederId, Generation, HouseholdPatch, NewUser, PLANS,
-    PasswordChange, PlansChange, Role, SettingsPatch, Units, User, UserPatch,
+    AdoptFeeder, Credentials, ErrorCode, FeederId, FeederSettingsPatch, Generation, HomePatch,
+    NewUser, PLANS, PasswordChange, PlansChange, Role, Units, User, UserPatch,
 };
 use wellfed_server_client::{Auth, Client, Lock, StatusCode};
 use wellfed_server_testkit::fixed::ManualClock;
@@ -63,12 +63,12 @@ async fn a_viewer_reads_but_every_write_is_refused() {
     let (viewer, _) = account(&server, &owner, "vic", Role::Viewer, None).await;
 
     viewer.feeders().await.unwrap();
-    assert_eq!(viewer.household().await.unwrap().zone, ZONE);
+    assert_eq!(viewer.home().await.unwrap().zone, ZONE);
     assert_eq!(viewer.session().await.unwrap().role, Role::Viewer);
 
     let forbidden = StatusCode::FORBIDDEN;
     let code = ErrorCode::Forbidden;
-    let patch = SettingsPatch::default();
+    let patch = FeederSettingsPatch::default();
     refused_for(
         "settings",
         viewer
@@ -115,13 +115,13 @@ async fn a_viewer_reads_but_every_write_is_refused() {
         expires: None,
     };
     refused_for("create", viewer.create_user(&new).await, forbidden, code);
-    let household = HouseholdPatch {
+    let home = HomePatch {
         units: Some(Units::Ounces),
-        ..HouseholdPatch::default()
+        ..HomePatch::default()
     };
     refused_for(
         "household",
-        viewer.update_household(&household).await,
+        viewer.update_home(&home).await,
         forbidden,
         code,
     );
@@ -135,7 +135,7 @@ async fn a_member_controls_feeders_but_not_accounts_or_the_household() {
     let (member, _) = account(&server, &owner, "bob", Role::Member, None).await;
 
     // Allowed through to the feeder, which this server does not have.
-    let patch = SettingsPatch::default();
+    let patch = FeederSettingsPatch::default();
     refused(
         member
             .put_settings(NOBODY, Generation(1), &patch, key())
@@ -158,7 +158,7 @@ async fn a_member_controls_feeders_but_not_accounts_or_the_household() {
     );
     refused_for(
         "household",
-        member.update_household(&HouseholdPatch::default()).await,
+        member.update_home(&HomePatch::default()).await,
         forbidden.0,
         forbidden.1,
     );
@@ -269,19 +269,19 @@ async fn setup_takes_the_zone_and_an_owner_changes_the_household() {
         ErrorCode::Invalid,
     );
     let (owner, _) = owner(&server).await;
-    assert_eq!(owner.household().await.unwrap().zone, ZONE);
+    assert_eq!(owner.home().await.unwrap().zone, ZONE);
 
-    let patch = HouseholdPatch {
+    let patch = HomePatch {
         units: Some(Units::Ounces),
         zone: Some("Asia/Kolkata".into()),
-        ..HouseholdPatch::default()
+        ..HomePatch::default()
     };
-    let household = owner.update_household(&patch).await.unwrap();
+    let home = owner.update_home(&patch).await.unwrap();
     assert_eq!(
-        (household.units, household.zone.as_str()),
+        (home.units, home.zone.as_str()),
         (Units::Ounces, "Asia/Kolkata")
     );
-    assert_eq!(owner.household().await.unwrap(), household);
+    assert_eq!(owner.home().await.unwrap(), home);
     server.stop().await;
 }
 
@@ -294,7 +294,7 @@ async fn an_anonymous_client_is_unauthenticated_everywhere() {
     let unauthenticated = (StatusCode::UNAUTHORIZED, ErrorCode::Unauthenticated);
     refused_for(
         "household",
-        anonymous.household().await,
+        anonymous.home().await,
         unauthenticated.0,
         unauthenticated.1,
     );

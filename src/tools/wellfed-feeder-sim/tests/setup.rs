@@ -11,11 +11,11 @@ use std::rc::Rc;
 
 use wellfed_client::setup::{Ask, Credentials, Session, Step};
 use wellfed_core::buttons::{Button, Buttons, Gesture};
+use wellfed_device::store::events::Read;
+use wellfed_device::store::net::BuildWifi;
 use wellfed_device_api::mailbox::{KeyResult, WifiResult};
-use wellfed_feeder::feeder::platform::BuildWifi;
 use wellfed_feeder::feeder::setup::{self, Cause, Ended};
 use wellfed_feeder::feeder::{self, Platform, feeding, owner};
-use wellfed_feeder::store::events::Read;
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;

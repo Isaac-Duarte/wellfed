@@ -6,7 +6,7 @@
 use std::ops::Range;
 
 use wellfed_amebad_sys::{BANK0_OFFSET, BANK1_OFFSET, BANK1_SECTORS, SECTOR_BYTES};
-use wellfed_board_plaf103::{STORAGE_OFFSET, STORAGE_SECTORS};
+use wellfed_board::{STORAGE_OFFSET, STORAGE_SECTORS};
 
 /// Stock's two plan sectors.
 const PLAN_SECTORS: Range<u32> = 0x7d_0000..0x7d_2000;

@@ -66,8 +66,7 @@ use std::time::Duration;
 use tokio::sync::{broadcast, watch};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
-use wellfed_api::{Connection as Link, FeederEvent, FeederId, FeederSample, Gap};
-use wellfed_model::DeviceKind;
+use wellfed_api::{Connection as Link, FeederId, FeederSample, Gap, HistoryEvent};
 use wellfed_session::noise::Keypair;
 use wellfed_store::Store;
 
@@ -190,7 +189,7 @@ impl Feeder {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MirrorEvent {
     /// An event the store did not hold before.
-    Event(FeederEvent),
+    Event(HistoryEvent),
     /// Events the feeder dropped before the server read them.
     Gap(Gap),
     Sample(FeederSample),
@@ -332,12 +331,6 @@ impl Mirror {
     /// Whether the feeder has an open session, welcomed.
     pub fn session_open(&self, id: FeederId) -> bool {
         self.handles().get(&id).is_some_and(task::Handle::is_open)
-    }
-
-    /// The kind of device the open session speaks to, or `None` while it
-    /// has none: another kind's ops are never sent.
-    pub fn kind(&self, id: FeederId) -> Option<DeviceKind> {
-        self.handles().get(&id).and_then(task::Handle::kind)
     }
 
     /// Follow a feeder's updates from now on.

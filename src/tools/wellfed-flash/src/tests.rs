@@ -25,6 +25,7 @@ use wellfed_image::bank::BANK1;
 use wellfed_image::fixtures::{synthetic_payload, wrap};
 
 mod banks;
+mod fountain;
 mod golden;
 mod recovery;
 mod update;
@@ -37,6 +38,8 @@ enum Fault {
     LostEraseAck(usize),
     /// The nth program frame is written but its ACK is lost.
     LostProgramAck(usize),
+    /// Every sector erase takes the whole 64 KiB block around it.
+    BlockErase,
 }
 
 enum State {
@@ -150,7 +153,12 @@ impl Helper {
                         let at = self.address();
                         assert_eq!(&self.input[4..6], &[1, 0]);
                         assert!(at >= 0x6000, "the factory region is never erased");
-                        self.flash[at..at + SECTOR].fill(0xff);
+                        if self.fault == Fault::BlockErase {
+                            let block = at & !0xffff;
+                            self.flash[block..block + 0x1_0000].fill(0xff);
+                        } else {
+                            self.flash[at..at + SECTOR].fill(0xff);
+                        }
                         self.erased.push(at);
                         self.erases += 1;
                         if self.fault != Fault::LostEraseAck(self.erases) {
@@ -451,7 +459,13 @@ fn develop(
     let length = development::extent(update.source, update.target, &layout)?;
     let current = protocol::read_region(port, layout.start, length)?;
     let other = protocol::read_region(port, layout.other.0, layout.other.1)?;
-    let plan = development::plan(update, &current, Some(&other))?;
+    // A fountain plan binds its own read of the bytes beside bank 1.
+    let neighbors = crate::device::pins(layout.kind.model())
+        .neighbors
+        .map(|(start, end)| protocol::read_region(port, start, end - start))
+        .transpose()?
+        .map(|bytes| sha256(&bytes));
+    let plan = development::plan_bound(update, &current, Some(&other), neighbors)?;
 
     port.0.borrow_mut().tx.clear();
     let mut acquire = acquire_for(layout, length);

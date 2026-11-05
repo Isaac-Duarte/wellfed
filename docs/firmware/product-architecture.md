@@ -85,8 +85,10 @@ In code:
 | Part | Where | What it holds |
 | --- | --- | --- |
 | SDK | `src/sdk/` | Mechanisms only: the runtime, clock and time sources, journal, feeding owner, buttons, Noise transport, the BLE link and the updater |
-| Product policy | `src/product/wellfed-feeder` | Schedules, child lock, reminders, history policy, the request and entity model, the product's stores, and the loop itself |
-| Product runtime | `src/product/wellfed-feeder-runtime` | The product's stores on the SDK runtime: the settings writer and its mailboxes |
+| Device policy | `src/product/wellfed-device` | What every device kind keeps: the settings, Wi-Fi, client, time, event and trace stores, the reset marker and the update view |
+| Device runtime | `src/product/wellfed-device-runtime` | Those stores on the SDK runtime: the settings writer, generic over a kind's own stores, and its mailboxes |
+| Product policy | `src/product/wellfed-feeder` | Schedules, child lock, reminders, history policy, the request and entity model, the feeder's own stores, and the loop itself |
+| Product runtime | `src/product/wellfed-feeder-runtime` | The feeder's stores in the settings writer and their mailboxes, and the writer's settings stage |
 | Firmware | `src/firmware/wellfed/feeder` | The PLAF103's wiring, and the feeding owner stepped in the loop |
 | Client core | `wellfed-client` | The sans-IO protocol logic every client shares |
 | Home Assistant | `src/integrations/homeassistant` | The integration's Python, and its PyO3 bridge over `wellfed-connect` |
@@ -95,8 +97,9 @@ In code:
 Some detail on each:
 
 - **SDK.** No SDK crate depends on a product crate. Where the runtime needs the product's stores (its settings writer, the Wi-Fi join's stored credentials), it calls a hook the product's runtime crate defines.
-- **`wellfed-feeder`** is a `no_std` library. Its stores keep the product's records: settings, Wi-Fi credentials, client keys and events. Its loop, `Feeder<P: Platform>::pass`, is the panel's owner, BLE setup mode, the device API's driver and the event recorder, over a `Platform` trait. It is host-tested, and the simulator runs the same pass on its own platform.
-- **`wellfed-feeder-runtime`** is linked by every PLAF103 firmware, so a firmware swap keeps the owner's data.
+- **`wellfed-device`** is a `no_std` library of what every kind keeps: the settings, Wi-Fi credentials, client keys, time settings, events and traces. **`wellfed-device-runtime`** runs those stores on the SDK. Its settings writer is generic over a kind's own stores (`writer::Product`), called statically, so a fountain links the two with its own policy and no feeder crate.
+- **`wellfed-feeder`** is a `no_std` library. Its own stores keep the feeder's records: plans, calibration, the meal call and the lifetime statistics. Its loop, `Feeder<P: Platform>::pass`, is the panel's owner, BLE setup mode, the device API's driver and the event recorder, over a `Platform` trait. It is host-tested, and the simulator runs the same pass on its own platform.
+- **`wellfed-feeder-runtime`** defines the settings stage over the shared writer and the feeder's stores. Every PLAF103 firmware links it, so a firmware swap keeps the owner's data.
 - **The firmware** supplies the `Platform` (pins, drivers, sockets, mailboxes) and steps the feeding owner in one loop task, before the product's pass. Another model gets its own thin firmware.
 - **`wellfed-client`** turns bytes in into bytes out: the Noise handshake, pairing, invites, requests, event-cursor sync and the installer's steps. It never opens a socket or a radio. `wellfed-connect` drives its device API sessions over tokio TCP for the server, the CLI and the Android app alike, and `wellfed-install` drives the install from stock for the CLI and the app, with stock's server in its own process. The app carries its BLE setup bytes in Dart, and WASM can run it later.
 - **`wellfed-server`** links single-purpose libraries for its shared pieces: the Noise client and request types in `wellfed-client` and `wellfed-model`, and its sessions in `wellfed-connect`. It speaks no stock protocol and holds no signing key: it verifies releases, and an owner signs a return to stock on their own computer. The bench's old catch-all server is deleted ([tools](../../src/tools/README.md)).
@@ -170,7 +173,7 @@ The event cursor is described under [data](#data).
 
 - **Sources:** NTP when reachable (the gateway by default, or an address the owner sets), plus syncs from the app and the server over the API. An owner's sync may step the clock. NTP and every other client may only narrow a valid clock within its error bound ([clock](clock.md)).
 - **Time zone:** a feeder setting, the zone's POSIX rule, which the feeder evaluates for any year.
-- **Validity is an error bound.** The SDK learns its drift from successive syncs and tracks how far off the clock could be. The clock stops counting as valid when that could exceed 2 minutes: about 6.6 hours after a fix before the drift is learned, about 22 hours after. The measured uncorrected drift is 735 to 2,060 ppm slow ([clock](clock.md)). The learned bound stays wide until the bench shows how much it moves; NTP keeps the clock valid.
+- **Validity is an error bound.** The SDK learns its drift from successive syncs and tracks how far off the clock could be. The clock stops counting as valid when that could exceed 2 minutes: about 6.6 hours after a fix before the drift is learned, about 7 days after. The SysTimer the clock counts on drifted 8 to 18 ppm over a 72-hour run ([clock](clock.md)), and the learned bound is about ten times that; NTP keeps the clock valid.
 - **Warm resets** (watchdog, update activation, trial boots) carry the clock through the always-on RTC. A power cut loses it.
 - **No source.** After a cold boot with no source, or once the bound is exceeded, scheduled meals hold. The feeder shows that it needs the time, through its lights and sound policy, and the Dispense button and app feeds still work. The missed-meal rule decides what happens once time returns.
 

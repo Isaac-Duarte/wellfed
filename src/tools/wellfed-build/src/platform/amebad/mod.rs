@@ -26,9 +26,10 @@ use self::sdk::{Overrides, check_sdk_worktree, prepare, rust_archive};
 use self::toolchain::{toolchain_lock, verify_toolchain};
 use super::{Built, Job};
 use crate::device::StockPaths;
-use crate::environment::Environment;
+use crate::environment::{BOARD_VARIABLE, Environment};
 use crate::{Error, Firmware, Profile, Provisioning, Repo, Result, Stage, digest, relative, text};
 use wellfed_formats::require;
+use wellfed_proto::device::Model;
 
 pub mod audit;
 pub(crate) mod credentials;
@@ -228,9 +229,11 @@ fn archive_symbols(core: Core) -> Vec<&'static str> {
 }
 
 /// The cargo environment of the archive builds: the checked environment
-/// plus what the SDK crates' build scripts read.
+/// plus what the SDK crates' build scripts read, the board among them, so
+/// both cores' archives are built for the device's model and no other.
 fn cargo_environment(
     environment: &Environment,
+    model: Model,
     sdk: &Path,
     toolchain: &Path,
     identity: &str,
@@ -238,6 +241,7 @@ fn cargo_environment(
     provisioning: Provisioning,
 ) -> Environment {
     let mut environment = environment.clone();
+    environment.insert(BOARD_VARIABLE.into(), model.name().into());
     environment.insert("WELLFED_BUILD_ID".into(), identity.into());
     environment.insert("WELLFED_SDK_DIR".into(), sdk.display().to_string());
     environment.insert(
@@ -476,6 +480,7 @@ impl Build<'_> {
             println!("Building Rust firmware archives...");
             let environment = cargo_environment(
                 &rust.environment,
+                job.device.model(),
                 &self.sdk,
                 job.toolchain,
                 job.identity,
@@ -643,23 +648,26 @@ impl Build<'_> {
                 &self.image_directory().join("OTA_All.bin"),
                 &stock.image,
                 &stock.layout,
+                job.device.model(),
             )
             .map_err(|e| Error::Layout(Box::new(e)))?;
             audits.layout_audit = Some(layout);
             audits.km0_pinmap_audit = Some(audit::pinmap::audit_linked_table(
                 ota,
                 audit::pmap_address(sdk, binutils)?,
+                job.device.model(),
                 &image,
             )?);
         }
         if job.profile.has(Stage::Rust) {
             audit::retained_ram(sdk, binutils)?;
-            audits.ram_park_audit = Some(park::audit(sdk, binutils, archives)?);
+            audits.ram_park_audit = Some(park::audit(sdk, binutils, archives, job.device.model())?);
             audits.sdk_hook_audit = Some(audit::hooks::audit(sdk, binutils, archives)?);
         }
         if job.profile.has(Stage::Firstboot) {
-            audits.firstboot_startup_audit = Some(audit::mains::audit(sdk, binutils)?);
-            audits.wifi_link_audit = Some(audit::writes::audit(sdk, binutils)?);
+            let model = job.device.model();
+            audits.firstboot_startup_audit = Some(audit::mains::audit(sdk, binutils, model)?);
+            audits.wifi_link_audit = Some(audit::writes::audit(sdk, binutils, model)?);
             audits.stack_audit = Some(audit::stack::audit(
                 &self.image_directory().join("target_img2.axf"),
                 &binutils.objdump(),
@@ -727,8 +735,13 @@ impl Amebad {
         let lock = lock(job.repo)?;
         let stock = if job.profile.has(Stage::Stock) {
             let stock = job.device.stock(job.repo)?;
-            audit::layout::audit(&stock.image, &stock.image, &stock.layout)
-                .map_err(|e| Error::Layout(Box::new(e)))?;
+            // The PLAF103's stock OTA is checked against its layout before
+            // anything is staged from it; the fountain's backup is checked
+            // by hash where its pad table is read.
+            if job.device.model() == Model::Plaf103 {
+                audit::layout::audit(&stock.image, &stock.image, &stock.layout, Model::Plaf103)
+                    .map_err(|e| Error::Layout(Box::new(e)))?;
+            }
             Some(stock)
         } else {
             None
@@ -797,6 +810,7 @@ mod tests {
             let (header, source) = credentials_header(&repo, provisioning).unwrap();
             let environment = cargo_environment(
                 &inherited,
+                Model::Plaf103,
                 Path::new("sdk"),
                 Path::new("toolchain"),
                 &"00".repeat(32),
@@ -813,6 +827,29 @@ mod tests {
             );
             assert_eq!(header.contains(&presence), told, "{provisioning:?}");
             assert_eq!(source.is_some(), told, "{provisioning:?}");
+        }
+    }
+
+    /// Both cores' archives are built for the device's model, whatever
+    /// board the builder's own environment names.
+    #[test]
+    fn the_board_is_the_device_model() {
+        let inherited = Environment::from([(BOARD_VARIABLE.to_string(), "plwf106".to_string())]);
+
+        for model in Model::ALL {
+            let environment = cargo_environment(
+                &inherited,
+                model,
+                Path::new("sdk"),
+                Path::new("toolchain"),
+                &"00".repeat(32),
+                None,
+                Provisioning::Consumer,
+            );
+            assert_eq!(
+                environment.get(BOARD_VARIABLE).map(String::as_str),
+                Some(model.name())
+            );
         }
     }
 }

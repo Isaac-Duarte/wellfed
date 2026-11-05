@@ -2,6 +2,9 @@
 //! the settings and honors `sound`, one tune plays at a time with the
 //! amplifier enabled only while the codec is open, and the ring drains
 //! before everything closes.
+//!
+//! The PLAF103's panel drivers, which build for no other board.
+#![cfg(wellfed_board = "plaf103")]
 
 use std::sync::{Mutex, MutexGuard};
 
@@ -10,7 +13,7 @@ use wellfed_core::settings::{SettingsView, Window};
 use wellfed_core::tone::PlayResult;
 use wellfed_core::tone::Tune;
 use wellfed_hal::audio::{self, AMP_PIN, Record, Speaker};
-use wellfed_hal::plaf103::storage::CALL;
+use wellfed_hal::board::storage::CALL;
 use wellfed_hal::sdk::fake;
 use wellfed_hal::{clock, settings};
 

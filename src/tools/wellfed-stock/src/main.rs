@@ -35,6 +35,10 @@ use wellfed_stock::{
     about = "The bench's server for stock PLAF103 1.1.15: its broker and the install ledger"
 )]
 struct Cli {
+    /// The stock device's model, which picks the message set the server
+    /// speaks. There is no default.
+    #[arg(long, global = true, value_enum)]
+    device: Option<wellfed_formats::cli::Device>,
     #[command(subcommand)]
     command: Action,
 }
@@ -143,7 +147,21 @@ async fn main() -> Result<()> {
         .with_writer(std::io::stderr)
         .init();
 
-    match Cli::parse().command {
+    let cli = Cli::parse();
+    // Every action works on one stock model's messages: only a model
+    // with a message set is served.
+    let Some(device) = cli.device else {
+        anyhow::bail!("name the stock device with --device (plaf103)");
+    };
+    let model = device.into();
+    if wellfed_stock::protocol::MessageSet::of(model).is_none() {
+        anyhow::bail!(
+            "there is no stock message set for the {} yet: its reverse engineering is open",
+            model.name()
+        );
+    }
+
+    match cli.command {
         Action::InitInstaller {
             mqtt_listen,
             timezone,

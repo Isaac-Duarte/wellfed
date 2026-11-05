@@ -1,7 +1,7 @@
 //! Confirmation on KM4, normal role (booted from bank 1).
 //!
 //! KM0 counts this image's boots until a record in storage sector
-//! `trial::CONFIRM_SECTOR` names its build identity (`trial.rs`). Once the
+//! [`CONFIRM_SECTOR`] names its build identity (`trial.rs`). Once the
 //! image has stayed healthy for `HEALTHY_MS` (the glue's test: the network
 //! check passed, outputs verified stopped, startup probes finished), this
 //! arms the flash-lock hooks like the updater (`arming.rs`). The firmware's
@@ -45,7 +45,12 @@ use crate::interlock::{INTERLOCK, WRITER_POLL_MS, WriteStep, WriteTurn};
 use crate::ota::update::Floor;
 use crate::sdk;
 use crate::supervision::supervise::Feeding;
-use crate::trial::{self, CONFIRM_SECTOR};
+use crate::trial;
+
+/// The confirmation record's sector, which every board with a store has
+/// (the board contract checks it); `trial::CONFIRM_SECTOR` is it.
+pub const CONFIRM_SECTOR: u32 = crate::board::storage::CONFIRM.first;
+const _: () = assert!(matches!(trial::CONFIRM_SECTOR, Some(sector) if sector == CONFIRM_SECTOR));
 
 pub const POLL_MS: u32 = 500;
 const _: () = assert!(POLL_MS <= WRITER_POLL_MS);

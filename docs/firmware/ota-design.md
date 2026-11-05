@@ -121,9 +121,11 @@ The install still stops; nothing is rewritten.
 **Manifest version 2** (`wellfed_core::ota::offer`) is 96 bytes, then the Ed25519 signature:
 
 - `PLOTA2\0\0`, the version, the image length, the target bank;
-- the image kind (1 replacement, 2 stock) and three zero bytes;
+- the image kind (1 replacement, 2 stock), the device model it is built for (`wellfed_proto::device::Model::code`, never 0) and two zero bytes;
 - the signing key's id (the first 8 bytes of SHA-256 over its public key);
 - the image's SHA-256 and the build ID.
+
+A feeder admits only an image for its own model: once the signature checks, a manifest naming another model is refused (`Target`) before anything is written. A release keeps its model too, and the server lists releases by model (`GET /releases?model=`) and offers one only to a device of that model (`409 other_model`). The OTA container and the bank image are unchanged: the model travels in the manifest, which heads every release file.
 
 Version 1 (`PLOTA1`) is deleted. An offer carrying its magic is refused as the wrong version. The bench still reads the versions of the version 1 manifests on disk when it picks the next.
 

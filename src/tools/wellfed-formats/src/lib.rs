@@ -17,8 +17,11 @@ pub mod audit;
 pub mod bench;
 pub mod canonical;
 pub mod capture;
+#[cfg(feature = "clap")]
+pub mod cli;
 pub mod credentials;
 pub mod device;
+#[cfg(feature = "export")]
 pub mod export;
 pub mod flash_plan;
 pub mod hex;

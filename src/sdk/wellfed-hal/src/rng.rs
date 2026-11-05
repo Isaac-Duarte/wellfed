@@ -19,8 +19,8 @@
 use wellfed_core::named_enum;
 use wellfed_core::rng::{Drbg, Pool};
 
+use crate::adc;
 use crate::entropy::{self, Jitter};
-use crate::{adc, plaf103};
 
 /// One bit per ADC sample, in eighths: below the 1.44 bits the bench measured.
 pub const CLAIM_EIGHTHS: u32 = 8;
@@ -28,7 +28,7 @@ pub const CLAIM_EIGHTHS: u32 = 8;
 pub const SAMPLE_LIMIT: u32 = 8_192;
 /// Raw samples [`Started`] reports, for the restart check across boots.
 pub const FIRST: usize = 16;
-const CHANNEL: u32 = plaf103::pins::ADC_SUPPLY;
+const CHANNEL: u32 = crate::sdk::ADC_SUPPLY_CHANNEL;
 const POLLS: u32 = 10_000;
 /// Jitter samples mixed in as the DRBG's nonce, credited nothing.
 const JITTER: usize = 64;

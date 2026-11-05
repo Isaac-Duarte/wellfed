@@ -3,7 +3,9 @@
 use jiff::Timestamp;
 use tempfile::TempDir;
 use uuid::Uuid;
-use wellfed_api::{ClientRole, FeederId, MetricKind, SampleValue};
+use wellfed_api::{
+    ClientRole, FeederId, Home, HomeId, MetricKind, Model, SampleValue, TimeFormat, Units,
+};
 use wellfed_store::{
     HourRow, NewFeeder, NewSample, SampleKey, SampleRefresh, SealedKey, Span, Store,
 };
@@ -15,6 +17,7 @@ async fn fresh() -> (TempDir, Store) {
     let store = Store::open(&dir.path().join("server.db"), at(0))
         .await
         .unwrap();
+    home(&store).await;
     (dir, store)
 }
 
@@ -27,6 +30,8 @@ async fn adopt(store: &Store, n: u8) -> FeederId {
     store
         .insert_feeder(NewFeeder {
             id,
+            home: HOME,
+            model: Model::Plaf103,
             identity: [n; 32],
             name: "kitchen",
             role: ClientRole::Server,
@@ -382,10 +387,20 @@ async fn samples_from_before_numbers_are_migrated_numbered_and_rolled_up() {
     sqlx::migrate!().run_to(NUMBERED - 1, &pool).await.unwrap();
     let id = FeederId(Uuid::from_u128(1));
     sqlx::query(
-        "INSERT INTO feeders (id, identity, name, role, key_nonce, key_sealed, created_ms)
-         VALUES (?, ?, 'kitchen', 'server', x'00', x'00', 0)",
+        "INSERT INTO homes (id, name, units, time_format, zone, created_ms)
+         VALUES (?, 'Home', 'grams', '24h', 'UTC', 0)",
+    )
+    .bind(HOME.0)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO feeders (id, home_id, kind, model, identity, name, role, key_nonce, key_sealed,
+                              created_ms)
+         VALUES (?, ?, 'feeder', 'plaf103', ?, 'kitchen', 'server', x'00', x'00', 0)",
     )
     .bind(id.0)
+    .bind(HOME.0)
     .bind([1u8; 32].as_slice())
     .execute(&pool)
     .await
@@ -411,6 +426,8 @@ async fn samples_from_before_numbers_are_migrated_numbered_and_rolled_up() {
     pool.close().await;
 
     let store = Store::open(&path, at(0)).await.unwrap();
+
+    home(&store).await;
     let refresh = store.refresh_samples(decode).await.unwrap();
     assert_eq!(
         refresh,
@@ -452,4 +469,21 @@ async fn samples_from_before_numbers_are_migrated_numbered_and_rolled_up() {
         hours(&store, id, Span::default()).await,
         [hour(0, &[-50]), hour(HOUR, &[-60])]
     );
+}
+
+/// The home every device here belongs to.
+const HOME: HomeId = HomeId(Uuid::from_u128(0x40));
+
+async fn home(store: &Store) {
+    let home = Home {
+        id: HOME,
+        name: "Home".into(),
+        units: Units::Grams,
+        time_format: TimeFormat::H24,
+        zone: "UTC".into(),
+    };
+    store
+        .create_home(&home, jiff::Timestamp::UNIX_EPOCH)
+        .await
+        .unwrap();
 }

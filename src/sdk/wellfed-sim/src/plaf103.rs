@@ -8,11 +8,11 @@
 use wellfed_core::feed::controller::FeedLimits;
 use wellfed_core::feed::progress::BowlMode;
 use wellfed_core::feed::sensor_inputs::SensorLimits;
-use wellfed_hal::owner::OwnerConfig;
 use wellfed_hal::sdk;
 use wellfed_hal::supervision::config::{SYSTIMER_HZ, WATCHDOG};
-use wellfed_hal::supervision::events::EventsConfig;
 use wellfed_hal::supervision::supervise::LIVENESS_MS;
+use wellfed_hal_feeder::events::EventsConfig;
+use wellfed_hal_feeder::owner::OwnerConfig;
 
 /// The vendor app's cap on one feed, which the journal pins.
 pub const MAX_PORTIONS: u16 = 48;

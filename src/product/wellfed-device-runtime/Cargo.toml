@@ -1,0 +1,22 @@
+[package]
+license.workspace = true
+name = "wellfed-device-runtime"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "The record stores every device keeps, on the Wellfed SDK runtime: the settings writer over a device kind's own stores, its mailboxes with the loop, and the Wi-Fi join's stored credentials"
+publish.workspace = true
+
+[features]
+# KM4 target builds with the pinned SDK bindings.
+km4 = ["wellfed-sdk/km4", "wellfed-hal/km4", "wellfed-hal/sdk"]
+
+[dependencies]
+wellfed-core.workspace = true
+wellfed-device.workspace = true
+wellfed-device-api.workspace = true
+wellfed-hal.workspace = true
+wellfed-sdk.workspace = true
+
+[lints]
+workspace = true

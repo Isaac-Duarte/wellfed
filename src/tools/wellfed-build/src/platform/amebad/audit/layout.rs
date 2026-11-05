@@ -3,6 +3,11 @@
 //!
 //! Structural and known-range only: not a flash plan or full partition
 //! validation, and boot acceptance stays unproven.
+//!
+//! The PLWF106 has no stock OTA image, only a flash backup, so its audit
+//! checks the candidate against its layout alone: the container, the
+//! layout's size cap and bank-1 placement clear of every preserved range.
+//! Its candidate goes into bank 1 only; bank 0 keeps the stock image.
 
 use std::fs;
 use std::path::Path;
@@ -10,6 +15,7 @@ use std::path::Path;
 use wellfed_formats::audit::{LayoutAudit, LayoutChecks, LayoutRegion, Placement};
 use wellfed_formats::layout::{Hex, Layout};
 use wellfed_image::ota::{STOCK_SHA256, container, images};
+use wellfed_proto::device::Model;
 
 use super::word;
 use crate::{Result, sha256};
@@ -38,16 +44,33 @@ pub enum LayoutError {
     Preserved { ranges: Vec<String> },
 }
 
-pub(crate) fn audit(image: &Path, stock: &Path, layout: &Path) -> Result<LayoutAudit> {
+/// The candidate `image` against `model`'s layout, with the PLAF103's stock
+/// OTA `stock` as its reference.
+pub(crate) fn audit(
+    image: &Path,
+    stock: &Path,
+    layout: &Path,
+    model: Model,
+) -> Result<LayoutAudit> {
+    match model {
+        Model::Plaf103 => feeder(image, stock, layout),
+        Model::Plwf106 => fountain(image, layout),
+    }
+}
+
+fn feeder(image: &Path, stock: &Path, layout: &Path) -> Result<LayoutAudit> {
     let layout: Layout = wellfed_formats::load(layout)?;
     require(
-        layout.schema_version == 1 && layout.stock_sha256 == STOCK_SHA256,
+        layout.schema_version == 1 && layout.stock_sha256.as_deref() == Some(STOCK_SHA256),
         || LayoutError::Identity,
     )?;
+    let Some(table_address) = layout.bank_table_runtime_address else {
+        return Err(LayoutError::Identity.into());
+    };
 
     let stock = fs::read(stock)?;
     require(
-        layout.stock_bytes == stock.len() as u64 && sha256(&stock) == STOCK_SHA256,
+        layout.stock_bytes == Some(stock.len() as u64) && sha256(&stock) == STOCK_SHA256,
         || LayoutError::Reference,
     )?;
     let reference = container(&stock)?;
@@ -57,7 +80,7 @@ pub(crate) fn audit(image: &Path, stock: &Path, layout: &Path) -> Result<LayoutA
         LayoutError::BankOffsets
     })?;
     let mapped = layout.flash_mapping_base.0;
-    let table = (0x17040 + layout.bank_table_runtime_address.0)
+    let table = (0x17040 + table_address.0)
         .checked_sub(0x0E00_0020)
         .and_then(|table| usize::try_from(table).ok())
         .unwrap_or(usize::MAX);
@@ -130,5 +153,76 @@ pub(crate) fn audit(image: &Path, stock: &Path, layout: &Path) -> Result<LayoutA
         scope:
             "Offline structural/known-range audit; not a flash plan or full partition validation"
                 .into(),
+    })
+}
+
+/// The fountain's candidate: within its layout's cap, sector-aligned, and in
+/// bank 1 clear of every preserved range. Nothing here compares a stock
+/// table: there is no stock OTA, and the factory loader's bank table is the
+/// PLAF103's, checked by the flash writer against the backup.
+fn fountain(image: &Path, layout: &Path) -> Result<LayoutAudit> {
+    let layout: Layout = wellfed_formats::load(layout)?;
+    require(
+        layout.schema_version == 1 && layout.model == "PLWF106" && layout.stock_sha256.is_none(),
+        || LayoutError::Identity,
+    )?;
+    let offsets: Vec<u64> = layout.ota_bank_offsets.iter().map(|o| o.0).collect();
+    let [bank0, bank1] = offsets[..] else {
+        return Err(LayoutError::BankOffsets.into());
+    };
+    require(bank0 < bank1, || LayoutError::BankOffsets)?;
+
+    let data = fs::read(image)?;
+    let payload = container(&data)?;
+    require(
+        payload.len() as u64 <= layout.candidate_payload_cap_bytes,
+        || LayoutError::Footprint,
+    )?;
+    require(
+        layout.sector_bytes == 4096 && payload.len() % 4096 == 0,
+        || LayoutError::Alignment,
+    )?;
+    let image_regions = images(payload)?;
+
+    let end = bank1 + payload.len() as u64;
+    let ranges: Vec<String> = layout
+        .known_preserve_ranges
+        .iter()
+        .filter(|range| bank1 < range.end_exclusive.0 && range.start.0 < end)
+        .map(|range| range.name.clone())
+        .collect();
+    require(ranges.is_empty(), || LayoutError::Preserved { ranges })?;
+
+    Ok(LayoutAudit {
+        schema_version: 1,
+        image: image.display().to_string(),
+        bytes: data.len(),
+        sha256: sha256(&data),
+        payload_bytes: payload.len(),
+        regions: image_regions
+            .into_iter()
+            .map(|region| LayoutRegion {
+                name: region.name.into(),
+                payload_header_offset: region.payload_header_offset,
+                body_bytes: region.body_bytes,
+                runtime_address: region.runtime_address,
+            })
+            .collect(),
+        candidate_placements: vec![Placement {
+            bank_index: 1,
+            flash_offset: Hex(bank1),
+            end_exclusive: Hex(end),
+            erase_bytes: payload.len(),
+        }],
+        checks: LayoutChecks {
+            container_and_checksum: true,
+            reference_table_matches: false,
+            known_preserve_ranges_untouched: true,
+        },
+        boot_acceptance: "unproven".into(),
+        physical_flash_capacity: "unverified".into(),
+        scope: "Offline structural/known-range audit of a bank-1 candidate against the \
+                PLWF106 layout's cap; no stock OTA to compare, not a flash plan"
+            .into(),
     })
 }

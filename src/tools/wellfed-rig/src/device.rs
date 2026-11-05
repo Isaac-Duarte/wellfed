@@ -41,8 +41,8 @@ use wellfed_formats::hex;
 use wellfed_formats::owner::OwnerKeyFile;
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
 use wellfed_model::{
-    Generation, Op, OpenRefusal, Refusal, Settings, SettingsPatch, Stats, StatsSection, Status,
-    TimeView, UpdateView, Wifi, WifiSource,
+    FeederSettingsPatch, Generation, Op, OpenRefusal, Refusal, Settings, Stats, StatsSection,
+    Status, TimeView, UpdateView, Wifi, WifiSource,
 };
 use wellfed_proto::api::{PORT, RequestId};
 use wellfed_session::noise::Keypair;
@@ -142,7 +142,7 @@ pub enum Ask {
     GetSettings,
     PutSettings {
         base: u32,
-        changes: SettingsPatch,
+        changes: FeederSettingsPatch,
     },
     /// Credentials for the next join, or `None` to clear them.
     PutWifi {
@@ -323,9 +323,10 @@ pub struct DeviceStatus {
     pub losses: u32,
     /// Unix milliseconds, `None` while the clock is invalid.
     pub clock_ms: Option<u64>,
-    pub settings_generation: u32,
+    /// A feeder's settings generation; `None` from another kind.
+    pub settings_generation: Option<u32>,
     pub wifi_generation: u32,
-    /// The panel's child lock; `None` before it is known.
+    /// A feeder panel's child lock; `None` before it is known.
     pub locked: Option<bool>,
 }
 
@@ -341,9 +342,9 @@ impl DeviceStatus {
             clock_ms: status
                 .clock
                 .and_then(|clock| u64::try_from(clock.as_millisecond()).ok()),
-            settings_generation: status.settings_generation.0,
+            settings_generation: status.feeder().map(|feeder| feeder.settings_generation.0),
             wifi_generation: status.wifi_generation.0,
-            locked: status.locked,
+            locked: status.feeder().and_then(|feeder| feeder.locked),
         }
     }
 
@@ -1151,7 +1152,7 @@ mod tests {
             wifi: WifiSource::Build,
             losses: 0,
             clock_ms: None,
-            settings_generation: 3,
+            settings_generation: Some(3),
             wifi_generation: 1,
             locked: Some(false),
         };

@@ -26,7 +26,7 @@
 
 use tokio::sync::oneshot;
 use wellfed_client::plans::{self, Edit};
-use wellfed_model::{Answer, Generation, Op, PLANS, Plan, Plans, SettingsPatch};
+use wellfed_model::{Answer, FeederSettingsPatch, Generation, Op, PLANS, Plan, Plans, Status};
 
 use crate::session::Heard;
 use crate::today::Facts;
@@ -51,7 +51,7 @@ fn landed_on(base: Generation, answer: Option<&Answer>) -> bool {
 pub(crate) enum Write {
     Settings {
         base: Generation,
-        changes: SettingsPatch,
+        changes: FeederSettingsPatch,
     },
     /// The desiccant changed today, on the settings generation `base` when
     /// it is known. Its `Done` moves the card's settings generation, so a
@@ -104,7 +104,7 @@ impl Write {
                 }
                 settings.apply(changes);
                 settings.generation = after(base);
-                if let Some(status) = facts.status.as_mut() {
+                if let Some(status) = facts.status.as_mut().and_then(Status::feeder_mut) {
                     status.settings_generation = after(base);
                 }
                 true
@@ -117,13 +117,14 @@ impl Write {
                     return false;
                 }
                 settings.generation = after(base);
-                if let Some(status) = facts.status.as_mut() {
+                if let Some(status) = facts.status.as_mut().and_then(Status::feeder_mut) {
                     status.settings_generation = after(base);
                 }
                 true
             }
             Self::Lock { locked } => {
-                let (Some(status), Some(Answer::Done { .. })) = (facts.status.as_mut(), answer)
+                let (Some(status), Some(Answer::Done { .. })) =
+                    (facts.status.as_mut().and_then(Status::feeder_mut), answer)
                 else {
                     return false;
                 };
@@ -146,8 +147,8 @@ impl Write {
 }
 
 /// `later` over `earlier`, field by field.
-fn merged(earlier: SettingsPatch, later: SettingsPatch) -> SettingsPatch {
-    SettingsPatch {
+fn merged(earlier: FeederSettingsPatch, later: FeederSettingsPatch) -> FeederSettingsPatch {
+    FeederSettingsPatch {
         lights: later.lights.or(earlier.lights),
         sound: later.sound.or(earlier.sound),
         volume: later.volume.or(earlier.volume),
@@ -166,7 +167,7 @@ pub(crate) struct Outgoing {
 }
 
 impl Outgoing {
-    fn settings(base: Generation, changes: SettingsPatch, replies: Vec<Reply>) -> Self {
+    fn settings(base: Generation, changes: FeederSettingsPatch, replies: Vec<Reply>) -> Self {
         Self {
             op: Op::PutSettings { base, changes },
             write: Write::Settings { base, changes },
@@ -237,7 +238,7 @@ enum Out {
 pub(crate) struct SettingsQueue {
     out: Out,
     /// The changes asked since, merged, and who asked them.
-    changes: Option<(SettingsPatch, Vec<Reply>)>,
+    changes: Option<(FeederSettingsPatch, Vec<Reply>)>,
     /// The resets asked since: one goes for them all.
     resets: Vec<Reply>,
 }
@@ -265,7 +266,7 @@ impl SettingsQueue {
             Write::Settings { base, changes } if self.out == Out::On(base) => {
                 let (held, replies) = self
                     .changes
-                    .get_or_insert_with(|| (SettingsPatch::default(), Vec::new()));
+                    .get_or_insert_with(|| (FeederSettingsPatch::default(), Vec::new()));
                 *held = merged(*held, changes);
                 replies.push(reply);
                 Queued::Waits
@@ -418,12 +419,12 @@ impl PlansQueue {
 
 #[cfg(test)]
 mod tests {
-    use wellfed_model::{MealReminder, Refusal, Settings, Weekdays, Window};
+    use wellfed_model::{FeederSettings, MealReminder, Refusal, Weekdays, Window};
 
     use super::*;
 
-    fn settings() -> Settings {
-        Settings {
+    fn settings() -> FeederSettings {
+        FeederSettings {
             generation: Generation(7),
             lights: true,
             sound: true,
@@ -437,14 +438,14 @@ mod tests {
         }
     }
 
-    fn volume(volume: u8) -> SettingsPatch {
-        SettingsPatch {
+    fn volume(volume: u8) -> FeederSettingsPatch {
+        FeederSettingsPatch {
             volume: Some(volume),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         }
     }
 
-    fn change(base: u32, changes: SettingsPatch) -> Write {
+    fn change(base: u32, changes: FeederSettingsPatch) -> Write {
         Write::Settings {
             base: Generation(base),
             changes,
@@ -490,10 +491,10 @@ mod tests {
         };
         let write = Write::of(&Op::PutSettings {
             base: Generation(7),
-            changes: SettingsPatch {
+            changes: FeederSettingsPatch {
                 sound: Some(false),
                 volume: Some(20),
-                ..SettingsPatch::default()
+                ..FeederSettingsPatch::default()
             },
         })
         .expect("a settings write");
@@ -523,7 +524,7 @@ mod tests {
         assert_eq!(facts.settings, Some(settings()));
 
         // The read that the change's event brings came first: it is newer.
-        let read = Settings {
+        let read = FeederSettings {
             generation: Generation(9),
             volume: 80,
             ..settings()
@@ -606,7 +607,7 @@ mod tests {
         assert!(reset.landed(&mut facts, Some(&done(8))));
         assert_eq!(
             facts.settings,
-            Some(Settings {
+            Some(FeederSettings {
                 generation: Generation(8),
                 ..settings()
             })
@@ -671,10 +672,10 @@ mod tests {
     fn writes_that_wait_merge_field_by_field_and_the_later_wins() {
         let mut queue = SettingsQueue::default();
         sent(queue.ask(change(7, volume(20)), None, reply().0));
-        let lights = SettingsPatch {
+        let lights = FeederSettingsPatch {
             lights: Some(false),
             volume: Some(30),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         assert!(matches!(
             queue.ask(change(7, lights), None, reply().0),
@@ -692,10 +693,10 @@ mod tests {
             next.op,
             Op::PutSettings {
                 base: Generation(8),
-                changes: SettingsPatch {
+                changes: FeederSettingsPatch {
                     lights: Some(false),
                     volume: Some(45),
-                    ..SettingsPatch::default()
+                    ..FeederSettingsPatch::default()
                 }
             }
         );

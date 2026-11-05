@@ -14,7 +14,7 @@ use wellfed_fw_qa::sequence::{
 };
 use wellfed_probes::buttons::{self, MASK};
 use wellfed_probes::{adc, optics};
-use wellfed_sdk::hal::board::MOTOR_MASK;
+use wellfed_sdk::hal::board::pins::MOTOR_MASK;
 use wellfed_sdk::hal::flash::park::Mmio;
 use wellfed_sdk::hal::leds::{self, Led};
 use wellfed_sdk::hal::sdk::fake;

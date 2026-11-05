@@ -5,8 +5,8 @@ use jiff::Timestamp;
 use tempfile::TempDir;
 use uuid::Uuid;
 use wellfed_api::{
-    ClientRole, FeederId, Food, FoodId, Pet, PetId, PetLink, Refill, RefillId, Species, UserId,
-    Weight, WeightId,
+    ClientRole, FeederId, Food, FoodId, Home, HomeId, Model, Pet, PetId, PetLink, Refill, RefillId,
+    Species, TimeFormat, Units, UserId, Weight, WeightId,
 };
 use wellfed_store::{Error, FoodSet, NewFeeder, SealedKey, Store, WeightCursor};
 
@@ -19,10 +19,13 @@ async fn fresh() -> (TempDir, Store, FeederId) {
     let store = Store::open(&dir.path().join("server.db"), at(0))
         .await
         .unwrap();
+    home(&store).await;
     let feeder = FeederId(Uuid::from_u128(1));
     store
         .insert_feeder(NewFeeder {
             id: feeder,
+            home: HOME,
+            model: Model::Plaf103,
             identity: [1; 32],
             name: "kitchen",
             role: ClientRole::Server,
@@ -383,4 +386,21 @@ async fn a_feeder_s_links_keep_their_history_and_never_overlap() {
     );
     let held = store.pet(tom.id).await.unwrap().unwrap();
     assert!(held.feeders.is_empty(), "only open links are listed");
+}
+
+/// The home every device here belongs to.
+const HOME: HomeId = HomeId(Uuid::from_u128(0x40));
+
+async fn home(store: &Store) {
+    let home = Home {
+        id: HOME,
+        name: "Home".into(),
+        units: Units::Grams,
+        time_format: TimeFormat::H24,
+        zone: "UTC".into(),
+    };
+    store
+        .create_home(&home, jiff::Timestamp::UNIX_EPOCH)
+        .await
+        .unwrap();
 }

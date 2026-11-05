@@ -17,6 +17,7 @@ crate-type = ["staticlib", "rlib"]
 # the RAM log tail the device API streams to an owner.
 km4 = [
     "wellfed-sdk/km4",
+    "wellfed-hal-feeder/km4",
     "wellfed-feeder-runtime/km4",
     "wellfed-sdk/bluetooth",
     "wellfed-sdk/log-tail",
@@ -39,18 +40,18 @@ feed-stall = []
 # Make each feed's stop not take, 2 s into its drive: held 300 ms for a
 # 1-portion feed, 8 s for more, for the bench to watch the stop retry and
 # the watchdog.
-stop-fail = ["wellfed-sdk/stop-fail"]
+stop-fail = ["wellfed-hal-feeder/stop-fail"]
 # A feeding owner that cannot open (its journal reads as failed, untouched):
 # its trial must not confirm, and falls back to bank 0.
 owner-fail = []
 # Show each feed a jam, 2 s into its drive: one the first reversal frees
 # for a 1-portion feed, one no reversal frees for 2, the mark input stuck
 # LOW for 3.
-feed-jam = ["wellfed-sdk/feed-faults"]
+feed-jam = ["wellfed-hal-feeder/feed-faults"]
 # Show each feed a sensor fault: the marks lost from the drive's start for
 # a 1-portion feed, the outlet blocked before it starts for 2, the ADC lost
 # 2 s into its drive for 3.
-sensor-fault = ["wellfed-sdk/feed-faults"]
+sensor-fault = ["wellfed-hal-feeder/feed-faults"]
 # Pulse and toggle PA25, stock's buzzer line, at rest, for the bench to
 # find out whether it reaches anything.
 buzzer = []
@@ -63,12 +64,15 @@ virtual-panel = ["wellfed-sdk/virtual-panel"]
 twin = []
 
 [dependencies]
+wellfed-device-runtime.workspace = true
 wellfed-feeder-runtime.workspace = true
 wellfed-core.workspace = true
+wellfed-device.workspace = true
 wellfed-device-api.workspace = true
 wellfed-feeder.workspace = true
 wellfed-proto.workspace = true
 wellfed-sdk.workspace = true
+wellfed-hal-feeder.workspace = true
 wellfed-session.workspace = true
 
 [dev-dependencies]

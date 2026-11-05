@@ -6,7 +6,6 @@
 use wellfed_fw_blink::blink::{Blinker, HALF_PERIOD_MS, LED, REPORTED, Record, Step, Stop};
 use wellfed_sdk::LogRecord;
 use wellfed_sdk::hal::leds::{self, Decision, Led};
-use wellfed_sdk::hal::plaf103;
 use wellfed_sdk::hal::sdk::fake;
 use wellfed_sdk::hal::stopped;
 
@@ -57,7 +56,7 @@ fn a_refused_request_stops_with_every_indicator_low() {
     assert!(leds::observe(LED).latch_high);
 
     // Motor STOP lost: the next request is refused, and nothing retries.
-    fake::with(|h| h.output[0] &= !plaf103::pins::MOTOR_A_BIT);
+    fake::with(|h| h.output[0] &= !wellfed_sdk::hal::board::pins::MOTOR_A_BIT);
     let step = blinker.step();
 
     assert_eq!(

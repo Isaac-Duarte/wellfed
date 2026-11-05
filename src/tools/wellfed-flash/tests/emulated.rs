@@ -86,6 +86,8 @@ impl Fixture {
     /// The session evidence every device command continues.
     fn evidence(&self, output: &Path) -> Vec<String> {
         [
+            "--device",
+            "plaf103",
             "--port",
             &self.port,
             "--baseline",
@@ -230,6 +232,8 @@ fn serial_evidence_never_continues_an_emulated_session() {
 
     let mut args = strings(&["update", "inspect"]);
     args.extend(strings(&[
+        "--device",
+        "plaf103",
         "--port",
         &f.port,
         "--baseline",
@@ -421,6 +425,8 @@ fn status_read_continues_the_session_with_whitelisted_reads_only() {
     let args = strings(&[
         "read",
         "status",
+        "--device",
+        "plaf103",
         "--port",
         &f.port,
         "--rom-report",
@@ -453,7 +459,7 @@ fn status_read_continues_the_session_with_whitelisted_reads_only() {
 /// recovery plan for it: `(read, plan, plan SHA-256)`.
 fn recovery(f: &Fixture, helper: &mut Helper<'_>) -> (PathBuf, PathBuf, String) {
     let read = f.out("full");
-    let mut args = strings(&["read", "full", "--port", &f.port]);
+    let mut args = strings(&["read", "full", "--device", "plaf103", "--port", &f.port]);
     args.extend(strings(&[
         "--rom-report",
         &path(&f.rom),

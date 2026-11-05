@@ -29,7 +29,7 @@ use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::serve::Control;
 use wellfed_model::{
-    Answer, Client, ClientRole, Joined, Op, Refusal, UpdatePhase, UpdateRefusal, UpdateStop,
+    Answer, Client, ClientRole, Joined, Model, Op, Refusal, UpdatePhase, UpdateRefusal, UpdateStop,
     UpdateView,
 };
 use wellfed_proto::api::RequestId;
@@ -59,6 +59,7 @@ impl Offer {
         let mut payload: Vec<u8> = (0..len).map(|i| (i % 249) as u8 ^ build).collect();
         payload[..8].copy_from_slice(&MARKER);
         let signed = Signed {
+            model: 1,
             manifest: Manifest {
                 version,
                 image_len: u32::try_from(len).unwrap(),
@@ -271,6 +272,7 @@ fn stock_offer(device: &[u8; 32], floor: u32, build: u8, len: usize) -> (Offer, 
     let mut payload: Vec<u8> = (0..len).map(|i| (i % 241) as u8 ^ build).collect();
     payload[..8].copy_from_slice(&MARKER);
     let signed = Signed {
+        model: 1,
         manifest: Manifest {
             version: 3,
             image_len: u32::try_from(len).unwrap(),
@@ -746,7 +748,8 @@ fn only_an_owner_enrolls_an_update_key() {
         assert_eq!(
             joined,
             Joined::Enrolled {
-                role: ClientRole::Member
+                role: ClientRole::Member,
+                model: Model::Plaf103,
             }
         );
 

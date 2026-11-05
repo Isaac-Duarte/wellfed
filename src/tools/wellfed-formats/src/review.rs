@@ -13,13 +13,17 @@ use serde::{Deserialize, Serialize};
 use crate::audit::{LayoutAudit, Main, PinmapAudit};
 
 pub const SCHEMA_VERSION: u32 = 1;
-/// What a `review.json` is. One kind today; any other reads as
-/// [`ReviewKind::Unsupported`], which the reader refuses by name rather than
-/// failing to parse the file.
+/// What a `review.json` is: one kind per model, so a review frozen against
+/// one model's stock, baseline and loader never installs on another. Any
+/// other reads as [`ReviewKind::Unsupported`], which the reader refuses by
+/// name rather than failing to parse the file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReviewKind {
     #[serde(rename = "plaf103_development_image_review")]
     Plaf103DevelopmentImage,
+    /// A fountain build. `wellfed-build review` does not write it yet.
+    #[serde(rename = "plwf106_development_image_review")]
+    Plwf106DevelopmentImage,
     /// Never written.
     #[serde(other, skip_serializing)]
     Unsupported,

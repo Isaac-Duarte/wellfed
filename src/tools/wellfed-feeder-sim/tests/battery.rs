@@ -325,7 +325,7 @@ fn a_client_reads_no_battery_from_a_rail_at_a_cut() {
         let Answer::Status(status) = connection.ask(id(1), &Op::Status).await.unwrap() else {
             panic!("a status");
         };
-        let supply = status.supply;
+        let supply = status.feeder().unwrap().supply;
         assert_eq!(supply.adapter, Some(false));
         assert_eq!(supply.battery, wellfed_model::Battery::Absent);
         assert_eq!(status.power.and_then(|power| power.battery_mv), None);
@@ -351,7 +351,7 @@ fn a_client_sees_the_supply_and_loses_the_feeder_on_batteries() {
         let Answer::Status(status) = connection.ask(id(1), &Op::Status).await.unwrap() else {
             panic!("a status");
         };
-        let supply = status.supply;
+        let supply = status.feeder().unwrap().supply;
         assert_eq!(supply.adapter, Some(true));
         assert_eq!(
             supply.battery,
@@ -375,7 +375,7 @@ fn a_client_sees_the_supply_and_loses_the_feeder_on_batteries() {
         let Answer::Status(status) = connection.ask(id(3), &Op::Status).await.unwrap() else {
             panic!("a status");
         };
-        assert_eq!(status.supply.adapter, Some(false));
+        assert_eq!(status.feeder().unwrap().supply.adapter, Some(false));
 
         // The radio goes: the session with it.
         tokio::time::sleep(Duration::from_millis(u64::from(RADIO_OFF_MS) + 1_000)).await;
@@ -387,7 +387,7 @@ fn a_client_sees_the_supply_and_loses_the_feeder_on_batteries() {
         let Answer::Status(status) = connection.ask(id(5), &Op::Status).await.unwrap() else {
             panic!("a status");
         };
-        assert_eq!(status.supply.adapter, Some(true));
+        assert_eq!(status.feeder().unwrap().supply.adapter, Some(true));
         sim.stop().await;
     });
 }

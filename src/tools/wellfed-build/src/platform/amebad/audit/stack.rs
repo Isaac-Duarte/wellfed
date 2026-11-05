@@ -24,6 +24,11 @@
 //! - inside vendor C (lwIP, the codec, the SDK's flash and ADC routines), not
 //!   at all: those sites are listed per task, and the margin covers them.
 //!
+//! A firmware with no SDK runtime (`runtime = "bare"`) is its own task table:
+//! it creates its tasks with `task_create`, and nothing in it installs a
+//! flash-lease provider, so the flash hooks' provider calls never run and
+//! charge nothing.
+//!
 //! Any other indirect call in Rust is refused, so a new function pointer or
 //! `dyn` call needs a class here or a direct call instead. The margin stays
 //! for what the walk does not model: exception nesting beyond one frame and
@@ -38,7 +43,9 @@ use wellfed_formats::audit::{StackAudit, TaskBound};
 
 use super::writes::{demangle, loaded};
 use super::{HEADING, tool};
+use crate::firmware::Runtime;
 use crate::{Firmware, Repo, Result};
+use wellfed_formats::require;
 
 /// Why the stack audit could not bound a task, or refused how the firmware
 /// starts its tasks. Function names are demangled, as the messages print
@@ -118,6 +125,34 @@ pub enum StackError {
         limit = FIRMWARE_TASKS
     )]
     TooMany { tasks: Vec<String> },
+    /// A firmware declared bare links the SDK runtime anyway: its tasks and
+    /// provider are not in the table a bare firmware is audited against.
+    #[error(
+        "The firmware declares runtime = \"bare\" but its image links the SDK runtime: {}",
+        functions.join(", ")
+    )]
+    BareRuntime { functions: Vec<String> },
+}
+
+/// What a bare firmware's image may not link: any of `wellfed-sdk`'s code
+/// (its runtime's tasks and the provider callbacks it installs). Read from
+/// the linked functions, not the firmware's sources, so a dependency that
+/// pulls the runtime in is caught too. Returns their demangled names.
+fn sdk_runtime_in<'a>(functions: impl Iterator<Item = &'a String>) -> Vec<String> {
+    let mut linked: Vec<String> = functions
+        .filter(|name| {
+            // The fault callback is the chip HAL's, which every image links;
+            // the others are the runtime's.
+            name.contains("11wellfed_sdk")
+                || PROVIDER_CALLBACKS
+                    .iter()
+                    .filter(|end| end.starts_with("7runtime"))
+                    .any(|end| name.ends_with(end))
+        })
+        .map(|name| demangle(name))
+        .collect();
+    linked.sort();
+    linked
 }
 
 /// The SDK runtime's task table.
@@ -132,6 +167,9 @@ const FIRMWARE_TASKS: usize = 4;
 
 /// The text the audit reads its task table from.
 pub(crate) struct TaskSources {
+    /// What the image starts from: the SDK runtime's table, or for a bare
+    /// firmware, its own sources.
+    kind: Runtime,
     runtime: String,
     /// The SDK services a firmware may start.
     services: String,
@@ -148,18 +186,28 @@ impl TaskSources {
 }
 
 pub(crate) fn task_sources(repo: &Repo, firmware: &Firmware) -> Result<TaskSources> {
+    let mut own = Vec::new();
+    rust_files(&repo.path(&format!("{}/src", firmware.dir())), &mut own)?;
+    own.sort();
+    let own = concatenated(&own)?;
+
+    if firmware.runtime() == Runtime::Bare {
+        return Ok(TaskSources {
+            kind: Runtime::Bare,
+            runtime: own,
+            services: String::new(),
+            own: String::new(),
+        });
+    }
     let services: Vec<std::path::PathBuf> = SERVICE_SOURCES
         .iter()
         .map(|source| repo.path(source))
         .collect();
-    let mut own = Vec::new();
-    rust_files(&repo.path(&format!("{}/src", firmware.dir())), &mut own)?;
-    own.sort();
-
     Ok(TaskSources {
+        kind: Runtime::Sdk,
         runtime: std::fs::read_to_string(repo.path(RUNTIME_SOURCE))?,
         services: concatenated(&services)?,
-        own: concatenated(&own)?,
+        own,
     })
 }
 
@@ -636,7 +684,7 @@ impl<'a> Graph<'a> {
     /// callback, with its own formatting charged as for a task.
     /// A callback that reaches an unclassified Rust indirect call is refused,
     /// as a task would be: nothing else walks the callbacks.
-    fn hook_charge(&self) -> Result<u64> {
+    fn hook_charge(&self, runtime: Runtime) -> Result<u64> {
         let hooks = self.classes.values().any(|class| *class == Indirect::Hook);
         let callbacks: Vec<&str> = self
             .functions
@@ -646,6 +694,9 @@ impl<'a> Graph<'a> {
             .collect();
         match (hooks, callbacks.is_empty()) {
             (false, true) => return Ok(0),
+            // Nothing in a bare firmware installs a provider, so the hooks
+            // stay on the vendor lock and never call one.
+            (true, true) if runtime == Runtime::Bare => return Ok(0),
             (true, true) => return Err(StackError::NoCallback.into()),
             (false, false) => return Err(StackError::NoHookSite.into()),
             (true, false) => {}
@@ -696,9 +747,15 @@ fn veneer(name: &str) -> Option<&str> {
 pub(crate) fn audit(elf: &Path, objdump: &Path, sources: &TaskSources) -> Result<StackAudit> {
     // A repeated heading starts that function over, as a later definition.
     let functions = link(frames(&tool(objdump, &["-d"], elf)?).into_iter().collect());
+    if sources.kind == Runtime::Bare {
+        let linked = sdk_runtime_in(functions.keys());
+        require(linked.is_empty(), || StackError::BareRuntime {
+            functions: linked,
+        })?;
+    }
     let data = loaded(elf, objdump)?;
     let graph = Graph::new(&functions, &data);
-    let hook = graph.hook_charge()?;
+    let hook = graph.hook_charge(sources.kind)?;
     let mut by_short: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for name in functions.keys() {
         let short = demangle(name)
@@ -888,6 +945,7 @@ mod tests {
     #[test]
     fn only_linked_firmware_tasks_count_and_one_past_the_share_is_refused() {
         let sources = |own: &str| TaskSources {
+            kind: Runtime::Sdk,
             runtime: "sdk::task_create(c\"wellfed-net\", 1536, 2, net_task, ptr::null_mut());"
                 .into(),
             services: "sdk::task_create(c\"wellfed-key\", 512, 3, key_task, ptr::null_mut());"
@@ -917,6 +975,7 @@ mod tests {
     #[test]
     fn a_task_started_but_not_declared_here_is_refused() {
         let own = |text: &str| TaskSources {
+            kind: Runtime::Sdk,
             runtime: String::new(),
             services: String::new(),
             own: text.into(),
@@ -958,6 +1017,7 @@ mod tests {
     #[test]
     fn a_firmware_that_creates_a_task_itself_is_refused() {
         let sources = TaskSources {
+            kind: Runtime::Sdk,
             runtime: String::new(),
             services: String::new(),
             own: "unsafe { sdk::task_create(c\"fw-raw\", 512, 2, raw_task, ptr::null_mut()) };"
@@ -1219,7 +1279,7 @@ mod tests {
             "the task's Display, and the Write it references"
         );
         assert!(graph.fmt_targets("_RNvNtCs1_3app6callee").is_empty());
-        let (charges, through_fmt) = graph.charges(task, graph.hook_charge().unwrap());
+        let (charges, through_fmt) = graph.charges(task, graph.hook_charge(Runtime::Sdk).unwrap());
         assert!(through_fmt.is_empty());
 
         // `write` (84) under each nesting level: Display (40) + write again,
@@ -1260,7 +1320,7 @@ mod tests {
         let graph = Graph::new(&functions, &[]);
 
         let task = "_RNvNtCs1_3app4task";
-        let (charges, through_fmt) = graph.charges(task, graph.hook_charge().unwrap());
+        let (charges, through_fmt) = graph.charges(task, graph.hook_charge(Runtime::Sdk).unwrap());
         let ((_, _, direct), _) = graph.worst(task, charges);
         assert!(direct.is_empty(), "the task's own walk never meets it");
         assert_eq!(through_fmt, ["_RNvNtCs1_3app6callee".to_string()].into());
@@ -1275,7 +1335,7 @@ mod tests {
         assert_ne!(listing, CLASSES);
         let functions = link(frames(&listing).into_iter().collect());
         assert!(matches!(
-            stack_error(Graph::new(&functions, &[]).hook_charge()),
+            stack_error(Graph::new(&functions, &[]).hook_charge(Runtime::Sdk)),
             StackError::CallbackUnbounded { .. }
         ));
     }
@@ -1288,7 +1348,7 @@ mod tests {
 ";
         let functions = link(frames(listing).into_iter().collect());
         assert!(matches!(
-            stack_error(Graph::new(&functions, &[]).hook_charge()),
+            stack_error(Graph::new(&functions, &[]).hook_charge(Runtime::Sdk)),
             StackError::NoHookSite
         ));
     }
@@ -1302,8 +1362,55 @@ mod tests {
 ";
         let functions = link(frames(listing).into_iter().collect());
         assert!(matches!(
-            stack_error(Graph::new(&functions, &[]).hook_charge()),
+            stack_error(Graph::new(&functions, &[]).hook_charge(Runtime::Sdk)),
             StackError::NoCallback
         ));
+
+        // A bare firmware installs no provider: the hooks charge nothing.
+        let graph = Graph::new(&functions, &[]);
+        assert_eq!(graph.hook_charge(Runtime::Bare).unwrap(), 0);
+    }
+
+    /// A bare firmware's own `task_create` calls are its task table, and the
+    /// SDK runtime's are not read.
+    #[test]
+    fn a_bare_firmware_is_its_own_task_table() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let repo = Repo { root };
+        let firmware = Firmware::new(&repo, "fountain").unwrap();
+        let sources = task_sources(&repo, &firmware).unwrap();
+
+        assert_eq!(sources.kind, Runtime::Bare);
+        let found = tasks(&sources.runtime).unwrap();
+        assert_eq!(
+            found,
+            [("beat_task".to_string(), ("wellfed-boot".to_string(), 4096))].into()
+        );
+        assert!(sources.firmware().trim().is_empty());
+    }
+
+    /// A bare firmware's image is refused if it links any of the SDK
+    /// runtime, by its own functions or by a provider callback.
+    #[test]
+    fn a_bare_image_linking_the_sdk_runtime_is_found() {
+        let bare = [
+            "_RNvNtCs1_19wellfed_fw_fountain3app9beat_task".to_string(),
+            "wellfed_amebad_flash_provider_fault".to_string(),
+            "_RNvNtCs2_11wellfed_hal7stopped10initialize".to_string(),
+        ];
+        assert!(sdk_runtime_in(bare.iter()).is_empty());
+
+        let runtime = [
+            bare[0].clone(),
+            "_RNvNtCs3_11wellfed_sdk7runtime15diagnostic_task".to_string(),
+            "_RNvNtCs4_5other7runtime12hook_acquire".to_string(),
+        ];
+        assert_eq!(
+            sdk_runtime_in(runtime.iter()),
+            [
+                "other::runtime::hook_acquire",
+                "wellfed_sdk::runtime::diagnostic_task"
+            ]
+        );
     }
 }

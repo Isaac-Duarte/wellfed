@@ -25,7 +25,9 @@ use wellfed_app_bridge::api::session::{Card, FedBy, FeedRefusal, HistoryBody, Se
 use wellfed_app_bridge::api::setup::{
     SetupDriver, SetupStep, recover, setup_control, setup_service,
 };
-use wellfed_app_bridge::api::store::{AppStore, KnownFeeder, load_store, save_store};
+use wellfed_app_bridge::api::store::{
+    AppStore, KnownFeeder, feeder_address, load_store, save_store,
+};
 use wellfed_app_bridge::requests;
 use wellfed_app_bridge::session::{self, Command};
 use wellfed_client::setup::{Ask, Session, panel_position};
@@ -622,7 +624,10 @@ fn a_feed_whose_answer_never_comes_is_reported_once_and_not_resent() {
         let mut fed = 0;
         while let Ok(pushed) = reader.next(Duration::from_secs(3)).await {
             if let wellfed_model::Pushed::Event(event) = pushed
-                && matches!(event.body, wellfed_model::EventBody::Fed { .. })
+                && matches!(
+                    event.body,
+                    wellfed_model::EventBody::Feeder(wellfed_model::FeederEvent::Fed { .. })
+                )
             {
                 fed += 1;
             }
@@ -707,11 +712,42 @@ fn the_store_round_trips_and_starts_empty() {
             identity: "ab".repeat(32),
             name: "Kitchen".into(),
             address: Some("192.168.1.20:4747".into()),
+            manual_address: Some("100.101.102.103:4747".into()),
         }],
         server: None,
     };
     save_store(path, &store).unwrap();
     assert_eq!(load_store(path).unwrap(), store);
+}
+
+/// The owner's typed address becomes what a session dials: an IP alone takes
+/// the device API's port, and a host name is refused, since nothing resolves
+/// it before the session dials.
+#[test]
+fn a_typed_feeder_address_is_an_ip_and_port() {
+    assert_eq!(
+        feeder_address(" 192.168.1.20 ").unwrap(),
+        "192.168.1.20:4747"
+    );
+    assert_eq!(
+        feeder_address("192.168.1.20:5000").unwrap(),
+        "192.168.1.20:5000"
+    );
+    assert_eq!(
+        feeder_address("[fd7a:115c:a1e0::1]:4747").unwrap(),
+        "[fd7a:115c:a1e0::1]:4747"
+    );
+    assert_eq!(
+        feeder_address("fd7a:115c:a1e0::1").unwrap(),
+        "[fd7a:115c:a1e0::1]:4747"
+    );
+    for refused in ["", "feeder.local", "192.168.1.20:", "192.168.1.20:99999"] {
+        assert_eq!(
+            feeder_address(refused).unwrap_err().kind,
+            ErrorKind::Address,
+            "{refused}"
+        );
+    }
 }
 
 /// A session on the local set, opened and caught up with the history.

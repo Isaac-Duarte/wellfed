@@ -656,13 +656,21 @@ impl<P: Platform> Feeder<P> {
 
     /// Record a feed's `Fed` event, which may take the queue's reserved
     /// slot. A restart's uncertain feed that a plan had claimed is the
-    /// plan's.
+    /// plan's, and happened at the occurrence's due time: the boot resolves
+    /// it before any source has set the clock after a power cut, and the
+    /// claim on NOR is the only time it still has. Its feed began within
+    /// the grace after it, so the history places it where it ran rather
+    /// than when the boot found it.
     pub fn record_outcome(&mut self, now_ms: u32, mut body: EventBody) {
-        if let EventBody::Fed { feed, by, .. } = &mut body {
-            *by = Schedule::source(&mut self.platform, *feed, *by);
+        let mut ran_s = None;
+        if let EventBody::Fed { feed, by, .. } = &mut body
+            && let Some(claim) = Schedule::claim_behind(&mut self.platform, *feed, *by)
+        {
+            *by = Source::Schedule(claim.plan);
+            ran_s = Some(claim.due_s);
         }
         self.serve.stats().fed(&body);
-        events::record_outcome(&mut self.platform, now_ms, body);
+        events::record_outcome(&mut self.platform, now_ms, ran_s, body);
         // The writer saves the totals soon after a feed (`FEED_SAVE_MS`), and
         // behind every queued record, so the event goes in first.
         let counts = self.serve.stats().counts(now_ms);

@@ -16,6 +16,7 @@ use regex::Regex;
 use wellfed_formats::layout::Layout;
 use wellfed_formats::lock::SdkLock;
 use wellfed_formats::require;
+use wellfed_proto::device::Model;
 
 use super::audit::{TRAIL_BYTES, hooks, pinmap};
 
@@ -356,10 +357,15 @@ const TRAIL_WRAPS: [&str; 7] = [
 const PRINT_WRAPS: [&str; 2] = ["DiagPrintf", "_rtl_printf"];
 
 /// The KM4 link rule's additions: the Rust archive, then the trail's and the
-/// prints' wraps. KM0 links only the archive.
-fn link_additions(core: Core, archive: &Path) -> String {
+/// prints' wraps. KM0 links only the archive. The trail follows the Wi-Fi
+/// driver's calls, which only the PLAF103's entry links and wraps.
+fn link_additions(model: Model, core: Core, archive: &Path) -> String {
+    let trail: &[&str] = match model {
+        Model::Plaf103 => &TRAIL_WRAPS,
+        Model::Plwf106 => &[],
+    };
     let wraps: String = match core {
-        Core::Hp => TRAIL_WRAPS
+        Core::Hp => trail
             .iter()
             .chain(&PRINT_WRAPS)
             .map(|name| format!(" -Wl,--wrap={name}"))
@@ -520,11 +526,23 @@ pub(crate) fn prepare(
 
     if let Some(stock) = stock {
         ota_addresses(stock, &sdk, &mut overrides)?;
-        let source = pinmap::overlay(&pinned(&sdk, PINMAP)?, &fs::read(&stock.image)?)?;
+        let source = pinmap::overlay(
+            &pinned(&sdk, PINMAP)?,
+            job.device.model(),
+            &fs::read(&stock.image)?,
+        )?;
         overlay(&sdk, PINMAP, &source, &mut overrides)?;
     }
     if profile.has(Stage::Rust) {
-        rust_overlays(repo, board, job.provisioning, &sdk, &mut overrides, &staged)?;
+        rust_overlays(
+            repo,
+            job.device.model(),
+            board,
+            job.provisioning,
+            &sdk,
+            &mut overrides,
+            &staged,
+        )?;
         let bluetooth = board.bluetooth_source(job.firmware)?;
         bluetooth_overlays(&sdk, bluetooth, &mut overrides, &staged)?;
     }
@@ -569,6 +587,7 @@ fn worktree(repo: &Repo, output: &Path, profile: Profile, lock: &SdkLock) -> Res
 /// rules and RAM sections, the flash-hook rename and the credential headers.
 fn rust_overlays(
     repo: &Repo,
+    model: Model,
     board: &Amebad,
     provisioning: Provisioning,
     sdk: &Path,
@@ -602,7 +621,7 @@ fn rust_overlays(
         let text = replace_once(
             &pinned(sdk, &relative)?,
             anchor,
-            &format!("{anchor} {}", link_additions(core, &archive)),
+            &format!("{anchor} {}", link_additions(model, core, &archive)),
             SdkAnchor::Image2LinkRule,
         )?;
         overlay(sdk, &relative, &text, overrides)?;
@@ -1136,7 +1155,7 @@ mod tests {
     #[test]
     fn only_the_km4_link_wraps_the_trail_primitives() {
         let archive = Path::new("/build/rust-lib/libwellfed_km4.a");
-        let km4 = link_additions(Core::Hp, archive);
+        let km4 = link_additions(Model::Plaf103, Core::Hp, archive);
         assert!(km4.starts_with("/build/rust-lib/libwellfed_km4.a -Wl,--wrap=save_and_cli "));
         for name in TRAIL_WRAPS {
             assert_eq!(
@@ -1153,8 +1172,15 @@ mod tests {
             "the register-access sections stay unwrapped"
         );
         assert_eq!(
-            link_additions(Core::Lp, archive),
+            link_additions(Model::Plaf103, Core::Lp, archive),
             archive.display().to_string()
+        );
+
+        // The fountain links no Wi-Fi driver, so only the prints are wrapped.
+        let fountain = link_additions(Model::Plwf106, Core::Hp, archive);
+        assert_eq!(
+            fountain,
+            "/build/rust-lib/libwellfed_km4.a -Wl,--wrap=DiagPrintf -Wl,--wrap=_rtl_printf"
         );
     }
 

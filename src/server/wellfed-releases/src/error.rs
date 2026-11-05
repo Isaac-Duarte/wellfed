@@ -63,7 +63,7 @@ impl Error {
         };
         Some(match error {
             ReleaseError::Short { .. } | ReleaseError::TooLarge { .. } => ReleaseRefusal::Size,
-            ReleaseError::Manifest(_) => ReleaseRefusal::Manifest,
+            ReleaseError::Manifest(_) | ReleaseError::Model { .. } => ReleaseRefusal::Manifest,
             ReleaseError::Stock => ReleaseRefusal::NeedsStatement,
             ReleaseError::UnknownKey => ReleaseRefusal::UnknownKey,
             ReleaseError::Signature => ReleaseRefusal::Signature,

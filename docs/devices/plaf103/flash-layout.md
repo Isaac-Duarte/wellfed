@@ -60,7 +60,7 @@ This is not a complete partition map. **Unknown gaps are not free storage.** Phy
 
 ## Wellfed's storage region
 
-The region is `STORAGE_OFFSET`/`STORAGE_SECTORS` in firmware, and `wellfed_board_plaf103::storage` names the owner of every sector.
+The region is `STORAGE_OFFSET`/`STORAGE_SECTORS` in firmware, and `wellfed_board::storage` names the owner of every sector.
 
 | Sectors | Owner |
 | --- | --- |

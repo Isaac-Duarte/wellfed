@@ -22,6 +22,7 @@ use crate::link::status::{self, Assessment};
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::require;
 use wellfed_formats::session::Mode as ReportMode;
+use wellfed_proto::device::Model;
 
 /// The reader's own refusals: missing or unpinned inputs before the port
 /// opens, and unstable status or an unfinished read file after.
@@ -37,6 +38,10 @@ pub enum ReadError {
     CandidateUnpinned { path: PathBuf },
     #[error("A reviewed successful ROM inspection report is required")]
     RomReportMissing,
+    #[error(
+        "A read that continues a ROM inspection needs --device: the model whose stock console it showed"
+    )]
+    DeviceMissing,
     #[error("A completed bounded read is required first")]
     BoundedReadMissing,
     #[error("The pinned helper is required")]
@@ -93,6 +98,9 @@ pub struct Args {
     pub seconds: f64,
     /// Which core owns the console when ROM inspection starts.
     pub start_core: Core,
+    /// The model whose stock console the ROM report must show. Required by
+    /// every read that validates one (`small`, `full`, `status`).
+    pub device: Option<Model>,
     /// The press `Mode::Press` types.
     pub press: Option<wellfed_core::virtual_panel::Press>,
 }
@@ -225,11 +233,14 @@ pub fn run(context: &Context, args: &Args) -> Result<Outcome> {
         }
 
         Mode::Small | Mode::Full | Mode::Status => {
+            let Some(model) = args.device else {
+                return Err(ReadError::DeviceMissing.into());
+            };
             helper = Some(context.helper(args.helper.as_deref())?);
             let Some(rom) = args.rom_report.as_deref() else {
                 return Err(ReadError::RomReportMissing.into());
             };
-            session::validate_rom_report(context, rom)?;
+            session::validate_rom_report_for(context, model, rom)?;
 
             if args.mode == Mode::Status {
                 let raw = session::validate_status_session(

@@ -15,7 +15,7 @@ The Wellfed Bench is an RP2040 USB-C board for recovering and developing on PETL
 - **RECOVER button.** Power-cycles the feeder into its ROM loader without a host.
 - **Room to grow.** 16 MB of flash (the firmware uses the first 2 MB), a 2×8 expansion header and an SWD header.
 
-The relay channels, LEDs, buttons and pin map are listed in the [firmware page](../../firmware/bench/README.md#relay-port).
+The relay channels, LEDs, buttons and pin map are listed in the [firmware page](../../firmware/bench/README.md#relay-port). The connectors, the FEEDER UART pinout and how to wire a feeder are on the [bench hardware](../../../docs/development/bench-hardware.md) page. The header's labels name the feeder's pins, so a feeder is wired label to label, TX to TX.
 
 ## Files
 

@@ -37,16 +37,16 @@ The board has a four-pin header labelled **GND, TX, RX, 3V3**. Our bench reads t
 
 ## Recovery
 
-We have two full 8 MiB reads of our unit that match byte for byte. Nothing has been written back, so no restore has been shown. No Wellfed writer accepts this model. See [backup and recovery](recovery.md) and the [flash layout](flash-layout.md).
+We have two full 8 MiB reads of our unit that match byte for byte. `wellfed-flash` has fountain writers pinned to that backup: a test image into bank 1 only, a give-way back to stock bank 0, and an exact restore of bank 1. None has run on the fountain yet. See [backup and recovery](recovery.md) and the [flash layout](flash-layout.md).
 
-The stock loader does not fall back to the other bank when a marked-valid image crashes. Wellfed's trial boot, not stock, would have to supply that recovery. `src/firmware/devices/` holds no layout or install profile for this model. The PLAF103 profile does not fit unchanged: this fountain keeps calibration records the feeder doesn't have, and different pins must be held off.
+The stock loader does not fall back to the other bank when a marked-valid image crashes. Over UART, a give-way does that by hand. A Wellfed image's trial boot would have to do it unattended. [`layout.json`](../../../src/firmware/devices/plwf106/layout.json) gives the fountain's banks and preserved ranges. There is no install profile for this model. The PLAF103 profile does not fit unchanged: this fountain keeps calibration records the feeder doesn't have, and different pins must be held off.
 
 ## Hardware blocks
 
 | Block | Stock | Wellfed |
 | --- | --- | --- |
-| Console and backups | Stock console over the header; ROM download mode by strap | Read-only bench reads, same tools as the PLAF103 |
-| Flash and boot | Two application banks; the loader tries bank 1 first | No layout or trial policy for this model |
+| Console and backups | Stock console over the header; ROM download mode by strap | Bench reads, and bank-1 writes and restore pinned to our backup, same tools as the PLAF103 |
+| Flash and boot | Two application banks; the loader tries bank 1 first | A layout and bank-1 write window; no trial policy for this model |
 | Wi-Fi | Starts alongside the local watering tasks | Nothing for this model |
 | Bluetooth LE | SDK components and FTL code present | Nothing; the setup protocol needs its own analysis |
 | Over-the-air updates | HTTP download, byte-sum check, opposite-bank activation ([contract](stock/ota-requirements.md)) | Nothing for this model |
@@ -73,6 +73,7 @@ The stock loader does not fall back to the other bank when a marked-valid image 
 | Console and loader entry | [UART](uart.md) |
 | Flash layout and boot | [Flash layout](flash-layout.md) |
 | Backup and recovery | [Recovery](recovery.md) |
+| The boot test image | [Boot test](boot-test.md) |
 | Stock firmware: tasks, pump, scale, reset, telemetry | [Stock firmware](stock/README.md) |
 | Stock update request, transfer and activation | [Stock OTA](stock/ota-requirements.md) |
 

@@ -24,10 +24,11 @@ use wellfed_proto::api::{EventBody, Source as EventSource};
 use wellfed_session::noise::Keypair;
 
 use super::events;
-use super::platform::{BuildWifi, Platform};
+use super::platform::Platform;
 use super::setup::{self, Cause, Setup};
 use crate::panel::{Action, Config, Event, Panel, Source};
 use wellfed_core::named_enum;
+use wellfed_device::store::net::BuildWifi;
 use wellfed_device_api::mailbox::Lock;
 use wellfed_device_api::mailbox::{ClientChange, KeyResult, PlansResult, Requested, WifiResult};
 use wellfed_device_api::pairing::{self, Pairing, Path, Refusal};

@@ -1,0 +1,20 @@
+[package]
+license.workspace = true
+name = "wellfed-device"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Policy every Wellfed device shares, independent of hardware and of its kind: the settings, Wi-Fi, client, time, event and trace stores, the factory reset's marker and the update view"
+publish.workspace = true
+
+[dependencies]
+wellfed-core.workspace = true
+wellfed-device-api.workspace = true
+wellfed-proto.workspace = true
+thiserror = { version = "2.0.21", default-features = false }
+
+[dev-dependencies]
+wellfed-testkit.workspace = true
+
+[lints]
+workspace = true

@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
+use wellfed_proto::device::Model;
 
 use super::ArchiveError;
 use super::csv::field_names;
@@ -80,7 +81,7 @@ macro_rules! tables {
 
 tables! {
     Users => "users": User,
-    Household => "household": Household,
+    Homes => "homes": Home,
     Feeders => "feeders": Feeder,
     FeederState => "feeder_state": FeederState,
     PhoneKeys => "phone_keys": PhoneKey,
@@ -121,21 +122,27 @@ pub struct User {
     pub expires_ms: Option<i64>,
 }
 
-/// The household: one row.
+/// The home the server serves: one row for now.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Household {
+pub struct Home {
+    pub id: Uuid,
     pub name: String,
     pub units: String,
     pub time_format: String,
     pub zone: String,
+    pub created_ms: i64,
 }
 
-/// A feeder, without the server's sealed key for it.
+/// A device of the home, of any kind, without the server's sealed key for
+/// it. Its kind is its model's, so the archive keeps the model alone, and
+/// an unknown model does not read.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Feeder {
     pub id: Uuid,
+    pub home_id: Uuid,
+    pub model: Model,
     #[serde(with = "hex_bytes")]
     pub identity: Vec<u8>,
     pub name: String,

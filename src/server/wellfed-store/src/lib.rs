@@ -33,6 +33,7 @@ mod feeders;
 mod feeds;
 mod foods;
 mod history;
+mod homes;
 mod import;
 mod installs;
 mod jobs;
@@ -85,6 +86,8 @@ pub enum Error {
     TooLarge(&'static str),
     #[error("that {0} already exists")]
     Duplicate(&'static str),
+    #[error("no stored {0} has that id")]
+    Missing(&'static str),
     #[error("a {0} still in use cannot be deleted")]
     InUse(&'static str),
     #[error("encode a cached {0}: {1}")]

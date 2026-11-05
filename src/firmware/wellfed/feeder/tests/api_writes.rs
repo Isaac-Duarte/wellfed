@@ -4,13 +4,13 @@
 use std::sync::{Mutex, MutexGuard};
 
 use wellfed_core::store::slot::SlotIo;
+use wellfed_device::store::net::NetStore;
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::mailbox::{SettingsFields, SettingsResult, SettingsView, WifiResult};
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_api::{Device, FeederDevice, KeyChange};
+use wellfed_device_runtime::{keys, network};
 use wellfed_feeder::feeder::{DeviceView, Feeder, NoFeeds};
-use wellfed_feeder::store::net::NetStore;
-use wellfed_feeder_runtime::{keys, network};
 use wellfed_fw_feeder::feeding::{ClaimTurn, Claiming, writes_queued};
 use wellfed_fw_feeder::platform::Plaf103;
 use wellfed_sdk::hal::interlock::{INTERLOCK, Interlock};

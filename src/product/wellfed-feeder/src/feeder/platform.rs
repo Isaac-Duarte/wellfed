@@ -17,13 +17,16 @@ use wellfed_core::log_tail::Batch as LogBatch;
 use wellfed_core::ota::install::{Answer, Progress, Refused};
 use wellfed_core::supply::Reading;
 use wellfed_core::tone::Tune;
-use wellfed_proto::api::{Counts, Erases, Power, Refusal, TASKS_MAX, TraceSummary};
+use wellfed_proto::api::{Counts, Erases, Power, Refusal, TASKS_MAX};
 use wellfed_proto::device::Model;
 use wellfed_proto::trace::PAGE_MAX;
 
 use super::supply::Radio;
 use crate::stats::Totals;
-use crate::store::events::{BODY_BYTES, Read};
+use wellfed_device::io::{Accepted, BleDrop, BleLink, Datagram, Received};
+use wellfed_device::store::events::{BODY_BYTES, EventsFill, Read};
+use wellfed_device::store::net::BuildWifi;
+use wellfed_device::store::traces::{TraceRead, TracesFill};
 use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{CLIENTS, Client};
 use wellfed_device_api::mailbox::{
@@ -39,16 +42,6 @@ pub struct Boot {
     pub bank: u8,
     pub reset_flags: u32,
     pub boot_count: u32,
-}
-
-/// Whether the image was built with Wi-Fi credentials of its own.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BuildWifi {
-    /// A bench image: the C entry prefills the bench hotspot.
-    Present,
-    /// A consumer image: the only network is the one the owner stores, so
-    /// a boot with none stored starts BLE setup mode on its own.
-    Absent,
 }
 
 /// The Wi-Fi link as status and the statistics report it.
@@ -118,60 +111,6 @@ pub struct TaskCount {
     pub total: u32,
 }
 
-/// The event ring's fill, for the statistics.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct EventsFill {
-    pub kept: u32,
-    pub capacity: u32,
-}
-
-/// The trace ring's fill, and the traces that never reached it, for the
-/// statistics.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct TracesFill {
-    pub kept: u32,
-    pub capacity: u32,
-    pub unsaved: u32,
-}
-
-/// What [`Platform::trace_page`] copied: the trace's summary, whether it is
-/// in storage, its body's whole length and the bytes copied.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TraceRead {
-    pub summary: TraceSummary,
-    pub stored: bool,
-    pub total: u16,
-    pub len: usize,
-}
-
-/// What a non-blocking accept found.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Accepted<S> {
-    Socket(S),
-    /// No connection waits.
-    None,
-    /// The listener failed; open a new one.
-    Error,
-}
-
-/// What a non-blocking receive found.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Received {
-    Data(usize),
-    /// Nothing waiting now.
-    Empty,
-    /// The peer closed the connection, or the socket failed.
-    Closed,
-}
-
-/// One mDNS datagram, if one waits.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Datagram {
-    Got { len: usize, ip: u32, port: u16 },
-    None,
-    Error,
-}
-
 /// Which of the event queue's slots a record may take.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EventSlot {
@@ -183,26 +122,6 @@ pub enum EventSlot {
 
 /// How a settled indicator level read back.
 pub use wellfed_core::indicator::Check;
-
-/// What setup mode's BLE link asks the loop to act on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BleLink {
-    /// A host connected and enabled notifications: a new session.
-    Opened,
-    /// A whole message waits in [`Platform::ble_message`].
-    Message,
-    /// The host left or was dropped: forget its session.
-    Closed,
-}
-
-/// Why setup mode drops its BLE host.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BleDrop {
-    /// The session ended; its last reply has had time to go out.
-    Done,
-    /// The host broke the protocol.
-    Protocol,
-}
 
 /// One step of a driver the platform owns: the delay it asks for, and its
 /// own record, if it made one.

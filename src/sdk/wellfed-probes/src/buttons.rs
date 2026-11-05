@@ -16,11 +16,11 @@
 use core::fmt;
 
 use wellfed_hal::stopped;
-use wellfed_hal::{bringup, plaf103, sdk};
+use wellfed_hal::{bringup, sdk};
 use wellfed_sdk::Record;
 
 /// PB4..PB7 as SDK pin numbers (port B is pins 32..63).
-pub const PINS: [u32; 4] = plaf103::pins::BUTTONS;
+pub const PINS: [u32; 4] = wellfed_hal::board::pins::BUTTONS;
 const PORT_B: u32 = 1;
 /// The four button bits in the port B input word.
 pub const MASK: u32 = 0xf0;

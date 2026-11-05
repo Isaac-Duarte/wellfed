@@ -29,6 +29,7 @@ fn id(key: &SigningKey) -> KeyId {
 
 fn signed(key: &SigningKey, version: u32, kind: ImageKind) -> Signed {
     Signed {
+        model: 1,
         manifest: Manifest {
             version,
             image_len: 3 * SECTOR_BYTES,
@@ -79,6 +80,7 @@ fn context<'a>(
     floor: u32,
 ) -> Context<'a> {
     Context {
+        model: 1,
         ring: KeyRing {
             built_in,
             added: None,
@@ -529,4 +531,31 @@ proptest! {
     ) {
         let _ = extent_of(&bytes, limit);
     }
+}
+
+/// An image signed for another model is refused once its signature checks,
+/// before any bank check: nothing reaches the writer. A manifest naming no
+/// model does not parse.
+#[test]
+fn an_image_for_another_model_is_refused_and_one_naming_none_does_not_parse() {
+    let k = keys();
+    let built_in = [public(&k.bench)];
+    let other = Signed {
+        model: 2,
+        ..signed(&k.bench, 7, ImageKind::Replacement)
+    };
+    let bytes = manifest(&k.bench, &other);
+    assert_eq!(
+        admit_offer(&bytes, None, &context(&built_in, &[], &[], 0)),
+        Err(OfferError::Model)
+    );
+
+    let none = Signed {
+        model: 0,
+        ..signed(&k.bench, 7, ImageKind::Replacement)
+    };
+    assert_eq!(
+        parse_manifest(&manifest(&k.bench, &none)),
+        Err(OfferError::Kind)
+    );
 }

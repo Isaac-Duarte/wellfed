@@ -41,7 +41,7 @@ pub struct ServerAccount {
     pub expires_ms: Option<i64>,
 }
 
-/// What an account may do in the household.
+/// What an account may do in the home.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ServerRole {
     Owner,
@@ -215,7 +215,7 @@ pub struct ServerPet {
     pub feeders: Vec<String>,
 }
 
-/// A pet's intake, day by day in the household's zone.
+/// A pet's intake, day by day in the home's zone.
 pub struct ServerPetIntake {
     pub pet: String,
     pub zone: String,

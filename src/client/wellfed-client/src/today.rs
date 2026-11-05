@@ -10,7 +10,7 @@
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use wellfed_model::{Plans, Settings, Status, TimeView};
+use wellfed_model::{FeederSettings, Plans, Status, TimeView};
 
 use crate::history::Feed;
 use crate::plans::{self, Meal};
@@ -31,7 +31,7 @@ impl TimeSettings for TimeView {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Facts<T = TimeView> {
     pub status: Option<Status>,
-    pub settings: Option<Settings>,
+    pub settings: Option<FeederSettings>,
     pub plans: Option<Plans>,
     pub time: Option<T>,
     /// The feeds its history has given so far, oldest first.
@@ -119,7 +119,7 @@ impl<T: TimeSettings> Facts<T> {
     /// The `Fed` event of the feed the status names as its last fault, once
     /// the history has given it.
     pub fn fault_feed(&self) -> Option<&Feed> {
-        let fault = self.status.as_ref()?.feed_fault?;
+        let fault = self.status.as_ref()?.feeder()?.feed_fault?;
         self.feeds.iter().rev().find(|fed| fed.feed == fault.feed)
     }
 
@@ -159,8 +159,9 @@ fn minute_of(at: Timestamp, zone: &TimeZone) -> u16 {
 #[cfg(test)]
 mod tests {
     use wellfed_model::{
-        Battery, Desiccant, FeedFault, FeedOutcome, FeedReason, FoodLevel, Generation, NtpServer,
-        PLANS, Plan, Readiness, Source, Supply, Weekdays, WifiSource,
+        Battery, Desiccant, DeviceStatus, FeedFault, FeedOutcome, FeedReason, FeederStatus,
+        FoodLevel, Generation, NtpServer, PLANS, Plan, Readiness, Source, Supply, Weekdays,
+        WifiSource,
     };
 
     use super::*;
@@ -188,20 +189,22 @@ mod tests {
             dns_losses: 0,
             clock,
             power: None,
-            locked: Some(false),
-            settings_generation: Generation(1),
             wifi_generation: Generation(1),
             last_event: None,
             sessions: 1,
-            food: FoodLevel::Present,
-            feed_fault: None,
-            readiness: Readiness::Ready,
-            desiccant: Desiccant::Unset,
-            supply: Supply {
-                adapter: Some(true),
-                battery: Battery::Absent,
-                below_floor: None,
-            },
+            device: DeviceStatus::Feeder(FeederStatus {
+                locked: Some(false),
+                settings_generation: Generation(1),
+                food: FoodLevel::Present,
+                feed_fault: None,
+                readiness: Readiness::Ready,
+                desiccant: Desiccant::Unset,
+                supply: Supply {
+                    adapter: Some(true),
+                    battery: Battery::Absent,
+                    below_floor: None,
+                },
+            }),
         }
     }
 
@@ -324,7 +327,13 @@ mod tests {
             outcome: FeedOutcome::Failed,
             reason: FeedReason::Jammed,
         };
-        facts.status.as_mut().unwrap().feed_fault = Some(fault);
+        facts
+            .status
+            .as_mut()
+            .unwrap()
+            .feeder_mut()
+            .unwrap()
+            .feed_fault = Some(fault);
         assert_eq!(facts.fault_feed().map(|fed| fed.feed), Some(7));
     }
 

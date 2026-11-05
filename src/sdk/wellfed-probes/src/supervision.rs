@@ -9,11 +9,11 @@
 //! skips the whole probe, so a reset cannot repeat it until power is cut.
 //! Clock rates are nominal; the bench capture measures them.
 
-use wellfed_hal::board::Board;
 use wellfed_hal::sdk;
 use wellfed_hal::stopped;
-use wellfed_hal::supervision::events::{Events, EventsConfig, EventsSnapshot};
 use wellfed_hal::supervision::watchdog::{Watchdog, WatchdogConfig};
+use wellfed_hal_feeder::board::Board;
+use wellfed_hal_feeder::events::{Events, EventsConfig, EventsSnapshot};
 
 /// Backup-register marker (`PFW5` in ASCII) written before the watchdog is armed.
 pub const MARKER: u32 = 0x5046_5735;
@@ -297,7 +297,7 @@ impl Probe {
 
                 let ms = now.wrapping_sub(self.phase_at);
                 if ms >= RESET_DEADLINE_MS {
-                    let _ = self.watchdog.close(Some(&self.board));
+                    let _ = self.watchdog.close(|| self.board.inactive());
                     if !self.watchdog.claimed {
                         sdk::backup_write(sdk::BACKUP_USER, 0);
                     }

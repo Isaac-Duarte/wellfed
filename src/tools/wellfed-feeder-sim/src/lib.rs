@@ -14,23 +14,27 @@
 //! simulated banks, with the loader's choice and KM0's trial around them
 //! ([`banks`]).
 //!
-//! - [`flash`]: the storage region, in memory or in a file.
-//! - [`banks`]: the two banks, the loader and the boot trial.
+//! What every device shares (the storage image, the device's own stores
+//! and their mailboxes, the host sockets, setup's BLE link, the banks and
+//! the update stage) is `wellfed_device_sim`'s; this crate adds the
+//! feeder's own around the feeder's loop.
+//!
 //! - [`feeding`]: the feeding owner, on the feed journal.
 //! - [`platform`]: the loop's platform, over the stores and host sockets.
 //! - [`sim`]: one feeder: the loop's pass, the writer's and update stage's
 //!   turns.
 //! - [`serve`]: the listener, and the loop that drives it.
 //! - `harness` (the `harness` feature, for tests only): a simulator on a
-//!   test's `LocalSet`, and a relay that can stall like a feeder that lost
-//!   power.
+//!   test's `LocalSet`, with `wellfed_device_sim`'s relay, runtime and
+//!   generator.
 
 #![forbid(unsafe_code)]
 
-pub mod banks;
+// The device's storage image and banks, as this simulator's users name them.
+pub use wellfed_device_sim::{banks, flash};
+
 pub mod console;
 pub mod feeding;
-pub mod flash;
 #[cfg(feature = "harness")]
 pub mod harness;
 pub mod platform;

@@ -1,21 +1,22 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide Card;
-import 'package:wellfed/screens/feeder/clock_portion.dart';
+import 'package:wellfed/screens/feeder/clock.dart';
 import 'package:wellfed/screens/feeder/diagnostics.dart';
 import 'package:wellfed/screens/feeder/meal_call.dart';
 import 'package:wellfed/screens/feeder/people.dart';
-import 'package:wellfed/screens/feeder/settings_tab.dart';
+import 'package:wellfed/screens/feeder/portion.dart';
 import 'package:wellfed/screens/feeder/today.dart' show clockWords;
 import 'package:wellfed/screens/feeder/updates.dart';
 import 'package:wellfed/screens/feeder/wifi.dart';
-import 'package:wellfed/src/rust/api/feeder.dart' show CallInfo, FeederReply, FeederRequest;
+import 'package:wellfed/src/rust/api/feeder.dart' show CalibrationInfo, CallInfo, FeederReply, FeederRequest;
 import 'package:wellfed/src/rust/api/model.dart' show CallClip_None, CallClip_Receiving, CallClip_Stored;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
+import 'package:wellfed/widgets/settings_list.dart';
 
 class SettingsOwnerSection extends StatefulWidget {
   const SettingsOwnerSection({super.key, required this.feeder});
@@ -36,6 +37,7 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
     // Read each time: another phone may have changed the clip. The row shows
     // the last one read meanwhile.
     unawaited(feeder.loadCall());
+    unawaited(feeder.loadCalibration());
   }
 
   void _open(BuildContext context, Widget screen) =>
@@ -51,6 +53,11 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
       _ => 'Weak signal',
     };
     final String? people = feeder.state.clients.isEmpty ? null : '${feeder.state.clients.length} of $clientsMost';
+    final String? portion = switch (feeder.state.calibration) {
+      null => null,
+      CalibrationInfo(portionMg: null) => 'Not measured',
+      CalibrationInfo(:final int portionMg) => '${gramsText(portionMg)} g',
+    };
     final CallInfo? call = feeder.state.call;
     final String? clip = switch (call?.clip) {
       null => null,
@@ -65,11 +72,12 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
         children: [
           _Link('Wi-Fi', signal, WifiScreen(feeder: feeder), first: true, open: (screen) => _open(context, screen)),
           _Link(
-            'Clock and portion size',
+            'Clock',
             card == null ? null : clockWords(context, card),
-            ClockPortionScreen(feeder: feeder),
+            ClockScreen(feeder: feeder),
             open: (screen) => _open(context, screen),
           ),
+          _Link('Portion size', portion, PortionScreen(feeder: feeder), open: (screen) => _open(context, screen)),
           _Link(
             'Meal call',
             clip,
@@ -107,7 +115,8 @@ class SettingsOwnerOnly extends StatelessWidget {
         children: [
           for (final (i, name) in const [
             'Wi-Fi',
-            'Clock and portion size',
+            'Clock',
+            'Portion size',
             'Meal call',
             'Firmware updates',
             'Remove people',
@@ -141,16 +150,7 @@ class _Link extends StatelessWidget {
   final bool first;
 
   @override
-  Widget build(BuildContext context) => SettingsTile(
-    first: first,
-    onTap: () => open(screen),
-    child: Row(
-      children: [
-        Expanded(child: SettingsWords(name, note)),
-        StrokeIcon(Glyph.chevron, size: 20, color: context.colors.textMuted),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) => SettingsLink(name, note, first: first, onTap: () => open(screen));
 }
 
 /// Ask, then restart. The feeder refuses a restart while a feed runs; one

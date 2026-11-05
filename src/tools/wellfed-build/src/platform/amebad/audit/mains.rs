@@ -12,6 +12,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use wellfed_formats::audit::{Main, MainCalls, MainsAudit};
+use wellfed_proto::device::Model;
 
 use super::hooks::file_offset;
 use super::{ADDRESSED, Binutils, DIRECT_BRANCH, INSTRUCTION, elf, hex, parse_hex, tool};
@@ -55,10 +56,22 @@ pub enum MainsError {
     Veneer { name: &'static str },
 }
 
-/// The reviewed calls of each core's `main`, in order.
-pub fn expected(core: Core) -> &'static [&'static str] {
-    match core {
-        Core::Lp => &[
+/// The reviewed calls of each core's `main` on each model's board, in order.
+/// The fountain's KM0 boots KM4 and nothing else (`fountain_km0.c`): no boot
+/// trial, which could clear bank 1's marker, no WLAN firmware, no flash
+/// peer and no shared-pad supply. Both models share the KM4 main.
+pub fn expected(model: Model, core: Core) -> &'static [&'static str] {
+    match (model, core) {
+        (Model::Plwf106, Core::Lp) => &[
+            "irq_register",
+            "irq_enable",
+            "pmu_acquire_wakelock",
+            "irq_disable",
+            "km4_flash_highspeed_init",
+            "km4_boot_on",
+            "vTaskStartScheduler",
+        ],
+        (Model::Plaf103, Core::Lp) => &[
             "irq_register",
             "irq_enable",
             "pmu_acquire_wakelock",
@@ -71,7 +84,7 @@ pub fn expected(core: Core) -> &'static [&'static str] {
             "wellfed_flash_peer_start",
             "vTaskStartScheduler",
         ],
-        Core::Hp => &[
+        (_, Core::Hp) => &[
             "irq_register",
             "irq_enable",
             "ipc_table_init",
@@ -99,11 +112,12 @@ pub fn check_main(
     listing: &str,
     address: u64,
     size: u64,
+    model: Model,
     core: Core,
     symbols: &HashMap<String, u64>,
     veneers: &HashMap<u64, String>,
 ) -> Result<MainCalls> {
-    let reviewed = expected(core);
+    let reviewed = expected(model, core);
     let inside = |at: u64| address <= at && at < address + size;
 
     let mut literals = HashMap::new();
@@ -244,7 +258,7 @@ pub fn listing_inputs(elf: &Path, objdump: &Path) -> Result<(Symbols, Vec<(u64, 
     Ok((symbols, mains))
 }
 
-pub fn audit(sdk: &Path, binutils: &Binutils) -> Result<MainsAudit> {
+pub fn audit(sdk: &Path, binutils: &Binutils, model: Model) -> Result<MainsAudit> {
     let objdump = binutils.objdump();
     let mut audited = BTreeMap::new();
 
@@ -261,7 +275,7 @@ pub fn audit(sdk: &Path, binutils: &Binutils) -> Result<MainsAudit> {
 
         let data = fs::read(&elf)?;
         let mut veneers = HashMap::new();
-        for name in expected(core) {
+        for name in expected(model, core) {
             let Some(&at) = symbols.get(&format!("__{name}_veneer")) else {
                 continue;
             };
@@ -289,7 +303,7 @@ pub fn audit(sdk: &Path, binutils: &Binutils) -> Result<MainsAudit> {
             ],
             &elf,
         )?;
-        let calls = check_main(&listing, address, size, core, &symbols, &veneers)?;
+        let calls = check_main(&listing, address, size, model, core, &symbols, &veneers)?;
         audited.insert(
             core.dir().to_string(),
             Main {

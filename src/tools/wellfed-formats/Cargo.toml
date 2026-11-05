@@ -11,6 +11,7 @@ publish.workspace = true
 clap = { workspace = true, optional = true }
 chrono = { version = "0.4.45", default-features = false, features = ["std", "serde"] }
 wellfed-session.workspace = true
+wellfed-proto.workspace = true
 wellfed-model = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
@@ -22,10 +23,12 @@ uuid = { workspace = true, features = ["serde"] }
 rustix = { version = "1.1.5", default-features = false, features = ["fs", "std"] }
 
 [features]
-# The suite's tier as a command-line option (the bench's `--tier`).
+# The suite's tier and the device model as command-line options (`--tier`, `--device`).
 clap = ["dep:clap"]
 # The bench server's /device/* routes, which carry device API values.
 device = ["dep:wellfed-model"]
+# The server's export archive: only the server links it.
+export = []
 
 [dev-dependencies]
 tempfile.workspace = true

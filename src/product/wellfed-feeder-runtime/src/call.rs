@@ -18,8 +18,8 @@ use wellfed_hal::sdk::IrqGuard;
 use wellfed_proto::api::Refusal;
 
 /// The call's sectors within the storage region.
-pub const CALL_BASE: u32 = wellfed_hal::plaf103::storage::CALL.first;
-pub const CALL_UNITS: u32 = wellfed_hal::plaf103::storage::CALL.count;
+pub const CALL_BASE: u32 = wellfed_hal::board::storage::CALL.first;
+pub const CALL_UNITS: u32 = wellfed_hal::board::storage::CALL.count;
 
 /// What waits for the writer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

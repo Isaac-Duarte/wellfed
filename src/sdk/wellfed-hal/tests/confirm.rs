@@ -1,6 +1,9 @@
 //! Confirmation write against the fake SDK storage model, with the
 //! KM0 peer answering HELLO through the real `park::answer`, and the
 //! update stage's floor raised before the record.
+//!
+//! The confirmation keeps its record in the board's store.
+#![cfg(wellfed_board_store)]
 
 use std::cell::{Cell, RefCell};
 use std::sync::{Mutex, MutexGuard};
@@ -13,12 +16,13 @@ use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::flash_lock::arming::{self, Hooks};
 use wellfed_hal::flash_lock::provider::{ATTEMPT_BIT, Provider};
 use wellfed_hal::interlock::INTERLOCK;
+use wellfed_hal::ota::confirm::CONFIRM_SECTOR;
 use wellfed_hal::ota::confirm::*;
 use wellfed_hal::ota::update::{Floor, StoreSlots, Update};
 use wellfed_hal::sdk::fake;
 use wellfed_hal::stopped;
 use wellfed_hal::supervision::supervise::Feeding;
-use wellfed_hal::trial::{CONFIRM_SECTOR, identity};
+use wellfed_hal::trial::identity;
 
 thread_local! {
     static REGS: RefCell<[[u32; 12]; 2]> = const { RefCell::new([[0; 12]; 2]) };

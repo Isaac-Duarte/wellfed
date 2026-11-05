@@ -1,0 +1,1354 @@
+//! The device settings writer, normal role, in the SDK runtime's service
+//! task (`wellfed_store_step`, which the device kind's runtime defines over
+//! its [`Product`]). It opens the store in
+//! storage sectors 2 and 3, publishes it for the device API
+//! (`wellfed_hal::settings`), arms the flash-lock hooks once as the
+//! confirmation does, and then saves each change the device API queues.
+//! Each save sets the arming attempt marker and clears it after, so a hang
+//! inside a save resets at most once per power cycle.
+//!
+//! Once armed it also keeps the keys. It mixes the seed stored across
+//! boots into the generator and stores the next one (sectors 7 and 8), and
+//! opens the identity and client store (sectors 9 and 10), creating the
+//! device's identity secret on the first boot that has a generator. It
+//! publishes the identity for the loop task and applies the client changes
+//! the loop queues ([`keys`]): enrollments, revocations and the
+//! Reset, the factory reset.
+//!
+//! The factory reset (`wellfed_device::store::reset`) is split across a
+//! restart so a power cut anywhere leaves it safe. The Reset change
+//! programs the marker (sector 36) and forgets every client; the loop then
+//! restarts. A boot that finds the marker opens and publishes nothing the
+//! reset clears, erases each cleared sector (`storage::FACTORY_CLEARED`) as
+//! its own step, lets the product rewrite what it keeps of a cleared store
+//! if it keeps any ([`Product::keep_on_reset`]), erases the marker last, and only then
+//! opens the stores, empty. The feed journal, the update store and the seed
+//! are never touched, nor any store the product opens as kept.
+//!
+//! It keeps the time settings too (sectors 27 and 28,
+//! `wellfed_device::store::time`): the owner's zone and the NTP server,
+//! published for the loop ([`time`]).
+//!
+//! It also keeps the event history (sectors 13-24,
+//! `wellfed_device::store::events`). It appends the records the loop queues
+//! and answers the device API's reads ([`events`]), polling
+//! faster while either waits, so a reconnecting client catches up in
+//! seconds.
+//!
+//! A device kind's own stores (the feeder's calibration, plans, meal call,
+//! traces and statistics) are its [`Product`]'s: the writer opens,
+//! publishes and steps them at fixed points of its own order, statically,
+//! so the stack audit follows every call.
+//!
+//! No write starts while a feed may move the outputs: a flash lease then
+//! fails its stopped-outputs check and resets the board. So each store write
+//! first takes the write turn in `wellfed_hal::interlock`. While a feed
+//! holds the outputs the work stays queued (a client change, a Wi-Fi save,
+//! the event queue in order) and the writer asks again each poll, so it runs
+//! once the owner is at rest with its outputs stopped, before the next feed.
+//! Reads of the event ring are answered meanwhile: they take no lease.
+//!
+//! Queuing a mailbox wakes a writer at rest (`wellfed_hal::writer_wake`), so
+//! a write starts without waiting out [`POLL_MS`]; that poll stays, and is
+//! all the work relies on. A wake cuts short only the delay of a step that did
+//! nothing, so a write's own delay stands: [`POLL_MS`] after every mailbox
+//! write that erases, an upload's chunks alone following sooner. The turn above
+//! and the attempt marker are the same either way.
+
+use core::fmt;
+
+use wellfed_core::named_enum;
+
+use wellfed_core::store::handover;
+use wellfed_core::store::seed::{SeedStatus, SeedStore};
+use wellfed_core::store::update::{UpdateStatus, UpdateStore};
+use wellfed_device::store::clients::{ClientError, ClientStatus, ClientStore};
+use wellfed_device::store::events::{self as ring, EMPTY, EventLog, EventsFill};
+use wellfed_device::store::net::{NetStatus, NetStore};
+use wellfed_device::store::reset as reset_marker;
+use wellfed_device::store::settings::{Settings, SettingsStatus, SettingsStore};
+use wellfed_device::store::time::{TimeStatus, TimeStore};
+use wellfed_hal::board::storage::{FACTORY_CLEARED_SECTORS, factory_cleared};
+use wellfed_hal::flash::park::Mmio;
+use wellfed_hal::flash_lock::arming::{self, Arming, Hooks, Poll};
+use wellfed_hal::flash_lock::provider::Provider;
+use wellfed_hal::interlock::{INTERLOCK, WRITER_POLL_MS, WriteStep, WriteTurn};
+use wellfed_hal::{rng, sdk, settings, supervision};
+use wellfed_sdk::storage::{
+    CLIENTS_BASE, EVENTS_BASE, EVENTS_UNITS, FlashOps, Region, SEED_BASE, SETTINGS_BASE,
+    SETTINGS_BINDING, Slots,
+};
+
+use crate::events;
+pub use crate::keys::KeyResult;
+use crate::keys::{self, Change};
+use crate::network::{self, NET_BASE};
+use crate::time::{self, TIME_BASE};
+
+/// The factory reset's marker sector (`storage::RESET`).
+pub const RESET_BASE: u32 = wellfed_hal::board::storage::RESET.first;
+const UPDATE_BASE: u32 = wellfed_hal::board::storage::UPDATE.first;
+const CONFIRM_SECTOR: u32 = wellfed_hal::board::storage::CONFIRM.first;
+
+pub const POLL_MS: u32 = 200;
+/// Between a factory reset's erases, each its own step and write turn.
+pub const RESET_POLL_MS: u32 = 1;
+/// While events wait to be written or read.
+pub const EVENTS_POLL_MS: u32 = 5;
+/// Polls at [`EVENTS_POLL_MS`] after the last answered read: about 1 s.
+/// A subscriber takes a batch one loop pass a record, and a pass that
+/// sends a frame runs about 16 ms (measured), so a batch of 16 outlasts
+/// a shorter linger and its next read would wait out the idle poll.
+pub const READ_LINGER_POLLS: u32 = 200;
+/// While a write waits for a feed to end: within the poll a claim allows a
+/// waiting writer before passing it.
+pub const WRITE_WAIT_POLL_MS: u32 = POLL_MS;
+const _: () = assert!(WRITE_WAIT_POLL_MS <= WRITER_POLL_MS);
+
+/// The write turn for one store write, given back when dropped.
+pub struct WriteHeld;
+
+impl Drop for WriteHeld {
+    fn drop(&mut self) {
+        INTERLOCK.end_write();
+    }
+}
+
+named_enum! {
+    /// Why a settings or Wi-Fi save did not happen (`error stage=`).
+    pub enum ErrorStage {
+        Unarmed = "unarmed",
+        Save = "save",
+        /// A factory reset's erase failed.
+        Erase = "erase",
+    }
+}
+
+named_enum! {
+    /// What became of the device's identity secret this boot.
+    pub enum Identity {
+        Loaded = "loaded",
+        Created = "created",
+        /// No generator, a store it may not write, or unarmed.
+        Missing = "missing",
+        Failed = "failed",
+    }
+}
+
+named_enum! {
+    /// A client store change the loop queued.
+    pub enum KeyChange {
+        Enroll = "enroll",
+        Revoke = "revoke",
+        Reset = "reset",
+    }
+}
+
+/// A product's own record, as a `PLCFG1` line's body says it.
+pub trait Describe: Copy + fmt::Debug + PartialEq + Eq {
+    /// The body of this record's `PLCFG1` line.
+    fn describe(self, f: &mut impl fmt::Write) -> fmt::Result;
+}
+
+/// What a writer step logs: the device's own stores' records, or its
+/// product's (`R`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Record<R> {
+    Open {
+        status: SettingsStatus,
+        generation: u64,
+        settings: Settings,
+    },
+    Arming(arming::Event),
+    Saved {
+        generation: u64,
+        settings: Settings,
+    },
+    Error {
+        stage: ErrorStage,
+        status: SettingsStatus,
+    },
+    /// Wi-Fi credentials (sectors 5 and 6): what the store holds.
+    NetOpen {
+        status: NetStatus,
+        generation: u64,
+        stored: bool,
+    },
+    NetSaved {
+        generation: u64,
+        stored: bool,
+    },
+    NetError {
+        stage: ErrorStage,
+    },
+    /// The time settings (sectors 27 and 28).
+    TimeOpen {
+        status: TimeStatus,
+        generation: u64,
+    },
+    TimeSaved {
+        generation: u64,
+    },
+    TimeError {
+        stage: ErrorStage,
+    },
+    /// The stored seed and the client store.
+    Keys {
+        seed: SeedStatus,
+        /// The stored seed went into the generator.
+        mixed: bool,
+        /// The next boot's seed was stored.
+        saved: bool,
+        clients: ClientStatus,
+        enrolled: usize,
+        identity: Identity,
+    },
+    KeysChanged {
+        change: KeyChange,
+        result: KeyResult,
+        enrolled: usize,
+    },
+    /// The event ring as opened.
+    Events {
+        open: bool,
+        last: Option<u64>,
+        oldest: Option<u64>,
+        epoch: u32,
+    },
+    /// An append failed; the record is dropped.
+    EventError,
+    /// The boot found the factory reset's marker: no cleared store opens
+    /// until the reset has erased them all.
+    ResetPending,
+    /// What the product keeps of a cleared store took neither its save nor,
+    /// failing that, its erase's fallback, so the reset erased it: what it
+    /// meant to keep is lost, and the reset goes on.
+    ResetWearLost,
+    /// The handover from stock's activation is done: Wi-Fi, the product's
+    /// cleared stores and clients went, unless the build has its own Wi-Fi
+    /// and keeps its bench key (`cleared`).
+    HandoverDone {
+        cleared: bool,
+    },
+    /// The handover cannot go on this boot; the next one tries again.
+    HandoverStopped {
+        stage: u8,
+    },
+    /// The factory reset erased every cleared store, then its marker.
+    ResetDone {
+        erased: u32,
+    },
+    /// The factory reset stopped for this boot: unarmed, or an erase of
+    /// `sector` failed. The marker stays, so the next boot tries again.
+    ResetError {
+        stage: ErrorStage,
+        sector: Option<u32>,
+        /// The loop was asked for a restart to try again.
+        restart: bool,
+    },
+    /// One of the product's own stores.
+    Product(R),
+}
+
+/// The body of a `PLCFG1` line.
+pub fn describe<R: Describe>(record: Record<R>, f: &mut impl fmt::Write) -> fmt::Result {
+    let values = |f: &mut dyn fmt::Write, s: &Settings| {
+        write!(
+            f,
+            "lights={} sound={} volume={} lights_window={} sound_window={} meal_reminder={} \
+             desiccant_days={} desiccant_reset=",
+            u8::from(s.lights),
+            u8::from(s.sound),
+            s.volume,
+            s.lights_window,
+            s.sound_window,
+            s.meal_reminder,
+            s.desiccant_days,
+        )?;
+        match s.desiccant_reset {
+            Some(day) => write!(f, "{day}"),
+            None => f.write_str("none"),
+        }
+    };
+    match record {
+        Record::Open {
+            status,
+            generation,
+            settings,
+        } => {
+            write!(f, "open status={} generation={generation} ", status.code())?;
+            values(f, &settings)
+        }
+        Record::Arming(arming::Event::Ready { reply, inactive }) => {
+            write!(
+                f,
+                "ready reply={} inactive={}",
+                reply.code(),
+                u8::from(inactive)
+            )
+        }
+        Record::Arming(arming::Event::Armed {
+            watchdog,
+            installed,
+        }) => write!(
+            f,
+            "armed watchdog={} installed={}",
+            u8::from(watchdog),
+            u8::from(installed)
+        ),
+        Record::Arming(arming::Event::Skip { marker }) => write!(f, "skip marker={marker:#x}"),
+        Record::Arming(arming::Event::Timeout) => f.write_str("error stage=timeout"),
+        Record::Arming(arming::Event::Clock) => f.write_str("error stage=clock"),
+        Record::Saved {
+            generation,
+            settings,
+        } => {
+            write!(f, "saved generation={generation} ")?;
+            values(f, &settings)
+        }
+        Record::Error { stage, status } => {
+            write!(f, "error stage={stage} status={}", status.code())
+        }
+        // Never the SSID or passphrase.
+        Record::NetOpen {
+            status,
+            generation,
+            stored,
+        } => write!(
+            f,
+            "net open status={} generation={generation} stored={}",
+            status as u8,
+            u8::from(stored)
+        ),
+        Record::NetSaved { generation, stored } => write!(
+            f,
+            "net saved generation={generation} stored={}",
+            u8::from(stored)
+        ),
+        Record::NetError { stage } => write!(f, "net error stage={stage}"),
+        Record::TimeOpen { status, generation } => write!(
+            f,
+            "time open status={} generation={generation}",
+            status.name()
+        ),
+        Record::TimeSaved { generation } => write!(f, "time saved generation={generation}"),
+        Record::TimeError { stage } => write!(f, "time error stage={stage}"),
+        Record::Keys {
+            seed,
+            mixed,
+            saved,
+            clients,
+            enrolled,
+            identity,
+        } => write!(
+            f,
+            "keys seed={} mixed={} saved={} clients={} enrolled={enrolled} identity={identity}",
+            seed_status(seed),
+            u8::from(mixed),
+            u8::from(saved),
+            client_status(clients),
+        ),
+        Record::KeysChanged {
+            change,
+            result,
+            enrolled,
+        } => write!(
+            f,
+            "keys change={change} result={result} enrolled={enrolled}"
+        ),
+        Record::Events {
+            open,
+            last,
+            oldest,
+            epoch,
+        } => write!(
+            f,
+            "events open={} last={} oldest={} epoch={epoch:08x}",
+            u8::from(open),
+            last.unwrap_or(0),
+            oldest.unwrap_or(0)
+        ),
+        Record::EventError => f.write_str("events error stage=append"),
+        Record::ResetPending => f.write_str("reset pending"),
+        Record::ResetWearLost => f.write_str("reset wear_lost=1"),
+        Record::ResetDone { erased } => write!(f, "reset done erased={erased}"),
+        Record::HandoverDone { cleared } => {
+            write!(f, "handover done cleared={}", u8::from(cleared))
+        }
+        Record::HandoverStopped { stage } => write!(f, "handover stopped stage={stage}"),
+        Record::ResetError {
+            stage,
+            sector,
+            restart,
+        } => {
+            write!(f, "reset error stage={stage}")?;
+            if let Some(sector) = sector {
+                write!(f, " sector={sector}")?;
+            }
+            write!(f, " restart={}", u8::from(restart))
+        }
+        Record::Product(record) => record.describe(f),
+    }
+}
+
+fn seed_status(status: SeedStatus) -> &'static str {
+    match status {
+        SeedStatus::Unopened => "unopened",
+        SeedStatus::Empty => "empty",
+        SeedStatus::Loaded => "loaded",
+        SeedStatus::ReadOnly => "read-only",
+        SeedStatus::Io => "io",
+    }
+}
+
+fn client_status(status: ClientStatus) -> &'static str {
+    match status {
+        ClientStatus::Unopened => "unopened",
+        ClientStatus::Empty => "empty",
+        ClientStatus::Loaded => "loaded",
+        ClientStatus::ReadOnly => "read-only",
+        ClientStatus::Io => "io",
+    }
+}
+
+/// `delay_ms == 0` ends the task; `armed` reports the arming outcome once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Step<R> {
+    pub delay_ms: u32,
+    pub record: Option<Record<R>>,
+    /// Arming finished this step, armed or not: later writers may start.
+    pub settled: bool,
+    /// No record was served or appended and nothing waits for a turn, so a
+    /// queued mailbox may cut this step's delay short
+    /// (`wellfed_hal::writer_wake`).
+    pub rested: bool,
+}
+
+/// A step after `delay_ms` that logs `record`.
+pub fn next<R>(delay_ms: u32, record: Option<Record<R>>) -> Step<R> {
+    Step {
+        delay_ms,
+        record,
+        settled: false,
+        rested: false,
+    }
+}
+
+/// What became of a store the product keeps through a factory reset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Wear {
+    /// Rewritten with what it keeps, or nothing to rewrite.
+    Kept,
+    /// The save failed, so the store was erased: what it kept is lost.
+    Lost,
+    /// Neither the save nor the erase took.
+    Failed,
+}
+
+/// A device kind's own stores, which the writer keeps beside the device's
+/// at fixed points of its order. Every call is static: the writer is
+/// generic over its product, never `dyn`, so the stack audit follows each.
+pub trait Product<F: FlashOps>: Default {
+    /// Its own records, logged among the writer's.
+    type Record: Describe;
+
+    /// The sectors the handover from stock clears after the Wi-Fi's, one
+    /// step each, in order.
+    const HANDOVER_CLEARED: &'static [u32];
+
+    /// First thing each boot: the stores a factory reset keeps.
+    fn open_kept(&mut self);
+
+    /// With the device's: the stores a factory reset clears.
+    fn open_cleared(&mut self);
+
+    /// After the handover: the stores it cleared, empty.
+    fn reopen_handed_over(&mut self);
+
+    /// Publish each store's view; `armed` as the writer is.
+    fn publish(&self, armed: bool);
+
+    /// The event ring opened: its own rings open with it, unlogged.
+    fn open_with_events(&mut self);
+
+    /// Once the device's stores are open: its own store that logs its
+    /// opening, if one has not yet (each call opens at most one).
+    fn open_late(&mut self) -> Option<Self::Record>;
+
+    /// The event ring's fill, as it changes.
+    fn events_filled(fill: EventsFill);
+
+    /// Its mailboxes, after the device's and before the settings: the step
+    /// that took one, or `None` when none waits (or one waits for something
+    /// other than a write turn and lets the work below go on).
+    fn mailboxes<H: Hooks>(&mut self, core: &mut Core<F>) -> Option<Step<Self::Record>>;
+
+    /// With no settings queued and before the event ring's step: its work
+    /// at rest, if any. `writable` when this boot may write.
+    fn rest(&mut self, core: &mut Core<F>, writable: bool) -> Option<Step<Self::Record>>;
+
+    /// The factory reset's step after the cleared sectors: rewrite what it
+    /// keeps of a cleared store, named by its first sector, or `None` when
+    /// it keeps nothing, and the marker's erase follows at once.
+    fn keep_on_reset() -> Option<(u32, Wear)>;
+}
+
+/// Whether `sector` reads erased, in small reads to spare the stack: an
+/// erase that reported success but left bits behind stops the reset.
+pub fn blank<F: FlashOps>(sector: u32) -> bool {
+    const CHUNK: u32 = 64;
+    let mut chunk = [0u8; CHUNK as usize];
+    (0..sdk::SECTOR_BYTES / CHUNK).all(|i| {
+        F::read(sector, i * CHUNK, &mut chunk) && chunk.iter().all(|&byte| byte == u8::MAX)
+    })
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Stage {
+    #[default]
+    Open,
+    Arm,
+    Idle,
+    /// Read-only for this boot (unarmed or a store it may not write).
+    Serve,
+}
+
+/// The device's own stores and the writer's state, which a [`Product`]'s
+/// steps borrow for the write turn and the event ring's readers.
+pub struct Core<F> {
+    stage: Stage,
+    arming: Arming,
+    store: SettingsStore<Slots<F, SETTINGS_BASE>>,
+    net: NetStore<Slots<F, NET_BASE>>,
+    /// The credential store's open record, logged on the next step.
+    net_opened: bool,
+    time: TimeStore<Slots<F, TIME_BASE>>,
+    /// The time store's open record, logged on a later step.
+    time_opened: bool,
+    armed: bool,
+    seed: SeedStore<Slots<F, SEED_BASE>>,
+    clients: ClientStore<Slots<F, CLIENTS_BASE>>,
+    keys_opened: bool,
+    events: EventLog<Region<F, EVENTS_BASE, EVENTS_UNITS>>,
+    events_opened: bool,
+    /// A read's records, before they are copied to the loop: static, as
+    /// the writer is, since the service task's stack has no room for it.
+    read_batch: [ring::Record; events::READ_BATCH],
+    /// Polls left at the read pace after the last answered read.
+    reading: u32,
+    /// Polls left at a product upload's pace ([`Core::linger`]).
+    receiving: u32,
+    /// This writer's wait for the write turn.
+    turn: WriteTurn,
+    /// A factory reset this boot finishes: the index (in
+    /// `storage::factory_cleared`) of the next sector to erase; past the
+    /// last, the product's keep step, then the marker itself. Until
+    /// it is `None` no cleared store opens and nothing is published.
+    resetting: Option<u32>,
+    /// The reset could not go on this boot (unarmed, or an erase failed).
+    reset_stopped: bool,
+    /// A handover this boot finishes: the next of its steps. Until it is
+    /// `None` nothing is published, so no one sees the Wi-Fi it clears.
+    handing_over: Option<u8>,
+    /// This boot recorded its attempt in the marker sector.
+    reset_attempted: bool,
+    /// Arming skipped this boot: the boot before reset inside a write.
+    skipped: bool,
+}
+
+impl<F> Default for Core<F> {
+    fn default() -> Self {
+        Self {
+            stage: Stage::default(),
+            arming: Arming::default(),
+            store: SettingsStore::default(),
+            net: NetStore::default(),
+            net_opened: false,
+            time: TimeStore::default(),
+            time_opened: false,
+            armed: false,
+            seed: SeedStore::default(),
+            clients: ClientStore::default(),
+            keys_opened: false,
+            events: EventLog::default(),
+            events_opened: false,
+            read_batch: [EMPTY; events::READ_BATCH],
+            reading: 0,
+            receiving: 0,
+            turn: WriteTurn::new(),
+            resetting: None,
+            reset_stopped: false,
+            handing_over: None,
+            reset_attempted: false,
+            skipped: false,
+        }
+    }
+}
+
+/// Writes through `F`, the storage region's mediated flash, for the device
+/// and its product `P`.
+pub struct Writer<F, P> {
+    core: Core<F>,
+    product: P,
+}
+
+impl<F, P: Default> Default for Writer<F, P> {
+    fn default() -> Self {
+        Self {
+            core: Core::default(),
+            product: P::default(),
+        }
+    }
+}
+
+/// The epoch a new event ring takes, drawn after the seed is mixed in and
+/// never 0, which a ring written before epochs reads as. A boot without a
+/// generator holds no session either (every handshake needs one), so its
+/// fallback only has to differ from 0; a later ring re-created with a
+/// generator draws again.
+fn fresh_epoch() -> u32 {
+    let mut bytes = [0; 4];
+    let drawn = if rng::fill(&mut bytes) {
+        u32::from_le_bytes(bytes)
+    } else {
+        0
+    };
+    drawn.max(1)
+}
+
+impl<F: FlashOps> Core<F> {
+    /// The write turn for one store write, or `None` while a feed holds the
+    /// outputs: the caller then leaves its work queued.
+    pub fn take_turn(&mut self) -> Option<WriteHeld> {
+        let stopped = || wellfed_hal::stopped::observe().verified();
+        match self.turn.begin(&INTERLOCK, sdk::uptime_ms(), stopped) {
+            WriteStep::Go(_) => Some(WriteHeld),
+            WriteStep::Wait => None,
+        }
+    }
+
+    /// The write turn asked for as if the outputs never stopped, so a claim
+    /// past its bound, which lets another store's write go ahead, keeps
+    /// this one waiting; `None` while it waits. `now` is the caller's
+    /// uptime, which its write also goes by.
+    pub fn take_released_turn(&mut self, now: u32) -> Option<WriteHeld> {
+        match self.turn.begin(&INTERLOCK, now, || false) {
+            WriteStep::Go(_) => Some(WriteHeld),
+            WriteStep::Wait => None,
+        }
+    }
+
+    /// This boot may not write: read-only for the boot, or unarmed.
+    pub fn unarmed<H: Hooks>(&self) -> bool {
+        self.stage == Stage::Serve || !H::armed()
+    }
+
+    /// The hooks were armed when the stores were last published.
+    pub fn armed(&self) -> bool {
+        self.armed
+    }
+
+    /// Keep the event ring's step at the upload pace for `polls` more polls,
+    /// so a product's next chunk follows within a round trip.
+    pub fn linger(&mut self, polls: u32) {
+        self.receiving = polls;
+    }
+
+    /// The step while a write waits for its turn: the event ring's readers
+    /// are still answered, since a read takes no lease.
+    pub fn waiting<R>(&mut self) -> Step<R> {
+        let delay = if self.answer_read() {
+            EVENTS_POLL_MS
+        } else {
+            WRITE_WAIT_POLL_MS
+        };
+        next(delay, None)
+    }
+
+    /// Publish every store's view, the product's after the device's;
+    /// nothing while a factory reset or the handover is unfinished, so no
+    /// client, store or credential it clears is served.
+    pub fn publish<P: Product<F>>(&self, product: &P) {
+        if self.resetting.is_some() || self.handing_over.is_some() {
+            return;
+        }
+        let writable = self.armed
+            && matches!(
+                self.store.status,
+                SettingsStatus::Loaded | SettingsStatus::Empty | SettingsStatus::Recovered
+            );
+        settings::publish(self.store.settings.view(self.store.generation, writable));
+        network::publish(&self.net, self.armed);
+        time::publish(&self.time, self.armed);
+        product.publish(self.armed);
+    }
+
+    /// Answer the read the device API asked for, if any; true while a
+    /// reader is about, so the next poll comes at the read pace. A reader
+    /// catching up asks again within a few loop passes of its last batch,
+    /// and the idle poll would make it wait [`POLL_MS`] for each.
+    fn answer_read(&mut self) -> bool {
+        let Some(after) = events::read_request() else {
+            self.reading = self.reading.saturating_sub(1);
+            return self.reading > 0;
+        };
+        let batch = self.events.read_batch(after, &mut self.read_batch);
+        events::finish_read(after, batch, &self.read_batch);
+        self.reading = READ_LINGER_POLLS;
+        true
+    }
+
+    /// The keys: mix the stored seed in and store the next, then open
+    /// the client store and create the identity if it has none. Writes only
+    /// when `writable` (armed, normal stage), each under its own attempt
+    /// marker.
+    fn keys<R>(&mut self, writable: bool) -> Record<R> {
+        self.seed.open(Slots::new());
+        let mixed = self.seed.seed().is_some_and(|seed| rng::mix(seed));
+        let saved = writable
+            && rng::bytes().is_some_and(|next| {
+                arming::set_attempt();
+                let saved = self.seed.save(&next);
+                arming::clear_attempt();
+                saved
+            });
+
+        self.clients.open(Slots::new());
+        let identity = if self.clients.identity().is_some() {
+            Identity::Loaded
+        } else if let Some(secret) = rng::bytes().filter(|_| writable && self.clients.writable()) {
+            arming::set_attempt();
+            let created = self.clients.set_identity(&secret).is_ok();
+            arming::clear_attempt();
+            if created {
+                Identity::Created
+            } else {
+                Identity::Failed
+            }
+        } else {
+            Identity::Missing
+        };
+        if let Some(secret) = self.clients.identity() {
+            keys::publish_identity(secret);
+        }
+        keys::publish_clients(self.clients.clients().copied());
+
+        Record::Keys {
+            seed: self.seed.status,
+            mixed,
+            saved,
+            clients: self.clients.status,
+            enrolled: self.clients.clients().count(),
+            identity,
+        }
+    }
+
+    /// Apply one queued client change, each write under its own attempt
+    /// marker, and free the mailbox with its result.
+    ///
+    /// A reset is the factory reset. It draws its new identity from the
+    /// generator or does not happen: a weaker key is never written. It
+    /// programs the reset's marker first, so whatever happens next the boot
+    /// after finishes it, then forgets every client at once (their sessions
+    /// end now, not at the restart). Once the marker is down the answer is
+    /// `Done`: the loop restarts the device, and that boot erases the
+    /// cleared stores.
+    fn change<R>(&mut self, change: Change, writable: bool) -> Record<R> {
+        let kind = match change {
+            Change::Enroll { .. } => KeyChange::Enroll,
+            Change::Revoke { .. } => KeyChange::Revoke,
+            Change::Reset => KeyChange::Reset,
+        };
+        let result = match change {
+            _ if !writable => KeyResult::Unarmed,
+            Change::Enroll { key, label, role } => {
+                self.apply(|clients| clients.enroll(key, label, role))
+            }
+            Change::Revoke { key } => self.apply(|clients| clients.revoke(&key)),
+            Change::Reset => match rng::bytes() {
+                Some(identity) => {
+                    arming::set_attempt();
+                    let marked = reset_marker::mark(&Region::<F, RESET_BASE, 1>::new());
+                    arming::clear_attempt();
+                    if marked {
+                        // Committed: the next boot erases the client store
+                        // whatever this write does, so a store it cannot
+                        // write (read-only, torn) still answers `Done` and
+                        // the loop restarts. A marker left down unanswered
+                        // would clear everything on some later, unrelated
+                        // boot.
+                        self.apply(|clients| clients.reset(&identity));
+                        KeyResult::Done
+                    } else {
+                        KeyResult::Io
+                    }
+                }
+                None => KeyResult::NoGenerator,
+            },
+        };
+
+        let reset = kind == KeyChange::Reset && result == KeyResult::Done;
+        if reset && let Some(secret) = self.clients.identity() {
+            keys::publish_identity(secret);
+        }
+        if reset {
+            // No session outlives a reset, even one the store kept.
+            keys::publish_clients(core::iter::empty());
+        } else {
+            keys::publish_clients(self.clients.clients().copied());
+        }
+        keys::finish(result);
+        Record::KeysChanged {
+            change: kind,
+            result,
+            enrolled: self.clients.clients().count(),
+        }
+    }
+
+    fn apply(
+        &mut self,
+        write: impl FnOnce(&mut ClientStore<Slots<F, CLIENTS_BASE>>) -> Result<(), ClientError>,
+    ) -> KeyResult {
+        arming::set_attempt();
+        let result = write(&mut self.clients);
+        arming::clear_attempt();
+        result.map_or_else(KeyResult::from, |()| KeyResult::Done)
+    }
+
+    /// Open the device's stores the Open stage serves that a factory reset
+    /// clears; the settings store's status.
+    fn open_cleared(&mut self) -> SettingsStatus {
+        let status = self.store.open(Slots::new(), SETTINGS_BINDING);
+        self.net.open(Slots::new());
+        self.time.open(Slots::new());
+        status
+    }
+
+    /// The reset cannot go on this boot. A boot that serves nothing has no
+    /// identity, API, recovery window or BLE setup, so it may ask the loop
+    /// for a restart (the loop waits for a feed in flight), but only once
+    /// per reset: while fewer than `reset::ATTEMPTS` armed boots have
+    /// started the erases (counted in the marker sector, since a boot's
+    /// reset flags cannot tell a hang from an intentional restart), and only
+    /// when a restart can help. That is a failed erase, or an arming skip:
+    /// the boot before hung inside a write, the skip has cleared the
+    /// attempt marker, and the restart arms again. Arming that failed for
+    /// any other reason would fail again, so that boot waits for a power
+    /// cycle.
+    fn reset_stop<R>(&mut self, stage: ErrorStage, sector: Option<u32>) -> Step<R> {
+        self.reset_stopped = true;
+        let helps = stage == ErrorStage::Erase || self.skipped;
+        let marker = Region::<F, RESET_BASE, 1>::new();
+        let restart = helps && reset_marker::attempts(&marker) < reset_marker::ATTEMPTS;
+        if restart {
+            keys::want_restart();
+        }
+        let record = Record::ResetError {
+            stage,
+            sector,
+            restart,
+        };
+        next(POLL_MS, Some(record))
+    }
+}
+
+impl<F: FlashOps, P: Product<F>> Writer<F, P> {
+    /// Append one queued event, or answer one read; the faster poll while
+    /// either has more waiting.
+    fn events_step(&mut self, writable: bool) -> Step<P::Record> {
+        let core = &mut self.core;
+        let mut record = None;
+        let mut appended = false;
+        let mut deferred = false;
+        if let Some(queued) = events::pending() {
+            if !writable {
+                events::finish_pending(core.events.last_seq());
+            } else if let Some(_turn) = core.take_turn() {
+                appended = true;
+                arming::set_attempt();
+                let appended = core.events.append(queued.at, &queued.body);
+                arming::clear_attempt();
+                if appended.is_err() {
+                    record = Some(Record::EventError);
+                }
+                events::finish_pending(core.events.last_seq());
+                self.publish_fill();
+            } else {
+                // Stays at the queue's head, so the records keep their order.
+                deferred = true;
+            }
+        }
+        let core = &mut self.core;
+        // A reader catching up asks again as soon as it has the answer.
+        let served = events::read_request().is_some();
+        let read = core.answer_read();
+        // An upload's next chunk comes within a round trip of the last one.
+        core.receiving = core.receiving.saturating_sub(1);
+
+        // An event a feed's turn deferred holds off everything that would
+        // ask for that turn again, or the writer would contest the loop's
+        // claim every poll as the feed starts. Reads take no turn.
+        let writes = !deferred && (events::pending().is_some() || core.receiving > 0);
+        let delay_ms = if writes || read {
+            EVENTS_POLL_MS
+        } else {
+            POLL_MS
+        };
+        let mut step = next(delay_ms, record);
+        step.rested = !served && !appended && !deferred;
+        step
+    }
+
+    /// One step of the handover: the Wi-Fi's two sectors, the product's
+    /// cleared sectors (`Product::HANDOVER_CLEARED`), the clients, the
+    /// update store's floor, the boot confirmation, then the mark, each
+    /// under its own write turn and attempt marker. A cut anywhere repeats
+    /// it, since the mark goes last. A build with Wi-Fi of its own is a
+    /// bench image, which pairs through the recovery window rather than
+    /// Bluetooth, so it keeps its Wi-Fi, the product's cleared stores and
+    /// clients, but any image installed from stock has to take the same
+    /// version again, and earn its floor with a real trial.
+    ///
+    /// Only bank 0 forgets the confirmation. KM0 reads the record at every boot
+    /// but decides by bank 1's marker: with it not intact, as bank 0 boots after
+    /// stock, the record changes nothing, so a cut through the erase changes no
+    /// boot. On bank 1 this build's next boot would run a trial, with the Wi-Fi
+    /// it needs to pass just cleared, and give way. A step that fails leaves the
+    /// mark for the next boot, and this one serves what it has.
+    fn handover_step<H: Hooks>(&mut self) -> Step<P::Record> {
+        let Some(step) = self.core.handing_over else {
+            return next(POLL_MS, None);
+        };
+        if self.core.unarmed::<H>() {
+            return self.handover_end(Record::HandoverStopped { stage: step });
+        }
+        let Some(turn) = self.core.take_turn() else {
+            return next(WRITE_WAIT_POLL_MS, None);
+        };
+
+        // The steps: the Wi-Fi's two sectors, the product's, the clients,
+        // the update store, the confirmation, the mark.
+        let cleared = P::HANDOVER_CLEARED.len();
+        let clients = 2 + cleared;
+        let index = usize::from(step);
+        let clears = !cfg!(build_wifi);
+        arming::set_attempt();
+        let done = if index <= clients && !clears {
+            true
+        } else if index < 2 {
+            let sector = NET_BASE + u32::from(step);
+            F::erase(sector) && blank::<F>(sector)
+        } else if let Some(&sector) = P::HANDOVER_CLEARED.get(index - 2) {
+            F::erase(sector) && blank::<F>(sector)
+        } else if index == clients {
+            self.core.clients.open(Slots::new());
+            match self.core.clients.identity().copied() {
+                Some(identity) => self.core.clients.reset(&identity).is_ok(),
+                None => true,
+            }
+        } else if index == clients + 1 {
+            let mut update = UpdateStore::default();
+            update.open(Region::<F, UPDATE_BASE, 2>::new());
+            let started = match update.status {
+                // A newer schema's floor is not this build's to touch.
+                UpdateStatus::ReadOnly => true,
+                // Its floor is unknown and may still stand, so the mark
+                // stays and the next boot tries again.
+                UpdateStatus::Io => false,
+                _ => update.start_over().is_ok(),
+            };
+            if started {
+                wellfed_hal::ota::update::store_started_over();
+            }
+            started
+        } else if index == clients + 2 && sdk::running_bank() != Some(0) {
+            true
+        } else if index == clients + 2 {
+            F::erase(CONFIRM_SECTOR) && blank::<F>(CONFIRM_SECTOR)
+        } else {
+            F::erase(RESET_BASE) && blank::<F>(RESET_BASE)
+        };
+        arming::clear_attempt();
+        drop(turn);
+
+        if !done {
+            return self.handover_end(Record::HandoverStopped { stage: step });
+        }
+        if index < clients + 3 {
+            self.core.handing_over = Some(step + 1);
+            return next(RESET_POLL_MS, None);
+        }
+        self.handover_end(Record::HandoverDone { cleared: clears })
+    }
+
+    fn handover_end(&mut self, record: Record<P::Record>) -> Step<P::Record> {
+        self.core.handing_over = None;
+        if matches!(record, Record::HandoverStopped { .. }) {
+            network::handover_put_off();
+        }
+        self.core.net = NetStore::default();
+        self.core.net.open(Slots::new());
+        self.product.reopen_handed_over();
+        self.core.publish(&self.product);
+        next(POLL_MS, Some(record))
+    }
+
+    /// One step of a factory reset this boot finishes: one erase, under
+    /// its own write turn (so it waits for a feed's outputs to stop) and
+    /// attempt marker; then, after the marker's, the cleared stores open
+    /// empty and everything is published. A reset that cannot go on stops
+    /// for the boot with nothing served, and the marker brings it back on
+    /// the next.
+    fn reset_step<H: Hooks>(&mut self) -> Step<P::Record> {
+        let core = &mut self.core;
+        if core.reset_stopped {
+            if supervision::restart_grace() {
+                // Nothing to save before a restart.
+                supervision::restart_flushed();
+            }
+            return next(POLL_MS, None);
+        }
+        if core.unarmed::<H>() {
+            return core.reset_stop(ErrorStage::Unarmed, None);
+        }
+        let Some(index) = core.resetting else {
+            return next(POLL_MS, None);
+        };
+        let Some(turn) = core.take_turn() else {
+            return next(WRITE_WAIT_POLL_MS, None);
+        };
+
+        let marker = Region::<F, RESET_BASE, 1>::new();
+        arming::set_attempt();
+        let noted = core.reset_attempted || reset_marker::note_attempt(&marker);
+        let mut wear = Wear::Kept;
+        let mut keeping = None;
+        // Past the cleared sectors: the product's keep step, if it has one
+        // (asked once, at its index), then the marker.
+        let kept = if noted && index == FACTORY_CLEARED_SECTORS {
+            P::keep_on_reset()
+        } else {
+            None
+        };
+        let mut marked = false;
+        let step = match factory_cleared(index) {
+            _ if !noted => None,
+            Some(sector) => Some((sector, F::erase(sector) && blank::<F>(sector))),
+            None => match kept {
+                Some((sector, result)) => {
+                    wear = result;
+                    keeping = Some(sector);
+                    Some((sector, wear != Wear::Failed))
+                }
+                None => {
+                    marked = true;
+                    Some((RESET_BASE, F::erase(RESET_BASE) && blank::<F>(RESET_BASE)))
+                }
+            },
+        };
+        arming::clear_attempt();
+        drop(turn);
+        core.reset_attempted = noted;
+
+        // An attempt that did not land is a store this boot cannot count
+        // in, so it stops without asking for a restart; so does a kept
+        // store that took neither its save nor its erase (an erase
+        // elsewhere that failed may be retried).
+        let Some((sector, done)) = step else {
+            return core.reset_stop(ErrorStage::Save, Some(RESET_BASE));
+        };
+        if !done {
+            let stage = if keeping == Some(sector) {
+                ErrorStage::Save
+            } else {
+                ErrorStage::Erase
+            };
+            return core.reset_stop(stage, Some(sector));
+        }
+        if !marked {
+            core.resetting = Some(index + 1);
+            let record = (wear == Wear::Lost).then_some(Record::ResetWearLost);
+            return next(RESET_POLL_MS, record);
+        }
+        core.resetting = None;
+        self.open_cleared();
+        self.core.publish(&self.product);
+        let record = Record::ResetDone {
+            erased: FACTORY_CLEARED_SECTORS,
+        };
+        next(POLL_MS, Some(record))
+    }
+
+    /// Open the stores the Open stage serves that a factory reset clears,
+    /// the device's then the product's; the settings store's status.
+    fn open_cleared(&mut self) -> SettingsStatus {
+        let status = self.core.open_cleared();
+        self.product.open_cleared();
+        status
+    }
+
+    fn publish_fill(&self) {
+        P::events_filled(EventsFill {
+            kept: self.core.events.kept(),
+            capacity: self.core.events.capacity(),
+        });
+    }
+
+    fn publish(&self) {
+        self.core.publish(&self.product);
+    }
+
+    /// One task iteration.
+    ///
+    /// # Safety
+    /// `provider` is valid for the program's lifetime, stays at a fixed
+    /// address and is not otherwise borrowed.
+    pub unsafe fn step<M: Mmio, H: Hooks>(&mut self, provider: *mut Provider) -> Step<P::Record> {
+        match self.core.stage {
+            Stage::Open => {
+                self.product.open_kept();
+                let record = if reset_marker::pending(&Region::<F, RESET_BASE, 1>::new()) {
+                    self.core.resetting = Some(0);
+                    Record::ResetPending
+                } else {
+                    if handover::pending(&Region::<F, RESET_BASE, 1>::new()) {
+                        self.core.handing_over = Some(0);
+                    }
+                    let status = self.open_cleared();
+                    Record::Open {
+                        status,
+                        generation: self.core.store.generation,
+                        settings: self.core.store.settings,
+                    }
+                };
+                self.core.armed = H::armed();
+                self.core.stage = if self.core.armed {
+                    Stage::Idle
+                } else {
+                    Stage::Arm
+                };
+                self.publish();
+                let mut step = next(POLL_MS, Some(record));
+                step.settled = self.core.armed;
+                step
+            }
+
+            // SAFETY: the caller's contract.
+            Stage::Arm => match unsafe { self.core.arming.step::<M, H>(provider) } {
+                Poll::Pending(event) => next(arming::POLL_MS, event.map(Record::Arming)),
+                Poll::Armed(event) => {
+                    // Armed for the rest of the boot; each save marks its own attempt.
+                    arming::clear_attempt();
+                    self.core.armed = H::armed();
+                    self.core.stage = Stage::Idle;
+                    self.publish();
+                    let mut step = next(POLL_MS, Some(Record::Arming(event)));
+                    step.settled = true;
+                    step
+                }
+                Poll::Failed(event) => {
+                    self.core.skipped = matches!(event, arming::Event::Skip { .. });
+                    self.core.stage = Stage::Serve;
+                    self.publish();
+                    let mut step = next(POLL_MS, Some(Record::Arming(event)));
+                    step.settled = true;
+                    step
+                }
+            },
+
+            Stage::Idle | Stage::Serve => self.serve::<H>(),
+        }
+    }
+
+    /// The Idle and Serve stages' step.
+    fn serve<H: Hooks>(&mut self) -> Step<P::Record> {
+        // Before the keys, the event ring and the product's late stores
+        // open: each is a store the reset clears.
+        if self.core.resetting.is_some() {
+            return self.reset_step::<H>();
+        }
+        if self.core.handing_over.is_some() {
+            return self.handover_step::<H>();
+        }
+        let core = &mut self.core;
+        if !core.net_opened {
+            core.net_opened = true;
+            return next(
+                POLL_MS,
+                Some(Record::NetOpen {
+                    status: core.net.status,
+                    generation: core.net.generation,
+                    stored: core.net.credentials.is_some(),
+                }),
+            );
+        }
+        if !core.time_opened {
+            core.time_opened = true;
+            return next(
+                POLL_MS,
+                Some(Record::TimeOpen {
+                    status: core.time.status,
+                    generation: core.time.generation,
+                }),
+            );
+        }
+        if !core.keys_opened {
+            let writable = core.stage == Stage::Idle && H::armed();
+            // The seed and, on a first boot, the identity: one turn.
+            let turn = if writable {
+                let Some(turn) = core.take_turn() else {
+                    return core.waiting();
+                };
+                Some(turn)
+            } else {
+                None
+            };
+            core.keys_opened = true;
+            let record = core.keys(writable);
+            drop(turn);
+            return next(POLL_MS, Some(record));
+        }
+        if !core.events_opened {
+            core.events_opened = true;
+            // The product's rings open with the event ring, unlogged: each
+            // record they take logs its own line.
+            self.product.open_with_events();
+            let core = &mut self.core;
+            core.events
+                .open(Region::new(), EVENTS_UNITS as usize, fresh_epoch());
+            events::publish_open(core.events.epoch(), core.events.last_seq());
+            self.publish_fill();
+            let core = &self.core;
+            let record = Record::Events {
+                open: core.events.is_open(),
+                last: core.events.last_seq(),
+                oldest: core.events.oldest_seq(),
+                epoch: core.events.epoch(),
+            };
+            return next(POLL_MS, Some(record));
+        }
+        if let Some(record) = self.product.open_late() {
+            return next(POLL_MS, Some(Record::Product(record)));
+        }
+        let core = &mut self.core;
+        if let Some(change) = keys::pending() {
+            let writable = core.stage == Stage::Idle && H::armed();
+            let turn = if writable {
+                let Some(turn) = core.take_turn() else {
+                    return core.waiting();
+                };
+                Some(turn)
+            } else {
+                None
+            };
+            let record = core.change(change, writable);
+            drop(turn);
+            return next(POLL_MS, Some(record));
+        }
+        if let Some(credentials) = network::pending() {
+            let record = if core.unarmed::<H>() {
+                Record::NetError {
+                    stage: ErrorStage::Unarmed,
+                }
+            } else {
+                let Some(_turn) = core.take_turn() else {
+                    return core.waiting();
+                };
+                arming::set_attempt();
+                let saved = core.net.save(credentials.as_ref());
+                arming::clear_attempt();
+                if saved {
+                    Record::NetSaved {
+                        generation: core.net.generation,
+                        stored: core.net.credentials.is_some(),
+                    }
+                } else {
+                    Record::NetError {
+                        stage: ErrorStage::Save,
+                    }
+                }
+            };
+            self.publish();
+            network::finish();
+            return next(POLL_MS, Some(record));
+        }
+        if let Some(settings) = time::pending() {
+            let record = if core.unarmed::<H>() {
+                Record::TimeError {
+                    stage: ErrorStage::Unarmed,
+                }
+            } else if settings == core.time.settings && core.time.generation != 0 {
+                Record::TimeSaved {
+                    generation: core.time.generation,
+                }
+            } else {
+                let Some(_turn) = core.take_turn() else {
+                    return core.waiting();
+                };
+                arming::set_attempt();
+                let saved = core.time.save(&settings);
+                arming::clear_attempt();
+                if saved {
+                    Record::TimeSaved {
+                        generation: core.time.generation,
+                    }
+                } else {
+                    Record::TimeError {
+                        stage: ErrorStage::Save,
+                    }
+                }
+            };
+            self.publish();
+            time::finish();
+            return next(POLL_MS, Some(record));
+        }
+        if let Some(step) = self.product.mailboxes::<H>(&mut self.core) {
+            return step;
+        }
+        let core = &mut self.core;
+        let Some(fields) = settings::pending() else {
+            let writable = core.stage == Stage::Idle && H::armed();
+            if let Some(step) = self.product.rest(&mut self.core, writable) {
+                return step;
+            }
+            if !writable && supervision::restart_grace() {
+                // Nothing to save before a restart.
+                supervision::restart_flushed();
+            }
+            return self.events_step(writable);
+        };
+        let target = core.store.settings.changed(fields);
+        let record = if core.unarmed::<H>() {
+            Record::Error {
+                stage: ErrorStage::Unarmed,
+                status: core.store.status,
+            }
+        } else if target == core.store.settings {
+            Record::Saved {
+                generation: core.store.generation,
+                settings: target,
+            }
+        } else {
+            let Some(_turn) = core.take_turn() else {
+                return core.waiting();
+            };
+            arming::set_attempt();
+            let saved = core.store.save(&target);
+            arming::clear_attempt();
+            if saved {
+                Record::Saved {
+                    generation: core.store.generation,
+                    settings: core.store.settings,
+                }
+            } else {
+                Record::Error {
+                    stage: ErrorStage::Save,
+                    status: core.store.status,
+                }
+            }
+        };
+        self.publish();
+        settings::finish();
+        next(POLL_MS, Some(record))
+    }
+}

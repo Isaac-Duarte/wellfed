@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/platform/feeder_ports.dart';
@@ -14,9 +15,22 @@ import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/restore/restore.dart';
 import 'package:wellfed/state/update/update.dart';
+import 'package:wellfed/state/wifi/networks.dart';
 
 /// Where a recording comes from.
 typedef PickRecording = Future<Uint8List?> Function();
+
+/// How a change to the address this phone dials ended.
+enum AddressChange {
+  /// This phone dials it from now on.
+  saved,
+
+  /// The text is not `ip` or `ip:port`.
+  invalid,
+
+  /// The app's file could not be written, so nothing changed.
+  notSaved,
+}
 
 /// One known feeder for the Home card: keeps a session open while the app
 /// runs, reconnecting with backoff, and runs feeds through it. Every feed
@@ -69,6 +83,12 @@ class FeederController extends ChangeNotifier {
 
   /// The phone's microphone, for recording the meal call here.
   Recorder get recorder => _ports.recorder;
+
+  /// The Wi-Fi this phone is on, when Android will say.
+  Future<String?> currentNetwork() => _ports.currentNetwork();
+
+  /// The networks this phone hears, for the feeder's Wi-Fi.
+  Future<NetworkScan> scanNetworks() => _ports.scanNetworks();
 
   /// Run `pick`: what it gave, and whether the file could be read.
   Future<(Uint8List?, bool)> readRecording(PickRecording pick) async {
@@ -176,11 +196,45 @@ class FeederController extends ChangeNotifier {
     }
     _setState(
       _state.copyWith(
-        known: KnownFeeder(identity: known.identity, name: trimmed, address: known.address),
+        known: KnownFeeder(
+          identity: known.identity,
+          name: trimmed,
+          address: known.address,
+          manualAddress: known.manualAddress,
+        ),
       ),
     );
     return true;
   }
+
+  /// Dial this feeder at `text` (`ip` or `ip:port`) from now on, or look for it
+  /// on the network again when `text` is blank. A session open elsewhere ends
+  /// so the next one dials the new address at once.
+  Future<AddressChange> setManualAddress(String text) async {
+    final String? address = text.trim().isEmpty ? null : _ports.parseAddress(text);
+    if (address == null && text.trim().isNotEmpty) return AddressChange.invalid;
+    final KnownFeeder known = _state.known;
+    if (address == known.manualAddress) return AddressChange.saved;
+
+    try {
+      await _book.setManualAddress(known.identity, address);
+    } on BridgeError {
+      return AddressChange.notSaved;
+    }
+    _setState(
+      _state.copyWith(
+        known: KnownFeeder(identity: known.identity, name: known.name, address: known.address, manualAddress: address),
+      ),
+    );
+
+    _redial = true;
+    _session?.close();
+    _wake?.call();
+    return AddressChange.saved;
+  }
+
+  /// The address changed, so the loop dials again without its backoff.
+  bool _redial = false;
 
   /// One request to the feeder. A write goes out once and is never sent
   /// again; the reply says how it ended, an unknown end included.
@@ -226,6 +280,11 @@ class FeederController extends ChangeNotifier {
         if (opened) retry = _retryFirst;
       }
       if (_disposed) return;
+      if (_redial) {
+        _redial = false;
+        retry = _retryFirst;
+        continue;
+      }
       final bool woken = await _pause(retry);
       retry = woken
           ? _retryFirst
@@ -257,8 +316,11 @@ class FeederController extends ChangeNotifier {
     return woken;
   }
 
-  /// The last address, or NSD's when there is none or it stopped working.
+  /// The owner's address when they gave one, which NSD can't reach past;
+  /// otherwise the last address, or NSD's when there is none or it stopped
+  /// working.
   Future<String?> _address() async {
+    if (_state.known.manualAddress case final String manual?) return manual;
     if (_state.connection != Connection.offline && _state.known.address != null) {
       return _state.known.address;
     }
@@ -301,19 +363,23 @@ class FeederController extends ChangeNotifier {
               calibration: () => null,
             ),
           );
-          try {
-            await _book.answeredAt(_state.known.identity, address);
-            final KnownFeeder known = _state.known;
-            _setState(
-              _state.copyWith(
-                known: _book.feeders.firstWhere((f) => f.identity == known.identity, orElse: () => known),
-              ),
-            );
-          } on BridgeError {
-            // Only a hint for the next start; NSD finds the feeder anyway.
+          // The owner's address may be a VPN's route, which updates and
+          // restores can't use, so only where NSD found the feeder is kept.
+          if (address != _state.known.manualAddress) {
+            try {
+              await _book.answeredAt(_state.known.identity, address);
+              final KnownFeeder known = _state.known;
+              _setState(
+                _state.copyWith(
+                  known: _book.feeders.firstWhere((f) => f.identity == known.identity, orElse: () => known),
+                ),
+              );
+            } on BridgeError {
+              // Only a hint for the next start; NSD finds the feeder anyway.
+            }
           }
         case SessionUpdate_Status(card: final Card card):
-          _setState(_state.copyWith(card: card, cardAt: DateTime.now(), cardFresh: true));
+          _setState(_state.copyWith(card: card, cardAt: clock.now(), cardFresh: true));
         case SessionUpdate_FeedStarted(:final int feed, :final int portions, :final int dueSeconds):
           _feedDue?.cancel();
           _feedDue = Timer(Duration(seconds: dueSeconds), _feedOverdue);

@@ -55,6 +55,7 @@ use wellfed_image::bank::BANK1;
 use wellfed_image::ota::STOCK_SHA256;
 use wellfed_image::review::frozen;
 use wellfed_image::root::Root;
+use wellfed_proto::device::Model;
 
 mod error;
 
@@ -333,6 +334,27 @@ impl Frozen {
         self.kind
     }
 
+    /// The device model the image is built for, which its manifest names:
+    /// a build's own, as its frozen build manifest records it, and for the
+    /// pinned stock image the PLAF103 (the pin is its stock). A device no
+    /// model has is refused, and so is any model but the PLAF103, whose
+    /// frozen `plaf103_*` review kinds are the only ones this signs.
+    pub fn model(&self) -> Result<Model> {
+        let Some(manifest) = &self.manifest else {
+            return Ok(Model::Plaf103);
+        };
+        let model = Model::ALL
+            .into_iter()
+            .find(|model| model.name() == manifest.device)
+            .ok_or_else(|| FrozenError::UnknownDevice {
+                device: manifest.device.clone(),
+            })?;
+        require(model == Model::Plaf103, || FrozenError::OtherModel {
+            model,
+        })?;
+        Ok(model)
+    }
+
     /// The build ID the manifest will carry, as lowercase hex.
     pub fn build_id(&self) -> String {
         hex::encode(&self.build_id)
@@ -368,6 +390,7 @@ impl Frozen {
         let signed = Signed {
             manifest,
             kind,
+            model: self.model()?.code(),
             key_id: key.id(),
         };
         let body = offer::manifest_body(&signed);
@@ -441,6 +464,42 @@ mod tests {
     use super::*;
 
     const BUILD: &str = "8a13e59efa15e56b5f5e32825909dc45e381a2027abc65d8de6658c40b302447";
+
+    /// A frozen build whose manifest names `device`.
+    fn build_for(device: &str) -> Frozen {
+        Frozen {
+            image: container(SECTOR, |i| u8::try_from(i % 251).unwrap()),
+            kind: ImageKind::Build,
+            build_id: [0x8a; 32],
+            manifest: Some(BuildManifest {
+                device: device.into(),
+                ..BuildManifest::default()
+            }),
+        }
+    }
+
+    /// The model a manifest names is the build's own, never assumed: only a
+    /// PLAF103 build signs, and a device no model has is refused.
+    #[test]
+    fn a_build_signs_as_the_model_its_manifest_names() {
+        assert_eq!(build_for("plaf103").model().unwrap(), Model::Plaf103);
+        assert!(matches!(
+            build_for("plwf106").model(),
+            Err(Error::Frozen(FrozenError::OtherModel {
+                model: Model::Plwf106
+            }))
+        ));
+        assert!(matches!(
+            build_for("plaf999").model(),
+            Err(Error::Frozen(FrozenError::UnknownDevice { device })) if device == "plaf999"
+        ));
+        let key = bench_key(3);
+        assert!(
+            build_for("plwf106")
+                .offer(&key, 9, Motion::Refused)
+                .is_err()
+        );
+    }
 
     /// An OTA container of `len` payload bytes starting with the marker.
     fn container(len: usize, fill: impl Fn(usize) -> u8) -> Vec<u8> {
@@ -534,6 +593,7 @@ mod tests {
         let built_in = [key.public()];
         let device = [0x42; 32];
         let context = |floor| Context {
+            model: 1,
             ring: KeyRing {
                 built_in: &built_in,
                 added: None,
@@ -624,6 +684,7 @@ mod tests {
         const BENCH: [[u8; 32]; 1] = [[0x0b; 32]];
         fn context(enrolled: &[[u8; 32]]) -> Context<'_> {
             Context {
+                model: 1,
                 ring: KeyRing {
                     built_in: &BENCH,
                     added: None,

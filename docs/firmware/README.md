@@ -88,18 +88,24 @@ The full inventory, with how to write a firmware, is the [firmware guide](../../
 | `wellfed-session` | Noise, HMAC, the setup code and framing, shared with clients |
 | `wellfed-core` | Controller, portions, sensors, motor gate, clock and the stores |
 | `wellfed-hal-common` | Code both cores link: RAM parking, flash hooks, the boot trial, panics |
-| `wellfed-hal` | KM4 ports: GPIO, ADC, timers, watchdog, flash leases, the update stage |
+| `wellfed-hal` | The chip HAL: KM4 GPIO, ADC, timers, watchdog, flash leases, the update stage, and the buttons, lights, buzzer and audio drivers |
+| `wellfed-hal-feeder` | The feeder's drivers above the chip HAL: the motor, beams and feedback board, its timer events and the feeding owner |
 | `wellfed-sdk` | The KM4 runtime every firmware runs inside |
 | `wellfed-probes` | The bench probes |
 | `wellfed-amebad-sys` | Bindings to the pinned AmebaD SDK, and its host fake |
-| `wellfed-board-plaf103` | The PLAF103's pins, ADC channels and storage map |
+| `wellfed-board` | The board contract: the one board crate `WELLFED_BOARD` names, checked for every item |
+| `wellfed-board-plaf103` | The PLAF103's pins, ADC channels, storage map and safe output state |
+| `wellfed-board-plwf106` | The PLWF106's pins, safe output state and stock flash; no store yet |
 | `wellfed-testkit`, `wellfed-sim` | Fake NOR storage and the virtual feeder |
 | `wellfed-proto` | The device protocol's messages |
 | `wellfed-device-api` | The feeder's side of the device API and pairing |
-| `wellfed-feeder` | Product policy and the loop itself |
-| `wellfed-feeder-runtime` | The product's stores on the SDK runtime |
+| `wellfed-device` | Policy every device shares: the settings, Wi-Fi, client, time, event and trace stores, the reset marker and the update view |
+| `wellfed-device-runtime` | Those stores on the SDK runtime: the settings writer over a kind's own stores, and its mailboxes |
+| `wellfed-feeder` | The feeder's policy, its own stores and the loop itself |
+| `wellfed-feeder-runtime` | The feeder's stores in the settings writer, their mailboxes, and the writer's settings stage |
 | `wellfed-fw-feeder` | The product firmware |
 | `wellfed-fw-qa`, `wellfed-fw-bringup`, `wellfed-fw-blink` | The self-test, bring-up and minimal firmwares |
+| `wellfed-fw-fountain` | The PLWF106's boot test, with no SDK runtime |
 
 ## Evidence
 

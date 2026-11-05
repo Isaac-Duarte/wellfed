@@ -1,5 +1,8 @@
 package io.github.isaacduarte.wellfed
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -92,6 +95,7 @@ class MainActivity : FlutterActivity() {
                 "phoneAddress" -> result.success(homeAddress())
                 "joinFeeder" -> joinFeeder(result)
                 "leaveFeeder" -> leaveFeeder(result)
+                "scanNetworks" -> result.success(scanNetworks())
                 else -> result.notImplemented()
             }
         }
@@ -202,6 +206,46 @@ class MainActivity : FlutterActivity() {
         poll.run()
     }
 
+    // The networks this phone hears, for the owner to pick the feeder's. It
+    // never fails: what stops a scan comes back as `problem`, and the owner
+    // types the name instead. Android throttles scans to a few a minute; the
+    // last results come back either way.
+    private fun scanNetworks(): Map<String, Any> {
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return mapOf("problem" to "permission")
+        }
+        val wifiManager = getSystemService(WifiManager::class.java)
+        if (wifiManager == null || !wifiManager.isWifiEnabled) return mapOf("problem" to "wifiOff")
+        if (getSystemService(LocationManager::class.java)?.isLocationEnabled == false) {
+            return mapOf("problem" to "locationOff")
+        }
+
+        @Suppress("DEPRECATION")
+        wifiManager.startScan()
+        val results =
+            try {
+                wifiManager.scanResults
+            } catch (_: SecurityException) {
+                return mapOf("problem" to "permission")
+            }
+        val networks =
+            results.mapNotNull { result ->
+                @Suppress("DEPRECATION")
+                val ssid = result.SSID?.removeSurrounding("\"").orEmpty()
+                if (ssid.isEmpty()) {
+                    null
+                } else {
+                    mapOf(
+                        "ssid" to ssid,
+                        "frequencyMhz" to result.frequency,
+                        "level" to result.level,
+                        "secured" to SECURED.any { result.capabilities.contains(it) },
+                    )
+                }
+            }
+        return mapOf("networks" to networks)
+    }
+
     override fun onDestroy() {
         feeder?.let { connectivity.unregisterNetworkCallback(it) }
         feeder = null
@@ -226,5 +270,9 @@ class MainActivity : FlutterActivity() {
         const val JOIN_TIMEOUT_MS = 60_000
         const val HOME_WAIT_MS = 30_000L
         const val HOME_POLL_MS = 250L
+
+        // A network asks for a password when its capabilities name one of
+        // these. OWE encrypts with no password, so it isn't here.
+        val SECURED = listOf("WEP", "PSK", "SAE", "EAP")
     }
 }

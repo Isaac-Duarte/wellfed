@@ -52,6 +52,7 @@ fn serve_refuses_a_plan_snapshot() {
         storage::write_json(&path, &config).unwrap();
 
         let output = Command::new(env!("CARGO_BIN_EXE_wellfed-stock"))
+            .args(["--device", "plaf103"])
             .args(["serve", "--config"])
             .arg(&path)
             .output()

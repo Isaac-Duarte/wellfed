@@ -5,7 +5,8 @@
 //!   the pushed history and the debug log in two rings, each to its own
 //!   bound, that `GET /device/pushed` serves;
 //! - follows the feeder's debug log into the state's tail and into
-//!   [`DEVICE_LOG`], through a buffer that is never synced;
+//!   [`DEVICE_LOG`], through a buffer that is never synced, with a marker
+//!   where the feeder overwrote lines before it sent them;
 //! - reads the status every 10 s, and sets the clock as `wellfed time`
 //!   does (this host's zone) when it is invalid or more than 2 s off;
 //! - carries the requests of the `wellfed` CLI (`POST /device/ask`) and of
@@ -43,7 +44,7 @@ use wellfed_formats::bench::notes::Seen;
 use wellfed_formats::bench::now;
 use wellfed_formats::hex;
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
-use wellfed_model::{Answer, Op, Pushed, Status};
+use wellfed_model::{Answer, LogLines, Op, Pushed, Status};
 use wellfed_rig::device::{self, DeviceError, DeviceLink, Owner};
 
 use crate::server::banks::Banks;
@@ -930,7 +931,7 @@ impl Open<'_> {
                 boot_count: status.boot_count,
                 rssi: status.rssi,
                 clock_ms: clock_ms.and_then(|ms| u64::try_from(ms).ok()),
-                locked: status.locked,
+                locked: status.feeder().and_then(|feeder| feeder.locked),
                 last_event: status.last_event,
                 sessions: status.sessions,
             });
@@ -966,18 +967,22 @@ impl Open<'_> {
 
         // Once a session, after its first status: the log's line numbers
         // count from each boot, so after a restart the tail starts again
-        // from the oldest line the feeder keeps, and otherwise after the
-        // last line already written.
+        // from the boot's first line, and otherwise after the last line
+        // already written. A boot this server saw follow another is read
+        // after line 0, so lines the feeder overwrote before this session
+        // come back as dropped and get their marker; a server that has
+        // followed no boot yet cannot tell its own lines from a new boot's,
+        // and reads from the oldest line kept.
         if !self.tailing {
             self.tailing = true;
-            let after = match *self.log_after {
-                Some((boot, seq)) if boot == status.boot_count => Some(seq),
-                _ => None,
+            let (after, new_boot) = match *self.log_after {
+                Some((boot, seq)) if boot == status.boot_count => (Some(seq), false),
+                Some(_) => (Some(0), true),
+                None => (None, true),
             };
             *self.log_after = Some((status.boot_count, after.unwrap_or(0)));
-            // A tail from the oldest line is another boot's numbering:
-            // the held log starts again with it.
-            if after.is_none() {
+            // Another boot's numbering: the held log starts again with it.
+            if new_boot {
                 self.logs.reset(None, None);
             }
             self.request(Purpose::Tail, &Op::TailLog { after });
@@ -1009,11 +1014,11 @@ impl Open<'_> {
                 if let Some((_, seq)) = self.log_after.as_mut() {
                     *seq = batch.seq;
                 }
-                self.log.write(&batch.lines);
+                let lines = tail_lines(batch);
+                self.log.write(&lines);
                 for line in &batch.lines {
                     self.notes.seen(&Seen::Line(line));
                 }
-                let lines = batch.lines.clone();
                 self.store.update(|state| {
                     state.feeder.log.extend(lines);
                     trim_tail(&mut state.feeder.log);
@@ -1033,6 +1038,24 @@ impl Open<'_> {
             let _ = files::replace_json(&self.root.join(DEVICE_CURSOR), &kept);
         }
     }
+}
+
+/// A batch's lines as the device log and the state's tail keep them: after
+/// a hole (the feeder overwrote lines after the cursor before it sent
+/// them, as a long reconnection can), a marker comes first that says how
+/// many are missing. No feeder line starts with `--` (its records start
+/// with `PL`, the runtime's with a word), so the marker is never mistaken
+/// for one.
+fn tail_lines(batch: &LogLines) -> Vec<String> {
+    let mut lines = Vec::with_capacity(batch.lines.len() + 1);
+    match batch.dropped {
+        0 => {}
+        1 => lines.push("-- 1 line not in the feeder's tail --".to_owned()),
+        dropped => lines.push(format!("-- {dropped} lines not in the feeder's tail --")),
+    }
+
+    lines.extend(batch.lines.iter().cloned());
+    lines
 }
 
 /// The feeder's log as files, one a UTC day, each line stamped with the
@@ -1087,7 +1110,7 @@ impl DeviceLog {
 
 #[cfg(test)]
 mod tests {
-    use wellfed_model::{Event, EventBody};
+    use wellfed_model::{CoreEvent, Event, EventBody};
 
     use super::*;
 
@@ -1096,10 +1119,10 @@ mod tests {
             epoch: 1,
             seq,
             at: None,
-            body: EventBody::Boot {
+            body: EventBody::Core(CoreEvent::Boot {
                 bank: 1,
                 reset_flags: 0,
-            },
+            }),
         })
     }
 
@@ -1120,6 +1143,29 @@ mod tests {
         // 11 to 13 fell out: the ring now holds every event after 13.
         assert_eq!((page.first, page.next, page.floor), (3, 7, Some(13)));
         assert_eq!(page.messages.len(), 4);
+    }
+
+    #[test]
+    fn a_hole_in_the_log_is_marked_before_the_lines_after_it() {
+        let batch = |dropped| LogLines {
+            seq: 40,
+            dropped,
+            lines: vec!["PLOWN1 state=6".to_owned(), "PLFEED2 fed id=7".to_owned()],
+        };
+
+        assert_eq!(tail_lines(&batch(0)), batch(0).lines);
+        assert_eq!(
+            tail_lines(&batch(6)),
+            [
+                "-- 6 lines not in the feeder's tail --",
+                "PLOWN1 state=6",
+                "PLFEED2 fed id=7",
+            ]
+        );
+        assert_eq!(
+            tail_lines(&batch(1))[0],
+            "-- 1 line not in the feeder's tail --"
+        );
     }
 
     #[test]

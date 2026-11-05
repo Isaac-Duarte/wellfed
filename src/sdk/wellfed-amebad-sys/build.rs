@@ -3,11 +3,18 @@
 //! Only KM4 target builds run bindgen; host and KM0 builds generate nothing.
 //! The function and type allowlists keep the generated surface to exactly
 //! what the ports call, so a new SDK use has to be added here deliberately.
+//!
+//! Also forwards the board `wellfed-board` chose, for the host fake's
+//! board-specific inputs.
+
+#[path = "../wellfed-board/build/forward.rs"]
+mod board;
 
 fn main() {
     println!("cargo:rerun-if-changed=sdk_wrapper.h");
     println!("cargo:rerun-if-env-changed=WELLFED_SDK_DIR");
     println!("cargo:rerun-if-env-changed=WELLFED_NEWLIB_INCLUDE");
+    board::forward();
     #[cfg(feature = "sdk")]
     sdk::generate();
 }

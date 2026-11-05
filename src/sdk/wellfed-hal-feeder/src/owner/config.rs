@@ -1,0 +1,148 @@
+//! Owner configuration and the static checks `Owner::start` applies.
+
+use core::ptr;
+
+use wellfed_core::adc_scale::AdcCalibration;
+use wellfed_core::feed::controller::{FeedController, FeedLimits};
+use wellfed_core::feed::feedback::CAPACITY;
+use wellfed_core::feed::food_read::FOOD_READ_MS;
+use wellfed_core::feed::progress::BowlMode;
+use wellfed_core::feed::sensor_inputs::{SensorInputs, SensorLimits};
+use wellfed_core::flash_coord::{FlashCoord, FlashLimits};
+use wellfed_core::interval_valid;
+
+use crate::events::{self, EventsConfig};
+use wellfed_hal::sdk;
+use wellfed_hal::supervision::config::WATCHDOG;
+
+#[derive(Clone, Copy, Debug)]
+pub struct OwnerConfig {
+    pub feed: FeedLimits,
+    pub sensors: SensorLimits,
+    pub events: EventsConfig,
+    /// The longest the owner may go without a beat while outputs may move
+    /// (preparing, feeding, reporting); at most the runtime watchdog's own
+    /// progress gap, whose expiry bounds were checked for it.
+    pub max_progress_gap_ms: u32,
+    /// The same, at rest: the outputs are stopped and the runtime checks
+    /// that itself, so the beat only shows the stepping task is alive, and
+    /// higher-priority tasks (the Wi-Fi driver's handshake) may hold it off
+    /// for longer than the active gap.
+    pub idle_gap_ms: u32,
+    pub bowl_mode: BowlMode,
+
+    pub sample_period_ms: u32,
+    /// At rest the owner still polls the GPIO, renews its lease and beats every
+    /// `sample_period_ms`, but converts the battery only this often, and the
+    /// motor current not at all. Inside the sensors' age limit and the motor
+    /// lease, though neither depends on it: both are renewed by the poll.
+    pub rest_capture_ms: u32,
+    pub prepare_timeout_ms: u32,
+    pub optics_max_on_ms: u32,
+    pub motor_deadtime_ms: u32,
+    pub motor_lease_ms: u32,
+    pub adc_poll_limit: u32,
+    pub wake_lock_id: u32,
+
+    /// Required external authority. Platform boot/transport establishes IDLE
+    /// before start. Retain beyond owner STOPPED until global transport teardown.
+    pub flash: *mut FlashCoord,
+}
+
+impl Default for OwnerConfig {
+    fn default() -> Self {
+        Self {
+            feed: FeedLimits::default(),
+            sensors: SensorLimits::default(),
+            events: EventsConfig::default(),
+            max_progress_gap_ms: 0,
+            idle_gap_ms: 0,
+            bowl_mode: BowlMode::default(),
+            sample_period_ms: 0,
+            rest_capture_ms: 0,
+            prepare_timeout_ms: 0,
+            optics_max_on_ms: 0,
+            motor_deadtime_ms: 0,
+            motor_lease_ms: 0,
+            adc_poll_limit: 0,
+            wake_lock_id: 0,
+            flash: ptr::null_mut(),
+        }
+    }
+}
+
+impl OwnerConfig {
+    pub fn valid(&self) -> bool {
+        let c = self;
+        if !interval_valid(c.max_progress_gap_ms)
+            || c.max_progress_gap_ms > WATCHDOG.max_progress_gap_ms
+            || c.max_progress_gap_ms <= c.sample_period_ms
+            || c.idle_gap_ms < c.max_progress_gap_ms
+            || !interval_valid(c.idle_gap_ms)
+            || !interval_valid(c.sample_period_ms)
+            || !interval_valid(c.prepare_timeout_ms)
+            || !interval_valid(c.optics_max_on_ms)
+            || c.motor_deadtime_ms == 0
+            || !interval_valid(c.motor_lease_ms)
+            || c.motor_lease_ms <= c.motor_deadtime_ms
+            || c.sample_period_ms >= c.motor_lease_ms / 3
+            || c.sample_period_ms > c.sensors.max_age_ms
+            || c.sample_period_ms > c.sensors.max_observation_gap_ms
+            || c.sample_period_ms > c.feed.max_observation_gap_ms
+            || c.sample_period_ms > c.events.max_feedback_age_ms
+            || c.rest_capture_ms < c.sample_period_ms
+            || c.rest_capture_ms > c.sensors.max_age_ms
+            || c.rest_capture_ms >= c.motor_lease_ms
+            || c.events.max_feedback_age_ms >= c.feed.feedback_inhibit_ms
+            || c.sensors.optical_settle_ms >= c.prepare_timeout_ms
+            || c.sensors.power_settle_ms >= c.prepare_timeout_ms
+            || u64::from(c.prepare_timeout_ms) + u64::from(c.feed.max_duration_ms)
+                > u64::from(c.optics_max_on_ms)
+            // A food reading's window must let the filter say low, with a
+            // sample's lag at each of its two ends.
+            || u64::from(c.sensors.optical_settle_ms)
+                + u64::from(c.sensors.food_low_delay_ms)
+                + 2 * u64::from(c.sample_period_ms)
+                > u64::from(FOOD_READ_MS)
+            || c.events.ticks_per_second < 1000
+            || c.events.ticks_per_second > 1_000_000
+            || c.events.timer_period_ms == 0
+            || c.events.timer_period_ms >= c.motor_lease_ms / 3
+            || c.events.feedback_capacity == 0
+            || usize::from(c.events.feedback_capacity) > CAPACITY
+            || c.adc_poll_limit == 0
+            || c.adc_poll_limit > 1_000_000
+            || c.wake_lock_id < sdk::PMU_USER_BASE
+            || c.wake_lock_id > sdk::PMU_MAX
+            || c.wake_lock_id == 17
+        {
+            return false;
+        }
+
+        // Only validate structure/ranges here; real efuse calibration is read by open.
+        let calibration = AdcCalibration {
+            offset: 2480,
+            gain: 12050,
+            ..AdcCalibration::default()
+        };
+        events::period_ticks(&c.events).is_some()
+            && FeedController::new(&c.feed, 0).is_some()
+            && SensorInputs::new(&c.sensors, &calibration).is_some()
+    }
+
+    /// Whether a whole flash lease fits between two beats. During a lease
+    /// the owner cannot beat, so the gap between two beats spans up to one
+    /// sample period before the lease, the entire lease budget, one sample
+    /// period after it, and two timer periods of scheduling/timer
+    /// granularity before the first post-lease beat (it also needs a fresh
+    /// timer interrupt). That sum must stay below `max_progress_gap_ms`. The
+    /// runtime's hardware counter, whose shortest expiry its configuration
+    /// requires to exceed twice its own gap (at least this one), then also
+    /// covers an IRQ-masked lease.
+    pub fn lease_fits(&self, limits: &FlashLimits) -> bool {
+        let needed = u64::from(limits.total_ms)
+            + 2 * u64::from(self.sample_period_ms)
+            + 2 * u64::from(self.events.timer_period_ms);
+        limits.total_ms != 0 && needed < u64::from(self.max_progress_gap_ms)
+    }
+}

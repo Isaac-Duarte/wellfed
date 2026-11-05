@@ -1,13 +1,15 @@
 //! Freeze a reviewed development image offline: `wellfed-build review`.
 //!
 //! A frozen review is the only form in which `wellfed-flash` accepts an
-//! image to install. For a PLAF103 first-boot build it re-derives the
+//! image to install. For a first-boot build of either model it re-derives the
 //! build's inputs from the current sources, re-hashes every input, overlay,
 //! artifact and archive the manifest names, and re-runs the linked-code
 //! audits. It then executes the actual factory loader (`wellfed-emu`) on
-//! the pinned baseline with the image alone in each bank. The original stock
-//! image is frozen by hash only. No serial port opens, and nothing claims
-//! the application boots.
+//! the model's pinned flash (the PLAF103's baseline, the PLWF106's backup)
+//! with the image alone in each bank: both models run the same loader. The
+//! PLAF103's original stock image is frozen by hash only; the fountain has
+//! no stock OTA. No serial port opens, and nothing claims the application
+//! boots.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -25,6 +27,7 @@ use wellfed_formats::review::{
 };
 use wellfed_image::ota::{STOCK_SHA256, container, images};
 use wellfed_image::root::Root;
+use wellfed_proto::device::Model;
 
 use crate::identity::current_inputs;
 use crate::image::audit_build;
@@ -43,8 +46,10 @@ pub enum ReviewError {
     PrivateBuild,
     #[error("Development image exceeds aligned bank-1 footprint")]
     Footprint { bytes: usize },
-    #[error("Only the reviewed PLAF103 UART startup profile is supported")]
+    #[error("Only a reviewed UART startup profile is supported")]
     Profile { device: String, profile: String },
+    #[error("The fountain's flash fixture is not its pinned backup")]
+    Backup,
     #[error("Build manifest names no firmware; rebuild it")]
     NoFirmware,
     #[error("Unexpected SDK/toolchain")]
@@ -90,10 +95,21 @@ pub enum ReviewError {
     Mapping { bank: u8, core: usize },
     #[error("Single-valid diagnostic bank selection differs")]
     Selection { bank: u8 },
+    /// With the pinned flash's bank 0 left valid and the image in bank 1, as
+    /// an install leaves them, the loader did not choose bank 1.
+    #[error("The loader does not choose the image installed in bank 1")]
+    Installed { stop: Stop, result: u32 },
+    /// Beside the installed image, bank 0 no longer passes the loader's own
+    /// check, so the case would not show bank 1 winning over valid stock.
+    #[error("Bank 0 fails the loader's check beside the installed image")]
+    InstalledStock { stop: Stop, result: u32 },
 }
 
-/// Bank 1's extent; a development image must fit it sector-aligned.
+/// The PLAF103's bank-1 extent; a development image must fit it
+/// sector-aligned.
 const BANK_BYTES: usize = 0x15_0000;
+/// The PLWF106's bank-1 write window: stock bank 0's rounded footprint.
+const FOUNTAIN_BANK_BYTES: usize = 0xe_b000;
 const SECTOR: usize = 4096;
 const ARTIFACTS: [&str; 4] = [
     "OTA_All.bin",
@@ -101,8 +117,8 @@ const ARTIFACTS: [&str; 4] = [
     "km0_km4_image2.bin",
     "km4_image2_all.bin",
 ];
-/// The device whose stock image, baseline and factory loader a review pins.
-const DEVICE: &str = "plaf103";
+/// The device whose stock OTA a stock review freezes.
+const DEVICE: &str = Model::Plaf103.name();
 const SCOPE: &str =
     "Package, linked code, stock pulls and modeled mapping; application behavior requires review";
 
@@ -116,26 +132,34 @@ pub fn freeze(repo: &Repo, kind: ImageKind, build: &Path, output: &Path) -> Resu
         ReviewError::Output
     })?;
 
-    let (image, manifest, review) = match kind {
+    let (image, manifest, review, model) = match kind {
         ImageKind::Stock => {
             let image = fs::read(Device::new(repo, DEVICE)?.stock(repo)?.image)?;
             require(sha256(&image) == STOCK_SHA256, || ReviewError::Stock)?;
             let details = Details::Stock {
                 stock_sha256: STOCK_SHA256.into(),
             };
-            (image, None, details)
+            (image, None, details, Model::Plaf103)
         }
         ImageKind::Build => {
             require(root.is_private(&build), || ReviewError::PrivateBuild)?;
-            let (image, manifest, details) = review(repo, &build)?;
-            (image, Some(manifest), Details::Build(Box::new(details)))
+            let (image, manifest, details, model) = review(repo, &build)?;
+            (
+                image,
+                Some(manifest),
+                Details::Build(Box::new(details)),
+                model,
+            )
         }
     };
 
-    let payload = bank_payload(&image)?;
+    let payload = model_payload(&image, model)?;
     let result = ImageReview {
         schema_version: SCHEMA_VERSION,
-        kind: ReviewKind::Plaf103DevelopmentImage,
+        kind: match model {
+            Model::Plaf103 => ReviewKind::Plaf103DevelopmentImage,
+            Model::Plwf106 => ReviewKind::Plwf106DevelopmentImage,
+        },
         image_kind: kind,
         ota_sha256: sha256(&image),
         payload_sha256: sha256(payload),
@@ -161,12 +185,21 @@ pub fn freeze(repo: &Repo, kind: ImageKind, build: &Path, output: &Path) -> Resu
     Ok(result)
 }
 
-/// The application payload, sector aligned within the bank footprint, with
-/// both cores at their exact addresses.
+/// The application payload, sector aligned within the PLAF103's bank
+/// footprint, with both cores at their exact addresses.
 pub fn bank_payload(image: &[u8]) -> Result<&[u8]> {
+    model_payload(image, Model::Plaf103)
+}
+
+/// [`bank_payload`] within `model`'s bank-1 window.
+fn model_payload(image: &[u8], model: Model) -> Result<&[u8]> {
+    let bank = match model {
+        Model::Plaf103 => BANK_BYTES,
+        Model::Plwf106 => FOUNTAIN_BANK_BYTES,
+    };
     let payload = container(image)?;
     require(
-        !payload.is_empty() && payload.len() <= BANK_BYTES && payload.len() % SECTOR == 0,
+        !payload.is_empty() && payload.len() <= bank && payload.len() % SECTOR == 0,
         || ReviewError::Footprint {
             bytes: payload.len(),
         },
@@ -176,18 +209,21 @@ pub fn bank_payload(image: &[u8]) -> Result<&[u8]> {
 }
 
 /// Everything a build review checks, returning the image, the exact manifest
-/// bytes and the review details.
-fn review(repo: &Repo, build: &Path) -> Result<(Vec<u8>, Vec<u8>, BuildDetails)> {
+/// bytes, the review details and the model the build is for.
+fn review(repo: &Repo, build: &Path) -> Result<(Vec<u8>, Vec<u8>, BuildDetails, Model)> {
     let raw = fs::read(build.join("manifest.json"))?;
     let m: BuildManifest = serde_json::from_slice(&raw)?;
     let lock = amebad::lock(repo)?;
-    require(
-        m.device == DEVICE && m.profile == Profile::Firstboot.name(),
-        || ReviewError::Profile {
+    let model = Model::ALL
+        .into_iter()
+        .find(|model| model.name() == m.device);
+    let Some(model) = model.filter(|_| m.profile == Profile::Firstboot.name()) else {
+        return Err(ReviewError::Profile {
             device: m.device.clone(),
             profile: m.profile.clone(),
-        },
-    )?;
+        }
+        .into());
+    };
     let device = Device::new(repo, &m.device)?;
     let Some(firmware) = m.firmware.as_deref() else {
         return Err(ReviewError::NoFirmware.into());
@@ -218,7 +254,7 @@ fn review(repo: &Repo, build: &Path) -> Result<(Vec<u8>, Vec<u8>, BuildDetails)>
     let files = artifacts(build, &m)?;
     let file = |name: &str| files.get(name).map_or(&[][..], Vec::as_slice);
     let image = file("OTA_All.bin").to_vec();
-    let payload = bank_payload(&image)?;
+    let payload = model_payload(&image, model)?;
     require(
         payload == file("km0_km4_image2.bin")
             && payload == [file("km0_image2_all.bin"), file("km4_image2_all.bin")].concat(),
@@ -254,8 +290,19 @@ fn review(repo: &Repo, build: &Path) -> Result<(Vec<u8>, Vec<u8>, BuildDetails)>
         || ReviewError::PadTable,
     )?;
 
-    let (baseline, rom) = factory::inputs(&repo.root)?;
+    let (baseline, rom) = match model {
+        Model::Plaf103 => factory::inputs(&repo.root)?,
+        Model::Plwf106 => {
+            let backup = fs::read(device.stock(repo)?.image)?;
+            require(
+                sha256(&backup) == amebad::audit::pinmap::reference_sha256(model),
+                || ReviewError::Backup,
+            )?;
+            (backup, factory::rom(&repo.root)?)
+        }
+    };
     let factory_mapping = mapping_cases(&baseline, &rom, &image)?;
+    installed_selection(&baseline, &rom, &image, model)?;
 
     // Refuse edits made during the (long) audits and emulation.
     require(
@@ -280,7 +327,7 @@ fn review(repo: &Repo, build: &Path) -> Result<(Vec<u8>, Vec<u8>, BuildDetails)>
         factory_mapping,
         scope: SCOPE.into(),
     };
-    Ok((image, raw, details))
+    Ok((image, raw, details, model))
 }
 
 /// The four packaged artifacts by file name, each matching its manifest entry.
@@ -367,6 +414,39 @@ pub fn mapping_cases(current: &[u8], rom: &[u8], image: &[u8]) -> Result<Vec<Map
         });
     }
     Ok(cases)
+}
+
+/// The installed configuration: `current` as pinned, with the image in bank
+/// 1. The loader tries bank 1 first, so it must choose the image there.
+///
+/// On the PLWF106 the pinned backup's bank 0 is stock, which every fountain
+/// install keeps exactly (a give-way back to it requires that), so bank 0
+/// must also pass the loader's own check: bank 1 wins over valid stock, not
+/// over an empty bank. The PLAF103's pinned baseline holds no bank 0 the
+/// loader accepts, so its case shows only the selection.
+pub fn installed_selection(current: &[u8], rom: &[u8], image: &[u8], model: Model) -> Result<()> {
+    let payload = container(image)?;
+    let start = BANKS[1] as usize;
+    let mut fixture = current.to_vec();
+    fixture[start..start + payload.len()].copy_from_slice(payload);
+
+    if model == Model::Plwf106 {
+        let stock = factory::execute(&fixture, rom, Entry::Check(0))?;
+        require(stock.stop == Stop::Returned && stock.result == 1, || {
+            ReviewError::InstalledStock {
+                stop: stock.stop,
+                result: stock.result,
+            }
+        })?;
+    }
+    let chosen = factory::execute(&fixture, rom, Entry::Select)?;
+    require(chosen.stop == Stop::Selected && chosen.result == 2, || {
+        ReviewError::Installed {
+            stop: chosen.stop,
+            result: chosen.result,
+        }
+    })?;
+    Ok(())
 }
 
 /// Whether core `index`'s final mapping covers `length` bytes at flash

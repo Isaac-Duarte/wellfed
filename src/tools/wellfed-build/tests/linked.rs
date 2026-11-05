@@ -15,6 +15,7 @@ use wellfed_build::image::audit_build;
 use wellfed_build::platform::amebad::audit::{self, Binutils, elf, hex, hooks, mains, park, tool};
 use wellfed_build::platform::amebad::{Core, PROJECT, binutils};
 use wellfed_build::{Device, Error, Firmware, HookError, MainsError, Profile, Provisioning, Repo};
+use wellfed_proto::device::Model;
 
 struct Build {
     repo: Repo,
@@ -201,7 +202,7 @@ fn mains(build: &Build) -> Vec<Main> {
             let (address, size) = (number(&function["address"]), number(&function["bytes"]));
             let elf = elf(&sdk(build), core);
             let (symbols, _) = mains::listing_inputs(&elf, &objdump).unwrap();
-            let veneers = mains::expected(core)
+            let veneers = mains::expected(Model::Plaf103, core)
                 .iter()
                 .filter_map(|name| {
                     Some((*symbols.get(&format!("__{name}_veneer"))?, name.to_string()))
@@ -218,7 +219,16 @@ fn mains(build: &Build) -> Vec<Main> {
 fn unknown_calls_control_flow_and_rom_pointers_in_mains_are_refused() {
     let build = build();
     for (core, address, size, listing, symbols, veneers) in mains(&build) {
-        mains::check_main(&listing, address, size, core, &symbols, &veneers).unwrap();
+        mains::check_main(
+            &listing,
+            address,
+            size,
+            Model::Plaf103,
+            core,
+            &symbols,
+            &veneers,
+        )
+        .unwrap();
 
         for instruction in [
             "f000 f800 bl 12345678 <wlan_network>".to_string(),
@@ -230,7 +240,16 @@ fn unknown_calls_control_flow_and_rom_pointers_in_mains_are_refused() {
         ] {
             let damaged = format!(" {address:x}: {instruction}\n{listing}");
             assert!(
-                mains::check_main(&damaged, address, size, core, &symbols, &veneers).is_err(),
+                mains::check_main(
+                    &damaged,
+                    address,
+                    size,
+                    Model::Plaf103,
+                    core,
+                    &symbols,
+                    &veneers
+                )
+                .is_err(),
                 "{core}: {instruction}"
             );
         }
@@ -238,7 +257,18 @@ fn unknown_calls_control_flow_and_rom_pointers_in_mains_are_refused() {
         let pointer = symbols["irq_register"];
         let changed = listing.replace(&format!(".word\t0x{pointer:08x}"), ".word\t0x12345679");
         assert_ne!(changed, listing, "{core}: irq_register literal");
-        assert!(mains::check_main(&changed, address, size, core, &symbols, &veneers).is_err());
+        assert!(
+            mains::check_main(
+                &changed,
+                address,
+                size,
+                Model::Plaf103,
+                core,
+                &symbols,
+                &veneers
+            )
+            .is_err()
+        );
     }
 }
 
@@ -267,7 +297,7 @@ fn a_corrupted_veneer_target_is_refused() {
     data[at + 12..at + 16].copy_from_slice(&wrong.to_le_bytes());
     fs::write(&elf, data).unwrap();
 
-    let error = mains::audit(copy.path(), &build.binutils).unwrap_err();
+    let error = mains::audit(copy.path(), &build.binutils, Model::Plaf103).unwrap_err();
     assert!(
         matches!(
             error,

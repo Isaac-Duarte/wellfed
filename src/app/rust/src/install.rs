@@ -494,6 +494,7 @@ impl Keys for AppKeys {
                 identity: hex,
                 name: self.name.clone(),
                 address: None,
+                manual_address: None,
             });
             save_store(&store, &saved)?;
         }

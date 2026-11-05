@@ -6,15 +6,17 @@ import 'package:wellfed/screens/setup/name_step.dart';
 import 'package:wellfed/screens/setup/pairing_view.dart';
 import 'package:wellfed/state/pairing/pairing.dart';
 import 'package:wellfed/state/setup/setup.dart';
+import 'package:wellfed/state/wifi/networks.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/feeder_drawing.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
+import 'package:wellfed/widgets/network_picker.dart';
 
 /// The control panel's band of the straight-on drawing, in its units: the
 /// buttons and lights, without the hopper above or the bowl below.
-const _panelBand = Rect.fromLTRB(-49, 390, 1049, 650);
+const _panelBand = Rect.fromLTRB(0, 0.39, 1, 0.65);
 
 /// BLE setup, from the panel to the code. [SetupFlow] holds its steps.
 class SetupScreen extends StatefulWidget {
@@ -109,6 +111,7 @@ class _SetupScreenState extends State<SetupScreen> {
       SetupWifi(:final WifiCredentials? wifi) => WifiStep(
         initial: wifi,
         currentNetwork: _flow.currentNetwork,
+        scanNetworks: _flow.scanNetworks,
         stepLabel: 'Step 2 of 4',
         progress: 0.5,
         onBack: _flow.toSetupMode,
@@ -176,14 +179,16 @@ class _Permissions extends StatelessWidget {
   }
 }
 
-/// The network the feeder joins after setup. The phone's current network
-/// is filled in when location is allowed; Android needs it to read the
-/// name, and nothing else uses it.
+/// The network the feeder joins after setup, picked from what this phone
+/// hears. The phone's current network is chosen first when location is
+/// allowed; Android needs it to read the name and list networks, and nothing
+/// else uses it.
 class WifiStep extends StatefulWidget {
   const WifiStep({
     super.key,
     required this.initial,
     required this.currentNetwork,
+    required this.scanNetworks,
     required this.onBack,
     required this.onDone,
     this.stepLabel,
@@ -195,6 +200,9 @@ class WifiStep extends StatefulWidget {
 
   /// The Wi-Fi this phone is on, when Android will say.
   final Future<String?> Function() currentNetwork;
+
+  /// The networks this phone hears.
+  final Future<NetworkScan> Function() scanNetworks;
   final VoidCallback onBack;
   final ValueChanged<WifiCredentials?> onDone;
   final String? stepLabel;
@@ -211,27 +219,6 @@ class _WifiStepState extends State<WifiStep> {
   late final _ssid = TextEditingController(text: widget.initial?.ssid);
   late final _password = TextEditingController(text: widget.initial?.passphrase);
   bool _hidden = true;
-
-  /// The name is typed, not the phone's current network.
-  bool _typing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_prefill());
-  }
-
-  Future<void> _prefill() async {
-    final String? name = await widget.currentNetwork();
-    if (!mounted) return;
-    if (name == null) {
-      setState(() => _typing = true);
-      return;
-    }
-    if (_ssid.text.isNotEmpty) return;
-    // Android quotes the name.
-    setState(() => _ssid.text = name.replaceAll(RegExp(r'^"|"$'), ''));
-  }
 
   @override
   void dispose() {
@@ -253,27 +240,12 @@ class _WifiStepState extends State<WifiStep> {
       content: [
         LabeledField(
           label: 'Network',
-          child: _typing || _ssid.text.isEmpty
-              ? TextField(
-                  controller: _ssid,
-                  autofocus: _typing,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(hintText: 'Network name'),
-                  onChanged: (_) => setState(() {}),
-                )
-              : InputDecorator(
-                  decoration: InputDecoration(
-                    prefixIcon: Padding(
-                      padding: const EdgeInsets.only(left: 14, right: 10),
-                      child: StrokeIcon(Glyph.wifi, size: 20, color: c.text),
-                    ),
-                    prefixIconConstraints: const BoxConstraints(),
-                  ),
-                  child: Text(
-                    _ssid.text,
-                    style: TextStyle(fontSize: Sizes.md, color: c.text),
-                  ),
-                ),
+          child: NetworkPicker(
+            controller: _ssid,
+            scan: widget.scanNetworks,
+            current: widget.currentNetwork,
+            onChanged: () => setState(() {}),
+          ),
         ),
         const SizedBox(height: 18),
         LabeledField(
@@ -292,17 +264,6 @@ class _WifiStepState extends State<WifiStep> {
             onChanged: (_) => setState(() {}),
           ),
         ),
-        if (!_typing && _ssid.text.isNotEmpty) ...[
-          const SizedBox(height: Space.s2),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              style: TextButton.styleFrom(padding: EdgeInsets.zero),
-              onPressed: () => setState(() => _typing = true),
-              child: const Text('Type a network name instead'),
-            ),
-          ),
-        ],
       ],
       actions: [
         FilledButton(

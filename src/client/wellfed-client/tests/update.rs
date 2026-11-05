@@ -22,6 +22,7 @@ use wellfed_core::ota::offer::{
 use wellfed_core::ota::{BANK1_OFFSET, MARKER, Manifest, SECTOR};
 use wellfed_core::store::update::{Candidate, State, UpdateStore};
 use wellfed_core::tone::Tune;
+use wellfed_device::update as wire;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
     LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields,
@@ -33,7 +34,6 @@ use wellfed_device_api::{
     Device, EventRead, FeederDevice, KeyChange, KeyOutcome, Pass, Reader, Server, UpdateAnswer,
     UpdateRequest,
 };
-use wellfed_feeder::update as wire;
 use wellfed_model::{self as model, Answer, Op};
 use wellfed_proto::api::{
     self as proto, DeviceStatus, EventBody, FeederStatus, FoodLevel, Refusal, RequestId, Status,
@@ -68,6 +68,7 @@ fn payload(len: usize, seed: u8) -> Vec<u8> {
 /// A version 2 manifest for `payload` as build `build`.
 fn manifest(key: &SigningKey, version: u32, payload: &[u8], build: u8, kind: ImageKind) -> Vec<u8> {
     let signed = Signed {
+        model: 1,
         manifest: Manifest {
             version,
             image_len: u32::try_from(payload.len()).unwrap(),
@@ -236,6 +237,7 @@ impl Feeder {
         let built_in = [bench().verifying_key().to_bytes()];
         let record = *self.store.record();
         let context = Context {
+            model: 1,
             ring: KeyRing {
                 built_in: &built_in,
                 added: record.added_key(),

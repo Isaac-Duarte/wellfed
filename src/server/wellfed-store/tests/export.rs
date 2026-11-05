@@ -18,12 +18,17 @@ INSERT INTO users VALUES (x'0192c5d0000070008000000000000002', 'bob', 'hash-b', 
 INSERT INTO sessions VALUES (x'aa', x'0192c5d0000070008000000000000001', 1, 2);
 INSERT INTO tokens VALUES (x'0192c5d0000070008000000000000009', x'bb',
     x'0192c5d0000070008000000000000001', 'phone', 1, NULL, NULL);
-INSERT INTO household VALUES (1, 'Home', 'grams', '24h', 'Europe/Berlin');
-INSERT INTO feeders (id, identity, name, role, address, key_nonce, key_sealed, synced, epoch, created_ms)
-    VALUES (x'0192c5d0000070008000000000000003', x'0101010101010101010101010101010101010101010101010101010101010101',
+INSERT INTO homes (id, name, units, time_format, zone, created_ms)
+    VALUES (x'0192c5d0000070008000000000000005', 'Home', 'grams', '24h', 'Europe/Berlin', 1);
+INSERT INTO feeders (id, home_id, kind, model, identity, name, role, address, key_nonce, key_sealed,
+        synced, epoch, created_ms)
+    VALUES (x'0192c5d0000070008000000000000003', x'0192c5d0000070008000000000000005', 'feeder',
+        'plaf103', x'0101010101010101010101010101010101010101010101010101010101010101',
         'kitchen', 'server', '192.0.2.7:4444', x'070707070707070707070707', x'0102', 5, 9, 3);
-INSERT INTO feeders (id, identity, name, role, address, key_nonce, key_sealed, synced, epoch, created_ms)
-    VALUES (x'0192c5d0000070008000000000000004', x'0202020202020202020202020202020202020202020202020202020202020202',
+INSERT INTO feeders (id, home_id, kind, model, identity, name, role, address, key_nonce, key_sealed,
+        synced, epoch, created_ms)
+    VALUES (x'0192c5d0000070008000000000000004', x'0192c5d0000070008000000000000005', 'feeder',
+        'plaf103', x'0202020202020202020202020202020202020202020202020202020202020202',
         'hall', 'owner', NULL, x'070707070707070707070707', x'03', NULL, NULL, 4);
 INSERT INTO phone_keys VALUES (x'0192c5d0000070008000000000000003', x'5151', x'0192c5d0000070008000000000000001',
     x'0192c5d0000070008000000000000009', 'member', 60, 61, 'token_revoked', 62, '{}');

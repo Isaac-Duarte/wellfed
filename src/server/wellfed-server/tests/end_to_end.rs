@@ -5,8 +5,8 @@ use jiff::Timestamp;
 use uuid::Uuid;
 use wellfed_api::{
     AdoptFeeder, ClientRole, Connection, Credentials, ErrorCode, EventBody, EventKind, EventQuery,
-    FeederId, NewUser, NextMeal, PLANS, Plan, Plans, PlansChange, Role, Settings, SettingsPatch,
-    Source, StreamEvent, StreamQuery, Weekdays,
+    FeederEvent, FeederId, FeederSettingsPatch, NewUser, NextMeal, PLANS, Plan, Plans, PlansChange,
+    Role, Settings, Source, StreamEvent, StreamQuery, Weekdays,
 };
 use wellfed_server_client::reqwest::header::ETAG;
 use wellfed_server_client::{
@@ -64,26 +64,26 @@ fn an_owner_adopts_a_feeder_and_works_it_over_http() {
         let read = expect_status(read, StatusCode::OK).await.unwrap();
         let etag = read.headers()[ETAG].to_str().unwrap().to_owned();
         let settings: Settings = decode(read, StatusCode::OK).await.unwrap();
-        assert_eq!(etag, format!("\"{}\"", settings.generation));
+        assert_eq!(etag, format!("\"{}\"", settings.generation()));
         assert_eq!(http.settings(kitchen).await.unwrap(), settings);
 
         let key = Uuid::from_u128(0x0192c5d0_1111_7000_8000_000000000001);
-        let patch = SettingsPatch {
+        let patch = FeederSettingsPatch {
             volume: Some(35),
-            ..SettingsPatch::default()
+            ..FeederSettingsPatch::default()
         };
         let changed = http
-            .put_settings(kitchen, settings.generation, &patch, key)
+            .put_settings(kitchen, settings.generation(), &patch, key)
             .await
             .unwrap();
-        assert_eq!(changed.volume, 35);
+        assert_eq!(changed.feeder().unwrap().volume, 35);
         let retried = http
-            .put_settings(kitchen, settings.generation, &patch, key)
+            .put_settings(kitchen, settings.generation(), &patch, key)
             .await
             .unwrap();
         assert_eq!(retried, changed);
         let other = Uuid::from_u128(0x0192c5d0_1111_7000_8000_000000000002);
-        let stale = http.put_settings(kitchen, settings.generation, &patch, other);
+        let stale = http.put_settings(kitchen, settings.generation(), &patch, other);
         let Err(Error::Stale(current)) = stale.await else {
             panic!("a stale edit is answered with the current settings");
         };
@@ -102,7 +102,10 @@ fn an_owner_adopts_a_feeder_and_works_it_over_http() {
                 }
                 match event {
                     StreamEvent::Event { event, .. }
-                        if matches!(event.body, EventBody::Lock { locked: false, .. }) =>
+                        if matches!(
+                            event.body,
+                            EventBody::Feeder(FeederEvent::Lock { locked: false, .. })
+                        ) =>
                     {
                         lock_seen = Some(id);
                     }
@@ -153,10 +156,10 @@ fn an_owner_adopts_a_feeder_and_works_it_over_http() {
         };
         assert!(matches!(
             event.body,
-            EventBody::Lock {
+            EventBody::Feeder(FeederEvent::Lock {
                 locked: false,
                 by: Source::Client { .. }
-            }
+            })
         ));
 
         server.stop().await;
@@ -279,7 +282,7 @@ async fn direct_until_fed(connection: &mut feeder::Connection) -> Vec<(u64, Even
     loop {
         match connection.next(WAIT).await.unwrap() {
             wellfed_model::Pushed::Event(event) => {
-                let fed = matches!(event.body, EventBody::Fed { .. });
+                let fed = matches!(event.body, EventBody::Feeder(FeederEvent::Fed { .. }));
                 seen.push((event.seq, event.body));
                 if fed {
                     return seen;
@@ -336,7 +339,7 @@ fn the_server_and_two_direct_sessions_each_see_the_same_feed() {
                     event: StreamEvent::Event { event, .. },
                     ..
                 } = next(&mut updates).await
-                    && matches!(event.body, EventBody::Fed { .. })
+                    && matches!(event.body, EventBody::Feeder(FeederEvent::Fed { .. }))
                 {
                     return event;
                 }

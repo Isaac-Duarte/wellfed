@@ -116,7 +116,7 @@ Every host tool is Rust. The full inventory, with which tools touch hardware, is
 | Build a firmware image | `wellfed-build` | [firmware builds](firmware-builds.md) |
 | Freeze a build for installing, or sign it as an update | `wellfed-build review`, `sign` | [development updates](uart-development.md) |
 | Read or write the feeder's flash over UART | `wellfed-flash` | [Rust flash client](rust-flash.md) |
-| Drive the relay bench: power, loader, OTA, the suite | `wellfed-bench` | [relay bench](../devices/plaf103/bench.md) |
+| Drive the relay bench: power, loader, OTA, the suite | `wellfed-bench` | [relay bench](../devices/plaf103/bench.md), [bench hardware](bench-hardware.md) |
 | Serve stock 1.1.15 for an install | `wellfed-stock` | [stock server](stock-server.md) |
 | Audit a capture or compare full-flash backups | `wellfed-audit` | [tools](../../src/tools/README.md) |
 | Test feeding logic against a modeled mechanism | `wellfed-sim` | [the simulator](#the-simulator) |

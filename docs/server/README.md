@@ -14,7 +14,7 @@ The server adds what a small device can't hold:
 - **Owner data.** Pets, foods, weights and refills, which the feeder doesn't track. From them and the feeds it mirrors, the server counts the portions since each refill and each pet's portions, and lists the feeds that were missed, uncertain or short. Once a feeder's portions are calibrated (weighed in the app), it also estimates the grams its hopper has left and when it runs out, and what each pet ate in grams and calories against its daily target.
 - **Releases and installs.** It fetches or takes signed firmware releases, verifies them, and installs one on a feeder running Wellfed when an owner asks. It does not install from stock: the app does that. It also keeps each feeder's stock firmware backup, so you can go back to stock.
 
-One server serves one household, with as many feeders as you own.
+One server serves one home, with as many devices as you own in it. Each device is stored with its kind and model, which its first session names. Only feeders run Wellfed today, so every device is a feeder for now.
 
 **This is heavy work in progress, a proof of concept.** The server adopts a real feeder and keeps its history whole across a restart, a power cut and a Wi-Fi drop. Feeds, accounts, releases and release installs are tested in simulation only. The [roadmap](../roadmap.md) lists it as Partial.
 
@@ -56,8 +56,8 @@ The API lives under `/api/v1`, as JSON. The complete reference is [`openapi.json
 
 | Group | Routes | What they do |
 | --- | --- | --- |
-| Setup and accounts | `/setup`, `/session`, `/users`, `/tokens`, `/household` | The first owner, logins, people and their roles, phone tokens, the household's name, units and zone |
-| Feeders | `/feeders`, `/feeders/{id}`, `/feeders/{id}/settings`, `/plans`, `/calibration`, `/call`, `/call/play`, `/lock`, `/desiccant/reset`, `/wifi`, `/reboot`, `/play`, `/clients`, `/invites`, `/phones` | Adopt and remove feeders, live status and the next meal, settings, feeding plans, the portion calibration, the meal call and administration |
+| Setup and accounts | `/setup`, `/session`, `/users`, `/tokens`, `/home` | The first owner, logins, people and their roles, phone tokens, and the home: its id, name, units and zone |
+| Feeders | `/feeders`, `/feeders/{id}`, `/feeders/{id}/settings`, `/plans`, `/calibration`, `/call`, `/call/play`, `/lock`, `/desiccant/reset`, `/wifi`, `/reboot`, `/play`, `/clients`, `/invites`, `/phones` | Adopt and remove devices (each listed with its home, kind and model), live status and the next meal, settings, feeding plans, the portion calibration, the meal call and administration |
 | Feeding | `/feeders/{id}/feed`, `/feeds/{feed}/cancel`, `/commands`, `/commands/{key}` | Feed, cancel, and the journal of every write |
 | History | `/feeders/{id}/events`, `/samples`, `/feeds/{feed}/trace`, `/stats`, `/log`, `/audit` | Events, samples, feed traces, statistics, the live debug log and the audit log |
 | Owner data | `/pets`, `/foods`, `/pets/{id}/weights`, `/pets/{id}/feeders/{feeder}`, `/feeders/{id}/food`, `/refills`, `/pets/{id}/intake` | Pets, foods, weights, which feeder serves which pet, refills; the food left since the last refill and a pet's intake against its target |

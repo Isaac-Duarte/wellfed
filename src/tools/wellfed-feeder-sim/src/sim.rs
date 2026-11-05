@@ -3,11 +3,11 @@
 //! ([`SimPlatform`]), then the tasks the firmware runs beside its loop: the
 //! settings writer's turn and the update stage's.
 //!
-//! A boot first runs the loader's choice and KM0's trial ([`Banks::boot`]);
-//! a new build in trial confirms itself at once, raising the floor as the
-//! firmware's confirmation does, unless the banks say it never will, in
-//! which case it resets after [`TRIAL_MS`] as the supervisor's deadline
-//! makes it. Button presses come from the caller ([`Sim::gesture`]) and wait
+//! A boot first runs the loader's choice and KM0's trial, and the update
+//! stage takes its turn after each pass, as every device's do
+//! ([`Updates`]): a new build in trial confirms itself at once, unless the
+//! banks say it never will, in which case it resets after [`TRIAL_MS`] as
+//! the supervisor's deadline makes it. Button presses come from the caller ([`Sim::gesture`]) and wait
 //! for the next pass, as the button service's queued gestures do.
 //!
 //! Nothing here reads a clock: every call takes the time, so tests can run
@@ -20,31 +20,23 @@ use std::net::Ipv4Addr;
 use std::rc::Rc;
 
 use tokio::net::{TcpStream, UdpSocket};
-use wellfed_board_plaf103::storage;
 use wellfed_core::buttons::Gesture;
 use wellfed_core::feed::controller::FeedReason;
-use wellfed_core::ota::offer::ImageKind;
-use wellfed_core::ota::{self, CONFIRM_LEN};
-use wellfed_core::store::slot::SlotIo;
-use wellfed_core::store::update::{State, UpdateStore};
 use wellfed_core::tone::{PlayResult, Tune};
 use wellfed_device_api::FeederDevice;
 use wellfed_device_api::mailbox::KeyResult;
+pub use wellfed_device_sim::updates::TRIAL_MS;
+use wellfed_device_sim::updates::{Booted, Updates};
 use wellfed_feeder::feeder::{self, Feeder};
 use wellfed_feeder::panel;
-use wellfed_hal::ota::mailbox;
-use wellfed_hal::ota::update::{self as update, Floor, Update};
-use wellfed_hal::trial::{self, Storm};
+use wellfed_hal::ota::update::{self as update, Floor};
+use wellfed_hal::trial::Storm;
 use wellfed_session::noise::Keypair;
 
-use crate::banks::{Banks, Boot, Bus, Trial};
+use crate::banks::Banks;
 use crate::feeding::SimFeeds;
-use crate::flash::{Flash, Region};
+use crate::flash::Flash;
 use crate::platform::{DeviceError, Random, SimPlatform};
-
-/// A build that never confirms resets this long into each trial boot: the
-/// firmware's supervisor waits ten minutes; the simulator does not.
-pub const TRIAL_MS: u32 = 2_000;
 
 /// What one step did, for the simulator's log. No record carries a key or
 /// a secret.
@@ -104,21 +96,11 @@ impl fmt::Display for Record {
 
 pub struct Sim {
     feeder: Box<Feeder<SimPlatform>>,
-    flash: Rc<Flash>,
     /// The feeding owner, stepped before each pass as the firmware's is.
     feeds: SimFeeds,
     booted: bool,
-    banks: Rc<RefCell<Banks>>,
-    bank: u8,
-    stage: Box<Update<Region>>,
-    /// When this boot ends in a reset nobody asked for: a build that never
-    /// confirms at its trial deadline, or one that storms.
-    fault_reset: Option<u32>,
-    /// The restart that comes is `fault_reset`'s, not one the feeder asked
-    /// for.
-    faulted: bool,
-    /// This boot has run long enough to end a storm's count.
-    settled: bool,
+    /// The boot's bank and trial, and the update stage's turns.
+    updates: Updates,
     /// What the boot did, for the first pass's log.
     boot: Record,
 }
@@ -144,33 +126,22 @@ impl Sim {
         boot_count: u32,
         mdns: Option<(UdpSocket, Ipv4Addr)>,
     ) -> Result<Self, DeviceError> {
-        let (Boot { bank, trial, storm }, build) = boot(flash, &mut banks.borrow_mut(), update_key);
-        // The mailbox and the interlock are RAM: a restart forgets every
-        // request and chunk, and the write turn a give-way kept.
-        mailbox::reset();
-        wellfed_hal::interlock::INTERLOCK.reset();
-        let store = Region::new(flash, storage::UPDATE);
-        let mut stage = Box::new(Update::new(bank, build, update_key, store));
-        let behaviour = banks.borrow().trial;
-        let confirmed = (trial && behaviour != Trial::NeverConfirms)
-            .then(|| confirm(flash, &mut stage, &build));
-        let storms = behaviour == Trial::Storms && bank == 1;
-        let fault_reset =
-            ((trial && confirmed.is_none()) || storms).then(|| now_ms.wrapping_add(TRIAL_MS));
+        let (updates, booted) = Updates::open(flash, banks, update_key, now_ms);
+        let Booted {
+            bank,
+            trial,
+            confirmed,
+            storm,
+            build,
+        } = booted;
 
         let mut platform = SimPlatform::open(flash, random, boot_count, bank, build, mdns)?;
         platform.attach_banks(banks);
         Ok(Self {
             feeder: Box::new(Feeder::new(platform)),
-            flash: Rc::clone(flash),
             feeds: SimFeeds::open(flash),
             booted: false,
-            banks: Rc::clone(banks),
-            bank,
-            stage,
-            fault_reset,
-            faulted: false,
-            settled: false,
+            updates,
             boot: Record::Boot {
                 bank,
                 trial,
@@ -206,12 +177,8 @@ impl Sim {
     /// the lifetime totals are saved.
     pub fn take_reboot(&mut self) -> bool {
         let reboot = self.platform().take_reboot();
-        // One the feeder asked for is no fault: the runtime ends a storm's
-        // count before it.
-        if reboot && !self.faulted {
-            self.banks.borrow_mut().deliberate();
-        }
         if reboot {
+            self.updates.restarting();
             self.platform().save_stats(true);
         }
         reboot
@@ -314,78 +281,13 @@ impl Sim {
     /// The update stage's turn, as the service task gives it; whether it
     /// has work waiting.
     fn update(&mut self, now_ms: u32, record: &mut impl FnMut(Record)) -> bool {
-        if self
-            .fault_reset
-            .is_some_and(|at| wellfed_core::deadline_passed(now_ms, at))
-        {
-            self.faulted = true;
-            self.platform().request_reboot();
-        }
-        if !self.settled && now_ms >= trial::STABLE_MS {
-            self.settled = true;
-            self.banks.borrow_mut().settle(self.bank);
-        }
-        let mut banks = self.banks.borrow_mut();
-        let mut bus = Bus {
-            banks: &mut banks,
-            bank: self.bank,
-            handover: Region::new(&self.flash, storage::RESET),
-        };
-        let step = self.stage.step(&mut bus, now_ms);
-        if let Some(event) = step.record {
+        let turn = self.updates.turn(now_ms);
+        if let Some(event) = turn.record {
             record(Record::Update(event));
         }
-        if step.restart {
-            self.feeder.platform_mut().request_reboot();
+        if turn.restart {
+            self.platform().request_reboot();
         }
-        step.delay_ms <= update::BUSY_MS
+        turn.busy
     }
-}
-
-/// The loader's choice and KM0's trial for this boot: the bank, whether its
-/// build is in trial, and the build. A build bank 0 activated in bank 1 is
-/// the one the update store names.
-fn boot(flash: &Rc<Flash>, banks: &mut Banks, key: Option<[u8; 32]>) -> (Boot, [u8; 32]) {
-    let mut store = UpdateStore::default();
-    store.open(Region::new(flash, storage::UPDATE));
-    if store.record().bank0.is_none()
-        && let Some(bank0) = banks.bank0_record(key)
-    {
-        // As if bank 0 had booted once: bank 1 gives way only to it.
-        let _ = store.set_bank0(bank0);
-    }
-    if banks.bank1_valid()
-        && let State::Activated(candidate) = store.record().state
-    {
-        if banks.stock_reinstalls && candidate.kind == ImageKind::Stock {
-            banks.stock_gave_way();
-        } else {
-            banks.bank1_build = candidate.build_id;
-        }
-    }
-
-    // An unreadable record names no build, as erased flash does.
-    let mut record = [0xffu8; CONFIRM_LEN];
-    if !Region::new(flash, storage::CONFIRM).read(0, 0, &mut record) {
-        record = [0xff; CONFIRM_LEN];
-    }
-    let booted = banks.boot(&record);
-    (booted, banks.build(booted.bank))
-}
-
-/// The build confirms: the floor first, then the record, as the
-/// firmware's confirmation writes them.
-fn confirm(flash: &Rc<Flash>, stage: &mut Update<Region>, build: &[u8; 32]) -> Floor {
-    let floor = stage.raise_floor();
-    let version = match floor {
-        Floor::Raised { version } => version,
-        Floor::Unchanged => 0,
-        Floor::Failed => return floor,
-    };
-    let record = ota::confirm_record(build, version);
-    let sector = Region::new(flash, storage::CONFIRM);
-    if !(sector.erase(0) && sector.program(0, 0, &record)) {
-        return Floor::Failed;
-    }
-    floor
 }
