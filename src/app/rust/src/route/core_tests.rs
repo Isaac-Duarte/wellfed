@@ -117,22 +117,43 @@ fn a_token_the_server_no_longer_takes_closes_the_server_path_and_opens_nothing()
     let refused = ServerReach::Refused;
     // An owner's own key closes with the token: nothing routes around the
     // account on the LAN, to a feeder the server lists or one it does not.
-    let keys = Keys::Own.under(refused);
+    let keys = Keys::Own.under(Standing::Refused);
     assert_eq!(keys, Keys::ServerOnly);
     assert_eq!(Access::of(true, true, keys), Some(Access::ServerOnly));
     assert_eq!(Access::of(false, true, keys), None);
+    // However the server's reach goes after: refused is the standing's,
+    // not the reach's.
+    for reach_now in [
+        refused,
+        ServerReach::Down { since_ms: NOW },
+        ServerReach::Up,
+    ] {
+        assert_eq!(
+            choose(
+                Access::ServerOnly,
+                reach(reach_now, Some(false), true),
+                NOW + RECHECK_MS
+            ),
+            RoutePath::Server
+        );
+    }
+    assert_eq!(Keys::Own.under(Standing::Taken), Keys::Own);
+    let taken = Standing::Taken;
     assert_eq!(
-        choose(
-            Access::ServerOnly,
-            reach(refused, Some(false), true),
-            NOW + RECHECK_MS
-        ),
-        RoutePath::Server
+        standing_after(taken, ServerFailure::Unauthorized),
+        Standing::Refused
     );
-    // A server that is only down leaves the phone's own keys alone.
-    let down = ServerReach::Down { since_ms: NOW };
-    assert_eq!(Keys::Own.under(down), Keys::Own);
-    assert_eq!(Keys::Own.under(ServerReach::Up), Keys::Own);
+    for failure in [
+        ServerFailure::Connect,
+        ServerFailure::Interrupted,
+        ServerFailure::Rejected,
+    ] {
+        assert_eq!(
+            standing_after(Standing::Refused, failure),
+            Standing::Refused
+        );
+        assert_eq!(standing_after(taken, failure), taken);
+    }
     assert_eq!(reach_after(ServerFailure::Unauthorized, NOW), refused);
     assert_eq!(
         reach_after(ServerFailure::Connect, NOW),

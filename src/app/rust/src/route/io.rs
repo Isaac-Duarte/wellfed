@@ -31,7 +31,7 @@ use crate::api::session::FeedRefusal;
 use crate::link::{DirectLink, LinkNews};
 use crate::requests;
 use crate::route::core::{
-    self, Access, Book, Ended, Keys, Reach, RetryPlan, ServerFailure, ServerReach,
+    self, Access, Book, Ended, Keys, Reach, RetryPlan, ServerFailure, ServerReach, Standing,
     settled_by_command, settled_by_history, settled_unfound,
 };
 use crate::route::pins::{PinRecord, PinState, PinStore, PinnedWrite, ServerMark};
@@ -57,6 +57,10 @@ struct State {
     store: PinStore,
     server: Option<Server>,
     reach: ServerReach,
+    /// Whether the configured server still takes this phone's token. Apart
+    /// from `reach`, so a refused token stays refused when that server then
+    /// goes down; only a fresh login or removing the server clears it.
+    standing: Standing,
     feeders: HashMap<String, Entry>,
     book: Book,
     /// Feeds this phone started through the server, whose end the stream
@@ -67,6 +71,9 @@ struct State {
     listeners: Vec<mpsc::UnboundedSender<RouterUpdate>>,
     /// The path each feeder was last said to take.
     announced: HashMap<String, Option<RoutePath>>,
+    /// Feeders whose adoption's answer was lost, and when: until the
+    /// server lists them or the grace passes, no second invite is made.
+    lost_adoptions: HashMap<String, i64>,
 }
 
 struct Server {
@@ -95,7 +102,7 @@ struct Entry {
     direct: Option<Arc<DirectLink>>,
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     Timestamp::now().as_millisecond()
 }
 
@@ -119,7 +126,8 @@ impl State {
         let keys = self
             .server
             .as_ref()
-            .map_or(Keys::Own, |server| server.keys.under(self.reach));
+            .map_or(Keys::Own, |server| server.keys)
+            .under(self.standing);
         Access::of(on_server, entry.direct.is_some(), keys)
     }
 
@@ -218,6 +226,7 @@ impl State {
     /// What a failed call says of the server.
     fn heard_failure(&mut self, failure: ServerFailure, now: i64) {
         self.reach = core::reach_after(failure, now);
+        self.standing = core::standing_after(self.standing, failure);
     }
 
     /// The paths that changed since they were last said.
@@ -332,12 +341,14 @@ impl Router {
             store,
             server: None,
             reach: ServerReach::Up,
+            standing: Standing::Taken,
             feeders: HashMap::new(),
             book,
             following: HashMap::new(),
             early: HashMap::new(),
             listeners: Vec::new(),
             announced: HashMap::new(),
+            lost_adoptions: HashMap::new(),
         };
         Ok(Self {
             inner: Arc::new(Inner {
@@ -365,13 +376,60 @@ impl Router {
             user: Uuid::parse_str(&account.id).ok(),
         });
         state.reach = ServerReach::Up;
+        state.standing = Standing::Taken;
         state.announce();
+    }
+
+    /// A server whose phone token secret is gone: the app is configured
+    /// with it, so nothing goes on the phone's own keys, as with a refused
+    /// token, until a login or removing the server.
+    pub(crate) fn refuse_server(&self) {
+        let mut state = self.state();
+        state.server = None;
+        state.standing = Standing::Refused;
+        state.following.clear();
+        state.announce();
+    }
+
+    /// Route through `handle`, a session the app kept, at a cold start:
+    /// what the server says of the account now, and with the server not
+    /// answering, `cached`, the account as the last login or list read it.
+    /// With neither, the account's standing is unknown, so it holds no
+    /// key of its own until the server says: a viewer or an account with an
+    /// expiry must never fall to the phone's own keys because its server was
+    /// down when the app started. A refused token stays refused.
+    pub(crate) async fn resume(
+        &self,
+        handle: ServerHandle,
+        cached: Option<ServerAccount>,
+    ) -> Result<ServerAccount, ServerError> {
+        let read = handle.client.session().await;
+
+        let error = match read {
+            Ok(user) => {
+                let account = ServerAccount::from(user);
+                self.connect_server(handle, &account);
+                return Ok(account);
+            }
+            Err(error) => error,
+        };
+        let failure = calls::failure(&error);
+        let mut state = self.state();
+        let (keys, user) = match (&cached, failure) {
+            (_, ServerFailure::Unauthorized) | (None, _) => (Keys::ServerOnly, None),
+            (Some(account), _) => (keys_of(account), Uuid::parse_str(&account.id).ok()),
+        };
+        state.server = Some(Server { handle, keys, user });
+        state.heard_failure(failure, now_ms());
+        state.announce();
+        Err(error.into())
     }
 
     pub(crate) fn disconnect_server(&self) {
         let mut state = self.state();
         state.server = None;
         state.reach = ServerReach::Up;
+        state.standing = Standing::Taken;
         state.following.clear();
         state.announce();
     }
@@ -419,6 +477,27 @@ impl Router {
         }
         state.announce();
         Ok(feeders.into_iter().map(ServerFeeder::from).collect())
+    }
+
+    /// When `feeder`'s adoption last lost its answer, while that is not
+    /// settled.
+    pub(crate) fn adoption_lost_at(&self, feeder: &str) -> Option<i64> {
+        self.state().lost_adoptions.get(feeder).copied()
+    }
+
+    /// `feeder`'s adoption lost its answer at `at`; `None` once settled.
+    pub(crate) fn adoption_lost(&self, feeder: &str, at: Option<i64>) {
+        let mut state = self.state();
+        match at {
+            Some(at) => state.lost_adoptions.insert(feeder.to_owned(), at),
+            None => state.lost_adoptions.remove(feeder),
+        };
+    }
+
+    /// How long after a lost attempt the server's silence counts as never
+    /// sent.
+    pub(crate) fn grace_ms(&self) -> i64 {
+        self.inner.grace_ms
     }
 
     /// The server's client, when one is configured.
@@ -1087,6 +1166,7 @@ impl Router {
                         // server that is down.
                         ServerErrorKind::TokenRevoked | ServerErrorKind::AccountDisabled => {
                             state.reach = ServerReach::Refused;
+                            state.standing = Standing::Refused;
                         }
                         ServerErrorKind::Unreachable | ServerErrorKind::Interrupted => {
                             state.reach = ServerReach::Down { since_ms: now_ms() };

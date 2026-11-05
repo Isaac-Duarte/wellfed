@@ -194,4 +194,64 @@ void main() {
     expect(ports.session.feeds, isEmpty);
     expect(ports.session.requests, isEmpty);
   });
+
+  test("an earlier, put-away feed's settlement never takes over a new feed still sending", () async {
+    final (FeederFleet fleet, FakeFeederPorts ports) = await _open();
+    final FeederController kitchen = fleet.all.single;
+
+    // Feed B goes; its answer has not come.
+    kitchen.feedNow(2);
+    await pumpEventQueue();
+    expect(kitchen.state.feed, isA<FeedSending>());
+
+    // Feed A, uncertain and already put away, settles now: its journal says it never went.
+    final PendingWrite a = _pending('a');
+    ports.fakeRouter.said.add(
+      RouterUpdate.settled(
+        pending: PendingWrite(
+          key: a.key,
+          feeder: a.feeder,
+          path: a.path,
+          kind: a.kind,
+          portions: a.portions,
+          sentMs: a.sentMs,
+          acknowledged: true,
+        ),
+        settlement: const Settlement.notSent(),
+      ),
+    );
+    await pumpEventQueue();
+    expect(kitchen.state.feed, isA<FeedSending>(), reason: 'A says nothing of B');
+
+    // Then B's own answer: it started.
+    ports.session.updates.add(const SessionUpdate.feedStarted(feed: 7, portions: 2, dueSeconds: 49));
+    await pumpEventQueue();
+    expect(kitchen.state.feed, isA<FeedRunning>(), reason: 'B runs');
+  });
+
+  testWidgets('a feed a check found started shows as uncertain once it is past due', (tester) async {
+    final ports = FakeFeederPorts();
+    final fleet = FeederFleet(FakeBook()..feeders = [_kitchen], ports);
+    addTearDown(fleet.dispose);
+    await tester.pump();
+    ports.session
+      ..opened()
+      ..status(fakeCard());
+    await tester.pump();
+    final FeederController kitchen = fleet.all.single;
+    ports.fakeRouter.feedAnswer = RoutedFeed.uncertain(pending: _pending('k6'));
+    kitchen.feedNow(1);
+    await tester.pump();
+
+    ports.fakeRouter.retryAnswer = RetryOutcome.settled(
+      pending: _pending('k6'),
+      settlement: const Settlement.started(feed: 5),
+    );
+    await kitchen.checkFeed();
+    expect(kitchen.state.feed, isA<FeedRunning>().having((feed) => feed.feed, 'feed', 5));
+
+    await tester.pump(const Duration(seconds: FakeFeederPorts.feedDue + 1));
+    expect(kitchen.state.feed, isA<FeedAdrift>().having((feed) => feed.by, 'by', FeedLoss.overdue));
+    expect(kitchen.state.feed.active, isFalse, reason: 'it no longer blocks the next feed');
+  });
 }

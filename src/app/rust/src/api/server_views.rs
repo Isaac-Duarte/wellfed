@@ -40,6 +40,10 @@ pub struct ServerLink {
 pub struct KnownServer {
     pub link: ServerLink,
     pub feeders: Vec<ListedFeeder>,
+    /// The account as the server last said, so a cold start with the server
+    /// down still keeps a viewer or an account with an expiry off the
+    /// phone's own keys.
+    pub account: Option<ServerAccount>,
 }
 
 /// One feeder of the server's last list, as the phone keeps it.
@@ -65,7 +69,8 @@ impl From<&ServerFeeder> for ListedFeeder {
 }
 
 /// The logged-in account.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServerAccount {
     pub id: String,
     pub name: String,
@@ -75,7 +80,8 @@ pub struct ServerAccount {
 }
 
 /// What an account may do in the home.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ServerRole {
     Owner,
     Member,

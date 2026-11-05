@@ -11,7 +11,7 @@ import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/router.dart';
-import 'package:wellfed/src/rust/api/router.dart' as router_api show settledFeed;
+import 'package:wellfed/src/rust/api/router.dart' as router_api show feedDueSeconds, settledFeed;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/api/update.dart';
@@ -40,6 +40,10 @@ abstract interface class FeederPorts {
   /// A feed's end as `settlement` gives it, for a feed whose `Fed` event this
   /// phone has not read; `null` for any settlement but a feed's end.
   FeedResult? settledFeed(Settlement settlement);
+
+  /// How long a feed of `portions` may take, in seconds, past which a feeder
+  /// that stayed on has ended it.
+  int feedDueSeconds(int portions);
 
   /// A session with this feeder read `build`, which settles the stock trial
   /// that installed it, if one is open.
@@ -94,6 +98,9 @@ class AppFeederPorts implements FeederPorts {
 
   @override
   FeedResult? settledFeed(Settlement settlement) => router_api.settledFeed(settlement: settlement);
+
+  @override
+  int feedDueSeconds(int portions) => router_api.feedDueSeconds(portions: portions);
 
   @override
   Future<void> share(String text) async {

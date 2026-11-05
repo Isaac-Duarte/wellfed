@@ -109,6 +109,9 @@ class _WellfedAppState extends State<WellfedApp> {
     _router.dispose();
     _fleet.dispose();
     _server.dispose();
+    // A router left open would be taken over by the next one anyway; this
+    // ends its updates now.
+    widget.app.router?.close();
     super.dispose();
   }
 

@@ -263,6 +263,11 @@ pub enum Adoption {
         feeder: ServerFeeder,
         error: ServerError,
     },
+    /// The adoption's answer was lost, and the server did not list the
+    /// feeder when read: it may still be adopting it. Nothing more is sent
+    /// for it; [`PathRouter::check_adoption`] reads the list again, and a
+    /// new adoption only reads too until the router's grace has passed.
+    Unsettled { error: ServerError },
     /// The feeder made no invite: `reply` says how that request ended.
     NoInvite { reply: RoutedReply },
     /// The server did not adopt it; `error` says why.
@@ -304,6 +309,14 @@ pub fn settled_feed(settlement: Settlement) -> Option<FeedResult> {
     })
 }
 
+/// How long a feed of `portions` may take, in seconds: past this a feeder
+/// that stayed on has ended it itself, so one whose end never arrived is
+/// shown as uncertain, not as running.
+#[frb(sync)]
+pub fn feed_due_seconds(portions: u8) -> u32 {
+    u32::try_from(crate::session::feed_due(portions).as_secs()).unwrap_or(u32::MAX)
+}
+
 #[frb(opaque)]
 pub struct PathRouter {
     router: Router,
@@ -335,6 +348,29 @@ impl PathRouter {
     #[frb(sync)]
     pub fn connect_server(&self, session: &ServerSession, account: ServerAccount) {
         self.router.connect_server(session.handle(), &account);
+    }
+
+    /// At a cold start, route through `session`, a kept login: by the
+    /// account the server reads now, or with the server not answering, by
+    /// `cached`, the account as last read. With no cached account the
+    /// account counts as one with no key of its own until the server says,
+    /// and a token the server refuses closes the phone's own keys, as
+    /// [`Self::connect_server`] after a fresh login opens them. The error
+    /// is what the server, or the way to it, said.
+    pub async fn resume_server(
+        &self,
+        session: &ServerSession,
+        cached: Option<ServerAccount>,
+    ) -> Result<ServerAccount, ServerError> {
+        self.router.resume(session.handle(), cached).await
+    }
+
+    /// The app is configured with a server whose token it no longer holds
+    /// (its secret is gone from secure storage): no feeder goes on the
+    /// phone's own keys until a login or [`Self::disconnect_server`].
+    #[frb(sync)]
+    pub fn refuse_server(&self) {
+        self.router.refuse_server();
     }
 
     /// No server any more (logged out): every feeder goes direct. A write
@@ -379,6 +415,16 @@ impl PathRouter {
     ) -> Adoption {
         let phone = *key.keypair().public();
         self.router.adopt(&feeder, name, address, phone).await
+    }
+
+    /// Read the server's list for `feeder` after an [`Adoption::Unsettled`]
+    /// one: adopted, its key is claimed; still unlisted while the server may
+    /// be adopting it, still unsettled; unlisted past the grace, `Failed`
+    /// with `NotFound`, and a new adoption makes a new invite. It sends
+    /// nothing but the claim.
+    pub async fn check_adoption(&self, feeder: String, key: &ClientKey) -> Adoption {
+        let phone = *key.keypair().public();
+        self.router.check_adoption(&feeder, phone).await
     }
 
     /// Record `key`, this phone's own key on `feeder`, as the account's

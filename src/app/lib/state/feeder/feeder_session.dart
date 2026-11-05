@@ -111,7 +111,7 @@ extension FeederSessionRun on FeederController {
   /// stream for a direct feed, or the router's answer for either path. Both
   /// may say it, in either order, and the second changes nothing. Past
   /// `dueSeconds` a feeder that stayed on has ended it.
-  void _feedStarted(int feed, int portions, int? dueSeconds, {String? key, RoutePath? path}) {
+  void _feedStarted(int feed, int portions, int dueSeconds, {String? key, RoutePath? path}) {
     final FeedState now = _feed;
     switch (now) {
       case FeedRunning(feed: final int running) when running == feed:
@@ -131,7 +131,7 @@ extension FeederSessionRun on FeederController {
         break;
       case FeedSending() || FeedUnanswered() || FeedIdle():
         _feedDue?.cancel();
-        if (dueSeconds != null) _feedDue = Timer(Duration(seconds: dueSeconds), _feedOverdue);
+        _feedDue = Timer(Duration(seconds: dueSeconds), _feedOverdue);
         _setFeed(FeedRunning(feed: feed, portions: portions, sentAt: now.sentAt, key: key, path: path));
       case _:
         break;
@@ -166,7 +166,8 @@ extension FeederSessionRun on FeederController {
     );
   }
 
-  /// Nothing has come of a running feed past the longest the feeder can take.
+  /// Nothing has come of a running feed past the longest the feeder can take:
+  /// the owner looks at the bowl.
   void _feedOverdue() {
     if (_feed case FeedRunning(:final int feed, :final int portions, :final DateTime? sentAt)) {
       _setFeed(FeedAdrift(feed: feed, by: FeedLoss.overdue, portions: portions, sentAt: sentAt));

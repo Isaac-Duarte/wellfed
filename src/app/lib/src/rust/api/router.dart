@@ -30,6 +30,12 @@ part 'router.freezed.dart';
 FeedResult? settledFeed({required Settlement settlement}) =>
     RustLib.instance.api.crateApiRouterSettledFeed(settlement: settlement);
 
+/// How long a feed of `portions` may take, in seconds: past this a feeder
+/// that stayed on has ended it itself, so one whose end never arrived is
+/// shown as uncertain, not as running.
+int feedDueSeconds({required int portions}) =>
+    RustLib.instance.api.crateApiRouterFeedDueSeconds(portions: portions);
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PathRouter>>
 abstract class PathRouter implements RustOpaqueInterface {
   /// The owner looked at the bowl and put `key` away: a new feed may go.
@@ -65,6 +71,16 @@ abstract class PathRouter implements RustOpaqueInterface {
 
   /// Stop the feed numbered `feed` if it still runs.
   Future<RoutedReply> cancelFeed({required String feeder, required int feed});
+
+  /// Read the server's list for `feeder` after an [`Adoption::Unsettled`]
+  /// one: adopted, its key is claimed; still unlisted while the server may
+  /// be adopting it, still unsettled; unlisted past the grace, `Failed`
+  /// with `NotFound`, and a new adoption makes a new invite. It sends
+  /// nothing but the claim.
+  Future<Adoption> checkAdoption({
+    required String feeder,
+    required ClientKey key,
+  });
 
   /// Record `key`, this phone's own key on `feeder`, as the account's
   /// phone key, for an adoption that left it [`Adoption::Unclaimed`].
@@ -110,6 +126,11 @@ abstract class PathRouter implements RustOpaqueInterface {
   /// Read the server's feeders, and route by what it says of each.
   Future<List<ServerFeeder>> refresh();
 
+  /// The app is configured with a server whose token it no longer holds
+  /// (its secret is gone from secure storage): no feeder goes on the
+  /// phone's own keys until a login or [`Self::disconnect_server`].
+  void refuseServer();
+
   /// The server's id for `feeder` (identity hex), as its last feeder list
   /// gave it, for a cold start before [`Self::refresh`] answers.
   void rememberServerFeeder({required String feeder, required String id});
@@ -117,6 +138,18 @@ abstract class PathRouter implements RustOpaqueInterface {
   /// Read the server's journal for every write pinned to it, and settle
   /// those it answers for.
   Future<void> resolve();
+
+  /// At a cold start, route through `session`, a kept login: by the
+  /// account the server reads now, or with the server not answering, by
+  /// `cached`, the account as last read. With no cached account the
+  /// account counts as one with no key of its own until the server says,
+  /// and a token the server refuses closes the phone's own keys, as
+  /// [`Self::connect_server`] after a fresh login opens them. The error
+  /// is what the server, or the way to it, said.
+  Future<ServerAccount> resumeServer({
+    required ServerSession session,
+    ServerAccount? cached,
+  });
 
   /// Ask a pending write's own path what became of it, only by reading:
   /// the server's journal entry for its key, or the feeder's history as
@@ -142,6 +175,13 @@ sealed class Adoption with _$Adoption {
     required ServerFeeder feeder,
     required ServerError error,
   }) = Adoption_Unclaimed;
+
+  /// The adoption's answer was lost, and the server did not list the
+  /// feeder when read: it may still be adopting it. Nothing more is sent
+  /// for it; [`PathRouter::check_adoption`] reads the list again, and a
+  /// new adoption only reads too until the router's grace has passed.
+  const factory Adoption.unsettled({required ServerError error}) =
+      Adoption_Unsettled;
 
   /// The feeder made no invite: `reply` says how that request ended.
   const factory Adoption.noInvite({required RoutedReply reply}) =

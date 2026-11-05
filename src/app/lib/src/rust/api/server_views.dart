@@ -69,10 +69,15 @@ class KnownServer {
   final ServerLink link;
   final List<ListedFeeder> feeders;
 
-  const KnownServer({required this.link, required this.feeders});
+  /// The account as the server last said, so a cold start with the server
+  /// down still keeps a viewer or an account with an expiry off the
+  /// phone's own keys.
+  final ServerAccount? account;
+
+  const KnownServer({required this.link, required this.feeders, this.account});
 
   @override
-  int get hashCode => link.hashCode ^ feeders.hashCode;
+  int get hashCode => link.hashCode ^ feeders.hashCode ^ account.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -80,7 +85,8 @@ class KnownServer {
       other is KnownServer &&
           runtimeType == other.runtimeType &&
           link == other.link &&
-          feeders == other.feeders;
+          feeders == other.feeders &&
+          account == other.account;
 }
 
 /// One feeder of the server's last list, as the phone keeps it.

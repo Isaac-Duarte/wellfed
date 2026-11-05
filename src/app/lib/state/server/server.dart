@@ -199,12 +199,7 @@ class HomeServer extends ChangeNotifier {
     ];
     if (_state case final ServerLinked linked) {
       _set(linked.copyWith(feeders: listed, listed: true, problem: () => null));
-      try {
-        await _book.setServer(KnownServer(link: linked.link, feeders: listed));
-      } on Object catch (error) {
-        // Only the copy for a cold start; the next list keeps it.
-        debugPrint("the server's feeder list was not kept: $error");
-      }
+      await _keep(KnownServer(link: linked.link, feeders: listed, account: linked.account));
     }
   }
 
@@ -225,12 +220,26 @@ class HomeServer extends ChangeNotifier {
     if (_state case ServerLinked(problem: ServerProblem.unreachable)) _retryNow();
   }
 
+  /// Keep `server` in the app's file for a cold start.
+  Future<void> _keep(KnownServer server) async {
+    try {
+      await _book.setServer(server);
+    } on Object catch (error) {
+      // Only the copy for a cold start; the next read keeps it.
+      debugPrint('the server was not kept: $error');
+    }
+  }
+
   String get _phone => _book.label.isEmpty ? 'Wellfed phone' : _book.label;
 
   Future<void> _restore(KnownServer kept) async {
     final String? secret = await _ports.secret();
     if (_disposed) return;
+    // With no token the phone has no standing on its server, and with a
+    // link that does not open it cannot ask: either way the router keeps
+    // the phone's own keys closed until a login or the server's removal.
     if (secret == null) {
+      _router?.refuseServer();
       _set(ServerLinked(link: kept.link, feeders: kept.feeders, problem: ServerProblem.signedOut));
       return;
     }
@@ -238,6 +247,7 @@ class HomeServer extends ChangeNotifier {
     try {
       session = _ports.restore(kept.link, secret);
     } on ServerError {
+      _router?.refuseServer();
       _set(ServerLinked(link: kept.link, feeders: kept.feeders, problem: ServerProblem.other));
       return;
     }
@@ -252,19 +262,26 @@ class HomeServer extends ChangeNotifier {
     await _connect(session);
   }
 
-  /// Read the account, hand the server to the router, list the feeders and
-  /// follow the stream.
+  /// Hand the server to the router, which reads the account and decides by
+  /// it (or, with the server down, by the account last kept) which keys the
+  /// phone may use; then list the feeders and follow the stream.
   Future<void> _connect(ServerSession session) async {
+    final PathRouter? router = _router;
     final ServerAccount account;
     try {
-      account = await session.account();
+      account = router == null
+          ? await session.account()
+          : await router.resumeServer(session: session, cached: _book.server?.account);
     } on ServerError catch (error) {
       _failed(error);
       return;
     }
     if (_disposed || _session != session) return;
-    _router?.connectServer(session: session, account: account);
-    if (_state case final ServerLinked linked) _set(linked.copyWith(account: account, problem: () => null));
+    if (_state case final ServerLinked linked) {
+      _set(linked.copyWith(account: account, problem: () => null));
+      // Kept, for a cold start with the server down to go by.
+      await _keep(KnownServer(link: linked.link, feeders: linked.feeders, account: account));
+    }
     await refresh();
     _follow();
   }

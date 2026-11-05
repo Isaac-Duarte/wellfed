@@ -14,7 +14,7 @@ import 'package:wellfed/src/rust/api/join.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/router.dart';
-import 'package:wellfed/src/rust/api/router.dart' as settled_feed show settledFeed;
+import 'package:wellfed/src/rust/api/router.dart' as settled_feed show feedDueSeconds, settledFeed;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/frb_generated.dart';
@@ -103,6 +103,9 @@ class _Ports implements FeederPorts {
 
   @override
   FeedResult? settledFeed(Settlement settlement) => settled_feed.settledFeed(settlement: settlement);
+
+  @override
+  int feedDueSeconds(int portions) => settled_feed.feedDueSeconds(portions: portions);
 
   @override
   FeederSession open(String identity, String address, {required bool syncClock}) => FeederSession(

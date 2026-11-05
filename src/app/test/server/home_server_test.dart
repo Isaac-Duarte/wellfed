@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
+import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/server/server.dart';
 
@@ -87,5 +88,34 @@ void main() {
 
     expect(server.state, isA<ServerLinked>().having((linked) => linked.problem, 'problem', ServerProblem.signedOut));
     expect(router.connected, isEmpty);
+  });
+
+  test("a kept server whose token is gone keeps the phone's own keys closed", () {
+    final book = FakeBook()
+      ..feeders = [_kitchen]
+      ..server = const KnownServer(link: serverLink, feeders: []);
+    final router = FakeRouter();
+    final server = HomeServer(book, FakeServerPorts(), router);
+    addTearDown(server.dispose);
+    return pumpEventQueue().then((_) {
+      expect(router.refusals, 1);
+      expect(router.connected, isEmpty);
+      expect(server.state, isA<ServerLinked>().having((linked) => linked.problem, 'problem', ServerProblem.signedOut));
+    });
+  });
+
+  test('a cold start hands the router the kept account, and keeps the one the server reads', () async {
+    const viewer = ServerAccount(id: 'u2', name: 'sam', role: ServerRole.viewer);
+    final book = FakeBook()
+      ..feeders = [_kitchen]
+      ..server = const KnownServer(link: serverLink, feeders: [], account: viewer);
+    final ports = FakeServerPorts()..kept = 'token-secret';
+    final router = FakeRouter();
+    final server = HomeServer(book, ports, router);
+    addTearDown(server.dispose);
+    await pumpEventQueue();
+
+    expect(router.resumed, [viewer]);
+    expect(book.server?.account, serverOwner, reason: 'what the server says now is kept');
   });
 }

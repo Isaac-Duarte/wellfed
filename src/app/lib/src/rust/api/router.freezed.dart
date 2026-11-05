@@ -56,12 +56,13 @@ extension AdoptionPatterns on Adoption {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Adoption_Adopted value)?  adopted,TResult Function( Adoption_Unclaimed value)?  unclaimed,TResult Function( Adoption_NoInvite value)?  noInvite,TResult Function( Adoption_Failed value)?  failed,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Adoption_Adopted value)?  adopted,TResult Function( Adoption_Unclaimed value)?  unclaimed,TResult Function( Adoption_Unsettled value)?  unsettled,TResult Function( Adoption_NoInvite value)?  noInvite,TResult Function( Adoption_Failed value)?  failed,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case Adoption_Adopted() when adopted != null:
 return adopted(_that);case Adoption_Unclaimed() when unclaimed != null:
-return unclaimed(_that);case Adoption_NoInvite() when noInvite != null:
+return unclaimed(_that);case Adoption_Unsettled() when unsettled != null:
+return unsettled(_that);case Adoption_NoInvite() when noInvite != null:
 return noInvite(_that);case Adoption_Failed() when failed != null:
 return failed(_that);case _:
   return orElse();
@@ -81,12 +82,13 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Adoption_Adopted value)  adopted,required TResult Function( Adoption_Unclaimed value)  unclaimed,required TResult Function( Adoption_NoInvite value)  noInvite,required TResult Function( Adoption_Failed value)  failed,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Adoption_Adopted value)  adopted,required TResult Function( Adoption_Unclaimed value)  unclaimed,required TResult Function( Adoption_Unsettled value)  unsettled,required TResult Function( Adoption_NoInvite value)  noInvite,required TResult Function( Adoption_Failed value)  failed,}){
 final _that = this;
 switch (_that) {
 case Adoption_Adopted():
 return adopted(_that);case Adoption_Unclaimed():
-return unclaimed(_that);case Adoption_NoInvite():
+return unclaimed(_that);case Adoption_Unsettled():
+return unsettled(_that);case Adoption_NoInvite():
 return noInvite(_that);case Adoption_Failed():
 return failed(_that);}
 }
@@ -102,12 +104,13 @@ return failed(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Adoption_Adopted value)?  adopted,TResult? Function( Adoption_Unclaimed value)?  unclaimed,TResult? Function( Adoption_NoInvite value)?  noInvite,TResult? Function( Adoption_Failed value)?  failed,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Adoption_Adopted value)?  adopted,TResult? Function( Adoption_Unclaimed value)?  unclaimed,TResult? Function( Adoption_Unsettled value)?  unsettled,TResult? Function( Adoption_NoInvite value)?  noInvite,TResult? Function( Adoption_Failed value)?  failed,}){
 final _that = this;
 switch (_that) {
 case Adoption_Adopted() when adopted != null:
 return adopted(_that);case Adoption_Unclaimed() when unclaimed != null:
-return unclaimed(_that);case Adoption_NoInvite() when noInvite != null:
+return unclaimed(_that);case Adoption_Unsettled() when unsettled != null:
+return unsettled(_that);case Adoption_NoInvite() when noInvite != null:
 return noInvite(_that);case Adoption_Failed() when failed != null:
 return failed(_that);case _:
   return null;
@@ -126,11 +129,12 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( ServerFeeder feeder)?  adopted,TResult Function( ServerFeeder feeder,  ServerError error)?  unclaimed,TResult Function( RoutedReply reply)?  noInvite,TResult Function( ServerError error)?  failed,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( ServerFeeder feeder)?  adopted,TResult Function( ServerFeeder feeder,  ServerError error)?  unclaimed,TResult Function( ServerError error)?  unsettled,TResult Function( RoutedReply reply)?  noInvite,TResult Function( ServerError error)?  failed,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case Adoption_Adopted() when adopted != null:
 return adopted(_that.feeder);case Adoption_Unclaimed() when unclaimed != null:
-return unclaimed(_that.feeder,_that.error);case Adoption_NoInvite() when noInvite != null:
+return unclaimed(_that.feeder,_that.error);case Adoption_Unsettled() when unsettled != null:
+return unsettled(_that.error);case Adoption_NoInvite() when noInvite != null:
 return noInvite(_that.reply);case Adoption_Failed() when failed != null:
 return failed(_that.error);case _:
   return orElse();
@@ -150,11 +154,12 @@ return failed(_that.error);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( ServerFeeder feeder)  adopted,required TResult Function( ServerFeeder feeder,  ServerError error)  unclaimed,required TResult Function( RoutedReply reply)  noInvite,required TResult Function( ServerError error)  failed,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( ServerFeeder feeder)  adopted,required TResult Function( ServerFeeder feeder,  ServerError error)  unclaimed,required TResult Function( ServerError error)  unsettled,required TResult Function( RoutedReply reply)  noInvite,required TResult Function( ServerError error)  failed,}) {final _that = this;
 switch (_that) {
 case Adoption_Adopted():
 return adopted(_that.feeder);case Adoption_Unclaimed():
-return unclaimed(_that.feeder,_that.error);case Adoption_NoInvite():
+return unclaimed(_that.feeder,_that.error);case Adoption_Unsettled():
+return unsettled(_that.error);case Adoption_NoInvite():
 return noInvite(_that.reply);case Adoption_Failed():
 return failed(_that.error);}
 }
@@ -170,11 +175,12 @@ return failed(_that.error);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( ServerFeeder feeder)?  adopted,TResult? Function( ServerFeeder feeder,  ServerError error)?  unclaimed,TResult? Function( RoutedReply reply)?  noInvite,TResult? Function( ServerError error)?  failed,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( ServerFeeder feeder)?  adopted,TResult? Function( ServerFeeder feeder,  ServerError error)?  unclaimed,TResult? Function( ServerError error)?  unsettled,TResult? Function( RoutedReply reply)?  noInvite,TResult? Function( ServerError error)?  failed,}) {final _that = this;
 switch (_that) {
 case Adoption_Adopted() when adopted != null:
 return adopted(_that.feeder);case Adoption_Unclaimed() when unclaimed != null:
-return unclaimed(_that.feeder,_that.error);case Adoption_NoInvite() when noInvite != null:
+return unclaimed(_that.feeder,_that.error);case Adoption_Unsettled() when unsettled != null:
+return unsettled(_that.error);case Adoption_NoInvite() when noInvite != null:
 return noInvite(_that.reply);case Adoption_Failed() when failed != null:
 return failed(_that.error);case _:
   return null;
@@ -315,6 +321,74 @@ class _$Adoption_UnclaimedCopyWithImpl<$Res>
   return _then(Adoption_Unclaimed(
 feeder: null == feeder ? _self.feeder : feeder // ignore: cast_nullable_to_non_nullable
 as ServerFeeder,error: null == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
+as ServerError,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class Adoption_Unsettled extends Adoption {
+  const Adoption_Unsettled({required this.error}): super._();
+  
+
+ final  ServerError error;
+
+/// Create a copy of Adoption
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$Adoption_UnsettledCopyWith<Adoption_Unsettled> get copyWith => _$Adoption_UnsettledCopyWithImpl<Adoption_Unsettled>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption_Unsettled&&(identical(other.error, error) || other.error == error));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,error);
+}
+
+@override
+String toString() {
+    return 'Adoption.unsettled(error: $error)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $Adoption_UnsettledCopyWith<$Res> implements $AdoptionCopyWith<$Res> {
+  factory $Adoption_UnsettledCopyWith(Adoption_Unsettled value, $Res Function(Adoption_Unsettled) _then) = _$Adoption_UnsettledCopyWithImpl;
+@useResult
+$Res call({
+ ServerError error
+});
+
+
+
+
+}
+/// @nodoc
+class _$Adoption_UnsettledCopyWithImpl<$Res>
+    implements $Adoption_UnsettledCopyWith<$Res> {
+  _$Adoption_UnsettledCopyWithImpl(this._self, this._then);
+
+  final Adoption_Unsettled _self;
+  final $Res Function(Adoption_Unsettled) _then;
+
+/// Create a copy of Adoption
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? error = null,}) {
+  return _then(Adoption_Unsettled(
+error: null == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
 as ServerError,
   ));
 }

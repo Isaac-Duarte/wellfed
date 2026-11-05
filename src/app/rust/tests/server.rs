@@ -626,6 +626,7 @@ fn the_app_file_keeps_the_server_link_and_its_list_and_no_secret() {
             server: Some(KnownServer {
                 link: session.link(),
                 feeders: vec![listed],
+                account: Some(session.account().await.unwrap()),
             }),
             ..AppStore::default()
         };

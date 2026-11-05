@@ -925,6 +925,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RoutePath? dco_decode_opt_box_autoadd_route_path(dynamic raw);
 
   @protected
+  ServerAccount? dco_decode_opt_box_autoadd_server_account(dynamic raw);
+
+  @protected
   ServerCommandOutcome? dco_decode_opt_box_autoadd_server_command_outcome(
     dynamic raw,
   );
@@ -2245,6 +2248,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RoutePath? sse_decode_opt_box_autoadd_route_path(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ServerAccount? sse_decode_opt_box_autoadd_server_account(
     SseDeserializer deserializer,
   );
 
@@ -3872,6 +3880,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_route_path(
     RoutePath? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_server_account(
+    ServerAccount? self,
     SseSerializer serializer,
   );
 

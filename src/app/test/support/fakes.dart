@@ -232,6 +232,12 @@ class FakeFeederPorts implements FeederPorts {
   @override
   PathRouter? get router => hasRouter ? fakeRouter : null;
 
+  /// How long the fakes say a feed may take.
+  static const feedDue = 60;
+
+  @override
+  int feedDueSeconds(int portions) => feedDue;
+
   @override
   FeedResult? settledFeed(Settlement settlement) => switch (settlement) {
     Settlement_Fed(:final int feed, :final int requested, :final int completed, :final FeedOutcome outcome) => fakeFed(

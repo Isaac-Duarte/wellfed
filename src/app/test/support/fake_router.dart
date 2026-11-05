@@ -128,6 +128,26 @@ class FakeRouter with FakeOpaque implements PathRouter {
   @override
   void disconnectServer() => disconnects++;
 
+  /// The kept accounts each cold start handed over, and how often the phone
+  /// said it holds no token for its server.
+  final resumed = <ServerAccount?>[];
+  int refusals = 0;
+
+  @override
+  Future<ServerAccount> resumeServer({required ServerSession session, ServerAccount? cached}) async {
+    resumed.add(cached);
+    final ServerAccount account = await session.account();
+    connected.add(account);
+    return account;
+  }
+
+  @override
+  void refuseServer() => refusals++;
+
+  @override
+  Future<Adoption> checkAdoption({required String feeder, required ClientKey key}) =>
+      throw UnimplementedError('no server here');
+
   @override
   void rememberServerFeeder({required String feeder, required String id}) => remembered.add((feeder, id));
 

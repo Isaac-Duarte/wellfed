@@ -34,7 +34,7 @@ extension FeederFeeds on FeederController {
       case RoutedFeed_Uncertain(:final PendingWrite pending):
         _uncertain(pending);
       case RoutedFeed_Settled(:final PendingWrite pending, :final Settlement settlement):
-        _settled(pending, settlement);
+        _settled(pending, settlement, ownCall: true);
       case RoutedFeed_NotSent(:final NotSentReason reason, :final ServerError? error):
         if (now is FeedSending) {
           _setFeed(FeedNotSent(portions: now.portions, sentAt: now.sentAt, why: _notSentWhy(reason, error)));
@@ -136,14 +136,18 @@ extension FeederFeeds on FeederController {
     );
   }
 
-  /// What became of `pending`, a feed of this phone's.
-  void _settled(PendingWrite pending, Settlement settlement) {
+  /// What became of `pending`, a feed of this phone's. It settles the feed
+  /// the sheet shows only by its key: any other write's settlement, an
+  /// earlier feed put away among them, says nothing of it. A feed still
+  /// sending has no key yet, so only its own call's answer (`ownCall`)
+  /// settles it.
+  void _settled(PendingWrite pending, Settlement settlement, {bool ownCall = false}) {
     if (pending.feeder != _state.known.identity || pending.kind != WriteKind.feed) return;
     final FeedState now = _feed;
     final bool ours = switch (now) {
       FeedUnanswered(:final String? key) => key == pending.key,
       FeedRunning(:final String? key) => key == pending.key,
-      FeedSending() => true,
+      FeedSending() => ownCall,
       _ => false,
     };
     if (!ours) return;
@@ -151,8 +155,9 @@ extension FeederFeeds on FeederController {
     final int portions = pending.portions ?? now.portions;
     switch (settlement) {
       case Settlement_Started(:final int feed):
-        // No timer: its end comes on the server's stream or in the history.
-        _feedStarted(feed, portions, null, key: pending.key, path: pending.path);
+        // Its end comes on the server's stream or in the history; past the
+        // longest such a feed takes, it shows as uncertain, not running.
+        _feedStarted(feed, portions, _ports.feedDueSeconds(portions), key: pending.key, path: pending.path);
       case Settlement_Fed(:final int feed):
         final FeedResult? result = _ports.settledFeed(settlement);
         if (result == null) return;

@@ -55,16 +55,27 @@ pub(crate) enum Keys {
     ServerOnly,
 }
 
+/// Whether the server this phone is configured with still takes its token.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Standing {
+    #[default]
+    Taken,
+    /// It refused the token (revoked, expired, the account deleted or
+    /// disabled), or the phone holds none for it. Sticky: only a fresh
+    /// login or removing the server clears it, whatever the server's reach
+    /// does meanwhile.
+    Refused,
+}
+
 impl Keys {
-    /// The keys the account may use while the server is `reach`. A server
-    /// that refuses this phone's token (revoked, or the account disabled)
-    /// closes the phone's own keys too: the server took this phone's
-    /// standing away, so the router does not route around it on the LAN.
-    /// Logging in again, or removing the server, opens them again.
-    pub(crate) const fn under(self, reach: ServerReach) -> Self {
-        match reach {
-            ServerReach::Refused => Self::ServerOnly,
-            ServerReach::Up | ServerReach::Down { .. } => self,
+    /// The keys the account may use while the server stands as `standing`.
+    /// A server that refused this phone's token closes the phone's own keys
+    /// too: the server took this phone's standing away, so the router does
+    /// not route around it on the LAN, even once that server goes down.
+    pub(crate) const fn under(self, standing: Standing) -> Self {
+        match standing {
+            Standing::Refused => Self::ServerOnly,
+            Standing::Taken => self,
         }
     }
 }
@@ -94,7 +105,7 @@ pub(crate) enum ServerReach {
     },
     /// It answers, but no longer for this phone's token (revoked, expired,
     /// or the account disabled): the server path is closed, not down, and
-    /// the phone's own keys close with it ([`Keys::under`]).
+    /// the phone's own keys close with it, for good ([`Standing::Refused`]).
     Refused,
 }
 
@@ -191,6 +202,15 @@ pub(crate) const fn server_ended(failure: ServerFailure) -> Ended {
         | ServerFailure::Unauthorized
         | ServerFailure::Rejected => Ended::Refused,
         ServerFailure::Interrupted | ServerFailure::OutcomeUnknown => Ended::Uncertain,
+    }
+}
+
+/// What a failure leaves of the phone's standing on the server: a refused
+/// token stays refused, and nothing a call says brings it back.
+pub(crate) const fn standing_after(standing: Standing, failure: ServerFailure) -> Standing {
+    match failure {
+        ServerFailure::Unauthorized => Standing::Refused,
+        _ => standing,
     }
 }
 
