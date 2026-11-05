@@ -26,7 +26,9 @@ use crate::api::server::{
     ServerCommand, ServerCommandOutcome, ServerEvent, ServerHandle, ServerUpdate,
 };
 use crate::api::server_error::{ServerError, ServerErrorKind};
-use crate::api::server_views::{ServerAccount, ServerConnection, ServerFeeder, ServerRole};
+use crate::api::server_views::{
+    KnownServer, ServerAccount, ServerConnection, ServerFeeder, ServerRole,
+};
 use crate::api::session::FeedRefusal;
 use crate::link::{DirectLink, LinkNews};
 use crate::requests;
@@ -34,7 +36,7 @@ use crate::route::core::{
     self, Access, Book, Ended, Keys, Reach, RetryPlan, ServerFailure, ServerReach, Standing,
     settled_by_command, settled_by_history, settled_unfound,
 };
-use crate::route::pins::{PinRecord, PinState, PinStore, PinnedWrite, ServerMark};
+use crate::route::pins::{LostAdoption, PinRecord, PinState, PinStore, PinnedWrite, ServerMark};
 use crate::route::server as calls;
 use crate::route::shape::{DirectCall, Shape, shape};
 use crate::session::{Command, Heard, feed_due};
@@ -71,9 +73,11 @@ struct State {
     listeners: Vec<mpsc::UnboundedSender<RouterUpdate>>,
     /// The path each feeder was last said to take.
     announced: HashMap<String, Option<RoutePath>>,
-    /// Feeders whose adoption's answer was lost, and when: until the
-    /// server lists them or the grace passes, no second invite is made.
-    lost_adoptions: HashMap<String, i64>,
+    /// A server the app keeps, before its session is handed over: the keys
+    /// its kept account may use, so no feeder goes on the phone's own key
+    /// that the account would not allow while the app is still reading its
+    /// token and asking the server.
+    cold: Option<Keys>,
 }
 
 struct Server {
@@ -81,6 +85,9 @@ struct Server {
     keys: Keys,
     /// The account's id, as the server last said.
     user: Option<Uuid>,
+    /// The account as the server last said, or as the app kept it while
+    /// the server has not answered yet.
+    account: Option<ServerAccount>,
 }
 
 impl Server {
@@ -123,11 +130,11 @@ impl State {
     fn access(&self, feeder: &str) -> Option<Access> {
         let entry = self.feeders.get(feeder)?;
         let on_server = self.server.is_some() && entry.server.is_some();
-        let keys = self
-            .server
-            .as_ref()
-            .map_or(Keys::Own, |server| server.keys)
-            .under(self.standing);
+        let keys = match &self.server {
+            Some(server) => server.keys,
+            None => self.cold.unwrap_or(Keys::Own),
+        }
+        .under(self.standing);
         Access::of(on_server, entry.direct.is_some(), keys)
     }
 
@@ -214,12 +221,18 @@ impl State {
     }
 
     /// The account as the server says it is now: a demotion or a new
-    /// expiry takes the phone's own keys away from here on.
+    /// expiry takes the phone's own keys away from here on. The app is told
+    /// of a change, and keeps it for a cold start with the server down.
     fn account_is(&mut self, user: User) {
         let account = ServerAccount::from(user);
-        if let Some(server) = self.server.as_mut() {
-            server.keys = keys_of(&account);
-            server.user = Uuid::parse_str(&account.id).ok();
+        let Some(server) = self.server.as_mut() else {
+            return;
+        };
+        server.keys = keys_of(&account);
+        server.user = Uuid::parse_str(&account.id).ok();
+        if server.account.as_ref() != Some(&account) {
+            server.account = Some(account.clone());
+            self.tell(&[RouterUpdate::Account { account }]);
         }
     }
 
@@ -348,7 +361,7 @@ impl Router {
             early: HashMap::new(),
             listeners: Vec::new(),
             announced: HashMap::new(),
-            lost_adoptions: HashMap::new(),
+            cold: None,
         };
         Ok(Self {
             inner: Arc::new(Inner {
@@ -374,9 +387,30 @@ impl Router {
             handle,
             keys: keys_of(account),
             user: Uuid::parse_str(&account.id).ok(),
+            account: Some(account.clone()),
         });
         state.reach = ServerReach::Up;
         state.standing = Standing::Taken;
+        state.announce();
+    }
+
+    /// The server the app keeps, before anything else asks the router: its
+    /// feeders' ids, and the keys its kept account may use (none of its own
+    /// with no account kept) until the session is handed over. It sends
+    /// nothing.
+    pub(crate) fn configure(&self, kept: &KnownServer) {
+        let mut state = self.state();
+        for listed in &kept.feeders {
+            // A kept id that does not parse: the next list replaces it.
+            if let Ok(id) = crate::server::ids::feeder(&listed.id) {
+                state
+                    .feeders
+                    .entry(listed.identity.clone())
+                    .or_default()
+                    .server = Some(id);
+            }
+        }
+        state.cold = Some(kept.account.as_ref().map_or(Keys::ServerOnly, keys_of));
         state.announce();
     }
 
@@ -419,7 +453,12 @@ impl Router {
             (_, ServerFailure::Unauthorized) | (None, _) => (Keys::ServerOnly, None),
             (Some(account), _) => (keys_of(account), Uuid::parse_str(&account.id).ok()),
         };
-        state.server = Some(Server { handle, keys, user });
+        state.server = Some(Server {
+            handle,
+            keys,
+            user,
+            account: cached,
+        });
         state.heard_failure(failure, now_ms());
         state.announce();
         Err(error.into())
@@ -428,18 +467,11 @@ impl Router {
     pub(crate) fn disconnect_server(&self) {
         let mut state = self.state();
         state.server = None;
+        state.cold = None;
         state.reach = ServerReach::Up;
         state.standing = Standing::Taken;
         state.following.clear();
         state.announce();
-    }
-
-    pub(crate) fn remember(&self, feeder: &str, id: &str) -> Result<(), ServerError> {
-        let id = crate::server::ids::feeder(id)?;
-        let mut state = self.state();
-        state.feeders.entry(feeder.to_owned()).or_default().server = Some(id);
-        state.announce();
-        Ok(())
     }
 
     pub(crate) async fn refresh(&self) -> Result<Vec<ServerFeeder>, ServerError> {
@@ -482,16 +514,30 @@ impl Router {
     /// When `feeder`'s adoption last lost its answer, while that is not
     /// settled.
     pub(crate) fn adoption_lost_at(&self, feeder: &str) -> Option<i64> {
-        self.state().lost_adoptions.get(feeder).copied()
+        let state = self.state();
+        state
+            .book
+            .adoptions
+            .iter()
+            .find(|lost| lost.feeder == feeder)
+            .map(|lost| lost.at_ms)
     }
 
     /// `feeder`'s adoption lost its answer at `at`; `None` once settled.
     pub(crate) fn adoption_lost(&self, feeder: &str, at: Option<i64>) {
         let mut state = self.state();
-        match at {
-            Some(at) => state.lost_adoptions.insert(feeder.to_owned(), at),
-            None => state.lost_adoptions.remove(feeder),
-        };
+        let before = state.book.adoptions.clone();
+        state.book.adoptions.retain(|lost| lost.feeder != feeder);
+        if let Some(at_ms) = at {
+            state.book.adoptions.push(LostAdoption {
+                feeder: feeder.to_owned(),
+                at_ms,
+            });
+        }
+        if state.book.adoptions != before {
+            // Kept for a restart; one that fails to save still holds this run.
+            state.save_or_log();
+        }
     }
 
     /// How long after a lost attempt the server's silence counts as never

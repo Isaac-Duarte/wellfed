@@ -89,6 +89,13 @@ abstract class PathRouter implements RustOpaqueInterface {
   /// End [`Self::updates`].
   void close();
 
+  /// The server the app keeps, handed over before anything else asks the
+  /// router (before the token is read, a session attached or a feed
+  /// made): its feeders' ids, and the keys its kept account may use. With
+  /// no account kept the phone uses none of its own until the server
+  /// says. [`Self::resume_server`] then refines it.
+  void configureServer({required KnownServer kept});
+
   /// Route through `session` from now on, as `account`: a viewer or an
   /// account with an expiry goes through the server only.
   void connectServer({
@@ -130,10 +137,6 @@ abstract class PathRouter implements RustOpaqueInterface {
   /// (its secret is gone from secure storage): no feeder goes on the
   /// phone's own keys until a login or [`Self::disconnect_server`].
   void refuseServer();
-
-  /// The server's id for `feeder` (identity hex), as its last feeder list
-  /// gave it, for a cold start before [`Self::refresh`] answers.
-  void rememberServerFeeder({required String feeder, required String id});
 
   /// Read the server's journal for every write pinned to it, and settle
   /// those it answers for.
@@ -404,6 +407,12 @@ sealed class RouterUpdate with _$RouterUpdate {
     required PendingWrite pending,
     required Settlement settlement,
   }) = RouterUpdate_Settled;
+
+  /// The server read the account anew and it changed (a new role or
+  /// expiry): the app keeps it, so a cold start with the server down goes
+  /// by it.
+  const factory RouterUpdate.account({required ServerAccount account}) =
+      RouterUpdate_Account;
 
   /// A feed this phone sent through the server ended.
   const factory RouterUpdate.feedEnded({

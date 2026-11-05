@@ -1539,12 +1539,13 @@ extension RouterUpdatePatterns on RouterUpdate {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RouterUpdate_Path value)?  path,TResult Function( RouterUpdate_Settled value)?  settled,TResult Function( RouterUpdate_FeedEnded value)?  feedEnded,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RouterUpdate_Path value)?  path,TResult Function( RouterUpdate_Settled value)?  settled,TResult Function( RouterUpdate_Account value)?  account,TResult Function( RouterUpdate_FeedEnded value)?  feedEnded,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case RouterUpdate_Path() when path != null:
 return path(_that);case RouterUpdate_Settled() when settled != null:
-return settled(_that);case RouterUpdate_FeedEnded() when feedEnded != null:
+return settled(_that);case RouterUpdate_Account() when account != null:
+return account(_that);case RouterUpdate_FeedEnded() when feedEnded != null:
 return feedEnded(_that);case _:
   return orElse();
 
@@ -1563,12 +1564,13 @@ return feedEnded(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RouterUpdate_Path value)  path,required TResult Function( RouterUpdate_Settled value)  settled,required TResult Function( RouterUpdate_FeedEnded value)  feedEnded,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RouterUpdate_Path value)  path,required TResult Function( RouterUpdate_Settled value)  settled,required TResult Function( RouterUpdate_Account value)  account,required TResult Function( RouterUpdate_FeedEnded value)  feedEnded,}){
 final _that = this;
 switch (_that) {
 case RouterUpdate_Path():
 return path(_that);case RouterUpdate_Settled():
-return settled(_that);case RouterUpdate_FeedEnded():
+return settled(_that);case RouterUpdate_Account():
+return account(_that);case RouterUpdate_FeedEnded():
 return feedEnded(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -1583,12 +1585,13 @@ return feedEnded(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RouterUpdate_Path value)?  path,TResult? Function( RouterUpdate_Settled value)?  settled,TResult? Function( RouterUpdate_FeedEnded value)?  feedEnded,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RouterUpdate_Path value)?  path,TResult? Function( RouterUpdate_Settled value)?  settled,TResult? Function( RouterUpdate_Account value)?  account,TResult? Function( RouterUpdate_FeedEnded value)?  feedEnded,}){
 final _that = this;
 switch (_that) {
 case RouterUpdate_Path() when path != null:
 return path(_that);case RouterUpdate_Settled() when settled != null:
-return settled(_that);case RouterUpdate_FeedEnded() when feedEnded != null:
+return settled(_that);case RouterUpdate_Account() when account != null:
+return account(_that);case RouterUpdate_FeedEnded() when feedEnded != null:
 return feedEnded(_that);case _:
   return null;
 
@@ -1606,11 +1609,12 @@ return feedEnded(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String feeder,  RoutePath? path)?  path,TResult Function( PendingWrite pending,  Settlement settlement)?  settled,TResult Function( String key,  String feeder,  Settlement settlement)?  feedEnded,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String feeder,  RoutePath? path)?  path,TResult Function( PendingWrite pending,  Settlement settlement)?  settled,TResult Function( ServerAccount account)?  account,TResult Function( String key,  String feeder,  Settlement settlement)?  feedEnded,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case RouterUpdate_Path() when path != null:
 return path(_that.feeder,_that.path);case RouterUpdate_Settled() when settled != null:
-return settled(_that.pending,_that.settlement);case RouterUpdate_FeedEnded() when feedEnded != null:
+return settled(_that.pending,_that.settlement);case RouterUpdate_Account() when account != null:
+return account(_that.account);case RouterUpdate_FeedEnded() when feedEnded != null:
 return feedEnded(_that.key,_that.feeder,_that.settlement);case _:
   return orElse();
 
@@ -1629,11 +1633,12 @@ return feedEnded(_that.key,_that.feeder,_that.settlement);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String feeder,  RoutePath? path)  path,required TResult Function( PendingWrite pending,  Settlement settlement)  settled,required TResult Function( String key,  String feeder,  Settlement settlement)  feedEnded,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String feeder,  RoutePath? path)  path,required TResult Function( PendingWrite pending,  Settlement settlement)  settled,required TResult Function( ServerAccount account)  account,required TResult Function( String key,  String feeder,  Settlement settlement)  feedEnded,}) {final _that = this;
 switch (_that) {
 case RouterUpdate_Path():
 return path(_that.feeder,_that.path);case RouterUpdate_Settled():
-return settled(_that.pending,_that.settlement);case RouterUpdate_FeedEnded():
+return settled(_that.pending,_that.settlement);case RouterUpdate_Account():
+return account(_that.account);case RouterUpdate_FeedEnded():
 return feedEnded(_that.key,_that.feeder,_that.settlement);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -1648,11 +1653,12 @@ return feedEnded(_that.key,_that.feeder,_that.settlement);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String feeder,  RoutePath? path)?  path,TResult? Function( PendingWrite pending,  Settlement settlement)?  settled,TResult? Function( String key,  String feeder,  Settlement settlement)?  feedEnded,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String feeder,  RoutePath? path)?  path,TResult? Function( PendingWrite pending,  Settlement settlement)?  settled,TResult? Function( ServerAccount account)?  account,TResult? Function( String key,  String feeder,  Settlement settlement)?  feedEnded,}) {final _that = this;
 switch (_that) {
 case RouterUpdate_Path() when path != null:
 return path(_that.feeder,_that.path);case RouterUpdate_Settled() when settled != null:
-return settled(_that.pending,_that.settlement);case RouterUpdate_FeedEnded() when feedEnded != null:
+return settled(_that.pending,_that.settlement);case RouterUpdate_Account() when account != null:
+return account(_that.account);case RouterUpdate_FeedEnded() when feedEnded != null:
 return feedEnded(_that.key,_that.feeder,_that.settlement);case _:
   return null;
 
@@ -1808,6 +1814,74 @@ $SettlementCopyWith<$Res> get settlement {
     return _then(_self.copyWith(settlement: value));
   });
 }
+}
+
+/// @nodoc
+
+
+class RouterUpdate_Account extends RouterUpdate {
+  const RouterUpdate_Account({required this.account}): super._();
+  
+
+ final  ServerAccount account;
+
+/// Create a copy of RouterUpdate
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RouterUpdate_AccountCopyWith<RouterUpdate_Account> get copyWith => _$RouterUpdate_AccountCopyWithImpl<RouterUpdate_Account>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is RouterUpdate_Account&&(identical(other.account, account) || other.account == account));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,account);
+}
+
+@override
+String toString() {
+    return 'RouterUpdate.account(account: $account)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RouterUpdate_AccountCopyWith<$Res> implements $RouterUpdateCopyWith<$Res> {
+  factory $RouterUpdate_AccountCopyWith(RouterUpdate_Account value, $Res Function(RouterUpdate_Account) _then) = _$RouterUpdate_AccountCopyWithImpl;
+@useResult
+$Res call({
+ ServerAccount account
+});
+
+
+
+
+}
+/// @nodoc
+class _$RouterUpdate_AccountCopyWithImpl<$Res>
+    implements $RouterUpdate_AccountCopyWith<$Res> {
+  _$RouterUpdate_AccountCopyWithImpl(this._self, this._then);
+
+  final RouterUpdate_Account _self;
+  final $Res Function(RouterUpdate_Account) _then;
+
+/// Create a copy of RouterUpdate
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? account = null,}) {
+  return _then(RouterUpdate_Account(
+account: null == account ? _self.account : account // ignore: cast_nullable_to_non_nullable
+as ServerAccount,
+  ));
+}
+
+
 }
 
 /// @nodoc

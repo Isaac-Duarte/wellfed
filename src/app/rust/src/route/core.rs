@@ -16,7 +16,7 @@ use uuid::Uuid;
 use wellfed_api::{CommandOutcome, CommandState};
 
 use crate::api::router::{RoutePath, Settlement};
-use crate::route::pins::{PinRecord, PinState, PinnedWrite, RunningFeed, ServerMark};
+use crate::route::pins::{LostAdoption, PinRecord, PinState, PinnedWrite, RunningFeed, ServerMark};
 
 /// How long a server that failed to connect is passed over before a new
 /// request tries it again. The stream reopening or any call answering marks
@@ -378,6 +378,9 @@ pub(crate) struct Book {
     /// Direct feeds this phone saw the feeder reserve, whose `Fed` it has
     /// not read yet: none is an uncertain feed's end.
     pub(crate) running: Vec<RunningFeed>,
+    /// Adoptions whose answer was lost, kept across a restart so the grace
+    /// before a second owner invite holds through one.
+    pub(crate) adoptions: Vec<LostAdoption>,
 }
 
 impl Book {

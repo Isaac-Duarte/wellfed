@@ -107,6 +107,9 @@ extension FeederFeeds on FeederController {
         if (_feed case FeedRunning(key: final String running?) when running == key) {
           if (_ports.settledFeed(settlement) case final FeedResult result) _feedEnded(result);
         }
+      case RouterUpdate_Account():
+        // The home server keeps the account; no feeder's own.
+        break;
     }
   }
 

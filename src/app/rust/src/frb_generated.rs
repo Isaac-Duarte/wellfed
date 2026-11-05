@@ -47,7 +47,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1474298382;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1312528697;
 
 // Section: executor
 
@@ -1574,6 +1574,55 @@ fn wire__crate__api__router__PathRouter_close_impl(
         },
     )
 }
+fn wire__crate__api__router__PathRouter_configure_server_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "PathRouter_configure_server",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PathRouter>,
+            >>::sse_decode(&mut deserializer);
+            let api_kept = <crate::api::server_views::KnownServer>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ =
+                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                            &api_that, 0, false,
+                        ),
+                    ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                        _ => unreachable!(),
+                    }
+                }
+                let api_that_guard = api_that_guard.unwrap();
+                let output_ok = Ok::<_, ()>({
+                    crate::api::router::PathRouter::configure_server(&*api_that_guard, api_kept);
+                })?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__router__PathRouter_connect_server_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -2044,58 +2093,6 @@ fn wire__crate__api__router__PathRouter_refuse_server_impl(
                 let output_ok = Ok::<_, ()>({
                     crate::api::router::PathRouter::refuse_server(&*api_that_guard);
                 })?;
-                std::result::Result::Ok(output_ok)
-            })())
-        },
-    )
-}
-fn wire__crate__api__router__PathRouter_remember_server_feeder_impl(
-    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
-    rust_vec_len_: i32,
-    data_len_: i32,
-) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
-        flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "PathRouter_remember_server_feeder",
-            port: None,
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
-        },
-        move || {
-            let message = unsafe {
-                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
-                    ptr_,
-                    rust_vec_len_,
-                    data_len_,
-                )
-            };
-            let mut deserializer =
-                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_that = <RustOpaqueMoi<
-                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PathRouter>,
-            >>::sse_decode(&mut deserializer);
-            let api_feeder = <String>::sse_decode(&mut deserializer);
-            let api_id = <String>::sse_decode(&mut deserializer);
-            deserializer.end();
-            transform_result_sse::<_, crate::api::server_error::ServerError>((move || {
-                let mut api_that_guard = None;
-                let decode_indices_ =
-                    flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
-                        flutter_rust_bridge::for_generated::LockableOrderInfo::new(
-                            &api_that, 0, false,
-                        ),
-                    ]);
-                for i in decode_indices_ {
-                    match i {
-                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
-                        _ => unreachable!(),
-                    }
-                }
-                let api_that_guard = api_that_guard.unwrap();
-                let output_ok = crate::api::router::PathRouter::remember_server_feeder(
-                    &*api_that_guard,
-                    api_feeder,
-                    api_id,
-                )?;
                 std::result::Result::Ok(output_ok)
             })())
         },
@@ -9625,6 +9622,13 @@ impl SseDecode for crate::api::router::RouterUpdate {
                 };
             }
             2 => {
+                let mut var_account =
+                    <crate::api::server_views::ServerAccount>::sse_decode(deserializer);
+                return crate::api::router::RouterUpdate::Account {
+                    account: var_account,
+                };
+            }
+            3 => {
                 let mut var_key = <String>::sse_decode(deserializer);
                 let mut var_feeder = <String>::sse_decode(deserializer);
                 let mut var_settlement = <crate::api::router::Settlement>::sse_decode(deserializer);
@@ -11401,9 +11405,9 @@ fn pde_ffi_dispatcher_primary_impl(
         28 => {
             wire__crate__api__router__PathRouter_claim_phone_impl(port, ptr, rust_vec_len, data_len)
         }
-        32 => wire__crate__api__router__PathRouter_feed_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__router__PathRouter_follow_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__router__PathRouter_refresh_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__router__PathRouter_feed_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__router__PathRouter_follow_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__router__PathRouter_refresh_impl(port, ptr, rust_vec_len, data_len),
         40 => wire__crate__api__router__PathRouter_resolve_impl(port, ptr, rust_vec_len, data_len),
         41 => wire__crate__api__router__PathRouter_resume_server_impl(
             port,
@@ -11586,19 +11590,17 @@ fn pde_ffi_dispatcher_sync_impl(
         22 => wire__crate__api__router__PathRouter_acknowledge_impl(ptr, rust_vec_len, data_len),
         25 => wire__crate__api__router__PathRouter_attach_impl(ptr, rust_vec_len, data_len),
         29 => wire__crate__api__router__PathRouter_close_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__router__PathRouter_connect_server_impl(ptr, rust_vec_len, data_len),
-        31 => {
+        30 => {
+            wire__crate__api__router__PathRouter_configure_server_impl(ptr, rust_vec_len, data_len)
+        }
+        31 => wire__crate__api__router__PathRouter_connect_server_impl(ptr, rust_vec_len, data_len),
+        32 => {
             wire__crate__api__router__PathRouter_disconnect_server_impl(ptr, rust_vec_len, data_len)
         }
-        34 => wire__crate__api__router__PathRouter_new_impl(ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__router__PathRouter_path_impl(ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__router__PathRouter_pending_impl(ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__router__PathRouter_refuse_server_impl(ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__router__PathRouter_remember_server_feeder_impl(
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
+        35 => wire__crate__api__router__PathRouter_new_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__router__PathRouter_path_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__router__PathRouter_pending_impl(ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__router__PathRouter_refuse_server_impl(ptr, rust_vec_len, data_len),
         44 => wire__crate__api__setup__Recovery_close_impl(ptr, rust_vec_len, data_len),
         45 => wire__crate__api__setup__Recovery_code_impl(ptr, rust_vec_len, data_len),
         46 => wire__crate__api__setup__Recovery_new_impl(ptr, rust_vec_len, data_len),
@@ -14472,12 +14474,15 @@ impl flutter_rust_bridge::IntoDart for crate::api::router::RouterUpdate {
                 settlement.into_into_dart().into_dart(),
             ]
             .into_dart(),
+            crate::api::router::RouterUpdate::Account { account } => {
+                [2.into_dart(), account.into_into_dart().into_dart()].into_dart()
+            }
             crate::api::router::RouterUpdate::FeedEnded {
                 key,
                 feeder,
                 settlement,
             } => [
-                2.into_dart(),
+                3.into_dart(),
                 key.into_into_dart().into_dart(),
                 feeder.into_into_dart().into_dart(),
                 settlement.into_into_dart().into_dart(),
@@ -19575,12 +19580,16 @@ impl SseEncode for crate::api::router::RouterUpdate {
                 <crate::api::router::PendingWrite>::sse_encode(pending, serializer);
                 <crate::api::router::Settlement>::sse_encode(settlement, serializer);
             }
+            crate::api::router::RouterUpdate::Account { account } => {
+                <i32>::sse_encode(2, serializer);
+                <crate::api::server_views::ServerAccount>::sse_encode(account, serializer);
+            }
             crate::api::router::RouterUpdate::FeedEnded {
                 key,
                 feeder,
                 settlement,
             } => {
-                <i32>::sse_encode(2, serializer);
+                <i32>::sse_encode(3, serializer);
                 <String>::sse_encode(key, serializer);
                 <String>::sse_encode(feeder, serializer);
                 <crate::api::router::Settlement>::sse_encode(settlement, serializer);

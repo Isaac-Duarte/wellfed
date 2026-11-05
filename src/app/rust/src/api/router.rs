@@ -15,6 +15,16 @@
 //! closes the phone's own keys too, on every feeder: the router never routes
 //! around the account, until the owner logs in again or removes the server
 //! ([`PathRouter::disconnect_server`]).
+//!
+//! The app keeps the server with its feeders and its account, and hands it
+//! to the router ([`PathRouter::configure_server`]) before anything else
+//! asks it, so a cold start goes by the kept account until the server
+//! answers. A change the server makes to the account while the app runs
+//! ([`RouterUpdate::Account`]) is kept too. One made while the app was
+//! closed, with the server down when it starts, is not known on the phone:
+//! a demoted owner's kept account still allows its own key, and only the
+//! server revoking that phone key on the feeder (as it does for a demotion,
+//! an expiry or a deleted account) stops it there.
 //! [`PathRouter::path`] and [`RouterUpdate::Path`] say which path a feeder
 //! takes now, for the screen's indicator.
 //!
@@ -57,7 +67,7 @@ use crate::api::keys::ClientKey;
 pub use crate::api::model::{FeedOutcome, FeedReason, FoodLevel};
 use crate::api::server::{ServerRefusal, ServerSession, ServerUpdate};
 use crate::api::server_error::ServerError;
-use crate::api::server_views::{ServerAccount, ServerFeeder};
+use crate::api::server_views::{KnownServer, ServerAccount, ServerFeeder};
 use crate::api::session::{FedBy, FeedRefusal, FeedResult, FeederSession};
 use crate::frb_generated::StreamSink;
 use crate::route::core::UNFOUND_GRACE_MS;
@@ -244,6 +254,10 @@ pub enum RouterUpdate {
         pending: PendingWrite,
         settlement: Settlement,
     },
+    /// The server read the account anew and it changed (a new role or
+    /// expiry): the app keeps it, so a cold start with the server down goes
+    /// by it.
+    Account { account: ServerAccount },
     /// A feed this phone sent through the server ended.
     FeedEnded {
         key: String,
@@ -350,6 +364,16 @@ impl PathRouter {
         self.router.connect_server(session.handle(), &account);
     }
 
+    /// The server the app keeps, handed over before anything else asks the
+    /// router (before the token is read, a session attached or a feed
+    /// made): its feeders' ids, and the keys its kept account may use. With
+    /// no account kept the phone uses none of its own until the server
+    /// says. [`Self::resume_server`] then refines it.
+    #[frb(sync)]
+    pub fn configure_server(&self, kept: KnownServer) {
+        self.router.configure(&kept);
+    }
+
     /// At a cold start, route through `session`, a kept login: by the
     /// account the server reads now, or with the server not answering, by
     /// `cached`, the account as last read. With no cached account the
@@ -378,13 +402,6 @@ impl PathRouter {
     #[frb(sync)]
     pub fn disconnect_server(&self) {
         self.router.disconnect_server();
-    }
-
-    /// The server's id for `feeder` (identity hex), as its last feeder list
-    /// gave it, for a cold start before [`Self::refresh`] answers.
-    #[frb(sync)]
-    pub fn remember_server_feeder(&self, feeder: String, id: String) -> Result<(), ServerError> {
-        self.router.remember(&feeder, &id)
     }
 
     /// Read the server's feeders, and route by what it says of each.

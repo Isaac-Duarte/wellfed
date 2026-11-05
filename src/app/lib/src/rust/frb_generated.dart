@@ -83,7 +83,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -1474298382;
+  int get rustContentHash => -1312528697;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -213,6 +213,11 @@ abstract class RustLibApi extends BaseApi {
 
   void crateApiRouterPathRouterClose({required PathRouter that});
 
+  void crateApiRouterPathRouterConfigureServer({
+    required PathRouter that,
+    required KnownServer kept,
+  });
+
   void crateApiRouterPathRouterConnectServer({
     required PathRouter that,
     required ServerSession session,
@@ -248,12 +253,6 @@ abstract class RustLibApi extends BaseApi {
   });
 
   void crateApiRouterPathRouterRefuseServer({required PathRouter that});
-
-  void crateApiRouterPathRouterRememberServerFeeder({
-    required PathRouter that,
-    required String feeder,
-    required String id,
-  });
 
   Future<void> crateApiRouterPathRouterResolve({required PathRouter that});
 
@@ -1641,6 +1640,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "PathRouter_close", argNames: ["that"]);
 
   @override
+  void crateApiRouterPathRouterConfigureServer({
+    required PathRouter that,
+    required KnownServer kept,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
+            that,
+            serializer,
+          );
+          sse_encode_box_autoadd_known_server(kept, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 30)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiRouterPathRouterConfigureServerConstMeta,
+        argValues: [that, kept],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRouterPathRouterConfigureServerConstMeta =>
+      const TaskConstMeta(
+        debugName: "PathRouter_configure_server",
+        argNames: ["that", "kept"],
+      );
+
+  @override
   void crateApiRouterPathRouterConnectServer({
     required PathRouter that,
     required ServerSession session,
@@ -1659,7 +1691,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_box_autoadd_server_account(account, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 30)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 31)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1688,7 +1720,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 31)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1726,7 +1758,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 33,
             port: port_,
           );
         },
@@ -1767,7 +1799,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 33,
+              funcId: 34,
               port: port_,
             );
           },
@@ -1797,7 +1829,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(pinsPath, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 34)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 35)!;
         },
         codec: SseCodec(
           decodeSuccessData:
@@ -1828,7 +1860,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_String(feeder, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 35)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 36)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_route_path,
@@ -1859,7 +1891,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 36)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 37)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_pending_write,
@@ -1890,7 +1922,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 38,
             port: port_,
           );
         },
@@ -1918,7 +1950,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 38)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 39)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1935,41 +1967,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "PathRouter_refuse_server",
         argNames: ["that"],
-      );
-
-  @override
-  void crateApiRouterPathRouterRememberServerFeeder({
-    required PathRouter that,
-    required String feeder,
-    required String id,
-  }) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerPathRouter(
-            that,
-            serializer,
-          );
-          sse_encode_String(feeder, serializer);
-          sse_encode_String(id, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 39)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_server_error,
-        ),
-        constMeta: kCrateApiRouterPathRouterRememberServerFeederConstMeta,
-        argValues: [that, feeder, id],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiRouterPathRouterRememberServerFeederConstMeta =>
-      const TaskConstMeta(
-        debugName: "PathRouter_remember_server_feeder",
-        argNames: ["that", "feeder", "id"],
       );
 
   @override
@@ -7462,6 +7459,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           settlement: dco_decode_box_autoadd_settlement(raw[2]),
         );
       case 2:
+        return RouterUpdate_Account(
+          account: dco_decode_box_autoadd_server_account(raw[1]),
+        );
+      case 3:
         return RouterUpdate_FeedEnded(
           key: dco_decode_String(raw[1]),
           feeder: dco_decode_String(raw[2]),
@@ -12325,6 +12326,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           settlement: var_settlement,
         );
       case 2:
+        var var_account = sse_decode_box_autoadd_server_account(deserializer);
+        return RouterUpdate_Account(account: var_account);
+      case 3:
         var var_key = sse_decode_String(deserializer);
         var var_feeder = sse_decode_String(deserializer);
         var var_settlement = sse_decode_box_autoadd_settlement(deserializer);
@@ -17212,12 +17216,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(1, serializer);
         sse_encode_box_autoadd_pending_write(pending, serializer);
         sse_encode_box_autoadd_settlement(settlement, serializer);
+      case RouterUpdate_Account(account: final account):
+        sse_encode_i_32(2, serializer);
+        sse_encode_box_autoadd_server_account(account, serializer);
       case RouterUpdate_FeedEnded(
         key: final key,
         feeder: final feeder,
         settlement: final settlement,
       ):
-        sse_encode_i_32(2, serializer);
+        sse_encode_i_32(3, serializer);
         sse_encode_String(key, serializer);
         sse_encode_String(feeder, serializer);
         sse_encode_box_autoadd_settlement(settlement, serializer);
@@ -18530,6 +18537,14 @@ class PathRouterImpl extends RustOpaque implements PathRouter {
   void close() =>
       RustLib.instance.api.crateApiRouterPathRouterClose(that: this);
 
+  /// The server the app keeps, handed over before anything else asks the
+  /// router (before the token is read, a session attached or a feed
+  /// made): its feeders' ids, and the keys its kept account may use. With
+  /// no account kept the phone uses none of its own until the server
+  /// says. [`Self::resume_server`] then refines it.
+  void configureServer({required KnownServer kept}) => RustLib.instance.api
+      .crateApiRouterPathRouterConfigureServer(that: this, kept: kept);
+
   /// Route through `session` from now on, as `account`: a viewer or an
   /// account with an expiry goes through the server only.
   void connectServer({
@@ -18577,15 +18592,6 @@ class PathRouterImpl extends RustOpaque implements PathRouter {
   /// phone's own keys until a login or [`Self::disconnect_server`].
   void refuseServer() =>
       RustLib.instance.api.crateApiRouterPathRouterRefuseServer(that: this);
-
-  /// The server's id for `feeder` (identity hex), as its last feeder list
-  /// gave it, for a cold start before [`Self::refresh`] answers.
-  void rememberServerFeeder({required String feeder, required String id}) =>
-      RustLib.instance.api.crateApiRouterPathRouterRememberServerFeeder(
-        that: this,
-        feeder: feeder,
-        id: id,
-      );
 
   /// Read the server's journal for every write pinned to it, and settle
   /// those it answers for.

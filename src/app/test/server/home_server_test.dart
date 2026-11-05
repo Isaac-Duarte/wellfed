@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
@@ -117,5 +118,33 @@ void main() {
 
     expect(router.resumed, [viewer]);
     expect(book.server?.account, serverOwner, reason: 'what the server says now is kept');
+  });
+
+  test('a kept server reaches the router before anything is awaited', () {
+    const viewer = ServerAccount(id: 'u2', name: 'sam', role: ServerRole.viewer);
+    const kept = KnownServer(link: serverLink, feeders: [], account: viewer);
+    final book = FakeBook()
+      ..feeders = [_kitchen]
+      ..server = kept;
+    final router = FakeRouter();
+    final server = HomeServer(book, FakeServerPorts()..kept = 'token-secret', router);
+    addTearDown(server.dispose);
+
+    // Synchronously, in the constructor: no session or feed can come first.
+    expect(router.configured, [kept]);
+    expect(router.log, ['configure']);
+    expect(router.resumed, isEmpty, reason: 'the secret is not read yet');
+  });
+
+  test('an account the router reads again is kept for the next cold start', () async {
+    final (HomeServer server, _, FakeRouter router, FakeBook book) = _server();
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+
+    const demoted = ServerAccount(id: 'u1', name: 'ada', role: ServerRole.viewer);
+    router.said.add(const RouterUpdate.account(account: demoted));
+    await pumpEventQueue();
+
+    expect(server.state, isA<ServerLinked>().having((linked) => linked.account, 'account', demoted));
+    expect(book.server?.account, demoted);
   });
 }

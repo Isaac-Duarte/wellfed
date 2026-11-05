@@ -109,12 +109,18 @@ class AppState extends ChangeNotifier implements FeederBook {
 
     final Directory dir = await getApplicationSupportDirectory();
     final path = '${dir.path}/wellfed.json';
-    return AppState._(key, await loadStore(path: path), path, _openRouter('${dir.path}/pending.json'));
+    final AppStore store = await loadStore(path: path);
+    return AppState._(key, store, path, _openRouter('${dir.path}/pending.json', store.server));
   }
 
-  static PathRouter? _openRouter(String pins) {
+  /// The router on `pins`, told at once of the server the app keeps, before
+  /// any feeder session exists: an account the server may have narrowed
+  /// never feeds on the phone's own key while the app reads its token.
+  static PathRouter? _openRouter(String pins, KnownServer? kept) {
     try {
-      return PathRouter(pinsPath: pins);
+      final router = PathRouter(pinsPath: pins);
+      if (kept != null) router.configureServer(kept: kept);
+      return router;
     } on BridgeError catch (error) {
       debugPrint('the pending writes could not be opened, so nothing is sent: ${error.message}');
       return null;

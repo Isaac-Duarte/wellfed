@@ -14,7 +14,14 @@
 //! (an activity recreated, a hot restart) leaves its router behind, never
 //! closed, and the app must not be left sending nothing until the process
 //! dies. What the fenced router had pinned is on disk, and the new one
-//! reads it back as uncertain.
+//! reads it back as uncertain. What the fenced router learns after the
+//! fence (an answer it heard, a settlement) is lost with it, and its pins
+//! stay uncertain in the new one until their own path settles them. Only the
+//! app's UI isolate opens a router: one opened in a background isolate
+//! would fence the UI's.
+//!
+//! The file also keeps the adoptions whose answer was lost, so the grace
+//! before a second owner invite outlives a restart.
 //! Written atomically, so a crash keeps the old or the new file. Every write
 //! is written down before it is sent, so a phone that stops mid-send finds
 //! it pinned at its next start. A file that does not load fails the router's
@@ -167,12 +174,23 @@ pub(crate) struct RunningFeed {
     pub(crate) until_ms: i64,
 }
 
+/// An adoption of `feeder` whose answer was lost at `at_ms`: until the
+/// server lists it, or the router's grace passes, no second owner invite is
+/// made for it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct LostAdoption {
+    pub(crate) feeder: String,
+    pub(crate) at_ms: i64,
+}
+
 /// The file's shape.
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PinFile {
     pins: Vec<PinRecord>,
     running: Vec<RunningFeed>,
+    adoptions: Vec<LostAdoption>,
 }
 
 /// A pins file open in this process: its lock, and the fence of the store
@@ -278,6 +296,7 @@ impl PinStore {
         Ok(Book {
             pins,
             running: file.running,
+            adoptions: file.adoptions,
         })
     }
 
@@ -290,6 +309,7 @@ impl PinStore {
         let file = PinFile {
             pins: book.pins.clone(),
             running: book.running.clone(),
+            adoptions: book.adoptions.clone(),
         };
         private::write_json(&self.path, &file)?;
         Ok(())
@@ -378,9 +398,14 @@ mod tests {
             feed: 4,
             until_ms: 9,
         };
+        let lost = LostAdoption {
+            feeder: "cd".repeat(32),
+            at_ms: 11,
+        };
         let saved = Book {
             pins: vec![feed(1), settings.clone()],
             running: vec![running.clone()],
+            adoptions: vec![lost.clone()],
         };
         store.save(&saved).unwrap();
         drop(store);
@@ -397,6 +422,7 @@ mod tests {
                     settings
                 ],
                 running: vec![running],
+                adoptions: vec![lost],
             }
         );
     }

@@ -119,12 +119,14 @@ class FeederFleet extends ChangeNotifier {
   }
 
   void _routerSaid(RouterUpdate update) {
-    final String feeder = switch (update) {
+    final String? feeder = switch (update) {
       RouterUpdate_Path(:final String feeder) => feeder,
       RouterUpdate_Settled(:final PendingWrite pending) => pending.feeder,
       RouterUpdate_FeedEnded(:final String feeder) => feeder,
+      // The account is the server's to keep.
+      RouterUpdate_Account() => null,
     };
-    _feeders[feeder]?.routerSaid(update);
+    if (feeder != null) _feeders[feeder]?.routerSaid(update);
   }
 
   void _serverSaid(ServerEvent event) {

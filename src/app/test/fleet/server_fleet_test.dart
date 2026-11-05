@@ -81,7 +81,8 @@ void main() {
       kept: book.server,
       setUp: (server) => server.session.accountFails = serverError(ServerErrorKind.unreachable),
     );
-    expect(coldPorts.fakeRouter.remembered, [('aa', 'id-k')]);
+    expect(coldPorts.fakeRouter.configured, [book.server]);
+    expect(coldPorts.fakeRouter.log.first, 'configure', reason: 'before any session or feed');
     expect(coldPorts.fakeRouter.connected, isEmpty, reason: 'the server never answered');
     expect(cold['aa']?.ownKey, isTrue);
     expect(coldPorts.sessions.map((session) => session.identity), contains('aa'));

@@ -16,8 +16,9 @@ import 'fakes.dart';
 class FakeRouter with FakeOpaque implements PathRouter {
   final _attached = <String, FakeSession>{};
 
-  /// What happened to the sessions, in order: `attach <feeder>` here, and
-  /// `run <feeder>` as each session starts.
+  /// What happened, in order: `configure` as the app tells it of a kept
+  /// server, `attach <feeder>` and `feed <feeder>` here, and `run <feeder>`
+  /// as each session starts.
   final log = <String>[];
 
   /// Every feed asked of it, by feeder.
@@ -30,9 +31,6 @@ class FakeRouter with FakeOpaque implements PathRouter {
   /// The servers it was handed, and how often it let one go.
   final connected = <ServerAccount>[];
   int disconnects = 0;
-
-  /// Kept server ids it was told before the server answered.
-  final remembered = <(String, String)>[];
 
   // ignore: close_sinks, the test ends with it
   final stream = StreamController<ServerUpdate>.broadcast();
@@ -70,6 +68,7 @@ class FakeRouter with FakeOpaque implements PathRouter {
   @override
   Future<RoutedFeed> feed({required String feeder, required int portions}) {
     fed.add((feeder, portions));
+    log.add('feed $feeder');
     final FakeSession? session = _on(feeder);
     session?.feed(portions: portions);
     final RoutedFeed? answer = feedAnswer;
@@ -148,8 +147,14 @@ class FakeRouter with FakeOpaque implements PathRouter {
   Future<Adoption> checkAdoption({required String feeder, required ClientKey key}) =>
       throw UnimplementedError('no server here');
 
+  /// The kept servers the app told it of before anything else.
+  final configured = <KnownServer>[];
+
   @override
-  void rememberServerFeeder({required String feeder, required String id}) => remembered.add((feeder, id));
+  void configureServer({required KnownServer kept}) {
+    configured.add(kept);
+    log.add('configure');
+  }
 
   @override
   Future<List<ServerFeeder>> refresh() async {

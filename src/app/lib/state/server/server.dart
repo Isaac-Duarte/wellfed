@@ -97,10 +97,16 @@ final class LoginFailed extends LoginOutcome {
 /// the app as it was: nothing here runs until a login.
 class HomeServer extends ChangeNotifier {
   /// The server `_book` keeps, if any, served at once.
+  ///
+  /// The router is told of the kept server before anything is awaited, so
+  /// no feed goes on the phone's own key that the kept account (or, with
+  /// none kept, an account not yet read) would not allow.
   HomeServer(this._book, this._ports, this._router) {
     final KnownServer? kept = _book.server;
+    _routed = _router?.updates().listen(_routerSaid);
     if (kept != null) {
-      _state = ServerLinked(link: kept.link, feeders: kept.feeders);
+      _router?.configureServer(kept: kept);
+      _state = ServerLinked(link: kept.link, feeders: kept.feeders, account: kept.account);
       unawaited(_restore(kept));
     }
   }
@@ -119,6 +125,8 @@ class HomeServer extends ChangeNotifier {
 
   ServerSession? _session;
   StreamSubscription<ServerUpdate>? _following;
+  StreamSubscription<RouterUpdate>? _routed;
+  Future<void> _kept = Future.value();
   String? _resume;
   Timer? _again;
   bool _disposed = false;
@@ -199,7 +207,7 @@ class HomeServer extends ChangeNotifier {
     ];
     if (_state case final ServerLinked linked) {
       _set(linked.copyWith(feeders: listed, listed: true, problem: () => null));
-      await _keep(KnownServer(link: linked.link, feeders: listed, account: linked.account));
+      await _keep();
     }
   }
 
@@ -220,13 +228,28 @@ class HomeServer extends ChangeNotifier {
     if (_state case ServerLinked(problem: ServerProblem.unreachable)) _retryNow();
   }
 
-  /// Keep `server` in the app's file for a cold start.
-  Future<void> _keep(KnownServer server) async {
+  /// Keep the server as it stands now in the app's file, for a cold start:
+  /// one write at a time, each of the state when it runs, so a slower write
+  /// never leaves an older account behind.
+  Future<void> _keep() => _kept = _kept.then((_) async {
+    final ServerState state = _state;
+    if (state is! ServerLinked || _disposed) return;
     try {
-      await _book.setServer(server);
+      await _book.setServer(KnownServer(link: state.link, feeders: state.feeders, account: state.account));
     } on Object catch (error) {
       // Only the copy for a cold start; the next read keeps it.
       debugPrint('the server was not kept: $error');
+    }
+  });
+
+  /// The router read the account again (a list, or the stream reopening):
+  /// a role or expiry the server changed is kept for the next cold start.
+  void _routerSaid(RouterUpdate update) {
+    if (update case RouterUpdate_Account(:final ServerAccount account)) {
+      if (_state case final ServerLinked linked) {
+        _set(linked.copyWith(account: account));
+        unawaited(_keep());
+      }
     }
   }
 
@@ -252,13 +275,6 @@ class HomeServer extends ChangeNotifier {
       return;
     }
     _session = session;
-    for (final ListedFeeder feeder in kept.feeders) {
-      try {
-        _router?.rememberServerFeeder(feeder: feeder.identity, id: feeder.id);
-      } on ServerError {
-        // A kept id that does not parse: the next list replaces it.
-      }
-    }
     await _connect(session);
   }
 
@@ -280,7 +296,7 @@ class HomeServer extends ChangeNotifier {
     if (_state case final ServerLinked linked) {
       _set(linked.copyWith(account: account, problem: () => null));
       // Kept, for a cold start with the server down to go by.
-      await _keep(KnownServer(link: linked.link, feeders: linked.feeders, account: account));
+      await _keep();
     }
     await refresh();
     _follow();
@@ -372,6 +388,7 @@ class HomeServer extends ChangeNotifier {
     _again?.cancel();
     _session?.close();
     unawaited(_following?.cancel());
+    unawaited(_routed?.cancel());
     unawaited(_events.close());
     super.dispose();
   }
