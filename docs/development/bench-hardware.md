@@ -1,15 +1,13 @@
 # Bench hardware
 
-This page is the physical reference for the bench: what plugs into what, which pin is which, how to check the wiring, and the order of a flash session. It is for contributors and agents who touch the bench. The commands themselves are on the [relay bench](../devices/plaf103/bench.md) page, and the board's design is on the [Wellfed Bench board](../../src/hardware/bench/README.md) page.
-
-Everything on this page beyond reading it is a physical operation on the device under test.
+This is the bench's physical reference, for contributors and agents who touch it: what plugs into what, which pin is which, how to check the wiring, and the order of a flash session. The commands are on the [relay bench](../devices/plaf103/bench.md) page and the board's design on the [Wellfed Bench board](../../src/hardware/bench/README.md) page. Everything here beyond reading is a physical operation on the device under test.
 
 ## Wire TX to TX
 
 > [!NOTE]
 > The Wellfed Bench board labels its **FEEDER UART** header with the feeder's pin names. Wire label to label: feeder **TX** to the board's **TX**, **RX** to **RX**, **GND** to **GND**. The board crosses the lines inside itself. Do not cross them again in the cable.
 
-The usual rule for a serial adapter, "TX goes to RX", applies only to a bare USB serial adapter, whose labels name its own pins. The bench no longer uses one, but older pages and captures describe it.
+The usual "TX goes to RX" applies only to a bare USB serial adapter, whose labels name its own pins. The bench no longer uses one, but older pages and captures describe it.
 
 | You connect the feeder to | Feeder TX goes to | Feeder RX goes to | Feeder GND goes to |
 | --- | --- | --- | --- |
@@ -26,7 +24,7 @@ Nothing ever connects to a feeder's 3V3 or VCC pin. The feeder runs from its own
 | Wellfed Bench board, Rev B | One USB cable to the host. Switches feeder 5 V, holds the loader strap, bridges the feeder's UART and isolates it while the feeder is off |
 | The feeder (PLAF103) or the fountain (PLWF106) | The device under test, one at a time |
 
-The board replaced an SH-UR04A USB relay board and an FT232R adapter. It speaks the relay board's `AT+CHn` protocol, so `wellfed-bench` drives it the same way. The [relay bench](../devices/plaf103/bench.md#wiring) page still describes the relay board's wiring, for comparison.
+The board replaced an SH-UR04A USB relay board and an FT232R adapter, and speaks the relay board's `AT+CHn` protocol, so `wellfed-bench` drives it the same way. The [relay bench](../devices/plaf103/bench.md#wiring) page keeps the relay board's wiring for comparison.
 
 ## The board's connectors
 
@@ -71,13 +69,13 @@ The console header `CON5` is labelled **RX, TX, GND** ([UART page](../devices/pl
 | Middle round pad | TX | Pin 2, TX |
 | Round pad nearest the mounting screw | GND | Pin 3, GND |
 
-Pin 1 is RX on both ends, so a three-wire cable runs straight across, pin 1 to pin 1. Pad positions can differ between units, so go by the silkscreen.
+Pin 1 is RX on both ends, so a three-wire cable runs straight across. Pad positions can differ between units, so go by the silkscreen.
 
-Plug the feeder's USB power cable into FEEDER 5V. Keep the D cells out: then FEEDER 5V is the feeder's only supply, and cutting it is the kill switch. With the cells in, the board's RECOVER refuses and the bench cannot power the feeder off.
+Plug the feeder's USB power cable into FEEDER 5V. Keep the D cells out, so FEEDER 5V is the only supply and cutting it is the kill switch. With the cells in, the board's RECOVER refuses and the bench cannot power the feeder off.
 
 ### PLWF106
 
-The fountain's header is labelled **GND, TX, RX, 3V3** ([UART page](../devices/plwf106/uart.md)). Its order differs from the feeder's, and it has a fourth pin, so wire by label rather than by position:
+The fountain's header is labelled **GND, TX, RX, 3V3** ([UART page](../devices/plwf106/uart.md)): another order, and a fourth pin, so wire by label, not position:
 
 | Fountain | Bench J2 |
 | --- | --- |
@@ -97,11 +95,11 @@ The board shows up as two USB serial ports. `private/bench.json` names both.
 | 0 | The feeder UART bridge, `…-if00` | `uart_port` | No |
 | 2 | The relay port, `…-if02` | `relay_port` | Yes, with `OK` |
 
-Name each port by a path that stays the same when the board is replugged, such as `/dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if00`. If you are unsure which port is which, send `AT`: only the relay port answers. The [bench firmware](../../src/firmware/bench/README.md#use-it-with-the-bench) page has the full `bench.json` and the port names on each host.
+Name each port by a path that survives a replug, such as `/dev/serial/by-id/usb-Wellfed_Wellfed_Bench_<serial>-if00`. Unsure which is which? Send `AT`: only the relay port answers. The [bench firmware](../../src/firmware/bench/README.md#use-it-with-the-bench) page has the full `bench.json` and the port names on each host.
 
 ## Check the wiring
 
-Check these before you blame the firmware or the tools. Steps 1 and 2 run with no server. While `wellfed-bench serve` runs it owns both ports, so steps 3 and 4 run as its jobs.
+Check these before blaming the firmware or the tools. Steps 1 and 2 run with no server; steps 3 and 4 run as jobs of `wellfed-bench serve`, which owns both ports.
 
 1. Run `wellfed-bench status` with no server.
 
@@ -109,17 +107,15 @@ Check these before you blame the firmware or the tools. Steps 1 and 2 run with n
 
 2. Open the relay port in a serial terminal and send `AT+CH1=1`, then `AT+STAT?`, then `AT+CH1=0`.
 
-   You should see `ALIVE:1` and `TXV` near 3290 mV in the `AT+STAT?` reply. That proves feeder TX reaches pin 2 and the grounds are shared. CH3 and CH4 stay off, which this check does not need.
+   You should see `ALIVE:1` and `TXV` near 3290 mV in the `AT+STAT?` reply, proving feeder TX reaches pin 2 and the grounds are shared. CH3 and CH4 stay off; this check does not need them.
 
 3. Start the server, then run `wellfed-bench boot NAME`.
 
-   You should see stock's or Wellfed's boot log in the capture. That proves the feeder-to-host direction through the CH4 buffer.
+   You should see stock's or Wellfed's boot log in the capture, proving the feeder-to-host direction through the CH4 buffer.
 
 4. Run `wellfed-bench loader NAME`.
 
-   You should see `#Flash Download Start` and a run of NAK bytes. That proves the strap reaches feeder TX. A host-to-feeder fault does not show here, since the loader sends without being asked.
-
-The host-to-feeder direction shows only when the feeder must answer: `rom-inspect`, and the helper upload at the start of `dump` and every prepare.
+   You should see `#Flash Download Start` and a run of NAK bytes, proving the strap reaches feeder TX. The loader sends unasked, so a host-to-feeder fault does not show here; it shows only when the feeder must answer: `rom-inspect`, and the helper upload at the start of `dump` and every prepare.
 
 | Symptom | Most likely cause |
 | --- | --- |
@@ -131,7 +127,7 @@ The host-to-feeder direction shows only when the feeder must answer: `rom-inspec
 
 ## Flash a feeder
 
-This is the order of a session that writes a feeder's flash over UART. Each step links to its detail.
+The order of a session that writes a feeder's flash over UART, each step linking to its detail:
 
 1. Build the bench binaries together, from the repository root:
 
@@ -139,7 +135,7 @@ This is the order of a session that writes a feeder's flash over UART. Each step
    cargo build --locked --release -p wellfed-bench -p wellfed-flash -p wellfed-stock -p wellfed
    ```
 
-   Don't rebuild `wellfed-flash` again until the session ends. A plan binds the hash of the binary that prepared it.
+   Don't rebuild `wellfed-flash` until the session ends: a plan binds the hash of the binary that prepared it.
 
 2. Freeze the reviews you need, offline, with `wellfed-build review` ([development updates](uart-development.md#freeze-the-images)): the target, and the source each bank holds now.
 
@@ -162,7 +158,7 @@ This is the order of a session that writes a feeder's flash over UART. Each step
    target/release/wellfed-bench dump NAME
    ```
 
-   Point `rom_report` and `baseline` in `private/bench.json` at the two results ([bench firmware](../../src/firmware/bench/README.md#use-it-with-the-bench)). A unit the bench knows already has both.
+   Point `rom_report` and `baseline` in `private/bench.json` at the two results ([bench firmware](../../src/firmware/bench/README.md#use-it-with-the-bench)). A unit the bench knows has both.
 
 6. Take a fresh backup with `wellfed-bench dump NAME`, and keep an independent copy.
 
@@ -185,19 +181,19 @@ This is the order of a session that writes a feeder's flash over UART. Each step
 
    You should see the final verification pass and the feeder boot.
 
-10. For the other bank, repeat from step 6 with `--bank 0` and its own source. Write one bank at a time: the bank you are not writing must hold a valid image, except that bank 1 may also be written over a bank 0 that is still the pinned baseline ([what the updater writes](uart-development.md#what-the-updater-writes)). `wellfed-bench banks` shows what the bench last saw in each.
+10. For the other bank, repeat from step 6 with `--bank 0` and its own source. Write one bank at a time: the other must hold a valid image, except that bank 1 may also be written over a bank 0 still at the pinned baseline ([what the updater writes](uart-development.md#what-the-updater-writes)). `wellfed-bench banks` shows what the bench last saw in each.
 
 11. Finish: `wellfed-bench off`, stop the server with `q`, put back any network or service you changed, and record what ran.
 
-If a step stops, nothing is retried. Don't run `flash-execute` again. Start a fresh `flash-prepare … --interrupted` session ([finish an interrupted update](uart-development.md#finish-an-interrupted-update)). Going back to stock has its own commands ([stock and back](../devices/plaf103/bench.md#stock-and-back)).
+If a step stops, nothing is retried. Don't run `flash-execute` again: start a fresh `flash-prepare … --interrupted` session ([finish an interrupted update](uart-development.md#finish-an-interrupted-update)). Going back to stock has its own commands ([stock and back](../devices/plaf103/bench.md#stock-and-back)).
 
 ## Flash the bench board
 
-The board's own firmware is separate from the feeder's. Stop `wellfed-bench serve` first, since it holds the relay port. Then send `AT+BOOTSEL` on the relay port, or hold BOOT and tap RESET, and copy the UF2 onto the `RPI-RP2` drive ([bench firmware](../../src/firmware/bench/README.md#flash)). `AT+BOOTSEL` cuts feeder power first.
+The board's own firmware is separate from the feeder's. Stop `wellfed-bench serve`, which holds the relay port, then send `AT+BOOTSEL` on the relay port (it cuts feeder power first), or hold BOOT and tap RESET, and copy the UF2 onto the `RPI-RP2` drive ([bench firmware](../../src/firmware/bench/README.md#flash)).
 
 ## Common mistakes
 
-- **Crossing TX and RX on the bench board.** Its labels already name the feeder's pins. See [Wire TX to TX](#wire-tx-to-tx).
+- **Crossing TX and RX on the bench board.** Its labels already name the feeder's pins ([wire TX to TX](#wire-tx-to-tx)).
 - **Connecting a 3V3 or VCC pin.** The feeder powers itself, and the bench header has no power pin.
 - **Leaving the D cells in.** The feeder stays powered when FEEDER 5V is cut, so power-off, loader entry and RECOVER don't work.
 - **Swapping `uart_port` and `relay_port`.** Only the relay port answers `AT`.
