@@ -84,9 +84,10 @@ A firmware gets four tasks (`FIRMWARE_TASKS`). The product uses two:
 
 **What the audit reads.** Besides the usual frame patterns, it counts Thumb-2 `subw sp, sp, #imm`, which LLVM uses for frames up to 4 KiB. It takes conditional direct calls (`blne`, `bne.w`) as edges, and a prologue slot saved as `str.w fp, [sp, #-4]!` as frame. Every firmware and variant builds under it, the deepest being `entropy` at 5,152 B.
 
-**Outside the audit.** The stack audit takes its roots from the firmware's `spawn` calls, so C-created tasks are outside it:
+**The Wi-Fi task.** `example_entry.c` creates `wellfed_wifi` (1,280 words, 5 KiB) so its stack stays sized for the vendor driver's calls, and its body is Rust (`wellfed_wifi_run`). The audit walks it from its C entry, so its Rust frames and the vendor C it calls directly count; the driver's own indirect calls are listed and left to the margin. Its bound is 1,872 B of 5,120 in the consumer `firstboot` feeder build. The deepest path is the credential select's flash-mapped read of the stored credentials (`select > NetStore::open > DualSlot::scan`). Under each vendor call the Rust holds about 290 B: the driver's loop with the task's machine (144 B), its step (64 B) and the call's dispatch (64 B), with the C wrapper's few bytes above.
 
-- The C Wi-Fi task (`wellfed_wifi`, 1,280 words, created by `example_entry.c`). The audit bounds neither the shim's C nor the Rust it reaches through `wellfed_wifi_select`, `wellfed_wifi_outcome` and `wellfed_wifi_watch`. That Rust is the credential choice, a flash-mapped read of the stored credentials, the interlock's atomics and `vTaskDelay` while a join waits, and the link's liveness machine. Nothing on that path formats.
+**Outside the audit.** The stack audit takes its roots from the firmware's `spawn` calls and the Wi-Fi task's entry, so other C-created tasks are outside it:
+
 - The BLE stack's own C tasks, which cost heap. The setup-mode heap figure includes them.
 - The two print wraps and the fault handler's call into the log ring ([logging](#logging)). They run on the calling C task's stack or the handler's: 24 B for the wrap, 40 B for the send.
 
@@ -183,7 +184,7 @@ KM0 prints only at boot, before KM4 logs through the ring.
 
 ## Scheduling gaps across Wi-Fi rejoins
 
-**A Wi-Fi association holds every task, not just the loop.** The feeding owner is stepped from the loop task (`wellfed-loop`, priority idle+2), and its beat is renewed only when the loop runs. The WPA3 SAE handshake once held the loop past the 1 s gap the beat promises while outputs may move. (At rest the beat now promises 10 s.) A feed's beat could stay inside 1 s two ways: move the owner to its own task at priority 4, above the Wi-Fi shim's task (idle+3), or hold Wi-Fi joins during a feed. A measurement with the [`gap-probe` variant](scheduling-gap-check.md), with no motor motion, settled it.
+**A Wi-Fi association holds every task, not just the loop.** The feeding owner is stepped from the loop task (`wellfed-loop`, priority idle+2), and its beat is renewed only when the loop runs. The WPA3 SAE handshake once held the loop past the 1 s gap the beat promises while outputs may move. (At rest the beat now promises 10 s.) A feed's beat could stay inside 1 s two ways: move the owner to its own task at priority 4, above the Wi-Fi task (idle+3), or hold Wi-Fi joins during a feed. A measurement with the [`gap-probe` variant](scheduling-gap-check.md), with no motor motion, settled it.
 
 ### The result
 
@@ -197,21 +198,21 @@ KM0 prints only at boot, before KM4 logs through the ring.
 
 ### The interlock
 
-`wellfed_hal::interlock` holds whose turn it is, in one atomic the loop and the C Wi-Fi task share, with no change to the C shim.
+`wellfed_hal::interlock` holds whose turn it is, in one atomic the loop and the Wi-Fi task share.
 
 - The loop claims the outputs before it submits a feed. It releases them once no feed is in flight and the owner is at rest, with motor STOP and the emitters off.
-- The shim calls `wellfed_wifi_select` before each attempt and `wellfed_wifi_outcome` after it. The select takes the join's turn and the outcome ends it, so the turn covers the scan, the association and DHCP.
-- Battery mode's radio changes take the same turn: the leave with `wifi_off`, and each `wifi_on` (`wellfed_wifi_radio_begin` and `wellfed_wifi_radio_end`). They stall the driver as an association does ([battery mode](power.md#battery-mode)).
+- The Wi-Fi task asks for credentials before each attempt (`Join::select`) and reports the outcome after it (`Join::outcome`). The select takes the join's turn and the outcome ends it, so the turn covers the scan, the association and DHCP.
+- Battery mode's radio changes take the same turn: the leave with `wifi_off`, and each `wifi_on`. They stall the driver as an association does ([battery mode](power.md#battery-mode)).
 - Watching a joined link takes no turn. That watch no longer leaves a network that has no internet, so such a network costs no rejoin, and no refused feed, every few seconds ([link liveness](startup-diagnostics.md#link-liveness-without-internet-dns)).
 
 How each case plays out:
 
 - **A feed during a join** is refused `Busy` (`PLOWN1 feed portions=… held=1`). Clients treat that as final for that write id.
 - **A join during a feed** waits in the Wi-Fi task, looking again every 50 ms, and marks itself waiting. A second feed is then refused (`held=2`), and the release hands the turn straight to the join, so back-to-back feeds cannot starve it.
-- **Joins cannot starve feeds.** An attempt ends within the shim's 10 s scan wait, plus one association and one DHCP run, and attempts back off at least 1 s. Only the vendor SDK's own timeouts inside `wifi_connect` and `LwIP_DHCP`, prebuilt and not in this repository, bound the association and DHCP runs. So the loop counts a join that holds its turn past 60 s (`LONG_JOIN_MS`, logged as `PLOWN1 joins … long_joins=`). Feeds stay refused while it does.
+- **Joins cannot starve feeds.** An attempt ends within the task's 10 s scan wait, plus one association and one DHCP run, and attempts back off at least 1 s. Only the vendor SDK's own timeouts inside `wifi_connect` and `LwIP_DHCP`, prebuilt and not in this repository, bound the association and DHCP runs. So the loop counts a join that holds its turn past 60 s (`LONG_JOIN_MS`, logged as `PLOWN1 joins … long_joins=`). Feeds stay refused while it does.
 - **No deadlock.** A join waits at most the claim's bound, `FEED_BOUND_MS`: the owner's `optics_max_on_ms` plus 2 s, which is 580 s for 48 portions. (The owner's configuration check holds the prepare timeout and the longest drive inside `optics_max_on_ms`.) Past the bound the join goes ahead and is counted as forced (`PLOWN1 joins … forced=`). A loop that stops stepping during a feed resets through the beat long before then.
 - **Storage writes take a turn too.** A flash lease while the outputs may move fails its stopped-outputs check and resets the board. So every store write outside the feed journal takes the write turn (`WriteTurn::begin`) for one record, granted only while no feed holds the outputs ([device API](device-api.md#no-flash-write-while-the-motor-may-move)). A claim waits at most `WRITE_WAIT_MS` for writes: 3 s, one record's three leases at their whole budget plus `WRITER_POLL_MS` (500 ms), the slowest writer poll in the service task. The loop tries the claim once a pass and never sleeps for it. A write still running, or a client's change still in its mailbox, then refuses the feed (`held=3`). Waiting writers are passed, since they have not started. Writes and joins do not wait for each other.
-- **The cost.** Feeds are refused for a whole attempt, scan and DHCP included, though only the association stalls. While the network is away, that is the scan (up to 10 s) every backoff (1–30 s). Narrowing the turn to the association alone would need a shim call between scan and connect.
+- **The cost.** Feeds are refused for a whole attempt, scan and DHCP included, though only the association stalls. While the network is away, that is the scan (up to 10 s) every backoff (1–30 s). Narrowing the turn to the association alone would mean ending it between scan and connect.
 
 ## Clients, request IDs and buffers
 

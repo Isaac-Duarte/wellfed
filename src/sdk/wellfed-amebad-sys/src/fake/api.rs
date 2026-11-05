@@ -914,6 +914,118 @@ pub fn wifi_start() -> bool {
     })
 }
 
+/// Numbered as the shim's ring numbers it.
+pub fn wifi_record(event: &WifiEvent) {
+    with(|h| {
+        let seq = u32::try_from(h.wifi_events.len() + 1).expect("a test records fewer than 2^32");
+        h.wifi_events.push(WifiEvent { seq, ..*event });
+    });
+}
+
+fn wifi_call<R>(name: &'static str, f: impl FnOnce(&mut crate::fake::Wifi) -> R) -> R {
+    with(|h| {
+        h.wifi.calls.push(name);
+        f(&mut h.wifi)
+    })
+}
+
+pub fn wifi_net_init() {
+    wifi_call("LwIP_Init", |_| ());
+}
+
+pub fn wifi_on() -> i32 {
+    wifi_call("wifi_on", |w| w.on.pop_front().unwrap_or(0))
+}
+
+pub fn wifi_power_save_off() {
+    wifi_call("wifi_set_power_mode", |_| ());
+}
+
+pub fn wifi_off() -> i32 {
+    wifi_call("wifi_off", |w| {
+        w.associated = false;
+        w.off
+    })
+}
+
+pub fn wifi_release_ip() {
+    wifi_call("LwIP_ReleaseIP", |_| ());
+}
+
+pub fn wifi_dhcp_stop() {
+    wifi_call("DHCP_STOP", |_| ());
+}
+
+pub fn wifi_dhcp_start() -> (u8, u32) {
+    wifi_call("DHCP_START", |w| w.dhcp)
+}
+
+pub fn wifi_disconnect() -> i32 {
+    wifi_call("wifi_disconnect", |w| {
+        w.associated = false;
+        w.disconnect
+    })
+}
+
+pub fn wifi_associated() -> bool {
+    wifi_call("wifi_is_connected_to_ap", |w| w.associated)
+}
+
+pub fn wifi_build_credentials() -> JoinCredentials {
+    with(|h| match h.wifi.build {
+        Some((ssid, psk)) => JoinCredentials {
+            ssid: ssid.as_ptr(),
+            ssid_len: u32::try_from(ssid.len()).expect("a short SSID"),
+            psk: psk.as_ptr(),
+            psk_len: u32::try_from(psk.len()).expect("a short password"),
+            source: 0,
+        },
+        None => JoinCredentials::EMPTY,
+    })
+}
+
+/// Tests report the access points through the shim's callbacks
+/// (`wellfed_wifi_scan_seen` in wellfed-hal), as the driver would.
+pub fn wifi_scan() -> i32 {
+    wifi_call("wifi_scan_networks", |w| w.scan)
+}
+
+/// # Safety
+/// As the target's: the pointers name their lengths' bytes.
+pub unsafe fn wifi_connect(credentials: &JoinCredentials, security: u32, _attempt: u32) -> i32 {
+    // SAFETY: the caller's contract.
+    let ssid = unsafe { credentials.ssid() }.to_vec();
+    let psk = if credentials.psk.is_null() {
+        Vec::new()
+    } else {
+        let len = usize::try_from(credentials.psk_len).expect("a short password");
+        // SAFETY: as above.
+        unsafe { core::slice::from_raw_parts(credentials.psk, len) }.to_vec()
+    };
+    wifi_call("wifi_connect", |w| {
+        w.connected_with.push((ssid, psk, security));
+        w.associated = w.connect == 0;
+        w.connect
+    })
+}
+
+pub fn wifi_channel() -> Option<i32> {
+    wifi_call("wifi_get_channel", |w| w.channel)
+}
+
+pub fn wifi_bssid() -> Option<[u8; 6]> {
+    wifi_call("wifi_get_ap_bssid", |w| w.bssid)
+}
+
+pub fn wifi_lease() -> (u32, bool) {
+    with(|h| h.wifi.lease)
+}
+
+/// The fake's one gateway, as DHCP or anything else set it.
+pub fn netif_gateway() -> u32 {
+    with(|h| h.gateway)
+}
+
 pub fn wifi_event(seq: u32) -> WifiPoll {
     with(|h| {
         let recorded =

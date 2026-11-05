@@ -148,10 +148,11 @@ pub const AUDIO_PAGE_SAMPLES: usize = 256;
 pub const AUDIO_PAGES: usize = 8;
 
 /// One event from the KM4 Wi-Fi shim's ring (`example_entry.c`), numbered
-/// from 1. `kind` is one of the associated constants: 1 on, 2 scan,
-/// 3 connect, 4 DHCP, 5 lost, 6 backoff, 8 gateway, 9 leave, 10 access
-/// point, 11 renewal. 7 was the internet DNS check the gateway probe
-/// replaced; it is never reused.
+/// from 1. The Wi-Fi task (`wellfed_core::wifi_task`) decides each; the
+/// shim numbers and keeps them. `kind` is one of the associated constants:
+/// 1 on, 2 scan, 3 connect, 4 DHCP, 5 lost, 6 backoff, 8 gateway, 9 leave,
+/// 10 access point, 11 renewal, 12 off. 7 was the internet DNS check the
+/// gateway probe replaced; it is never reused.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct WifiEvent {
@@ -183,7 +184,7 @@ impl WifiEvent {
     /// One ICMP echo to the lease's gateway: `result` 0 when it answered.
     pub const GATEWAY: u32 = 8;
     /// The leave before an intentional restart: `result` is
-    /// `wifi_disconnect`'s, `value` 1 if still associated at the shim's bound.
+    /// `wifi_disconnect`'s, `value` 1 if still associated at the task's bound.
     pub const LEAVE: u32 = 9;
     /// The access point a join landed on, once it has an address: `result`
     /// is its channel (-1 unread), `value` its BSSID's last 4 bytes (0
@@ -194,6 +195,50 @@ impl WifiEvent {
     /// Battery mode turned the radio off: `result` is `wifi_off`'s. Its
     /// return is an `ON` event with the attempt it left at.
     pub const OFF: u32 = 12;
+}
+
+/// One join's credentials as the Wi-Fi shim takes them (`example_entry.c`):
+/// the build's network, prefilled from the shim's generated header (empty
+/// without one), or the product's stored credentials in their place. Each
+/// pointer names its length's bytes while the Wi-Fi task joins with them:
+/// the build's are static constants, the stored ones the product's static
+/// join state. Neither is ever logged.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JoinCredentials {
+    pub ssid: *const u8,
+    pub ssid_len: u32,
+    pub psk: *const u8,
+    pub psk_len: u32,
+    /// `WifiSource::code`: 0 build, 1 stored, 2 fallback.
+    pub source: u32,
+}
+
+impl JoinCredentials {
+    /// Nothing to join.
+    pub const EMPTY: Self = Self {
+        ssid: core::ptr::null(),
+        ssid_len: 0,
+        psk: core::ptr::null(),
+        psk_len: 0,
+        source: 0,
+    };
+
+    /// The SSID's bytes.
+    ///
+    /// # Safety
+    /// `ssid` names `ssid_len` bytes that live as long as `self` is used,
+    /// or `ssid_len` is 0.
+    pub unsafe fn ssid(&self) -> &[u8] {
+        let Ok(len) = usize::try_from(self.ssid_len) else {
+            return &[];
+        };
+        if len == 0 || self.ssid.is_null() {
+            return &[];
+        }
+        // SAFETY: the caller's contract.
+        unsafe { core::slice::from_raw_parts(self.ssid, len) }
+    }
 }
 
 /// One task's stack, as `wellfed_task_stacks` (`example_entry.c`) reports

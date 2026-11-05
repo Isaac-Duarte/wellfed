@@ -22,7 +22,8 @@ use wellfed_board::safe::{PORT_A_HIGH, PORT_A_LOW, PORT_B_LOW};
 
 use super::{
     AUDIO_PAGE_SAMPLES, AUDIO_PAGES, Advertising, BleEvent, BlePoll, BleService, BleStats,
-    GpioRouting, Irq, Isr, LpClock, SECTOR_BYTES, Systick, TaskStep, WifiEvent, WifiPoll,
+    GpioRouting, Irq, Isr, JoinCredentials, LpClock, SECTOR_BYTES, Systick, TaskStep, WifiEvent,
+    WifiPoll,
 };
 
 /// What the fake models of the chosen board beyond its pins: its inputs'
@@ -102,10 +103,13 @@ pub struct Hardware {
     pub battery_adc: u16,
 
     pub wifi_started: bool,
-    /// Every event the Wi-Fi shim recorded, in order; tests script it.
+    /// Every event the Wi-Fi shim recorded, in order; tests script it, or
+    /// the Wi-Fi task records it.
     pub wifi_events: Vec<WifiEvent>,
     /// The shim's ring size.
     pub wifi_ring: u32,
+    /// The Wi-Fi task's vendor calls.
+    pub wifi: Wifi,
 
     /// Internal channel 10: the chip's own supply measurement.
     pub supply_adc: u16,
@@ -287,6 +291,49 @@ pub struct Hardware {
     pub log_uart_overrun: bool,
 }
 
+/// The Wi-Fi shim's vendor calls, as the Wi-Fi task makes them: each one
+/// made, by name, and what each answers.
+#[derive(Clone, Debug)]
+pub struct Wifi {
+    pub calls: Vec<&'static str>,
+    /// `wifi_on`, in order; 0 once they run out.
+    pub on: VecDeque<i32>,
+    pub off: i32,
+    /// The shim's build network.
+    pub build: Option<(&'static [u8], &'static [u8])>,
+    pub scan: i32,
+    pub connect: i32,
+    /// The credentials each connect was given: SSID, password, security.
+    pub connected_with: Vec<(Vec<u8>, Vec<u8>, u32)>,
+    pub dhcp: (u8, u32),
+    pub disconnect: i32,
+    pub associated: bool,
+    pub channel: Option<i32>,
+    pub bssid: Option<[u8; 6]>,
+    /// lwIP's lease clock, and whether its client is bound.
+    pub lease: (u32, bool),
+}
+
+impl Default for Wifi {
+    fn default() -> Self {
+        Self {
+            calls: Vec::new(),
+            on: VecDeque::new(),
+            off: 0,
+            build: None,
+            scan: 0,
+            connect: 0,
+            connected_with: Vec::new(),
+            dhcp: (2, 0),
+            disconnect: 0,
+            associated: false,
+            channel: None,
+            bssid: None,
+            lease: (0, false),
+        }
+    }
+}
+
 impl Default for Hardware {
     /// Reset state: inputs show outlet clear and DC present; nominal ADC values.
     fn default() -> Self {
@@ -338,6 +385,7 @@ impl Default for Hardware {
             wifi_started: false,
             wifi_events: Vec::new(),
             wifi_ring: 16,
+            wifi: Wifi::default(),
 
             output_hook: None,
             direction_hook: None,

@@ -4,9 +4,11 @@
 //!   from BLE setup ([`save`]), checked by the store's own rules, are
 //!   queued for the settings writer, which saves them to NOR (storage
 //!   sectors 5 and 6).
-//! - **Join half:** before each join attempt the C shim asks for credentials
-//!   (`wellfed_wifi_select`) and then reports the outcome
-//!   (`wellfed_wifi_outcome`). Stored credentials are used until
+//! - **Join half:** before each join attempt the Wi-Fi task asks for
+//!   credentials ([`select`]) and then reports the outcome ([`outcome`]),
+//!   through the [`Joins`] this crate hands the task's driver
+//!   (`wellfed_hal::link`) from the task's entry, [`wellfed_wifi_run`].
+//!   Stored credentials are used until
 //!   [`FALLBACK_AFTER`] attempts in a row fail without one success this boot;
 //!   then the build's credentials take over, so a bad save cannot strand the
 //!   feeder. A save during the boot (a device API write, or BLE setup)
@@ -15,7 +17,7 @@
 //! - **No build network:** a consumer image has no build credentials
 //!   ([`BUILD_WIFI`]). Stored credentials are then used however often they
 //!   fail, and with none stored there is nothing to join: the select hands
-//!   the C task empty credentials, which it reports as a failed attempt
+//!   the task empty credentials, which it reports as a failed attempt
 //!   without scanning.
 //! - **Turn:** the select takes the join's turn in the [`interlock`], waiting
 //!   while a feed holds the outputs, and the outcome ends it, so no feed
@@ -34,8 +36,10 @@ use wellfed_device::store::reset;
 use wellfed_device_api::mailbox::{WifiResult, WifiSource, WifiView};
 use wellfed_device_api::wifi::Credentials;
 
+use wellfed_core::wifi_task::Attempt;
 use wellfed_hal::cell::TaskCell;
 use wellfed_hal::interlock::INTERLOCK;
+pub use wellfed_hal::sdk::JoinCredentials;
 use wellfed_hal::{link, sdk};
 
 /// The credential slots within the storage region (`0x345000`).
@@ -48,7 +52,7 @@ pub const FALLBACK_AFTER: u32 = 5;
 pub use wellfed_device::store::net::BuildWifi;
 
 /// This image's build Wi-Fi. `wellfed-build` sets `WELLFED_BUILD_WIFI`
-/// exactly when the generated header the C entry prefills from names a
+/// exactly when the generated header the C shim prefills from names a
 /// network; the build script turns its presence into `cfg(build_wifi)`.
 /// The loop reads it too (the firmware's `Platform::build_wifi`): an image
 /// without one and nothing stored starts BLE setup mode at boot.
@@ -58,7 +62,7 @@ pub const BUILD_WIFI: BuildWifi = if cfg!(build_wifi) {
     BuildWifi::Absent
 };
 
-/// The link-time check that the C entry and this crate agree: the entry
+/// The link-time check that the C shim and this crate agree: the shim
 /// reads the one of these two symbols its header's `WELLFED_BUILD_WIFI`
 /// picks, and only the matching build defines it, so a header and a
 /// runtime that disagree about a build network fail the link.
@@ -238,7 +242,7 @@ pub unsafe fn reset() {
     INTERLOCK.reset();
 }
 
-// ---- The join half, called by the C Wi-Fi task only.
+// ---- The join half, called by the Wi-Fi task only.
 
 #[derive(Default)]
 struct Join {
@@ -248,7 +252,7 @@ struct Join {
     joined_once: bool,
 }
 
-/// Touched only by the C Wi-Fi task, through the two exports below.
+/// Touched only by the Wi-Fi task, through [`select`] and [`outcome`].
 static JOIN: TaskCell<Join> = TaskCell::new(Join {
     opened: false,
     stored: None,
@@ -312,37 +316,15 @@ pub fn handover_put_off() {
     HANDOVER_PUT_OFF.store(true, Ordering::Release);
 }
 
-/// The C view of one join's credentials; prefilled with the build's, or
-/// empty without a build network.
-#[repr(C)]
-pub struct JoinCredentials {
-    pub ssid: *const u8,
-    pub ssid_len: u32,
-    pub psk: *const u8,
-    pub psk_len: u32,
-    /// `WifiSource::code`: 0 build, 1 stored, 2 fallback.
-    pub source: u32,
-}
-
 /// Before each join attempt: take the join's turn (waiting while a feed
-/// holds the outputs), then replace the build's credentials with stored
-/// ones unless the fallback has taken over.
+/// holds the outputs), then replace the build's credentials in `out` with
+/// stored ones unless the fallback has taken over. With nothing to join,
+/// `out` is emptied (a zero SSID length), which the task reports as a
+/// failed attempt without scanning.
 ///
 /// # Safety
-/// `out` is valid; called only from the Wi-Fi task, which may block here.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn wellfed_wifi_select(out: *mut JoinCredentials) {
-    // SAFETY: the caller's contract.
-    unsafe { select(BUILD_WIFI, out) }
-}
-
-/// [`wellfed_wifi_select`] for an image with or without build credentials.
-/// With nothing to join, `out` is emptied (a zero SSID length), which the C
-/// task reports as a failed attempt without scanning.
-///
-/// # Safety
-/// As [`wellfed_wifi_select`]'s.
-pub unsafe fn select(build: BuildWifi, out: *mut JoinCredentials) {
+/// Called only from the Wi-Fi task, which may block here.
+pub unsafe fn select(build: BuildWifi, out: &mut JoinCredentials) {
     INTERLOCK.begin_join(sdk::uptime_ms, sdk::delay_ms);
 
     // SAFETY: only the Wi-Fi task calls this.
@@ -356,8 +338,6 @@ pub unsafe fn select(build: BuildWifi, out: *mut JoinCredentials) {
     // device API's view has no value for it.
     let code = choice.unwrap_or(WifiSource::Build).code();
     SOURCE.store(code, Ordering::Release);
-    // SAFETY: the caller's contract; JOIN is static, so the pointers live on.
-    let out = unsafe { &mut *out };
     out.source = u32::from(code);
     let Some(choice) = choice else {
         out.ssid = core::ptr::null();
@@ -366,6 +346,7 @@ pub unsafe fn select(build: BuildWifi, out: *mut JoinCredentials) {
         out.psk_len = 0;
         return;
     };
+    // JOIN is static, so the pointers live on.
     if let (WifiSource::Stored, Some(c)) = (choice, join.stored.as_ref()) {
         out.ssid = c.ssid().as_ptr();
         out.ssid_len = u32::try_from(c.ssid().len()).unwrap_or(0);
@@ -374,26 +355,21 @@ pub unsafe fn select(build: BuildWifi, out: *mut JoinCredentials) {
     }
 }
 
-/// After each join attempt: 1 when an address was assigned, which also
-/// starts the link's watch (`wellfed_wifi_watch`).
+/// After each join attempt: ends the join's turn, and counts the attempt
+/// toward the fallback.
 ///
 /// # Safety
 /// Called only from the Wi-Fi task, which owns `JOIN`, and never while a
-/// `wellfed_wifi_select` call is running.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn wellfed_wifi_outcome(joined: i32) {
+/// [`select`] call is running.
+pub unsafe fn outcome(attempt: Attempt) {
     INTERLOCK.end_join();
-    if joined != 0 {
-        // SAFETY: the caller's contract: the Wi-Fi task, between watches.
-        unsafe { link::joined() };
-    }
 
     // SAFETY: the caller's contract makes this the only reference to `JOIN`.
     let join = unsafe { &mut *JOIN.get() };
     if source() != WifiSource::Stored {
         return;
     }
-    if joined != 0 {
+    if attempt == Attempt::Joined {
         join.joined_once = true;
         join.failures = 0;
     } else if !link::radio_off() {
@@ -401,4 +377,33 @@ pub unsafe extern "C" fn wellfed_wifi_outcome(joined: i32) {
         // credentials, so it never counts toward the fallback.
         join.failures = join.failures.saturating_add(1);
     }
+}
+
+/// The product's half of the Wi-Fi task's joins, for its driver.
+pub struct Joins;
+
+impl link::Join for Joins {
+    unsafe fn select(&mut self, out: &mut JoinCredentials) {
+        // SAFETY: the trait's contract: the Wi-Fi task.
+        unsafe { select(BUILD_WIFI, out) }
+    }
+
+    unsafe fn outcome(&mut self, attempt: Attempt) {
+        // SAFETY: the trait's contract: the Wi-Fi task, after its select.
+        unsafe { outcome(attempt) }
+    }
+}
+
+/// The C Wi-Fi task's body (`wellfed_wifi` in `example_entry.c`), which
+/// ends the task when this returns. Exported from here, not from
+/// `wellfed_hal::link` where the driver is, because the task needs this
+/// crate's [`Joins`] and the SDK may not depend on the product; every image
+/// with the Wi-Fi shim links this crate.
+///
+/// # Safety
+/// Called once, from the C Wi-Fi task.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wellfed_wifi_run() {
+    // SAFETY: the caller's contract.
+    unsafe { link::run(Joins) }
 }

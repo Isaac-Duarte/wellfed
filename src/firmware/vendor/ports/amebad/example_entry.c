@@ -1,32 +1,18 @@
 /* Hooks called by the vendor's KM4 main; preserve its startup and RTOS setup.
  * The application itself is the Rust staticlib linked into this image.
  *
- * One task joins the configured network and keeps it. It runs
- * LwIP_Init and wifi_on(STA), then repeats: scan for the network (to learn
- * its security), wifi_connect, DHCP; on success it watches the link, every
- * half second asking Rust (`wellfed_wifi_watch`, wellfed-hal link.rs)
- * whether to keep it, given the association, the lease and, when Rust asks
- * for one, an ICMP echo to the lease's gateway. Nothing asks the internet:
- * a network without a route out is kept. When Rust says leave, the task
- * leaves and rejoins with bounded backoff, which resets once Rust reports
- * the join settled. The SDK's static-address DHCP fallback counts as
- * failure and is cleared. Nothing resets or writes flash; the SDK's own
- * reconnect stays unregistered. Events go to a ring the Rust probe drains.
- * Before an intentional restart Rust asks the task to leave for good
- * (`wellfed_wifi_restarting`, wellfed-hal link.rs): it disconnects, so the
- * access point drops the protected association instead of rejecting the
- * next boot's with status 30, and never joins again.
- * Battery mode asks for the radio off (`wellfed_wifi_radio`, wellfed-hal
- * link.rs): the task leaves the same way, turns the radio off (wifi_off)
- * and waits until Rust asks for it on again, then turns it on (wifi_on, as
- * at boot) and joins afresh. Between attempts and inside one it checks the
- * wish too, so it neither scans nor associates while the radio should be
- * off. A restart wins over both.
- * A bench image's SSID and password come from a generated header built from
- * a private file; neither is ever logged here. A consumer image's header
- * defines neither, so it joins only the network the owner stored, and with
- * none it waits without scanning. Nothing registers fast connect or
- * calls rtw_efuse_boot_write.
+ * One task joins the configured network and keeps it (wellfed_wifi, created
+ * here so its stack stays sized for the vendor driver's calls). Its body is
+ * Rust: the flow (scan, connect and DHCP with bounded backoff, the watch over
+ * a joined link and its gateway probe, the leave before an intentional
+ * restart, battery mode's radio off and on) is wellfed-core wifi_task.rs,
+ * and wellfed-hal link.rs performs each of its steps through one wrapper
+ * here per vendor call. Nothing here decides whether or when to make them.
+ * The task's events go to a ring here that the Rust probe drains. Nothing
+ * resets or writes flash; the SDK's own reconnect stays unregistered, and
+ * nothing registers fast connect or calls rtw_efuse_boot_write. A bench
+ * image's SSID and password come from a generated header built from a
+ * private file; neither is ever logged.
  *
  * Non-blocking socket helpers for the Rust device API, and the raw socket
  * the gateway probe sends its echo on; the protocols are Rust (wellfed-feeder,
@@ -363,82 +349,27 @@ void __wrap_rtw_os_indicate_disconnect(void *adapter)
     wellfed_trail_note(WELLFED_STEP_INDICATE_DISCONNECT_RETURNED, 0, WELLFED_MARK_DISCONNECT, lr, (unsigned int)adapter);
 }
 
+/* The Wi-Fi task. Its body is Rust (wellfed_wifi_run: wellfed-hal
+ * link.rs drives wellfed-core wifi_task.rs's machine), on this task's
+ * stack, which stays sized for the vendor driver's calls. What follows is
+ * one wrapper per vendor call it makes, the scan's callback and the event
+ * ring the Rust probe drains. Nothing here decides whether or when to call
+ * them, and nothing here logs the credentials. */
 #define WELLFED_WIFI_EVENTS 16
-#define WELLFED_SCAN_WAIT_MS 10000
-#define WELLFED_WATCH_MS 500
-#define WELLFED_BACKOFF_MIN_MS 1000
-#define WELLFED_BACKOFF_MAX_MS 30000
 
-/* Event kinds; shared with Rust (`sdk::WifiEvent`). */
-enum {
-    WELLFED_EV_ON = 1,      /* result: wifi_on; value: battery mode's failures in a row; ms: duration */
-    WELLFED_EV_SCAN = 2,    /* result: scan; value: found (0/1); rssi, security */
-    WELLFED_EV_CONNECT = 3, /* result: wifi_connect; ms */
-    WELLFED_EV_DHCP = 4,    /* result: LwIP_DHCP state; value: IPv4 (host order) when assigned; ms */
-    WELLFED_EV_LOST = 5,    /* result: the cause (`liveness::Cause`): 0 association, 2 lease, 3 gateway; value: ms connected */
-    WELLFED_EV_BACKOFF = 6, /* value: ms until the next attempt */
-    /* 7 was the internet DNS check; never reused. */
-    WELLFED_EV_GATEWAY = 8, /* result: 0 or a WELLFED_ECHO_* failure; value: the gateway's IPv4 (host order); ms */
-    WELLFED_EV_LEAVE = 9,   /* result: wifi_disconnect; value: 1 still associated at the bound; ms */
-    WELLFED_EV_AP = 10,     /* after an address: result: the channel (1-14, 36-177), or -1; value: the BSSID's last 4 bytes */
-    WELLFED_EV_RENEW = 11,  /* lwIP's DHCP client took a new ACK without a rejoin (renew or rebind) */
-    WELLFED_EV_OFF = 12,    /* battery mode: result: wifi_off; ms: duration */
-};
+/* The vendor values Rust compares against (wifi_task.rs SUCCESS,
+ * SCAN_TIMEOUT and DHCP_ASSIGNED). */
+_Static_assert(RTW_SUCCESS == 0, "wifi_task::SUCCESS");
+_Static_assert(RTW_TIMEOUT == 2, "wifi_task::SCAN_TIMEOUT");
+_Static_assert(DHCP_ADDRESS_ASSIGNED == 2, "wifi_task::DHCP_ASSIGNED");
 
-/* The lost event's cause Rust answers before an intentional restart
- * (`liveness::Cause::Restart`). */
-#define WELLFED_CAUSE_RESTART 4
-/* The lost event's cause Rust answers while battery mode wants the radio
- * off (`liveness::Cause::Radio`). */
-#define WELLFED_CAUSE_RADIO 5
-int wellfed_wifi_restarting(void);
-/* 1 while the radio should be up, 0 while battery mode wants it off. */
-int wellfed_wifi_radio(void);
-/* A radio change takes the join's turn (wellfed-hal link.rs): wifi_off and
- * wifi_on stall every task in the driver as an association does, so a
- * claimed feed defers them and a feed is refused while one runs. */
-void wellfed_wifi_radio_begin(void);
-void wellfed_wifi_radio_end(void);
-/* wifi_on failed WELLFED_RADIO_TRIES times in a row: restart. */
-void wellfed_wifi_radio_failed(void);
-/* How long the radio's return waits before trying wifi_on again. */
-#define WELLFED_RADIO_RETRY_MS 5000
-/* wifi_on failures in a row, WELLFED_RADIO_RETRY_MS apart, before the
- * feeder restarts: about 30 s without Wi-Fi on the adapter. */
-#define WELLFED_RADIO_TRIES 6
-/* Before wifi_off with no association held: a failed or rejected join's
- * teardown runs in the timer task (rtw_clearstakey_cmd, then the key
- * table's CAM writes), and powering the MAC down under it stalled the bus
- * into a watchdog reset (see wellfed_wifi_task). Provisional: the teardown
- * has finished well within it on the bench. */
-#define WELLFED_RADIO_SETTLE_MS 2000
-/* After a leave, before wifi_off: the disconnect's key-table teardown may
- * still be pending in the timer task. Inside the turn, so it holds feeds
- * this much longer. Provisional, like WELLFED_RADIO_SETTLE_MS. */
-#define WELLFED_RADIO_LEAVE_SETTLE_MS 500
-/* How long a leave waits for the driver to report the association gone:
- * inside the watchdog's shortest expiry (2.4 s at its clock's bound) with a gateway probe's
- * second before it. */
-#define WELLFED_LEAVE_WAIT_MS 1000
-#define WELLFED_POLL_MS 50
+static unsigned int wellfed_be32(const uint8_t *a)
+{
+    return ((unsigned int)a[0] << 24) | ((unsigned int)a[1] << 16) | ((unsigned int)a[2] << 8) | a[3];
+}
 
-/* wellfed_wifi_watch's probe argument and answer; shared with Rust
- * (`liveness::Probe::from_code`, `liveness::Verdict::code`). */
-enum {
-    WELLFED_PROBE_NONE = 0,
-    WELLFED_PROBE_ANSWERED = 1,
-    WELLFED_PROBE_SILENT = 2,
-    WELLFED_PROBE_NO_GATEWAY = 3,
-    WELLFED_PROBE_UNSENT = 4,
-};
-enum {
-    WELLFED_WATCH_HOLD = 0,
-    WELLFED_WATCH_PROBE = 1,
-    WELLFED_WATCH_SETTLED = 2,
-    WELLFED_WATCH_LEAVE = 0x100, /* plus the cause, the lost event's result */
-};
-int wellfed_wifi_watch(int associated, int leased, int probe);
-
+/* One event, shared with Rust (`sdk::WifiEvent`): the task decides each,
+ * and the ring numbers and keeps it. */
 struct wellfed_wifi_event {
     unsigned int seq;
     unsigned int kind;
@@ -453,41 +384,19 @@ struct wellfed_wifi_event {
 static struct wellfed_wifi_event wellfed_events[WELLFED_WIFI_EVENTS];
 static unsigned int wellfed_seq;
 static unsigned int wellfed_started;
-static volatile unsigned int wellfed_scan_done;
-static volatile int wellfed_found_rssi;
-static volatile unsigned int wellfed_found_security;
-static volatile unsigned int wellfed_found;
 
-static void wellfed_event(unsigned int kind, unsigned int attempt, int result, unsigned int value, unsigned int ms)
+/* Number `event` and keep it in the ring over the oldest. */
+void wellfed_wifi_record(const struct wellfed_wifi_event *event)
 {
     taskENTER_CRITICAL();
     struct wellfed_wifi_event *e = &wellfed_events[wellfed_seq % WELLFED_WIFI_EVENTS];
+    *e = *event;
     e->seq = ++wellfed_seq;
-    e->kind = kind;
-    e->attempt = attempt;
-    e->result = result;
-    e->value = value;
-    e->rssi = kind == WELLFED_EV_SCAN ? wellfed_found_rssi : 0;
-    e->security = kind == WELLFED_EV_SCAN ? wellfed_found_security : 0;
-    e->ms = ms;
     taskEXIT_CRITICAL();
 }
 
-/* Gateway echo failures, as the event result (`echo::Outcome::code`). */
-enum {
-    WELLFED_ECHO_NO_GATEWAY = -1,
-    WELLFED_ECHO_SOCKET = -2,
-    WELLFED_ECHO_SEND = -3,
-    WELLFED_ECHO_TIMEOUT = -4,
-};
-
-static unsigned int wellfed_ms(TickType_t since)
-{
-    return (unsigned int)((xTaskGetTickCount() - since) * portTICK_PERIOD_MS);
-}
-
-/* Join credentials, shared with Rust (`network::JoinCredentials`):
- * prefilled with the build's (empty without), replaced by stored ones unless
+/* Join credentials, shared with Rust (`sdk::JoinCredentials`): prefilled
+ * here with the build's (empty without), replaced by stored ones unless
  * the fallback has taken over (wellfed-device-runtime network.rs). */
 struct wellfed_join_credentials {
     const unsigned char *ssid;
@@ -496,147 +405,6 @@ struct wellfed_join_credentials {
     unsigned int psk_len;
     unsigned int source; /* 0 build, 1 stored, 2 fallback */
 };
-void wellfed_wifi_select(struct wellfed_join_credentials *out);
-void wellfed_wifi_outcome(int joined);
-static struct wellfed_join_credentials wellfed_creds;
-
-static rtw_result_t wellfed_scan_result(rtw_scan_handler_result_t *result)
-{
-    if (result->scan_complete == RTW_TRUE) {
-        wellfed_scan_done = 1;
-        return RTW_SUCCESS;
-    }
-    rtw_scan_result_t *ap = &result->ap_details;
-    unsigned int length = wellfed_creds.ssid_len;
-    if (ap->SSID.len == length && memcmp(ap->SSID.val, wellfed_creds.ssid, length) == 0 &&
-        (!wellfed_found || ap->signal_strength > wellfed_found_rssi)) {
-        wellfed_found_rssi = ap->signal_strength;
-        wellfed_found_security = (unsigned int)ap->security;
-        wellfed_found = 1;
-    }
-    return RTW_SUCCESS;
-}
-
-/* Leave the network cleanly: before an intentional restart (then never
- * join again) or before battery mode turns the radio off. The disconnect
- * sends the access point a (protected) deauthentication from the driver's
- * command thread; wait, bounded, until the driver reports the association
- * gone, so it has left before the reset or the radio goes. Before a
- * restart the watchdog feeder has already stopped: if anything here hangs,
- * the reset comes all the same. */
-static void wellfed_leave(unsigned int attempt)
-{
-    TickType_t begin = xTaskGetTickCount();
-    LwIP_DHCP(0, DHCP_STOP);
-    LwIP_ReleaseIP(0);
-    int result = wifi_disconnect();
-    while (wifi_is_connected_to_ap() == RTW_SUCCESS && wellfed_ms(begin) < WELLFED_LEAVE_WAIT_MS) {
-        vTaskDelay(WELLFED_POLL_MS / portTICK_PERIOD_MS);
-    }
-    wellfed_event(WELLFED_EV_LEAVE, attempt, result, wifi_is_connected_to_ap() == RTW_SUCCESS,
-                   wellfed_ms(begin));
-}
-
-static void wellfed_access_point(unsigned int attempt);
-
-/* One join attempt: scan, connect, DHCP. 1 when an address was assigned. */
-static int wellfed_join_once(unsigned int attempt)
-{
-    wellfed_found = 0;
-    wellfed_scan_done = 0;
-    TickType_t begin = xTaskGetTickCount();
-    int result = wifi_scan_networks(wellfed_scan_result, NULL);
-    while (result == RTW_SUCCESS && !wellfed_scan_done && wellfed_ms(begin) < WELLFED_SCAN_WAIT_MS) {
-        vTaskDelay(50 / portTICK_PERIOD_MS);
-    }
-    if (result == RTW_SUCCESS && !wellfed_scan_done) {
-        result = RTW_TIMEOUT;
-    }
-    wellfed_event(WELLFED_EV_SCAN, attempt, result, wellfed_found, wellfed_ms(begin));
-    /* A restart asked for during the scan (up to 10 s): no new association,
-     * which the access point would hold against the next boot. Nor one
-     * battery mode would only leave again. */
-    if (result != RTW_SUCCESS || !wellfed_found || wellfed_wifi_restarting() || !wellfed_wifi_radio()) {
-        return 0;
-    }
-    begin = xTaskGetTickCount();
-    /* The trail shows whether wifi_connect returned before a stall. */
-    wellfed_trail_note(WELLFED_STEP_CONNECT, 0, WELLFED_MARK_CONNECT, 0, attempt);
-    result = wifi_connect((char *)wellfed_creds.ssid, (rtw_security_t)wellfed_found_security,
-                          (char *)wellfed_creds.psk, (int)wellfed_creds.ssid_len, (int)wellfed_creds.psk_len,
-                          -1, NULL);
-    wellfed_trail_note(WELLFED_STEP_CONNECT_RETURNED, 0, WELLFED_MARK_CONNECT_RETURNED, 0, (unsigned int)result);
-    /* The event's value names the credentials' source, never the credentials. */
-    wellfed_event(WELLFED_EV_CONNECT, attempt, result, wellfed_creds.source, wellfed_ms(begin));
-    if (result != RTW_SUCCESS) {
-        return 0;
-    }
-    /* Asked for while it associated: leave the fresh association at once. */
-    if (wellfed_wifi_restarting() || !wellfed_wifi_radio()) {
-        wellfed_leave(attempt);
-        return 0;
-    }
-    begin = xTaskGetTickCount();
-    uint8_t state = LwIP_DHCP(0, DHCP_START);
-    unsigned int ip = 0;
-    if (state == DHCP_ADDRESS_ASSIGNED) {
-        uint8_t *a = LwIP_GetIP(&xnetif[0]);
-        ip = ((unsigned int)a[0] << 24) | ((unsigned int)a[1] << 16) | ((unsigned int)a[2] << 8) | a[3];
-    }
-    wellfed_event(WELLFED_EV_DHCP, attempt, state, ip, wellfed_ms(begin));
-    if (state != DHCP_ADDRESS_ASSIGNED) {
-        /* Never keep the SDK's static fallback address. */
-        LwIP_DHCP(0, DHCP_STOP);
-        LwIP_ReleaseIP(0);
-        wifi_disconnect();
-        return 0;
-    }
-    wellfed_access_point(attempt);
-    return 1;
-}
-
-/* The joined access point, for the statistics: its channel and the last
- * four bytes of its BSSID, which tell a home's few access points apart. */
-static void wellfed_access_point(unsigned int attempt)
-{
-    /* wifi_get_channel takes an int * but hands it to wext_get_channel as a
-     * u8 *, so only the low byte is written: the int starts at zero for the
-     * rest to read as the channel. AmebaD is dual band, so a 2.4 GHz
-     * (1-14) or 5 GHz (36-177) channel; anything else is none (-1). */
-    int channel = 0;
-    if (wifi_get_channel(&channel) != RTW_SUCCESS ||
-        !((channel >= 1 && channel <= 14) || (channel >= 36 && channel <= 177))) {
-        channel = -1;
-    }
-    unsigned char bssid[6] = {0};
-    unsigned int tail = 0;
-    if (wifi_get_ap_bssid(bssid) == RTW_SUCCESS) {
-        tail = ((unsigned int)bssid[2] << 24) | ((unsigned int)bssid[3] << 16) | ((unsigned int)bssid[4] << 8) |
-               bssid[5];
-    }
-    wellfed_event(WELLFED_EV_AP, attempt, channel, tail, 0);
-}
-
-/* lwIP's DHCP client restarts its lease clock at every ACK. Seeing it go
- * back while bound to the lease is a renewal (or a rebind): no event of
- * lwIP's says so. A read of one u16 from another task, so at worst one renewal
- * is seen a tick late. */
-static unsigned int wellfed_lease_used(void)
-{
-    struct dhcp *dhcp = netif_dhcp_data(&xnetif[0]);
-    return dhcp != NULL ? dhcp->lease_used : 0;
-}
-
-/* Bound to a lease: a release (an expiry) also zeroes the lease clock, and
- * is no renewal. */
-static int wellfed_dhcp_bound(void)
-{
-    struct dhcp *dhcp = netif_dhcp_data(&xnetif[0]);
-    return dhcp != NULL && dhcp->state == DHCP_STATE_BOUND;
-}
-
-/* wellfed_join's result when Rust selected no credentials. */
-#define WELLFED_JOIN_NOTHING (-1)
 
 /* The header's WELLFED_BUILD_WIFI says whether the image has a build
  * network; Rust learns the same from the builder (wellfed-device-runtime
@@ -656,52 +424,141 @@ extern const unsigned char WELLFED_RUNTIME_NO_BUILD_WIFI;
 #define WELLFED_RUNTIME_WIFI WELLFED_RUNTIME_NO_BUILD_WIFI
 #endif
 
-/* One attempt with the credentials Rust selects, reporting the outcome: 1
- * joined, 0 failed, WELLFED_JOIN_NOTHING with nothing to join. A consumer
- * image has no build network (the generated header defines nothing), so
- * until the owner stores one Rust selects empty credentials; the attempt
- * then neither scans nor associates and still reports its outcome, which
- * ends the join's turn. */
-static int wellfed_join(unsigned int attempt)
+/* The build's network, before each attempt's select. A bench image's comes
+ * from a generated header built from a private file; a consumer image's
+ * header defines none, so it joins only the network the owner stored. */
+void wellfed_wifi_build_credentials(struct wellfed_join_credentials *out)
 {
     (void)*(volatile const unsigned char *)&WELLFED_RUNTIME_WIFI;
 #ifdef WELLFED_BUILD_WIFI
-    wellfed_creds.ssid = (const unsigned char *)WELLFED_WIFI_SSID;
-    wellfed_creds.ssid_len = sizeof(WELLFED_WIFI_SSID) - 1;
-    wellfed_creds.psk = (const unsigned char *)WELLFED_WIFI_PASSWORD;
-    wellfed_creds.psk_len = sizeof(WELLFED_WIFI_PASSWORD) - 1;
+    out->ssid = (const unsigned char *)WELLFED_WIFI_SSID;
+    out->ssid_len = sizeof(WELLFED_WIFI_SSID) - 1;
+    out->psk = (const unsigned char *)WELLFED_WIFI_PASSWORD;
+    out->psk_len = sizeof(WELLFED_WIFI_PASSWORD) - 1;
 #else
-    wellfed_creds.ssid = NULL;
-    wellfed_creds.ssid_len = 0;
-    wellfed_creds.psk = NULL;
-    wellfed_creds.psk_len = 0;
+    out->ssid = NULL;
+    out->ssid_len = 0;
+    out->psk = NULL;
+    out->psk_len = 0;
 #endif
-    wellfed_creds.source = 0;
-    wellfed_wifi_select(&wellfed_creds);
-    if (wellfed_creds.ssid_len == 0) {
-        wellfed_wifi_outcome(0);
-        return WELLFED_JOIN_NOTHING;
+    out->source = 0;
+}
+
+void wellfed_wifi_net_init(void)
+{
+    LwIP_Init();
+}
+
+/* 0 started, 1 already running; below 0 the driver failed. */
+int wellfed_wifi_on(void)
+{
+    return wifi_on(RTW_MODE_STA);
+}
+
+/* Inactive and leisure power save off; wifi_task.rs says why. */
+void wellfed_wifi_power_save_off(void)
+{
+    wifi_set_power_mode(0, 0);
+}
+
+int wellfed_wifi_off(void)
+{
+    return wifi_off();
+}
+
+void wellfed_wifi_release_ip(void)
+{
+    LwIP_ReleaseIP(0);
+}
+
+void wellfed_wifi_dhcp_stop(void)
+{
+    LwIP_DHCP(0, DHCP_STOP);
+}
+
+/* Run DHCP: lwIP's state, with the address (host order) in `ip` once one
+ * was assigned, else 0. */
+unsigned int wellfed_wifi_dhcp_start(unsigned int *ip)
+{
+    uint8_t state = LwIP_DHCP(0, DHCP_START);
+    *ip = state == DHCP_ADDRESS_ASSIGNED ? wellfed_be32(LwIP_GetIP(&xnetif[0])) : 0;
+    return state;
+}
+
+int wellfed_wifi_disconnect(void)
+{
+    return wifi_disconnect();
+}
+
+int wellfed_wifi_associated(void)
+{
+    return wifi_is_connected_to_ap() == RTW_SUCCESS;
+}
+
+/* The scan's results go to Rust (wellfed-hal link.rs), which keeps the
+ * strongest access point naming the network. */
+void wellfed_wifi_scan_seen(const unsigned char *ssid, unsigned int len, int rssi, unsigned int security);
+void wellfed_wifi_scan_complete(void);
+
+static rtw_result_t wellfed_scan_result(rtw_scan_handler_result_t *result)
+{
+    if (result->scan_complete == RTW_TRUE) {
+        wellfed_wifi_scan_complete();
+        return RTW_SUCCESS;
     }
-    /* A restart asked for while the turn waited: join no more; nor while
-     * battery mode wants the radio off. */
-    int joined = !wellfed_wifi_restarting() && wellfed_wifi_radio() && wellfed_join_once(attempt);
-    wellfed_wifi_outcome(joined);
-    return joined;
+    rtw_scan_result_t *ap = &result->ap_details;
+    wellfed_wifi_scan_seen(ap->SSID.val, ap->SSID.len, ap->signal_strength, (unsigned int)ap->security);
+    return RTW_SUCCESS;
 }
 
-static unsigned int wellfed_be32(const uint8_t *a)
+int wellfed_wifi_scan(void)
 {
-    return ((unsigned int)a[0] << 24) | ((unsigned int)a[1] << 16) | ((unsigned int)a[2] << 8) | a[3];
+    return wifi_scan_networks(wellfed_scan_result, NULL);
 }
 
-unsigned int wellfed_ipv4(void);
-
-/* The lease holds: lwIP's DHCP client is bound, renewing or rebinding. It
- * gives the address up only once the lease ran out with renew and rebind
- * unanswered. */
-static int wellfed_leased(void)
+/* wifi_connect with `creds` and the security the scan saw. The trail shows
+ * whether it returned before a stall. */
+int wellfed_wifi_connect(const struct wellfed_join_credentials *creds, unsigned int security,
+                         unsigned int attempt)
 {
-    return wellfed_ipv4() != 0;
+    wellfed_trail_note(WELLFED_STEP_CONNECT, 0, WELLFED_MARK_CONNECT, 0, attempt);
+    int result = wifi_connect((char *)creds->ssid, (rtw_security_t)security, (char *)creds->psk,
+                              (int)creds->ssid_len, (int)creds->psk_len, -1, NULL);
+    wellfed_trail_note(WELLFED_STEP_CONNECT_RETURNED, 0, WELLFED_MARK_CONNECT_RETURNED, 0, (unsigned int)result);
+    return result;
+}
+
+/* wifi_get_channel takes an int * but hands it to wext_get_channel as a
+ * u8 *, so only the low byte is written: the int starts at zero for the
+ * rest to read as the channel. Rust checks that it is one. */
+int wellfed_wifi_channel(int *channel)
+{
+    *channel = 0;
+    return wifi_get_channel(channel);
+}
+
+int wellfed_wifi_bssid(unsigned char *bssid)
+{
+    return wifi_get_ap_bssid(bssid);
+}
+
+/* lwIP's lease clock in `used` (0 without a client), and whether its client
+ * is bound: the clock restarts at every ACK, so Rust takes it going back
+ * while bound as a renewal, which no lwIP event reports. A release (an
+ * expiry) zeroes it too, unbound. A read of one u16 from another task, so
+ * at worst one renewal is seen a tick late. */
+int wellfed_wifi_lease(unsigned int *used)
+{
+    struct dhcp *dhcp = netif_dhcp_data(&xnetif[0]);
+    *used = dhcp != NULL ? dhcp->lease_used : 0;
+    return dhcp != NULL && dhcp->state == DHCP_STATE_BOUND;
+}
+
+/* The interface's gateway, host order, whatever set it: the gateway probe
+ * reads it while the lease holds. */
+unsigned int wellfed_netif_gateway(void)
+{
+    return wellfed_be32(LwIP_GetGW(&xnetif[0]));
 }
 
 /* The gateway probe's socket helpers. Rust builds the echo, matches the
@@ -732,219 +589,14 @@ int wellfed_icmp_recv(int s, void *buffer, unsigned int length, unsigned int tim
     return lwip_recv(s, buffer, length, 0);
 }
 
-/* One ICMP echo to `gateway` (host order), as the gateway event's result:
- * 0 when it answered, or a WELLFED_ECHO_* failure (wellfed-sdk wifi.rs). */
-int wellfed_gateway_echo(unsigned int gateway, uint16_t seq);
-
-/* One probe of the lease's gateway, as wellfed_wifi_watch's probe code. */
-static int wellfed_gateway(unsigned int attempt)
-{
-    static uint16_t seq;
-    unsigned int gateway = wellfed_be32(LwIP_GetGW(&xnetif[0]));
-    TickType_t begin = xTaskGetTickCount();
-    int result = gateway != 0 ? wellfed_gateway_echo(gateway, ++seq) : WELLFED_ECHO_NO_GATEWAY;
-    wellfed_event(WELLFED_EV_GATEWAY, attempt, result, gateway, wellfed_ms(begin));
-    switch (result) {
-    case 0:
-        return WELLFED_PROBE_ANSWERED;
-    case WELLFED_ECHO_NO_GATEWAY:
-        return WELLFED_PROBE_NO_GATEWAY;
-    case WELLFED_ECHO_TIMEOUT:
-        return WELLFED_PROBE_SILENT;
-    default:
-        /* No socket or no send: nothing was asked of the gateway. */
-        return WELLFED_PROBE_UNSENT;
-    }
-}
-
-/* Watch a joined link until Rust says leave; the lost event's cause. */
-static int wellfed_watch(unsigned int attempt, unsigned int *backoff)
-{
-    int probe = WELLFED_PROBE_NONE;
-    unsigned int lease_used = wellfed_lease_used();
-    for (;;) {
-        unsigned int used = wellfed_lease_used();
-        if (used < lease_used && wellfed_dhcp_bound()) {
-            wellfed_event(WELLFED_EV_RENEW, attempt, 0, used, 0);
-        }
-        lease_used = used;
-        int verdict = wellfed_wifi_watch(wifi_is_connected_to_ap() == RTW_SUCCESS, wellfed_leased(), probe);
-        probe = WELLFED_PROBE_NONE;
-        if (verdict >= WELLFED_WATCH_LEAVE) {
-            return verdict - WELLFED_WATCH_LEAVE;
-        }
-        if (verdict == WELLFED_WATCH_PROBE) {
-            probe = wellfed_gateway(attempt);
-            continue;
-        }
-        if (verdict == WELLFED_WATCH_SETTLED) {
-            *backoff = WELLFED_BACKOFF_MIN_MS;
-        }
-        /* In steps, so a restart's leave (or battery mode's) starts within
-         * one rather than at the next watch tick. */
-        for (unsigned int waited = 0;
-             waited < WELLFED_WATCH_MS && !wellfed_wifi_restarting() && wellfed_wifi_radio();
-             waited += WELLFED_POLL_MS) {
-            vTaskDelay(WELLFED_POLL_MS / portTICK_PERIOD_MS);
-        }
-    }
-}
-
-static void wellfed_park(void)
-{
-    for (;;) {
-        vTaskDelay(portMAX_DELAY);
-    }
-}
-
-/* Wait `ms` in polls, ending early once a restart or battery mode wants
- * the task's attention. */
-static void wellfed_wait(unsigned int ms)
-{
-    for (unsigned int waited = 0; waited < ms && !wellfed_wifi_restarting() && wellfed_wifi_radio();
-         waited += WELLFED_POLL_MS) {
-        vTaskDelay(WELLFED_POLL_MS / portTICK_PERIOD_MS);
-    }
-}
-
-/* Wait `ms` in polls, ending early only for a restart. */
-static void wellfed_hold(unsigned int ms)
-{
-    for (unsigned int waited = 0; waited < ms && !wellfed_wifi_restarting(); waited += WELLFED_POLL_MS) {
-        vTaskDelay(WELLFED_POLL_MS / portTICK_PERIOD_MS);
-    }
-}
-
-/* Battery mode: leave (when `associated`), turn the radio off and wait
- * until Rust asks for it on again, then turn it on as at boot (wifi_on in
- * station mode, the same power-save settings) for a fresh join. wifi_off
- * stops lwIP's DHCP client and takes the interface down, so the device
- * API's address goes with it. The leave with wifi_off, and each wifi_on,
- * hold the join's turn, so neither runs under a moving feed. A settle
- * comes before wifi_off: with no association, 2 s outside the turn; after
- * a leave, 500 ms inside it. A restart asked for
- * meanwhile parks the task with the radio off. A wifi_on that fails is
- * tried again every WELLFED_RADIO_RETRY_MS, up to WELLFED_RADIO_TRIES
- * times; then the feeder restarts with the turn still held, so no feed
- * starts into the reset. */
-static void wellfed_radio_off(unsigned int attempt, int associated)
-{
-    if (!associated) {
-        wellfed_hold(WELLFED_RADIO_SETTLE_MS);
-        if (wellfed_wifi_restarting()) {
-            wellfed_park();
-        }
-        /* The adapter came back meanwhile: the radio is still on. */
-        if (wellfed_wifi_radio()) {
-            return;
-        }
-    }
-    wellfed_wifi_radio_begin();
-    if (associated) {
-        wellfed_leave(attempt);
-        wellfed_hold(WELLFED_RADIO_LEAVE_SETTLE_MS);
-    }
-    TickType_t begin = xTaskGetTickCount();
-    LwIP_ReleaseIP(0);
-    int off = wifi_off();
-    wellfed_wifi_radio_end();
-    wellfed_event(WELLFED_EV_OFF, attempt, off, 0, wellfed_ms(begin));
-    unsigned int failed = 0;
-    for (;;) {
-        while (!wellfed_wifi_radio() && !wellfed_wifi_restarting()) {
-            vTaskDelay(WELLFED_POLL_MS / portTICK_PERIOD_MS);
-        }
-        if (wellfed_wifi_restarting()) {
-            wellfed_park();
-        }
-        wellfed_wifi_radio_begin();
-        begin = xTaskGetTickCount();
-        /* 0 started, 1 already running; below 0 the driver failed. */
-        int on = wifi_on(RTW_MODE_STA);
-        if (on >= 0) {
-            wifi_set_power_mode(0, 0);
-        }
-        failed = on >= 0 ? 0 : failed + 1;
-        if (failed >= WELLFED_RADIO_TRIES) {
-            wellfed_wifi_radio_failed();
-        } else {
-            wellfed_wifi_radio_end();
-        }
-        wellfed_event(WELLFED_EV_ON, attempt, on, failed, wellfed_ms(begin));
-        if (on >= 0) {
-            return;
-        }
-        if (failed >= WELLFED_RADIO_TRIES) {
-            wellfed_park();
-        }
-        wellfed_hold(WELLFED_RADIO_RETRY_MS);
-    }
-}
+/* The task's body; it returns only when the radio never came up at boot. */
+void wellfed_wifi_run(void);
 
 static void wellfed_wifi_task(void *unused)
 {
     (void)unused;
-    TickType_t begin = xTaskGetTickCount();
-    LwIP_Init();
-    int on = wifi_on(RTW_MODE_STA);
-    wellfed_event(WELLFED_EV_ON, 0, on, 0, wellfed_ms(begin));
-    if (on != RTW_SUCCESS) {
-        vTaskDelete(NULL);
-        return;
-    }
-    /* Inactive and leisure power save both off: the chip never sleeps on the
-     * adapter, so holding frames until a beacon wake saves nothing. IPS must stay
-     * off for its own reason. After a rejected
-     * join the driver tears down in the timer task, and its key-table writes
-     * (rtw_clearstakey_cmd, then ROM_WIFI_CAM_WRITE) race rtw_ps_processor's
-     * ips_enter, which powers the MAC down when unassociated. A store to the
-     * powered-down MAC stalled the bus and the tick with it, until the
-     * watchdog reset the board: the call trail caught it in every such hang. */
-    wifi_set_power_mode(0, 0);
-    unsigned int attempt = 0;
-    unsigned int backoff = WELLFED_BACKOFF_MIN_MS;
-    for (;;) {
-        /* Between attempts no join holds the network: one that got no
-         * address disconnected (wellfed_join_once). */
-        if (wellfed_wifi_restarting()) {
-            wellfed_park();
-        }
-        if (!wellfed_wifi_radio()) {
-            wellfed_radio_off(attempt, 0);
-            backoff = WELLFED_BACKOFF_MIN_MS;
-        }
-        attempt++;
-        int result = wellfed_join(attempt);
-        /* Nothing to join: look again at the longest interval, which still
-         * picks up credentials BLE setup stores within one. The radio stays
-         * on, since BLE needs it. */
-        if (result == WELLFED_JOIN_NOTHING) {
-            backoff = WELLFED_BACKOFF_MAX_MS;
-        } else if (result) {
-            TickType_t joined = xTaskGetTickCount();
-            int cause = wellfed_watch(attempt, &backoff);
-            if (cause == WELLFED_CAUSE_RESTART) {
-                wellfed_leave(attempt);
-                wellfed_park();
-            }
-            /* Battery mode: no loss to count. */
-            if (cause == WELLFED_CAUSE_RADIO) {
-                wellfed_radio_off(attempt, 1);
-                backoff = WELLFED_BACKOFF_MIN_MS;
-                continue;
-            }
-            wellfed_event(WELLFED_EV_LOST, attempt, cause, wellfed_ms(joined), 0);
-            LwIP_DHCP(0, DHCP_STOP);
-            LwIP_ReleaseIP(0);
-            /* Still associated: leave, so the next attempt joins afresh. */
-            if (cause != 0) {
-                wifi_disconnect();
-            }
-        }
-        wellfed_event(WELLFED_EV_BACKOFF, attempt, 0, backoff, 0);
-        wellfed_wait(backoff);
-        backoff = backoff * 2 > WELLFED_BACKOFF_MAX_MS ? WELLFED_BACKOFF_MAX_MS : backoff * 2;
-    }
+    wellfed_wifi_run();
+    vTaskDelete(NULL);
 }
 
 /* One task's stack for the statistics, shared with Rust
@@ -1213,7 +865,7 @@ unsigned int wellfed_gateway_ipv4(void)
     if (!dhcp_supplied_address(&xnetif[0])) {
         return 0;
     }
-    return wellfed_be32(LwIP_GetGW(&xnetif[0]));
+    return wellfed_netif_gateway();
 }
 
 /* The KM0 RTC's time, control, status and prescaler registers, read only.

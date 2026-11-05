@@ -1,9 +1,10 @@
 //! Bench probe on KM4: join the configured network and keep it.
 //!
-//! Starts the KM4 Wi-Fi shim (`example_entry.c`), which owns the connection:
-//! radio on, then scan, connect and DHCP, then a gateway probe every few
-//! seconds while it watches the link (`wellfed_hal::link`), rejoining with
-//! bounded backoff when the association, the lease or the gateway is lost.
+//! Starts the KM4 Wi-Fi task (`example_entry.c` creates it, and
+//! `wellfed_hal::link` runs it), which owns the connection: radio on, then
+//! scan, connect and DHCP, then a gateway probe every few seconds while it
+//! watches the link, rejoining with bounded backoff when the association,
+//! the lease or the gateway is lost.
 //! This probe drains the shim's numbered event
 //! ring without end and logs each event once, with stopped-output readback.
 //! The SSID and password never pass through here. Outputs stay as startup
@@ -13,16 +14,6 @@ use wellfed_hal::sdk::{self, WifiEvent, WifiPoll};
 use wellfed_hal::stopped;
 
 pub const POLL_MS: u32 = 250;
-
-/// The C Wi-Fi task's gateway probe: one echo ([`wellfed_hal::link::echo`]),
-/// answered as the gateway event's `result`
-/// ([`wellfed_core::echo::Outcome::code`]). Exported from here because only
-/// an image with the Wi-Fi shim links this crate, and the probe calls the
-/// shim's socket helpers.
-#[unsafe(no_mangle)]
-pub extern "C" fn wellfed_gateway_echo(gateway: u32, seq: u16) -> i32 {
-    wellfed_hal::link::echo(gateway, seq).code()
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Record {

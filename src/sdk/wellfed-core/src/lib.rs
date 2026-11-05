@@ -38,6 +38,7 @@ pub mod store;
 pub mod supply;
 pub mod tone;
 pub mod virtual_panel;
+pub mod wifi_task;
 
 /// Distances at or beyond this are ambiguous for wrapping millisecond clocks.
 pub const HALF_RANGE: u32 = 0x8000_0000;

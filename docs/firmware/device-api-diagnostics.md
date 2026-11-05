@@ -45,7 +45,7 @@ The loop keeps the figures in RAM as it runs (`wellfed_feeder::stats::Keeper`): 
 
 **`None`** comes from a build that keeps no totals, and from a store this build can't write (a newer record version, or a read error).
 
-**The Wi-Fi shim** reports two more events in `PLWIF3`: `kind=ap`, after each join's DHCP, with the channel and the BSSID's last four bytes; and `kind=renew`, a lease renewal. A renewal is seen as lwIP's lease clock going back while the client is bound. A release on expiry also zeroes it, and isn't counted.
+**The Wi-Fi task** reports two more events in `PLWIF3`: `kind=ap`, after each join's DHCP, with the channel and the BSSID's last four bytes; and `kind=renew`, a lease renewal. A renewal is seen as lwIP's lease clock going back while the client is bound. A release on expiry also zeroes it, and isn't counted.
 
 The live metrics that go beside the statistics are in [samples](device-api-ops.md#samples).
 

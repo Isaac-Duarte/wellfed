@@ -65,7 +65,7 @@ XX alone trusts whichever device answers. With only a Dispense press as the chec
 
 ## Runtime
 
-**The C side.** `wellfed_ble.c` starts one task (`wellfed_ble`, 1024 words, priority 1). It waits up to 60 s for the Wi-Fi shim's radio, since `hci_board_init` refuses before `wifi_on`, then brings the stack up in the vendor example's order and runs the GAP message loop.
+**The C side.** `wellfed_ble.c` starts one task (`wellfed_ble`, 1024 words, priority 1). It waits up to 60 s for the Wi-Fi task's radio, since `hci_board_init` refuses before `wifi_on`, then brings the stack up in the vendor example's order and runs the GAP message loop.
 
 - **One link, no bonding.** `gap_config_le_key_storage_flag(0)` keeps no keys, and BLE pairing is off (a just-works request is rejected). Access control is the Noise handshake and the code.
 - **Advertising** runs only while Rust asks: connectable, about every 100 ms, with the 128-bit service UUID, and the name `Wellfed` in the scan response.

@@ -10,8 +10,9 @@
 //! The device's record stores (settings, Wi-Fi credentials, keys, events)
 //! are the product's schema, so the SDK does not know them: the runtime
 //! steps the writer the firmware links (`wellfed_store_step`), and the
-//! Wi-Fi join asks the same crate for the stored credentials
-//! (`wellfed_wifi_select`). `wellfed-feeder-runtime` defines both, and
+//! Wi-Fi task's entry (`wellfed_wifi_run`) runs the SDK's join driver with
+//! the same crate's stored credentials. `wellfed-feeder-runtime` defines
+//! both, and
 //! every PLAF103 firmware links it, so a firmware swap keeps the owner's
 //! data.
 //!

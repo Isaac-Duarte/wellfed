@@ -70,7 +70,7 @@ On batteries the feeder behaves as stock does ([stock firmware](../devices/plaf1
 
 **The phantom at a cut.** With no cells, a power cut reads the dying 5 V rail as a plausible pack (3.86 V seen). So after the adapter's samples read no pack, the loop keeps reporting none until the channel reads otherwise for 5 s (`feeder::supply::CELLS_MS`), whatever PA19 says. The cut's `Supply` event reads `Absent`, and status and metrics, version 1 `Power` included, show no millivolts. The phantom is too brief to start battery mode or lift a [brownout hold](#brownout). It also delays entry: from a no-pack reading, the radio goes off about 10 s after the pull. Cells fitted on the adapter show after 5 s.
 
-**Radio off.** The loop asks for it every pass (`Platform::radio`). The C Wi-Fi task (`example_entry.c`) then:
+**Radio off.** The loop asks for it every pass (`Platform::radio`). The Wi-Fi task (`wellfed_core::wifi_task`) then:
 
 1. waits 2 s if no association is held, as after a failed or rejected join, so the driver's key-table teardown finishes first (powering the MAC down under it can stall the bus into a watchdog reset). If the adapter returns meanwhile, the radio stays on;
 2. takes the join's turn, which waits out a moving feed;
@@ -189,4 +189,4 @@ The chip doesn't sleep (recovered):
   - `wellfed-feeder/tests/supply.rs`: events and their rate, the 5 s wait, the minute back on, boots across the uptime wrap, setup mode, the phantom, the hold and its release.
   - The firmware's `tests/manual_feed.rs`, `wellfed-client/tests/api.rs`, and wire fixtures for every variant: a refused press on a low pack, the battery reason on the wire.
   - Simulation: `wellfed-sim` (sags via `surge_sag_adc`, `drive_sag_adc`, zero by default; scenarios `adapter-loss-mid-feed.json`, `battery-sag.json`), `wellfed-feeder-sim/tests/battery.rs` and `tests/update.rs` (battery mode end to end over TCP, an install cancelled mid-transfer). Its console takes `adapter in|out` and `pack <mV>|out`.
-  - The C task's `wifi_off`/`wifi_on` path is static analysis only.
+  - The Wi-Fi task's `wifi_off`/`wifi_on` path is host-tested against a scripted driver (`wellfed-core/tests/wifi_task.rs`) and the SDK fake (`wellfed-hal/tests/link.rs`); on hardware it is static analysis only.

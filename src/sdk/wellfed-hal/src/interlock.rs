@@ -10,19 +10,19 @@
 //!   ([`Interlock::claim_feed`]) and releases them once the owner is at rest
 //!   with its outputs stopped ([`Interlock::release_feed`]). A claim is
 //!   refused while a join runs or waits; the firmware refuses that feed.
-//! - **Joins.** Before each join attempt the C Wi-Fi task asks for
-//!   credentials (`wellfed_wifi_select`), which first takes the join's turn
-//!   ([`Interlock::begin_join`]), waiting while the outputs are claimed; the
-//!   attempt's outcome (`wellfed_wifi_outcome`) ends it
+//! - **Joins.** Before each join attempt the Wi-Fi task asks the product
+//!   for credentials ([`crate::link::Join::select`]), which first takes the
+//!   join's turn ([`Interlock::begin_join`]), waiting while the outputs are
+//!   claimed; the attempt's outcome ([`crate::link::Join::outcome`]) ends it
 //!   ([`Interlock::end_join`]). So the turn covers the whole attempt: scan,
 //!   association and DHCP. Battery mode's radio changes (the leave with
 //!   `wifi_off`, and each `wifi_on`) take the same turn
-//!   ([`crate::link::wellfed_wifi_radio_begin`]): they stall the driver as
-//!   an association does.
+//!   ([`crate::link::radio_begin`]): they stall the driver as an
+//!   association does.
 //!
 //! **Neither starves.** A join that finds a feed running marks itself
 //! waiting: no new feed is admitted, and the release hands the turn straight
-//! to the join. A join is bounded by the shim's 10 s scan wait, then one
+//! to the join. A join is bounded by the task's 10 s scan wait, then one
 //! association and one DHCP run, whose own bounds are the vendor SDK's
 //! internal timeouts in `wifi_connect` and `LwIP_DHCP` (prebuilt, not in this
 //! repository); attempts back off at least 1 s, so feeds get their turn
@@ -81,10 +81,11 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use crate::supervision::config::FLASH_LIMITS;
 
-/// How often a waiting join looks again; the shim polls its scan as often.
+/// How often a waiting join looks again; the Wi-Fi task polls its scan as
+/// often (`wellfed_core::wifi_task::POLL_MS`).
 pub const JOIN_POLL_MS: u32 = 50;
 
-/// A join holding its turn this long is counted: the shim's scan wait is
+/// A join holding its turn this long is counted: the task's scan wait is
 /// 10 s, and associations and DHCP have finished within seconds on the bench.
 pub const LONG_JOIN_MS: u32 = 60_000;
 

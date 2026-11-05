@@ -3,6 +3,7 @@
 
 use std::sync::Mutex;
 
+use wellfed_core::wifi_task::Attempt;
 use wellfed_device::store::net::NetStore;
 use wellfed_device_api::mailbox::{WifiResult, WifiSource};
 use wellfed_device_api::wifi::Credentials;
@@ -15,7 +16,7 @@ static SERIAL: Mutex<()> = Mutex::new(());
 const BUILD_SSID: &[u8] = b"build-net";
 const BUILD_PSK: &[u8] = b"build-pass";
 
-/// One select by a bench image, whose C entry prefills the build's network.
+/// One select by a bench image, whose C shim prefills the build's network.
 fn select() -> (Vec<u8>, Vec<u8>, u32) {
     let mut out = JoinCredentials {
         ssid: BUILD_SSID.as_ptr(),
@@ -33,7 +34,7 @@ fn select() -> (Vec<u8>, Vec<u8>, u32) {
     (ssid, psk, out.source)
 }
 
-/// One select by a consumer image, whose C entry prefills nothing: the
+/// One select by a consumer image, whose C shim prefills nothing: the
 /// stored credentials, or `None` for nothing to join.
 fn select_consumer() -> Option<(Vec<u8>, Vec<u8>, u32)> {
     let mut out = JoinCredentials {
@@ -56,10 +57,10 @@ fn select_consumer() -> Option<(Vec<u8>, Vec<u8>, u32)> {
     Some((ssid, psk, out.source))
 }
 
-/// The C Wi-Fi task's report after a join attempt.
-fn outcome(joined: i32) {
+/// The Wi-Fi task's report after a join attempt.
+fn outcome(attempt: Attempt) {
     // SAFETY: the test is the only Wi-Fi task, and no select is running.
-    unsafe { wellfed_wifi_outcome(joined) };
+    unsafe { network::outcome(attempt) };
 }
 
 /// The module's state forgotten, under `SERIAL`.
@@ -155,14 +156,14 @@ fn a_handover_withholds_stored_wifi_until_it_is_put_off() {
     });
 
     assert_eq!(select_consumer(), None, "the mark is down");
-    outcome(0);
+    outcome(Attempt::Failed);
 
     network::handover_put_off();
     assert_eq!(
         select_consumer(),
         Some((b"stored-net".to_vec(), b"stored-pass".to_vec(), 1))
     );
-    outcome(0);
+    outcome(Attempt::Failed);
     forget();
 }
 
@@ -174,7 +175,7 @@ fn a_consumer_image_joins_only_what_is_stored() {
     store(None);
     for _ in 0..2 * FALLBACK_AFTER {
         assert_eq!(select_consumer(), None, "nothing stored");
-        outcome(0);
+        outcome(Attempt::Failed);
     }
     assert_eq!(source(), WifiSource::Build);
     assert_eq!(
@@ -194,7 +195,7 @@ fn a_consumer_image_joins_only_what_is_stored() {
             Some((b"stored-net".to_vec(), b"stored-pass".to_vec(), 1)),
             "attempt {attempt}"
         );
-        outcome(0);
+        outcome(Attempt::Failed);
     }
     assert_eq!(source(), WifiSource::Stored);
     forget();
@@ -221,7 +222,7 @@ fn joins_use_stored_credentials_until_they_keep_failing() {
             (b"stored-net".to_vec(), b"stored-pass".to_vec(), 1),
             "attempt {attempt}"
         );
-        outcome(0);
+        outcome(Attempt::Failed);
     }
     assert_eq!(select(), (BUILD_SSID.to_vec(), BUILD_PSK.to_vec(), 2));
     assert_eq!(source(), WifiSource::Fallback);
@@ -229,10 +230,10 @@ fn joins_use_stored_credentials_until_they_keep_failing() {
     // Joined once this boot: later failures keep the stored network.
     forget();
     select();
-    outcome(1);
+    outcome(Attempt::Joined);
     for _ in 0..2 * FALLBACK_AFTER {
         assert_eq!(select().2, 1);
-        outcome(0);
+        outcome(Attempt::Failed);
     }
 }
 
@@ -250,15 +251,15 @@ fn attempts_with_the_radio_off_never_count_toward_the_fallback() {
     wellfed_hal::link::set_radio(wellfed_core::liveness::Radio::Off);
     for _ in 0..2 * FALLBACK_AFTER {
         assert_eq!(select().2, 1);
-        outcome(0);
+        outcome(Attempt::Failed);
     }
     wellfed_hal::link::set_radio(wellfed_core::liveness::Radio::On);
     for attempt in 0..FALLBACK_AFTER {
         assert_eq!(select().2, 1, "attempt {attempt}");
-        outcome(0);
+        outcome(Attempt::Failed);
     }
     assert_eq!(select().2, 2);
-    outcome(0);
+    outcome(Attempt::Failed);
 }
 
 #[test]
@@ -269,7 +270,7 @@ fn a_save_mid_boot_is_joined_with_a_fresh_count() {
     store(Some(Credentials::new(b"old-net", b"old-pass1").unwrap()));
     for _ in 0..FALLBACK_AFTER {
         select();
-        outcome(0);
+        outcome(Attempt::Failed);
     }
     assert_eq!(select().2, 2, "fallen back to the build's");
 
@@ -281,7 +282,7 @@ fn a_save_mid_boot_is_joined_with_a_fresh_count() {
             (b"new-net".to_vec(), b"new-pass1".to_vec(), 1),
             "attempt {attempt}"
         );
-        outcome(0);
+        outcome(Attempt::Failed);
     }
     assert_eq!(select().2, 2, "the new ones can still fall back");
 }
@@ -336,7 +337,7 @@ fn an_attempt_holds_the_join_turn_from_select_to_outcome() {
     select();
     assert_eq!(INTERLOCK.turn(), Turn::Joining);
     assert_eq!(INTERLOCK.claim_feed(1000), Err(Held::Joining));
-    outcome(0);
+    outcome(Attempt::Failed);
     assert_eq!(INTERLOCK.turn(), Turn::Free);
 
     // A feed holding the outputs keeps the next attempt waiting in the Wi-Fi
@@ -348,30 +349,7 @@ fn an_attempt_holds_the_join_turn_from_select_to_outcome() {
     assert_eq!(wellfed_hal::sdk::uptime_ms() - before, 1000);
     assert_eq!(INTERLOCK.turn(), Turn::Joining);
     assert_eq!(INTERLOCK.status().forced, 1);
-    outcome(0);
+    outcome(Attempt::Failed);
     assert_eq!(INTERLOCK.turn(), Turn::Free);
     forget();
-}
-
-#[test]
-fn only_a_successful_join_restarts_the_link_watch() {
-    use wellfed_hal::link::wellfed_wifi_watch;
-    use wellfed_hal::net_status;
-
-    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    fake::reset_hardware();
-    net_status::reset();
-    forget();
-    // SAFETY: the test is the only Wi-Fi task, between a join and its leave.
-    let watch = |probe| unsafe { wellfed_wifi_watch(1, 1, probe) };
-
-    outcome(1);
-    watch(0);
-    watch(1);
-    assert!(net_status::read().live, "settled once the gateway answers");
-
-    outcome(0);
-    assert!(net_status::read().live, "a failed attempt leaves the watch");
-    outcome(1);
-    assert!(!net_status::read().live, "a new join watches from scratch");
 }

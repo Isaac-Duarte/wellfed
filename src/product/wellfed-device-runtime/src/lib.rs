@@ -11,9 +11,9 @@
 //!   [`writer`] over the device's stores and its kind's ([`writer::Product`]),
 //!   which the kind's runtime instantiates and exports, and which alone
 //!   writes the settings, Wi-Fi, client and event stores;
-//! - `wellfed_wifi_select` and `wellfed_wifi_outcome`, the C Wi-Fi task's
-//!   choice between stored and build credentials ([`network`]), exported
-//!   from here.
+//! - `wellfed_wifi_run`, the C Wi-Fi task's body, which runs the SDK's
+//!   driver (`wellfed_hal::link`) with this crate's choice between stored
+//!   and build credentials ([`network`]), exported from here.
 //!
 //! The rest carries work between the loop task and the writer, each a
 //! one-slot or bounded mailbox: client changes and the identity ([`keys`]),

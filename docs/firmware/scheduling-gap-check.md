@@ -13,7 +13,7 @@ Gaps are timed on the system timer rather than the FreeRTOS tick, so a driver se
 
 **No feeds.** The variant's `Feeds::submit` returns `Unavailable` without calling `Feeding::submit`, which is compiled out of its path. The device API's `Feed` is refused, and nothing else submits a feed. The feeding owner still opens at rest, so the loop carries its usual load and the beat runs as in the product.
 
-**Rejoins come from the host.** The firmware cannot force one: the Wi-Fi shim in `example_entry.c` owns the connection, and its C interface has only start and an event ring. A disconnect call would change the C interface for a measurement. Taking the bench hotspot down and back up makes the shim lose the link, back off, and run a full scan, connect (the WPA3 SAE handshake) and DHCP when it returns. The first join after each boot is another sample.
+**Rejoins come from the host.** The firmware cannot force one: the Wi-Fi task owns the connection, and the rest of the firmware can only ask it to leave for good or turn the radio off. A rejoin request would change the task for a measurement. Taking the bench hotspot down and back up makes the task lose the link, back off, and run a full scan, connect (the WPA3 SAE handshake) and DHCP when it returns. The first join after each boot is another sample.
 
 ## Records
 
@@ -42,7 +42,7 @@ At startup it logs `PLGAP1 task created=1`, or `=0` if `spawn` refused the task.
 | `lost`, `dns` | Losses since boot: every loss, and those of them the link check noticed (lease or gateway) |
 | `rejoin` | 1 when `gen` changed during the window: the link was lost or joined |
 
-The shim's own `PLWIF3` records (scan, connect, DHCP, loss, backoff, with their durations) fall between the `PLGAP1` lines and show where in a window a join ran.
+The Wi-Fi task's own `PLWIF3` records (scan, connect, DHCP, loss, backoff, with their durations) fall between the `PLGAP1` lines and show where in a window a join ran.
 
 **Reading it.** For each rejoin window, compare `p4 late` with `loop late`. If the priority-4 task stays far under 1 s while the loop's lateness reaches hundreds of milliseconds, priority helps. If both are held about as long, the hold is in a driver section above priority 4 or with interrupts masked, and joins must be held during a feed instead.
 
@@ -59,7 +59,7 @@ The feeder must be powered and on the replacement firmware, with the hotspot up 
    trap 'nmcli connection up "$HOTSPOT"' EXIT   # an interrupted loop leaves the hotspot up
    for i in $(seq 10); do sleep 60; nmcli connection down "$HOTSPOT"; sleep 15; nmcli connection up "$HOTSPOT"; done
    ```
-   After a loss the shim backs off from 1 s, doubling up to 30 s between attempts, and a scan waits up to 10 s. So a rejoin lands 15–45 s after the hotspot returns. The 60 s quiet time leaves at least one quiet window between rejoins.
+   After a loss the task backs off from 1 s, doubling up to 30 s between attempts, and a scan waits up to 10 s. So a rejoin lands 15–45 s after the hotspot returns. The 60 s quiet time leaves at least one quiet window between rejoins.
 5. Add first-join samples with cold boots: `wellfed-bench boot NAME-boot-01 --seconds 180`, with the hotspot up.
 6. Read each `PLGAP1 net … rejoin=1` window, the `p4` and `loop` lines before it, and the `worst` values at the end. Count rejoins from `gen`, which a loss and a join each bump. You should see `gen` rise by about 20, and both lines in every rejoin window.
 
