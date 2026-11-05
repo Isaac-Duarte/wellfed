@@ -10,6 +10,7 @@ import 'package:wellfed/src/rust/api/install.dart' show PendingInstall;
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/fleet/adopt.dart';
+import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -18,12 +19,15 @@ import 'package:wellfed/widgets/layout.dart';
 /// Feeder-first Home: one card per feeder this phone knows, large for one
 /// feeder and compact for several.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.fleet, required this.earlierInstall, this.adopt});
+  const HomeScreen({super.key, required this.fleet, required this.earlierInstall, this.adopt, this.pinsProblem});
 
   final FeederFleet fleet;
 
   /// Putting a feeder this phone paired onto the home server, with one.
   final AdoptFlow? adopt;
+
+  /// Why the record of unconfirmed writes did not open: then nothing is sent.
+  final PinsProblem? pinsProblem;
 
   /// What an earlier install left, read from its records. A run that died
   /// before it ended (the app killed, say) has no other way to say so, and a
@@ -81,6 +85,20 @@ class _HomeScreenState extends State<HomeScreen> {
         body: ListView(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
           children: [
+            if (widget.pinsProblem case final PinsProblem problem) ...[
+              Notice(
+                tone: Tone.fault,
+                lead: 'Feeding and changes are off.',
+                text: switch (problem) {
+                  PinsProblem.inUse => 'Another copy of Wellfed holds its record of unconfirmed writes. Close it, then open the app again.',
+                  PinsProblem.unreadable =>
+                    "This phone's record of unconfirmed writes can't be read, so the app sends nothing rather than "
+                        "risk a feed twice. Clear the app's data (Android Settings, Apps, Wellfed, Storage), then "
+                        'pair your feeders again.',
+                },
+              ),
+              const SizedBox(height: Space.s4),
+            ],
             if (_earlier != PendingInstall.nothing) ...[
               const Notice(
                 tone: Tone.warning,

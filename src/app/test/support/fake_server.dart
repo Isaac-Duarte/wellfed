@@ -33,13 +33,20 @@ class FakeServerSession with FakeOpaque implements ServerSession {
   final details = <String, ServerFeederDetail>{};
 
   @override
-  ServerLink link() => serverLink;
+  ServerLink link() => linked;
+
+  /// Where it is, and as whom.
+  ServerLink linked = serverLink;
+
+  /// While set, the account read waits for it: a server slow to answer.
+  Future<void>? accountWait;
 
   @override
   String secret() => 'token-secret';
 
   @override
   Future<ServerAccount> account() async {
+    await accountWait;
     // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (accountFails case final error?) throw error;
     return who;

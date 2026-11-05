@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/server_error.dart';
@@ -146,5 +148,54 @@ void main() {
 
     expect(server.state, isA<ServerLinked>().having((linked) => linked.account, 'account', demoted));
     expect(book.server?.account, demoted);
+  });
+
+  test("a login keeps the phone's own keys closed until the server says who it is", () async {
+    final (HomeServer server, FakeServerPorts ports, FakeRouter router, _) = _server();
+    final answer = Completer<void>();
+    ports.session.accountWait = answer.future;
+    final Future<LoginOutcome> login = server.logIn(url: 'http://home.lan:8080', name: 'sam', password: 'hunter2');
+    await pumpEventQueue();
+
+    // The last server let go, then this one told with no account: no key of
+    // the phone's own while the account read is out.
+    expect(router.log, ['disconnect', 'configure', 'resume']);
+    expect(router.configured.single.account, isNull);
+    expect(router.configured.single.link, serverLink);
+
+    answer.complete();
+    await login;
+    expect(router.connected, [serverOwner]);
+  });
+
+  test("a login's file never keeps the last server's copy over the new one", () async {
+    final (HomeServer server, FakeServerPorts ports, _, FakeBook book) = _server();
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+
+    // A copy of the first server is still being written as the next login goes.
+    final slow = Completer<void>();
+    book.serverWrite = slow.future;
+    final Future<void> refreshing = server.refresh();
+    await pumpEventQueue();
+    const other = ServerLink(
+      url: 'http://other.lan:8080',
+      user: 'sam',
+      tokenId: '00000000-0000-0000-0000-000000000009',
+    );
+    // The new server answers nothing yet, so only the login's own write counts.
+    final answer = Completer<void>();
+    ports.session = FakeServerSession()
+      ..linked = other
+      ..accountWait = answer.future;
+    final Future<LoginOutcome> login = server.logIn(url: 'http://other.lan:8080', name: 'sam', password: 'pw');
+    await pumpEventQueue();
+    slow.complete();
+    await refreshing;
+    await pumpEventQueue();
+
+    expect(book.server?.link, other);
+    expect(book.server?.account, isNull, reason: 'no account of the last server goes with it');
+    answer.complete();
+    await login;
   });
 }

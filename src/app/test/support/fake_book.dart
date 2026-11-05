@@ -117,8 +117,15 @@ class FakeBook extends ChangeNotifier implements FeederBook {
   @override
   KnownServer? server;
 
+  /// While set, the next write of [server] waits for it: a slow disk.
+  Future<void>? serverWrite;
+
   @override
   Future<void> setServer(KnownServer? server) async {
+    // Only the next write is slow.
+    final Future<void>? slow = serverWrite;
+    serverWrite = null;
+    await slow;
     this.server = server;
     notifyListeners();
   }

@@ -173,11 +173,18 @@ class HomeServer extends ChangeNotifier {
     if (_disposed) return const LoginDone();
 
     _drop();
-    await _ports.keepSecret(session.secret());
     final ServerLink link = session.link();
-    await _book.setServer(KnownServer(link: link, feeders: const []));
+    // The router holds no key of the phone's own for this account until the
+    // server says who it is: a viewer never feeds direct in between.
+    _router?.configureServer(
+      kept: KnownServer(link: link, feeders: const []),
+    );
     _session = session;
     _set(ServerLinked(link: link, feeders: const []));
+    // Through the queue, after any copy of the last server still writing;
+    // then the secret, so a file with the old link never meets the new one.
+    await _keep();
+    await _ports.keepSecret(session.secret());
     await _connect(session);
     return const LoginDone();
   }

@@ -2,11 +2,14 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/today.dart';
+import 'package:wellfed/screens/home/home.dart';
+import 'package:wellfed/src/rust/api/install.dart' show PendingInstall;
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
+import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/state/server/server.dart';
 
@@ -120,5 +123,26 @@ void main() {
     await tester.pumpWidget(themed(Scaffold(body: TodayTab(feeder: kitchen))));
     await settle(tester);
     expect(find.text('Feed now'), findsNothing);
+  });
+
+  testWidgets('a record of unconfirmed writes that will not open is said plainly on Home', (tester) async {
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final fleet = FeederFleet(FakeBook()..feeders = [_kitchen], FakeFeederPorts()..hasRouter = false);
+    addTearDown(fleet.dispose);
+    await tester.pumpWidget(
+      themed(
+        HomeScreen(
+          fleet: fleet,
+          earlierInstall: () async => PendingInstall.nothing,
+          pinsProblem: PinsProblem.unreadable,
+        ),
+      ),
+    );
+    await settle(tester);
+
+    expect(find.textContaining('Feeding and changes are off.', findRichText: true), findsOneWidget);
+    expect(find.textContaining("Clear the app's data", findRichText: true), findsOneWidget);
   });
 }

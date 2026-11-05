@@ -84,6 +84,8 @@ A release build's pin goes in the bridge as `RELEASE_PIN`, which the environment
 
 The app's own file gained `appearance`, with no fallback for older files: clear the app's data on a phone that ran an earlier build, then pair again. Its `server` now holds the link and the server's last feeder list together; a phone that logged in to a server with an earlier build has to clear the app's data too (no phone has yet).
 
+The pins file, `pending.json` beside it, now keeps the adoptions whose answer was lost, also with no fallback. One a build before that wrote does not open, and then the app sends nothing, which Home says. To clear it, clear the app's data (Android Settings, Apps, Wellfed, Storage), then pair again. No phone ran such a build.
+
 ## Toolchain
 
 The versions this was built with:

@@ -66,11 +66,24 @@ abstract interface class FeederBook implements Listenable {
   Future<void> setServer(KnownServer? server);
 }
 
+/// Why the pins file (`pending.json`) did not open, so the app sends no
+/// request at all.
+enum PinsProblem {
+  /// Another copy of the app, in another process, holds it.
+  inUse,
+
+  /// It can't be read: damaged, or written by a build whose shape this one
+  /// does not read. Only clearing the app's data clears it.
+  unreadable,
+}
+
 /// The phone's identity and the feeders it knows. The client secret lives
 /// in Keystore-backed secure storage; everything else in the app's own
 /// file, which Rust reads and writes.
 class AppState extends ChangeNotifier implements FeederBook {
-  AppState._(this.key, this._store, this._path, this.router);
+  AppState._(this.key, this._store, this._path, (PathRouter?, PinsProblem?) opened)
+    : router = opened.$1,
+      pinsProblem = opened.$2;
 
   static const _secretName = 'client-secret';
 
@@ -81,6 +94,9 @@ class AppState extends ChangeNotifier implements FeederBook {
   /// file; `null` when they could not be opened, and then the app sends no
   /// request at all rather than an unpinned write.
   final PathRouter? router;
+
+  /// Why [router] is `null`, for the owner to see.
+  final PinsProblem? pinsProblem;
   final String _path;
   AppStore _store;
 
@@ -116,14 +132,14 @@ class AppState extends ChangeNotifier implements FeederBook {
   /// The router on `pins`, told at once of the server the app keeps, before
   /// any feeder session exists: an account the server may have narrowed
   /// never feeds on the phone's own key while the app reads its token.
-  static PathRouter? _openRouter(String pins, KnownServer? kept) {
+  static (PathRouter?, PinsProblem?) _openRouter(String pins, KnownServer? kept) {
     try {
       final router = PathRouter(pinsPath: pins);
       if (kept != null) router.configureServer(kept: kept);
-      return router;
+      return (router, null);
     } on BridgeError catch (error) {
       debugPrint('the pending writes could not be opened, so nothing is sent: ${error.message}');
-      return null;
+      return (null, error.kind == ErrorKind.inUse ? PinsProblem.inUse : PinsProblem.unreadable);
     }
   }
 

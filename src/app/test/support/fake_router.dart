@@ -17,7 +17,7 @@ class FakeRouter with FakeOpaque implements PathRouter {
   final _attached = <String, FakeSession>{};
 
   /// What happened, in order: `configure` as the app tells it of a kept
-  /// server, `attach <feeder>` and `feed <feeder>` here, and `run <feeder>`
+  /// server, `disconnect` as it lets one go, `resume` as it hands one over, `attach <feeder>` and `feed <feeder>` here, and `run <feeder>`
   /// as each session starts.
   final log = <String>[];
 
@@ -125,7 +125,10 @@ class FakeRouter with FakeOpaque implements PathRouter {
   void connectServer({required ServerSession session, required ServerAccount account}) => connected.add(account);
 
   @override
-  void disconnectServer() => disconnects++;
+  void disconnectServer() {
+    disconnects++;
+    log.add('disconnect');
+  }
 
   /// The kept accounts each cold start handed over, and how often the phone
   /// said it holds no token for its server.
@@ -135,6 +138,7 @@ class FakeRouter with FakeOpaque implements PathRouter {
   @override
   Future<ServerAccount> resumeServer({required ServerSession session, ServerAccount? cached}) async {
     resumed.add(cached);
+    log.add('resume');
     final ServerAccount account = await session.account();
     connected.add(account);
     return account;

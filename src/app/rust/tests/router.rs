@@ -1575,3 +1575,51 @@ fn a_feed_s_answer_is_told_by_its_key_for_a_screen_that_holds_only_the_pin() {
         sim.stop().await;
     });
 }
+
+#[test]
+fn a_login_uses_no_own_key_while_the_server_is_asked_who_the_account_is() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let kitchen = identity(&sim);
+        let phone = Rc::new(Phone::new());
+        let _direct = phone.open(&sim, sim.address).await;
+        assert_eq!(phone.router.path(kitchen.clone()), Some(RoutePath::Direct));
+
+        // The app's login: the last server let go, the new one told with no
+        // account, then handed over while its answer is out.
+        let link = ServerLink {
+            url: silent(),
+            user: "sam".into(),
+            token_id: "00000000-0000-0000-0000-000000000001".into(),
+        };
+        phone.router.disconnect_server();
+        phone.router.configure_server(KnownServer {
+            link: link.clone(),
+            feeders: Vec::new(),
+            account: None,
+        });
+        let session = Rc::new(ServerSession::restore(link, "secret".into()).unwrap());
+        let resuming = {
+            let (phone, session) = (Rc::clone(&phone), Rc::clone(&session));
+            tokio::task::spawn_local(async move {
+                let _ = phone.router.resume_server(&session, None).await;
+            })
+        };
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        assert_eq!(phone.router.path(kitchen.clone()), None);
+        assert!(!matches!(
+            phone.router.feed(kitchen, 1).await,
+            RoutedFeed::Started { .. }
+        ));
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let feeds = feeder::feeds(&flash);
+        resuming.abort();
+        sim.stop().await;
+        assert_eq!(
+            feeds, 0,
+            "a login fed on the phone's own key before the server said"
+        );
+    });
+}

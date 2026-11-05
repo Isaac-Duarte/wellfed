@@ -118,6 +118,7 @@ class _WellfedAppState extends State<WellfedApp> {
         : HomeScreen(
             fleet: _fleet,
             adopt: _adopt,
+            pinsProblem: widget.app.pinsProblem,
             earlierInstall: () async {
               final ports = AppInstallPorts(widget.app.key);
               return ports.pending(await ports.paths());
