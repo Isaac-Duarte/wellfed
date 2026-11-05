@@ -632,7 +632,7 @@ Two bench routes go to stock 1.1.15:
 - over the air (`ota` with a stock review, or the [`restore-stock` job](#restore-as-a-job) from the owner's backup);
 - over UART (`stock-prepare` and `stock-execute`).
 
-The way from stock to Wellfed over stock's own updater is the Android app's, from a phone and a real Reset hold, which erases stock's plans ([running an install on the bench](../../firmware/consumer-installation.md#running-an-install-on-the-bench)). No bench job does it. The `restore-stock` job and the app's install are the real path, and the suite does not cover it: [before a release](../../development/dart.md#before-a-release), run both.
+The way from stock to Wellfed over stock's own updater is the Android app's, from a phone and a real Reset hold, which erases stock's plans ([running an install on the bench](../../firmware/install-bench-checks.md#running-an-install-on-the-bench)). No bench job does it. The `restore-stock` job and the app's install are the real path, and the suite does not cover it: [before a release](../../development/dart.md#before-a-release), run both.
 
 ### To stock over the air
 

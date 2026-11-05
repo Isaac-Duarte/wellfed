@@ -14,6 +14,7 @@ The [owner guide](guide/README.md) is the place to start if you own a feeder. It
 | [Glossary](glossary.md) | The words the rest of the docs use without explaining |
 | [Supported devices](devices/README.md) | Which feeders Wellfed runs on |
 | [Consumer installation](firmware/consumer-installation.md) | Moving a stock feeder to Wellfed over the air, and going back |
+| [Bank, install and rollback bench checks](firmware/install-bench-checks.md) | Checking the bank rules, an install from stock and a rollback on the bench |
 
 ## How it works
 
