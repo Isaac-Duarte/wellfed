@@ -150,6 +150,36 @@ mod tests {
         assert!(matches!(shape(&FeederRequest::GetCalibration), Shape::Read));
     }
 
+    /// A skip and its undo are writes the server carries, under their own
+    /// kind, naming the meal by the instant the card gave; an instant that
+    /// is no whole second names no meal and goes nowhere.
+    #[test]
+    fn a_skip_pins_its_meal_and_an_instant_off_the_second_is_refused() {
+        let due_ms = 1_790_006_400_000;
+        let due = jiff::Timestamp::from_millisecond(due_ms).unwrap();
+        let Shape::Write { write, stream } = shape(&FeederRequest::SkipMeal { slot: 2, due_ms })
+        else {
+            panic!("a skip is a write");
+        };
+        assert_eq!(write, PinnedWrite::Skip { slot: 2, due });
+        assert_eq!(write.kind(), WriteKind::Skip);
+        assert!(stream.is_none());
+        assert!(matches!(
+            shape(&FeederRequest::UnskipMeal { slot: 2, due_ms }),
+            Shape::Write {
+                write: PinnedWrite::Unskip { slot: 2, .. },
+                ..
+            }
+        ));
+        assert!(matches!(
+            shape(&FeederRequest::SkipMeal {
+                slot: 2,
+                due_ms: due_ms + 1
+            }),
+            Shape::NotAsked(NotAsked::EmptySlot)
+        ));
+    }
+
     #[test]
     fn a_recording_that_is_no_clip_is_refused_before_it_goes() {
         let upload = FeederRequest::UploadCall {
