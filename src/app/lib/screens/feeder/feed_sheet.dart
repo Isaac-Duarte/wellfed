@@ -14,6 +14,8 @@ import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/when.dart';
 
+part 'feed_words.dart';
+
 /// The Feed now button: a new feed, so a known ending the owner has moved on
 /// from gives way to the portions. One that isn't known stays until it is
 /// closed, as the owner should look at the bowl before feeding again.
@@ -307,10 +309,20 @@ class _Progress extends StatelessWidget {
         builder: (context) {
           final ThemeTokens c = context.colors;
           final FeedState feed = feeder.state.feed;
-          final String why = feed is FeedRefused
-              ? _refusal(feed.refusal)
-              : 'The connection dropped before the request went out. Try again '
-                    'once the feeder is online.';
+          final String why = switch (feed) {
+            FeedRefused(:final FeedRefusal refusal) => _refusal(refusal),
+            FeedNotSent(why: NotSentWhy.signedOut) =>
+              "The server no longer takes this phone's login, so nothing goes to "
+                  'the feeder. Log in again, or remove the server to use this '
+                  "phone's own key.",
+            FeedNotSent(why: NotSentWhy.forbidden) => 'This account may not feed.',
+            FeedNotSent(why: NotSentWhy.notPinned) =>
+              "This phone couldn't write the feed down before sending it, so it "
+                  "didn't send it.",
+            _ =>
+              'The connection dropped before the request went out. Try again '
+                  'once the feeder is online.',
+          };
           return _Sheet(
             glyph: Glyph.failed,
             color: c.fault,
@@ -366,7 +378,21 @@ class _Progress extends StatelessWidget {
                 "Wellfed won't send it again on its own. Look at the bowl before "
                 'you feed again.',
               ),
-              FilledButton(onPressed: () => _close(context), child: const Text('Close')),
+              if (feed case FeedUnanswered(key: _?))
+                Row(
+                  children: [
+                    Expanded(
+                      // Only reads what the feeder or the server recorded.
+                      child: OutlinedButton(onPressed: feeder.checkFeed, child: const Text('Check again')),
+                    ),
+                    const SizedBox(width: Space.s3),
+                    Expanded(
+                      child: FilledButton(onPressed: () => _close(context), child: const Text('Close')),
+                    ),
+                  ],
+                )
+              else
+                FilledButton(onPressed: () => _close(context), child: const Text('Close')),
             ],
           );
         },
@@ -383,29 +409,6 @@ class _Progress extends StatelessWidget {
   }
 
   static String _upper(String words) => words.isEmpty ? words : words[0].toUpperCase() + words.substring(1);
-
-  static String _uncertainWhy(FeedReason reason) => switch (reason) {
-    FeedReason.interrupted =>
-      "The feeder restarted during the feed, so it can't say how much "
-          'dropped.',
-    FeedReason.power =>
-      "The power went out during the feed, so the feeder can't say how much "
-          'dropped.',
-    FeedReason.sensor ||
-    FeedReason.noFeedback ||
-    FeedReason.feedbackStream => "The feeder lost track of its wheel, so it can't say how much dropped.",
-    _ => 'The feeder stopped without recording how much dropped.',
-  };
-
-  static String _refusal(FeedRefusal? refusal) => switch (refusal) {
-    FeedRefusal.forbidden => 'This phone may not feed this feeder.',
-    FeedRefusal.busy => "It's busy saving a change. Try again in a moment.",
-    FeedRefusal.fault => 'It stopped on a fault and feeds again after a restart.',
-    FeedRefusal.portions => 'A feed is 1 to 48 portions.',
-    FeedRefusal.notFound => 'That feed is not running.',
-    FeedRefusal.unavailable => 'This firmware does not feed.',
-    FeedRefusal.other || null => 'It refused the request.',
-  };
 }
 
 class _Stepper extends StatelessWidget {

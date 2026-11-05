@@ -10,7 +10,11 @@
 //! The path is chosen per feeder, server first: a new read or a new write
 //! goes direct when the server is unreachable, or reports the feeder offline
 //! while the phone's own session reaches it. A viewer, or an account with an
-//! expiry, holds no key of its own, so it goes through the server only.
+//! expiry, holds no key of its own, so it goes through the server only. A
+//! server that refuses this phone's token (revoked, or the account disabled)
+//! closes the phone's own keys too, on every feeder: the router never routes
+//! around the account, until the owner logs in again or removes the server
+//! ([`PathRouter::disconnect_server`]).
 //! [`PathRouter::path`] and [`RouterUpdate::Path`] say which path a feeder
 //! takes now, for the screen's indicator.
 //!
@@ -45,13 +49,16 @@
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
 
+use wellfed_client::history::Delivered;
+
 use crate::api::error::BridgeError;
 use crate::api::feeder::{FeederReply, FeederRequest};
-pub use crate::api::model::{FeedOutcome, FeedReason};
+use crate::api::keys::ClientKey;
+pub use crate::api::model::{FeedOutcome, FeedReason, FoodLevel};
 use crate::api::server::{ServerRefusal, ServerSession, ServerUpdate};
 use crate::api::server_error::ServerError;
 use crate::api::server_views::{ServerAccount, ServerFeeder};
-use crate::api::session::{FeedRefusal, FeederSession};
+use crate::api::session::{FedBy, FeedRefusal, FeedResult, FeederSession};
 use crate::frb_generated::StreamSink;
 use crate::route::core::UNFOUND_GRACE_MS;
 use crate::route::io::Router;
@@ -244,6 +251,59 @@ pub enum RouterUpdate {
         settlement: Settlement,
     },
 }
+/// How adopting a feeder this phone paired before the server ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Adoption {
+    /// The server holds it, and this phone's key on it is the account's
+    /// phone key: deleting the account on the server revokes it.
+    Adopted { feeder: ServerFeeder },
+    /// The server holds it, and this phone's key is not the account's yet:
+    /// `error` says why, and [`PathRouter::claim_phone`] tries again.
+    Unclaimed {
+        feeder: ServerFeeder,
+        error: ServerError,
+    },
+    /// The feeder made no invite: `reply` says how that request ended.
+    NoInvite { reply: RoutedReply },
+    /// The server did not adopt it; `error` says why.
+    Failed { error: ServerError },
+}
+
+/// A feed's end as a settlement gives it, as the feed sheet shows one, for
+/// a feed whose `Fed` event this phone has not read: a server feed whose
+/// stream was down when it ended. When the feeder recorded it, and what its
+/// beam read, are the history's to say, and its requester is left
+/// [`FedBy::Unknown`], since the server's journal does not name the key
+/// the feeder heard. `None` for any settlement but [`Settlement::Fed`].
+#[frb(sync)]
+pub fn settled_feed(settlement: Settlement) -> Option<FeedResult> {
+    let Settlement::Fed {
+        feed,
+        requested,
+        completed,
+        outcome,
+        reason,
+    } = settlement
+    else {
+        return None;
+    };
+    let delivered = Delivered::of(outcome, completed, requested);
+    let (confirmed, at_most) = delivered.bounds();
+    Some(FeedResult {
+        feed,
+        requested,
+        confirmed,
+        at_most,
+        outcome,
+        reason,
+        uncertain: outcome == FeedOutcome::Uncertain,
+        words: delivered.describe(requested, outcome),
+        at_ms: None,
+        by: FedBy::Unknown,
+        hopper: FoodLevel::Unread,
+    })
+}
+
 #[frb(opaque)]
 pub struct PathRouter {
     router: Router,
@@ -302,6 +362,30 @@ impl PathRouter {
     #[frb(sync)]
     pub fn attach(&self, session: &FeederSession) {
         self.router.attach(session.direct());
+    }
+
+    /// Adopt `feeder`, which this phone paired before the server, as
+    /// `name`: an owner's invite made with `key` (this phone's own) goes
+    /// to the server, which records `key` as the account's phone key.
+    /// `address` is where the phone last found it (`ip:port`); without one
+    /// the server looks for it on mDNS. A feeder the server already lists
+    /// is only claimed.
+    pub async fn adopt(
+        &self,
+        feeder: String,
+        name: String,
+        address: Option<String>,
+        key: &ClientKey,
+    ) -> Adoption {
+        let phone = *key.keypair().public();
+        self.router.adopt(&feeder, name, address, phone).await
+    }
+
+    /// Record `key`, this phone's own key on `feeder`, as the account's
+    /// phone key, for an adoption that left it [`Adoption::Unclaimed`].
+    pub async fn claim_phone(&self, feeder: String, key: &ClientKey) -> Adoption {
+        let phone = *key.keypair().public();
+        self.router.claim_phone(&feeder, phone).await
     }
 
     /// The path a new request to `feeder` takes now.

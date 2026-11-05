@@ -3,10 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 
-/// How the session to a feeder stands.
+/// How this phone reaches a feeder: its own session, or the owner's server
+/// while that session is down and the server holds the feeder.
 enum Connection {
   /// Looking for the feeder's address on the LAN.
   looking,
@@ -14,7 +16,7 @@ enum Connection {
   /// Opening a session to an address.
   connecting,
 
-  /// The session is open.
+  /// The session is open, or the server's link to the feeder is.
   online,
 
   /// Not reachable; [FeederState.error] says how the last try ended.
@@ -69,10 +71,20 @@ final class FeedRunning extends FeedState {
     required super.sentAt,
     this.cancelAsked = false,
     this.cancelUnconfirmed = false,
+    this.key,
+    this.path,
   });
 
   /// The feeder's number for it.
   final int feed;
+
+  /// Its idempotency key, once the router has answered for it.
+  final String? key;
+
+  /// The way it went, once the router has answered for it: through the
+  /// server, its end comes on the server's stream, and the phone's own
+  /// session closing says nothing of it.
+  final RoutePath? path;
 
   /// "Stop feeding" went out and nothing has come of it yet. Only the feed's
   /// end says it stopped.
@@ -111,16 +123,36 @@ final class FeedRefused extends FeedState {
 }
 
 /// No answer came: the feed may have run. It is never sent again, and no later
-/// feed's end is taken for it: the bowl or the history says.
+/// feed's end is taken for it: the bowl or the history says. A new feed waits
+/// until the owner puts it away.
 final class FeedUnanswered extends FeedState {
   /// A feed that went out and heard nothing back.
-  const FeedUnanswered({required super.portions, required super.sentAt});
+  const FeedUnanswered({required super.portions, required super.sentAt, this.key});
+
+  /// Its idempotency key while the router keeps it pending: a check asks its
+  /// own path what became of it, and putting it away lets a new feed go.
+  final String? key;
 }
 
-/// The session ended before the request went out: nothing was fed.
+/// The request never went out: nothing was fed.
 final class FeedNotSent extends FeedState {
   /// A feed that never left this phone.
-  const FeedNotSent({required super.portions, required super.sentAt});
+  const FeedNotSent({required super.portions, required super.sentAt, this.why});
+
+  /// Why, when the router said more than that the feeder was out of reach.
+  final NotSentWhy? why;
+}
+
+/// Why a feed never went out, as the feed sheet tells it.
+enum NotSentWhy {
+  /// The server refused this phone's token, or the account stopped: log in again.
+  signedOut,
+
+  /// This account may not feed.
+  forbidden,
+
+  /// The phone could not write the pending feed down first, so it held it back.
+  notPinned,
 }
 
 /// The link went while the feed ran, or its end is overdue. If the feeder
@@ -155,6 +187,8 @@ final class FeederState {
     this.clients = const [],
     this.call,
     this.calibration,
+    this.path,
+    this.serverId,
   });
 
   /// What this phone keeps about the feeder.
@@ -196,6 +230,14 @@ final class FeederState {
   /// The portion size the feeder last said, for the feed sheet's grams.
   final CalibrationInfo? calibration;
 
+  /// The way a new request goes now, as the router last said: through the
+  /// owner's server or this phone's own session; `null` when it reaches the
+  /// feeder no way at all, or before the router has said.
+  final RoutePath? path;
+
+  /// The owner's server's id for it, while the server lists it.
+  final String? serverId;
+
   /// The card is what this session read, not an earlier one.
   bool get cardIsCurrent => connection == Connection.online && cardFresh;
 
@@ -218,6 +260,8 @@ final class FeederState {
     List<ClientView>? clients,
     CallInfo? Function()? call,
     CalibrationInfo? Function()? calibration,
+    RoutePath? Function()? path,
+    String? Function()? serverId,
   }) => FeederState(
     known: known ?? this.known,
     connection: connection ?? this.connection,
@@ -232,5 +276,7 @@ final class FeederState {
     clients: clients == null ? this.clients : List.unmodifiable(clients),
     call: call == null ? this.call : call(),
     calibration: calibration == null ? this.calibration : calibration(),
+    path: path == null ? this.path : path(),
+    serverId: serverId == null ? this.serverId : serverId(),
   );
 }

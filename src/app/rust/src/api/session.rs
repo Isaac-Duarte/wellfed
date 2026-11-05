@@ -1,6 +1,8 @@
-//! A feeder's device API session, as Dart holds it: commands go in through
-//! [`FeederSession`], and everything the screens show comes out of the
-//! stream [`FeederSession::run`] feeds.
+//! A feeder's device API session, as Dart holds it: everything the screens
+//! show comes out of the stream [`FeederSession::run`] feeds. Dart sends it
+//! no request of its own: every request and every feed goes through the
+//! path router ([`crate::api::router::PathRouter`]), which the app attaches
+//! the session to before it runs, so no write leaves unpinned.
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -11,14 +13,13 @@ use wellfed_model::Refusal;
 use wellfed_session::noise::Keypair;
 
 use crate::api::error::{BridgeError, ErrorKind};
-use crate::api::feeder::{FeederReply, FeederRequest, PlansView, SettingsView, TimeInfo};
+use crate::api::feeder::{PlansView, SettingsView, TimeInfo};
 use crate::api::keys::ClientKey;
 use crate::api::model::{
     Blocked, ClientRole, Desiccant, FeedOutcome, FeedReason, FoodLevel, MissedReason,
 };
 use crate::frb_generated::StreamSink;
 use crate::link::DirectLink;
-use crate::requests;
 use crate::session::{self, Command};
 
 /// What the Home card shows, from the feeder's status.
@@ -384,35 +385,6 @@ impl FeederSession {
     /// What the path router reaches this session through.
     pub(crate) fn direct(&self) -> Arc<DirectLink> {
         Arc::clone(&self.link)
-    }
-
-    /// Feed `portions` (1-48) once. The answer and the feed's end arrive
-    /// as updates. Refused with [`ErrorKind::Routed`] once a path router
-    /// holds the session: its feeds go through the router, which pins them
-    /// and keeps one feed from doubling an uncertain one.
-    #[frb(sync)]
-    pub fn feed(&self, portions: u8) -> Result<(), BridgeError> {
-        if self.link.is_routed() {
-            return Err(BridgeError::new(
-                ErrorKind::Routed,
-                "this session's feeds go through the path router",
-            ));
-        }
-        self.send(Command::Feed {
-            portions,
-            reply: None,
-        })
-    }
-
-    #[frb(sync)]
-    pub fn cancel_feed(&self, feed: u32) -> Result<(), BridgeError> {
-        self.send(Command::CancelFeed { feed })
-    }
-
-    /// Run one request. A write goes out once; see [`FeederReply`] for how it
-    /// can end short of an answer.
-    pub async fn ask(&self, request: FeederRequest) -> FeederReply {
-        requests::run(&self.commands, self.feeder, request).await
     }
 
     /// Read the status again.

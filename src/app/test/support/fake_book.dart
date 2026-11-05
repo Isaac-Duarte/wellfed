@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:wellfed/src/rust/api/error.dart';
+import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 
@@ -112,4 +113,13 @@ class FakeBook extends ChangeNotifier implements FeederBook {
 
   @override
   void clockSynced(String identity) => _clockDue.remove(identity);
+
+  @override
+  KnownServer? server;
+
+  @override
+  Future<void> setServer(KnownServer? server) async {
+    this.server = server;
+    notifyListeners();
+  }
 }

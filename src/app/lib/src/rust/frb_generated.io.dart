@@ -306,6 +306,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  Adoption dco_decode_adoption(dynamic raw);
+
+  @protected
   AppStore dco_decode_app_store(dynamic raw);
 
   @protected
@@ -411,6 +414,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   InviteView dco_decode_box_autoadd_invite_view(dynamic raw);
 
   @protected
+  KnownServer dco_decode_box_autoadd_known_server(dynamic raw);
+
+  @protected
   MealReminder dco_decode_box_autoadd_meal_reminder(dynamic raw);
 
   @protected
@@ -418,6 +424,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MissedReason dco_decode_box_autoadd_missed_reason(dynamic raw);
+
+  @protected
+  NewRefill dco_decode_box_autoadd_new_refill(dynamic raw);
 
   @protected
   NextMealView dco_decode_box_autoadd_next_meal_view(dynamic raw);
@@ -465,6 +474,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RoutePath dco_decode_box_autoadd_route_path(dynamic raw);
 
   @protected
+  RoutedReply dco_decode_box_autoadd_routed_reply(dynamic raw);
+
+  @protected
   ServerAccount dco_decode_box_autoadd_server_account(dynamic raw);
 
   @protected
@@ -483,6 +495,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ServerEvent dco_decode_box_autoadd_server_event(dynamic raw);
+
+  @protected
+  ServerFeeder dco_decode_box_autoadd_server_feeder(dynamic raw);
 
   @protected
   ServerFoodLeft dco_decode_box_autoadd_server_food_left(dynamic raw);
@@ -716,6 +731,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   KnownFeeder dco_decode_known_feeder(dynamic raw);
 
   @protected
+  KnownServer dco_decode_known_server(dynamic raw);
+
+  @protected
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
@@ -729,6 +747,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<ListedFeeder> dco_decode_list_listed_feeder(dynamic raw);
 
   @protected
   List<MealView> dco_decode_list_meal_view(dynamic raw);
@@ -778,6 +799,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ServerPet> dco_decode_list_server_pet(dynamic raw);
 
   @protected
+  List<ServerRefill> dco_decode_list_server_refill(dynamic raw);
+
+  @protected
+  List<ServerWeight> dco_decode_list_server_weight(dynamic raw);
+
+  @protected
   List<SetupStep> dco_decode_list_setup_step(dynamic raw);
 
   @protected
@@ -788,6 +815,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Weekday> dco_decode_list_weekday(dynamic raw);
+
+  @protected
+  ListedFeeder dco_decode_listed_feeder(dynamic raw);
 
   @protected
   ListenUpdate dco_decode_listen_update(dynamic raw);
@@ -806,6 +836,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MissedReason dco_decode_missed_reason(dynamic raw);
+
+  @protected
+  NewRefill dco_decode_new_refill(dynamic raw);
 
   @protected
   NextMealView dco_decode_next_meal_view(dynamic raw);
@@ -859,6 +892,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
 
   @protected
+  KnownServer? dco_decode_opt_box_autoadd_known_server(dynamic raw);
+
+  @protected
   MealReminder? dco_decode_opt_box_autoadd_meal_reminder(dynamic raw);
 
   @protected
@@ -901,9 +937,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ServerFoodPeriod? dco_decode_opt_box_autoadd_server_food_period(dynamic raw);
-
-  @protected
-  ServerLink? dco_decode_opt_box_autoadd_server_link(dynamic raw);
 
   @protected
   ServerNextMeal? dco_decode_opt_box_autoadd_server_next_meal(dynamic raw);
@@ -1118,6 +1151,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ServerRefill dco_decode_server_refill(dynamic raw);
 
   @protected
+  ServerRefillPage dco_decode_server_refill_page(dynamic raw);
+
+  @protected
   ServerRefusal dco_decode_server_refusal(dynamic raw);
 
   @protected
@@ -1131,6 +1167,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ServerUpdate dco_decode_server_update(dynamic raw);
+
+  @protected
+  ServerWeight dco_decode_server_weight(dynamic raw);
+
+  @protected
+  ServerWeightPage dco_decode_server_weight_page(dynamic raw);
 
   @protected
   SessionUpdate dco_decode_session_update(dynamic raw);
@@ -1488,6 +1530,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  Adoption sse_decode_adoption(SseDeserializer deserializer);
+
+  @protected
   AppStore sse_decode_app_store(SseDeserializer deserializer);
 
   @protected
@@ -1603,6 +1648,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   InviteView sse_decode_box_autoadd_invite_view(SseDeserializer deserializer);
 
   @protected
+  KnownServer sse_decode_box_autoadd_known_server(SseDeserializer deserializer);
+
+  @protected
   MealReminder sse_decode_box_autoadd_meal_reminder(
     SseDeserializer deserializer,
   );
@@ -1614,6 +1662,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MissedReason sse_decode_box_autoadd_missed_reason(
     SseDeserializer deserializer,
   );
+
+  @protected
+  NewRefill sse_decode_box_autoadd_new_refill(SseDeserializer deserializer);
 
   @protected
   NextMealView sse_decode_box_autoadd_next_meal_view(
@@ -1669,6 +1720,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RoutePath sse_decode_box_autoadd_route_path(SseDeserializer deserializer);
 
   @protected
+  RoutedReply sse_decode_box_autoadd_routed_reply(SseDeserializer deserializer);
+
+  @protected
   ServerAccount sse_decode_box_autoadd_server_account(
     SseDeserializer deserializer,
   );
@@ -1691,6 +1745,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ServerEvent sse_decode_box_autoadd_server_event(SseDeserializer deserializer);
+
+  @protected
+  ServerFeeder sse_decode_box_autoadd_server_feeder(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ServerFoodLeft sse_decode_box_autoadd_server_food_left(
@@ -1950,6 +2009,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   KnownFeeder sse_decode_known_feeder(SseDeserializer deserializer);
 
   @protected
+  KnownServer sse_decode_known_server(SseDeserializer deserializer);
+
+  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
@@ -1965,6 +2027,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Uint8List> sse_decode_list_list_prim_u_8_strict(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ListedFeeder> sse_decode_list_listed_feeder(
     SseDeserializer deserializer,
   );
 
@@ -2028,6 +2095,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<ServerPet> sse_decode_list_server_pet(SseDeserializer deserializer);
 
   @protected
+  List<ServerRefill> sse_decode_list_server_refill(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ServerWeight> sse_decode_list_server_weight(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<SetupStep> sse_decode_list_setup_step(SseDeserializer deserializer);
 
   @protected
@@ -2038,6 +2115,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<Weekday> sse_decode_list_weekday(SseDeserializer deserializer);
+
+  @protected
+  ListedFeeder sse_decode_listed_feeder(SseDeserializer deserializer);
 
   @protected
   ListenUpdate sse_decode_listen_update(SseDeserializer deserializer);
@@ -2056,6 +2136,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MissedReason sse_decode_missed_reason(SseDeserializer deserializer);
+
+  @protected
+  NewRefill sse_decode_new_refill(SseDeserializer deserializer);
 
   @protected
   NextMealView sse_decode_next_meal_view(SseDeserializer deserializer);
@@ -2115,6 +2198,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  KnownServer? sse_decode_opt_box_autoadd_known_server(
+    SseDeserializer deserializer,
+  );
 
   @protected
   MealReminder? sse_decode_opt_box_autoadd_meal_reminder(
@@ -2177,11 +2265,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ServerFoodPeriod? sse_decode_opt_box_autoadd_server_food_period(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  ServerLink? sse_decode_opt_box_autoadd_server_link(
     SseDeserializer deserializer,
   );
 
@@ -2428,6 +2511,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ServerRefill sse_decode_server_refill(SseDeserializer deserializer);
 
   @protected
+  ServerRefillPage sse_decode_server_refill_page(SseDeserializer deserializer);
+
+  @protected
   ServerRefusal sse_decode_server_refusal(SseDeserializer deserializer);
 
   @protected
@@ -2443,6 +2529,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ServerUpdate sse_decode_server_update(SseDeserializer deserializer);
+
+  @protected
+  ServerWeight sse_decode_server_weight(SseDeserializer deserializer);
+
+  @protected
+  ServerWeightPage sse_decode_server_weight_page(SseDeserializer deserializer);
 
   @protected
   SessionUpdate sse_decode_session_update(SseDeserializer deserializer);
@@ -2842,6 +2934,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_adoption(Adoption self, SseSerializer serializer);
+
+  @protected
   void sse_encode_app_store(AppStore self, SseSerializer serializer);
 
   @protected
@@ -3001,6 +3096,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_known_server(
+    KnownServer self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_meal_reminder(
     MealReminder self,
     SseSerializer serializer,
@@ -3012,6 +3113,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_missed_reason(
     MissedReason self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_new_refill(
+    NewRefill self,
     SseSerializer serializer,
   );
 
@@ -3097,6 +3204,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_routed_reply(
+    RoutedReply self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_server_account(
     ServerAccount self,
     SseSerializer serializer,
@@ -3129,6 +3242,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_server_event(
     ServerEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_server_feeder(
+    ServerFeeder self,
     SseSerializer serializer,
   );
 
@@ -3439,6 +3558,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_known_feeder(KnownFeeder self, SseSerializer serializer);
 
   @protected
+  void sse_encode_known_server(KnownServer self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
@@ -3462,6 +3584,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_list_prim_u_8_strict(
     List<Uint8List> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_listed_feeder(
+    List<ListedFeeder> self,
     SseSerializer serializer,
   );
 
@@ -3550,6 +3678,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_server_refill(
+    List<ServerRefill> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_server_weight(
+    List<ServerWeight> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_setup_step(
     List<SetupStep> self,
     SseSerializer serializer,
@@ -3571,6 +3711,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_weekday(List<Weekday> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_listed_feeder(ListedFeeder self, SseSerializer serializer);
+
+  @protected
   void sse_encode_listen_update(ListenUpdate self, SseSerializer serializer);
 
   @protected
@@ -3587,6 +3730,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_missed_reason(MissedReason self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_new_refill(NewRefill self, SseSerializer serializer);
 
   @protected
   void sse_encode_next_meal_view(NextMealView self, SseSerializer serializer);
@@ -3663,6 +3809,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_i_64(
     PlatformInt64? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_known_server(
+    KnownServer? self,
     SseSerializer serializer,
   );
 
@@ -3744,12 +3896,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_server_food_period(
     ServerFoodPeriod? self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_opt_box_autoadd_server_link(
-    ServerLink? self,
     SseSerializer serializer,
   );
 
@@ -4060,6 +4206,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_server_refill(ServerRefill self, SseSerializer serializer);
 
   @protected
+  void sse_encode_server_refill_page(
+    ServerRefillPage self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_server_refusal(ServerRefusal self, SseSerializer serializer);
 
   @protected
@@ -4079,6 +4231,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_server_update(ServerUpdate self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_server_weight(ServerWeight self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_server_weight_page(
+    ServerWeightPage self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_session_update(SessionUpdate self, SseSerializer serializer);

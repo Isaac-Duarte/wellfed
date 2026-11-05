@@ -1,0 +1,91 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/src/rust/api/server_error.dart';
+import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/server/server.dart';
+
+import '../support/fakes.dart';
+
+const _kitchen = KnownFeeder(identity: 'aa', name: 'Kitchen', address: 'lan:4747');
+
+(HomeServer, FakeServerPorts, FakeRouter, FakeBook) _server() {
+  final book = FakeBook()..feeders = [_kitchen];
+  final ports = FakeServerPorts();
+  final router = FakeRouter();
+  final server = HomeServer(book, ports, router);
+  addTearDown(server.dispose);
+  return (server, ports, router, book);
+}
+
+void main() {
+  test('no server configured runs nothing', () {
+    final (HomeServer server, FakeServerPorts ports, FakeRouter router, _) = _server();
+    expect(server.state, isA<ServerAbsent>());
+    expect(ports.logins, isEmpty);
+    expect(router.connected, isEmpty);
+  });
+
+  test('a login keeps the token in secure storage and the password nowhere', () async {
+    final (HomeServer server, FakeServerPorts ports, FakeRouter router, FakeBook book) = _server();
+    final LoginOutcome outcome = await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+
+    expect(outcome, isA<LoginDone>());
+    expect(ports.logins.single.phone, 'Pixel', reason: 'the token is named for this phone');
+    expect(ports.kept, 'token-secret');
+    expect(book.server?.link, serverLink);
+    expect('${book.server?.link.url}${book.server?.link.user}${book.server?.link.tokenId}', isNot(contains('hunter2')));
+    expect(router.connected, [serverOwner]);
+    expect(server.state, isA<ServerLinked>().having((linked) => linked.account, 'account', serverOwner));
+  });
+
+  test('a refused login says why and keeps nothing', () async {
+    final (HomeServer server, FakeServerPorts ports, _, FakeBook book) = _server();
+    ports.loginFails = serverError(ServerErrorKind.badCredentials);
+    final LoginOutcome outcome = await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'wrong');
+
+    expect(outcome, isA<LoginFailed>().having((failed) => failed.error.kind, 'kind', ServerErrorKind.badCredentials));
+    expect(ports.kept, isNull);
+    expect(book.server, isNull);
+    expect(server.state, isA<ServerAbsent>());
+  });
+
+  test('logging out revokes the token and forgets the server, and the feeders stay', () async {
+    final (HomeServer server, FakeServerPorts ports, FakeRouter router, FakeBook book) = _server();
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+
+    expect(await server.logOut(), isTrue);
+    expect(ports.session.logouts, 1);
+    expect(ports.kept, isNull);
+    expect(book.server, isNull);
+    expect(book.feeders, [_kitchen]);
+    expect(router.disconnects, greaterThan(0));
+    expect(server.state, isA<ServerAbsent>());
+  });
+
+  test('a logout the server cannot take still forgets it, and says so', () async {
+    final (HomeServer server, FakeServerPorts ports, _, FakeBook book) = _server();
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+    ports.session.logoutFails = serverError(ServerErrorKind.unreachable);
+
+    expect(await server.logOut(), isFalse);
+    expect(book.server, isNull);
+  });
+
+  test('removing the server leaves its token as it is', () async {
+    final (HomeServer server, FakeServerPorts ports, _, FakeBook book) = _server();
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+
+    await server.removeServer();
+    expect(ports.session.logouts, 0);
+    expect(ports.forgets, 1);
+    expect(book.server, isNull);
+  });
+
+  test('a token the server refuses is signed out, and nothing tries it again', () async {
+    final (HomeServer server, FakeServerPorts ports, FakeRouter router, _) = _server();
+    ports.session.accountFails = serverError(ServerErrorKind.tokenRevoked);
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+
+    expect(server.state, isA<ServerLinked>().having((linked) => linked.problem, 'problem', ServerProblem.signedOut));
+    expect(router.connected, isEmpty);
+  });
+}

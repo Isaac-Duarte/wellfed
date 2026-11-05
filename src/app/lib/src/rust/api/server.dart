@@ -25,6 +25,26 @@ abstract class ServerSession implements RustOpaqueInterface {
   /// Who this phone's token speaks for.
   Future<ServerAccount> account();
 
+  /// Record a refill of `feeder` made now. The server takes a refill once
+  /// per call and keys none, so a call whose answer was lost is read back
+  /// from [`Self::refills`] before it is made again.
+  Future<ServerRefill> addRefill({
+    required String feeder,
+    required NewRefill refill,
+  });
+
+  /// Log `grams` (1-200000), weighed at `at_ms`, or now. As with a
+  /// refill, a call whose answer was lost is read back before it is made
+  /// again.
+  Future<ServerWeight> addWeight({
+    required String pet,
+    required int grams,
+    PlatformInt64? atMs,
+  });
+
+  /// The pet eats from `feeder` too: its intake counts that feeder.
+  Future<ServerPet> assignFeeder({required String pet, required String feeder});
+
   /// End every follow, now and later. The reads still work.
   void close();
 
@@ -47,6 +67,11 @@ abstract class ServerSession implements RustOpaqueInterface {
   Future<void> deleteFood({required String id});
 
   Future<void> deletePet({required String id});
+
+  /// Remove a refill recorded by mistake.
+  Future<void> deleteRefill({required String feeder, required String refill});
+
+  Future<void> deleteWeight({required String pet, required String weight});
 
   /// A page of `feeder`'s history after `after` in `epoch` (the server's
   /// current epoch when `None`), at most `limit` (1-1000, default 100).
@@ -105,6 +130,14 @@ abstract class ServerSession implements RustOpaqueInterface {
 
   Future<List<ServerPet>> pets();
 
+  /// A page of `feeder`'s refills, oldest first: after `after` (the last
+  /// page's `next`), at most `limit` (1-1000, default 100).
+  Future<ServerRefillPage> refills({
+    required String feeder,
+    String? after,
+    int? limit,
+  });
+
   /// The session a stored link and token secret make. Nothing is sent
   /// until a call.
   static ServerSession restore({
@@ -117,6 +150,18 @@ abstract class ServerSession implements RustOpaqueInterface {
 
   /// The token's secret, for secure storage only.
   String secret();
+
+  /// Serve `food` from `feeder` from now on: what its food view and the
+  /// intake of the pets eating from it count by.
+  Future<ServerFoodPeriod> setFeederFood({
+    required String feeder,
+    required String food,
+  });
+
+  Future<ServerPet> unassignFeeder({
+    required String pet,
+    required String feeder,
+  });
 
   /// Replace a food's fields with these, as its edit form holds them.
   Future<ServerFood> updateFood({
@@ -134,6 +179,14 @@ abstract class ServerSession implements RustOpaqueInterface {
     required Species species,
     String? birthDate,
     int? dailyKcal,
+  });
+
+  /// A page of `pet`'s weight log, oldest reading first: after `after`
+  /// (the last page's `next`), at most `limit` (1-1000, default 100).
+  Future<ServerWeightPage> weights({
+    required String pet,
+    String? after,
+    int? limit,
   });
 }
 

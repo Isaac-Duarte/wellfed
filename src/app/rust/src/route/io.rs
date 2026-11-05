@@ -421,6 +421,19 @@ impl Router {
         Ok(feeders.into_iter().map(ServerFeeder::from).collect())
     }
 
+    /// The server's client, when one is configured.
+    pub(crate) fn server_client(&self) -> Option<wellfed_server_client::Client> {
+        self.state().client()
+    }
+
+    /// The server's id for `feeder`, while a server is configured and its
+    /// last list named it.
+    pub(crate) fn listed(&self, feeder: &str) -> Option<FeederId> {
+        let state = self.state();
+        state.server.as_ref()?;
+        state.feeders.get(feeder)?.server
+    }
+
     /// Read the account again, so a demotion or a new expiry routes from
     /// now on.
     async fn reread_account(&self) {

@@ -5,6 +5,7 @@ import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/join_ports.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
 import 'package:wellfed/platform/phone.dart';
+import 'package:wellfed/platform/server_ports.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
@@ -19,6 +20,7 @@ import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/state/join/join.dart';
+import 'package:wellfed/state/server/server.dart';
 import 'package:wellfed/state/settings/backups.dart';
 import 'package:wellfed/state/setup/setup.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -64,7 +66,8 @@ class _WellfedAppState extends State<WellfedApp> {
   late final _pairing = AppPairingPorts(widget.app.key);
   static const _phone = AppPhonePorts();
 
-  late final _fleet = FeederFleet(widget.app, AppFeederPorts(widget.app.key));
+  late final _server = HomeServer(widget.app, const AppServerPorts(), widget.app.router);
+  late final _fleet = FeederFleet(widget.app, AppFeederPorts(widget.app.key, widget.app.router), server: _server);
   late final AppLifecycleListener _lifecycle;
 
   @override
@@ -74,8 +77,10 @@ class _WellfedAppState extends State<WellfedApp> {
   }
 
   late final GoRouter _router = wellfedRouter(
-    book: widget.app,
-    root: (context) => widget.app.feeders.isEmpty
+    // The server's feeders count as the phone's own do: with none at all,
+    // the welcome.
+    book: Listenable.merge([widget.app, _fleet]),
+    root: (context) => _fleet.all.isEmpty
         ? const WelcomeScreen()
         : HomeScreen(
             fleet: _fleet,
@@ -103,6 +108,7 @@ class _WellfedAppState extends State<WellfedApp> {
     _lifecycle.dispose();
     _router.dispose();
     _fleet.dispose();
+    _server.dispose();
     super.dispose();
   }
 

@@ -6,6 +6,7 @@
 import '../frb_generated.dart';
 import 'error.dart';
 import 'feeder.dart';
+import 'keys.dart';
 import 'model.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
@@ -17,8 +18,17 @@ import 'server_views.dart';
 import 'session.dart';
 part 'router.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `follow_with`, `open_with`, `updates_with`
+
+/// A feed's end as a settlement gives it, as the feed sheet shows one, for
+/// a feed whose `Fed` event this phone has not read: a server feed whose
+/// stream was down when it ended. When the feeder recorded it, and what its
+/// beam read, are the history's to say, and its requester is left
+/// [`FedBy::Unknown`], since the server's journal does not name the key
+/// the feeder heard. `None` for any settlement but [`Settlement::Fed`].
+FeedResult? settledFeed({required Settlement settlement}) =>
+    RustLib.instance.api.crateApiRouterSettledFeed(settlement: settlement);
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<PathRouter>>
 abstract class PathRouter implements RustOpaqueInterface {
@@ -27,6 +37,19 @@ abstract class PathRouter implements RustOpaqueInterface {
   /// now; one nothing can settle (a direct write other than a feed) goes
   /// now. A key that is no idempotency key is refused.
   void acknowledge({required String key});
+
+  /// Adopt `feeder`, which this phone paired before the server, as
+  /// `name`: an owner's invite made with `key` (this phone's own) goes
+  /// to the server, which records `key` as the account's phone key.
+  /// `address` is where the phone last found it (`ip:port`); without one
+  /// the server looks for it on mDNS. A feeder the server already lists
+  /// is only claimed.
+  Future<Adoption> adopt({
+    required String feeder,
+    required String name,
+    String? address,
+    required ClientKey key,
+  });
 
   /// Run one request. One the server has no route for goes on the
   /// phone's own session, when it may use one.
@@ -42,6 +65,10 @@ abstract class PathRouter implements RustOpaqueInterface {
 
   /// Stop the feed numbered `feed` if it still runs.
   Future<RoutedReply> cancelFeed({required String feeder, required int feed});
+
+  /// Record `key`, this phone's own key on `feeder`, as the account's
+  /// phone key, for an adoption that left it [`Adoption::Unclaimed`].
+  Future<Adoption> claimPhone({required String feeder, required ClientKey key});
 
   /// End [`Self::updates`].
   void close();
@@ -98,6 +125,30 @@ abstract class PathRouter implements RustOpaqueInterface {
 
   /// Hear the router's updates until [`Self::close`].
   Stream<RouterUpdate> updates();
+}
+
+@freezed
+sealed class Adoption with _$Adoption {
+  const Adoption._();
+
+  /// The server holds it, and this phone's key on it is the account's
+  /// phone key: deleting the account on the server revokes it.
+  const factory Adoption.adopted({required ServerFeeder feeder}) =
+      Adoption_Adopted;
+
+  /// The server holds it, and this phone's key is not the account's yet:
+  /// `error` says why, and [`PathRouter::claim_phone`] tries again.
+  const factory Adoption.unclaimed({
+    required ServerFeeder feeder,
+    required ServerError error,
+  }) = Adoption_Unclaimed;
+
+  /// The feeder made no invite: `reply` says how that request ended.
+  const factory Adoption.noInvite({required RoutedReply reply}) =
+      Adoption_NoInvite;
+
+  /// The server did not adopt it; `error` says why.
+  const factory Adoption.failed({required ServerError error}) = Adoption_Failed;
 }
 
 /// Why a write went nowhere.

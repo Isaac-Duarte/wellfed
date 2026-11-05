@@ -44,10 +44,6 @@ pub enum ErrorKind {
     /// The pending writes' file is already open in another router: one
     /// router owns it.
     InUse,
-    /// The session is the path router's: its feeds go through
-    /// [`PathRouter::feed`](crate::api::router::PathRouter::feed), which
-    /// pins them.
-    Routed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

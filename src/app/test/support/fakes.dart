@@ -14,6 +14,7 @@ import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
 import 'package:wellfed/src/rust/api/update.dart';
@@ -23,9 +24,12 @@ import 'package:wellfed/theme/theme.dart';
 
 import 'fake_install.dart';
 import 'fake_phone.dart';
+import 'fake_router.dart';
 
 export 'fake_book.dart';
 export 'fake_phone.dart';
+export 'fake_router.dart';
+export 'fake_server.dart';
 
 /// Pump past transitions. Not `pumpAndSettle`: a screen waiting on the feeder
 /// shows a spinner, which never settles.
@@ -143,8 +147,13 @@ final doneStep = SetupStep.done(
 );
 
 /// A device API session the test drives: its updates are the test's, and each
-/// request is recorded and answered from [replies].
+/// request the router sends it is recorded and answered from [replies].
 class FakeSession with FakeOpaque implements FeederSession {
+  FakeSession([this.identity = '']);
+
+  /// The feeder it was opened to.
+  final String identity;
+
   // ignore: the test ends with it
   final updates = StreamController<SessionUpdate>();
   final requests = <FeederRequest>[];
@@ -157,10 +166,16 @@ class FakeSession with FakeOpaque implements FeederSession {
   Future<FeederReply> Function(FeederRequest)? answering;
   int closes = 0;
 
-  @override
-  Stream<SessionUpdate> run() => updates.stream;
+  /// The router's log, once it holds this session.
+  List<String>? log;
 
   @override
+  Stream<SessionUpdate> run() {
+    (log ?? <String>[]).add('run $identity');
+    return updates.stream;
+  }
+
+  /// A request the router sent on this session.
   Future<FeederReply> ask({required FeederRequest request}) async {
     requests.add(request);
     final Future<FeederReply> Function(FeederRequest)? answer = answering;
@@ -169,14 +184,14 @@ class FakeSession with FakeOpaque implements FeederSession {
     return replies.isEmpty ? const FeederReply.done() : replies.removeAt(0);
   }
 
-  @override
+  /// A feed the router sent on this session.
   void feed({required int portions}) => feeds.add(portions);
 
   /// What a cancel throws, as a session already gone does.
   Object? cancelFails;
   final cancels = <int>[];
 
-  @override
+  /// A stop the router sent on this session.
   void cancelFeed({required int feed}) {
     // ignore: only_throw_errors, this stands in for the bridge, whose errors aren't Exceptions.
     if (cancelFails case final error?) throw error;
@@ -207,6 +222,27 @@ class FakeBackupPorts implements BackupPorts {
 
 class FakeFeederPorts implements FeederPorts {
   final sessions = <FakeSession>[];
+
+  /// The router every request goes through.
+  final FakeRouter fakeRouter = FakeRouter();
+
+  /// Whether the router's pins opened; with none, nothing is sent.
+  bool hasRouter = true;
+
+  @override
+  PathRouter? get router => hasRouter ? fakeRouter : null;
+
+  @override
+  FeedResult? settledFeed(Settlement settlement) => switch (settlement) {
+    Settlement_Fed(:final int feed, :final int requested, :final int completed, :final FeedOutcome outcome) => fakeFed(
+      feed: feed,
+      requested: requested,
+      confirmed: completed,
+      atMost: requested,
+      outcome: outcome,
+    ),
+    _ => null,
+  };
 
   @override
   final FakeRecorder recorder = FakeRecorder();
@@ -240,7 +276,7 @@ class FakeFeederPorts implements FeederPorts {
 
   @override
   FeederSession open(String identity, String address, {required bool syncClock}) {
-    final session = FakeSession();
+    final session = FakeSession(identity);
     sessions.add(session);
     dialed.add(address);
     return session;

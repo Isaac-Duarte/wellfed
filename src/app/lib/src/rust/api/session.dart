@@ -20,19 +20,7 @@ part 'session.freezed.dart';
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<FeederSession>>
 abstract class FeederSession implements RustOpaqueInterface {
-  /// Run one request. A write goes out once; see [`FeederReply`] for how it
-  /// can end short of an answer.
-  Future<FeederReply> ask({required FeederRequest request});
-
-  void cancelFeed({required int feed});
-
   void close();
-
-  /// Feed `portions` (1-48) once. The answer and the feed's end arrive
-  /// as updates. Refused with [`ErrorKind::Routed`] once a path router
-  /// holds the session: its feeds go through the router, which pins them
-  /// and keeps one feed from doubling an uncertain one.
-  void feed({required int portions});
 
   /// A session with `feeder` (its identity key) at `address` (`ip:port`,
   /// as NSD resolved it). With `sync_clock`, as after pairing, it gives

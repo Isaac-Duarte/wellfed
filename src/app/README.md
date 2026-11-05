@@ -33,7 +33,8 @@ Servers come later ([roadmap](../../docs/roadmap.md)). Meal reminders are a sett
 | Theme | `lib/theme/tokens.g.dart` | Colors and sizes from [`assets/brand/tokens.json`](../../assets/brand/tokens.json) |
 
 - **The Rust half checks what the feeder checks.** Dart moves bytes and shows what the session says. A feed goes out once; a feed whose answer never came is shown as "may have run" and never sent again.
-- **With a server, every feeder request goes through the path router** (`rust/src/route/`, `PathRouter` in Dart). It picks the server first and the phone's own session when the server can't reach the feeder ([two paths, one feed](../../docs/server/README.md#two-paths-one-feed)). Every write is written down in `pending.json`, beside the app's file, before it goes, and is sent once. One that may have run stays pinned to its path until that path settles it, and a retry only reads. A new feed waits until an uncertain one is settled or put away. Once the app has a router, every request goes through it: a session the router holds refuses a feed of its own, and a pins file that won't open blocks writes instead of sending them unpinned. The screens don't use it yet.
+- **Every feeder request goes through the path router** (`rust/src/route/`, `PathRouter` in Dart), with a server or without one. It picks the server first and the phone's own session when the server can't reach the feeder ([two paths, one feed](../../docs/server/README.md#two-paths-one-feed)). Every write is written down in `pending.json`, beside the app's file, before it goes, and is sent once. One that may have run stays pinned to its path until that path settles it, and a check only reads. A new feed waits until an uncertain one is settled or put away: closing the feed sheet that asks "Did it feed?" puts it away, and one an earlier run left is asked about before the next feed. Each session is attached to the router before it runs, and a session offers Dart no request of its own, so nothing reaches a feeder around it. A pins file that won't open blocks every request instead of sending writes unpinned.
+- **With a server, its list is the feeders.** The phone keeps its own key on the feeders it paired and uses it when the server can't reach one; a feeder it holds no key on goes through the server only, and one it paired that the server doesn't list is offered for adoption. The last list is kept in the app's file, so a cold start with the server down still reaches the feeders directly. A server that refuses the phone's token (revoked, or the account disabled) stops the direct path too, until the owner logs in again or removes the server. Removing the server, or logging out, keeps the phone's own keys.
 - **Images** are links to the committed renders in `assets/renders/`, and the launcher icon links to `assets/brand/android/`.
 - **The client secret never leaves the phone.** Android backup is off, so a new phone pairs again.
 - **A session gives a feeder this phone's clock** right after pairing, and whenever the feeder's clock is not set, as `wellfed time` does.
@@ -80,7 +81,7 @@ A release build's pin goes in the bridge as `RELEASE_PIN`, which the environment
 
 ### What the app's file holds
 
-The app's own file gained `appearance`, with no fallback for older files: clear the app's data on a phone that ran an earlier build, then pair again.
+The app's own file gained `appearance`, with no fallback for older files: clear the app's data on a phone that ran an earlier build, then pair again. Its `server` now holds the link and the server's last feeder list together; a phone that logged in to a server with an earlier build has to clear the app's data too (no phone has yet).
 
 ## Toolchain
 

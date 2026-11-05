@@ -13,6 +13,8 @@ import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/join.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/router.dart';
+import 'package:wellfed/src/rust/api/router.dart' as settled_feed show settledFeed;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/frb_generated.dart';
@@ -88,11 +90,19 @@ class _Feeder {
   }
 }
 
-/// The real session; the rest of what a feeder's screens reach is not in play.
+/// The real session and the real path router, with no server, so every
+/// request and feed goes through the router as the app sends it; the rest of
+/// what a feeder's screens reach is not in play.
 class _Ports implements FeederPorts {
-  _Ports(this._key);
+  _Ports(this._key, this.router);
 
   final ClientKey _key;
+
+  @override
+  final PathRouter router;
+
+  @override
+  FeedResult? settledFeed(Settlement settlement) => settled_feed.settledFeed(settlement: settlement);
 
   @override
   FeederSession open(String identity, String address, {required bool syncClock}) => FeederSession(
@@ -180,6 +190,7 @@ void main() {
   late ClientKey owner;
   late _Feeder sim;
   late FeederController feeder;
+  late Directory pins;
 
   setUpAll(() async {
     if (target == null) return;
@@ -187,7 +198,9 @@ void main() {
     owner = ClientKey.generate();
     sim = await _Feeder.start(target, owner);
     final known = KnownFeeder(identity: sim.identity, name: 'Smoke', address: sim.address);
-    feeder = FeederController(FakeBook()..feeders = [known], _Ports(owner), known);
+    pins = await Directory.systemTemp.createTemp('wellfed-smoke-pins');
+    final router = PathRouter(pinsPath: '${pins.path}/pending.json');
+    feeder = FeederController(FakeBook()..feeders = [known], _Ports(owner, router), known);
     await _until(feeder, (state) => state.cardIsCurrent);
   });
 
@@ -195,6 +208,7 @@ void main() {
     if (target == null) return;
     feeder.dispose();
     await sim.stop();
+    await pins.delete(recursive: true);
   });
 
   test('a session opens and reads the card', skip: absent, () {

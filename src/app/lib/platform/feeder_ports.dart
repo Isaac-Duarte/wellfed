@@ -10,6 +10,8 @@ import 'package:wellfed/platform/restore_ports.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
+import 'package:wellfed/src/rust/api/router.dart';
+import 'package:wellfed/src/rust/api/router.dart' as router_api show settledFeed;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/api/update.dart';
@@ -24,11 +26,20 @@ abstract interface class UpdatePush {
   void located(int id, String? address);
 }
 
-/// What a feeder's controller reaches outside Dart: the Rust session and
-/// NSD. Behind this, so its screens are tested with no Rust and no network.
+/// What a feeder's controller reaches outside Dart: the Rust session, the
+/// path router and NSD. Behind this, so its screens are tested with no Rust
+/// and no network.
 abstract interface class FeederPorts {
   /// A session with the feeder `identity` (hex) at `address`, not yet run.
   FeederSession open(String identity, String address, {required bool syncClock});
+
+  /// The one router every request and feed goes through; `null` when its
+  /// pins could not be opened, and then nothing is sent at all.
+  PathRouter? get router;
+
+  /// A feed's end as `settlement` gives it, for a feed whose `Fed` event this
+  /// phone has not read; `null` for any settlement but a feed's end.
+  FeedResult? settledFeed(Settlement settlement);
 
   /// A session with this feeder read `build`, which settles the stock trial
   /// that installed it, if one is open.
@@ -75,8 +86,14 @@ abstract interface class FeederPorts {
 
 /// [FeederPorts] on Android, with this phone's key.
 class AppFeederPorts implements FeederPorts {
-  /// Ports signed by `_key`.
-  AppFeederPorts(this._key);
+  /// Ports signed by `_key`, routed by `router`.
+  AppFeederPorts(this._key, this.router);
+
+  @override
+  final PathRouter? router;
+
+  @override
+  FeedResult? settledFeed(Settlement settlement) => router_api.settledFeed(settlement: settlement);
 
   @override
   Future<void> share(String text) async {

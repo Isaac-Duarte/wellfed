@@ -11,7 +11,8 @@
 
 use flutter_rust_bridge::frb;
 pub use wellfed_api::{
-    CommandKind, CommandState, FeedRate, InstallState, PortionWeight, Species, WeighedIntake,
+    CommandKind, CommandState, FeedRate, InstallState, NewRefill, PortionWeight, Species,
+    WeighedIntake,
 };
 
 pub use crate::api::model::{ClientRole, FeedOutcome, FeedReason, MissedReason};
@@ -29,6 +30,38 @@ pub struct ServerLink {
     pub user: String,
     /// The phone token's id, which logging out revokes.
     pub token_id: String,
+}
+
+/// The server this phone logged in to, as the app's file keeps it: the link,
+/// and the feeders its last list gave, so a cold start with the server down
+/// still knows which feeders are the server's and reaches them directly.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KnownServer {
+    pub link: ServerLink,
+    pub feeders: Vec<ListedFeeder>,
+}
+
+/// One feeder of the server's last list, as the phone keeps it.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ListedFeeder {
+    /// The server's id for it.
+    pub id: String,
+    /// The feeder's identity key, lowercase hex.
+    pub identity: String,
+    /// What the household calls it.
+    pub name: String,
+}
+
+impl From<&ServerFeeder> for ListedFeeder {
+    fn from(feeder: &ServerFeeder) -> Self {
+        Self {
+            id: feeder.id.clone(),
+            identity: feeder.identity.clone(),
+            name: feeder.name.clone(),
+        }
+    }
 }
 
 /// The logged-in account.
@@ -148,6 +181,29 @@ pub struct ServerRefill {
     pub user: String,
 }
 
+/// A page of a feeder's refills, oldest first.
+pub struct ServerRefillPage {
+    pub items: Vec<ServerRefill>,
+    /// The `after` of the next page; `None` at the end.
+    pub next: Option<String>,
+}
+
+/// One entry of a pet's weight log.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ServerWeight {
+    pub id: String,
+    /// When the pet weighed this.
+    pub at_ms: i64,
+    pub grams: u32,
+}
+
+/// A page of a pet's weight log, oldest reading first.
+pub struct ServerWeightPage {
+    pub items: Vec<ServerWeight>,
+    /// The `after` of the next page; `None` at the end.
+    pub next: Option<String>,
+}
+
 /// A feeder's food view: what it holds, how much is left and how fast it
 /// goes, by the feeder's portion calibration alone. Uncalibrated, it counts
 /// portions only.
@@ -254,6 +310,12 @@ pub enum _Species {
     Cat,
     Dog,
     Other,
+}
+
+#[frb(mirror(NewRefill))]
+pub enum _NewRefill {
+    Grams { grams: u32 },
+    FullBag,
 }
 
 #[frb(mirror(PortionWeight))]
