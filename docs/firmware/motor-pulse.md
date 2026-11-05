@@ -49,7 +49,7 @@ A power cut or reset mid-feed leaves the journal's reservation pending. The next
 2. It sits Terminal until the loop has logged `PLOWN1 fed id=N … outcome=5 … durable=1` and recorded a `Fed` event with outcome `Uncertain`, by the feeder.
 3. It goes Idle.
 
-The feed is never retried, and its id is never reused. The edge cases resolve the same way:
+The feed is never retried, and its id is never reused: the next feed takes the id after it. The edge cases resolve the same way:
 
 - **A cut during the resolution's own journal write** leaves the reservation pending, so the next boot resolves it, once.
 - **A cut while the reservation itself is being written**, a few milliseconds before the motor may start, leaves a cut record beside the one at rest. It can only be the next reservation, so the next boot resolves it as uncertain under the next id. Usually that reservation never committed: the motor never ran and no client was answered `Feeding`, so the uncertain result is conservative.
@@ -117,7 +117,16 @@ The timer interrupt enforces the motor gate's 200 ms command lease and the owner
 > [!WARNING]
 > Every clean cold boot pulses once. The marker survives a watchdog reset but not power loss, so the image must not stay installed after the session.
 
-Records (`PLMOT1`): `start created=`; `open board= ready= attached= events= capture= ms=`; `armed delay_ms= pulse_ms= lease_ms=`; `pulse dir= applied_ms= on_ms= edges= first_edge_ms= current=min,max,mean samples=`; `after ms= edges= current=… stopped=`; `done`. A `skip`, `timeout` or `error stage= fault= stopped=` ends the probe stopped.
+Records (`PLMOT1`), in order:
+
+- `start created=`
+- `open board= ready= attached= events= capture= ms=`
+- `armed delay_ms= pulse_ms= lease_ms=`
+- `pulse dir= applied_ms= on_ms= edges= first_edge_ms= current=min,max,mean samples=`
+- `after ms= edges= current=… stopped=`
+- `done`
+
+A `skip`, `timeout` or `error stage= fault= stopped=` ends the probe stopped.
 
 Guards:
 
@@ -129,7 +138,7 @@ Guards:
 
 All observed on the research unit with the hopper empty, unless marked. The full dated record is kept in the project's work history.
 
-- **First pulse** (October 24, owner present, `fw16-pulse-01`, image `073940ec…`, capture `fw16-pulse-01-run`). One pulse of 106 ms (the 10 ms timer tick), `stopped=1`, no error, and the owner heard the motor. The analyzer at the motor (1 MHz) saw one drive in 130 s, 106.07 ms with the white-lead side HIGH, 60.5 s after power-on; `dir=1` is `MotorCommand::Drive0`, PA13 HIGH and PA14 LOW. Opening the board before arming showed a 212 µs coast. Current read raw 64–447, mean 147 over 10 samples while driving, 15–16 stopped. No PA18 edge. `feeder` v154 was restored over UART (`fw16-restore-01`). The owner ran this before the power-on flicker at the motor was classified, since the ROM loader shows it too.
+- **First pulse** (October 24, owner present, `fw16-pulse-01`, image `073940ec…`, capture `fw16-pulse-01-run`). One pulse of 106 ms (the 10 ms timer tick), `stopped=1`, no error, and the owner heard the motor. The analyzer at the motor (1 MHz) saw one drive in 130 s, 106.07 ms with the white-lead side HIGH, 60.5 s after power-on; `dir=1` is `MotorCommand::Drive0`, PA13 HIGH and PA14 LOW. Opening the board before arming showed a 212 µs coast. Current read raw 64–447, mean 147 over 10 samples while driving, 15–16 stopped. No PA18 edge in the pulse or the second after it. `feeder` v154 was restored over UART (`fw16-restore-01`). The owner ran this before the power-on flicker at the motor was classified, since the ROM loader shows it too.
 - **Direction** (October 25, `fw16-feed-02`, v164). The first feed through the owner: the owner saw the rotor turn clockwise (`Drive0`, PA13 HIGH). It stopped by itself on the then 3 s feedback timeout (`outcome=4 reason=6 durable=1 drive_ms=3018`, current max 166 and mean 64 scaled), with no `PLFLT`, and the client got the `Fed` event.
 - **Mark sensor** (October 25, v165–v167). The pin watch saw only PA18 change among the GPIO pads. PA18 rests HIGH and reads LOW for about 1.17 s at a mark. The portion is credited on the rise and the motor stopped 18 ms later (`drive_ms=9072`, edges at 7,888 ms LOW and 9,054 ms HIGH). A portion is about 9.05 s of drive, empty. A start-up surge read 333 on one poll and tripped a feed 17 ms in, so a jam now needs two consecutive polls over the limit (`OVERCURRENT_POLLS`); a feedback edge reuses its poll's sample and does not count.
 - **Food and a full turn** (October 25). With food (v167, `fw16-food-01`, `-02`), three 1-portion feeds ended `Done` at 9,787–9,857 ms, mark LOW about 1.38 s, mean current 82–87. PA17 read food present, the outlet beam changed 0, 4 and 8 times, and food came out, at first a little less than stock's portion. A 3-portion feed (`fw16-turn-01`, v168 `0c955e25…`) took 27,241 ms, marks at 9.0, 18.2 and 27.2 s, stopping 20 ms after the third rise, and the owner's tape mark returned to its start: three compartments a turn, as owner photos of the rotor over one drop hole show. These figures are the virtual feeder's plant (`wellfed_sim::plant`, [development guide](../development/README.md)).

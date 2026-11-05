@@ -97,7 +97,7 @@ A `MealSoon` event names the plan's slot, the time the meal is due (and its minu
 - **Never withdrawn.** A meal can still be missed after its reminder: blocked past the grace, held, or passed by a forward jump. Disabling, deleting or moving a plan inside the lead leaves its `MealSoon`, and a move adds a second. A forward jump across the lead gives no reminder at all. So a client acting on a reminder should check the plans, or the `Fed` or `Missed` event that follows for the same plan and due time.
 - **Again after a restart.** It keeps nothing on flash, so a restart inside the lead announces the same meal again once the clock is back, with the same plan and due time. A client can drop the repeat.
 
-The reminder only reads the plans. It never claims, delays or blocks a meal.
+The reminder only reads the plans. It never claims, delays or blocks a meal, so the meal runs exactly as it would with the reminder off.
 
 ## Meal call
 
@@ -160,7 +160,7 @@ A plans store the feeder cannot write runs nothing, since it could not keep the 
 The plans live in storage sectors 11 and 12 (`wellfed_feeder::store::plans`): one 128-byte record, version 3, holding the ten plans (a plan's meal call and its skip bit in its flag byte), each plan's mark and the last claim. Only the settings writer writes it, inside a marked attempt, after a feed has released the outputs. A save happens for each change you make and for each occurrence run or missed. A record of a newer version makes the store read-only with no plans, so a build runs nothing it cannot read. An older version is not read.
 
 > [!NOTE]
-> Version 3 added the skip bit. Its first boot finds no plans it can read: the store opens empty and writable, so no meal runs until the owner adds the plans again (app or `wellfed plans add`). A plan added again runs from its next occurrence after the save, and the feed journal still stops a claimed feed from running twice. The ignored old record is overwritten by the first save, and nothing needs erasing. A build from before version 3 goes read-only on a version 3 record rather than misread it.
+> Version 3 added the skip bit. Its first boot finds no plans it can read: the store opens empty and writable, so no meal runs until the owner adds the plans again (app or `wellfed plans add`). The marks and the last claim go with the old record, so a plan added again runs from its next occurrence after the save, and the feed journal still stops a claimed feed from running twice. The ignored old record is overwritten by the first save, and nothing needs erasing. A build from before version 3 goes read-only on a version 3 record rather than misread it.
 
 The [factory reset](pairing.md#factory-reset) erases the plans, last claim included. The feed journal it keeps still stops a claimed feed from running twice.
 

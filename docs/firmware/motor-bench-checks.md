@@ -18,7 +18,8 @@ For each feed in the checks below:
 1. `wellfed-bench capture NAME-uart --seconds 180` starts a UART capture.
 2. `sigrok-cli --driver fx2lafw --config samplerate=1M --time 60000 --channels D0,D1,D2,D3,D4,D5,D6,D7 --output-format binary --output-file private/captures/NAME-la.bin` starts the analyzer.
 3. `wellfed feed --portions N --address <feeder>` runs the feed.
-4. Watch the UART for the expected records, then read the `Fed` event with `wellfed events --address <feeder>`.
+4. Watch the UART for the expected records, then read the `Fed` event with `wellfed events --address <feeder>`. In a long case the board resets mid-feed, and the client loses its session without a `Fed` event: the feed is uncertain and is never sent again.
+5. After a reset, check that the next boot shows `PLOWN1 open` before anything else runs, and before the next feed. If arming was skipped because a store write was in progress at the reset, power-cycle with `wellfed-bench boot` so the owner opens and the pending feed resolves.
 
 A flat analyzer capture through a drive the firmware reports is a failed capture, not evidence.
 
@@ -29,8 +30,7 @@ About 45 minutes: three over-the-air installs and four feeds, each driving at mo
 1. Run `wellfed-bench ota NAME --build --firmware feeder --variant feed-stall` from the main checkout's root (or with `--root`). Wait for the build to confirm. A reset during the trial would count against it, so run no feed before the confirmation.
 2. Feed 1 portion, then 2.
 3. Install `stop-fail` the same way, wait for the confirmation, then feed 1 portion, then 2.
-4. In a long case the board resets mid-feed, and the client loses its session without a `Fed` event. The feed is uncertain and is never sent again.
-5. After a reset, the next boot must show `PLOWN1 open` before anything else runs. If arming was skipped because a store write was in progress at the reset, power-cycle with `wellfed-bench boot` so the owner opens and the pending feed resolves.
+4. Restore the normal build at once (see [Restore](#restore)). A variant injects into every feed, whatever starts it.
 
 > [!WARNING]
 > Stop if a drive is still running 1 s after it should have ended: power off at once with `wellfed-bench off` (or `boot`, which cuts power itself), then report. That is 3 s after `PLOWN1 state=4` for the stalls and the short failed stop, and 11 s for the long failed stop. Any motion after a reset is the same.
@@ -47,6 +47,7 @@ About an hour: three over-the-air installs and six feeds, the longest driving ab
    - For 1, `PLOWN1 pins` shows PA18 toggling (the real marks) while `PLINJ1 clear … edges=` counts the dropped interrupts.
    - For 2, the analyzer shows no drive.
    - For 3, after the `Fed` event, `wellfed status` reports readiness blocked `Fault`, `wellfed events` shows a `FeedingBlocked`, and the UART shows no `PLSUP1 stop` for 2 minutes. Then `wellfed reboot`: the next boot is Idle and ready, with `FeedingBlocked` cleared. The variant came in by an over-the-air restart, so this power cycle has had a reset and its recovery restart stays off: left alone, the hold must last past 10 min.
+4. Restore the normal build at once (see [Restore](#restore)).
 
 > [!WARNING]
 > Stop if the motor drives 1 s past its expected end, or at all after a reset: power off (`wellfed-bench off`, or `boot`), then report.
@@ -71,7 +72,13 @@ This builds and installs the [first-pulse probe](motor-pulse.md#the-first-pulse-
 
 You should see one `pulse` record with `on_ms` about 100 and `stopped=1` after it, the motor moving only once, and no `error`.
 
+## Restore
+
+After each variant check, and before anything else:
+
+1. Install the normal `feeder` with `wellfed-bench ota NAME --build --firmware feeder`, and wait for its confirmation.
+2. Run `wellfed-bench status`. You should see the normal build confirmed on bank 1, the hotspot up, and no capture or server running.
+
 ## Next steps
 
-- After the variant checks, install the normal `feeder` (`wellfed-bench ota NAME --build --firmware feeder`), wait for its confirmation, check `wellfed-bench status`, and leave the hotspot up with no capture or server running.
 - Record results in the [motor evidence](motor-pulse.md#evidence) or the [jams evidence](jams-and-sensor-faults.md#evidence), with their level and date.
