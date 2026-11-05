@@ -34,13 +34,13 @@ From the bottom up:
 | --- | --- | --- |
 | Board | Every pin, ADC channel and storage sector of the PLAF103, in one crate | [Device layer](device-layer.md) |
 | SDK runtime | Startup with outputs stopped, the watchdog, Wi-Fi, flash coordination, updates and boot confirmation | [Startup diagnostics](startup-diagnostics.md), [OTA design](ota-design.md), [bank policy](bank-policy.md) |
-| Feeding owner | The motor, beams and feedback under supervision, and the journal | [Motor pulse](motor-pulse.md), [jams and sensor faults](jams-and-sensor-faults.md), [calibration](calibration.md) |
+| Feeding owner | The motor, beams and feedback under supervision, and the journal | [Motor pulse](motor-pulse.md), [jams and sensor faults](jams-and-sensor-faults.md), their [bench checks](motor-bench-checks.md), [calibration](calibration.md) |
 | Product | The loop: the panel, the device API, pairing, events and settings | [Device API](device-api.md), [pairing](pairing.md), [Bluetooth](bluetooth.md) |
-| Peripherals | Buttons, lights, speaker, clock and power | [Buttons](buttons.md), [indicators](indicators.md), [audio](audio.md), [clock](clock.md), [power](power.md) and its [bench checks](power-bench-checks.md), [optical inputs](optical-inputs.md) |
+| Peripherals | Buttons, lights, speaker, clock and power | [Buttons](buttons.md), [indicators](indicators.md), [audio](audio.md), [clock](clock.md) and its [bench checks](clock-bench-checks.md), [power](power.md) and its [bench checks](power-bench-checks.md), [optical inputs](optical-inputs.md) |
 | Schedules | Feeding plans: when each runs, at most once | [Schedules](schedules.md) |
 | Reminders | The desiccant reminder's count, from the last replacement | [Desiccant reminder](desiccant.md) |
 
-The design behind all of this, from "one firmware, server optional" to the choice of Noise, is in [product architecture](product-architecture.md). Whether it fits the chip is measured in [resource budget](resource-budget.md). How a stock feeder moves to Wellfed, and back, is in [consumer installation](consumer-installation.md).
+The design behind all of this, from "one firmware, server optional" to the choice of Noise, is in [product architecture](product-architecture.md). Whether it fits the chip is measured in [resource budget](resource-budget.md), with its [scheduling gap check](scheduling-gap-check.md). How a stock feeder moves to Wellfed, and back, is in [consumer installation](consumer-installation.md).
 
 Wellfed has a second, separate path to the feeder. The `wellfed-stock` server talks to **stock 1.1.15** over stock's own MQTT protocol. It never runs inside the feeder, and the replacement firmware doesn't use it except to install itself. Stock 1.1.15 can install the replacement over its own updater, with no UART write.
 

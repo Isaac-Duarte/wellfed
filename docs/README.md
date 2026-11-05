@@ -31,6 +31,7 @@ The firmware docs describe Wellfed's own replacement, which isn't tied to one de
 | [Startup diagnostics](firmware/startup-diagnostics.md) | What every boot checks before firmware code runs |
 | [QA firmware](firmware/qa.md) | The guided self-test image |
 | [Resource budget](firmware/resource-budget.md) | Flash, RAM and task limits of the product image |
+| [Scheduling gap bench check](firmware/scheduling-gap-check.md) | Measuring how long a Wi-Fi rejoin holds the feeder's tasks |
 | [Device layer](firmware/device-layer.md) | Where the board's assumptions live, so a second model can be added |
 | [Device kinds and models](firmware/device-kinds.md) | How the code splits by chip, board, kind and model, and how a fountain would slot in |
 | [Bring-up probes](firmware/bring-up-probes.md) | The bounded tests that first brought each piece of hardware up |
@@ -43,6 +44,7 @@ Feeder components:
 | Page | What it covers |
 | --- | --- |
 | [Motor pulse](firmware/motor-pulse.md) | The supervised motor drive |
+| [Motor bench checks](firmware/motor-bench-checks.md) | Rerunning the first pulse, the stall, failed-stop, jam and sensor-fault checks on the bench |
 | [Schedules](firmware/schedules.md) | Feeding plans, the meal reminder and the meal call |
 | [Portions and calibration](firmware/calibration.md) | Counting portions and calibrating them |
 | [Jams and sensor faults](firmware/jams-and-sensor-faults.md) | What happens when food or feedback goes missing |
@@ -52,6 +54,7 @@ Feeder components:
 | [Audio](firmware/audio.md) | The speaker and built-in tunes |
 | [Desiccant reminder](firmware/desiccant.md) | Counting the days until the desiccant pack is due |
 | [Clock](firmware/clock.md) | Wall clock, offline time and missed time |
+| [Clock bench checks](firmware/clock-bench-checks.md) | Checking live NTP, rate learning, warm resets and expiry on the bench |
 | [Power](firmware/power.md) | The supply, the battery floor, brownout and sleep |
 | [Power bench checks](firmware/power-bench-checks.md) | Checking the readings, the floor, the brownout hold and battery mode on the bench |
 
