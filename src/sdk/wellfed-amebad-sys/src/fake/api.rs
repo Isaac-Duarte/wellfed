@@ -1045,6 +1045,47 @@ pub fn udp_open() -> Option<i32> {
     with(|h| (!h.tcp_listen_fails).then_some(UDP))
 }
 
+/// The fake's raw ICMP socket.
+const ICMP: i32 = 302;
+
+pub fn icmp_open() -> Option<i32> {
+    with(|h| (!h.icmp_open_fails).then_some(ICMP))
+}
+
+#[must_use]
+pub fn icmp_send(socket: i32, data: &[u8], ip: u32) -> bool {
+    assert_eq!(socket, ICMP, "an ICMP send on the probe's socket");
+    with(|h| {
+        h.icmp_tx.push((data.to_vec(), ip));
+        !h.icmp_send_fails
+    })
+}
+
+/// The next datagram, cut to `buffer`, once it arrives on the fake clock;
+/// one that arrives later than `timeout_ms` (or none at all) lets the whole
+/// timeout pass and returns `None`.
+pub fn icmp_recv(socket: i32, buffer: &mut [u8], timeout_ms: u32) -> Option<usize> {
+    assert_eq!(socket, ICMP, "an ICMP receive on the probe's socket");
+    assert!(timeout_ms > 0, "lwIP takes a zero timeout as none");
+    with(|h| {
+        h.icmp_waits.push(timeout_ms);
+        let Some((after, datagram)) = h.icmp_rx.pop_front() else {
+            h.uptime_ms = h.uptime_ms.wrapping_add(timeout_ms);
+            return None;
+        };
+        if after >= timeout_ms {
+            h.uptime_ms = h.uptime_ms.wrapping_add(timeout_ms);
+            h.icmp_rx.push_front((after - timeout_ms, datagram));
+            return None;
+        }
+
+        h.uptime_ms = h.uptime_ms.wrapping_add(after);
+        let len = datagram.len().min(buffer.len());
+        buffer[..len].copy_from_slice(&datagram[..len]);
+        Some(len)
+    })
+}
+
 pub fn rtc_registers() -> [u32; 4] {
     with(|h| h.rtc)
 }

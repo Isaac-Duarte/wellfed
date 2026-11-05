@@ -39,9 +39,14 @@
 //! for during one is refused as during a join. A `wifi_on` that keeps
 //! failing ends in a restart ([`wellfed_wifi_radio_failed`]), asked for
 //! with the turn still held, so no feed starts into the reset.
+//!
+//! **The gateway probe** is one ICMP echo ([`echo`]): the request and the
+//! match are `wellfed_core::echo`'s, and the shim only opens the raw socket,
+//! sends, receives one datagram with a timeout, and closes it.
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use wellfed_core::echo::{self as icmp, Outcome};
 use wellfed_core::liveness::{Cause, Liveness, Probe, Radio, Verdict};
 
 use crate::cell::TaskCell;
@@ -158,4 +163,43 @@ pub unsafe extern "C" fn wellfed_wifi_watch(associated: i32, leased: i32, probe:
     net_status::set_live(watch.live());
 
     verdict.code()
+}
+
+/// One ICMP echo to `gateway` (host order), numbered `seq`: whether it
+/// answered within [`icmp::TIMEOUT_MS`], or why nothing was asked of it.
+pub fn echo(gateway: u32, seq: u16) -> Outcome {
+    let Some(socket) = sdk::icmp_open() else {
+        return Outcome::NoSocket;
+    };
+    let outcome = exchange(socket, gateway, seq);
+    sdk::tcp_close(socket);
+    outcome
+}
+
+/// Send the request, then read datagrams until the gateway's reply, an
+/// error, or the timeout over all of them: the raw socket also hands over
+/// every other ICMP datagram to this host, each skipped.
+fn exchange(socket: i32, gateway: u32, seq: u16) -> Outcome {
+    if !sdk::icmp_send(socket, &icmp::request(seq), gateway) {
+        return Outcome::NotSent;
+    }
+
+    let sent = sdk::uptime_ms();
+    let mut datagram = [0; icmp::RECEIVE_BYTES];
+    loop {
+        let waited = sdk::uptime_ms().wrapping_sub(sent);
+        let left = icmp::TIMEOUT_MS.saturating_sub(waited);
+        if left == 0 {
+            return Outcome::Silent;
+        }
+        let Some(len) = sdk::icmp_recv(socket, &mut datagram, left) else {
+            return Outcome::Silent;
+        };
+        if datagram
+            .get(..len)
+            .is_some_and(|got| icmp::answers(got, gateway, seq))
+        {
+            return Outcome::Answered;
+        }
+    }
 }

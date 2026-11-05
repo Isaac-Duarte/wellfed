@@ -5,6 +5,7 @@ use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 
+use wellfed_core::echo::Outcome;
 use wellfed_core::liveness::{Cause, PROBE_PERIOD_MS, Radio, Verdict};
 use wellfed_hal::interlock::{Held, INTERLOCK, Turn};
 use wellfed_hal::link::{
@@ -300,4 +301,86 @@ fn a_radio_that_will_not_come_back_restarts_the_feeder() {
     wellfed_wifi_radio_failed();
     assert!(supervision::restart_grace());
     supervision::reset();
+}
+
+const GATEWAY: u32 = 0xc0a8_0101;
+
+/// `from`'s echo reply to request `seq`, behind a 20-byte IPv4 header.
+fn reply(from: u32, seq: u16) -> Vec<u8> {
+    let mut datagram = vec![0; 20];
+    datagram[0] = 0x45;
+    datagram[12..16].copy_from_slice(&from.to_be_bytes());
+    let mut echo = wellfed_core::echo::request(seq).to_vec();
+    echo[0] = 0;
+    datagram.extend_from_slice(&echo);
+    datagram
+}
+
+/// The probe sends one request to the gateway and takes its reply, then
+/// closes the socket.
+#[test]
+fn an_echo_the_gateway_answers() {
+    let _guard = start();
+    fake::with(|h| h.icmp_rx.push_back((4, reply(GATEWAY, 9))));
+
+    assert_eq!(link::echo(GATEWAY, 9), Outcome::Answered);
+    fake::with(|h| {
+        assert_eq!(
+            h.icmp_tx,
+            [(wellfed_core::echo::request(9).to_vec(), GATEWAY)]
+        );
+        assert_eq!(h.icmp_waits, [1000]);
+        assert_eq!(h.tcp_closed.len(), 1, "the socket is closed");
+        assert_eq!(h.uptime_ms, 4);
+    });
+}
+
+/// Other ICMP datagrams to this host are skipped, and the probe's second
+/// is shared by every receive.
+#[test]
+fn an_echo_skips_other_icmp_within_one_budget() {
+    let _guard = start();
+    fake::with(|h| {
+        h.icmp_rx.push_back((300, reply(0xc0a8_0102, 9)));
+        h.icmp_rx.push_back((300, reply(GATEWAY, 8)));
+        h.icmp_rx.push_back((100, vec![0x45; 12]));
+        h.icmp_rx.push_back((200, reply(GATEWAY, 9)));
+    });
+    assert_eq!(link::echo(GATEWAY, 9), Outcome::Answered);
+    fake::with(|h| assert_eq!(h.icmp_waits, [1000, 700, 400, 300]));
+}
+
+#[test]
+fn an_echo_answered_past_its_budget_is_silent() {
+    let _guard = start();
+    fake::with(|h| {
+        h.icmp_rx.push_back((300, reply(0xc0a8_0102, 9)));
+        h.icmp_rx.push_back((300, reply(GATEWAY, 8)));
+        h.icmp_rx.push_back((300, reply(GATEWAY, 8)));
+        h.icmp_rx.push_back((300, reply(GATEWAY, 9)));
+    });
+    assert_eq!(link::echo(GATEWAY, 9), Outcome::Silent);
+    fake::with(|h| {
+        assert_eq!(h.icmp_waits, [1000, 700, 400, 100]);
+        assert_eq!(h.uptime_ms, 1000, "the budget, and no more");
+        assert_eq!(h.tcp_closed.len(), 1);
+    });
+}
+
+#[test]
+fn an_echo_that_never_left_says_why() {
+    let _guard = start();
+    fake::with(|h| h.icmp_open_fails = true);
+    assert_eq!(link::echo(GATEWAY, 1), Outcome::NoSocket);
+    fake::with(|h| assert!(h.icmp_tx.is_empty() && h.tcp_closed.is_empty()));
+
+    fake::with(|h| {
+        h.icmp_open_fails = false;
+        h.icmp_send_fails = true;
+    });
+    assert_eq!(link::echo(GATEWAY, 1), Outcome::NotSent);
+    fake::with(|h| {
+        assert!(h.icmp_waits.is_empty(), "nothing waited for");
+        assert_eq!(h.tcp_closed.len(), 1);
+    });
 }

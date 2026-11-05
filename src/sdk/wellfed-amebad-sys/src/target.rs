@@ -1298,6 +1298,8 @@ pub fn audio_close() {
     unsafe { wellfed_audio_close() }
 }
 
+/// Close any lwIP socket: a device API connection, a listener, or the
+/// gateway probe's.
 pub fn tcp_close(socket: i32) {
     // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
     unsafe { wellfed_tcp_close(socket) }
@@ -1320,6 +1322,9 @@ unsafe extern "C" {
     fn wellfed_ipv4() -> u32;
     fn wellfed_gateway_ipv4() -> u32;
     fn wellfed_udp_open() -> i32;
+    fn wellfed_icmp_open() -> i32;
+    fn wellfed_icmp_send(socket: i32, data: *const u8, length: u32, ip: u32) -> i32;
+    fn wellfed_icmp_recv(socket: i32, buffer: *mut u8, length: u32, timeout_ms: u32) -> i32;
     fn wellfed_rtc_read(out: *mut u32);
     fn wellfed_time_carry_load(out: *mut u32);
     fn wellfed_time_carry_store(words: *const u32);
@@ -1461,6 +1466,33 @@ pub fn udp_open() -> Option<i32> {
     // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
     let socket = unsafe { wellfed_udp_open() };
     (socket >= 0).then_some(socket)
+}
+
+/// A raw ICMP socket for the gateway probe, or `None`; close it with
+/// [`tcp_close`].
+pub fn icmp_open() -> Option<i32> {
+    // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
+    let socket = unsafe { wellfed_icmp_open() };
+    (socket >= 0).then_some(socket)
+}
+
+/// Send `data` to `ip` (host order) on an ICMP socket: true when all of it
+/// went.
+#[must_use]
+pub fn icmp_send(socket: i32, data: &[u8], ip: u32) -> bool {
+    let length = u32::try_from(data.len()).unwrap_or(u32::MAX);
+    // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
+    unsafe { wellfed_icmp_send(socket, data.as_ptr(), length, ip) == 0 }
+}
+
+/// One datagram from an ICMP socket, its IPv4 header first, waiting at most
+/// `timeout_ms` (nonzero: lwIP takes zero as no timeout); its length, cut
+/// to `buffer`, or `None` once the wait ran out or the socket failed.
+pub fn icmp_recv(socket: i32, buffer: &mut [u8], timeout_ms: u32) -> Option<usize> {
+    let length = u32::try_from(buffer.len()).unwrap_or(u32::MAX);
+    // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
+    let got = unsafe { wellfed_icmp_recv(socket, buffer.as_mut_ptr(), length, timeout_ms) };
+    usize::try_from(got).ok().map(|got| got.min(buffer.len()))
 }
 
 /// Milliseconds since the scheduler started (configTICK_RATE_HZ is 1000).

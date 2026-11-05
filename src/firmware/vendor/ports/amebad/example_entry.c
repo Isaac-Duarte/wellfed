@@ -28,8 +28,9 @@
  * none it waits without scanning. Nothing registers fast connect or
  * calls rtw_efuse_boot_write.
  *
- * Non-blocking socket helpers for the Rust device API; its protocol is Rust
- * (wellfed-feeder), and nothing here parses network data.
+ * Non-blocking socket helpers for the Rust device API, and the raw socket
+ * the gateway probe sends its echo on; the protocols are Rust (wellfed-feeder,
+ * wellfed-core echo.rs), and nothing here parses network data.
  */
 #include "FreeRTOS.h"
 #include "task.h"
@@ -38,7 +39,6 @@
 #include "lwip_netconf.h"
 #include "lwip/dhcp.h"
 #include "lwip/prot/dhcp.h"
-#include "lwip/inet_chksum.h"
 #include "lwip/sockets.h"
 #include <platform/platform_stdlib.h>
 #include "wellfed_wifi_credentials.h"
@@ -368,10 +368,6 @@ void __wrap_rtw_os_indicate_disconnect(void *adapter)
 #define WELLFED_WATCH_MS 500
 #define WELLFED_BACKOFF_MIN_MS 1000
 #define WELLFED_BACKOFF_MAX_MS 30000
-/* One echo per probe; the gateway is one hop away, so an answer later than
- * this is as good as none. */
-#define WELLFED_ECHO_TIMEOUT_MS 1000
-#define WELLFED_ECHO_ID 0x504c /* "PL" */
 
 /* Event kinds; shared with Rust (`sdk::WifiEvent`). */
 enum {
@@ -477,7 +473,7 @@ static void wellfed_event(unsigned int kind, unsigned int attempt, int result, u
     taskEXIT_CRITICAL();
 }
 
-/* Gateway echo failures, as the event result. */
+/* Gateway echo failures, as the event result (`echo::Outcome::code`). */
 enum {
     WELLFED_ECHO_NO_GATEWAY = -1,
     WELLFED_ECHO_SOCKET = -2,
@@ -708,61 +704,37 @@ static int wellfed_leased(void)
     return wellfed_ipv4() != 0;
 }
 
-/* One ICMP echo to `gateway` (host order): 0 when it answered, or a
- * WELLFED_ECHO_* failure. A raw socket sees every ICMP datagram to this
- * host and lwIP still answers echo requests itself, so the reply is matched
- * by source, type, identifier and sequence. */
-static int wellfed_echo(unsigned int gateway, uint16_t seq)
+/* The gateway probe's socket helpers. Rust builds the echo, matches the
+ * reply and keeps the probe's budget (wellfed-hal link.rs echo); these only
+ * move bytes. A raw socket, closed with wellfed_tcp_close. */
+int wellfed_icmp_open(void)
 {
-    uint8_t m[64];
-    memset(m, 0, 16);
-    m[0] = 8; /* echo request */
-    m[4] = WELLFED_ECHO_ID >> 8;
-    m[5] = WELLFED_ECHO_ID & 0xff;
-    m[6] = seq >> 8;
-    m[7] = seq & 0xff;
-    memcpy(m + 8, "wellfed", 8);
-    uint16_t sum = inet_chksum(m, 16);
-    memcpy(m + 2, &sum, 2); /* already in network order */
+    return lwip_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+}
 
-    int s = lwip_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-    if (s < 0) {
-        return WELLFED_ECHO_SOCKET;
-    }
+/* Send `length` bytes to `ip` (host order): 0 when all of them went. */
+int wellfed_icmp_send(int s, const void *data, unsigned int length, unsigned int ip)
+{
     struct sockaddr_in to;
     memset(&to, 0, sizeof(to));
     to.sin_family = AF_INET;
-    to.sin_addr.s_addr = lwip_htonl(gateway);
-    int status = WELLFED_ECHO_SEND;
-    if (lwip_sendto(s, m, 16, 0, (struct sockaddr *)&to, sizeof(to)) == 16) {
-        status = WELLFED_ECHO_TIMEOUT;
-        TickType_t sent = xTaskGetTickCount();
-        /* Skip other ICMP traffic, waiting at most the timeout overall. */
-        unsigned int waited;
-        while ((waited = wellfed_ms(sent)) < WELLFED_ECHO_TIMEOUT_MS) {
-            int left = (int)(WELLFED_ECHO_TIMEOUT_MS - waited);
-            lwip_setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &left, sizeof(left));
-            int got = lwip_recv(s, m, sizeof(m), 0);
-            if (got < 20) {
-                if (got < 0) {
-                    break;
-                }
-                continue;
-            }
-            int at = (m[0] & 0x0f) * 4; /* the IPv4 header's length */
-            if (at < 20 || got < at + 8 || wellfed_be32(m + 12) != gateway) {
-                continue;
-            }
-            if (m[at] == 0 && m[at + 4] == (WELLFED_ECHO_ID >> 8) && m[at + 5] == (WELLFED_ECHO_ID & 0xff) &&
-                m[at + 6] == (seq >> 8) && m[at + 7] == (seq & 0xff)) {
-                status = 0;
-                break;
-            }
-        }
-    }
-    lwip_close(s);
-    return status;
+    to.sin_addr.s_addr = lwip_htonl(ip);
+    return lwip_sendto(s, data, length, 0, (struct sockaddr *)&to, sizeof(to)) == (int)length ? 0 : -1;
 }
+
+/* One datagram, its IPv4 header first, waiting at most `timeout_ms`
+ * (nonzero: lwIP takes zero as no timeout): its length, or below 0 on a
+ * timeout or an error. */
+int wellfed_icmp_recv(int s, void *buffer, unsigned int length, unsigned int timeout_ms)
+{
+    int left = (int)timeout_ms;
+    lwip_setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &left, sizeof(left));
+    return lwip_recv(s, buffer, length, 0);
+}
+
+/* One ICMP echo to `gateway` (host order), as the gateway event's result:
+ * 0 when it answered, or a WELLFED_ECHO_* failure (wellfed-sdk wifi.rs). */
+int wellfed_gateway_echo(unsigned int gateway, uint16_t seq);
 
 /* One probe of the lease's gateway, as wellfed_wifi_watch's probe code. */
 static int wellfed_gateway(unsigned int attempt)
@@ -770,7 +742,7 @@ static int wellfed_gateway(unsigned int attempt)
     static uint16_t seq;
     unsigned int gateway = wellfed_be32(LwIP_GetGW(&xnetif[0]));
     TickType_t begin = xTaskGetTickCount();
-    int result = gateway != 0 ? wellfed_echo(gateway, ++seq) : WELLFED_ECHO_NO_GATEWAY;
+    int result = gateway != 0 ? wellfed_gateway_echo(gateway, ++seq) : WELLFED_ECHO_NO_GATEWAY;
     wellfed_event(WELLFED_EV_GATEWAY, attempt, result, gateway, wellfed_ms(begin));
     switch (result) {
     case 0:

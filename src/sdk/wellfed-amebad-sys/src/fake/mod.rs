@@ -132,6 +132,15 @@ pub struct Hardware {
     pub udp_rx: VecDeque<(Vec<u8>, u32, u16)>,
     pub udp_tx: Vec<(Vec<u8>, u32, u16)>,
     pub gateway: u32,
+    /// The gateway probe's raw ICMP socket: the datagrams to come, each
+    /// with the milliseconds it arrives after the receive that asks for it;
+    /// what was sent and to whom; each receive's timeout; and whether the
+    /// socket or the send fails.
+    pub icmp_rx: VecDeque<(u32, Vec<u8>)>,
+    pub icmp_tx: Vec<(Vec<u8>, u32)>,
+    pub icmp_waits: Vec<u32>,
+    pub icmp_open_fails: bool,
+    pub icmp_send_fails: bool,
     /// The KM0 RTC's TR, CR, ISR and PRER.
     pub rtc: [u32; 4],
     /// `wellfed_time_carry`, the RAM a warm reset keeps.
@@ -315,6 +324,11 @@ impl Default for Hardware {
             udp_rx: VecDeque::new(),
             udp_tx: Vec::new(),
             gateway: 0,
+            icmp_rx: VecDeque::new(),
+            icmp_tx: Vec::new(),
+            icmp_waits: Vec::new(),
+            icmp_open_fails: false,
+            icmp_send_fails: false,
             rtc: [0; 4],
             time_carry: [0; crate::TIME_CARRY_WORDS],
             trail: [0; crate::TRAIL_WORDS],

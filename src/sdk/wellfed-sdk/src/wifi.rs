@@ -14,6 +14,16 @@ use wellfed_hal::stopped;
 
 pub const POLL_MS: u32 = 250;
 
+/// The C Wi-Fi task's gateway probe: one echo ([`wellfed_hal::link::echo`]),
+/// answered as the gateway event's `result`
+/// ([`wellfed_core::echo::Outcome::code`]). Exported from here because only
+/// an image with the Wi-Fi shim links this crate, and the probe calls the
+/// shim's socket helpers.
+#[unsafe(no_mangle)]
+pub extern "C" fn wellfed_gateway_echo(gateway: u32, seq: u16) -> i32 {
+    wellfed_hal::link::echo(gateway, seq).code()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Record {
     Start {

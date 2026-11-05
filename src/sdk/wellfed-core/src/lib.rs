@@ -21,6 +21,7 @@ pub mod buttons;
 pub mod clip;
 pub mod clock;
 pub mod desiccant;
+pub mod echo;
 pub mod feed;
 pub mod flash_coord;
 pub mod indicator;
