@@ -18,7 +18,7 @@ flowchart TB
 
 ## How the parts reach the chip
 
-The chip reads sensors, buttons and power through GPIO and two ADC inputs (battery and motor current), and drives the motor through an H-bridge, since a pin can't supply its current ([glossary](../../glossary.md)). `PA13` is pin 13 of port A.
+The chip reads sensors, buttons and power through GPIO and two ADC inputs (battery and motor current), and drives the motor through an H-bridge, since a pin can't supply its current ([glossary](../../glossary.md)). `PA13` is pin 13 of port A. Flash is laid out in the [flash layout](flash-layout.md), the console and its wiring are on the [relay bench](bench.md), and the firmware that uses all this is in the [firmware architecture](../../firmware/README.md).
 
 ```mermaid
 %% svg: parts.svg

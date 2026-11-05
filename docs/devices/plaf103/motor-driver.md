@@ -73,7 +73,7 @@ CON1 (silkscreen 余粮红外, "remaining-food infrared") carries the food-level
 | TP22 | 0.66 V | 0.11 V | 0.66 V | 0.11 V |
 
 - **TP20** follows only the food emitter (PA15), on its drive path: 3.3 V off, about 1.2 V on, a typical infrared LED forward voltage. So **the food emitter's OFF state is confirmed**: 3.3 V, no LED current.
-- **TP21** reads 2.67–2.68 V whatever the emitters do: most likely a supply or bias node.
+- **TP21** reads 2.67–2.68 V whatever the emitters do: most likely a supply or bias node, not an emitter drive or receiver output.
 - **TP22** follows PA15, not PB3, despite sitting beside CON2. Its levels (0.66 V dark, a base-emitter clamp; 0.11 V lit) fit the food receiver's phototransistor driving an inverting stage, which would make PA17 HIGH when lit, as measured.
 
 No test point follows PB3. The outlet sensor's CON2 wires do:
@@ -91,7 +91,7 @@ The driver pulls white to ground to light the LED. At rest it sits at 2.6 V with
 
 1. **Emitter current** for both emitters: the voltage across each series resistor, or a supply-current meter.
 2. **Polarity:** trace PA13 and PA14 to INA and INB. The input captures suggest PA13 drives INB, opposite to the stock-derived mapping. Check the clip labels against the pin map before counting that.
-3. **A reset mid-drive:** when a watchdog reset ended a drive, the leads read differently three more times, for 38–110 µs, within 0.2 ms of the drive's end. Two had the drive's polarity and one the opposite, and no drive followed. Back-EMF from the coasting motor explains the first two, not the third. Capture this with the inputs probed.
+3. **A reset mid-drive:** when a watchdog reset ended a drive, the leads read differently three more times, for 38–110 µs, within 0.2 ms of the drive's end. Two had the drive's polarity and one the opposite, and no drive followed. Back-EMF from the coasting motor would explain the first two, not the third. Capture this with the inputs probed.
 4. **The power-on skew:** inside the supply ramp, before any code runs, single threshold skews of up to 4.5 µs remain between the inputs, unclassified. If they also appear when the loader runs instead of our code, they belong to the probe and the ramp. A scope on the inputs, or a meter on the undriven inputs with the analyzer attached, would settle it.
 
 ## Capture startup transients

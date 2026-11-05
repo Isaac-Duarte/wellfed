@@ -20,7 +20,7 @@ Stock's broker is a DNS name. Its settings sector at `0x3e8000` holds the port a
 - **What rewrites it.** Once connected, a `DEVICE_CONFIG_SYNC` carrying an `mqttAddr` list of host and port rewrites only `0x3e8000`, and `WIFI_CHANGE_SERVICE` only the Wi-Fi settings. Neither erases the plans (static analysis). Our server sends neither.
 - **First messages.** A stock set up before sends no `BINDING`. It sends a diagnostic report, `NTP`, `GET_FEEDING_PLAN_EVENT`, a heartbeat, `DEVICE_START_EVENT` and `ATTR_PUSH_EVENT` (observed). A stock fresh from setup sends `BINDING` first (observed, in a capture of the vendor app's setup).
 
-Our broker is authenticated, with no upstream bridge and no kept sessions. The server sends only two commands unasked, `ATTR_GET_SERVICE` and `OTA_UPGRADE` (`protocol::Sent`), each with a fresh UUID, on QoS 0 and never retained. A reply must match its request ID, and an uncertain operation is never republished automatically. Stock's limited raw-payload and result caching is no substitute for durable no-replay handling.
+Our broker is authenticated, with no upstream bridge and no kept sessions. The server sends only two commands unasked, `ATTR_GET_SERVICE` and `OTA_UPGRADE` (`protocol::Sent`), on QoS 0 and never retained. `ATTR_GET_SERVICE` gets a fresh UUID. `OTA_UPGRADE` carries the caller's durable request ID, and a reused ID returns the existing record without sending again. A reply must match its request ID, and an uncertain operation is never republished automatically. Stock's limited raw-payload and result caching is no substitute for durable no-replay handling.
 
 ## Feeding and device features
 
@@ -52,7 +52,7 @@ Stock's event task runs its button handler once per loop, with a 50-tick delay a
 - The panel starts locked at every boot, so an unattended reboot never leaves Dispense live.
 - Any gesture, Lock included, restarts the relock count, and a held button keeps it off until release. Stock counts only Mic, Reset and Dispense.
 - A `SetLock` request over the [device API](../../../firmware/device-api.md) locks or unlocks; a remote unlock relocks on the same 30 s timer.
-- `disableHardwareButton` and its recovery sequence are not implemented. Wellfed's Reset hold clears its own stores ([roadmap](../../../roadmap.md)).
+- `disableHardwareButton` and its recovery sequence are not implemented. Wellfed's own Reset hold clears clients, Wi-Fi, settings and plans, and keeps the calibration, the feed journal and the flash wear counts ([roadmap](../../../roadmap.md)).
 
 ## Bluetooth LE
 
@@ -65,7 +65,7 @@ Advertising runs only on mains power. Feeding, schedules and settings all go ove
 
 ## Clock and schedules
 
-Stock keeps up to ten plans in flash ([plan records](#plan-records)) and asks for them with `GET_FEEDING_PLAN_EVENT` when it connects; any reply with a `plans` key replaces the whole table ([how stock receives plans](#how-stock-receives-plans)). Our stock server leaves the plans alone, and sets stock's clock only when no meal can come due ([an installer's server](../../../development/stock-server.md#an-installers-server-trust-on-first-use)).
+Stock keeps up to ten plans in flash ([plan records](#plan-records)) and asks for them with `GET_FEEDING_PLAN_EVENT` when it connects; any reply with a `plans` key replaces the whole table ([how stock receives plans](#how-stock-receives-plans)). Our stock server leaves the plans alone, and sets stock's clock only when no meal can come due. Nonempty plans are unvalidated for this release. Before that change our server answered an installer's config with `plans: []`, so installs run before then may have erased stock's table ([an installer's server](../../../development/stock-server.md#an-installers-server-trust-on-first-use)).
 
 Stock's `NTP` request carries its own clock in `ts` (observed). With its clock held two days behind, stock refused an install with error 1214 (observed once; the clock as the cause is likely, not confirmed statically). Responses use the configured IANA time zone, including DST transitions. Stock's full time zone and timer activation, and how the cloud builds plans, are unresolved. Wellfed's own schedules are in [feeding schedules](../../../firmware/schedules.md).
 
@@ -197,7 +197,7 @@ Always send `repeatDay`: without it stock records an error, and the one-off flag
 | Fact | Value | Evidence |
 | --- | --- | --- |
 | Reset holds | One: Reset about 5 s on an unlocked panel starts the factory restore. The panel handler has no Wi-Fi-only hold | static, emulation |
-| What the restore clears | Everything stock keeps: it erases `0x3e8000`–`0x3ea000` (the broker, Wi-Fi and binding records), `0x7d0000`–`0x7d6000` (the plans and the record rings) and `0x7da000`, then restarts. An install starts from the Reset hold, so it begins with no meals | static |
+| What the restore clears | Everything stock keeps: it erases `0x3e8000`–`0x3ea000` (the broker, Wi-Fi and binding records), `0x7d0000`–`0x7d6000` (the plans and the record rings) and `0x7da000`, then restarts. The replacement starts with no meals, since the installer doesn't read stock's plans ([consumer installation](../../../firmware/consumer-installation.md)) | static |
 | Setup mode | Only through the Reset hold. A set-up stock that can't reach its Wi-Fi retries forever and never opens its setup access point on its own | static |
 | MQTT `RESTORE` | Erases the same plan sectors, but keeps the Wi-Fi settings | static |
 | Home Assistant, history, remote control and the app | None on the device: history and remote control live in the cloud, the vendor app is the client, and there is no Home Assistant | static |

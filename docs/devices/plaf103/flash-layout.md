@@ -4,7 +4,7 @@ What we know of the PLAF103's 8 MiB flash: the boot material, the two applicatio
 
 ## The map
 
-Flash is erased in 4 KiB sectors before it is written ([glossary](../../glossary.md)). Values are physical flash offsets with exclusive ends; mapped external flash begins at `0x08000000`. The machine-readable copy is [layout.json](../../../src/firmware/devices/plaf103/layout.json).
+Flash is erased in 4 KiB sectors before it is written ([glossary](../../glossary.md)). Values are physical flash offsets, counted in bytes from the start of the flash chip, with exclusive ends; mapped external flash begins at `0x08000000`. The machine-readable copy is [layout.json](../../../src/firmware/devices/plaf103/layout.json).
 
 The drawing is to scale. Most of the front half is two banks, each big enough for a whole firmware image. Unmapped is not free: we don't write where we haven't checked.
 
@@ -65,7 +65,7 @@ No flash tool writes this region. The development, update and stock-recovery wri
 
 ## Flash clock
 
-Wellfed runs the flash at 50 MHz in Dual IO mode, set through KM0's `Flash_Speed`. At 80 MHz, over-the-air downloads into bank 0 hit random faults and single-bit read errors on our unit. At 50 MHz the boot calibration window is wider, and none of 8 installs faulted. Quad IO is not used, because its check fails at the slow boot clock. [Bank-0 download faults](../../firmware/ota-design.md#bank-0-download-faults) gives the working explanation.
+Wellfed runs the flash at 50 MHz in Dual IO mode, set through KM0's `Flash_Speed`. At 80 MHz, over-the-air downloads into bank 0 hit random faults and single-bit read errors on our unit. At 50 MHz the boot calibration window is wider, and none of 8 installs faulted. That fix is not yet settled: no long unattended run of repeated installs has confirmed it ([Evidence](#evidence)). Quad IO is not used, because its check fails at the slow boot clock. [Bank-0 download faults](../../firmware/ota-design.md#bank-0-download-faults) gives the working explanation.
 
 ## OTA images and the layout
 

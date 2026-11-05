@@ -4,7 +4,7 @@ The Wi-Fi and Bluetooth chip inside the PLAF103 and the PLWF106, and the chip We
 
 ## The chip at a glance
 
-A system on a chip with two cores, SRAM, a boot ROM and a radio; flash is a separate chip on an SPI bus, and the chip runs code straight out of it. The [glossary](../../glossary.md) defines each part. The boot ROM never changes and holds a UART download mode that can rewrite flash, so the chip can always be recovered whatever flash holds. The radio carries Wi-Fi, for the [device API](../../firmware/device-api.md), and Bluetooth LE, for setup and [pairing](../../firmware/pairing.md).
+A system on a chip with two cores, SRAM (each core's working memory, which forgets everything at power-off), a boot ROM and a radio; flash is a separate chip on an SPI bus, and the chip runs code straight out of it. The [glossary](../../glossary.md) defines the other parts. The boot ROM never changes and holds a UART download mode that can rewrite flash, so the chip can always be recovered whatever flash holds. The radio carries Wi-Fi, for the [device API](../../firmware/device-api.md), and Bluetooth LE, for setup and [pairing](../../firmware/pairing.md).
 
 ```mermaid
 %% svg: soc.svg
