@@ -50,20 +50,18 @@ pub fn sync(now: Timestamp, zone: &TimeZone) -> TimeSync {
 
 /// The earliest occurrence after `now` of any enabled plan in `plans`, in
 /// `zone`; `None` when no plan is enabled. A tie goes to the lower slot,
-/// which the feeder runs first.
+/// which the feeder runs first. A skipped meal is not next: its plan's
+/// next is the occurrence after it.
 pub fn next_meal(plans: &Plans, now: Timestamp, zone: &TimeZone) -> Option<NextMeal> {
     let now_ms = u64::try_from(now.as_millisecond()).ok()?;
-    let offset_at = |ms: u64| {
-        let at = Timestamp::from_millisecond(i64::try_from(ms).ok()?).ok()?;
-        Some(zone.to_offset(at).seconds())
-    };
+    let offset_at = offsets(zone);
 
     let mut next: Option<NextMeal> = None;
     for (slot, plan) in plans.plans.iter().enumerate() {
         let Some(plan) = plan.filter(|plan| plan.enabled) else {
             continue;
         };
-        let Some(due) = schedule::next_due(&core_plan(&plan), now_ms, offset_at) else {
+        let Some(due) = plan_next(plans, slot, &plan, now_ms, offset_at) else {
             continue;
         };
         let Some(at) = i64::try_from(due)
@@ -83,6 +81,28 @@ pub fn next_meal(plans: &Plans, now: Timestamp, zone: &TimeZone) -> Option<NextM
     next
 }
 
+/// Slot `slot`'s next occurrence after `now_ms`, past the meal its skip
+/// names. Consecutive occurrences are a day apart, so at most one is
+/// skipped.
+fn plan_next(
+    plans: &Plans,
+    slot: usize,
+    plan: &Plan,
+    now_ms: u64,
+    offset_at: impl Fn(u64) -> Option<i32> + Copy,
+) -> Option<u64> {
+    let plan = core_plan(plan);
+    let due = schedule::next_due(&plan, now_ms, offset_at)?;
+    let skipped = plans
+        .skipped
+        .get(slot)
+        .and_then(|at| u64::try_from(at.as_millisecond()).ok());
+    if skipped == Some(due) {
+        return schedule::next_due(&plan, due, offset_at);
+    }
+    Some(due)
+}
+
 /// The feeder's zone as its time settings give it: its POSIX rule, or the
 /// offset a sync left it, or `fallback` (a host's own zone) with neither, when
 /// the feeder has no idea of local time and the host's is the best guess.
@@ -99,9 +119,18 @@ pub fn feeder_zone(view: &TimeView, fallback: TimeZone) -> TimeZone {
         .map_or(fallback, TimeZone::fixed)
 }
 
+/// `zone`'s offset at an instant in Unix milliseconds, as the feeder's
+/// schedule asks for it.
+pub(crate) fn offsets(zone: &TimeZone) -> impl Fn(u64) -> Option<i32> + Copy + '_ {
+    |ms: u64| {
+        let at = Timestamp::from_millisecond(i64::try_from(ms).ok()?).ok()?;
+        Some(zone.to_offset(at).seconds())
+    }
+}
+
 /// The model's plan as the feeder's schedule holds it: the same fields,
 /// and the same weekday bits.
-const fn core_plan(plan: &Plan) -> schedule::Plan {
+pub(crate) const fn core_plan(plan: &Plan) -> schedule::Plan {
     schedule::Plan {
         minute: plan.minute,
         portions: plan.portions,
@@ -314,6 +343,32 @@ mod tests {
             ..once
         };
         assert_eq!(meal(&table(&[(0, ran)]), midnight), None);
+    }
+
+    /// A skipped meal is not next, of its plan or of all of them: the
+    /// plan's next is its following day's, and another plan's meal comes
+    /// first. Once the skipped meal's time has passed, the skip no longer
+    /// moves anything.
+    #[test]
+    fn a_skipped_meal_is_not_next() {
+        let midnight = NOW + 6 * HOUR;
+        let breakfast = midnight + 7 * HOUR;
+        let mut plans = table(&[(0, daily(7 * 60, 1)), (1, daily(18 * 60, 2))]);
+        let mut skipped = [None; PLANS];
+        skipped[0] = Some(u32::try_from(breakfast).unwrap());
+        plans.skipped = wellfed_model::SkippedMeals::from_seconds(skipped);
+
+        assert_eq!(meal(&plans, midnight), Some((midnight + 18 * HOUR, 1)));
+        let alone = Plans {
+            plans: table(&[(0, daily(7 * 60, 1))]).plans,
+            ..plans
+        };
+        assert_eq!(meal(&alone, midnight), Some((breakfast + 24 * HOUR, 0)));
+        assert_eq!(
+            meal(&alone, breakfast + HOUR),
+            Some((breakfast + 24 * HOUR, 0)),
+            "past it, the next is tomorrow's anyway"
+        );
     }
 
     /// The case the server's former time request pinned.

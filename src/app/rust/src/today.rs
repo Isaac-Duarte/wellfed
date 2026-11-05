@@ -82,7 +82,8 @@ pub(crate) fn card(facts: &Facts) -> Option<Card> {
                 MealState::Next { at } => MealStanding::Next {
                     at_ms: at.as_millisecond(),
                 },
-                MealState::Later => MealStanding::Later,
+                MealState::Later | MealState::Skipped { .. } => MealStanding::Later,
+                MealState::SkipKept => MealStanding::Passed,
             },
         })
         .collect();

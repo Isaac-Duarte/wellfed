@@ -2,13 +2,18 @@
 //! replaces the whole table against a generation, so a change is a read, an
 //! edit of that table ([`edited`]) and a write; every client makes the same
 //! edit here, and a stale write is refused rather than merged.
+//!
+//! Skipping one of today's meals is no edit of the table: it names the
+//! meal's instant, which [`to_skip`] and [`to_undo`] find in the plans as
+//! read, so no user types a time. The feeder checks the same rules again
+//! against its own clock and refuses what no longer holds.
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use wellfed_model::{CALL_PLAYS_MAX, PLANS, PORTIONS_MAX, Plan, Plans, TimeOfDay, Weekdays};
 
 use crate::history::Feed;
-use crate::time::next_meal;
+use crate::time::{core_plan, next_meal, offsets};
 
 /// What a change does to the table.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -110,6 +115,72 @@ pub fn edited(plans: &Plans, edit: Edit) -> Result<[Option<Plan>; PLANS], EditEr
     Ok(table)
 }
 
+/// Why a meal cannot be skipped, or its skip undone. The feeder refuses the
+/// same, by its own clock, if the plans moved on since they were read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum SkipError {
+    #[error("slot {slot} holds no plan")]
+    Empty { slot: u8 },
+    #[error("plan {slot} is disabled")]
+    Disabled { slot: u8 },
+    #[error("plan {slot} has no meal left today")]
+    NoneToday { slot: u8 },
+    #[error("plan {slot}'s next meal is already skipped")]
+    Skipped { slot: u8 },
+    #[error("plan {slot} has no skipped meal")]
+    NotSkipped { slot: u8 },
+    #[error("plan {slot}'s skipped meal is already due, so its skip stays")]
+    Due { slot: u8 },
+}
+
+/// The meal of slot `slot` a skip names: the plan's next, while it falls on
+/// today's date in `zone` and is not skipped already.
+pub fn to_skip(
+    plans: &Plans,
+    slot: u8,
+    now: Timestamp,
+    zone: &TimeZone,
+) -> Result<Timestamp, SkipError> {
+    let index = usize::from(slot);
+    let plan = plans
+        .plans
+        .get(index)
+        .copied()
+        .flatten()
+        .ok_or(SkipError::Empty { slot })?;
+    if !plan.enabled {
+        return Err(SkipError::Disabled { slot });
+    }
+    if plans.skipped.get(index).is_some_and(|at| at > now) {
+        return Err(SkipError::Skipped { slot });
+    }
+
+    let now_ms = u64::try_from(now.as_millisecond()).map_err(|_| SkipError::NoneToday { slot })?;
+    let due = wellfed_core::schedule::next_due(&core_plan(&plan), now_ms, offsets(zone))
+        .and_then(|ms| i64::try_from(ms).ok())
+        .and_then(|ms| Timestamp::from_millisecond(ms).ok())
+        .filter(|at| same_day(*at, zone, now.to_zoned(zone.clone()).date()))
+        .ok_or(SkipError::NoneToday { slot })?;
+    Ok(due)
+}
+
+/// The meal of slot `slot` an undo names: the skipped one, while it is
+/// still to come. At its instant it is the schedule's, so the skip stays.
+pub fn to_undo(plans: &Plans, slot: u8, now: Timestamp) -> Result<Timestamp, SkipError> {
+    let index = usize::from(slot);
+    if plans.plans.get(index).copied().flatten().is_none() {
+        return Err(SkipError::Empty { slot });
+    }
+    let at = plans
+        .skipped
+        .get(index)
+        .ok_or(SkipError::NotSkipped { slot })?;
+    if at <= now {
+        return Err(SkipError::Due { slot });
+    }
+    Ok(at)
+}
+
 /// How one of today's meals stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MealState {
@@ -123,9 +194,16 @@ pub enum MealState {
         at: Timestamp,
     },
     Later,
+    /// Skipped, and still to come: an undo before `at` brings it back.
+    Skipped {
+        at: Timestamp,
+    },
+    /// Skipped, and its time has come: it stays skipped.
+    SkipKept,
 }
 
-/// One enabled plan that runs today, by the feeder's local calendar.
+/// One of today's meals by the feeder's local calendar: an enabled plan
+/// that runs today, or one that fed or was skipped today.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Meal {
     pub slot: u8,
@@ -153,20 +231,27 @@ pub fn today(plans: &Plans, feeds: &[Feed], now: Timestamp, zone: &TimeZone) -> 
             let plan = (*plan)?;
             let slot = u8::try_from(slot).ok()?;
             let runs = plan.days.bits() == 0 || runs_on(plan.days, day);
-            // A once plan that ran stays in its slot disabled: it still
-            // shows as today's meal when its feed is today's.
+            // A once plan that ran, or was skipped, stays in its slot
+            // disabled: it still shows as today's meal when its feed or
+            // its skip is today's.
             let fed = last_feed(feeds, slot, plan.minute, zone, day);
-            if !(plan.enabled && runs) && fed.is_none() {
+            let skipped = plans
+                .skipped
+                .get(usize::from(slot))
+                .filter(|at| same_day(*at, zone, day));
+            if !(plan.enabled && runs) && fed.is_none() && skipped.is_none() {
                 return None;
             }
 
-            let state = match (fed, next) {
-                (Some(feed), _) => MealState::Fed(feed),
-                (None, Some(next)) if next.slot == slot && same_day(next.at, zone, day) => {
+            let state = match (fed, skipped, next) {
+                (Some(feed), _, _) => MealState::Fed(feed),
+                (None, Some(at), _) if at > now => MealState::Skipped { at },
+                (None, Some(_), _) => MealState::SkipKept,
+                (None, None, Some(next)) if next.slot == slot && same_day(next.at, zone, day) => {
                     MealState::Next { at: next.at }
                 }
-                (None, _) if plan.minute <= minute_now => MealState::Passed,
-                (None, _) => MealState::Later,
+                (None, None, _) if plan.minute <= minute_now => MealState::Passed,
+                (None, None, _) => MealState::Later,
             };
             Some(Meal {
                 slot,
@@ -391,5 +476,158 @@ mod tests {
         let meals = today(&plans(table), &[once], now, &zone);
         assert_eq!(meals.len(), 1);
         assert_eq!(meals[0].state, MealState::Fed(once));
+    }
+
+    /// Plans with breakfast (slot 0, 07:30), lunch (slot 1, 12:30) and
+    /// dinner (slot 2, 18:30), daily, and `skipped` per slot.
+    fn meals_skipping(skipped: &[(usize, &str)]) -> Plans {
+        let mut table = [None; PLANS];
+        table[0] = Some(BREAKFAST);
+        table[1] = Some(Plan {
+            minute: 12 * 60 + 30,
+            ..BREAKFAST
+        });
+        table[2] = Some(Plan {
+            minute: 18 * 60 + 30,
+            ..BREAKFAST
+        });
+        let mut seconds = [None; PLANS];
+        for &(slot, at) in skipped {
+            let at: Timestamp = at.parse().unwrap();
+            seconds[slot] = Some(u32::try_from(at.as_second()).unwrap());
+        }
+        Plans {
+            skipped: wellfed_model::SkippedMeals::from_seconds(seconds),
+            ..plans(table)
+        }
+    }
+
+    /// A skipped meal still to come can be undone; once its time came the
+    /// skip stays. The next meal passes over it.
+    #[test]
+    fn today_shows_a_skip_until_its_time_and_after() {
+        let zone = TimeZone::UTC;
+        let now: Timestamp = "2026-10-30T12:04:00Z".parse().unwrap();
+        let skipped = meals_skipping(&[(0, "2026-10-30T07:30:00Z"), (1, "2026-10-30T12:30:00Z")]);
+
+        let states: Vec<_> = today(&skipped, &[], now, &zone)
+            .iter()
+            .map(|meal| (meal.slot, meal.state))
+            .collect();
+        assert_eq!(
+            states,
+            [
+                (0, MealState::SkipKept),
+                (
+                    1,
+                    MealState::Skipped {
+                        at: "2026-10-30T12:30:00Z".parse().unwrap()
+                    }
+                ),
+                (
+                    2,
+                    MealState::Next {
+                        at: "2026-10-30T18:30:00Z".parse().unwrap()
+                    }
+                ),
+            ]
+        );
+    }
+
+    /// Yesterday's skip says nothing of today's meal.
+    #[test]
+    fn a_skip_of_another_day_is_not_todays() {
+        let zone = TimeZone::UTC;
+        let now: Timestamp = "2026-10-30T06:00:00Z".parse().unwrap();
+        let plans = meals_skipping(&[(0, "2026-10-29T07:30:00Z")]);
+
+        let meals = today(&plans, &[], now, &zone);
+        assert_eq!(
+            meals[0].state,
+            MealState::Next {
+                at: "2026-10-30T07:30:00Z".parse().unwrap()
+            }
+        );
+    }
+
+    /// A plan that runs once is disabled by its skip, and still shows as
+    /// today's skipped meal.
+    #[test]
+    fn a_once_plan_its_skip_disabled_shows_as_skipped() {
+        let zone = TimeZone::UTC;
+        let now: Timestamp = "2026-10-30T06:00:00Z".parse().unwrap();
+        let mut table = [None; PLANS];
+        table[0] = Some(Plan {
+            days: Weekdays::ONCE,
+            enabled: false,
+            ..BREAKFAST
+        });
+        let mut seconds = [None; PLANS];
+        let at: Timestamp = "2026-10-30T07:30:00Z".parse().unwrap();
+        seconds[0] = Some(u32::try_from(at.as_second()).unwrap());
+        let plans = Plans {
+            skipped: wellfed_model::SkippedMeals::from_seconds(seconds),
+            ..plans(table)
+        };
+
+        let meals = today(&plans, &[], now, &zone);
+        assert_eq!(meals.len(), 1);
+        assert_eq!(meals[0].state, MealState::Skipped { at });
+        assert_eq!(to_undo(&plans, 0, now), Ok(at));
+    }
+
+    #[test]
+    fn a_skip_names_the_plans_next_meal_today() {
+        let zone = TimeZone::UTC;
+        let now: Timestamp = "2026-10-30T12:04:00Z".parse().unwrap();
+        let none = meals_skipping(&[]);
+
+        assert_eq!(
+            to_skip(&none, 1, now, &zone),
+            Ok("2026-10-30T12:30:00Z".parse().unwrap())
+        );
+        assert_eq!(
+            to_skip(&none, 0, now, &zone),
+            Err(SkipError::NoneToday { slot: 0 }),
+            "breakfast is tomorrow's"
+        );
+        assert_eq!(
+            to_skip(&none, 5, now, &zone),
+            Err(SkipError::Empty { slot: 5 })
+        );
+
+        let lunch = meals_skipping(&[(1, "2026-10-30T12:30:00Z")]);
+        assert_eq!(
+            to_skip(&lunch, 1, now, &zone),
+            Err(SkipError::Skipped { slot: 1 })
+        );
+
+        let mut disabled = none;
+        disabled.plans[2] = disabled.plans[2].map(|plan| Plan {
+            enabled: false,
+            ..plan
+        });
+        assert_eq!(
+            to_skip(&disabled, 2, now, &zone),
+            Err(SkipError::Disabled { slot: 2 })
+        );
+    }
+
+    #[test]
+    fn an_undo_names_the_skipped_meal_until_its_time() {
+        let lunch: Timestamp = "2026-10-30T12:30:00Z".parse().unwrap();
+        let plans = meals_skipping(&[(1, "2026-10-30T12:30:00Z")]);
+        let before: Timestamp = "2026-10-30T12:04:00Z".parse().unwrap();
+
+        assert_eq!(to_undo(&plans, 1, before), Ok(lunch));
+        assert_eq!(to_undo(&plans, 1, lunch), Err(SkipError::Due { slot: 1 }));
+        assert_eq!(
+            to_undo(&plans, 2, before),
+            Err(SkipError::NotSkipped { slot: 2 })
+        );
+        assert_eq!(
+            to_undo(&plans, 7, before),
+            Err(SkipError::Empty { slot: 7 })
+        );
     }
 }
