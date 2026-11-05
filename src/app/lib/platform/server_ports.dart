@@ -1,4 +1,5 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/src/rust/api/server.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 
@@ -26,6 +27,9 @@ abstract interface class ServerPorts {
 
   /// Forget the phone token's secret.
   Future<void> forgetSecret();
+
+  /// Owner's servers announcing themselves on the LAN, until cancelled.
+  Stream<FoundServer> browse();
 }
 
 /// [ServerPorts] on Android: the token's secret beside the client secret, in
@@ -56,4 +60,7 @@ class AppServerPorts implements ServerPorts {
 
   @override
   Future<void> forgetSecret() => _storage.delete(key: _secretName);
+
+  @override
+  Stream<FoundServer> browse() => Discovery.browseServers();
 }

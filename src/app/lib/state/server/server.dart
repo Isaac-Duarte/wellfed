@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/server_ports.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/router.dart';
@@ -137,6 +138,21 @@ class HomeServer extends ChangeNotifier {
   /// entries and the server's links to them.
   Stream<ServerEvent> get events => _events.stream;
 
+  /// The session the server's own screens read and write with: pets, foods,
+  /// refills, weights and the long history, none of which reach a feeder.
+  /// `null` with no server, or before a kept token is read.
+  ServerSession? get session => _session;
+
+  /// Owner's servers announcing themselves on the LAN, until cancelled.
+  Stream<FoundServer> browse() => _ports.browse();
+
+  /// The account may only look: no feeder takes a feed or a change from
+  /// this phone, through the server or its own key.
+  bool get viewer => switch (_state) {
+    ServerLinked(account: ServerAccount(role: ServerRole.viewer)) => true,
+    _ => false,
+  };
+
   /// What this account may do on its feeders, as a feeder's own role names
   /// it: `null` for a viewer, and before the server has said.
   ClientRole? get feederRole => switch (_state) {
@@ -156,7 +172,7 @@ class HomeServer extends ChangeNotifier {
     }
     if (_disposed) return const LoginDone();
 
-    await _drop();
+    _drop();
     await _ports.keepSecret(session.secret());
     final ServerLink link = session.link();
     await _book.setServer(KnownServer(link: link, feeders: const []));
@@ -360,18 +376,22 @@ class HomeServer extends ChangeNotifier {
 
   /// Stop following and let go of the session, keeping nothing of the server.
   Future<void> _forget() async {
-    await _drop();
+    _drop();
+    _set(const ServerAbsent());
+    // A copy kept before this writes first, so none outlives the removal.
+    await _kept;
     await _ports.forgetSecret();
     await _book.setServer(null);
-    _set(const ServerAbsent());
   }
 
-  Future<void> _drop() async {
+  void _drop() {
     _again?.cancel();
     _again = null;
     _session?.close();
     _session = null;
-    await _following?.cancel();
+    // No event comes once it is cancelled; its end is not waited for, so a
+    // stream slow to close never holds the logout up.
+    unawaited(_following?.cancel());
     _following = null;
     _resume = null;
     _router?.disconnectServer();

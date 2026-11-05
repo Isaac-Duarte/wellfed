@@ -23,6 +23,7 @@ import 'package:wellfed/state/wifi/networks.dart';
 part 'feeder_route.dart';
 part 'feeder_server.dart';
 part 'feeder_session.dart';
+part 'feeder_writes.dart';
 
 /// Where a recording comes from.
 typedef PickRecording = Future<Uint8List?> Function();
@@ -53,6 +54,7 @@ class FeederController extends ChangeNotifier {
       _connection = ownKey ? Connection.looking : Connection.offline,
       _ownKey = ownKey {
     _pendingFromBefore();
+    _readUnconfirmed();
     if (ownKey) unawaited(_serve());
   }
 
@@ -88,6 +90,9 @@ class FeederController extends ChangeNotifier {
 
   /// The feeder as the owner's server last told it, while the server lists it.
   _ServerSide? _server;
+
+  /// The server's account for this phone may only look.
+  bool _viewer = false;
 
   /// Runs out when a running feed's result is overdue.
   Timer? _feedDue;
@@ -231,7 +236,9 @@ class FeederController extends ChangeNotifier {
     final PathRouter? router = _ports.router;
     if (router == null) return const FeederReply.notSent();
     final RoutedReply routed = await router.ask(feeder: _state.known.identity, request: request);
+    if (_disposed) return routed.reply;
     _keep(request, routed.reply);
+    if (routed.pending != null) _readUnconfirmed();
     return routed.reply;
   }
 

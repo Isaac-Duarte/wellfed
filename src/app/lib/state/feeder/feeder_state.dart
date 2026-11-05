@@ -189,6 +189,8 @@ final class FeederState {
     this.calibration,
     this.path,
     this.serverId,
+    this.viewer = false,
+    this.unconfirmed = const [],
   });
 
   /// What this phone keeps about the feeder.
@@ -238,11 +240,19 @@ final class FeederState {
   /// The owner's server's id for it, while the server lists it.
   final String? serverId;
 
+  /// The account the server knows this phone by may only look: it feeds
+  /// through neither the server nor the phone's own key, so Feed is hidden.
+  final bool viewer;
+
+  /// Changes other than a feed that may or may not have reached the feeder,
+  /// held on the path they went until a check or the owner puts them away.
+  final List<PendingWrite> unconfirmed;
+
   /// The card is what this session read, not an earlier one.
   bool get cardIsCurrent => connection == Connection.online && cardFresh;
 
   /// Whether the feeder would take a feed from this phone now.
-  bool get canFeed => cardIsCurrent && !feed.active && role != ClientRole.server && (card?.ready ?? false);
+  bool get canFeed => cardIsCurrent && !feed.active && !viewer && role != ClientRole.server && (card?.ready ?? false);
 
   /// This state with the named parts changed. A nullable part takes a function,
   /// so that null can be set.
@@ -262,6 +272,8 @@ final class FeederState {
     CalibrationInfo? Function()? calibration,
     RoutePath? Function()? path,
     String? Function()? serverId,
+    bool? viewer,
+    List<PendingWrite>? unconfirmed,
   }) => FeederState(
     known: known ?? this.known,
     connection: connection ?? this.connection,
@@ -278,5 +290,7 @@ final class FeederState {
     calibration: calibration == null ? this.calibration : calibration(),
     path: path == null ? this.path : path(),
     serverId: serverId == null ? this.serverId : serverId(),
+    viewer: viewer ?? this.viewer,
+    unconfirmed: unconfirmed == null ? this.unconfirmed : List.unmodifiable(unconfirmed),
   );
 }

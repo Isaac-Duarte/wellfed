@@ -88,8 +88,9 @@ class FeederFleet extends ChangeNotifier {
     }
 
     final ClientRole? role = _server?.feederRole;
+    final bool viewer = _server?.viewer ?? false;
     for (final MapEntry(key: identity, value: controller) in _feeders.entries) {
-      controller.serverListed(listed[identity]?.id, role: role);
+      controller.serverListed(listed[identity]?.id, role: role, viewer: viewer);
       if (_ports.router?.path(feeder: identity) case final RoutePath path) controller.routed(path);
     }
     _readDetails(listed.values.map((feeder) => feeder.id).toSet());

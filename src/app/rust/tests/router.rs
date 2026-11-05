@@ -1548,3 +1548,30 @@ fn a_change_to_the_account_the_router_reads_is_told() {
         server.stop().await;
     });
 }
+
+#[test]
+fn a_feed_s_answer_is_told_by_its_key_for_a_screen_that_holds_only_the_pin() {
+    local(async {
+        let sim = feeder::start().await;
+        let phone = Phone::new();
+        let _direct = phone.open(&sim, sim.address).await;
+        let kitchen = identity(&sim);
+
+        let RoutedFeed::Started { key, feed, .. } = phone.router.feed(kitchen, 1).await else {
+            panic!("the feed starts");
+        };
+        let told = eventually("the feed's answer is told", async || {
+            let mut updates = phone.updates.borrow_mut();
+            std::iter::from_fn(|| updates.try_recv().ok()).find_map(|update| match update {
+                RouterUpdate::Settled {
+                    pending,
+                    settlement,
+                } if pending.key == key => Some(settlement),
+                _ => None,
+            })
+        })
+        .await;
+        assert_eq!(told, Settlement::Started { feed });
+        sim.stop().await;
+    });
+}

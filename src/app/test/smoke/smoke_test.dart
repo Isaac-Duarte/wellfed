@@ -118,6 +118,16 @@ class _Ports implements FeederPorts {
   @override
   Future<void> answered(String identity, String build) async {}
 
+  // No server here: nothing is adopted.
+  @override
+  Future<Adoption> adopt(KnownFeeder feeder) => throw UnimplementedError();
+
+  @override
+  Future<Adoption> checkAdoption(String identity) => throw UnimplementedError();
+
+  @override
+  Future<Adoption> claimPhone(String identity) => throw UnimplementedError();
+
   @override
   Future<String?> locate(String identity, Duration wait) async => null;
 

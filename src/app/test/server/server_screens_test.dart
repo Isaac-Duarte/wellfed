@@ -1,0 +1,215 @@
+import 'package:flutter/material.dart' hide Card;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:wellfed/platform/discovery.dart';
+import 'package:wellfed/screens/server/account.dart';
+import 'package:wellfed/screens/server/add_server.dart';
+import 'package:wellfed/screens/server/feeder_food.dart';
+import 'package:wellfed/screens/server/pet.dart';
+import 'package:wellfed/src/rust/api/router.dart';
+import 'package:wellfed/src/rust/api/server_error.dart';
+import 'package:wellfed/src/rust/api/server_views.dart';
+import 'package:wellfed/src/rust/api/session.dart';
+import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/fleet/adopt.dart';
+import 'package:wellfed/state/server/add_server.dart';
+import 'package:wellfed/state/server/feeder_food.dart';
+import 'package:wellfed/state/server/household.dart';
+import 'package:wellfed/state/server/pet.dart';
+import 'package:wellfed/state/server/server.dart';
+import 'package:wellfed/state/server/server_history.dart';
+
+import '../support/fakes.dart';
+
+const _kitchen = KnownFeeder(identity: 'aa', name: 'Kitchen', address: 'lan:4747');
+const _cat = ServerPet(id: 'p1', name: 'Miso', species: Species.cat, feeders: ['id-k']);
+
+(HomeServer, FakeServerPorts, FakeBook) _server() {
+  final book = FakeBook()..feeders = [_kitchen];
+  final ports = FakeServerPorts();
+  final server = HomeServer(book, ports, FakeRouter());
+  addTearDown(server.dispose);
+  return (server, ports, book);
+}
+
+void _phone(WidgetTester tester) {
+  tester.view.physicalSize = const Size(412, 915);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+}
+
+HistoryEntry _entry(int seq) => HistoryEntry(seq: BigInt.from(seq), atMs: 1000 * seq, body: const HistoryBody.other());
+
+void main() {
+  testWidgets('adding a server offers what the LAN announces, and logs in at a bare address as http', (tester) async {
+    _phone(tester);
+    final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
+    await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
+    ports.found
+      ..add(const FoundServer(url: 'http://192.168.1.20:8080', name: 'home-1a2b3c4d'))
+      ..add(const FoundServer(url: 'http://192.168.1.20:8080', name: 'home-1a2b3c4d'));
+    await settle(tester);
+    expect(find.text('home-1a2b3c4d'), findsOneWidget, reason: 'heard twice, listed once');
+
+    await tester.enterText(find.byType(TextField).at(0), '192.168.1.20:8080');
+    await tester.enterText(find.byType(TextField).at(1), 'ada');
+    await tester.enterText(find.byType(TextField).at(2), 'hunter2');
+    await tester.pump();
+    await tester.tap(find.text('Log in'));
+    await settle(tester);
+
+    expect(ports.logins.single.url, 'http://192.168.1.20:8080');
+    expect(book.server?.link, serverLink);
+    expect(server.state, isA<ServerLinked>());
+  });
+
+  testWidgets('a refused login says why, and keeps nothing', (tester) async {
+    _phone(tester);
+    final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
+    ports.loginFails = serverError(ServerErrorKind.badCredentials);
+    await tester.pumpWidget(themed(AddServerScreen(newFlow: () => AddServerFlow(server))));
+    await tester.enterText(find.byType(TextField).at(0), 'http://home.lan:8080');
+    await tester.enterText(find.byType(TextField).at(1), 'ada');
+    await tester.enterText(find.byType(TextField).at(2), 'wrong');
+    await tester.pump();
+    await tester.tap(find.text('Log in'));
+    await settle(tester);
+
+    expect(find.text('The name or the password is wrong.'), findsOneWidget);
+    expect(book.server, isNull);
+  });
+
+  testWidgets('the account says the phone keeps its keys, and logging out revokes the token', (tester) async {
+    _phone(tester);
+    final (HomeServer server, FakeServerPorts ports, FakeBook book) = _server();
+    await server.logIn(url: 'http://home.lan:8080', name: 'ada', password: 'hunter2');
+    await tester.pumpWidget(themed(AccountScreen(server: server)));
+    await settle(tester);
+
+    expect(find.text('Owner'), findsOneWidget);
+    expect(find.textContaining('Deleting your account on the server revokes those keys'), findsOneWidget);
+    await tester.tap(find.text('Log out').first);
+    await settle(tester);
+    await tester.tap(find.widgetWithText(TextButton, 'Log out'));
+    await settle(tester);
+
+    expect(ports.session.logouts, 1);
+    expect(book.server, isNull);
+    expect(book.feeders, [_kitchen]);
+  });
+
+  test('pets and foods are read, and a change reads them again', () async {
+    final session = FakeServerSession();
+    session.home.pets = const [_cat];
+    final flow = HouseholdFlow(session);
+    addTearDown(flow.dispose);
+    await flow.load();
+    expect(flow.state.pets, [_cat]);
+
+    expect(await flow.saveFood(brand: 'Acme', name: 'Chicken', kcalPerKg: 3800, bagGrams: 2000), isTrue);
+    expect(flow.state.foods.single.name, 'Chicken');
+
+    session.home.fails = serverError(ServerErrorKind.foodInUse);
+    expect(await flow.deleteFood('f1'), isFalse);
+    expect(flow.state.error?.kind, ServerErrorKind.foodInUse);
+  });
+
+  testWidgets('an uncalibrated feeder counts portions: no grams and no food left', (tester) async {
+    _phone(tester);
+    final session = FakeServerSession();
+    session.home.food = const ServerFeederFood(
+      weight: PortionWeight.uncalibrated(),
+      sinceRefill: ServerSinceRefill(portions: 14, uncertainPortions: 1),
+      rate: FeedRate(portions: 6, hours: 24),
+      anomalies: [],
+    );
+    await tester.pumpWidget(themed(FeederFoodScreen(flow: FeederFoodFlow(session, 'id-k'), name: 'Kitchen')));
+    await settle(tester);
+
+    expect(find.textContaining('14 portions'), findsOneWidget);
+    expect(find.text('6 portions in 24 hours'), findsOneWidget);
+    expect(find.textContaining(' g left'), findsNothing);
+    expect(find.textContaining('a day'), findsNothing);
+
+    await tester.tap(find.text('Full bag'));
+    await settle(tester);
+    expect(session.home.changes, ['refill id-k full']);
+  });
+
+  testWidgets('a calibrated feeder shows what is left', (tester) async {
+    _phone(tester);
+    final session = FakeServerSession();
+    session.home.food = const ServerFeederFood(
+      weight: PortionWeight.calibration(portionMg: 9000),
+      sinceRefill: ServerSinceRefill(
+        portions: 14,
+        uncertainPortions: 0,
+        left: ServerFoodLeft(gramsUsed: 126, gramsLeft: 874, gramsLeftLeast: 874),
+      ),
+      rate: FeedRate(portions: 6, hours: 24, gramsPerDay: 54),
+      anomalies: [],
+    );
+    await tester.pumpWidget(themed(FeederFoodScreen(flow: FeederFoodFlow(session, 'id-k'), name: 'Kitchen')));
+    await settle(tester);
+
+    expect(find.textContaining('874 g left'), findsOneWidget);
+    expect(find.text('54 g a day'), findsOneWidget);
+  });
+
+  testWidgets("a pet's day from uncalibrated feeders counts portions, with no calories", (tester) async {
+    _phone(tester);
+    final session = FakeServerSession();
+    session.home.days = const [
+      ServerIntakeDay(
+        date: '2026-11-04',
+        estimate: false,
+        unweighed: [ServerFeederPortions(feeder: 'id-k', portions: 3, uncertainPortions: 0)],
+      ),
+    ];
+    final household = HouseholdFlow(session);
+    addTearDown(household.dispose);
+    await tester.pumpWidget(
+      themed(
+        PetScreen(
+          flow: PetFlow(session, _cat),
+          household: household,
+          feeders: const [ListedFeeder(id: 'id-k', identity: 'aa', name: 'Kitchen')],
+        ),
+      ),
+    );
+    await settle(tester);
+
+    expect(find.text('3 portions from Kitchen'), findsOneWidget);
+    expect(find.textContaining('kcal'), findsNothing);
+  });
+
+  test('the long history reads every page and shows the newest first', () async {
+    final session = FakeServerSession();
+    session.home.pages = {
+      null: ServerEventPage(
+        entries: [
+          for (final int seq in [1, 2]) ServerEntry(epoch: 1, receivedMs: 0, entry: _entry(seq)),
+        ],
+        next: BigInt.two,
+      ),
+      BigInt.two: ServerEventPage(entries: [ServerEntry(epoch: 1, receivedMs: 0, entry: _entry(3))]),
+    };
+    final flow = ServerHistoryFlow(session, 'id-k');
+    addTearDown(flow.dispose);
+    await flow.load();
+
+    expect(flow.state.reading, isFalse);
+    expect(flow.state.entries.map((entry) => entry.seq.toInt()), [3, 2, 1]);
+  });
+
+  test('an adoption whose answer was lost is only checked again, never sent again', () async {
+    final (HomeServer server, _, _) = _server();
+    final ports = FakeFeederPorts()..adoptAnswer = Adoption.unsettled(error: serverError(ServerErrorKind.interrupted));
+    final flow = AdoptFlow(ports, server);
+    addTearDown(flow.dispose);
+
+    await flow.adopt(_kitchen);
+    expect(flow.state['aa'], isA<AdoptUnsettled>());
+    await flow.adopt(_kitchen);
+    expect(ports.adoptSteps, ['adopt aa', 'check aa']);
+  });
+}

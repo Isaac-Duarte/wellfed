@@ -12,6 +12,7 @@ import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/router.dart' as router_api show feedDueSeconds, settledFeed;
+import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/api/update.dart';
@@ -44,6 +45,19 @@ abstract interface class FeederPorts {
   /// How long a feed of `portions` may take, in seconds, past which a feeder
   /// that stayed on has ended it.
   int feedDueSeconds(int portions);
+
+  /// Adopt `feeder`, paired before the server, onto the server through the
+  /// router: an owner's invite made with this phone's key, which becomes the
+  /// account's phone key.
+  Future<Adoption> adopt(KnownFeeder feeder);
+
+  /// Read the server's list again after an adoption whose answer was lost.
+  /// It sends nothing but the claim.
+  Future<Adoption> checkAdoption(String identity);
+
+  /// Claim this phone's key on `identity` as the account's, for an adoption
+  /// that left it unclaimed.
+  Future<Adoption> claimPhone(String identity);
 
   /// A session with this feeder read `build`, which settles the stock trial
   /// that installed it, if one is open.
@@ -101,6 +115,30 @@ class AppFeederPorts implements FeederPorts {
 
   @override
   int feedDueSeconds(int portions) => router_api.feedDueSeconds(portions: portions);
+
+  @override
+  Future<Adoption> adopt(KnownFeeder feeder) =>
+      _routed((router) => router.adopt(feeder: feeder.identity, name: feeder.name, address: feeder.address, key: _key));
+
+  @override
+  Future<Adoption> checkAdoption(String identity) =>
+      _routed((router) => router.checkAdoption(feeder: identity, key: _key));
+
+  @override
+  Future<Adoption> claimPhone(String identity) => _routed((router) => router.claimPhone(feeder: identity, key: _key));
+
+  /// With no router nothing goes to the server either.
+  Future<Adoption> _routed(Future<Adoption> Function(PathRouter router) call) {
+    final PathRouter? routing = router;
+    if (routing == null) {
+      return Future.value(
+        const Adoption.failed(
+          error: ServerError(kind: ServerErrorKind.closed, message: 'the pending writes could not be opened'),
+        ),
+      );
+    }
+    return call(routing);
+  }
 
   @override
   Future<void> share(String text) async {

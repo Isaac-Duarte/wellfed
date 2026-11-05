@@ -60,10 +60,17 @@ String whoText(FeederController feeder, FedBy by) => switch (by) {
 /// lead with a tinted badge; changes and routine notes stay quiet, and a run
 /// of the same change folds into one row, so five settings saves don't push
 /// the day's feeds off the screen.
+///
+/// With the owner's server, `longHistory` opens what the server kept, which
+/// reaches back further than the feeder's ring; that screen draws its
+/// `entries` here, newest first, with `empty` while it has none.
 class HistoryTab extends StatefulWidget {
-  const HistoryTab({super.key, required this.feeder});
+  const HistoryTab({super.key, required this.feeder, this.longHistory, this.entries, this.empty});
 
   final FeederController feeder;
+  final VoidCallback? longHistory;
+  final List<HistoryEntry>? entries;
+  final String? empty;
 
   @override
   State<HistoryTab> createState() => _HistoryTabState();
@@ -99,7 +106,8 @@ class _HistoryTabState extends State<HistoryTab> {
     builder: (context, _) {
       final ThemeTokens c = context.colors;
       final FeederController feeder = widget.feeder;
-      final List<_Day> days = _days(context, feeder, feeder.state.history.reversed, _filter);
+      final List<_Day> days = _days(context, feeder, widget.entries ?? feeder.state.history.reversed, _filter);
+      final VoidCallback? longHistory = feeder.state.serverId == null ? null : widget.longHistory;
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -123,6 +131,7 @@ class _HistoryTabState extends State<HistoryTab> {
                   ),
                   const SizedBox(width: Space.s2),
                 ],
+                if (longHistory != null) TextButton(onPressed: longHistory, child: const Text('Full history')),
               ],
             ),
           ),
@@ -130,11 +139,12 @@ class _HistoryTabState extends State<HistoryTab> {
             child: days.isEmpty
                 ? Center(
                     child: Text(
-                      feeder.state.historyRead
-                          ? 'Nothing here yet.'
-                          : feeder.state.connection == Connection.online
-                          ? 'Reading the history…'
-                          : "Can't read the history right now.",
+                      widget.empty ??
+                          (feeder.state.historyRead
+                              ? 'Nothing here yet.'
+                              : feeder.state.connection == Connection.online
+                              ? 'Reading the history…'
+                              : "Can't read the history right now."),
                       style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
                     ),
                   )

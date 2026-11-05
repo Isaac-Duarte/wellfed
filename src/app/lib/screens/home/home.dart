@@ -2,11 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:wellfed/screens/home/adopt_prompt.dart';
 import 'package:wellfed/screens/home/feeder_card.dart';
 import 'package:wellfed/screens/home/todays_meals.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/src/rust/api/install.dart' show PendingInstall;
+import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/fleet/adopt.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -15,9 +18,12 @@ import 'package:wellfed/widgets/layout.dart';
 /// Feeder-first Home: one card per feeder this phone knows, large for one
 /// feeder and compact for several.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.fleet, required this.earlierInstall});
+  const HomeScreen({super.key, required this.fleet, required this.earlierInstall, this.adopt});
 
   final FeederFleet fleet;
+
+  /// Putting a feeder this phone paired onto the home server, with one.
+  final AdoptFlow? adopt;
 
   /// What an earlier install left, read from its records. A run that died
   /// before it ended (the app killed, say) has no other way to say so, and a
@@ -87,6 +93,8 @@ class _HomeScreenState extends State<HomeScreen> {
               FilledButton(onPressed: () => unawaited(_openInstall()), child: const Text('Finish installing')),
               const SizedBox(height: Space.s4),
             ],
+            if (widget.adopt case final AdoptFlow adopt?)
+              for (final KnownFeeder feeder in widget.fleet.adoptable) AdoptPrompt(feeder: feeder, flow: adopt),
             for (final (i, controller) in feeders.indexed) ...[
               if (i > 0) const SizedBox(height: Space.s3),
               FeederCard(controller: controller, compact: !one),

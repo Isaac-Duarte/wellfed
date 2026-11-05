@@ -15,8 +15,10 @@ import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/router.dart';
+import 'package:wellfed/src/rust/api/server_error.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
+import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/api/update.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/wifi/networks.dart';
@@ -237,6 +239,30 @@ class FakeFeederPorts implements FeederPorts {
 
   @override
   int feedDueSeconds(int portions) => feedDue;
+
+  /// What each adoption step answers, and the steps asked, in order.
+  Adoption adoptAnswer = const Adoption.failed(
+    error: ServerError(kind: ServerErrorKind.closed, message: 'none'),
+  );
+  final adoptSteps = <String>[];
+
+  @override
+  Future<Adoption> adopt(KnownFeeder feeder) async {
+    adoptSteps.add('adopt ${feeder.identity}');
+    return adoptAnswer;
+  }
+
+  @override
+  Future<Adoption> checkAdoption(String identity) async {
+    adoptSteps.add('check $identity');
+    return adoptAnswer;
+  }
+
+  @override
+  Future<Adoption> claimPhone(String identity) async {
+    adoptSteps.add('claim $identity');
+    return adoptAnswer;
+  }
 
   @override
   FeedResult? settledFeed(Settlement settlement) => switch (settlement) {

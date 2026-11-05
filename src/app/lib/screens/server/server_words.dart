@@ -1,0 +1,88 @@
+import 'package:flutter/material.dart';
+import 'package:wellfed/src/rust/api/server_error.dart';
+import 'package:wellfed/src/rust/api/server_views.dart';
+import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/icons.dart';
+
+/// What a server error means to the owner, in a sentence.
+String serverErrorWords(ServerError error) => switch (error.kind) {
+  ServerErrorKind.address => 'That is not a server address. It looks like http://192.168.1.20:8080.',
+  ServerErrorKind.redirected => 'The server sent the phone elsewhere. Use this address instead: ${error.message}',
+  ServerErrorKind.unreachable => 'Nothing answered at that address. Check the phone is on the home network.',
+  ServerErrorKind.interrupted => 'The connection broke before the server answered.',
+  ServerErrorKind.badCredentials => 'The name or the password is wrong.',
+  ServerErrorKind.rateLimited => switch (error.retryAfterSeconds) {
+    final int seconds? => 'Too many tries. Try again in $seconds seconds.',
+    null => 'Too many tries. Try again in a while.',
+  },
+  ServerErrorKind.tokenRevoked => 'The server no longer takes this phone. Log in again.',
+  ServerErrorKind.accountDisabled => 'This account has expired. An owner can extend it on the server.',
+  ServerErrorKind.forbidden => 'Your account may not do that.',
+  ServerErrorKind.notFound => 'The server no longer has that.',
+  ServerErrorKind.invalid => 'The server did not take that: ${error.message}',
+  ServerErrorKind.foodInUse => 'A feeder held this food, so it stays in the history.',
+  ServerErrorKind.noCurrentFood => 'Set the food this feeder holds first.',
+  ServerErrorKind.alreadyAdopted => 'The server already has this feeder.',
+  ServerErrorKind.inviteExpired => 'The feeder dropped the invite. Try again.',
+  ServerErrorKind.phoneKeyUnconfirmed => "The server couldn't reach the feeder to confirm this phone. Try again.",
+  ServerErrorKind.phoneKeyRefused => 'The server would not take this phone as yours: ${error.message}',
+  ServerErrorKind.feederOffline => "The server can't reach this feeder right now.",
+  ServerErrorKind.outcomeUnknown => 'The feeder did not answer in time. Check before you try again.',
+  ServerErrorKind.keyReused || ServerErrorKind.refused => 'The server refused: ${error.message}',
+  ServerErrorKind.protocol => 'That does not answer as a Wellfed server of this version.',
+  ServerErrorKind.closed => 'The server connection is closed.',
+};
+
+/// What an account may do, in a word.
+String roleWords(ServerRole role) => switch (role) {
+  ServerRole.owner => 'Owner',
+  ServerRole.member => 'Member',
+  ServerRole.viewer => 'Viewer',
+};
+
+/// A plain page of the server's screens: a back button and a title.
+class ServerPage extends StatelessWidget {
+  const ServerPage({super.key, required this.title, required this.children, this.action});
+
+  final String title;
+  final List<Widget> children;
+
+  /// A button for the bottom right, to add something.
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeTokens c = context.colors;
+    return Scaffold(
+      appBar: AppBar(
+        toolbarHeight: 64,
+        automaticallyImplyLeading: false,
+        titleSpacing: 4,
+        leading: IconButton(
+          tooltip: 'Back',
+          onPressed: () => Navigator.pop(context),
+          icon: StrokeIcon(Glyph.back, color: c.text),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(fontSize: 20, fontWeight: Fonts.semibold, color: c.text),
+        ),
+      ),
+      floatingActionButton: action,
+      body: ListView(padding: const EdgeInsets.all(Space.s4), children: children),
+    );
+  }
+}
+
+/// A line of muted text under a heading.
+class Muted extends StatelessWidget {
+  const Muted(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: context.colors.textMuted),
+  );
+}

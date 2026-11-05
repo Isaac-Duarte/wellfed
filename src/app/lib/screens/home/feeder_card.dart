@@ -68,20 +68,22 @@ class FeederCard extends StatelessWidget {
                             ],
                           ),
                         ),
-                        const SizedBox(width: Space.s2),
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size(0, 44),
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            textStyle: const TextStyle(
-                              fontFamily: Fonts.family,
-                              fontSize: Sizes.base,
-                              fontWeight: Fonts.semibold,
+                        if (!controller.state.viewer) ...[
+                          const SizedBox(width: Space.s2),
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size(0, 44),
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              textStyle: const TextStyle(
+                                fontFamily: Fonts.family,
+                                fontSize: Sizes.base,
+                                fontWeight: Fonts.semibold,
+                              ),
                             ),
+                            onPressed: controller.state.canFeed ? () => feedNow(context, controller) : null,
+                            child: const Text('Feed'),
                           ),
-                          onPressed: controller.state.canFeed ? () => feedNow(context, controller) : null,
-                          child: const Text('Feed'),
-                        ),
+                        ],
                       ],
                     ),
                     if (why != null) ...[
@@ -186,11 +188,14 @@ class FeederCard extends StatelessWidget {
                       ),
                     ],
                     for (final notice in notices) ...[const SizedBox(height: 14), notice],
-                    const SizedBox(height: Space.s4),
-                    FilledButton(
-                      onPressed: controller.state.canFeed ? () => feedNow(context, controller) : null,
-                      child: const Text('Feed now'),
-                    ),
+                    // A viewer's account feeds nothing, so it has no Feed to press.
+                    if (!controller.state.viewer) ...[
+                      const SizedBox(height: Space.s4),
+                      FilledButton(
+                        onPressed: controller.state.canFeed ? () => feedNow(context, controller) : null,
+                        child: const Text('Feed now'),
+                      ),
+                    ],
                     if (controller.state.feed is! FeedIdle) ...[
                       const SizedBox(height: Space.s1),
                       TextButton(

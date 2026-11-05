@@ -97,6 +97,7 @@ extension FeederFeeds on FeederController {
 
   /// What the router said of this feeder's writes since.
   void routerSaid(RouterUpdate update) {
+    _readUnconfirmed();
     switch (update) {
       case RouterUpdate_Path(:final RoutePath? path):
         routed(path);
@@ -158,6 +159,8 @@ extension FeederFeeds on FeederController {
     final int portions = pending.portions ?? now.portions;
     switch (settlement) {
       case Settlement_Started(:final int feed):
+        // Its own call's answer came first: the same feed, already running.
+        if (now case FeedRunning(feed: final int running) when running == feed) return;
         // Its end comes on the server's stream or in the history; past the
         // longest such a feed takes, it shows as uncertain, not running.
         _feedStarted(feed, portions, _ports.feedDueSeconds(portions), key: pending.key, path: pending.path);

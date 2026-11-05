@@ -40,8 +40,10 @@ final class _ServerSide {
 extension FeederServerSide on FeederController {
   /// The server lists it as `id`, for an account whose standing there a
   /// feeder's role names as `role` (`null` for a viewer); `id` `null` when it
-  /// no longer does, or there is no server.
-  void serverListed(String? id, {ClientRole? role}) {
+  /// no longer does, or there is no server. A `viewer` account feeds no
+  /// feeder, listed or not: its phone's own keys are closed too.
+  void serverListed(String? id, {ClientRole? role, bool viewer = false}) {
+    _viewer = viewer;
     final _ServerSide? before = _server;
     _server = id == null
         ? null
@@ -90,7 +92,7 @@ extension FeederServerSide on FeederController {
   /// and the server's link is up.
   FeederState _reached(FeederState next) {
     final _ServerSide? server = _server;
-    final FeederState listed = next.copyWith(serverId: () => server?.id);
+    final FeederState listed = next.copyWith(serverId: () => server?.id, viewer: _viewer);
     final Card? card = server?.card;
     if (_connection == Connection.online || server == null || !server.live || card == null) {
       return listed.copyWith(connection: _connection);

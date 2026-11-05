@@ -4,9 +4,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:wellfed/screens/server/server_screens.dart';
 import 'package:wellfed/screens/setup/name_step.dart';
+import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/server/server.dart';
 import 'package:wellfed/state/settings/backups.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
@@ -32,9 +35,12 @@ class SettingsButton extends StatelessWidget {
 
 /// The app's own settings (15.1).
 class AppSettingsScreen extends StatefulWidget {
-  const AppSettingsScreen({super.key, required this.book, required this.newBackups});
+  const AppSettingsScreen({super.key, required this.book, required this.newBackups, this.server});
 
   final FeederBook book;
+
+  /// The owner's server's screens: its row opens the account, or adding one.
+  final ServerScreens? server;
 
   /// The controller of the backups this phone keeps.
   final BackupsFlow Function() newBackups;
@@ -79,7 +85,7 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([widget.book, _backups]),
+    listenable: Listenable.merge([widget.book, _backups, ?widget.server?.server]),
     builder: (context, _) {
       final ThemeTokens c = context.colors;
       final FeederBook book = widget.book;
@@ -132,6 +138,28 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                 ],
               ),
             ),
+            if (widget.server case final ServerScreens server?)
+              SettingsSection(
+                'Home server',
+                Column(
+                  children: [
+                    SettingsLink(
+                      switch (server.server.state) {
+                        ServerLinked(:final ServerLink link) => link.url,
+                        ServerAbsent() => 'Add a home server',
+                      },
+                      switch (server.server.state) {
+                        ServerLinked(:final ServerLink link) => link.user,
+                        ServerAbsent() => null,
+                      },
+                      first: true,
+                      onTap: () => unawaited(server.open(context)),
+                    ),
+                    if (server.server.state is ServerLinked)
+                      SettingsLink('Pets and foods', null, onTap: () => unawaited(server.openHousehold(context))),
+                  ],
+                ),
+              ),
             SettingsSection(
               'Firmware backups',
               last: true,

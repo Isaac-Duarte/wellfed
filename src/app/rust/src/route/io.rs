@@ -23,7 +23,7 @@ use crate::api::router::{
     Settlement,
 };
 use crate::api::server::{
-    ServerCommand, ServerCommandOutcome, ServerEvent, ServerHandle, ServerUpdate,
+    ServerCommand, ServerCommandOutcome, ServerEvent, ServerHandle, ServerRefusal, ServerUpdate,
 };
 use crate::api::server_error::{ServerError, ServerErrorKind};
 use crate::api::server_views::{
@@ -691,6 +691,7 @@ impl Router {
         tried: FeedTry,
     ) -> RoutedFeed {
         let now = now_ms();
+        let held = state.book.get(key).map(PinRecord::view);
         state.book.ended(key, tried.ended(), now);
         if let (RoutePath::Direct, FeedTry::Started(feed)) = (path, &tried) {
             // Its end may come late, after a gap in what the session reads:
@@ -767,6 +768,18 @@ impl Router {
                 error,
             },
         };
+        // A screen made again while the call was out took the pin up from
+        // `pending` as uncertain, and only hears its end here; the caller's
+        // own screen has the call's answer, and a feed still sending there
+        // is no key's yet.
+        if let Some(pending) = held
+            && let Some(settlement) = feed_settlement(&routed)
+        {
+            state.tell(&[RouterUpdate::Settled {
+                pending,
+                settlement,
+            }]);
+        }
         state.announce();
         routed
     }
@@ -1442,4 +1455,28 @@ fn view_settlement(command: &ServerCommand) -> Option<Settlement> {
         },
         ServerCommandOutcome::Unrecorded => Settlement::Unrecorded,
     })
+}
+
+/// What a feed call's answer settles of its pin, for a screen that holds
+/// only the pin; `None` while it may still have run. A refusal the device
+/// API names no more closely than "other" is left to the bowl.
+fn feed_settlement(routed: &RoutedFeed) -> Option<Settlement> {
+    let refusal = |refusal: FeedRefusal| match refusal {
+        FeedRefusal::Forbidden => Some(ServerRefusal::Forbidden),
+        FeedRefusal::Busy => Some(ServerRefusal::Busy),
+        FeedRefusal::Fault => Some(ServerRefusal::Fault),
+        FeedRefusal::Portions => Some(ServerRefusal::Portions),
+        FeedRefusal::NotFound => Some(ServerRefusal::NotFound),
+        FeedRefusal::Unavailable => Some(ServerRefusal::Unavailable),
+        FeedRefusal::Other => None,
+    };
+    match routed {
+        RoutedFeed::Started { feed, .. } => Some(Settlement::Started { feed: *feed }),
+        RoutedFeed::Refused { refusal: why, .. } => {
+            refusal(*why).map(|refusal| Settlement::Refused { refusal })
+        }
+        RoutedFeed::NotSent { .. } => Some(Settlement::NotSent),
+        RoutedFeed::Settled { settlement, .. } => Some(settlement.clone()),
+        RoutedFeed::Uncertain { .. } | RoutedFeed::Held { .. } => None,
+    }
 }
