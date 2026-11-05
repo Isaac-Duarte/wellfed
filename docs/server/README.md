@@ -20,7 +20,7 @@ One server serves one home, with as many devices as you own in it. Each device i
 
 ## Two paths, one feed
 
-The app's screens don't connect to a server yet. Its Rust half has the router that will carry them, which follows this design and is tested in simulation only. When a server is configured, the app talks to it whenever it can reach it. That way remote access works and the audit log names the person. Each owner's or member's phone also holds its own key on every feeder. When the server is down, the phone uses that key on the home network, for reads and new requests only. A viewer's phone holds no key, so the server alone enforces a viewer's limits.
+The app connects to a server through a router in its Rust half, which follows this design. When a server is configured, the app talks to it whenever it can reach it. That way remote access works and the audit log names the person. Each owner's or member's phone also holds its own key on every feeder. When the server is down, the phone uses that key on the home network, for reads and new requests only. A viewer's phone holds no key, so the server alone enforces a viewer's limits.
 
 The danger is a retry that crosses paths. The server and the phone send different request ids, so a feed that timed out on one path and was retried on the other could feed twice. So **an uncertain write never switches path.** It is resolved on its own path only, from the server's journal under its key or from the feeder's history (a feed by its `Fed` event). It is never resent on the other path. The CLI follows the same rule: each command takes one path, the device API or `wellfed server`, with no fallback between them.
 
