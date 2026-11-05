@@ -61,6 +61,36 @@ Card _fourMealsCard() => fakeCard(
   plans: fullCard().plans,
 );
 
+/// A day with a skip in each standing: breakfast skipped with its time come,
+/// supper offered for a skip, and a late meal skipped with its undo still open.
+Card _skippingCard() {
+  final int supper = DateTime(2026, 11, 2, 17).millisecondsSinceEpoch;
+  final int late = DateTime(2026, 11, 2, 22).millisecondsSinceEpoch;
+  return fakeCard(
+    nextMeal: NextMealView(slot: 2, atMs: supper, minute: 17 * 60, portions: 2),
+    meals: [
+      const MealView(slot: 0, minute: 7 * 60, portions: 2, call: 1, standing: MealStanding.skipKept()),
+      MealView(
+        slot: 2,
+        minute: 17 * 60,
+        portions: 2,
+        call: 1,
+        standing: MealStanding.next(atMs: supper),
+        action: MealAction.skip(dueMs: supper),
+      ),
+      MealView(
+        slot: 3,
+        minute: 22 * 60,
+        portions: 1,
+        call: 0,
+        standing: MealStanding.skipped(atMs: late),
+        action: MealAction.undo(dueMs: late),
+      ),
+    ],
+    plans: fullCard().plans,
+  );
+}
+
 /// Every fact on Today that needs the owner at once: low food, batteries at
 /// 15% with the adapter out, a weak signal, the desiccant overdue, and this
 /// morning's meal cut short by a power loss.
@@ -254,6 +284,20 @@ void main() {
         final FeederController feeder = await goldenFeeder(tester);
         await showPhone(tester, shell(feeder, todayTab), brightness, size: smallPhone);
         await matchesGolden('today_small', brightness);
+      });
+
+      golden('today with skipped meals', (tester) async {
+        final FeederController feeder = await goldenFeeder(tester, card: _skippingCard());
+        await showPhone(tester, shell(feeder, todayTab), brightness);
+        await matchesGolden('today_skipped', brightness);
+      });
+
+      golden("a meal skip's confirmation", (tester) async {
+        final FeederController feeder = await goldenFeeder(tester, card: _skippingCard());
+        await showPhone(tester, shell(feeder, todayTab), brightness);
+        await tester.tap(find.text('Skip'));
+        await tester.pumpAndSettle();
+        await matchesGolden('skip_meal_confirm', brightness);
       });
 
       golden('the schedule', (tester) async {

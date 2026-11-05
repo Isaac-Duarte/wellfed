@@ -477,4 +477,7 @@ enum WriteKind {
   calibration,
   call,
   update,
+
+  /// A meal's skip or its undo.
+  skip,
 }

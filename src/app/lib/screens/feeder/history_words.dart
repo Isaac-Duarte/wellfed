@@ -43,6 +43,16 @@ _Words _describe(BuildContext context, FeederController feeder, HistoryBody body
     HistoryBody_SettingsChanged(:final FedBy by) => quiet(Glyph.sliders, 'Settings changed', who(by)),
     HistoryBody_WifiChanged(:final FedBy by) => quiet(Glyph.wifi, 'Wi-Fi changed', who(by)),
     HistoryBody_PlansChanged(:final FedBy by) => quiet(Glyph.clock, 'Meals changed', who(by)),
+    HistoryBody_Skipped(:final PlatformInt64 dueMs, :final FedBy by) => quiet(
+      Glyph.minus,
+      'Skipped the ${clockTextMs(context, dueMs)} meal',
+      who(by),
+    ),
+    HistoryBody_Unskipped(:final PlatformInt64 dueMs, :final FedBy by) => quiet(
+      Glyph.clock,
+      'Brought back the ${clockTextMs(context, dueMs)} meal',
+      who(by),
+    ),
     HistoryBody_Joined(:final String fingerprint) => quiet(Glyph.add, 'Someone joined', feeder.clientName(fingerprint)),
     HistoryBody_UpdateKeyAdded(:final String fingerprint) => quiet(
       Glyph.key,

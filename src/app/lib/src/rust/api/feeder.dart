@@ -230,6 +230,19 @@ sealed class FeederRequest with _$FeederRequest {
   }) = FeederRequest_PutCalibration;
   const factory FeederRequest.getPlans() = FeederRequest_GetPlans;
 
+  /// Skip one of today's meals, named as the card's `MealAction::Skip`
+  /// names it.
+  const factory FeederRequest.skipMeal({
+    required int slot,
+    required PlatformInt64 dueMs,
+  }) = FeederRequest_SkipMeal;
+
+  /// Undo a meal's skip, named as the card's `MealAction::Undo` names it.
+  const factory FeederRequest.unskipMeal({
+    required int slot,
+    required PlatformInt64 dueMs,
+  }) = FeederRequest_UnskipMeal;
+
   /// The change the owner made to the table they saw.
   const factory FeederRequest.editPlans({
     required PlansView plans,

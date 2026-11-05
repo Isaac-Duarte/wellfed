@@ -102,6 +102,8 @@ pub enum WriteKind {
     Calibration,
     Call,
     Update,
+    /// A meal's skip or its undo.
+    Skip,
 }
 
 /// A write that may have run, pinned to the path it went on.

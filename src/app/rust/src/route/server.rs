@@ -3,7 +3,7 @@
 //! [`super::core`].
 
 use uuid::Uuid;
-use wellfed_api::{ErrorCode, FeederId, Generation, PlansChange, Settings};
+use wellfed_api::{ErrorCode, FeederId, Generation, MealRequest, PlansChange, Settings};
 use wellfed_server_client::{Client, Error, Lock};
 
 use crate::api::feeder::{FeederRefusal, FeederReply, FeederRequest};
@@ -39,6 +39,14 @@ pub(crate) async fn send(
             client.set_lock(id, lock, key).await.map(|()| done(None))
         }
         PinnedWrite::Desiccant => client.reset_desiccant(id, key).await.map(|()| done(None)),
+        PinnedWrite::Skip { slot, due } => client
+            .skip_meal(id, MealRequest { slot, due }, key)
+            .await
+            .map(|()| done(None)),
+        PinnedWrite::Unskip { slot, due } => client
+            .unskip_meal(id, MealRequest { slot, due }, key)
+            .await
+            .map(|()| done(None)),
         PinnedWrite::Plans { base, plans } => client
             .put_plans(id, Generation(base), &PlansChange { plans }, key)
             .await

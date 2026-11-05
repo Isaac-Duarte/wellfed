@@ -66,6 +66,17 @@ pub enum FeederRequest {
         bowl: Bowl,
     },
     GetPlans,
+    /// Skip one of today's meals, named as the card's `MealAction::Skip`
+    /// names it.
+    SkipMeal {
+        slot: u8,
+        due_ms: i64,
+    },
+    /// Undo a meal's skip, named as the card's `MealAction::Undo` names it.
+    UnskipMeal {
+        slot: u8,
+        due_ms: i64,
+    },
     /// The change the owner made to the table they saw.
     EditPlans {
         plans: PlansView,

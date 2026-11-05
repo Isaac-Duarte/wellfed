@@ -252,6 +252,41 @@ void main() {
     expect(after.plans.plans.nonNulls.map((plan) => plan.minute), contains(480));
   });
 
+  test('a meal skipped here shows as skipped, and its undo brings it back', skip: absent, () async {
+    // A few minutes ahead, so the meal is still to come all through the test.
+    final DateTime now = DateTime.now();
+    final int minute = now.hour * 60 + now.minute + 3;
+    if (minute >= 24 * 60) return markTestSkipped('no minute is left today for a meal to skip');
+    final FeederReply before = await feeder.ask(const FeederRequest.getPlans());
+    if (before is! FeederReply_Plans) fail('no plans: $before');
+    final plan = PlanView(minute: minute, portions: 1, days: Weekday.values, enabled: true, call: 0);
+    final FeederReply added = await feeder.ask(
+      FeederRequest.editPlans(
+        plans: before.plans,
+        edit: PlanEdit.add(plan: plan),
+      ),
+    );
+    expect(added, isA<FeederReply_Done>());
+
+    MealView? meal(FeederState state) => state.card?.meals.where((meal) => meal.minute == minute).firstOrNull;
+    await _until(feeder, (state) => meal(state)?.action is MealAction_Skip);
+    final MealView? offered = meal(feeder.state);
+    if (offered == null) fail('the meal left the card');
+    final MealAction? skip = offered.action;
+    if (skip is! MealAction_Skip) fail('no skip offered: $skip');
+    final FeederReply skipped = await feeder.ask(FeederRequest.skipMeal(slot: offered.slot, dueMs: skip.dueMs));
+    expect(skipped, isA<FeederReply_Done>());
+
+    // The skip's event has the session read the plans again.
+    await _until(feeder, (state) => meal(state)?.standing is MealStanding_Skipped);
+    final MealAction? undo = meal(feeder.state)?.action;
+    if (undo is! MealAction_Undo) fail('no undo offered: $undo');
+    expect(undo.dueMs, skip.dueMs, reason: 'the same meal');
+    final FeederReply undone = await feeder.ask(FeederRequest.unskipMeal(slot: offered.slot, dueMs: undo.dueMs));
+    expect(undone, isA<FeederReply_Done>());
+    await _until(feeder, (state) => meal(state)?.action is MealAction_Skip);
+  });
+
   test('a feed goes out once and comes back as its end', skip: absent, () async {
     expect(feeder.state.canFeed, isTrue, reason: 'card: ${feeder.state.card?.blocked}');
     feeder.feedNow(1);

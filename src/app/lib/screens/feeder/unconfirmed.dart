@@ -23,6 +23,7 @@ String writeWords(WriteKind kind) => switch (kind) {
   WriteKind.calibration => 'The portion size',
   WriteKind.call => 'A meal call change',
   WriteKind.update => 'A firmware update',
+  WriteKind.skip => "A meal's skip or its undo",
 };
 
 /// Changes other than a feed that went out and never said how they ended.

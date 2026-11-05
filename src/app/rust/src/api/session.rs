@@ -80,7 +80,8 @@ pub struct NextMealView {
     pub portions: u8,
 }
 
-/// One enabled plan that runs today.
+/// One of today's meals: an enabled plan that runs today, or one that fed
+/// or was skipped today.
 pub struct MealView {
     pub slot: u8,
     pub minute: u16,
@@ -88,6 +89,15 @@ pub struct MealView {
     /// Plays of the meal call before it.
     pub call: u8,
     pub standing: MealStanding,
+    /// What the row may offer; the request names the meal by `due_ms`.
+    pub action: Option<MealAction>,
+}
+
+/// A skip of today's meal, or its undo, as `wellfed_client::plans::today`
+/// offers it: the screen sends the instant back unread.
+pub enum MealAction {
+    Skip { due_ms: i64 },
+    Undo { due_ms: i64 },
 }
 
 pub enum MealStanding {
@@ -101,6 +111,13 @@ pub enum MealStanding {
         at_ms: i64,
     },
     Later,
+    /// Skipped on request, and still to come: an undo before `at_ms` brings
+    /// it back.
+    Skipped {
+        at_ms: i64,
+    },
+    /// Skipped on request, and its time has come: it stays skipped.
+    SkipKept,
 }
 
 /// Who asked for a feed or a change.
@@ -181,6 +198,18 @@ pub enum HistoryBody {
     },
     Food {
         level: FoodLevel,
+    },
+    /// A client skipped one of today's meals.
+    Skipped {
+        slot: u8,
+        due_ms: i64,
+        by: FedBy,
+    },
+    /// A client undid a meal's skip before its time.
+    Unskipped {
+        slot: u8,
+        due_ms: i64,
+        by: FedBy,
     },
     /// Events that left the ring before they were read.
     Gap {

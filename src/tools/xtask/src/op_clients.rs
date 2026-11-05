@@ -32,22 +32,14 @@ const SHARED: [&str; 3] = [
 /// Written by the code generator from the bridge's own types.
 const GENERATED: &str = "frb_generated.rs";
 
-/// Skipping a meal is served by the feeder and the CLI before the app offers
-/// it; the app's Today screen removes these entries.
-const SKIP_PENDING: &str = "the feeder and the CLI serve it ahead of the app, whose Today screen \
-                            removes this entry";
 /// What the CLI does not do, with why.
 const NOT_IN_CLI: [(&str, &str); 0] = [];
 /// What the app does not do, with why.
-const NOT_IN_APP: [(&str, &str); 3] = [
-    ("SkipMeal", SKIP_PENDING),
-    ("UnskipMeal", SKIP_PENDING),
-    (
-        "UpdateKeyStatement",
-        "a statement is signed offline by a built-in or the release key, and the phone holds no \
+const NOT_IN_APP: [(&str, &str); 1] = [(
+    "UpdateKeyStatement",
+    "a statement is signed offline by a built-in or the release key, and the phone holds no \
          key a feeder trusts; the owner's computer carries one to the feeder",
-    ),
-];
+)];
 
 /// The variants `source` declares for `enum`, in order.
 fn variants<'a>(source: &'a str, name: &str) -> Vec<&'a str> {

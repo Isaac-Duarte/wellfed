@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/screens/feeder/feed_detail.dart';
 import 'package:wellfed/screens/feeder/history.dart';
+import 'package:wellfed/screens/feeder/meal_skip.dart';
 import 'package:wellfed/screens/feeder/portion.dart' show gramsText;
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -299,6 +300,8 @@ class _Row extends StatelessWidget {
                 ],
               ),
             ),
+            if (moment.meal case api.MealView(:final api.MealAction action?) && final api.MealView meal)
+              MealSkipButton(feeder: feeder, meal: meal, action: action),
             if (fed != null) StrokeIcon(Glyph.chevron, size: 16, color: c.textMuted),
           ],
         ),
@@ -338,6 +341,15 @@ class _Row extends StatelessWidget {
           null => 'No feed recorded',
         },
         true,
+      ),
+      // Skipped on request: quiet, and not a problem, unlike a meal the
+      // feeder couldn't run.
+      (api.MealStanding_Skipped() || api.MealStanding_SkipKept(), _) => (
+        Glyph.minus,
+        c.textMuted,
+        'Skipped · ${portionsText(meal?.portions ?? 0)}',
+        'Skipped on request',
+        false,
       ),
       (api.MealStanding_Next(:final PlatformInt64 atMs), _) => (
         Glyph.clock,

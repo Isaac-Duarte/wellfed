@@ -9,7 +9,7 @@ use wellfed_model::{Calibration, Op};
 
 use crate::api::feeder::{FeederRequest, NotAsked};
 use crate::api::router::WriteKind;
-use crate::requests::{edited_plans, portion_mg, settings_patch};
+use crate::requests::{edited_plans, meal_due, portion_mg, settings_patch};
 use crate::route::pins::PinnedWrite;
 
 pub(crate) enum Shape {
@@ -60,6 +60,14 @@ pub(crate) fn shape(request: &FeederRequest) -> Shape {
         }),
         FeederRequest::SetLock { locked } => write(PinnedWrite::Lock { locked: *locked }),
         FeederRequest::ResetDesiccant => write(PinnedWrite::Desiccant),
+        FeederRequest::SkipMeal { slot, due_ms } => match meal_due(*due_ms) {
+            Some(due) => write(PinnedWrite::Skip { slot: *slot, due }),
+            None => Shape::NotAsked(NotAsked::EmptySlot),
+        },
+        FeederRequest::UnskipMeal { slot, due_ms } => match meal_due(*due_ms) {
+            Some(due) => write(PinnedWrite::Unskip { slot: *slot, due }),
+            None => Shape::NotAsked(NotAsked::EmptySlot),
+        },
         FeederRequest::EditPlans { plans, edit } => match edited_plans(plans, edit) {
             Ok((base, _, table)) => write(PinnedWrite::Plans {
                 base: base.0,

@@ -2,8 +2,8 @@
 //! own file (`pending.json` next to `wellfed.json`), so the pin outlives the
 //! app: a write that may have run is resolved on the path it went on after a
 //! restart too. It holds no secrets: a write a server route carries keeps
-//! its body (a feed, a cancel, settings, the lock, the desiccant, the plans,
-//! the calibration), a meal call write and anything else (a Wi-Fi change
+//! its body (a feed, a cancel, settings, the lock, the desiccant, a meal's
+//! skip, the plans, the calibration), a meal call write and anything else (a Wi-Fi change
 //! among them) only its kind. Nothing is ever sent again from a pin.
 //!
 //! One router owns the file at a time, so two routers can never each think
@@ -32,6 +32,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use wellfed_formats::private;
@@ -110,6 +111,15 @@ pub(crate) enum PinnedWrite {
         locked: bool,
     },
     Desiccant,
+    /// A skip of one of today's meals, named by its instant.
+    Skip {
+        slot: u8,
+        due: Timestamp,
+    },
+    Unskip {
+        slot: u8,
+        due: Timestamp,
+    },
     Plans {
         base: u32,
         plans: [Option<Plan>; PLANS],
@@ -138,6 +148,7 @@ impl PinnedWrite {
             Self::Settings { .. } => WriteKind::Settings,
             Self::Lock { .. } => WriteKind::Lock,
             Self::Desiccant => WriteKind::Desiccant,
+            Self::Skip { .. } | Self::Unskip { .. } => WriteKind::Skip,
             Self::Plans { .. } => WriteKind::Plans,
             Self::Calibration { .. } => WriteKind::Calibration,
             Self::CallUpload | Self::CallDelete | Self::CallPlay => WriteKind::Call,

@@ -121,6 +121,7 @@ class _Standing extends StatelessWidget {
       api.MealStanding_Passed() => _Words('No feed recorded', c.textMuted),
       api.MealStanding_Next(:final PlatformInt64 atMs) => _Words(untilText(clock.now(), atMs), c.accent),
       api.MealStanding_Later() => _Words('Later', c.textMuted),
+      api.MealStanding_Skipped() || api.MealStanding_SkipKept() => _Words('Skipped', c.textMuted),
     };
   }
 }

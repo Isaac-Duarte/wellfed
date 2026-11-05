@@ -5198,6 +5198,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MealAction dco_decode_box_autoadd_meal_action(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_meal_action(raw);
+  }
+
+  @protected
   MealReminder dco_decode_box_autoadd_meal_reminder(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_meal_reminder(raw);
@@ -6024,25 +6030,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 18:
         return FeederRequest_GetPlans();
       case 19:
+        return FeederRequest_SkipMeal(
+          slot: dco_decode_u_8(raw[1]),
+          dueMs: dco_decode_i_64(raw[2]),
+        );
+      case 20:
+        return FeederRequest_UnskipMeal(
+          slot: dco_decode_u_8(raw[1]),
+          dueMs: dco_decode_i_64(raw[2]),
+        );
+      case 21:
         return FeederRequest_EditPlans(
           plans: dco_decode_box_autoadd_plans_view(raw[1]),
           edit: dco_decode_box_autoadd_plan_edit(raw[2]),
         );
-      case 20:
+      case 22:
         return FeederRequest_GetCall();
-      case 21:
+      case 23:
         return FeederRequest_UploadCall(
           wav: dco_decode_list_prim_u_8_strict(raw[1]),
         );
-      case 22:
-        return FeederRequest_DeleteCall();
-      case 23:
-        return FeederRequest_PlayCall();
       case 24:
-        return FeederRequest_UpdateState();
+        return FeederRequest_DeleteCall();
       case 25:
-        return FeederRequest_CancelUpdate();
+        return FeederRequest_PlayCall();
       case 26:
+        return FeederRequest_UpdateState();
+      case 27:
+        return FeederRequest_CancelUpdate();
+      case 28:
         return FeederRequest_TailLog(
           after: dco_decode_opt_box_autoadd_u_32(raw[1]),
         );
@@ -6151,11 +6167,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 16:
         return HistoryBody_Food(level: dco_decode_food_level(raw[1]));
       case 17:
+        return HistoryBody_Skipped(
+          slot: dco_decode_u_8(raw[1]),
+          dueMs: dco_decode_i_64(raw[2]),
+          by: dco_decode_box_autoadd_fed_by(raw[3]),
+        );
+      case 18:
+        return HistoryBody_Unskipped(
+          slot: dco_decode_u_8(raw[1]),
+          dueMs: dco_decode_i_64(raw[2]),
+          by: dco_decode_box_autoadd_fed_by(raw[3]),
+        );
+      case 19:
         return HistoryBody_Gap(
           from: dco_decode_u_64(raw[1]),
           to: dco_decode_u_64(raw[2]),
         );
-      case 18:
+      case 20:
         return HistoryBody_Other();
       default:
         throw Exception("unreachable");
@@ -6673,6 +6701,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MealAction dco_decode_meal_action(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return MealAction_Skip(dueMs: dco_decode_i_64(raw[1]));
+      case 1:
+        return MealAction_Undo(dueMs: dco_decode_i_64(raw[1]));
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
   MealReminder dco_decode_meal_reminder(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     switch (raw[0]) {
@@ -6699,6 +6740,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return MealStanding_Next(atMs: dco_decode_i_64(raw[1]));
       case 3:
         return MealStanding_Later();
+      case 4:
+        return MealStanding_Skipped(atMs: dco_decode_i_64(raw[1]));
+      case 5:
+        return MealStanding_SkipKept();
       default:
         throw Exception("unreachable");
     }
@@ -6708,14 +6753,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MealView dco_decode_meal_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return MealView(
       slot: dco_decode_u_8(arr[0]),
       minute: dco_decode_u_16(arr[1]),
       portions: dco_decode_u_8(arr[2]),
       call: dco_decode_u_8(arr[3]),
       standing: dco_decode_meal_standing(arr[4]),
+      action: dco_decode_opt_box_autoadd_meal_action(arr[5]),
     );
   }
 
@@ -6887,6 +6933,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   KnownServer? dco_decode_opt_box_autoadd_known_server(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_known_server(raw);
+  }
+
+  @protected
+  MealAction? dco_decode_opt_box_autoadd_meal_action(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_meal_action(raw);
   }
 
   @protected
@@ -9351,6 +9403,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MealAction sse_decode_box_autoadd_meal_action(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_meal_action(deserializer));
+  }
+
+  @protected
   MealReminder sse_decode_box_autoadd_meal_reminder(
     SseDeserializer deserializer,
   ) {
@@ -10310,23 +10368,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 18:
         return FeederRequest_GetPlans();
       case 19:
+        var var_slot = sse_decode_u_8(deserializer);
+        var var_dueMs = sse_decode_i_64(deserializer);
+        return FeederRequest_SkipMeal(slot: var_slot, dueMs: var_dueMs);
+      case 20:
+        var var_slot = sse_decode_u_8(deserializer);
+        var var_dueMs = sse_decode_i_64(deserializer);
+        return FeederRequest_UnskipMeal(slot: var_slot, dueMs: var_dueMs);
+      case 21:
         var var_plans = sse_decode_box_autoadd_plans_view(deserializer);
         var var_edit = sse_decode_box_autoadd_plan_edit(deserializer);
         return FeederRequest_EditPlans(plans: var_plans, edit: var_edit);
-      case 20:
+      case 22:
         return FeederRequest_GetCall();
-      case 21:
+      case 23:
         var var_wav = sse_decode_list_prim_u_8_strict(deserializer);
         return FeederRequest_UploadCall(wav: var_wav);
-      case 22:
-        return FeederRequest_DeleteCall();
-      case 23:
-        return FeederRequest_PlayCall();
       case 24:
-        return FeederRequest_UpdateState();
+        return FeederRequest_DeleteCall();
       case 25:
-        return FeederRequest_CancelUpdate();
+        return FeederRequest_PlayCall();
       case 26:
+        return FeederRequest_UpdateState();
+      case 27:
+        return FeederRequest_CancelUpdate();
+      case 28:
         var var_after = sse_decode_opt_box_autoadd_u_32(deserializer);
         return FeederRequest_TailLog(after: var_after);
       default:
@@ -10437,10 +10503,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_level = sse_decode_food_level(deserializer);
         return HistoryBody_Food(level: var_level);
       case 17:
+        var var_slot = sse_decode_u_8(deserializer);
+        var var_dueMs = sse_decode_i_64(deserializer);
+        var var_by = sse_decode_box_autoadd_fed_by(deserializer);
+        return HistoryBody_Skipped(
+          slot: var_slot,
+          dueMs: var_dueMs,
+          by: var_by,
+        );
+      case 18:
+        var var_slot = sse_decode_u_8(deserializer);
+        var var_dueMs = sse_decode_i_64(deserializer);
+        var var_by = sse_decode_box_autoadd_fed_by(deserializer);
+        return HistoryBody_Unskipped(
+          slot: var_slot,
+          dueMs: var_dueMs,
+          by: var_by,
+        );
+      case 19:
         var var_from = sse_decode_u_64(deserializer);
         var var_to = sse_decode_u_64(deserializer);
         return HistoryBody_Gap(from: var_from, to: var_to);
-      case 18:
+      case 20:
         return HistoryBody_Other();
       default:
         throw UnimplementedError('');
@@ -11168,6 +11252,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MealAction sse_decode_meal_action(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        var var_dueMs = sse_decode_i_64(deserializer);
+        return MealAction_Skip(dueMs: var_dueMs);
+      case 1:
+        var var_dueMs = sse_decode_i_64(deserializer);
+        return MealAction_Undo(dueMs: var_dueMs);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
   MealReminder sse_decode_meal_reminder(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -11199,6 +11300,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return MealStanding_Next(atMs: var_atMs);
       case 3:
         return MealStanding_Later();
+      case 4:
+        var var_atMs = sse_decode_i_64(deserializer);
+        return MealStanding_Skipped(atMs: var_atMs);
+      case 5:
+        return MealStanding_SkipKept();
       default:
         throw UnimplementedError('');
     }
@@ -11212,12 +11318,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_portions = sse_decode_u_8(deserializer);
     var var_call = sse_decode_u_8(deserializer);
     var var_standing = sse_decode_meal_standing(deserializer);
+    var var_action = sse_decode_opt_box_autoadd_meal_action(deserializer);
     return MealView(
       slot: var_slot,
       minute: var_minute,
       portions: var_portions,
       call: var_call,
       standing: var_standing,
+      action: var_action,
     );
   }
 
@@ -11474,6 +11582,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_known_server(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  MealAction? sse_decode_opt_box_autoadd_meal_action(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_meal_action(deserializer));
     } else {
       return null;
     }
@@ -14507,6 +14628,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_meal_action(
+    MealAction self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_meal_action(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_meal_reminder(
     MealReminder self,
     SseSerializer serializer,
@@ -15417,25 +15547,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_bowl(bowl, serializer);
       case FeederRequest_GetPlans():
         sse_encode_i_32(18, serializer);
-      case FeederRequest_EditPlans(plans: final plans, edit: final edit):
+      case FeederRequest_SkipMeal(slot: final slot, dueMs: final dueMs):
         sse_encode_i_32(19, serializer);
+        sse_encode_u_8(slot, serializer);
+        sse_encode_i_64(dueMs, serializer);
+      case FeederRequest_UnskipMeal(slot: final slot, dueMs: final dueMs):
+        sse_encode_i_32(20, serializer);
+        sse_encode_u_8(slot, serializer);
+        sse_encode_i_64(dueMs, serializer);
+      case FeederRequest_EditPlans(plans: final plans, edit: final edit):
+        sse_encode_i_32(21, serializer);
         sse_encode_box_autoadd_plans_view(plans, serializer);
         sse_encode_box_autoadd_plan_edit(edit, serializer);
       case FeederRequest_GetCall():
-        sse_encode_i_32(20, serializer);
+        sse_encode_i_32(22, serializer);
       case FeederRequest_UploadCall(wav: final wav):
-        sse_encode_i_32(21, serializer);
+        sse_encode_i_32(23, serializer);
         sse_encode_list_prim_u_8_strict(wav, serializer);
       case FeederRequest_DeleteCall():
-        sse_encode_i_32(22, serializer);
-      case FeederRequest_PlayCall():
-        sse_encode_i_32(23, serializer);
-      case FeederRequest_UpdateState():
         sse_encode_i_32(24, serializer);
-      case FeederRequest_CancelUpdate():
+      case FeederRequest_PlayCall():
         sse_encode_i_32(25, serializer);
-      case FeederRequest_TailLog(after: final after):
+      case FeederRequest_UpdateState():
         sse_encode_i_32(26, serializer);
+      case FeederRequest_CancelUpdate():
+        sse_encode_i_32(27, serializer);
+      case FeederRequest_TailLog(after: final after):
+        sse_encode_i_32(28, serializer);
         sse_encode_opt_box_autoadd_u_32(after, serializer);
     }
   }
@@ -15527,12 +15665,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case HistoryBody_Food(level: final level):
         sse_encode_i_32(16, serializer);
         sse_encode_food_level(level, serializer);
-      case HistoryBody_Gap(from: final from, to: final to):
+      case HistoryBody_Skipped(
+        slot: final slot,
+        dueMs: final dueMs,
+        by: final by,
+      ):
         sse_encode_i_32(17, serializer);
+        sse_encode_u_8(slot, serializer);
+        sse_encode_i_64(dueMs, serializer);
+        sse_encode_box_autoadd_fed_by(by, serializer);
+      case HistoryBody_Unskipped(
+        slot: final slot,
+        dueMs: final dueMs,
+        by: final by,
+      ):
+        sse_encode_i_32(18, serializer);
+        sse_encode_u_8(slot, serializer);
+        sse_encode_i_64(dueMs, serializer);
+        sse_encode_box_autoadd_fed_by(by, serializer);
+      case HistoryBody_Gap(from: final from, to: final to):
+        sse_encode_i_32(19, serializer);
         sse_encode_u_64(from, serializer);
         sse_encode_u_64(to, serializer);
       case HistoryBody_Other():
-        sse_encode_i_32(18, serializer);
+        sse_encode_i_32(20, serializer);
     }
   }
 
@@ -16173,6 +16329,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_meal_action(MealAction self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case MealAction_Skip(dueMs: final dueMs):
+        sse_encode_i_32(0, serializer);
+        sse_encode_i_64(dueMs, serializer);
+      case MealAction_Undo(dueMs: final dueMs):
+        sse_encode_i_32(1, serializer);
+        sse_encode_i_64(dueMs, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_meal_reminder(MealReminder self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     switch (self) {
@@ -16198,6 +16367,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_64(atMs, serializer);
       case MealStanding_Later():
         sse_encode_i_32(3, serializer);
+      case MealStanding_Skipped(atMs: final atMs):
+        sse_encode_i_32(4, serializer);
+        sse_encode_i_64(atMs, serializer);
+      case MealStanding_SkipKept():
+        sse_encode_i_32(5, serializer);
     }
   }
 
@@ -16209,6 +16383,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_8(self.portions, serializer);
     sse_encode_u_8(self.call, serializer);
     sse_encode_meal_standing(self.standing, serializer);
+    sse_encode_opt_box_autoadd_meal_action(self.action, serializer);
   }
 
   @protected
@@ -16449,6 +16624,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_known_server(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_meal_action(
+    MealAction? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_meal_action(self, serializer);
     }
   }
 

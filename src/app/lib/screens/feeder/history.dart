@@ -34,6 +34,8 @@ bool _shown(_Filter filter, HistoryBody body) => switch (filter) {
     HistoryBody_SettingsChanged() ||
     HistoryBody_WifiChanged() ||
     HistoryBody_PlansChanged() ||
+    HistoryBody_Skipped() ||
+    HistoryBody_Unskipped() ||
     HistoryBody_Joined() ||
     HistoryBody_UpdateKeyAdded() ||
     HistoryBody_Revoked() ||

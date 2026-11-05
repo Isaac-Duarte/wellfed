@@ -202,6 +202,16 @@ pub enum MealState {
     SkipKept,
 }
 
+/// What a client may offer for one of today's meals, with the instant the
+/// request names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MealAction {
+    /// The plan's next meal, today and still to come ([`to_skip`]).
+    Skip { due: Timestamp },
+    /// The skipped meal, still to come ([`to_undo`]).
+    Undo { due: Timestamp },
+}
+
 /// One of today's meals by the feeder's local calendar: an enabled plan
 /// that runs today, or one that fed or was skipped today.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -211,6 +221,8 @@ pub struct Meal {
     pub portions: u8,
     pub call: u8,
     pub state: MealState,
+    /// `None` for a meal that fed, passed, or whose skip stays.
+    pub action: Option<MealAction>,
 }
 
 /// Today's meals in `zone`, earliest first. `feeds` is the history as far as
@@ -253,12 +265,20 @@ pub fn today(plans: &Plans, feeds: &[Feed], now: Timestamp, zone: &TimeZone) -> 
                 (None, None, _) if plan.minute <= minute_now => MealState::Passed,
                 (None, None, _) => MealState::Later,
             };
+            let action = match state {
+                MealState::Skipped { at } => Some(MealAction::Undo { due: at }),
+                MealState::Next { .. } | MealState::Later => to_skip(plans, slot, now, zone)
+                    .ok()
+                    .map(|due| MealAction::Skip { due }),
+                MealState::Fed(_) | MealState::Passed | MealState::SkipKept => None,
+            };
             Some(Meal {
                 slot,
                 minute: plan.minute,
                 portions: plan.portions,
                 call: plan.call,
                 state,
+                action,
             })
         })
         .collect();
@@ -459,6 +479,14 @@ mod tests {
                 (2, MealState::Later),
             ]
         );
+        assert_eq!(
+            meals[3].action,
+            Some(MealAction::Skip {
+                due: "2026-10-30T18:30:00Z".parse().unwrap()
+            }),
+            "a later meal today can be skipped too"
+        );
+        assert_eq!((meals[0].action, meals[1].action), (None, None));
     }
 
     #[test]
@@ -510,10 +538,8 @@ mod tests {
         let now: Timestamp = "2026-10-30T12:04:00Z".parse().unwrap();
         let skipped = meals_skipping(&[(0, "2026-10-30T07:30:00Z"), (1, "2026-10-30T12:30:00Z")]);
 
-        let states: Vec<_> = today(&skipped, &[], now, &zone)
-            .iter()
-            .map(|meal| (meal.slot, meal.state))
-            .collect();
+        let meals = today(&skipped, &[], now, &zone);
+        let states: Vec<_> = meals.iter().map(|meal| (meal.slot, meal.state)).collect();
         assert_eq!(
             states,
             [
@@ -531,6 +557,20 @@ mod tests {
                     }
                 ),
             ]
+        );
+        let actions: Vec<_> = meals.iter().map(|meal| meal.action).collect();
+        assert_eq!(
+            actions,
+            [
+                None,
+                Some(MealAction::Undo {
+                    due: "2026-10-30T12:30:00Z".parse().unwrap()
+                }),
+                Some(MealAction::Skip {
+                    due: "2026-10-30T18:30:00Z".parse().unwrap()
+                }),
+            ],
+            "a kept skip offers nothing"
         );
     }
 

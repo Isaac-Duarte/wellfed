@@ -353,6 +353,20 @@ sealed class HistoryBody with _$HistoryBody {
       HistoryBody_DispenseRefused;
   const factory HistoryBody.food({required FoodLevel level}) = HistoryBody_Food;
 
+  /// A client skipped one of today's meals.
+  const factory HistoryBody.skipped({
+    required int slot,
+    required PlatformInt64 dueMs,
+    required FedBy by,
+  }) = HistoryBody_Skipped;
+
+  /// A client undid a meal's skip before its time.
+  const factory HistoryBody.unskipped({
+    required int slot,
+    required PlatformInt64 dueMs,
+    required FedBy by,
+  }) = HistoryBody_Unskipped;
+
   /// Events that left the ring before they were read.
   const factory HistoryBody.gap({required BigInt from, required BigInt to}) =
       HistoryBody_Gap;
@@ -383,6 +397,16 @@ class HistoryEntry {
 }
 
 @freezed
+sealed class MealAction with _$MealAction {
+  const MealAction._();
+
+  const factory MealAction.skip({required PlatformInt64 dueMs}) =
+      MealAction_Skip;
+  const factory MealAction.undo({required PlatformInt64 dueMs}) =
+      MealAction_Undo;
+}
+
+@freezed
 sealed class MealStanding with _$MealStanding {
   const MealStanding._();
 
@@ -396,9 +420,18 @@ sealed class MealStanding with _$MealStanding {
   const factory MealStanding.next({required PlatformInt64 atMs}) =
       MealStanding_Next;
   const factory MealStanding.later() = MealStanding_Later;
+
+  /// Skipped on request, and still to come: an undo before `at_ms` brings
+  /// it back.
+  const factory MealStanding.skipped({required PlatformInt64 atMs}) =
+      MealStanding_Skipped;
+
+  /// Skipped on request, and its time has come: it stays skipped.
+  const factory MealStanding.skipKept() = MealStanding_SkipKept;
 }
 
-/// One enabled plan that runs today.
+/// One of today's meals: an enabled plan that runs today, or one that fed
+/// or was skipped today.
 class MealView {
   final int slot;
   final int minute;
@@ -408,12 +441,16 @@ class MealView {
   final int call;
   final MealStanding standing;
 
+  /// What the row may offer; the request names the meal by `due_ms`.
+  final MealAction? action;
+
   const MealView({
     required this.slot,
     required this.minute,
     required this.portions,
     required this.call,
     required this.standing,
+    this.action,
   });
 
   @override
@@ -422,7 +459,8 @@ class MealView {
       minute.hashCode ^
       portions.hashCode ^
       call.hashCode ^
-      standing.hashCode;
+      standing.hashCode ^
+      action.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -433,7 +471,8 @@ class MealView {
           minute == other.minute &&
           portions == other.portions &&
           call == other.call &&
-          standing == other.standing;
+          standing == other.standing &&
+          action == other.action;
 }
 
 class NextMealView {
