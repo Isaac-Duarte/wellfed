@@ -53,6 +53,7 @@ Feeder components:
 | [Desiccant reminder](firmware/desiccant.md) | Counting the days until the desiccant pack is due |
 | [Clock](firmware/clock.md) | Wall clock, offline time and missed time |
 | [Power](firmware/power.md) | The supply, the battery floor, brownout and sleep |
+| [Power bench checks](firmware/power-bench-checks.md) | Checking the readings, the floor, the brownout hold and battery mode on the bench |
 
 ## Hardware
 

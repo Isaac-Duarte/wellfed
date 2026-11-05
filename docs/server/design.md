@@ -189,6 +189,18 @@ Roles are owner, member and viewer. The service's `Permission` enum and its one 
 
 **The audit log** (`GET /audit`) is the command journal interleaved with account changes: setup, logins and failed logins with the client's address, users created, changed and deleted, passwords set, tokens made and revoked, and changes to the home. A journal row joins the log through a trigger in the statement that records it, so no write reaches a feeder unlogged. Owner data and adoptions aren't in it yet. It's kept forever.
 
+### Phone keys
+
+Owners' and members' phones hold their own feeder keys beside the server's, for when the server is down ([two paths, one feed](README.md#two-paths-one-feed)). A phone that paired before the server claims its key with `POST /feeders/{id}/phones`, or names it on adoption (`phone_key` in `POST /feeders`). The server checks the feeder lists the key, then records it as that account's, so account changes revoke it.
+
+- **A refused claim leaves the adoption standing**: `409 phone_key_not_listed` if the feeder doesn't list it, `409 phone_key_unconfirmed` if it couldn't be read. Claim again once it's online.
+- **A repeated claim returns its record**, so retrying a lost answer is safe.
+- **Only owners claim new keys**, with a phone's token and no expiry on account or token. The feeder can't prove which phone holds a key, so a claim trusts the account; a member could claim and then revoke someone else's. So a member's claim of an unrecorded key is `403 phone_claim_owners_only`.
+- **A member's phone that paired before the server** asks for an invite (`POST /feeders/{id}/invites`) and joins with a new key; the old one shows unowned for an owner to revoke.
+- **Never claimable:** the server's own key, a client an owner kept, a key the feeder lists as a server's or update signer's, or another phone's key.
+
+**Route parity.** `wellfed_service::parity` gives every device operation the app can make a server route or a stated reason for none. It matches exhaustively over the device API's operations, so a new operation doesn't build until it has one.
+
 ## Commands and feeds
 
 **The command journal** records every write before it is sent: its key, user, token, feeder, kind, the SHA-256 of the request's canonical JSON, the device request ID, and its state (`sent`, `answered`, `unknown`, `resolved`) with the outcome. The device request ID is a hash of the user, the feeder, the kind of write and the `Idempotency-Key`, since every user shares the server's key on the feeder. A key reused for a different request is refused `422 key_reused`. The journal is kept forever.

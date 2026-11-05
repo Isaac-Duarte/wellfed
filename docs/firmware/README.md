@@ -36,7 +36,7 @@ From the bottom up:
 | SDK runtime | Startup with outputs stopped, the watchdog, Wi-Fi, flash coordination, updates and boot confirmation | [Startup diagnostics](startup-diagnostics.md), [OTA design](ota-design.md), [bank policy](bank-policy.md) |
 | Feeding owner | The motor, beams and feedback under supervision, and the journal | [Motor pulse](motor-pulse.md), [jams and sensor faults](jams-and-sensor-faults.md), [calibration](calibration.md) |
 | Product | The loop: the panel, the device API, pairing, events and settings | [Device API](device-api.md), [pairing](pairing.md), [Bluetooth](bluetooth.md) |
-| Peripherals | Buttons, lights, speaker, clock and power | [Buttons](buttons.md), [indicators](indicators.md), [audio](audio.md), [clock](clock.md), [power](power.md), [optical inputs](optical-inputs.md) |
+| Peripherals | Buttons, lights, speaker, clock and power | [Buttons](buttons.md), [indicators](indicators.md), [audio](audio.md), [clock](clock.md), [power](power.md) and its [bench checks](power-bench-checks.md), [optical inputs](optical-inputs.md) |
 | Schedules | Feeding plans: when each runs, at most once | [Schedules](schedules.md) |
 | Reminders | The desiccant reminder's count, from the last replacement | [Desiccant reminder](desiccant.md) |
 
