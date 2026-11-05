@@ -1,6 +1,6 @@
 # Device API
 
-This page explains how the feeder serves its encrypted API, for contributors working on the firmware or a client, and for owners who want to know what happens when they tap Feed. Each operation's answers and refusals are in [operations](device-api-ops.md), and statistics, traces, the log and the stock backup in [diagnostics](device-api-diagnostics.md). The types are in [`wellfed-proto`](../../src/product/wellfed-proto/src/lib.rs), and the server's use of the API in [the server docs](../server/README.md).
+This page explains how the feeder serves its encrypted API, for contributors working on the firmware or a client, and for owners who want to know what happens when they tap Feed. Each operation's answers and refusals are in [operations](device-api-ops.md), along with the parts of the firmware behind them: the settings writer and its record, Wi-Fi join and fallback, the lock's box and the hopper beam's filter. and statistics, traces, the log and the stock backup in [diagnostics](device-api-diagnostics.md). The types are in [`wellfed-proto`](../../src/product/wellfed-proto/src/lib.rs), and the server's use of the API in [the server docs](../server/README.md).
 
 ## The one idea
 
@@ -88,7 +88,7 @@ The feeder checks a session's key against the enrolled clients the settings writ
 
 **A join during a feed** waits in the Wi-Fi task until the owner is at rest with its outputs stopped, for at most `FEED_BOUND_MS`: the owner's cap on a feed's emitters-on time plus 2 s, about 9 min 40 s for 48 portions. `PLOWN1 joins …` counts waits, and joins forced past that bound.
 
-**A storage write running** when a feed comes makes it wait, for at most `WRITE_WAIT_MS`: 3 s, one record's erase and two programs at their whole lease budget, after a waiting writer's slowest poll (`WRITER_POLL_MS`, 500 ms). A write still running then, or a client's change still queued, refuses the feed `Busy` (`held=3`). The loop tries the claim once a pass without sleeping, so it keeps serving meanwhile:
+**A storage write running** when a feed comes makes it wait, for at most `WRITE_WAIT_MS`: 3 s, one record's erase and two programs at their whole lease budget, after a waiting writer's slowest poll (`WRITER_POLL_MS`, 500 ms; the settings writer itself polls every 200 ms). A write still running then, or a client's change still queued, refuses the feed `Busy` (`held=3`). The loop tries the claim once a pass without sleeping, so it keeps serving meanwhile:
 
 - The request stays unanswered. `Feeding` still means reserved, and a refusal comes as that request's answer. A retry of the id, on any session, waits for the same feed or hears the same refusal.
 - Others see a feed in flight: readiness says `feeding`, and another feed, a restart, an update offer or a change that would queue a write is refused `Busy`.
@@ -112,7 +112,7 @@ The feeder checks a session's key against the enrolled clients the settings writ
 
 **Two paths, one write.** An owner's or member's phone holds its own key beside the server's, and the two send different write ids, so a write resent on the other path would run twice. An uncertain write is retried only on its own path under its own id, or resolved from the history ([two paths, one feed](../server/README.md#two-paths-one-feed)).
 
-**Readiness** is one decision that says whether a feed can start now (`wellfed_feeder::feeder::feeding::readiness`). `Status` carries it in `FeederStatus`, beside the judged supply.
+**Readiness** is one decision that says whether a feed can start now (`wellfed_feeder::feeder::feeding::readiness`). `FeederStatus { readiness, supply, … }` carries it (the model's `Status.readiness`), beside `supply`, the judged supply with the pack's charge.
 
 | Reason | Means | Feed refused as |
 | --- | --- | --- |
@@ -136,7 +136,7 @@ The feeder checks a session's key against the enrolled clients the settings writ
 
 **The Dispense button** asks for one portion, as stock's does, through the same readiness and owner as a client's `Feed`, and its `Fed` event says `by: Panel`. A locked panel ignores it, and a pending pairing confirmation takes the press first. The loop logs `PLFEED1 dispense feed=N` or `dispense refused=…`. A press while a feed can't start (a running feed included) starts nothing and isn't queued, as stock's (its record code 2022). It becomes a `DispenseRefused { reason }` event only when its reason differs from the last recorded since the feeder was last ready, so presses during a long feed can't fill the event queue.
 
-**Feeds are silent.** No feed decision reads the speaker, so a tune that plays, won't open or stalls leaves a feed's start, cancel and `Fed` event alone. A tune isn't cut when a feed follows it. Its steps (the codec's close and `done` line included) run between the owner's steps through the drive, so they count against `max_observation_gap_ms`, as meal calls do.
+**Feeds are silent.** A feed asks nothing of the speaker. The loop steps the speaker for a client's `play` outside setup mode, after the owner and the device API, and refuses one while a feed is in flight. No feed decision reads the speaker, so a tune that plays, won't open or stalls leaves a feed's start, cancel and `Fed` event alone. A tune isn't cut when a feed follows it, such as a press, a client's feed, or a meal with no call or whose call has ended. Its steps (the codec's close and `done` line included) run between the owner's steps through the drive, so they count against `max_observation_gap_ms`, as meal calls do. An owner-chosen call before a scheduled meal belongs to the schedule feature ([schedules](schedules.md)).
 
 **No restart into a feed.**
 
@@ -185,7 +185,7 @@ Every flash lease checks that the outputs are stopped, and fails closed when the
 
 **The ring.** The settings writer appends records to the ring in storage sectors 13–24 (`wellfed_device::store::events`: 32-byte records, at least 1,408 kept) and answers the API's reads. It polls every 5 ms while either waits, and for about 1 s after its last read. While a feed holds the outputs, an append waits at the head of the queue.
 
-**Epochs.** A ring created empty draws a random epoch, and every record repeats it in bytes 4–7. The welcome carries the epoch, and the feeder welcomes no session until the writer has opened the ring and published it.
+**Epochs.** A ring created empty draws a random epoch, and every record repeats it in bytes 4–7, the high half of the 64-bit sequence field. The welcome carries the epoch, and the feeder welcomes no session until the writer has opened the ring and published it.
 
 **Reads.**
 

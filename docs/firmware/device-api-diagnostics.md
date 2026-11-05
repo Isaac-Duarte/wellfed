@@ -41,7 +41,7 @@ The loop keeps the figures in RAM as it runs (`wellfed_feeder::stats::Keeper`): 
 - A supervision stop (a hung task, unverified outputs) saves nothing.
 - Each save counts its own erase. A failed save isn't retried that boot.
 
-**Lower bounds.** The lifetime counts and `resets` never exceed the truth. A power cut loses up to an hour of a boot's counts and 10 minutes of its feeds. While no token is left, a short boot's reset goes uncounted, and so does anything else it counted unless a feed's save took it along. So the lifetime feeds can read under the history. The `missed` flag that says so is in the log, not on the wire.
+**Lower bounds.** The lifetime counts and `resets` never exceed the truth. A power cut loses up to an hour of a boot's counts and 10 minutes of its feeds. While no token is left, a short boot's reset goes uncounted, and so does anything else it counted unless a feed's save took it along. The feed history records every feed, so the lifetime feed count can read under it. The `missed` flag that says so is in the log, not on the wire.
 
 **`None`** comes from a build that keeps no totals, and from a store this build can't write (a newer record version, or a read error).
 

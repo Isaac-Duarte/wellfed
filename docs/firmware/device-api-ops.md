@@ -1,6 +1,6 @@
 # Device API operations
 
-This reference lists what each [device API](device-api.md) operation does, who may send it and what refuses it, plus what a feed records and the live samples. It is for contributors writing a client or changing the firmware. The types are in [`wellfed-proto`](../../src/product/wellfed-proto/src/api.rs). Every write is remembered by its id and checked against its role first ([roles](device-api.md#writes-roles-and-generations)), and a client's store write during a feed is refused `Busy` ([why](device-api.md#no-flash-write-while-the-motor-may-move)).
+This reference lists what each [device API](device-api.md) operation does, who may send it and what refuses it, plus what a feed records and the live samples. With each op it covers the firmware behind it: the settings writer and its record layout, Wi-Fi join and fallback, the lock's box and the hopper beam's filter. It is for contributors writing a client or changing the firmware. The types are in [`wellfed-proto`](../../src/product/wellfed-proto/src/api.rs). Every write is remembered by its id and checked against its role first ([roles](device-api.md#writes-roles-and-generations)), and a client's store write during a feed is refused `Busy` ([why](device-api.md#no-flash-write-while-the-motor-may-move)).
 
 ## The shared core
 
@@ -42,7 +42,7 @@ Every kind of device serves these.
 
 The **outcome** is `Done`, `Cancelled`, `Expired` (the feeder couldn't get ready in time), `Failed`, or `Uncertain`: the owner stopped without a durable result, or a reset interrupted the feed and the next boot resolved it.
 
-The **reason** names what ended it ([jams and sensor faults](jams-and-sensor-faults.md)). No failure is retried. The full set is `FeedReason`; these are the failures:
+The **reason** names what ended it ([jams and sensor faults](jams-and-sensor-faults.md)). No failure is retried. The full set is `FeedReason`. Every reason other than `Done` and `Cancelled`:
 
 | Reason | Means |
 | --- | --- |
