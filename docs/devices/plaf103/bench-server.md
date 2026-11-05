@@ -107,7 +107,7 @@ Each entry is checked against what the feeder says it runs: the capture's `PLFW1
 
 On a terminal, `serve` draws its console full screen on `/dev/tty`: the UART-write banner with sectors verified; the job, its step and next steps; Activity; the relays and the lease; the feeder (banks, session, status, clock, journal high water, hotspot, capture and the device log's last lines); the operator's step, timers and evidence by card; and a scrolling log of every job's output. PgUp and PgDn scroll the log, Up and Down a line, and End follows it again. A job's question shows in a panel above the log with its number and the `wellfed-bench answer` line that answers it; the console only shows it.
 
-`q` or Ctrl+C stops the server as SIGINT does ([above](#stopping-the-server)). The screen redraws at most twice a second while the flash client writes, otherwise four times. It draws only from the live state and a channel, so a slow terminal never holds the output pump: it loses console lines instead, which the job's stream and log file keep. When the server stops, the screen closes and the log's last 30 lines print. Without a terminal (a service, a pipe), or with `--plain`, the console is plain lines on stdout.
+`q` or Ctrl+C stops the server as SIGINT does ([above](#stopping-the-server)). During a UART write or loader session, the first press only shows the confirmation in the footer. The screen redraws at most twice a second while the flash client writes, otherwise four times. It draws only from the live state and a channel, so a slow terminal never holds the output pump: it loses console lines instead, which the job's stream and log file keep. When the server stops, the screen closes and the log's last 30 lines print. Without a terminal (a service, a pipe), or with `--plain`, the console is plain lines on stdout.
 
 ### Watching from another terminal
 
@@ -144,6 +144,8 @@ A card is the operator's free-text name for the work. Evidence must name a file 
 **Timers.** `--at HH:MM` is the next time the bench host's clock reads it; `--in` takes lengths such as `90s`, `5m` or `1h30m`. A timer with `--expect TEXT` is seen by the first UART, device log or job output line containing `TEXT` from its start until its window ends; one with `--expect-event KIND` by a device event of that kind (`boot`, `fed`, `clock_sync`, as the device API names them). The window ends 2 minutes after the due time unless `--window` says otherwise, and a timer unseen by then is missed. Both outcomes are notes, so a restarted server shows them. Lines come from the idle capture, the device log and the running job's output, so a `boot` job's own banner counts.
 
 ## MCP
+
+The MCP tools drive real hardware under the bench's [safety rules](bench.md#safety-rules).
 
 `wellfed-bench mcp` serves the bench's tools to an agent over the Model Context Protocol on stdin and stdout. It is a client like every other command, so it needs `serve` running in the same checkout. Register it from the checkout's root, for example in `.mcp.json`:
 
@@ -203,9 +205,9 @@ Stopped: The bench lease of pid 81234 (…) outlived its process: that run was k
 With no server only `status` runs, and that is the way back:
 
 1. Run `target/release/wellfed-bench status`. It shows the lease first (free, held, or left by a process that is gone), finds no server, and reads the relays itself without taking the lease.
-2. Stop what the killed job left running. Under a lease whose holder is gone, `status` lists every `wellfed-flash`, `wellfed-stock`, `wellfed-build` and `sigrok-cli` running on this bench, with pid and command line. Let a `wellfed-flash` finish, or stop it with SIGINT (`kill -INT PID`) so it records its stop. Stop the others by hand.
+2. Stop what the killed job left running. Under a lease whose holder is gone, `status` lists every `wellfed-flash`, `wellfed-stock`, `wellfed-build` and `sigrok-cli` running on this bench, with pid and command line. They no longer count as the bench's. Let a `wellfed-flash` finish, or stop it with SIGINT (`kill -INT PID`) so it records its stop. Stop the others by hand.
 3. Run `target/release/wellfed-bench status --break-lease`. It refuses while a `wellfed-flash` still runs on this bench, naming it, since it may be writing. Otherwise it removes the lease, only if its holder is gone, then shows the relays.
-4. Start the server again. It replaces the stale `private/bench.sock`; until then a client finds nothing answering and says to start one.
+4. Start the server again. It replaces the stale `private/bench.sock` once it holds the lease; until then a client finds nothing answering and says to start one.
 
 The tools are found by process name and by the `private/` of their working directory, since every job's child runs from its server's checkout, where the lease lives. So a worktree whose `private/` links to the main checkout's shares its lease and finds the main server's tools, a checkout with its own `private/` never counts them, and the killed server needed to record nothing.
 

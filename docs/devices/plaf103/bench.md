@@ -199,7 +199,7 @@ target/release/wellfed-bench ota stock-01 --review private/verification/<stock r
 2. **Sign** in process with `wellfed-build`'s signing library and `private/ota-key.json`: it verifies the review as `wellfed-flash` does (refusing a directory with no `review.json`, an image or manifest that differs from it, a non-pinned "stock" image, or an unattended motion policy) and signs a version 2 manifest.
 3. **Push** over the device API as `--keys`: the offer, bank 1's give-way, the offer again to bank 0, the chunks, and a resume after any drop.
 4. **Watch** with receive-only UART captures until the new build confirms, falls back, or `--minutes` (20) pass.
-5. **Check status:** after confirmation, `Status` is read as `--keys` every 5 s for up to 90 s until it shows the offered build on bank 1, and reports the uptime, boot count, Wi-Fi source and clock validity. Each new reason for waiting (an older build, another bank, the request failing) is logged once.
+5. **Check status:** only for a `feeder` build, since other firmwares serve no device API and their UART confirmation is the whole check. After confirmation, `Status` is read as `--keys` every 5 s for up to 90 s until it shows the offered build on bank 1, and reports the uptime, boot count, Wi-Fi source and clock validity. Each new reason for waiting (an older build, another bank, the request failing) is logged once.
 
 **Choosing a build.** `--firmware qa|optics|buttons|adc|speaker|blink|trial|feeder` picks the build (default `qa`), and `--variant` a variant of it: `stall|fail` with `--firmware trial`; `entropy|owner-stall|held-stall|gap-probe|feed-stall|stop-fail|owner-fail|feed-jam|sensor-fault|buzzer|twin|virtual-panel` with `--firmware feeder`.
 
@@ -223,8 +223,8 @@ target/release/wellfed-bench ota stock-01 --review private/verification/<stock r
 
 | Outcome | Lines | Exit |
 | --- | --- | --- |
-| Passed | `PLFW1 start build=<ID> bank=1`, then `PLCNF1 confirmed=1`, then the status check | 0 |
-| Health missing | Confirmed on the UART, but the status never showed the build within 90 s | 1 |
+| Passed | `PLFW1 start build=<ID> bank=1`, then `PLCNF1 confirmed=1`, then the status check for a `feeder` build | 0 |
+| Health missing | A `feeder` build confirmed on the UART, but the status never showed the build within 90 s | 1 |
 | Fell back | `PLTRL1 give_way=1` after activation or the new build's start; reports the last `PLTRL1 confirmed=0 boot=N` | 1 |
 | Update error | `PLOTA1 error stage=…` | 1 |
 | Refused | The push ended before any UART outcome: the feeder refused the offer (a downgrade without a statement, a manifest bank 0 does not install, another signer) or reported a stop over the API | 1 |
@@ -279,7 +279,7 @@ target/release/wellfed-bench restore-stock --key private/ota-key.json
 - The server closes its feeder session for the whole job, and starts the tool once its state shows that, since the tool opens its own sessions only then.
 - The tool writes each question as one stdout line (`--prompts lines`), and goes on without waiting for the Dispense answer, since the feeder times its own window. The question goes into the live state (`prompt`: the job, its number, its words and the answers it takes) and the console, and waits for `wellfed-bench answer JOB SEQ done|yes|no` or `job_answer`.
 - An answer is taken only for the current question, by its number, and only of its kind (done for an instruction, yes or no for a question). Anything else is refused, never held, since the tool reads answers in order with no number of their own. The job takes the question away before stopping the tool, so an answer the server took (202) reaches the tool unless it has exited.
-- With `--virtual-panel`, the job answers `press-dispense` itself on a running [virtual panel](#virtual-panel) build, from its own thread: one 150 ms Dispense press, as a `wellfed-flash read press` child under the server's lease, recorded in the job's output. Nothing unlocks the panel first, since a waiting enrollment takes Dispense on a locked panel too, and the server's capture stops for every job, so the press has the port. The job answers done only once the press echoed and released; otherwise it stops the tool and ends naming the press, pressing nothing again. It presses nothing once stopping or after the tool exits. Without the flag the prompt waits for a person at the panel, who answers done after pressing.
+- With `--virtual-panel`, the job answers `press-dispense` itself on a running [virtual panel](#virtual-panel) build, from its own thread: one 150 ms Dispense press, as a `wellfed-flash read press` child under the server's lease, recorded in the job's output. Nothing unlocks the panel first, since a waiting enrollment takes Dispense on a locked panel too, and the server's capture stops for every job, so the press has the port. The job answers done only once the press echoed and released; otherwise it stops the tool and ends naming the press, pressing nothing again. Just before the press it looks again, and presses nothing once stopping or after the tool exits. The press adds no step row of its own. Without the flag the prompt waits for a person at the panel, who answers done after pressing.
 - The tool's stderr is the job's output. A stdout line that is no question stops the tool, and when it exits with an error, the last error it printed is the job's.
 - A cancel stops the tool through its SIGTERM handler and takes the question away, as the job's end does however it ended.
 - Only a whole restore marks bank 1 as stock in the [bank ledger](bench-server.md#the-bank-ledger); anything else marks it unknown, since the write may have stopped part-way.

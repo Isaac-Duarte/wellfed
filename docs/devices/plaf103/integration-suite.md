@@ -4,6 +4,9 @@
 
 The suite is the `wellfed-itest` crate, linked into the [bench server](bench-server.md), which runs it as a job in its own process: the run, its cancel and its exit status are the job's, and the client exits with that status. `--list` answers in the client, with no server.
 
+> [!WARNING]
+> `--feeds` and `sustained` ask the feeder to feed unattended. Follow the bench's [safety rules](bench.md#safety-rules): hopper empty, D cells out, at most 3 portions a feed.
+
 ```sh
 cargo build --release --bins --examples
 target/release/wellfed-bench itest --list
@@ -30,7 +33,7 @@ target/release/wellfed-bench itest itest-YYYYMMDD-06 --build --power --destructi
 | `wifi-fallback` | Credentials stored for an absent SSID (`PLCFG1 net saved stored=1`). After a cold boot, `Status.wifi` shows `Fallback`. A clear (against the Wi-Fi generation) and another cold boot return it to `Build`. It refuses to start while credentials are stored | `--power` |
 | `network-bounce` | The hotspot down for 20 s and back. The device API answers again with the same boot count and more Wi-Fi losses (association, lease or gateway) | |
 | `feed-writes` | Writes from a second session during a feed, then a cancel ([details](#feed-writes)) | `--feeds` |
-| `ota-recovery` | The trial firmware's `fail` image installs and fails its trial, and KM0 gives way to bank 0, which answers the device API. The suite pushes the re-signed baseline to it with one fault each, in its own transfer: a flipped byte → `stage=hash`, a chunk ahead of the wanted ones → `order`, 75 s of silence → `timeout`, none activating, bank 0 answering after each. A clean push then confirms and restores the baseline | `--build --power` |
+| `ota-recovery` | The trial firmware's `fail` image installs and fails its trial, and KM0 gives way to bank 0, which answers the device API. The suite pushes the re-signed baseline to it with one fault each, in its own transfer: a flipped byte → `stage=hash`, a chunk ahead of the wanted ones → `order`, 75 s of silence → `timeout`, none activating, bank 0 answering after each. A clean push then confirms and restores the baseline, so the fallback needs no restore install of its own | `--build --power` |
 | `ota-power-cuts` | Installs the feeder's `twin` variant: the same firmware under another build identity, so it still serves the device API, and unconfirmed, since a confirmed build skips the trial. **Mid-download** (48 sectors in), the next boot must be bank 0, and the offer's first progress record must show the download starting again. **10 s into trial boot 1**, before the 30 s confirmation, KM0 must count boot 1 again (backup registers clear on power loss), and the build must still confirm. A cut during activation itself is not attempted, since the marker write and reset take milliseconds. The re-signed baseline then goes back on | `--build --power --destructive` |
 | `sustained` | `--sustained-cycles` (default 16) half-hour cycles of feeds every 10 minutes, each opening with one fault from a fixed rotation. Any failed check cuts relay 1 and halts ([below](#sustained-run)) | soak tier, `--build --power --destructive --feeds` |
 
@@ -117,7 +120,7 @@ Each cycle ends with a note of the figures so far (feeds, polls and the slowest 
 
 **Stop conditions.** Any failed check, a feed result that does not arrive within 100 s, a silent feeder (180 s), an install that does not confirm, or the operator's Ctrl+C halts the run: the suite **cuts relay 1 and leaves it off**, runs no further cycle or scenario, puts the hotspot back as it found it, and records why. A host panic does the same: until the run ends cleanly, tearing the rig down cuts relay 1.
 
-> [!NOTE]
+> [!WARNING]
 > Nothing is restored on the feeder after a halt, so a halt during a `feed-jam`, `sensor-fault` or `feed-stall` step may leave that variant on bank 1 (the halt note says so). **A person looks before power returns.** Install the baseline before any other run. If the feeder then does not boot, the suite's UART recovery applies.
 
 **Kept out of the unattended run (the owner's rules):**
