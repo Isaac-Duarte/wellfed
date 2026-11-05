@@ -64,7 +64,7 @@ wellfed plans unskip 2    # bring it back, until its time
 
 The CLI finds the meal from the plans, the feeder's clock and its zone, so you never type a time. `wellfed plans list` shows a skip beside its plan. `wellfed server plans skip` and `unskip` do the same through the server (`POST /feeders/{id}/meals/skip` and `/meals/unskip`), and the server's next meal passes over a skipped one.
 
-A client sends `SkipMeal { slot, due_s }`, naming the plan's slot and the meal's due instant, and `UnskipMeal` with the same two ([device API](device-api.md#time-and-calibration)). Each is answered once stored, and recorded as a `Skipped` or `Unskipped` event with its client. `GetPlans` names each slot's skipped meal while its skip stands, until the plan's next meal is taken or passed, so a skip in the past is spent.
+A client sends `SkipMeal { slot, due_s }`, naming the plan's slot and the meal's due instant, and `UnskipMeal` with the same two ([device API](device-api-ops.md#time-and-calibration)). Each is answered once stored, and recorded as a `Skipped` or `Unskipped` event with its client. `GetPlans` names each slot's skipped meal while its skip stands, until the plan's next meal is taken or passed, so a skip in the past is spent.
 
 - **Only today's next meal**, still to come by the feeder's clock and zone. A meal already due belongs to the schedule, so an undo at or after its minute is refused and the meal stays skipped.
 - **One meal at a time.** Skipping a meal twice, or undoing one that wasn't skipped, is refused.

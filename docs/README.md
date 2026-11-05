@@ -24,6 +24,8 @@ The firmware docs describe Wellfed's own replacement, which isn't tied to one de
 | [Product architecture](firmware/product-architecture.md) | The product we are building toward, and why each choice was made |
 | [Firmware architecture](firmware/README.md) | How the replacement firmware is put together |
 | [Device API](firmware/device-api.md) | The feeder's encrypted local API |
+| [Device API operations](firmware/device-api-ops.md) | Each request's answers, refusals and roles, what a feed records, and the live samples |
+| [Diagnostics and the stock backup](firmware/device-api-diagnostics.md) | Statistics, feed traces, the debug log and bank 1's copy, over the device API |
 | [Pairing](firmware/pairing.md) | Keys, randomness and how clients pair |
 | [Bluetooth](firmware/bluetooth.md) | Bluetooth LE and setup mode |
 | [OTA design](firmware/ota-design.md) | Over-the-air updates |
