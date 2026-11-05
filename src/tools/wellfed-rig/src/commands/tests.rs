@@ -1365,6 +1365,7 @@ fn ota_cancel_sends_one_cancel_and_nothing_else() {
         written: 0,
         wanted: Vec::new(),
         stopped: None,
+        bank0: wellfed_model::Bank0Check::Unchecked,
     };
     rig.tools.0.borrow_mut().cancel_answer = Some(Answer::Update(view));
     assert_eq!(rig.bench.ota(&args).unwrap(), 0);

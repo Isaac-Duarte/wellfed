@@ -96,6 +96,7 @@ impl State {
             written: u32::try_from(self.received.len() * 512).unwrap(),
             wanted: slots,
             stopped: None,
+            bank0: proto::Bank0Check::Unchecked,
         }
     }
 

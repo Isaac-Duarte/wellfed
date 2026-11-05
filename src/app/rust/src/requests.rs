@@ -661,6 +661,7 @@ pub(crate) fn reply_of(answer: Answer) -> FeederReply {
                 version: view.version,
                 image_len: view.image_len,
                 written: view.written,
+                bank0: view.bank0,
             },
         },
         Answer::Refused(refusal) => FeederReply::Refused {

@@ -15,7 +15,7 @@ use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
 use wellfed_client::connection::{Connection, Event};
 use wellfed_client::update::{Image, InstallError, Installer, Next, Sent};
-use wellfed_core::ota::install::{Install, Phase, Progress, Refused, Stop, Taken};
+use wellfed_core::ota::install::{Blocked, Install, Phase, Progress, Refused, Stop, Taken};
 use wellfed_core::ota::offer::{
     self, Context, ImageKind, KeyRing, Signed, admit_offer, key_id, manifest_digest,
 };
@@ -260,7 +260,7 @@ impl Feeder {
 
         if self.bank == 1 {
             if !self.bank0_valid {
-                return Err(refuse(Refused::Fallback));
+                return Err(refuse(Refused::Fallback(Blocked::Unrecorded)));
             }
             self.store
                 .set_pending(candidate)
@@ -987,6 +987,7 @@ fn nothing_is_cancelled_once_bank_1_is_activated() {
         written: u32::try_from(SECTOR).unwrap(),
         wanted: Vec::new(),
         stopped: None,
+        bank0: model::Bank0Check::Unchecked,
     };
     installer
         .answer(Sent::Offer, &Answer::Update(activated))

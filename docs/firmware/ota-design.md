@@ -77,6 +77,10 @@ Bank 1 gives way only to a bank 0 that recorded its own image (length, SHA-256 a
 
 So after a UART install of bank 0, bank 1 refuses every offer `Fallback` until bank 0 has booted once. The reviewed UART install boots bank 1, so the bank-0 record comes with the first give-way through UART (`give-way-execute --fallback`), or with a failed trial.
 
+A refusal names the check that failed: `marker` (bank 0's loader marker is invalid), `unrecorded` (no record), `key` (bank 0's built-in key is not the offer's), `extent` (bank 0's headers give no image), `changed` (its length or hash differs from the record) or `read` (bank 0 could not be read). The reason goes on the wire as `UpdateRefusal::Fallback { reason }` and in `PLWCH1 refused give_way reason=…`, with the recorded and found lengths and the first four bytes of each hash where the check got that far. A failed give-way write after every check passed is a different line, `PLWCH1 error stage=give_way_write`.
+
+Bank 1 also runs the same check once per boot, without an offer, so an owner sees a blocked bank 0 before an update is refused for it. It waits for the flash hooks, which bank 1 arms only once its trial confirmed, so it stays out of the trial's health window. It pauses while a feed holds the outputs and while the stage has a request, an install or a give-way to run, and an offer's own check replaces it. It hashes 8 sectors a step, as an offer's check does, through mapped reads: no flash lease and no write turn. It logs `PLOTA1 bank0 check=match|unrecorded|marker|extent|changed|read` once, and `UpdateView.bank0` carries the result (`Unchecked` until then, and always from bank 0). The key is not part of it: that depends on the offer.
+
 Both banks must carry the same built-in keys. Bank 1 checks the offer's key against bank 0's recorded key id before it gives way, so an offer bank 0 could not admit never strands the feeder on bank 0.
 
 ### Stops

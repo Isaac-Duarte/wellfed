@@ -6335,6 +6335,18 @@
           }
         }
       },
+      "Bank0Blocked": {
+        "type": "string",
+        "description": "Why bank 1 will not give way to bank 0, in the order it checks.",
+        "enum": [
+          "marker",
+          "unrecorded",
+          "key",
+          "extent",
+          "changed",
+          "read"
+        ]
+      },
       "Battery": {
         "oneOf": [
           {
@@ -12935,27 +12947,141 @@
         ]
       },
       "UpdateRefusal": {
-        "type": "string",
-        "description": "Why an update op was refused.",
-        "enum": [
-          "manifest",
-          "key",
-          "revoked",
-          "signature",
-          "target",
-          "same",
-          "downgrade",
-          "statement",
-          "pending",
-          "failed",
-          "fallback",
-          "attempt",
-          "installing",
-          "not_installing",
-          "store",
-          "unconfirmed",
-          "battery"
-        ]
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Not a version 2 manifest, or an unknown image kind.",
+            "enum": [
+              "manifest"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "No trusted key has the manifest's (or a statement's) key id.",
+            "enum": [
+              "key"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "That key was retired.",
+            "enum": [
+              "revoked"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "signature"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Not for bank 1, outside the reviewed size, or built for another\ndevice model.",
+            "enum": [
+              "target"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Bank 1 already runs that build.",
+            "enum": [
+              "same"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "The version is not above the floor (or the image is stock): a\ndowngrade statement must come with it.",
+            "enum": [
+              "downgrade"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "The downgrade or key statement does not check out.",
+            "enum": [
+              "statement"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Bank 0 installs only the manifest bank 1 gave way for.",
+            "enum": [
+              "pending"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "This manifest was activated and failed its trial.",
+            "enum": [
+              "failed"
+            ]
+          },
+          {
+            "type": "object",
+            "description": "Bank 0 holds no build that can install it, so bank 1 does not\ngive way: `reason` names the check.",
+            "required": [
+              "fallback"
+            ],
+            "properties": {
+              "fallback": {
+                "type": "object",
+                "description": "Bank 0 holds no build that can install it, so bank 1 does not\ngive way: `reason` names the check.",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "$ref": "#/components/schemas/Bank0Blocked"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "string",
+            "description": "An install reset the feeder this power cycle.",
+            "enum": [
+              "attempt"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Another update is in progress.",
+            "enum": [
+              "installing"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "No install is receiving chunks.",
+            "enum": [
+              "not_installing"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "The update store cannot be read or written.",
+            "enum": [
+              "store"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Nobody pressed Dispense in time to confirm the key.",
+            "enum": [
+              "unconfirmed"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "The feeder runs on its batteries: no install starts until the\nadapter returns.",
+            "enum": [
+              "battery"
+            ]
+          }
+        ],
+        "description": "Why an update op was refused."
       },
       "UpdateStop": {
         "type": "string",

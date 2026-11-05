@@ -76,7 +76,15 @@ Future<FeederController> _updating(WidgetTester tester, String build) async {
   await tester.pump();
   session.replies.add(
     const FeederReply.update(
-      update: UpdateInfo(phase: UpdatePhase.idle, bank: 1, minVersion: 6, version: 0, imageLen: 0, written: 0),
+      update: UpdateInfo(
+        phase: UpdatePhase.idle,
+        bank: 1,
+        minVersion: 6,
+        version: 0,
+        imageLen: 0,
+        written: 0,
+        bank0: Bank0Check.unchecked(),
+      ),
     ),
   );
   return feeder;

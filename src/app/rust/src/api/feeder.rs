@@ -7,9 +7,9 @@
 //! sends it again. [`FeederReply::NotSent`] means it never left this phone.
 
 pub use crate::api::model::{
-    Blocked, Bowl, CallClip, ClientRole, Desiccant, FeedOutcome, FeedReason, FoodLevel,
-    MealReminder, NtpResult, Phase, Stats, StatsSection, TimeSource, TraceEntry, TraceSummary,
-    Tune, UpdatePhase, UpdateRefusal, Weekday, Window,
+    Bank0Blocked, Bank0Check, Blocked, Bowl, CallClip, ClientRole, Desiccant, FeedOutcome,
+    FeedReason, FoodLevel, MealReminder, NtpResult, Phase, Stats, StatsSection, TimeSource,
+    TraceEntry, TraceSummary, Tune, UpdatePhase, UpdateRefusal, Weekday, Window,
 };
 
 /// What the owner asks of a feeder.
@@ -294,6 +294,9 @@ pub struct UpdateInfo {
     pub version: u32,
     pub image_len: u32,
     pub written: u32,
+    /// Bank 0, the recovery copy, as bank 1 last checked it: blocked means
+    /// every update is refused until bank 0 boots once.
+    pub bank0: Bank0Check,
 }
 
 /// Why the feeder refused a request: the device API's refusals.

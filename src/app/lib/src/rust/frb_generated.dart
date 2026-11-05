@@ -5006,6 +5006,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Bank0Blocked dco_decode_bank_0_blocked(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return Bank0Blocked.values[raw as int];
+  }
+
+  @protected
+  Bank0Check dco_decode_bank_0_check(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    switch (raw[0]) {
+      case 0:
+        return Bank0Check_Unchecked();
+      case 1:
+        return Bank0Check_Match();
+      case 2:
+        return Bank0Check_Blocked(dco_decode_bank_0_blocked(raw[1]));
+      default:
+        throw Exception("unreachable");
+    }
+  }
+
+  @protected
   Blocked dco_decode_blocked(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return Blocked.values[raw as int];
@@ -5512,6 +5533,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  UpdateRefusal dco_decode_box_autoadd_update_refusal(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_update_refusal(raw);
+  }
+
+  @protected
   WeighedIntake dco_decode_box_autoadd_weighed_intake(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_weighed_intake(raw);
@@ -5899,7 +5926,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 10:
         return FeederRefusal_Fault();
       case 11:
-        return FeederRefusal_Update(reason: dco_decode_update_refusal(raw[1]));
+        return FeederRefusal_Update(
+          reason: dco_decode_box_autoadd_update_refusal(raw[1]),
+        );
       case 12:
         return FeederRefusal_Unverified();
       case 13:
@@ -8508,8 +8537,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   UpdateInfo dco_decode_update_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return UpdateInfo(
       phase: dco_decode_update_phase(arr[0]),
       bank: dco_decode_u_8(arr[1]),
@@ -8517,6 +8546,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       version: dco_decode_u_32(arr[3]),
       imageLen: dco_decode_u_32(arr[4]),
       written: dco_decode_u_32(arr[5]),
+      bank0: dco_decode_bank_0_check(arr[6]),
     );
   }
 
@@ -8556,7 +8586,46 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   UpdateRefusal dco_decode_update_refusal(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return UpdateRefusal.values[raw as int];
+    switch (raw[0]) {
+      case 0:
+        return UpdateRefusal_Manifest();
+      case 1:
+        return UpdateRefusal_Key();
+      case 2:
+        return UpdateRefusal_Revoked();
+      case 3:
+        return UpdateRefusal_Signature();
+      case 4:
+        return UpdateRefusal_Target();
+      case 5:
+        return UpdateRefusal_Same();
+      case 6:
+        return UpdateRefusal_Downgrade();
+      case 7:
+        return UpdateRefusal_Statement();
+      case 8:
+        return UpdateRefusal_Pending();
+      case 9:
+        return UpdateRefusal_Failed();
+      case 10:
+        return UpdateRefusal_Fallback(
+          reason: dco_decode_bank_0_blocked(raw[1]),
+        );
+      case 11:
+        return UpdateRefusal_Attempt();
+      case 12:
+        return UpdateRefusal_Installing();
+      case 13:
+        return UpdateRefusal_NotInstalling();
+      case 14:
+        return UpdateRefusal_Store();
+      case 15:
+        return UpdateRefusal_Unconfirmed();
+      case 16:
+        return UpdateRefusal_Battery();
+      default:
+        throw Exception("unreachable");
+    }
   }
 
   @protected
@@ -9191,6 +9260,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Bank0Blocked sse_decode_bank_0_blocked(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return Bank0Blocked.values[inner];
+  }
+
+  @protected
+  Bank0Check sse_decode_bank_0_check(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        return Bank0Check_Unchecked();
+      case 1:
+        return Bank0Check_Match();
+      case 2:
+        var var_field0 = sse_decode_bank_0_blocked(deserializer);
+        return Bank0Check_Blocked(var_field0);
+      default:
+        throw UnimplementedError('');
+    }
+  }
+
+  @protected
   Blocked sse_decode_blocked(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
@@ -9767,6 +9861,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  UpdateRefusal sse_decode_box_autoadd_update_refusal(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_update_refusal(deserializer));
+  }
+
+  @protected
   WeighedIntake sse_decode_box_autoadd_weighed_intake(
     SseDeserializer deserializer,
   ) {
@@ -10221,7 +10323,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 10:
         return FeederRefusal_Fault();
       case 11:
-        var var_reason = sse_decode_update_refusal(deserializer);
+        var var_reason = sse_decode_box_autoadd_update_refusal(deserializer);
         return FeederRefusal_Update(reason: var_reason);
       case 12:
         return FeederRefusal_Unverified();
@@ -13600,6 +13702,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_version = sse_decode_u_32(deserializer);
     var var_imageLen = sse_decode_u_32(deserializer);
     var var_written = sse_decode_u_32(deserializer);
+    var var_bank0 = sse_decode_bank_0_check(deserializer);
     return UpdateInfo(
       phase: var_phase,
       bank: var_bank,
@@ -13607,6 +13710,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       version: var_version,
       imageLen: var_imageLen,
       written: var_written,
+      bank0: var_bank0,
     );
   }
 
@@ -13646,8 +13750,47 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   UpdateRefusal sse_decode_update_refusal(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var inner = sse_decode_i_32(deserializer);
-    return UpdateRefusal.values[inner];
+
+    var tag_ = sse_decode_i_32(deserializer);
+    switch (tag_) {
+      case 0:
+        return UpdateRefusal_Manifest();
+      case 1:
+        return UpdateRefusal_Key();
+      case 2:
+        return UpdateRefusal_Revoked();
+      case 3:
+        return UpdateRefusal_Signature();
+      case 4:
+        return UpdateRefusal_Target();
+      case 5:
+        return UpdateRefusal_Same();
+      case 6:
+        return UpdateRefusal_Downgrade();
+      case 7:
+        return UpdateRefusal_Statement();
+      case 8:
+        return UpdateRefusal_Pending();
+      case 9:
+        return UpdateRefusal_Failed();
+      case 10:
+        var var_reason = sse_decode_bank_0_blocked(deserializer);
+        return UpdateRefusal_Fallback(reason: var_reason);
+      case 11:
+        return UpdateRefusal_Attempt();
+      case 12:
+        return UpdateRefusal_Installing();
+      case 13:
+        return UpdateRefusal_NotInstalling();
+      case 14:
+        return UpdateRefusal_Store();
+      case 15:
+        return UpdateRefusal_Unconfirmed();
+      case 16:
+        return UpdateRefusal_Battery();
+      default:
+        throw UnimplementedError('');
+    }
   }
 
   @protected
@@ -14376,6 +14519,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_bank_0_blocked(Bank0Blocked self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_bank_0_check(Bank0Check self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    switch (self) {
+      case Bank0Check_Unchecked():
+        sse_encode_i_32(0, serializer);
+      case Bank0Check_Match():
+        sse_encode_i_32(1, serializer);
+      case Bank0Check_Blocked(field0: final field0):
+        sse_encode_i_32(2, serializer);
+        sse_encode_bank_0_blocked(field0, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_blocked(Blocked self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
@@ -15072,6 +15235,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_update_refusal(
+    UpdateRefusal self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_update_refusal(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_weighed_intake(
     WeighedIntake self,
     SseSerializer serializer,
@@ -15412,7 +15584,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(10, serializer);
       case FeederRefusal_Update(reason: final reason):
         sse_encode_i_32(11, serializer);
-        sse_encode_update_refusal(reason, serializer);
+        sse_encode_box_autoadd_update_refusal(reason, serializer);
       case FeederRefusal_Unverified():
         sse_encode_i_32(12, serializer);
       case FeederRefusal_Portions(asked: final asked):
@@ -18335,6 +18507,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.version, serializer);
     sse_encode_u_32(self.imageLen, serializer);
     sse_encode_u_32(self.written, serializer);
+    sse_encode_bank_0_check(self.bank0, serializer);
   }
 
   @protected
@@ -18371,7 +18544,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   void sse_encode_update_refusal(UpdateRefusal self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.index, serializer);
+    switch (self) {
+      case UpdateRefusal_Manifest():
+        sse_encode_i_32(0, serializer);
+      case UpdateRefusal_Key():
+        sse_encode_i_32(1, serializer);
+      case UpdateRefusal_Revoked():
+        sse_encode_i_32(2, serializer);
+      case UpdateRefusal_Signature():
+        sse_encode_i_32(3, serializer);
+      case UpdateRefusal_Target():
+        sse_encode_i_32(4, serializer);
+      case UpdateRefusal_Same():
+        sse_encode_i_32(5, serializer);
+      case UpdateRefusal_Downgrade():
+        sse_encode_i_32(6, serializer);
+      case UpdateRefusal_Statement():
+        sse_encode_i_32(7, serializer);
+      case UpdateRefusal_Pending():
+        sse_encode_i_32(8, serializer);
+      case UpdateRefusal_Failed():
+        sse_encode_i_32(9, serializer);
+      case UpdateRefusal_Fallback(reason: final reason):
+        sse_encode_i_32(10, serializer);
+        sse_encode_bank_0_blocked(reason, serializer);
+      case UpdateRefusal_Attempt():
+        sse_encode_i_32(11, serializer);
+      case UpdateRefusal_Installing():
+        sse_encode_i_32(12, serializer);
+      case UpdateRefusal_NotInstalling():
+        sse_encode_i_32(13, serializer);
+      case UpdateRefusal_Store():
+        sse_encode_i_32(14, serializer);
+      case UpdateRefusal_Unconfirmed():
+        sse_encode_i_32(15, serializer);
+      case UpdateRefusal_Battery():
+        sse_encode_i_32(16, serializer);
+    }
   }
 
   @protected

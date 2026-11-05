@@ -166,6 +166,7 @@ fn receiving() -> UpdateView {
         written: 0,
         wanted: [Some(0); WANTED_MAX],
         stopped: None,
+        bank0: wellfed_proto::api::Bank0Check::Unchecked,
     }
 }
 

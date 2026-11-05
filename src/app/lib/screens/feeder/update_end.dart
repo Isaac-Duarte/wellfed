@@ -53,46 +53,69 @@ import 'package:wellfed/widgets/replies.dart';
   UpdateEnd_Failed(:final detail) => ("This phone couldn't send it", 'Nothing was installed. $detail'),
 };
 
+/// Why the recovery copy (bank 0) stops an update, and what fixes it. The
+/// feeder installs an update from its recovery copy, and only hands over to a
+/// copy that started once and checked itself in; one written on the bench
+/// has not until it starts.
+String recoveryWords(String name, Bank0Blocked reason) => switch (reason) {
+  Bank0Blocked.unrecorded =>
+    "$name's recovery copy was rewritten and hasn't checked itself in. Start "
+        '$name from its recovery copy once (a bench step), then try again.',
+  Bank0Blocked.changed =>
+    "$name's recovery copy changed since it last checked itself in. Start "
+        '$name from its recovery copy once (a bench step), then try again.',
+  Bank0Blocked.key =>
+    "$name's recovery copy doesn't trust the key that signed this update, so "
+        'it could not install it.',
+  Bank0Blocked.marker || Bank0Blocked.extent || Bank0Blocked.read =>
+    "$name's recovery copy can't be read as working firmware, so it can't "
+        'install updates. It needs a bench repair.',
+};
+
 (String, String) _refused(String name, FeederRefusal refusal) => switch (refusal) {
-  FeederRefusal_Update(reason: UpdateRefusal.battery) => (
+  FeederRefusal_Update(reason: UpdateRefusal_Battery()) => (
     'Plug $name in first',
     "It's running on batteries, and it won't install an update unless it's on "
         'mains power. Nothing changed.',
   ),
-  FeederRefusal_Update(reason: UpdateRefusal.downgrade) => (
+  FeederRefusal_Update(reason: UpdateRefusal_Downgrade()) => (
     'Older than what it runs',
     "$name won't go back to an earlier version.",
   ),
   FeederRefusal_Update(
-    reason: UpdateRefusal.manifest ||
-        UpdateRefusal.key ||
-        UpdateRefusal.revoked ||
-        UpdateRefusal.signature ||
-        UpdateRefusal.statement ||
-        UpdateRefusal.target,
+    reason: UpdateRefusal_Manifest() ||
+        UpdateRefusal_Key() ||
+        UpdateRefusal_Revoked() ||
+        UpdateRefusal_Signature() ||
+        UpdateRefusal_Statement() ||
+        UpdateRefusal_Target(),
   ) =>
     (
       "Signature didn't check out",
       'The image may be damaged, or it was not signed for this feeder. Nothing '
           'was installed.',
     ),
-  FeederRefusal_Update(reason: UpdateRefusal.same) => ('Nothing to do', '$name already runs this version.'),
-  FeederRefusal_Update(reason: UpdateRefusal.failed) => (
+  FeederRefusal_Update(reason: UpdateRefusal_Same()) => ('Nothing to do', '$name already runs this version.'),
+  FeederRefusal_Update(reason: UpdateRefusal_Failed()) => (
     'This version failed on $name',
     'It was tried before and did not start properly, so it will not try again.',
   ),
-  FeederRefusal_Update(reason: UpdateRefusal.attempt) => (
+  FeederRefusal_Update(reason: UpdateRefusal_Attempt()) => (
     'Restart $name first',
     'An install already reset it since it was last powered up. Nothing changed.',
   ),
-  FeederRefusal_Update(reason: UpdateRefusal.installing) => (
+  FeederRefusal_Update(reason: UpdateRefusal_Installing()) => (
     'Another update is under way',
     'Let it finish, then look again. Nothing changed.',
   ),
-  FeederRefusal_Update(reason: UpdateRefusal.pending) => (
+  FeederRefusal_Update(reason: UpdateRefusal_Pending()) => (
     'An earlier update is still held',
     "One stopped partway, and $name won't take another until it's cancelled. "
         'Nothing is installing now.',
+  ),
+  FeederRefusal_Update(reason: UpdateRefusal_Fallback(:final reason)) => (
+    reason == Bank0Blocked.key ? "The recovery copy can't take it" : 'Updates are blocked',
+    '${recoveryWords(name, reason)} Nothing changed.',
   ),
   FeederRefusal_Update() => ('$name said no', "It can't install an update right now. Nothing changed."),
   FeederRefusal_Busy() => ("It's feeding", 'Try again when the feed finishes.'),
@@ -171,7 +194,7 @@ class UpdateEndScreen extends StatelessWidget {
 
   /// A stop left its candidate recorded, and only a cancel forgets it.
   bool get _heldEarlier => switch (end) {
-    UpdateEnd_Refused(refusal: FeederRefusal_Update(reason: UpdateRefusal.pending)) => true,
+    UpdateEnd_Refused(refusal: FeederRefusal_Update(reason: UpdateRefusal_Pending())) => true,
     _ => false,
   };
 

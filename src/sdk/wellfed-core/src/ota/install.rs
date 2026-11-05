@@ -109,6 +109,9 @@ pub struct Progress {
     pub wanted: [Option<u32>; WANTED],
     /// Why the last install stopped, if it did.
     pub stopped: Option<Stop>,
+    /// Bank 0 as bank 1 last checked it; always [`Bank0Check::Unchecked`]
+    /// on bank 0, which records itself instead.
+    pub bank0: Bank0Check,
 }
 
 impl Progress {
@@ -123,6 +126,7 @@ impl Progress {
             written: 0,
             wanted: [None; WANTED],
             stopped: None,
+            bank0: Bank0Check::Unchecked,
         }
     }
 
@@ -138,6 +142,74 @@ impl Progress {
     }
 }
 
+crate::named_enum! {
+    /// Why bank 1 does not make way for bank 0: the check that failed, in
+    /// the order bank 1 runs them. Bank 1 gives way only to a bank 0 that
+    /// booted, recorded its own image in the update store and still holds
+    /// exactly that image, so the build it hands over to can install. The
+    /// words are the `reason=` of `PLWCH1 refused give_way` and the
+    /// `check=` of `PLOTA1 bank0`.
+    pub enum Blocked {
+        /// Bank 0's loader marker is not valid.
+        Marker = "marker",
+        /// Bank 0 never recorded itself: it was written over UART (or
+        /// the store was reset) and has not booted since.
+        Unrecorded = "unrecorded",
+        /// Bank 0's built-in update key is not the one the offer leans on.
+        Key = "key",
+        /// Bank 0's image headers do not give an image to hash.
+        Extent = "extent",
+        /// Bank 0's image differs from what it recorded, in length or hash.
+        Changed = "changed",
+        /// Bank 0 could not be read while hashing it.
+        Read = "read",
+    }
+}
+
+crate::named_enum! {
+    /// Why bank 0 recorded no image at boot (`PLOTA1 bank0 recorded=0
+    /// error=…`).
+    pub enum Bank0Error {
+        /// Its headers do not give an image to hash.
+        Extent = "extent",
+        /// It could not be read while hashing.
+        Read = "read",
+        /// The update store could not be written.
+        Store = "store",
+    }
+}
+
+/// Bank 0 as bank 1 last checked it: once per boot, and at every offer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Bank0Check {
+    /// Not checked yet this boot (or the store could not be read).
+    Unchecked,
+    /// Bank 0 holds the image it recorded.
+    Match,
+    /// Bank 1 would not give way to it.
+    Blocked(Blocked),
+}
+
+impl Bank0Check {
+    /// The `check=` word of `PLOTA1 bank0`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unchecked => "unchecked",
+            Self::Match => "match",
+            Self::Blocked(blocked) => blocked.as_str(),
+        }
+    }
+
+    /// The check that prints as `text`, as a host reads a record back.
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "unchecked" => Some(Self::Unchecked),
+            "match" => Some(Self::Match),
+            _ => Blocked::parse(text).map(Self::Blocked),
+        }
+    }
+}
+
 /// Why an update request was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Refused {
@@ -148,8 +220,8 @@ pub enum Refused {
     Unreadable,
     /// The mailbox or the flash is not free yet.
     Busy,
-    /// Bank 0 does not hold the recorded image of a build that installs.
-    Fallback,
+    /// Bank 1 does not make way for bank 0, for this reason.
+    Fallback(Blocked),
     /// Bank 0 installs only the manifest bank 1 gave way for.
     Pending,
     /// This manifest was activated and failed its trial.
@@ -196,7 +268,7 @@ impl Refused {
             Self::Offer(_) => RefusedReason::Manifest,
             Self::Store(_) | Self::Unreadable => RefusedReason::Store,
             Self::Busy => RefusedReason::Busy,
-            Self::Fallback => RefusedReason::Fallback,
+            Self::Fallback(_) => RefusedReason::Fallback,
             Self::Pending => RefusedReason::Pending,
             Self::Failed => RefusedReason::Failed,
             Self::Attempt => RefusedReason::Attempt,

@@ -5746,6 +5746,13 @@ fn wire__crate__api__setup__setup_service_impl(
 
 #[allow(clippy::unnecessary_literal_unwrap)]
 const _: fn() = || {
+    match None::<crate::api::model::Bank0Check>.unwrap() {
+        crate::api::model::Bank0Check::Unchecked => {}
+        crate::api::model::Bank0Check::Match => {}
+        crate::api::model::Bank0Check::Blocked(field0) => {
+            let _: crate::api::model::Bank0Blocked = field0;
+        }
+    }
     match None::<crate::api::model::CallClip>.unwrap() {
         crate::api::model::CallClip::None => {}
         crate::api::model::CallClip::Receiving {
@@ -5970,6 +5977,27 @@ const _: fn() = || {
         let _: Option<u16> = TraceSummary.battery_min_mv;
         let _: u16 = TraceSummary.stride;
         let _: bool = TraceSummary.truncated;
+    }
+    match None::<crate::api::model::UpdateRefusal>.unwrap() {
+        crate::api::model::UpdateRefusal::Manifest => {}
+        crate::api::model::UpdateRefusal::Key => {}
+        crate::api::model::UpdateRefusal::Revoked => {}
+        crate::api::model::UpdateRefusal::Signature => {}
+        crate::api::model::UpdateRefusal::Target => {}
+        crate::api::model::UpdateRefusal::Same => {}
+        crate::api::model::UpdateRefusal::Downgrade => {}
+        crate::api::model::UpdateRefusal::Statement => {}
+        crate::api::model::UpdateRefusal::Pending => {}
+        crate::api::model::UpdateRefusal::Failed => {}
+        crate::api::model::UpdateRefusal::Fallback { reason } => {
+            let _: crate::api::model::Bank0Blocked = reason;
+        }
+        crate::api::model::UpdateRefusal::Attempt => {}
+        crate::api::model::UpdateRefusal::Installing => {}
+        crate::api::model::UpdateRefusal::NotInstalling => {}
+        crate::api::model::UpdateRefusal::Store => {}
+        crate::api::model::UpdateRefusal::Unconfirmed => {}
+        crate::api::model::UpdateRefusal::Battery => {}
     }
     {
         let WeighedIntake = None::<crate::api::server_views::WeighedIntake>.unwrap();
@@ -6423,6 +6451,44 @@ impl SseDecode for crate::api::install::BackupProblem {
             1 => crate::api::install::BackupProblem::Differs,
             _ => unreachable!("Invalid variant for BackupProblem: {}", inner),
         };
+    }
+}
+
+impl SseDecode for crate::api::model::Bank0Blocked {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::model::Bank0Blocked::Marker,
+            1 => crate::api::model::Bank0Blocked::Unrecorded,
+            2 => crate::api::model::Bank0Blocked::Key,
+            3 => crate::api::model::Bank0Blocked::Extent,
+            4 => crate::api::model::Bank0Blocked::Changed,
+            5 => crate::api::model::Bank0Blocked::Read,
+            _ => unreachable!("Invalid variant for Bank0Blocked: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::model::Bank0Check {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                return crate::api::model::Bank0Check::Unchecked;
+            }
+            1 => {
+                return crate::api::model::Bank0Check::Match;
+            }
+            2 => {
+                let mut var_field0 = <crate::api::model::Bank0Blocked>::sse_decode(deserializer);
+                return crate::api::model::Bank0Check::Blocked(var_field0);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -11182,6 +11248,7 @@ impl SseDecode for crate::api::feeder::UpdateInfo {
         let mut var_version = <u32>::sse_decode(deserializer);
         let mut var_imageLen = <u32>::sse_decode(deserializer);
         let mut var_written = <u32>::sse_decode(deserializer);
+        let mut var_bank0 = <crate::api::model::Bank0Check>::sse_decode(deserializer);
         return crate::api::feeder::UpdateInfo {
             phase: var_phase,
             bank: var_bank,
@@ -11189,6 +11256,7 @@ impl SseDecode for crate::api::feeder::UpdateInfo {
             version: var_version,
             image_len: var_imageLen,
             written: var_written,
+            bank0: var_bank0,
         };
     }
 }
@@ -11249,27 +11317,64 @@ impl SseDecode for crate::api::update::UpdateProgress {
 impl SseDecode for crate::api::model::UpdateRefusal {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::api::model::UpdateRefusal::Manifest,
-            1 => crate::api::model::UpdateRefusal::Key,
-            2 => crate::api::model::UpdateRefusal::Revoked,
-            3 => crate::api::model::UpdateRefusal::Signature,
-            4 => crate::api::model::UpdateRefusal::Target,
-            5 => crate::api::model::UpdateRefusal::Same,
-            6 => crate::api::model::UpdateRefusal::Downgrade,
-            7 => crate::api::model::UpdateRefusal::Statement,
-            8 => crate::api::model::UpdateRefusal::Pending,
-            9 => crate::api::model::UpdateRefusal::Failed,
-            10 => crate::api::model::UpdateRefusal::Fallback,
-            11 => crate::api::model::UpdateRefusal::Attempt,
-            12 => crate::api::model::UpdateRefusal::Installing,
-            13 => crate::api::model::UpdateRefusal::NotInstalling,
-            14 => crate::api::model::UpdateRefusal::Store,
-            15 => crate::api::model::UpdateRefusal::Unconfirmed,
-            16 => crate::api::model::UpdateRefusal::Battery,
-            _ => unreachable!("Invalid variant for UpdateRefusal: {}", inner),
-        };
+        let mut tag_ = <i32>::sse_decode(deserializer);
+        match tag_ {
+            0 => {
+                return crate::api::model::UpdateRefusal::Manifest;
+            }
+            1 => {
+                return crate::api::model::UpdateRefusal::Key;
+            }
+            2 => {
+                return crate::api::model::UpdateRefusal::Revoked;
+            }
+            3 => {
+                return crate::api::model::UpdateRefusal::Signature;
+            }
+            4 => {
+                return crate::api::model::UpdateRefusal::Target;
+            }
+            5 => {
+                return crate::api::model::UpdateRefusal::Same;
+            }
+            6 => {
+                return crate::api::model::UpdateRefusal::Downgrade;
+            }
+            7 => {
+                return crate::api::model::UpdateRefusal::Statement;
+            }
+            8 => {
+                return crate::api::model::UpdateRefusal::Pending;
+            }
+            9 => {
+                return crate::api::model::UpdateRefusal::Failed;
+            }
+            10 => {
+                let mut var_reason = <crate::api::model::Bank0Blocked>::sse_decode(deserializer);
+                return crate::api::model::UpdateRefusal::Fallback { reason: var_reason };
+            }
+            11 => {
+                return crate::api::model::UpdateRefusal::Attempt;
+            }
+            12 => {
+                return crate::api::model::UpdateRefusal::Installing;
+            }
+            13 => {
+                return crate::api::model::UpdateRefusal::NotInstalling;
+            }
+            14 => {
+                return crate::api::model::UpdateRefusal::Store;
+            }
+            15 => {
+                return crate::api::model::UpdateRefusal::Unconfirmed;
+            }
+            16 => {
+                return crate::api::model::UpdateRefusal::Battery;
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -11993,6 +12098,57 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::install::BackupProblem>
 {
     fn into_into_dart(self) -> crate::api::install::BackupProblem {
         self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::Bank0Blocked> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::model::Bank0Blocked::Marker => 0.into_dart(),
+            crate::api::model::Bank0Blocked::Unrecorded => 1.into_dart(),
+            crate::api::model::Bank0Blocked::Key => 2.into_dart(),
+            crate::api::model::Bank0Blocked::Extent => 3.into_dart(),
+            crate::api::model::Bank0Blocked::Changed => 4.into_dart(),
+            crate::api::model::Bank0Blocked::Read => 5.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::model::Bank0Blocked>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::model::Bank0Blocked>>
+    for crate::api::model::Bank0Blocked
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::model::Bank0Blocked> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::Bank0Check> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::model::Bank0Check::Unchecked => [0.into_dart()].into_dart(),
+            crate::api::model::Bank0Check::Match => [1.into_dart()].into_dart(),
+            crate::api::model::Bank0Check::Blocked(field0) => {
+                [2.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::model::Bank0Check>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::model::Bank0Check>>
+    for crate::api::model::Bank0Check
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::model::Bank0Check> {
+        self.into()
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -16256,6 +16412,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::feeder::UpdateInfo {
             self.version.into_into_dart().into_dart(),
             self.image_len.into_into_dart().into_dart(),
             self.written.into_into_dart().into_dart(),
+            self.bank0.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -16337,24 +16494,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::update::UpdateProgress>
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::UpdateRefusal> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
-            crate::api::model::UpdateRefusal::Manifest => 0.into_dart(),
-            crate::api::model::UpdateRefusal::Key => 1.into_dart(),
-            crate::api::model::UpdateRefusal::Revoked => 2.into_dart(),
-            crate::api::model::UpdateRefusal::Signature => 3.into_dart(),
-            crate::api::model::UpdateRefusal::Target => 4.into_dart(),
-            crate::api::model::UpdateRefusal::Same => 5.into_dart(),
-            crate::api::model::UpdateRefusal::Downgrade => 6.into_dart(),
-            crate::api::model::UpdateRefusal::Statement => 7.into_dart(),
-            crate::api::model::UpdateRefusal::Pending => 8.into_dart(),
-            crate::api::model::UpdateRefusal::Failed => 9.into_dart(),
-            crate::api::model::UpdateRefusal::Fallback => 10.into_dart(),
-            crate::api::model::UpdateRefusal::Attempt => 11.into_dart(),
-            crate::api::model::UpdateRefusal::Installing => 12.into_dart(),
-            crate::api::model::UpdateRefusal::NotInstalling => 13.into_dart(),
-            crate::api::model::UpdateRefusal::Store => 14.into_dart(),
-            crate::api::model::UpdateRefusal::Unconfirmed => 15.into_dart(),
-            crate::api::model::UpdateRefusal::Battery => 16.into_dart(),
-            _ => unreachable!(),
+            crate::api::model::UpdateRefusal::Manifest => [0.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Key => [1.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Revoked => [2.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Signature => [3.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Target => [4.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Same => [5.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Downgrade => [6.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Statement => [7.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Pending => [8.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Failed => [9.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Fallback { reason } => {
+                [10.into_dart(), reason.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::model::UpdateRefusal::Attempt => [11.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Installing => [12.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::NotInstalling => [13.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Store => [14.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Unconfirmed => [15.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::Battery => [16.into_dart()].into_dart(),
+            _ => {
+                unimplemented!("");
+            }
         }
     }
 }
@@ -16977,6 +17138,47 @@ impl SseEncode for crate::api::install::BackupProblem {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::api::model::Bank0Blocked {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::model::Bank0Blocked::Marker => 0,
+                crate::api::model::Bank0Blocked::Unrecorded => 1,
+                crate::api::model::Bank0Blocked::Key => 2,
+                crate::api::model::Bank0Blocked::Extent => 3,
+                crate::api::model::Bank0Blocked::Changed => 4,
+                crate::api::model::Bank0Blocked::Read => 5,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::model::Bank0Check {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        match self {
+            crate::api::model::Bank0Check::Unchecked => {
+                <i32>::sse_encode(0, serializer);
+            }
+            crate::api::model::Bank0Check::Match => {
+                <i32>::sse_encode(1, serializer);
+            }
+            crate::api::model::Bank0Check::Blocked(field0) => {
+                <i32>::sse_encode(2, serializer);
+                <crate::api::model::Bank0Blocked>::sse_encode(field0, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 
@@ -21002,6 +21204,7 @@ impl SseEncode for crate::api::feeder::UpdateInfo {
         <u32>::sse_encode(self.version, serializer);
         <u32>::sse_encode(self.image_len, serializer);
         <u32>::sse_encode(self.written, serializer);
+        <crate::api::model::Bank0Check>::sse_encode(self.bank0, serializer);
     }
 }
 
@@ -21058,31 +21261,63 @@ impl SseEncode for crate::api::update::UpdateProgress {
 impl SseEncode for crate::api::model::UpdateRefusal {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::api::model::UpdateRefusal::Manifest => 0,
-                crate::api::model::UpdateRefusal::Key => 1,
-                crate::api::model::UpdateRefusal::Revoked => 2,
-                crate::api::model::UpdateRefusal::Signature => 3,
-                crate::api::model::UpdateRefusal::Target => 4,
-                crate::api::model::UpdateRefusal::Same => 5,
-                crate::api::model::UpdateRefusal::Downgrade => 6,
-                crate::api::model::UpdateRefusal::Statement => 7,
-                crate::api::model::UpdateRefusal::Pending => 8,
-                crate::api::model::UpdateRefusal::Failed => 9,
-                crate::api::model::UpdateRefusal::Fallback => 10,
-                crate::api::model::UpdateRefusal::Attempt => 11,
-                crate::api::model::UpdateRefusal::Installing => 12,
-                crate::api::model::UpdateRefusal::NotInstalling => 13,
-                crate::api::model::UpdateRefusal::Store => 14,
-                crate::api::model::UpdateRefusal::Unconfirmed => 15,
-                crate::api::model::UpdateRefusal::Battery => 16,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
+        match self {
+            crate::api::model::UpdateRefusal::Manifest => {
+                <i32>::sse_encode(0, serializer);
+            }
+            crate::api::model::UpdateRefusal::Key => {
+                <i32>::sse_encode(1, serializer);
+            }
+            crate::api::model::UpdateRefusal::Revoked => {
+                <i32>::sse_encode(2, serializer);
+            }
+            crate::api::model::UpdateRefusal::Signature => {
+                <i32>::sse_encode(3, serializer);
+            }
+            crate::api::model::UpdateRefusal::Target => {
+                <i32>::sse_encode(4, serializer);
+            }
+            crate::api::model::UpdateRefusal::Same => {
+                <i32>::sse_encode(5, serializer);
+            }
+            crate::api::model::UpdateRefusal::Downgrade => {
+                <i32>::sse_encode(6, serializer);
+            }
+            crate::api::model::UpdateRefusal::Statement => {
+                <i32>::sse_encode(7, serializer);
+            }
+            crate::api::model::UpdateRefusal::Pending => {
+                <i32>::sse_encode(8, serializer);
+            }
+            crate::api::model::UpdateRefusal::Failed => {
+                <i32>::sse_encode(9, serializer);
+            }
+            crate::api::model::UpdateRefusal::Fallback { reason } => {
+                <i32>::sse_encode(10, serializer);
+                <crate::api::model::Bank0Blocked>::sse_encode(reason, serializer);
+            }
+            crate::api::model::UpdateRefusal::Attempt => {
+                <i32>::sse_encode(11, serializer);
+            }
+            crate::api::model::UpdateRefusal::Installing => {
+                <i32>::sse_encode(12, serializer);
+            }
+            crate::api::model::UpdateRefusal::NotInstalling => {
+                <i32>::sse_encode(13, serializer);
+            }
+            crate::api::model::UpdateRefusal::Store => {
+                <i32>::sse_encode(14, serializer);
+            }
+            crate::api::model::UpdateRefusal::Unconfirmed => {
+                <i32>::sse_encode(15, serializer);
+            }
+            crate::api::model::UpdateRefusal::Battery => {
+                <i32>::sse_encode(16, serializer);
+            }
+            _ => {
+                unimplemented!("");
+            }
+        }
     }
 }
 

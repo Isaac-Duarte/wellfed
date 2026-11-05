@@ -426,6 +426,9 @@ fn messages() -> Vec<Fixture> {
                 written: 8192,
                 wanted: [Some(8192), Some(8704), None, None, None, None, None, None],
                 stopped: Some(UpdateStop::Timeout),
+                bank0: Bank0Check::Blocked {
+                    reason: Bank0Blocked::Changed,
+                },
             }))),
             feeder,
         ),
@@ -1100,6 +1103,15 @@ fn messages() -> Vec<Fixture> {
                 by: Source::Client([1, 2, 3, 4]),
             }),
             |b| decode::<EventBody>(b).is_ok(),
+        ),
+        (
+            "outcome-update-refused-fallback",
+            entry(&response(Outcome::Refused(Refusal::Update(
+                UpdateRefusal::Fallback {
+                    reason: Bank0Blocked::Unrecorded,
+                },
+            )))),
+            feeder,
         ),
     ]
 }

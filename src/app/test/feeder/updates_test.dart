@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show SizedBox;
+import 'package:flutter/material.dart' show FilledButton, SizedBox;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/updates.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
@@ -16,6 +16,7 @@ Future<(FakeFeederPorts, FakeSession)> _show(
   WidgetTester tester, {
   ImageCheck image = const ImageCheck.ready(provisioning: ImageProvisioning.consumer, build: _newBuild, version: 7),
   String build = 'ab',
+  Bank0Check bank0 = const Bank0Check.unchecked(),
 }) async {
   final book = FakeBook()..feeders = [kitchen];
   final ports = FakeFeederPorts()..image = image;
@@ -27,8 +28,16 @@ Future<(FakeFeederPorts, FakeSession)> _show(
   ports.session.status(fakeCard(build: build));
   await tester.pump();
   ports.session.replies.add(
-    const FeederReply.update(
-      update: UpdateInfo(phase: UpdatePhase.idle, bank: 1, minVersion: 6, version: 0, imageLen: 0, written: 0),
+    FeederReply.update(
+      update: UpdateInfo(
+        phase: UpdatePhase.idle,
+        bank: 1,
+        minVersion: 6,
+        version: 0,
+        imageLen: 0,
+        written: 0,
+        bank0: bank0,
+      ),
     ),
   );
   await showTab(tester, UpdatesScreen(feeder: feeder));
@@ -121,7 +130,15 @@ void main() {
 
     session.replies.add(
       const FeederReply.update(
-        update: UpdateInfo(phase: UpdatePhase.idle, bank: 0, minVersion: 6, version: 0, imageLen: 0, written: 0),
+        update: UpdateInfo(
+          phase: UpdatePhase.idle,
+          bank: 0,
+          minVersion: 6,
+          version: 0,
+          imageLen: 0,
+          written: 0,
+          bank0: Bank0Check.unchecked(),
+        ),
       ),
     );
     await tapIn(tester, find.text('Look again'));
@@ -139,7 +156,15 @@ void main() {
     await settle(tester);
     session.replies.add(
       const FeederReply.update(
-        update: UpdateInfo(phase: UpdatePhase.idle, bank: 1, minVersion: 7, version: 0, imageLen: 0, written: 0),
+        update: UpdateInfo(
+          phase: UpdatePhase.idle,
+          bank: 1,
+          minVersion: 7,
+          version: 0,
+          imageLen: 0,
+          written: 0,
+          bank0: Bank0Check.unchecked(),
+        ),
       ),
     );
     await tapIn(tester, find.text('Look again'));
@@ -147,7 +172,15 @@ void main() {
 
     session.replies.add(
       const FeederReply.update(
-        update: UpdateInfo(phase: UpdatePhase.idle, bank: 1, minVersion: 7, version: 0, imageLen: 0, written: 0),
+        update: UpdateInfo(
+          phase: UpdatePhase.idle,
+          bank: 1,
+          minVersion: 7,
+          version: 0,
+          imageLen: 0,
+          written: 0,
+          bank0: Bank0Check.unchecked(),
+        ),
       ),
     );
     await tapIn(tester, find.text('Done'));
@@ -159,7 +192,7 @@ void main() {
     await tapIn(tester, find.text('Install on Kitchen'));
     ports.progress.add(
       const UpdateProgress.ended(
-        end: UpdateEnd.refused(refusal: FeederRefusal.update(reason: UpdateRefusal.pending)),
+        end: UpdateEnd.refused(refusal: FeederRefusal.update(reason: UpdateRefusal.pending())),
       ),
     );
     await settle(tester);
@@ -197,6 +230,24 @@ void main() {
     expect(ports.located, [(4, 'lan:4747')]);
   });
 
+  testWidgets('a recovery copy that has not checked itself in blocks updates, and says how to fix it', (tester) async {
+    await _show(tester, bank0: const Bank0Check.blocked(Bank0Blocked.unrecorded));
+    expect(find.textContaining('Updates are blocked.'), findsOneWidget);
+    expect(find.textContaining("hasn't checked itself in"), findsOneWidget);
+    expect(find.textContaining('recovery copy once (a bench step)'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Install on Kitchen'), 200);
+    final FilledButton install = tester.widget(
+      find.ancestor(of: find.text('Install on Kitchen'), matching: find.byType(FilledButton)),
+    );
+    expect(install.onPressed, isNull, reason: 'the feeder would refuse it');
+  });
+
+  testWidgets('a recovery copy that matches its record blocks nothing', (tester) async {
+    await _show(tester, bank0: const Bank0Check.match());
+    expect(find.textContaining('Updates are blocked'), findsNothing);
+    expect(find.text('Install on Kitchen'), findsOneWidget);
+  });
+
   group('how it ends', () {
     Future<void> end(WidgetTester tester, UpdateEnd end) async {
       final (FakeFeederPorts ports, _) = await _show(tester);
@@ -206,9 +257,21 @@ void main() {
     }
 
     testWidgets('on batteries', (tester) async {
-      await end(tester, const UpdateEnd.refused(refusal: FeederRefusal.update(reason: UpdateRefusal.battery)));
+      await end(tester, const UpdateEnd.refused(refusal: FeederRefusal.update(reason: UpdateRefusal.battery())));
       expect(find.text('Plug Kitchen in first'), findsOneWidget);
       expect(find.text('Try again'), findsNothing);
+    });
+
+    testWidgets('refused for the recovery copy, with what fixes it', (tester) async {
+      await end(
+        tester,
+        const UpdateEnd.refused(
+          refusal: FeederRefusal.update(reason: UpdateRefusal.fallback(reason: Bank0Blocked.changed)),
+        ),
+      );
+      expect(find.text('Updates are blocked'), findsOneWidget);
+      expect(find.textContaining('changed since it last checked itself in'), findsOneWidget);
+      expect(find.textContaining('said no'), findsNothing);
     });
 
     testWidgets('an uncertain one is said, and offers nothing again', (tester) async {

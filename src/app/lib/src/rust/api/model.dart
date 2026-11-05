@@ -9,6 +9,17 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'model.freezed.dart';
 
+enum Bank0Blocked { marker, unrecorded, key, extent, changed, read }
+
+@freezed
+sealed class Bank0Check with _$Bank0Check {
+  const Bank0Check._();
+
+  const factory Bank0Check.unchecked() = Bank0Check_Unchecked;
+  const factory Bank0Check.match() = Bank0Check_Match;
+  const factory Bank0Check.blocked(Bank0Blocked field0) = Bank0Check_Blocked;
+}
+
 enum Blocked {
   starting,
   journal,
@@ -653,24 +664,28 @@ enum Tune { chime, meal, coin, alert, test, twinkle }
 
 enum UpdatePhase { idle, checking, givingWay, receiving, activated }
 
-enum UpdateRefusal {
-  manifest,
-  key,
-  revoked,
-  signature,
-  target,
-  same,
-  downgrade,
-  statement,
-  pending,
-  failed,
-  fallback,
-  attempt,
-  installing,
-  notInstalling,
-  store,
-  unconfirmed,
-  battery,
+@freezed
+sealed class UpdateRefusal with _$UpdateRefusal {
+  const UpdateRefusal._();
+
+  const factory UpdateRefusal.manifest() = UpdateRefusal_Manifest;
+  const factory UpdateRefusal.key() = UpdateRefusal_Key;
+  const factory UpdateRefusal.revoked() = UpdateRefusal_Revoked;
+  const factory UpdateRefusal.signature() = UpdateRefusal_Signature;
+  const factory UpdateRefusal.target() = UpdateRefusal_Target;
+  const factory UpdateRefusal.same() = UpdateRefusal_Same;
+  const factory UpdateRefusal.downgrade() = UpdateRefusal_Downgrade;
+  const factory UpdateRefusal.statement() = UpdateRefusal_Statement;
+  const factory UpdateRefusal.pending() = UpdateRefusal_Pending;
+  const factory UpdateRefusal.failed() = UpdateRefusal_Failed;
+  const factory UpdateRefusal.fallback({required Bank0Blocked reason}) =
+      UpdateRefusal_Fallback;
+  const factory UpdateRefusal.attempt() = UpdateRefusal_Attempt;
+  const factory UpdateRefusal.installing() = UpdateRefusal_Installing;
+  const factory UpdateRefusal.notInstalling() = UpdateRefusal_NotInstalling;
+  const factory UpdateRefusal.store() = UpdateRefusal_Store;
+  const factory UpdateRefusal.unconfirmed() = UpdateRefusal_Unconfirmed;
+  const factory UpdateRefusal.battery() = UpdateRefusal_Battery;
 }
 
 enum UpdateStop {

@@ -5,6 +5,7 @@ import 'package:wellfed/screens/feeder/update_end.dart';
 import 'package:wellfed/screens/restore/restore_screen.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart';
+import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/update/update.dart';
@@ -106,7 +107,13 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                     _ => null,
                   };
                   final bool current = offered != null && build != null && offered.$1 == build;
-                  final bool can = offered != null && !current && _feeder.state.cardIsCurrent;
+                  // The feeder refuses every update until its recovery copy
+                  // checks itself in, so none is offered meanwhile.
+                  final Bank0Blocked? blocked = switch (state?.bank0) {
+                    Bank0Check_Blocked(:final Bank0Blocked field0) => field0,
+                    _ => null,
+                  };
+                  final bool can = offered != null && !current && blocked == null && _feeder.state.cardIsCurrent;
 
                   return ListView(
                     padding: const EdgeInsets.all(Space.s4),
@@ -121,6 +128,14 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                         if (card != null) ('Running from', Text('Bank ${card.bank}')),
                       ]),
                       const SizedBox(height: Space.s4),
+                      if (blocked != null) ...[
+                        Notice(
+                          tone: Tone.warning,
+                          glyph: Glyph.warning,
+                          text: 'Updates are blocked. ${recoveryWords(name, blocked)}',
+                        ),
+                        const SizedBox(height: Space.s4),
+                      ],
                       if (_image == null)
                         Text(
                           'Looking at what this app carries…',

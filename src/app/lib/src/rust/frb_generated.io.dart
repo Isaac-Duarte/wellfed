@@ -321,6 +321,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BackupProblem dco_decode_backup_problem(dynamic raw);
 
   @protected
+  Bank0Blocked dco_decode_bank_0_blocked(dynamic raw);
+
+  @protected
+  Bank0Check dco_decode_bank_0_check(dynamic raw);
+
+  @protected
   Blocked dco_decode_blocked(dynamic raw);
 
   @protected
@@ -573,6 +579,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UpdateInfo dco_decode_box_autoadd_update_info(dynamic raw);
+
+  @protected
+  UpdateRefusal dco_decode_box_autoadd_update_refusal(dynamic raw);
 
   @protected
   WeighedIntake dco_decode_box_autoadd_weighed_intake(dynamic raw);
@@ -1557,6 +1566,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BackupProblem sse_decode_backup_problem(SseDeserializer deserializer);
 
   @protected
+  Bank0Blocked sse_decode_bank_0_blocked(SseDeserializer deserializer);
+
+  @protected
+  Bank0Check sse_decode_bank_0_check(SseDeserializer deserializer);
+
+  @protected
   Blocked sse_decode_blocked(SseDeserializer deserializer);
 
   @protected
@@ -1859,6 +1874,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UpdateInfo sse_decode_box_autoadd_update_info(SseDeserializer deserializer);
+
+  @protected
+  UpdateRefusal sse_decode_box_autoadd_update_refusal(
+    SseDeserializer deserializer,
+  );
 
   @protected
   WeighedIntake sse_decode_box_autoadd_weighed_intake(
@@ -2977,6 +2997,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_backup_problem(BackupProblem self, SseSerializer serializer);
 
   @protected
+  void sse_encode_bank_0_blocked(Bank0Blocked self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_bank_0_check(Bank0Check self, SseSerializer serializer);
+
+  @protected
   void sse_encode_blocked(Blocked self, SseSerializer serializer);
 
   @protected
@@ -3411,6 +3437,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_update_info(
     UpdateInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_update_refusal(
+    UpdateRefusal self,
     SseSerializer serializer,
   );
 

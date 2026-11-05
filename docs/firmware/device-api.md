@@ -290,7 +290,7 @@ Every flash lease checks that the outputs are stopped, and fails closed when the
 
 ### Updates, backups, invites and recovery
 
-- **Updates** (owner sessions only): `OfferUpdate`, `UpdateChunk`, `UpdateState`, `CancelUpdate`, `EnrollUpdateKey` and `UpdateKeyStatement`, answered `Outcome::Update` or `Refusal::Update`.
+- **Updates** (owner sessions only): `OfferUpdate`, `UpdateChunk`, `UpdateState`, `CancelUpdate`, `EnrollUpdateKey` and `UpdateKeyStatement`, answered `Outcome::Update` or `Refusal::Update`. `UpdateView.bank0` is bank 0 as bank 1 last checked it (`Unchecked`, `Match`, or `Blocked { reason }`), and `UpdateRefusal::Fallback { reason }` names the check an offer failed: `Marker`, `Unrecorded`, `Key`, `Extent`, `Changed` or `Read` ([OTA design](ota-design.md#bootstrap)).
   - The loop never verifies a signature. It copies the request into the update mailbox and answers from what the service task's update stage publishes ([OTA design](ota-design.md#updates-over-the-device-api)).
   - An offer is refused `Busy` while a feed is queued or driven, and a feed while an install holds the flash.
   - A chunk is idempotent by its offset, so it is not a remembered write and is not logged one by one.

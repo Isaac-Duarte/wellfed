@@ -50,6 +50,67 @@ pub struct UpdateView {
     pub wanted: Vec<u32>,
     /// Why the last install stopped before activation, if it did.
     pub stopped: Option<UpdateStop>,
+    /// Bank 0, the recovery copy, as bank 1 last checked it; always
+    /// unchecked from bank 0.
+    pub bank0: Bank0Check,
+}
+
+/// Bank 0, the recovery copy, as bank 1 last checked it (once per boot,
+/// and at every offer). Bank 1 gives way for an update only to a bank 0
+/// that booted, recorded its own image and still holds exactly that image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "state", content = "reason", rename_all = "snake_case")]
+pub enum Bank0Check {
+    /// Not checked yet this boot.
+    Unchecked,
+    /// Bank 0 holds the image it recorded: updates can go ahead.
+    Match,
+    /// Bank 1 will not give way to it, so every update is refused.
+    Blocked(Bank0Blocked),
+}
+
+impl Bank0Check {
+    /// What blocks updates, if anything does.
+    pub const fn blocked(self) -> Option<Bank0Blocked> {
+        match self {
+            Self::Blocked(reason) => Some(reason),
+            Self::Unchecked | Self::Match => None,
+        }
+    }
+}
+
+/// Why bank 1 will not give way to bank 0, in the order it checks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Bank0Blocked {
+    /// Bank 0's loader marker is not valid.
+    Marker,
+    /// Bank 0 never recorded itself: written over UART and not booted
+    /// since. Booting it once records it.
+    Unrecorded,
+    /// Bank 0's built-in update key is not the one that signed the offer.
+    Key,
+    /// Bank 0's image headers do not give an image.
+    Extent,
+    /// Bank 0 changed since it recorded itself.
+    Changed,
+    /// Bank 0 could not be read.
+    Read,
+}
+
+impl Bank0Blocked {
+    /// The JSON spelling, as the feeder's `PLWCH1 refused give_way
+    /// reason=…` record spells it too.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Marker => "marker",
+            Self::Unrecorded => "unrecorded",
+            Self::Key => "key",
+            Self::Extent => "extent",
+            Self::Changed => "changed",
+            Self::Read => "read",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,8 +177,10 @@ pub enum UpdateRefusal {
     /// This manifest was activated and failed its trial.
     Failed,
     /// Bank 0 holds no build that can install it, so bank 1 does not
-    /// give way.
-    Fallback,
+    /// give way: `reason` names the check.
+    Fallback {
+        reason: Bank0Blocked,
+    },
     /// An install reset the feeder this power cycle.
     Attempt,
     /// Another update is in progress.

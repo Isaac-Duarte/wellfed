@@ -85,7 +85,7 @@ On the feeder, the same replacement image has run from both banks, and today bot
 2. **Bank 0 holds a known-good fallback,** not a peer. It boots only when bank 1's marker or signatures fail. It runs the full `feeder` build: it serves the device API and feeds, so a failed update lands on a feeder that still works. It is the only bank that writes bank 1 ([OTA design](ota-design.md#updates-over-the-device-api)).
 3. **Never leave both banks invalid.** The loader then waits forever, and only the UART loader recovers. Any marker write must keep at least one valid bank.
 4. **To give way to bank 0, clear bank 1's marker.** Bank 0 cannot win while bank 1 is valid.
-5. **Bank 1 gives way only to the bank 0 it knows.** At boot, bank 0 records its build, its image's length (from the bank's own headers) and its SHA-256 in the update store. Bank 1 hashes bank 0 again before a give-way, and refuses when bank 0 changed or never recorded itself. So a give-way never lands on a build that cannot take the offer.
+5. **Bank 1 gives way only to the bank 0 it knows.** At boot, bank 0 records its build, its image's length (from the bank's own headers) and its SHA-256 in the update store. Bank 1 hashes bank 0 again before a give-way, and refuses when bank 0 changed or never recorded itself, naming which check failed. It runs the same check once per boot and publishes the result in the update state, so a bank 0 written over UART shows as blocked before an offer is refused. So a give-way never lands on a build that cannot take the offer.
 
 ## When a new build won't start
 

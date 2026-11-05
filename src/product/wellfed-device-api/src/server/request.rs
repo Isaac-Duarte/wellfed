@@ -621,7 +621,7 @@ fn update_refusal(refusal: UpdateRefusal) -> &'static str {
         UpdateRefusal::Statement => "update-statement",
         UpdateRefusal::Pending => "update-pending",
         UpdateRefusal::Failed => "update-failed",
-        UpdateRefusal::Fallback => "update-fallback",
+        UpdateRefusal::Fallback { .. } => "update-fallback",
         UpdateRefusal::Attempt => "update-attempt",
         UpdateRefusal::Installing => "update-installing",
         UpdateRefusal::NotInstalling => "update-not-installing",

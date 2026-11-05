@@ -10,7 +10,11 @@
 //! `Bank0`), a build that installs over the device API. It then records the
 //! offer as pending, answers [`Phase::GivingWay`], and once that answer is
 //! out clears its own marker's first byte and restarts. The loader boots
-//! bank 0.
+//! bank 0. A refusal names the check that failed ([`Blocked`]). Once per
+//! boot, after the trial and while idle, bank 1 also runs the same check
+//! without an offer and publishes the result ([`Bank0Check`]), so a bank 0
+//! written over UART that has not booted since shows up before an update
+//! is refused for it.
 //!
 //! **Bank 0** records its own image at boot (only when it changed), and
 //! installs only the pending manifest, or, with none pending (fresh from
@@ -40,7 +44,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use sha2::{Digest, Sha256};
 pub use wellfed_core::ota::SectorStep;
-use wellfed_core::ota::install::{Install, Phase, Progress, Refused, Stop, Taken};
+use wellfed_core::ota::install::{
+    Bank0Check, Bank0Error, Blocked, Install, Phase, Progress, Refused, Stop, Taken,
+};
 use wellfed_core::ota::offer::{
     self, Admitted, Context, ImageKind, KeyId, KeyRing, KeyStatement, Trust, admit_offer,
     admit_statement,
@@ -259,8 +265,16 @@ pub enum Record {
         len: u32,
         recorded: bool,
     },
-    /// Bank 0's headers did not give an image to record.
-    Bank0Unknown,
+    /// Bank 0 could not record its own image, so bank 1 will not give way
+    /// to it until a boot that does.
+    Bank0Unrecorded {
+        error: Bank0Error,
+    },
+    /// Bank 1's boot check of bank 0 against its record.
+    Bank0Check {
+        check: Bank0Check,
+        found: Found,
+    },
     Refused {
         refused: Refused,
     },
@@ -271,7 +285,13 @@ pub enum Record {
         version: u32,
     },
     /// Bank 0 cannot take the offer; bank 1 stays.
-    GiveWayRefused,
+    GiveWayRefused {
+        blocked: Blocked,
+        found: Found,
+    },
+    /// The give-way's own flash write (bank 1's first marker byte) failed
+    /// after every check passed; bank 1 stays.
+    GiveWayFailed,
     Manifest {
         version: u32,
         bytes: u32,
@@ -299,9 +319,55 @@ impl Record {
     /// The record's line tag.
     pub const fn tag(&self) -> &'static str {
         match self {
-            Self::Offer { .. } | Self::GaveWay { .. } | Self::GiveWayRefused => Tag::Watch.as_str(),
+            Self::Offer { .. }
+            | Self::GaveWay { .. }
+            | Self::GiveWayRefused { .. }
+            | Self::GiveWayFailed => Tag::Watch.as_str(),
             _ => Tag::Update.as_str(),
         }
+    }
+}
+
+/// Bank 0's image as recorded and as found, for the records that compare
+/// them: lengths, and each SHA-256's first four bytes. What a check never
+/// reached is `None` and left out of the line.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Found {
+    pub recorded_len: Option<u32>,
+    pub found_len: Option<u32>,
+    pub recorded: Option<[u8; 4]>,
+    pub found: Option<[u8; 4]>,
+}
+
+impl Found {
+    fn recorded(bank0: &Bank0) -> Self {
+        Self {
+            recorded_len: Some(bank0.len),
+            recorded: Some(prefix(&bank0.sha256)),
+            ..Self::default()
+        }
+    }
+}
+
+fn prefix(sha256: &[u8; 32]) -> [u8; 4] {
+    [sha256[0], sha256[1], sha256[2], sha256[3]]
+}
+
+impl fmt::Display for Found {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(len) = self.recorded_len {
+            write!(f, " recorded_len={len}")?;
+        }
+        if let Some(len) = self.found_len {
+            write!(f, " found_len={len}")?;
+        }
+        if let Some(hash) = self.recorded {
+            write!(f, " recorded={}", wellfed_session::hex::Lower(&hash))?;
+        }
+        if let Some(hash) = self.found {
+            write!(f, " found={}", wellfed_session::hex::Lower(&hash))?;
+        }
+        Ok(())
     }
 }
 
@@ -361,11 +427,15 @@ pub fn describe(record: Record, f: &mut impl fmt::Write) -> fmt::Result {
         Record::Bank0 { len, recorded } => {
             write!(f, "bank0 bytes={len} recorded={}", u8::from(recorded))
         }
-        Record::Bank0Unknown => f.write_str("bank0 bytes=0 recorded=0"),
+        Record::Bank0Unrecorded { error } => write!(f, "bank0 recorded=0 error={error}"),
+        Record::Bank0Check { check, found } => write!(f, "bank0 check={}{found}", check.as_str()),
         Record::Refused { refused: why } => write!(f, "refused reason={}", why.reason()),
         Record::Offer { version } => write!(f, "offer=1 version={version}"),
         Record::GaveWay { version } => write!(f, "give_way=1 version={version} restart=1"),
-        Record::GiveWayRefused => f.write_str("error stage=give_way"),
+        Record::GiveWayRefused { blocked, found } => {
+            write!(f, "refused give_way reason={blocked}{found}")
+        }
+        Record::GiveWayFailed => f.write_str("error stage=give_way_write"),
         Record::Manifest { version, bytes } => {
             write!(f, "manifest version={version} bytes={bytes}")
         }
@@ -501,6 +571,12 @@ pub struct Update<I> {
     attempt: bool,
     /// Bank 0 still has its image to record.
     record_bank0: bool,
+    /// Bank 1 still has bank 0 to check this boot.
+    check_bank0: bool,
+    /// Bank 0 as bank 1 last checked it, as published.
+    bank0: Bank0Check,
+    /// Bank 0's own image being hashed: to record it on bank 0, to check
+    /// it at boot on bank 1.
     scan: Option<Scan>,
     work: Work,
     /// The write turn, and whether the stage holds it.
@@ -526,6 +602,8 @@ impl<I: SlotIo + Clone> Update<I> {
             opened: false,
             attempt: false,
             record_bank0: bank == 0,
+            check_bank0: bank == 1,
+            bank0: Bank0Check::Unchecked,
             scan: None,
             work: Work::Idle,
             turn: WriteTurn::new(),
@@ -555,6 +633,13 @@ impl<I: SlotIo + Clone> Update<I> {
     }
 
     fn progress(&self) -> Progress {
+        Progress {
+            bank0: self.bank0,
+            ..self.work_progress()
+        }
+    }
+
+    fn work_progress(&self) -> Progress {
         let idle = Progress {
             stopped: self.stopped,
             ..Progress::idle(self.bank, self.min())
@@ -650,6 +735,14 @@ impl<I: SlotIo + Clone> Update<I> {
             self.settle_turn();
             return next(BUSY_MS, record);
         }
+        if self.check_bank0
+            && let Some(record) = self.boot_check_step(flash)
+        {
+            if record.is_some() {
+                self.publish();
+            }
+            return next(BUSY_MS, record);
+        }
 
         let step = match self.work {
             Work::Checking { .. } => self.check_step(flash, now),
@@ -681,7 +774,9 @@ impl<I: SlotIo + Clone> Update<I> {
                 Some(scan) => self.scan.insert(scan),
                 None => {
                     self.record_bank0 = false;
-                    return Some(Some(Record::Bank0Unknown));
+                    return Some(Some(Record::Bank0Unrecorded {
+                        error: Bank0Error::Extent,
+                    }));
                 }
             },
         };
@@ -692,7 +787,9 @@ impl<I: SlotIo + Clone> Update<I> {
         let Ok(sha256) = done else {
             self.scan = None;
             self.record_bank0 = false;
-            return Some(Some(Record::Bank0Unknown));
+            return Some(Some(Record::Bank0Unrecorded {
+                error: Bank0Error::Read,
+            }));
         };
         if !flash.armed() {
             // Keep the digest; the settings writer arms the hooks soon.
@@ -721,8 +818,83 @@ impl<I: SlotIo + Clone> Update<I> {
         Some(Some(if saved {
             Record::Bank0 { len, recorded }
         } else {
-            Record::Bank0Unknown
+            Record::Bank0Unrecorded {
+                error: Bank0Error::Store,
+            }
         }))
+    }
+
+    /// Bank 1's boot check: bank 0 against its record, hashed as an offer's
+    /// check hashes it, so the owner sees a bank 0 that would block updates
+    /// before offering one. It only reads mapped flash, so it takes no flash
+    /// lease and no write turn; still it waits for the hooks (armed once the
+    /// trial confirmed, so it stays out of the trial's health window), and
+    /// it pauses while a feed holds the outputs or the stage has a request,
+    /// an install or a give-way to run. `None` when it does not run this
+    /// step.
+    fn boot_check_step(&mut self, flash: &mut impl Flash) -> Option<Option<Record>> {
+        let busy = self.install.is_some()
+            || !matches!(self.work, Work::Idle)
+            || mailbox::pending().is_some()
+            || INTERLOCK.outputs_claimed();
+        if busy || !flash.armed() {
+            return None;
+        }
+        if !self.store.readable() {
+            // Nothing to compare with: offers are refused as unreadable.
+            self.check_bank0 = false;
+            return None;
+        }
+
+        let scan = match self.scan.as_mut() {
+            Some(scan) => scan,
+            None => match self.bank0_record(flash) {
+                Err((blocked, found)) => {
+                    return Some(Some(self.boot_checked(Bank0Check::Blocked(blocked), found)));
+                }
+                Ok(recorded) => match Scan::start(flash) {
+                    Some(scan) => self.scan.insert(scan),
+                    None => {
+                        let found = Found::recorded(&recorded);
+                        return Some(Some(
+                            self.boot_checked(Bank0Check::Blocked(Blocked::Extent), found),
+                        ));
+                    }
+                },
+            },
+        };
+        let len = scan.len;
+        let Some(done) = scan.step(flash) else {
+            return Some(None);
+        };
+
+        let (check, found) = compare(self.store.record().bank0, len, done);
+        Some(Some(self.boot_checked(check, found)))
+    }
+
+    fn boot_checked(&mut self, check: Bank0Check, found: Found) -> Record {
+        self.checked(check);
+        Record::Bank0Check { check, found }
+    }
+
+    /// Bank 0 was checked, at boot or for an offer: the result stands for
+    /// the rest of the boot, and the boot check has nothing left to do.
+    fn checked(&mut self, check: Bank0Check) {
+        self.bank0 = check;
+        self.check_bank0 = false;
+        self.scan = None;
+    }
+
+    /// The checks before any hashing: bank 0's marker, then its record,
+    /// which the hash is compared with.
+    fn bank0_record(&self, flash: &mut impl Flash) -> Result<Bank0, (Blocked, Found)> {
+        let recorded = self.store.record().bank0;
+        let found = recorded.as_ref().map(Found::recorded).unwrap_or_default();
+        let mut marker = [0u8; 8];
+        if !(flash.bank0(0, &mut marker) && marker == MARKER) {
+            return Err((Blocked::Marker, found));
+        }
+        recorded.ok_or((Blocked::Unrecorded, found))
     }
 
     fn refuse(&mut self, refused: Refused) -> Step {
@@ -808,29 +980,38 @@ impl<I: SlotIo + Clone> Update<I> {
     /// owners' update keys (`signers`), so only a built-in key can differ
     /// between them.
     fn check_bank0(&mut self, admitted: Admitted, flash: &mut impl Flash, version: u32) -> Step {
-        let mut marker = [0u8; 8];
-        let valid = flash.bank0(0, &mut marker) && marker == MARKER;
-        let recorded = self.store.record().bank0;
+        let recorded = match self.bank0_record(flash) {
+            Ok(recorded) => recorded,
+            Err((blocked, found)) => return self.give_way_refused(blocked, found),
+        };
         // Bank 0 must find every built-in key the offer leans on: the
         // manifest's signer and a downgrade statement's.
-        let finds = |key_id: KeyId, trust: Trust| {
-            trust != Trust::BuiltIn || recorded.is_some_and(|bank0| bank0.key == Some(key_id))
-        };
+        let finds =
+            |key_id: KeyId, trust: Trust| trust != Trust::BuiltIn || recorded.key == Some(key_id);
         let trusted = finds(admitted.signed.key_id, admitted.trust)
             && admitted
                 .downgrade
                 .is_none_or(|signer| finds(signer.key_id, signer.trust));
-        let scan = if valid && recorded.is_some() && trusted {
-            Scan::start(flash)
-        } else {
-            None
+        if !trusted {
+            return self.give_way_refused(Blocked::Key, Found::recorded(&recorded));
+        }
+        let Some(scan) = Scan::start(flash) else {
+            return self.give_way_refused(Blocked::Extent, Found::recorded(&recorded));
         };
-        let Some(scan) = scan else {
-            mailbox::finish(Err(Refused::Fallback));
-            return next(IDLE_MS, Some(Record::GiveWayRefused));
-        };
+
         self.work = Work::Checking { admitted, scan };
         next(BUSY_MS, Some(Record::Offer { version }))
+    }
+
+    /// Refuse the offer: bank 1 stays. Every reason but the key is bank 0's
+    /// own state, so it stands as the boot check's result too; the key
+    /// depends on the offer.
+    fn give_way_refused(&mut self, blocked: Blocked, found: Found) -> Step {
+        if blocked != Blocked::Key {
+            self.checked(Bank0Check::Blocked(blocked));
+        }
+        mailbox::finish(Err(Refused::Fallback(blocked)));
+        next(IDLE_MS, Some(Record::GiveWayRefused { blocked, found }))
     }
 
     fn check_step(&mut self, flash: &mut impl Flash, now: u32) -> Step {
@@ -844,16 +1025,11 @@ impl<I: SlotIo + Clone> Update<I> {
         let admitted = *admitted;
         self.work = Work::Idle;
 
-        let matches = done.is_ok_and(|sha256| {
-            self.store
-                .record()
-                .bank0
-                .is_some_and(|bank0| bank0.len == len && bank0.sha256 == sha256)
-        });
-        if !matches {
-            mailbox::finish(Err(Refused::Fallback));
-            return next(IDLE_MS, Some(Record::GiveWayRefused));
+        let (check, found) = compare(self.store.record().bank0, len, done);
+        if let Bank0Check::Blocked(blocked) = check {
+            return self.give_way_refused(blocked, found);
         }
+        self.checked(check);
         if let Err(error) = under_marker(|| self.store.set_pending(candidate(&admitted))) {
             mailbox::finish(Err(Refused::Store(error)));
             return next(
@@ -1117,7 +1293,7 @@ impl<I: SlotIo + Clone> Update<I> {
             if !under_marker(|| flash.give_way()) {
                 self.work = Work::Idle;
                 mailbox::release();
-                return next(IDLE_MS, Some(Record::GiveWayRefused));
+                return next(IDLE_MS, Some(Record::GiveWayFailed));
             }
             self.work = Work::Restarting { give_way: true };
             return Step {
@@ -1133,6 +1309,29 @@ impl<I: SlotIo + Clone> Update<I> {
             restart: true,
         }
     }
+}
+
+/// Bank 0's image, hashed to `done` over `len` bytes, against the image it
+/// recorded (read again now: the store may have been reopened meanwhile).
+fn compare(recorded: Option<Bank0>, len: u32, done: Result<[u8; 32], ()>) -> (Bank0Check, Found) {
+    let mut found = Found {
+        found_len: Some(len),
+        ..recorded.as_ref().map(Found::recorded).unwrap_or_default()
+    };
+    let Some(recorded) = recorded else {
+        return (Bank0Check::Blocked(Blocked::Unrecorded), found);
+    };
+    let Ok(sha256) = done else {
+        return (Bank0Check::Blocked(Blocked::Read), found);
+    };
+
+    found.found = Some(prefix(&sha256));
+    let check = if recorded.len == len && recorded.sha256 == sha256 {
+        Bank0Check::Match
+    } else {
+        Bank0Check::Blocked(Blocked::Changed)
+    };
+    (check, found)
 }
 
 /// One write under the attempt marker, as the settings writer brackets its

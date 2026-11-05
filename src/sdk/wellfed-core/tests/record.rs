@@ -1,7 +1,7 @@
 //! The host tools' view of the firmware's UART records.
 
 use wellfed_core::feed::owner::OwnerState;
-use wellfed_core::ota::install::{RefusedReason, StopStage};
+use wellfed_core::ota::install::{Bank0Check, Bank0Error, Blocked, RefusedReason, StopStage};
 use wellfed_core::record::{
     Api, Confirm, Event, Owner, Record, Settings, Tag, Trial, Update, Watch,
 };
@@ -152,8 +152,42 @@ fn update_records_decode_their_words() {
     );
     assert_eq!(event("PLOTA1 error stage=unheard-of"), None);
     assert_eq!(
-        event("PLWCH1 error stage=give_way"),
-        Some(Event::Watch(Watch::GiveWayRefused))
+        event("PLWCH1 refused give_way reason=changed recorded_len=8 found_len=9"),
+        Some(Event::Watch(Watch::GiveWayRefused {
+            reason: Blocked::Changed
+        }))
+    );
+    assert_eq!(event("PLWCH1 refused give_way reason=unheard-of"), None);
+    assert_eq!(
+        event("PLWCH1 error stage=give_way_write"),
+        Some(Event::Watch(Watch::GiveWayFailed))
+    );
+    // Bank 0 recorded itself, whether or not the record changed; a line
+    // that says it could not is never mistaken for one.
+    assert_eq!(
+        event("PLOTA1 bank0 bytes=69632 recorded=0"),
+        Some(Event::Update(Update::Bank0Recorded {
+            bytes: 69_632,
+            written: false
+        }))
+    );
+    assert_eq!(
+        event("PLOTA1 bank0 recorded=0 error=store"),
+        Some(Event::Update(Update::Bank0Unrecorded {
+            error: Bank0Error::Store
+        }))
+    );
+    assert_eq!(
+        event("PLOTA1 bank0 check=unrecorded"),
+        Some(Event::Update(Update::Bank0Check {
+            check: Bank0Check::Blocked(Blocked::Unrecorded)
+        }))
+    );
+    assert_eq!(
+        event("PLOTA1 bank0 check=match recorded_len=8"),
+        Some(Event::Update(Update::Bank0Check {
+            check: Bank0Check::Match
+        }))
     );
     assert_eq!(
         event("PLCNF1 confirmed=1 already=1"),

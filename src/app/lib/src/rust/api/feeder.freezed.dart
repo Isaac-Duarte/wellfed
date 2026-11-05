@@ -683,7 +683,7 @@ $Res call({
 });
 
 
-
+$UpdateRefusalCopyWith<$Res> get reason;
 
 }
 /// @nodoc
@@ -703,7 +703,16 @@ as UpdateRefusal,
   ));
 }
 
-
+/// Create a copy of FeederRefusal
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$UpdateRefusalCopyWith<$Res> get reason {
+  
+  return $UpdateRefusalCopyWith<$Res>(_self.reason, (value) {
+    return _then(_self.copyWith(reason: value));
+  });
+}
 }
 
 /// @nodoc

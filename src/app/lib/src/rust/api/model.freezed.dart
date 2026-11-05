@@ -13,6 +13,304 @@ part of 'model.dart';
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
+mixin _$Bank0Check {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Bank0Check);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'Bank0Check()';
+}
+
+
+}
+
+/// @nodoc
+class $Bank0CheckCopyWith<$Res>  {
+$Bank0CheckCopyWith(Bank0Check _, $Res Function(Bank0Check) __);
+}
+
+
+/// Adds pattern-matching-related methods to [Bank0Check].
+extension Bank0CheckPatterns on Bank0Check {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Bank0Check_Unchecked value)?  unchecked,TResult Function( Bank0Check_Match value)?  match,TResult Function( Bank0Check_Blocked value)?  blocked,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case Bank0Check_Unchecked() when unchecked != null:
+return unchecked(_that);case Bank0Check_Match() when match != null:
+return match(_that);case Bank0Check_Blocked() when blocked != null:
+return blocked(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Bank0Check_Unchecked value)  unchecked,required TResult Function( Bank0Check_Match value)  match,required TResult Function( Bank0Check_Blocked value)  blocked,}){
+final _that = this;
+switch (_that) {
+case Bank0Check_Unchecked():
+return unchecked(_that);case Bank0Check_Match():
+return match(_that);case Bank0Check_Blocked():
+return blocked(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Bank0Check_Unchecked value)?  unchecked,TResult? Function( Bank0Check_Match value)?  match,TResult? Function( Bank0Check_Blocked value)?  blocked,}){
+final _that = this;
+switch (_that) {
+case Bank0Check_Unchecked() when unchecked != null:
+return unchecked(_that);case Bank0Check_Match() when match != null:
+return match(_that);case Bank0Check_Blocked() when blocked != null:
+return blocked(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  unchecked,TResult Function()?  match,TResult Function( Bank0Blocked field0)?  blocked,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case Bank0Check_Unchecked() when unchecked != null:
+return unchecked();case Bank0Check_Match() when match != null:
+return match();case Bank0Check_Blocked() when blocked != null:
+return blocked(_that.field0);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  unchecked,required TResult Function()  match,required TResult Function( Bank0Blocked field0)  blocked,}) {final _that = this;
+switch (_that) {
+case Bank0Check_Unchecked():
+return unchecked();case Bank0Check_Match():
+return match();case Bank0Check_Blocked():
+return blocked(_that.field0);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  unchecked,TResult? Function()?  match,TResult? Function( Bank0Blocked field0)?  blocked,}) {final _that = this;
+switch (_that) {
+case Bank0Check_Unchecked() when unchecked != null:
+return unchecked();case Bank0Check_Match() when match != null:
+return match();case Bank0Check_Blocked() when blocked != null:
+return blocked(_that.field0);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class Bank0Check_Unchecked extends Bank0Check {
+  const Bank0Check_Unchecked(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Bank0Check_Unchecked);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'Bank0Check.unchecked()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class Bank0Check_Match extends Bank0Check {
+  const Bank0Check_Match(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Bank0Check_Match);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'Bank0Check.match()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class Bank0Check_Blocked extends Bank0Check {
+  const Bank0Check_Blocked(this.field0): super._();
+  
+
+ final  Bank0Blocked field0;
+
+/// Create a copy of Bank0Check
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$Bank0Check_BlockedCopyWith<Bank0Check_Blocked> get copyWith => _$Bank0Check_BlockedCopyWithImpl<Bank0Check_Blocked>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Bank0Check_Blocked&&(identical(other.field0, field0) || other.field0 == field0));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,field0);
+}
+
+@override
+String toString() {
+    return 'Bank0Check.blocked(field0: $field0)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $Bank0Check_BlockedCopyWith<$Res> implements $Bank0CheckCopyWith<$Res> {
+  factory $Bank0Check_BlockedCopyWith(Bank0Check_Blocked value, $Res Function(Bank0Check_Blocked) _then) = _$Bank0Check_BlockedCopyWithImpl;
+@useResult
+$Res call({
+ Bank0Blocked field0
+});
+
+
+
+
+}
+/// @nodoc
+class _$Bank0Check_BlockedCopyWithImpl<$Res>
+    implements $Bank0Check_BlockedCopyWith<$Res> {
+  _$Bank0Check_BlockedCopyWithImpl(this._self, this._then);
+
+  final Bank0Check_Blocked _self;
+  final $Res Function(Bank0Check_Blocked) _then;
+
+/// Create a copy of Bank0Check
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? field0 = null,}) {
+  return _then(Bank0Check_Blocked(
+null == field0 ? _self.field0 : field0 // ignore: cast_nullable_to_non_nullable
+as Bank0Blocked,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$CallClip {
 
 
@@ -2448,6 +2746,836 @@ as TraceMotor,
 
 
 }
+
+/// @nodoc
+mixin _$UpdateRefusal {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal()';
+}
+
+
+}
+
+/// @nodoc
+class $UpdateRefusalCopyWith<$Res>  {
+$UpdateRefusalCopyWith(UpdateRefusal _, $Res Function(UpdateRefusal) __);
+}
+
+
+/// Adds pattern-matching-related methods to [UpdateRefusal].
+extension UpdateRefusalPatterns on UpdateRefusal {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UpdateRefusal_Manifest value)?  manifest,TResult Function( UpdateRefusal_Key value)?  key,TResult Function( UpdateRefusal_Revoked value)?  revoked,TResult Function( UpdateRefusal_Signature value)?  signature,TResult Function( UpdateRefusal_Target value)?  target,TResult Function( UpdateRefusal_Same value)?  same,TResult Function( UpdateRefusal_Downgrade value)?  downgrade,TResult Function( UpdateRefusal_Statement value)?  statement,TResult Function( UpdateRefusal_Pending value)?  pending,TResult Function( UpdateRefusal_Failed value)?  failed,TResult Function( UpdateRefusal_Fallback value)?  fallback,TResult Function( UpdateRefusal_Attempt value)?  attempt,TResult Function( UpdateRefusal_Installing value)?  installing,TResult Function( UpdateRefusal_NotInstalling value)?  notInstalling,TResult Function( UpdateRefusal_Store value)?  store,TResult Function( UpdateRefusal_Unconfirmed value)?  unconfirmed,TResult Function( UpdateRefusal_Battery value)?  battery,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case UpdateRefusal_Manifest() when manifest != null:
+return manifest(_that);case UpdateRefusal_Key() when key != null:
+return key(_that);case UpdateRefusal_Revoked() when revoked != null:
+return revoked(_that);case UpdateRefusal_Signature() when signature != null:
+return signature(_that);case UpdateRefusal_Target() when target != null:
+return target(_that);case UpdateRefusal_Same() when same != null:
+return same(_that);case UpdateRefusal_Downgrade() when downgrade != null:
+return downgrade(_that);case UpdateRefusal_Statement() when statement != null:
+return statement(_that);case UpdateRefusal_Pending() when pending != null:
+return pending(_that);case UpdateRefusal_Failed() when failed != null:
+return failed(_that);case UpdateRefusal_Fallback() when fallback != null:
+return fallback(_that);case UpdateRefusal_Attempt() when attempt != null:
+return attempt(_that);case UpdateRefusal_Installing() when installing != null:
+return installing(_that);case UpdateRefusal_NotInstalling() when notInstalling != null:
+return notInstalling(_that);case UpdateRefusal_Store() when store != null:
+return store(_that);case UpdateRefusal_Unconfirmed() when unconfirmed != null:
+return unconfirmed(_that);case UpdateRefusal_Battery() when battery != null:
+return battery(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UpdateRefusal_Manifest value)  manifest,required TResult Function( UpdateRefusal_Key value)  key,required TResult Function( UpdateRefusal_Revoked value)  revoked,required TResult Function( UpdateRefusal_Signature value)  signature,required TResult Function( UpdateRefusal_Target value)  target,required TResult Function( UpdateRefusal_Same value)  same,required TResult Function( UpdateRefusal_Downgrade value)  downgrade,required TResult Function( UpdateRefusal_Statement value)  statement,required TResult Function( UpdateRefusal_Pending value)  pending,required TResult Function( UpdateRefusal_Failed value)  failed,required TResult Function( UpdateRefusal_Fallback value)  fallback,required TResult Function( UpdateRefusal_Attempt value)  attempt,required TResult Function( UpdateRefusal_Installing value)  installing,required TResult Function( UpdateRefusal_NotInstalling value)  notInstalling,required TResult Function( UpdateRefusal_Store value)  store,required TResult Function( UpdateRefusal_Unconfirmed value)  unconfirmed,required TResult Function( UpdateRefusal_Battery value)  battery,}){
+final _that = this;
+switch (_that) {
+case UpdateRefusal_Manifest():
+return manifest(_that);case UpdateRefusal_Key():
+return key(_that);case UpdateRefusal_Revoked():
+return revoked(_that);case UpdateRefusal_Signature():
+return signature(_that);case UpdateRefusal_Target():
+return target(_that);case UpdateRefusal_Same():
+return same(_that);case UpdateRefusal_Downgrade():
+return downgrade(_that);case UpdateRefusal_Statement():
+return statement(_that);case UpdateRefusal_Pending():
+return pending(_that);case UpdateRefusal_Failed():
+return failed(_that);case UpdateRefusal_Fallback():
+return fallback(_that);case UpdateRefusal_Attempt():
+return attempt(_that);case UpdateRefusal_Installing():
+return installing(_that);case UpdateRefusal_NotInstalling():
+return notInstalling(_that);case UpdateRefusal_Store():
+return store(_that);case UpdateRefusal_Unconfirmed():
+return unconfirmed(_that);case UpdateRefusal_Battery():
+return battery(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UpdateRefusal_Manifest value)?  manifest,TResult? Function( UpdateRefusal_Key value)?  key,TResult? Function( UpdateRefusal_Revoked value)?  revoked,TResult? Function( UpdateRefusal_Signature value)?  signature,TResult? Function( UpdateRefusal_Target value)?  target,TResult? Function( UpdateRefusal_Same value)?  same,TResult? Function( UpdateRefusal_Downgrade value)?  downgrade,TResult? Function( UpdateRefusal_Statement value)?  statement,TResult? Function( UpdateRefusal_Pending value)?  pending,TResult? Function( UpdateRefusal_Failed value)?  failed,TResult? Function( UpdateRefusal_Fallback value)?  fallback,TResult? Function( UpdateRefusal_Attempt value)?  attempt,TResult? Function( UpdateRefusal_Installing value)?  installing,TResult? Function( UpdateRefusal_NotInstalling value)?  notInstalling,TResult? Function( UpdateRefusal_Store value)?  store,TResult? Function( UpdateRefusal_Unconfirmed value)?  unconfirmed,TResult? Function( UpdateRefusal_Battery value)?  battery,}){
+final _that = this;
+switch (_that) {
+case UpdateRefusal_Manifest() when manifest != null:
+return manifest(_that);case UpdateRefusal_Key() when key != null:
+return key(_that);case UpdateRefusal_Revoked() when revoked != null:
+return revoked(_that);case UpdateRefusal_Signature() when signature != null:
+return signature(_that);case UpdateRefusal_Target() when target != null:
+return target(_that);case UpdateRefusal_Same() when same != null:
+return same(_that);case UpdateRefusal_Downgrade() when downgrade != null:
+return downgrade(_that);case UpdateRefusal_Statement() when statement != null:
+return statement(_that);case UpdateRefusal_Pending() when pending != null:
+return pending(_that);case UpdateRefusal_Failed() when failed != null:
+return failed(_that);case UpdateRefusal_Fallback() when fallback != null:
+return fallback(_that);case UpdateRefusal_Attempt() when attempt != null:
+return attempt(_that);case UpdateRefusal_Installing() when installing != null:
+return installing(_that);case UpdateRefusal_NotInstalling() when notInstalling != null:
+return notInstalling(_that);case UpdateRefusal_Store() when store != null:
+return store(_that);case UpdateRefusal_Unconfirmed() when unconfirmed != null:
+return unconfirmed(_that);case UpdateRefusal_Battery() when battery != null:
+return battery(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  manifest,TResult Function()?  key,TResult Function()?  revoked,TResult Function()?  signature,TResult Function()?  target,TResult Function()?  same,TResult Function()?  downgrade,TResult Function()?  statement,TResult Function()?  pending,TResult Function()?  failed,TResult Function( Bank0Blocked reason)?  fallback,TResult Function()?  attempt,TResult Function()?  installing,TResult Function()?  notInstalling,TResult Function()?  store,TResult Function()?  unconfirmed,TResult Function()?  battery,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case UpdateRefusal_Manifest() when manifest != null:
+return manifest();case UpdateRefusal_Key() when key != null:
+return key();case UpdateRefusal_Revoked() when revoked != null:
+return revoked();case UpdateRefusal_Signature() when signature != null:
+return signature();case UpdateRefusal_Target() when target != null:
+return target();case UpdateRefusal_Same() when same != null:
+return same();case UpdateRefusal_Downgrade() when downgrade != null:
+return downgrade();case UpdateRefusal_Statement() when statement != null:
+return statement();case UpdateRefusal_Pending() when pending != null:
+return pending();case UpdateRefusal_Failed() when failed != null:
+return failed();case UpdateRefusal_Fallback() when fallback != null:
+return fallback(_that.reason);case UpdateRefusal_Attempt() when attempt != null:
+return attempt();case UpdateRefusal_Installing() when installing != null:
+return installing();case UpdateRefusal_NotInstalling() when notInstalling != null:
+return notInstalling();case UpdateRefusal_Store() when store != null:
+return store();case UpdateRefusal_Unconfirmed() when unconfirmed != null:
+return unconfirmed();case UpdateRefusal_Battery() when battery != null:
+return battery();case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  manifest,required TResult Function()  key,required TResult Function()  revoked,required TResult Function()  signature,required TResult Function()  target,required TResult Function()  same,required TResult Function()  downgrade,required TResult Function()  statement,required TResult Function()  pending,required TResult Function()  failed,required TResult Function( Bank0Blocked reason)  fallback,required TResult Function()  attempt,required TResult Function()  installing,required TResult Function()  notInstalling,required TResult Function()  store,required TResult Function()  unconfirmed,required TResult Function()  battery,}) {final _that = this;
+switch (_that) {
+case UpdateRefusal_Manifest():
+return manifest();case UpdateRefusal_Key():
+return key();case UpdateRefusal_Revoked():
+return revoked();case UpdateRefusal_Signature():
+return signature();case UpdateRefusal_Target():
+return target();case UpdateRefusal_Same():
+return same();case UpdateRefusal_Downgrade():
+return downgrade();case UpdateRefusal_Statement():
+return statement();case UpdateRefusal_Pending():
+return pending();case UpdateRefusal_Failed():
+return failed();case UpdateRefusal_Fallback():
+return fallback(_that.reason);case UpdateRefusal_Attempt():
+return attempt();case UpdateRefusal_Installing():
+return installing();case UpdateRefusal_NotInstalling():
+return notInstalling();case UpdateRefusal_Store():
+return store();case UpdateRefusal_Unconfirmed():
+return unconfirmed();case UpdateRefusal_Battery():
+return battery();}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  manifest,TResult? Function()?  key,TResult? Function()?  revoked,TResult? Function()?  signature,TResult? Function()?  target,TResult? Function()?  same,TResult? Function()?  downgrade,TResult? Function()?  statement,TResult? Function()?  pending,TResult? Function()?  failed,TResult? Function( Bank0Blocked reason)?  fallback,TResult? Function()?  attempt,TResult? Function()?  installing,TResult? Function()?  notInstalling,TResult? Function()?  store,TResult? Function()?  unconfirmed,TResult? Function()?  battery,}) {final _that = this;
+switch (_that) {
+case UpdateRefusal_Manifest() when manifest != null:
+return manifest();case UpdateRefusal_Key() when key != null:
+return key();case UpdateRefusal_Revoked() when revoked != null:
+return revoked();case UpdateRefusal_Signature() when signature != null:
+return signature();case UpdateRefusal_Target() when target != null:
+return target();case UpdateRefusal_Same() when same != null:
+return same();case UpdateRefusal_Downgrade() when downgrade != null:
+return downgrade();case UpdateRefusal_Statement() when statement != null:
+return statement();case UpdateRefusal_Pending() when pending != null:
+return pending();case UpdateRefusal_Failed() when failed != null:
+return failed();case UpdateRefusal_Fallback() when fallback != null:
+return fallback(_that.reason);case UpdateRefusal_Attempt() when attempt != null:
+return attempt();case UpdateRefusal_Installing() when installing != null:
+return installing();case UpdateRefusal_NotInstalling() when notInstalling != null:
+return notInstalling();case UpdateRefusal_Store() when store != null:
+return store();case UpdateRefusal_Unconfirmed() when unconfirmed != null:
+return unconfirmed();case UpdateRefusal_Battery() when battery != null:
+return battery();case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class UpdateRefusal_Manifest extends UpdateRefusal {
+  const UpdateRefusal_Manifest(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Manifest);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.manifest()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Key extends UpdateRefusal {
+  const UpdateRefusal_Key(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Key);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.key()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Revoked extends UpdateRefusal {
+  const UpdateRefusal_Revoked(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Revoked);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.revoked()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Signature extends UpdateRefusal {
+  const UpdateRefusal_Signature(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Signature);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.signature()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Target extends UpdateRefusal {
+  const UpdateRefusal_Target(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Target);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.target()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Same extends UpdateRefusal {
+  const UpdateRefusal_Same(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Same);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.same()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Downgrade extends UpdateRefusal {
+  const UpdateRefusal_Downgrade(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Downgrade);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.downgrade()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Statement extends UpdateRefusal {
+  const UpdateRefusal_Statement(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Statement);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.statement()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Pending extends UpdateRefusal {
+  const UpdateRefusal_Pending(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Pending);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.pending()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Failed extends UpdateRefusal {
+  const UpdateRefusal_Failed(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Failed);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.failed()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Fallback extends UpdateRefusal {
+  const UpdateRefusal_Fallback({required this.reason}): super._();
+  
+
+ final  Bank0Blocked reason;
+
+/// Create a copy of UpdateRefusal
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$UpdateRefusal_FallbackCopyWith<UpdateRefusal_Fallback> get copyWith => _$UpdateRefusal_FallbackCopyWithImpl<UpdateRefusal_Fallback>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Fallback&&(identical(other.reason, reason) || other.reason == reason));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,reason);
+}
+
+@override
+String toString() {
+    return 'UpdateRefusal.fallback(reason: $reason)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $UpdateRefusal_FallbackCopyWith<$Res> implements $UpdateRefusalCopyWith<$Res> {
+  factory $UpdateRefusal_FallbackCopyWith(UpdateRefusal_Fallback value, $Res Function(UpdateRefusal_Fallback) _then) = _$UpdateRefusal_FallbackCopyWithImpl;
+@useResult
+$Res call({
+ Bank0Blocked reason
+});
+
+
+
+
+}
+/// @nodoc
+class _$UpdateRefusal_FallbackCopyWithImpl<$Res>
+    implements $UpdateRefusal_FallbackCopyWith<$Res> {
+  _$UpdateRefusal_FallbackCopyWithImpl(this._self, this._then);
+
+  final UpdateRefusal_Fallback _self;
+  final $Res Function(UpdateRefusal_Fallback) _then;
+
+/// Create a copy of UpdateRefusal
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? reason = null,}) {
+  return _then(UpdateRefusal_Fallback(
+reason: null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
+as Bank0Blocked,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class UpdateRefusal_Attempt extends UpdateRefusal {
+  const UpdateRefusal_Attempt(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Attempt);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.attempt()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Installing extends UpdateRefusal {
+  const UpdateRefusal_Installing(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Installing);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.installing()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_NotInstalling extends UpdateRefusal {
+  const UpdateRefusal_NotInstalling(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_NotInstalling);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.notInstalling()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Store extends UpdateRefusal {
+  const UpdateRefusal_Store(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Store);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.store()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Unconfirmed extends UpdateRefusal {
+  const UpdateRefusal_Unconfirmed(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Unconfirmed);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.unconfirmed()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_Battery extends UpdateRefusal {
+  const UpdateRefusal_Battery(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_Battery);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.battery()';
+}
+
+
+}
+
+
+
 
 /// @nodoc
 mixin _$Window {

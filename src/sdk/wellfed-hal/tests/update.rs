@@ -16,7 +16,7 @@ use std::sync::{Mutex, MutexGuard};
 use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
 use wellfed_core::flash_coord::{FlashFault, FlashPhase, FlashReply};
-use wellfed_core::ota::install::{IDLE_MS, Phase, Progress, Refused, Stop};
+use wellfed_core::ota::install::{Bank0Check, Blocked, IDLE_MS, Phase, Progress, Refused, Stop};
 use wellfed_core::ota::offer::{
     self, ImageKind, KeyError, KeyStatement, OfferError, Signed, StatementError, key_id,
 };
@@ -111,6 +111,9 @@ struct TestFlash {
     /// The attempt register as each bank-1 program found it: what a reset
     /// inside that write would leave behind.
     register_seen: Vec<u32>,
+    /// Whole-sector bank-0 reads (the hash's, not the headers') at or
+    /// past this offset fail.
+    bank0_fails_from: Option<u32>,
 }
 
 impl Flash for TestFlash {
@@ -177,7 +180,10 @@ impl Flash for TestFlash {
         self.inner.read_uncached(sector, offset, bytes)
     }
     fn bank0(&mut self, offset: u32, bytes: &mut [u8]) -> bool {
-        self.inner.bank0(offset, bytes)
+        let fails = self
+            .bank0_fails_from
+            .is_some_and(|from| offset >= from && bytes.len() == SECTOR);
+        !fails && self.inner.bank0(offset, bytes)
     }
     fn give_way(&mut self) -> bool {
         self.inner.give_way()
@@ -252,6 +258,11 @@ fn manifest(version: u32, payload: &[u8]) -> Vec<u8> {
 
 /// Bank 0 holding a reviewed build's layout.
 fn bank0_image() -> Vec<u8> {
+    bank0_layout(40_000)
+}
+
+/// The same layout with a flash text part of `text` bytes.
+fn bank0_layout(text: u32) -> Vec<u8> {
     let mut out = Vec::new();
     let part = |out: &mut Vec<u8>, address: u32, body: u32| {
         out.extend_from_slice(&MARKER);
@@ -263,7 +274,7 @@ fn bank0_image() -> Vec<u8> {
     part(&mut out, 0x0C00_0020, 3000);
     part(&mut out, 0x0008_3000, 200);
     out.resize(out.len().next_multiple_of(SECTOR), 0xff);
-    part(&mut out, 0x0E00_0020, 40_000);
+    part(&mut out, 0x0E00_0020, text);
     part(&mut out, 0x1000_5000, 900);
     part(&mut out, 0x0200_0020, 0);
     out.resize(out.len().next_multiple_of(SECTOR), 0xff);
@@ -1219,51 +1230,269 @@ fn bank_1_records_the_offer_then_gives_way_once_the_answer_is_out() {
         .eq(MARKER[1..].iter())));
 }
 
+/// Puts bank 0, its record or the flash in the state a case needs.
+type Setup = fn(&mut TestFlash);
+
 #[test]
 fn bank_1_never_gives_way_to_a_bank_0_that_cannot_take_the_offer() {
     let payload = image(LEN);
     let signed = manifest(3, &payload);
-    let cases: [(&str, fn()); 5] = [
-        ("no record", || {}),
-        ("another built-in key", || {
+    let len = recorded_bank0().len;
+    let cases: [(Blocked, Setup); 8] = [
+        (Blocked::Unrecorded, |_| {}),
+        (Blocked::Key, |_| {
             let bank0 = Bank0 {
                 key: Some([0x99; 8]),
                 ..recorded_bank0()
             };
             store().set_bank0(bank0).unwrap();
         }),
-        ("no built-in key", || {
+        (Blocked::Key, |_| {
             let bank0 = Bank0 {
                 key: None,
                 ..recorded_bank0()
             };
             store().set_bank0(bank0).unwrap();
         }),
-        ("changed image", || {
+        (Blocked::Changed, |_| {
             store().set_bank0(recorded_bank0()).unwrap();
             fake::with(|h| h.bank0[SECTOR + 100] ^= 1);
         }),
-        ("invalid marker", || {
+        (Blocked::Changed, |_| {
+            let bank0 = Bank0 {
+                len: recorded_bank0().len - SECTOR as u32,
+                ..recorded_bank0()
+            };
+            store().set_bank0(bank0).unwrap();
+        }),
+        (Blocked::Marker, |_| {
             store().set_bank0(recorded_bank0()).unwrap();
             fake::with(|h| h.bank0_marker[0] = 0);
         }),
+        (Blocked::Extent, |_| {
+            store().set_bank0(recorded_bank0()).unwrap();
+            fake::with(|h| h.bank0[8..32].fill(0));
+        }),
+        (Blocked::Read, |flash| {
+            store().set_bank0(recorded_bank0()).unwrap();
+            flash.bank0_fails_from = Some(SECTOR as u32);
+        }),
     ];
-    for (name, setup) in cases {
+    for (n, (blocked, setup)) in cases.into_iter().enumerate() {
+        let _guard = start(1);
+        let mut rig = Rig::bench(1);
+        setup(&mut rig.flash);
+        assert_eq!(
+            rig.offer(&signed, None),
+            Err(Refused::Fallback(blocked)),
+            "case {n}"
+        );
+        assert_eq!(store().record().state, State::None, "{n}: nothing pending");
+        assert!(!mailbox::installing(), "{n}: the lease is released");
+        rig.now += LEAVE_MAX_MS;
+        rig.steps(2);
+        assert!(!rig.restarted, "{n}");
+        assert!(fake::with(|h| h.bank1[..8] == MARKER), "{n}");
+
+        // The log names the check, never the give-way's write failure, and
+        // carries what it compared.
+        let found = rig.records.iter().find_map(|record| match record {
+            Record::GiveWayRefused { blocked: b, found } if *b == blocked => Some(*found),
+            _ => None,
+        });
+        let found = found.unwrap_or_else(|| panic!("{n}: {:?}", rig.records));
+        assert!(!rig.records.contains(&Record::GiveWayFailed), "{n}");
+        match blocked {
+            Blocked::Unrecorded => assert_eq!(found, Found::default(), "{n}"),
+            Blocked::Changed => {
+                assert_eq!(found.found_len, Some(len), "{n}");
+                assert!(found.found.is_some(), "{n}");
+                assert!(
+                    found.recorded_len != found.found_len || found.recorded != found.found,
+                    "{n}: {found:?}"
+                );
+            }
+            Blocked::Read => {
+                assert_eq!(found.found_len, Some(len), "{n}");
+                assert_eq!(found.found, None, "{n}");
+            }
+            _ => assert_eq!(found.found, None, "{n}"),
+        }
+
+        // Every reason but the key is bank 0's own state: it stands as the
+        // published check.
+        let published = mailbox::progress().unwrap().bank0;
+        if blocked == Blocked::Key {
+            assert_ne!(published, Bank0Check::Blocked(Blocked::Key), "{n}");
+        } else {
+            assert_eq!(published, Bank0Check::Blocked(blocked), "{n}");
+        }
+    }
+}
+
+#[test]
+fn a_failed_give_way_write_has_its_own_record() {
+    let _guard = start(1);
+    store().set_bank0(recorded_bank0()).unwrap();
+    let mut rig = Rig::bench(1);
+    // The give-way's own guard refuses it once bank 1's marker is gone.
+    let answer = progress(rig.offer(&manifest(3, &image(LEN)), None));
+    assert_eq!(answer.phase, Phase::GivingWay);
+    fake::with(|h| h.bank1[1] = 0);
+
+    rig.now += LEAVE_MS;
+    rig.steps(2);
+    assert!(!rig.restarted);
+    assert!(rig.records.contains(&Record::GiveWayFailed));
+    assert!(
+        !rig.records
+            .iter()
+            .any(|r| matches!(r, Record::GiveWayRefused { .. }))
+    );
+}
+
+/// A bank 0 that takes more than one scan step to hash.
+fn large_bank0() -> Vec<u8> {
+    bank0_layout(12 * SECTOR as u32)
+}
+
+/// Step until the boot check has published something, at most `n` steps.
+fn boot_check(rig: &mut Rig, n: usize) -> Bank0Check {
+    for _ in 0..n {
+        rig.step();
+        let check = mailbox::progress().unwrap().bank0;
+        if check != Bank0Check::Unchecked {
+            return check;
+        }
+    }
+    Bank0Check::Unchecked
+}
+
+fn boot_checks(rig: &Rig) -> Vec<(Bank0Check, Found)> {
+    rig.records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Bank0Check { check, found } => Some((*check, *found)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn bank_1_checks_bank_0_once_per_boot_and_publishes_the_result() {
+    let cases: [(Bank0Check, fn()); 5] = [
+        (Bank0Check::Match, || {
+            store().set_bank0(recorded_bank0()).unwrap();
+        }),
+        // Written over UART: never booted, never recorded.
+        (Bank0Check::Blocked(Blocked::Unrecorded), || {}),
+        (Bank0Check::Blocked(Blocked::Changed), || {
+            store().set_bank0(recorded_bank0()).unwrap();
+            fake::with(|h| h.bank0[SECTOR + 100] ^= 1);
+        }),
+        (Bank0Check::Blocked(Blocked::Marker), || {
+            store().set_bank0(recorded_bank0()).unwrap();
+            fake::with(|h| h.bank0_marker[0] = 0);
+        }),
+        (Bank0Check::Blocked(Blocked::Extent), || {
+            store().set_bank0(recorded_bank0()).unwrap();
+            fake::with(|h| h.bank0[8..32].fill(0));
+        }),
+    ];
+    for (expected, setup) in cases {
         let _guard = start(1);
         setup();
         let mut rig = Rig::bench(1);
-        assert_eq!(rig.offer(&signed, None), Err(Refused::Fallback), "{name}");
-        assert_eq!(
-            store().record().state,
-            State::None,
-            "{name}: nothing pending"
-        );
-        assert!(!mailbox::installing(), "{name}: the lease is released");
-        rig.now += LEAVE_MAX_MS;
-        rig.steps(2);
-        assert!(!rig.restarted, "{name}");
-        assert!(fake::with(|h| h.bank1[..8] == MARKER), "{name}");
+        let erases = fake::with(|h| h.storage_erases);
+
+        assert_eq!(boot_check(&mut rig, 20), expected);
+        rig.steps(50);
+        let checks = boot_checks(&rig);
+        assert_eq!(checks.len(), 1, "{expected:?}: once per boot");
+        let (check, found) = checks[0];
+        assert_eq!(check, expected);
+        if expected == Bank0Check::Match {
+            assert_eq!(found.recorded_len, found.found_len);
+            assert_eq!(found.recorded, found.found);
+            assert!(found.found.is_some());
+        }
+
+        // A read-only check: no store write, no write turn, no give-way.
+        assert_eq!(fake::with(|h| h.storage_erases), erases, "{expected:?}");
+        assert!(!INTERLOCK.writing(), "{expected:?}");
+        assert!(fake::with(|h| h.bank1[..8] == MARKER), "{expected:?}");
+        assert_eq!(mailbox::progress().unwrap().phase, Phase::Idle);
     }
+}
+
+#[test]
+fn the_boot_check_waits_for_the_trial_and_for_a_feed() {
+    let _guard = start(1);
+    store().set_bank0(recorded_bank0()).unwrap();
+    ARMED.with(|a| a.set(false));
+    let mut rig = Rig::bench(1);
+
+    // The hooks are armed only once the trial confirmed.
+    assert_eq!(boot_check(&mut rig, 30), Bank0Check::Unchecked);
+    assert!(boot_checks(&rig).is_empty());
+
+    // Never while a feed holds the outputs.
+    ARMED.with(|a| a.set(true));
+    INTERLOCK.claim_feed(u32::MAX).unwrap();
+    assert_eq!(boot_check(&mut rig, 30), Bank0Check::Unchecked);
+    assert!(boot_checks(&rig).is_empty());
+
+    INTERLOCK.release_feed();
+    assert_eq!(boot_check(&mut rig, 30), Bank0Check::Match);
+}
+
+#[test]
+fn the_boot_check_hashes_in_steps_and_an_offer_s_check_takes_over() {
+    let _guard = start(1);
+    fake::with(|h| h.bank0 = large_bank0());
+    let bank0 = Bank0 {
+        len: u32::try_from(large_bank0().len()).unwrap(),
+        sha256: Sha256::digest(large_bank0()).into(),
+        ..recorded_bank0()
+    };
+    store().set_bank0(bank0).unwrap();
+    let mut rig = Rig::bench(1);
+
+    // Opened, then one scan step: more of the image is left.
+    rig.steps(2);
+    assert_eq!(mailbox::progress().unwrap().bank0, Bank0Check::Unchecked);
+
+    // An offer comes first; its own check decides, and the boot check has
+    // nothing left to log.
+    let answer = progress(rig.offer(&manifest(3, &image(LEN)), None));
+    assert_eq!(answer.phase, Phase::GivingWay);
+    assert_eq!(answer.bank0, Bank0Check::Match);
+    assert!(boot_checks(&rig).is_empty());
+}
+
+#[test]
+fn an_offer_refused_for_its_key_leaves_the_boot_check_to_run() {
+    let _guard = start(1);
+    let bank0 = Bank0 {
+        key: Some([0x99; 8]),
+        ..recorded_bank0()
+    };
+    store().set_bank0(bank0).unwrap();
+    let mut rig = Rig::bench(1);
+    assert_eq!(
+        rig.offer(&manifest(3, &image(LEN)), None),
+        Err(Refused::Fallback(Blocked::Key))
+    );
+    assert_eq!(boot_check(&mut rig, 20), Bank0Check::Match);
+}
+
+#[test]
+fn bank_0_never_runs_the_boot_check() {
+    let _guard = start(0);
+    let mut rig = Rig::bench(0);
+    rig.steps(50);
+    assert!(boot_checks(&rig).is_empty());
+    assert_eq!(mailbox::progress().unwrap().bank0, Bank0Check::Unchecked);
 }
 
 #[test]
@@ -1291,7 +1520,10 @@ fn bank_1_never_gives_way_for_a_downgrade_bank_0_could_not_check() {
     statement.extend_from_slice(&bench().sign(&body).to_bytes());
 
     let mut rig = Rig::bench(1);
-    assert_eq!(rig.offer(&stock, Some(&statement)), Err(Refused::Fallback));
+    assert_eq!(
+        rig.offer(&stock, Some(&statement)),
+        Err(Refused::Fallback(Blocked::Key))
+    );
     assert_eq!(store().record().state, State::None);
     assert!(fake::with(|h| h.bank1[..8] == MARKER));
 }
