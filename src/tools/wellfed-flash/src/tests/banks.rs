@@ -496,3 +496,44 @@ fn give_way_then_restore_marker_round_trip() {
     develop(&root, &unit, &mut port, &restore, "restore").unwrap();
     assert!(port.0.borrow().flash == flash);
 }
+
+/// A marker restore that stopped resumes by exactly one mode, picked by what
+/// bank 1 holds: `--restore-marker` alone from the given-way bytes,
+/// `--interrupted` alone from an erased or staged marker sector, and never
+/// both. The bench job prints these two flag sets; its tests pin that it
+/// prints no other.
+#[test]
+fn a_stopped_marker_restore_resumes_by_one_mode_never_both() {
+    let source = image(30000, 7);
+    let payload = development::payload(&source, &BANK1).unwrap().to_vec();
+    let mut given_way = payload.clone();
+    given_way[0] = 0;
+    let mut erased = payload.clone();
+    erased[..SECTOR].fill(0xff);
+    let mut staged = payload.clone();
+    staged[..8].fill(0xff);
+
+    let checks = |restore: bool, interrupted: bool, current: &[u8]| {
+        let mut mode = update(Some(&source), &source, BANK1);
+        mode.restore = restore;
+        mode.interrupted = interrupted;
+        development::images(&mode, current)
+            .err()
+            .map(|e| e.to_string())
+    };
+    let fresh = |current: &[u8]| checks(true, false, current);
+    let interrupted = |current: &[u8]| checks(false, true, current);
+
+    assert_eq!(fresh(&given_way), None);
+    assert!(fresh(&erased).is_some());
+    assert!(fresh(&staged).is_some());
+    assert_eq!(interrupted(&erased), None);
+    assert_eq!(interrupted(&staged), None);
+    assert!(interrupted(&given_way).is_some());
+    for current in [&given_way, &erased, &staged] {
+        assert_eq!(
+            checks(true, true, current),
+            Some(development::DevelopmentError::RestoreScope.to_string())
+        );
+    }
+}

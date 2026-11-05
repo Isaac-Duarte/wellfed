@@ -107,11 +107,31 @@ pub enum CommandsError {
     Bank1SourceRequired,
     #[error("--bank1-source applies only to --bank 0")]
     Bank1SourceUnused,
-    #[error("Cannot read the frozen review {review}: {error}")]
-    ReviewUnreadable {
+    #[error("Cannot use the frozen review {review}: {error}")]
+    Review {
         review: String,
-        error: wellfed_formats::Error,
+        error: wellfed_image::Error,
     },
+    /// Bank 1 does not hold the image `--bank1-source` names (its first
+    /// marker byte aside, which a give-way clears), so restoring its marker
+    /// against that review would fail after bank 0 was written.
+    #[error(
+        "Bank 1's first sector is not {review}'s, its first byte aside; name the review bank 1 holds"
+    )]
+    Bank1SourceDiffers { review: String },
+    #[error("The prepare's inspection holds no bank-1 sector at {sector}")]
+    Bank1SectorMissing { sector: String },
+    /// The bank-1 review an execute names must be the one its prepare
+    /// checked against bank 1, unchanged.
+    #[error("{binding} does not bind --bank1-source {review} as prepared; prepare again")]
+    Bank1SourceUnbound { binding: String, review: String },
+    /// A bank-0 write exited 0, which only a `wellfed-flash` older than this
+    /// bench does: the current one exits 3 for a verified bank-0 write.
+    #[error(
+        "wellfed-flash exited 0 for a bank-0 write: an older wellfed-flash than this bench \
+         (version skew). Bank 0 is likely written and verified; rebuild wellfed-flash"
+    )]
+    FlashSkew,
     /// A target manifest that cannot be read is not taken as motionless.
     #[error("Cannot read {manifest} to check its motion policy: {error}")]
     MotionPolicyUnreadable {
@@ -988,6 +1008,9 @@ impl Bench {
         let Some((sha, plan)) = self.update_plan(args)? else {
             return Ok(1);
         };
+        if let Some(bank1) = &args.bank1_source {
+            self.bind_bank1(&args.name, bank1)?;
+        }
         say!(
             "Plan {}: bank {}, {} sectors staged, {} erases, target {}",
             self.rel(&Paths::new(&self.root, &args.name).plan),
@@ -1011,6 +1034,9 @@ impl Bench {
         let update = self.update_args(args, &p)?;
         for path in [&p.loader, &p.bounded, &p.inspect, &p.plan] {
             self.fresh(path)?;
+        }
+        if args.bank1_source.is_some() {
+            self.fresh(&bank0::binding(&self.root, &args.name))?;
         }
         self.loader(&p.loader)?;
 
@@ -1049,6 +1075,9 @@ impl Bench {
         require(p.plan.is_file() && !p.execute.exists(), || {
             CommandsError::PlanRequired
         })?;
+        if let Some(bank1) = &args.update.bank1_source {
+            self.require_bank1_bound(&args.update.name, bank1)?;
+        }
         self.require_unbroken_power()?;
 
         // Progress estimate only; the updater reads and checks the plan itself.
@@ -1079,6 +1108,21 @@ impl Bench {
         let written = if args.update.bank == 0 { 3 } else { 0 };
         match self.run(&command) {
             Ok(code) if code == written => {}
+            Ok(0) => {
+                // Only an older wellfed-flash says 0 for a bank-0 write.
+                if let (Some(bank), Some(content)) = (
+                    Bank::of(args.update.bank),
+                    installed(&self.root, &args.update.target),
+                ) {
+                    self.wrote(bank, content, Source::FlashExecute);
+                }
+                say!("{}", CommandsError::FlashSkew);
+                return Ok(self.unfinished(
+                    "bank 0 is likely written and verified, unrecorded; bank 1 is unchanged \
+                     and refuses every update",
+                    &bank0::skew_steps(&args.update),
+                ));
+            }
             Ok(_) => {
                 say!("Update stopped; the feeder stays powered and is not booted. No retry.");
                 self.stopped_write(args.update.bank, Source::FlashExecute);
@@ -1408,10 +1452,12 @@ fn installed(root: &Path, review: &Path) -> Option<Content> {
 
 /// The execute command matching a prepare: same evidence flags, plus the hash.
 fn execute_line(args: &UpdateArgs, sha: &str) -> String {
-    let mut line = format!(
-        "wellfed-bench flash-execute {} --bank {}",
-        args.name, args.bank
-    );
+    update_line("flash-execute", args) + &format!(" --expected-plan-sha256 {sha}")
+}
+
+/// `wellfed-bench COMMAND` with `args`' update flags.
+fn update_line(command: &str, args: &UpdateArgs) -> String {
+    let mut line = format!("wellfed-bench {command} {} --bank {}", args.name, args.bank);
     if let Some(source) = &args.source {
         line += &format!(" --source {}", source.display());
     } else if let Some(read) = &args.original_read {
@@ -1431,7 +1477,7 @@ fn execute_line(args: &UpdateArgs, sha: &str) -> String {
     if let Some(bank1) = &args.bank1_source {
         line += &format!(" --bank1-source {}", bank1.display());
     }
-    line + &format!(" --expected-plan-sha256 {sha}")
+    line
 }
 
 /// The give-way session a stock return runs first, beside its own evidence.

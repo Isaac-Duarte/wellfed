@@ -1486,6 +1486,30 @@ fn an_offer_refused_for_its_key_leaves_the_boot_check_to_run() {
     assert_eq!(boot_check(&mut rig, 20), Bank0Check::Match);
 }
 
+/// A store the handover rewrote may record another bank 0, so a reopen
+/// checks bank 0 again rather than keep the result against the old record.
+#[test]
+fn a_reopened_store_checks_bank_0_again() {
+    let _guard = start(1);
+    store().set_bank0(recorded_bank0()).unwrap();
+    let mut rig = Rig::bench(1);
+    assert_eq!(boot_check(&mut rig, 20), Bank0Check::Match);
+
+    fake::with(|h| h.bank0[SECTOR + 100] ^= 1);
+    store_started_over();
+    rig.step();
+    assert_eq!(mailbox::progress().unwrap().bank0, Bank0Check::Unchecked);
+    assert_eq!(
+        boot_check(&mut rig, 20),
+        Bank0Check::Blocked(Blocked::Changed)
+    );
+    let checks: Vec<Bank0Check> = boot_checks(&rig).into_iter().map(|(c, _)| c).collect();
+    assert_eq!(
+        checks,
+        [Bank0Check::Match, Bank0Check::Blocked(Blocked::Changed)]
+    );
+}
+
 #[test]
 fn bank_0_never_runs_the_boot_check() {
     let _guard = start(0);

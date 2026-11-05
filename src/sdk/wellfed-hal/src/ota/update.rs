@@ -11,10 +11,10 @@
 //! offer as pending, answers [`Phase::GivingWay`], and once that answer is
 //! out clears its own marker's first byte and restarts. The loader boots
 //! bank 0. A refusal names the check that failed ([`Blocked`]). Once per
-//! boot, after the trial and while idle, bank 1 also runs the same check
-//! without an offer and publishes the result ([`Bank0Check`]), so a bank 0
-//! written over UART that has not booted since shows up before an update
-//! is refused for it.
+//! boot, after the healthy window once the flash hooks are armed, and while
+//! idle, bank 1 also runs the same check without an offer and publishes the
+//! result ([`Bank0Check`]), so a bank 0 written over UART that has not
+//! booted since shows up before an update is refused for it.
 //!
 //! **Bank 0** records its own image at boot (only when it changed), and
 //! installs only the pending manifest, or, with none pending (fresh from
@@ -619,6 +619,13 @@ impl<I: SlotIo + Clone> Update<I> {
         STORE_STARTED_OVER.store(false, Ordering::Release);
         self.store.open(self.io.clone());
         self.opened = true;
+        // A store the handover rewrote may record another bank 0: bank 1
+        // checks it again rather than keep a result against the old record.
+        if self.bank == 1 {
+            self.check_bank0 = true;
+            self.bank0 = Bank0Check::Unchecked;
+            self.scan = None;
+        }
         self.attempt = self.bank == 0 && arming::update_attempted();
         self.publish();
         Record::Opened {
@@ -827,8 +834,8 @@ impl<I: SlotIo + Clone> Update<I> {
     /// Bank 1's boot check: bank 0 against its record, hashed as an offer's
     /// check hashes it, so the owner sees a bank 0 that would block updates
     /// before offering one. It only reads mapped flash, so it takes no flash
-    /// lease and no write turn; still it waits for the hooks (armed once the
-    /// trial confirmed, so it stays out of the trial's health window), and
+    /// lease and no write turn; still it waits for the hooks (armed after the
+    /// build's healthy window, so it stays out of that window), and
     /// it pauses while a feed holds the outputs or the stage has a request,
     /// an install or a give-way to run. `None` when it does not run this
     /// step.

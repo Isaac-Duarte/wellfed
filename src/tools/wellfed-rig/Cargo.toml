@@ -14,6 +14,8 @@ wellfed-client.workspace = true
 wellfed-connect.workspace = true
 wellfed-core.workspace = true
 wellfed-formats = { workspace = true, features = ["clap"] }
+# Loads frozen reviews, as the flash client does, for a bank-0 write's checks.
+wellfed-image.workspace = true
 wellfed-model.workspace = true
 wellfed-proto.workspace = true
 wellfed-relay = { path = "../wellfed-relay" }
@@ -35,6 +37,8 @@ wellfed-build = { path = "../wellfed-build" }
 # Device::install's push, faults included, against the simulator over TCP.
 wellfed-feeder-sim = { path = "../wellfed-feeder-sim", features = ["harness"] }
 wellfed-image = { workspace = true, features = ["fixtures"] }
+# The flash client's own image checks, which a bank-0 finish's printed
+# commands must pass.
 wellfed-relay = { path = "../wellfed-relay", features = ["fake"] }
 sha2 = "0.10"
 tempfile.workspace = true
