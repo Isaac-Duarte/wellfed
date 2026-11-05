@@ -276,8 +276,8 @@ const fn on_off(on: bool) -> &'static str {
     if on { "on" } else { "off" }
 }
 
-/// Each plan, a line a filled slot.
-pub(crate) fn plans(plans: &Plans) -> String {
+/// Each plan, a line a filled slot, naming a skipped meal in `zone`.
+pub(crate) fn plans(plans: &Plans, zone: &TimeZone) -> String {
     let mut text = format!("Plans, generation {}", plans.generation);
     if !plans.writable {
         text.push_str(" (not writable now)");
@@ -301,6 +301,9 @@ pub(crate) fn plans(plans: &Plans) -> String {
             plan.days,
             if plan.enabled { "enabled" } else { "disabled" },
         );
+        if let Some(at) = plans.skipped.get(slot) {
+            let _ = write!(text, "  skipped {}", time(Some(at), zone));
+        }
     }
     if !any {
         text.push_str("\n  no plans");
@@ -747,21 +750,27 @@ mod tests {
             enabled: true,
             call: 0,
         });
+        let mut skipped = [None; PLANS];
+        // 2026-10-30T18:00:00Z.
+        skipped[5] = Some(1_793_383_200);
         let plans = Plans {
             generation: Generation(4),
             writable: true,
             plans: table,
-            skipped: wellfed_model::SkippedMeals::NONE,
+            skipped: wellfed_model::SkippedMeals::from_seconds(skipped),
         };
         assert_eq!(
-            super::plans(&plans),
+            super::plans(&plans, &TimeZone::UTC),
             "Plans, generation 4\n  2  07:30  2 portions  daily  call 3 times  disabled\n  5  \
-             18:00  1 portions  once  no call  enabled"
+             18:00  1 portions  once  no call  enabled  skipped 2026-10-30 18:00:00 +00:00"
         );
         let empty = Plans {
             plans: [None; PLANS],
             ..plans
         };
-        assert_eq!(super::plans(&empty), "Plans, generation 4\n  no plans");
+        assert_eq!(
+            super::plans(&empty, &TimeZone::UTC),
+            "Plans, generation 4\n  no plans"
+        );
     }
 }

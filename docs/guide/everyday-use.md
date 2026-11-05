@@ -33,6 +33,8 @@ wellfed plans add --at 07:30 --portions 2 --days daily
 wellfed plans edit 0 --days mon,wed,fri
 wellfed plans disable 0
 wellfed plans delete 0
+wellfed plans skip 0
+wellfed plans unskip 0
 ```
 
 A meal's number is its slot, as `wellfed plans list` shows it.
@@ -45,6 +47,7 @@ A few rules are worth knowing:
 
 - **A new meal starts from its next occurrence.** Saving a 07:30 meal at 07:35 feeds tomorrow, not now.
 - **Moving a meal can feed it again the same day.** Changing a meal's time or days starts it afresh. Move a 07:30 meal that already ran to 12:00, and it feeds again at 12:00. The editor's note that a meal that ran won't run again holds only while the time stays put.
+- **Skipping one meal.** You can skip a meal's next run if it falls today and hasn't come due, and undo the skip until it does. The meal doesn't feed, remind or call, and tomorrow's runs as usual. History shows who skipped it.
 - **A late meal has 15 minutes.** If the feeder restarted or was busy, the meal still runs within 15 minutes of its time. Later than that, it doesn't run, and History shows **Meal skipped**.
 - **Two people editing at once.** If the meals changed while you were editing, the change is refused and nothing is overwritten. Read them again and redo your edit. The CLI sees the same refusal as `Stale`.
 

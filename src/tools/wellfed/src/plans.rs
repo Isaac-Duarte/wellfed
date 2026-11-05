@@ -4,15 +4,24 @@
 //! meanwhile (another client's, or a plan that ran once disabling itself)
 //! is refused rather than overwritten; it is never retried.
 //!
+//! A skip names one of today's meals by its instant, which the plans as read,
+//! the feeder's clock and its zone give (`wellfed_client::plans::to_skip`), so
+//! nobody types a time; the feeder checks it again and refuses a meal that
+//! is no longer the plan's next. It is never retried either.
+//!
 //! `wellfed server plans` makes the same changes through the server, from
 //! the same arguments ([`NewPlan`], [`PlanChange`], [`Slot`]) and with the
 //! same edit (`wellfed_client::plans::edited`).
 
-use anyhow::{Result, bail};
+use crate::device::Connection;
+use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
-use wellfed_client::plans::{Edit, edited};
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
+use wellfed_client::plans::{Edit, edited, to_skip, to_undo};
+use wellfed_client::time::feeder_zone;
 use wellfed_model::{
-    Answer, CALL_PLAYS_MAX, Op, PLANS, PORTIONS_MAX, Plan, Refusal, TimeOfDay, Weekdays,
+    Answer, CALL_PLAYS_MAX, Op, PLANS, PORTIONS_MAX, Plan, Plans, Refusal, TimeOfDay, Weekdays,
 };
 
 use crate::{Target, connect, print_answer, text};
@@ -69,6 +78,28 @@ enum Action {
         #[command(flatten)]
         slot: Slot,
     },
+    /// Skip the plan's next meal, if it falls today: it does not feed,
+    /// remind or call. `unskip` brings it back until its time.
+    Skip {
+        #[command(flatten)]
+        target: Target,
+        #[command(flatten)]
+        slot: Slot,
+    },
+    /// Bring back the plan's skipped meal, while its time is still to come.
+    Unskip {
+        #[command(flatten)]
+        target: Target,
+        #[command(flatten)]
+        slot: Slot,
+    },
+}
+
+/// What to do with a plan's meal today.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MealChange {
+    Skip,
+    Undo,
 }
 
 /// A plan to add.
@@ -141,6 +172,10 @@ pub(crate) struct Slot {
 }
 
 impl Slot {
+    pub(crate) const fn slot(&self) -> u8 {
+        self.slot
+    }
+
     pub(crate) const fn enabled(&self, enabled: bool) -> Edit {
         Edit::Enabled {
             slot: self.slot,
@@ -176,17 +211,14 @@ pub(crate) async fn command(args: PlansArgs) -> Result<()> {
         Action::Enable { target, slot } => (target, slot.enabled(true)),
         Action::Disable { target, slot } => (target, slot.enabled(false)),
         Action::Delete { target, slot } => (target, slot.delete()),
+        Action::Skip { target, slot } => return skip(&target, slot.slot, MealChange::Skip).await,
+        Action::Unskip { target, slot } => {
+            return skip(&target, slot.slot, MealChange::Undo).await;
+        }
     };
 
     let (_, _, mut connection) = connect(&target).await?;
-    let current = match connection.ask(&Op::GetPlans).await? {
-        Answer::Plans(plans) => plans,
-        Answer::Refused(Refusal::Unavailable) => bail!("this feeder keeps no plans"),
-        answer => {
-            print_answer(&answer)?;
-            bail!("the feeder did not return its plans");
-        }
-    };
+    let current = read_plans(&mut connection).await?;
     let plans = edited(&current, edit)?;
     let answer = connection
         .ask(&Op::PutPlans {
@@ -205,9 +237,89 @@ async fn list(target: &Target, json: bool) -> Result<()> {
     let (_, _, mut connection) = connect(target).await?;
     match connection.ask(&Op::GetPlans).await? {
         Answer::Plans(plans) if !json => {
-            println!("{}", text::plans(&plans));
+            println!("{}", text::plans(&plans, &TimeZone::system()));
             Ok(())
         }
         answer => print_answer(&answer),
+    }
+}
+
+async fn read_plans(connection: &mut Connection) -> Result<Plans> {
+    match connection.ask(&Op::GetPlans).await? {
+        Answer::Plans(plans) => Ok(plans),
+        Answer::Refused(Refusal::Unavailable) => bail!("this feeder keeps no plans"),
+        answer => {
+            print_answer(&answer)?;
+            bail!("the feeder did not return its plans");
+        }
+    }
+}
+
+/// Skip slot `slot`'s meal today, or undo its skip: the meal is found in the
+/// plans by the feeder's clock and zone, and the change is sent once.
+async fn skip(target: &Target, slot: u8, change: MealChange) -> Result<()> {
+    let (_, _, mut connection) = connect(target).await?;
+    let plans = read_plans(&mut connection).await?;
+    let Answer::Status(status) = connection.ask(&Op::Status).await? else {
+        bail!("the feeder did not return its status");
+    };
+    let now = status
+        .clock
+        .context("the feeder's clock is not set, so it keeps no meals; run `wellfed time`")?;
+    let Answer::Time(view) = connection.ask(&Op::GetTime).await? else {
+        bail!("the feeder did not return its time settings");
+    };
+    let zone = feeder_zone(&view, TimeZone::system());
+
+    let (due, op) = match change {
+        MealChange::Skip => {
+            let due = to_skip(&plans, slot, now, &zone)?;
+            (due, Op::SkipMeal { slot, due })
+        }
+        MealChange::Undo => {
+            let due = to_undo(&plans, slot, now)?;
+            (due, Op::UnskipMeal { slot, due })
+        }
+    };
+    let answer = connection.ask(&op).await?;
+    if let Answer::Done { .. } = answer {
+        println!("{}", skipped(slot, due, &zone, change));
+        return Ok(());
+    }
+    if let Answer::Refused(refusal) = answer
+        && let Some(why) = refused(refusal, change)
+    {
+        eprintln!("{why}");
+    }
+    print_answer(&answer)
+}
+
+/// What a skip or undo did, at the meal's minute on the feeder's day.
+pub(crate) fn skipped(slot: u8, due: Timestamp, zone: &TimeZone, change: MealChange) -> String {
+    let at = due.to_zoned(zone.clone()).strftime("%H:%M");
+    match change {
+        MealChange::Skip => format!("Skipped plan {slot}'s {at} meal today."),
+        MealChange::Undo => format!("Plan {slot}'s {at} meal today runs again."),
+    }
+}
+
+/// Why the feeder refused a skip or its undo, where the refusal alone does
+/// not say.
+pub(crate) const fn refused(refusal: Refusal, change: MealChange) -> Option<&'static str> {
+    match (refusal, change) {
+        (Refusal::Invalid, MealChange::Skip) => Some(
+            "The meal is no longer the plan's next today, or is already skipped; \
+             read the plans again.",
+        ),
+        (Refusal::Invalid, MealChange::Undo) => {
+            Some("The skipped meal is already due, or its skip has gone; read the plans again.")
+        }
+        (Refusal::Busy, _) => Some(
+            "The feeder is busy with a feed, a plans change or the plan's last meal; \
+             try again shortly.",
+        ),
+        (Refusal::NotFound, _) => Some("That slot holds no enabled plan."),
+        (Refusal::NoClock, _) => Some("The feeder's clock is invalid; run `wellfed time` first."),
+        _ => None,
     }
 }

@@ -32,13 +32,12 @@ const SHARED: [&str; 3] = [
 /// Written by the code generator from the bridge's own types.
 const GENERATED: &str = "frb_generated.rs";
 
-/// Skipping a meal is served by the feeder before either client offers it:
-/// the model carries the ops so the simulator's tests reach the device API
-/// end to end. Each client's command removes its entry.
-const SKIP_PENDING: &str = "the feeder serves it ahead of the clients, whose skip command \
+/// Skipping a meal is served by the feeder and the CLI before the app offers
+/// it; the app's Today screen removes these entries.
+const SKIP_PENDING: &str = "the feeder and the CLI serve it ahead of the app, whose Today screen \
                             removes this entry";
 /// What the CLI does not do, with why.
-const NOT_IN_CLI: [(&str, &str); 2] = [("SkipMeal", SKIP_PENDING), ("UnskipMeal", SKIP_PENDING)];
+const NOT_IN_CLI: [(&str, &str); 0] = [];
 /// What the app does not do, with why.
 const NOT_IN_APP: [(&str, &str); 3] = [
     ("SkipMeal", SKIP_PENDING),
