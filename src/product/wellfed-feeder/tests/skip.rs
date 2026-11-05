@@ -45,6 +45,7 @@ fn view(plan: Plan, mark_s: u32) -> PlansView {
     PlansView {
         table,
         marks,
+        skips: 0,
         claim: None,
         revision: REVISION,
         replaced: 0,
@@ -57,6 +58,7 @@ fn apply(view: &PlansView, change: &PlansChange) -> PlansView {
     let plans = Plans {
         table: view.table,
         marks: view.marks,
+        skips: view.skips,
         claim: view.claim,
         revision: view.revision,
     };
@@ -412,5 +414,95 @@ fn an_undo_after_the_offsets_moved_the_plan_s_next_meal_is_refused() {
         now_ms,
         moved,
     );
+    assert_eq!(undo, Err(Refusal::Invalid));
+}
+
+#[test]
+fn an_undo_of_a_meal_that_ran_is_refused_after_the_clock_moves_back() {
+    // Every day at 18:00: today's meal ran (claimed, then settled into the
+    // mark), and the clock then moved back five minutes before it.
+    let due_ms = 1_793_811_600_000;
+    let every_day = plan(18 * 60, Weekdays::EVERY_DAY);
+    let start = view(every_day, seconds(due_ms - 24 * HOUR_MS));
+    let held = Claim {
+        plan: 0,
+        due_s: seconds(due_ms),
+        high_water: 4,
+        disabled: false,
+    };
+    let claimed = apply(
+        &start,
+        &PlansChange::Claim {
+            claim: held,
+            revision: REVISION,
+        },
+    );
+    let ran = apply(&claimed, &PlansChange::Settle { claim: held });
+    assert_eq!(ran.marks[0], seconds(due_ms));
+
+    let back_ms = due_ms - 5 * MINUTE_MS;
+    for view in [&claimed, &ran] {
+        let undo = change(view, 0, seconds(due_ms), MealSkip::Unskip, back_ms, europe);
+        assert_eq!(undo, Err(Refusal::Invalid));
+        assert_eq!(judged(view, due_ms, due_ms), Occurrence::Evaluated);
+    }
+}
+
+#[test]
+fn an_undo_of_a_missed_meal_is_refused_after_the_clock_moves_back() {
+    let due_ms = 1_793_811_600_000;
+    let start = view(
+        plan(18 * 60, Weekdays::EVERY_DAY),
+        seconds(due_ms - 24 * HOUR_MS),
+    );
+    let passed = apply(
+        &start,
+        &PlansChange::Pass {
+            plan: 0,
+            due_s: seconds(due_ms),
+            revision: REVISION,
+        },
+    );
+
+    let back_ms = due_ms - 5 * MINUTE_MS;
+    let undo = change(
+        &passed,
+        0,
+        seconds(due_ms),
+        MealSkip::Unskip,
+        back_ms,
+        europe,
+    );
+    assert_eq!(undo, Err(Refusal::Invalid));
+}
+
+#[test]
+fn an_undo_of_a_plan_that_ran_once_is_refused_after_the_clock_moves_back() {
+    // It ran, and disabled itself, as a skip would have.
+    let due_ms = 1_793_811_600_000;
+    let start = view(plan(18 * 60, Weekdays::ONCE), seconds(due_ms - HOUR_MS));
+    let held = Claim {
+        plan: 0,
+        due_s: seconds(due_ms),
+        high_water: 4,
+        disabled: false,
+    };
+    let claimed = apply(
+        &start,
+        &PlansChange::Claim {
+            claim: held,
+            revision: REVISION,
+        },
+    );
+    let ran = apply(
+        &claimed,
+        &PlansChange::Settle {
+            claim: claimed.claim.unwrap(),
+        },
+    );
+    assert!(!ran.table[0].unwrap().enabled);
+
+    let back_ms = due_ms - 5 * MINUTE_MS;
+    let undo = change(&ran, 0, seconds(due_ms), MealSkip::Unskip, back_ms, europe);
     assert_eq!(undo, Err(Refusal::Invalid));
 }

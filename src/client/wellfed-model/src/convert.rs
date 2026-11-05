@@ -17,9 +17,9 @@ use crate::{
     FeederSettingsPatch, FeederStatus, Flash, Food, FoodLevel, Generation, Hello, Hex, Invite,
     Joined, LogLines, MealReminder, Memory, MissedReason, NtpResult, NtpServer, Op, OpenRefusal,
     Phase, Plan, Plans, Portions, Power, PowerStats, Readiness, Refusal, ResetCause, Resets,
-    Sample, SampleValue, Settings, Source, Stats, StatsSection, Status, Supply, TaskStack,
-    TimeSource, TimeSync, TimeView, Tune, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView,
-    Weekdays, WifiSource, Window, setup,
+    Sample, SampleValue, Settings, SkippedMeals, Source, Stats, StatsSection, Status, Supply,
+    TaskStack, TimeSource, TimeSync, TimeView, Tune, UpdatePhase, UpdateRefusal, UpdateStop,
+    UpdateView, Weekdays, WifiSource, Window, setup,
 };
 use crate::{
     CurrentUnit, FeedStats, Malformed, Trace, TraceEntry, TraceMotor, TracePage, TraceSummary,
@@ -934,10 +934,12 @@ impl From<proto::Outcome<'_>> for Answer {
                 generation,
                 writable,
                 plans,
+                skipped,
             })) => Self::Plans(Plans {
                 generation: Generation(generation),
                 writable,
                 plans: plans.map(|plan| plan.map(Into::into)),
+                skipped: SkippedMeals::from_seconds(skipped),
             }),
             proto::Outcome::Feeder(proto::FeederOutcome::Call(view)) => Self::Call(view.into()),
         }

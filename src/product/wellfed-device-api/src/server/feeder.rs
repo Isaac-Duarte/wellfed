@@ -771,6 +771,7 @@ impl Server {
                         generation: view.revision,
                         writable: view.writable,
                         plans: wire_plans(&view.table),
+                        skipped: core::array::from_fn(|slot| view.skipped(slot)),
                     }))
                 }
                 _ => unavailable,

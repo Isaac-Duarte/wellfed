@@ -39,7 +39,8 @@ pub use event::{
     Source,
 };
 pub use plan::{
-    NextMeal, PLANS, PORTIONS_MAX, Plan, Plans, TimeOfDay, Weekday, Weekdays, WeekdaysError,
+    NextMeal, PLANS, PORTIONS_MAX, Plan, Plans, SkippedMeals, TimeOfDay, Weekday, Weekdays,
+    WeekdaysError,
 };
 pub use request::{
     Answer, Bowl, Calibration, CalibrationView, Client, Invite, NtpResult, NtpServer, Op, Phase,

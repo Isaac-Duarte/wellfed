@@ -3,8 +3,8 @@
 //! **The mark is the skip.** Each slot's mark is the latest occurrence
 //! that never runs, and the schedule, the meal reminder and the meal call
 //! all leave an occurrence at or before it alone. A skip moves the mark up
-//! to the skipped occurrence, so none of the three acts on it; nothing
-//! else records a skip, and the plans record keeps its format.
+//! to the skipped occurrence, so none of the three acts on it, and sets
+//! the slot's skip bit, which only an undo reads.
 //!
 //! **Which meal.** Only the plan's next occurrence, while it is still to
 //! come and falls on today's local date, and only once every earlier
@@ -16,8 +16,13 @@
 //!
 //! **The undo.** It moves the mark back to the second before the skipped
 //! occurrence, only while that occurrence is still to come, is still the
-//! plan's next, and the mark is still exactly it (a change to the plan's
-//! minute or days resets the mark, and with it the skip). Before the skip
+//! plan's next, and the slot's mark is still the skip of exactly it. The
+//! store keeps a skip bit per slot beside the mark: a claim, a pass or a
+//! save of the same occurrence leaves the same mark, and after a backward
+//! clock jump it would look like a skip still to come, so undoing a mark
+//! without the bit could run a meal twice. Every change that moves the
+//! mark otherwise clears the bit (a change to the plan's minute or days
+//! among them, which drops the skip). Before the skip
 //! the mark was at or after the plan's occurrence before the skipped one
 //! (the skip waits for that one to settle) and below the skipped one, so
 //! the undo's mark is never lower than it was; and since no occurrence of
@@ -87,11 +92,10 @@ pub fn change(
             })
         }
         MealSkip::Unskip => {
-            // A skipped plan that runs once is the disabled one.
-            if plan.enabled == plan.days.once() {
-                return Err(Refusal::NotFound);
-            }
-            if view.marks.get(index) != Some(&due_s) {
+            // A claim, a pass or a save can leave the mark at `due_s` too,
+            // and after a backward clock jump that occurrence looks still
+            // to come: only the skip bit says the mark is a skip.
+            if view.skipped(index) != Some(due_s) {
                 return Err(Refusal::Invalid);
             }
             // The offsets moved since the skip, so another occurrence now

@@ -92,7 +92,7 @@ impl Service {
             // the current settings.
             CommandOutcome::Refused {
                 refusal: FeederRefusal::Stale,
-            } => Err(Error::StalePlans(self.read_plans(id).await?)),
+            } => Err(Error::StalePlans(Box::new(self.read_plans(id).await?))),
             CommandOutcome::Refused { refusal } => Err(Error::Refused(refusal)),
             CommandOutcome::Settings { .. }
             | CommandOutcome::Feeding { .. }

@@ -751,6 +751,7 @@ mod tests {
             generation: Generation(4),
             writable: true,
             plans: table,
+            skipped: wellfed_model::SkippedMeals::NONE,
         };
         assert_eq!(
             super::plans(&plans),

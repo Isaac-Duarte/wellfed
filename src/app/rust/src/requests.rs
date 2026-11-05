@@ -382,6 +382,9 @@ fn plans_of(view: &PlansView) -> Plans {
         generation: Generation(view.generation),
         writable: view.writable,
         plans,
+        // The app's view keeps no skips yet: a table it sends back is a
+        // `PutPlans`, which names none.
+        skipped: wellfed_model::SkippedMeals::NONE,
     }
 }
 

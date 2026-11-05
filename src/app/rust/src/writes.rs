@@ -386,6 +386,7 @@ impl PlansQueue {
             generation: after(base),
             writable: true,
             plans: table,
+            skipped: wellfed_model::SkippedMeals::NONE,
         };
         let mut replies = Vec::new();
         for (switch, reply) in self.waiting.drain(..) {
@@ -480,6 +481,7 @@ mod tests {
                 enabled: true,
                 call: 0,
             }); PLANS],
+            skipped: wellfed_model::SkippedMeals::NONE,
         }
     }
 

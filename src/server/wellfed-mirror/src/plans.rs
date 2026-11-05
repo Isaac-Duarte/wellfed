@@ -119,6 +119,7 @@ mod tests {
             generation: Generation(generation),
             writable: true,
             plans: table,
+            skipped: wellfed_model::SkippedMeals::NONE,
         }
     }
 

@@ -10268,7 +10268,8 @@
         "required": [
           "generation",
           "writable",
-          "plans"
+          "plans",
+          "skipped"
         ],
         "properties": {
           "generation": {
@@ -10287,6 +10288,18 @@
               ]
             },
             "description": "The plan in each slot, all ten; `null` is an empty one.",
+            "maxItems": 10,
+            "minItems": 10
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": "Each slot's skipped meal, while its skip stands: the instant the\nmeal is due. `null` with none, all ten.",
             "maxItems": 10,
             "minItems": 10
           },

@@ -220,6 +220,7 @@ mod tests {
             generation: Generation(3),
             writable: true,
             plans: table,
+            skipped: wellfed_model::SkippedMeals::NONE,
         }
     }
 

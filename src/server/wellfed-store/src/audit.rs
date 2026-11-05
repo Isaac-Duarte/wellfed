@@ -35,7 +35,8 @@ pub struct AuditRow {
 /// What a row holds: an account change, or a journal entry as it stands.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AuditRecord {
-    Change(AuditAction),
+    /// Boxed, as a command is: an action can carry a whole plans table.
+    Change(Box<AuditAction>),
     Command(Box<CommandRow>),
 }
 
@@ -190,9 +191,9 @@ impl TryFrom<Joined> for AuditRow {
         let command = joined.command()?;
         let record = match (command, joined.action.as_deref()) {
             (Some(command), None) => AuditRecord::Command(Box::new(command)),
-            (None, Some(json)) => AuditRecord::Change(
+            (None, Some(json)) => AuditRecord::Change(Box::new(
                 serde_json::from_str(json).map_err(|_| Error::Corrupt("audit action"))?,
-            ),
+            )),
             _ => return Err(Error::Corrupt("audit row")),
         };
 

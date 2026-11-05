@@ -72,7 +72,7 @@ fn plans_change_against_the_current_generation_only() {
         let Err(Error::StalePlans(current)) = stale else {
             panic!("{stale:?}");
         };
-        assert_eq!(current, changed);
+        assert_eq!(*current, changed);
 
         // A plan out of range is refused by its slot before anything is
         // sent.

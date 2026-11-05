@@ -66,6 +66,54 @@ pub struct Plans {
     /// The plan in each slot, all ten; `null` is an empty one.
     #[schema(min_items = 10, max_items = 10)]
     pub plans: [Option<Plan>; PLANS],
+    /// Each slot's skipped meal, while its skip stands: the instant the
+    /// meal is due. `null` with none, all ten.
+    #[schema(value_type = Vec<Option<String>>, min_items = 10, max_items = 10)]
+    pub skipped: SkippedMeals,
+}
+
+/// Each slot's skipped meal, kept as the feeder's Unix seconds so the plans
+/// stay small enough to copy, and spelled as timestamps on the wire.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SkippedMeals([Option<u32>; PLANS]);
+
+impl SkippedMeals {
+    /// No meal skipped.
+    pub const NONE: Self = Self([None; PLANS]);
+
+    /// From the feeder's Unix seconds, each slot's.
+    pub const fn from_seconds(seconds: [Option<u32>; PLANS]) -> Self {
+        Self(seconds)
+    }
+
+    /// Slot `slot`'s skipped meal, while its skip stands.
+    pub fn get(&self, slot: usize) -> Option<Timestamp> {
+        let seconds = (*self.0.get(slot)?)?;
+        Timestamp::from_second(i64::from(seconds)).ok()
+    }
+}
+
+impl Serialize for SkippedMeals {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let at: [Option<Timestamp>; PLANS] = std::array::from_fn(|slot| self.get(slot));
+        at.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SkippedMeals {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let at = <[Option<Timestamp>; PLANS]>::deserialize(deserializer)?;
+        let mut seconds = [None; PLANS];
+        for (slot, at) in seconds.iter_mut().zip(at) {
+            *slot = at
+                .map(|at| u32::try_from(at.as_second()))
+                .transpose()
+                .map_err(|_| {
+                    serde::de::Error::custom("a skipped meal outside the feeder's clock")
+                })?;
+        }
+        Ok(Self(seconds))
+    }
 }
 
 /// The plans' next meal: the earliest occurrence of any enabled plan, in

@@ -856,6 +856,7 @@ fn messages() -> Vec<Fixture> {
                 generation: 5,
                 writable: true,
                 plans: plans(),
+                skipped: skipped(),
             })))),
             feeder,
         ),
@@ -1101,6 +1102,13 @@ fn messages() -> Vec<Fixture> {
             |b| decode::<EventBody>(b).is_ok(),
         ),
     ]
+}
+
+/// Slot 0's meal skipped, the rest not.
+fn skipped() -> [Option<u32>; PLANS_MAX] {
+    let mut skipped = [None; PLANS_MAX];
+    skipped[0] = Some(1_793_200_000);
+    skipped
 }
 
 /// Two plans: breakfast every day in slot 0, and a one-off in slot 2.

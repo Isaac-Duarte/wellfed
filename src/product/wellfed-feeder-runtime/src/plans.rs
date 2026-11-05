@@ -41,6 +41,7 @@ static STATE: AtomicU8 = AtomicU8::new(Hand::Empty as u8);
 static PUBLISHED: TaskCell<PlansView> = TaskCell::new(PlansView {
     table: [None; wellfed_device_api::mailbox::PLANS],
     marks: [0; wellfed_device_api::mailbox::PLANS],
+    skips: 0,
     claim: None,
     revision: 0,
     replaced: 0,

@@ -529,6 +529,10 @@ pub struct Plans {
     pub generation: u32,
     pub writable: bool,
     pub plans: [Option<Plan>; PLANS_MAX],
+    /// Each slot's skipped meal (Unix seconds) while its skip stands
+    /// ([`FeederOp::SkipMeal`]): `None` once it is undone, or once the
+    /// plan's next meal is taken or passed, or its minute or days change.
+    pub skipped: [Option<u32>; PLANS_MAX],
 }
 
 /// The largest [`Op::UpdateChunk`]: an eighth of a flash sector, which
@@ -2088,6 +2092,7 @@ mod tests {
                 generation: u32::MAX,
                 writable: true,
                 plans: [plan; PLANS_MAX],
+                skipped: [Some(u32::MAX); PLANS_MAX],
             })),
         };
         let len = encode(&plans, &mut out).unwrap();

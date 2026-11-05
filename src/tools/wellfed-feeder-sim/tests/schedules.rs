@@ -1314,3 +1314,91 @@ fn a_skip_is_refused_without_time_tomorrow_and_once_the_meal_is_due() {
     feeder.run(MINUTE_MS);
     assert_eq!(feeder.fed(), [FED_PLAN_0]);
 }
+
+#[test]
+fn an_undo_after_the_clock_moves_back_past_a_meal_that_ran_never_feeds_it_again() {
+    let mut feeder = breakfast();
+    feeder.run_until(BREAKFAST + MINUTE_MS);
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
+
+    // A sync puts the clock five minutes before the meal that ran: the
+    // claim marks the meal, as a skip's mark would.
+    feeder.sync(BREAKFAST - 5 * MINUTE_MS);
+    assert_eq!(feeder.plans().mark(0), Some(seconds(BREAKFAST)));
+    assert_eq!(feeder.plans().skips, 0);
+    assert_eq!(
+        feeder.skip(BREAKFAST, MealSkip::Unskip),
+        Err(Refusal::Invalid)
+    );
+    feeder.run(20 * MINUTE_MS);
+    assert_eq!(feeder.fed(), [FED_PLAN_0], "fed once");
+    assert_eq!(feeder.claims, 1);
+}
+
+#[test]
+fn an_undo_after_the_clock_moves_back_past_a_missed_meal_never_feeds_it() {
+    let mut feeder = breakfast();
+    // A forward jump past the grace: the meal is passed and reported.
+    feeder.run(MINUTE_MS);
+    feeder.sync(BREAKFAST + 20 * MINUTE_MS);
+    feeder.run(MINUTE_MS);
+    assert_eq!(
+        feeder.missed(),
+        [(0, seconds(BREAKFAST), MissedReason::Late)]
+    );
+
+    feeder.sync(BREAKFAST - 5 * MINUTE_MS);
+    assert_eq!(
+        feeder.skip(BREAKFAST, MealSkip::Unskip),
+        Err(Refusal::Invalid)
+    );
+    feeder.run(20 * MINUTE_MS);
+    assert!(feeder.fed().is_empty());
+}
+
+#[test]
+fn an_undo_after_the_clock_moves_back_past_a_plan_that_ran_once_never_feeds_it_again() {
+    let mut feeder = Feeder::new();
+    feeder.run(100);
+    feeder.sync(WEDNESDAY + 7 * HOUR_MS);
+    let once = Plan {
+        days: Weekdays::ONCE,
+        ..plan(7 * 60 + 30, 2)
+    };
+    feeder.put(table(&[(0, once)]));
+    feeder.run_until(BREAKFAST + MINUTE_MS);
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
+    assert_eq!(
+        feeder.plans().table[0].map(|plan| plan.enabled),
+        Some(false)
+    );
+
+    feeder.sync(BREAKFAST - 5 * MINUTE_MS);
+    assert_eq!(
+        feeder.skip(BREAKFAST, MealSkip::Unskip),
+        Err(Refusal::Invalid)
+    );
+    feeder.run(20 * MINUTE_MS);
+    assert_eq!(feeder.fed(), [FED_PLAN_0], "fed once");
+    assert_eq!(
+        feeder.plans().table[0].map(|plan| plan.enabled),
+        Some(false)
+    );
+}
+
+#[test]
+fn a_skip_survives_a_restart_and_its_undo_then_feeds_the_meal() {
+    let mut feeder = breakfast();
+    feeder.run_until(BREAKFAST - 25 * MINUTE_MS);
+    assert_eq!(feeder.skip(BREAKFAST, MealSkip::Skip), Ok(()));
+    feeder.run(1);
+
+    feeder.restart();
+    feeder.run(100);
+    feeder.sync(BREAKFAST - 20 * MINUTE_MS);
+    feeder.run(1_000);
+    assert_eq!(feeder.plans().skips, 1);
+    assert_eq!(feeder.skip(BREAKFAST, MealSkip::Unskip), Ok(()));
+    feeder.run_until(BREAKFAST + MINUTE_MS);
+    assert_eq!(feeder.fed(), [FED_PLAN_0]);
+}
