@@ -49,10 +49,12 @@ Feeder components:
 | [Motor bench checks](firmware/motor-bench-checks.md) | Rerunning the first pulse, the stall, failed-stop, jam and sensor-fault checks on the bench |
 | [Schedules](firmware/schedules.md) | Feeding plans, the meal reminder and the meal call |
 | [Portions and calibration](firmware/calibration.md) | Counting portions and calibrating them |
+| [Weighing session](firmware/weighing-session.md) | Measuring what one portion weighs and storing it |
 | [Jams and sensor faults](firmware/jams-and-sensor-faults.md) | What happens when food or feedback goes missing |
 | [Optical inputs](firmware/optical-inputs.md) | The food, outlet and feedback sensors |
 | [Buttons](firmware/buttons.md) | Panel buttons and gestures |
 | [Indicators](firmware/indicators.md) | The panel lights |
+| [Indicators bench check](firmware/indicators-bench-check.md) | Checking each light's states on the bench |
 | [Audio](firmware/audio.md) | The speaker and built-in tunes |
 | [Desiccant reminder](firmware/desiccant.md) | Counting the days until the desiccant pack is due |
 | [Clock](firmware/clock.md) | Wall clock, offline time and missed time |

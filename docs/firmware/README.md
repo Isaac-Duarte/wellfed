@@ -4,23 +4,19 @@ This page explains how the Wellfed replacement firmware is put together and why.
 
 ## The one idea
 
-One task owns the feeder. A single loop task runs the network, the panel and feeding, and inside it the [feeding owner](../glossary.md) is the only code allowed to move the motor. Everything that wants food asks that owner: the Dispense button, the `wellfed` CLI, the app and the server all go through the same [device API](device-api.md) requests, and all of them land in the same loop.
+One task owns the feeder. A single loop task runs the network, the panel and feeding, and inside it the [feeding owner](../glossary.md) is the only code allowed to move the motor. The Dispense button, the `wellfed` CLI, the app and the server all ask that owner through the same [device API](device-api.md) requests, in the same loop.
 
-That one rule is what makes the safety promises simple. Two clients and a button press can't race each other into a double feed, because there is nobody to race. A feed is written down before the motor turns, so a power cut can't make the feeder repeat it. And the motor's stop guarantees live in timers and the watchdog, below the loop, so a slow network can't keep the motor running.
+That rule makes the safety promises simple. Two clients and a button press can't race into a double feed, because there is nobody to race. A feed is written down before the motor turns, so a power cut can't make the feeder repeat it. And the motor's stop guarantees live in timers and the watchdog, below the loop, so a slow network can't keep the motor running.
 
 ## One feed, end to end
 
-Here is a single one-portion feed, from your finger to the event your app shows.
-
-1. **You ask.** You press Dispense, or run `wellfed feed --portions 1`. The button service task only notices the gesture and queues it. The CLI's request arrives as an encrypted Noise message on the feeder's TCP port.
+1. **You ask.** You press Dispense, or run `wellfed feed --portions 1`. The button service task only queues the gesture; the CLI's request arrives as an encrypted Noise message on the feeder's TCP port.
 2. **The loop picks it up.** On its next pass the loop reads the gesture or the request. A locked panel ignores the button; a client's request is checked against its role.
 3. **Is a feed allowed now?** One decision, called readiness, answers that. A feed is refused while another runs, while the owner is still starting or faulted, while Wi-Fi is joining, in Bluetooth setup mode, during an update, or on a battery below its floor. A refusal is final: nothing moved, and trying again is a new feed.
 4. **The owner writes it down.** The feeding owner reserves the feed in its [journal](../glossary.md) in flash, under the next feed number. Only then does the client's answer go out, naming that number.
 5. **The motor turns, supervised.** The owner claims the outputs, turns on the beams and drives the motor. One portion is one compartment of the rotor, about 9 s of drive, counted by a mark on the feedback line ([motor pulse](motor-pulse.md)). A hardware timer, a short motor lease and the watchdog each stop the motor on their own if the owner stops checking in.
 6. **The result is recorded.** With the outputs stopped, the owner writes the result to the journal. The loop then records a `Fed` event, which says who asked (`Panel` for the button) and how the feed ended.
-7. **Clients hear about it.** The event goes into the event history, and every subscribed client receives it. The CLI that asked prints the result.
-
-Feeds are silent: no tune plays.
+7. **Clients hear about it.** The event goes into the history and to every subscribed client, and the CLI that asked prints the result. Feeds play no tune.
 
 **If the power goes out mid-feed**, the reservation is still in the journal. At the next boot the owner records that feed as *uncertain* under its own number, reports it once, and never runs it again. Clients never resend a feed whose answer they didn't get either. The worst case is a feed you have to check, never a feed served twice.
 
@@ -34,11 +30,12 @@ From the bottom up:
 | --- | --- | --- |
 | Board | Every pin, ADC channel and storage sector of the PLAF103, in one crate | [Device layer](device-layer.md) |
 | SDK runtime | Startup with outputs stopped, the watchdog, Wi-Fi, flash coordination, updates and boot confirmation | [Startup diagnostics](startup-diagnostics.md), [OTA design](ota-design.md), [bank policy](bank-policy.md) |
-| Feeding owner | The motor, beams and feedback under supervision, and the journal | [Motor pulse](motor-pulse.md), [jams and sensor faults](jams-and-sensor-faults.md), their [bench checks](motor-bench-checks.md), [calibration](calibration.md) |
+| Feeding owner | The motor, beams and feedback under supervision, and the journal | [Motor pulse](motor-pulse.md), [jams and sensor faults](jams-and-sensor-faults.md), their [bench checks](motor-bench-checks.md), [calibration](calibration.md) and its [weighing session](weighing-session.md) |
 | Product | The loop: the panel, the device API, pairing, events and settings | [Device API](device-api.md) with its [operations](device-api-ops.md) and [diagnostics](device-api-diagnostics.md), [pairing](pairing.md), [Bluetooth](bluetooth.md) |
-| Peripherals | Buttons, lights, speaker, clock and power | [Buttons](buttons.md), [indicators](indicators.md), [audio](audio.md), [clock](clock.md) and its [bench checks](clock-bench-checks.md), [power](power.md) and its [bench checks](power-bench-checks.md), [optical inputs](optical-inputs.md) |
+| Peripherals | Buttons, lights, speaker, clock and power | [Buttons](buttons.md), [indicators](indicators.md) and their [bench check](indicators-bench-check.md), [audio](audio.md), [clock](clock.md) and its [bench checks](clock-bench-checks.md), [power](power.md) and its [bench checks](power-bench-checks.md), [optical inputs](optical-inputs.md) |
 | Schedules | Feeding plans: when each runs, at most once | [Schedules](schedules.md) |
 | Reminders | The desiccant reminder's count, from the last replacement | [Desiccant reminder](desiccant.md) |
+| Bring-up and devices | The probes that first brought the hardware up, the QA self-test, and how a second model or kind slots in | [Bring-up probes](bring-up-probes.md), [QA firmware](qa.md), [device kinds](device-kinds.md) |
 
 The design behind all of this, from "one firmware, server optional" to the choice of Noise, is in [product architecture](product-architecture.md). Whether it fits the chip is measured in [resource budget](resource-budget.md), with its [scheduling gap check](scheduling-gap-check.md). How a stock feeder moves to Wellfed, and back, is in [consumer installation](consumer-installation.md).
 

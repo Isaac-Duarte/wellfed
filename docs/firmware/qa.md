@@ -1,12 +1,12 @@
 # Checking a feeder with the QA firmware
 
-The `qa` firmware (`src/firmware/wellfed/qa`) grades a feeder's hardware in one boot. It walks you through every bring-up check that needs no motor: the optical sensors, the power inputs, the four buttons, the four lights and the speaker. It ends with one UART line that says whether the unit passed. This guide is for contributors bringing up a unit on the bench.
+The `qa` firmware (`src/firmware/wellfed/qa`) grades a feeder's hardware in one boot. It walks you through every bring-up check that needs no motor (optical sensors, power inputs, the four buttons, the four lights and the speaker) and ends with one UART line saying whether the unit passed. This guide is for contributors bringing up a unit on the bench.
 
-The motor never moves. The optics and power checks hold it at STOP, and pressing Dispense only answers a prompt.
+The motor never moves: the optics and power checks hold it at STOP, and Dispense only answers a prompt.
 
 ## Before you start
 
-You need the bench set up for UART capture and over-the-air installs, and someone at the feeder to press buttons, look and listen. No screen is needed at the feeder: the startup chime plays at boot, and each button prompt plays a short cue. Every prompt is also a UART line, which the capture records.
+You need the bench set up for UART capture and over-the-air installs, and someone at the feeder to press buttons, look and listen. No screen is needed: the chime plays at boot, each button prompt plays a short cue, and every prompt is also a UART line in the capture.
 
 ## Steps
 
@@ -32,12 +32,10 @@ When the result is logged, the QA task ends. The runtime keeps the build confirm
 | **Indicators** | Answer for each light | Each light is driven HIGH, its settled readback accepts the level, and you answer yes |
 | **Speaker** | Answer for the tune | The test tune starts and you answer yes |
 
-Notes:
-
 - **Optics** holds the KM0 flash handshake, so the build does not confirm before it ends.
-- **Power** values are logged as `PLADC1` lines, not judged. The battery divider is measured on one unit only, and no limits are set. The check shows the ADC path works, not that the battery voltage is in range.
-- **Buttons** are Reset (PB4), Mic (PB5), Dispense (PB6) and Lock (PB7), active LOW ([buttons](buttons.md)). A press of another button fails that item as `wrong`, and no press fails it as `timeout`. All four lines must read released when the check opens, or every guided check fails as `lines`.
-- **Indicators** are PA0, PA2, PA4 and PB22 ([indicator lights](indicators.md)). Buttons other than Dispense and Lock are ignored while it waits for your answer.
+- **Power** values are logged as `PLADC1` lines, not judged: the battery divider is measured on one unit only, and no limits are set. The check shows the ADC path works, not that the battery is in range.
+- **Buttons** ([buttons](buttons.md)): another button fails the item as `wrong`, no press as `timeout`. All four lines must read released when the check opens, or every guided check fails as `lines`.
+- **Indicators** are PA0, PA2, PA4 and PB22 ([indicator lights](indicators.md)). Buttons other than Dispense and Lock are ignored while it waits.
 - **Speaker** with `sound` off fails as `muted`, without a prompt.
 
 ## Records
@@ -55,20 +53,9 @@ The image carries the optics and ADC probes, so it declares their startup polici
 
 ## How the audit grades
 
-`wellfed-audit qa --device plaf103` loads the capture and its source-bound build as the startup audit does. It requires `firmware: qa` in the manifest and a passing startup. It then reads the `PLQA1` lines and trusts none of the summaries on their own:
+`wellfed-audit qa --device plaf103` loads the capture and its source-bound build as the startup audit does, requiring `firmware: qa` in the manifest and a passing startup. It trusts no summary alone: every check must start in order and report one verdict, and the result line must repeat those verdicts with a status that follows from them. The outcome is `pass`, `qa_fail` (the run completed and a check failed, with the items listed), `qa_sequence` (missing, repeated, out-of-order or inconsistent records, with the fault named), or `startup_<outcome>`.
 
-- every check must start in order and report one verdict;
-- the result line must repeat those verdicts;
-- its status must follow from them.
-
-The outcome is one of:
-
-- `pass`;
-- `qa_fail`: the run completed and a check failed, with the failed items listed;
-- `qa_sequence`: missing, repeated, out-of-order or inconsistent records, with the fault named;
-- `startup_<outcome>`.
-
-Buttons, indicators and the tune are graded by what you answered. A lit light and an audible tune are your observations, not measurements.
+Buttons, indicators and the tune are graded by what you answered: a lit light and an audible tune are your observations, not measurements.
 
 ## Common mistakes
 
@@ -91,5 +78,5 @@ Buttons, indicators and the tune are graded by what you answered. A lit light an
 - **Two earlier guided runs** of `qa` `ef76b85e…` (v84), each graded by `wellfed-audit qa --device plaf103`, passed every check and item between them:
   - `fw39-qa-03-guided`: optics, power, all four buttons, three indicators and the speaker passed. PA0 failed as `no`: the owner mis-pressed Lock about 0.9 s after the prompt.
   - `fw39-qa-04-guided`: optics, power, all four indicators, the speaker and three buttons passed. Reset timed out with no press on the line; the owner missed the prompt.
-- **Optics fault.** Observed: the starvation figures above (`stall=703`, `stall=702`).
+- **Optics fault.** Observed: the starvation figures under known issues (`stall=703`, `stall=702`).
 - **Host.** Modeled: the sequence runs against the SDK fake with a scripted operator.
