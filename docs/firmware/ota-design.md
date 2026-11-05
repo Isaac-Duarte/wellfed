@@ -152,11 +152,11 @@ Storage formats stay readable by the bank-0 build, or a format change ships a ba
 
 ## Boot confirmation and fallback
 
-KM0 runs the trial before it starts KM4 (`wellfed-hal-common/src/trial.rs`, `wellfed_trial_step` in `firstboot_km0.c`).
+KM0 runs the trial before it starts KM4. Rust decides and writes the `PLTRL1` lines (`wellfed-hal-common/src/trial.rs`); `wellfed_trial_step` in `firstboot_km0.c` reads flash and the register, prints the lines, and does the give-way's marker write and watchdog reset.
 
 - **Running bank:** read from bank 1's physical marker.
 - **Confirmation** is keyed by the build identity, not the image hash, since the running image doesn't know its own OTA hash. The record lives in storage sector 4 (`0x344000`). So reinstalling the build the record names skips the trial: KM0 logs `PLTRL1 confirmed=1` straight after activation, and the build `PLCNF1 confirmed=1 already=1`. A test that needs a trial must install a build the record doesn't name, or go through stock, whose handover on bank 0 erases the record.
-- **Count:** backup register 4: bits 0–15 the peer boot count, 16–19 the trial count on a trial boot (with bit 19 set, the storm's backoff level on any other), 20–23 the [storm](#reset-storms) count, 24–30 an identity tag, and 31 "forgive no brownout next boot" (`trial.rs` documents the layout).
+- **Count:** backup register 4: bits 0–15 the peer boot count, which KM0's peer task bumps at its start (`trial::boot_counted`), 16–19 the trial count on a trial boot (with bit 19 set, the storm's backoff level on any other), 20–23 the [storm](#reset-storms) count, 24–30 an identity tag, and 31 "forgive no brownout next boot" (`trial.rs` documents the layout).
 - **Give way:** at boot 4, and only if bank 0's marker is valid, KM0 clears byte 0 of bank 1's marker and resets with its own watchdog. The program step bypasses `FLASH_Write_Lock`: after a watchdog reset, that lock's KM0 branch waits forever for an absent KM4, because `km4_status_on` still reads the HS clock bit set.
 
 **How a build confirms.** Once the startup probe has ended, the link is live, and outputs have been verified stopped for 30 s continuously, the build arms the hooks, writes the record to sector 4 and reads it back (the service task in `wellfed-sdk`'s `runtime.rs`). A live link is associated, leased, and the lease's gateway answering an ICMP echo, or never having answered this join ([link liveness](startup-diagnostics.md#link-liveness-without-internet-dns)). It needs no internet DNS, so a build confirms on a LAN with no route out. A gateway that goes silent after answering restarts the 30 s.

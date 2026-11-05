@@ -143,20 +143,6 @@ fn a_count_from_another_image_does_not_carry_over() {
 }
 
 #[test]
-fn codes_carry_the_counts() {
-    assert_eq!(Decision::NotBank1 { resets: 0 }.code(), 0);
-    assert_eq!(Decision::NotBank1 { resets: 2 }.code(), 0x200);
-    assert_eq!(Decision::Confirmed { resets: 1 }.code(), 0x101);
-    assert_eq!(Decision::Counted(2).code(), 0x202);
-    assert_eq!(Decision::GiveWay.code(), 3);
-    assert_eq!(Decision::NoFallback(3).code(), 0x304);
-    assert_eq!(Decision::Held { resets: 5 }.code(), 0x505);
-    assert_eq!(Decision::StormGiveWay { resets: 5 }.code(), 0x506);
-    // `firstboot_km0.c` prints `limit=5` with the storm give-way.
-    assert_eq!(STORM_LIMIT, 5);
-}
-
-#[test]
 fn a_confirmed_build_that_keeps_resetting_gives_way_at_the_storm_limit() {
     let record = confirm_record(&ID, 0);
     let out = boots_from(7, &MARKER, MARKER, record, |_| None);
