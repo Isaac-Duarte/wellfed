@@ -37,8 +37,6 @@ wellfed-build = { path = "../wellfed-build" }
 # Device::install's push, faults included, against the simulator over TCP.
 wellfed-feeder-sim = { path = "../wellfed-feeder-sim", features = ["harness"] }
 wellfed-image = { workspace = true, features = ["fixtures"] }
-# The flash client's own image checks, which a bank-0 finish's printed
-# commands must pass.
 wellfed-relay = { path = "../wellfed-relay", features = ["fake"] }
 sha2 = "0.10"
 tempfile.workspace = true

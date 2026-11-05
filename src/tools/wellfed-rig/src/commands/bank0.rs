@@ -21,8 +21,10 @@
 //! any plan. Any step that fails, an error included, stops the job without a
 //! retry, and it says where the feeder stands and the commands that go on.
 //! Where a write stopped part way, the flash client's own read-only
-//! inspections say which way on applies, and the job prints only that one;
-//! when they cannot tell, it prints each with its condition.
+//! inspections say which way on applies, and the job prints only that one.
+//! When they all refuse, no flash-client command applies and it prints a
+//! full read to investigate; when they could not run, it prints each way on
+//! with its condition.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use wellfed_core::ota::SECTOR;
 use wellfed_core::ota::install::{Bank0Check, Bank0Error, Blocked};
 use wellfed_core::record::{Event, Record, Update};
-use wellfed_formats::bench::banks::{Content, Source};
+use wellfed_formats::bench::banks::{BANKS, Bank, Check, Content, Ledger, Source};
 use wellfed_formats::bench::{Paths, VERIFICATION};
 use wellfed_formats::flash_plan::GiveWayPlan;
 use wellfed_formats::require;
@@ -52,6 +54,9 @@ pub(crate) const BANK0_BOOT_SECONDS: f64 = 60.0;
 /// after its Wi-Fi join), once the flash hooks are armed, then hashes it.
 /// Under the flash client's 180 s cap on one capture.
 pub(crate) const BANK1_BOOT_SECONDS: f64 = 170.0;
+
+/// The flash client's exit for a refusal: its checks ran and said no.
+const REFUSED: i32 = 2;
 
 /// Where a bank-0 prepare binds the bank-1 review it checked.
 pub(crate) fn binding(root: &Path, name: &str) -> PathBuf {
@@ -143,8 +148,11 @@ pub(crate) enum Bank1 {
     Staged,
     /// Exactly its review, marker and all.
     Restored,
-    /// None of these, or the inspections could not run.
-    Unknown,
+    /// The inspections could not run, or one stopped: nothing is known.
+    Uninspected,
+    /// Every inspection ran and refused: bank 1 is in none of the states a
+    /// flash-client command takes on.
+    Unrecognized,
 }
 
 /// The read-only inspections that tell [`Bank1`] states apart.
@@ -194,7 +202,29 @@ pub(crate) enum At {
     RestoreUnknown,
     /// Bank 1's marker is back; its check not seen.
     Restored,
+    /// A write stopped part way and every inspection refused bank 1.
+    Unrecognized,
 }
+
+/// Why bank 0 is not an image bank 1 can hand over to, as the next write
+/// must take it on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Unusable {
+    /// Bank 0's marker is not valid: a bank-0 write from its pinned bytes
+    /// (`--original-read`), which the flash client takes only then.
+    Marker,
+    /// Bank 0 holds the image just written, but its headers give no image to
+    /// hash: another build, written over it as the reviewed source.
+    Extent,
+    /// Bank 1 could not read bank 0: another look, since writing the same
+    /// image again changes no byte.
+    Read,
+}
+
+/// Where a stopped write left the feeder: never booted since, in the ROM
+/// loader the job entered to inspect bank 1, or off if power was cut.
+const NOT_BOOTED: &str = "the feeder has not booted since: it waits in the ROM loader, or is \
+                          off if its power was cut";
 
 /// The commands that go on from a stop, under session names the job has
 /// not used.
@@ -265,21 +295,41 @@ impl Next<'_> {
         ]
     }
 
-    /// Bank 0 itself is not an image bank 1 can hand over to: write it again.
-    fn rewrite(&self) -> Vec<String> {
+    /// Bank 0 is not an image bank 1 can hand over to, for `why`.
+    pub(crate) fn rewrite(&self, why: Unusable) -> Vec<String> {
         let (name, target, bank1) = (self.name, self.target.display(), self.bank1.display());
         let motion = if self.attended_motion {
             " --attended-motion"
         } else {
             ""
         };
-        vec![
-            format!("wellfed-bench dump {name}-reread"),
-            format!(
-                "wellfed-bench flash-prepare {name}-again --bank 0 --original-read <that full read> \
-                 --target {target} --bank1-source {bank1}{motion}"
-            ),
-        ]
+        match why {
+            Unusable::Marker => vec![
+                format!("wellfed-bench dump {name}-reread"),
+                format!(
+                    "wellfed-bench flash-prepare {name}-again --bank 0 --original-read <that \
+                     full read> --target {target} --bank1-source {bank1}{motion}"
+                ),
+            ],
+            Unusable::Extent => vec![
+                format!(
+                    "choose another build: bank 0 holds {target} exactly, and bank 1 finds no \
+                     image in its headers"
+                ),
+                format!(
+                    "wellfed-bench flash-prepare {name}-again --bank 0 --source {target} \
+                     --target <that build's review> --bank1-source {bank1}{motion}"
+                ),
+            ],
+            Unusable::Read => [
+                self.boot1(),
+                vec![format!(
+                    "if it says check=read again: wellfed-bench dump {name}-reread, and compare \
+                     bank 0 with {target}; writing {target} again changes no byte"
+                )],
+            ]
+            .concat(),
+        }
     }
 
     /// Each step under its condition.
@@ -291,16 +341,19 @@ impl Next<'_> {
     }
 
     /// Where the feeder stands at `at`, and the commands from there.
-    pub(crate) fn at(&self, at: At) -> (&'static str, Vec<String>) {
+    pub(crate) fn at(&self, at: At) -> (String, Vec<String>) {
         match at {
             At::Written => (
                 "bank 0 holds the new image, unrecorded; bank 1 is unchanged and boots, and \
-                 refuses every update",
+                 refuses every update"
+                    .into(),
                 [self.give_way(), self.restore(Resume::Fresh)].concat(),
             ),
             At::GiveWayUnknown => (
-                "the give-way stopped, and bank 1's first marker byte may or may not be \
-                 cleared; the feeder is powered and not booted",
+                format!(
+                    "the give-way stopped, bank 1's first marker byte may or may not be \
+                     cleared, and the inspections could not run; {NOT_BOOTED}"
+                ),
                 [
                     Self::when(
                         "give-way-prepare accepts bank 1 (its marker intact)",
@@ -315,22 +368,28 @@ impl Next<'_> {
             ),
             At::GivenWay => (
                 "bank 1 has given way, so bank 0 boots, but its record was not seen; updates \
-                 stay refused",
+                 stay refused"
+                    .into(),
                 [self.boot0(), self.restore(Resume::Fresh)].concat(),
             ),
             At::Recorded => (
                 "bank 0 recorded itself and runs; bank 1 holds its source with the first \
-                 marker byte cleared",
+                 marker byte cleared"
+                    .into(),
                 self.restore(Resume::Fresh),
             ),
             At::RestoreStaged => (
-                "the marker restore stopped with bank 1's marker sector erased or staged; \
-                 bank 0 recorded itself, and the feeder is powered and not booted",
+                format!(
+                    "the marker restore stopped with bank 1's marker sector erased or staged, \
+                     after bank 0 recorded itself; {NOT_BOOTED}"
+                ),
                 self.restore(Resume::Interrupted),
             ),
             At::RestoreUnknown => (
-                "the marker restore stopped, and how far it got is not known; bank 0 \
-                 recorded itself, and the feeder is powered and not booted",
+                format!(
+                    "the marker restore stopped after bank 0 recorded itself, and the \
+                     inspections could not run to say how far it got; {NOT_BOOTED}"
+                ),
                 [
                     Self::when(
                         "flash-prepare --restore-marker accepts bank 1 (nothing erased yet)",
@@ -349,8 +408,22 @@ impl Next<'_> {
                 .concat(),
             ),
             At::Restored => (
-                "bank 1's marker is back, but its boot check was not seen",
+                "bank 1's marker is back, but its boot check was not seen".into(),
                 self.boot1(),
+            ),
+            At::Unrecognized => (
+                format!(
+                    "the write stopped part way and every read-only inspection refused bank 1, \
+                     so no wellfed-flash command applies to it; its marker is not valid, so \
+                     the feeder boots bank 0 when it next boots; {NOT_BOOTED}"
+                ),
+                vec![
+                    format!("wellfed-bench dump {}-investigate", self.name),
+                    format!(
+                        "compare bank 1 in that read with {}'s image before any write",
+                        self.bank1.display()
+                    ),
+                ],
             ),
         }
     }
@@ -363,7 +436,8 @@ impl Next<'_> {
             Bank1::GivenWay => At::Recorded,
             Bank1::Staged => At::RestoreStaged,
             Bank1::Restored => At::Restored,
-            Bank1::Unknown => unknown,
+            Bank1::Uninspected => unknown,
+            Bank1::Unrecognized => At::Unrecognized,
         }
     }
 }
@@ -385,9 +459,10 @@ pub(crate) fn skew_steps(update: &UpdateArgs) -> Vec<String> {
 }
 
 impl Bench {
-    /// At a bank-0 prepare: bank 1 must hold `bank1`'s image (its first
-    /// marker byte aside, which a give-way clears), as the prepare's
-    /// inspection read bank 1's first sector. The review is then bound for
+    /// At a bank-0 prepare, before its plan: bank 1's first sector, as the
+    /// inspection read it, must be `bank1`'s (its first marker byte aside,
+    /// which a give-way clears), and when the bench ledger names the image
+    /// bank 1 holds, it must be `bank1`'s too. The review is then bound for
     /// the execute.
     pub(super) fn bind_bank1(&mut self, name: &str, bank1: &Path) -> Result<()> {
         let frozen = self.frozen(bank1, &bank::BANK1)?;
@@ -409,6 +484,8 @@ impl Bench {
             },
         )?;
 
+        self.require_ledger_bank1(bank1, &frozen)?;
+
         let bound = Bank1Binding {
             review: bank1.to_path_buf(),
             review_sha256: frozen.review_sha256,
@@ -422,6 +499,44 @@ impl Bench {
             self.rel(bank1),
             bound.review_sha256
         );
+        Ok(())
+    }
+
+    /// What the bench ledger says bank 1 holds must be `bank1`'s image; a
+    /// ledger that names no image there leaves the first sector the only
+    /// check, and says so.
+    fn require_ledger_bank1(&self, bank1: &Path, frozen: &Frozen) -> Result<()> {
+        let ledger: Option<Ledger> = wellfed_formats::load(&self.root.join(BANKS)).ok();
+        let held = ledger
+            .and_then(|mut ledger| ledger.banks.remove(&Bank::One))
+            .map(|entry| match entry.check {
+                // The feeder's own report outranks the job that wrote it.
+                Check::Disputed { seen, .. } => seen,
+                Check::Unchecked | Check::Confirmed { .. } => entry.content,
+            });
+        let agrees = match &held {
+            Some(Content::Image { sha256 }) => {
+                sha256.eq_ignore_ascii_case(&frozen.review.ota_sha256)
+            }
+            Some(named @ (Content::Build { .. } | Content::Stock)) => {
+                super::installed(&self.root, bank1).as_ref() == Some(named)
+            }
+            Some(Content::Invalid | Content::Unknown) | None => {
+                say!(
+                    "The bank ledger names no image in bank 1: bank 1's review checked against \
+                     its first sector only"
+                );
+                return Ok(());
+            }
+        };
+        if let (false, Some(held)) = (agrees, held) {
+            return Err(CommandsError::Bank1LedgerDiffers {
+                review: self.rel(bank1),
+                ledger: held,
+            }
+            .into());
+        }
+        say!("The bank ledger agrees: bank 1 holds {}", self.rel(bank1));
         Ok(())
     }
 
@@ -549,8 +664,12 @@ impl Bench {
                      (error={error}); updates stay refused"
                 );
                 let steps = match error {
-                    Bank0Error::Store => [next.boot0(), next.restore(Resume::Fresh)].concat(),
-                    Bank0Error::Extent | Bank0Error::Read => next.rewrite(),
+                    // A read that failed while hashing may pass on another
+                    // boot, as a store write may.
+                    Bank0Error::Store | Bank0Error::Read => {
+                        [next.boot0(), next.restore(Resume::Fresh)].concat()
+                    }
+                    Bank0Error::Extent => next.rewrite(Unusable::Extent),
                 };
                 return Ok(self.unfinished(&now, &steps));
             }
@@ -615,7 +734,9 @@ impl Bench {
                     Blocked::Unrecorded | Blocked::Changed | Blocked::Key => {
                         [next.give_way(), next.restore(Resume::Fresh)].concat()
                     }
-                    Blocked::Marker | Blocked::Extent | Blocked::Read => next.rewrite(),
+                    Blocked::Marker => next.rewrite(Unusable::Marker),
+                    Blocked::Extent => next.rewrite(Unusable::Extent),
+                    Blocked::Read => next.rewrite(Unusable::Read),
                 };
                 Ok(self.unfinished(&now, &steps))
             }
@@ -629,18 +750,18 @@ impl Bench {
     }
 
     /// After a write that stopped: which state bank 1 is in, by the first of
-    /// `probes` whose read-only inspection passes. Nothing is written; an
-    /// inspection that fails or cannot run says only that it does not apply,
-    /// and none passing is [`Bank1::Unknown`]. A cancel probes nothing.
+    /// `probes` whose read-only inspection passes. Nothing is written. Every
+    /// one refusing (exit 2) is [`Bank1::Unrecognized`]; one that stops, or
+    /// cannot run, and a cancel, are [`Bank1::Uninspected`].
     fn probe(&mut self, update: &UpdateArgs, bank1: &Path, probes: &[Probe]) -> Bank1 {
         if self.cancel.is_cancelled() {
-            return Bank1::Unknown;
+            return Bank1::Uninspected;
         }
         match self.try_probe(update, bank1, probes) {
             Ok(found) => found,
             Err(error) => {
                 say!("Could not inspect bank 1 after the stop: {error}");
-                Bank1::Unknown
+                Bank1::Uninspected
             }
         }
     }
@@ -657,7 +778,7 @@ impl Bench {
             &[&self.read_args(), &self.out(&p.bounded)],
         );
         if self.run(&read)? != 0 {
-            return Ok(Bank1::Unknown);
+            return Ok(Bank1::Uninspected);
         }
 
         for &probe in probes {
@@ -695,17 +816,22 @@ impl Bench {
                     )
                 }
             };
-            if self.run(&words)? == 0 {
-                say!("Bank 1 after the stop: {:?}", probe.passed());
-                return Ok(probe.passed());
+            match self.run(&words)? {
+                0 => {
+                    say!("Bank 1 after the stop: {:?}", probe.passed());
+                    return Ok(probe.passed());
+                }
+                REFUSED => {}
+                _ => return Ok(Bank1::Uninspected),
             }
         }
-        Ok(Bank1::Unknown)
+        say!("Bank 1 after the stop: every inspection refused it");
+        Ok(Bank1::Unrecognized)
     }
 
     fn stopped_at(&mut self, next: &Next<'_>, at: At) -> u8 {
         let (now, steps) = next.at(at);
-        self.unfinished(now, &steps)
+        self.unfinished(&now, &steps)
     }
 
     /// Stop without a retry: where the feeder stands, and what goes on.

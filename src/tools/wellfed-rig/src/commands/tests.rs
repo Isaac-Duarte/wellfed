@@ -2635,7 +2635,9 @@ fn a_stopped_give_way_prints_the_way_on_bank_1_is_in() {
     assert!(!steps.contains("give-way-prepare"), "{steps}");
     assert!(steps.contains("--restore-marker"), "{steps}");
 
-    let unknown = stopped_at(0, &[2, 2]);
+    // An inspection that stopped (exit 1) tells nothing: both ways on, each
+    // with its condition.
+    let unknown = stopped_at(0, &[1]);
     let steps = next(&unknown);
     assert!(
         steps.contains("if give-way-prepare accepts bank 1"),
@@ -2650,6 +2652,23 @@ fn a_stopped_give_way_prints_the_way_on_bank_1_is_in() {
             .count(),
         2
     );
+
+    // Both refused (exit 2), as for a frame that cleared only some of byte
+    // 0's bits: no flash-client way on, and none printed.
+    assert_unrecognized(&stopped_at(0, &[2, 2]));
+}
+
+/// The stop where every inspection refused bank 1: a full read to look,
+/// and none of the writes or conditions the inspections ruled out.
+fn assert_unrecognized(rig: &Rig) {
+    let steps = next(rig);
+    assert!(
+        steps.starts_with("wellfed-bench dump unit-investigate"),
+        "{steps}"
+    );
+    for ruled_out in ["if ", "give-way-prepare", "flash-prepare", "boot unit-bank"] {
+        assert!(!steps.contains(ruled_out), "{ruled_out}: {steps}");
+    }
 }
 
 /// After a marker restore that stopped, the inspections tell the given-way
@@ -2685,7 +2704,12 @@ fn a_stopped_marker_restore_prints_the_way_on_bank_1_is_in() {
     );
     assert!(next(&restored).starts_with("wellfed-bench boot unit-bank1"));
 
-    let unknown = stopped_at(1, &[2, 2, 2]);
+    assert_unrecognized(&stopped_at(1, &[2, 2, 2]));
+
+    // The second inspection stopped: nothing is known, so every way on is
+    // printed with its condition.
+    let unknown = stopped_at(1, &[2, 1]);
+    assert_eq!(probes(&unknown).len(), 2);
     let steps = next(&unknown);
     for condition in [
         "if flash-prepare --restore-marker accepts",
@@ -2862,6 +2886,9 @@ fn the_bank_1_review_must_be_what_bank_1_holds() {
                 Error::Command(CommandsError::Bank1SourceDiffers { .. })
             );
             assert!(!binding.exists());
+            // Checked before the plan: none was prepared.
+            assert!(!flash_commands(&rig).contains(&"update prepare".to_string()));
+            assert!(!Paths::new(&rig.bench.root, "unit").plan.exists());
         }
         assert!(!flash_commands(&rig).iter().any(|c| c.ends_with("execute")));
     }
@@ -2895,4 +2922,125 @@ fn an_execute_needs_the_bank_1_review_its_prepare_bound() {
         Error::Command(CommandsError::Bank1SourceUnbound { .. })
     );
     assert!(executed(&rig).is_empty());
+}
+
+/// When the bench ledger names the image bank 1 holds, the bank-1 review
+/// must be it, as the feeder last reported it when the two disagree; a
+/// ledger with no image there leaves the first sector the only check.
+#[test]
+fn the_bank_1_review_must_be_what_the_ledger_has_in_bank_1() {
+    use wellfed_formats::bench::banks::{BANKS, Check, Entry, Ledger, Witness};
+
+    let image = |sha256: &str| Content::Image {
+        sha256: sha256.into(),
+    };
+    let bank1_ota = {
+        let rig = rig();
+        bank_review(&rig, B1, 7).0
+    };
+    let cases = [
+        (image(&bank1_ota.to_uppercase()), Check::Unchecked, true),
+        (
+            image(&bank1_ota),
+            Check::Confirmed {
+                by: Witness::Banner,
+                at: 1.0,
+            },
+            true,
+        ),
+        (image("cc"), Check::Unchecked, false),
+        (
+            image(&bank1_ota),
+            Check::Disputed {
+                by: Witness::Banner,
+                at: 1.0,
+                seen: Content::Stock,
+            },
+            false,
+        ),
+        (Content::Stock, Check::Unchecked, false),
+        (Content::Invalid, Check::Unchecked, true),
+        (Content::Unknown, Check::Unchecked, true),
+    ];
+    for (content, check, ok) in cases {
+        let mut rig = rig();
+        fs::create_dir_all(rig.bench.root.join(VERIFICATION)).unwrap();
+        bank_review(&rig, B0, 3);
+        let (_, bank1) = bank_review(&rig, B1, 7);
+        rig.tools.0.borrow_mut().bank1_sector = Some(bank1[..SECTOR].to_vec());
+        let mut ledger = Ledger::default();
+        ledger.banks.insert(
+            Bank::One,
+            Entry {
+                content: content.clone(),
+                source: wellfed_formats::bench::banks::Source::FlashExecute,
+                session: None,
+                at: 0.0,
+                check,
+            },
+        );
+        let path = rig.bench.root.join(BANKS);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, serde_json::to_vec(&ledger).unwrap()).unwrap();
+
+        let mut args = update("unit");
+        args.bank = 0;
+        args.source = None;
+        args.target = B0.into();
+        args.bank1_source = Some(B1.into());
+        if ok {
+            assert_eq!(rig.bench.flash_prepare(&args).unwrap(), 0, "{content:?}");
+        } else {
+            let error = rig.bench.flash_prepare(&args).unwrap_err();
+            assert_matches!(
+                error,
+                Error::Command(CommandsError::Bank1LedgerDiffers { .. }),
+                "{content:?}"
+            );
+            assert!(
+                !flash_commands(&rig).contains(&"update prepare".to_string()),
+                "{content:?}"
+            );
+        }
+    }
+}
+
+/// What a bank 0 bank 1 cannot hand over to needs, by why: a write from
+/// its pinned bytes only when its marker is not valid (the flash client
+/// refuses `--original-read` otherwise), a new build over it as the source
+/// when its headers give no image, and another look when bank 1 could not
+/// read it, since writing it again changes no byte. The flash client's own
+/// checks on each written command are its test
+/// `each_printed_bank_0_rewrite_passes_for_its_state`.
+#[test]
+fn each_unusable_bank_0_prints_the_write_that_applies() {
+    use super::bank0::{Next, Unusable};
+
+    let next = Next {
+        name: "unit",
+        target: Path::new(B0),
+        bank1: Path::new(B1),
+        attended_motion: false,
+    };
+    let marker = next.rewrite(Unusable::Marker).join("\n");
+    assert!(marker.contains("dump unit-reread"), "{marker}");
+    assert!(
+        marker.contains(&format!(
+            "flash-prepare unit-again --bank 0 --original-read <that full read> --target {B0}"
+        )),
+        "{marker}"
+    );
+
+    let extent = next.rewrite(Unusable::Extent).join("\n");
+    assert!(
+        extent.contains(&format!(
+            "flash-prepare unit-again --bank 0 --source {B0} --target <that build's review>"
+        )),
+        "{extent}"
+    );
+    assert!(!extent.contains("--original-read"), "{extent}");
+
+    let read = next.rewrite(Unusable::Read).join("\n");
+    assert!(read.starts_with("wellfed-bench boot unit-bank1"), "{read}");
+    assert!(!read.contains("flash-prepare"), "{read}");
 }

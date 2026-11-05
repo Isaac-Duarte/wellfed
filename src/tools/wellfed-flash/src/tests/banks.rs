@@ -537,3 +537,40 @@ fn a_stopped_marker_restore_resumes_by_one_mode_never_both() {
         );
     }
 }
+
+/// The bank-0 writes the bench job prints for a bank 0 bank 1 will not
+/// hand over to pass these checks only in their own state: `--original-read`
+/// from a bank 0 whose marker is not valid, `--source` the image just
+/// written for a bank 0 that holds it. The first is refused over a valid
+/// marker, and writing that image again over itself writes no byte.
+#[test]
+fn each_printed_bank_0_rewrite_passes_for_its_state() {
+    let written = image(20000, 9);
+    let other = image(20000, 5);
+    let held = development::payload(&written, &BANK0).unwrap().to_vec();
+    let new = development::payload(&other, &BANK0).unwrap().to_vec();
+    assert_eq!(held.len(), new.len());
+    let mut no_marker = held.clone();
+    no_marker[..8].fill(0xff);
+
+    // Marker: from the pinned read.
+    let mut from_read = update(None, &written, BANK0);
+    from_read.original = Some(&no_marker);
+    assert!(development::images(&from_read, &no_marker).is_ok());
+    from_read.original = Some(&held);
+    let error = development::images(&from_read, &held).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        development::DevelopmentError::OriginalValid.to_string()
+    );
+
+    // Extent: another build, over the image just written as its source.
+    let over = update(Some(&written), &other, BANK0);
+    assert!(development::images(&over, &held).is_ok());
+    assert!(development::images(&over, &no_marker).is_err());
+
+    // Read: the same image again proposes exactly what bank 0 holds.
+    let again = update(Some(&written), &written, BANK0);
+    let (proposed, _) = development::images(&again, &held).unwrap();
+    assert!(proposed == held);
+}

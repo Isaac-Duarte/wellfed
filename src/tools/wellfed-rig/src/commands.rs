@@ -119,6 +119,11 @@ pub enum CommandsError {
         "Bank 1's first sector is not {review}'s, its first byte aside; name the review bank 1 holds"
     )]
     Bank1SourceDiffers { review: String },
+    /// The bench ledger names what bank 1 holds, and it is not the review.
+    #[error(
+        "The bank ledger has bank 1 holding {ledger:?}, not {review}; name the review it holds"
+    )]
+    Bank1LedgerDiffers { review: String, ledger: Content },
     #[error("The prepare's inspection holds no bank-1 sector at {sector}")]
     Bank1SectorMissing { sector: String },
     /// The bank-1 review an execute names must be the one its prepare
@@ -1008,9 +1013,6 @@ impl Bench {
         let Some((sha, plan)) = self.update_plan(args)? else {
             return Ok(1);
         };
-        if let Some(bank1) = &args.bank1_source {
-            self.bind_bank1(&args.name, bank1)?;
-        }
         say!(
             "Plan {}: bank {}, {} sectors staged, {} erases, target {}",
             self.rel(&Paths::new(&self.root, &args.name).plan),
@@ -1040,22 +1042,30 @@ impl Bench {
         }
         self.loader(&p.loader)?;
 
-        let steps = [
+        let looks = [
             argv(
                 &["read", "small"],
                 &[&self.read_args(), &self.out(&p.bounded)],
             ),
             argv(&["update", "inspect"], &[&update, &self.out(&p.inspect)]),
-            argv(
-                &["update", "prepare"],
-                &[
-                    &update,
-                    &["--inspection".into(), self.report(&p.inspect)],
-                    &self.out(&p.plan),
-                ],
-            ),
         ];
-        if !self.run_all(&steps)? {
+        if !self.run_all(&looks)? {
+            return Ok(None);
+        }
+        // Bank 1's review is checked against what the inspection read, and
+        // bound, before a plan exists to execute.
+        if let Some(bank1) = &args.bank1_source {
+            self.bind_bank1(&args.name, bank1)?;
+        }
+        let prepare = argv(
+            &["update", "prepare"],
+            &[
+                &update,
+                &["--inspection".into(), self.report(&p.inspect)],
+                &self.out(&p.plan),
+            ],
+        );
+        if !self.run_all(&[prepare])? {
             return Ok(None);
         }
 
