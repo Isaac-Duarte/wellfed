@@ -1,6 +1,6 @@
 # TypeScript standard
 
-These are the rules for the web frontends in `src/web/` (TypeScript and Svelte), why each exists, and what enforces it. [AGENTS.md](../../AGENTS.md#web-conventions) keeps the short form. These apps are the landing page and the docs site. The server and the bench have no web UI: owners use the [app and the CLI](../firmware/product-architecture.md#frontends), and the bench has its [console](../devices/plaf103/bench.md#the-console).
+These are the rules for the web frontends in `src/web/` (TypeScript and Svelte), why each exists, and what enforces it. [AGENTS.md](../../AGENTS.md#web-conventions) keeps the short form. These apps are the landing page and the docs site. The server and the bench have no web UI: owners use the [app and the CLI](../firmware/product-architecture.md#frontends), and the bench has its [console](../devices/plaf103/bench-server.md#the-console).
 
 Every rule marked with a tool runs in `make check-web`.
 

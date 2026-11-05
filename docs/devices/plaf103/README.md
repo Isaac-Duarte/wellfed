@@ -130,7 +130,7 @@ $1
 | Console and loader entry | [UART](uart.md) |
 | Flash layout and boot | [Flash layout](flash-layout.md) |
 | Backup and recovery | [Recovery](recovery.md) |
-| Relay bench automation | [Bench](bench.md) |
+| Relay bench automation | [Bench](bench.md), [bench server](bench-server.md), [integration suite](integration-suite.md) |
 | Stock 1.1.15 behavior and protocol | [Stock firmware](stock/README.md), [stock OTA requirements](stock/ota-requirements.md) |
 
 Machine-readable device data lives in [`src/firmware/devices/plaf103/`](../../../src/firmware/devices/plaf103/).

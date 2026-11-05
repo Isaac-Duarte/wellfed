@@ -81,7 +81,7 @@ Progress goes to stderr. Stdout carries exactly one JSON object: `status`, the o
 | 2 | Refused before any serial access. No port opened, and no output directory was created unless the error says otherwise |
 | 3 | Incomplete: an `update --bank 0` wrote and verified bank 0, which has not recorded itself yet, so bank 1 refuses every update. The summary's `bank0.next` and stderr list the steps that finish it ([OTA design](../firmware/ota-design.md#bootstrap)) |
 
-A command that opens the serial port first takes the [bench lease](../devices/plaf103/bench.md#bench-lease) under `--root`. When `wellfed-bench` started it, it runs on its parent's lease instead. Another holder, or a lease a killed run left behind, is a refusal (exit 2) that names the holder. The offline commands take no lease.
+A command that opens the serial port first takes the [bench lease](../devices/plaf103/bench-server.md#bench-lease) under `--root`. When `wellfed-bench` started it, it runs on its parent's lease instead. Another holder, or a lease a killed run left behind, is a refusal (exit 2) that names the holder. The offline commands take no lease.
 
 Ctrl-C stops a session terminally and records the stop. It is checked before every transmission, so no frame follows the interrupt. A final report that cannot be saved after the port opened is a stop (exit 1, `report_error`), never a refusal.
 

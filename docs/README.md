@@ -76,6 +76,8 @@ Facts about a **chip** hold for every board built on it. Facts about a **device*
 | [Flash layout](devices/plaf103/flash-layout.md) | Boot flow and what lives where in flash |
 | [Recovery](devices/plaf103/recovery.md) | UART backup and the recovery writers |
 | [Relay bench](devices/plaf103/bench.md) | Powering and flashing the feeder from the bench |
+| [Bench server](devices/plaf103/bench-server.md) | The server that holds the bench: its routes, feeder session, console, lease and records |
+| [Integration suite](devices/plaf103/integration-suite.md) | Real-device tests on the bench, and the sustained run |
 | [Stock behavior and protocol](devices/plaf103/stock/README.md) | What stock firmware 1.1.15 does |
 | [Stock OTA requirements](devices/plaf103/stock/ota-requirements.md) | What stock's updater accepts |
 | [RTL8721DM (AmebaD)](chips/rtl8721dm/README.md) | The SoC and its SDK |
