@@ -33,33 +33,8 @@ import '../restore/restore_support.dart';
 import '../support/fake_install.dart';
 import '../support/fakes.dart';
 import '../support/harness.dart';
+import 'golden_fixtures.dart';
 import 'golden_support.dart';
-
-/// Four meals with a meal call each, one in every standing, so the rows show
-/// with both a short time ("7:00 AM") and a long one ("12:00 PM").
-Card _fourMealsCard() => fakeCard(
-  nextMeal: NextMealView(slot: 2, atMs: DateTime(2026, 11, 2, 17).millisecondsSinceEpoch, minute: 17 * 60, portions: 2),
-  lastFed: fixtureFed,
-  meals: [
-    MealView(
-      slot: 0,
-      minute: 7 * 60,
-      portions: 2,
-      call: 1,
-      standing: MealStanding.fed(result: fixtureFed),
-    ),
-    const MealView(slot: 1, minute: 12 * 60, portions: 1, call: 1, standing: MealStanding.passed()),
-    MealView(
-      slot: 2,
-      minute: 17 * 60,
-      portions: 2,
-      call: 1,
-      standing: MealStanding.next(atMs: DateTime(2026, 11, 2, 17).millisecondsSinceEpoch),
-    ),
-    const MealView(slot: 3, minute: 22 * 60, portions: 1, call: 1, standing: MealStanding.later()),
-  ],
-  plans: fullCard().plans,
-);
 
 /// A day with a skip in each standing: breakfast skipped with its time come,
 /// supper offered for a skip, and a late meal skipped with its undo still open.
@@ -226,7 +201,7 @@ void main() {
       golden("home with today's meals", (tester) async {
         final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
         answerAsFull(session);
-        session.status(_fourMealsCard());
+        session.status(fourMealsCard());
         await tester.pump();
         await showPhone(
           tester,
@@ -243,25 +218,8 @@ void main() {
         final (FeederController feeder, FakeSession session) = await oneFeeder(tester, phone: fixturePhone());
         answerAsFull(session);
         session
-          ..status(_fourMealsCard())
-          ..history([
-            HistoryEntry(
-              seq: BigInt.one,
-              atMs: DateTime(2026, 11, 2, 9, 12).millisecondsSinceEpoch,
-              body: HistoryBody.fed(
-                result: fakeFed(atMs: DateTime(2026, 11, 2, 9, 12).millisecondsSinceEpoch, requested: 1, confirmed: 1),
-              ),
-            ),
-            HistoryEntry(
-              seq: BigInt.two,
-              atMs: DateTime(2026, 11, 2, 12, 1).millisecondsSinceEpoch,
-              body: HistoryBody.missed(
-                slot: 1,
-                dueMs: DateTime(2026, 11, 2, 12).millisecondsSinceEpoch,
-                reason: const MissedReason.late_(),
-              ),
-            ),
-          ]);
+          ..status(fourMealsCard())
+          ..history(fourMealsHistory());
         await tester.pump();
         await showPhone(tester, shell(feeder, todayTab), brightness);
         await decodeImages(tester);

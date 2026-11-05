@@ -62,15 +62,17 @@ Future<void> showPhone(
   Brightness brightness, {
   Size size = phoneSize,
   double text = 1,
+  double ratio = 1,
 }) async {
-  frame(tester, size: size, text: text);
+  frame(tester, size: size, text: text, ratio: ratio);
   await tester.pumpWidget(themed(screen, brightness: brightness));
   await settle(tester);
 }
 
-void frame(WidgetTester tester, {Size size = phoneSize, double text = 1}) {
-  tester.view.physicalSize = size;
-  tester.view.devicePixelRatio = 1;
+/// `size` in logical pixels, drawn `ratio` physical pixels to each.
+void frame(WidgetTester tester, {Size size = phoneSize, double text = 1, double ratio = 1}) {
+  tester.view.physicalSize = size * ratio;
+  tester.view.devicePixelRatio = ratio;
   tester.platformDispatcher.textScaleFactorTestValue = text;
   addTearDown(tester.view.reset);
   addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);

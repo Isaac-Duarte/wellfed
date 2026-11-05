@@ -1,4 +1,4 @@
-.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-goldens app-installer-input sqlx-prepare server-dist server-image check-server-release
+.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-goldens guide-screenshots app-installer-input sqlx-prepare server-dist server-image check-server-release
 
 help:
 	@echo "check: formatting, Clippy, Rust tests, cross-builds, simulator, repository checks"
@@ -10,6 +10,7 @@ help:
 	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator with 95% coverage, on Home Assistant 2026.10 and Python 3.14 (needs uv)"
 	@echo "homeassistant-wheels: the Home Assistant bridge's release wheels, cross-built for musllinux and manylinux (aarch64, x86_64, armv7 musl), and its sdist (needs uv; adds Rust targets)"
 	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
+	@echo "guide-screenshots: redraw the owner guide's app screenshots in docs/guide/ from the app's test fixtures"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
 	@echo "sqlx-prepare: regenerate the server store's query metadata (.sqlx/) after changing a query or migration"
 	@echo "server-dist / server-image: the server's static release binaries in dist/server/ and its container image (docker or podman)"
@@ -143,22 +144,38 @@ APP_INSTALLER = $(APP)/assets/installer
 # The goldens belong to Linux: font rasterizers differ by as much as a real
 # change. On any other host they run in a Linux container, fed the app's
 # sources as a tar, so the checkout gets back only the images: new ones with
-# UPDATE=1, and a failed run's diffs in test/golden/failures/.
+# UPDATE=1, and a failed run's diffs in test/golden/failures/. The owner
+# guide's screenshots are goldens too (test/guide/), kept in docs/guide/,
+# which the container mounts where the test looks for it.
 GOLDENS_IMAGE = wellfed-app-goldens:$(FLUTTER_VERSION)
 GOLDENS_DIR = $(CURDIR)/$(APP)/test/golden
+GOLDENS_TESTS = test/golden test/guide
 app-goldens:
 ifeq ($(shell uname),Linux)
-	cd $(APP) && flutter test test/golden $(if $(UPDATE),--update-goldens)
+	cd $(APP) && flutter test $(GOLDENS_TESTS) $(if $(UPDATE),--update-goldens)
 else
 	$(CONTAINER) build -q -t $(GOLDENS_IMAGE) --build-arg FLUTTER_VERSION=$(FLUTTER_VERSION) \
 		-f $(APP)/tools/goldens/Containerfile $(APP)/tools/goldens
 	rm -rf $(GOLDENS_DIR)/failures && mkdir -p $(GOLDENS_DIR)/failures
 	COPYFILE_DISABLE=1 tar -L -C $(APP) --exclude ./build --exclude ./.dart_tool --exclude ./test/golden/failures \
-		--exclude ./android/.gradle --exclude ./android/.kotlin --exclude ./tools/wellfed_lints/.dart_tool -cf - . | \
-		$(CONTAINER) run --rm -i -v wellfed-pub-cache:/root/.pub-cache \
+		--exclude ./test/guide/failures --exclude ./android/.gradle --exclude ./android/.kotlin \
+		--exclude ./tools/wellfed_lints/.dart_tool -cf - . | \
+		$(CONTAINER) run --rm -i -v wellfed-pub-cache:/root/.pub-cache -v $(CURDIR)/docs/guide:/app/docs/guide \
 		-v $(GOLDENS_DIR)/files:/files -v $(GOLDENS_DIR)/failures:/failures $(GOLDENS_IMAGE) \
-		sh -c 'tar -x && flutter test test/golden $(if $(UPDATE),--update-goldens && cp test/golden/files/*.png /files/) \
-			|| { cp -r test/golden/failures/. /failures/ 2>/dev/null; exit 1; }'
+		sh -c 'mkdir -p src/app && cd src/app && tar -x && \
+			flutter test $(GOLDENS_TESTS) $(if $(UPDATE),--update-goldens && cp test/golden/files/*.png /files/) \
+			|| { cp -r test/golden/failures/. /failures/ 2>/dev/null; \
+				mkdir -p /failures/guide && cp -r test/guide/failures/. /failures/guide/ 2>/dev/null; exit 1; }'
+endif
+
+# The owner guide's app screenshots, redrawn from the fixtures the goldens use
+# and written into docs/guide/. Look at each before committing it, and check
+# the guide's alt text still says what it shows.
+guide-screenshots:
+ifeq ($(shell uname),Linux)
+	cd $(APP) && flutter test test/guide --update-goldens
+else
+	$(MAKE) app-goldens UPDATE=1
 endif
 
 app-installer-input:

@@ -9,9 +9,9 @@ The app has one screen per feeder, with four tabs: **Today**, **Schedule**, **Hi
 
 The CLI keeps your key in `private/wellfed-owner.json` under the folder you run it from, and makes a new key if that file is missing. So run it from the folder you first ran it in, or pass `--keys`.
 
-![The app's Today tab, with Ready to feed at the top, a red notice that the feeder restarted during a feed and stopped somewhere between 0 and 3 of 3 portions, then rows for food, power, Wi-Fi, clock, desiccant and the button lock](app-today.png)
+![The app's Today tab, with Ready to feed at the top, 3 portions fed today, the day's meals (fed at 7:00 AM, a Dispense button press at 9:12 AM, missed at noon, next at 5:00 PM, one later), a line saying power, Wi-Fi and clock look fine, and a Feed now button](app-today.png)
 
-The screenshot shows Today after a power cut during a feed, which is why it has a red notice. The Feed now button sits below this crop.
+When something needs you, Today says so. A feed cut short by a power loss gets a notice above the meals, and batteries, a weak signal or overdue desiccant move out of the line that says all is fine into rows of their own.
 
 ## Meals
 
@@ -23,7 +23,7 @@ The feeder keeps up to ten meals and runs them itself, so no phone or server has
 
 Open **Schedule** and tap **Add meal**. Set the time, the portions and how it repeats, then tap **Save**. Tap a meal to change or delete it, and use its switch to turn it off for a while.
 
-![The meal editor, with a time of 9:31 AM, 1 portion, repeat choices of Daily, Weekdays, Weekends and Once, seven day buttons, a meal call from Off to 5, and an On switch](app-meal-editor.png)
+![The meal editor, with a time of 8:00 AM, 2 portions, repeat choices of Daily, Weekdays, Weekends and Once, seven day buttons, a meal call from Off to 5, an On switch and a Delete meal button](app-meal-editor.png)
 
 ### CLI
 
@@ -41,7 +41,7 @@ A meal's number is its slot, as `wellfed plans list` shows it.
 
 <!-- /tabs -->
 
-![The Schedule tab, with the next meal at 9:58 AM, 1 of 10 meals used, and a note that a meal more than 15 minutes late is skipped and shows in History](app-schedule.png)
+![The Schedule tab, with the next meal today at 5:00 PM, 2 of 10 meals used, an 8:00 AM meal switched on and a 6:00 PM meal switched off, a note that a meal more than 15 minutes late is missed and shows in History, and an Add meal button](app-schedule.png)
 
 A few rules are worth knowing:
 
@@ -164,9 +164,9 @@ wellfed calibrate --weighed 71.1 --portions 10
 
 **History** lists what happened, newest first: feeds, missed and skipped meals, restarts, changes and who made them. Filter it with **Feeds**, **Problems** or **Changes**, and tap a feed for its detail. On the CLI, use `wellfed feeds` for the feeds and `wellfed events` for everything.
 
-![The History tab: clock set, Fed between 0 and 3 marked Interrupted and not repeated, started up, then several completed feeds with who asked for them](app-history.png)
+![The History tab with its All, Feeds, Problems and Changes filters: today, food read low, three feeds with what asked for each and someone joining; yesterday, the clock set, five settings changes folded into one row, a feed and a missed meal](app-history.png)
 
-A feed that was interrupted reads as a range, such as **Fed between 0 and 3**, because the feeder can't know how far it got. **Fed 2 of 2** counts rotor marks. It doesn't mean the food reached the bowl, and the feeder never knows what your pet ate. "Bench" in this screenshot is the name of the client that made those requests.
+A feed that was interrupted reads as a range, such as **Fed between 0 and 3**, because the feeder can't know how far it got. **Fed 2 of 2** counts rotor marks. It doesn't mean the food reached the bowl, and the feeder never knows what your pet ate.
 
 The feeder keeps a limited history, and a long one needs the optional server. See the [roadmap](../roadmap.md).
 
