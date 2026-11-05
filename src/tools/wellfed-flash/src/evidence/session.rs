@@ -196,8 +196,8 @@ impl<P: Port + ?Sized> Port for Box<P> {
         (**self).in_waiting()
     }
 
-    fn ready_naks(&self) -> usize {
-        (**self).ready_naks()
+    fn readiness(&self) -> crate::link::protocol::Readiness {
+        (**self).readiness()
     }
 }
 

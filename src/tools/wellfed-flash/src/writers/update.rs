@@ -618,7 +618,7 @@ fn session_run(
     let update = loaded.update();
 
     let result = (|| -> Result<Option<development::Verified>> {
-        // One idle-ready NAK per command: see `Prompt`.
+        // A fresh ready wait before each command: see `Readiness`.
         let mut port = protocol::Prompt(context.record(&args.evidence.port, &directory)?);
         report.update(|r| r.status = Status::Running)?;
 

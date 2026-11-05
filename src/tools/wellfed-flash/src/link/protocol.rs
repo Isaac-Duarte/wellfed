@@ -178,24 +178,35 @@ pub trait Port {
     fn flush(&mut self) -> io::Result<()>;
     /// Bytes already received and not yet read.
     fn in_waiting(&mut self) -> io::Result<usize>;
-    /// Consecutive idle-ready NAKs that show the helper waits for a command.
-    fn ready_naks(&self) -> usize {
-        SETTLED_NAKS
+    /// How this session waits for the helper to take a command.
+    fn readiness(&self) -> Readiness {
+        Readiness::Settled
     }
 }
 
-/// The helper's ready wait as the stock, recovery and give-way writers keep
-/// it, and as every write was physically proven with: three idle-ready
-/// NAKs, 150 ms at the helper's one NAK per 50 ms.
-pub const SETTLED_NAKS: usize = 3;
+/// How a session waits for the helper's idle-ready NAKs, which it sends
+/// every 50 ms while it waits for a command and never mid-reply.
+///
+/// A command must go right after a NAK arrives: a NAK still on the wire
+/// when the command reaches the helper is read as its reply, and the
+/// session stops (the loader `0x15` stops after host pauses, when queued
+/// NAKs were read in one burst and the command went at a random point of
+/// the helper's 50 ms cycle).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Readiness {
+    /// Three NAKs in a row, buffered ones included, then the rest drained:
+    /// 100 to 150 ms. The stock, recovery and give-way writers keep it, as
+    /// every write was first proven with.
+    Settled,
+    /// Every byte already buffered must be an idle NAK and is dropped, and
+    /// the command goes on the next NAK, just sent: half a cycle on
+    /// average, and never on a stale NAK whatever the host paused for.
+    Fresh,
+}
 
-/// A session that takes one idle-ready NAK as ready. The helper sends NAK
-/// only while it waits in command mode, the line keeps order, and each
-/// command's reply is read whole before the next wait, so a NAK read after
-/// it was sent once the helper was idle again; any other byte still
-/// buffered fails [`drain_naks`] before the command goes. The development
-/// update waits before each of thousands of commands, and the two NAKs
-/// more cost it about a third of its time.
+/// A session that waits [`Readiness::Fresh`]. A development update waits
+/// before each of thousands of commands; a settled wait each time left
+/// the line idle for more than half of it.
 pub struct Prompt<P>(pub P);
 
 impl<P: Port> Port for Prompt<P> {
@@ -215,8 +226,8 @@ impl<P: Port> Port for Prompt<P> {
         self.0.in_waiting()
     }
 
-    fn ready_naks(&self) -> usize {
-        1
+    fn readiness(&self) -> Readiness {
+        Readiness::Fresh
     }
 }
 
@@ -376,11 +387,20 @@ pub fn drain_naks(port: &mut dyn Port, before: Pending) -> Result<()> {
     Ok(())
 }
 
-/// Helper idle-ready: fresh NAKs, then nothing else buffered.
+/// Helper idle-ready, by the session's [`Readiness`]; then nothing else
+/// buffered.
 pub fn command_ready(port: &mut dyn Port) -> Result<()> {
-    let naks = port.ready_naks();
-    wait_naks(port, naks, Duration::from_secs(5))?;
-    drain_naks(port, Pending::Command)
+    ready(port, Pending::Command)
+}
+
+fn ready(port: &mut dyn Port, before: Pending) -> Result<()> {
+    if port.readiness() == Readiness::Fresh {
+        drain_naks(port, before)?;
+        wait_naks(port, 1, Duration::from_secs(5))?;
+    } else {
+        wait_naks(port, 3, Duration::from_secs(5))?;
+    }
+    drain_naks(port, before)
 }
 
 /// One request; only already-in-flight NAKs may precede its ACK.
@@ -437,9 +457,7 @@ pub fn receive_flash(
     mut progress: Option<&mut dyn FnMut(usize, usize)>,
 ) -> Result<Transfer> {
     let request = read_request(offset, length)?;
-    let naks = port.ready_naks();
-    wait_naks(port, naks, Duration::from_secs(5))?;
-    drain_naks(port, Pending::Read)?;
+    ready(port, Pending::Read)?;
     send(port, &request)?;
 
     let mut total = 0;
@@ -461,6 +479,12 @@ pub fn receive_flash(
                 received: total,
                 length,
             })?;
+            // The helper is idle again. A fresh session's next command
+            // waits for its own NAK, so one is enough here.
+            let naks = match port.readiness() {
+                Readiness::Settled => 3,
+                Readiness::Fresh => 1,
+            };
             send(port, &[ACK])?;
             wait_naks(port, naks, Duration::from_secs(5))?;
             return Ok(Transfer {
@@ -918,12 +942,28 @@ mod tests {
         assert_eq!(km4_help_model(km0), None);
     }
 
-    /// A line that has received `0`, read a byte at a time.
-    struct Received(std::collections::VecDeque<u8>);
+    /// A line holding `buffered`, which `in_waiting` counts, and then
+    /// `arriving`, a byte per read once the buffer is empty: what the
+    /// helper sends after the session looks.
+    struct Line {
+        buffered: std::collections::VecDeque<u8>,
+        arriving: std::collections::VecDeque<u8>,
+    }
 
-    impl Port for Received {
+    fn line(buffered: &[u8], arriving: &[u8]) -> Line {
+        Line {
+            buffered: buffered.iter().copied().collect(),
+            arriving: arriving.iter().copied().collect(),
+        }
+    }
+
+    impl Port for Line {
         fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-            match (self.0.pop_front(), buffer.first_mut()) {
+            let next = self
+                .buffered
+                .pop_front()
+                .or_else(|| self.arriving.pop_front());
+            match (next, buffer.first_mut()) {
                 (Some(byte), Some(slot)) => {
                     *slot = byte;
                     Ok(1)
@@ -941,43 +981,48 @@ mod tests {
         }
 
         fn in_waiting(&mut self) -> io::Result<usize> {
-            Ok(self.0.len())
+            Ok(self.buffered.len())
         }
     }
 
-    /// A session keeps three NAKs in a row as its ready wait, so a stray
-    /// byte between them starts the count again. A `Prompt` session goes on
-    /// the first NAK, and the same stray byte, still buffered, stops it.
+    /// A settled session counts buffered NAKs, a stray byte restarting the
+    /// count, so after a pause it goes on NAKs queued long ago.
     #[test]
-    fn a_prompt_session_is_ready_on_one_nak_and_still_refuses_stray_output() {
-        let line = || Received([NAK, b'A', NAK, NAK, NAK].into());
-
-        let mut settled = line();
+    fn a_settled_session_counts_three_naks_buffered_or_not() {
+        let mut settled = line(&[NAK, b'A', NAK, NAK, NAK], &[NAK]);
         command_ready(&mut settled).unwrap();
-        assert!(settled.0.is_empty());
+        assert!(settled.buffered.is_empty());
+        assert_eq!(settled.arriving.len(), 1, "went on buffered NAKs");
+    }
 
-        let mut prompt = Prompt(line());
+    /// A fresh session drops the NAKs queued while it paused and goes on
+    /// the next one, so the command leaves just after a NAK, never at a
+    /// random point of the helper's cycle; stray output still stops it.
+    #[test]
+    fn a_fresh_session_goes_on_a_new_nak_and_refuses_stray_output() {
+        let mut fresh = Prompt(line(&[NAK, NAK, NAK, NAK], &[NAK, NAK]));
+        command_ready(&mut fresh).unwrap();
+        assert!(fresh.0.buffered.is_empty());
+        assert_eq!(fresh.0.arriving.len(), 1, "waited for one NAK, not more");
+
+        let mut stray = Prompt(line(&[NAK, b'A'], &[NAK]));
         assert!(matches!(
-            command_ready(&mut prompt),
+            command_ready(&mut stray),
             Err(crate::Error::Protocol(ProtocolError::UnexpectedOutput(
                 Pending::Command
             )))
         ));
-
-        let mut prompt = Prompt(Received([NAK, NAK].into()));
-        command_ready(&mut prompt).unwrap();
-        assert!(prompt.0.0.is_empty(), "the NAKs behind it are drained");
     }
 
     /// Only the outer session decides: the evidence log and a box pass the
-    /// count through, and every other session keeps three.
+    /// readiness through, and every other session stays settled.
     #[test]
-    fn the_ready_wait_is_the_outer_sessions() {
-        let boxed: Box<dyn Port> = Box::new(Received([].into()));
-        assert_eq!(boxed.ready_naks(), SETTLED_NAKS);
-        assert_eq!(Prompt(boxed).ready_naks(), 1);
-        let inner: Box<dyn Port> = Box::new(Prompt(Received([].into())));
-        assert_eq!(inner.ready_naks(), 1);
+    fn the_readiness_is_the_outer_sessions() {
+        let boxed: Box<dyn Port> = Box::new(line(&[], &[]));
+        assert_eq!(boxed.readiness(), Readiness::Settled);
+        assert_eq!(Prompt(boxed).readiness(), Readiness::Fresh);
+        let inner: Box<dyn Port> = Box::new(Prompt(line(&[], &[])));
+        assert_eq!(inner.readiness(), Readiness::Fresh);
     }
 
     /// A console that prints its reply in timed pieces.

@@ -136,8 +136,8 @@ impl<P: Port> Port for EvidencePort<P> {
         self.port.in_waiting()
     }
 
-    fn ready_naks(&self) -> usize {
-        self.port.ready_naks()
+    fn readiness(&self) -> crate::link::protocol::Readiness {
+        self.port.readiness()
     }
 }
 

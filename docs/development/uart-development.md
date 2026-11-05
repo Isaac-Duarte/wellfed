@@ -97,7 +97,7 @@ A shorter target keeps and verifies the old tail. A larger target explicitly inc
 
 Readiness synchronization follows the durable erase-intent fsync, immediately before transmission. This keeps a journal stall from crossing the helper's idle-ready interval.
 
-The helper sends a NAK every 50 ms while it waits for a command. A development update and a read take one NAK, read after the last reply, as ready: the helper sends none mid-reply, and any other byte still buffered stops the session before the command goes. That saves about 100 ms on each of the update's thousands of commands, around a third of its time. The stock, recovery and give-way writers keep the three NAKs every write was first proven with.
+The helper sends a NAK every 50 ms while it waits for a command, and a NAK still on the wire when a command reaches it is read as the reply, which stops the session. So a command must leave just after a NAK arrives. A development update and a read drop the NAKs already buffered (any other byte stops the session) and go on the next NAK: about 25 ms a command where three NAKs took 100 to 150 ms, and never on NAKs queued during a host pause, which is what stopped earlier installs on a loader `0x15`. The stock, recovery and give-way writers keep the three-NAK wait every write was first proven with.
 
 Missing ACKs, protocol errors or drift stop the session terminally. There is no automatic resume, replay, fallback write or boot command.
 
