@@ -11,7 +11,7 @@ import '../support/harness.dart';
 import 'golden_support.dart';
 
 /// Two days of a feeder's history as the owner meets it: the day's feeds, a
-/// skipped meal, and a burst of settings saves that folds into one row.
+/// missed meal, and a burst of settings saves that folds into one row.
 List<HistoryEntry> _history() {
   var seq = 0;
   HistoryEntry at(DateTime when, HistoryBody body) =>

@@ -31,7 +31,7 @@ _Words _describe(BuildContext context, FeederController feeder, HistoryBody body
     HistoryBody_Missed(:final PlatformInt64 dueMs, :final MissedReason reason) => loud(
       Glyph.warning,
       c.warning,
-      '${clockTextMs(context, dueMs)} meal skipped',
+      '${clockTextMs(context, dueMs)} meal missed',
       missedText(reason),
     ),
     HistoryBody_Restarted() => quiet(Glyph.power, 'Started up', ''),
@@ -120,7 +120,7 @@ String _asker(FeederController feeder, FedBy by) => switch (by) {
   _ => whoText(feeder, by),
 };
 
-/// Why a meal was skipped, as a sentence.
+/// Why a meal was missed, as a sentence.
 String missedText(MissedReason reason) => switch (reason) {
   MissedReason_Late() => 'The feeder was off or had no time',
   MissedReason_Blocked(:final reason) => switch (reason) {

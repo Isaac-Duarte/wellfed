@@ -170,7 +170,7 @@ class _Day {
   final String heading;
   final List<_Run> runs = [];
   int fed = 0;
-  int skipped = 0;
+  int missed = 0;
 }
 
 /// One row: an entry, or a run of the same quiet change folded together,
@@ -198,7 +198,7 @@ List<_Day> _days(BuildContext context, FeederController feeder, Iterable<History
     // The day's tally counts every meal, whatever the filter shows.
     final HistoryBody body = entry.body;
     if (body is HistoryBody_Fed) day.fed++;
-    if (body is HistoryBody_Missed) day.skipped++;
+    if (body is HistoryBody_Missed) day.missed++;
     if (!_shown(filter, body)) continue;
 
     final _Words words = _describe(context, feeder, body);
@@ -229,7 +229,7 @@ class _DayCard extends StatelessWidget {
     final ThemeTokens c = context.colors;
     final String tally = [
       if (day.fed > 0) '${day.fed} ${day.fed == 1 ? 'feed' : 'feeds'}',
-      if (day.skipped > 0) '${day.skipped} skipped',
+      if (day.missed > 0) '${day.missed} missed',
     ].join(' · ');
 
     final rows = <Widget>[];
@@ -276,7 +276,7 @@ class _DayCard extends StatelessWidget {
                 if (tally.isNotEmpty)
                   Text(
                     tally,
-                    style: TextStyle(fontSize: Sizes.sm, color: day.skipped > 0 ? c.warning : c.textMuted),
+                    style: TextStyle(fontSize: Sizes.sm, color: day.missed > 0 ? c.warning : c.textMuted),
                   ),
               ],
             ),

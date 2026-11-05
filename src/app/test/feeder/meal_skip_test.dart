@@ -51,7 +51,8 @@ void main() {
 
   testWidgets('a skip asks first, then names the meal the card offered', (tester) async {
     final FakeSession session = await today(tester);
-    expect(find.text('Skipped on request'), findsNWidgets(2));
+    expect(find.text('Skipped'), findsNWidgets(2));
+    expect(find.textContaining('Missed'), findsNothing, reason: 'a skip is not a missed meal');
     expect(find.text('Skip'), findsOneWidget, reason: 'only the meal still to come');
     expect(find.text('Undo'), findsOneWidget, reason: 'only the skip still to come');
 

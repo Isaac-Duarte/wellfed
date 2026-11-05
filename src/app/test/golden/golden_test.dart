@@ -238,7 +238,7 @@ void main() {
       });
 
       golden('today', (tester) async {
-        // A whole day: a meal fed, one skipped, one next and one later, and a
+        // A whole day: a meal fed, one missed, one next and one later, and a
         // press of the Dispense button between them.
         final (FeederController feeder, FakeSession session) = await oneFeeder(tester, phone: fixturePhone());
         answerAsFull(session);

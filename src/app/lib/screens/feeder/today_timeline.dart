@@ -23,7 +23,7 @@ import 'package:wellfed/widgets/when.dart';
 /// order.
 ///
 /// The meals and how each stands come from the card; a feed asked for by hand
-/// and the reason a meal was skipped come from the history the session keeps,
+/// and the reason a meal was missed come from the history the session keeps,
 /// so a history not read yet shows the meals alone.
 class TodayTimeline extends StatelessWidget {
   const TodayTimeline({super.key, required this.feeder, required this.card});
@@ -335,20 +335,20 @@ class _Row extends StatelessWidget {
       (api.MealStanding_Passed(), _) => (
         Glyph.warning,
         c.warning,
-        'Skipped · ${portionsText(meal?.portions ?? 0)}',
+        'Missed · ${portionsText(meal?.portions ?? 0)}',
         switch (moment.missed) {
           final MissedReason reason? => missedText(reason),
           null => 'No feed recorded',
         },
         true,
       ),
-      // Skipped on request: quiet, and not a problem, unlike a meal the
-      // feeder couldn't run.
+      // Skipped on purpose: quiet, and not a problem, unlike a meal the
+      // feeder missed.
       (api.MealStanding_Skipped() || api.MealStanding_SkipKept(), _) => (
         Glyph.minus,
         c.textMuted,
-        'Skipped · ${portionsText(meal?.portions ?? 0)}',
-        'Skipped on request',
+        'Skipped',
+        join([portionsText(meal?.portions ?? 0), call]),
         false,
       ),
       (api.MealStanding_Next(:final PlatformInt64 atMs), _) => (

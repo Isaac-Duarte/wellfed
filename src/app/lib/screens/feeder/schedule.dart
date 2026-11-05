@@ -174,7 +174,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                   Text(
                     'The feeder keeps these itself and feeds on time even when '
                     'no phone is around. A meal more than 15 minutes late is '
-                    'skipped and shows in History.',
+                    'missed and shows in History.',
                     style: muted.copyWith(height: 1.5),
                   ),
                 ],
