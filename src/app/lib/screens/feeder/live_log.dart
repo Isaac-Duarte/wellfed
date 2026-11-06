@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
@@ -95,6 +97,11 @@ class _LiveLogScreenState extends State<LiveLogScreen> {
     for (final line in [..._lines, ..._waiting]) '${_clock(line.at)} ${line.text}',
   ].join('\n');
 
+  void _copy() {
+    unawaited(Clipboard.setData(ClipboardData(text: _text())));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Log copied.')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
@@ -126,13 +133,22 @@ class _LiveLogScreenState extends State<LiveLogScreen> {
             onPressed: _problem == null ? _togglePause : null,
             icon: StrokeIcon(_paused ? Glyph.play : Glyph.pause, color: c.text),
           ),
-          IconButton(
-            tooltip: 'Share the log',
-            onPressed: _lines.isEmpty && _waiting.isEmpty
-                ? null
-                : () => unawaited((widget.share ?? widget.feeder.share)(_text())),
-            icon: Icon(Icons.share_outlined, color: c.text),
-          ),
+          // A desktop's share menu opens from a corner of the window, and a
+          // log goes into a bug report or a terminal from the clipboard.
+          if (isDesktop)
+            IconButton(
+              tooltip: 'Copy the log',
+              onPressed: _lines.isEmpty && _waiting.isEmpty ? null : _copy,
+              icon: Icon(Icons.copy_outlined, color: c.text),
+            )
+          else
+            IconButton(
+              tooltip: 'Share the log',
+              onPressed: _lines.isEmpty && _waiting.isEmpty
+                  ? null
+                  : () => unawaited((widget.share ?? widget.feeder.share)(_text())),
+              icon: Icon(Icons.share_outlined, color: c.text),
+            ),
         ],
       ),
       body: SafeArea(

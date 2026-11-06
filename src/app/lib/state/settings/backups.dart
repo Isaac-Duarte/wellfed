@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -30,8 +31,16 @@ class BackupsFlow extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Hand the backup at `path` to wherever the owner keeps files.
-  Future<void> share(String path) => _ports.share(path);
+  /// Hand the backup at `path` to wherever the owner keeps files: why it
+  /// could not be saved, or `null` when it was or the owner cancelled.
+  Future<String?> share(String path) async {
+    try {
+      await _ports.share(path);
+      return null;
+    } on FileSystemException catch (error) {
+      return "Couldn't save the backup: ${error.osError?.message ?? error.message}.";
+    }
+  }
 
   @override
   void dispose() {

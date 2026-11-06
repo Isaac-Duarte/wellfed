@@ -1,6 +1,10 @@
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:flutter/material.dart' hide Card;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/screens/feeder/diagnostics.dart';
@@ -56,6 +60,15 @@ class _FakeBackups implements BackupPorts {
 
   @override
   Future<void> share(String path) async => shared.add(path);
+}
+
+class _FailingBackups implements BackupPorts {
+  @override
+  Future<String?> kept(String identity) async => '/backups/$identity';
+
+  @override
+  Future<void> share(String path) async =>
+      throw const FileSystemException('copy failed', '/backups/aa', OSError('No space left on device', 28));
 }
 
 void main() {
@@ -185,6 +198,31 @@ void main() {
       expect(feeder.hearingLog, isFalse);
     });
 
+    testWidgets('a desktop copies the log instead of sharing it', (tester) async {
+      final copied = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.arguments case {'text': final String text} when call.method == 'Clipboard.setData') copied.add(text);
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      try {
+        await showTab(tester, LiveLogScreen(feeder: feeder, share: (_) async => fail('a desktop shares nothing')));
+        session.updates.add(const SessionUpdate.log(seq: 1, dropped: 0, lines: ['PLNET1 rssi=-58']));
+        await settle(tester);
+        expect(find.byTooltip('Share the log'), findsNothing);
+
+        await tester.tap(find.byTooltip('Copy the log'));
+        await tester.pump();
+        expect(copied.single, contains('PLNET1 rssi=-58'));
+        expect(find.text('Log copied.'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox());
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
     testWidgets('pausing holds the view, and the lines heard meanwhile join it on resume', (tester) async {
       final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
       await showTab(tester, LiveLogScreen(feeder: feeder));
@@ -265,6 +303,28 @@ void main() {
       expect(find.text('None yet'), findsNothing);
       await tapIn(tester, find.byTooltip("Share Kitchen's backup"));
       expect(backups.shared, ['/backups/aa']);
+    });
+
+    testWidgets('a backup that could not be saved says why', (tester) async {
+      final book = FakeBook()..feeders = [kitchen];
+      await showTab(tester, AppSettingsScreen(book: book, newBackups: () => BackupsFlow(book, _FailingBackups())));
+
+      await tapIn(tester, find.byTooltip("Share Kitchen's backup"));
+      expect(find.textContaining("Couldn't save the backup: No space left"), findsOneWidget);
+    });
+
+    testWidgets('on a desktop the rename refusal names the computer', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      try {
+        await settings(tester);
+        await tapIn(tester, find.text('Name on feeders'));
+        await tester.enterText(find.byType(TextField), 'a' * 17);
+        await tapIn(tester, find.widgetWithText(FilledButton, 'Save'));
+        expect(find.text('A computer name is 1 to 16 bytes.'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox());
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
     testWidgets('with no backups it says so, and the rename says what feeders keep', (tester) async {

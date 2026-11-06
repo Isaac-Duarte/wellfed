@@ -329,15 +329,15 @@ class _Failed extends StatelessWidget {
 
   /// Why the phone found no feeder, or the link dropped, and what the owner
   /// does then.
-  static const _otherReasons = [
+  static List<(String, String)> get _otherReasons => [
     ('Time ran out', 'The code works for 60 seconds. Ask for a new one.'),
-    ('The feeder is full', 'It holds 8 phones and servers. Remove one in its People list.'),
+    ('The feeder is full', 'It holds 8 ${anyDevice}s and servers. Remove one in its People list.'),
     (
       'Setup mode ended',
       'After 15 idle minutes the feeder leaves setup mode. Hold Lock and Mic '
           'again.',
     ),
-    ('Busy with another phone', 'Only one phone sets it up at a time.'),
+    ('Busy with another $anyDevice', 'Only one $anyDevice sets it up at a time.'),
   ];
 
   (String, String) _words() => switch (state.failure) {
@@ -383,8 +383,8 @@ class _Failed extends StatelessWidget {
 
   static (String, String) _refusal(SetupRefusal? refusal) => switch (refusal) {
     SetupRefusal.busy => (
-      'Busy with another phone',
-      'Only one phone sets it up at a time. Wait for it to finish, then try '
+      'Busy with another $anyDevice',
+      'Only one $anyDevice sets it up at a time. Wait for it to finish, then try '
           'again.',
     ),
     SetupRefusal.unconfirmed => ('Time ran out', 'The code works for 60 seconds. Try again with a new code.'),
@@ -396,7 +396,7 @@ class _Failed extends StatelessWidget {
     ),
     SetupRefusal.full => (
       'The feeder is full',
-      'It holds 8 phones and servers. An owner removes one in its People '
+      'It holds 8 ${anyDevice}s and servers. An owner removes one in its People '
           'list first.',
     ),
     SetupRefusal.notWritable => ("The feeder can't save right now", 'Try again in a minute.'),

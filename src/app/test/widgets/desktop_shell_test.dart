@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/app.dart';
+import 'package:wellfed/platform/menu.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
@@ -19,7 +20,7 @@ import '../support/fakes.dart';
 
 /// The desktop window as the app builds it, around the routes it has. The
 /// `/flow` page stands for a running install: it refuses to be left.
-Future<GoRouter> _window(WidgetTester tester, FeederFleet fleet, FakeBook book) async {
+Future<GoRouter> _window(WidgetTester tester, FeederFleet fleet, FakeBook book, {MenuPorts? menu}) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -34,7 +35,8 @@ Future<GoRouter> _window(WidgetTester tester, FeederFleet fleet, FakeBook book) 
       '/settings': (context) => AppSettingsScreen(book: book, newBackups: () => BackupsFlow(book, FakeBackupPorts())),
     },
     feeder: (context, identity, tab) => FeederRoute(fleet: fleet, identity: identity, initialTab: tab),
-    shell: (context, router, pages, child) => DesktopShell(fleet: fleet, router: router, pages: pages, child: child),
+    shell: (context, router, pages, child) =>
+        DesktopShell(fleet: fleet, router: router, pages: pages, menu: menu, child: child),
   );
   addTearDown(router.dispose);
   await tester.pumpWidget(MaterialApp.router(theme: wellfedTheme(Brightness.light), routerConfig: router));
@@ -76,6 +78,16 @@ Future<void> _chord(WidgetTester tester, LogicalKeyboardKey modifier, LogicalKey
 }
 
 Future<void> _ctrl(WidgetTester tester, LogicalKeyboardKey key) => _chord(tester, LogicalKeyboardKey.controlLeft, key);
+
+/// Settings… picked in the Mac's menu bar, as its runner sends it.
+Future<void> _menuSettings(WidgetTester tester) async {
+  await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+    'wellfed/menu',
+    const StandardMethodCodec().encodeMethodCall(const MethodCall('settings')),
+    (_) {},
+  );
+  await settle(tester);
+}
 
 /// A test of the desktop build: Linux (or `platform`) for the test body
 /// alone, as the binding checks no debug override outlives it.
@@ -139,8 +151,9 @@ void main() {
       final (FeederFleet fleet, FakeBook book) = await _oneFeeder(tester);
       await _window(tester, fleet, book);
 
+      // On a Mac the menu bar's Settings… owns ⌘, (its own test below).
       await _chord(tester, command, LogicalKeyboardKey.comma);
-      expect(find.text('APPEARANCE'), findsOneWidget);
+      expect(find.text('APPEARANCE'), platform == TargetPlatform.macOS ? findsNothing : findsOneWidget);
 
       await _chord(tester, command, LogicalKeyboardKey.keyN);
       expect(find.text('Add page'), findsOneWidget);
@@ -259,4 +272,76 @@ void main() {
     expect(find.byType(TextField), findsNothing);
     expect(find.text('Overview page'), findsOneWidget);
   });
+
+  _desktopTest('Settings… in the Mac menu opens the settings page', platform: TargetPlatform.macOS, (tester) async {
+    final (FeederFleet fleet, FakeBook book) = await _oneFeeder(tester);
+    await _window(tester, fleet, book, menu: const AppMenuPorts());
+    await tester.tap(find.text('Kitchen'));
+    await settle(tester);
+
+    await _menuSettings(tester);
+    expect(find.text('APPEARANCE'), findsOneWidget);
+    expect(_selected(tester, 'Settings'), isTrue);
+  });
+
+  _desktopTest('a dialog open over the window keeps it from the menu', platform: TargetPlatform.macOS, (tester) async {
+    final (FeederFleet fleet, FakeBook book) = await _oneFeeder(tester);
+    final GoRouter router = await _window(tester, fleet, book, menu: const AppMenuPorts());
+    unawaited(
+      showDialog<void>(
+        context: router.routerDelegate.navigatorKey.currentContext ?? (throw StateError('no navigator')),
+        builder: (_) => const AlertDialog(content: Text('Did it feed?')),
+      ),
+    );
+    await settle(tester);
+
+    await _menuSettings(tester);
+    expect(find.text('Did it feed?'), findsOneWidget);
+    expect(find.text('Overview page'), findsOneWidget);
+  });
+
+  _desktopTest('Settings… picked twice opens one page over Welcome', platform: TargetPlatform.macOS, (tester) async {
+    final fleet = FeederFleet(FakeBook(), FakeFeederPorts());
+    addTearDown(fleet.dispose);
+    await _window(tester, fleet, FakeBook(), menu: const AppMenuPorts());
+
+    await _menuSettings(tester);
+    await _menuSettings(tester);
+    expect(find.text('APPEARANCE'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Back'));
+    await settle(tester);
+    expect(find.text('Overview page'), findsOneWidget);
+  });
+
+  for (final (String how, Future<void> Function(WidgetTester) pick) in [
+    (
+      'the sidebar',
+      (tester) async {
+        await tester.tap(find.text('Settings').first);
+        await settle(tester);
+      },
+    ),
+    ('the menu', _menuSettings),
+  ]) {
+    _desktopTest('Settings from $how leaves a page pushed over settings', platform: TargetPlatform.macOS, (
+      tester,
+    ) async {
+      final (FeederFleet fleet, FakeBook book) = await _oneFeeder(tester);
+      await _window(tester, fleet, book, menu: const AppMenuPorts());
+      await _menuSettings(tester);
+      // As About and the server pages open: pushed on the navigator, so the
+      // router's location still names settings.
+      unawaited(
+        Navigator.of(tester.element(find.text('APPEARANCE')))
+            .push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('About page')))),
+      );
+      await settle(tester);
+      expect(find.text('About page'), findsOneWidget);
+
+      await pick(tester);
+      expect(find.text('About page'), findsNothing);
+      expect(find.text('APPEARANCE'), findsOneWidget);
+    });
+  }
 }

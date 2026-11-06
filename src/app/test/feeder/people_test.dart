@@ -1,6 +1,6 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Card;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/join_ports.dart';
 import 'package:wellfed/screens/feeder/invite.dart';
@@ -150,6 +150,32 @@ void main() {
     });
   });
 
+  testWidgets('a desktop copies the invite link instead of sharing it', (tester) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.arguments case {'text': final String text} when call.method == 'Clipboard.setData') copied.add(text);
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    try {
+      await showTab(
+        tester,
+        InviteScreen(
+          invite: const InviteView(text: 'wellfed-invite:1:x', seconds: 60, role: ClientRole.member),
+          share: (_) async => fail('a desktop shares nothing'),
+        ),
+      );
+
+      await tester.tap(find.text('Copy link'));
+      await tester.pump();
+      expect(copied, ['wellfed-invite:1:x']);
+      expect(find.text('Link copied'), findsOneWidget);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
   group('Joining', () {
     Future<(_FakeJoin, FakeBook, void Function(String))> join(WidgetTester tester) async {
       final ports = _FakeJoin();
@@ -244,6 +270,71 @@ void main() {
       expect(book.feeders, isEmpty);
       final FilledButton button = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(button.onPressed, isNull);
+    });
+
+    /// The join screen as a Mac shows it, counting the cameras it builds.
+    Future<_FakeJoin> desktopJoin(WidgetTester tester, void Function() camera, {bool canScan = true}) async {
+      final ports = _FakeJoin();
+      await showTab(
+        tester,
+        JoinScreen(
+          canScan: canScan,
+          newFlow: () => JoinFlow(FakeBook()..label = 'My Mac', ports),
+          scanner: (_) {
+            camera();
+            return const SizedBox();
+          },
+        ),
+      );
+      return ports;
+    }
+
+    testWidgets('a desktop takes a pasted link, and no camera', (tester) async {
+      var cameras = 0;
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      try {
+        await desktopJoin(tester, () => cameras++);
+
+        await tester.enterText(find.byType(TextField), 'https://example.com');
+        await tapIn(tester, find.text('Use this link'));
+        expect(find.textContaining("isn't a Wellfed invite"), findsOneWidget);
+
+        await tester.enterText(find.byType(TextField), 'wellfed-invite:1:x');
+        await tapIn(tester, find.text('Use this link'));
+        expect(find.text('Found'), findsOneWidget);
+        expect(cameras, 0);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('a desktop opens the camera only when asked', (tester) async {
+      var cameras = 0;
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      try {
+        await desktopJoin(tester, () => cameras++);
+        expect(cameras, 0);
+
+        await tapIn(tester, find.text('Scan the code with a camera'));
+        expect(cameras, greaterThan(0));
+        expect(find.text('Close the camera'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('a desktop with no scanner offers no camera', (tester) async {
+      var cameras = 0;
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      try {
+        await desktopJoin(tester, () => cameras++, canScan: false);
+
+        expect(find.text('Scan the code with a camera'), findsNothing);
+        expect(find.text('Use this link'), findsOneWidget);
+        expect(cameras, 0);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
   });
 }

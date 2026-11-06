@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/platform/feeder_ports.dart';
+import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/join_ports.dart';
+import 'package:wellfed/platform/menu.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
 import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/server_ports.dart';
@@ -110,23 +113,63 @@ String _pathOf(Place place) => switch (place) {
 };
 
 /// The desktop window around `child`, the page `router` shows in `pages`.
-class DesktopShell extends StatelessWidget {
-  const DesktopShell({super.key, required this.fleet, required this.router, required this.pages, required this.child});
+class DesktopShell extends StatefulWidget {
+  const DesktopShell({
+    super.key,
+    required this.fleet,
+    required this.router,
+    required this.pages,
+    required this.child,
+    this.menu,
+  });
 
   final FeederFleet fleet;
   final GoRouter router;
   final GlobalKey<NavigatorState> pages;
   final Widget child;
 
+  /// The menu bar, on a Mac.
+  final MenuPorts? menu;
+
+  @override
+  State<DesktopShell> createState() => _DesktopShellState();
+}
+
+class _DesktopShellState extends State<DesktopShell> {
+  /// Stops this window's menu listener, and only its own.
+  VoidCallback? _stopMenu;
+
+  @override
+  void initState() {
+    super.initState();
+    _stopMenu = widget.menu?.listen(settings: _menuSettings);
+  }
+
+  @override
+  void dispose() {
+    _stopMenu?.call();
+    super.dispose();
+  }
+
+  /// Settings… from the menu bar, as ⌘, does in the window. A dialog open
+  /// over the window keeps it: the dialog asks something first, and the
+  /// keyboard shortcut cannot reach past it either.
+  void _menuSettings() {
+    if (widget.router.routerDelegate.navigatorKey.currentState?.canPop() ?? false) return;
+    _go(const SettingsPlace());
+  }
+
+  void _go(Place place) => unawaited(_goTo(widget.router, widget.pages, widget.fleet, place));
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: router.routerDelegate,
+    listenable: widget.router.routerDelegate,
     builder: (context, _) => SidebarShell(
-      fleet: fleet,
-      at: placeOf(router),
-      go: (place) => unawaited(_goTo(router, pages, fleet, place)),
-      back: () => unawaited(_back(pages)),
-      child: child,
+      fleet: widget.fleet,
+      at: placeOf(widget.router),
+      go: _go,
+      back: () => unawaited(_back(widget.pages)),
+      child: widget.child,
     ),
   );
 }
@@ -137,6 +180,11 @@ class DesktopShell extends StatelessWidget {
 Future<void> _goTo(GoRouter router, GlobalKey<NavigatorState> pages, FeederFleet fleet, Place place) async {
   final NavigatorState? navigator = pages.currentState;
   if (navigator == null) return;
+  // Already showing: a second press, or the menu and a shortcut both
+  // answering one, must not stack the page again. Only when the router's own
+  // page is on top, though: one pushed over it (About, a server page) leaves
+  // the router's location as it was, and the press goes back to the place.
+  if (_same(placeOf(router), place) && _top(navigator)?.settings is Page<Object?>) return;
   while (navigator.canPop()) {
     final Route<Object?>? before = _top(navigator);
     await navigator.maybePop();
@@ -152,6 +200,13 @@ Future<void> _goTo(GoRouter router, GlobalKey<NavigatorState> pages, FeederFleet
     router.go(path);
   }
 }
+
+/// Whether `place` is the page showing. A feeder is never the same: picking
+/// it again in the sidebar brings it back to its first tab.
+bool _same(Place? showing, Place place) => switch ((showing, place)) {
+  (OverviewPlace(), OverviewPlace()) || (AddPlace(), AddPlace()) || (SettingsPlace(), SettingsPlace()) => true,
+  _ => false,
+};
 
 /// Escape: out of a text field first, then back a page through its PopScope.
 Future<void> _back(GlobalKey<NavigatorState> pages) async {
@@ -241,7 +296,13 @@ class _WellfedAppState extends State<WellfedApp> {
     feeder: (context, identity, tab) =>
         FeederRoute(fleet: _fleet, identity: identity, initialTab: tab, server: _serverScreens),
     shell: isDesktop
-        ? (context, router, pages, child) => DesktopShell(fleet: _fleet, router: router, pages: pages, child: child)
+        ? (context, router, pages, child) => DesktopShell(
+            fleet: _fleet,
+            router: router,
+            pages: pages,
+            menu: Platform.isMacOS ? const AppMenuPorts() : null,
+            child: child,
+          )
         : null,
     pages: {
       '/add': (context) => const AddFeederScreen(),
@@ -251,7 +312,8 @@ class _WellfedAppState extends State<WellfedApp> {
         newBackups: () => BackupsFlow(widget.app, AppBackupPorts(widget.app.key)),
         server: _serverScreens,
       ),
-      '/join': (context) => JoinScreen(newFlow: () => JoinFlow(widget.app, AppJoinPorts(widget.app.key))),
+      '/join': (context) =>
+          JoinScreen(newFlow: () => JoinFlow(widget.app, AppJoinPorts(widget.app.key)), canScan: hostCanScan),
       '/recover': (context) => RecoverScreen(newFlow: () => RecoverFlow(widget.app, _pairing, _phone)),
       '/install': (context) => InstallScreen(newFlow: () => InstallFlow(widget.app, AppInstallPorts(widget.app.key))),
     },

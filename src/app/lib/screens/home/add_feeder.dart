@@ -37,9 +37,7 @@ class AddFeederWays extends StatelessWidget {
         RouteCard(
           glyph: Glyph.install,
           title: 'Install Wellfed',
-          body:
-              "For a feeder still on the vendor's app. This $deviceName replaces its firmware and keeps a backup "
-              'of the original.',
+          body: _installWords,
           onTap: () => context.push('/install'),
         ),
       const SizedBox(height: Space.s3),
@@ -73,6 +71,13 @@ class AddFeederWays extends StatelessWidget {
   );
 }
 
+/// What the install does, and what does it: only the Android app installs,
+/// so a desktop sends the owner there rather than promising it can.
+String get _installWords => isDesktop
+    ? "For a feeder still on the vendor's app. The Android app replaces its firmware and keeps a backup of the "
+          'original.'
+    : "For a feeder still on the vendor's app. This phone replaces its firmware and keeps a backup of the original.";
+
 /// The common case, led by the feeder it is for.
 class _InstallCard extends StatelessWidget {
   const _InstallCard({required this.onTap});
@@ -100,8 +105,7 @@ class _InstallCard extends StatelessWidget {
                 ),
                 const SizedBox(height: Space.s1),
                 Text(
-                  "For a feeder still on the vendor's app. This $deviceName replaces its firmware and keeps a backup "
-                  'of the original.',
+                  _installWords,
                   style: TextStyle(fontSize: Sizes.base, height: 1.45, color: c.textMuted),
                 ),
               ],
