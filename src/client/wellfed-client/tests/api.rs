@@ -16,7 +16,7 @@ use wellfed_core::desiccant::Count;
 use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
 use wellfed_core::tone::Tune;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
-use wellfed_device_api::mailbox::Lock;
+use wellfed_device_api::mailbox::{KEYS_FINISHED, Lock};
 use wellfed_device_api::mailbox::{
     LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields,
     TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState, WifiResult,
@@ -62,7 +62,9 @@ struct Fake {
     locked: Option<bool>,
     clients: Vec<Client>,
     keys_pending: Option<(u32, KeyChange)>,
-    keys_done: Option<(u32, KeyOutcome)>,
+    /// The last finished changes, newest last, as many as the firmware's
+    /// mailbox remembers.
+    keys_done: Vec<(u32, KeyOutcome)>,
     ticket: u32,
     events: Vec<proto::Event>,
     /// Events before this sequence number left the ring.
@@ -253,7 +255,10 @@ impl Fake {
                     }
                 }
             };
-            self.keys_done = Some((ticket, outcome));
+            if self.keys_done.len() == KEYS_FINISHED {
+                self.keys_done.remove(0);
+            }
+            self.keys_done.push((ticket, outcome));
         }
         if !self.hold_feeds {
             self.reserved = u32::try_from(self.feeds.len()).unwrap();
@@ -361,8 +366,9 @@ impl Device for Fake {
 
     fn keys_outcome(&mut self, ticket: u32) -> Option<KeyOutcome> {
         self.keys_done
-            .filter(|&(done, _)| done == ticket)
-            .map(|(_, outcome)| outcome)
+            .iter()
+            .find(|&&(done, _)| done == ticket)
+            .map(|&(_, outcome)| outcome)
     }
 
     /// A small fixed answer per section, each told apart by its values.
@@ -1468,6 +1474,145 @@ fn revoking_a_client_closes_its_open_session() {
     rig.publish();
     assert!(rig.ended(Reason::Revoked));
     assert!(rig.server.closing(member.slot));
+}
+
+/// Send a request and run one pass without the writer's turn, so a write it
+/// queues stays queued.
+fn send_unwritten(rig: &mut Rig, client: &mut Client_, id: u8, op: Op) {
+    let bytes = client.session.request([id; 16], &op).unwrap();
+    client.outbox.extend(bytes);
+    rig.deliver(client.slot, &mut client.outbox);
+    rig.pass();
+}
+
+/// The history's revocations: the client revoked and who asked.
+fn revocations(rig: &Rig) -> Vec<(proto::Fingerprint, proto::Source)> {
+    rig.device
+        .events
+        .iter()
+        .filter_map(|e| match e.body {
+            EventBody::Revoked { client, by } => Some((client, by)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn fingerprint(secret: [u8; 32]) -> proto::Fingerprint {
+    let key = public(secret);
+    [key[0], key[1], key[2], key[3]]
+}
+
+/// The session goes once its revocation is queued: the writer still applies
+/// it, so the history must still say so, once and naming who asked.
+#[test]
+fn a_revocation_whose_session_left_is_still_in_the_history() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let revoke = Op::RevokeClient {
+        key: public(MEMBER),
+    };
+    send_unwritten(&mut rig, &mut owner, 1, revoke);
+    assert!(
+        rig.device.keys_pending.is_some(),
+        "the revocation is queued"
+    );
+
+    let records = &mut rig.records;
+    rig.server.closed(owner.slot, |r| records.push(r));
+    rig.pass();
+    assert_eq!(revocations(&rig), [], "not before the writer has finished");
+
+    rig.device.write();
+    rig.pass();
+    rig.pass();
+    assert!(!rig.device.clients.iter().any(|c| c.key == public(MEMBER)));
+    let by = proto::Source::Client(fingerprint(OWNER));
+    assert_eq!(revocations(&rig), [(fingerprint(MEMBER), by)]);
+}
+
+/// A revocation its session read before it ended is in the history once:
+/// the session's end leaves nothing to settle.
+#[test]
+fn a_revocation_read_before_its_session_left_is_in_the_history_once() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let revoke = Op::RevokeClient {
+        key: public(MEMBER),
+    };
+    send_unwritten(&mut rig, &mut owner, 1, revoke);
+    rig.device.write();
+    rig.pass();
+    let by = proto::Source::Client(fingerprint(OWNER));
+    assert_eq!(revocations(&rig), [(fingerprint(MEMBER), by)]);
+
+    let records = &mut rig.records;
+    rig.server.closed(owner.slot, |r| records.push(r));
+    rig.pass();
+    rig.pass();
+    assert_eq!(revocations(&rig), [(fingerprint(MEMBER), by)]);
+}
+
+/// An owner revoking its own key: the new table ends its session before it
+/// reads the result, and the history still has the revocation.
+#[test]
+fn an_owner_revoking_itself_is_in_the_history() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let revoke = Op::RevokeClient { key: public(OWNER) };
+    send_unwritten(&mut rig, &mut owner, 1, revoke);
+
+    rig.device.write();
+    rig.publish();
+    assert!(rig.ended(Reason::Revoked));
+    rig.pass();
+    let by = proto::Source::Client(fingerprint(OWNER));
+    assert_eq!(revocations(&rig), [(fingerprint(OWNER), by)]);
+}
+
+/// A left revocation the writer could not apply changed nothing: no event.
+#[test]
+fn a_left_revocation_that_found_nothing_is_not_in_the_history() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let revoke = Op::RevokeClient {
+        key: public(MEMBER),
+    };
+    send_unwritten(&mut rig, &mut owner, 1, revoke);
+    let records = &mut rig.records;
+    rig.server.closed(owner.slot, |r| records.push(r));
+
+    // Gone before the writer reaches the change: it finds nothing.
+    rig.device.clients.retain(|c| c.key != public(MEMBER));
+    rig.device.write();
+    assert_eq!(rig.device.keys_outcome(1), Some(KeyOutcome::NotFound));
+    rig.pass();
+    rig.pass();
+    assert_eq!(revocations(&rig), []);
+}
+
+/// Another change queued and finished before the session's next pass (a
+/// BLE setup's enrollment, say) does not hide the session's own result.
+#[test]
+fn a_change_finished_behind_another_still_answers_its_session() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let revoke = Op::RevokeClient {
+        key: public(MEMBER),
+    };
+    send_unwritten(&mut rig, &mut owner, 1, revoke);
+    rig.device.write();
+
+    let other = rig.device.keys(KeyChange::Revoke { key: [0x99; 32] });
+    rig.device.write();
+    assert_eq!(
+        rig.device.keys_outcome(other.unwrap()),
+        Some(KeyOutcome::NotFound)
+    );
+
+    let answer = poll_answer(&mut rig, &mut owner, 1, 5);
+    assert_eq!(answer, Some(Answer::Done { generation: None }));
+    let by = proto::Source::Client(fingerprint(OWNER));
+    assert_eq!(revocations(&rig), [(fingerprint(MEMBER), by)]);
 }
 
 #[test]

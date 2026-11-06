@@ -94,14 +94,13 @@ impl Server {
                     Reply::Refused(Refusal::NotWritable)
                 }
             },
-            Waiting::Keys { ticket, revoked } => match device.keys_outcome(ticket) {
+            Waiting::Keys {
+                ticket,
+                revoked: revoked_key,
+            } => match device.keys_outcome(ticket) {
                 None => return Ok(None),
                 Some(KeyOutcome::Done) => {
-                    let body = EventBody::Revoked {
-                        client: fingerprint(&revoked),
-                        by,
-                    };
-                    device.record(now_ms, body);
+                    revoked(now_ms, device, &revoked_key, by);
                     Reply::Done(None)
                 }
                 Some(KeyOutcome::NotFound) => Reply::Refused(Refusal::NotFound),
@@ -300,6 +299,15 @@ pub(super) fn signer_landed<D: Device>(
         change: UpdateKeyChange::Enrolled,
         key: key_id(key),
     });
+}
+
+/// A revocation went through, with its session or after it.
+pub(super) fn revoked<D: Device>(now_ms: u32, device: &mut D, key: &[u8; 32], by: Source) {
+    let body = EventBody::Revoked {
+        client: fingerprint(key),
+        by,
+    };
+    device.record(now_ms, body);
 }
 
 /// The zone's text, copied out of the device's view for the answer to

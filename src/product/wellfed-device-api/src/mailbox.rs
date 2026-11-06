@@ -322,6 +322,23 @@ pub enum ClientChange {
     Reset,
 }
 
+/// How many finished client changes the key mailbox remembers, so every
+/// waiter still holding a ticket can read its result.
+///
+/// The mailbox queues one change at a time, so tickets finish in order, and
+/// every waiter reads its result by the next loop pass: an open session or
+/// a joining one polls each pass (a session with a write pending sends
+/// nothing else, so it is never held back by its transmit buffer), and a
+/// session that ended waiting is settled at the start of the next pass.
+/// Between a ticket finishing and that read, each requester can have at
+/// most one newer change queued and finished: the [`crate::SESSIONS`]
+/// slots, the BLE setup and the panel's reset. Their tickets and the
+/// waiter's own make six; eight leaves room without costing more than 32
+/// bytes.
+pub const KEYS_FINISHED: usize = 8;
+
+const _: () = assert!(KEYS_FINISHED > crate::SESSIONS + 2);
+
 named_enum! {
     /// Whether a one-slot mailbox took a change.
     pub enum Requested {

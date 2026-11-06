@@ -28,7 +28,7 @@ use crate::setup::Responder;
 use crate::{BUFFER, Device, Reader, Reason, Record, SESSIONS};
 use wellfed_core::deadline_passed;
 use wellfed_proto::api::{
-    self as proto, DeviceMessage, FRAME_MAX, Open, OpenRefusal, Refusal, RequestId, Sample,
+    self as proto, DeviceMessage, FRAME_MAX, Open, OpenRefusal, Refusal, RequestId, Sample, Source,
 };
 
 use wellfed_session::noise::{Handshake, Keypair, Transport};
@@ -81,13 +81,23 @@ enum Waiting {
     },
 }
 
-/// A pressed key's enrollment that outlived its session: the writer finishes
-/// a queued change whoever is waiting for it.
+/// A client store change that outlived the session waiting for it: the
+/// writer finishes a queued change whoever is waiting, so the passes that
+/// follow record what the session would have ([`Server::settle_left`]).
 #[derive(Clone, Copy)]
-struct SignerLeft {
+struct Left {
     ticket: u32,
+    /// The key enrolled or revoked.
     key: [u8; 32],
-    slot: u8,
+    change: LeftChange,
+}
+
+#[derive(Clone, Copy)]
+enum LeftChange {
+    /// A pressed update key's enrollment, from session slot `slot`.
+    Signer { slot: u8 },
+    /// A revocation the client `by` asked for.
+    Revoke { by: Source },
 }
 
 #[derive(Clone, Copy)]
@@ -175,8 +185,16 @@ pub struct Server {
     signer: Option<pairing::Event>,
     /// A session waiting for an update key's press ended: cancel the offer.
     cancel_signer: bool,
-    /// A session waiting for a pressed key's enrollment ended.
-    signer_left: Option<SignerLeft>,
+    /// Sessions that ended waiting for a client store change, until the
+    /// writer has finished it. As many entries as slots: each slot holds
+    /// one waiting session, and an entry whose change is finished settles
+    /// at the start of the next pass. More would need a reused slot to
+    /// open, ask and end again within the pass its first entry's change
+    /// finished in; the oldest ticket's entry then gives way. An entry whose
+    /// ticket the mailbox no longer remembers would wait until it gives way,
+    /// and its event would be lost: the mailbox's ring is sized so a result
+    /// outlives the pass it is read in.
+    left: [Option<Left>; SESSIONS],
     /// Subscribers that ended since the last pass, by slot: the device
     /// hears of each on the next.
     readers_left: [bool; SESSIONS],
@@ -223,7 +241,7 @@ impl Server {
             cancel_rescue: false,
             signer: None,
             cancel_signer: false,
-            signer_left: None,
+            left: [None; SESSIONS],
             readers_left: [false; SESSIONS],
             feeding: false,
             handshook: false,
@@ -353,53 +371,86 @@ impl Server {
         }
     }
 
-    /// A session that waits for an update key's press ended: the next
-    /// pass cancels the offer, so the next Dispense press feeds again. One
-    /// past its press has queued the key, which lands anyway: the passes
-    /// that follow record it ([`Self::settle_signer_left`]).
-    fn forget_signer(&mut self, index: usize) {
+    /// A session ended with a write pending. One that waits for an update
+    /// key's press: the next pass cancels the offer, so the next Dispense
+    /// press feeds again. One past its press has queued the key, and one
+    /// that asked for a revocation has queued it: either lands anyway, and
+    /// the passes that follow record it ([`Self::settle_left`]). Out of
+    /// line, as [`Self::settle_left`] is: it copies the session's key, which
+    /// must not grow `step`'s frame through `end`.
+    #[inline(never)]
+    fn forget_waiting(&mut self, index: usize) {
         let Phase::Open {
             pending: Some(Pending { waiting, .. }),
+            key: session,
             ..
         } = self.slots[index].phase
         else {
             return;
         };
-        match waiting {
-            Waiting::Signer { .. } => self.cancel_signer = true,
-            Waiting::SignerKeys { ticket, key } => {
-                self.signer_left = Some(SignerLeft {
-                    ticket,
-                    key,
-                    slot: slot_id(index),
-                });
+        let left = match waiting {
+            Waiting::Signer { .. } => {
+                self.cancel_signer = true;
+                return;
             }
-            _ => {}
+            Waiting::SignerKeys { ticket, key } => Left {
+                ticket,
+                key,
+                change: LeftChange::Signer {
+                    slot: slot_id(index),
+                },
+            },
+            Waiting::Keys { ticket, revoked } => Left {
+                ticket,
+                key: revoked,
+                change: LeftChange::Revoke {
+                    by: Source::Client(handshake::fingerprint(&session)),
+                },
+            },
+            _ => return,
+        };
+
+        // A free entry, else the oldest ticket's: see `left`.
+        let age = |entry: &Option<Left>| {
+            entry.map_or(u32::MAX, |old| left.ticket.wrapping_sub(old.ticket))
+        };
+        if let Some(entry) = self.left.iter_mut().max_by_key(|entry| age(entry)) {
+            *entry = Some(left);
         }
     }
 
-    /// Record a pressed key whose session has gone, once the writer has
-    /// finished it. Out of line, as [`Self::tell_readers_left`] is, so it does
-    /// not grow `step`'s frame.
+    /// Record each change whose session has gone, once the writer has
+    /// finished it, as the session would have. Out of line, as
+    /// [`Self::tell_readers_left`] is, so it does not grow `step`'s frame.
     #[inline(never)]
-    fn settle_signer_left<D: Device>(
+    fn settle_left<D: Device>(
         &mut self,
         now_ms: u32,
         device: &mut D,
         record: &mut impl FnMut(Record),
     ) {
-        let Some(left) = self.signer_left else {
-            return;
-        };
-        let Some(outcome) = device.keys_outcome(left.ticket) else {
-            return;
-        };
+        for entry in &mut self.left {
+            let Some(left) = *entry else {
+                continue;
+            };
+            let Some(outcome) = device.keys_outcome(left.ticket) else {
+                continue;
+            };
 
-        self.signer_left = None;
-        // Only a new key is news: a duplicate may belong to a session client,
-        // which the live path refuses, so it must not read as enrolled here.
-        if matches!(outcome, crate::KeyOutcome::Done) {
-            pending::signer_landed(now_ms, device, outcome, left.slot, &left.key, record);
+            *entry = None;
+            // Only a change that went through is news. A duplicate key may
+            // belong to a session client, which the live path refuses, so it
+            // must not read as enrolled here; a refused revocation changed
+            // nothing.
+            if !matches!(outcome, crate::KeyOutcome::Done) {
+                continue;
+            }
+            match left.change {
+                LeftChange::Signer { slot } => {
+                    pending::signer_landed(now_ms, device, outcome, slot, &left.key, record);
+                }
+                LeftChange::Revoke { by } => pending::revoked(now_ms, device, &left.key, by),
+            }
         }
     }
 
@@ -468,7 +519,7 @@ impl Server {
             self.signer = None;
         }
         self.tell_readers_left(device);
-        self.settle_signer_left(now_ms, device, &mut record);
+        self.settle_left(now_ms, device, &mut record);
 
         // A feed queued before the deadline (a Dispense press: the server
         // refuses its own) holds the restart until it has ended, so the
@@ -538,7 +589,7 @@ impl Server {
     /// End `index` with `reason`: anything queued still goes out, then the
     /// driver closes it.
     fn end(&mut self, index: usize, reason: Reason, record: &mut impl FnMut(Record)) {
-        self.forget_signer(index);
+        self.forget_waiting(index);
         let slot = &mut self.slots[index];
         if matches!(slot.phase, Phase::Free | Phase::Closing) {
             return;

@@ -17,6 +17,7 @@
 //! before any store opens ([`finish_reset`], [`finish_handover`]), with the
 //! device kind's own part of each given by the caller.
 
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use wellfed_board::storage::{self, Sectors};
@@ -34,8 +35,9 @@ use wellfed_device::store::time::TimeStore;
 use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
-    ClientChange, KeyResult, Requested, SettingsFields, SettingsResult, SettingsView, TimeSettings,
-    TimeSettingsResult, TimeSettingsView, WifiResult, WifiSource, WifiView,
+    ClientChange, KEYS_FINISHED, KeyResult, Requested, SettingsFields, SettingsResult,
+    SettingsView, TimeSettings, TimeSettingsResult, TimeSettingsView, WifiResult, WifiSource,
+    WifiView,
 };
 use wellfed_device_api::wifi::Credentials;
 use wellfed_hal::ota::signers;
@@ -79,7 +81,9 @@ pub struct DeviceStores {
     /// Bumped when the identity changes, as the writer publishes it.
     identity_generation: u32,
     keys_pending: Option<(u32, ClientChange)>,
-    keys_done: Option<(u32, KeyResult)>,
+    /// The last finished changes, newest last, as many as the firmware's
+    /// mailbox remembers.
+    keys_done: VecDeque<(u32, KeyResult)>,
     ticket: u32,
     events: EventLog<Region>,
     /// The turns subscribers read the ring in, the firmware's own, and
@@ -151,7 +155,7 @@ impl DeviceStores {
             clients_generation: 1,
             identity_generation: 1,
             keys_pending: None,
-            keys_done: None,
+            keys_done: VecDeque::with_capacity(KEYS_FINISHED),
             ticket: 0,
             events,
             reads: Reads::new(),
@@ -326,8 +330,9 @@ impl DeviceStores {
 
     pub fn keys_outcome(&self, ticket: u32) -> Option<KeyResult> {
         self.keys_done
-            .filter(|&(done, _)| done == ticket)
-            .map(|(_, result)| result)
+            .iter()
+            .find(|&&(done, _)| done == ticket)
+            .map(|&(_, result)| result)
     }
 
     /// The client table, when it changed since generation `seen`.
@@ -434,7 +439,10 @@ impl DeviceStores {
                 None => KeyResult::NoGenerator,
             },
         };
-        self.keys_done = Some((ticket, result));
+        if self.keys_done.len() == KEYS_FINISHED {
+            self.keys_done.pop_front();
+        }
+        self.keys_done.push_back((ticket, result));
         self.clients_changed();
         Some(result)
     }
