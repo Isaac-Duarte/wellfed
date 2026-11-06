@@ -13,6 +13,9 @@
 //! stops for about 45 ms) runs behind by every skip with no error to show
 //! for it, so the caller derives `now` from a counter that runs through
 //! them, and forgets the clock ([`WallClock::forget`]) when it cannot.
+//! Call [`WallClock::advance`] at least once a day, including while the
+//! clock is invalid, so an expired anchor keeps its elapsed time across
+//! the millisecond count's wrap instead of becoming recent again.
 //!
 //! **The trusted interval.** The clock keeps an anchor that only a trusted
 //! fix sets: an owner's sync, or any fix while the clock is invalid (the
@@ -116,6 +119,10 @@ pub const MISSED_GRACE_MS: u64 = 15 * 60 * 1000;
 /// under 2^31 ms and a rate under 2^24 ppb, so no product overflows, and
 /// the KM4 has no 128-bit divide.
 const PPB: i64 = 1_000_000_000;
+
+/// Carry the anchors before their modular age can become ambiguous.
+/// Once a day also bounds rounding to at most a microsecond per day.
+const REBASE_MS: u32 = 24 * 60 * 60 * 1000;
 
 /// One sync as a client sends it: the time and the zone's offsets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -381,6 +388,7 @@ impl WallClock {
             unix_us: fix.unix_ms * 1000,
             error_us: u64::from(fix.error_ms) * 1000,
         };
+        self.advance(now);
 
         // An expired clock still knows where the time lies, only too loosely
         // to read: NTP must fall inside that, so an answer re-sets the clock
@@ -534,6 +542,47 @@ impl WallClock {
     /// Set or clear the zone's rule.
     pub fn set_rule(&mut self, rule: Option<Rule>) {
         self.rule = rule;
+    }
+
+    /// Carry the trusted interval forward, even while it is too wide to
+    /// read. Call at least once a day: `now` is a wrapping count, so an
+    /// anchor left at its original fix would look recent again after a
+    /// full wrap. This preserves its grown error and the interval that
+    /// bounds NTP after expiry; it neither supplies a fix nor learns a
+    /// rate. A count that lost half its range must be forgotten instead.
+    pub fn advance(&mut self, now: u32) {
+        if self
+            .base
+            .is_some_and(|base| now.wrapping_sub(base.uptime_ms) >= crate::HALF_RANGE)
+        {
+            self.base = None;
+        }
+        if self
+            .last
+            .is_some_and(|(_, at)| now.wrapping_sub(at) >= crate::HALF_RANGE)
+        {
+            self.last = None;
+        }
+
+        let Some(trust) = self.trust else {
+            return;
+        };
+        if now.wrapping_sub(trust.uptime_ms) < REBASE_MS {
+            return;
+        }
+        let (Some(mut trust), Some(centre)) = (
+            self.project(trust, now),
+            self.centre.and_then(|centre| self.project(centre, now)),
+        ) else {
+            self.forget();
+            return;
+        };
+        // Keep the sub-microsecond correction lost when the new anchor
+        // is rounded inside the interval, rather than accumulating it
+        // outside the bound over many carries.
+        trust.error_us += 1;
+        self.trust = Some(trust);
+        self.centre = Some(centre);
     }
 
     /// `anchor` carried to uptime `now`, its error grown by the rate

@@ -206,7 +206,6 @@ void main() {
   late ClientKey owner;
   late _Feeder sim;
   late FeederController feeder;
-  late Directory pins;
 
   setUpAll(() async {
     if (target == null) return;
@@ -215,18 +214,16 @@ void main() {
     await RustLib.init(externalLibrary: ExternalLibrary.open('$target/$library'));
     owner = ClientKey.generate();
     sim = await _Feeder.start(target, owner);
+    addTearDown(sim.stop);
     final known = KnownFeeder(identity: sim.identity, name: 'Smoke', address: sim.address);
-    pins = await Directory.systemTemp.createTemp('wellfed-smoke-pins');
+    final Directory pins = await Directory.systemTemp.createTemp('wellfed-smoke-pins');
+    addTearDown(() async {
+      await pins.delete(recursive: true);
+    });
     final router = PathRouter(pinsPath: '${pins.path}/pending.json');
     feeder = FeederController(FakeBook()..feeders = [known], _Ports(owner, router), known);
+    addTearDown(feeder.dispose);
     await _until(feeder, (state) => state.cardIsCurrent);
-  });
-
-  tearDownAll(() async {
-    if (target == null) return;
-    feeder.dispose();
-    await sim.stop();
-    await pins.delete(recursive: true);
   });
 
   test('a session opens and reads the card', skip: absent, () {

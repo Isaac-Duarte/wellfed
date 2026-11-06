@@ -190,27 +190,30 @@ pub fn rule(name: &str, now: Timestamp, host: Option<&TimeZone>) -> Result<Strin
 }
 
 /// The first instant in the next ten years where `rule` and `zone` differ,
-/// checked at `now` and on both sides of each of the zone's transitions.
+/// checked at `now` and on both sides of both sets of transitions. A rule
+/// can add a change the full zone does not have, including when the host's
+/// newer tzdb has abolished DST and has no transitions left to inspect.
 fn disagreement(rule: Rule, zone: &TimeZone, now: Timestamp) -> Option<Timestamp> {
     let end = now.as_second().saturating_add(AGREE_S);
     let differs = |t: Timestamp| rule.offset_at(t.as_second()) != zone.to_offset(t).seconds();
     if differs(now) {
         return Some(now);
     }
-    for transition in zone.following(now) {
-        let t = transition.timestamp();
-        if t.as_second() > end {
-            break;
-        }
-        let before = Timestamp::from_second(t.as_second() - 1).ok()?;
-        if differs(before) {
-            return Some(before);
-        }
-        if differs(t) {
-            return Some(t);
-        }
-    }
-    None
+    let full = zone
+        .following(now)
+        .map(|transition| transition.timestamp())
+        .take_while(|t| t.as_second() <= end);
+    let kept = core::iter::successors(rule.next_change(now.as_second()), |&(at, _)| {
+        rule.next_change(at)
+    })
+    .take_while(|&(at, _)| at <= end)
+    .filter_map(|(at, _)| Timestamp::from_second(at).ok());
+
+    full.chain(kept)
+        .flat_map(|t| [Timestamp::from_second(t.as_second() - 1).ok(), Some(t)])
+        .flatten()
+        .filter(|&t| differs(t))
+        .min()
 }
 
 /// A version 2+ TZif file ends with its POSIX rule between two newlines.
@@ -419,6 +422,33 @@ mod tests {
         );
         let full = Zone::parse(b"CET-1CEST,M3.5.0,M10.5.0/3").unwrap().rule();
         assert_eq!(disagreement(full, &berlin, now), None);
+    }
+
+    /// A host with a newer rule may have abolished DST. Matching winter
+    /// offsets do not prove the bundled rule remains right in summer.
+    #[test]
+    fn a_rule_with_a_change_the_host_lacks_is_refused() {
+        let now: Timestamp = "2026-01-01T00:00:00Z".parse().unwrap();
+        let winter_only = TimeZone::posix("MST7").unwrap();
+        assert!(winter_only.following(now).next().is_none());
+        assert_eq!(
+            rule("America/Denver", now, Some(&winter_only)),
+            Err(RuleError::Irregular {
+                name: "America/Denver".into(),
+                rule: "MST7MDT,M3.2.0,M11.1.0".into(),
+                at: at(SPRING),
+            })
+        );
+    }
+
+    /// When two rule versions change on different dates, report the first
+    /// actual disagreement, whichever version changes first.
+    #[test]
+    fn a_rule_that_changes_before_the_host_disagrees_at_its_own_change() {
+        let now: Timestamp = "2026-01-01T00:00:00Z".parse().unwrap();
+        let early = Zone::parse(b"MST7MDT,M3.2.0,M11.1.0").unwrap().rule();
+        let late = TimeZone::posix("MST7MDT,M3.3.0,M11.1.0").unwrap();
+        assert_eq!(disagreement(early, &late, now), Some(at(SPRING)));
     }
 
     /// Every zone's rule fits the feeder and agrees with jiff at every

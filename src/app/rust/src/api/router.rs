@@ -1,11 +1,11 @@
 //! Every request to a feeder, through the owner's server or the phone's own
 //! session. With no server configured the router passes everything to the
-//! phone's own session, but it still pins every write, so Dart makes every
-//! request through it once the app has one, and never around it: a session
-//! the router holds refuses [`FeederSession::feed`]. A pins file that does
-//! not open (corrupt, or already open in another router) fails
-//! [`PathRouter::new`], and the app then sends no write at all: it never
-//! falls back to unpinned writes.
+//! phone's own session, but it still pins every write. Dart sends every
+//! request through it; a [`FeederSession`] exposes no unpinned write. A pins
+//! file that does not open (corrupt, or locked by another process) fails
+//! [`PathRouter::new`], and the app then sends no write at all. A new router
+//! in this process takes over the pins and fences the old router, so a
+//! restarted UI isolate keeps every uncertain write.
 //!
 //! The path is chosen per feeder, server first: a new read or a new write
 //! goes direct when the server is unreachable, or reports the feeder offline
@@ -39,9 +39,9 @@
 //! never recorded (a lost `feeder_offline` answer, a failure before the
 //! insert, a request that never reached it, an app that stopped before it
 //! sent), so a resend could feed again after the owner already had. A
-//! journal that lacks the key settles it as never sent only when it is the
-//! one the write went to (the same token and account), well after its
-//! attempt. With its path down it stays uncertain, and
+//! journal that lacks the key cannot prove it was never sent: restoring a
+//! backup can lose a completed write while keeping the token and account.
+//! A missing entry or a path that is down leaves it uncertain, and
 //! [`PathRouter::pending`] lists it.
 //!
 //! A write the server definitely did not send has run nowhere, and goes on
@@ -70,7 +70,6 @@ use crate::api::server_error::ServerError;
 use crate::api::server_views::{KnownServer, ServerAccount, ServerFeeder};
 use crate::api::session::{FedBy, FeedRefusal, FeedResult, FeederSession};
 use crate::frb_generated::StreamSink;
-use crate::route::core::UNFOUND_GRACE_MS;
 use crate::route::io::Router;
 
 /// The way a request reaches a feeder.
@@ -145,7 +144,8 @@ pub enum Settlement {
     /// The feeder restarted with no record of the feed: whether food was
     /// dispensed is not known, and it is never sent again.
     Unrecorded,
-    /// The server holds no record of it: it was never sent.
+    /// Explicit evidence confirms it was never sent. A missing server
+    /// journal entry (`404`) alone is not enough to establish this result.
     NotSent,
     /// A meal call write another change to the call overtook: final, and
     /// whether this one ever took effect no longer shows. Read the call to
@@ -340,22 +340,16 @@ pub struct PathRouter {
 
 impl PathRouter {
     /// The one router keeping its pins at `pins_path` (`pending.json`
-    /// beside the app's file); [`ErrorKind::InUse`] while another holds
-    /// them. With no server configured it passes every request to the
+    /// beside the app's file); [`ErrorKind::InUse`] while another process
+    /// holds them. In this process it takes over and fences the old
+    /// router. With no server configured it passes every request to the
     /// phone's own sessions.
     ///
     /// [`ErrorKind::InUse`]: crate::api::error::ErrorKind::InUse
     #[frb(sync)]
     pub fn new(pins_path: String) -> Result<Self, BridgeError> {
-        Self::open_with(pins_path, UNFOUND_GRACE_MS)
-    }
-
-    /// [`Self::new`], taking a server write its journal lacks as never sent
-    /// `grace_ms` after its attempt, for Rust tests.
-    #[frb(ignore)]
-    pub fn open_with(pins_path: String, grace_ms: i64) -> Result<Self, BridgeError> {
         Ok(Self {
-            router: Router::open(std::path::Path::new(&pins_path), grace_ms)?,
+            router: Router::open(std::path::Path::new(&pins_path))?,
         })
     }
 

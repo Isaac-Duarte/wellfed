@@ -96,6 +96,33 @@ pub enum Error {
     Path(std::path::PathBuf),
 }
 
+#[cfg(test)]
+mod durability_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn command_commits_use_full_wal_synchronization() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join("server.db"), Timestamp::UNIX_EPOCH)
+            .await
+            .unwrap();
+        let synchronous: i64 = sqlx::query_scalar("PRAGMA synchronous")
+            .fetch_one(&store.writer)
+            .await
+            .unwrap();
+        let journal: String = sqlx::query_scalar("PRAGMA journal_mode")
+            .fetch_one(&store.writer)
+            .await
+            .unwrap();
+        assert_eq!(journal, "wal");
+        assert_eq!(
+            synchronous, 2,
+            "a journal commit must sync before a feed is sent"
+        );
+        store.close().await;
+    }
+}
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// The database: a writer and a read pool over one file.
@@ -116,7 +143,9 @@ impl Store {
             .filename(path)
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
-            .synchronous(SqliteSynchronous::Normal)
+            // A committed command journal row must survive power loss
+            // before the service sends its physical action to a feeder.
+            .synchronous(SqliteSynchronous::Full)
             .foreign_keys(true)
             .busy_timeout(BUSY);
         let writer = SqlitePoolOptions::new()

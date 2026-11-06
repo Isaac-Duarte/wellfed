@@ -75,6 +75,7 @@ fn update<T>(change: impl FnOnce(&mut WallClock, u32, &mut u32) -> T) -> T {
     // SAFETY: interrupts are masked, so this is the only reference.
     let kept = unsafe { &mut *CLOCK.get() };
     let now = count(kept);
+    kept.clock.advance(now);
     change(&mut kept.clock, now, &mut kept.kept_at)
 }
 

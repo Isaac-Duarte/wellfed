@@ -16,23 +16,21 @@ use uuid::Uuid;
 use wellfed_api::{CommandOutcome, CommandState};
 
 use crate::api::router::{RoutePath, Settlement};
-use crate::route::pins::{LostAdoption, PinRecord, PinState, PinnedWrite, RunningFeed, ServerMark};
+use crate::route::pins::{LostAdoption, PinRecord, PinState, PinnedWrite, RunningFeed};
 
 /// How long a server that failed to connect is passed over before a new
 /// request tries it again. The stream reopening or any call answering marks
 /// it up sooner.
 pub(crate) const RECHECK_MS: i64 = 30_000;
 
-/// How long after its last attempt a server write the journal does not hold
-/// is taken as never sent. The server records a write before it sends it,
-/// so an entry it never made was never sent; the wait covers a request
-/// still on its way to a server that is slow to take it, well past the
-/// phone's own 30 s request timeout.
-pub(crate) const UNFOUND_GRACE_MS: i64 = 10 * 60_000;
-
 /// How long a pin the owner put away is kept, from the acknowledgement, for
 /// its path to settle it. One still pending holds forever.
 pub(crate) const KEEP_MS: i64 = 7 * 24 * 3_600_000;
+
+/// How long a lost adoption waits before the server's list may permit
+/// another invite. A missing command journal entry never uses this grace:
+/// it cannot prove a write was never sent.
+pub(crate) const ADOPTION_GRACE_MS: i64 = 10 * 60_000;
 
 /// What this phone may use to reach a feeder.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -299,20 +297,6 @@ fn settlement_of(outcome: &CommandOutcome) -> Settlement {
         },
         CommandOutcome::Unrecorded => Settlement::Unrecorded,
     }
-}
-
-/// A server write the journal does not hold settles as never sent, once its
-/// last attempt is `grace_ms` old, and only when the journal that does not
-/// hold it is the one it went to: the same token, so the same server, and
-/// the same account, since another's entries are not found either.
-pub(crate) fn settled_unfound(
-    pin: &PinRecord,
-    asked: Option<ServerMark>,
-    now_ms: i64,
-    grace_ms: i64,
-) -> Option<Settlement> {
-    let same = pin.server.is_some() && pin.server == asked;
-    (same && now_ms.saturating_sub(pin.tried_ms) >= grace_ms).then_some(Settlement::NotSent)
 }
 
 /// A feed's end this phone's own session read from the feeder's history.

@@ -34,7 +34,7 @@ use crate::link::{DirectLink, LinkNews};
 use crate::requests;
 use crate::route::core::{
     self, Access, Book, Ended, Keys, Reach, RetryPlan, ServerFailure, ServerReach, Standing,
-    settled_by_command, settled_by_history, settled_unfound,
+    settled_by_command, settled_by_history,
 };
 use crate::route::pins::{LostAdoption, PinRecord, PinState, PinStore, PinnedWrite, ServerMark};
 use crate::route::server as calls;
@@ -50,9 +50,6 @@ pub(crate) struct Router {
 struct Inner {
     state: Mutex<State>,
     closed: watch::Sender<bool>,
-    /// How long after its attempt a server write its journal lacks is
-    /// taken as never sent.
-    grace_ms: i64,
 }
 
 struct State {
@@ -345,7 +342,7 @@ impl State {
 }
 
 impl Router {
-    pub(crate) fn open(pins_path: &Path, grace_ms: i64) -> Result<Self, BridgeError> {
+    pub(crate) fn open(pins_path: &Path) -> Result<Self, BridgeError> {
         let (store, mut book) = PinStore::open(pins_path)?;
         if book.expire(now_ms()) {
             store.save(&book)?;
@@ -367,7 +364,6 @@ impl Router {
             inner: Arc::new(Inner {
                 state: Mutex::new(state),
                 closed: watch::Sender::new(false),
-                grace_ms,
             }),
         })
     }
@@ -540,10 +536,10 @@ impl Router {
         }
     }
 
-    /// How long after a lost attempt the server's silence counts as never
-    /// sent.
+    /// How long a lost adoption waits before the server's list may permit
+    /// another invite. This never settles a missing command journal entry.
     pub(crate) fn grace_ms(&self) -> i64 {
-        self.inner.grace_ms
+        core::ADOPTION_GRACE_MS
     }
 
     /// The server's client, when one is configured.
@@ -1118,11 +1114,7 @@ impl Router {
 
     /// What the server's journal says of `pin` now: only ever a read.
     async fn read_journal(&self, pin: &PinRecord) -> Option<Settlement> {
-        let (client, mark) = {
-            let state = self.state();
-            let server = state.server.as_ref()?;
-            (server.handle.client.clone(), server.mark())
-        };
+        let client = self.state().client()?;
         let read = client.command(pin.key).await;
 
         let mut state = self.state();
@@ -1135,7 +1127,10 @@ impl Router {
                 if problem.code == ErrorCode::NotFound =>
             {
                 state.reach = ServerReach::Up;
-                settled_unfound(pin, mark, now_ms(), self.inner.grace_ms)
+                // A restored backup can keep the same token and account
+                // while losing a write that already dispensed food. Even
+                // an old 404 cannot prove the request was never sent.
+                None
             }
             Err(error) => {
                 state.heard_failure(calls::failure(&error), now_ms());

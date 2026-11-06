@@ -759,14 +759,14 @@ impl Platform for SimPlatform {
 
     /// The simulated uptime never stops.
     fn clock_ms(&mut self, now_ms: u32) -> u32 {
+        self.device.clock().advance(now_ms);
         now_ms
     }
 
     fn wall_ms(&mut self, now_ms: u32) -> Option<u64> {
-        self.device
-            .clock()
-            .read(now_ms)
-            .map(|reading| reading.unix_ms)
+        let clock = self.device.clock();
+        clock.advance(now_ms);
+        clock.read(now_ms).map(|reading| reading.unix_ms)
     }
 
     fn time_sync(&mut self, now_ms: u32, sync: Sync, origin: Origin) -> Result<Jump, SyncError> {
@@ -778,7 +778,9 @@ impl Platform for SimPlatform {
     }
 
     fn clock_state(&mut self, now_ms: u32) -> ClockState {
-        self.device.clock().state(now_ms)
+        let clock = self.device.clock();
+        clock.advance(now_ms);
+        clock.state(now_ms)
     }
 
     fn offset_at(&self, unix_ms: u64) -> Option<i32> {

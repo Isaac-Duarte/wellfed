@@ -135,7 +135,7 @@ impl Service {
         }
 
         self.mirror.set_zone(zone);
-        let token = self.open_session(user.id).await?;
+        let token = self.open_session(user.id, &hash).await?;
         self.record_as(Some(&user), None, AuditAction::Setup).await;
         Ok((user, token))
     }
@@ -171,6 +171,7 @@ impl Service {
             Some(login) => (Some(login.user), decoy()?.to_owned(), false),
             None => (None, decoy()?.to_owned(), false),
         };
+        let verified_hash = hash.clone();
         let verified = blocking(move || Ok(verify_password(&credentials.password, &hash))).await?;
         let matches = usable && verified;
 
@@ -194,10 +195,10 @@ impl Service {
             .into());
         }
 
+        let token = self.open_session(user.id, &verified_hash).await?;
         self.accounts
             .limits
             .succeeded(attempt, self.shared.clock.now());
-        let token = self.open_session(user.id).await?;
         self.record_as(Some(&user), None, AuditAction::Login { from })
             .await;
         Ok((user, token))
@@ -252,6 +253,7 @@ impl Service {
         let store = &self.shared.store;
         let hash = store.password_hash(user.id).await?;
         let hash = hash.ok_or(Error::NotFound(Resource::User))?;
+        let verified_hash = hash.clone();
         let current = change.current;
         let matches = blocking(move || Ok(verify_password(&current, &hash))).await?;
         if !matches {
@@ -259,12 +261,17 @@ impl Service {
         }
 
         let hash = self.hash_password(change.password).await?;
-        if !store.set_password(user.id, &hash).await? {
-            return Err(Error::NotFound(Resource::User));
+        if !store
+            .set_password(
+                user.id,
+                &hash,
+                Some(&verified_hash),
+                session.and_then(SessionToken::hash).as_ref(),
+            )
+            .await?
+        {
+            return Err(AccountError::BadCredentials.into());
         }
-        store
-            .delete_sessions_of(user.id, session.and_then(SessionToken::hash).as_ref())
-            .await?;
         let action = AuditAction::PasswordSet {
             account: user.id,
             name: user.name.clone(),
@@ -273,13 +280,20 @@ impl Service {
         Ok(())
     }
 
-    async fn open_session(&self, user: UserId) -> Result<SessionToken> {
+    async fn open_session(&self, user: UserId, verified_hash: &str) -> Result<SessionToken> {
         let secret = self.shared.random::<32>()?;
         let token = SessionToken(hex::encode(&secret));
         let hash: [u8; 32] = Sha256::digest(secret).into();
 
         let now = self.shared.clock.now();
-        self.shared.store.create_session(&hash, user, now).await?;
+        if !self
+            .shared
+            .store
+            .create_session(&hash, user, now, verified_hash)
+            .await?
+        {
+            return Err(AccountError::BadCredentials.into());
+        }
         Ok(token)
     }
 

@@ -19,7 +19,7 @@ use axum_extra::extract::WithRejection;
 use futures_util::{Stream, StreamExt, stream};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
-use wellfed_api::{ErrorCode, MetricKind, Problem, StreamEvent, StreamQuery, User};
+use wellfed_api::{ErrorCode, MetricKind, Problem, Role, StreamEvent, StreamQuery, User};
 use wellfed_service::{Permission, Resume, Stamped, StreamId, can};
 
 use super::TAG_FEEDERS;
@@ -65,6 +65,7 @@ pub(crate) async fn stream(
     };
     let subscription = state.service.hub().subscribe(last);
 
+    let role = caller.user.role;
     let wanted = move |event: &StreamEvent| shown(&caller.user, &metrics, event);
     let first: Vec<_> = match subscription.resume {
         Resume::Replay(missed) => missed
@@ -83,7 +84,7 @@ pub(crate) async fn stream(
     });
 
     let shutdown = state.shutdown.clone();
-    let session = session_ended(state, auth::credential(&headers));
+    let session = session_ended(state, auth::credential(&headers), role);
     let events = stream::iter(first).chain(live).take_until(async move {
         tokio::select! {
             () = shutdown.cancelled() => {}
@@ -93,15 +94,18 @@ pub(crate) async fn stream(
     Ok(Sse::new(events).keep_alive(KeepAlive::default()))
 }
 
-/// Resolves once the stream's credential no longer authenticates. A store
-/// failure ends the stream too; the client reconnects and is checked again.
-pub(crate) async fn session_ended(state: AppState, credential: Option<Credential>) {
+/// Resolves once the credential ends or its role changes. Stream filters
+/// and route permissions were chosen when the connection opened, so a
+/// changed role must reconnect and be authorized again. Store failures
+/// also end the stream.
+pub(crate) async fn session_ended(state: AppState, credential: Option<Credential>, role: Role) {
     let Some(credential) = credential else {
         return;
     };
     loop {
         tokio::time::sleep(SESSION_CHECK).await;
-        if !matches!(credential.caller(&state).await, Ok(Some(_))) {
+        if !matches!(credential.caller(&state).await, Ok(Some(caller)) if caller.user.role == role)
+        {
             return;
         }
     }

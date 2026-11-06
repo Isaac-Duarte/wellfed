@@ -1154,11 +1154,13 @@ impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
     }
 
     /// A client's table is saved at the wall time now, so a plan it adds
-    /// or moves never runs an occurrence already past.
+    /// or moves never runs an occurrence already past. A claimed meal
+    /// keeps its table until its feed has been queued: the writer may
+    /// finish the claim between the schedule's step and this request.
     fn plans(&mut self, change: Option<Table>) -> PlansResult {
         match change {
             None => self.platform.plans(),
-            Some(_) if self.outputs_claimed() => PlansResult::Busy,
+            Some(_) if self.outputs_claimed() || self.claim => PlansResult::Busy,
             Some(table) => {
                 let at_s = self
                     .platform

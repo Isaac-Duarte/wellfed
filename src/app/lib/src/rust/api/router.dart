@@ -19,7 +19,7 @@ import 'session.dart';
 part 'router.freezed.dart';
 
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`
-// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `follow_with`, `open_with`, `updates_with`
+// These functions are ignored (category: IgnoreBecauseExplicitAttribute): `follow_with`, `updates_with`
 
 /// A feed's end as a settlement gives it, as the feed sheet shows one, for
 /// a feed whose `Fed` event this phone has not read: a server feed whose
@@ -116,8 +116,9 @@ abstract class PathRouter implements RustOpaqueInterface {
   Stream<ServerUpdate> follow({String? lastEventId});
 
   /// The one router keeping its pins at `pins_path` (`pending.json`
-  /// beside the app's file); [`ErrorKind::InUse`] while another holds
-  /// them. With no server configured it passes every request to the
+  /// beside the app's file); [`ErrorKind::InUse`] while another process
+  /// holds them. In this process it takes over and fences the old
+  /// router. With no server configured it passes every request to the
   /// phone's own sessions.
   ///
   /// [`ErrorKind::InUse`]: crate::api::error::ErrorKind::InUse
@@ -451,7 +452,8 @@ sealed class Settlement with _$Settlement {
   /// dispensed is not known, and it is never sent again.
   const factory Settlement.unrecorded() = Settlement_Unrecorded;
 
-  /// The server holds no record of it: it was never sent.
+  /// Explicit evidence confirms it was never sent. A missing server
+  /// journal entry (`404`) alone is not enough to establish this result.
   const factory Settlement.notSent() = Settlement_NotSent;
 
   /// A meal call write another change to the call overtook: final, and

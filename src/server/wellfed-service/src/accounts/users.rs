@@ -105,17 +105,17 @@ impl Service {
         let now = self.shared.clock.now();
         let enabled = disabled(&current, now) && !disabled(&updated, now);
         let reset = hash.is_some();
-        if let Some(hash) = hash {
-            store.set_password(id, &hash).await?;
-        }
-
         // Whoever held the old password is logged out: everywhere when an
         // owner sets someone else's temporary one, and everywhere but here
         // when they set their own.
         let keep = session
             .filter(|_| actor.id == id)
             .and_then(SessionToken::hash);
-        if enabled || reset {
+        if let Some(hash) = hash {
+            if !store.set_password(id, &hash, None, keep.as_ref()).await? {
+                return Err(Error::NotFound(Resource::User));
+            }
+        } else if enabled {
             store.delete_sessions_of(id, keep.as_ref()).await?;
         }
 
@@ -195,10 +195,9 @@ pub async fn reset_owner(
     let typed = password.clone();
     let hash = sessions::blocking(move || hash_password(&typed, &salt)).await?;
 
-    if !store.set_password(owner.id, &hash).await? {
+    if !store.set_password(owner.id, &hash, None, None).await? {
         return Err(Error::NotFound(Resource::User));
     }
-    store.delete_sessions_of(owner.id, None).await?;
     let action = AuditAction::PasswordSet {
         account: owner.id,
         name: owner.name.clone(),
