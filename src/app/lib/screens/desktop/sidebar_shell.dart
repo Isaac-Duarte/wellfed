@@ -35,7 +35,8 @@ final class SettingsPlace extends Place {
 
 /// The desktop window: the feeders down a sidebar, and the page beside it.
 /// Before there is a feeder there is nothing to list, so the page (Welcome,
-/// then a way to add one) takes the whole window.
+/// then a way to add one) takes the whole window, and Welcome brings its own
+/// panel where the sidebar will be.
 class SidebarShell extends StatelessWidget {
   const SidebarShell({
     super.key,
@@ -61,9 +62,12 @@ class SidebarShell extends StatelessWidget {
     listenable: fleet,
     builder: (context, _) {
       final List<FeederController> feeders = fleet.all.toList();
+      // Welcome is the window itself before there is a feeder, with its own
+      // panel where the sidebar will be; every other page reads as a column.
+      final bool welcome = feeders.isEmpty && at is OverviewPlace;
       final Widget page = ColoredBox(
         color: context.colors.background,
-        child: CenteredColumn(child: child),
+        child: welcome ? child : CenteredColumn(child: child),
       );
       // The sidebar sits outside every page's Scaffold, so it brings its own
       // Material for the theme's text and ink.
