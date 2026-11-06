@@ -7,8 +7,8 @@ use std::collections::VecDeque;
 use wellfed_core::echo::Outcome as Echo;
 use wellfed_core::liveness::{Cause, Radio};
 use wellfed_core::wifi_task::{
-    Action, Attempt, BACKOFF_MAX_MS, BACKOFF_MIN_MS, Done, Event, Kind, POLL_MS, SCAN_TIMEOUT,
-    Sighting, WifiTask, Wishes,
+    Action, Attempt, BACKOFF_ABSENT_MAX_MS, BACKOFF_MAX_MS, BACKOFF_MIN_MS, Done, Event, Kind,
+    POLL_MS, SCAN_TIMEOUT, Sighting, WifiTask, Wishes,
 };
 
 const SSID: &[u8] = b"home";
@@ -352,14 +352,37 @@ fn a_radio_that_never_comes_up_ends_the_task() {
     }
 }
 
+/// A network that is there and refuses the feeder backs off to the longest
+/// wait.
 #[test]
-fn failed_attempts_back_off_doubling_to_the_longest() {
+fn refused_attempts_back_off_doubling_to_the_longest() {
+    let mut task = Task::new(Net {
+        connect: -1,
+        ..Net::default()
+    });
+
+    for (attempt, backoff) in [1000, 2000, 4000, 8000, 16000, 30000, 30000]
+        .into_iter()
+        .enumerate()
+    {
+        let event = task.until_event(Kind::Backoff);
+        assert_eq!((event.attempt, event.value), (attempt as u32 + 1, backoff));
+        let waited = task.take_until(|a| *a == Action::Select);
+        assert_eq!(delays(&waited), backoff, "attempt {}", attempt + 1);
+    }
+    assert_eq!(BACKOFF_MAX_MS, 30_000);
+}
+
+/// A network the scans do not see is looked for at least every
+/// `BACKOFF_ABSENT_MAX_MS`, so its return is found soon.
+#[test]
+fn failed_attempts_back_off_doubling_to_the_absent_longest() {
     let mut task = Task::new(Net {
         aps: vec![(b"other", -40, 4)],
         ..Net::default()
     });
 
-    for (attempt, backoff) in [1000, 2000, 4000, 8000, 16000, 30000, 30000]
+    for (attempt, backoff) in [1000, 2000, 4000, 8000, 10000, 10000, 10000]
         .into_iter()
         .enumerate()
     {
@@ -599,8 +622,8 @@ fn a_network_back_from_an_outage_starts_the_backoff_over() {
     }
     assert_eq!(
         task.events(Kind::Backoff).last().unwrap().value,
-        16_000,
-        "the waits grew while the network was gone"
+        BACKOFF_ABSENT_MAX_MS,
+        "the waits grew while the network was gone, to the absent cap"
     );
 
     task.net.aps = home;

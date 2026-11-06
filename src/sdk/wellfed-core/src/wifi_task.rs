@@ -29,9 +29,12 @@
 //! failed attempt waits [`BACKOFF_MIN_MS`], doubling to [`BACKOFF_MAX_MS`];
 //! with nothing to join the wait is the longest, which still picks up
 //! credentials BLE setup stores within one (the radio stays on, since BLE
-//! needs it). A scan that finds the network after one that completed
-//! without it starts the doubling over: the waits grew while the network
-//! was gone, and a network back from an outage has not refused the feeder
+//! needs it). While scans complete without the network the wait stops at
+//! [`BACKOFF_ABSENT_MAX_MS`], so a network back from an outage is found
+//! within about that; the longest wait is for a network that is there and
+//! refuses the feeder (a wrong password, a full access point). A scan that
+//! finds the network after one that completed without it starts the
+//! doubling over: a network back from an outage has not refused the feeder
 //! yet. Its first join often fails all the same, since the driver offers
 //! the cached PMKSA and an access point that restarted rejects it (status
 //! 53) before the driver drops it, so the retry that follows at full SAE
@@ -76,6 +79,10 @@ use crate::liveness::{Cause, Liveness, Probe, Radio, Verdict};
 pub const BACKOFF_MIN_MS: u32 = 1_000;
 /// The longest wait between attempts.
 pub const BACKOFF_MAX_MS: u32 = 30_000;
+/// The longest wait while the last scan did not see the network. Each
+/// attempt holds feeds for its scan (about 4 s), so a due meal waits that
+/// much more often during an outage; well within a meal's 60 s.
+pub const BACKOFF_ABSENT_MAX_MS: u32 = 10_000;
 /// How long a scan may run before it counts as timed out.
 pub const SCAN_WAIT_MS: u32 = 10_000;
 /// Between watch ticks of a joined link.
@@ -727,6 +734,9 @@ impl WifiTask {
                         self.backoff = BACKOFF_MIN_MS;
                     }
                     self.seen = sighting.found;
+                    if !sighting.found {
+                        self.backoff = self.backoff.min(BACKOFF_ABSENT_MAX_MS);
+                    }
                 }
                 if result != SUCCESS || !sighting.found || wishes.interrupting() {
                     return go(At::JoinFailed);
