@@ -163,6 +163,9 @@ class _Ports implements FeederPorts {
   UpdatePush pushUpdate(String identity, String? address) => throw UnimplementedError();
 
   @override
+  bool get updatesFeeder => true;
+
+  @override
   RestorePorts get restore => throw UnimplementedError();
 }
 
@@ -207,7 +210,9 @@ void main() {
 
   setUpAll(() async {
     if (target == null) return;
-    await RustLib.init(externalLibrary: ExternalLibrary.open('$target/libwellfed_app_bridge.so'));
+    // Cargo names the bridge's shared library by the host's convention.
+    final String library = Platform.isMacOS ? 'libwellfed_app_bridge.dylib' : 'libwellfed_app_bridge.so';
+    await RustLib.init(externalLibrary: ExternalLibrary.open('$target/$library'));
     owner = ClientKey.generate();
     sim = await _Feeder.start(target, owner);
     final known = KnownFeeder(identity: sim.identity, name: 'Smoke', address: sim.address);

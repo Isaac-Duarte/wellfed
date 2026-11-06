@@ -230,8 +230,11 @@ class InstallFlow extends ChangeNotifier {
     _setupHint = false;
   }
 
-  /// Read what decides whether this phone can install at all.
+  /// Read what decides whether this phone can install at all. A device that
+  /// cannot join the feeder's Wi-Fi is refused first: every way through an
+  /// install goes over that network.
   Future<void> load() async {
+    if (!_ports.joinsFeederNetwork) return _go(InstallStage.unavailable);
     final InstallPaths paths = await _ports.paths();
     _paths = paths;
     _image = await _ports.prepareImage(paths);
@@ -370,6 +373,7 @@ class InstallFlow extends ChangeNotifier {
     );
     return switch (_stage) {
       InstallStage.loading => InstallLoading(facts),
+      InstallStage.unavailable => InstallUnavailable(facts),
       InstallStage.before => InstallBefore(facts, image: _image, build: _build),
       InstallStage.naming => InstallNaming(facts),
       InstallStage.wifi => InstallWifi(facts),

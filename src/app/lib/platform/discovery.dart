@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:nsd/nsd.dart' as nsd;
 
+import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/src/rust/api/discovery.dart';
 
 export 'package:wellfed/src/rust/api/discovery.dart' show FoundFeeder;
@@ -24,8 +25,9 @@ class FoundServer {
 
 /// Feeders on the LAN, `_wellfed._tcp`, each with its identity in the TXT
 /// `id`; and owner's servers, `_wellfed-server._tcp`. Android browses
-/// through NsdManager; Linux, where `nsd` has no side, browses feeders
-/// through the bridge's mDNS.
+/// through NsdManager, which holds the multicast lock a phone needs. A
+/// desktop browses feeders through the bridge's mDNS, the same as the CLI's,
+/// and uses no `nsd` at all, which has no Linux side.
 class Discovery {
   /// The NSD service feeders advertise.
   static const serviceType = '_wellfed._tcp';
@@ -34,13 +36,13 @@ class Discovery {
   static const serverType = '_wellfed-server._tcp';
 
   /// Every feeder found until the returned stream is cancelled.
-  static Stream<FoundFeeder> browse() => Platform.isLinux ? _bridge() : _nsd(serviceType, _feeder);
+  static Stream<FoundFeeder> browse() => onDesktopHost ? _bridge() : _nsd(serviceType, _feeder);
 
   /// Every owner's server found until the returned stream is cancelled. The
-  /// bridge browses feeders only, so on Linux nothing is found and the
+  /// bridge browses feeders only, so on a desktop nothing is found and the
   /// server is entered by its address.
   static Stream<FoundServer> browseServers() =>
-      Platform.isLinux ? const Stream<FoundServer>.empty() : _nsd(serverType, _server);
+      onDesktopHost ? const Stream<FoundServer>.empty() : _nsd(serverType, _server);
 
   static Stream<FoundFeeder> _bridge() {
     late final StreamController<FoundFeeder> out;

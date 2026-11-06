@@ -74,6 +74,10 @@ class FakeInstallPorts implements InstallPorts {
     this.pendingInstall = PendingInstall.nothing,
   });
 
+  /// False to stand in for a desktop.
+  @override
+  bool joinsFeederNetwork = true;
+
   ImageCheck image;
   BuildCheck build;
   String? ip;

@@ -6,7 +6,7 @@ help:
 	@echo "check-bench-board: Clippy and a release build of the bench board's RP2040 firmware (part of check-cross)"
 	@echo "check-fixtures: optional reference-binary/SDK evidence; fails if unavailable"
 	@echo "check-web: the site and docs site: lint, format, licenses, types, unit tests, build, then Playwright (needs Node and pnpm)"
-	@echo "check-app: the Android app's bindings and tokens unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, and a debug APK (needs the pinned Flutter)"
+	@echo "check-app: the Android app's bindings and tokens unchanged, format, lint plugin, analysis, widget, accessibility, golden and smoke tests, a debug APK, and on Linux or macOS that desktop's app (needs the pinned Flutter)"
 	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator with 95% coverage, on Home Assistant 2026.10 and Python 3.14 (needs uv)"
 	@echo "homeassistant-wheels: the Home Assistant bridge's release wheels, cross-built for musllinux and manylinux (aarch64, x86_64, armv7 musl), and its sdist (needs uv; adds Rust targets)"
 	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
@@ -115,8 +115,10 @@ check-web:
 # The Android app (src/app/). Its Dart bindings and theme tokens are
 # generated from Rust and committed, so a regeneration must leave them
 # unchanged. The bridge crate's own tests run in `check-rust`. The APK is
-# built for arm64 phones and x86_64 emulators only, and the Linux desktop
-# build only on a Linux host, since Flutter cannot cross-build it.
+# built for arm64 phones and x86_64 emulators only, and each desktop app only
+# on its own host, since Flutter cannot cross-build them: Linux on Linux, macOS
+# on a Mac, where the bridge comes in as a CocoaPods pod (CocoaPods needs a
+# UTF-8 locale).
 APP = src/app
 FLUTTER_VERSION = 3.47.8
 APP_APK = $(APP)/build/app/outputs/flutter-apk/app-debug.apk
@@ -147,6 +149,7 @@ check-app:
 	@unzip -p $(APP_APK) 'classes*.dex' | grep -aq 'Lorg/rustls/platformverifier/CertificateVerifier' || \
 		{ echo "the APK lacks rustls-platform-verifier's Kotlin half"; exit 1; }
 	@if [ "$$(uname)" = Linux ]; then cd $(APP) && flutter build linux --debug; fi
+	@if [ "$$(uname)" = Darwin ]; then cd $(APP) && LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 flutter build macos --debug; fi
 
 # The image the APK installs is a build-time input, from a frozen review and
 # its signed update manifest under private/. This copies them in (they are

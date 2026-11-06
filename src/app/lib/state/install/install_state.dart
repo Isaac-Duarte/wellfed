@@ -8,6 +8,9 @@ enum InstallStage {
   /// Reading the APK's image and this build's identity.
   loading,
 
+  /// This device cannot install: it cannot join the feeder's own Wi-Fi.
+  unavailable,
+
   /// What it takes, and how the feeder finds this phone.
   before,
 
@@ -143,6 +146,13 @@ sealed class InstallState {
 final class InstallLoading extends InstallState {
   /// Nothing known yet.
   const InstallLoading(super.facts);
+}
+
+/// This device cannot install, so nothing is read and the feeder is never
+/// touched.
+final class InstallUnavailable extends InstallState {
+  /// Refused before anything else.
+  const InstallUnavailable(super.facts);
 }
 
 /// What it takes, and how the feeder finds this phone.

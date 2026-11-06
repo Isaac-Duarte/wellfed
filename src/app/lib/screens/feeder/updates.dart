@@ -41,7 +41,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
   void initState() {
     super.initState();
     _flow.addListener(_flowChanged);
-    unawaited(_read());
+    if (_flow.state is! UpdateUnavailable) unawaited(_read());
   }
 
   @override
@@ -79,6 +79,7 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
     builder: (context, _) {
       final UpdateState update = _flow.state;
       if (update is UpdateEnded) return UpdateEndScreen(feeder: _feeder, ended: update);
+      if (update is UpdateUnavailable) return const _Unavailable();
       final offering = update is UpdateIdle;
       return Scaffold(
         appBar: AppBar(
@@ -278,4 +279,21 @@ class _Line extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The firmware screen on a device that may not update a feeder.
+class _Unavailable extends StatelessWidget {
+  const _Unavailable();
+
+  @override
+  Widget build(BuildContext context) => StepScaffold(
+    title: 'Firmware',
+    content: [
+      Notice(
+        tone: Tone.fault,
+        lead: "This $deviceName cannot update a feeder's firmware.",
+        text: 'Only the Android app can. Update from an Android phone that owns this feeder.',
+      ),
+    ],
+  );
 }

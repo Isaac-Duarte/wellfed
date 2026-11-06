@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -94,15 +95,21 @@ class SidebarShell extends StatelessWidget {
 
   /// Ctrl+1 to Ctrl+9 open the feeders in the sidebar's order, Ctrl+0 the
   /// overview (Welcome before there is a feeder); Ctrl+N adds one, Ctrl+,
-  /// opens settings and Escape steps back.
+  /// opens settings and Escape steps back. On a Mac each is ⌘ in place of
+  /// Ctrl, as in every Mac app.
   Map<ShortcutActivator, VoidCallback> _shortcuts(List<FeederController> feeders) => {
     const SingleActivator(LogicalKeyboardKey.escape): back,
-    const SingleActivator(LogicalKeyboardKey.comma, control: true): () => go(const SettingsPlace()),
-    const SingleActivator(LogicalKeyboardKey.keyN, control: true): () => go(const AddPlace()),
-    const SingleActivator(LogicalKeyboardKey.digit0, control: true): () => go(const OverviewPlace()),
+    _command(LogicalKeyboardKey.comma): () => go(const SettingsPlace()),
+    _command(LogicalKeyboardKey.keyN): () => go(const AddPlace()),
+    _command(LogicalKeyboardKey.digit0): () => go(const OverviewPlace()),
     for (final (i, feeder) in feeders.take(_digits.length).indexed)
-      SingleActivator(_digits[i], control: true): () => go(FeederPlace(feeder.state.known.identity)),
+      _command(_digits[i]): () => go(FeederPlace(feeder.state.known.identity)),
   };
+
+  /// `key` with the platform's command modifier.
+  static SingleActivator _command(LogicalKeyboardKey key) => defaultTargetPlatform == TargetPlatform.macOS
+      ? SingleActivator(key, meta: true)
+      : SingleActivator(key, control: true);
 
   static const List<LogicalKeyboardKey> _digits = [
     LogicalKeyboardKey.digit1,

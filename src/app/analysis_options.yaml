@@ -19,6 +19,7 @@ analyzer:
     - lib/src/rust/**
     - lib/theme/tokens.g.dart
     - linux/**
+    - macos/**
 
 linter:
   rules:

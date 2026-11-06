@@ -1,7 +1,7 @@
-//! Feeders on the LAN, for the platforms with no mDNS plugin of their own.
-//! Android browses through NsdManager, which holds the multicast lock the
-//! phone needs; the Linux desktop has no such plugin, so it browses here,
-//! through the same `wellfed-connect` the CLI locates feeders with.
+//! Feeders on the LAN, for the desktops. Android browses through
+//! NsdManager, which holds the multicast lock the phone needs. `nsd` has no
+//! Linux side, and macOS browses here too, so both desktops find feeders
+//! through the same `wellfed-connect` the CLI locates them with.
 
 use std::sync::Arc;
 use std::time::Duration;

@@ -1,0 +1,3 @@
+PRODUCT_NAME = Wellfed
+PRODUCT_BUNDLE_IDENTIFIER = io.github.isaacduarte.wellfed
+PRODUCT_COPYRIGHT = Copyright © 2026 Wellfed contributors

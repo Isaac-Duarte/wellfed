@@ -15,6 +15,12 @@ final class UpdateIdle extends UpdateState {
   const UpdateIdle();
 }
 
+/// This device may not update a feeder, so nothing is offered or sent.
+final class UpdateUnavailable extends UpdateState {
+  /// Refused from the start.
+  const UpdateUnavailable();
+}
+
 /// A run under way.
 sealed class UpdateRun extends UpdateState {
   /// A run with this much sent.

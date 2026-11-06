@@ -338,6 +338,10 @@ class FakeFeederPorts implements FeederPorts {
   /// For a test that leaves a screen and comes back to the same feeder.
   late FeederController controller;
 
+  /// False to stand in for a desktop.
+  @override
+  bool updatesFeeder = true;
+
   ImageCheck image = const ImageCheck.absent();
   final pushes = <String?>[];
   final located = <(int, String?)>[];

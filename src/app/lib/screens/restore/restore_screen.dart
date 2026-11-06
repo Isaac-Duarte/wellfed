@@ -53,6 +53,7 @@ class RestoreView extends StatelessWidget {
       canPop: !flow.state.committed,
       child: switch (flow.state) {
         RestoreLoading() => const Scaffold(body: SizedBox.shrink()),
+        RestoreUnavailable() => const _Unavailable(),
         final RestoreNoBackup state => _NoBackup(flow, state),
         final RestoreBefore state => _Before(flow, state),
         final RestoreRunning state => _Running(flow, state),
@@ -65,6 +66,24 @@ class RestoreView extends StatelessWidget {
 }
 
 const _title = 'Restore original firmware';
+
+/// The restore refused on a device that may not run it.
+class _Unavailable extends StatelessWidget {
+  const _Unavailable();
+
+  @override
+  Widget build(BuildContext context) => StepScaffold(
+    leading: Leading.close,
+    title: _title,
+    content: [
+      Notice(
+        tone: Tone.fault,
+        lead: 'This $deviceName cannot restore the original firmware.',
+        text: 'Only the Android app can put it back. Restore from an Android phone that owns this feeder.',
+      ),
+    ],
+  );
+}
 
 class _NoBackup extends StatelessWidget {
   const _NoBackup(this.flow, this.state);

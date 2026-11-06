@@ -67,24 +67,30 @@ bool _selected(WidgetTester tester, String label) => tester
     .widgetList<Semantics>(find.ancestor(of: find.text(label), matching: find.byType(Semantics)))
     .any((row) => row.properties.selected ?? false);
 
-Future<void> _ctrl(WidgetTester tester, LogicalKeyboardKey key) async {
-  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+/// `key` pressed with `modifier` held.
+Future<void> _chord(WidgetTester tester, LogicalKeyboardKey modifier, LogicalKeyboardKey key) async {
+  await tester.sendKeyDownEvent(modifier);
   await tester.sendKeyEvent(key);
-  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+  await tester.sendKeyUpEvent(modifier);
   await settle(tester);
 }
 
-/// A test of the desktop build: Linux for the test body alone, as the
-/// binding checks no debug override outlives it.
-void _desktopTest(String description, Future<void> Function(WidgetTester tester) body) =>
-    testWidgets(description, (tester) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-      try {
-        await body(tester);
-      } finally {
-        debugDefaultTargetPlatformOverride = null;
-      }
-    });
+Future<void> _ctrl(WidgetTester tester, LogicalKeyboardKey key) => _chord(tester, LogicalKeyboardKey.controlLeft, key);
+
+/// A test of the desktop build: Linux (or `platform`) for the test body
+/// alone, as the binding checks no debug override outlives it.
+void _desktopTest(
+  String description,
+  Future<void> Function(WidgetTester tester) body, {
+  TargetPlatform platform = TargetPlatform.linux,
+}) => testWidgets(description, (tester) async {
+  debugDefaultTargetPlatformOverride = platform;
+  try {
+    await body(tester);
+  } finally {
+    debugDefaultTargetPlatformOverride = null;
+  }
+});
 
 void main() {
   _desktopTest('the sidebar opens each place and marks the one showing', (tester) async {
@@ -122,20 +128,37 @@ void main() {
     expect(_selected(tester, 'Overview'), isTrue);
   });
 
-  _desktopTest('shortcuts open settings, adding and the feeders', (tester) async {
+  // Ctrl on Linux, ⌘ on a Mac.
+  for (final (TargetPlatform platform, LogicalKeyboardKey command) in [
+    (TargetPlatform.linux, LogicalKeyboardKey.controlLeft),
+    (TargetPlatform.macOS, LogicalKeyboardKey.metaLeft),
+  ]) {
+    _desktopTest('shortcuts open settings, adding and the feeders on ${platform.name}', platform: platform, (
+      tester,
+    ) async {
+      final (FeederFleet fleet, FakeBook book) = await _oneFeeder(tester);
+      await _window(tester, fleet, book);
+
+      await _chord(tester, command, LogicalKeyboardKey.comma);
+      expect(find.text('APPEARANCE'), findsOneWidget);
+
+      await _chord(tester, command, LogicalKeyboardKey.keyN);
+      expect(find.text('Add page'), findsOneWidget);
+
+      await _chord(tester, command, LogicalKeyboardKey.digit1);
+      expect(find.byType(FeederShell), findsOneWidget);
+
+      await _chord(tester, command, LogicalKeyboardKey.digit0);
+      expect(find.text('Overview page'), findsOneWidget);
+    });
+  }
+
+  _desktopTest('on a Mac, Ctrl is not the command key', platform: TargetPlatform.macOS, (tester) async {
     final (FeederFleet fleet, FakeBook book) = await _oneFeeder(tester);
     await _window(tester, fleet, book);
 
     await _ctrl(tester, LogicalKeyboardKey.comma);
-    expect(find.text('APPEARANCE'), findsOneWidget);
-
-    await _ctrl(tester, LogicalKeyboardKey.keyN);
-    expect(find.text('Add page'), findsOneWidget);
-
-    await _ctrl(tester, LogicalKeyboardKey.digit1);
-    expect(find.byType(FeederShell), findsOneWidget);
-
-    await _ctrl(tester, LogicalKeyboardKey.digit0);
+    expect(find.text('APPEARANCE'), findsNothing);
     expect(find.text('Overview page'), findsOneWidget);
   });
 

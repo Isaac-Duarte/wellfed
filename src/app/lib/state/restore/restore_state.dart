@@ -41,6 +41,13 @@ final class RestoreLoading extends RestoreState {
   const RestoreLoading();
 }
 
+/// This device may not restore, so nothing is read and the feeder is never
+/// touched.
+final class RestoreUnavailable extends RestoreState {
+  /// Refused before anything else.
+  const RestoreUnavailable();
+}
+
 /// No copy of stock to put back: pick one from a file.
 final class RestoreNoBackup extends RestoreState {
   /// No usable copy; [notStock] says why the last one looked at failed.

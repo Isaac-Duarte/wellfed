@@ -16,15 +16,17 @@ import 'package:wellfed/state/update/update_state.dart';
 /// [start] does nothing while one runs or while its end is unknown, wherever
 /// the owner has been meanwhile.
 class UpdateFlow extends ChangeNotifier {
-  /// The update of `_feeder`, reaching outside Dart through `_ports`.
-  UpdateFlow(this._feeder, this._ports);
+  /// The update of `_feeder`, reaching outside Dart through `_ports`. A
+  /// device that may not update is refused here, before anything is read.
+  UpdateFlow(this._feeder, this._ports)
+    : _state = _ports.updatesFeeder ? const UpdateIdle() : const UpdateUnavailable();
 
   final FeederController _feeder;
   final FeederPorts _ports;
 
   /// How the update stands.
   UpdateState get state => _state;
-  UpdateState _state = const UpdateIdle();
+  UpdateState _state;
 
   /// The build and version this run offered.
   (String, int)? _served;

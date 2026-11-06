@@ -11,6 +11,7 @@ import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
+import 'package:wellfed/widgets/layout.dart';
 
 /// Installing Wellfed on a feeder that runs stock, one screen per stage of
 /// its [InstallFlow].
@@ -73,6 +74,7 @@ class _InstallScreenState extends State<InstallScreen> {
       },
       child: switch (_flow.state) {
         InstallLoading() => const Scaffold(body: Center(child: CircularProgressIndicator())),
+        InstallUnavailable() => const InstallUnavailablePage(),
         final InstallBefore state => InstallBeforePage(flow: _flow, state: state),
         InstallNaming() => NameStep(
           initial: _flow.label,
@@ -128,4 +130,25 @@ class InstallFact extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The install refused on a device that cannot join the feeder's own Wi-Fi.
+class InstallUnavailablePage extends StatelessWidget {
+  const InstallUnavailablePage({super.key});
+
+  @override
+  Widget build(BuildContext context) => StepScaffold(
+    leading: Leading.close,
+    title: 'Install Wellfed',
+    content: [
+      Notice(
+        tone: Tone.fault,
+        lead: 'This $deviceName cannot install Wellfed.',
+        text:
+            "The install joins the feeder's own Wi-Fi, which only the Android "
+            'app can do. Install from an Android phone, then recover the feeder '
+            'here or join it with an invite.',
+      ),
+    ],
+  );
 }

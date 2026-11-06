@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wellfed/platform/discovery.dart';
+import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/recorder.dart';
@@ -73,6 +74,11 @@ abstract interface class FeederPorts {
   /// The image this APK carries, unpacked and checked against its pin.
   Future<ImageCheck> updateImage();
 
+  /// Whether this device may update a feeder's firmware. Only the Android
+  /// app has: the run keeps its process alive through the install's
+  /// foreground service, which has no desktop side.
+  bool get updatesFeeder;
+
   /// One update of the feeder to that image, which goes once.
   UpdatePush pushUpdate(String identity, String? address);
 
@@ -109,6 +115,9 @@ class AppFeederPorts implements FeederPorts {
 
   @override
   final PathRouter? router;
+
+  @override
+  bool get updatesFeeder => !onDesktopHost;
 
   @override
   FeedResult? settledFeed(Settlement settlement) => router_api.settledFeed(settlement: settlement);

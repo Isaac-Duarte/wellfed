@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wellfed/platform/discovery.dart';
+import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/install.dart' as rust;
@@ -48,6 +49,10 @@ abstract interface class InstallLink {
 /// share sheet. Behind this, so every screen is tested with no Rust and no
 /// phone.
 abstract interface class InstallPorts {
+  /// Whether this device can join the feeder's own Wi-Fi, which every
+  /// install goes through. Only the Android app can.
+  bool get joinsFeederNetwork;
+
   /// Where the install keeps its files.
   Future<InstallPaths> paths();
 
@@ -140,6 +145,9 @@ class AppInstallPorts implements InstallPorts {
   static const _screen = MethodChannel('io.github.isaacduarte.wellfed/screen');
 
   final ClientKey _key;
+
+  @override
+  bool get joinsFeederNetwork => !onDesktopHost;
 
   /// The image's files, as `make app-installer-input` fills them in.
   static const _imageAssets = ['review.json', 'build-manifest.json', 'image.bin', 'update.manifest'];

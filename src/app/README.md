@@ -95,15 +95,27 @@ The versions this was built with:
 - The Rust targets: `rustup target add --toolchain 1.99.1 aarch64-linux-android x86_64-linux-android`.
 - `cargo install flutter_rust_bridge_codegen --version 2.13.0 --locked`.
 - For the Linux desktop build: clang, CMake, Ninja, pkg-config, and the GTK 3 and libsecret development files (`gtk3` and `libsecret` on Arch, `libgtk-3-dev` and `libsecret-1-dev` on Debian), then `flutter config --enable-linux-desktop`.
+- For the macOS desktop build: Xcode, CocoaPods with `LANG=en_US.UTF-8` in the shell, and `rustup target add --toolchain 1.99.1 aarch64-apple-darwin x86_64-apple-darwin` (a release build holds both).
 
-Then `make check-app` from the repository root regenerates the bindings and checks they are unchanged, formats, analyzes, runs the widget tests and builds a debug APK, and on a Linux host the Linux desktop app too. The bridge's own tests run in `make check`, against the simulated feeder.
+Then `make check-app` from the repository root regenerates the bindings and checks they are unchanged, formats, analyzes, runs the widget tests and builds a debug APK, and on a Linux or macOS host that desktop's app too. The bridge's own tests run in `make check`, against the simulated feeder.
 
 ## The Linux desktop app
 
-It is the same app, started with `flutter run -d linux`, or built with `flutter build linux` into `build/linux/x64/release/bundle/`. So far it starts and finds feeders on the LAN. Recovery over the LAN needs nothing more, but has not been walked on Linux yet. It cannot yet set a feeder up over Bluetooth or install, which need a Bluetooth plugin with a Linux side and joining the feeder's own Wi-Fi through NetworkManager.
+It is the same app, started with `flutter run -d linux`, or built with `flutter build linux` into `build/linux/x64/release/bundle/`. So far it starts and finds feeders on the LAN. Recovery over the LAN needs nothing more, but has not been walked on Linux yet. It cannot yet set a feeder up over Bluetooth or install, which need a Bluetooth plugin with a Linux side and joining the feeder's own Wi-Fi through NetworkManager. Its install, firmware update and restore screens refuse, saying why: updates and restores keep running through Android's foreground service, which a desktop does not have.
 
 - **Discovery goes through Rust.** `nsd` has no Linux side, so `platform/discovery.dart` browses through the bridge's `FeederBrowse`, over the same `wellfed_connect::Browse` the CLI locates feeders with. Android keeps NsdManager, which holds the multicast lock a phone needs.
 - **Nothing asks for permissions.** BlueZ and NetworkManager answer any process of the logged-in user, so `AppPhonePorts` reports everything granted, and the computer's name is its hostname.
+
+## The macOS desktop app
+
+It is the same app, started with `flutter run -d macos`, or built with `flutter build macos` into `build/macos/Build/Products/Release/Wellfed.app`. It needs macOS 12 or later, the oldest that `file_selector` supports. On a Mac it has started to Welcome, found the simulator on the LAN by mDNS, and recovered it through to "You're its owner", in simulation only. Bluetooth setup has not been tried on a Mac: `flutter_reactive_ble` has a macOS side, but nothing has proven it. Both desktops refuse the install, since it joins the feeder's own Wi-Fi, which only the Android app can do. They refuse firmware updates and restoring the original firmware too, since those keep running through Android's foreground service.
+
+- **It is signed ad hoc, outside the sandbox.** Building it needs no Apple developer account. The device and network entitlements in `macos/Runner/` are inert outside the sandbox and without the hardened runtime, which this build does not enable.
+- **Discovery goes through Rust, as on Linux.** Feeders come through the bridge's `FeederBrowse`. The desktops use no `nsd`, so an owner's server is entered by its address. The first browse may make macOS ask whether Wellfed can find devices on your local network: allow it.
+- **The secrets are in the login keychain.** The data protection keychain needs a team ID, which an ad hoc build lacks, so `platform/secure_storage.dart` turns it off. The key survives a restart of the same build. The keychain knows an ad hoc build by its hash, so after each rebuild macOS asks whether Wellfed may read its own key, and the window stays blank until you answer. If you deny it, the app cannot read its key and stays blank: quit it, open it again and allow.
+- **Nothing asks for permissions up front.** `permission_handler` has no macOS side, and macOS asks on first use instead. Nothing asks for location yet, so the Wi-Fi's name is never filled in for you. The computer's name is its hostname, without the `.local` a Mac adds.
+- **Shortcuts use ⌘.** ⌘1 to ⌘9, ⌘0, ⌘N and ⌘, do what Ctrl does on Linux.
+- **https should need no extra wiring.** `rustls-platform-verifier` checks a certificate through Security.framework, with no setup call like Android's JNI hook. It has been checked only against public sites: one with a valid certificate was reached, and a self-signed and an expired one were refused. No login to an owner's server over https has been tried on a Mac.
 
 ## Change the bridge
 
