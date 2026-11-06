@@ -29,7 +29,13 @@
 //! failed attempt waits [`BACKOFF_MIN_MS`], doubling to [`BACKOFF_MAX_MS`];
 //! with nothing to join the wait is the longest, which still picks up
 //! credentials BLE setup stores within one (the radio stays on, since BLE
-//! needs it).
+//! needs it). A scan that finds the network after one that completed
+//! without it starts the doubling over: the waits grew while the network
+//! was gone, and a network back from an outage has not refused the feeder
+//! yet. Its first join often fails all the same, since the driver offers
+//! the cached PMKSA and an access point that restarted rejects it (status
+//! 53) before the driver drops it, so the retry that follows at full SAE
+//! comes after a second, not after the longest wait.
 //!
 //! **Watch.** A joined link is sampled every [`WATCH_MS`] and judged by
 //! [`Liveness`], which asks for a gateway echo when one is due. A settled
@@ -545,6 +551,8 @@ pub struct WifiTask {
     entry: Entry,
     /// `wifi_on` failures in a row since the radio went off.
     failed: u32,
+    /// Whether the last scan that completed saw the network.
+    seen: bool,
 }
 
 impl Default for WifiTask {
@@ -593,6 +601,7 @@ impl WifiTask {
             joined_at: 0,
             entry: Entry::Unassociated,
             failed: 0,
+            seen: false,
         }
     }
 
@@ -713,6 +722,12 @@ impl WifiTask {
             // association, which the access point would hold against the
             // next boot. Nor one battery mode would only leave again.
             At::Scanned { result, sighting } => {
+                if result == SUCCESS {
+                    if sighting.found && !self.seen {
+                        self.backoff = BACKOFF_MIN_MS;
+                    }
+                    self.seen = sighting.found;
+                }
                 if result != SUCCESS || !sighting.found || wishes.interrupting() {
                     return go(At::JoinFailed);
                 }

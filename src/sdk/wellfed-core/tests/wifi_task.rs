@@ -583,6 +583,41 @@ fn a_settled_join_resets_the_backoff() {
     );
 }
 
+/// A network back from an outage starts the doubling over, so the join
+/// it refuses first (an access point that restarted rejects the cached
+/// PMKSA) is retried after a second, not after the wait the outage grew.
+#[test]
+fn a_network_back_from_an_outage_starts_the_backoff_over() {
+    let mut task = Task::settled(Net::default());
+    let home = task.net.aps.clone();
+
+    task.net.aps.clear();
+    task.net.associated = false;
+    task.until_event(Kind::Lost);
+    for _ in 0..5 {
+        task.until_event(Kind::Scan);
+    }
+    assert_eq!(
+        task.events(Kind::Backoff).last().unwrap().value,
+        16_000,
+        "the waits grew while the network was gone"
+    );
+
+    task.net.aps = home;
+    task.net.connect = -1;
+    let back = task.until_event(Kind::Scan);
+    assert_eq!(back.value, 1);
+    let refused = task.until_event(Kind::Backoff);
+    assert_eq!(refused.value, BACKOFF_MIN_MS);
+
+    // Still seen and still refused: the doubling goes on from there.
+    let again = task.until_event(Kind::Backoff);
+    assert_eq!(again.value, 2 * BACKOFF_MIN_MS);
+
+    task.net.connect = 0;
+    task.until(|a| *a == Action::Outcome(Attempt::Joined));
+}
+
 #[test]
 fn a_silent_gateway_is_left_once_it_has_answered() {
     let mut task = Task::settled(Net::default());
