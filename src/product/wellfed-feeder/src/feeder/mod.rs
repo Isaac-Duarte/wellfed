@@ -529,7 +529,8 @@ impl<P: Platform> Feeder<P> {
         self.readiness.note(&mut self.platform, now_ms, ready, |r| {
             record(Record::Feeding(r))
         });
-        if let Some(level) = self.readiness.food(feeds.food(), !feeds.busy()) {
+        let flight = feeding::Flight::of(feeds);
+        if let Some(level) = self.readiness.food(feeds.food(), flight) {
             events::record(&mut self.platform, now_ms, EventBody::Food { level });
         }
 

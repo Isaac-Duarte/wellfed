@@ -346,6 +346,67 @@ fn a_press_past_its_claim_s_deadline_is_refused_as_any_press_is() {
     assert_eq!(feeding_journal(&feeder), Some(1));
 }
 
+/// A feeder at the boot's first food reading, with Dispense pressed in the
+/// very pass that takes it and a write held in the way of the press's claim
+/// (`press`), or with no press. Each pass advances as `Feeder::run`'s do,
+/// but with no end to cut the last one short, so two feeders built alike
+/// pass at the same times.
+fn at_first_reading(press: Option<u32>) -> (Feeder, u32) {
+    let mut feeder = Feeder::first_boot();
+    feeder.run(1_000);
+    feeder.hold(&[Button::Lock]);
+    feeder.sim.hold_write(true);
+    loop {
+        let at = feeder.now;
+        if press == Some(at) {
+            let chord = Buttons::of(Button::Dispense);
+            feeder.sim.gesture(Gesture::Down { chord });
+            feeder.sim.gesture(Gesture::Up {
+                chord,
+                level: 0,
+                held_ms: 80,
+            });
+        }
+        let records = &mut feeder.records;
+        let delay = feeder.sim.pass(at, |record| records.push(record));
+        feeder.now += delay.clamp(1, 1000);
+        if feeder.sim.food().is_some() {
+            return (feeder, at);
+        }
+        assert!(feeder.now < 30_000, "no reading");
+    }
+}
+
+/// A press whose claim was refused moved nothing and lit no beam, so a
+/// reading it overlapped (the boot's first, taken in the pass the press
+/// came in) only sets the baseline, as it does with no press: no `Food`
+/// event repeats a level the hopper had before the restart.
+#[test]
+fn a_refused_claim_leaves_the_first_food_reading_a_baseline() {
+    let (_, read_at) = at_first_reading(None);
+    let (mut feeder, at) = at_first_reading(Some(read_at));
+    assert_eq!(at, read_at, "the same pass");
+    assert!(
+        matches!(feeder.dispensed()[..], [Ok(1)]),
+        "waits for its claim"
+    );
+    assert!(!feeder.sim.feed_outputs_claimed());
+
+    feeder.run(3_100);
+    assert!(matches!(
+        feeder.dispensed()[..],
+        [Ok(1), Err(Refusal::Busy)]
+    ));
+    assert_eq!(feeding_journal(&feeder), Some(0), "it never ran");
+    feeder.sim.hold_write(false);
+    feeder.run(1_000);
+    let food = harness::events(&mut feeder.sim)
+        .into_iter()
+        .filter(|body| matches!(body, EventBody::Food { .. }))
+        .count();
+    assert_eq!(food, 0);
+}
+
 /// Setup mode the owner holds the buttons for, while a press waits behind a
 /// write: it ends in a restart, so the waiting feed is refused rather than
 /// started into it.

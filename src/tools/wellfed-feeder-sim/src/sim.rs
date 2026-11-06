@@ -224,6 +224,11 @@ impl Sim {
         self.feeds.fill(food);
     }
 
+    /// The food beam's latest reading (`true` with food), once one is taken.
+    pub fn food(&self) -> Option<bool> {
+        wellfed_feeder::feeder::Feeds::food(&self.feeds)
+    }
+
     /// A client's cancel of the feed numbered `feed`: whether it found it.
     pub fn cancel_feed(&self, feed: u32) -> bool {
         wellfed_feeder::feeder::Feeds::cancel(&self.feeds, feed)
