@@ -8,6 +8,7 @@ import 'package:wellfed/state/join/join.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
@@ -100,12 +101,12 @@ class _JoinScreenState extends State<JoinScreen> {
               const SizedBox(height: Space.s4),
               LabeledField(
                 label: 'This feeder',
-                hint: 'Only this phone uses it.',
+                hint: 'Only this $deviceName uses it.',
                 child: TextField(controller: _feederName, onChanged: (_) => setState(() {})),
               ),
               const SizedBox(height: Space.s4),
               LabeledField(
-                label: 'This phone',
+                label: 'This $deviceName',
                 hint: 'The feeder lists you by this.',
                 child: TextField(controller: _phoneName, onChanged: (_) => setState(() {})),
               ),

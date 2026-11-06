@@ -194,4 +194,7 @@ pub enum UpdateRefusal {
     /// The feeder runs on its batteries: no install starts until the
     /// adapter returns.
     Battery,
+    /// The key is already enrolled as a session key, which is never an
+    /// update signer too.
+    HeldAsSessionKey,
 }

@@ -1,9 +1,6 @@
-import 'dart:async';
-
 import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/src/rust/api/session.dart' as api;
 import 'package:wellfed/state/feeder/feeder.dart';
@@ -14,9 +11,12 @@ import 'package:wellfed/widgets/when.dart';
 
 /// What today's meals come to (5.1), below the only card.
 class TodaysMeals extends StatelessWidget {
-  const TodaysMeals({super.key, required this.controller});
+  const TodaysMeals({super.key, required this.controller, this.gap = Space.s4});
 
   final FeederController controller;
+
+  /// The room above the heading, which sets it off from the card above.
+  final double gap;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -28,7 +28,7 @@ class TodaysMeals extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: Space.s4),
+          SizedBox(height: gap),
           Row(
             children: [
               Expanded(
@@ -38,7 +38,7 @@ class TodaysMeals extends StatelessWidget {
                 ),
               ),
               TextButton(
-                onPressed: () => unawaited(context.push('/feeder/${controller.state.known.identity}?tab=$scheduleTab')),
+                onPressed: () => openFeeder(context, controller.state.known.identity, scheduleTab),
                 child: const Text('Schedule'),
               ),
             ],

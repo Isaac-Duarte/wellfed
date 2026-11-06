@@ -38,7 +38,8 @@
 //! either's. With no feed in flight, a level that differs from the last one
 //! seen this boot is a `Food` event ([`Watch::food`]): at most one a feed or a
 //! window, however the beam flickers as the last kibble passes. A boot's first
-//! reading records only if a feed took it: a first window can't tell whether
+//! reading records only if a feed took it (one refused while it waited for
+//! its claim never lit the beam): a first window can't tell whether
 //! anything happened to the hopper, so a change made while the feeder was off
 //! shows in the status and the light, not in History, and each restart costs
 //! neither a History line nor a flash write. No feed waits on it or is refused for it, as stock.
@@ -175,6 +176,34 @@ pub fn refused_reason<F: Feeds>(feeds: &F, ready: Readiness) -> Blocked {
     }
 }
 
+/// Where a feed is, as the food level sees it: only a running feed can
+/// light the beam.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Flight {
+    /// No feed is asked for or running.
+    Rest,
+    /// A feed waits for its claim on the outputs ([`Feeds::claiming`]):
+    /// readings at rest are held, and it may yet be refused having moved
+    /// nothing.
+    Claiming,
+    /// A feed has its claim, or the owner holds it.
+    Running,
+}
+
+impl Flight {
+    /// A waiting claim first: `busy` is true for it too, though nothing has
+    /// moved.
+    pub fn of<F: Feeds>(feeds: &F) -> Self {
+        if feeds.claiming().is_some() {
+            Self::Claiming
+        } else if feeds.busy() {
+            Self::Running
+        } else {
+            Self::Rest
+        }
+    }
+}
+
 /// The last readiness logged, the last lasting reason recorded, and the
 /// reason of the last refused Dispense press recorded since the feeder
 /// was last ready.
@@ -202,15 +231,22 @@ impl Watch {
         }
     }
 
-    /// The food beam's latest reading, `reading`, with no feed in flight
-    /// (`at_rest`): the level to record as a `Food` event when it differs
-    /// from the last one seen this boot. During a feed the level waits for
-    /// its end, so a beam that flickers records once. The first level of a
-    /// boot only sets the baseline, unless the feed just ended took it.
-    pub fn food(&mut self, reading: Option<bool>, at_rest: bool) -> Option<FoodLevel> {
-        if !at_rest {
-            self.fed = true;
-            return None;
+    /// The food beam's latest reading, `reading`, with the feed `flight`:
+    /// the level to record as a `Food` event when it differs from the last
+    /// one seen this boot. During a feed the level waits for its end, so a
+    /// beam that flickers records once. The first level of a boot only sets
+    /// the baseline, unless the feed just ended took it. A feed still
+    /// waiting for its claim has lit nothing: one refused there leaves a
+    /// reading taken in the pass it was asked in (the boot's first window
+    /// can finish just before the press is queued) a baseline, not a feed's.
+    pub fn food(&mut self, reading: Option<bool>, flight: Flight) -> Option<FoodLevel> {
+        match flight {
+            Flight::Rest => {}
+            Flight::Claiming => return None,
+            Flight::Running => {
+                self.fed = true;
+                return None;
+            }
         }
         let fed = core::mem::take(&mut self.fed);
         let present = reading?;
@@ -320,18 +356,25 @@ mod tests {
     #[test]
     fn the_food_level_is_recorded_once_a_change_at_rest() {
         let mut watch = Watch::new();
-        assert_eq!(watch.food(None, true), None, "no reading at boot");
+        assert_eq!(watch.food(None, Flight::Rest), None, "no reading at boot");
 
         // A feed reads food, then low, then food, and ends.
         for reading in [true, false, true] {
-            assert_eq!(watch.food(Some(reading), false), None, "during a feed");
+            assert_eq!(
+                watch.food(Some(reading), Flight::Running),
+                None,
+                "during a feed"
+            );
         }
-        assert_eq!(watch.food(Some(true), true), Some(FoodLevel::Present));
-        assert_eq!(watch.food(Some(true), true), None, "no repeat");
+        assert_eq!(
+            watch.food(Some(true), Flight::Rest),
+            Some(FoodLevel::Present)
+        );
+        assert_eq!(watch.food(Some(true), Flight::Rest), None, "no repeat");
 
-        assert_eq!(watch.food(Some(false), false), None);
-        assert_eq!(watch.food(Some(false), true), Some(FoodLevel::Low));
-        assert_eq!(watch.food(Some(false), true), None);
+        assert_eq!(watch.food(Some(false), Flight::Running), None);
+        assert_eq!(watch.food(Some(false), Flight::Rest), Some(FoodLevel::Low));
+        assert_eq!(watch.food(Some(false), Flight::Rest), None);
     }
 
     /// A boot's first reading at rest sets the baseline with no event, low or
@@ -340,15 +383,27 @@ mod tests {
     fn a_boot_s_first_idle_reading_records_nothing() {
         for (first, change) in [(false, FoodLevel::Present), (true, FoodLevel::Low)] {
             let mut watch = Watch::new();
-            assert_eq!(watch.food(None, true), None);
-            assert_eq!(watch.food(Some(first), true), None, "the baseline");
-            assert_eq!(watch.food(Some(first), true), None);
-            assert_eq!(watch.food(Some(!first), true), Some(change), "a window");
+            assert_eq!(watch.food(None, Flight::Rest), None);
+            assert_eq!(watch.food(Some(first), Flight::Rest), None, "the baseline");
+            assert_eq!(watch.food(Some(first), Flight::Rest), None);
+            assert_eq!(
+                watch.food(Some(!first), Flight::Rest),
+                Some(change),
+                "a window"
+            );
 
             let mut watch = Watch::new();
-            assert_eq!(watch.food(Some(first), true), None);
-            assert_eq!(watch.food(Some(!first), false), None, "during a feed");
-            assert_eq!(watch.food(Some(!first), true), Some(change), "its end");
+            assert_eq!(watch.food(Some(first), Flight::Rest), None);
+            assert_eq!(
+                watch.food(Some(!first), Flight::Running),
+                None,
+                "during a feed"
+            );
+            assert_eq!(
+                watch.food(Some(!first), Flight::Rest),
+                Some(change),
+                "its end"
+            );
         }
     }
 
@@ -357,12 +412,35 @@ mod tests {
     #[test]
     fn only_a_feed_s_own_reading_records_as_the_first() {
         let mut watch = Watch::new();
-        assert_eq!(watch.food(None, false), None, "a feed, unread");
-        assert_eq!(watch.food(None, true), None, "it ended");
-        assert_eq!(watch.food(Some(false), true), None, "a window");
+        assert_eq!(watch.food(None, Flight::Running), None, "a feed, unread");
+        assert_eq!(watch.food(None, Flight::Rest), None, "it ended");
+        assert_eq!(watch.food(Some(false), Flight::Rest), None, "a window");
 
         let mut watch = Watch::new();
-        assert_eq!(watch.food(Some(false), false), None, "a feed reads low");
-        assert_eq!(watch.food(Some(false), true), Some(FoodLevel::Low));
+        assert_eq!(
+            watch.food(Some(false), Flight::Running),
+            None,
+            "a feed reads low"
+        );
+        assert_eq!(watch.food(Some(false), Flight::Rest), Some(FoodLevel::Low));
+    }
+
+    /// A feed refused while it waited for its claim lit nothing: the boot's
+    /// first reading, taken in the pass it was asked in, stays a baseline.
+    /// One whose claim was taken read the beam, and its reading records.
+    #[test]
+    fn a_feed_refused_before_its_claim_takes_no_reading() {
+        let mut watch = Watch::new();
+        assert_eq!(watch.food(Some(true), Flight::Claiming), None);
+        assert_eq!(watch.food(Some(true), Flight::Rest), None, "refused");
+        assert_eq!(watch.food(Some(true), Flight::Rest), None);
+
+        let mut watch = Watch::new();
+        assert_eq!(watch.food(Some(true), Flight::Claiming), None);
+        assert_eq!(watch.food(Some(true), Flight::Running), None, "claimed");
+        assert_eq!(
+            watch.food(Some(true), Flight::Rest),
+            Some(FoodLevel::Present)
+        );
     }
 }

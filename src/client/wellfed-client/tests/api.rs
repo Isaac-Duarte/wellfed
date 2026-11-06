@@ -16,7 +16,7 @@ use wellfed_core::desiccant::Count;
 use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
 use wellfed_core::tone::Tune;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
-use wellfed_device_api::mailbox::Lock;
+use wellfed_device_api::mailbox::{KEYS_FINISHED, Lock};
 use wellfed_device_api::mailbox::{
     LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields,
     TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState, WifiResult,
@@ -31,8 +31,9 @@ use wellfed_device_api::{
 use wellfed_model as model;
 use wellfed_model::{Answer, FeederSettingsPatch, Generation, Hello, Joined, Op, OpenRefusal};
 use wellfed_proto::api::{
-    self as proto, DeviceStatus, EventBody, FeederStatus, FoodLevel, Metric, Refusal, Sample,
-    Stats, StatsSection, Status, UpdatePhase, UpdateRefusal, UpdateView, WANTED_MAX,
+    self as proto, DeviceStatus, EventBody, FeederStatus, FoodLevel, FrozenRefusal, Metric,
+    Refusal, Sample, Stats, StatsSection, Status, UpdatePhase, UpdateRefusal, UpdateView,
+    WANTED_MAX,
 };
 use wellfed_session::frame;
 use wellfed_session::noise::Keypair;
@@ -62,7 +63,9 @@ struct Fake {
     locked: Option<bool>,
     clients: Vec<Client>,
     keys_pending: Option<(u32, KeyChange)>,
-    keys_done: Option<(u32, KeyOutcome)>,
+    /// The last finished changes, newest last, as many as the firmware's
+    /// mailbox remembers.
+    keys_done: Vec<(u32, KeyOutcome)>,
     ticket: u32,
     events: Vec<proto::Event>,
     /// Events before this sequence number left the ring.
@@ -88,10 +91,10 @@ struct Fake {
     chunks_busy: bool,
     /// Update requests queued, in order, and the next one's answer.
     updates: Vec<String>,
-    update_done: Option<(u32, Result<UpdateAnswer, Refusal>)>,
+    update_done: Option<(u32, Result<UpdateAnswer, FrozenRefusal>)>,
     /// Keep the next request queued (its lease held) until `answer_held`.
     hold: bool,
-    held: Option<(u32, Result<UpdateAnswer, Refusal>)>,
+    held: Option<(u32, Result<UpdateAnswer, FrozenRefusal>)>,
     /// Chunk offsets handed over.
     chunks: Vec<u32>,
     time: TimeSettingsView,
@@ -253,7 +256,10 @@ impl Fake {
                     }
                 }
             };
-            self.keys_done = Some((ticket, outcome));
+            if self.keys_done.len() == KEYS_FINISHED {
+                self.keys_done.remove(0);
+            }
+            self.keys_done.push((ticket, outcome));
         }
         if !self.hold_feeds {
             self.reserved = u32::try_from(self.feeds.len()).unwrap();
@@ -361,8 +367,9 @@ impl Device for Fake {
 
     fn keys_outcome(&mut self, ticket: u32) -> Option<KeyOutcome> {
         self.keys_done
-            .filter(|&(done, _)| done == ticket)
-            .map(|(_, outcome)| outcome)
+            .iter()
+            .find(|&&(done, _)| done == ticket)
+            .map(|&(_, outcome)| outcome)
     }
 
     /// A small fixed answer per section, each told apart by its values.
@@ -464,9 +471,9 @@ impl Device for Fake {
         })
     }
 
-    fn update(&mut self, request: UpdateRequest<'_>) -> Result<u32, Refusal> {
+    fn update(&mut self, request: UpdateRequest<'_>) -> Result<u32, FrozenRefusal> {
         if !self.update {
-            return Err(Refusal::Unavailable);
+            return Err(FrozenRefusal::Unavailable);
         }
         self.ticket += 1;
         let answer = match request {
@@ -496,21 +503,21 @@ impl Device for Fake {
         Ok(self.ticket)
     }
 
-    fn update_outcome(&mut self, ticket: u32) -> Option<Result<UpdateAnswer, Refusal>> {
+    fn update_outcome(&mut self, ticket: u32) -> Option<Result<UpdateAnswer, FrozenRefusal>> {
         self.update_done
             .filter(|&(done, _)| done == ticket)
             .map(|(_, answer)| answer)
     }
 
-    fn update_chunk(&mut self, offset: u32, _data: &[u8]) -> Result<UpdateView, Refusal> {
+    fn update_chunk(&mut self, offset: u32, _data: &[u8]) -> Result<UpdateView, FrozenRefusal> {
         if !self.update {
-            return Err(Refusal::Unavailable);
+            return Err(FrozenRefusal::Unavailable);
         }
         if self.chunks_busy {
-            return Err(Refusal::Busy);
+            return Err(FrozenRefusal::Busy);
         }
         if !self.installing {
-            return Err(Refusal::Update(UpdateRefusal::NotInstalling));
+            return Err(FrozenRefusal::Update(UpdateRefusal::NotInstalling));
         }
         self.chunks.push(offset);
         Ok(receiving())
@@ -1470,6 +1477,145 @@ fn revoking_a_client_closes_its_open_session() {
     assert!(rig.server.closing(member.slot));
 }
 
+/// Send a request and run one pass without the writer's turn, so a write it
+/// queues stays queued.
+fn send_unwritten(rig: &mut Rig, client: &mut Client_, id: u8, op: Op) {
+    let bytes = client.session.request([id; 16], &op).unwrap();
+    client.outbox.extend(bytes);
+    rig.deliver(client.slot, &mut client.outbox);
+    rig.pass();
+}
+
+/// The history's revocations: the client revoked and who asked.
+fn revocations(rig: &Rig) -> Vec<(proto::Fingerprint, proto::Source)> {
+    rig.device
+        .events
+        .iter()
+        .filter_map(|e| match e.body {
+            EventBody::Revoked { client, by } => Some((client, by)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn fingerprint(secret: [u8; 32]) -> proto::Fingerprint {
+    let key = public(secret);
+    [key[0], key[1], key[2], key[3]]
+}
+
+/// The session goes once its revocation is queued: the writer still applies
+/// it, so the history must still say so, once and naming who asked.
+#[test]
+fn a_revocation_whose_session_left_is_still_in_the_history() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let revoke = Op::RevokeClient {
+        key: public(MEMBER),
+    };
+    send_unwritten(&mut rig, &mut owner, 1, revoke);
+    assert!(
+        rig.device.keys_pending.is_some(),
+        "the revocation is queued"
+    );
+
+    let records = &mut rig.records;
+    rig.server.closed(owner.slot, |r| records.push(r));
+    rig.pass();
+    assert_eq!(revocations(&rig), [], "not before the writer has finished");
+
+    rig.device.write();
+    rig.pass();
+    rig.pass();
+    assert!(!rig.device.clients.iter().any(|c| c.key == public(MEMBER)));
+    let by = proto::Source::Client(fingerprint(OWNER));
+    assert_eq!(revocations(&rig), [(fingerprint(MEMBER), by)]);
+}
+
+/// A revocation its session read before it ended is in the history once:
+/// the session's end leaves nothing to settle.
+#[test]
+fn a_revocation_read_before_its_session_left_is_in_the_history_once() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let revoke = Op::RevokeClient {
+        key: public(MEMBER),
+    };
+    send_unwritten(&mut rig, &mut owner, 1, revoke);
+    rig.device.write();
+    rig.pass();
+    let by = proto::Source::Client(fingerprint(OWNER));
+    assert_eq!(revocations(&rig), [(fingerprint(MEMBER), by)]);
+
+    let records = &mut rig.records;
+    rig.server.closed(owner.slot, |r| records.push(r));
+    rig.pass();
+    rig.pass();
+    assert_eq!(revocations(&rig), [(fingerprint(MEMBER), by)]);
+}
+
+/// An owner revoking its own key: the new table ends its session before it
+/// reads the result, and the history still has the revocation.
+#[test]
+fn an_owner_revoking_itself_is_in_the_history() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let revoke = Op::RevokeClient { key: public(OWNER) };
+    send_unwritten(&mut rig, &mut owner, 1, revoke);
+
+    rig.device.write();
+    rig.publish();
+    assert!(rig.ended(Reason::Revoked));
+    rig.pass();
+    let by = proto::Source::Client(fingerprint(OWNER));
+    assert_eq!(revocations(&rig), [(fingerprint(OWNER), by)]);
+}
+
+/// A left revocation the writer could not apply changed nothing: no event.
+#[test]
+fn a_left_revocation_that_found_nothing_is_not_in_the_history() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let revoke = Op::RevokeClient {
+        key: public(MEMBER),
+    };
+    send_unwritten(&mut rig, &mut owner, 1, revoke);
+    let records = &mut rig.records;
+    rig.server.closed(owner.slot, |r| records.push(r));
+
+    // Gone before the writer reaches the change: it finds nothing.
+    rig.device.clients.retain(|c| c.key != public(MEMBER));
+    rig.device.write();
+    assert_eq!(rig.device.keys_outcome(1), Some(KeyOutcome::NotFound));
+    rig.pass();
+    rig.pass();
+    assert_eq!(revocations(&rig), []);
+}
+
+/// Another change queued and finished before the session's next pass (a
+/// BLE setup's enrollment, say) does not hide the session's own result.
+#[test]
+fn a_change_finished_behind_another_still_answers_its_session() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let revoke = Op::RevokeClient {
+        key: public(MEMBER),
+    };
+    send_unwritten(&mut rig, &mut owner, 1, revoke);
+    rig.device.write();
+
+    let other = rig.device.keys(KeyChange::Revoke { key: [0x99; 32] });
+    rig.device.write();
+    assert_eq!(
+        rig.device.keys_outcome(other.unwrap()),
+        Some(KeyOutcome::NotFound)
+    );
+
+    let answer = poll_answer(&mut rig, &mut owner, 1, 5);
+    assert_eq!(answer, Some(Answer::Done { generation: None }));
+    let by = proto::Source::Client(fingerprint(OWNER));
+    assert_eq!(revocations(&rig), [(fingerprint(MEMBER), by)]);
+}
+
 #[test]
 fn an_invite_enrolls_a_new_client_once() {
     let mut rig = Rig::new();
@@ -1506,6 +1652,135 @@ fn an_invite_enrolls_a_new_client_once() {
     // The invite was single-use.
     assert_eq!(redeem(&mut rig, invite, [0x50; 32]), None);
     assert!(rig.ended(Reason::Invite));
+}
+
+/// The history's enrollments: the client, its role and how it came.
+fn enrollments(rig: &Rig) -> Vec<(proto::Fingerprint, proto::Role, proto::Path)> {
+    rig.device
+        .events
+        .iter()
+        .filter_map(|e| match e.body {
+            EventBody::Enrolled { client, role, path } => Some((client, role, path)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A member's invite, asked for as request `id` of the owner's session.
+fn member_invite(rig: &mut Rig, owner: &mut Client_, id: u8) -> Invite {
+    let invite = ask(
+        rig,
+        owner,
+        id,
+        Op::CreateInvite {
+            role: model::ClientRole::Member,
+        },
+    );
+    let Answer::Invite(invite) = invite else {
+        panic!("{invite:?}");
+    };
+    Invite {
+        feeder: public(FEEDER),
+        id: invite.id,
+        secret: invite.secret.0,
+    }
+}
+
+/// Redeem `invite` with `secret` until the joining session has queued its
+/// enrollment, then drop the connection before the writer takes it; the
+/// enrollment's ticket.
+fn redeem_and_drop(rig: &mut Rig, invite: Invite, secret: [u8; 32]) -> u32 {
+    let slot = rig.accept().unwrap();
+    let (mut join, mut outbox) =
+        Join::connect(&Keypair::from_secret(secret), invite, "phone", [0x55; 32]).unwrap();
+    for _ in 0..200 {
+        rig.deliver(slot, &mut outbox);
+        rig.pass();
+        if let Some((ticket, KeyChange::Enroll { key, .. })) = rig.device.keys_pending {
+            assert_eq!(key, public(secret));
+            let records = &mut rig.records;
+            rig.server.closed(slot, |r| records.push(r));
+            return ticket;
+        }
+        let bytes = rig.collect(slot);
+        if !bytes.is_empty()
+            && let Some(JoinStep::Send(bytes)) = join.receive(&bytes).unwrap()
+        {
+            outbox.extend(bytes);
+        }
+    }
+    panic!("no enrollment queued");
+}
+
+/// The connection drops while its enrollment is queued: the writer still
+/// enrolls the key, so the history must still say so, once, as a join that
+/// stayed would have.
+#[test]
+fn a_join_whose_connection_dropped_is_still_in_the_history() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let invite = member_invite(&mut rig, &mut owner, 1);
+    redeem_and_drop(&mut rig, invite, STRANGER);
+    rig.pass();
+    assert_eq!(enrollments(&rig), [], "not before the writer has finished");
+
+    rig.device.write();
+    rig.pass();
+    rig.pass();
+    assert!(rig.device.clients.iter().any(|c| c.key == public(STRANGER)));
+    let enrolled = (
+        fingerprint(STRANGER),
+        proto::Role::Member,
+        proto::Path::Invite,
+    );
+    assert_eq!(enrollments(&rig), [enrolled]);
+}
+
+/// A dropped join the writer refused enrolled nothing new: no event, for a
+/// key already enrolled or a full table.
+#[test]
+fn a_dropped_join_that_was_refused_is_not_in_the_history() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let invite = member_invite(&mut rig, &mut owner, 1);
+    let ticket = redeem_and_drop(&mut rig, invite, STRANGER);
+    rig.device.enroll(public(STRANGER), Role::Member);
+    rig.device.write();
+    assert_eq!(rig.device.keys_outcome(ticket), Some(KeyOutcome::Duplicate));
+    rig.pass();
+    rig.pass();
+    assert_eq!(enrollments(&rig), []);
+
+    let invite = member_invite(&mut rig, &mut owner, 2);
+    let ticket = redeem_and_drop(&mut rig, invite, [0x50; 32]);
+    // The fake's table never fills: finish the change as a full one would.
+    rig.device.keys_pending = None;
+    rig.device.keys_done.push((ticket, KeyOutcome::Full));
+    rig.pass();
+    rig.pass();
+    assert_eq!(enrollments(&rig), []);
+}
+
+/// A join that stays to read its answer is in the history once: its end
+/// leaves nothing to settle.
+#[test]
+fn a_join_that_completes_is_in_the_history_once() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let invite = member_invite(&mut rig, &mut owner, 1);
+    let joined = redeem(&mut rig, invite, STRANGER);
+    assert!(
+        matches!(joined, Some(Joined::Enrolled { .. })),
+        "{joined:?}"
+    );
+    rig.pass();
+    rig.pass();
+    let enrolled = (
+        fingerprint(STRANGER),
+        proto::Role::Member,
+        proto::Path::Invite,
+    );
+    assert_eq!(enrollments(&rig), [enrolled]);
 }
 
 /// Redeem `invite` with a new key; the feeder's answer, or `None` if the
@@ -2820,7 +3095,12 @@ fn a_session_key_is_never_enrolled_as_an_update_signer() {
 
     rig.signer = press_dispense(&mut rig);
     let refused = poll_answer(&mut rig, &mut owner, 1, 50).unwrap();
-    assert_eq!(refused, Answer::Refused(model::Refusal::Invalid));
+    assert_eq!(
+        refused,
+        Answer::Refused(model::Refusal::Update(
+            model::UpdateRefusal::HeldAsSessionKey
+        ))
+    );
     let member = rig.device.clients.iter().find(|c| c.key == public(MEMBER));
     assert_eq!(member.map(|c| c.role), Some(Role::Member));
 }

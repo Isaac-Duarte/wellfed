@@ -9,6 +9,7 @@ import 'package:wellfed/state/setup/setup.dart';
 import 'package:wellfed/state/wifi/networks.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/feeder_drawing.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
@@ -250,7 +251,7 @@ class _WifiStepState extends State<WifiStep> {
         const SizedBox(height: 18),
         LabeledField(
           label: 'Password',
-          hint: "8 to 63 characters. The feeder keeps it; this phone doesn't.",
+          hint: "8 to 63 characters. The feeder keeps it; this $deviceName doesn't.",
           child: TextField(
             controller: _password,
             obscureText: _hidden,

@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:wellfed/platform/secure_storage.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/router.dart';
@@ -78,8 +78,8 @@ enum PinsProblem {
 }
 
 /// The phone's identity and the feeders it knows. The client secret lives
-/// in Keystore-backed secure storage; everything else in the app's own
-/// file, which Rust reads and writes.
+/// in [secureStorage]; everything else in the app's own file, which Rust
+/// reads and writes.
 class AppState extends ChangeNotifier implements FeederBook {
   AppState._(this.key, this._store, this._path, (PathRouter?, PinsProblem?) opened)
     : router = opened.$1,
@@ -109,13 +109,12 @@ class AppState extends ChangeNotifier implements FeederBook {
 
   /// Read this phone's key and file, making a key the first time.
   static Future<AppState> load() async {
-    const storage = FlutterSecureStorage();
-    final String? saved = await storage.read(key: _secretName);
+    final String? saved = await secureStorage.read(key: _secretName);
     final ClientKey key;
     if (saved == null) {
       key = ClientKey.generate();
       // The store's hex spelling, as for feeder identities: 32 bytes.
-      await storage.write(
+      await secureStorage.write(
         key: _secretName,
         value: identityHex(identity: key.secret()),
       );

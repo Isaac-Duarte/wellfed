@@ -41,6 +41,10 @@ class FakeRestoreRun implements RestoreRun, RustOpaqueInterface {
 }
 
 class FakeRestorePorts implements RestorePorts {
+  /// False to stand in for a desktop.
+  @override
+  bool restoresFeeder = true;
+
   String? kept = '/kept/stock-1.1.15.bin';
   final checks = <String, BackupCheck>{'/kept/stock-1.1.15.bin': const BackupCheck.ready(version: '1.1.15')};
   String? picks;

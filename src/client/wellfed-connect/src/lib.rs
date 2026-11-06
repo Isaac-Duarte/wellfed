@@ -4,7 +4,8 @@
 //! this crate only moves bytes and keeps the clock.
 //!
 //! - [`locate`] finds a feeder by its identity over mDNS, or takes the
-//!   address it is given.
+//!   address it is given. [`Browse`] lists every feeder announcing itself,
+//!   for the apps that have no mDNS of their own (the Linux desktop).
 //! - [`Connection`] is an open session. [`Connection::ask`] sends one
 //!   request and waits for its answer; events, gaps and samples that arrive
 //!   meanwhile stay queued for [`Connection::next`] rather than being lost.
@@ -134,32 +135,113 @@ pub fn locate(identity: &[u8; 32], address: Option<&str>, wait: Duration) -> Res
         return parse_address(address);
     }
 
-    let daemon = mdns_sd::ServiceDaemon::new()?;
-    let receiver = daemon.browse(&format!("{SERVICE}.local."))?;
+    let browse = Browse::start()?;
     let want = Lower(identity).to_string();
     let deadline = std::time::Instant::now() + wait;
-    let found = loop {
+    loop {
         let left = deadline.saturating_duration_since(std::time::Instant::now());
-        if left.is_zero() {
-            break None;
+        match browse.next(left) {
+            Browsed::Found(feeder) if feeder.identity == want => return Ok(feeder.address),
+            Browsed::Found(_) => {}
+            Browsed::Quiet | Browsed::Stopped => {
+                return Err(Error::NotFound(want[..16].to_owned()));
+            }
         }
-        let Ok(event) = receiver.recv_timeout(left) else {
-            break None;
-        };
-        let mdns_sd::ServiceEvent::ServiceResolved(info) = event else {
-            continue;
-        };
-        if info.get_property_val_str("id") != Some(want.as_str()) {
-            continue;
+    }
+}
+
+/// A feeder announcing its device API over mDNS.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Announced {
+    /// Its identity key as the TXT `id` gives it: lowercase hex.
+    pub identity: String,
+    /// Where its device API listens, on the first IPv4 address it gave.
+    pub address: SocketAddr,
+    /// The service instance name it announces.
+    pub name: String,
+}
+
+/// What [`Browse::next`] heard.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Browsed {
+    Found(Announced),
+    /// Nothing within the wait.
+    Quiet,
+    /// The browse was stopped, or its daemon ended.
+    Stopped,
+}
+
+/// Feeders announcing themselves over mDNS, until [`Self::stop`] or drop.
+///
+/// A feeder is heard again each time it re-announces, so a caller that
+/// lists them keys them by identity.
+pub struct Browse {
+    daemon: mdns_sd::ServiceDaemon,
+    receiver: mdns_sd::Receiver<mdns_sd::ServiceEvent>,
+}
+
+impl Browse {
+    pub fn start() -> Result<Self> {
+        let daemon = mdns_sd::ServiceDaemon::new()?;
+        let receiver = daemon.browse(&format!("{SERVICE}.local."))?;
+        Ok(Self { daemon, receiver })
+    }
+
+    /// The next feeder resolved within `wait`. Blocks the calling thread, so
+    /// an async caller runs it on a blocking thread.
+    pub fn next(&self, wait: Duration) -> Browsed {
+        let deadline = std::time::Instant::now() + wait;
+        loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                return Browsed::Quiet;
+            }
+            let event = match self.receiver.recv_timeout(left) {
+                Ok(event) => event,
+                Err(mdns_sd::RecvTimeoutError::Timeout) => return Browsed::Quiet,
+                Err(mdns_sd::RecvTimeoutError::Disconnected) => return Browsed::Stopped,
+            };
+            match event {
+                mdns_sd::ServiceEvent::ServiceResolved(service) => {
+                    if let Some(feeder) = announced(&service) {
+                        return Browsed::Found(feeder);
+                    }
+                }
+                mdns_sd::ServiceEvent::SearchStopped(_) => return Browsed::Stopped,
+                _ => {}
+            }
         }
-        if let Some(ip) = info.get_addresses_v4().into_iter().next() {
-            break Some(SocketAddr::new(IpAddr::V4(ip), info.get_port()));
-        }
-    };
-    // Shutting down only stops the daemon's thread; a failure leaves
-    // nothing behind that matters to the caller.
-    let _ = daemon.shutdown();
-    found.ok_or_else(|| Error::NotFound(want[..16].to_owned()))
+    }
+
+    /// Stop browsing: a blocked [`Self::next`] answers [`Browsed::Stopped`].
+    pub fn stop(&self) {
+        // Shutting down only stops the daemon's thread, and a second
+        // shutdown fails harmlessly; nothing is left that matters.
+        let _ = self.daemon.shutdown();
+    }
+}
+
+impl Drop for Browse {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// A resolved `_wellfed._tcp` service as a feeder: one with an identity
+/// and an IPv4 address, since the device API listens on IPv4 only.
+fn announced(service: &mdns_sd::ResolvedService) -> Option<Announced> {
+    let identity = service.get_property_val_str("id")?;
+    let ip = service.get_addresses_v4().into_iter().next()?;
+    let fullname = service.get_fullname();
+    let name = fullname
+        .strip_suffix(service.ty_domain.as_str())
+        .and_then(|name| name.strip_suffix('.'))
+        .unwrap_or(fullname);
+    Some(Announced {
+        identity: identity.to_owned(),
+        address: SocketAddr::new(IpAddr::V4(ip), service.get_port()),
+        name: name.to_owned(),
+    })
 }
 
 /// The clock the sans-IO session reads: tokio's, so a paused test clock
@@ -304,6 +386,14 @@ impl Connection {
     /// The epoch the feeder's event numbers count in.
     pub fn epoch(&self) -> u32 {
         self.opened().epoch
+    }
+
+    /// Whether the feeder's build speaks this client's schema revision.
+    /// When it does not, only the frozen update path goes to it: every
+    /// other request and a subscription are refused with
+    /// [`wellfed_client::api::Error::OtherSchema`], never sent.
+    pub fn same_schema(&self) -> bool {
+        self.opened().same_schema()
     }
 
     /// The newest event or gap end received since [`Self::subscribe`].
@@ -621,6 +711,7 @@ mod tests {
             build: "fountain",
             role: WireRole::Owner,
             epoch: 1,
+            schema: wellfed_proto::api::SCHEMA,
         };
         let len = wellfed_proto::encode(&welcome, &mut plain).unwrap();
         let mut out = [0; FRAME_MAX];

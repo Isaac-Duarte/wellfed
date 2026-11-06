@@ -8,15 +8,18 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/clock/clock.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
 
 /// Choose a role (11.2), create one invite, and show it. An unanswered create
 /// is not sent again: at worst an unseen invite runs out by itself.
 Future<void> inviteSomeone(BuildContext context, FeederController feeder) async {
-  final ClientRole? role = await showModalBottomSheet<ClientRole>(
+  final ClientRole? role = await showPanel<ClientRole>(
     context: context,
-    isScrollControlled: true,
+    scrollControlled: true,
+    // The role sheet pads its own top.
+    dialogTop: Space.s1,
     builder: (_) => _RoleSheet(name: feeder.state.known.name),
   );
   if (role == null || !context.mounted) return;
@@ -24,11 +27,7 @@ Future<void> inviteSomeone(BuildContext context, FeederController feeder) async 
   final FeederReply reply = await feeder.ask(FeederRequest.createInvite(role: role));
   if (!context.mounted) return;
   if (reply is FeederReply_Invite) {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => InviteScreen(share: feeder.share, invite: reply.invite),
-      ),
-    );
+    await openModalPage<void>(context, (_) => InviteScreen(share: feeder.share, invite: reply.invite));
     // Whoever scanned it joined while it was on screen.
     await feeder.loadClients();
   } else {

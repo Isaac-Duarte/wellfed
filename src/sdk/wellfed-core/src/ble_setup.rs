@@ -49,6 +49,17 @@ mod tests {
         assert_eq!(parse_prefix([0xff, 0xff]), None);
     }
 
+    /// A client of any later build sets up, or recovers, a feeder of any
+    /// earlier one: the setup exchange is frozen with the device API's
+    /// update path, and so is how it travels over BLE.
+    #[test]
+    fn the_setup_transport_never_changes() {
+        assert_eq!(SERVICE, 0x504c_5345_5455_5000_8000_0000_0000_0000);
+        assert_eq!(CONTROL, SERVICE + 1);
+        assert_eq!(MAX_MESSAGE, 448);
+        assert_eq!(prefix(MAX_MESSAGE), Some([0xc0, 0x01]));
+    }
+
     #[test]
     fn uuids_go_to_the_stack_little_endian() {
         assert_eq!(uuid_le(CONTROL)[0], 1);

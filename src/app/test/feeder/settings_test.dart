@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/feeder/settings_tab.dart';
+import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
@@ -111,6 +112,24 @@ void main() {
       }
       expect(find.text('Diagnostics'), findsOneWidget);
     });
+
+    // A feeder of another build still takes an update from the Firmware
+    // row; one of another major takes none from this app.
+    for (final (ErrorKind kind, bool offered) in [(ErrorKind.otherBuild, true), (ErrorKind.version, false)]) {
+      testWidgets('after a session ended $kind, Firmware is ${offered ? '' : 'not '}offered', (tester) async {
+        final (_, FakeSession session) = await _settingsTab(tester);
+        session.updates.add(
+          SessionUpdate.closed(
+            error: BridgeError(kind: kind, message: 'another build'),
+          ),
+        );
+        unawaited(session.updates.close());
+        await tester.pump();
+        await settle(tester);
+        expect(find.text('Firmware'), offered ? findsOneWidget : findsNothing);
+        await tester.pump(const Duration(seconds: 3));
+      });
+    }
 
     testWidgets('a member sees what a member may change', (tester) async {
       await _settingsTab(tester, role: ClientRole.member);

@@ -16,7 +16,7 @@ String _uncertainWhy(FeedReason reason) => switch (reason) {
 
 /// Why the feeder refused a feed or its stop, in the sheet's words.
 String _refusal(FeedRefusal? refusal) => switch (refusal) {
-  FeedRefusal.forbidden => 'This phone may not feed this feeder.',
+  FeedRefusal.forbidden => 'This $deviceName may not feed this feeder.',
   FeedRefusal.busy => "It's busy saving a change. Try again in a moment.",
   FeedRefusal.fault => 'It stopped on a fault and feeds again after a restart.',
   FeedRefusal.portions => 'A feed is 1 to 48 portions.',

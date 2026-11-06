@@ -395,5 +395,10 @@ view_enum! {
         /// not reconnect.
         Revoked => "revoked",
         Disconnected => "disconnected",
+        /// The feeder runs a different build than this integration, which
+        /// takes nothing but an update; `build` names it. This session
+        /// will not reconnect: the integration sets up a new one, retrying
+        /// until the feeder is updated.
+        OtherBuild => "other_build",
     }
 }

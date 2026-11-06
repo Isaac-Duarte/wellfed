@@ -686,6 +686,8 @@ sealed class UpdateRefusal with _$UpdateRefusal {
   const factory UpdateRefusal.store() = UpdateRefusal_Store;
   const factory UpdateRefusal.unconfirmed() = UpdateRefusal_Unconfirmed;
   const factory UpdateRefusal.battery() = UpdateRefusal_Battery;
+  const factory UpdateRefusal.heldAsSessionKey() =
+      UpdateRefusal_HeldAsSessionKey;
 }
 
 enum UpdateStop {

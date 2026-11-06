@@ -4,8 +4,9 @@
 
 use super::handshake::fingerprint;
 use super::recovery::Rescue;
-use super::request::{Action, proto_role};
+use super::request::{Action, Reply, proto_role};
 use super::{Phase, Server, proto_encode, slot_id};
+use crate::clients::Role;
 use crate::pairing::Pairing;
 use crate::{
     Device, EventRead, HANDSHAKE_MS, IDLE_MS, KeyChange, KeyOutcome, Reader, Reason, Record,
@@ -152,6 +153,9 @@ impl Server {
         let Some(outcome) = device.keys_outcome(ticket_id) else {
             return Ok(false);
         };
+        // Read: an end from here on (a failed seal) must not leave the
+        // enrollment to `Server::settle_left` as well.
+        *ticket = None;
 
         let joined = match outcome {
             KeyOutcome::Done | KeyOutcome::Duplicate => Joined::Enrolled {
@@ -162,12 +166,7 @@ impl Server {
             KeyOutcome::NotFound | KeyOutcome::NotWritable => Joined::Refused(Refusal::NotWritable),
         };
         if matches!(joined, Joined::Enrolled { .. }) {
-            let body = EventBody::Enrolled {
-                client: fingerprint(key),
-                role: proto_role(*role),
-                path: proto::Path::Invite,
-            };
-            device.record(now_ms, body);
+            joined_event(now_ms, device, key, *role);
         }
         let len = proto_encode(&joined, &mut self.plain)?;
         let sealed = transport
@@ -241,10 +240,9 @@ impl Server {
         // The message borrows `plain`, which the answer reuses: take what
         // it says into an owned action first.
         self.plain_len = len;
-        let message: ClientMessage<'_> =
-            wellfed_proto::decode(&self.plain[..len]).map_err(|_| Reason::Malformed)?;
-        let (id, action) = match message {
-            ClientMessage::Subscribe { after, samples } => {
+        let (id, name, reply) = match wellfed_proto::decode::<ClientMessage<'_>>(&self.plain[..len])
+        {
+            Ok(ClientMessage::Subscribe { after, samples }) => {
                 if let Phase::Open {
                     events, samples: s, ..
                 } = &mut self.slots[index].phase
@@ -254,13 +252,24 @@ impl Server {
                 }
                 return Ok(());
             }
-            ClientMessage::Request { id, op } => (id, Action::from(op)),
+            Ok(ClientMessage::Request { id, op }) => {
+                let action = Action::from(op);
+                match self.request(index, id, action, now_ms, device, pairing, record) {
+                    Some(reply) => (id, action.name(), reply),
+                    None => return Ok(()),
+                }
+            }
+            // A request from a client of another build, with an op this one
+            // does not know: its id is readable, since a request is frozen
+            // at index 0, so it is refused, not the session ended. Bytes
+            // that are not a request at all still end it. One call answers
+            // both, so the answer's frame is inlined here once.
+            Err(_) => {
+                let id = request_id(&self.plain[..len]).ok_or(Reason::Malformed)?;
+                (id, Action::UNKNOWN, Reply::Refused(Refusal::Unavailable))
+            }
         };
-
-        match self.request(index, id, action, now_ms, device, pairing, record) {
-            Some(reply) => self.answer(index, id, action.name(), reply, now_ms, device, record),
-            None => Ok(()),
-        }
+        self.answer(index, id, name, reply, now_ms, device, record)
     }
 
     /// The client list borrows labels from the table, so it is encoded here.
@@ -408,5 +417,24 @@ impl Server {
             *log = Some(Some(batch.seq));
         }
         self.seal_plain(index, len).map(|()| true)
+    }
+}
+
+/// An invite's key was enrolled, with its joining session or after it.
+pub(super) fn joined_event<D: Device>(now_ms: u32, device: &mut D, key: &[u8; 32], role: Role) {
+    let body = EventBody::Enrolled {
+        client: fingerprint(key),
+        role: proto_role(role),
+        path: proto::Path::Invite,
+    };
+    device.record(now_ms, body);
+}
+
+/// The id of an undecodable request: the frozen request's tag (0), then
+/// its 16-byte id, read without decoding the op behind it.
+fn request_id(plain: &[u8]) -> Option<RequestId> {
+    match plain.split_first() {
+        Some((0, rest)) => rest.first_chunk().copied(),
+        _ => None,
     }
 }

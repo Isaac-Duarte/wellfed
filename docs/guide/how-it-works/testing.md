@@ -18,7 +18,8 @@ Each row links to its entry, which has the numbers and what the fix did and didn
 | [A test build's trial](#installed-a-test-build-which-rolled-itself-back) | A Wi-Fi retry starved the supervising task, and the build rolled itself back. | **Fixed** |
 | [Installing from stock](#installed-from-stock-on-a-route-weve-since-removed) | Stock refused the install, then our backup check refused a correct copy. | **Fixed** |
 | [The clock across an install](#compared-the-clock-with-the-bench-computer) | The clock read 12.2 s behind while claiming 5.5 s of error. | **Fixed** |
-| [Two history readers](#two-clients-reading-history-at-once) | With the server's stream open, a second client got one backlog event in 25 s and no live ones. | **Partly fixed** |
+| [A 40 s hotspot drop](#dropped-the-hotspot-for-40-s) | The feeder took 64 to 68 s to answer again after the hotspot came back. | **Fixed** |
+| [Two history readers](#two-clients-reading-history-at-once) | With the server's stream open, a second client got one backlog event in 25 s and no live ones. | **Fixed** |
 | [Power cuts with no cells](#cut-the-power-with-no-cells-fitted) | The record read a 3,861 mV battery with no batteries fitted. | **Partly fixed** |
 | [72 hours on schedules alone](#72-hours-on-schedules-alone) | Offline during a feed, the device log lost that meal's result lines, 3 times in 3. | **Passed with gaps** |
 
@@ -27,7 +28,6 @@ These entries are **Open**:
 - [The 8-hour fault run](#the-8-hour-fault-run-six-tries)
 - [The motor leads through a reset mid-drive](#looked-at-the-motor-leads-through-a-reset-mid-drive)
 - [A real jam](#tried-and-failed-to-jam-it-on-purpose)
-- [Recovering from a 40 s hotspot drop](#dropped-the-hotspot-for-40-s)
 
 ## How far this goes
 
@@ -123,6 +123,7 @@ After a cut, the access point still held the old connection and rejected the fir
 
 - **The first 20 cuts:** 19 met that rejection, and 9 of those hung the chip until the watchdog reset it. The trail pointed at the Wi-Fi driver powering down under a write, so we turned its idle power save off.
 - **The next 20 cuts:** all 20 met the rejection and none hung.
+- **Nov 6, after the Wi-Fi task moved from C to Rust:** 20 more cuts, 18 met the rejection, none hung, and every boot joined.
 
 ### Cut the power mid-feed with the app watching
 
@@ -424,14 +425,14 @@ Through a restart, a power cut and a 38 s Wi-Fi drop.
 
 ### Two clients reading history at once
 
-*Oct 28 and 31*
+*Oct 28, 31 and Nov 6*
 
-**Partly fixed.**
+**Fixed.**
 
 - **Oct 28:** with the server's stream open, a second client got one backlog event in 25 s and no live ones.
 - **Oct 31, after the fix:** two readers from different points, five times, each got every event once, in about 0.6 s.
 
-The retest beside a server is still owed.
+- **Nov 6:** beside a client following live with samples on, as the server's stream does, a second client caught up 674 events in 0.46 s, in order. Both got two new events at once, and the first client's samples kept their 5 s pace. The first client was the CLI, not the server itself.
 
 ### Turned Wi-Fi leisure power save off
 
@@ -453,9 +454,16 @@ Current draw wasn't measured, and a Bluetooth install on this setting hasn't run
 
 ### Dropped the hotspot for 40 s
 
-*Nov 1 · Three times*
+*Nov 1 and 6 · 28 times*
 
-**Open.** With power save off, the feeder took 64 to 68 s to answer again. The first join fails and the next waits out a 30 s backoff. One earlier drop with power save on, on another build, showed the same failed first join and backoff, but we didn't time it. We don't know why the first one fails.
+**Fixed.**
+
+- **Nov 1, three drops:** with power save off, the feeder took 64 to 68 s to answer again. The first join failed and the next waited out a 30 s backoff. One earlier drop with power save on, on another build, showed the same, untimed.
+- **Why the first join fails:** the Wi-Fi driver offers the key it cached from the last join. The restarted hotspot no longer has it and rejects the join (status 53), and the driver then drops it, so the next join runs the full handshake and succeeds.
+- **Why the wait was 30 s:** the wait between tries doubled the whole time the network was gone, and the rejected join waited the longest.
+- **Nov 6, one drop:** the feeder now starts the waits over when the network comes back. The rejected join was retried after 1 s, and the feeder had its address 34.6 s after the hotspot returned. Most of what's left is the wait the outage grew: the try before it just missed the hotspot's return, and the next came 20 s later.
+- **Nov 6, twenty more drops on that build:** each rejoin took 36 to 40 s, with no fault or restart.
+- **Nov 6, three drops on the next build:** while the network is gone the wait between tries now stops growing at 10 s. The feeder had its address 29, 34 and 33 s after the hotspot returned, with no fault. What's left is the scans themselves (4 s each), the rejected join and the join that succeeds (5 s each).
 
 ## Batteries
 

@@ -16,7 +16,7 @@ use wellfed_formats::hex;
 use wellfed_install::event::Event;
 use wellfed_install::push::push;
 use wellfed_install::{Discovery, Review};
-use wellfed_model::{Answer, Op, Readiness, Status, UpdateView};
+use wellfed_model::{Answer, Op, Readiness, UpdateView};
 use wellfed_session::noise::Keypair;
 
 use crate::api::error::{BridgeError, ErrorKind};
@@ -276,15 +276,11 @@ async fn confirm(
     tokio::time::sleep(RESTART).await;
     let deadline = Instant::now() + CONFIRM_WAIT;
     while Instant::now() < deadline {
-        if let Some((status, view)) = reading(connect).await {
-            if status.bank == 0 || !status.build.eq_ignore_ascii_case(served) {
+        if let Some(read) = reading(connect).await {
+            if read.view.bank == 0 || !read.build.eq_ignore_ascii_case(served) {
                 return UpdateEnd::WentBack;
             }
-            if view.min_version >= version
-                || status
-                    .feeder()
-                    .is_some_and(|feeder| feeder.readiness == Readiness::Ready)
-            {
+            if read.view.min_version >= version || read.ready {
                 return UpdateEnd::Confirmed;
             }
         }
@@ -293,20 +289,40 @@ async fn confirm(
     UpdateEnd::Unconfirmed
 }
 
-/// What a fresh session says it runs, or `None` while it cannot say.
+/// What a fresh session says it runs.
+struct Reading {
+    /// The build its welcome names.
+    build: String,
+    view: UpdateView,
+    /// Whether it reports itself ready to feed.
+    ready: bool,
+}
+
+/// What a fresh session says it runs, or `None` while it cannot say. The
+/// bank comes from the update state and the build from the welcome, both
+/// frozen, so a trial that fell back to an older bank 0 reads as having
+/// gone back. Readiness is not frozen, so it is read only from a build of
+/// this app's revision; another build is not the served one anyway.
 async fn reading(
     connect: &impl AsyncFn() -> Result<Connection, wellfed_install::Error>,
-) -> Option<(Status, UpdateView)> {
+) -> Option<Reading> {
     let mut session = connect().await.ok()?;
-    let id = wellfed_install::session::random().ok()?;
-    let Answer::Status(status) = session.ask(id, &Op::Status).await.ok()? else {
-        return None;
-    };
+    let build = session.build().to_owned();
     let id = wellfed_install::session::random().ok()?;
     let Answer::Update(view) = session.ask(id, &Op::UpdateState).await.ok()? else {
         return None;
     };
-    Some((status, view))
+    let mut ready = false;
+    if session.same_schema() {
+        let id = wellfed_install::session::random().ok()?;
+        let Answer::Status(status) = session.ask(id, &Op::Status).await.ok()? else {
+            return None;
+        };
+        ready = status
+            .feeder()
+            .is_some_and(|feeder| feeder.readiness == Readiness::Ready);
+    }
+    Some(Reading { build, view, ready })
 }
 
 #[cfg(test)]

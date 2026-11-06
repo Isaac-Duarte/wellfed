@@ -96,6 +96,9 @@ pub enum ServerConnection {
     Online,
     /// The feeder refused the server's key: removed or reset.
     Refused,
+    /// The feeder runs a different build than the server, so it takes
+    /// nothing but an update, which the Firmware screen still sends.
+    OtherBuild,
 }
 
 /// One adopted feeder, as `GET /feeders` lists it.

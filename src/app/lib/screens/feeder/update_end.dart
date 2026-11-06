@@ -10,6 +10,7 @@ import 'package:wellfed/state/update/update.dart';
 import 'package:wellfed/state/update/update_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/replies.dart';
@@ -50,7 +51,7 @@ import 'package:wellfed/widgets/replies.dart';
     "The new version didn't start properly, so it runs its other copy of "
         'Wellfed. That copy can feed, and may be older than the one it ran.',
   ),
-  UpdateEnd_Failed(:final detail) => ("This phone couldn't send it", 'Nothing was installed. $detail'),
+  UpdateEnd_Failed(:final detail) => ("This $deviceName couldn't send it", 'Nothing was installed. $detail'),
 };
 
 /// Why the recovery copy (bank 0) stops an update, and what fixes it. The

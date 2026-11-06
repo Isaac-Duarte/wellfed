@@ -2,22 +2,46 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/feeder_drawing.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/settings_list.dart';
 
-/// The ways in, the common one first: most feeders arrive on the vendor's
-/// firmware. A reset or a lost owner is rare, so those sit below as plain rows.
+/// The ways in, under the question that picks one.
 class AddFeederScreen extends StatelessWidget {
   const AddFeederScreen({super.key});
 
   @override
-  Widget build(BuildContext context) => StepScaffold(
-    title: 'Add a feeder',
-    body: 'How is this feeder getting to you?',
-    content: [
-      _InstallCard(onTap: () => context.push('/install')),
+  Widget build(BuildContext context) =>
+      const StepScaffold(title: 'Add a feeder', body: 'How is this feeder getting to you?', content: [AddFeederWays()]);
+}
+
+/// The ways in, the common one first: most feeders arrive on the vendor's
+/// firmware. A reset or a lost owner is rare, so those sit below as plain rows.
+/// The desktop Welcome lists them too, beside its own picture of the feeder,
+/// so there the install card goes without one.
+class AddFeederWays extends StatelessWidget {
+  const AddFeederWays({super.key, this.pictured = true});
+
+  /// Whether the install card shows the feeder.
+  final bool pictured;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (pictured)
+        _InstallCard(onTap: () => context.push('/install'))
+      else
+        RouteCard(
+          glyph: Glyph.install,
+          title: 'Install Wellfed',
+          body:
+              "For a feeder still on the vendor's app. This $deviceName replaces its firmware and keeps a backup "
+              'of the original.',
+          onTap: () => context.push('/install'),
+        ),
       const SizedBox(height: Space.s3),
       RouteCard(
         glyph: Glyph.add,
@@ -39,7 +63,7 @@ class AddFeederScreen extends StatelessWidget {
             ),
             SettingsLink(
               'Recover a feeder',
-              'On your Wi-Fi, but no phone can open it',
+              'On your Wi-Fi, but no $anyDevice can open it',
               onTap: () => context.push('/recover'),
             ),
           ],
@@ -76,7 +100,7 @@ class _InstallCard extends StatelessWidget {
                 ),
                 const SizedBox(height: Space.s1),
                 Text(
-                  "For a feeder still on the vendor's app. This phone replaces its firmware and keeps a backup "
+                  "For a feeder still on the vendor's app. This $deviceName replaces its firmware and keeps a backup "
                   'of the original.',
                   style: TextStyle(fontSize: Sizes.base, height: 1.45, color: c.textMuted),
                 ),

@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use wellfed_proto::api::{
     self as proto, ClientMessage, DeviceMessage, FRAME_MAX, FoodLevel, Hello, Op, Outcome,
-    PROLOGUE, PROTOCOL_MAJOR, Welcome,
+    PROLOGUE, PROTOCOL_MAJOR, UpdateOp, Welcome,
 };
 use wellfed_proto::device::Model;
 use wellfed_session::frame::{self, PREFIX};
@@ -103,19 +103,19 @@ impl State {
     fn answer(&mut self, op: &Op<'_>) -> Outcome<'static> {
         match op {
             Op::Status => Outcome::Status(status()),
-            Op::OfferUpdate { .. } => {
+            Op::Update(UpdateOp::Offer { .. }) => {
                 let first: Vec<u32> = self.remaining().into_iter().take(1).collect();
                 Outcome::Update(self.view(&first))
             }
-            Op::UpdateChunk { offset, .. } => {
+            Op::Update(UpdateOp::Chunk { offset, .. }) => {
                 if !self.received.contains(offset) {
                     self.received.push(*offset);
                 }
                 // Between sectors: nothing wanted until the state is read.
                 Outcome::Update(self.view(&[]))
             }
-            Op::UpdateState => Outcome::Update(self.view(&self.remaining())),
-            Op::CancelUpdate => Outcome::Update(proto::UpdateView {
+            Op::Update(UpdateOp::State) => Outcome::Update(self.view(&self.remaining())),
+            Op::Update(UpdateOp::Cancel) => Outcome::Update(proto::UpdateView {
                 phase: proto::UpdatePhase::Idle,
                 stopped: Some(proto::UpdateStop::Cancelled),
                 ..self.view(&[])
@@ -128,10 +128,10 @@ impl State {
 fn seen(op: &Op<'_>) -> Seen {
     match op {
         Op::Status => Seen::Status,
-        Op::OfferUpdate { .. } => Seen::Offer,
-        Op::UpdateChunk { offset, .. } => Seen::Chunk(*offset),
-        Op::UpdateState => Seen::State,
-        Op::CancelUpdate => Seen::Cancel,
+        Op::Update(UpdateOp::Offer { .. }) => Seen::Offer,
+        Op::Update(UpdateOp::Chunk { offset, .. }) => Seen::Chunk(*offset),
+        Op::Update(UpdateOp::State) => Seen::State,
+        Op::Update(UpdateOp::Cancel) => Seen::Cancel,
         _ => Seen::Other,
     }
 }
@@ -227,6 +227,7 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>) -> std::io::Result<()> {
         build: "garbled",
         role: proto::Role::Owner,
         epoch: 1,
+        schema: proto::SCHEMA,
     };
     let mut payload = [0; 128];
     let len = wellfed_proto::encode(&welcome, &mut payload).unwrap();
@@ -246,11 +247,15 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>) -> std::io::Result<()> {
         let (garbled, result) = {
             let mut state = lock(state);
             let seen = seen(&op);
+            let mut opening = false;
             if let Some(session) = state.sessions.last_mut() {
                 session.push(seen);
+                opening = session.len() == 1;
             }
             let result = state.answer(&op);
-            let garbled = state.left > 0 && state.garble.hits(seen);
+            // Each session opens with the bank's read, which is not the
+            // install's: the garbled answer is one the installer reads.
+            let garbled = state.left > 0 && !opening && state.garble.hits(seen);
             if garbled {
                 state.left -= 1;
             }
@@ -346,8 +351,8 @@ fn a_garbled_chunk_answer_resumes_from_the_state() {
     result.unwrap();
     let sessions = feeder.sessions();
     assert_eq!(sessions.len(), 2, "{sessions:?}");
-    assert_eq!(sessions[0], [Seen::Status, Seen::Offer, Seen::Chunk(0)]);
-    assert_eq!(sessions[1][..2], [Seen::Status, Seen::State]);
+    assert_eq!(sessions[0], [Seen::State, Seen::Offer, Seen::Chunk(0)]);
+    assert_eq!(sessions[1][..2], [Seen::State, Seen::State]);
 
     let note = garbled_note(&notes);
     assert!(note.contains("(1 of 3 allowed) on bank 0"), "{note}");
@@ -368,7 +373,7 @@ fn a_garbled_state_answer_reads_the_state_again() {
     let sessions = feeder.sessions();
     assert_eq!(sessions.len(), 2, "{sessions:?}");
     assert_eq!(sessions[0].last(), Some(&Seen::State));
-    assert_eq!(sessions[1][..2], [Seen::Status, Seen::State]);
+    assert_eq!(sessions[1][..2], [Seen::State, Seen::State]);
     assert!(garbled_note(&notes).contains("outstanding State;"));
 }
 
@@ -383,8 +388,8 @@ fn a_garbled_cancel_answer_cancels_again() {
     assert_eq!(
         feeder.sessions(),
         [
-            vec![Seen::Status, Seen::Cancel],
-            vec![Seen::Status, Seen::Cancel]
+            vec![Seen::State, Seen::Cancel],
+            vec![Seen::State, Seen::Cancel]
         ]
     );
     assert!(garbled_note(&notes).contains("outstanding Cancel;"));
@@ -411,6 +416,6 @@ fn a_fourth_garbled_answer_ends_the_install() {
     assert!(
         sessions
             .iter()
-            .all(|session| session == &[Seen::Status, Seen::Offer])
+            .all(|session| session == &[Seen::State, Seen::Offer])
     );
 }

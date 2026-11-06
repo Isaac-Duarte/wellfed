@@ -205,6 +205,10 @@ enum ServerConnection {
 
   /// The feeder refused the server's key: removed or reset.
   refused,
+
+  /// The feeder runs a different build than the server, so it takes
+  /// nothing but an update, which the Firmware screen still sends.
+  otherBuild,
 }
 
 /// One history entry, with when the server received it.

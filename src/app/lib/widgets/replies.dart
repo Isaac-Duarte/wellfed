@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/widgets/desktop.dart';
 
 /// Why a request came to nothing, or may have: `null` once it worked. An
 /// uncertain write says so, and nothing sends it again.
@@ -16,7 +17,7 @@ String? replyProblem(FeederReply reply) => switch (reply) {
 };
 
 String refusalWords(FeederRefusal refusal) => switch (refusal) {
-  FeederRefusal_Forbidden() => "This phone isn't allowed to do that here.",
+  FeederRefusal_Forbidden() => "This $deviceName isn't allowed to do that here.",
   FeederRefusal_Stale() => 'This changed just now. Look again and decide again.',
   FeederRefusal_Busy() => "It's busy. Try again in a moment.",
   FeederRefusal_Unavailable() => "This feeder's firmware doesn't do that yet.",

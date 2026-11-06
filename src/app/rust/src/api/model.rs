@@ -190,6 +190,7 @@ pub enum _UpdateRefusal {
     Store,
     Unconfirmed,
     Battery,
+    HeldAsSessionKey,
 }
 
 #[frb(mirror(Bank0Blocked))]

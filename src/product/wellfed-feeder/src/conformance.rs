@@ -17,8 +17,8 @@
 use wellfed_core::store::slot::crc32;
 use wellfed_proto::api::{
     Blocked, CurrentUnit, Desiccant, DeviceStatus, Event, EventBody, FeedOutcome, FeedReason,
-    FeederStatus, FoodLevel, Readiness, Refusal, Resets, Source, Stats, StatsSection, Status,
-    TraceSummary,
+    FeederStatus, FoodLevel, FrozenRefusal, Readiness, Refusal, Resets, Source, Stats,
+    StatsSection, Status, TraceSummary,
 };
 use wellfed_proto::device::{DeviceKind, Model};
 
@@ -959,7 +959,7 @@ pub fn a_reset_hold_is_refused_while_feeding_and_marked_at_rest(rig: &mut impl R
     };
     assert_eq!(
         device(rig, 70, |device| device.update(offer)),
-        Err(Refusal::Busy)
+        Err(FrozenRefusal::Busy)
     );
     rig.write();
     assert_eq!(
@@ -971,7 +971,7 @@ pub fn a_reset_hold_is_refused_while_feeding_and_marked_at_rest(rig: &mut impl R
     );
     assert_eq!(
         device(rig, 90, |device| device.update(offer)),
-        Err(Refusal::Busy)
+        Err(FrozenRefusal::Busy)
     );
 }
 

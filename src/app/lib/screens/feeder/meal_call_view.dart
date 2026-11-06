@@ -88,7 +88,7 @@ class _RecordButton extends StatelessWidget {
           dimension: _ring,
           child: Center(
             child: _Round(
-              tooltip: 'Record on this phone',
+              tooltip: 'Record on this $deviceName',
               color: on ? c.accent : c.sunken,
               onTap: onRecord,
               child: StrokeIcon(Glyph.mic, size: 38, color: on ? c.accentText : c.textMuted, weight: 2),

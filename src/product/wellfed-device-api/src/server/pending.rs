@@ -94,14 +94,13 @@ impl Server {
                     Reply::Refused(Refusal::NotWritable)
                 }
             },
-            Waiting::Keys { ticket, revoked } => match device.keys_outcome(ticket) {
+            Waiting::Keys {
+                ticket,
+                revoked: revoked_key,
+            } => match device.keys_outcome(ticket) {
                 None => return Ok(None),
                 Some(KeyOutcome::Done) => {
-                    let body = EventBody::Revoked {
-                        client: fingerprint(&revoked),
-                        by,
-                    };
-                    device.record(now_ms, body);
+                    revoked(now_ms, device, &revoked_key, by);
                     Reply::Done(None)
                 }
                 Some(KeyOutcome::NotFound) => Reply::Refused(Refusal::NotFound),
@@ -118,7 +117,7 @@ impl Server {
                     });
                     Reply::Done(None)
                 }
-                Some(Err(refusal)) => Reply::Refused(refusal),
+                Some(Err(refusal)) => Reply::Refused(refusal.into()),
             },
             Waiting::Signer { key, label } => match self.signer {
                 Some(pairing::Event::Admit {
@@ -151,7 +150,7 @@ impl Server {
                 Some(KeyOutcome::Duplicate)
                     if find(&self.clients, &key).is_some_and(|c| c.role != Role::UpdateSigner) =>
                 {
-                    Reply::Refused(Refusal::Invalid)
+                    Reply::Refused(Refusal::Update(UpdateRefusal::HeldAsSessionKey))
                 }
                 Some(outcome @ (KeyOutcome::Done | KeyOutcome::Duplicate)) => {
                     signer_landed(now_ms, device, outcome, slot_id(index), &key, record);
@@ -300,6 +299,15 @@ pub(super) fn signer_landed<D: Device>(
         change: UpdateKeyChange::Enrolled,
         key: key_id(key),
     });
+}
+
+/// A revocation went through, with its session or after it.
+pub(super) fn revoked<D: Device>(now_ms: u32, device: &mut D, key: &[u8; 32], by: Source) {
+    let body = EventBody::Revoked {
+        client: fingerprint(key),
+        by,
+    };
+    device.record(now_ms, body);
 }
 
 /// The zone's text, copied out of the device's view for the answer to

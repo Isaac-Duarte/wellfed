@@ -27,7 +27,6 @@ use wellfed_proto::api::{
     self as proto, Fingerprint, Hello, Open, OpenRefusal, PROLOGUE, PROTOCOL_MAJOR,
     PROTOCOL_MAJOR_MIN, Welcome,
 };
-use wellfed_proto::device::Model;
 use wellfed_session::noise::{Handshake, Keypair, Pattern, Role as NoiseRole};
 
 impl Server {
@@ -137,9 +136,8 @@ impl Server {
                             let Some(epoch) = device.epoch() else {
                                 return Ok(false);
                             };
-                            let welcome =
-                                welcome(refusal, role, device.model(), device.build(), epoch);
-                            let len = proto_encode(&welcome, &mut self.plain)?;
+                            let len =
+                                encode_welcome(refusal, role, device, epoch, &mut self.plain)?;
                             &self.plain[..len]
                         }
                         _ => &[][..],
@@ -284,24 +282,30 @@ fn admit(
     session_role.is_none().then_some(OpenRefusal::Unknown)
 }
 
-fn welcome(
+/// The welcome, encoded into `out`; its length. Out of line, so the
+/// `Welcome` and its encoder live in this frame alone, never in the
+/// handshake's, which every pass of the loop goes through.
+#[inline(never)]
+fn encode_welcome<D: Device>(
     refusal: Option<OpenRefusal>,
     role: Option<Role>,
-    model: Model,
-    build: &str,
+    device: &D,
     epoch: u32,
-) -> Welcome<'_> {
-    match (refusal, role) {
+    out: &mut [u8],
+) -> Result<usize, Reason> {
+    let welcome = match (refusal, role) {
         (None, Some(role)) => Welcome::Open {
             major: PROTOCOL_MAJOR,
-            model,
-            build,
+            model: device.model(),
+            build: device.build(),
             role: proto_role(role),
             epoch,
+            schema: device.schema(),
         },
         (Some(refusal), _) => Welcome::Refused(refusal),
         (None, None) => Welcome::Refused(OpenRefusal::Unknown),
-    }
+    };
+    proto_encode(&welcome, out)
 }
 
 pub(super) fn find<'a>(

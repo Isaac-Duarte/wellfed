@@ -16,6 +16,7 @@ import 'package:wellfed/state/server/household.dart';
 import 'package:wellfed/state/server/pet.dart';
 import 'package:wellfed/state/server/server.dart';
 import 'package:wellfed/state/server/server_history.dart';
+import 'package:wellfed/widgets/desktop.dart';
 
 /// The owner's server's screens, and the controllers they make. The app
 /// builds one; a screen that has none shows the app as it is with no server.
@@ -49,15 +50,17 @@ class ServerScreens {
   /// The account screen, or adding a server when there is none.
   Future<void> open(BuildContext context) async {
     if (server.state is! ServerLinked) {
-      await _push(context, (_) => AddServerScreen(newFlow: newAddServer));
+      await _push(context, (_) => FormWidth(child: AddServerScreen(newFlow: newAddServer)));
       if (server.state is! ServerLinked || !context.mounted) return;
     }
     await _push(
       context,
-      (context) => AccountScreen(
-        server: server,
-        household: () => unawaited(openHousehold(context)),
-        logInAgain: () => unawaited(_push(context, (_) => AddServerScreen(newFlow: newAddServer))),
+      (context) => FormWidth(
+        child: AccountScreen(
+          server: server,
+          household: () => unawaited(openHousehold(context)),
+          logInAgain: () => unawaited(_push(context, (_) => FormWidth(child: AddServerScreen(newFlow: newAddServer)))),
+        ),
       ),
     );
   }

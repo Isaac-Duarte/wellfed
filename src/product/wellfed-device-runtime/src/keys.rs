@@ -9,7 +9,14 @@
 //! naming the [`KeyResult`]. A second change before the writer takes the
 //! first is [`Requested::Busy`], never queued behind it. A caller that must
 //! know the result (BLE setup answers its client) keeps the [`ticket`] of
-//! its change and reads [`outcome`].
+//! its change and reads [`outcome`]. The mailbox remembers the last
+//! [`KEYS_FINISHED`] results, so a ticket stays readable after newer
+//! changes finish behind it.
+//!
+//! The result reaches the history only when the loop reads it: the writer
+//! applies a change, and the device API records its event (a revocation's)
+//! on a later pass. A restart in between applies the change with no event;
+//! that window is not closed here.
 //!
 //! The other way, the writer publishes the identity secret it holds with
 //! [`publish_identity`], each time with a new generation, and the loop
@@ -21,7 +28,9 @@
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use wellfed_device_api::clients::{CLIENTS as STORE_CLIENTS, Client, Role};
-pub use wellfed_device_api::mailbox::{ClientChange as Change, KeyResult, Requested};
+pub use wellfed_device_api::mailbox::{
+    ClientChange as Change, KEYS_FINISHED, KeyResult, Requested,
+};
 
 use wellfed_hal::cell::TaskCell;
 use wellfed_hal::ota::signers;
@@ -47,9 +56,13 @@ static PENDING: TaskCell<Option<Change>> = TaskCell::new(None);
 static STATE: AtomicU8 = AtomicU8::new(Hand::Empty as u8);
 /// The latest queued change's ticket; only the claimant writes it.
 static TICKET: AtomicU32 = AtomicU32::new(0);
-/// The last finished change: its ticket's low 24 bits, then its result's
-/// index in `KeyResult::ALL` plus one (0 before any).
-static FINISHED: AtomicU32 = AtomicU32::new(0);
+/// The last finished changes, a ring the writer fills at `NEXT`: each its
+/// ticket's low 24 bits, then its result's index in `KeyResult::ALL` plus
+/// one (0 for an entry never written). Only the writer stores either; the
+/// loop reads each entry whole, so it sees an entry before or after its
+/// overwrite, never a mix.
+static FINISHED: [AtomicU32; KEYS_FINISHED] = [const { AtomicU32::new(0) }; KEYS_FINISHED];
+static NEXT: AtomicU32 = AtomicU32::new(0);
 
 /// Written by the writer and read by the loop, each with the scheduler
 /// paused; `GENERATION` is 0 until the first publish.
@@ -92,10 +105,10 @@ pub fn ticket() -> u32 {
 
 /// The result of the change with `ticket`, once the writer has finished it.
 pub fn outcome(ticket: u32) -> Option<KeyResult> {
-    let finished = FINISHED.load(Ordering::Acquire);
-    if finished >> 8 != ticket & 0x00ff_ffff {
-        return None;
-    }
+    let finished = FINISHED
+        .iter()
+        .map(|entry| entry.load(Ordering::Acquire))
+        .find(|&finished| finished & 0xff != 0 && finished >> 8 == ticket & 0x00ff_ffff)?;
     let index = usize::try_from(finished & 0xff).ok()?.checked_sub(1)?;
     KeyResult::ALL.get(index).copied()
 }
@@ -116,10 +129,13 @@ pub fn finish(result: KeyResult) {
         .position(|&r| r == result)
         .and_then(|i| u32::try_from(i + 1).ok())
         .unwrap_or(0);
-    FINISHED.store(
+    let next = NEXT.load(Ordering::Acquire);
+    let slot = usize::try_from(next).unwrap_or(0) % KEYS_FINISHED;
+    FINISHED[slot].store(
         (TICKET.load(Ordering::Acquire) & 0x00ff_ffff) << 8 | index,
         Ordering::Release,
     );
+    NEXT.store(next.wrapping_add(1), Ordering::Release);
     STATE.store(Hand::Empty as u8, Ordering::Release);
 }
 
@@ -211,7 +227,10 @@ pub fn reset() {
     RESTART.store(false, Ordering::Release);
     STATE.store(Hand::Empty as u8, Ordering::Release);
     TICKET.store(0, Ordering::Release);
-    FINISHED.store(0, Ordering::Release);
+    for entry in &FINISHED {
+        entry.store(0, Ordering::Release);
+    }
+    NEXT.store(0, Ordering::Release);
     GENERATION.store(0, Ordering::Release);
     // SAFETY: host tests serialize on this module's state.
     unsafe { *IDENTITY.get() = [0; 32] };

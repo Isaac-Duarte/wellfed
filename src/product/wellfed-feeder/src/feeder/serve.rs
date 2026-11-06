@@ -33,8 +33,9 @@ use wellfed_core::ota::offer::{KeyStatement, key_id};
 use wellfed_core::tone::Tune;
 use wellfed_proto::api::{
     self as proto, BANK1_PAGE_MAX, Bank1Page, Battery, Desiccant, DeviceStatus, EventBody,
-    FeederStatus, Metric, PORT, Power, Readiness, Refusal, Sample, Source, Stats, StatsSection,
-    Status, Supply, TASKS_MAX, TaskStack as WireTask, TracePage, UpdateRefusal, UpdateView,
+    FeederStatus, FrozenRefusal, Metric, PORT, Power, Readiness, Refusal, Sample, Source, Stats,
+    StatsSection, Status, Supply, TASKS_MAX, TaskStack as WireTask, TracePage, UpdateRefusal,
+    UpdateView,
 };
 use wellfed_proto::device::Model;
 use wellfed_proto::trace::PAGE_MAX;
@@ -1028,12 +1029,12 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
     /// mid-write costs nothing (the marker comes last), but the radio goes
     /// off within seconds and the install would time out. A cancel and a
     /// key statement still go through.
-    fn update(&mut self, request: UpdateRequest<'_>) -> Result<u32, Refusal> {
+    fn update(&mut self, request: UpdateRequest<'_>) -> Result<u32, FrozenRefusal> {
         if matches!(request, UpdateRequest::Offer { .. }) && self.supply.adapter == Some(false) {
-            return Err(Refusal::Update(UpdateRefusal::Battery));
+            return Err(FrozenRefusal::Update(UpdateRefusal::Battery));
         }
         let ticket = match request {
-            UpdateRequest::Offer { .. } if self.reset => return Err(Refusal::Busy),
+            UpdateRequest::Offer { .. } if self.reset => return Err(FrozenRefusal::Busy),
             UpdateRequest::Offer {
                 manifest,
                 downgrade,
@@ -1045,7 +1046,7 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
         ticket.map_err(wire::refusal)
     }
 
-    fn update_outcome(&mut self, ticket: u32) -> Option<Result<UpdateAnswer, Refusal>> {
+    fn update_outcome(&mut self, ticket: u32) -> Option<Result<UpdateAnswer, FrozenRefusal>> {
         self.platform
             .update_outcome(ticket)
             .map(|answer| match answer {
@@ -1062,20 +1063,20 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
             })
     }
 
-    fn update_chunk(&mut self, offset: u32, data: &[u8]) -> Result<UpdateView, Refusal> {
-        let progress = self.platform.update_progress().ok_or(Refusal::Busy)?;
+    fn update_chunk(&mut self, offset: u32, data: &[u8]) -> Result<UpdateView, FrozenRefusal> {
+        let progress = self.platform.update_progress().ok_or(FrozenRefusal::Busy)?;
         match progress.phase {
             Phase::Receiving => {}
             // The last chunk's answer may have been lost: the state says so.
             Phase::Activated => return Ok(wire::view(&progress)),
             Phase::Idle | Phase::Checking | Phase::GivingWay => {
-                return Err(Refusal::Update(UpdateRefusal::NotInstalling));
+                return Err(FrozenRefusal::Update(UpdateRefusal::NotInstalling));
             }
         }
         self.platform
             .update_chunk(offset, data)
             .map_err(wire::refusal)?;
-        let progress = self.platform.update_progress().ok_or(Refusal::Busy)?;
+        let progress = self.platform.update_progress().ok_or(FrozenRefusal::Busy)?;
         Ok(wire::view(&progress))
     }
 

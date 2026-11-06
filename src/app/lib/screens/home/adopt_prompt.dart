@@ -5,6 +5,7 @@ import 'package:wellfed/screens/server/server_words.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/adopt.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/layout.dart';
 
 /// A feeder this phone paired before the home server, which the server does
@@ -30,7 +31,7 @@ class AdoptPrompt extends StatelessWidget {
         AdoptDone() => (Tone.neutral, '$name is on the home server.'),
         AdoptUnclaimed(:final error) => (
           Tone.warning,
-          '$name is on the server, but this phone is not yours there yet. ${serverErrorWords(error)}',
+          '$name is on the server, but this $deviceName is not yours there yet. ${serverErrorWords(error)}',
         ),
         AdoptUnsettled() => (
           Tone.warning,

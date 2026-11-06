@@ -29,6 +29,8 @@ pub(crate) struct Command {
 pub struct Operation {
     steps: mpsc::Sender<Command>,
     pub(crate) link: watch::Receiver<Link>,
+    /// The build the open session's welcome names.
+    pub(crate) build: watch::Receiver<Option<String>>,
     answer: Duration,
     /// How an install on this turn waits between its steps.
     pub(crate) pace: Pace,
@@ -100,6 +102,7 @@ impl LongLane {
         Ok(Operation {
             steps: self.steps,
             link: self.link,
+            build: self.build,
             answer: timing.answer,
             pace: timing.pace,
             random,
@@ -116,8 +119,13 @@ async fn send(
     request: RequestId,
     op: Op,
 ) -> Result<Answer, AskError> {
-    if link != Link::Online {
-        return Err(AskError::Offline);
+    // A feeder of another build is sent the frozen update path alone: any
+    // other op may decode there as something else.
+    match link {
+        Link::Online => {}
+        Link::OtherBuild if op.is_frozen() => {}
+        Link::OtherBuild => return Err(AskError::OtherBuild),
+        Link::Offline | Link::Connecting | Link::Refused => return Err(AskError::Offline),
     }
 
     let deadline = Instant::now() + answer;

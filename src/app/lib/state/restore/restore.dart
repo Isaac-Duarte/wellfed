@@ -10,7 +10,7 @@ import 'package:wellfed/state/restore/restore_state.dart';
 
 export 'package:wellfed/state/restore/restore_state.dart';
 
-enum _Stage { loading, noBackup, before, running, done, uncertain, stopped }
+enum _Stage { loading, unavailable, noBackup, before, running, done, uncertain, stopped }
 
 /// One restore of a feeder's original firmware.
 class RestoreFlow extends ChangeNotifier {
@@ -68,8 +68,13 @@ class RestoreFlow extends ChangeNotifier {
   bool _holding = false;
   bool _disposed = false;
 
-  /// Find the copy of stock this phone kept, and look at it.
+  /// Find the copy of stock this phone kept, and look at it. A device that
+  /// may not restore is refused first, before anything is read.
   Future<void> load() async {
+    if (!_ports.restoresFeeder) {
+      _stage = _Stage.unavailable;
+      return _changed();
+    }
     final String dataDir = await _ports.dataDir();
     _dataDir = dataDir;
     final String? kept = _ports.keptBackup(dataDir, identity);
@@ -295,6 +300,7 @@ class RestoreFlow extends ChangeNotifier {
 
   RestoreState _snapshot() => switch (_stage) {
     _Stage.loading => const RestoreLoading(),
+    _Stage.unavailable => const RestoreUnavailable(),
     _Stage.noBackup => RestoreNoBackup(notStock: _notStock),
     _Stage.before => RestoreBefore(
       version: _version,

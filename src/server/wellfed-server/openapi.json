@@ -7111,7 +7111,8 @@
           "offline",
           "connecting",
           "online",
-          "refused"
+          "refused",
+          "other_build"
         ]
       },
       "CoreEvent": {
@@ -7490,6 +7491,7 @@
           "invite_expired",
           "unreachable",
           "feeder_offline",
+          "feeder_other_build",
           "feeder_refused",
           "outcome_unknown",
           "key_reused",
@@ -13078,6 +13080,13 @@
             "description": "The feeder runs on its batteries: no install starts until the\nadapter returns.",
             "enum": [
               "battery"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "The key is already enrolled as a session key, which is never an\nupdate signer too.",
+            "enum": [
+              "held_as_session_key"
             ]
           }
         ],

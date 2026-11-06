@@ -54,6 +54,10 @@ pub enum Connection {
     Online,
     /// The feeder no longer knows the server's key (revoked, or reset).
     Refused,
+    /// The feeder runs a build that speaks another revision of the device
+    /// API than this server: it is mirrored no further and sent nothing but
+    /// an install, which updates it.
+    OtherBuild,
 }
 
 /// A device the server mirrors. The API names every one a feeder for now;

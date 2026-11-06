@@ -69,7 +69,7 @@ extension InstallSteps on InstallFlow {
     answer(
       InstallAnswer.failed(
         reason:
-            'This phone came back to its Wi-Fi at ${address ?? "no address"}, '
+            'This $deviceName came back to its Wi-Fi at ${address ?? "no address"}, '
             'but told the feeder $_phoneIp.',
       ),
     );

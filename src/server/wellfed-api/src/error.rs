@@ -99,6 +99,10 @@ pub enum ErrorCode {
     Unreachable,
     /// The server has no session with the feeder right now.
     FeederOffline,
+    /// The feeder runs a different build than the server, so the server
+    /// sends it nothing but an update (the feeder's `connection` reads
+    /// `other_build`). Nothing was sent: update the feeder, or the server.
+    FeederOtherBuild,
     /// The feeder refused the request; `refusal` says why. A refused write is
     /// final for its `Idempotency-Key`: the feeder replays the refusal while
     /// it remembers the id, and a later attempt needs a new key.

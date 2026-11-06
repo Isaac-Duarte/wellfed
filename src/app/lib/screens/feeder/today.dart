@@ -18,6 +18,7 @@ import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/pending.dart';
 import 'package:wellfed/widgets/when.dart';
@@ -39,66 +40,113 @@ class TodayTab extends StatelessWidget {
       final api.Card? live = feeder.state.connection == Connection.online ? card : null;
       final stopped = live?.blocked == Blocked.fault;
 
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: ListView(
-                children: [
-                  _Summary(feeder: feeder),
-                  const SizedBox(height: Space.s4),
-                  if (live != null && !live.clockSet) ...[
-                    NoTimeNotice(feeder: feeder),
-                    const SizedBox(height: Space.s3),
-                  ],
-                  if (live?.time case final time? when live != null && holdsForNoZone(live)) ...[
-                    NoZoneNotice(feeder: feeder, time: time),
-                    const SizedBox(height: Space.s3),
-                  ],
-                  if (live?.time case final time? when routerGivesNoTime(time)) ...[
-                    RouterTimeNotice(feeder: feeder, time: time),
-                    const SizedBox(height: Space.s3),
-                  ],
-                  if (stopped) ...[
-                    TodayStopped(feeder: feeder),
-                    const SizedBox(height: Space.s3),
-                  ] else if (card?.fault case final fault?) ...[
-                    TodayLastFeedFailed(fault: fault),
-                    const SizedBox(height: Space.s3),
-                  ],
-                  if (card != null) ...[
-                    TodayTimeline(feeder: feeder, card: card),
-                    const SizedBox(height: Space.s4),
-                    TodayFacts(feeder: feeder, card: card),
-                    const SizedBox(height: Space.s3),
-                  ],
-                  _LightsLink(),
-                  if (stopped) ...[
-                    const SizedBox(height: Space.s3),
-                    Text(
-                      'Other faults that show here: the bowl sensor stopped '
-                      'answering, the outlet is blocked, the motor drew too '
-                      'much current.',
-                      style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: context.colors.textMuted),
+      final List<Widget> facts = [
+        if (live != null && !live.clockSet) ...[NoTimeNotice(feeder: feeder), const SizedBox(height: Space.s3)],
+        if (live?.time case final time? when live != null && holdsForNoZone(live)) ...[
+          NoZoneNotice(feeder: feeder, time: time),
+          const SizedBox(height: Space.s3),
+        ],
+        if (live?.time case final time? when routerGivesNoTime(time)) ...[
+          RouterTimeNotice(feeder: feeder, time: time),
+          const SizedBox(height: Space.s3),
+        ],
+        if (stopped) ...[
+          TodayStopped(feeder: feeder),
+          const SizedBox(height: Space.s3),
+        ] else if (card?.fault case final fault?) ...[
+          TodayLastFeedFailed(fault: fault),
+          const SizedBox(height: Space.s3),
+        ],
+        if (card != null) ...[
+          TodayTimeline(feeder: feeder, card: card),
+          const SizedBox(height: Space.s4),
+          TodayFacts(feeder: feeder, card: card),
+          const SizedBox(height: Space.s3),
+        ],
+        _LightsLink(),
+        if (stopped) ...[
+          const SizedBox(height: Space.s3),
+          Text(
+            'Other faults that show here: the bowl sensor stopped '
+            'answering, the outlet is blocked, the motor drew too '
+            'much current.',
+            style: TextStyle(fontSize: Sizes.sm, height: 1.5, color: context.colors.textMuted),
+          ),
+        ],
+      ];
+      // A viewer's account feeds nothing, so it has no Feed to press.
+      final Widget? feed = feeder.state.viewer
+          ? null
+          : FilledButton(
+              onPressed: feeder.state.canFeed ? () => feedNow(context, feeder) : null,
+              child: Text(stopped ? 'Feed now · unavailable until restart' : 'Feed now'),
+            );
+
+      // A desktop window is wide enough for the summary beside the facts,
+      // with Feed now under the facts rather than across the whole window.
+      if (isDesktop) {
+        return LayoutBuilder(
+          builder: (context, box) => box.maxWidth < _twoColumns
+              ? _OneColumn(feeder: feeder, facts: facts, feed: feed)
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(Space.s5, Space.s5, Space.s3, Space.s5),
+                        children: [_Summary(feeder: feeder)],
+                      ),
+                    ),
+                    SizedBox(
+                      width: 360,
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(Space.s3, Space.s5, Space.s5, Space.s5),
+                        children: [
+                          if (feed != null) ...[feed, const SizedBox(height: Space.s5)],
+                          ...facts,
+                        ],
+                      ),
                     ),
                   ],
-                ],
-              ),
-            ),
-            // A viewer's account feeds nothing, so it has no Feed to press.
-            if (!feeder.state.viewer) ...[
-              const SizedBox(height: Space.s3),
-              FilledButton(
-                onPressed: feeder.state.canFeed ? () => feedNow(context, feeder) : null,
-                child: Text(stopped ? 'Feed now · unavailable until restart' : 'Feed now'),
-              ),
-            ],
-          ],
-        ),
-      );
+                ),
+        );
+      }
+
+      return _OneColumn(feeder: feeder, facts: facts, feed: feed);
     },
+  );
+
+  /// Wide enough for the summary beside the facts.
+  static const double _twoColumns = 720;
+}
+
+/// Today on a phone, or a narrow desktop window: the summary over the facts,
+/// with Feed now along the bottom.
+class _OneColumn extends StatelessWidget {
+  const _OneColumn({required this.feeder, required this.facts, required this.feed});
+
+  final FeederController feeder;
+  final List<Widget> facts;
+  final Widget? feed;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: ListView(
+            children: [
+              _Summary(feeder: feeder),
+              const SizedBox(height: Space.s4),
+              ...facts,
+            ],
+          ),
+        ),
+        if (feed case final feed?) ...[const SizedBox(height: Space.s3), feed],
+      ],
+    ),
   );
 }
 
@@ -118,6 +166,8 @@ class _Summary extends StatelessWidget {
       Connection.looking => (c.textMuted, 'Looking…'),
       Connection.connecting => (c.textMuted, 'Connecting…'),
       Connection.offline => (c.textMuted, "Can't reach it"),
+      Connection.otherBuild => (c.warning, 'Different build: update the feeder or this app'),
+      Connection.otherVersion => (c.warning, 'This feeder needs a different app version'),
       Connection.online when feeder.state.feed.active => (c.accent, 'Feeding'),
       Connection.online when card?.ready ?? false => (c.ok, 'Ready to feed'),
       Connection.online when card?.blocked == Blocked.feeding => (c.accent, 'Feeding'),

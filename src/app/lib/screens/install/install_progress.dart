@@ -8,6 +8,7 @@ import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
 import 'package:wellfed/widgets/code_tiles.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 
@@ -33,9 +34,9 @@ class InstallHandoverPage extends StatelessWidget {
       progress: 0.35,
       leading: Leading.close,
       onLeading: () => unawaited(onLeave()),
-      title: 'Tell the feeder how to reach this phone',
+      title: 'Tell the feeder how to reach this $deviceName',
       body:
-          "This phone joins the feeder's setup network for a few seconds, "
+          "This $deviceName joins the feeder's setup network for a few seconds, "
           'sends your Wi-Fi once, then comes back to your network.',
       content: [
         const Notice(
@@ -48,13 +49,13 @@ class InstallHandoverPage extends StatelessWidget {
         ),
         if (state.joinFailed) ...[
           const SizedBox(height: Space.s3),
-          const Notice(
+          Notice(
             tone: Tone.warning,
-            lead: "This phone didn't join the feeder's network.",
+            lead: "This $deviceName didn't join the feeder's network.",
             text:
                 'Its name starts with PL-AF103. It can take a minute to appear '
-                "after the reset. If this phone set it up in the vendor's app, "
-                "forget that network in the phone's Wi-Fi settings, then try "
+                "after the reset. If this $deviceName set it up in the vendor's app, "
+                "forget that network in the $deviceName's Wi-Fi settings, then try "
                 'again. If it never appears, hold Reset again.',
           ),
         ],
@@ -166,7 +167,7 @@ class InstallSendingPage extends StatelessWidget {
       progress: 0.6,
       leading: Leading.none,
       title: 'Installing Wellfed',
-      body: 'The feeder downloads Wellfed from this phone, then restarts into it.',
+      body: 'The feeder downloads Wellfed from this $deviceName, then restarts into it.',
       content: [
         _Step(
           'Sending firmware',
@@ -184,11 +185,11 @@ class InstallSendingPage extends StatelessWidget {
           ),
           const SizedBox(height: Space.s3),
         ],
-        const Notice(
+        Notice(
           tone: Tone.warning,
           lead: 'Keep Wellfed open.',
           text:
-              'This phone is serving the firmware, and closing the app stops '
+              'This $deviceName is serving the firmware, and closing the app stops '
               "it. Don't unplug the feeder.",
         ),
         WaitWords(flow.waitWords, progress: state.percent),
@@ -364,7 +365,7 @@ class InstallFinishingPage extends StatelessWidget {
       leading: Leading.none,
       title: title,
       content: [
-        const _Step('This phone is its owner', CheckState.done),
+        _Step('This $deviceName is its owner', CheckState.done),
         if (state.joining != CheckState.waiting) _Step('Finding it on your network', state.joining),
         _Step('Copying the original firmware', state.copying, fraction: state.copied),
         _Step('Check the copy matches', state.checked),
@@ -377,10 +378,10 @@ class InstallFinishingPage extends StatelessWidget {
           style: bodyStyle(context),
         ),
         const SizedBox(height: Space.s4),
-        const Notice(
+        Notice(
           tone: Tone.neutral,
           lead: 'Keep the feeder plugged in.',
-          text: 'If this phone loses it, Wellfed picks up where it stopped.',
+          text: 'If this $deviceName loses it, Wellfed picks up where it stopped.',
         ),
         WaitWords(
           flow.waitWords,

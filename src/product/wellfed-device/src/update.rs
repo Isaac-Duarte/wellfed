@@ -6,7 +6,8 @@ use wellfed_core::ota::install::{Bank0Check, Blocked, Phase, Progress, Refused, 
 use wellfed_core::ota::offer::{KeyError, OfferError, StatementError};
 use wellfed_core::store::update::UpdateError;
 use wellfed_proto::api::{
-    self, Bank0Blocked, Refusal, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView, WANTED_MAX,
+    self, Bank0Blocked, FrozenRefusal, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView,
+    WANTED_MAX,
 };
 
 const _: () = assert!(WANTED == WANTED_MAX);
@@ -103,11 +104,12 @@ const fn statement(error: StatementError) -> UpdateRefusal {
     }
 }
 
-/// Why an update request was refused, as the owner reads it.
-pub const fn refusal(refused: Refused) -> Refusal {
-    Refusal::Update(match refused {
-        Refused::Busy => return Refusal::Busy,
-        Refused::Store(UpdateError::Full | UpdateError::Occupied) => return Refusal::Full,
+/// Why an update request was refused, as the owner reads it: a frozen
+/// refusal, since the update path is frozen.
+pub const fn refusal(refused: Refused) -> FrozenRefusal {
+    FrozenRefusal::Update(match refused {
+        Refused::Busy => return FrozenRefusal::Busy,
+        Refused::Store(UpdateError::Full | UpdateError::Occupied) => return FrozenRefusal::Full,
         Refused::Store(UpdateError::Revoked) => UpdateRefusal::Revoked,
         Refused::Store(_) | Refused::Unreadable => UpdateRefusal::Store,
         Refused::Offer(error) => offer(error),

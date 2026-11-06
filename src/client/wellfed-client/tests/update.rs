@@ -36,8 +36,8 @@ use wellfed_device_api::{
 };
 use wellfed_model::{self as model, Answer, Op};
 use wellfed_proto::api::{
-    self as proto, DeviceStatus, EventBody, FeederStatus, FoodLevel, Refusal, RequestId, Status,
-    UpdateView,
+    self as proto, DeviceStatus, EventBody, FeederStatus, FoodLevel, FrozenRefusal, Refusal,
+    RequestId, Status, UpdateView,
 };
 use wellfed_session::noise::Keypair;
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
@@ -129,7 +129,7 @@ struct Feeder {
     /// The restart gives way: bank 1's first marker byte is cleared.
     give_way: bool,
     ticket: u32,
-    outcome: Option<(u32, Result<UpdateAnswer, Refusal>)>,
+    outcome: Option<(u32, Result<UpdateAnswer, FrozenRefusal>)>,
     faults: Faults,
     /// A candidate that never gets healthy, as a failed trial.
     never_confirm: bool,
@@ -233,7 +233,7 @@ impl Feeder {
         manifest: &[u8],
         downgrade: Option<&[u8]>,
         device: [u8; 32],
-    ) -> Result<UpdateAnswer, Refusal> {
+    ) -> Result<UpdateAnswer, FrozenRefusal> {
         let built_in = [bench().verifying_key().to_bytes()];
         let record = *self.store.record();
         let context = Context {
@@ -296,7 +296,7 @@ impl Feeder {
         Ok(UpdateAnswer::View(self.view()))
     }
 
-    fn take(&mut self, offset: u32, data: &[u8], now: u32) -> Result<UpdateView, Refusal> {
+    fn take(&mut self, offset: u32, data: &[u8], now: u32) -> Result<UpdateView, FrozenRefusal> {
         let Some(install) = self.install.as_mut() else {
             return Err(wire::refusal(Refused::NotInstalling));
         };
@@ -449,7 +449,7 @@ impl Device for Feeder {
 
     fn reboot(&mut self) {}
 
-    fn update(&mut self, request: UpdateRequest<'_>) -> Result<u32, Refusal> {
+    fn update(&mut self, request: UpdateRequest<'_>) -> Result<u32, FrozenRefusal> {
         let answer = match request {
             UpdateRequest::Offer {
                 manifest,
@@ -465,14 +465,14 @@ impl Device for Feeder {
                     .map_err(|error| wire::refusal(Refused::Store(error)))?;
                 Ok(UpdateAnswer::View(self.view()))
             }
-            UpdateRequest::Statement { .. } => Err(Refusal::Unavailable),
+            UpdateRequest::Statement { .. } => Err(FrozenRefusal::Unavailable),
         };
         self.ticket += 1;
         self.outcome = Some((self.ticket, answer));
         Ok(self.ticket)
     }
 
-    fn update_outcome(&mut self, ticket: u32) -> Option<Result<UpdateAnswer, Refusal>> {
+    fn update_outcome(&mut self, ticket: u32) -> Option<Result<UpdateAnswer, FrozenRefusal>> {
         let outcome = self
             .outcome
             .filter(|&(done, _)| done == ticket)
@@ -485,7 +485,7 @@ impl Device for Feeder {
         outcome
     }
 
-    fn update_chunk(&mut self, offset: u32, data: &[u8]) -> Result<UpdateView, Refusal> {
+    fn update_chunk(&mut self, offset: u32, data: &[u8]) -> Result<UpdateView, FrozenRefusal> {
         self.take(offset, data, 0)
     }
 

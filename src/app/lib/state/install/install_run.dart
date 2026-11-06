@@ -137,7 +137,7 @@ extension InstallRunning on InstallFlow {
       case InstallEvent_Requesting():
         _stage = InstallStage.sending;
         _sendingSince = DateTime.now();
-        await _hold('This phone is serving the firmware.');
+        await _hold('This $deviceName is serving the firmware.');
       case InstallEvent_StockProgress(percent: final sent):
         _stage = InstallStage.sending;
         _percent = sent;

@@ -72,7 +72,8 @@ impl Written {
 pub struct Update {
     pub kind: UpdateKind,
     /// For [`UpdateKind::Connected`]: the build that answered, this
-    /// client's role and what the feeder serves.
+    /// client's role and what the feeder serves. For
+    /// [`UpdateKind::OtherBuild`], the build alone.
     pub build: Option<String>,
     pub role: Option<Role>,
     pub capabilities: Option<Capabilities>,
@@ -165,6 +166,13 @@ impl Update {
 
     pub fn revoked() -> Self {
         Self::kind(UpdateKind::Revoked)
+    }
+
+    pub fn other_build(build: impl Into<String>) -> Self {
+        Self {
+            build: Some(build.into()),
+            ..Self::kind(UpdateKind::OtherBuild)
+        }
     }
 
     pub fn disconnected(reason: impl Into<String>) -> Self {

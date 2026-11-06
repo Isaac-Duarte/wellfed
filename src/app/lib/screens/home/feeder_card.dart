@@ -1,9 +1,6 @@
-import 'dart:async';
-
 import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
-import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/feeder/feed_sheet.dart';
 import 'package:wellfed/screens/feeder/no_time.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
@@ -14,6 +11,7 @@ import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/layout.dart';
 import 'package:wellfed/widgets/when.dart';
@@ -219,8 +217,7 @@ class FeederCard extends StatelessWidget {
     return any ? 'Meals held' : 'No meal set';
   }
 
-  void _open(BuildContext context, [int tab = todayTab]) =>
-      unawaited(context.push('/feeder/${controller.state.known.identity}?tab=$tab'));
+  void _open(BuildContext context, [int tab = todayTab]) => openFeeder(context, controller.state.known.identity, tab);
 
   bool get _unreachable => controller.state.connection == Connection.offline;
 
@@ -267,7 +264,7 @@ class FeederCard extends StatelessWidget {
   /// The compact card's second line.
   String? _line(BuildContext context) {
     final FeedState feed = controller.state.feed;
-    if (feed is FeedRunning) return 'Started from this phone';
+    if (feed is FeedRunning) return 'Started from this $deviceName';
     if (controller.state.connection != Connection.offline) {
       final api.NextMealView? next = controller.state.card?.nextMeal;
       return next == null
@@ -289,8 +286,8 @@ class FeederCard extends StatelessWidget {
           "it's plugged back in.";
     }
     if (controller.state.connection == Connection.offline) {
-      return "This phone can't reach it. Check that it's plugged in, the "
-          'Wi-Fi light is steady, and this phone is on the same Wi-Fi.';
+      return "This $deviceName can't reach it. Check that it's plugged in, the "
+          'Wi-Fi light is steady, and this $deviceName is on the same Wi-Fi.';
     }
     return null;
   }
@@ -373,6 +370,8 @@ class _Chips extends StatelessWidget {
       Connection.looking => StatusChip('Looking…', color: c.textMuted),
       Connection.connecting => StatusChip('Connecting…', color: c.textMuted),
       Connection.offline => StatusChip("Can't reach it", color: c.textMuted),
+      Connection.otherBuild => StatusChip('Different build: update the feeder or this app', color: c.warning),
+      Connection.otherVersion => StatusChip('This feeder needs a different app version', color: c.warning),
       Connection.online when feed is FeedRunning => StatusChip(
         'Feeding ${feed.portions == 1 ? '1 portion' : '${feed.portions} portions'}',
         color: c.accent,

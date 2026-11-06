@@ -707,7 +707,10 @@ fn run(ctx: &mut Ctx, scenarios: &[&'static Scenario]) -> Result<(Vec<Report>, O
         let mut verdict = match result {
             Ok(()) => Verdict::Pass,
             Err(error) if error.interrupted() => return Err(error),
-            Err(error) => Verdict::Fail(error.to_string()),
+            Err(error) => match error.unmet_on_device() {
+                Some(reason) => Verdict::Skip(reason),
+                None => Verdict::Fail(error.to_string()),
+            },
         };
         let halted = ctx.halted.take();
         if let Some(reason) = &halted {

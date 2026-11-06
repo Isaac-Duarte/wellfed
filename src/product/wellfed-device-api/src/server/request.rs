@@ -13,8 +13,8 @@ use crate::pairing::{self, Pairing};
 use crate::wifi::Credentials;
 use crate::{Device, KeyChange, REBOOT_MS, Record, UpdateRequest};
 use wellfed_proto::api::{
-    self as proto, ClientMessage, EventBody, Op, Refusal, RequestId, Source, StatsSection,
-    UPDATE_CHUNK_MAX, UpdateRefusal, UpdateView,
+    self as proto, ClientMessage, EventBody, FrozenRefusal, Op, Refusal, RequestId, Source,
+    StatsSection, UPDATE_CHUNK_MAX, UpdateOp, UpdateRefusal, UpdateView,
 };
 
 impl Server {
@@ -84,6 +84,7 @@ impl Server {
                 // checked as for any write, and the refusal is remembered.
                 None => Reply::Refused(Refusal::Unavailable),
             },
+            Action::Alive => Reply::Done(None),
             Action::Status => Reply::Status,
             Action::PutWifi { base, wifi } => match put_wifi(base, wifi, device) {
                 Ok(()) => return self.wait(index, id, action, Waiting::Wifi),
@@ -151,12 +152,12 @@ impl Server {
             Action::OfferUpdate | Action::CancelUpdate | Action::UpdateKeyStatement => {
                 match self.update_request(action, device) {
                     Ok(ticket) => return self.wait(index, id, action, Waiting::Update { ticket }),
-                    Err(refusal) => Reply::Refused(refusal),
+                    Err(refusal) => Reply::Refused(refusal.into()),
                 }
             }
             Action::UpdateChunk { offset } => match self.update_chunk(offset, device) {
                 Ok(view) => Reply::Update(view),
-                Err(refusal) => Reply::Refused(refusal),
+                Err(refusal) => Reply::Refused(refusal.into()),
             },
             Action::UpdateState => match device.update_view() {
                 Some(view) => Reply::Update(view),
@@ -206,44 +207,52 @@ impl Server {
     /// The update op in `plain`, read again for its bytes, queued with the
     /// device. Out of line: the decoded message is a frame of its own.
     #[inline(never)]
-    fn update_request<D: Device>(&self, action: Action, device: &mut D) -> Result<u32, Refusal> {
-        let message: ClientMessage<'_> =
-            wellfed_proto::decode(&self.plain[..self.plain_len]).map_err(|_| Refusal::Invalid)?;
+    fn update_request<D: Device>(
+        &self,
+        action: Action,
+        device: &mut D,
+    ) -> Result<u32, FrozenRefusal> {
+        let message: ClientMessage<'_> = wellfed_proto::decode(&self.plain[..self.plain_len])
+            .map_err(|_| FrozenRefusal::Invalid)?;
         let ClientMessage::Request { op, .. } = message else {
-            return Err(Refusal::Invalid);
+            return Err(FrozenRefusal::Invalid);
         };
         let request = match (action, op) {
             (
                 Action::OfferUpdate,
-                Op::OfferUpdate {
+                Op::Update(UpdateOp::Offer {
                     manifest,
                     downgrade,
-                },
+                }),
             ) => UpdateRequest::Offer {
                 manifest,
                 downgrade,
-                device: self.identity_public.ok_or(Refusal::Busy)?,
+                device: self.identity_public.ok_or(FrozenRefusal::Busy)?,
             },
-            (Action::UpdateKeyStatement, Op::UpdateKeyStatement { statement }) => {
+            (Action::UpdateKeyStatement, Op::Update(UpdateOp::KeyStatement { statement })) => {
                 UpdateRequest::Statement { statement }
             }
-            (Action::CancelUpdate, Op::CancelUpdate) => UpdateRequest::Cancel,
-            _ => return Err(Refusal::Invalid),
+            (Action::CancelUpdate, Op::Update(UpdateOp::Cancel)) => UpdateRequest::Cancel,
+            _ => return Err(FrozenRefusal::Invalid),
         };
         device.update(request)
     }
 
     /// The chunk in `plain`, handed to the device.
     #[inline(never)]
-    fn update_chunk<D: Device>(&self, offset: u32, device: &mut D) -> Result<UpdateView, Refusal> {
-        let message: ClientMessage<'_> =
-            wellfed_proto::decode(&self.plain[..self.plain_len]).map_err(|_| Refusal::Invalid)?;
+    fn update_chunk<D: Device>(
+        &self,
+        offset: u32,
+        device: &mut D,
+    ) -> Result<UpdateView, FrozenRefusal> {
+        let message: ClientMessage<'_> = wellfed_proto::decode(&self.plain[..self.plain_len])
+            .map_err(|_| FrozenRefusal::Invalid)?;
         match message {
             ClientMessage::Request {
-                op: Op::UpdateChunk { offset: at, data },
+                op: Op::Update(UpdateOp::Chunk { offset: at, data }),
                 ..
             } if at == offset => device.update_chunk(offset, data),
-            _ => Err(Refusal::Invalid),
+            _ => Err(FrozenRefusal::Invalid),
         }
     }
 }
@@ -375,6 +384,7 @@ const fn store_role(role: proto::Role) -> Role {
 /// per kind's module.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Action {
+    Alive,
     Status,
     PutWifi {
         base: u32,
@@ -448,22 +458,8 @@ impl From<Op<'_>> for Action {
             Op::ListClients => Self::ListClients,
             Op::RevokeClient { key } => Self::RevokeClient { key },
             Op::Reboot => Self::Reboot,
-            // The bytes stay in the plaintext buffer, read again when the
-            // op runs, so the action stays small.
-            Op::OfferUpdate { .. } => Self::OfferUpdate,
-            Op::UpdateChunk { offset, data } => {
-                if data.is_empty() || data.len() > UPDATE_CHUNK_MAX {
-                    return Self::Invalid;
-                }
-                Self::UpdateChunk { offset }
-            }
-            Op::UpdateState => Self::UpdateState,
-            Op::CancelUpdate => Self::CancelUpdate,
-            Op::EnrollUpdateKey { key, label } => match Label::new(label.as_bytes()) {
-                Some(label) => Self::EnrollUpdateKey { key, label },
-                None => Self::Invalid,
-            },
-            Op::UpdateKeyStatement { .. } => Self::UpdateKeyStatement,
+            Op::Update(op) => update_action(op),
+            Op::Alive => Self::Alive,
             Op::GetTime => Self::GetTime,
             Op::PutTime { base, changes } => {
                 let zone = match changes.zone {
@@ -495,7 +491,31 @@ impl From<Op<'_>> for Action {
     }
 }
 
+/// An update op's action; see [`Action::from`].
+fn update_action(op: UpdateOp<'_>) -> Action {
+    match op {
+        // The bytes stay in the plaintext buffer, read again when the op
+        // runs, so the action stays small.
+        UpdateOp::Offer { .. } => Action::OfferUpdate,
+        UpdateOp::Chunk { offset, data } => {
+            if data.is_empty() || data.len() > UPDATE_CHUNK_MAX {
+                return Action::Invalid;
+            }
+            Action::UpdateChunk { offset }
+        }
+        UpdateOp::State => Action::UpdateState,
+        UpdateOp::Cancel => Action::CancelUpdate,
+        UpdateOp::EnrollKey { key, label } => match Label::new(label.as_bytes()) {
+            Some(label) => Action::EnrollUpdateKey { key, label },
+            None => Action::Invalid,
+        },
+        UpdateOp::KeyStatement { .. } => Action::UpdateKeyStatement,
+    }
+}
+
 impl Action {
+    /// What the record names a request whose op does not decode.
+    pub(super) const UNKNOWN: &'static str = "unknown";
     /// The chunk op's name, which the answer's record leaves out.
     pub(super) const CHUNK: &'static str = "update-chunk";
     /// The meal call's chunk op, whose answers the records leave out too.
@@ -507,7 +527,8 @@ impl Action {
             Self::Feeder(action) => action.writes(),
             _ => !matches!(
                 self,
-                Self::Status
+                Self::Alive
+                    | Self::Status
                     | Self::ListClients
                     | Self::Invalid
                     | Self::UpdateState
@@ -522,6 +543,7 @@ impl Action {
 
     pub(super) const fn name(self) -> &'static str {
         match self {
+            Self::Alive => "alive",
             Self::Status => "status",
             Self::PutWifi { .. } => "put-wifi",
             Self::TimeSync(_) => "time-sync",
@@ -628,5 +650,6 @@ fn update_refusal(refusal: UpdateRefusal) -> &'static str {
         UpdateRefusal::Store => "update-store",
         UpdateRefusal::Unconfirmed => "update-unconfirmed",
         UpdateRefusal::Battery => "update-battery",
+        UpdateRefusal::HeldAsSessionKey => "update-held-as-session-key",
     }
 }

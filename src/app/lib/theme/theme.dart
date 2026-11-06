@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
 import 'package:wellfed/theme/tokens.g.dart';
+import 'package:wellfed/widgets/desktop.dart';
 
 export 'package:wellfed/theme/tokens.g.dart';
 
 /// Material's theme from the brand tokens: blue is the only signal color,
-/// amber only for food, and the status colors only for status.
+/// amber only for food, and the status colors only for status. A desktop
+/// build takes a pointer's sizes: shorter buttons, visible scrollbars, a
+/// fade between pages and dialogs drawn as cards.
 ThemeData wellfedTheme(Brightness brightness) {
   final ThemeTokens t = brightness == Brightness.dark ? darkTokens : lightTokens;
   final scheme = ColorScheme(
@@ -33,7 +36,11 @@ ThemeData wellfedTheme(Brightness brightness) {
     scrim: t.scrim,
   );
   final controlShape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.control));
-  const buttonSize = Size(64, 52);
+  final buttonSize = isDesktop ? const Size(64, 44) : const Size(64, 52);
+  final dialogShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(Radii.card),
+    side: BorderSide(color: t.line),
+  );
 
   return ThemeData(
     useMaterial3: true,
@@ -113,6 +120,26 @@ ThemeData wellfedTheme(Brightness brightness) {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
     ),
     dividerTheme: DividerThemeData(color: t.line, space: 1),
+    pageTransitionsTheme: isDesktop
+        ? const PageTransitionsTheme(
+            builders: {
+              TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
+              TargetPlatform.macOS: FadeForwardsPageTransitionsBuilder(),
+              TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
+            },
+          )
+        : null,
+    dialogTheme: isDesktop
+        ? DialogThemeData(backgroundColor: t.surface, surfaceTintColor: Colors.transparent, shape: dialogShape)
+        : null,
+    scrollbarTheme: isDesktop
+        ? ScrollbarThemeData(
+            thickness: const WidgetStatePropertyAll(6),
+            radius: const Radius.circular(Radii.pill),
+            thumbColor: WidgetStatePropertyAll(t.lineStrong),
+          )
+        : null,
+    tooltipTheme: isDesktop ? const TooltipThemeData(waitDuration: Duration(milliseconds: 500)) : null,
   );
 }
 

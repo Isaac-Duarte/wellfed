@@ -970,6 +970,20 @@ static GDMA_InitTypeDef wellfed_audio_gdma;
  * cannot turn the channel back on. */
 static volatile int wellfed_audio_opened;
 
+/* Undo what wellfed_audio_open turned on, codec output first. The I2S PLL
+ * and the codec and SPORT clocks draw current while idle, and every open
+ * sets them up again, so a close leaves none of them running: one sound
+ * must not raise standby current on the D-cells until the next reboot. */
+static void wellfed_audio_power_down(void)
+{
+    AUDIO_SP_TxStart(AUDIO_SPORT_DEV, DISABLE);
+    AUDIO_SP_TdmaCmd(AUDIO_SPORT_DEV, DISABLE);
+    CODEC_DeInit(APP_LINE_OUT);
+    RCC_PeriphClockCmd(APBPeriph_SPORT, APBPeriph_SPORT_CLOCK, DISABLE);
+    RCC_PeriphClockCmd(APBPeriph_AUDIOC, APBPeriph_AUDIOC_CLOCK, DISABLE);
+    PLL_I2S_Set(DISABLE);
+}
+
 static u32 wellfed_audio_done(void *data)
 {
     GDMA_InitTypeDef *gdma = data;
@@ -1047,9 +1061,7 @@ int wellfed_audio_open(unsigned int rate_hz)
     if (!AUDIO_SP_TXGDMA_Init(0, &wellfed_audio_gdma, &wellfed_audio_gdma, wellfed_audio_done,
                               wellfed_audio_zero, WELLFED_AUDIO_PAGE)) {
         wellfed_audio_opened = 0;
-        AUDIO_SP_TxStart(AUDIO_SPORT_DEV, DISABLE);
-        AUDIO_SP_TdmaCmd(AUDIO_SPORT_DEV, DISABLE);
-        CODEC_DeInit(APP_LINE_OUT);
+        wellfed_audio_power_down();
         return 0;
     }
     return 1;
@@ -1088,7 +1100,7 @@ unsigned int wellfed_audio_underruns_seen(void)
     return wellfed_audio_underruns;
 }
 
-/* Stop the DMA, SPORT and codec output; the clocks stay on for the next open. */
+/* Stop the DMA, then SPORT, the codec output and their clocks. */
 void wellfed_audio_close(void)
 {
     if (!wellfed_audio_opened) {
@@ -1098,9 +1110,7 @@ void wellfed_audio_close(void)
     GDMA_Cmd(wellfed_audio_gdma.GDMA_Index, wellfed_audio_gdma.GDMA_ChNum, DISABLE);
     GDMA_ClearINT(wellfed_audio_gdma.GDMA_Index, wellfed_audio_gdma.GDMA_ChNum);
     GDMA_ChnlFree(wellfed_audio_gdma.GDMA_Index, wellfed_audio_gdma.GDMA_ChNum);
-    AUDIO_SP_TxStart(AUDIO_SPORT_DEV, DISABLE);
-    AUDIO_SP_TdmaCmd(AUDIO_SPORT_DEV, DISABLE);
-    CODEC_DeInit(APP_LINE_OUT);
+    wellfed_audio_power_down();
 }
 
 void wellfed_tick_hook(const char *name, int suspended);

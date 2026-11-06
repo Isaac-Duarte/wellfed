@@ -29,8 +29,12 @@ pub enum ErrorKind {
     Closed,
     /// The feeder does not know this phone's key.
     UnknownKey,
-    /// The feeder serves another protocol version.
+    /// The feeder serves another major of the protocol: not even an update
+    /// goes to it from this app.
     Version,
+    /// The feeder runs a build of another schema revision: it takes only
+    /// an update, which this app still sends.
+    OtherBuild,
     /// Every session slot on the feeder is taken.
     Full,
     /// The session already ended.
@@ -97,6 +101,7 @@ impl From<wellfed_connect::Error> for BridgeError {
             Error::Closed | Error::Io(_) => ErrorKind::Closed,
             Error::UnknownKey => ErrorKind::UnknownKey,
             Error::Version(_) => ErrorKind::Version,
+            Error::Session(wellfed_client::api::Error::OtherSchema { .. }) => ErrorKind::OtherBuild,
             Error::Full => ErrorKind::Full,
             Error::Session(_) | Error::Encode | Error::ReservedId => ErrorKind::Protocol,
         };

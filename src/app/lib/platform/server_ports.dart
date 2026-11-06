@@ -1,5 +1,5 @@
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:wellfed/platform/discovery.dart';
+import 'package:wellfed/platform/secure_storage.dart';
 import 'package:wellfed/src/rust/api/server.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 
@@ -32,14 +32,13 @@ abstract interface class ServerPorts {
   Stream<FoundServer> browse();
 }
 
-/// [ServerPorts] on Android: the token's secret beside the client secret, in
-/// Keystore-backed secure storage.
+/// [ServerPorts] on every platform: the token's secret beside the client
+/// secret, in [secureStorage].
 class AppServerPorts implements ServerPorts {
   /// Ports for this phone.
   const AppServerPorts();
 
   static const _secretName = 'server-token';
-  static const _storage = FlutterSecureStorage();
 
   @override
   Future<ServerSession> login({
@@ -53,13 +52,13 @@ class AppServerPorts implements ServerPorts {
   ServerSession restore(ServerLink link, String secret) => ServerSession.restore(link: link, secret: secret);
 
   @override
-  Future<String?> secret() => _storage.read(key: _secretName);
+  Future<String?> secret() => secureStorage.read(key: _secretName);
 
   @override
-  Future<void> keepSecret(String secret) => _storage.write(key: _secretName, value: secret);
+  Future<void> keepSecret(String secret) => secureStorage.write(key: _secretName, value: secret);
 
   @override
-  Future<void> forgetSecret() => _storage.delete(key: _secretName);
+  Future<void> forgetSecret() => secureStorage.delete(key: _secretName);
 
   @override
   Stream<FoundServer> browse() => Discovery.browseServers();

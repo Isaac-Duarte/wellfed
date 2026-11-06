@@ -117,11 +117,12 @@ impl Operation {
                 *sent = true;
                 Ok(answer)
             }
-            Err(error @ (AskError::Offline | AskError::NotRunning | AskError::Unsendable))
-                if !*sent =>
-            {
-                Err(CallError::Unsent(error))
-            }
+            Err(
+                error @ (AskError::Offline
+                | AskError::OtherBuild
+                | AskError::NotRunning
+                | AskError::Unsendable),
+            ) if !*sent => Err(CallError::Unsent(error)),
             Err(error) => {
                 *sent = true;
                 Err(CallError::Lost(error))

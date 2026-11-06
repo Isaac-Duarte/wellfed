@@ -106,4 +106,17 @@ void main() {
     expect(hall?.canFeed, isTrue);
     expect(server.session.logouts, 0);
   });
+
+  test('a feeder the server reaches on another build reads as needing an update, and feeds no one', () async {
+    final ServerFeeder hall = _listed('id-h', 'cc', 'Hall', link: ServerConnection.otherBuild);
+    final (FeederFleet fleet, _, _, _) = await _fleet([
+      hall,
+    ], setUp: (server) => server.session.details['id-h'] = ServerFeederDetail(feeder: hall));
+    await pumpEventQueue();
+
+    final FeederState? state = fleet['cc']?.state;
+    expect(state?.connection, Connection.otherBuild);
+    expect(state?.cardIsCurrent, isFalse);
+    expect(state?.canFeed, isFalse);
+  });
 }

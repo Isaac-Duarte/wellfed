@@ -8,6 +8,7 @@ import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
 
@@ -133,7 +134,7 @@ class _Person extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeTokens c = context.colors;
-    final String name = client.you ? '${client.label} (this phone)' : client.label;
+    final String name = client.you ? '${client.label} (this $deviceName)' : client.label;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: Space.s4, vertical: Space.s3),
       decoration: BoxDecoration(

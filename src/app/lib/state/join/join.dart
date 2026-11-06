@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-
 import 'package:wellfed/platform/join_ports.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
@@ -9,6 +8,7 @@ import 'package:wellfed/src/rust/api/join.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/form_factor.dart';
 
 /// How joining with an invite stands.
 sealed class JoinState {
@@ -147,7 +147,7 @@ class JoinFlow extends ChangeNotifier {
           'The feeder turned this invite down: it has expired or been used. '
               'Ask for a new one.',
         ErrorKind.label => 'A phone name is 1 to 16 bytes.',
-        ErrorKind.store => 'Joined, but this phone could not save it.',
+        ErrorKind.store => 'Joined, but this $deviceName could not save it.',
         ErrorKind.interrupted =>
           'The connection broke, so you may or may not have joined. Wellfed '
               "won't send this invite again. Ask for a new one.",

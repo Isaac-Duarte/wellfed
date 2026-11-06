@@ -32,45 +32,73 @@
 //!   [`Hello::major`], and a device refuses one it does not serve with
 //!   [`OpenRefusal::Version`].
 //! - What a session serves follows from the welcome's kind, model and
-//!   major alone: there are no feature bits. An op a build does not serve
-//!   is refused `Unavailable`.
-//! - Postcard is positional: a field added, removed, reordered or retyped
-//!   changes every byte after it. While the research unit is the only
-//!   device running Wellfed, messages change in place: the firmware and
+//!   major alone: there are no feature bits. An op a build does not serve,
+//!   or cannot decode, is refused `Unavailable`.
+//! - **The update path is frozen.** Every update passes through bank 0,
+//!   which keeps the build it was written with, so a client of any later
+//!   build must still update it. The connection's opening ([`Open`],
+//!   [`Hello`], [`Welcome`]), the frames, discovery, the update ops
+//!   ([`Op::Update`]), the keepalive ([`Op::Alive`]), invites
+//!   ([`Op::CreateInvite`], [`Join`], [`Joined`]), the recovery window's
+//!   setup exchange ([`crate::setup`]) and every answer they get never
+//!   change: no field is added, removed, reordered or retyped,
+//!   and an enum only gains variants at its end. The frozen variants of
+//!   [`ClientMessage`], [`DeviceMessage`], [`Op`], [`Outcome`] and
+//!   [`Refusal`] come first, so the rest can change behind them. Only a
+//!   new major changes the frozen part, and a device keeps serving major
+//!   1's for good. So does every client, even once a new major exists: a
+//!   feeder never updated since speaks nothing else.
+//!   `tests/fixtures/update-v1.txt` pins it, and its test only appends.
+//! - Everything else is positional too, but changes in place while the
+//!   research unit is the only device running Wellfed: the firmware and
 //!   every client are built from this repository together. The change
-//!   rewrites the message's fixture lines by hand (blessing only appends).
-//!
-//! The byte fixtures in `tests/fixtures/v1.txt` pin every v1 message, and
-//! their test refuses to re-bless a line that changed.
+//!   rewrites the message's lines in `tests/fixtures/v1.txt` by hand
+//!   (blessing only appends). Any change to a type changes [`SCHEMA`],
+//!   which the welcome carries: a client of another revision sends that
+//!   build only frozen ops.
 
 use serde::{Deserialize, Serialize};
 
 use crate::device::Model;
 pub use crate::setup::Wifi;
 
-/// Bound into the IK and invite handshakes, so a session meant for another
-/// protocol or version fails at its first encrypted message.
+/// Frozen. Bound into the IK and invite handshakes, so a session meant
+/// for another protocol or version fails at its first encrypted message.
 pub const PROLOGUE: &[u8] = b"wellfed-api-v1";
 
+/// The major this build speaks. Major 1's update path is frozen: a new
+/// major is the only way to change it, and a device keeps serving major 1's
+/// update path for good.
 pub const PROTOCOL_MAJOR: u16 = 1;
 /// The oldest major this device still serves.
 pub const PROTOCOL_MAJOR_MIN: u16 = 1;
 
-/// The largest frame either way, Noise tag included.
+/// The revision of everything outside the frozen part: a hash of every
+/// message type's structure, traced variant by variant and field by field
+/// (`tests/schema.rs`), so any change to a type, fixture or no fixture,
+/// makes a new revision. The test fails, naming the new value, until this
+/// is updated. The welcome carries it ([`Welcome::Open::schema`]), and a
+/// client of another revision sends that build only frozen ops.
+pub const SCHEMA: u32 = 0xb5d9_31f4;
+
+/// Frozen. The largest frame either way, Noise tag included.
 pub const FRAME_MAX: usize = 1024;
 /// The largest message a frame can seal.
 pub const MESSAGE_MAX: usize = FRAME_MAX - 16;
 
-/// The mDNS service the device advertises.
+/// Frozen. The mDNS service the device advertises, with TXT `v=1` and
+/// `id=` its identity key in hex.
 pub const SERVICE: &str = "_wellfed._tcp";
-/// The TCP port the device listens on.
+/// Frozen. The TCP port the device listens on.
 pub const PORT: u16 = 4747;
 
 /// A client-chosen request id: random, so a retry after a reconnect is
 /// still recognized.
 pub type RequestId = [u8; 16];
 
-/// The first frame on a connection, in clear.
+/// Frozen, with every variant: the first frame on a connection, in clear.
+/// A session, an invite's redemption and the recovery window all reach a
+/// feeder of any build.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Open {
     Session,
@@ -78,13 +106,14 @@ pub enum Open {
     Recovery,
 }
 
-/// The client's IK first-message payload.
+/// Frozen. The client's IK first-message payload.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hello {
     pub major: u16,
 }
 
-/// The device's IK second-message payload.
+/// Frozen, with everything it carries. The device's IK second-message
+/// payload.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Welcome<'a> {
     Open {
@@ -102,10 +131,16 @@ pub enum Welcome<'a> {
         /// so a cursor from another epoch means nothing here: the client
         /// starts again from the oldest event kept.
         epoch: u32,
+        /// The build's [`SCHEMA`]: which revision of everything outside the
+        /// frozen update path it speaks. A client of another revision sends
+        /// only frozen ops on this session, since its other ops may decode
+        /// here as something else.
+        schema: u32,
     },
     Refused(OpenRefusal),
 }
 
+/// Frozen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OpenRefusal {
     /// The key is not enrolled (or was revoked).
@@ -117,7 +152,8 @@ pub enum OpenRefusal {
     Full,
 }
 
-/// A client's role, as the client store keeps it.
+/// Frozen, since the welcome carries it. A client's role, as the client
+/// store keeps it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
     Owner,
@@ -126,7 +162,7 @@ pub enum Role {
     UpdateSigner,
 }
 
-/// An invite redemption's third-message payload.
+/// Frozen. An invite redemption's third-message payload.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Join<'a> {
     /// A name for the client, shown when the owner lists clients (1-16
@@ -134,7 +170,8 @@ pub struct Join<'a> {
     pub label: &'a str,
 }
 
-/// The device's answer to a [`Join`], sealed; the connection then closes.
+/// Frozen, with what it carries. The device's answer to a [`Join`],
+/// sealed; the connection then closes.
 /// An enrollment names the device's model, as a session's welcome does, so
 /// a client that redeems an invite knows what it joined without opening one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,7 +180,10 @@ pub enum Joined {
     Refused(Refusal),
 }
 
-/// What a client sends once the session is open.
+/// What a client sends once the session is open. [`Self::Request`] is
+/// frozen at index 0, so a request's id is always readable: a device
+/// answers an op it cannot decode `Unavailable` rather than end the
+/// session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ClientMessage<'a> {
     Request {
@@ -168,12 +208,29 @@ pub enum Samples {
 }
 
 /// One operation. Reads may be repeated freely; a write's id makes a retry
-/// return the first answer instead of running again. The shared core
-/// first, then one variant per device kind's module.
+/// return the first answer instead of running again.
+///
+/// The first three variants are frozen ([`Self::is_frozen`]): the update
+/// ops, the keepalive and the invite, which every build of major 1 serves
+/// at these indices for good. The rest is the shared core, then one variant per device
+/// kind's module, and changes freely.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Op<'a> {
+    /// Frozen at index 0: an update, and the keys that sign one.
+    #[serde(borrow)]
+    Update(UpdateOp<'a>),
+    /// Frozen at index 1: the keepalive, answered [`Outcome::Done`] to
+    /// every session (an update signer's key never opens one). Its answer
+    /// never changes, so a client keeps a session alive even with a build
+    /// whose other answers it cannot read.
+    Alive,
+    /// Frozen at index 2: a single-use invite for a new client, held in RAM
+    /// for 10 minutes, answered [`Outcome::Invite`]. Frozen so a new phone
+    /// can still join a feeder of an older build, and then update it.
+    CreateInvite {
+        role: Role,
+    },
     /// Answered [`Outcome::Status`]: the shared status and the kind's.
-    /// Clients send it as a keepalive.
     Status,
     /// Stores credentials for the next join, or clears them with `None`.
     /// Applies only if the Wi-Fi store is still at `base` generation.
@@ -183,10 +240,6 @@ pub enum Op<'a> {
         wifi: Option<Wifi<'a>>,
     },
     TimeSync(TimeSync),
-    /// A single-use invite for a new client, held in RAM for 10 minutes.
-    CreateInvite {
-        role: Role,
-    },
     ListClients,
     RevokeClient {
         key: [u8; 32],
@@ -194,46 +247,6 @@ pub enum Op<'a> {
     /// Refused `Busy` while a kind's operation that a restart would cut
     /// (a feed) is in flight.
     Reboot,
-    /// Offer a signed version 2 manifest, with the downgrade statement it
-    /// needs when its version is not above the floor (always, for stock).
-    /// Bank 1 checks it, records it and gives way to bank 0
-    /// ([`UpdatePhase::GivingWay`]): the client reconnects and offers it
-    /// again, and bank 0, which installs only that manifest, starts
-    /// receiving. Refused `Busy` while a feed runs. Owner sessions only.
-    OfferUpdate {
-        #[serde(borrow)]
-        manifest: &'a [u8],
-        #[serde(borrow)]
-        downgrade: Option<&'a [u8]>,
-    },
-    /// Image bytes at `offset`, one of the offsets [`UpdateView::wanted`]
-    /// names, at most [`UPDATE_CHUNK_MAX`] bytes. Idempotent by offset: a
-    /// chunk already written is answered with the state and changes
-    /// nothing, so a retry needs no remembered id.
-    UpdateChunk {
-        offset: u32,
-        #[serde(borrow)]
-        data: &'a [u8],
-    },
-    /// The update's state, for a client that reconnected.
-    UpdateState,
-    /// Stop the install with bank 1 left invalid, and forget the
-    /// candidate.
-    CancelUpdate,
-    /// Enroll an owner's Ed25519 update-signing key. Answered once a
-    /// press at the device confirms it, or refused `Update(Unconfirmed)`
-    /// when nobody presses within the window.
-    EnrollUpdateKey {
-        key: [u8; 32],
-        #[serde(borrow)]
-        label: &'a str,
-    },
-    /// A key statement a built-in or the release key signed: fill the
-    /// release slot, or retire a key id for good.
-    UpdateKeyStatement {
-        #[serde(borrow)]
-        statement: &'a [u8],
-    },
     /// The time settings and the clock's state.
     GetTime,
     /// Applies only if the time settings are still at `base` generation.
@@ -273,6 +286,55 @@ pub enum Op<'a> {
     /// The feeder's module; refused `Unavailable` by another kind.
     #[serde(borrow)]
     Feeder(FeederOp<'a>),
+}
+
+/// The update ops ([`Op::Update`]), frozen with everything they carry and
+/// every answer they get: no variant or field is removed, reordered or
+/// retyped, and a new op goes at the end. An update always goes through
+/// bank 0, which keeps the build it was written with, so a client of any
+/// later build must still speak these to it. Owner sessions only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UpdateOp<'a> {
+    /// Offer a signed version 2 manifest, with the downgrade statement it
+    /// needs when its version is not above the floor (always, for stock).
+    /// Bank 1 checks it, records it and gives way to bank 0
+    /// ([`UpdatePhase::GivingWay`]): the client reconnects and offers it
+    /// again, and bank 0, which installs only that manifest, starts
+    /// receiving. Refused `Busy` while a feed runs.
+    Offer {
+        #[serde(borrow)]
+        manifest: &'a [u8],
+        #[serde(borrow)]
+        downgrade: Option<&'a [u8]>,
+    },
+    /// Image bytes at `offset`, one of the offsets [`UpdateView::wanted`]
+    /// names, at most [`UPDATE_CHUNK_MAX`] bytes. Idempotent by offset: a
+    /// chunk already written is answered with the state and changes
+    /// nothing, so a retry needs no remembered id.
+    Chunk {
+        offset: u32,
+        #[serde(borrow)]
+        data: &'a [u8],
+    },
+    /// The update's state, for a client that reconnected.
+    State,
+    /// Stop the install with bank 1 left invalid, and forget the
+    /// candidate.
+    Cancel,
+    /// Enroll an owner's Ed25519 update-signing key. Answered once a
+    /// press at the device confirms it, or refused `Update(Unconfirmed)`
+    /// when nobody presses within the window.
+    EnrollKey {
+        key: [u8; 32],
+        #[serde(borrow)]
+        label: &'a str,
+    },
+    /// A key statement a built-in or the release key signed: fill the
+    /// release slot, or retire a key id for good.
+    KeyStatement {
+        #[serde(borrow)]
+        statement: &'a [u8],
+    },
 }
 
 /// The feeder's ops ([`DeviceKind::Feeder`](crate::device::DeviceKind::Feeder)).
@@ -548,23 +610,21 @@ pub struct Plans {
     pub skipped: [Option<u32>; PLANS_MAX],
 }
 
-/// The largest [`Op::UpdateChunk`]: an eighth of a flash sector, which
+/// Frozen. The largest [`UpdateOp::Chunk`]: an eighth of a flash sector, which
 /// a sealed request carries with room to spare.
 pub const UPDATE_CHUNK_MAX: usize = 512;
-/// The chunk offsets one [`UpdateView`] names: a sector's worth.
+/// Frozen, since it sizes [`UpdateView::wanted`]. The chunk offsets one
+/// [`UpdateView`] names: a sector's worth.
 pub const WANTED_MAX: usize = 8;
 
 impl Op<'_> {
-    /// Whether the op changes something, so its id is remembered. A chunk
-    /// is idempotent by its offset instead, so a whole image does not push
-    /// every other write out of the device's memory. No wildcard, so a new
-    /// op cannot land without its decision.
+    /// Whether the op changes something, so its id is remembered. No
+    /// wildcard, so a new op cannot land without its decision.
     pub const fn writes(&self) -> bool {
         match self {
-            Self::Status
+            Self::Alive
+            | Self::Status
             | Self::ListClients
-            | Self::UpdateState
-            | Self::UpdateChunk { .. }
             | Self::GetTime
             | Self::TailLog { .. }
             | Self::Stats { .. }
@@ -574,12 +634,33 @@ impl Op<'_> {
             | Self::CreateInvite { .. }
             | Self::RevokeClient { .. }
             | Self::Reboot
-            | Self::OfferUpdate { .. }
-            | Self::CancelUpdate
-            | Self::EnrollUpdateKey { .. }
-            | Self::UpdateKeyStatement { .. }
             | Self::PutTime { .. } => true,
+            Self::Update(op) => op.writes(),
             Self::Feeder(op) => op.writes(),
+        }
+    }
+
+    /// Whether the op is frozen (the update path, the keepalive and the
+    /// invite), which every build of major 1 decodes and answers alike.
+    pub const fn is_frozen(&self) -> bool {
+        matches!(
+            self,
+            Self::Update(_) | Self::Alive | Self::CreateInvite { .. }
+        )
+    }
+}
+
+impl UpdateOp<'_> {
+    /// [`Op::writes`] for the update ops. A chunk is idempotent by its
+    /// offset instead, so a whole image does not push every other write
+    /// out of the device's memory.
+    pub const fn writes(&self) -> bool {
+        match self {
+            Self::State | Self::Chunk { .. } => false,
+            Self::Offer { .. }
+            | Self::Cancel
+            | Self::EnrollKey { .. }
+            | Self::KeyStatement { .. } => true,
         }
     }
 }
@@ -757,7 +838,8 @@ pub struct TimeSync {
     pub next_offset_s: i32,
 }
 
-/// What the device sends once the session is open.
+/// What the device sends once the session is open. [`Self::Response`] is
+/// frozen at index 0; the rest changes freely.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[expect(
     clippy::large_enum_variant,
@@ -918,22 +1000,25 @@ impl<'b> EventBatchWriter<'b> {
     }
 }
 
+/// A request's answer. The first four variants are frozen
+/// ([`Self::is_frozen`]): every answer a frozen op gets is one of them, at
+/// these indices, for good. The rest changes freely.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Outcome<'a> {
-    /// A write took effect (or a read of nothing); for a settings or Wi-Fi
-    /// write, `generation` is the store's after it.
-    Done {
-        generation: Option<u32>,
-    },
+    /// Frozen at index 0. A write took effect (or a read of nothing); for
+    /// a settings or Wi-Fi write, `generation` is the store's after it.
+    Done { generation: Option<u32> },
+    /// Frozen at index 1, with the frozen part of [`Refusal`].
+    Refused(Refusal),
+    /// Frozen at index 2: where the update stands, after an update op.
+    Update(UpdateView),
+    /// Frozen at index 3: the invite [`Op::CreateInvite`] made.
+    Invite(Invite),
     /// [`Op::Status`]'s answer: the shared status and the kind's.
     #[serde(borrow)]
     Status(Status<'a>),
     #[serde(borrow)]
     Clients(Clients<'a>),
-    Invite(Invite),
-    Refused(Refusal),
-    /// Where the update stands, after an update op.
-    Update(UpdateView),
     #[serde(borrow)]
     Time(TimeView<'a>),
     /// The section [`Op::Stats`] asked for.
@@ -945,6 +1030,22 @@ pub enum Outcome<'a> {
     /// The answer to an [`Op::Feeder`].
     #[serde(borrow)]
     Feeder(FeederOutcome<'a>),
+}
+
+impl Outcome<'_> {
+    /// Whether the answer is one a frozen op may get.
+    pub const fn is_frozen(&self) -> bool {
+        match self {
+            Self::Done { .. } | Self::Update(_) | Self::Invite(_) => true,
+            Self::Refused(refusal) => refusal.is_frozen(),
+            Self::Status(_)
+            | Self::Clients(_)
+            | Self::Time(_)
+            | Self::Stats(_)
+            | Self::Bank1(_)
+            | Self::Feeder(_) => false,
+        }
+    }
 }
 
 /// The answers only a [`FeederOp`] gets.
@@ -1063,17 +1164,19 @@ impl Blocked {
     }
 }
 
+/// Why a request was refused. The first eight variants are frozen
+/// ([`Self::is_frozen`], and [`FrozenRefusal`] names them): they are every
+/// refusal a frozen op gets, at these indices, for good. The rest changes
+/// freely.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Refusal {
     /// This client's role may not do that.
     Forbidden,
-    /// The store moved past the request's `base`: re-read and decide again.
-    Stale {
-        current: u32,
-    },
     /// Another change is still being written, or the stores are loading.
     Busy,
-    /// This firmware does not serve the op yet.
+    /// This build does not serve the op: one of another kind, or one a
+    /// newer client sent that this build cannot decode. Update the feeder
+    /// first.
     Unavailable,
     /// A field failed the feeder's checks.
     Invalid,
@@ -1081,7 +1184,12 @@ pub enum Refusal {
     NotWritable,
     /// Every client slot (or invite) is taken.
     Full,
+    /// An update op was refused: why.
+    Update(UpdateRefusal),
+    /// No such thing: a remembered invite that has expired, among others.
     NotFound,
+    /// The store moved past the request's `base`: re-read and decide again.
+    Stale { current: u32 },
     /// The `sound` setting is off.
     Muted,
     /// The clock refused the sync.
@@ -1089,23 +1197,79 @@ pub enum Refusal {
     /// The feeding owner stopped on a fault and serves no feed until the
     /// feeder restarts.
     Fault,
-    /// An update op was refused: why.
-    Update(UpdateRefusal),
     /// A bowl mode this feeder has not verified on hardware.
     Unverified,
     /// A feed, or a plan's, asked for `asked` portions, outside 1 to
     /// [`PORTIONS_MAX`].
-    Portions {
-        asked: u8,
-    },
+    Portions { asked: u8 },
     /// The clock is invalid, so the feeder cannot date the change: sync
     /// the time first.
     NoClock,
 }
 
-/// Where an update stands. The install itself does not depend on the
+impl Refusal {
+    /// Whether the refusal is one a frozen op may get.
+    pub const fn is_frozen(&self) -> bool {
+        self.frozen().is_some()
+    }
+
+    /// The refusal as the frozen part names it, if it is one.
+    pub const fn frozen(&self) -> Option<FrozenRefusal> {
+        Some(match *self {
+            Self::Forbidden => FrozenRefusal::Forbidden,
+            Self::Busy => FrozenRefusal::Busy,
+            Self::Unavailable => FrozenRefusal::Unavailable,
+            Self::Invalid => FrozenRefusal::Invalid,
+            Self::NotWritable => FrozenRefusal::NotWritable,
+            Self::Full => FrozenRefusal::Full,
+            Self::Update(refusal) => FrozenRefusal::Update(refusal),
+            Self::NotFound => FrozenRefusal::NotFound,
+            Self::Stale { .. }
+            | Self::Muted
+            | Self::Time
+            | Self::Fault
+            | Self::Unverified
+            | Self::Portions { .. }
+            | Self::NoClock => return None,
+        })
+    }
+}
+
+/// The frozen refusals: the first variants of [`Refusal`], in its order.
+/// What the device answers on the frozen paths (an update, a key, an
+/// invite) is typed as this, so a refusal outside the frozen part cannot
+/// reach a client of another build. It becomes a [`Refusal`] only to go on
+/// the wire, where both encode alike.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FrozenRefusal {
+    Forbidden,
+    Busy,
+    Unavailable,
+    Invalid,
+    NotWritable,
+    Full,
+    Update(UpdateRefusal),
+    NotFound,
+}
+
+impl From<FrozenRefusal> for Refusal {
+    fn from(refusal: FrozenRefusal) -> Self {
+        match refusal {
+            FrozenRefusal::Forbidden => Self::Forbidden,
+            FrozenRefusal::Busy => Self::Busy,
+            FrozenRefusal::Unavailable => Self::Unavailable,
+            FrozenRefusal::Invalid => Self::Invalid,
+            FrozenRefusal::NotWritable => Self::NotWritable,
+            FrozenRefusal::Full => Self::Full,
+            FrozenRefusal::Update(refusal) => Self::Update(refusal),
+            FrozenRefusal::NotFound => Self::NotFound,
+        }
+    }
+}
+
+/// Frozen. Where an update stands. The install itself does not depend on the
 /// session: a client that lost its connection reconnects, reads
-/// [`Op::UpdateState`] and sends what [`Self::wanted`] names.
+/// [`UpdateOp::State`] and sends what [`Self::wanted`] names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateView {
     pub phase: UpdatePhase,
@@ -1131,7 +1295,7 @@ pub struct UpdateView {
     pub bank0: Bank0Check,
 }
 
-/// Bank 0, the recovery copy, as bank 1 last checked it. Bank 1 gives way
+/// Frozen. Bank 0, the recovery copy, as bank 1 last checked it. Bank 1 gives way
 /// for an update only to a bank 0 that booted, recorded its own image and
 /// still holds exactly that image.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1144,7 +1308,7 @@ pub enum Bank0Check {
     Blocked { reason: Bank0Blocked },
 }
 
-/// Why bank 1 will not give way to bank 0, in the order it checks.
+/// Frozen. Why bank 1 will not give way to bank 0, in the order it checks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Bank0Blocked {
     /// Bank 0's loader marker is not valid.
@@ -1162,11 +1326,12 @@ pub enum Bank0Blocked {
     Read,
 }
 
+/// Frozen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UpdatePhase {
     /// No update in progress.
     Idle,
-    /// The offer is being checked; ask [`Op::UpdateState`] again.
+    /// The offer is being checked; ask [`UpdateOp::State`] again.
     Checking,
     /// Bank 1 recorded the offer and restarts into bank 0 once this
     /// answer is out: reconnect and offer the same manifest again.
@@ -1179,8 +1344,8 @@ pub enum UpdatePhase {
     Activated,
 }
 
-/// Why an install stopped. Bank 1's marker was never written, so the
-/// feeder keeps running bank 0.
+/// Frozen. Why an install stopped. Bank 1's marker was never written, so
+/// the feeder keeps running bank 0.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UpdateStop {
     /// No chunk came for a minute.
@@ -1200,7 +1365,7 @@ pub enum UpdateStop {
     Store,
 }
 
-/// Why an update op was refused.
+/// Frozen. Why an update op was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UpdateRefusal {
     /// Not a version 2 manifest (a version 1 one, wrong length or magic),
@@ -1246,6 +1411,10 @@ pub enum UpdateRefusal {
     /// The feeder runs on its batteries: no install starts until the
     /// adapter returns.
     Battery,
+    /// The key an enrollment names is already enrolled as a session key
+    /// (owner, member or server), which is never an update signer too. It
+    /// stays what it was.
+    HeldAsSessionKey,
 }
 
 /// What every device reports about itself, and its kind's part.
@@ -1406,6 +1575,7 @@ pub struct Client<'a> {
     pub you: bool,
 }
 
+/// Frozen, as [`Outcome::Invite`] carries it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Invite {
     pub id: u32,
@@ -2035,20 +2205,20 @@ mod tests {
         // each well past the size the feeder accepts.
         let offer = ClientMessage::Request {
             id: [0xff; 16],
-            op: Op::OfferUpdate {
+            op: Op::Update(UpdateOp::Offer {
                 manifest: &[0xff; 200],
                 downgrade: Some(&[0xff; 200]),
-            },
+            }),
         };
         let len = encode(&offer, &mut out).unwrap();
         assert_eq!(decode::<ClientMessage<'_>>(&out[..len]), Ok(offer));
 
         let chunk = ClientMessage::Request {
             id: [0xff; 16],
-            op: Op::UpdateChunk {
+            op: Op::Update(UpdateOp::Chunk {
                 offset: u32::MAX,
                 data: &[0xff; UPDATE_CHUNK_MAX],
-            },
+            }),
         };
         let len = encode(&chunk, &mut out).unwrap();
         assert_eq!(decode::<ClientMessage<'_>>(&out[..len]), Ok(chunk));

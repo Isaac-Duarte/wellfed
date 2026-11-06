@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:wellfed/state/clock/clock.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 
 /// What the header's leading button does: step back, or leave the flow.
@@ -73,46 +75,96 @@ class StepScaffold extends StatelessWidget {
                     : TextStyle(fontSize: Sizes.base, fontWeight: Fonts.medium, color: c.textMuted),
               ),
       ),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (progress case final progress?)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: Space.s5),
-                child: Bar(value: progress, height: 4),
-              ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(Space.s5, 20, Space.s5, Space.s5),
+      body: isDesktop
+          ? _DesktopStep(step: this)
+          : SafeArea(
+              top: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (top case final top?) ...[top, const SizedBox(height: Space.s4)],
-                  if (title case final title?) Headline(title),
-                  if (body case final body?) ...[
-                    const SizedBox(height: Space.s3),
-                    Text(body, style: bodyStyle(context)),
-                  ],
-                  if (title != null || body != null) const SizedBox(height: 20),
-                  ...content,
+                  if (progress case final progress?)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: Space.s5),
+                      child: Bar(value: progress, height: 4),
+                    ),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(Space.s5, 20, Space.s5, Space.s5),
+                      children: [
+                        if (top case final top?) ...[top, const SizedBox(height: Space.s4)],
+                        if (title case final title?) Headline(title),
+                        if (body case final body?) ...[
+                          const SizedBox(height: Space.s3),
+                          Text(body, style: bodyStyle(context)),
+                        ],
+                        if (title != null || body != null) const SizedBox(height: 20),
+                        ...content,
+                      ],
+                    ),
+                  ),
+                  if (actions.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(Space.s5, 0, Space.s5, Space.s5),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final (i, action) in actions.indexed) ...[
+                            if (i > 0) const SizedBox(height: Space.s3),
+                            action,
+                          ],
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
-            if (actions.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(Space.s5, 0, Space.s5, Space.s5),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final (i, action) in actions.indexed) ...[if (i > 0) const SizedBox(height: Space.s3), action],
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
     );
   }
+}
+
+/// A desktop step: one card centered in the window, the actions inside it
+/// under the content, as a form in a desktop app keeps its buttons.
+class _DesktopStep extends StatelessWidget {
+  const _DesktopStep({required this.step});
+
+  final StepScaffold step;
+
+  @override
+  Widget build(BuildContext context) => Scrollbar(
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(Space.s5, Space.s2, Space.s5, Space.s6),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: desktopStep),
+          child: Panel(
+            padding: const EdgeInsets.all(Space.s6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (step.progress case final progress?) ...[
+                  Bar(value: progress, height: 4),
+                  const SizedBox(height: Space.s5),
+                ],
+                if (step.top case final top?) ...[top, const SizedBox(height: Space.s4)],
+                if (step.title case final title?) Headline(title),
+                if (step.body case final body?) ...[
+                  const SizedBox(height: Space.s3),
+                  Text(body, style: bodyStyle(context)),
+                ],
+                if (step.title != null || step.body != null) const SizedBox(height: 20),
+                ...step.content,
+                if (step.actions.isNotEmpty) const SizedBox(height: Space.s5),
+                for (final (i, action) in step.actions.indexed) ...[
+                  if (i > 0) const SizedBox(height: Space.s3),
+                  action,
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 /// Body copy: 15 px, muted.

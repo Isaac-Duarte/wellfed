@@ -186,7 +186,7 @@ pub async fn next(updates: &mut Receiver<MirrorEvent>) -> MirrorEvent {
 /// The home every device here belongs to.
 pub const HOME: HomeId = HomeId(Uuid::from_u128(0x40));
 
-async fn home(store: &Store) {
+pub async fn home(store: &Store) {
     let home = Home {
         id: HOME,
         name: "Home".into(),

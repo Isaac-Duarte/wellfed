@@ -7,8 +7,9 @@
 //! The feeder task keeps the session, so the driver never opens one: when
 //! the session drops (a cut, or the feeder restarting into bank 0 to take
 //! the release), the task reconnects on its own, and the driver waits for
-//! the link to come back and reads the feeder's status from the new
-//! session. Feeds and status reads keep their own lane throughout, so each
+//! the link to come back and reads the feeder's update state from the new
+//! session: never its status, since bank 0 may run a build of another
+//! schema revision, which only the frozen update path reaches. Feeds and status reads keep their own lane throughout, so each
 //! waits at most one chunk.
 
 use tokio::time::{Duration, Instant, sleep, timeout_at};
@@ -28,7 +29,7 @@ pub use wellfed_connect::update::Pushed;
 
 /// From a restart until the feeder answers the device API again.
 const REOPEN_WAIT: Duration = Duration::from_secs(5 * 60);
-/// Between status reads that find no session to answer them.
+/// Between state reads that find no session to answer them.
 const POLL: Duration = Duration::from_secs(1);
 
 /// What an install offers: a release file as the server keeps it (the
@@ -178,17 +179,22 @@ impl<P: FnMut(&UpdateView)> Steps for Lane<'_, P> {
     async fn reopen(&mut self) -> Result<Option<Opened>, PushError> {
         let deadline = Instant::now() + REOPEN_WAIT;
         loop {
-            let online = self.operation.link.wait_for(|link| *link == Link::Online);
+            let online = self
+                .operation
+                .link
+                .wait_for(|link| matches!(link, Link::Online | Link::OtherBuild));
             match timeout_at(deadline, online).await {
                 Ok(Ok(_)) => {}
                 // Not back in time, or the feeder's task has ended.
                 Err(_) | Ok(Err(_)) => return Ok(None),
             }
             let id = self.operation.request_id()?;
-            if let Ok(Answer::Status(status)) = self.operation.step(id, Op::Status).await {
+            if let Ok(Answer::Update(view)) = self.operation.step(id, Op::UpdateState).await
+                && let Some(build) = self.operation.build.borrow().clone()
+            {
                 return Ok(Some(Opened {
-                    bank: status.bank,
-                    build: status.build,
+                    bank: view.bank,
+                    build,
                 }));
             }
             if Instant::now() >= deadline {

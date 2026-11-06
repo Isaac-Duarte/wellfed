@@ -108,12 +108,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: WellfedConfigEntry) -> b
     # The first state names the role and what the feeder serves, which
     # decide the entities.
     await session.ready(READY_WAIT)
-    if session.revoked or session.state is None:
+    if session.revoked or session.other_build or session.state is None:
         await hass.async_add_executor_job(session.stop)
         if session.revoked:
             raise ConfigEntryAuthFailed(translation_domain=DOMAIN, translation_key="revoked")
+        # Home Assistant tries again on its own, backing off: once the
+        # feeder is updated, the entry comes back with no reload.
+        if session.other_build:
+            raise ConfigEntryNotReady(translation_domain=DOMAIN, translation_key="other_build")
         raise ConfigEntryNotReady(translation_domain=DOMAIN, translation_key="not_ready")
 
+    # A feeder found on another build mid-session takes the same path:
+    # set up again, which waits, retrying, for its update.
+    session.on_other_build = lambda: hass.config_entries.async_schedule_reload(entry.entry_id)
     entry.runtime_data = session
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

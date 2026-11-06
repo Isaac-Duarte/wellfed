@@ -8,13 +8,14 @@ Every kind of device serves these.
 
 | Op | Notes |
 | --- | --- |
-| `Status` | Answered `Status`: the shared fields and the kind's part. A feeder's is `DeviceStatus::Feeder(FeederStatus)`: the lock, the settings' generation, the food beam, the last feed fault, the desiccant count, the readiness and the judged supply. Clients send it as a keepalive |
+| `Status` | Answered `Status`: the shared fields and the kind's part. A feeder's is `DeviceStatus::Feeder(FeederStatus)`: the lock, the settings' generation, the food beam, the last feed fault, the desiccant count, the readiness and the judged supply |
+| `Alive` | Answered `Done`, to any role. The keepalive: frozen, so a client keeps a session with a feeder of any build alive ([evolution](device-api.md#evolution)) |
 | `PutWifi { base, wifi }` | `None` clears. Owners only |
 | `TimeSync` | An owner's may step the clock. Anyone else's may only narrow it, and is refused `Time` when it disagrees with a valid clock beyond both error bounds |
 | `CreateInvite { role }`, `ListClients`, `RevokeClient { key }` | `RevokeClient` is owners only |
 | `Reboot` | Owners only. Refused `Busy` while a feed is in flight |
 | `GetTime`, `PutTime { base, changes }` | `GetTime` is answered `Time(TimeView)`. `PutTime` is owners only |
-| `OfferUpdate`, `UpdateChunk`, `UpdateState`, `CancelUpdate`, `EnrollUpdateKey`, `UpdateKeyStatement` | Owners only. Refused `Unavailable` by a build without an installer |
+| `Update`: `Offer`, `Chunk`, `State`, `Cancel`, `EnrollKey`, `KeyStatement` | Owners only. Refused `Unavailable` by a build without an installer. Frozen, with their answers, so any later client updates a bank 0 of any build ([evolution](device-api.md#evolution)) |
 | `Stats { section }` | One section of the statistics. The food, feeds and portions sections are a feeder's ([statistics](device-api-diagnostics.md#statistics)) |
 | `ReadBank1 { offset }` | Answered `Bank1(Bank1Page)`. Owners only, served only from bank 0 ([stock backup](device-api-diagnostics.md#stock-backup)) |
 | `TailLog { after }` | Owners only, answered with `Log` batches ([debug log](device-api-diagnostics.md#debug-log)) |
@@ -148,7 +149,7 @@ A subscriber that asked for samples (`Samples::On`) gets every kind, each on its
 
 ## Updates, invites and recovery
 
-**Updates** (owner sessions only) are `OfferUpdate`, `UpdateChunk`, `UpdateState`, `CancelUpdate`, `EnrollUpdateKey` and `UpdateKeyStatement`, answered `Outcome::Update` or `Refusal::Update`.
+**Updates** (owner sessions only) are `Op::Update`'s `Offer`, `Chunk`, `State`, `Cancel`, `EnrollKey` and `KeyStatement`, answered `Outcome::Update`, `Outcome::Done` or `Refusal::Update`. They are frozen ([evolution](device-api.md#evolution)).
 
 - `UpdateView.bank0` is bank 0 as bank 1 last checked it: `Unchecked`, `Match`, or `Blocked { reason }`. `UpdateRefusal::Fallback { reason }` names the check an offer failed: `Marker`, `Unrecorded`, `Key`, `Extent`, `Changed` or `Read` ([OTA design](ota-design.md#bootstrap)).
 - The loop never verifies a signature. It copies the request into the update mailbox and answers from what the service task's update stage publishes ([OTA design](ota-design.md#updates-over-the-device-api)).
@@ -156,7 +157,7 @@ A subscriber that asked for samples (`Samples::On`) gets every kind, each on its
 - A chunk is idempotent by its offset, so it isn't a remembered write, and chunks aren't logged one by one.
 - An update key is enrolled only once someone at the feeder presses Dispense within 60 s. The session's answer waits for the press (`wellfed-client` waits 75 s for this op, not its usual 10 s), and a session that leaves cancels the offer. A locked panel still takes this press, and the history records the enrollment. `wellfed update-key enroll` sends it ([OTA design](ota-design.md#keys-and-anti-rollback)).
 
-**Invites and recovery** follow [pairing](pairing.md#pairing). `CreateInvite` mints a single-use secret, held in RAM for 10 minutes, which is the PSK of the new client's XXpsk3 handshake. The third handshake message carries the label, and the key enrolls through the keys mailbox. The sealed answer, `Joined::Enrolled { role, model }`, names the model as a welcome does, so the client knows what it joined without opening a session. The recovery window runs BLE's setup exchange, code proof included, over the stream, closes at the first offer, and takes no Wi-Fi.
+**Invites and recovery** follow [pairing](pairing.md#pairing), and are frozen with the update path ([evolution](device-api.md#the-frozen-part)). `CreateInvite` mints a single-use secret, held in RAM for 10 minutes, which is the PSK of the new client's XXpsk3 handshake. The third handshake message carries the label, and the key enrolls through the keys mailbox. The sealed answer, `Joined::Enrolled { role, model }`, names the model as a welcome does, so the client knows what it joined without opening a session. The recovery window runs BLE's setup exchange, code proof included, over the stream, closes at the first offer, and takes no Wi-Fi.
 
 ## Evidence
 

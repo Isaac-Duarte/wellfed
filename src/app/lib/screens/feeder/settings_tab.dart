@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide Card;
+import 'package:go_router/go_router.dart';
 import 'package:wellfed/screens/feeder/settings_owner.dart';
 import 'package:wellfed/screens/feeder/settings_rows.dart';
 import 'package:wellfed/screens/feeder/settings_window.dart';
@@ -10,6 +11,7 @@ import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/ask_text.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/pending.dart';
 import 'package:wellfed/widgets/settings_list.dart';
@@ -115,7 +117,7 @@ class SettingsTab extends StatelessWidget {
           ],
           // What this phone keeps about the feeder: it works offline too.
           SettingsSection(
-            'On this phone',
+            'On this $deviceName',
             Column(
               children: [
                 SettingsTile(
@@ -146,7 +148,7 @@ class SettingsTab extends StatelessWidget {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Remove from this phone',
+                      'Remove from this $deviceName',
                       style: TextStyle(fontSize: 15, fontWeight: Fonts.medium, color: c.fault),
                     ),
                   ),
@@ -213,9 +215,9 @@ class SettingsTab extends StatelessWidget {
     final bool? sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Remove $name from this phone?'),
-        content: const Text(
-          'It keeps feeding on its schedule. This phone stays on its People '
+        title: Text('Remove $name from this $deviceName?'),
+        content: Text(
+          'It keeps feeding on its schedule. This $deviceName stays on its People '
           'list until an owner removes it.',
         ),
         actions: [
@@ -225,7 +227,13 @@ class SettingsTab extends StatelessWidget {
       ),
     );
     if (sure != true || !context.mounted) return;
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    // On a desktop the feeder's page is the first, with nothing under it to
+    // pop back to, so the window goes to the overview.
+    if (isDesktop) {
+      context.go('/');
+    } else {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
     await feeder.forgetHere();
   }
 }

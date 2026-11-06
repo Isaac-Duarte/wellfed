@@ -676,6 +676,46 @@ fn an_enrolled_owner_key_signs_updates_a_feeder_without_a_built_in_key_takes() {
     });
 }
 
+/// A key enrolled as a session key is never an update signer too: after
+/// the press the feeder refuses it with a refusal of its own, which a
+/// client that never read the list (a feeder of another build) reads as
+/// such, and the key stays an owner's.
+#[test]
+fn a_session_key_offered_as_a_signer_is_refused_after_the_press() {
+    paused(async {
+        let mut rig = Rig::trusting(None).await;
+        let mut connection = rig.open().await;
+        rig.sim.type_line("hold lock").unwrap();
+        let own = *Keypair::from_secret(OWNER).public();
+        let mut enroll = Enroll::new(own, "mine", connection.role())
+            .unwrap()
+            .unlisted();
+        let update_key::Next::Press(op) = enroll.poll() else {
+            panic!("an unlisted enrollment goes straight to the press");
+        };
+        let id = rig.id();
+        let sim = &rig.sim;
+        let (answer, ()) = tokio::join!(connection.ask(id, &op), async {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            sim.type_line("press dispense").unwrap();
+        });
+        let answer = answer.unwrap();
+        assert_eq!(
+            answer,
+            Answer::Refused(Refusal::Update(UpdateRefusal::HeldAsSessionKey))
+        );
+        enroll.answer(&answer);
+        assert_eq!(
+            enroll.poll(),
+            update_key::Next::Failed(EnrollError::HeldAsSessionKey)
+        );
+        let listed = clients(&mut rig).await;
+        let entry = listed.iter().find(|c| c.key.0 == own).unwrap();
+        assert_eq!(entry.role, ClientRole::Owner);
+        rig.sim.stop().await;
+    });
+}
+
 #[test]
 fn without_a_press_the_key_is_unconfirmed_and_not_enrolled() {
     paused(async {

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 
+import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/src/rust/api/install.dart' as install;
 import 'package:wellfed/src/rust/api/keys.dart';
@@ -13,6 +14,11 @@ import 'package:wellfed/src/rust/api/restore.dart' as rust;
 /// service, the kept backup and the file picker. Behind this, so every screen
 /// is tested with no Rust and no phone.
 abstract interface class RestorePorts {
+  /// Whether this device may put the vendor's firmware back. Only the
+  /// Android app has: the run keeps its process alive through the install's
+  /// foreground service, which has no desktop side.
+  bool get restoresFeeder;
+
   /// The installer's own folder.
   Future<String> dataDir();
 
@@ -61,6 +67,9 @@ class AppRestorePorts implements RestorePorts {
 
   /// The install's folders, NSD and foreground service are a restore's too.
   final AppInstallPorts _install;
+
+  @override
+  bool get restoresFeeder => !onDesktopHost;
 
   @override
   Future<String> dataDir() async => (await _install.paths()).data;
