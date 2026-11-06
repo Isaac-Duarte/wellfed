@@ -14,6 +14,7 @@ import 'package:wellfed/src/rust/api/model.dart' show CallClip_None, CallClip_Re
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/settings_list.dart';
@@ -41,7 +42,7 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
   }
 
   void _open(BuildContext context, Widget screen) =>
-      unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen)));
+      unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => FormWidth(child: screen))));
 
   @override
   Widget build(BuildContext context) {

@@ -27,11 +27,7 @@ Future<void> inviteSomeone(BuildContext context, FeederController feeder) async 
   final FeederReply reply = await feeder.ask(FeederRequest.createInvite(role: role));
   if (!context.mounted) return;
   if (reply is FeederReply_Invite) {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => InviteScreen(share: feeder.share, invite: reply.invite),
-      ),
-    );
+    await openModalPage<void>(context, (_) => InviteScreen(share: feeder.share, invite: reply.invite));
     // Whoever scanned it joined while it was on screen.
     await feeder.loadClients();
   } else {

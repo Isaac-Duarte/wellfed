@@ -9,6 +9,7 @@ import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/cards.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
 import 'package:wellfed/widgets/replies.dart';
 import 'package:wellfed/widgets/when.dart';
@@ -20,12 +21,7 @@ Future<void> openMealEditor(
   required FeederController feeder,
   required PlansView held,
   int? slot,
-}) => Navigator.of(context).push(
-  MaterialPageRoute<void>(
-    fullscreenDialog: true,
-    builder: (_) => MealEditor(feeder: feeder, held: held, slot: slot),
-  ),
-);
+}) => openModalPage<void>(context, (_) => MealEditor(feeder: feeder, held: held, slot: slot));
 
 const List<Weekday> _everyDay = Weekday.values;
 const List<Weekday> _weekdays = [Weekday.mon, Weekday.tue, Weekday.wed, Weekday.thu, Weekday.fri];
@@ -336,11 +332,16 @@ class _MealEditorState extends State<MealEditor> {
           Text('Meal call', style: label),
           CallLink(
             onTap: () => unawaited(
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => MealCallScreen(feeder: widget.feeder, pick: widget.feeder.pickRecording),
-                ),
-              ),
+              isDesktop
+                  ? openModalPage<void>(
+                      context,
+                      (_) => MealCallScreen(feeder: widget.feeder, pick: widget.feeder.pickRecording),
+                    )
+                  : Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => MealCallScreen(feeder: widget.feeder, pick: widget.feeder.pickRecording),
+                      ),
+                    ),
             ),
           ),
           const SizedBox(height: Space.s1),

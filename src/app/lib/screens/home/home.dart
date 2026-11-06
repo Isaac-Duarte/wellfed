@@ -184,7 +184,9 @@ class _DesktopOverview extends StatelessWidget {
                     for (final controller in feeders)
                       SizedBox(
                         width: width,
-                        child: FeederCard(controller: controller, compact: true),
+                        // A window has the room for each feeder's next meal, last
+                        // feed and power that a phone folds away.
+                        child: FeederCard(controller: controller),
                       ),
                   ],
                 );

@@ -16,6 +16,7 @@ import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/form_factor.dart';
 import 'package:wellfed/state/restore/restore.dart';
 import 'package:wellfed/state/update/update.dart';
 import 'package:wellfed/state/wifi/networks.dart';
@@ -149,10 +150,10 @@ class FeederController extends ChangeNotifier {
   String clientName(String fingerprint) {
     for (final ClientView client in _state.clients) {
       if (client.fingerprint == fingerprint) {
-        return client.you ? 'This phone' : client.label;
+        return client.you ? 'This $deviceName' : client.label;
       }
     }
-    return 'A phone or server';
+    return 'A $anyDevice or server';
   }
 
   /// Read who the feeder lists.

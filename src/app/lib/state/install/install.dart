@@ -9,6 +9,7 @@ import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/setup.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
+import 'package:wellfed/state/form_factor.dart';
 import 'package:wellfed/state/install/install_state.dart';
 import 'package:wellfed/state/wifi/networks.dart';
 
