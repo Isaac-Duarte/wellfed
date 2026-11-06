@@ -1070,6 +1070,29 @@ fn verdicts(reports: &[Report]) -> Vec<(&str, &str)> {
         .collect()
 }
 
+/// A consumer image joins with stored credentials and has no build ones to
+/// fall back to: the fallback scenario is skipped with its reason, and the
+/// run still passes.
+#[test]
+fn the_wifi_fallback_is_skipped_on_a_feeder_without_build_credentials() {
+    let mut feeder = Feeder::new(OLD);
+    feeder.source = WifiSource::Stored;
+    let (reports, _) = suite(
+        &mut feeder,
+        &["--power", "--build", "--only", "wifi-fallback"],
+    );
+
+    let fallback = reports
+        .iter()
+        .find(|r| r.scenario == "wifi-fallback")
+        .expect("the scenario ran");
+    let Verdict::Skip(reason) = &fallback.verdict else {
+        panic!("{:?}", fallback.verdict);
+    };
+    assert!(reason.contains("not the build's"), "{reason}");
+    assert_eq!(exit_code(&reports, None), 0);
+}
+
 #[test]
 fn the_full_suite_passes_on_a_well_behaved_feeder() {
     let mut feeder = Feeder::new(OLD);

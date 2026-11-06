@@ -81,6 +81,16 @@ impl Error {
     pub(crate) fn interrupted(&self) -> bool {
         matches!(self, Self::Rig(wellfed_rig::Error::Interrupted))
     }
+
+    /// The device can't run the scenario at all, which only its answers
+    /// show (a consumer image has no build credentials to fall back to):
+    /// the scenario is skipped with this reason, not failed.
+    pub(crate) fn unmet_on_device(&self) -> Option<String> {
+        match self {
+            Self::Scenarios(error @ ScenariosError::NotBuildWifi { .. }) => Some(error.to_string()),
+            _ => None,
+        }
+    }
 }
 
 fn scenario_names() -> String {
