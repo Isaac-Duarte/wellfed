@@ -34,6 +34,7 @@
 //! for what the walk does not model: exception nesting beyond one frame and
 //! the vendor C sites.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::LazyLock;
@@ -81,6 +82,11 @@ pub enum StackError {
     NoHookSite,
     #[error("The flash-hook callback {callback} reaches an unbounded indirect call in {call}")]
     CallbackUnbounded { callback: String, call: String },
+    #[error(
+        "The stack audit walked {visits} calls without finishing: the call graph has cycles \
+         too tangled to bound this way, so no bound is given"
+    )]
+    WalkBudget { visits: u64 },
     #[error("Ambiguous task entry {entry}: {symbols:?}")]
     AmbiguousEntry { entry: String, symbols: Vec<String> },
     #[error(
@@ -519,12 +525,23 @@ struct Charges {
 /// path whose indirect calls stay unbounded.
 type Walk = (u64, Vec<String>, BTreeSet<String>);
 
+/// Calls the walks of one audit may visit before it refuses. A result cut
+/// against an ancestor is walked again from each path, so a large tangle of
+/// mutually recursive functions could take exponential time; the audit
+/// fails closed rather than hang the build. The feeder's image needs far
+/// fewer (its whole audit runs in under a second).
+const WALK_VISITS_MAX: u64 = 20_000_000;
+
 struct Graph<'a> {
     functions: &'a HashMap<String, Function>,
     classes: HashMap<&'a str, Indirect>,
     by_address: HashMap<u64, &'a str>,
     /// The image's loaded sections, for the tables a reference points into.
     data: &'a [(u64, Vec<u8>)],
+    /// Calls visited so far, against `budget`; past it every walk stops
+    /// short, and `audit` refuses.
+    visits: Cell<u64>,
+    budget: u64,
 }
 
 impl<'a> Graph<'a> {
@@ -543,7 +560,14 @@ impl<'a> Graph<'a> {
             classes,
             by_address,
             data,
+            visits: Cell::new(0),
+            budget: WALK_VISITS_MAX,
         }
+    }
+
+    /// Whether some walk ran out of `budget`, so its numbers are short.
+    fn exhausted(&self) -> bool {
+        self.visits.get() > self.budget
     }
 
     /// The function at `value`, a Thumb code address.
@@ -622,10 +646,19 @@ impl<'a> Graph<'a> {
     /// recursion was cut.
     fn worst(&self, entry: &str, charges: Charges) -> (Walk, Vec<String>) {
         let (mut memo, mut cut) = (HashMap::new(), BTreeSet::new());
-        let walk = self.walk(entry, charges, &mut Vec::new(), &mut memo, &mut cut);
+        let (walk, _) = self.walk(entry, charges, &mut Vec::new(), &mut memo, &mut cut);
         (walk, cut.into_iter().collect())
     }
 
+    /// `name`'s deepest path, and the shallowest index in `visiting` above
+    /// `name` that a cut below it landed on, if any.
+    ///
+    /// A cut against a function still on the path above `name` makes
+    /// `name`'s result depend on how it was reached: from a caller where that
+    /// function is not on the path, the cut edge is a real call whose frames
+    /// count. Such a result is not memoised, so a later caller walks it again
+    /// rather than reuse the smaller number. A result whose cuts all landed on
+    /// `name` or below closed its cycles itself, and is memoised.
     fn walk(
         &self,
         name: &str,
@@ -633,16 +666,22 @@ impl<'a> Graph<'a> {
         visiting: &mut Vec<String>,
         memo: &mut HashMap<String, Walk>,
         cut: &mut BTreeSet<String>,
-    ) -> Walk {
-        if visiting.iter().any(|v| v == name) {
+    ) -> (Walk, Option<usize>) {
+        self.visits.set(self.visits.get().saturating_add(1));
+        if self.exhausted() {
+            // Short, and never memoised (index 0 is above every caller);
+            // `audit` refuses before any bound is used.
+            return ((0, Vec::new(), BTreeSet::new()), Some(0));
+        }
+        if let Some(at) = visiting.iter().position(|v| v == name) {
             cut.insert(name.to_string());
-            return (0, Vec::new(), BTreeSet::new());
+            return ((0, Vec::new(), BTreeSet::new()), Some(at));
         }
         if let Some(known) = memo.get(name) {
-            return known.clone();
+            return (known.clone(), None);
         }
         let Some(f) = self.functions.get(name) else {
-            return (0, vec![name.to_string()], BTreeSet::new());
+            return ((0, vec![name.to_string()], BTreeSet::new()), None);
         };
 
         let (mut best, mut path, mut vendor) = (0, Vec::new(), BTreeSet::new());
@@ -654,9 +693,12 @@ impl<'a> Graph<'a> {
             }
             None => {}
         }
+        let own = visiting.len();
+        let mut reached: Option<usize> = None;
         visiting.push(name.to_string());
         for callee in &f.calls {
-            let (depth, deeper, nested) = self.walk(callee, charges, visiting, memo, cut);
+            let ((depth, deeper, nested), hit) = self.walk(callee, charges, visiting, memo, cut);
+            reached = reached.into_iter().chain(hit).min();
             vendor.extend(nested);
             if depth > best {
                 (best, path) = (depth, deeper);
@@ -667,8 +709,13 @@ impl<'a> Graph<'a> {
         let mut full = vec![name.to_string()];
         full.extend(path);
         let result = (f.frame + best, full, vendor);
-        memo.insert(name.to_string(), result.clone());
-        result
+        match reached.filter(|&at| at < own) {
+            Some(ancestor) => (result, Some(ancestor)),
+            None => {
+                memo.insert(name.to_string(), result.clone());
+                (result, None)
+            }
+        }
     }
 
     /// The deepest of `targets` under `charges`, and the unbounded indirect
@@ -810,6 +857,9 @@ pub(crate) fn audit(elf: &Path, objdump: &Path, sources: &TaskSources) -> Result
     if rows.is_empty() {
         return Err(StackError::NoTasks.into());
     }
+    require(!graph.exhausted(), || StackError::WalkBudget {
+        visits: graph.visits.get(),
+    })?;
     Ok(StackAudit {
         tasks: rows,
         firmware_tasks,
@@ -1455,5 +1505,110 @@ mod tests {
                 "wellfed_sdk::runtime::diagnostic_task"
             ]
         );
+    }
+
+    /// A call graph from `(name, frame, callees)`.
+    fn graph_of(edges: &[(&str, u64, &[&str])]) -> HashMap<String, Function> {
+        edges
+            .iter()
+            .map(|(name, frame, calls)| {
+                let function = Function {
+                    frame: *frame,
+                    calls: calls.iter().map(|c| c.to_string()).collect(),
+                    ..Function::default()
+                };
+                (name.to_string(), function)
+            })
+            .collect()
+    }
+
+    /// `x` is first walked under `a`, so its edge back to `a` is cut and its
+    /// result leaves out `a`'s frames. From `b`, where `a` is not on the
+    /// path, `x` calls `a` for real, and the worst path goes through it.
+    #[test]
+    fn a_result_cut_against_an_ancestor_is_walked_again_from_another_path() {
+        let functions = graph_of(&[
+            ("root", 1, &["a", "b"]),
+            ("a", 100, &["d", "x"]),
+            ("d", 500, &[]),
+            ("x", 10, &["a", "leaf"]),
+            ("leaf", 1, &[]),
+            ("b", 1, &["x"]),
+        ]);
+        let graph = Graph::new(&functions, &[]);
+
+        let ((depth, path, _), cut) = graph.worst("root", Charges::default());
+        assert_eq!(depth, 1 + 1 + 10 + 100 + 500, "root, b, x, a, d");
+        assert_eq!(path, ["root", "b", "x", "a", "d"]);
+        assert_eq!(cut, ["a"]);
+
+        let (mut memo, mut cut) = (HashMap::new(), BTreeSet::new());
+        graph.walk(
+            "a",
+            Charges::default(),
+            &mut Vec::new(),
+            &mut memo,
+            &mut cut,
+        );
+        assert!(!memo.contains_key("x"), "x's result depends on a above it");
+        assert_eq!(memo["a"].0, 600, "a closed its own cycle");
+    }
+
+    /// A walk past its visit budget stops short and marks the graph, which
+    /// `audit` refuses, so a short number is never a bound.
+    #[test]
+    fn a_walk_past_its_budget_marks_the_graph_exhausted() {
+        let functions = graph_of(&[
+            ("root", 1, &["a", "b"]),
+            ("a", 1, &["b", "c"]),
+            ("b", 1, &["c", "a"]),
+            ("c", 1, &["a", "b"]),
+        ]);
+        let mut graph = Graph::new(&functions, &[]);
+        graph.worst("root", Charges::default());
+        assert!(!graph.exhausted(), "{} visits", graph.visits.get());
+
+        let used = graph.visits.get();
+        graph.budget = used / 2;
+        graph.visits.set(0);
+        graph.worst("root", Charges::default());
+        assert!(graph.exhausted());
+    }
+
+    /// A cycle that closes on `x` itself leaves `x`'s result the same from
+    /// any caller, so it is memoised, and the cut is still reported.
+    #[test]
+    fn a_cycle_closed_inside_a_function_is_memoised_and_reported() {
+        let functions = graph_of(&[
+            ("root", 1, &["p", "q", "r"]),
+            ("p", 2, &["x"]),
+            ("q", 3, &["x"]),
+            ("x", 10, &["y"]),
+            ("y", 20, &["leaf", "x"]),
+            ("leaf", 5, &[]),
+            ("r", 100, &["y"]),
+        ]);
+        let graph = Graph::new(&functions, &[]);
+
+        // From `r`, `y` calls `x` for real: `y`'s result under `x` (where
+        // that call was cut) must not be reused, which gave 1 + 100 + 25.
+        // Reusing `x`'s memo inside its own cycle may count `y` twice: an
+        // over-count, safe, so only the floor is pinned.
+        let ((depth, path, _), cut) = graph.worst("root", Charges::default());
+        assert!(depth >= 1 + 100 + 20 + 10, "{depth}: root, r, y, x");
+        assert_eq!(path[..4], ["root", "r", "y", "x"]);
+        assert_eq!(cut, ["x"]);
+
+        let (mut memo, mut cut) = (HashMap::new(), BTreeSet::new());
+        let (_, reached) = graph.walk(
+            "p",
+            Charges::default(),
+            &mut Vec::new(),
+            &mut memo,
+            &mut cut,
+        );
+        assert_eq!(reached, None);
+        assert_eq!(memo["x"].0, 35);
+        assert!(!memo.contains_key("y"), "y's cut landed on x above it");
     }
 }
