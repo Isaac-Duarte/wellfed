@@ -40,6 +40,7 @@ pub mod reminder;
 pub mod schedule;
 pub mod serve;
 pub mod setup;
+pub mod skip;
 pub mod supply;
 pub mod time;
 

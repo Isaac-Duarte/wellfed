@@ -12,7 +12,8 @@ use super::request::{Action, Reply};
 use super::{Server, Waiting};
 use crate::mailbox::{
     Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult, MealReminder,
-    PLANS, Plan, PlansResult, PlayResult, SettingsFields, SettingsResult, Table, Weekdays, Window,
+    MealSkip, PLANS, Plan, PlansResult, PlayResult, SettingsFields, SettingsResult, Table,
+    Weekdays, Window,
 };
 use crate::{FeederDevice, Reason};
 use wellfed_core::tone::Tune as CoreTune;
@@ -64,6 +65,14 @@ pub(super) enum FeederWait {
     /// `Plans` event once the writer reports it saved.
     Plans {
         revision: u32,
+    },
+    /// A skip of slot `slot`'s meal due at `due_s`, or its undo: done once
+    /// the slot's mark covers the meal (a skip) or no longer does (an
+    /// undo), and recorded then.
+    Skip {
+        slot: u8,
+        due_s: u32,
+        skip: MealSkip,
     },
     /// A meal call upload's start, or its delete: done once the store
     /// waits for that upload's first chunk, or holds no clip.
@@ -129,6 +138,12 @@ pub(super) enum FeederAction {
         base: u32,
     },
     ResetDesiccant,
+    /// A skip of slot `slot`'s meal due at `due_s`, or its undo.
+    SkipMeal {
+        slot: u8,
+        due_s: u32,
+        skip: MealSkip,
+    },
     GetCall,
     StartCall {
         bytes: u32,
@@ -205,6 +220,16 @@ pub(super) fn action(op: FeederOp<'_>) -> Action {
         }
         FeederOp::DeleteCall => FeederAction::DeleteCall,
         FeederOp::PlayCall => FeederAction::PlayCall,
+        FeederOp::SkipMeal { slot, due_s } => FeederAction::SkipMeal {
+            slot,
+            due_s,
+            skip: MealSkip::Skip,
+        },
+        FeederOp::UnskipMeal { slot, due_s } => FeederAction::SkipMeal {
+            slot,
+            due_s,
+            skip: MealSkip::Unskip,
+        },
     };
     Action::Feeder(action)
 }
@@ -255,6 +280,14 @@ impl FeederAction {
             Self::CallChunk { .. } => Self::CALL_CHUNK,
             Self::DeleteCall => "delete-call",
             Self::PlayCall => "play-call",
+            Self::SkipMeal {
+                skip: MealSkip::Skip,
+                ..
+            } => "skip-meal",
+            Self::SkipMeal {
+                skip: MealSkip::Unskip,
+                ..
+            } => "unskip-meal",
         }
     }
 }
@@ -370,6 +403,15 @@ impl Server {
                 }
                 Err(refusal) => Reply::Refused(refusal),
             },
+            FeederAction::SkipMeal { slot, due_s, skip } => {
+                match device.skip_meal(slot, due_s, skip, now_ms) {
+                    Ok(()) => {
+                        let wait = FeederWait::Skip { slot, due_s, skip };
+                        return self.wait(index, id, whole, Waiting::Feeder(wait));
+                    }
+                    Err(refusal) => Reply::Refused(refusal),
+                }
+            }
             FeederAction::GetCall => match device.call(None) {
                 CallResult::Current { .. } => Reply::Feeder(FeederReply::Call),
                 CallResult::Busy => Reply::Refused(Refusal::Busy),
@@ -729,6 +771,7 @@ impl Server {
                         generation: view.revision,
                         writable: view.writable,
                         plans: wire_plans(&view.table),
+                        skipped: core::array::from_fn(|slot| view.skipped(slot)),
                     }))
                 }
                 _ => unavailable,
@@ -796,6 +839,47 @@ pub(super) fn poll<F: FeederDevice>(
                 Reply::Done(Some(generation))
             }
             PlansResult::Current { pending: false, .. } => Reply::Refused(Refusal::NotWritable),
+            PlansResult::Current { pending: true, .. } | PlansResult::Busy => return None,
+            PlansResult::ReadOnly | PlansResult::Unserved => Reply::Refused(Refusal::NotWritable),
+        },
+        // The slot's stored skip decides, never its mark with the claim
+        // folded in: an undo that lands just before its meal is due is
+        // followed at once by the schedule's claim of that meal, which
+        // marks it as the skip did. Only a skip sets the bit and only an
+        // undo clears it before the meal is due; a change the writer could
+        // not save leaves it as it was. A skip that lands is never claimed
+        // over (its mark covers the meal), so its bit stands until polled.
+        FeederWait::Skip { slot, due_s, skip } => match device.plans(None) {
+            PlansResult::Current {
+                view,
+                pending: false,
+            } => {
+                let held = view.skipped(usize::from(slot)) == Some(due_s);
+                let (landed, body) = match skip {
+                    MealSkip::Skip => (
+                        held,
+                        EventBody::Skipped {
+                            plan: slot,
+                            due: due_s,
+                            by,
+                        },
+                    ),
+                    MealSkip::Unskip => (
+                        !held,
+                        EventBody::Unskipped {
+                            plan: slot,
+                            due: due_s,
+                            by,
+                        },
+                    ),
+                };
+                if landed {
+                    device.record(now_ms, body);
+                    Reply::Done(None)
+                } else {
+                    Reply::Refused(Refusal::NotWritable)
+                }
+            }
             PlansResult::Current { pending: true, .. } | PlansResult::Busy => return None,
             PlansResult::ReadOnly | PlansResult::Unserved => Reply::Refused(Refusal::NotWritable),
         },

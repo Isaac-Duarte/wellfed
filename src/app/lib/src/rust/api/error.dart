@@ -85,9 +85,4 @@ enum ErrorKind {
   /// The pending writes' file is already open in another router: one
   /// router owns it.
   inUse,
-
-  /// The session is the path router's: its feeds go through
-  /// [`PathRouter::feed`](crate::api::router::PathRouter::feed), which
-  /// pins them.
-  routed,
 }

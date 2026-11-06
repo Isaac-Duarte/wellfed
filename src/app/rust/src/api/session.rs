@@ -1,6 +1,8 @@
-//! A feeder's device API session, as Dart holds it: commands go in through
-//! [`FeederSession`], and everything the screens show comes out of the
-//! stream [`FeederSession::run`] feeds.
+//! A feeder's device API session, as Dart holds it: everything the screens
+//! show comes out of the stream [`FeederSession::run`] feeds. Dart sends it
+//! no request of its own: every request and every feed goes through the
+//! path router ([`crate::api::router::PathRouter`]), which the app attaches
+//! the session to before it runs, so no write leaves unpinned.
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -11,14 +13,13 @@ use wellfed_model::Refusal;
 use wellfed_session::noise::Keypair;
 
 use crate::api::error::{BridgeError, ErrorKind};
-use crate::api::feeder::{FeederReply, FeederRequest, PlansView, SettingsView, TimeInfo};
+use crate::api::feeder::{PlansView, SettingsView, TimeInfo};
 use crate::api::keys::ClientKey;
 use crate::api::model::{
     Blocked, ClientRole, Desiccant, FeedOutcome, FeedReason, FoodLevel, MissedReason,
 };
 use crate::frb_generated::StreamSink;
 use crate::link::DirectLink;
-use crate::requests;
 use crate::session::{self, Command};
 
 /// What the Home card shows, from the feeder's status.
@@ -79,7 +80,8 @@ pub struct NextMealView {
     pub portions: u8,
 }
 
-/// One enabled plan that runs today.
+/// One of today's meals: an enabled plan that runs today, or one that fed
+/// or was skipped today.
 pub struct MealView {
     pub slot: u8,
     pub minute: u16,
@@ -87,6 +89,15 @@ pub struct MealView {
     /// Plays of the meal call before it.
     pub call: u8,
     pub standing: MealStanding,
+    /// What the row may offer; the request names the meal by `due_ms`.
+    pub action: Option<MealAction>,
+}
+
+/// A skip of today's meal, or its undo, as `wellfed_client::plans::today`
+/// offers it: the screen sends the instant back unread.
+pub enum MealAction {
+    Skip { due_ms: i64 },
+    Undo { due_ms: i64 },
 }
 
 pub enum MealStanding {
@@ -100,6 +111,13 @@ pub enum MealStanding {
         at_ms: i64,
     },
     Later,
+    /// Skipped on request, and still to come: an undo before `at_ms` brings
+    /// it back.
+    Skipped {
+        at_ms: i64,
+    },
+    /// Skipped on request, and its time has come: it stays skipped.
+    SkipKept,
 }
 
 /// Who asked for a feed or a change.
@@ -180,6 +198,18 @@ pub enum HistoryBody {
     },
     Food {
         level: FoodLevel,
+    },
+    /// A client skipped one of today's meals.
+    Skipped {
+        slot: u8,
+        due_ms: i64,
+        by: FedBy,
+    },
+    /// A client undid a meal's skip before its time.
+    Unskipped {
+        slot: u8,
+        due_ms: i64,
+        by: FedBy,
     },
     /// Events that left the ring before they were read.
     Gap {
@@ -384,35 +414,6 @@ impl FeederSession {
     /// What the path router reaches this session through.
     pub(crate) fn direct(&self) -> Arc<DirectLink> {
         Arc::clone(&self.link)
-    }
-
-    /// Feed `portions` (1-48) once. The answer and the feed's end arrive
-    /// as updates. Refused with [`ErrorKind::Routed`] once a path router
-    /// holds the session: its feeds go through the router, which pins them
-    /// and keeps one feed from doubling an uncertain one.
-    #[frb(sync)]
-    pub fn feed(&self, portions: u8) -> Result<(), BridgeError> {
-        if self.link.is_routed() {
-            return Err(BridgeError::new(
-                ErrorKind::Routed,
-                "this session's feeds go through the path router",
-            ));
-        }
-        self.send(Command::Feed {
-            portions,
-            reply: None,
-        })
-    }
-
-    #[frb(sync)]
-    pub fn cancel_feed(&self, feed: u32) -> Result<(), BridgeError> {
-        self.send(Command::CancelFeed { feed })
-    }
-
-    /// Run one request. A write goes out once; see [`FeederReply`] for how it
-    /// can end short of an answer.
-    pub async fn ask(&self, request: FeederRequest) -> FeederReply {
-        requests::run(&self.commands, self.feeder, request).await
     }
 
     /// Read the status again.

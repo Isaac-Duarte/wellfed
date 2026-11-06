@@ -182,6 +182,23 @@ pub enum FeederEvent {
     Food {
         level: FoodLevel,
     },
+    /// A client skipped a plan's meal still to come: it does not feed
+    /// unless the skip is undone before it is due.
+    Skipped {
+        /// The plan's slot.
+        plan: u8,
+        /// When the meal is due.
+        due: Timestamp,
+        by: Source,
+    },
+    /// A client undid the skip of a plan's meal: it feeds as planned.
+    Unskipped {
+        /// The plan's slot.
+        plan: u8,
+        /// When the meal is due.
+        due: Timestamp,
+        by: Source,
+    },
 }
 
 /// What the food beam across the hopper reads. One reading with food shows
@@ -344,6 +361,8 @@ impl EventBody {
                 FeederEvent::Supply { .. } => EventKind::Supply,
                 FeederEvent::DispenseRefused { .. } => EventKind::DispenseRefused,
                 FeederEvent::Food { .. } => EventKind::Food,
+                FeederEvent::Skipped { .. } => EventKind::Skipped,
+                FeederEvent::Unskipped { .. } => EventKind::Unskipped,
             },
         }
     }
@@ -387,10 +406,12 @@ pub enum EventKind {
     DispenseRefused,
     MealSoon,
     Food,
+    Skipped,
+    Unskipped,
 }
 
 impl EventKind {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 18] = [
         Self::Boot,
         Self::Lock,
         Self::Settings,
@@ -407,6 +428,8 @@ impl EventKind {
         Self::DispenseRefused,
         Self::MealSoon,
         Self::Food,
+        Self::Skipped,
+        Self::Unskipped,
     ];
 
     /// The stored spelling, the same as the JSON one.
@@ -428,6 +451,8 @@ impl EventKind {
             Self::DispenseRefused => "dispense_refused",
             Self::MealSoon => "meal_soon",
             Self::Food => "food",
+            Self::Skipped => "skipped",
+            Self::Unskipped => "unskipped",
         }
     }
 
@@ -454,7 +479,9 @@ impl EventKind {
             | Self::MealSoon
             | Self::Supply
             | Self::DispenseRefused
-            | Self::Food => Some(DeviceKind::Feeder),
+            | Self::Food
+            | Self::Skipped
+            | Self::Unskipped => Some(DeviceKind::Feeder),
         }
     }
 }

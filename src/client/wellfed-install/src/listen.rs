@@ -362,8 +362,10 @@ mod tests {
 
         let heard = std::sync::Arc::default();
         let client = stock_client(listen, "AF_TEST", std::sync::Arc::clone(&heard));
+        // Stock connects and reports within a fraction of a second here, and
+        // the listener only says it stayed once the whole wait has passed.
         let mut saw_stock = false;
-        let listened = listen_for(&path, Duration::from_secs(8), &mut saw_stock).await;
+        let listened = listen_for(&path, Duration::from_secs(3), &mut saw_stock).await;
         client.abort();
 
         assert_eq!(listened.unwrap(), Listened::StockStayed { resolved: false });

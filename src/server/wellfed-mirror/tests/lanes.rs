@@ -9,14 +9,14 @@ use std::cell::{Cell, RefCell};
 use std::time::Duration;
 
 use wellfed_api::ClientRole;
-use wellfed_connect::ANSWER;
+use wellfed_connect::Timing;
 use wellfed_mirror::{AskError, MirrorEvent, Zone};
 use wellfed_model::{Answer, Op};
 use wellfed_server_testkit::feeder::{self, Relay};
 use wellfed_server_testkit::fixed::FixedClock;
 use wellfed_server_testkit::{TempStore, WAIT, local};
 
-use support::{ID, mirrored, mirrored_as};
+use support::{ID, mirrored, mirrored_as, mirrored_timed, timing};
 
 #[test]
 fn a_long_operation_takes_turns_with_short_commands() {
@@ -338,16 +338,25 @@ fn the_tasks_own_requests_and_a_write_in_flight_each_get_their_own_answer() {
 /// is unknown, as any request unanswered in time is; the clock request
 /// running out of time does not end the session, and the next command is
 /// served on it. The callers' own window is longer here, so the write's
-/// outcome is the session's.
+/// outcome is the session's. The session's window is a second rather than
+/// the feeder's ten, so the stall is short.
 #[test]
 fn the_tasks_own_request_unanswered_in_time_keeps_the_session() {
+    const ANSWER: Duration = Duration::from_secs(1);
     local(async {
         let temp = TempStore::new();
         let store = temp.open().await;
         let sim = feeder::start().await;
         let relay = Relay::start(sim.address).await;
         let address = relay.address.to_string();
-        let (mirror, mut updates) = mirrored(&store, &sim, &address, ANSWER * 2).await;
+        let timing = wellfed_mirror::Timing {
+            session: Timing {
+                answer: ANSWER,
+                ..Timing::DEFAULT
+            },
+            ..timing(ANSWER * 2)
+        };
+        let (mirror, mut updates) = mirrored_timed(&store, &sim, &address, timing).await;
         let zone = Zone::new("Europe/Berlin", FixedClock.now()).unwrap();
 
         relay.pause();

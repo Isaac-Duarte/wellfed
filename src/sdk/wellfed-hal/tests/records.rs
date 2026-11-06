@@ -9,7 +9,9 @@
 use std::fmt;
 
 use wellfed_core::ota::SectorStep;
-use wellfed_core::ota::install::{Refused, RefusedReason, Stop, StopStage};
+use wellfed_core::ota::install::{
+    Bank0Check, Bank0Error, Blocked, Refused, RefusedReason, Stop, StopStage,
+};
 use wellfed_core::ota::offer::OfferError;
 use wellfed_core::record::{Confirm, Event, Record, Tag, Update, Watch};
 use wellfed_hal::ota::{confirm, update};
@@ -91,10 +93,56 @@ fn update_records_decode_to_what_they_say() {
             Event::Watch(Watch::Offer { version: Some(34) }),
         ),
         (
-            update::Record::GiveWayRefused,
-            Event::Watch(Watch::GiveWayRefused),
+            update::Record::GiveWayRefused {
+                blocked: Blocked::Changed,
+                found: update::Found::default(),
+            },
+            Event::Watch(Watch::GiveWayRefused {
+                reason: Blocked::Changed,
+            }),
+        ),
+        (
+            update::Record::GiveWayFailed,
+            Event::Watch(Watch::GiveWayFailed),
+        ),
+        (
+            update::Record::Bank0 {
+                len: 69_632,
+                recorded: true,
+            },
+            Event::Update(Update::Bank0Recorded {
+                bytes: 69_632,
+                written: true,
+            }),
         ),
     ];
+    for error in Bank0Error::ALL.iter().copied() {
+        update_decodes(
+            update::Record::Bank0Unrecorded { error },
+            Some(Event::Update(Update::Bank0Unrecorded { error })),
+        );
+    }
+    let checks = [Bank0Check::Unchecked, Bank0Check::Match]
+        .into_iter()
+        .chain(Blocked::ALL.iter().copied().map(Bank0Check::Blocked));
+    for check in checks {
+        update_decodes(
+            update::Record::Bank0Check {
+                check,
+                found: update::Found::default(),
+            },
+            Some(Event::Update(Update::Bank0Check { check })),
+        );
+    }
+    for blocked in Blocked::ALL.iter().copied() {
+        update_decodes(
+            update::Record::GiveWayRefused {
+                blocked,
+                found: update::Found::default(),
+            },
+            Some(Event::Watch(Watch::GiveWayRefused { reason: blocked })),
+        );
+    }
     for (record, expected) in cases {
         update_decodes(record, Some(expected));
     }
@@ -177,6 +225,14 @@ fn update_words_are_unchanged() {
             "not-installing",
             "model"
         ]
+    );
+    assert_eq!(
+        displayed(Blocked::ALL, Blocked::as_str),
+        ["marker", "unrecorded", "key", "extent", "changed", "read"]
+    );
+    assert_eq!(
+        displayed(Bank0Error::ALL, Bank0Error::as_str),
+        ["extent", "read", "store"]
     );
     assert_eq!(
         displayed(SectorStep::ALL, SectorStep::as_str),
@@ -289,8 +345,66 @@ fn stage_and_reason_records_format_as_before() {
             "error stage=hash",
         ),
         (
-            text(|f| update::describe(update::Record::GiveWayRefused, f)),
-            "error stage=give_way",
+            text(|f| {
+                update::describe(
+                    update::Record::GiveWayRefused {
+                        blocked: Blocked::Changed,
+                        found: update::Found {
+                            recorded_len: Some(1_048_576),
+                            found_len: Some(1_052_672),
+                            recorded: Some([0xde, 0xad, 0xbe, 0xef]),
+                            found: Some([0x01, 0x02, 0x03, 0x04]),
+                        },
+                    },
+                    f,
+                )
+            }),
+            "refused give_way reason=changed recorded_len=1048576 found_len=1052672 \
+             recorded=deadbeef found=01020304",
+        ),
+        (
+            text(|f| {
+                update::describe(
+                    update::Record::GiveWayRefused {
+                        blocked: Blocked::Unrecorded,
+                        found: update::Found::default(),
+                    },
+                    f,
+                )
+            }),
+            "refused give_way reason=unrecorded",
+        ),
+        (
+            text(|f| update::describe(update::Record::GiveWayFailed, f)),
+            "error stage=give_way_write",
+        ),
+        (
+            text(|f| {
+                update::describe(
+                    update::Record::Bank0Check {
+                        check: Bank0Check::Blocked(Blocked::Read),
+                        found: update::Found {
+                            recorded_len: Some(4096),
+                            found_len: Some(4096),
+                            recorded: Some([0xab; 4]),
+                            found: None,
+                        },
+                    },
+                    f,
+                )
+            }),
+            "bank0 check=read recorded_len=4096 found_len=4096 recorded=abababab",
+        ),
+        (
+            text(|f| {
+                update::describe(
+                    update::Record::Bank0Unrecorded {
+                        error: Bank0Error::Extent,
+                    },
+                    f,
+                )
+            }),
+            "bank0 recorded=0 error=extent",
         ),
         (
             text(|f| {

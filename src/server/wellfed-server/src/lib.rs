@@ -110,6 +110,8 @@ fn router() -> OpenApiRouter<AppState> {
         ))
         .routes(routes!(call::call, call::delete_call))
         .routes(routes!(call::play_call))
+        .routes(routes!(feeders::skip_meal))
+        .routes(routes!(feeders::unskip_meal))
         .routes(routes!(feeders::lock))
         .routes(routes!(feeders::reset_desiccant))
         .routes(routes!(clients::clients))

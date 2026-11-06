@@ -1,16 +1,30 @@
 //! Every request to a feeder, through the owner's server or the phone's own
 //! session. With no server configured the router passes everything to the
-//! phone's own session, but it still pins every write, so Dart makes every
-//! request through it once the app has one, and never around it: a session
-//! the router holds refuses [`FeederSession::feed`]. A pins file that does
-//! not open (corrupt, or already open in another router) fails
-//! [`PathRouter::new`], and the app then sends no write at all: it never
-//! falls back to unpinned writes.
+//! phone's own session, but it still pins every write. Dart sends every
+//! request through it; a [`FeederSession`] exposes no unpinned write. A pins
+//! file that does not open (corrupt, or locked by another process) fails
+//! [`PathRouter::new`], and the app then sends no write at all. A new router
+//! in this process takes over the pins and fences the old router, so a
+//! restarted UI isolate keeps every uncertain write.
 //!
 //! The path is chosen per feeder, server first: a new read or a new write
 //! goes direct when the server is unreachable, or reports the feeder offline
 //! while the phone's own session reaches it. A viewer, or an account with an
-//! expiry, holds no key of its own, so it goes through the server only.
+//! expiry, holds no key of its own, so it goes through the server only. A
+//! server that refuses this phone's token (revoked, or the account disabled)
+//! closes the phone's own keys too, on every feeder: the router never routes
+//! around the account, until the owner logs in again or removes the server
+//! ([`PathRouter::disconnect_server`]).
+//!
+//! The app keeps the server with its feeders and its account, and hands it
+//! to the router ([`PathRouter::configure_server`]) before anything else
+//! asks it, so a cold start goes by the kept account until the server
+//! answers. A change the server makes to the account while the app runs
+//! ([`RouterUpdate::Account`]) is kept too. One made while the app was
+//! closed, with the server down when it starts, is not known on the phone:
+//! a demoted owner's kept account still allows its own key, and only the
+//! server revoking that phone key on the feeder (as it does for a demotion,
+//! an expiry or a deleted account) stops it there.
 //! [`PathRouter::path`] and [`RouterUpdate::Path`] say which path a feeder
 //! takes now, for the screen's indicator.
 //!
@@ -45,13 +59,16 @@
 use flutter_rust_bridge::frb;
 use serde::{Deserialize, Serialize};
 
+use wellfed_client::history::Delivered;
+
 use crate::api::error::BridgeError;
 use crate::api::feeder::{FeederReply, FeederRequest};
-pub use crate::api::model::{FeedOutcome, FeedReason};
+use crate::api::keys::ClientKey;
+pub use crate::api::model::{FeedOutcome, FeedReason, FoodLevel};
 use crate::api::server::{ServerRefusal, ServerSession, ServerUpdate};
 use crate::api::server_error::ServerError;
-use crate::api::server_views::{ServerAccount, ServerFeeder};
-use crate::api::session::{FeedRefusal, FeederSession};
+use crate::api::server_views::{KnownServer, ServerAccount, ServerFeeder};
+use crate::api::session::{FedBy, FeedRefusal, FeedResult, FeederSession};
 use crate::frb_generated::StreamSink;
 use crate::route::io::Router;
 
@@ -84,6 +101,8 @@ pub enum WriteKind {
     Calibration,
     Call,
     Update,
+    /// A meal's skip or its undo.
+    Skip,
 }
 
 /// A write that may have run, pinned to the path it went on.
@@ -237,6 +256,10 @@ pub enum RouterUpdate {
         pending: PendingWrite,
         settlement: Settlement,
     },
+    /// The server read the account anew and it changed (a new role or
+    /// expiry): the app keeps it, so a cold start with the server down goes
+    /// by it.
+    Account { account: ServerAccount },
     /// A feed this phone sent through the server ended.
     FeedEnded {
         key: String,
@@ -244,6 +267,72 @@ pub enum RouterUpdate {
         settlement: Settlement,
     },
 }
+/// How adopting a feeder this phone paired before the server ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Adoption {
+    /// The server holds it, and this phone's key on it is the account's
+    /// phone key: deleting the account on the server revokes it.
+    Adopted { feeder: ServerFeeder },
+    /// The server holds it, and this phone's key is not the account's yet:
+    /// `error` says why, and [`PathRouter::claim_phone`] tries again.
+    Unclaimed {
+        feeder: ServerFeeder,
+        error: ServerError,
+    },
+    /// The adoption's answer was lost, and the server did not list the
+    /// feeder when read: it may still be adopting it. Nothing more is sent
+    /// for it; [`PathRouter::check_adoption`] reads the list again, and a
+    /// new adoption only reads too until the router's grace has passed.
+    Unsettled { error: ServerError },
+    /// The feeder made no invite: `reply` says how that request ended.
+    NoInvite { reply: RoutedReply },
+    /// The server did not adopt it; `error` says why.
+    Failed { error: ServerError },
+}
+
+/// A feed's end as a settlement gives it, as the feed sheet shows one, for
+/// a feed whose `Fed` event this phone has not read: a server feed whose
+/// stream was down when it ended. When the feeder recorded it, and what its
+/// beam read, are the history's to say, and its requester is left
+/// [`FedBy::Unknown`], since the server's journal does not name the key
+/// the feeder heard. `None` for any settlement but [`Settlement::Fed`].
+#[frb(sync)]
+pub fn settled_feed(settlement: Settlement) -> Option<FeedResult> {
+    let Settlement::Fed {
+        feed,
+        requested,
+        completed,
+        outcome,
+        reason,
+    } = settlement
+    else {
+        return None;
+    };
+    let delivered = Delivered::of(outcome, completed, requested);
+    let (confirmed, at_most) = delivered.bounds();
+    Some(FeedResult {
+        feed,
+        requested,
+        confirmed,
+        at_most,
+        outcome,
+        reason,
+        uncertain: outcome == FeedOutcome::Uncertain,
+        words: delivered.describe(requested, outcome),
+        at_ms: None,
+        by: FedBy::Unknown,
+        hopper: FoodLevel::Unread,
+    })
+}
+
+/// How long a feed of `portions` may take, in seconds: past this a feeder
+/// that stayed on has ended it itself, so one whose end never arrived is
+/// shown as uncertain, not as running.
+#[frb(sync)]
+pub fn feed_due_seconds(portions: u8) -> u32 {
+    u32::try_from(crate::session::feed_due(portions).as_secs()).unwrap_or(u32::MAX)
+}
+
 #[frb(opaque)]
 pub struct PathRouter {
     router: Router,
@@ -251,8 +340,9 @@ pub struct PathRouter {
 
 impl PathRouter {
     /// The one router keeping its pins at `pins_path` (`pending.json`
-    /// beside the app's file); [`ErrorKind::InUse`] while another holds
-    /// them. With no server configured it passes every request to the
+    /// beside the app's file); [`ErrorKind::InUse`] while another process
+    /// holds them. In this process it takes over and fences the old
+    /// router. With no server configured it passes every request to the
     /// phone's own sessions.
     ///
     /// [`ErrorKind::InUse`]: crate::api::error::ErrorKind::InUse
@@ -270,18 +360,44 @@ impl PathRouter {
         self.router.connect_server(session.handle(), &account);
     }
 
+    /// The server the app keeps, handed over before anything else asks the
+    /// router (before the token is read, a session attached or a feed
+    /// made): its feeders' ids, and the keys its kept account may use. With
+    /// no account kept the phone uses none of its own until the server
+    /// says. [`Self::resume_server`] then refines it.
+    #[frb(sync)]
+    pub fn configure_server(&self, kept: KnownServer) {
+        self.router.configure(&kept);
+    }
+
+    /// At a cold start, route through `session`, a kept login: by the
+    /// account the server reads now, or with the server not answering, by
+    /// `cached`, the account as last read. With no cached account the
+    /// account counts as one with no key of its own until the server says,
+    /// and a token the server refuses closes the phone's own keys, as
+    /// [`Self::connect_server`] after a fresh login opens them. The error
+    /// is what the server, or the way to it, said.
+    pub async fn resume_server(
+        &self,
+        session: &ServerSession,
+        cached: Option<ServerAccount>,
+    ) -> Result<ServerAccount, ServerError> {
+        self.router.resume(session.handle(), cached).await
+    }
+
+    /// The app is configured with a server whose token it no longer holds
+    /// (its secret is gone from secure storage): no feeder goes on the
+    /// phone's own keys until a login or [`Self::disconnect_server`].
+    #[frb(sync)]
+    pub fn refuse_server(&self) {
+        self.router.refuse_server();
+    }
+
     /// No server any more (logged out): every feeder goes direct. A write
     /// pinned to the server stays pinned and uncertain.
     #[frb(sync)]
     pub fn disconnect_server(&self) {
         self.router.disconnect_server();
-    }
-
-    /// The server's id for `feeder` (identity hex), as its last feeder list
-    /// gave it, for a cold start before [`Self::refresh`] answers.
-    #[frb(sync)]
-    pub fn remember_server_feeder(&self, feeder: String, id: String) -> Result<(), ServerError> {
-        self.router.remember(&feeder, &id)
     }
 
     /// Read the server's feeders, and route by what it says of each.
@@ -295,6 +411,40 @@ impl PathRouter {
     #[frb(sync)]
     pub fn attach(&self, session: &FeederSession) {
         self.router.attach(session.direct());
+    }
+
+    /// Adopt `feeder`, which this phone paired before the server, as
+    /// `name`: an owner's invite made with `key` (this phone's own) goes
+    /// to the server, which records `key` as the account's phone key.
+    /// `address` is where the phone last found it (`ip:port`); without one
+    /// the server looks for it on mDNS. A feeder the server already lists
+    /// is only claimed.
+    pub async fn adopt(
+        &self,
+        feeder: String,
+        name: String,
+        address: Option<String>,
+        key: &ClientKey,
+    ) -> Adoption {
+        let phone = *key.keypair().public();
+        self.router.adopt(&feeder, name, address, phone).await
+    }
+
+    /// Read the server's list for `feeder` after an [`Adoption::Unsettled`]
+    /// one: adopted, its key is claimed; still unlisted while the server may
+    /// be adopting it, still unsettled; unlisted past the grace, `Failed`
+    /// with `NotFound`, and a new adoption makes a new invite. It sends
+    /// nothing but the claim.
+    pub async fn check_adoption(&self, feeder: String, key: &ClientKey) -> Adoption {
+        let phone = *key.keypair().public();
+        self.router.check_adoption(&feeder, phone).await
+    }
+
+    /// Record `key`, this phone's own key on `feeder`, as the account's
+    /// phone key, for an adoption that left it [`Adoption::Unclaimed`].
+    pub async fn claim_phone(&self, feeder: String, key: &ClientKey) -> Adoption {
+        let phone = *key.keypair().public();
+        self.router.claim_phone(&feeder, phone).await
     }
 
     /// The path a new request to `feeder` takes now.

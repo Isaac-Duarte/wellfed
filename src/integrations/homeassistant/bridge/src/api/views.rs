@@ -201,7 +201,9 @@ impl From<&model::Event> for Event {
             | model::EventBody::Core(model::CoreEvent::Revoked { by, .. })
             | model::EventBody::Core(model::CoreEvent::ClockSync { by, .. })
             | model::EventBody::Feeder(model::FeederEvent::Fed { by, .. })
-            | model::EventBody::Feeder(model::FeederEvent::Plans { by, .. }) => Some(by),
+            | model::EventBody::Feeder(model::FeederEvent::Plans { by, .. })
+            | model::EventBody::Feeder(model::FeederEvent::Skipped { by, .. })
+            | model::EventBody::Feeder(model::FeederEvent::Unskipped { by, .. }) => Some(by),
             _ => None,
         };
         let (mut client, mut plan) = source.map_or((None, None), source_detail);
@@ -210,7 +212,9 @@ impl From<&model::Event> for Event {
                 client = Some(named.to_string())
             }
             model::EventBody::Feeder(model::FeederEvent::Missed { plan: slot, .. })
-            | model::EventBody::Feeder(model::FeederEvent::MealSoon { plan: slot, .. }) => {
+            | model::EventBody::Feeder(model::FeederEvent::MealSoon { plan: slot, .. })
+            | model::EventBody::Feeder(model::FeederEvent::Skipped { plan: slot, .. })
+            | model::EventBody::Feeder(model::FeederEvent::Unskipped { plan: slot, .. }) => {
                 plan = Some(*slot)
             }
             _ => {}

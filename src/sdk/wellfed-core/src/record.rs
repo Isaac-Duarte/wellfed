@@ -14,7 +14,7 @@
 use crate::feed::controller::FeedReason;
 use crate::feed::owner::OwnerState;
 use crate::feed::storage::OwnerOutcome;
-use crate::ota::install::{RefusedReason, StopStage};
+use crate::ota::install::{Bank0Check, Bank0Error, Blocked, RefusedReason, StopStage};
 
 crate::named_enum! {
     /// The tags the host tools act on.
@@ -26,9 +26,11 @@ crate::named_enum! {
         Trial = "PLTRL1",
         /// Confirmation: `confirmed=1 healthy_ms=…`.
         Confirm = "PLCNF1",
-        /// Offer check: `offer=1 version=…`, `give_way=1 version=…`.
+        /// Offer check: `offer=1 version=…`, `give_way=1 version=…`,
+        /// `refused give_way reason=…`, `error stage=give_way_write`.
         Watch = "PLWCH1",
-        /// Bank 0's update stage: `manifest`, `progress sectors=N/T`,
+        /// The update stage: `bank0 …` (bank 0 recording itself, bank 1
+        /// checking it), then bank 0's `manifest`, `progress sectors=N/T`,
         /// `activated`, `refused reason=…`, `error stage=…`.
         Update = "PLOTA1",
         /// Settings writer: `saved generation=…`, `net saved stored=…`,
@@ -106,13 +108,31 @@ pub enum Watch {
     GiveWay {
         version: Option<u32>,
     },
-    /// The give-way could not be recorded.
-    GiveWayRefused,
+    /// Bank 1 would not give way to bank 0, for `reason`.
+    GiveWayRefused {
+        reason: Blocked,
+    },
+    /// Every check passed but the give-way's flash write failed.
+    GiveWayFailed,
 }
 
-/// Bank 0's update stage (`PLOTA1`).
+/// The update stage (`PLOTA1`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Update {
+    /// Bank 0 recorded its own image of `bytes` (`written`: the record
+    /// changed this boot; unchanged otherwise).
+    Bank0Recorded {
+        bytes: u32,
+        written: bool,
+    },
+    /// Bank 0 could not record itself.
+    Bank0Unrecorded {
+        error: Bank0Error,
+    },
+    /// Bank 1's boot check of bank 0.
+    Bank0Check {
+        check: Bank0Check,
+    },
     Manifest {
         version: Option<u32>,
         bytes: Option<u32>,
@@ -339,8 +359,15 @@ impl<'a> Record<'a> {
             Some(Watch::GiveWay { version })
         } else if self.flag("offer") == Some(true) {
             Some(Watch::Offer { version })
-        } else if self.first == "error" && self.field("stage") == Some("give_way") {
-            Some(Watch::GiveWayRefused)
+        } else if self.first == "refused" {
+            if self.body.split_whitespace().nth(1) != Some("give_way") {
+                return None;
+            }
+            Some(Watch::GiveWayRefused {
+                reason: Blocked::parse(self.field("reason")?)?,
+            })
+        } else if self.first == "error" && self.field("stage") == Some("give_way_write") {
+            Some(Watch::GiveWayFailed)
         } else {
             None
         }
@@ -348,6 +375,20 @@ impl<'a> Record<'a> {
 
     fn update(&self) -> Option<Update> {
         Some(match self.first {
+            "bank0" => match self.field("check") {
+                Some(check) => Update::Bank0Check {
+                    check: Bank0Check::parse(check)?,
+                },
+                None => match self.field("error") {
+                    Some(error) => Update::Bank0Unrecorded {
+                        error: Bank0Error::parse(error)?,
+                    },
+                    None => Update::Bank0Recorded {
+                        bytes: self.number("bytes")?,
+                        written: self.flag("recorded")?,
+                    },
+                },
+            },
             "manifest" => Update::Manifest {
                 version: self.number("version"),
                 bytes: self.number("bytes"),

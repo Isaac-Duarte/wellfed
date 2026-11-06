@@ -87,11 +87,14 @@ class TodayTab extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: Space.s3),
-            FilledButton(
-              onPressed: feeder.state.canFeed ? () => feedNow(context, feeder) : null,
-              child: Text(stopped ? 'Feed now · unavailable until restart' : 'Feed now'),
-            ),
+            // A viewer's account feeds nothing, so it has no Feed to press.
+            if (!feeder.state.viewer) ...[
+              const SizedBox(height: Space.s3),
+              FilledButton(
+                onPressed: feeder.state.canFeed ? () => feedNow(context, feeder) : null,
+                child: Text(stopped ? 'Feed now · unavailable until restart' : 'Feed now'),
+              ),
+            ],
           ],
         ),
       );

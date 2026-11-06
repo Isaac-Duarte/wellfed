@@ -401,6 +401,10 @@ struct UpdateArgs {
     interrupted: bool,
     #[serde(default)]
     restore_marker: bool,
+    /// Bank 0 only, and required there: the frozen review of what bank 1
+    /// holds, whose marker the execute restores once bank 0 has recorded
+    /// itself.
+    bank1_source: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
@@ -415,6 +419,7 @@ struct ExecuteArgs {
     interrupted: bool,
     #[serde(default)]
     restore_marker: bool,
+    bank1_source: Option<String>,
     /// The plan's SHA-256 exactly as flash_prepare printed it, after review.
     plan_sha256: String,
     boot_seconds: Option<f64>,
@@ -657,7 +662,7 @@ const SPECS: &[Spec] = &[
     },
     Spec {
         name: "flash_execute",
-        description: "WRITES FLASH over UART: executes the reviewed plan whose SHA-256 is given (wellfed-flash refuses any other), then cold boots. Nothing on the bench may be touched during the write.",
+        description: "WRITES FLASH over UART: executes the reviewed plan whose SHA-256 is given (wellfed-flash refuses any other), then cold boots. Nothing on the bench may be touched during the write. A bank-0 write (bank1_source required) then gives way, boots bank 0 so it records itself, restores bank 1's marker and boots bank 1; it is done only when bank 1 logs PLOTA1 bank0 check=match, and otherwise stops and prints where the feeder stands and the next commands.",
         schema: schema::<ExecuteArgs>,
     },
     Spec {
@@ -900,6 +905,7 @@ impl Line {
             .value("--original-read", args.original_read)
             .switch("--interrupted", args.interrupted)
             .switch("--restore-marker", args.restore_marker)
+            .value("--bank1-source", args.bank1_source)
     }
 }
 
@@ -978,6 +984,7 @@ fn job_words(name: &str, args: JsonObject) -> Result<Vec<String>, ToolError> {
                 original_read: args.original_read,
                 interrupted: args.interrupted,
                 restore_marker: args.restore_marker,
+                bank1_source: args.bank1_source,
             };
             Line::new(&["flash-execute"])
                 .update(update)
@@ -1160,6 +1167,24 @@ mod tests {
             call("power", args(serde_json::json!({"state": "on"}))).unwrap(),
             Call::Job(vec!["on".into()])
         );
+
+        // A bank-0 write names bank 1's review, which its finish restores.
+        let bank0 = call(
+            "flash_execute",
+            args(serde_json::json!({
+                "name": "unit-08",
+                "target": "private/verification/b0-review",
+                "bank": 0,
+                "bank1_source": "private/verification/b1-review",
+                "plan_sha256": "cd34",
+            })),
+        )
+        .unwrap();
+        let Call::Job(words) = bank0 else {
+            panic!("a job");
+        };
+        let at = words.iter().position(|w| w == "--bank1-source").unwrap();
+        assert_eq!(words[at + 1], "private/verification/b1-review");
     }
 
     #[test]

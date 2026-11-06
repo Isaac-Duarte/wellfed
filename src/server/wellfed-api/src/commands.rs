@@ -60,6 +60,10 @@ pub enum CommandKind {
     CallDelete,
     /// Playing the meal call once, to hear it.
     CallPlay,
+    /// Skipping one of today's meals.
+    Skip,
+    /// Undoing a meal's skip before its time.
+    Unskip,
 }
 
 impl CommandKind {
@@ -82,11 +86,13 @@ impl CommandKind {
             Self::CallUpload => "call_upload",
             Self::CallDelete => "call_delete",
             Self::CallPlay => "call_play",
+            Self::Skip => "skip",
+            Self::Unskip => "unskip",
         }
     }
 
     /// Every kind, in the order they were added.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 18] = [
         Self::Settings,
         Self::Lock,
         Self::Feed,
@@ -103,6 +109,8 @@ impl CommandKind {
         Self::CallUpload,
         Self::CallDelete,
         Self::CallPlay,
+        Self::Skip,
+        Self::Unskip,
     ];
 
     pub fn from_code(code: &str) -> Option<Self> {

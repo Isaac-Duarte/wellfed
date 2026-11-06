@@ -309,8 +309,8 @@ pub(crate) async fn project(
             .await?;
         }
 
-        // Settings, plans and Wi-Fi changes, meal reminders, missed meals,
-        // refused Dispense presses, enrolments and revocations, lost events
+        // Settings, plans and Wi-Fi changes, meal reminders, missed and
+        // skipped meals, refused Dispense presses, enrolments and revocations, lost events
         // and supply changes: nothing a view reads yet. A view that needs
         // one adds its table and bumps the version, and the rebuild fills it
         // from the history already held.
@@ -318,6 +318,8 @@ pub(crate) async fn project(
         | EventBody::Feeder(FeederEvent::Plans { .. })
         | EventBody::Feeder(FeederEvent::Missed { .. })
         | EventBody::Feeder(FeederEvent::MealSoon { .. })
+        | EventBody::Feeder(FeederEvent::Skipped { .. })
+        | EventBody::Feeder(FeederEvent::Unskipped { .. })
         | EventBody::Feeder(FeederEvent::DispenseRefused { .. })
         | EventBody::Feeder(FeederEvent::Food { .. })
         | EventBody::Core(CoreEvent::Wifi { .. })

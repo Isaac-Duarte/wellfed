@@ -294,7 +294,8 @@ pub fn run(context: &Context, args: &Args) -> Result<Outcome> {
     )?;
 
     let result = (|| -> Result<Reading> {
-        let mut port = context.record(&args.port, &directory)?;
+        // A fresh ready wait before each command: see `Readiness`.
+        let mut port = protocol::Prompt(context.record(&args.port, &directory)?);
         report.update(|r| r.status = Status::Running)?;
 
         progress(&format!(

@@ -1,11 +1,13 @@
 //! The feeding plans through the service: replaced as one table against
 //! their generation, a retry under the same key answered once, and the
 //! next meal reckoned from the copy the server holds, which follows a
-//! change another client makes.
+//! change another client makes; and a skip of one of today's meals, which
+//! moves that next meal past it until its undo.
 
 use jiff::Timestamp;
 use wellfed_api::{
-    Connection as Link, Generation, NextMeal, PLANS, Plan, Plans, PlansChange, Weekdays,
+    Connection as Link, FeederRefusal, Generation, MealRequest, NextMeal, PLANS, Plan, Plans,
+    PlansChange, Weekdays,
 };
 use wellfed_model::{Answer, Op, TimeSync};
 use wellfed_server_testkit::feeder::{self, open_owner};
@@ -72,7 +74,7 @@ fn plans_change_against_the_current_generation_only() {
         let Err(Error::StalePlans(current)) = stale else {
             panic!("{stale:?}");
         };
-        assert_eq!(current, changed);
+        assert_eq!(*current, changed);
 
         // A plan out of range is refused by its slot before anything is
         // sent.
@@ -204,6 +206,92 @@ fn a_plan_that_runs_once_leaves_no_next_meal() {
         .await;
         let plans = service.plans(id).await.unwrap();
         assert!(plans.plans[0].is_some_and(|plan| !plan.enabled));
+        server.shutdown().await;
+        sim.stop().await;
+    });
+}
+
+/// A skip through the server: the feeder's plans name it, the next meal
+/// moves to the day after, a retry under its key is answered once, and a
+/// second skip is refused. The owner's undo on the feeder itself brings the
+/// meal back as the next one, read again after its `unskipped` event.
+#[test]
+fn a_skip_moves_the_next_meal_until_another_client_undoes_it() {
+    local(async {
+        let sim = feeder::start().await;
+        let server = TestService::start().await;
+        let service = server.service();
+        service.setup(ada_setup()).await.unwrap();
+        let id = server.adopt(&sim).await;
+        server.link(id, Link::Online).await;
+        let read = service.plans(id).await.unwrap();
+        service
+            .put_plans(&ada().into(), id, read.generation, only(0, SUPPER), None)
+            .await
+            .unwrap();
+        let supper = Timestamp::from_second(SUPPER_AT).unwrap();
+        let next = |at: i64| NextMeal {
+            at: Timestamp::from_second(at).unwrap(),
+            slot: 0,
+            portions: 2,
+        };
+        until("supper is the next meal", || async {
+            service.feeder(id).await.unwrap().next_meal == Some(next(SUPPER_AT))
+        })
+        .await;
+
+        let meal = MealRequest {
+            slot: 0,
+            due: supper,
+        };
+        let caller = ada().into();
+        service
+            .skip_meal(&caller, id, meal, Some([4; 16]))
+            .await
+            .unwrap();
+        assert_eq!(
+            service.plans(id).await.unwrap().skipped.get(0),
+            Some(supper)
+        );
+        until("the next meal is tomorrow's supper", || async {
+            service.feeder(id).await.unwrap().next_meal == Some(next(SUPPER_AT + 86_400))
+        })
+        .await;
+
+        service
+            .skip_meal(&caller, id, meal, Some([4; 16]))
+            .await
+            .expect("a retry under the same key is answered from the journal");
+        let again = service.skip_meal(&caller, id, meal, Some([5; 16])).await;
+        assert!(
+            matches!(again, Err(Error::Refused(FeederRefusal::Invalid))),
+            "{again:?}"
+        );
+        let out_of_range = MealRequest { slot: 10, ..meal };
+        let refused = service.skip_meal(&caller, id, out_of_range, None).await;
+        assert!(
+            matches!(refused, Err(Error::Invalid(Invalid::Meal))),
+            "{refused:?}"
+        );
+
+        let mut owner = open_owner(&sim).await;
+        let undo = Op::UnskipMeal {
+            slot: 0,
+            due: supper,
+        };
+        let answer = owner.ask([0x74; 16], &undo).await.unwrap();
+        assert!(matches!(answer, Answer::Done { .. }), "{answer:?}");
+        drop(owner);
+        until("supper is the next meal again", || async {
+            service.feeder(id).await.unwrap().next_meal == Some(next(SUPPER_AT))
+        })
+        .await;
+
+        let late = service.unskip_meal(&caller, id, meal, None).await;
+        assert!(
+            matches!(late, Err(Error::Refused(FeederRefusal::Invalid))),
+            "no skip left to undo: {late:?}"
+        );
         server.shutdown().await;
         sim.stop().await;
     });

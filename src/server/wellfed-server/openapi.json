@@ -2307,6 +2307,170 @@
         }
       }
     },
+    "/api/v1/feeders/{id}/meals/skip": {
+      "post": {
+        "tags": [
+          "feeders"
+        ],
+        "summary": "Skip one of today's meals: it does not feed, remind or call. The meal\nis its plan's next, still to come and on the feeder's today, named by\nthe instant `GET /feeders/{id}/plans` reckons for it; any other is\nrefused `invalid`, and one while a feed or a plans change is under way\n`busy`.",
+        "operationId": "skip_meal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FeederId"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID; a retry with the same key is answered once",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MealRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "description": "invalid: a malformed body or Idempotency-Key, or a slot or instant out of range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "feeder_refused (invalid, busy, not_found, no_clock): final for this key; a later attempt needs a new key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "feeder_offline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "outcome_unknown: retry with the same key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feeders/{id}/meals/unskip": {
+      "post": {
+        "tags": [
+          "feeders"
+        ],
+        "summary": "Undo a meal's skip while the meal is still to come, so it feeds after\nall. Once it is due the skip stays: refused `invalid`.",
+        "operationId": "unskip_meal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FeederId"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "A UUID; a retry with the same key is answered once",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MealRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "description": "invalid: a malformed body or Idempotency-Key, or a slot or instant out of range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "feeder_refused (invalid, busy, not_found, no_clock): final for this key; a later attempt needs a new key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "feeder_offline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "outcome_unknown: retry with the same key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/feeders/{id}/phones": {
       "post": {
         "tags": [
@@ -6171,6 +6335,18 @@
           }
         }
       },
+      "Bank0Blocked": {
+        "type": "string",
+        "description": "Why bank 1 will not give way to bank 0, in the order it checks.",
+        "enum": [
+          "marker",
+          "unrecorded",
+          "key",
+          "extent",
+          "changed",
+          "read"
+        ]
+      },
       "Battery": {
         "oneOf": [
           {
@@ -6656,7 +6832,9 @@
           "calibration",
           "call_upload",
           "call_delete",
-          "call_play"
+          "call_play",
+          "skip",
+          "unskip"
         ]
       },
       "CommandOutcome": {
@@ -8175,6 +8353,70 @@
                 "$ref": "#/components/schemas/FoodLevel"
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A client skipped a plan's meal still to come: it does not feed\nunless the skip is undone before it is due.",
+            "required": [
+              "plan",
+              "due",
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "due": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the meal is due."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "skipped"
+                ]
+              },
+              "plan": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The plan's slot.",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A client undid the skip of a plan's meal: it feeds as planned.",
+            "required": [
+              "plan",
+              "due",
+              "by",
+              "kind"
+            ],
+            "properties": {
+              "by": {
+                "$ref": "#/components/schemas/Source"
+              },
+              "due": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the meal is due."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unskipped"
+                ]
+              },
+              "plan": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The plan's slot.",
+                "minimum": 0
+              }
+            }
           }
         ],
         "description": "An event only a feeder records."
@@ -9594,6 +9836,27 @@
         ],
         "description": "Whether the feeder records a `meal_soon` event ahead of each scheduled\nmeal, and how many minutes ahead (1-60). It goes to the event stream\nfor the app and the server; the feeder plays nothing.\n\nSpelled `off` or the minutes on the command line."
       },
+      "MealRequest": {
+        "type": "object",
+        "description": "One of today's meals: its plan's slot and the instant it is due, as\nthe plans' next meal or their `skipped` list names it.",
+        "required": [
+          "slot",
+          "due"
+        ],
+        "properties": {
+          "due": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "slot": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The plan's slot, 0 to 9.",
+            "maximum": 9,
+            "minimum": 0
+          }
+        }
+      },
       "MemoryStats": {
         "type": "object",
         "required": [
@@ -10204,7 +10467,8 @@
         "required": [
           "generation",
           "writable",
-          "plans"
+          "plans",
+          "skipped"
         ],
         "properties": {
           "generation": {
@@ -10223,6 +10487,18 @@
               ]
             },
             "description": "The plan in each slot, all ten; `null` is an empty one.",
+            "maxItems": 10,
+            "minItems": 10
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": "Each slot's skipped meal, while its skip stands: the instant the\nmeal is due. `null` with none, all ten.",
             "maxItems": 10,
             "minItems": 10
           },
@@ -12671,27 +12947,141 @@
         ]
       },
       "UpdateRefusal": {
-        "type": "string",
-        "description": "Why an update op was refused.",
-        "enum": [
-          "manifest",
-          "key",
-          "revoked",
-          "signature",
-          "target",
-          "same",
-          "downgrade",
-          "statement",
-          "pending",
-          "failed",
-          "fallback",
-          "attempt",
-          "installing",
-          "not_installing",
-          "store",
-          "unconfirmed",
-          "battery"
-        ]
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Not a version 2 manifest, or an unknown image kind.",
+            "enum": [
+              "manifest"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "No trusted key has the manifest's (or a statement's) key id.",
+            "enum": [
+              "key"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "That key was retired.",
+            "enum": [
+              "revoked"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "signature"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Not for bank 1, outside the reviewed size, or built for another\ndevice model.",
+            "enum": [
+              "target"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Bank 1 already runs that build.",
+            "enum": [
+              "same"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "The version is not above the floor (or the image is stock): a\ndowngrade statement must come with it.",
+            "enum": [
+              "downgrade"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "The downgrade or key statement does not check out.",
+            "enum": [
+              "statement"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Bank 0 installs only the manifest bank 1 gave way for.",
+            "enum": [
+              "pending"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "This manifest was activated and failed its trial.",
+            "enum": [
+              "failed"
+            ]
+          },
+          {
+            "type": "object",
+            "description": "Bank 0 holds no build that can install it, so bank 1 does not\ngive way: `reason` names the check.",
+            "required": [
+              "fallback"
+            ],
+            "properties": {
+              "fallback": {
+                "type": "object",
+                "description": "Bank 0 holds no build that can install it, so bank 1 does not\ngive way: `reason` names the check.",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "$ref": "#/components/schemas/Bank0Blocked"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "string",
+            "description": "An install reset the feeder this power cycle.",
+            "enum": [
+              "attempt"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Another update is in progress.",
+            "enum": [
+              "installing"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "No install is receiving chunks.",
+            "enum": [
+              "not_installing"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "The update store cannot be read or written.",
+            "enum": [
+              "store"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Nobody pressed Dispense in time to confirm the key.",
+            "enum": [
+              "unconfirmed"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "The feeder runs on its batteries: no install starts until the\nadapter returns.",
+            "enum": [
+              "battery"
+            ]
+          }
+        ],
+        "description": "Why an update op was refused."
       },
       "UpdateStop": {
         "type": "string",

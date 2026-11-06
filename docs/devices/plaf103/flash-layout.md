@@ -1,12 +1,12 @@
 # PLAF103 boot and flash layout
 
-This page maps what we know of the PLAF103's 8 MiB flash: the boot material, the two application banks, Wellfed's storage region and the sectors stock uses. It is a reference for anyone writing tools or firmware that touch flash.
+What we know of the PLAF103's 8 MiB flash: the boot material, the two application banks, Wellfed's storage region and the sectors stock uses. It is a reference for tools and firmware that touch flash.
 
-## What flash holds
+## The map
 
-Flash is the feeder's long-term memory: an 8 MiB chip that keeps its contents with the power off. It is erased in 4 KiB **sectors** before it is written. An **offset** is a position in it, counted in bytes from the start and written in hexadecimal, such as `0x186000`.
+Flash is erased in 4 KiB sectors before it is written ([glossary](../../glossary.md)). Values are physical flash offsets, counted in bytes from the start of the flash chip, with exclusive ends; mapped external flash begins at `0x08000000`. The machine-readable copy is [layout.json](../../../src/firmware/devices/plaf103/layout.json).
 
-The drawing is to scale. Most of the front half is two **banks**, each big enough for a whole firmware image. Wellfed's settings, feed journal and history live in their own small region. Stock firmware left data in a few places further on. The rest is not mapped, which is not the same as free: we don't write where we haven't checked.
+The drawing is to scale. Most of the front half is two banks, each big enough for a whole firmware image. Unmapped is not free: we don't write where we haven't checked.
 
 ```mermaid
 %% svg: flash-map.svg
@@ -15,32 +15,6 @@ flowchart LR
   bank1 --> gap1["not mapped"] --> storage["0x340000<br/>Wellfed storage, 48 sectors"] --> gap2["not mapped"]
   gap2 --> settings["0x3e8000<br/>Stock settings and clock"] --> gap3["not mapped"] --> records["0x7cb000<br/>Stock logs, plans, feed records"]
 ```
-
-## Picking a bank
-
-At power-on the chip's boot ROM hands over to a **factory loader** at the start of flash. It boots bank 1 whenever bank 1 is valid, and falls back to bank 0 only when it isn't. That rule is what makes updates safe; [bank policy](../../firmware/bank-policy.md) explains how.
-
-```mermaid
-%% svg: ../../firmware/boot-flow.svg
-flowchart TD
-  power(["Power on"]) --> rom["Boot ROM"]
-  rom --> strap{"TX held low<br/>at power-on?"}
-  strap -->|yes| uart["UART download mode:<br/>the bench's way in"]
-  strap -->|no| loader["Factory loader"]
-  loader --> bank1{"Bank 1 valid?"}
-  bank1 -->|yes| boot1["Boot bank 1"]
-  bank1 -->|no| bank0{"Bank 0 valid?"}
-  bank0 -->|yes| boot0["Boot bank 0:<br/>the known-good fallback"]
-  bank0 -->|no| wait["Wait forever: only UART recovers"]
-```
-
-All values are flash offsets, with exclusive ends. Mapped external flash begins at `0x08000000`. The machine-readable version is [layout.json](../../../src/firmware/devices/plaf103/layout.json).
-
-## How it boots
-
-The PLAF103 uses the AmebaD's dual-core startup: factory loader and configuration first, then the application banks ([chip memory map](../../chips/rtl8721dm/README.md#memory-map)). Stock 1.1.15 loads its KM0 and KM4 image regions and picks an application bank by its validity marker. The factory loader checks bank 1 first and falls back to bank 0 ([bank policy](../../firmware/bank-policy.md)).
-
-## The map
 
 | Range | Role |
 | --- | --- |
@@ -57,6 +31,10 @@ The PLAF103 uses the AmebaD's dual-core startup: factory loader and configuratio
 | `0x7da000–0x7db000` | Stock error-record sector |
 
 This is not a complete partition map. **Unknown gaps are not free storage.** Physical flash ends at `0x800000`. The OTP, eFuse and security registers sit outside it and are not in a normal flash backup.
+
+## How it boots
+
+The PLAF103 uses the AmebaD's dual-core startup: factory loader and configuration first, then the application banks ([chip memory map](../../chips/rtl8721dm/README.md#memory-map)). Stock 1.1.15 loads its KM0 and KM4 image regions from the bank the loader picks by validity marker. The factory loader boots bank 1 whenever bank 1 is valid, and bank 0 only when it isn't. [Bank policy](../../firmware/bank-policy.md) draws that flow and explains how updates rely on it.
 
 ## Wellfed's storage region
 
@@ -87,15 +65,13 @@ No flash tool writes this region. The development, update and stock-recovery wri
 
 ## Flash clock
 
-Wellfed runs the flash at 50 MHz in Dual IO mode, set through KM0's `Flash_Speed`. At 80 MHz, over-the-air downloads into bank 0 hit random faults and single-bit read errors on our unit. At 50 MHz the boot calibration window is wider, and those faults have stopped in every install so far (8 of 8). We'll treat the fix as settled once the long unattended run passes. Quad IO is not used, because its check fails at the slow boot clock.
+Wellfed runs the flash at 50 MHz in Dual IO mode, set through KM0's `Flash_Speed`. At 80 MHz, over-the-air downloads into bank 0 hit random faults and single-bit read errors on our unit. At 50 MHz the boot calibration window is wider, and none of 8 installs faulted. That fix is not yet settled: no long unattended run of repeated installs has confirmed it ([Evidence](#evidence)). Quad IO is not used, because its check fails at the slow boot clock. [Bank-0 download faults](../../firmware/ota-design.md#bank-0-download-faults) gives the working explanation.
 
 ## OTA images and the layout
 
-The pinned stock OTA file is 1,376,288 bytes, including a 32-byte container header. Its SHA-256 is `05147476fc70c91cc77ad7da6d6772376b2081d460ac7b1912e2d73868a09498`. OTA container offsets and raw flash offsets are different coordinate systems.
+OTA container offsets and raw flash offsets are different coordinate systems. [Stock OTA requirements](stock/ota-requirements.md) gives the pinned stock OTA file and separates what stock checks from our stricter profile and from the factory loader's needs. Our structural auditor checks an image's checksum, declared lengths, headers, load addresses, placement and the known preserve ranges. It does not prove the factory loader will boot a new image.
 
-Our structural auditor checks an image's checksum, declared lengths, headers, load addresses, placement and the known preserve ranges. It does not prove that the factory loader will boot a new image. [Stock OTA requirements](stock/ota-requirements.md) separates what stock checks from our stricter profile and from the factory loader's needs.
-
-The flags in `layout.json` stay conservative: the map is incomplete, there is no general guarantee of verified capacity, and no general guarantee that an image boots. Read coverage and diagnostic boots apply to the research unit and the exact images tested.
+The flags in `layout.json` stay conservative: the map is incomplete, with no general guarantee of verified capacity or that an image boots. Read coverage and diagnostic boots apply to the research unit and the exact images tested.
 
 The SDK's `device` and `firstboot` profiles overlay the stock-derived bank addresses and startup pin pulls. They do not replace or validate the SDK's separately generated bootloader, and generated loader files are unsupported. See [build profiles](../../development/firmware-builds.md) and [recovery](recovery.md).
 
@@ -105,4 +81,4 @@ The SDK's `device` and `firstboot` profiles overlay the stock-derived bank addre
 - **Observed:** the stock settings, audio-start, log, plan-record and error-record sectors.
 - **Modeled:** running the factory loader's instructions against modeled ROM and MMIO accepts the reviewed diagnostic in both bank fixtures. It is not a full reset-path or power-cut simulation.
 - **Storage region growth:** the owner extended the region from 16 sectors on October 23, 2026, and from 32 to 48 on October 26. Both rest on a static pass that found no stock access in `0x306000–0x3e8000`, and on all 15 full dumps reading blank there ([resource budget](../../firmware/resource-budget.md)).
-- **Observed, October 27, 2026 (flash clock):** at 80 MHz, bank 0's downloads faulted at random sectors and one readback returned a single flipped bit. At 50 MHz the calibration window read 29–31 over 15 boots, against 11–17 at 80 MHz, and 8 of 8 alternating over-the-air installs through bank 0 passed with no fault. That is one evening's runs, not yet a sustained run.
+- **Observed, October 27, 2026 (flash clock):** at 80 MHz, bank 0's downloads faulted at random sectors and one readback returned a single flipped bit. At 50 MHz the calibration window read 29–31 over 15 boots, against 11–17 at 80 MHz, and 8 of 8 alternating over-the-air installs through bank 0 passed with no fault. That is one evening's runs: the 72-hour run of November 1 to 4 had no installs ([testing](../../guide/how-it-works/testing.md)).

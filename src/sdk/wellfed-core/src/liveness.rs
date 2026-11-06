@@ -7,8 +7,8 @@
 //! would only churn rejoins, each of which refuses local feeds while it
 //! runs.
 //!
-//! The C Wi-Fi task samples the link every watch tick and asks
-//! [`Liveness::step`] what to do; the machine itself does no IO.
+//! The Wi-Fi task ([`crate::wifi_task`]) samples the link every watch tick
+//! and asks [`Liveness::step`] what to do; the machine itself does no IO.
 //!
 //! - **Association** lost: leave at once ([`Cause::Link`]).
 //! - **Lease** gone (lwIP cleared the address after renew and rebind both
@@ -23,7 +23,7 @@
 //!   drops pings is never left for it.
 //!
 //! **Settled** is reported once per join, when the gateway first answers,
-//! or after [`GATEWAY_MISSES`] probes without one: the shim then resets its
+//! or after [`GATEWAY_MISSES`] probes without one: the task then resets its
 //! rejoin backoff, so a network that keeps dropping the feeder right after
 //! DHCP backs off rather than rejoining every second.
 
@@ -35,17 +35,14 @@ pub const PROBE_PERIOD_MS: u32 = 5_000;
 /// is ordinary; three in a row are not.
 pub const GATEWAY_MISSES: u8 = 3;
 
-/// [`Verdict::code`] of a leave is this plus the [`Cause::code`].
-pub const LEAVE: i32 = 0x100;
-
-/// One gateway probe's outcome, as the shim reports it with the next step.
+/// One gateway probe's outcome, as the task reports it with the next step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Probe {
     /// No probe ran since the last step.
     None,
     /// The gateway answered the echo.
     Answered,
-    /// Sent, and no answer within the shim's timeout.
+    /// Sent, and no answer within the probe's timeout.
     Silent,
     /// The lease named no gateway, so there is nothing to probe.
     NoGateway,
@@ -55,22 +52,7 @@ pub enum Probe {
     Unsent,
 }
 
-impl Probe {
-    /// The shim's code: 0 none, 1 answered, 2 silent, 3 no gateway, 4 unsent. An
-    /// unknown code carries no observation and reads as none, so a shim
-    /// mismatch can never make the feeder leave a working network.
-    pub const fn from_code(code: i32) -> Self {
-        match code {
-            1 => Self::Answered,
-            2 => Self::Silent,
-            3 => Self::NoGateway,
-            4 => Self::Unsent,
-            _ => Self::None,
-        }
-    }
-}
-
-/// Why a link was left: the `result` of the shim's `lost` event.
+/// Why a link was left: the `result` of the task's `lost` event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Cause {
@@ -127,7 +109,7 @@ impl Radio {
     }
 }
 
-/// What the shim does after a step.
+/// What the task does after a step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Verdict {
     /// Keep watching: wait one watch tick and step again.
@@ -139,32 +121,6 @@ pub enum Verdict {
     Settled,
     /// Leave the network and rejoin after the backoff.
     Leave(Cause),
-}
-
-impl Verdict {
-    /// The C return value: 0 hold, 1 probe, 2 settled, [`LEAVE`] plus the
-    /// cause for a leave.
-    pub const fn code(self) -> i32 {
-        match self {
-            Self::Hold => 0,
-            Self::Probe => 1,
-            Self::Settled => 2,
-            Self::Leave(cause) => LEAVE + cause.code() as i32,
-        }
-    }
-
-    /// The verdict a [`Verdict::code`] names, or `None` for any other value.
-    pub const fn from_code(code: i32) -> Option<Self> {
-        Some(match code {
-            0 => Self::Hold,
-            1 => Self::Probe,
-            2 => Self::Settled,
-            _ => match Cause::from_code(code.wrapping_sub(LEAVE)) {
-                Some(cause) => Self::Leave(cause),
-                None => return None,
-            },
-        })
-    }
 }
 
 /// One join's liveness; a new join starts a new machine.
@@ -191,7 +147,7 @@ impl Liveness {
         }
     }
 
-    /// One watch tick: the link as the shim sees it now, and the result of
+    /// One watch tick: the link as the task sees it now, and the result of
     /// the probe the last step asked for, if one ran.
     pub fn step(&mut self, now: u32, associated: bool, leased: bool, probe: Probe) -> Verdict {
         let verdict = self.decide(now, associated, leased, probe);

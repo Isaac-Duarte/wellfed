@@ -7,6 +7,8 @@
 //! against the plan's mark: at or before it, nothing; at most 15 minutes
 //! late, it runs; later, it is passed and reported missed. Without a valid
 //! clock or a zone offset, plans hold: nothing runs and nothing is passed.
+//! A client's skip moves a mark ahead to the occurrence skipped
+//! ([`super::skip`]), so it is judged like one already run: nothing.
 //!
 //! **Claim, then feed.** An occurrence runs in two steps: the writer first
 //! saves a claim (the occurrence, and the journal's high water), and only

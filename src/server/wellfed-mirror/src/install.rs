@@ -16,7 +16,7 @@ use wellfed_api::Connection as Link;
 use wellfed_client::install::Bank1Reader;
 use wellfed_client::release::MANIFEST_LEN;
 use wellfed_client::update::Image;
-use wellfed_connect::update::{Opened, Pace, Steps};
+use wellfed_connect::update::{Opened, Steps};
 use wellfed_model::{Answer, Op, UpdateView};
 use wellfed_session::hex::Lower;
 
@@ -93,12 +93,13 @@ impl Operation {
             payload,
         };
 
+        let pace = self.pace;
         let mut steps = Lane {
             operation: self,
             build: update.build,
             progress,
         };
-        wellfed_connect::update::push(image, &mut steps, Pace::DEFAULT).await
+        wellfed_connect::update::push(image, &mut steps, pace).await
     }
 
     /// Restore stock: push `restore` until bank 1 is activated, the
@@ -116,12 +117,13 @@ impl Operation {
             downgrade: Some(restore.downgrade),
             payload: restore.payload,
         };
+        let pace = self.pace;
         let mut steps = Lane {
             operation: self,
             build: restore.build,
             progress,
         };
-        match wellfed_connect::update::push(image, &mut steps, Pace::DEFAULT).await {
+        match wellfed_connect::update::push(image, &mut steps, pace).await {
             Ok(pushed) => Ok(pushed),
             Err(PushError::Random(failed)) => Err(failed),
             // Only a release file is split; a restore's parts come whole.

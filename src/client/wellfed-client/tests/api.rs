@@ -166,6 +166,7 @@ fn receiving() -> UpdateView {
         written: 0,
         wanted: [Some(0); WANTED_MAX],
         stopped: None,
+        bank0: wellfed_proto::api::Bank0Check::Unchecked,
     }
 }
 
@@ -2317,6 +2318,8 @@ fn every_body() -> Vec<EventBody> {
             EventBody::DispenseRefused { .. } => 13,
             EventBody::MealSoon { .. } => 14,
             EventBody::Food { .. } => 15,
+            EventBody::Skipped { .. } => 16,
+            EventBody::Unskipped { .. } => 17,
         }
     }
     let by = proto::Source::Panel;
@@ -2373,6 +2376,16 @@ fn every_body() -> Vec<EventBody> {
         },
         EventBody::Food {
             level: proto::FoodLevel::Low,
+        },
+        EventBody::Skipped {
+            plan: 0,
+            due: 1_793_200_000,
+            by,
+        },
+        EventBody::Unskipped {
+            plan: 0,
+            due: 1_793_200_000,
+            by,
         },
     ];
     let mut seen: Vec<usize> = bodies.iter().map(variant).collect();

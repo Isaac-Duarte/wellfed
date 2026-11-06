@@ -1,6 +1,6 @@
 # Evidence levels
 
-Every finding in these docs carries one of these labels. A label says how the fact was established and on which unit. It never says that repeating the experiment is safe or authorized.
+Every finding in these docs carries one of these labels, saying how the fact was established and on which unit, never that repeating the experiment is safe or authorized.
 
 | Label | Also written as | Meaning |
 | --- | --- | --- |
@@ -10,4 +10,4 @@ Every finding in these docs carries one of these labels. A label says how the fa
 | **External** | peer project | Reported by another project, usually on a different model (see [references](references.md)). A lead for our own checks, never a fact about our devices until we observe it. |
 | **Unknown** | — | Not established. Unknown flash ranges are not free space, and unknown pins are not unused. |
 
-Most findings come from one research unit. A finding applies to other units of the same model only when it says so. A finding on one model never carries over to another model by default, even one with the same SoC.
+Most findings come from one research unit, and apply to other units of the same model only when they say so. A finding on one model never carries over to another by default, even one with the same SoC.

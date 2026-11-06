@@ -82,8 +82,13 @@ impl Simulator {
         }
     }
 
+    /// The owner's device, reaching for the simulator again sooner than
+    /// for the board: the simulator restarts a second after it answers a
+    /// give-way, as the update stage does, and listens again at once.
     fn device(&self) -> Device {
-        Device::at(super::Owner::of(OWNER, self.identity), self.address)
+        let mut device = Device::at(super::Owner::of(OWNER, self.identity), self.address);
+        device.retry = std::time::Duration::from_millis(1_500);
+        device
     }
 }
 
@@ -148,13 +153,13 @@ fn push(device: &mut Device, offer: &Offer, fault: Fault) -> Result<(), DeviceEr
 /// The feeder's update state once it answers from `bank` (a restart
 /// follows an activation or a give-way).
 fn state_on(device: &mut Device, bank: u8) -> wellfed_model::UpdateView {
-    for _ in 0..60 {
+    for _ in 0..600 {
         if let Ok(Answer::Update(view)) = device.ask(&Ask::UpdateState)
             && view.bank == bank
         {
             return view;
         }
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
     panic!("the feeder never answered from bank {bank}");
 }

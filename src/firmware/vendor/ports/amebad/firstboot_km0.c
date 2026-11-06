@@ -45,6 +45,7 @@ __attribute__((noinline)) void wellfed_shared_pad_power_init(void)
 
 u32 wellfed_amebad_flash_peer_step(u32 boot_count, u32 ticks);
 void wellfed_amebad_flash_peer_irq(VOID *data, u32 status, u32 channel);
+u32 wellfed_amebad_boot_count(u32 *reg);
 
 /* KM0 peer: the Rust step answers KM4's HELLO and bumps a heartbeat in backup
  * register 5 every tick; IPC channel 16 parks this core in RAM for a lease.
@@ -53,10 +54,11 @@ void wellfed_amebad_flash_peer_irq(VOID *data, u32 status, u32 channel);
 static void wellfed_flash_peer_task(void *context)
 {
     (void)context;
-    /* Bits 16-31 belong to the trial (wellfed_trial_step). */
+    /* The count is bits 0-15; bits 16-31 belong to the trial
+     * (wellfed_trial_step), and Rust leaves them as they are. */
     u32 reg = BKUP_Read(BKUP_REG4);
-    u32 count = (reg + 1) & 0xFFFFU;
-    BKUP_Write(BKUP_REG4, (reg & 0xFFFF0000U) | count);
+    u32 count = wellfed_amebad_boot_count(&reg);
+    BKUP_Write(BKUP_REG4, reg);
     for (;;) {
         wellfed_amebad_flash_peer_step(count, SYSTIMER_TickGet());
         vTaskDelay(1);
@@ -86,7 +88,7 @@ __attribute__((noinline)) void wellfed_wifi_fw_start(void)
 }
 
 u32 wellfed_amebad_trial_decide(const u8 *bank1, const u8 *bank0, const u8 *record, u32 *reg,
-                                 u32 brownout);
+                                 u32 brownout, char *line, u32 line_len);
 
 /* Boot trial (wellfed-hal-common/src/trial.rs decides): before KM4 runs,
  * count an unconfirmed bank-1 image's boots in backup register 4 and, at the
@@ -95,7 +97,9 @@ u32 wellfed_amebad_trial_decide(const u8 *bank1, const u8 *bank0, const u8 *reco
  * the same way. A brownout boot takes back the previous boot's pending storm
  * count (a supply fault, not the build's). The bit may be stale: the loader
  * leaves BOOT_Reason as it was when it finds no reset flag set, so the Rust
- * side never forgives two boots in a row.
+ * side never forgives two boots in a row. Rust also writes the PLTRL1
+ * lines this prints, and says whether to give way; the marker write and
+ * the reset stay here, beside the flash and watchdog calls they need.
  * KM4 is off, so the SDK flash lock only masks
  * this core's interrupts (wellfed_trial_program).
  * Physical reads go through the direct SPIC window. */
@@ -127,34 +131,17 @@ __attribute__((noinline)) void wellfed_trial_step(void)
     const u8 *record = (const u8 *)(SPI_FLASH_BASE + WELLFED_CONFIRM_OFFSET);
     u32 brownout = (BOOT_Reason() & BIT_BOOT_BOD_RESET_HAPPEN) != 0;
     u32 reg = BKUP_Read(BKUP_REG4);
-    if (brownout) {
-        DiagPrintf("PLTRL1 brownout=1 reg=%08x\n", reg);
-    }
-    u32 code = wellfed_amebad_trial_decide(bank1, bank0, record, &reg, brownout);
+    /* The brownout line and the longest decision line come to 78 bytes
+     * with the NUL (wellfed-hal-common's trial_report test). */
+    char line[96];
+    u32 give_way = wellfed_amebad_trial_decide(bank1, bank0, record, &reg, brownout, line,
+                                               sizeof(line));
     BKUP_Write(BKUP_REG4, reg);
-    switch (code & 0xFFU) {
-    case 0:
-        DiagPrintf("PLTRL1 bank=0 resets=%d\n", code >> 8);
+    if (line[0] != '\0') {
+        DiagPrintf("%s", line);
+    }
+    if (!give_way) {
         return;
-    case 1:
-        DiagPrintf("PLTRL1 confirmed=1 resets=%d\n", code >> 8);
-        return;
-    case 2:
-        DiagPrintf("PLTRL1 confirmed=0 boot=%d limit=3\n", code >> 8);
-        return;
-    case 4:
-        DiagPrintf("PLTRL1 error fallback=invalid boot=%d\n", code >> 8);
-        return;
-    case 5:
-        /* A reset storm with nothing to fall back to: KM4 boots held. */
-        DiagPrintf("PLTRL1 storm=%d held=1\n", code >> 8);
-        return;
-    case 6:
-        /* A reset storm on a confirmed bank 1: give way as a trial does. */
-        DiagPrintf("PLTRL1 storm=%d limit=5\n", code >> 8);
-        break;
-    default:
-        break;
     }
     /* Clear only byte 0 ('8' -> 0x00); bytes 1-3 are rewritten unchanged,
      * since programming only clears bits. */

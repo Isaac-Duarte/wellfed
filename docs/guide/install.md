@@ -1,6 +1,6 @@
 # Install
 
-This page walks through moving a feeder from the vendor's firmware to Wellfed. It is for owners who have read [Before you start](before-you-start.md). The screens are from a run on our test feeder.
+This page walks through moving a feeder from the vendor's firmware to Wellfed. It is for owners who have read [Before you start](before-you-start.md). The screenshots are drawn from the app with made-up details.
 
 > [!NOTE]
 > **You can't follow this yet.** There's no public build: no release exists, and the signing key a release needs hasn't been generated. Today the install only runs on our bench, from an image we build ourselves. This page shows what it will involve, and the [roadmap](../roadmap.md) shows when that changes.
@@ -48,11 +48,11 @@ The feeder joins your network and connects to your phone, not to the vendor. The
 
 Compare the device ID with the label under the feeder, and the address with your router's list of devices. Then confirm. This matters because the first feeder to connect is the one that gets trusted. If a different feeder shows up, say no.
 
-![The app asks whether the feeder that connected is yours, with its device ID and address hidden here, and checks for the model, firmware version and mains power](app-confirm-feeder.png)
+![The app asks whether the feeder that connected is yours, with an example device ID and address, and checks for the model, firmware version and mains power](app-confirm-feeder.png)
 
 The feeder's own updater then downloads Wellfed from your phone and restarts into it. From this point, the vendor's firmware can't start again until it is restored from a good copy.
 
-![The app shows Installing Wellfed with a progress bar, and asks you to keep it open](app-installing.png)
+![The app shows Installing Wellfed, sending the firmware at 60% and then restarting into it, and asks you to keep it open](app-installing.png)
 
 ## Step 4: Claim it
 
@@ -62,13 +62,13 @@ The app finds the feeder over Bluetooth and shows six button presses. Press them
 
 ![The app shows six buttons to press in order, a map of the ring's symbols and a countdown](app-claim.png)
 
-The code in this screenshot is from an old run and has expired. Yours will be different.
+The code in this screenshot is an example. Yours will be different.
 
 ## Step 5: Make it permanent
 
 The feeder copies the vendor's firmware to your phone, which checks that the copy matches the known 1.1.15 firmware. Only then does Wellfed overwrite it. This takes about 4 minutes, and there's nothing to press.
 
-![The app shows a checklist: this phone is its owner, the copy of the original firmware, the check, making Wellfed permanent, then restart and confirm](app-permanent.png)
+![The app shows a checklist: this phone is its owner, the copy of the original firmware and its check done, making Wellfed permanent at 40%, then restart and confirm](app-permanent.png)
 
 > [!WARNING]
 > After this step, your backup is the only copy of your feeder's original firmware, and the feeder can't make another. Uninstalling the app or clearing its data deletes the app's copy.

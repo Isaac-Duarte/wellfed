@@ -2,10 +2,12 @@
 //! `wellfed_core::ota` becomes in the device API, so the firmware and
 //! every host fake answer an owner the same way.
 
-use wellfed_core::ota::install::{Phase, Progress, Refused, Stop, WANTED};
+use wellfed_core::ota::install::{Bank0Check, Blocked, Phase, Progress, Refused, Stop, WANTED};
 use wellfed_core::ota::offer::{KeyError, OfferError, StatementError};
 use wellfed_core::store::update::UpdateError;
-use wellfed_proto::api::{Refusal, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView, WANTED_MAX};
+use wellfed_proto::api::{
+    self, Bank0Blocked, Refusal, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView, WANTED_MAX,
+};
 
 const _: () = assert!(WANTED == WANTED_MAX);
 
@@ -19,6 +21,27 @@ pub const fn stop(stop: Stop) -> UpdateStop {
         Stop::Hash => UpdateStop::Hash,
         Stop::Activate => UpdateStop::Activate,
         Stop::Store => UpdateStop::Store,
+    }
+}
+
+pub const fn blocked(blocked: Blocked) -> Bank0Blocked {
+    match blocked {
+        Blocked::Marker => Bank0Blocked::Marker,
+        Blocked::Unrecorded => Bank0Blocked::Unrecorded,
+        Blocked::Key => Bank0Blocked::Key,
+        Blocked::Extent => Bank0Blocked::Extent,
+        Blocked::Changed => Bank0Blocked::Changed,
+        Blocked::Read => Bank0Blocked::Read,
+    }
+}
+
+pub const fn bank0(check: Bank0Check) -> api::Bank0Check {
+    match check {
+        Bank0Check::Unchecked => api::Bank0Check::Unchecked,
+        Bank0Check::Match => api::Bank0Check::Match,
+        Bank0Check::Blocked(reason) => api::Bank0Check::Blocked {
+            reason: blocked(reason),
+        },
     }
 }
 
@@ -42,6 +65,7 @@ pub const fn view(progress: &Progress) -> UpdateView {
             Some(s) => Some(stop(s)),
             None => None,
         },
+        bank0: bank0(progress.bank0),
     }
 }
 
@@ -88,7 +112,9 @@ pub const fn refusal(refused: Refused) -> Refusal {
         Refused::Store(_) | Refused::Unreadable => UpdateRefusal::Store,
         Refused::Offer(error) => offer(error),
         Refused::Statement(error) => statement(error),
-        Refused::Fallback => UpdateRefusal::Fallback,
+        Refused::Fallback(reason) => UpdateRefusal::Fallback {
+            reason: blocked(reason),
+        },
         Refused::Pending => UpdateRefusal::Pending,
         Refused::Failed => UpdateRefusal::Failed,
         Refused::Attempt => UpdateRefusal::Attempt,

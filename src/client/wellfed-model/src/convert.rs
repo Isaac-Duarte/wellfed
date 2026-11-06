@@ -11,15 +11,16 @@ use wellfed_proto::device::DeviceKind;
 use wellfed_proto::setup as proto_setup;
 
 use crate::{
-    Answer, Bank1Page, Battery, Blocked, Bowl, Calibration, CalibrationView, CallClip, CallView,
-    Client, ClientRole, CoreEvent, Counters, Counts, Desiccant, DeviceStatus, EnrollPath, Erases,
-    Event, EventBody, FeedFault, FeedOutcome, FeedReason, FeederEvent, FeederSettings,
-    FeederSettingsPatch, FeederStatus, Flash, Food, FoodLevel, Generation, Hello, Hex, Invite,
-    Joined, LogLines, MealReminder, Memory, MissedReason, NtpResult, NtpServer, Op, OpenRefusal,
-    Phase, Plan, Plans, Portions, Power, PowerStats, Readiness, Refusal, ResetCause, Resets,
-    Sample, SampleValue, Settings, Source, Stats, StatsSection, Status, Supply, TaskStack,
-    TimeSource, TimeSync, TimeView, Tune, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView,
-    Weekdays, WifiSource, Window, setup,
+    Answer, Bank0Blocked, Bank0Check, Bank1Page, Battery, Blocked, Bowl, Calibration,
+    CalibrationView, CallClip, CallView, Client, ClientRole, CoreEvent, Counters, Counts,
+    Desiccant, DeviceStatus, EnrollPath, Erases, Event, EventBody, FeedFault, FeedOutcome,
+    FeedReason, FeederEvent, FeederSettings, FeederSettingsPatch, FeederStatus, Flash, Food,
+    FoodLevel, Generation, Hello, Hex, Invite, Joined, LogLines, MealReminder, Memory,
+    MissedReason, NtpResult, NtpServer, Op, OpenRefusal, Phase, Plan, Plans, Portions, Power,
+    PowerStats, Readiness, Refusal, ResetCause, Resets, Sample, SampleValue, Settings,
+    SkippedMeals, Source, Stats, StatsSection, Status, Supply, TaskStack, TimeSource, TimeSync,
+    TimeView, Tune, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView, Weekdays, WifiSource,
+    Window, setup,
 };
 use crate::{
     CurrentUnit, FeedStats, Malformed, Trace, TraceEntry, TraceMotor, TracePage, TraceSummary,
@@ -422,6 +423,20 @@ impl From<proto::EventBody> for EventBody {
             proto::EventBody::Food { level } => EventBody::Feeder(FeederEvent::Food {
                 level: level.into(),
             }),
+            proto::EventBody::Skipped { plan, due, by } => {
+                EventBody::Feeder(FeederEvent::Skipped {
+                    plan,
+                    due: seconds(due),
+                    by: by.into(),
+                })
+            }
+            proto::EventBody::Unskipped { plan, due, by } => {
+                EventBody::Feeder(FeederEvent::Unskipped {
+                    plan,
+                    due: seconds(due),
+                    by: by.into(),
+                })
+            }
         }
     }
 }
@@ -516,6 +531,16 @@ impl From<EventBody> for proto::EventBody {
             },
             EventBody::Feeder(FeederEvent::Food { level }) => Self::Food {
                 level: level.into(),
+            },
+            EventBody::Feeder(FeederEvent::Skipped { plan, due, by }) => Self::Skipped {
+                plan,
+                due: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
+                by: by.into(),
+            },
+            EventBody::Feeder(FeederEvent::Unskipped { plan, due, by }) => Self::Unskipped {
+                plan,
+                due: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
+                by: by.into(),
             },
         }
     }
@@ -910,10 +935,12 @@ impl From<proto::Outcome<'_>> for Answer {
                 generation,
                 writable,
                 plans,
+                skipped,
             })) => Self::Plans(Plans {
                 generation: Generation(generation),
                 writable,
                 plans: plans.map(|plan| plan.map(Into::into)),
+                skipped: SkippedMeals::from_seconds(skipped),
             }),
             proto::Outcome::Feeder(proto::FeederOutcome::Call(view)) => Self::Call(view.into()),
         }
@@ -1371,6 +1398,7 @@ impl From<proto::UpdateView> for UpdateView {
             written,
             wanted,
             stopped,
+            bank0,
         } = view;
         Self {
             phase: phase.into(),
@@ -1382,6 +1410,30 @@ impl From<proto::UpdateView> for UpdateView {
             written,
             wanted: wanted.into_iter().flatten().collect(),
             stopped: stopped.map(UpdateStop::from),
+            bank0: bank0.into(),
+        }
+    }
+}
+
+impl From<proto::Bank0Blocked> for Bank0Blocked {
+    fn from(reason: proto::Bank0Blocked) -> Self {
+        match reason {
+            proto::Bank0Blocked::Marker => Self::Marker,
+            proto::Bank0Blocked::Unrecorded => Self::Unrecorded,
+            proto::Bank0Blocked::Key => Self::Key,
+            proto::Bank0Blocked::Extent => Self::Extent,
+            proto::Bank0Blocked::Changed => Self::Changed,
+            proto::Bank0Blocked::Read => Self::Read,
+        }
+    }
+}
+
+impl From<proto::Bank0Check> for Bank0Check {
+    fn from(check: proto::Bank0Check) -> Self {
+        match check {
+            proto::Bank0Check::Unchecked => Self::Unchecked,
+            proto::Bank0Check::Match => Self::Match,
+            proto::Bank0Check::Blocked { reason } => Self::Blocked(reason.into()),
         }
     }
 }
@@ -1426,7 +1478,9 @@ impl From<proto::UpdateRefusal> for UpdateRefusal {
             proto::UpdateRefusal::Statement => Self::Statement,
             proto::UpdateRefusal::Pending => Self::Pending,
             proto::UpdateRefusal::Failed => Self::Failed,
-            proto::UpdateRefusal::Fallback => Self::Fallback,
+            proto::UpdateRefusal::Fallback { reason } => Self::Fallback {
+                reason: reason.into(),
+            },
             proto::UpdateRefusal::Attempt => Self::Attempt,
             proto::UpdateRefusal::Installing => Self::Installing,
             proto::UpdateRefusal::NotInstalling => Self::NotInstalling,
@@ -1588,6 +1642,16 @@ impl Op {
             }),
             Self::DeleteCall => proto::Op::Feeder(proto::FeederOp::DeleteCall),
             Self::PlayCall => proto::Op::Feeder(proto::FeederOp::PlayCall),
+            // A time past the feeder's u32 seconds is no meal it holds: it
+            // is refused `Invalid`.
+            Self::SkipMeal { slot, due } => proto::Op::Feeder(proto::FeederOp::SkipMeal {
+                slot: *slot,
+                due_s: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
+            }),
+            Self::UnskipMeal { slot, due } => proto::Op::Feeder(proto::FeederOp::UnskipMeal {
+                slot: *slot,
+                due_s: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
+            }),
         }
     }
 }
@@ -1962,6 +2026,9 @@ mod tests {
             written: 4096,
             wanted,
             stopped: None,
+            bank0: proto::Bank0Check::Blocked {
+                reason: proto::Bank0Blocked::Unrecorded,
+            },
         };
 
         let Answer::Update(view) = Answer::from(proto::Outcome::Update(view)) else {
@@ -1971,6 +2038,10 @@ mod tests {
         let json = serde_json::to_value(&view).unwrap();
         assert_eq!(json["phase"], "receiving");
         assert_eq!(json["digest"], "ab".repeat(32));
+        assert_eq!(
+            json["bank0"],
+            serde_json::json!({"state": "blocked", "reason": "unrecorded"})
+        );
     }
 
     #[test]

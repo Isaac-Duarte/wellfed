@@ -46,9 +46,10 @@ class AppStore {
   final List<KnownFeeder> feeders;
   final Appearance appearance;
 
-  /// The owner's server this phone logged in to, if any. Its token's
-  /// secret is in secure storage, as the client secret is.
-  final ServerLink? server;
+  /// The owner's server this phone logged in to, if any, with the
+  /// feeders it last listed. Its token's secret is in secure storage, as
+  /// the client secret is.
+  final KnownServer? server;
 
   const AppStore({
     required this.label,

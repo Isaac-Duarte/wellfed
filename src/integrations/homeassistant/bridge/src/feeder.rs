@@ -38,7 +38,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 use wellfed_client::history::{Backlog, Entry, Feed};
 use wellfed_client::today::Facts;
-use wellfed_connect::{Connection, Cursor, Received};
+use wellfed_connect::{Connection, Cursor, Received, Timing};
 use wellfed_model::{
     Answer, Blocked, CalibrationView, ClientRole, CoreEvent, EventBody, FeederEvent,
     FeederSettingsPatch, Generation, Op, Pushed, Readiness, Settings, Source, Status,
@@ -55,8 +55,6 @@ type RequestId = [u8; 16];
 /// How often a quiet session reads the status anew, which also keeps the
 /// connection's silence limit fed.
 const TURN: Duration = Duration::from_secs(30);
-/// How long a lost session waits before opening another.
-const RETRY: Duration = Duration::from_secs(10);
 /// How long an uncertain feed waits for its `Fed` event within one
 /// session: longer than the longest feed the feeder runs.
 const SETTLE: Duration = Duration::from_secs(15 * 60);
@@ -71,6 +69,25 @@ enum Command {
         reply: oneshot::Sender<Written>,
     },
     Refresh,
+}
+
+/// How long the session waits on the feeder, and between sessions.
+/// Home Assistant runs on [`Clocks::DEFAULT`]; a test that loses an answer
+/// or a session on purpose shortens them, so it waits a second, not ten.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Clocks {
+    /// The device API session's own clocks: how long an answer may take
+    /// before the write it answers is uncertain.
+    pub session: Timing,
+    /// How long a lost session waits before opening another.
+    pub retry: Duration,
+}
+
+impl Clocks {
+    pub const DEFAULT: Self = Self {
+        session: Timing::DEFAULT,
+        retry: Duration::from_secs(10),
+    };
 }
 
 /// Where the session finds its feeder.
@@ -89,10 +106,10 @@ pub struct Feeder {
 }
 
 impl Feeder {
-    /// Start the session thread for `target` as `key`. It connects, and
-    /// reconnects after every loss, until the handle is dropped or the
-    /// feeder revokes the key.
-    pub fn start(key: ClientKey, target: Target) -> Result<Self, Error> {
+    /// Start the session thread for `target` as `key`, on `clocks`. It
+    /// connects, and reconnects after every loss, until the handle is
+    /// dropped or the feeder revokes the key.
+    pub fn start(key: ClientKey, target: Target, clocks: Clocks) -> Result<Self, Error> {
         let (commands, inbox) = mpsc::unbounded_channel();
         let (outbox, updates) = std_mpsc::channel();
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -101,7 +118,7 @@ impl Feeder {
             .map_err(Error::Thread)?;
         std::thread::Builder::new()
             .name("wellfed-session".into())
-            .spawn(move || runtime.block_on(run(key, target, inbox, outbox)))
+            .spawn(move || runtime.block_on(run(key, target, clocks, inbox, outbox)))
             .map_err(Error::Thread)?;
 
         Ok(Self {
@@ -228,6 +245,7 @@ impl Memory {
 async fn run(
     key: ClientKey,
     target: Target,
+    clocks: Clocks,
     mut commands: mpsc::UnboundedReceiver<Command>,
     updates: std_mpsc::Sender<Update>,
 ) {
@@ -236,7 +254,7 @@ async fn run(
     let mut memory = Memory::default();
 
     loop {
-        let ended = match open(&key, &target).await {
+        let ended = match open(&key, &target, clocks.session).await {
             Ok(connection) => {
                 let session = Session::new(connection, fingerprint, &mut memory, &updates);
                 session.serve(&mut commands).await
@@ -259,7 +277,7 @@ async fn run(
         // While no session is open a write is refused at once, never held
         // for the next one: a feed sent minutes after its press is not the
         // feed the owner asked for.
-        let pause = tokio::time::sleep(RETRY);
+        let pause = tokio::time::sleep(clocks.retry);
         tokio::pin!(pause);
         loop {
             tokio::select! {
@@ -292,9 +310,10 @@ async fn revoked(
     }
 }
 
-async fn open(key: &ClientKey, target: &Target) -> Result<Connection, Error> {
+async fn open(key: &ClientKey, target: &Target, timing: Timing) -> Result<Connection, Error> {
     let address: SocketAddr = locate(&target.identity, target.address.as_deref()).await?;
-    Ok(Connection::open(key.keypair(), target.identity, address, random()?).await?)
+    let ephemeral = random()?;
+    Ok(Connection::open_with(key.keypair(), target.identity, address, ephemeral, timing).await?)
 }
 
 enum Ended {

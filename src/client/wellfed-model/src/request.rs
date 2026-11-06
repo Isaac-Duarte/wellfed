@@ -160,6 +160,18 @@ pub enum Op {
     DeleteCall,
     /// Play the stored meal call once, to hear it.
     PlayCall,
+    /// Skip plan `slot`'s meal due at `due`: its next, still to come today
+    /// by the feeder's clock. `Done` once the feeder holds the skip.
+    SkipMeal {
+        slot: u8,
+        due: jiff::Timestamp,
+    },
+    /// Undo the skip of plan `slot`'s meal due at `due`, while it is still
+    /// to come. `Done` once the feeder holds the undo.
+    UnskipMeal {
+        slot: u8,
+        due: jiff::Timestamp,
+    },
 }
 
 /// What the owner measured, as the feeder keeps it.

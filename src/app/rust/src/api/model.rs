@@ -6,7 +6,8 @@
 use flutter_rust_bridge::frb;
 pub use wellfed_model::setup::{Enrolled, Refusal as SetupRefusal, WifiSaved};
 pub use wellfed_model::{
-    Blocked, ClientRole, FeedOutcome, FeedReason, FoodLevel, MissedReason, UpdatePhase, UpdateStop,
+    Bank0Blocked, Bank0Check, Blocked, ClientRole, FeedOutcome, FeedReason, FoodLevel,
+    MissedReason, UpdatePhase, UpdateStop,
 };
 
 #[frb(mirror(Enrolled))]
@@ -182,13 +183,30 @@ pub enum _UpdateRefusal {
     Statement,
     Pending,
     Failed,
-    Fallback,
+    Fallback { reason: Bank0Blocked },
     Attempt,
     Installing,
     NotInstalling,
     Store,
     Unconfirmed,
     Battery,
+}
+
+#[frb(mirror(Bank0Blocked))]
+pub enum _Bank0Blocked {
+    Marker,
+    Unrecorded,
+    Key,
+    Extent,
+    Changed,
+    Read,
+}
+
+#[frb(mirror(Bank0Check))]
+pub enum _Bank0Check {
+    Unchecked,
+    Match,
+    Blocked(Bank0Blocked),
 }
 
 #[frb(mirror(UpdatePhase))]

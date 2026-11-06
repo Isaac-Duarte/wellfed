@@ -10,8 +10,9 @@ use futures_util::TryStreamExt;
 use jiff::SignedDuration;
 use uuid::Uuid;
 use wellfed_api::{
-    AdoptFeeder, ClientRole, CommandState, Connection, Credentials, ErrorCode, ExportFormat,
-    FeederId, NewFood, NewPet, NewRefill, NewToken, NewUser, NewWeight, Role, SampleValue, Species,
+    AdoptFeeder, ClientRole, CommandState, Connection, Credentials, ErrorCode, EventKind,
+    EventQuery, ExportFormat, FeederId, NewFood, NewPet, NewRefill, NewToken, NewUser, NewWeight,
+    Role, SampleValue, Species,
 };
 use wellfed_formats::canonical::sha256;
 use wellfed_formats::export::{Manifest, Table};
@@ -58,6 +59,21 @@ async fn home(sim: &Running) -> (TestServer, Client) {
         .set_lock(feeder, wellfed_server_client::Lock::Locked, lock)
         .await
         .unwrap();
+    // The command resolves on the feeder's answer, before its lock event is
+    // mirrored, and the lock_changes row comes from that event.
+    let locks = EventQuery {
+        kind: Some(EventKind::Lock),
+        ..EventQuery::default()
+    };
+    until("the lock change is mirrored", || async {
+        !owner
+            .events(feeder, &locks)
+            .await
+            .unwrap()
+            .events
+            .is_empty()
+    })
+    .await;
 
     let pet = owner
         .create_pet(&NewPet {

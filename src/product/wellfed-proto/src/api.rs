@@ -385,6 +385,44 @@ pub enum FeederOp<'a> {
     /// speaker or the store, or when the clip would still sound as a meal's
     /// call is due to begin.
     PlayCall,
+    /// Skip the meal of plan `slot` due at `due_s` (Unix seconds): its next
+    /// occurrence, still to come today by the feeder's local calendar.
+    /// Answered `Done` once the store holds the skip, recorded as
+    /// [`EventBody::Skipped`]; the meal then never feeds, and no reminder
+    /// or meal call comes for it. A plan that runs once is disabled with it.
+    /// Owner, member and server sessions, as for [`Self::PutPlans`].
+    /// Refused [`Refusal::NoClock`] without a valid clock and zone offset,
+    /// [`Refusal::NotFound`] for an empty or disabled slot,
+    /// [`Refusal::Invalid`] when `due_s` is not that occurrence (already
+    /// due, tomorrow's, or already skipped), [`Refusal::Busy`] while
+    /// another plans change is being written, a feed holds the outputs, a
+    /// meal is being claimed or the plan's last occurrence is still
+    /// running or waiting, and [`Refusal::NotWritable`] when the store
+    /// cannot be written or the writer could not save it. A change to the
+    /// plan's minute or days drops the skip. [`Plans::skipped`] names the
+    /// skip while it stands.
+    SkipMeal {
+        slot: u8,
+        due_s: u32,
+    },
+    /// Undo the skip of plan `slot`'s meal due at `due_s`, while it is
+    /// still to come: answered `Done` once the store holds it, recorded as
+    /// [`EventBody::Unskipped`], and the meal feeds as planned. Owner,
+    /// member and server sessions. A disabled plan is no refusal: a plan
+    /// that runs once is disabled by its skip, and enabled again by the
+    /// undo. Refused [`Refusal::NoClock`] without a valid clock and zone
+    /// offset, [`Refusal::NotFound`] for an empty slot,
+    /// [`Refusal::Invalid`] when the store holds no skip of that meal (a
+    /// meal that ran or was missed among them, even after the clock moved
+    /// back before it), or the meal is already due or no longer the plan's
+    /// next, [`Refusal::Busy`] while another plans change is being written,
+    /// a feed holds the outputs or a meal is being claimed, and
+    /// [`Refusal::NotWritable`] when the store cannot be written or the
+    /// writer could not save it.
+    UnskipMeal {
+        slot: u8,
+        due_s: u32,
+    },
 }
 
 /// The meal call's stream: 8 kHz mono, 4-bit IMA ADPCM, two samples a
@@ -502,6 +540,12 @@ pub struct Plans {
     pub generation: u32,
     pub writable: bool,
     pub plans: [Option<Plan>; PLANS_MAX],
+    /// Each slot's skipped meal (Unix seconds) while its skip stands
+    /// ([`FeederOp::SkipMeal`]): `None` once it is undone, or once the
+    /// plan's next meal is taken or passed, or its minute or days change.
+    /// A skip stays named after its meal's time, until that next meal, so
+    /// a client compares it with the time: one in the past is spent.
+    pub skipped: [Option<u32>; PLANS_MAX],
 }
 
 /// The largest [`Op::UpdateChunk`]: an eighth of a flash sector, which
@@ -561,7 +605,9 @@ impl FeederOp<'_> {
             | Self::ResetDesiccant
             | Self::StartCall { .. }
             | Self::DeleteCall
-            | Self::PlayCall => true,
+            | Self::PlayCall
+            | Self::SkipMeal { .. }
+            | Self::UnskipMeal { .. } => true,
         }
     }
 }
@@ -1080,6 +1126,40 @@ pub struct UpdateView {
     pub wanted: [Option<u32>; WANTED_MAX],
     /// Why the last install stopped before activation, if it did.
     pub stopped: Option<UpdateStop>,
+    /// Bank 0 as bank 1 last checked it, at boot or for an offer; always
+    /// [`Bank0Check::Unchecked`] from bank 0.
+    pub bank0: Bank0Check,
+}
+
+/// Bank 0, the recovery copy, as bank 1 last checked it. Bank 1 gives way
+/// for an update only to a bank 0 that booted, recorded its own image and
+/// still holds exactly that image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Bank0Check {
+    /// Not checked yet this boot.
+    Unchecked,
+    /// Bank 0 holds the image it recorded: updates can go ahead.
+    Match,
+    /// Bank 1 will not give way to it, so every update is refused.
+    Blocked { reason: Bank0Blocked },
+}
+
+/// Why bank 1 will not give way to bank 0, in the order it checks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Bank0Blocked {
+    /// Bank 0's loader marker is not valid.
+    Marker,
+    /// Bank 0 never recorded itself: written over UART and not booted
+    /// since. Booting it once records it.
+    Unrecorded,
+    /// Bank 0's built-in update key is not the one the offer leans on.
+    Key,
+    /// Bank 0's image headers do not give an image.
+    Extent,
+    /// Bank 0 changed since it recorded itself, in length or hash.
+    Changed,
+    /// Bank 0 could not be read.
+    Read,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1148,8 +1228,10 @@ pub enum UpdateRefusal {
     /// This manifest was activated and failed its trial: sign another.
     Failed,
     /// Bank 0 does not hold a build that can install it, so bank 1 does
-    /// not give way.
-    Fallback,
+    /// not give way: `reason` names the check.
+    Fallback {
+        reason: Bank0Blocked,
+    },
     /// An install reset the feeder this power cycle: no new install until
     /// the next power cycle.
     Attempt,
@@ -1437,6 +1519,21 @@ pub enum EventBody {
     /// only if a feed took it.
     Food {
         level: FoodLevel,
+    },
+    /// `by` skipped the occurrence of plan `plan` due at `due` (Unix
+    /// seconds): it will not feed unless the skip is undone before it is
+    /// due ([`Self::Unskipped`]).
+    Skipped {
+        plan: u8,
+        due: u32,
+        by: Source,
+    },
+    /// `by` undid the skip of plan `plan`'s occurrence due at `due`: it
+    /// feeds as planned.
+    Unskipped {
+        plan: u8,
+        due: u32,
+        by: Source,
     },
 }
 
@@ -1968,6 +2065,9 @@ mod tests {
                 written: u32::MAX,
                 wanted: [Some(u32::MAX); WANTED_MAX],
                 stopped: Some(UpdateStop::Store),
+                bank0: Bank0Check::Blocked {
+                    reason: Bank0Blocked::Read,
+                },
             }),
         };
         let len = encode(&view, &mut out).unwrap();
@@ -2044,6 +2144,7 @@ mod tests {
                 generation: u32::MAX,
                 writable: true,
                 plans: [plan; PLANS_MAX],
+                skipped: [Some(u32::MAX); PLANS_MAX],
             })),
         };
         let len = encode(&plans, &mut out).unwrap();
@@ -2359,6 +2460,16 @@ mod tests {
             },
             EventBody::Food {
                 level: FoodLevel::Low,
+            },
+            EventBody::Skipped {
+                plan: u8::MAX,
+                due: u32::MAX,
+                by: Source::Client(client),
+            },
+            EventBody::Unskipped {
+                plan: u8::MAX,
+                due: u32::MAX,
+                by: Source::Client(client),
             },
         ] {
             let mut out = [0; EVENT_BODY_MAX];

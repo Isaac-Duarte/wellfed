@@ -29,7 +29,7 @@ use std::time::{Duration, Instant};
 
 use clap::Args;
 use wellfed_core::ota;
-use wellfed_core::ota::install::{RefusedReason, StopStage};
+use wellfed_core::ota::install::{Blocked, RefusedReason, StopStage};
 use wellfed_core::record::{self, Confirm, Record, Trial, Update, Watch as Watching};
 use wellfed_formats::capture::arrival;
 use wellfed_formats::manifest::{BuildManifest, Provisioning};
@@ -569,6 +569,10 @@ pub enum Event {
     GiveWay {
         version: Option<u32>,
     },
+    /// Bank 1 would not give way to bank 0, for `reason`.
+    GiveWayRefused {
+        reason: Blocked,
+    },
     /// The feeder refused the offer: `same` when it is the running build,
     /// `attempt` when an earlier attempt this power cycle reset.
     Refused {
@@ -637,6 +641,10 @@ impl fmt::Display for Event {
                 "Recovery role skipped the update: an earlier attempt this power cycle reset"
             ),
             Self::Refused { reason } => write!(f, "The feeder refused the offer ({reason})"),
+            Self::GiveWayRefused { reason } => write!(
+                f,
+                "Bank 1 will not give way to bank 0 (reason={reason}); see `wellfed-flash update --bank 0`"
+            ),
             Self::Manifest { version, bytes } => write!(
                 f,
                 "Manifest version {} accepted ({} bytes); downloading",
@@ -795,6 +803,9 @@ impl Watch {
         match event {
             record::Event::Watch(Watching::GiveWay { version }) => Some(Event::GiveWay { version }),
             record::Event::Watch(Watching::Offer { version }) => Some(Event::Offer { version }),
+            record::Event::Watch(Watching::GiveWayRefused { reason }) => {
+                Some(Event::GiveWayRefused { reason })
+            }
 
             record::Event::Update(update) => match update {
                 Update::Manifest { version, bytes } => Some(Event::Manifest { version, bytes }),
@@ -817,6 +828,9 @@ impl Watch {
                     }
                     Some(Event::Refused { reason })
                 }
+                Update::Bank0Recorded { .. }
+                | Update::Bank0Unrecorded { .. }
+                | Update::Bank0Check { .. } => None,
             },
 
             record::Event::Start { build, bank } => {

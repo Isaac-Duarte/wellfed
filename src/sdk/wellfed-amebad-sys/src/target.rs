@@ -16,8 +16,8 @@ use wellfed_board::{STORAGE_OFFSET, STORAGE_SECTORS};
 use wellfed_core::log_ring::Room;
 
 use super::{
-    AUDIO_PAGE_SAMPLES, FlashMmuEntry, GpioRouting, Irq, Isr, LpClock, SECTOR_BYTES, SYSTICK_CTRL,
-    Systick, TaskCount, TaskStack, TaskStep, WifiEvent, WifiPoll,
+    AUDIO_PAGE_SAMPLES, FlashMmuEntry, GpioRouting, Irq, Isr, JoinCredentials, LpClock,
+    SECTOR_BYTES, SYSTICK_CTRL, Systick, TaskCount, TaskStack, TaskStep, WifiEvent, WifiPoll,
 };
 use super::{Accepted, ApiRecv, Datagram};
 #[cfg(feature = "bluetooth")]
@@ -1200,6 +1200,27 @@ pub unsafe fn task_create(
 unsafe extern "C" {
     fn wellfed_wifi_start() -> i32;
     fn wellfed_wifi_event(seq: u32, out: *mut WifiEvent) -> i32;
+    fn wellfed_wifi_record(event: *const WifiEvent);
+    fn wellfed_wifi_net_init();
+    fn wellfed_wifi_on() -> i32;
+    fn wellfed_wifi_power_save_off();
+    fn wellfed_wifi_off() -> i32;
+    fn wellfed_wifi_release_ip();
+    fn wellfed_wifi_dhcp_stop();
+    fn wellfed_wifi_dhcp_start(ip: *mut u32) -> u32;
+    fn wellfed_wifi_disconnect() -> i32;
+    fn wellfed_wifi_associated() -> i32;
+    fn wellfed_wifi_build_credentials(out: *mut JoinCredentials);
+    fn wellfed_wifi_scan() -> i32;
+    fn wellfed_wifi_connect(
+        credentials: *const JoinCredentials,
+        security: u32,
+        attempt: u32,
+    ) -> i32;
+    fn wellfed_wifi_channel(channel: *mut i32) -> i32;
+    fn wellfed_wifi_bssid(bssid: *mut u8) -> i32;
+    fn wellfed_wifi_lease(used: *mut u32) -> i32;
+    fn wellfed_netif_gateway() -> u32;
 }
 
 /// Start the KM4 Wi-Fi shim's task (join and keep the configured network);
@@ -1207,6 +1228,133 @@ unsafe extern "C" {
 pub fn wifi_start() -> bool {
     // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
     unsafe { wellfed_wifi_start() != 0 }
+}
+
+// The Wi-Fi task's vendor calls, one shim function each: the task's flow
+// (wellfed-core `wifi_task`) decides which, and when.
+
+/// Number `event` and put it in the shim's ring (its `seq` is ignored).
+pub fn wifi_record(event: &WifiEvent) {
+    // SAFETY: the C shim in `example_entry.c`; it copies the event.
+    unsafe { wellfed_wifi_record(event) }
+}
+
+/// `LwIP_Init`.
+pub fn wifi_net_init() {
+    // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
+    unsafe { wellfed_wifi_net_init() }
+}
+
+/// `wifi_on` in station mode: 0 started, 1 already running, below 0 failed.
+pub fn wifi_on() -> i32 {
+    // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
+    unsafe { wellfed_wifi_on() }
+}
+
+/// Inactive and leisure power save off.
+pub fn wifi_power_save_off() {
+    // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
+    unsafe { wellfed_wifi_power_save_off() }
+}
+
+/// `wifi_off`.
+pub fn wifi_off() -> i32 {
+    // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
+    unsafe { wellfed_wifi_off() }
+}
+
+/// `LwIP_ReleaseIP`.
+pub fn wifi_release_ip() {
+    // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
+    unsafe { wellfed_wifi_release_ip() }
+}
+
+/// Stop lwIP's DHCP client.
+pub fn wifi_dhcp_stop() {
+    // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
+    unsafe { wellfed_wifi_dhcp_stop() }
+}
+
+/// Run DHCP: lwIP's state, and the address (host order) once assigned.
+pub fn wifi_dhcp_start() -> (u8, u32) {
+    let mut ip = 0;
+    // SAFETY: the C shim in `example_entry.c` writes one word to `ip`,
+    // which is live for the call.
+    let state = unsafe { wellfed_wifi_dhcp_start(&raw mut ip) };
+    (u8::try_from(state).unwrap_or(u8::MAX), ip)
+}
+
+/// `wifi_disconnect`.
+pub fn wifi_disconnect() -> i32 {
+    // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
+    unsafe { wellfed_wifi_disconnect() }
+}
+
+/// Whether the driver holds an association.
+pub fn wifi_associated() -> bool {
+    // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
+    unsafe { wellfed_wifi_associated() != 0 }
+}
+
+/// The build's network, from the shim's generated header; empty without
+/// one.
+pub fn wifi_build_credentials() -> JoinCredentials {
+    let mut credentials = JoinCredentials::EMPTY;
+    // SAFETY: the C shim in `example_entry.c` fills the live struct with
+    // pointers to its static constants.
+    unsafe { wellfed_wifi_build_credentials(&raw mut credentials) };
+    credentials
+}
+
+/// Start a scan; the shim reports each access point to
+/// `wellfed_wifi_scan_seen` and the end to `wellfed_wifi_scan_complete`.
+pub fn wifi_scan() -> i32 {
+    // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
+    unsafe { wellfed_wifi_scan() }
+}
+
+/// `wifi_connect` with `credentials` and the `security` the scan saw;
+/// `attempt` goes to the call trail.
+///
+/// # Safety
+/// Each of `credentials`' pointers names its length's bytes for the call.
+pub unsafe fn wifi_connect(credentials: &JoinCredentials, security: u32, attempt: u32) -> i32 {
+    // SAFETY: the caller's contract; the shim only reads them.
+    unsafe { wellfed_wifi_connect(credentials, security, attempt) }
+}
+
+/// The channel as `wifi_get_channel` left it, or `None` when it failed.
+pub fn wifi_channel() -> Option<i32> {
+    let mut channel = 0;
+    // SAFETY: the C shim in `example_entry.c` writes one int to `channel`,
+    // which is live for the call.
+    let status = unsafe { wellfed_wifi_channel(&raw mut channel) };
+    (status == 0).then_some(channel)
+}
+
+/// The joined access point's BSSID, or `None` when it could not be read.
+pub fn wifi_bssid() -> Option<[u8; 6]> {
+    let mut bssid = [0; 6];
+    // SAFETY: the C shim in `example_entry.c` writes at most six bytes to
+    // `bssid`, which is live for the call.
+    let status = unsafe { wellfed_wifi_bssid(bssid.as_mut_ptr()) };
+    (status == 0).then_some(bssid)
+}
+
+/// lwIP's lease clock (seconds since its last ACK) and whether its DHCP
+/// client is bound.
+pub fn wifi_lease() -> (u32, bool) {
+    let mut used = 0;
+    // SAFETY: the C shim in `example_entry.c` writes one word to `used`,
+    // which is live for the call.
+    let bound = unsafe { wellfed_wifi_lease(&raw mut used) };
+    (used, bound != 0)
+}
+
+/// The interface's gateway (host order), whatever set it; 0 for none.
+pub fn netif_gateway() -> u32 {
+    // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
+    unsafe { wellfed_netif_gateway() }
 }
 
 pub fn wifi_event(seq: u32) -> WifiPoll {
@@ -1298,6 +1446,8 @@ pub fn audio_close() {
     unsafe { wellfed_audio_close() }
 }
 
+/// Close any lwIP socket: a device API connection, a listener, or the
+/// gateway probe's.
 pub fn tcp_close(socket: i32) {
     // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
     unsafe { wellfed_tcp_close(socket) }
@@ -1320,6 +1470,9 @@ unsafe extern "C" {
     fn wellfed_ipv4() -> u32;
     fn wellfed_gateway_ipv4() -> u32;
     fn wellfed_udp_open() -> i32;
+    fn wellfed_icmp_open() -> i32;
+    fn wellfed_icmp_send(socket: i32, data: *const u8, length: u32, ip: u32) -> i32;
+    fn wellfed_icmp_recv(socket: i32, buffer: *mut u8, length: u32, timeout_ms: u32) -> i32;
     fn wellfed_rtc_read(out: *mut u32);
     fn wellfed_time_carry_load(out: *mut u32);
     fn wellfed_time_carry_store(words: *const u32);
@@ -1461,6 +1614,33 @@ pub fn udp_open() -> Option<i32> {
     // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
     let socket = unsafe { wellfed_udp_open() };
     (socket >= 0).then_some(socket)
+}
+
+/// A raw ICMP socket for the gateway probe, or `None`; close it with
+/// [`tcp_close`].
+pub fn icmp_open() -> Option<i32> {
+    // SAFETY: the C shim in `example_entry.c`; it takes no arguments.
+    let socket = unsafe { wellfed_icmp_open() };
+    (socket >= 0).then_some(socket)
+}
+
+/// Send `data` to `ip` (host order) on an ICMP socket: true when all of it
+/// went.
+#[must_use]
+pub fn icmp_send(socket: i32, data: &[u8], ip: u32) -> bool {
+    let length = u32::try_from(data.len()).unwrap_or(u32::MAX);
+    // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
+    unsafe { wellfed_icmp_send(socket, data.as_ptr(), length, ip) == 0 }
+}
+
+/// One datagram from an ICMP socket, its IPv4 header first, waiting at most
+/// `timeout_ms` (nonzero: lwIP takes zero as no timeout); its length, cut
+/// to `buffer`, or `None` once the wait ran out or the socket failed.
+pub fn icmp_recv(socket: i32, buffer: &mut [u8], timeout_ms: u32) -> Option<usize> {
+    let length = u32::try_from(buffer.len()).unwrap_or(u32::MAX);
+    // SAFETY: the C shim in `example_entry.c`; any buffer is live for the call.
+    let got = unsafe { wellfed_icmp_recv(socket, buffer.as_mut_ptr(), length, timeout_ms) };
+    usize::try_from(got).ok().map(|got| got.min(buffer.len()))
 }
 
 /// Milliseconds since the scheduler started (configTICK_RATE_HZ is 1000).

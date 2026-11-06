@@ -5,20 +5,30 @@ import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/join_ports.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
 import 'package:wellfed/platform/phone.dart';
+import 'package:wellfed/platform/server_ports.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
 import 'package:wellfed/screens/home/welcome.dart';
 import 'package:wellfed/screens/install/install_screen.dart';
+import 'package:wellfed/screens/server/server_screens.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/screens/setup/join.dart';
 import 'package:wellfed/screens/setup/recover_screen.dart';
 import 'package:wellfed/screens/setup/setup_screen.dart';
+import 'package:wellfed/src/rust/api/server.dart';
 import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/fleet/adopt.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
 import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/state/join/join.dart';
+import 'package:wellfed/state/server/add_server.dart';
+import 'package:wellfed/state/server/feeder_food.dart';
+import 'package:wellfed/state/server/household.dart';
+import 'package:wellfed/state/server/pet.dart';
+import 'package:wellfed/state/server/server.dart';
+import 'package:wellfed/state/server/server_history.dart';
 import 'package:wellfed/state/settings/backups.dart';
 import 'package:wellfed/state/setup/setup.dart';
 import 'package:wellfed/theme/theme.dart';
@@ -64,7 +74,33 @@ class _WellfedAppState extends State<WellfedApp> {
   late final _pairing = AppPairingPorts(widget.app.key);
   static const _phone = AppPhonePorts();
 
-  late final _fleet = FeederFleet(widget.app, AppFeederPorts(widget.app.key));
+  late final _server = HomeServer(widget.app, const AppServerPorts(), widget.app.router);
+  late final _feederPorts = AppFeederPorts(widget.app.key, widget.app.router);
+  late final _fleet = FeederFleet(widget.app, _feederPorts, server: _server);
+  late final _adopt = AdoptFlow(_feederPorts, _server);
+
+  /// Each server screen's controller, on the session open when it is made.
+  late final _serverScreens = ServerScreens(
+    server: _server,
+    adopt: _adopt,
+    newAddServer: () => AddServerFlow(_server),
+    newHousehold: () => switch (_server.session) {
+      final ServerSession session? => HouseholdFlow(session),
+      null => null,
+    },
+    newPet: (pet) => switch (_server.session) {
+      final ServerSession session? => PetFlow(session, pet),
+      null => null,
+    },
+    newFood: (feeder) => switch (_server.session) {
+      final ServerSession session? => FeederFoodFlow(session, feeder),
+      null => null,
+    },
+    newHistory: (feeder) => switch (_server.session) {
+      final ServerSession session? => ServerHistoryFlow(session, feeder),
+      null => null,
+    },
+  );
   late final AppLifecycleListener _lifecycle;
 
   @override
@@ -74,23 +110,29 @@ class _WellfedAppState extends State<WellfedApp> {
   }
 
   late final GoRouter _router = wellfedRouter(
-    book: widget.app,
-    root: (context) => widget.app.feeders.isEmpty
+    // The server's feeders count as the phone's own do: with none at all,
+    // the welcome.
+    book: Listenable.merge([widget.app, _fleet]),
+    root: (context) => _fleet.all.isEmpty
         ? const WelcomeScreen()
         : HomeScreen(
             fleet: _fleet,
+            adopt: _adopt,
+            pinsProblem: widget.app.pinsProblem,
             earlierInstall: () async {
               final ports = AppInstallPorts(widget.app.key);
               return ports.pending(await ports.paths());
             },
           ),
-    feeder: (context, identity, tab) => FeederRoute(fleet: _fleet, identity: identity, initialTab: tab),
+    feeder: (context, identity, tab) =>
+        FeederRoute(fleet: _fleet, identity: identity, initialTab: tab, server: _serverScreens),
     pages: {
       '/add': (context) => const AddFeederScreen(),
       '/setup': (context) => SetupScreen(newFlow: () => SetupFlow(widget.app, _pairing, _phone)),
       '/settings': (context) => AppSettingsScreen(
         book: widget.app,
         newBackups: () => BackupsFlow(widget.app, AppBackupPorts(widget.app.key)),
+        server: _serverScreens,
       ),
       '/join': (context) => JoinScreen(newFlow: () => JoinFlow(widget.app, AppJoinPorts(widget.app.key))),
       '/recover': (context) => RecoverScreen(newFlow: () => RecoverFlow(widget.app, _pairing, _phone)),
@@ -102,7 +144,12 @@ class _WellfedAppState extends State<WellfedApp> {
   void dispose() {
     _lifecycle.dispose();
     _router.dispose();
+    _adopt.dispose();
     _fleet.dispose();
+    _server.dispose();
+    // A router left open would be taken over by the next one anyway; this
+    // ends its updates now.
+    widget.app.router?.close();
     super.dispose();
   }
 

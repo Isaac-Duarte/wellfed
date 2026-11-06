@@ -176,13 +176,15 @@ async fn a_watcher_keeps_the_last_state_of_a_server_gone_and_resyncs_with_the_ne
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_watcher_nobody_reads_stops_fetching_and_loses_nothing_once_read_again() {
     let Some(_turn) = turn().await else { return };
-    let checkout = Checkout::new(8.0);
+    let checkout = Checkout::new(0.0);
     let server = Running::start(checkout.open());
     let (socket, seen) = recorded(&server, &checkout.root());
     let mut watched = Watched::start(Client::at(socket)).await.unwrap();
 
-    // 3000 lines against a queue of 1000, with nothing taking them.
-    let id = server.submit(&["capture", "burst"]).await.unwrap();
+    // 3000 lines against a queue of 1000, with nothing taking them. The
+    // capture runs until it is released, so it is still running however
+    // long the watcher takes to stop.
+    let id = server.submit(&["capture", "held-burst"]).await.unwrap();
     let output = format!("/jobs/{id}/output");
     let polls = || {
         let seen = seen.lock().unwrap();
@@ -202,6 +204,7 @@ async fn a_watcher_nobody_reads_stops_fetching_and_loses_nothing_once_read_again
     }
     let job = server.state().await.job.unwrap();
     assert!(job.id == id && job.end.is_none(), "{job:?}");
+    checkout.release("held-burst");
 
     let mut kept = Vec::new();
     read_until(&mut watched, &mut kept, &format!("── job {id} complete ──")).await;

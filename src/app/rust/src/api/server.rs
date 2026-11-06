@@ -14,8 +14,8 @@ use std::time::Duration;
 use flutter_rust_bridge::frb;
 use tokio::sync::watch;
 use wellfed_api::{
-    Credentials, EventQuery, FoodPatch, IntakeQuery, NewFood, NewPet, NewToken, PetPatch,
-    StreamQuery, TokenId,
+    Credentials, EventQuery, FoodPatch, IntakeQuery, NewFood, NewPet, NewToken, NewWeight,
+    PageQuery, PetPatch, StreamQuery, TokenId,
 };
 pub use wellfed_server_client::Timeouts;
 use wellfed_server_client::{Auth, Client, Url};
@@ -23,12 +23,13 @@ use wellfed_server_client::{Auth, Client, Url};
 pub use crate::api::model::{FeedOutcome, FeedReason};
 use crate::api::server_error::{ServerError, ServerErrorKind};
 pub use crate::api::server_views::{
-    CommandKind, CommandState, InstallState, ServerAccount, ServerConnection, ServerEntry,
-    ServerEventPage, ServerFeeder, ServerFeederDetail, ServerFeederFood, ServerFood, ServerLink,
-    ServerPet, ServerPetIntake, Species,
+    CommandKind, CommandState, InstallState, NewRefill, ServerAccount, ServerConnection,
+    ServerEntry, ServerEventPage, ServerFeeder, ServerFeederDetail, ServerFeederFood, ServerFood,
+    ServerFoodPeriod, ServerLink, ServerPet, ServerPetIntake, ServerRefill, ServerRefillPage,
+    ServerWeight, ServerWeightPage, Species,
 };
 use crate::frb_generated::StreamSink;
-use crate::server::{date, event_page, ids, stream_event};
+use crate::server::{date, event_page, ids, stream_event, timestamp};
 
 /// How long the phone waits on a server that goes quiet, so a half-open
 /// connection ends in an error instead of a screen that waits for good.
@@ -388,6 +389,125 @@ impl ServerSession {
     /// Delete a food no feeder's history names.
     pub async fn delete_food(&self, id: String) -> Result<(), ServerError> {
         Ok(self.client.delete_food(ids::food(&id)?).await?)
+    }
+
+    /// Serve `food` from `feeder` from now on: what its food view and the
+    /// intake of the pets eating from it count by.
+    pub async fn set_feeder_food(
+        &self,
+        feeder: String,
+        food: String,
+    ) -> Result<ServerFoodPeriod, ServerError> {
+        let period = self
+            .client
+            .set_feeder_food(ids::feeder(&feeder)?, ids::food(&food)?)
+            .await?;
+        Ok(period.into())
+    }
+
+    /// A page of `feeder`'s refills, oldest first: after `after` (the last
+    /// page's `next`), at most `limit` (1-1000, default 100).
+    pub async fn refills(
+        &self,
+        feeder: String,
+        after: Option<String>,
+        limit: Option<u32>,
+    ) -> Result<ServerRefillPage, ServerError> {
+        let page = self
+            .client
+            .refills(ids::feeder(&feeder)?, &PageQuery { after, limit })
+            .await?;
+        Ok(page.into())
+    }
+
+    /// Record a refill of `feeder` made now. The server takes a refill once
+    /// per call and keys none, so a call whose answer was lost is read back
+    /// from [`Self::refills`] before it is made again.
+    pub async fn add_refill(
+        &self,
+        feeder: String,
+        refill: NewRefill,
+    ) -> Result<ServerRefill, ServerError> {
+        let refill = self
+            .client
+            .add_refill(ids::feeder(&feeder)?, &refill)
+            .await?;
+        Ok(refill.into())
+    }
+
+    /// Remove a refill recorded by mistake.
+    pub async fn delete_refill(&self, feeder: String, refill: String) -> Result<(), ServerError> {
+        Ok(self
+            .client
+            .delete_refill(ids::feeder(&feeder)?, ids::refill(&refill)?)
+            .await?)
+    }
+
+    /// The pet eats from `feeder` too: its intake counts that feeder.
+    pub async fn assign_feeder(
+        &self,
+        pet: String,
+        feeder: String,
+    ) -> Result<ServerPet, ServerError> {
+        let pet = self
+            .client
+            .assign_feeder(ids::pet(&pet)?, ids::feeder(&feeder)?)
+            .await?;
+        Ok(pet.into())
+    }
+
+    pub async fn unassign_feeder(
+        &self,
+        pet: String,
+        feeder: String,
+    ) -> Result<ServerPet, ServerError> {
+        let pet = self
+            .client
+            .unassign_feeder(ids::pet(&pet)?, ids::feeder(&feeder)?)
+            .await?;
+        Ok(pet.into())
+    }
+
+    /// A page of `pet`'s weight log, oldest reading first: after `after`
+    /// (the last page's `next`), at most `limit` (1-1000, default 100).
+    pub async fn weights(
+        &self,
+        pet: String,
+        after: Option<String>,
+        limit: Option<u32>,
+    ) -> Result<ServerWeightPage, ServerError> {
+        let page = self
+            .client
+            .weights(ids::pet(&pet)?, &PageQuery { after, limit })
+            .await?;
+        Ok(page.into())
+    }
+
+    /// Log `grams` (1-200000), weighed at `at_ms`, or now. As with a
+    /// refill, a call whose answer was lost is read back before it is made
+    /// again.
+    pub async fn add_weight(
+        &self,
+        pet: String,
+        grams: u32,
+        at_ms: Option<i64>,
+    ) -> Result<ServerWeight, ServerError> {
+        let weight = NewWeight {
+            grams,
+            at: at_ms.map(timestamp).transpose()?,
+        };
+        Ok(self
+            .client
+            .add_weight(ids::pet(&pet)?, &weight)
+            .await?
+            .into())
+    }
+
+    pub async fn delete_weight(&self, pet: String, weight: String) -> Result<(), ServerError> {
+        Ok(self
+            .client
+            .delete_weight(ids::pet(&pet)?, ids::weight(&weight)?)
+            .await?)
     }
 
     /// Follow the server's live stream, after `last_event_id` when given

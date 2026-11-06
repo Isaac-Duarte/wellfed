@@ -91,8 +91,9 @@ pub(crate) async fn turn() -> Option<tokio::sync::MutexGuard<'static, ()>> {
 }
 
 /// A checkout with a bench config and a stand-in flash client:
-/// - `read observe` holds the port for `hold` seconds; a capture named
-///   `burst` first prints 3000 lines on stderr;
+/// - `read observe` holds the port for `hold` seconds, or, for a capture
+///   named `held-…`, until a `release` file appears in it ([`Checkout::release`]);
+///   a capture whose name ends in `burst` first prints 3000 lines on stderr;
 /// - `update execute` reports 3 of 19 sectors, then writes until a signal,
 ///   which it records in `update-signal` at the root;
 /// - `read press` appends its chord and hold to `presses` at the root, and
@@ -126,7 +127,10 @@ case "$3 $4" in
   echo '{{"status":"running"}}' > "$out/report.json"
   trap 'echo INT > "$out/signal"; kill $! 2>/dev/null; exit 1' INT
   trap 'echo TERM > "$out/signal"; kill $! 2>/dev/null; exit 1' TERM
-  sleep {hold} & wait $!
+  case "$out" in
+  */held-*) until [ -e "$out/release" ]; do sleep 0.05; done & wait $! ;;
+  *) sleep {hold} & wait $! ;;
+  esac
   echo '{{"status":"complete","result":{{"bytes":7}}}}' > "$out/report.json"
   ;;
 "read press")
@@ -184,6 +188,11 @@ esac
 
     fn capture(&self, name: &str) -> PathBuf {
         self.root().join("private/captures").join(name)
+    }
+
+    /// End the `held-…` capture `name`, which runs until this.
+    fn release(&self, name: &str) {
+        fs::write(self.capture(name).join("release"), b"").unwrap();
     }
 }
 

@@ -13,7 +13,7 @@ use crate::Error;
 use wellfed_model::FeederSettingsPatch;
 
 use crate::api::{Tune, Update, Written};
-use crate::feeder::{self, Target};
+use crate::feeder::{self, Clocks, Target};
 use crate::key::{self, ClientKey, Joined, bytes32};
 
 /// A call into the Wellfed bridge failed.
@@ -92,6 +92,7 @@ impl Feeder {
         Ok(Self(feeder::Feeder::start(
             key,
             Target { identity, address },
+            Clocks::DEFAULT,
         )?))
     }
 

@@ -1,10 +1,24 @@
 # PLAF103 board and signal map
 
-What the PLAF103 main board connects to each [RTL8721DM](../../chips/rtl8721dm/README.md) pin, and what we still don't know about each connection. It is a reference for firmware work. Identification and support status are on the [device page](README.md).
+What the PLAF103 main board connects to each [RTL8721DM](../../chips/rtl8721dm/README.md) pin, and what is still unknown about each connection. It is a reference for firmware work; identification is on the [device page](README.md).
 
-## At a glance
+## How it feeds
 
-The chip reads the sensors, buttons and power inputs on its left, and drives the motor, lights and sound on its right. The [device page](README.md#how-the-parts-reach-the-chip) explains each kind of connection.
+The motor turns a rotor under the hopper that carries food into the outlet chute and the bowl. Three light beams watch it, each an emitter facing a receiver across a gap that food blocks: the food-level beam across the hopper, blocked while there is food; the feedback sensor, which sees one rotor mark per portion; and the outlet beam, which sees food leave.
+
+```mermaid
+%% svg: food-path.svg
+flowchart TB
+  hopper["Hopper: 5 L of dry food"] --> rotor["Rotor, turned by the motor"]
+  rotor --> chute["Outlet chute"] --> bowl["Bowl"]
+  level{{"Food-level sensor: food blocks the beam"}} -.-> hopper
+  feedback{{"Feedback: one mark a portion"}} -.-> rotor
+  outlet{{"Outlet sensor: sees food leave"}} -.-> chute
+```
+
+## How the parts reach the chip
+
+The chip reads sensors, buttons and power through GPIO and two ADC inputs (battery and motor current), and drives the motor through an H-bridge, since a pin can't supply its current ([glossary](../../glossary.md)). `PA13` is pin 13 of port A. Flash is laid out in the [flash layout](flash-layout.md), the console and its wiring are on the [relay bench](bench.md), and the firmware that uses all this is in the [firmware architecture](../../firmware/README.md).
 
 ```mermaid
 %% svg: parts.svg
@@ -32,7 +46,7 @@ flowchart LR
 
 ## Signal map
 
-The roles come from stock 1.1.15, and many have since been confirmed on the board. The SDK numbers a pin as `(port << 5) | pin` ([chip](../../chips/rtl8721dm/README.md#pins)).
+The roles come from stock 1.1.15, and many are confirmed on the board ([evidence](#evidence)). The SDK numbers a pin as `(port << 5) | pin` ([chip](../../chips/rtl8721dm/README.md#pins)).
 
 | Signal | Role | Still unknown |
 | --- | --- | --- |
@@ -51,8 +65,6 @@ The roles come from stock 1.1.15, and many have since been confirmed on the boar
 
 Seen from the front, the buttons run **Lock, Dispense, Mic, Reset** from left to right. The indicator icons run **low food, lock, Wi-Fi, warning** from left to right.
 
-The buttons read high with the pad pulls off, so the pull-ups are on the board. No bounce showed at a 2 ms poll.
-
 ## Motor truth table
 
 Stock drives the motor like this:
@@ -65,7 +77,7 @@ Stock drives the motor like this:
 | Reverse recovery | Nonzero | 1 | 0 |
 | Initialization and stop | Either | 1 | 1 |
 
-Both HIGH is the driver's brake. Stock writes the two pins one after the other, and startup passes through input configuration first. This table does not say which way is clockwise. The [motor driver page](motor-driver.md) has the driver's own truth table and the electrical checks.
+Both HIGH is the driver's brake. Stock writes the two pins one after the other, and startup passes through input configuration first. The table doesn't say which way is clockwise. The [motor driver page](motor-driver.md) has the driver's own truth table and the electrical checks.
 
 ## Connectors
 
@@ -91,8 +103,6 @@ Useful addresses in the stock 1.1.15 image:
 | Power worker | `0x0e011f10` |
 | Indicator worker | `0x0e011738` |
 
-See also the [relay bench](bench.md), the [flash layout](flash-layout.md) and the [firmware architecture](../../firmware/README.md).
-
 ## Evidence
 
 - **Recovered:** every role in the signal map from stock 1.1.15, the motor truth table, and the instruction anchors.
@@ -100,7 +110,7 @@ See also the [relay bench](bench.md), the [flash layout](flash-layout.md) and th
 - **Observed:** PA19's levels on adapter and batteries, from the power-input bring-up.
 - **Observed, October 23, 2026:** PB2 tracks the pack through a divider of about 2.06.
 - **Observed, October 25, 2026:** PA18 rests HIGH and reads LOW for about 1.17 s at each mark, about 9 s of drive apart. Earlier empty-hopper drives that saw no edge had ended between marks.
-- **Observed:** the button roles, active-LOW levels, board pull-ups and no bounce at a 2 ms poll, with the owner pressing. On October 24, 2026 the owner confirmed the front-view order. An earlier note had recorded the press order from the reverse view.
+- **Observed:** the button roles, active-LOW levels, board pull-ups (the buttons read high with the pad pulls off) and no bounce at a 2 ms poll, with the owner pressing. On October 24, 2026 the owner confirmed the front-view order. An earlier note had recorded the press order from the reverse view.
 - **Observed:** a bounded diagnostic lit **PA0 Wi-Fi, PA2 low food, PA4 locked, PB22 warning**, HIGH on and LOW off, after the stock shared-pad supply prerequisite was restored. Each blinked twice and ended dark. Input reads of PA0, PA2 and PA4 still disagreed with their visible HIGH output, and interleaved UART reports were unresolved, so these are not passing electrical readbacks. See [startup diagnostics](../../firmware/startup-diagnostics.md). The owner confirmed the front-view icon order on October 24, 2026.
 - **Observed:** PB23 held HIGH by the replacement firmware while the speaker played.
 - **Observed:** the CON3 lead colors and the motor from owner photographs. Unplugging CON3 removed boot and loader response. Stopped-startup observations were made with the harness connected, under supervision.

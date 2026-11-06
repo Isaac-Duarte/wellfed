@@ -40,11 +40,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::{Instant, timeout, timeout_at};
 use wellfed_client::api::{Invite, Join, JoinStep};
-use wellfed_client::connection::{self, Event, Opened, Recovery as Window, Timing};
-pub use wellfed_client::connection::{Cursor, KEEPALIVE_ID, Resume};
+use wellfed_client::connection::{self, Event, Opened, Recovery as Window};
+pub use wellfed_client::connection::{Cursor, KEEPALIVE_ID, Resume, Timing};
 use wellfed_model::setup::Reply;
 use wellfed_model::{
-    Answer, ClientRole, DeviceKind, Joined, Model, Op, OpenRefusal, Pushed, Refusal,
+    Answer, ClientRole, DeviceKind, Hello, Joined, Model, Op, OpenRefusal, Pushed, Refusal,
 };
 use wellfed_proto::api::{PORT, RequestId, SERVICE};
 use wellfed_session::hex::Lower;
@@ -241,7 +241,21 @@ impl Connection {
         address: SocketAddr,
         ephemeral: [u8; 32],
     ) -> Result<Self> {
-        let session = connection::Connection::new(keys, identity, ephemeral, now())?;
+        Self::open_with(keys, identity, address, ephemeral, Timing::DEFAULT).await
+    }
+
+    /// As [`Self::open`], on the session clocks `timing` gives rather than
+    /// [`Timing::DEFAULT`]: a test that loses an answer on purpose waits
+    /// out a short answer window instead of the feeder's real one.
+    pub async fn open_with(
+        keys: &Keypair,
+        identity: [u8; 32],
+        address: SocketAddr,
+        ephemeral: [u8; 32],
+        timing: Timing,
+    ) -> Result<Self> {
+        let session =
+            connection::Connection::with(keys, identity, ephemeral, Hello::CURRENT, timing, now())?;
         let mut connection = Self {
             stream: dial(address).await?,
             session,

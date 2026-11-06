@@ -466,7 +466,7 @@ extension HistoryBodyPatterns on HistoryBody {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( HistoryBody_Fed value)?  fed,TResult Function( HistoryBody_Missed value)?  missed,TResult Function( HistoryBody_Restarted value)?  restarted,TResult Function( HistoryBody_Lock value)?  lock,TResult Function( HistoryBody_SettingsChanged value)?  settingsChanged,TResult Function( HistoryBody_WifiChanged value)?  wifiChanged,TResult Function( HistoryBody_PlansChanged value)?  plansChanged,TResult Function( HistoryBody_Joined value)?  joined,TResult Function( HistoryBody_UpdateKeyAdded value)?  updateKeyAdded,TResult Function( HistoryBody_Revoked value)?  revoked,TResult Function( HistoryBody_ClockSet value)?  clockSet,TResult Function( HistoryBody_Lost value)?  lost,TResult Function( HistoryBody_FeedingBlocked value)?  feedingBlocked,TResult Function( HistoryBody_MealSoon value)?  mealSoon,TResult Function( HistoryBody_Supply value)?  supply,TResult Function( HistoryBody_DispenseRefused value)?  dispenseRefused,TResult Function( HistoryBody_Food value)?  food,TResult Function( HistoryBody_Gap value)?  gap,TResult Function( HistoryBody_Other value)?  other,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( HistoryBody_Fed value)?  fed,TResult Function( HistoryBody_Missed value)?  missed,TResult Function( HistoryBody_Restarted value)?  restarted,TResult Function( HistoryBody_Lock value)?  lock,TResult Function( HistoryBody_SettingsChanged value)?  settingsChanged,TResult Function( HistoryBody_WifiChanged value)?  wifiChanged,TResult Function( HistoryBody_PlansChanged value)?  plansChanged,TResult Function( HistoryBody_Joined value)?  joined,TResult Function( HistoryBody_UpdateKeyAdded value)?  updateKeyAdded,TResult Function( HistoryBody_Revoked value)?  revoked,TResult Function( HistoryBody_ClockSet value)?  clockSet,TResult Function( HistoryBody_Lost value)?  lost,TResult Function( HistoryBody_FeedingBlocked value)?  feedingBlocked,TResult Function( HistoryBody_MealSoon value)?  mealSoon,TResult Function( HistoryBody_Supply value)?  supply,TResult Function( HistoryBody_DispenseRefused value)?  dispenseRefused,TResult Function( HistoryBody_Food value)?  food,TResult Function( HistoryBody_Skipped value)?  skipped,TResult Function( HistoryBody_Unskipped value)?  unskipped,TResult Function( HistoryBody_Gap value)?  gap,TResult Function( HistoryBody_Other value)?  other,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case HistoryBody_Fed() when fed != null:
@@ -486,7 +486,9 @@ return feedingBlocked(_that);case HistoryBody_MealSoon() when mealSoon != null:
 return mealSoon(_that);case HistoryBody_Supply() when supply != null:
 return supply(_that);case HistoryBody_DispenseRefused() when dispenseRefused != null:
 return dispenseRefused(_that);case HistoryBody_Food() when food != null:
-return food(_that);case HistoryBody_Gap() when gap != null:
+return food(_that);case HistoryBody_Skipped() when skipped != null:
+return skipped(_that);case HistoryBody_Unskipped() when unskipped != null:
+return unskipped(_that);case HistoryBody_Gap() when gap != null:
 return gap(_that);case HistoryBody_Other() when other != null:
 return other(_that);case _:
   return orElse();
@@ -506,7 +508,7 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( HistoryBody_Fed value)  fed,required TResult Function( HistoryBody_Missed value)  missed,required TResult Function( HistoryBody_Restarted value)  restarted,required TResult Function( HistoryBody_Lock value)  lock,required TResult Function( HistoryBody_SettingsChanged value)  settingsChanged,required TResult Function( HistoryBody_WifiChanged value)  wifiChanged,required TResult Function( HistoryBody_PlansChanged value)  plansChanged,required TResult Function( HistoryBody_Joined value)  joined,required TResult Function( HistoryBody_UpdateKeyAdded value)  updateKeyAdded,required TResult Function( HistoryBody_Revoked value)  revoked,required TResult Function( HistoryBody_ClockSet value)  clockSet,required TResult Function( HistoryBody_Lost value)  lost,required TResult Function( HistoryBody_FeedingBlocked value)  feedingBlocked,required TResult Function( HistoryBody_MealSoon value)  mealSoon,required TResult Function( HistoryBody_Supply value)  supply,required TResult Function( HistoryBody_DispenseRefused value)  dispenseRefused,required TResult Function( HistoryBody_Food value)  food,required TResult Function( HistoryBody_Gap value)  gap,required TResult Function( HistoryBody_Other value)  other,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( HistoryBody_Fed value)  fed,required TResult Function( HistoryBody_Missed value)  missed,required TResult Function( HistoryBody_Restarted value)  restarted,required TResult Function( HistoryBody_Lock value)  lock,required TResult Function( HistoryBody_SettingsChanged value)  settingsChanged,required TResult Function( HistoryBody_WifiChanged value)  wifiChanged,required TResult Function( HistoryBody_PlansChanged value)  plansChanged,required TResult Function( HistoryBody_Joined value)  joined,required TResult Function( HistoryBody_UpdateKeyAdded value)  updateKeyAdded,required TResult Function( HistoryBody_Revoked value)  revoked,required TResult Function( HistoryBody_ClockSet value)  clockSet,required TResult Function( HistoryBody_Lost value)  lost,required TResult Function( HistoryBody_FeedingBlocked value)  feedingBlocked,required TResult Function( HistoryBody_MealSoon value)  mealSoon,required TResult Function( HistoryBody_Supply value)  supply,required TResult Function( HistoryBody_DispenseRefused value)  dispenseRefused,required TResult Function( HistoryBody_Food value)  food,required TResult Function( HistoryBody_Skipped value)  skipped,required TResult Function( HistoryBody_Unskipped value)  unskipped,required TResult Function( HistoryBody_Gap value)  gap,required TResult Function( HistoryBody_Other value)  other,}){
 final _that = this;
 switch (_that) {
 case HistoryBody_Fed():
@@ -526,7 +528,9 @@ return feedingBlocked(_that);case HistoryBody_MealSoon():
 return mealSoon(_that);case HistoryBody_Supply():
 return supply(_that);case HistoryBody_DispenseRefused():
 return dispenseRefused(_that);case HistoryBody_Food():
-return food(_that);case HistoryBody_Gap():
+return food(_that);case HistoryBody_Skipped():
+return skipped(_that);case HistoryBody_Unskipped():
+return unskipped(_that);case HistoryBody_Gap():
 return gap(_that);case HistoryBody_Other():
 return other(_that);}
 }
@@ -542,7 +546,7 @@ return other(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( HistoryBody_Fed value)?  fed,TResult? Function( HistoryBody_Missed value)?  missed,TResult? Function( HistoryBody_Restarted value)?  restarted,TResult? Function( HistoryBody_Lock value)?  lock,TResult? Function( HistoryBody_SettingsChanged value)?  settingsChanged,TResult? Function( HistoryBody_WifiChanged value)?  wifiChanged,TResult? Function( HistoryBody_PlansChanged value)?  plansChanged,TResult? Function( HistoryBody_Joined value)?  joined,TResult? Function( HistoryBody_UpdateKeyAdded value)?  updateKeyAdded,TResult? Function( HistoryBody_Revoked value)?  revoked,TResult? Function( HistoryBody_ClockSet value)?  clockSet,TResult? Function( HistoryBody_Lost value)?  lost,TResult? Function( HistoryBody_FeedingBlocked value)?  feedingBlocked,TResult? Function( HistoryBody_MealSoon value)?  mealSoon,TResult? Function( HistoryBody_Supply value)?  supply,TResult? Function( HistoryBody_DispenseRefused value)?  dispenseRefused,TResult? Function( HistoryBody_Food value)?  food,TResult? Function( HistoryBody_Gap value)?  gap,TResult? Function( HistoryBody_Other value)?  other,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( HistoryBody_Fed value)?  fed,TResult? Function( HistoryBody_Missed value)?  missed,TResult? Function( HistoryBody_Restarted value)?  restarted,TResult? Function( HistoryBody_Lock value)?  lock,TResult? Function( HistoryBody_SettingsChanged value)?  settingsChanged,TResult? Function( HistoryBody_WifiChanged value)?  wifiChanged,TResult? Function( HistoryBody_PlansChanged value)?  plansChanged,TResult? Function( HistoryBody_Joined value)?  joined,TResult? Function( HistoryBody_UpdateKeyAdded value)?  updateKeyAdded,TResult? Function( HistoryBody_Revoked value)?  revoked,TResult? Function( HistoryBody_ClockSet value)?  clockSet,TResult? Function( HistoryBody_Lost value)?  lost,TResult? Function( HistoryBody_FeedingBlocked value)?  feedingBlocked,TResult? Function( HistoryBody_MealSoon value)?  mealSoon,TResult? Function( HistoryBody_Supply value)?  supply,TResult? Function( HistoryBody_DispenseRefused value)?  dispenseRefused,TResult? Function( HistoryBody_Food value)?  food,TResult? Function( HistoryBody_Skipped value)?  skipped,TResult? Function( HistoryBody_Unskipped value)?  unskipped,TResult? Function( HistoryBody_Gap value)?  gap,TResult? Function( HistoryBody_Other value)?  other,}){
 final _that = this;
 switch (_that) {
 case HistoryBody_Fed() when fed != null:
@@ -562,7 +566,9 @@ return feedingBlocked(_that);case HistoryBody_MealSoon() when mealSoon != null:
 return mealSoon(_that);case HistoryBody_Supply() when supply != null:
 return supply(_that);case HistoryBody_DispenseRefused() when dispenseRefused != null:
 return dispenseRefused(_that);case HistoryBody_Food() when food != null:
-return food(_that);case HistoryBody_Gap() when gap != null:
+return food(_that);case HistoryBody_Skipped() when skipped != null:
+return skipped(_that);case HistoryBody_Unskipped() when unskipped != null:
+return unskipped(_that);case HistoryBody_Gap() when gap != null:
 return gap(_that);case HistoryBody_Other() when other != null:
 return other(_that);case _:
   return null;
@@ -581,7 +587,7 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( FeedResult result)?  fed,TResult Function( int slot,  PlatformInt64 dueMs,  MissedReason reason)?  missed,TResult Function()?  restarted,TResult Function( bool locked,  FedBy by)?  lock,TResult Function( FedBy by)?  settingsChanged,TResult Function( FedBy by)?  wifiChanged,TResult Function( FedBy by)?  plansChanged,TResult Function( String fingerprint)?  joined,TResult Function( String fingerprint)?  updateKeyAdded,TResult Function( String fingerprint,  FedBy by)?  revoked,TResult Function( FedBy by)?  clockSet,TResult Function( int count)?  lost,TResult Function( Blocked? reason)?  feedingBlocked,TResult Function( int minute,  int portions)?  mealSoon,TResult Function( bool? adapter)?  supply,TResult Function( Blocked reason)?  dispenseRefused,TResult Function( FoodLevel level)?  food,TResult Function( BigInt from,  BigInt to)?  gap,TResult Function()?  other,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( FeedResult result)?  fed,TResult Function( int slot,  PlatformInt64 dueMs,  MissedReason reason)?  missed,TResult Function()?  restarted,TResult Function( bool locked,  FedBy by)?  lock,TResult Function( FedBy by)?  settingsChanged,TResult Function( FedBy by)?  wifiChanged,TResult Function( FedBy by)?  plansChanged,TResult Function( String fingerprint)?  joined,TResult Function( String fingerprint)?  updateKeyAdded,TResult Function( String fingerprint,  FedBy by)?  revoked,TResult Function( FedBy by)?  clockSet,TResult Function( int count)?  lost,TResult Function( Blocked? reason)?  feedingBlocked,TResult Function( int minute,  int portions)?  mealSoon,TResult Function( bool? adapter)?  supply,TResult Function( Blocked reason)?  dispenseRefused,TResult Function( FoodLevel level)?  food,TResult Function( int slot,  PlatformInt64 dueMs,  FedBy by)?  skipped,TResult Function( int slot,  PlatformInt64 dueMs,  FedBy by)?  unskipped,TResult Function( BigInt from,  BigInt to)?  gap,TResult Function()?  other,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case HistoryBody_Fed() when fed != null:
 return fed(_that.result);case HistoryBody_Missed() when missed != null:
@@ -600,7 +606,9 @@ return feedingBlocked(_that.reason);case HistoryBody_MealSoon() when mealSoon !=
 return mealSoon(_that.minute,_that.portions);case HistoryBody_Supply() when supply != null:
 return supply(_that.adapter);case HistoryBody_DispenseRefused() when dispenseRefused != null:
 return dispenseRefused(_that.reason);case HistoryBody_Food() when food != null:
-return food(_that.level);case HistoryBody_Gap() when gap != null:
+return food(_that.level);case HistoryBody_Skipped() when skipped != null:
+return skipped(_that.slot,_that.dueMs,_that.by);case HistoryBody_Unskipped() when unskipped != null:
+return unskipped(_that.slot,_that.dueMs,_that.by);case HistoryBody_Gap() when gap != null:
 return gap(_that.from,_that.to);case HistoryBody_Other() when other != null:
 return other();case _:
   return orElse();
@@ -620,7 +628,7 @@ return other();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( FeedResult result)  fed,required TResult Function( int slot,  PlatformInt64 dueMs,  MissedReason reason)  missed,required TResult Function()  restarted,required TResult Function( bool locked,  FedBy by)  lock,required TResult Function( FedBy by)  settingsChanged,required TResult Function( FedBy by)  wifiChanged,required TResult Function( FedBy by)  plansChanged,required TResult Function( String fingerprint)  joined,required TResult Function( String fingerprint)  updateKeyAdded,required TResult Function( String fingerprint,  FedBy by)  revoked,required TResult Function( FedBy by)  clockSet,required TResult Function( int count)  lost,required TResult Function( Blocked? reason)  feedingBlocked,required TResult Function( int minute,  int portions)  mealSoon,required TResult Function( bool? adapter)  supply,required TResult Function( Blocked reason)  dispenseRefused,required TResult Function( FoodLevel level)  food,required TResult Function( BigInt from,  BigInt to)  gap,required TResult Function()  other,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( FeedResult result)  fed,required TResult Function( int slot,  PlatformInt64 dueMs,  MissedReason reason)  missed,required TResult Function()  restarted,required TResult Function( bool locked,  FedBy by)  lock,required TResult Function( FedBy by)  settingsChanged,required TResult Function( FedBy by)  wifiChanged,required TResult Function( FedBy by)  plansChanged,required TResult Function( String fingerprint)  joined,required TResult Function( String fingerprint)  updateKeyAdded,required TResult Function( String fingerprint,  FedBy by)  revoked,required TResult Function( FedBy by)  clockSet,required TResult Function( int count)  lost,required TResult Function( Blocked? reason)  feedingBlocked,required TResult Function( int minute,  int portions)  mealSoon,required TResult Function( bool? adapter)  supply,required TResult Function( Blocked reason)  dispenseRefused,required TResult Function( FoodLevel level)  food,required TResult Function( int slot,  PlatformInt64 dueMs,  FedBy by)  skipped,required TResult Function( int slot,  PlatformInt64 dueMs,  FedBy by)  unskipped,required TResult Function( BigInt from,  BigInt to)  gap,required TResult Function()  other,}) {final _that = this;
 switch (_that) {
 case HistoryBody_Fed():
 return fed(_that.result);case HistoryBody_Missed():
@@ -639,7 +647,9 @@ return feedingBlocked(_that.reason);case HistoryBody_MealSoon():
 return mealSoon(_that.minute,_that.portions);case HistoryBody_Supply():
 return supply(_that.adapter);case HistoryBody_DispenseRefused():
 return dispenseRefused(_that.reason);case HistoryBody_Food():
-return food(_that.level);case HistoryBody_Gap():
+return food(_that.level);case HistoryBody_Skipped():
+return skipped(_that.slot,_that.dueMs,_that.by);case HistoryBody_Unskipped():
+return unskipped(_that.slot,_that.dueMs,_that.by);case HistoryBody_Gap():
 return gap(_that.from,_that.to);case HistoryBody_Other():
 return other();}
 }
@@ -655,7 +665,7 @@ return other();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( FeedResult result)?  fed,TResult? Function( int slot,  PlatformInt64 dueMs,  MissedReason reason)?  missed,TResult? Function()?  restarted,TResult? Function( bool locked,  FedBy by)?  lock,TResult? Function( FedBy by)?  settingsChanged,TResult? Function( FedBy by)?  wifiChanged,TResult? Function( FedBy by)?  plansChanged,TResult? Function( String fingerprint)?  joined,TResult? Function( String fingerprint)?  updateKeyAdded,TResult? Function( String fingerprint,  FedBy by)?  revoked,TResult? Function( FedBy by)?  clockSet,TResult? Function( int count)?  lost,TResult? Function( Blocked? reason)?  feedingBlocked,TResult? Function( int minute,  int portions)?  mealSoon,TResult? Function( bool? adapter)?  supply,TResult? Function( Blocked reason)?  dispenseRefused,TResult? Function( FoodLevel level)?  food,TResult? Function( BigInt from,  BigInt to)?  gap,TResult? Function()?  other,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( FeedResult result)?  fed,TResult? Function( int slot,  PlatformInt64 dueMs,  MissedReason reason)?  missed,TResult? Function()?  restarted,TResult? Function( bool locked,  FedBy by)?  lock,TResult? Function( FedBy by)?  settingsChanged,TResult? Function( FedBy by)?  wifiChanged,TResult? Function( FedBy by)?  plansChanged,TResult? Function( String fingerprint)?  joined,TResult? Function( String fingerprint)?  updateKeyAdded,TResult? Function( String fingerprint,  FedBy by)?  revoked,TResult? Function( FedBy by)?  clockSet,TResult? Function( int count)?  lost,TResult? Function( Blocked? reason)?  feedingBlocked,TResult? Function( int minute,  int portions)?  mealSoon,TResult? Function( bool? adapter)?  supply,TResult? Function( Blocked reason)?  dispenseRefused,TResult? Function( FoodLevel level)?  food,TResult? Function( int slot,  PlatformInt64 dueMs,  FedBy by)?  skipped,TResult? Function( int slot,  PlatformInt64 dueMs,  FedBy by)?  unskipped,TResult? Function( BigInt from,  BigInt to)?  gap,TResult? Function()?  other,}) {final _that = this;
 switch (_that) {
 case HistoryBody_Fed() when fed != null:
 return fed(_that.result);case HistoryBody_Missed() when missed != null:
@@ -674,7 +684,9 @@ return feedingBlocked(_that.reason);case HistoryBody_MealSoon() when mealSoon !=
 return mealSoon(_that.minute,_that.portions);case HistoryBody_Supply() when supply != null:
 return supply(_that.adapter);case HistoryBody_DispenseRefused() when dispenseRefused != null:
 return dispenseRefused(_that.reason);case HistoryBody_Food() when food != null:
-return food(_that.level);case HistoryBody_Gap() when gap != null:
+return food(_that.level);case HistoryBody_Skipped() when skipped != null:
+return skipped(_that.slot,_that.dueMs,_that.by);case HistoryBody_Unskipped() when unskipped != null:
+return unskipped(_that.slot,_that.dueMs,_that.by);case HistoryBody_Gap() when gap != null:
 return gap(_that.from,_that.to);case HistoryBody_Other() when other != null:
 return other();case _:
   return null;
@@ -1880,6 +1892,168 @@ as FoodLevel,
 /// @nodoc
 
 
+class HistoryBody_Skipped extends HistoryBody {
+  const HistoryBody_Skipped({required this.slot, required this.dueMs, required this.by}): super._();
+  
+
+ final  int slot;
+ final  PlatformInt64 dueMs;
+ final  FedBy by;
+
+/// Create a copy of HistoryBody
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$HistoryBody_SkippedCopyWith<HistoryBody_Skipped> get copyWith => _$HistoryBody_SkippedCopyWithImpl<HistoryBody_Skipped>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is HistoryBody_Skipped&&(identical(other.slot, slot) || other.slot == slot)&&(identical(other.dueMs, dueMs) || other.dueMs == dueMs)&&(identical(other.by, by) || other.by == by));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,slot,dueMs,by);
+}
+
+@override
+String toString() {
+    return 'HistoryBody.skipped(slot: $slot, dueMs: $dueMs, by: $by)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $HistoryBody_SkippedCopyWith<$Res> implements $HistoryBodyCopyWith<$Res> {
+  factory $HistoryBody_SkippedCopyWith(HistoryBody_Skipped value, $Res Function(HistoryBody_Skipped) _then) = _$HistoryBody_SkippedCopyWithImpl;
+@useResult
+$Res call({
+ int slot, PlatformInt64 dueMs, FedBy by
+});
+
+
+$FedByCopyWith<$Res> get by;
+
+}
+/// @nodoc
+class _$HistoryBody_SkippedCopyWithImpl<$Res>
+    implements $HistoryBody_SkippedCopyWith<$Res> {
+  _$HistoryBody_SkippedCopyWithImpl(this._self, this._then);
+
+  final HistoryBody_Skipped _self;
+  final $Res Function(HistoryBody_Skipped) _then;
+
+/// Create a copy of HistoryBody
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? slot = null,Object? dueMs = null,Object? by = null,}) {
+  return _then(HistoryBody_Skipped(
+slot: null == slot ? _self.slot : slot // ignore: cast_nullable_to_non_nullable
+as int,dueMs: null == dueMs ? _self.dueMs : dueMs // ignore: cast_nullable_to_non_nullable
+as PlatformInt64,by: null == by ? _self.by : by // ignore: cast_nullable_to_non_nullable
+as FedBy,
+  ));
+}
+
+/// Create a copy of HistoryBody
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$FedByCopyWith<$Res> get by {
+  
+  return $FedByCopyWith<$Res>(_self.by, (value) {
+    return _then(_self.copyWith(by: value));
+  });
+}
+}
+
+/// @nodoc
+
+
+class HistoryBody_Unskipped extends HistoryBody {
+  const HistoryBody_Unskipped({required this.slot, required this.dueMs, required this.by}): super._();
+  
+
+ final  int slot;
+ final  PlatformInt64 dueMs;
+ final  FedBy by;
+
+/// Create a copy of HistoryBody
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$HistoryBody_UnskippedCopyWith<HistoryBody_Unskipped> get copyWith => _$HistoryBody_UnskippedCopyWithImpl<HistoryBody_Unskipped>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is HistoryBody_Unskipped&&(identical(other.slot, slot) || other.slot == slot)&&(identical(other.dueMs, dueMs) || other.dueMs == dueMs)&&(identical(other.by, by) || other.by == by));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,slot,dueMs,by);
+}
+
+@override
+String toString() {
+    return 'HistoryBody.unskipped(slot: $slot, dueMs: $dueMs, by: $by)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $HistoryBody_UnskippedCopyWith<$Res> implements $HistoryBodyCopyWith<$Res> {
+  factory $HistoryBody_UnskippedCopyWith(HistoryBody_Unskipped value, $Res Function(HistoryBody_Unskipped) _then) = _$HistoryBody_UnskippedCopyWithImpl;
+@useResult
+$Res call({
+ int slot, PlatformInt64 dueMs, FedBy by
+});
+
+
+$FedByCopyWith<$Res> get by;
+
+}
+/// @nodoc
+class _$HistoryBody_UnskippedCopyWithImpl<$Res>
+    implements $HistoryBody_UnskippedCopyWith<$Res> {
+  _$HistoryBody_UnskippedCopyWithImpl(this._self, this._then);
+
+  final HistoryBody_Unskipped _self;
+  final $Res Function(HistoryBody_Unskipped) _then;
+
+/// Create a copy of HistoryBody
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? slot = null,Object? dueMs = null,Object? by = null,}) {
+  return _then(HistoryBody_Unskipped(
+slot: null == slot ? _self.slot : slot // ignore: cast_nullable_to_non_nullable
+as int,dueMs: null == dueMs ? _self.dueMs : dueMs // ignore: cast_nullable_to_non_nullable
+as PlatformInt64,by: null == by ? _self.by : by // ignore: cast_nullable_to_non_nullable
+as FedBy,
+  ));
+}
+
+/// Create a copy of HistoryBody
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$FedByCopyWith<$Res> get by {
+  
+  return $FedByCopyWith<$Res>(_self.by, (value) {
+    return _then(_self.copyWith(by: value));
+  });
+}
+}
+
+/// @nodoc
+
+
 class HistoryBody_Gap extends HistoryBody {
   const HistoryBody_Gap({required this.from, required this.to}): super._();
   
@@ -1980,6 +2154,338 @@ String toString() {
 
 
 /// @nodoc
+mixin _$MealAction {
+
+ PlatformInt64 get dueMs;
+/// Create a copy of MealAction
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MealActionCopyWith<MealAction> get copyWith => _$MealActionCopyWithImpl<MealAction>(this as MealAction, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  final _this = this as MealAction;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MealAction&&(identical(other.dueMs, _this.dueMs) || other.dueMs == _this.dueMs));
+}
+
+
+@override
+int get hashCode {
+  final _this = this as MealAction;
+  return Object.hash(runtimeType,_this.dueMs);
+}
+
+@override
+String toString() {
+  final _this = this as MealAction;
+  return 'MealAction(dueMs: ${_this.dueMs})';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $MealActionCopyWith<$Res>  {
+  factory $MealActionCopyWith(MealAction value, $Res Function(MealAction) _then) = _$MealActionCopyWithImpl;
+@useResult
+$Res call({
+ PlatformInt64 dueMs
+});
+
+
+
+
+}
+/// @nodoc
+class _$MealActionCopyWithImpl<$Res>
+    implements $MealActionCopyWith<$Res> {
+  _$MealActionCopyWithImpl(this._self, this._then);
+
+  final MealAction _self;
+  final $Res Function(MealAction) _then;
+
+/// Create a copy of MealAction
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? dueMs = null,}) {
+  return _then(_self.copyWith(
+dueMs: null == dueMs ? _self.dueMs : dueMs // ignore: cast_nullable_to_non_nullable
+as PlatformInt64,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [MealAction].
+extension MealActionPatterns on MealAction {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( MealAction_Skip value)?  skip,TResult Function( MealAction_Undo value)?  undo,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case MealAction_Skip() when skip != null:
+return skip(_that);case MealAction_Undo() when undo != null:
+return undo(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( MealAction_Skip value)  skip,required TResult Function( MealAction_Undo value)  undo,}){
+final _that = this;
+switch (_that) {
+case MealAction_Skip():
+return skip(_that);case MealAction_Undo():
+return undo(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( MealAction_Skip value)?  skip,TResult? Function( MealAction_Undo value)?  undo,}){
+final _that = this;
+switch (_that) {
+case MealAction_Skip() when skip != null:
+return skip(_that);case MealAction_Undo() when undo != null:
+return undo(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( PlatformInt64 dueMs)?  skip,TResult Function( PlatformInt64 dueMs)?  undo,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case MealAction_Skip() when skip != null:
+return skip(_that.dueMs);case MealAction_Undo() when undo != null:
+return undo(_that.dueMs);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( PlatformInt64 dueMs)  skip,required TResult Function( PlatformInt64 dueMs)  undo,}) {final _that = this;
+switch (_that) {
+case MealAction_Skip():
+return skip(_that.dueMs);case MealAction_Undo():
+return undo(_that.dueMs);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( PlatformInt64 dueMs)?  skip,TResult? Function( PlatformInt64 dueMs)?  undo,}) {final _that = this;
+switch (_that) {
+case MealAction_Skip() when skip != null:
+return skip(_that.dueMs);case MealAction_Undo() when undo != null:
+return undo(_that.dueMs);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class MealAction_Skip extends MealAction {
+  const MealAction_Skip({required this.dueMs}): super._();
+  
+
+@override final  PlatformInt64 dueMs;
+
+/// Create a copy of MealAction
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MealAction_SkipCopyWith<MealAction_Skip> get copyWith => _$MealAction_SkipCopyWithImpl<MealAction_Skip>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is MealAction_Skip&&(identical(other.dueMs, dueMs) || other.dueMs == dueMs));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,dueMs);
+}
+
+@override
+String toString() {
+    return 'MealAction.skip(dueMs: $dueMs)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $MealAction_SkipCopyWith<$Res> implements $MealActionCopyWith<$Res> {
+  factory $MealAction_SkipCopyWith(MealAction_Skip value, $Res Function(MealAction_Skip) _then) = _$MealAction_SkipCopyWithImpl;
+@override @useResult
+$Res call({
+ PlatformInt64 dueMs
+});
+
+
+
+
+}
+/// @nodoc
+class _$MealAction_SkipCopyWithImpl<$Res>
+    implements $MealAction_SkipCopyWith<$Res> {
+  _$MealAction_SkipCopyWithImpl(this._self, this._then);
+
+  final MealAction_Skip _self;
+  final $Res Function(MealAction_Skip) _then;
+
+/// Create a copy of MealAction
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? dueMs = null,}) {
+  return _then(MealAction_Skip(
+dueMs: null == dueMs ? _self.dueMs : dueMs // ignore: cast_nullable_to_non_nullable
+as PlatformInt64,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class MealAction_Undo extends MealAction {
+  const MealAction_Undo({required this.dueMs}): super._();
+  
+
+@override final  PlatformInt64 dueMs;
+
+/// Create a copy of MealAction
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MealAction_UndoCopyWith<MealAction_Undo> get copyWith => _$MealAction_UndoCopyWithImpl<MealAction_Undo>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is MealAction_Undo&&(identical(other.dueMs, dueMs) || other.dueMs == dueMs));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,dueMs);
+}
+
+@override
+String toString() {
+    return 'MealAction.undo(dueMs: $dueMs)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $MealAction_UndoCopyWith<$Res> implements $MealActionCopyWith<$Res> {
+  factory $MealAction_UndoCopyWith(MealAction_Undo value, $Res Function(MealAction_Undo) _then) = _$MealAction_UndoCopyWithImpl;
+@override @useResult
+$Res call({
+ PlatformInt64 dueMs
+});
+
+
+
+
+}
+/// @nodoc
+class _$MealAction_UndoCopyWithImpl<$Res>
+    implements $MealAction_UndoCopyWith<$Res> {
+  _$MealAction_UndoCopyWithImpl(this._self, this._then);
+
+  final MealAction_Undo _self;
+  final $Res Function(MealAction_Undo) _then;
+
+/// Create a copy of MealAction
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? dueMs = null,}) {
+  return _then(MealAction_Undo(
+dueMs: null == dueMs ? _self.dueMs : dueMs // ignore: cast_nullable_to_non_nullable
+as PlatformInt64,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$MealStanding {
 
 
@@ -2023,14 +2529,16 @@ extension MealStandingPatterns on MealStanding {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( MealStanding_Fed value)?  fed,TResult Function( MealStanding_Passed value)?  passed,TResult Function( MealStanding_Next value)?  next,TResult Function( MealStanding_Later value)?  later,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( MealStanding_Fed value)?  fed,TResult Function( MealStanding_Passed value)?  passed,TResult Function( MealStanding_Next value)?  next,TResult Function( MealStanding_Later value)?  later,TResult Function( MealStanding_Skipped value)?  skipped,TResult Function( MealStanding_SkipKept value)?  skipKept,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case MealStanding_Fed() when fed != null:
 return fed(_that);case MealStanding_Passed() when passed != null:
 return passed(_that);case MealStanding_Next() when next != null:
 return next(_that);case MealStanding_Later() when later != null:
-return later(_that);case _:
+return later(_that);case MealStanding_Skipped() when skipped != null:
+return skipped(_that);case MealStanding_SkipKept() when skipKept != null:
+return skipKept(_that);case _:
   return orElse();
 
 }
@@ -2048,14 +2556,16 @@ return later(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( MealStanding_Fed value)  fed,required TResult Function( MealStanding_Passed value)  passed,required TResult Function( MealStanding_Next value)  next,required TResult Function( MealStanding_Later value)  later,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( MealStanding_Fed value)  fed,required TResult Function( MealStanding_Passed value)  passed,required TResult Function( MealStanding_Next value)  next,required TResult Function( MealStanding_Later value)  later,required TResult Function( MealStanding_Skipped value)  skipped,required TResult Function( MealStanding_SkipKept value)  skipKept,}){
 final _that = this;
 switch (_that) {
 case MealStanding_Fed():
 return fed(_that);case MealStanding_Passed():
 return passed(_that);case MealStanding_Next():
 return next(_that);case MealStanding_Later():
-return later(_that);}
+return later(_that);case MealStanding_Skipped():
+return skipped(_that);case MealStanding_SkipKept():
+return skipKept(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -2069,14 +2579,16 @@ return later(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( MealStanding_Fed value)?  fed,TResult? Function( MealStanding_Passed value)?  passed,TResult? Function( MealStanding_Next value)?  next,TResult? Function( MealStanding_Later value)?  later,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( MealStanding_Fed value)?  fed,TResult? Function( MealStanding_Passed value)?  passed,TResult? Function( MealStanding_Next value)?  next,TResult? Function( MealStanding_Later value)?  later,TResult? Function( MealStanding_Skipped value)?  skipped,TResult? Function( MealStanding_SkipKept value)?  skipKept,}){
 final _that = this;
 switch (_that) {
 case MealStanding_Fed() when fed != null:
 return fed(_that);case MealStanding_Passed() when passed != null:
 return passed(_that);case MealStanding_Next() when next != null:
 return next(_that);case MealStanding_Later() when later != null:
-return later(_that);case _:
+return later(_that);case MealStanding_Skipped() when skipped != null:
+return skipped(_that);case MealStanding_SkipKept() when skipKept != null:
+return skipKept(_that);case _:
   return null;
 
 }
@@ -2093,13 +2605,15 @@ return later(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( FeedResult result)?  fed,TResult Function()?  passed,TResult Function( PlatformInt64 atMs)?  next,TResult Function()?  later,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( FeedResult result)?  fed,TResult Function()?  passed,TResult Function( PlatformInt64 atMs)?  next,TResult Function()?  later,TResult Function( PlatformInt64 atMs)?  skipped,TResult Function()?  skipKept,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case MealStanding_Fed() when fed != null:
 return fed(_that.result);case MealStanding_Passed() when passed != null:
 return passed();case MealStanding_Next() when next != null:
 return next(_that.atMs);case MealStanding_Later() when later != null:
-return later();case _:
+return later();case MealStanding_Skipped() when skipped != null:
+return skipped(_that.atMs);case MealStanding_SkipKept() when skipKept != null:
+return skipKept();case _:
   return orElse();
 
 }
@@ -2117,13 +2631,15 @@ return later();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( FeedResult result)  fed,required TResult Function()  passed,required TResult Function( PlatformInt64 atMs)  next,required TResult Function()  later,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( FeedResult result)  fed,required TResult Function()  passed,required TResult Function( PlatformInt64 atMs)  next,required TResult Function()  later,required TResult Function( PlatformInt64 atMs)  skipped,required TResult Function()  skipKept,}) {final _that = this;
 switch (_that) {
 case MealStanding_Fed():
 return fed(_that.result);case MealStanding_Passed():
 return passed();case MealStanding_Next():
 return next(_that.atMs);case MealStanding_Later():
-return later();}
+return later();case MealStanding_Skipped():
+return skipped(_that.atMs);case MealStanding_SkipKept():
+return skipKept();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -2137,13 +2653,15 @@ return later();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( FeedResult result)?  fed,TResult? Function()?  passed,TResult? Function( PlatformInt64 atMs)?  next,TResult? Function()?  later,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( FeedResult result)?  fed,TResult? Function()?  passed,TResult? Function( PlatformInt64 atMs)?  next,TResult? Function()?  later,TResult? Function( PlatformInt64 atMs)?  skipped,TResult? Function()?  skipKept,}) {final _that = this;
 switch (_that) {
 case MealStanding_Fed() when fed != null:
 return fed(_that.result);case MealStanding_Passed() when passed != null:
 return passed();case MealStanding_Next() when next != null:
 return next(_that.atMs);case MealStanding_Later() when later != null:
-return later();case _:
+return later();case MealStanding_Skipped() when skipped != null:
+return skipped(_that.atMs);case MealStanding_SkipKept() when skipKept != null:
+return skipKept();case _:
   return null;
 
 }
@@ -2343,6 +2861,106 @@ int get hashCode => runtimeType.hashCode;
 @override
 String toString() {
     return 'MealStanding.later()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class MealStanding_Skipped extends MealStanding {
+  const MealStanding_Skipped({required this.atMs}): super._();
+  
+
+ final  PlatformInt64 atMs;
+
+/// Create a copy of MealStanding
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MealStanding_SkippedCopyWith<MealStanding_Skipped> get copyWith => _$MealStanding_SkippedCopyWithImpl<MealStanding_Skipped>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is MealStanding_Skipped&&(identical(other.atMs, atMs) || other.atMs == atMs));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,atMs);
+}
+
+@override
+String toString() {
+    return 'MealStanding.skipped(atMs: $atMs)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $MealStanding_SkippedCopyWith<$Res> implements $MealStandingCopyWith<$Res> {
+  factory $MealStanding_SkippedCopyWith(MealStanding_Skipped value, $Res Function(MealStanding_Skipped) _then) = _$MealStanding_SkippedCopyWithImpl;
+@useResult
+$Res call({
+ PlatformInt64 atMs
+});
+
+
+
+
+}
+/// @nodoc
+class _$MealStanding_SkippedCopyWithImpl<$Res>
+    implements $MealStanding_SkippedCopyWith<$Res> {
+  _$MealStanding_SkippedCopyWithImpl(this._self, this._then);
+
+  final MealStanding_Skipped _self;
+  final $Res Function(MealStanding_Skipped) _then;
+
+/// Create a copy of MealStanding
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? atMs = null,}) {
+  return _then(MealStanding_Skipped(
+atMs: null == atMs ? _self.atMs : atMs // ignore: cast_nullable_to_non_nullable
+as PlatformInt64,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class MealStanding_SkipKept extends MealStanding {
+  const MealStanding_SkipKept(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is MealStanding_SkipKept);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'MealStanding.skipKept()';
 }
 
 

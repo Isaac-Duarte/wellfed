@@ -15,9 +15,10 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use wellfed_client::history::Feed;
 use wellfed_model::{
-    Battery, Blocked, CoreEvent, DeviceStatus, EnrollPath, Event, EventBody, FeedFault,
+    Bank0Check, Battery, Blocked, CoreEvent, DeviceStatus, EnrollPath, Event, EventBody, FeedFault,
     FeederEvent, FeederSettings, FeederStatus, FoodLevel, MealReminder, MissedReason, Plans, Power,
     Pushed, Readiness, Sample, SampleValue, Settings, Source, Status, Supply, TimeOfDay,
+    UpdateView,
 };
 
 /// The feeder's time in `zone`, with its offset so a line reads the same
@@ -59,6 +60,23 @@ pub(crate) fn fed(feed: &Feed) -> String {
         feed.delivered.describe(feed.requested, feed.outcome),
         feed.reason.code()
     )
+}
+
+/// Bank 0, the recovery copy, as bank 1 last checked it: one line, or none
+/// from bank 0 itself, which records itself instead.
+pub(crate) fn recovery(view: &UpdateView) -> Option<String> {
+    if view.bank == 0 {
+        return None;
+    }
+    Some(match view.bank0 {
+        Bank0Check::Unchecked => "Recovery copy (bank 0): not checked yet this boot".to_owned(),
+        Bank0Check::Match => "Recovery copy (bank 0): matches its record".to_owned(),
+        Bank0Check::Blocked(reason) => format!(
+            "Recovery copy (bank 0): updates are blocked (reason={}): {}",
+            reason.code(),
+            wellfed_client::update::blocked_words(reason)
+        ),
+    })
 }
 
 /// The status, a line a topic: the shared core's, with the kind's own
@@ -276,8 +294,8 @@ const fn on_off(on: bool) -> &'static str {
     if on { "on" } else { "off" }
 }
 
-/// Each plan, a line a filled slot.
-pub(crate) fn plans(plans: &Plans) -> String {
+/// Each plan, a line a filled slot, naming a skipped meal in `zone`.
+pub(crate) fn plans(plans: &Plans, zone: &TimeZone) -> String {
     let mut text = format!("Plans, generation {}", plans.generation);
     if !plans.writable {
         text.push_str(" (not writable now)");
@@ -301,6 +319,9 @@ pub(crate) fn plans(plans: &Plans) -> String {
             plan.days,
             if plan.enabled { "enabled" } else { "disabled" },
         );
+        if let Some(at) = plans.skipped.get(slot) {
+            let _ = write!(text, "  skipped {}", time(Some(at), zone));
+        }
     }
     if !any {
         text.push_str("\n  no plans");
@@ -427,6 +448,16 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
             reason.code()
         ),
         EventBody::Feeder(FeederEvent::Food { level }) => format!("hopper {}", word(&level)),
+        EventBody::Feeder(FeederEvent::Skipped { plan, due, by }) => format!(
+            "plan {plan}'s meal due {} skipped by {}",
+            time(Some(due), zone),
+            source(Some(by))
+        ),
+        EventBody::Feeder(FeederEvent::Unskipped { plan, due, by }) => format!(
+            "plan {plan}'s meal due {} unskipped by {}",
+            time(Some(due), zone),
+            source(Some(by))
+        ),
     }
 }
 
@@ -737,20 +768,57 @@ mod tests {
             enabled: true,
             call: 0,
         });
+        let mut skipped = [None; PLANS];
+        // 2026-10-30T18:00:00Z.
+        skipped[5] = Some(1_793_383_200);
         let plans = Plans {
             generation: Generation(4),
             writable: true,
             plans: table,
+            skipped: wellfed_model::SkippedMeals::from_seconds(skipped),
         };
         assert_eq!(
-            super::plans(&plans),
+            super::plans(&plans, &TimeZone::UTC),
             "Plans, generation 4\n  2  07:30  2 portions  daily  call 3 times  disabled\n  5  \
-             18:00  1 portions  once  no call  enabled"
+             18:00  1 portions  once  no call  enabled  skipped 2026-10-30 18:00:00 +00:00"
         );
         let empty = Plans {
             plans: [None; PLANS],
             ..plans
         };
-        assert_eq!(super::plans(&empty), "Plans, generation 4\n  no plans");
+        assert_eq!(
+            super::plans(&empty, &TimeZone::UTC),
+            "Plans, generation 4\n  no plans"
+        );
+    }
+
+    #[test]
+    fn the_recovery_copy_reads_as_its_check_and_what_clears_it() {
+        let view = |bank, bank0| UpdateView {
+            phase: wellfed_model::UpdatePhase::Idle,
+            bank,
+            min_version: 4,
+            digest: None,
+            version: 0,
+            image_len: 0,
+            written: 0,
+            wanted: Vec::new(),
+            stopped: None,
+            bank0,
+        };
+        assert_eq!(recovery(&view(0, Bank0Check::Unchecked)), None);
+        assert_eq!(
+            recovery(&view(1, Bank0Check::Match)).as_deref(),
+            Some("Recovery copy (bank 0): matches its record")
+        );
+        let blocked = Bank0Check::Blocked(wellfed_model::Bank0Blocked::Unrecorded);
+        assert_eq!(
+            recovery(&view(1, blocked)).as_deref(),
+            Some(
+                "Recovery copy (bank 0): updates are blocked (reason=unrecorded): bank 0, the \
+                 recovery copy, was rewritten and has not recorded itself: start the feeder from \
+                 bank 0 once, then offer again"
+            )
+        );
     }
 }

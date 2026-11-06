@@ -13,7 +13,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 import 'session.dart';
 part 'server_views.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `from`
 
 enum CommandKind {
   settings,
@@ -32,6 +32,8 @@ enum CommandKind {
   callUpload,
   callDelete,
   callPlay,
+  skip,
+  unskip,
 }
 
 enum CommandState { sent, answered, unknown, resolved }
@@ -61,6 +63,71 @@ class FeedRate {
 }
 
 enum InstallState { running, activated, alreadyRunning, failed }
+
+/// The server this phone logged in to, as the app's file keeps it: the link,
+/// and the feeders its last list gave, so a cold start with the server down
+/// still knows which feeders are the server's and reaches them directly.
+class KnownServer {
+  final ServerLink link;
+  final List<ListedFeeder> feeders;
+
+  /// The account as the server last said, so a cold start with the server
+  /// down still keeps a viewer or an account with an expiry off the
+  /// phone's own keys.
+  final ServerAccount? account;
+
+  const KnownServer({required this.link, required this.feeders, this.account});
+
+  @override
+  int get hashCode => link.hashCode ^ feeders.hashCode ^ account.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is KnownServer &&
+          runtimeType == other.runtimeType &&
+          link == other.link &&
+          feeders == other.feeders &&
+          account == other.account;
+}
+
+/// One feeder of the server's last list, as the phone keeps it.
+class ListedFeeder {
+  /// The server's id for it.
+  final String id;
+
+  /// The feeder's identity key, lowercase hex.
+  final String identity;
+
+  /// What the household calls it.
+  final String name;
+
+  const ListedFeeder({
+    required this.id,
+    required this.identity,
+    required this.name,
+  });
+
+  @override
+  int get hashCode => id.hashCode ^ identity.hashCode ^ name.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ListedFeeder &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          identity == other.identity &&
+          name == other.name;
+}
+
+@freezed
+sealed class NewRefill with _$NewRefill {
+  const NewRefill._();
+
+  const factory NewRefill.grams({required int grams}) = NewRefill_Grams;
+  const factory NewRefill.fullBag() = NewRefill_FullBag;
+}
 
 @freezed
 sealed class PortionWeight with _$PortionWeight {
@@ -682,6 +749,27 @@ class ServerRefill {
           user == other.user;
 }
 
+/// A page of a feeder's refills, oldest first.
+class ServerRefillPage {
+  final List<ServerRefill> items;
+
+  /// The `after` of the next page; `None` at the end.
+  final String? next;
+
+  const ServerRefillPage({required this.items, this.next});
+
+  @override
+  int get hashCode => items.hashCode ^ next.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ServerRefillPage &&
+          runtimeType == other.runtimeType &&
+          items == other.items &&
+          next == other.next;
+}
+
 /// What an account may do in the home.
 enum ServerRole { owner, member, viewer }
 
@@ -741,6 +829,54 @@ class ServerSnapshot {
           atMs == other.atMs &&
           live == other.live &&
           card == other.card;
+}
+
+/// One entry of a pet's weight log.
+class ServerWeight {
+  final String id;
+
+  /// When the pet weighed this.
+  final PlatformInt64 atMs;
+  final int grams;
+
+  const ServerWeight({
+    required this.id,
+    required this.atMs,
+    required this.grams,
+  });
+
+  @override
+  int get hashCode => id.hashCode ^ atMs.hashCode ^ grams.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ServerWeight &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          atMs == other.atMs &&
+          grams == other.grams;
+}
+
+/// A page of a pet's weight log, oldest reading first.
+class ServerWeightPage {
+  final List<ServerWeight> items;
+
+  /// The `after` of the next page; `None` at the end.
+  final String? next;
+
+  const ServerWeightPage({required this.items, this.next});
+
+  @override
+  int get hashCode => items.hashCode ^ next.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ServerWeightPage &&
+          runtimeType == other.runtimeType &&
+          items == other.items &&
+          next == other.next;
 }
 
 enum Species { cat, dog, other }

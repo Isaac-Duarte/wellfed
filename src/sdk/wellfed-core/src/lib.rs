@@ -21,6 +21,7 @@ pub mod buttons;
 pub mod clip;
 pub mod clock;
 pub mod desiccant;
+pub mod echo;
 pub mod feed;
 pub mod flash_coord;
 pub mod indicator;
@@ -37,6 +38,7 @@ pub mod store;
 pub mod supply;
 pub mod tone;
 pub mod virtual_panel;
+pub mod wifi_task;
 
 /// Distances at or beyond this are ambiguous for wrapping millisecond clocks.
 pub const HALF_RANGE: u32 = 0x8000_0000;

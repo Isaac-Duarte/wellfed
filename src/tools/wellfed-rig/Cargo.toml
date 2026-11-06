@@ -14,6 +14,8 @@ wellfed-client.workspace = true
 wellfed-connect.workspace = true
 wellfed-core.workspace = true
 wellfed-formats = { workspace = true, features = ["clap"] }
+# Loads frozen reviews, as the flash client does, for a bank-0 write's checks.
+wellfed-image.workspace = true
 wellfed-model.workspace = true
 wellfed-proto.workspace = true
 wellfed-relay = { path = "../wellfed-relay" }

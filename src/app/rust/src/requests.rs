@@ -143,6 +143,14 @@ pub async fn run(
             Err(reason) => return not_asked(reason),
         },
         FeederRequest::GetPlans => Op::GetPlans,
+        FeederRequest::SkipMeal { slot, due_ms } => match meal_due(due_ms) {
+            Some(due) => Op::SkipMeal { slot, due },
+            None => return not_asked(NotAsked::EmptySlot),
+        },
+        FeederRequest::UnskipMeal { slot, due_ms } => match meal_due(due_ms) {
+            Some(due) => Op::UnskipMeal { slot, due },
+            None => return not_asked(NotAsked::EmptySlot),
+        },
         FeederRequest::EditPlans { plans, edit } => {
             let (base, edit, table) = match edited_plans(&plans, &edit) {
                 Ok(edited) => edited,
@@ -204,6 +212,15 @@ pub(crate) fn edited_plans(
     let edit = edit_of(edit)?;
     let table = plans::edited(&held, edit).map_err(not_edited)?;
     Ok((held.generation, edit, table))
+}
+
+/// The instant a card's meal action names: a whole second, as the feeder's
+/// clock counts. Anything else names no meal the card offered.
+pub(crate) fn meal_due(due_ms: i64) -> Option<Timestamp> {
+    if due_ms.rem_euclid(1000) != 0 {
+        return None;
+    }
+    Timestamp::from_millisecond(due_ms).ok()
 }
 
 pub(crate) const fn not_asked(reason: NotAsked) -> FeederReply {
@@ -382,6 +399,9 @@ fn plans_of(view: &PlansView) -> Plans {
         generation: Generation(view.generation),
         writable: view.writable,
         plans,
+        // The app's view keeps no skips yet: a table it sends back is a
+        // `PutPlans`, which names none.
+        skipped: wellfed_model::SkippedMeals::NONE,
     }
 }
 
@@ -641,6 +661,7 @@ pub(crate) fn reply_of(answer: Answer) -> FeederReply {
                 version: view.version,
                 image_len: view.image_len,
                 written: view.written,
+                bank0: view.bank0,
             },
         },
         Answer::Refused(refusal) => FeederReply::Refused {

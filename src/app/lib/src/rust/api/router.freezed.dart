@@ -13,6 +13,526 @@ part of 'router.dart';
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
+mixin _$Adoption {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'Adoption()';
+}
+
+
+}
+
+/// @nodoc
+class $AdoptionCopyWith<$Res>  {
+$AdoptionCopyWith(Adoption _, $Res Function(Adoption) __);
+}
+
+
+/// Adds pattern-matching-related methods to [Adoption].
+extension AdoptionPatterns on Adoption {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( Adoption_Adopted value)?  adopted,TResult Function( Adoption_Unclaimed value)?  unclaimed,TResult Function( Adoption_Unsettled value)?  unsettled,TResult Function( Adoption_NoInvite value)?  noInvite,TResult Function( Adoption_Failed value)?  failed,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case Adoption_Adopted() when adopted != null:
+return adopted(_that);case Adoption_Unclaimed() when unclaimed != null:
+return unclaimed(_that);case Adoption_Unsettled() when unsettled != null:
+return unsettled(_that);case Adoption_NoInvite() when noInvite != null:
+return noInvite(_that);case Adoption_Failed() when failed != null:
+return failed(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( Adoption_Adopted value)  adopted,required TResult Function( Adoption_Unclaimed value)  unclaimed,required TResult Function( Adoption_Unsettled value)  unsettled,required TResult Function( Adoption_NoInvite value)  noInvite,required TResult Function( Adoption_Failed value)  failed,}){
+final _that = this;
+switch (_that) {
+case Adoption_Adopted():
+return adopted(_that);case Adoption_Unclaimed():
+return unclaimed(_that);case Adoption_Unsettled():
+return unsettled(_that);case Adoption_NoInvite():
+return noInvite(_that);case Adoption_Failed():
+return failed(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( Adoption_Adopted value)?  adopted,TResult? Function( Adoption_Unclaimed value)?  unclaimed,TResult? Function( Adoption_Unsettled value)?  unsettled,TResult? Function( Adoption_NoInvite value)?  noInvite,TResult? Function( Adoption_Failed value)?  failed,}){
+final _that = this;
+switch (_that) {
+case Adoption_Adopted() when adopted != null:
+return adopted(_that);case Adoption_Unclaimed() when unclaimed != null:
+return unclaimed(_that);case Adoption_Unsettled() when unsettled != null:
+return unsettled(_that);case Adoption_NoInvite() when noInvite != null:
+return noInvite(_that);case Adoption_Failed() when failed != null:
+return failed(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( ServerFeeder feeder)?  adopted,TResult Function( ServerFeeder feeder,  ServerError error)?  unclaimed,TResult Function( ServerError error)?  unsettled,TResult Function( RoutedReply reply)?  noInvite,TResult Function( ServerError error)?  failed,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case Adoption_Adopted() when adopted != null:
+return adopted(_that.feeder);case Adoption_Unclaimed() when unclaimed != null:
+return unclaimed(_that.feeder,_that.error);case Adoption_Unsettled() when unsettled != null:
+return unsettled(_that.error);case Adoption_NoInvite() when noInvite != null:
+return noInvite(_that.reply);case Adoption_Failed() when failed != null:
+return failed(_that.error);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( ServerFeeder feeder)  adopted,required TResult Function( ServerFeeder feeder,  ServerError error)  unclaimed,required TResult Function( ServerError error)  unsettled,required TResult Function( RoutedReply reply)  noInvite,required TResult Function( ServerError error)  failed,}) {final _that = this;
+switch (_that) {
+case Adoption_Adopted():
+return adopted(_that.feeder);case Adoption_Unclaimed():
+return unclaimed(_that.feeder,_that.error);case Adoption_Unsettled():
+return unsettled(_that.error);case Adoption_NoInvite():
+return noInvite(_that.reply);case Adoption_Failed():
+return failed(_that.error);}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( ServerFeeder feeder)?  adopted,TResult? Function( ServerFeeder feeder,  ServerError error)?  unclaimed,TResult? Function( ServerError error)?  unsettled,TResult? Function( RoutedReply reply)?  noInvite,TResult? Function( ServerError error)?  failed,}) {final _that = this;
+switch (_that) {
+case Adoption_Adopted() when adopted != null:
+return adopted(_that.feeder);case Adoption_Unclaimed() when unclaimed != null:
+return unclaimed(_that.feeder,_that.error);case Adoption_Unsettled() when unsettled != null:
+return unsettled(_that.error);case Adoption_NoInvite() when noInvite != null:
+return noInvite(_that.reply);case Adoption_Failed() when failed != null:
+return failed(_that.error);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class Adoption_Adopted extends Adoption {
+  const Adoption_Adopted({required this.feeder}): super._();
+  
+
+ final  ServerFeeder feeder;
+
+/// Create a copy of Adoption
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$Adoption_AdoptedCopyWith<Adoption_Adopted> get copyWith => _$Adoption_AdoptedCopyWithImpl<Adoption_Adopted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption_Adopted&&(identical(other.feeder, feeder) || other.feeder == feeder));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,feeder);
+}
+
+@override
+String toString() {
+    return 'Adoption.adopted(feeder: $feeder)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $Adoption_AdoptedCopyWith<$Res> implements $AdoptionCopyWith<$Res> {
+  factory $Adoption_AdoptedCopyWith(Adoption_Adopted value, $Res Function(Adoption_Adopted) _then) = _$Adoption_AdoptedCopyWithImpl;
+@useResult
+$Res call({
+ ServerFeeder feeder
+});
+
+
+
+
+}
+/// @nodoc
+class _$Adoption_AdoptedCopyWithImpl<$Res>
+    implements $Adoption_AdoptedCopyWith<$Res> {
+  _$Adoption_AdoptedCopyWithImpl(this._self, this._then);
+
+  final Adoption_Adopted _self;
+  final $Res Function(Adoption_Adopted) _then;
+
+/// Create a copy of Adoption
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? feeder = null,}) {
+  return _then(Adoption_Adopted(
+feeder: null == feeder ? _self.feeder : feeder // ignore: cast_nullable_to_non_nullable
+as ServerFeeder,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class Adoption_Unclaimed extends Adoption {
+  const Adoption_Unclaimed({required this.feeder, required this.error}): super._();
+  
+
+ final  ServerFeeder feeder;
+ final  ServerError error;
+
+/// Create a copy of Adoption
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$Adoption_UnclaimedCopyWith<Adoption_Unclaimed> get copyWith => _$Adoption_UnclaimedCopyWithImpl<Adoption_Unclaimed>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption_Unclaimed&&(identical(other.feeder, feeder) || other.feeder == feeder)&&(identical(other.error, error) || other.error == error));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,feeder,error);
+}
+
+@override
+String toString() {
+    return 'Adoption.unclaimed(feeder: $feeder, error: $error)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $Adoption_UnclaimedCopyWith<$Res> implements $AdoptionCopyWith<$Res> {
+  factory $Adoption_UnclaimedCopyWith(Adoption_Unclaimed value, $Res Function(Adoption_Unclaimed) _then) = _$Adoption_UnclaimedCopyWithImpl;
+@useResult
+$Res call({
+ ServerFeeder feeder, ServerError error
+});
+
+
+
+
+}
+/// @nodoc
+class _$Adoption_UnclaimedCopyWithImpl<$Res>
+    implements $Adoption_UnclaimedCopyWith<$Res> {
+  _$Adoption_UnclaimedCopyWithImpl(this._self, this._then);
+
+  final Adoption_Unclaimed _self;
+  final $Res Function(Adoption_Unclaimed) _then;
+
+/// Create a copy of Adoption
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? feeder = null,Object? error = null,}) {
+  return _then(Adoption_Unclaimed(
+feeder: null == feeder ? _self.feeder : feeder // ignore: cast_nullable_to_non_nullable
+as ServerFeeder,error: null == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
+as ServerError,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class Adoption_Unsettled extends Adoption {
+  const Adoption_Unsettled({required this.error}): super._();
+  
+
+ final  ServerError error;
+
+/// Create a copy of Adoption
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$Adoption_UnsettledCopyWith<Adoption_Unsettled> get copyWith => _$Adoption_UnsettledCopyWithImpl<Adoption_Unsettled>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption_Unsettled&&(identical(other.error, error) || other.error == error));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,error);
+}
+
+@override
+String toString() {
+    return 'Adoption.unsettled(error: $error)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $Adoption_UnsettledCopyWith<$Res> implements $AdoptionCopyWith<$Res> {
+  factory $Adoption_UnsettledCopyWith(Adoption_Unsettled value, $Res Function(Adoption_Unsettled) _then) = _$Adoption_UnsettledCopyWithImpl;
+@useResult
+$Res call({
+ ServerError error
+});
+
+
+
+
+}
+/// @nodoc
+class _$Adoption_UnsettledCopyWithImpl<$Res>
+    implements $Adoption_UnsettledCopyWith<$Res> {
+  _$Adoption_UnsettledCopyWithImpl(this._self, this._then);
+
+  final Adoption_Unsettled _self;
+  final $Res Function(Adoption_Unsettled) _then;
+
+/// Create a copy of Adoption
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? error = null,}) {
+  return _then(Adoption_Unsettled(
+error: null == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
+as ServerError,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class Adoption_NoInvite extends Adoption {
+  const Adoption_NoInvite({required this.reply}): super._();
+  
+
+ final  RoutedReply reply;
+
+/// Create a copy of Adoption
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$Adoption_NoInviteCopyWith<Adoption_NoInvite> get copyWith => _$Adoption_NoInviteCopyWithImpl<Adoption_NoInvite>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption_NoInvite&&(identical(other.reply, reply) || other.reply == reply));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,reply);
+}
+
+@override
+String toString() {
+    return 'Adoption.noInvite(reply: $reply)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $Adoption_NoInviteCopyWith<$Res> implements $AdoptionCopyWith<$Res> {
+  factory $Adoption_NoInviteCopyWith(Adoption_NoInvite value, $Res Function(Adoption_NoInvite) _then) = _$Adoption_NoInviteCopyWithImpl;
+@useResult
+$Res call({
+ RoutedReply reply
+});
+
+
+
+
+}
+/// @nodoc
+class _$Adoption_NoInviteCopyWithImpl<$Res>
+    implements $Adoption_NoInviteCopyWith<$Res> {
+  _$Adoption_NoInviteCopyWithImpl(this._self, this._then);
+
+  final Adoption_NoInvite _self;
+  final $Res Function(Adoption_NoInvite) _then;
+
+/// Create a copy of Adoption
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? reply = null,}) {
+  return _then(Adoption_NoInvite(
+reply: null == reply ? _self.reply : reply // ignore: cast_nullable_to_non_nullable
+as RoutedReply,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class Adoption_Failed extends Adoption {
+  const Adoption_Failed({required this.error}): super._();
+  
+
+ final  ServerError error;
+
+/// Create a copy of Adoption
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$Adoption_FailedCopyWith<Adoption_Failed> get copyWith => _$Adoption_FailedCopyWithImpl<Adoption_Failed>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is Adoption_Failed&&(identical(other.error, error) || other.error == error));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,error);
+}
+
+@override
+String toString() {
+    return 'Adoption.failed(error: $error)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $Adoption_FailedCopyWith<$Res> implements $AdoptionCopyWith<$Res> {
+  factory $Adoption_FailedCopyWith(Adoption_Failed value, $Res Function(Adoption_Failed) _then) = _$Adoption_FailedCopyWithImpl;
+@useResult
+$Res call({
+ ServerError error
+});
+
+
+
+
+}
+/// @nodoc
+class _$Adoption_FailedCopyWithImpl<$Res>
+    implements $Adoption_FailedCopyWith<$Res> {
+  _$Adoption_FailedCopyWithImpl(this._self, this._then);
+
+  final Adoption_Failed _self;
+  final $Res Function(Adoption_Failed) _then;
+
+/// Create a copy of Adoption
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? error = null,}) {
+  return _then(Adoption_Failed(
+error: null == error ? _self.error : error // ignore: cast_nullable_to_non_nullable
+as ServerError,
+  ));
+}
+
+
+}
+
+/// @nodoc
 mixin _$RetryOutcome {
 
 
@@ -1019,12 +1539,13 @@ extension RouterUpdatePatterns on RouterUpdate {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RouterUpdate_Path value)?  path,TResult Function( RouterUpdate_Settled value)?  settled,TResult Function( RouterUpdate_FeedEnded value)?  feedEnded,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( RouterUpdate_Path value)?  path,TResult Function( RouterUpdate_Settled value)?  settled,TResult Function( RouterUpdate_Account value)?  account,TResult Function( RouterUpdate_FeedEnded value)?  feedEnded,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case RouterUpdate_Path() when path != null:
 return path(_that);case RouterUpdate_Settled() when settled != null:
-return settled(_that);case RouterUpdate_FeedEnded() when feedEnded != null:
+return settled(_that);case RouterUpdate_Account() when account != null:
+return account(_that);case RouterUpdate_FeedEnded() when feedEnded != null:
 return feedEnded(_that);case _:
   return orElse();
 
@@ -1043,12 +1564,13 @@ return feedEnded(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RouterUpdate_Path value)  path,required TResult Function( RouterUpdate_Settled value)  settled,required TResult Function( RouterUpdate_FeedEnded value)  feedEnded,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( RouterUpdate_Path value)  path,required TResult Function( RouterUpdate_Settled value)  settled,required TResult Function( RouterUpdate_Account value)  account,required TResult Function( RouterUpdate_FeedEnded value)  feedEnded,}){
 final _that = this;
 switch (_that) {
 case RouterUpdate_Path():
 return path(_that);case RouterUpdate_Settled():
-return settled(_that);case RouterUpdate_FeedEnded():
+return settled(_that);case RouterUpdate_Account():
+return account(_that);case RouterUpdate_FeedEnded():
 return feedEnded(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -1063,12 +1585,13 @@ return feedEnded(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RouterUpdate_Path value)?  path,TResult? Function( RouterUpdate_Settled value)?  settled,TResult? Function( RouterUpdate_FeedEnded value)?  feedEnded,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( RouterUpdate_Path value)?  path,TResult? Function( RouterUpdate_Settled value)?  settled,TResult? Function( RouterUpdate_Account value)?  account,TResult? Function( RouterUpdate_FeedEnded value)?  feedEnded,}){
 final _that = this;
 switch (_that) {
 case RouterUpdate_Path() when path != null:
 return path(_that);case RouterUpdate_Settled() when settled != null:
-return settled(_that);case RouterUpdate_FeedEnded() when feedEnded != null:
+return settled(_that);case RouterUpdate_Account() when account != null:
+return account(_that);case RouterUpdate_FeedEnded() when feedEnded != null:
 return feedEnded(_that);case _:
   return null;
 
@@ -1086,11 +1609,12 @@ return feedEnded(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String feeder,  RoutePath? path)?  path,TResult Function( PendingWrite pending,  Settlement settlement)?  settled,TResult Function( String key,  String feeder,  Settlement settlement)?  feedEnded,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String feeder,  RoutePath? path)?  path,TResult Function( PendingWrite pending,  Settlement settlement)?  settled,TResult Function( ServerAccount account)?  account,TResult Function( String key,  String feeder,  Settlement settlement)?  feedEnded,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case RouterUpdate_Path() when path != null:
 return path(_that.feeder,_that.path);case RouterUpdate_Settled() when settled != null:
-return settled(_that.pending,_that.settlement);case RouterUpdate_FeedEnded() when feedEnded != null:
+return settled(_that.pending,_that.settlement);case RouterUpdate_Account() when account != null:
+return account(_that.account);case RouterUpdate_FeedEnded() when feedEnded != null:
 return feedEnded(_that.key,_that.feeder,_that.settlement);case _:
   return orElse();
 
@@ -1109,11 +1633,12 @@ return feedEnded(_that.key,_that.feeder,_that.settlement);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String feeder,  RoutePath? path)  path,required TResult Function( PendingWrite pending,  Settlement settlement)  settled,required TResult Function( String key,  String feeder,  Settlement settlement)  feedEnded,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String feeder,  RoutePath? path)  path,required TResult Function( PendingWrite pending,  Settlement settlement)  settled,required TResult Function( ServerAccount account)  account,required TResult Function( String key,  String feeder,  Settlement settlement)  feedEnded,}) {final _that = this;
 switch (_that) {
 case RouterUpdate_Path():
 return path(_that.feeder,_that.path);case RouterUpdate_Settled():
-return settled(_that.pending,_that.settlement);case RouterUpdate_FeedEnded():
+return settled(_that.pending,_that.settlement);case RouterUpdate_Account():
+return account(_that.account);case RouterUpdate_FeedEnded():
 return feedEnded(_that.key,_that.feeder,_that.settlement);}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -1128,11 +1653,12 @@ return feedEnded(_that.key,_that.feeder,_that.settlement);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String feeder,  RoutePath? path)?  path,TResult? Function( PendingWrite pending,  Settlement settlement)?  settled,TResult? Function( String key,  String feeder,  Settlement settlement)?  feedEnded,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String feeder,  RoutePath? path)?  path,TResult? Function( PendingWrite pending,  Settlement settlement)?  settled,TResult? Function( ServerAccount account)?  account,TResult? Function( String key,  String feeder,  Settlement settlement)?  feedEnded,}) {final _that = this;
 switch (_that) {
 case RouterUpdate_Path() when path != null:
 return path(_that.feeder,_that.path);case RouterUpdate_Settled() when settled != null:
-return settled(_that.pending,_that.settlement);case RouterUpdate_FeedEnded() when feedEnded != null:
+return settled(_that.pending,_that.settlement);case RouterUpdate_Account() when account != null:
+return account(_that.account);case RouterUpdate_FeedEnded() when feedEnded != null:
 return feedEnded(_that.key,_that.feeder,_that.settlement);case _:
   return null;
 
@@ -1288,6 +1814,74 @@ $SettlementCopyWith<$Res> get settlement {
     return _then(_self.copyWith(settlement: value));
   });
 }
+}
+
+/// @nodoc
+
+
+class RouterUpdate_Account extends RouterUpdate {
+  const RouterUpdate_Account({required this.account}): super._();
+  
+
+ final  ServerAccount account;
+
+/// Create a copy of RouterUpdate
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$RouterUpdate_AccountCopyWith<RouterUpdate_Account> get copyWith => _$RouterUpdate_AccountCopyWithImpl<RouterUpdate_Account>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is RouterUpdate_Account&&(identical(other.account, account) || other.account == account));
+}
+
+
+@override
+int get hashCode {
+    return Object.hash(runtimeType,account);
+}
+
+@override
+String toString() {
+    return 'RouterUpdate.account(account: $account)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $RouterUpdate_AccountCopyWith<$Res> implements $RouterUpdateCopyWith<$Res> {
+  factory $RouterUpdate_AccountCopyWith(RouterUpdate_Account value, $Res Function(RouterUpdate_Account) _then) = _$RouterUpdate_AccountCopyWithImpl;
+@useResult
+$Res call({
+ ServerAccount account
+});
+
+
+
+
+}
+/// @nodoc
+class _$RouterUpdate_AccountCopyWithImpl<$Res>
+    implements $RouterUpdate_AccountCopyWith<$Res> {
+  _$RouterUpdate_AccountCopyWithImpl(this._self, this._then);
+
+  final RouterUpdate_Account _self;
+  final $Res Function(RouterUpdate_Account) _then;
+
+/// Create a copy of RouterUpdate
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? account = null,}) {
+  return _then(RouterUpdate_Account(
+account: null == account ? _self.account : account // ignore: cast_nullable_to_non_nullable
+as ServerAccount,
+  ));
+}
+
+
 }
 
 /// @nodoc

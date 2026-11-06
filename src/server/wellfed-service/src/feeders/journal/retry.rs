@@ -31,11 +31,15 @@ const fn resend(kind: CommandKind) -> Resend {
         // tune played twice is only heard twice. A desiccant reset run
         // again dates the replacement to the day it runs, which is what a
         // retry of it asks. A calibration change names its base too, and the
-        // meal call played twice is only heard twice.
+        // meal call played twice is only heard twice. A skip or its undo
+        // names its meal's instant: run again after the first landed, it is
+        // refused `invalid`, and once the meal is due neither moves it.
         CommandKind::Settings
         | CommandKind::Plans
         | CommandKind::Calibration
         | CommandKind::CallPlay
+        | CommandKind::Skip
+        | CommandKind::Unskip
         | CommandKind::Desiccant
         | CommandKind::Lock
         | CommandKind::Cancel
@@ -172,6 +176,8 @@ mod tests {
                 Resend::SameId,
                 Resend::Checked,
                 Resend::Checked,
+                Resend::SameId,
+                Resend::SameId,
                 Resend::SameId,
             ],
             "the rule of each kind, in the order of CommandKind::ALL"

@@ -2,9 +2,7 @@
 
 What an image must look like for the PLAF103's stock 1.1.15 updater to download and activate it, and what the request and HTTP server must do. Wellfed's installer relies on this to put Wellfed on a stock feeder with no soldering. Wellfed's own updates use a different [OTA protocol and trial policy](../../../firmware/ota-design.md).
 
-The short version: stock fetches any locally hosted image that fits the Realtek OTA format and the boot layout. It checks only an additive byte-sum before activating. Its mandatory MQTT `sha256` field is never compared with the download. Activation invalidates the previous bank, so stock cannot recover by itself from a new image that fails to boot.
-
-The IDs U01–U08 point into the [evidence register](#evidence-register) at the end.
+In short: stock fetches any locally hosted image that fits the Realtek OTA format and the boot layout, and checks only an additive byte-sum before activating. Its mandatory MQTT `sha256` field is never compared with the download. Activation invalidates the previous bank, so stock cannot recover by itself from a new image that fails to boot. The IDs U01–U08 point into the [evidence register](#evidence-register).
 
 ## The contract
 
@@ -32,7 +30,7 @@ Precheck function `0x0e018e30` reads these fields from the command it receives (
 | `msgId` | Required nonempty string, at most 63 bytes. |
 | `targetPid` | Optional string. When nonempty it must match `PLAF103`, copied with a 31-byte bound. The installer should always send the exact model. |
 
-**Version.** For `upgradeType = 1`, stock refuses a target numerically equal to the running `1.1.15`. It tests equality, not whether the target is newer. A return from a modified `1.1.16` to the original `1.1.15` confirmed a downgrade in that one cycle (U07). A `downgrade forbidden` string elsewhere in the binary does not show an active downgrade check here.
+**Version.** For `upgradeType = 1`, stock refuses a target numerically equal to the running `1.1.15`: an equality test, not a newer-than test. A return from a modified `1.1.16` to the original `1.1.15` confirmed a downgrade in that one cycle (U07). A `downgrade forbidden` string elsewhere in the binary does not show an active downgrade check here.
 
 **Device state.** The precheck also requires:
 
@@ -44,9 +42,9 @@ Precheck function `0x0e018e30` reads these fields from the command it receives (
 - another device-state getter clear (`0x0e012780 == 0`), and the time-valid getter returning 1 (`0x0e015dc8`);
 - at least **32,768 bytes** of free heap.
 
-The predicates are exact, but the meaning of every opaque state value is not established. An installer should require DC power and an idle, online feeder, and keep the actual precheck error.
+The predicates are exact, but the opaque state values' meanings are not established. An installer should require DC power and an idle, online feeder, and keep the actual precheck error.
 
-**A request is not a probe (U08).** A rejection can take the cleanup path that erases OTA-status sector `0x3ef000`. The precheck also updates message and state bookkeeping before it checks for an active OTA. Discover devices through ordinary identity and status reports, with an installer-side allowlist of tested model and version pairs. Never resend an uncertain OTA command automatically.
+**A request is not a probe (U08).** A rejection can take the cleanup path that erases OTA-status sector `0x3ef000`, and the precheck updates message and state bookkeeping before it checks for an active OTA. Discover devices through ordinary identity and status reports, with an installer-side allowlist of tested model and version pairs. Never resend an uncertain OTA command automatically.
 
 ## HTTP server and URL requirements
 
@@ -58,7 +56,7 @@ Host: <host>
 
 ```
 
-There is no vendor-domain allowlist on this path, so a local host can serve the file. The task's name includes `https_ota` and the first check accepts an HTTPS prefix, but the download path uses plain socket I/O. **That does not establish HTTPS or TLS support.** Use plain HTTP, the route demonstrated on hardware.
+No vendor-domain allowlist sits on this path, so a local host can serve the file. The task's name includes `https_ota` and the first check accepts an HTTPS prefix, but the download uses plain socket I/O, which **does not establish HTTPS or TLS support.** Use plain HTTP, the route demonstrated on hardware.
 
 **The URL.** Parser `0x0e01b274` copies into a **128-byte URL buffer**, narrower than the 256-byte precheck. Its splitter `0x0e01afa4` uses small fixed buffers and tokenizes around `@`, `/` and `:`. It bounds the host at 32 bytes and the port at six characters (parsed with `atoi`), and copies at most 127 bytes of resource. These are parser limits, not a promise that boundary-length inputs work. So:
 
@@ -67,9 +65,9 @@ There is no vendor-domain allowlist on this path, so a local host can serve the 
 - leave out credentials and fragments;
 - use an ordinary decimal port in `1..65535`.
 
-IPv6 literals are outside the reviewed path. The request's `Host` field omits the port even on a nondefault port. Your server should accept that request without redirecting it.
+IPv6 literals are outside the reviewed path. The request's `Host` field omits the port even on a nondefault port, and your server should accept that without redirecting.
 
-**The response.** Parser `0x0e02aa8c` recognizes **`Content-Length` or `CONTENT-LENGTH`**, compared case-sensitively. It needs a nonzero declared length and recognizes status 200 or a special 302 redirect path. Lowercase `content-length`, other redirects, chunked transfer coding and compression are not known to work. Serve a direct `HTTP/1.1 200 OK` with `Content-Length` equal to the exact file size and the unchanged binary body. Avoid cookies, login pages, content transformations and large headers. The image descriptor's length drives completion, so don't count on the device to reconcile contradictory HTTP lengths.
+**The response.** Parser `0x0e02aa8c` recognizes **`Content-Length` or `CONTENT-LENGTH`**, case-sensitively, needs a nonzero declared length, and recognizes status 200 or a special 302 redirect path. Lowercase `content-length`, other redirects, chunked transfer coding and compression are not known to work. Serve a direct `HTTP/1.1 200 OK` with `Content-Length` equal to the exact file size and the unchanged binary body, without cookies, login pages, content transformations or large headers. The image descriptor's length drives completion, so don't count on the device to reconcile contradictory HTTP lengths.
 
 ## The image container
 
@@ -86,11 +84,11 @@ The known single-entry profile starts with eight little-endian 32-bit words (U01
 | `0x18` | Payload file offset | `32` |
 | `0x1c` | Destination field | `0xffffffff` |
 
-The payload starts at byte 32. The checksum covers the image headers and padding, but not this outer header. Recalculate both length and checksum when you build a different payload.
+The payload starts at byte 32. The checksum covers the image headers and padding, but not this outer header. Recalculate both length and checksum for a different payload.
 
-Stock's descriptor parser `0x0e02a2b0` checks only the first **three** identifier bytes against `OTA`. It copies each 24-byte descriptor and replaces the destination with the selected bank's address. It does not give our parser's exact-format guarantees, and its descriptor loop does not establish a safe maximum count. Keep to the reviewed single-entry profile. Don't assume multi-image packages, other sizes or other flash destinations work.
+Stock's descriptor parser `0x0e02a2b0` checks only the first **three** identifier bytes against `OTA`. It copies each 24-byte descriptor and replaces the destination with the selected bank's address. It gives none of our parser's exact-format guarantees, and its descriptor loop doesn't establish a safe maximum count. Keep to the reviewed single-entry profile; don't assume multi-image packages, other sizes or other flash destinations work.
 
-[Our OTA parser](../../../../src/tools/wellfed-image/src/ota.rs) admits a deliberately narrower format (U06). It requires the whole eight-word profile above, an exact payload length through EOF and the correct byte-sum. Its inner images are:
+[Our OTA parser](../../../../src/tools/wellfed-image/src/ota.rs) admits a deliberately narrower format (U06): the whole eight-word profile above, an exact payload length through EOF and the correct byte-sum. Its inner images are:
 
 | Order | Region | Runtime body address |
 | --- | --- | --- |
@@ -100,26 +98,26 @@ Stock's descriptor parser `0x0e02a2b0` checks only the first **three** identifie
 | 4 | KM4 RAM | `0x10005000` |
 | 5 | KM4 PSRAM header, empty body in this profile | `0x02000020` |
 
-Each inner header is 32 bytes: the eight-byte ASCII marker **`81958711`**, the body length, the load address, then four `0xffffffff` words. The KM4 group starts on a 4 KiB boundary, and padding between and after the groups must be erased `0xff` bytes. Body lengths depend on the build; the original KM4 header position `0x17000` is not a fixed requirement. The marker is a validity tag, not a signature. The reserved words in this profile don't establish security-fuse state on every unit.
+Each inner header is 32 bytes: the eight-byte ASCII marker **`81958711`**, the body length, the load address, then four `0xffffffff` words. The KM4 group starts on a 4 KiB boundary, and padding between and after the groups must be erased `0xff` bytes. Body lengths depend on the build; the original KM4 header position `0x17000` is not a fixed requirement. The marker is a validity tag, not a signature, and the reserved words don't establish security-fuse state on every unit.
 
-The [layout auditor](../../../../src/tools/wellfed-build/src/platform/amebad/audit/layout.rs) also checks 4 KiB payload alignment, placement in both banks and that nothing overlaps a known preserved range. It caps the payload at the stock footprint, **`0x150000` bytes (1.3125 MiB)**, so a complete OTA file is at most **1,376,288 bytes**. The banks start 1.5 MiB apart, but the unknown gaps between partitions are not established free space. These checks are requirements of our profile; stock does not perform them all. See the [flash layout](../flash-layout.md) and the [layout data](../../../../src/firmware/devices/plaf103/layout.json).
+The [layout auditor](../../../../src/tools/wellfed-build/src/platform/amebad/audit/layout.rs) also checks 4 KiB payload alignment, placement in both banks and that nothing overlaps a known preserved range. It caps the payload at the stock footprint, **`0x150000` bytes (1.3125 MiB)**, so a complete OTA file is at most **1,376,288 bytes**. The banks start 1.5 MiB apart, but the unknown gaps between partitions are not established free space. These are requirements of our profile; stock does not perform them all. See the [flash layout](../flash-layout.md) and the [layout data](../../../../src/firmware/devices/plaf103/layout.json).
 
 ## Validation, activation and return to stock
 
-**Download and check (U04, U05).** Stock picks the opposite application bank; the mapped bases are `0x08006000` and `0x08186000`. It does not write the outer OTA header into the bank. While downloading, `0x0e02af04` holds back the payload's first eight bytes and writes the rest. Then `0x0e02a580` reads the staged body back, adds the withheld bytes, and compares the result with the descriptor's checksum. The orchestrator then calls activation, `0x0e02a648`.
+**Download and check (U04, U05).** Stock picks the opposite application bank; the mapped bases are `0x08006000` and `0x08186000`. It doesn't write the outer OTA header into the bank. While downloading, `0x0e02af04` holds back the payload's first eight bytes and writes the rest. Then `0x0e02a580` reads the staged body back, adds the withheld bytes, and compares the result with the descriptor's checksum. The orchestrator then calls activation, `0x0e02a648`.
 
-**Activation.** It writes the new bank's eight-byte marker, then programs one word over the start of the old bank's marker. Static analysis read it as a first byte of zero; on the research unit the word read back `00 00 21 01` over `38 31 39 35` (physical observation, October 29, 2026), so the other three bytes lose bits too. The old application's bytes may still be there, but the loader won't select it. A reported download progress of 100 is therefore no evidence of activation or a successful boot.
+**Activation.** It writes the new bank's eight-byte marker, then programs one word over the start of the old bank's marker. Static analysis read it as a first byte of zero; on the research unit the word read back `00 00 21 01` over `38 31 39 35` (physical observation, October 29, 2026), so the other three bytes lose bits too. The old application's bytes may remain, but the loader won't select it. A download progress of 100 is therefore no evidence of activation or a successful boot.
 
-**Bank selection (U05).** The [bank policy](../../../firmware/bank-policy.md) documents the factory loader's fixed preference for a valid bank 1, and the give-way mechanism we tested. A failure after selecting an apparently valid bank does not trigger a retry from the other bank. The loader accepting known headers is separate from the candidate actually running its network and recovery code.
+**Bank selection (U05).** The [bank policy](../../../firmware/bank-policy.md) documents the factory loader's fixed preference for a valid bank 1 and the give-way we tested. A failure after the loader selects an apparently valid bank brings no retry from the other bank, and accepting known headers is not the candidate running its network and recovery code.
 
-**What an OTA package is not.** It holds application-bank material, not a complete backup. Factory configuration, settings and flash identity data need a separate backup route, and OTP and eFuse data are outside any ordinary flash image. The original application package works as a return image only while a working firmware still accepts a compatible update. Recovering from a failed first boot needs its own demonstrated route. Patching stock to expose backup and recovery is a proposed design, not something these format checks make reliable.
+**What an OTA package is not.** It holds application-bank material, not a complete backup: factory configuration, settings and flash identity data need a separate backup route, and OTP and eFuse data are outside any flash image. The original package works as a return image only while a working firmware still accepts a compatible update, and recovering from a failed first boot needs its own demonstrated route. Patching stock to expose backup and recovery is a proposed design, which these format checks don't make reliable.
 
 ## Evidence
 
 - **Recovered, October 23, 2026:** this whole page, verified offline against PLAF103 stock 1.1.15. No device, phone, radio, service or routing operation was performed for the review, and no new simulation was run.
 - **Recovered:** the inspected stock OTA is 1,376,288 bytes, SHA-256 `05147476fc70c91cc77ad7da6d6772376b2081d460ac7b1912e2d73868a09498`. Its KM4 executable segment starts at file offset `0x17040`, mapped at runtime address `0x0e000020`. All function addresses on this page use that runtime coordinate system.
-- **Recovered:** 1,649 entries in 15 exported instruction listings were compared byte for byte with that segment, and the segment with the corresponding slice of the pinned OTA. The outer header, five inner image headers, padding, byte-sum and embedded bank table were decoded independently from the binary. The URL splitter was disassembled directly with Capstone 5.0.7. These checks tie the findings to the supplied stock bytes. They do not remove decompiler ambiguity or establish hardware reliability.
-- **Observed, October 23, 2026:** in `fw40-stock-ota-05`, stock 1.1.15 accepted a `qa` build through this updater and downloaded it in about 40 s, and the build booted from bank 0. The same runs showed the `OTA_INFORM` error 2003 when the image port was unreachable.
+- **Recovered:** 1,649 entries in 15 exported instruction listings were compared byte for byte with that segment, and the segment with the corresponding slice of the pinned OTA. The outer header, five inner image headers, padding, byte-sum and embedded bank table were decoded independently from the binary, and the URL splitter disassembled directly with Capstone 5.0.7. These checks tie the findings to the supplied stock bytes; they don't remove decompiler ambiguity or establish hardware reliability.
+- **Observed, October 23, 2026:** in `fw40-stock-ota-05`, stock 1.1.15 accepted a `qa` build through this updater and downloaded it in about 40 s, and the build booted from bank 0. The same runs showed `OTA_INFORM` error 2003 when the image port was unreachable.
 - **Private register:** the optional ignored evidence register is `private/research/stock-updater/evidence.md`, with source paths, byte lengths and SHA-256 hashes in the adjacent `evidence-index.json`. Vendor binaries, decompiled listings, captures and device identifiers stay private.
 
 ### Evidence register

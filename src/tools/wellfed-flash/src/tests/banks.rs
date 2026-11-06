@@ -496,3 +496,81 @@ fn give_way_then_restore_marker_round_trip() {
     develop(&root, &unit, &mut port, &restore, "restore").unwrap();
     assert!(port.0.borrow().flash == flash);
 }
+
+/// A marker restore that stopped resumes by exactly one mode, picked by what
+/// bank 1 holds: `--restore-marker` alone from the given-way bytes,
+/// `--interrupted` alone from an erased or staged marker sector, and never
+/// both. The bench job prints these two flag sets; its tests pin that it
+/// prints no other.
+#[test]
+fn a_stopped_marker_restore_resumes_by_one_mode_never_both() {
+    let source = image(30000, 7);
+    let payload = development::payload(&source, &BANK1).unwrap().to_vec();
+    let mut given_way = payload.clone();
+    given_way[0] = 0;
+    let mut erased = payload.clone();
+    erased[..SECTOR].fill(0xff);
+    let mut staged = payload.clone();
+    staged[..8].fill(0xff);
+
+    let checks = |restore: bool, interrupted: bool, current: &[u8]| {
+        let mut mode = update(Some(&source), &source, BANK1);
+        mode.restore = restore;
+        mode.interrupted = interrupted;
+        development::images(&mode, current)
+            .err()
+            .map(|e| e.to_string())
+    };
+    let fresh = |current: &[u8]| checks(true, false, current);
+    let interrupted = |current: &[u8]| checks(false, true, current);
+
+    assert_eq!(fresh(&given_way), None);
+    assert!(fresh(&erased).is_some());
+    assert!(fresh(&staged).is_some());
+    assert_eq!(interrupted(&erased), None);
+    assert_eq!(interrupted(&staged), None);
+    assert!(interrupted(&given_way).is_some());
+    for current in [&given_way, &erased, &staged] {
+        assert_eq!(
+            checks(true, true, current),
+            Some(development::DevelopmentError::RestoreScope.to_string())
+        );
+    }
+}
+
+/// The bank-0 writes the bench job prints for a bank 0 bank 1 will not
+/// hand over to pass these checks only in their own state: `--original-read`
+/// from a bank 0 whose marker is not valid, `--source` the image just
+/// written for a bank 0 that holds it. The first is refused over a valid
+/// marker, and writing that image again over itself writes no byte.
+#[test]
+fn each_printed_bank_0_rewrite_passes_for_its_state() {
+    let written = image(20000, 9);
+    let other = image(20000, 5);
+    let held = development::payload(&written, &BANK0).unwrap().to_vec();
+    let new = development::payload(&other, &BANK0).unwrap().to_vec();
+    assert_eq!(held.len(), new.len());
+    let mut no_marker = held.clone();
+    no_marker[..8].fill(0xff);
+
+    // Marker: from the pinned read.
+    let mut from_read = update(None, &written, BANK0);
+    from_read.original = Some(&no_marker);
+    assert!(development::images(&from_read, &no_marker).is_ok());
+    from_read.original = Some(&held);
+    let error = development::images(&from_read, &held).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        development::DevelopmentError::OriginalValid.to_string()
+    );
+
+    // Extent: another build, over the image just written as its source.
+    let over = update(Some(&written), &other, BANK0);
+    assert!(development::images(&over, &held).is_ok());
+    assert!(development::images(&over, &no_marker).is_err());
+
+    // Read: the same image again proposes exactly what bank 0 holds.
+    let again = update(Some(&written), &written, BANK0);
+    let (proposed, _) = development::images(&again, &held).unwrap();
+    assert!(proposed == held);
+}

@@ -52,7 +52,7 @@ flowchart LR
   meals --> hold["Any time up to about 6.6 hours after the drop: meals hold"]
   drop --> clients["The app and the CLI can't reach it"]
   drop --> button["The Dispense button keeps working on an unlocked panel, but can refuse a press while it rejoins"]
-  hold --> back["Time returns: a meal under 15 minutes late runs, an older one is skipped"]
+  hold --> back["Time returns: a meal under 15 minutes late runs, an older one is missed"]
 ```
 
 | When this is down | Meals | The app and CLI, directly | What you lose |

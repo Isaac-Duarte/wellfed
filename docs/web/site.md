@@ -1,8 +1,8 @@
 # well-fed.dev
 
-This page is for maintainers of the project's landing page. The site is one prerendered page in `src/web/apps/site`, served as static files by a Cloudflare Worker.
+This page is for maintainers of the project's landing page: one prerendered page in `src/web/apps/site`, served as static files by a Cloudflare Worker.
 
-It is one screen: a headline over the feeder, a short honest line about where Wellfed stands, and links to GitHub and the roadmap. The detail lives in the [README](../../README.md) and the docs, so the page never has to keep a status table in step with them.
+It is one screen: a headline over the feeder, a short honest line about where Wellfed stands, and links to GitHub and the roadmap. The detail lives in the [README](../../README.md) and the docs, so the page keeps no status table in step with them.
 
 ## What it is
 
@@ -17,13 +17,11 @@ It is one screen: a headline over the feeder, a short honest line about where We
 
 ## Keeping it true
 
-The page makes only claims the README already makes: open source, MIT licensed, no account, no vendor cloud, and that Wellfed is in heavy development. The footer keeps the caution to keep another way to feed your pet. If the README's or the [roadmap's](../roadmap.md) status changes, check the status line in `src/lib/sections/Hero.svelte` still matches it. Outbound links are in `src/lib/links.ts`.
+The page makes only claims the README already makes: open source, MIT licensed, no account, no vendor cloud, and that Wellfed is in heavy development. The footer keeps the caution to keep another way to feed your pet. When the README's or the [roadmap's](../roadmap.md) status changes, check the status line in `src/lib/sections/Hero.svelte` still matches. Outbound links are in `src/lib/links.ts`.
 
 ## The drawing
 
-The hero's feeder is line art traced from the 3D model, not a render: `assets/model/lineart.py` writes the visible lines and the part hotspots to `assets/renders/card-lines.json`, and the hero draws them as SVG paths in the theme's line colors. The paths draw themselves in with CSS, and leaders run from parts of the feeder to the claims beside it. Those claims are ones the page already makes: open source, MIT licensed, no account, no vendor cloud. With reduced motion the drawing is simply there.
-
-Because the CSP refuses inline styles, positions are SVG attributes and the animation's timing lives in the component's stylesheet. Retrace after the model changes:
+The hero's feeder is line art traced from the 3D model, not a render: `assets/model/lineart.py` writes the visible lines and the part hotspots to `assets/renders/card-lines.json`, which the hero draws as SVG paths in the theme's line colors. The paths draw themselves in with CSS, and leaders run from parts of the feeder to the four claims beside it; with reduced motion the drawing is simply there. The CSP refuses inline styles, so positions are SVG attributes and the animation's timing lives in the component's stylesheet. Retrace after the model changes:
 
 ```sh
 blender -b assets/model/plaf103.blend -P assets/model/lineart.py
@@ -51,7 +49,7 @@ pnpm -C src/web --filter @wellfed/site e2e
 
 ## Deploy
 
-Cloudflare Workers Builds builds from the repository with its Git integration; nothing in the repository holds a Cloudflare credential. The Worker has no script: [`wrangler.jsonc`](../../src/web/apps/site/wrangler.jsonc) serves the prerendered build as static assets, and `static/_headers` sets the response headers. The project settings:
+Cloudflare Workers Builds builds from the repository with its Git integration, and nothing in the repository holds a Cloudflare credential. The Worker has no script: [`wrangler.jsonc`](../../src/web/apps/site/wrangler.jsonc) serves the prerendered build as static assets, and `static/_headers` sets the response headers. The project settings:
 
 | Setting | Value |
 | --- | --- |
@@ -63,4 +61,4 @@ Cloudflare Workers Builds builds from the repository with its Git integration; n
 | Environment | `NODE_VERSION=22.18.0` |
 | Custom domain | `well-fed.dev` |
 
-Every other branch gets a preview URL from the same settings, which is the place to review a change before it reaches `master`.
+Every other branch gets a preview URL from the same settings, where a change is reviewed before it reaches `master`.

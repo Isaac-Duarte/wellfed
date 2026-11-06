@@ -9,9 +9,9 @@ The app has one screen per feeder, with four tabs: **Today**, **Schedule**, **Hi
 
 The CLI keeps your key in `private/wellfed-owner.json` under the folder you run it from, and makes a new key if that file is missing. So run it from the folder you first ran it in, or pass `--keys`.
 
-![The app's Today tab, with Ready to feed at the top, a red notice that the feeder restarted during a feed and stopped somewhere between 0 and 3 of 3 portions, then rows for food, power, Wi-Fi, clock, desiccant and the button lock](app-today.png)
+![The app's Today tab, with Ready to feed at the top, 3 portions fed today, the day's meals (fed at 7:00 AM, a Dispense button press at 9:12 AM, missed at noon, next at 5:00 PM, one later), a line saying power, Wi-Fi and clock look fine, and a Feed now button](app-today.png)
 
-The screenshot shows Today after a power cut during a feed, which is why it has a red notice. The Feed now button sits below this crop.
+When something needs you, Today says so. A feed cut short by a power loss gets a notice above the meals, and batteries, a weak signal or overdue desiccant move out of the line that says all is fine into rows of their own.
 
 ## Meals
 
@@ -23,7 +23,7 @@ The feeder keeps up to ten meals and runs them itself, so no phone or server has
 
 Open **Schedule** and tap **Add meal**. Set the time, the portions and how it repeats, then tap **Save**. Tap a meal to change or delete it, and use its switch to turn it off for a while.
 
-![The meal editor, with a time of 9:31 AM, 1 portion, repeat choices of Daily, Weekdays, Weekends and Once, seven day buttons, a meal call from Off to 5, and an On switch](app-meal-editor.png)
+![The meal editor, with a time of 8:00 AM, 2 portions, repeat choices of Daily, Weekdays, Weekends and Once, seven day buttons, a meal call from Off to 5, an On switch and a Delete meal button](app-meal-editor.png)
 
 ### CLI
 
@@ -33,19 +33,22 @@ wellfed plans add --at 07:30 --portions 2 --days daily
 wellfed plans edit 0 --days mon,wed,fri
 wellfed plans disable 0
 wellfed plans delete 0
+wellfed plans skip 0
+wellfed plans unskip 0
 ```
 
 A meal's number is its slot, as `wellfed plans list` shows it.
 
 <!-- /tabs -->
 
-![The Schedule tab, with the next meal at 9:58 AM, 1 of 10 meals used, and a note that a meal more than 15 minutes late is skipped and shows in History](app-schedule.png)
+![The Schedule tab, with the next meal today at 5:00 PM, 2 of 10 meals used, an 8:00 AM meal switched on and a 6:00 PM meal switched off, a note that a meal more than 15 minutes late is missed and shows in History, and an Add meal button](app-schedule.png)
 
 A few rules are worth knowing:
 
 - **A new meal starts from its next occurrence.** Saving a 07:30 meal at 07:35 feeds tomorrow, not now.
 - **Moving a meal can feed it again the same day.** Changing a meal's time or days starts it afresh. Move a 07:30 meal that already ran to 12:00, and it feeds again at 12:00. The editor's note that a meal that ran won't run again holds only while the time stays put.
-- **A late meal has 15 minutes.** If the feeder restarted or was busy, the meal still runs within 15 minutes of its time. Later than that, it doesn't run, and History shows **Meal skipped**.
+- **Skipping one meal.** You can skip a meal's next run if it falls today and hasn't come due, and undo the skip until it does. In the app, tap **Skip** on the meal's line on **Today**, then **Skip meal**; the line then shows **Skipped** with **Undo** until the meal's time. The meal doesn't feed, remind or call, and tomorrow's runs as usual. History shows who skipped it.
+- **A late meal has 15 minutes.** If the feeder restarted or was busy, the meal still runs within 15 minutes of its time. Later than that, it doesn't run, and History shows it as missed.
 - **Two people editing at once.** If the meals changed while you were editing, the change is refused and nothing is overwritten. Read them again and redo your edit. The CLI sees the same refusal as `Stale`.
 
 ### Before a meal
@@ -147,9 +150,11 @@ Feed one portion first and throw it away, so the rotor starts from a known place
 
 ### App
 
-This takes an owner. Open **Settings**, then **Portion size**. Tap **Enter what 10 portions weighed** and enter the grams, or step the size a gram at a time with **−** and **+**.
+In the app this takes an owner. Open **Settings**, then **Portion size**. Tap **Enter what 10 portions weighed** and enter the grams, or step the size a gram at a time with **−** and **+**.
 
 ### CLI
+
+An owner or a member can run this.
 
 ```sh
 wellfed calibrate --weighed 71.1 --portions 10
@@ -159,11 +164,11 @@ wellfed calibrate --weighed 71.1 --portions 10
 
 ## History
 
-**History** lists what happened, newest first: feeds, skipped meals, restarts, changes and who made them. Filter it with **Feeds**, **Problems** or **Changes**, and tap a feed for its detail. On the CLI, use `wellfed feeds` for the feeds and `wellfed events` for everything.
+**History** lists what happened, newest first: feeds, missed and skipped meals, restarts, changes and who made them. Filter it with **Feeds**, **Problems** or **Changes**, and tap a feed for its detail. On the CLI, use `wellfed feeds` for the feeds and `wellfed events` for everything.
 
-![The History tab: clock set, Fed between 0 and 3 marked Interrupted and not repeated, started up, then several completed feeds with who asked for them](app-history.png)
+![The History tab with its All, Feeds, Problems and Changes filters: today, food read low, three feeds with what asked for each and someone joining; yesterday, the clock set, five settings changes folded into one row, a feed and a missed meal](app-history.png)
 
-A feed that was interrupted reads as a range, such as **Fed between 0 and 3**, because the feeder can't know how far it got. **Fed 2 of 2** counts rotor marks. It doesn't mean the food reached the bowl, and the feeder never knows what your pet ate. "Bench" in this screenshot is the name of the client that made those requests.
+A feed that was interrupted reads as a range, such as **Fed between 0 and 3**, because the feeder can't know how far it got. **Fed 2 of 2** counts rotor marks. It doesn't mean the food reached the bowl, and the feeder never knows what your pet ate.
 
 The feeder keeps a limited history, and a long one needs the optional server. See the [roadmap](../roadmap.md).
 
@@ -185,7 +190,7 @@ After a power cut, your plans come back but the clock doesn't. If your router an
 
 The feeder also needs your time zone, since meals are set in local time. The app stores your phone's zone when you set a feeder up; **Settings** → **Clock** shows it, and offers **Use this phone's zone** when the feeder keeps a different one. Without one, the feeder uses the offset a phone last gave it, which a power cut erases: the clock comes back right from the router or a time server, but every meal holds until a phone gives the offset again. The app does that as soon as it connects, and the **Today** tab says **Meals are on hold** until then.
 
-When the time returns, a meal less than 15 minutes late runs, and an older one is skipped. On a day with a long outage, feed your pet another way.
+When the time returns, a meal less than 15 minutes late runs, and an older one is missed. On a day with a long outage, feed your pet another way.
 
 Even with your router answering, the clock reads invalid for up to a minute about every 6.6 hours, until the next poll sets it again. A meal due in that minute runs once it's back.
 
@@ -232,7 +237,7 @@ An invite works once and runs out after 10 minutes, or sooner if the feeder rest
 
 Nothing updates by itself, and there's no release to update to yet. In the app, an owner opens **Settings**, then **Firmware**. Today that offers only the build the app itself carries. The CLI has no update command.
 
-A new build runs on trial, and if it doesn't start properly the feeder goes back to its other copy of Wellfed, which may be older. Feeding waits during the install. A meal due meanwhile runs afterward if it's within its 15 minutes, and otherwise it's skipped. [Install and rollback](how-it-works/install-and-rollback.md#when-an-update-goes-wrong) has the details.
+A new build runs on trial, and if it doesn't start properly the feeder goes back to its other copy of Wellfed, which may be older. Feeding waits during the install. A meal due meanwhile runs afterward if it's within its 15 minutes, and otherwise it's missed. [Install and rollback](how-it-works/install-and-rollback.md#when-an-update-goes-wrong) has the details.
 
 ## Next steps
 

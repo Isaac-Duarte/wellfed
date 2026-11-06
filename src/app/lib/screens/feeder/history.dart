@@ -34,6 +34,8 @@ bool _shown(_Filter filter, HistoryBody body) => switch (filter) {
     HistoryBody_SettingsChanged() ||
     HistoryBody_WifiChanged() ||
     HistoryBody_PlansChanged() ||
+    HistoryBody_Skipped() ||
+    HistoryBody_Unskipped() ||
     HistoryBody_Joined() ||
     HistoryBody_UpdateKeyAdded() ||
     HistoryBody_Revoked() ||
@@ -60,10 +62,17 @@ String whoText(FeederController feeder, FedBy by) => switch (by) {
 /// lead with a tinted badge; changes and routine notes stay quiet, and a run
 /// of the same change folds into one row, so five settings saves don't push
 /// the day's feeds off the screen.
+///
+/// With the owner's server, `longHistory` opens what the server kept, which
+/// reaches back further than the feeder's ring; that screen draws its
+/// `entries` here, newest first, with `empty` while it has none.
 class HistoryTab extends StatefulWidget {
-  const HistoryTab({super.key, required this.feeder});
+  const HistoryTab({super.key, required this.feeder, this.longHistory, this.entries, this.empty});
 
   final FeederController feeder;
+  final VoidCallback? longHistory;
+  final List<HistoryEntry>? entries;
+  final String? empty;
 
   @override
   State<HistoryTab> createState() => _HistoryTabState();
@@ -99,7 +108,8 @@ class _HistoryTabState extends State<HistoryTab> {
     builder: (context, _) {
       final ThemeTokens c = context.colors;
       final FeederController feeder = widget.feeder;
-      final List<_Day> days = _days(context, feeder, feeder.state.history.reversed, _filter);
+      final List<_Day> days = _days(context, feeder, widget.entries ?? feeder.state.history.reversed, _filter);
+      final VoidCallback? longHistory = feeder.state.serverId == null ? null : widget.longHistory;
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -123,6 +133,7 @@ class _HistoryTabState extends State<HistoryTab> {
                   ),
                   const SizedBox(width: Space.s2),
                 ],
+                if (longHistory != null) TextButton(onPressed: longHistory, child: const Text('Full history')),
               ],
             ),
           ),
@@ -130,11 +141,12 @@ class _HistoryTabState extends State<HistoryTab> {
             child: days.isEmpty
                 ? Center(
                     child: Text(
-                      feeder.state.historyRead
-                          ? 'Nothing here yet.'
-                          : feeder.state.connection == Connection.online
-                          ? 'Reading the history…'
-                          : "Can't read the history right now.",
+                      widget.empty ??
+                          (feeder.state.historyRead
+                              ? 'Nothing here yet.'
+                              : feeder.state.connection == Connection.online
+                              ? 'Reading the history…'
+                              : "Can't read the history right now."),
                       style: TextStyle(fontSize: Sizes.base, color: c.textMuted),
                     ),
                   )
@@ -158,7 +170,7 @@ class _Day {
   final String heading;
   final List<_Run> runs = [];
   int fed = 0;
-  int skipped = 0;
+  int missed = 0;
 }
 
 /// One row: an entry, or a run of the same quiet change folded together,
@@ -186,7 +198,7 @@ List<_Day> _days(BuildContext context, FeederController feeder, Iterable<History
     // The day's tally counts every meal, whatever the filter shows.
     final HistoryBody body = entry.body;
     if (body is HistoryBody_Fed) day.fed++;
-    if (body is HistoryBody_Missed) day.skipped++;
+    if (body is HistoryBody_Missed) day.missed++;
     if (!_shown(filter, body)) continue;
 
     final _Words words = _describe(context, feeder, body);
@@ -217,7 +229,7 @@ class _DayCard extends StatelessWidget {
     final ThemeTokens c = context.colors;
     final String tally = [
       if (day.fed > 0) '${day.fed} ${day.fed == 1 ? 'feed' : 'feeds'}',
-      if (day.skipped > 0) '${day.skipped} skipped',
+      if (day.missed > 0) '${day.missed} missed',
     ].join(' · ');
 
     final rows = <Widget>[];
@@ -264,7 +276,7 @@ class _DayCard extends StatelessWidget {
                 if (tally.isNotEmpty)
                   Text(
                     tally,
-                    style: TextStyle(fontSize: Sizes.sm, color: day.skipped > 0 ? c.warning : c.textMuted),
+                    style: TextStyle(fontSize: Sizes.sm, color: day.missed > 0 ? c.warning : c.textMuted),
                   ),
               ],
             ),

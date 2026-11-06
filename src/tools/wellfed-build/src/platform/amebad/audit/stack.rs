@@ -160,6 +160,13 @@ pub(crate) const RUNTIME_SOURCE: &str = "src/sdk/wellfed-sdk/src/runtime.rs";
 /// SDK services a firmware may start, whose tasks count as the firmware's
 /// (the button task).
 pub(crate) const SERVICE_SOURCES: [&str; 1] = ["src/sdk/wellfed-sdk/src/buttons.rs"];
+/// Tasks the vendor C creates whose body is Rust: the task's name, the C
+/// entry the walk starts from, and the stack words `example_entry.c` gives
+/// it (a test reads them there). The Wi-Fi task's frames are the driver's
+/// and the vendor calls' it makes, as much as its Rust's, so the walk counts
+/// both, and only an image that links the shim has the entry.
+pub(crate) const C_TASKS: [(&str, &str, u64); 1] = [("wellfed_wifi", "wellfed_wifi_task", 1280)];
+
 /// The firmware's share of the SDK's eight task slots: the runtime holds three
 /// in the normal role, and one stays spare. `wellfed_sdk::FIRMWARE_TASKS` enforces the
 /// same budget at run time, and a test keeps the two equal.
@@ -785,39 +792,19 @@ pub(crate) fn audit(elf: &Path, objdump: &Path, sources: &TaskSources) -> Result
             }
         };
 
-        let (charges, mut unbounded) = graph.charges(symbol, hook);
-        let ((depth, path, direct), cut) = graph.worst(symbol, charges);
-        unbounded.extend(direct);
-        if let Some(rust) = unbounded.iter().find(|name| name.starts_with("_R")) {
-            return Err(StackError::Unbounded {
-                task,
-                call: demangle(rust),
-            }
-            .into());
-        }
-        let bound = depth + OVERHEAD;
-        let path: Vec<String> = path.iter().take(12).map(|n| demangle(n)).collect();
-        if bound as f64 > stack as f64 * (1.0 - MARGIN) {
-            return Err(StackError::Overflow {
-                task,
-                bound,
-                stack,
-                path,
-            }
-            .into());
-        }
         rows.insert(
-            task,
-            TaskBound {
-                entry,
-                stack,
-                bound,
-                fmt_bound: charges.fmt,
-                unbounded: unbounded.iter().map(|n| demangle(n)).collect(),
-                recursion: cut.iter().map(|n| demangle(n)).collect(),
-                path,
-            },
+            task.clone(),
+            bound(&graph, symbol, &entry, &task, stack, hook)?,
         );
+    }
+
+    // A C task's entry is a C symbol, and only an image that links its
+    // source has it.
+    for (task, entry, words) in C_TASKS {
+        if functions.contains_key(entry) {
+            let row = bound(&graph, entry, entry, task, words * 4, hook)?;
+            rows.insert(task.to_string(), row);
+        }
     }
 
     if rows.is_empty() {
@@ -835,6 +822,48 @@ pub(crate) fn audit(elf: &Path, objdump: &Path, sources: &TaskSources) -> Result
                 flash hooks bounded by class; vendor C indirect calls listed and covered by the \
                 margin"
             .into(),
+    })
+}
+
+/// `task`'s worst path from `symbol`, refused past the margin of its `stack`
+/// bytes or at an unbounded Rust indirect call.
+fn bound(
+    graph: &Graph<'_>,
+    symbol: &str,
+    entry: &str,
+    task: &str,
+    stack: u64,
+    hook: u64,
+) -> Result<TaskBound> {
+    let (charges, mut unbounded) = graph.charges(symbol, hook);
+    let ((depth, path, direct), cut) = graph.worst(symbol, charges);
+    unbounded.extend(direct);
+    if let Some(rust) = unbounded.iter().find(|name| name.starts_with("_R")) {
+        return Err(StackError::Unbounded {
+            task: task.into(),
+            call: demangle(rust),
+        }
+        .into());
+    }
+    let bound = depth + OVERHEAD;
+    let path: Vec<String> = path.iter().take(12).map(|n| demangle(n)).collect();
+    if bound as f64 > stack as f64 * (1.0 - MARGIN) {
+        return Err(StackError::Overflow {
+            task: task.into(),
+            bound,
+            stack,
+            path,
+        }
+        .into());
+    }
+    Ok(TaskBound {
+        entry: entry.into(),
+        stack,
+        bound,
+        fmt_bound: charges.fmt,
+        unbounded: unbounded.iter().map(|n| demangle(n)).collect(),
+        recursion: cut.iter().map(|n| demangle(n)).collect(),
+        path,
     })
 }
 
@@ -905,6 +934,20 @@ mod tests {
         match result {
             Err(Error::Stack(error)) => error,
             other => panic!("{other:?}"),
+        }
+    }
+
+    /// The C task's stack is the audit's, and its name and entry too.
+    #[test]
+    fn the_c_tasks_are_created_as_the_audit_reads_them() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let entry =
+            std::fs::read_to_string(root.join("src/firmware/vendor/ports/amebad/example_entry.c"))
+                .unwrap();
+
+        for (task, function, words) in C_TASKS {
+            let creation = format!("xTaskCreate({function}, \"{task}\", {words},");
+            assert_eq!(entry.matches(&creation).count(), 1, "{creation}");
         }
     }
 

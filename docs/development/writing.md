@@ -92,13 +92,17 @@ Each entry in [the test log](../guide/how-it-works/testing.md) has exactly one v
 
 ### Screenshots
 
-A screenshot is a PNG beside the page, shown with an inline Markdown image whose alt text says what matters in it. Before one enters Git:
+A screenshot is a PNG beside the page, shown with an inline Markdown image whose alt text says what matters in it.
+
+The owner guide's app screenshots are drawn by the app's guide test (`src/app/test/guide/`) from made-up fixtures, so they hold nothing private. `make check-app` fails when a screen they show changes, and `make guide-screenshots` redraws them. Look at each redrawn image, and update its alt text and the page's words to match.
+
+Any other screenshot is a real capture. Before one enters Git:
 
 - Paint over anything private with a solid block, since blur and pixelation can be reversed: Wi-Fi names and passwords, device IDs, serials, MAC and IP addresses, keys and live setup codes, account and people names, and notifications. Crop out the status bar where you can.
 - Export a fresh PNG with no metadata, and check that with a metadata dump.
 - Look at the image at full size. Keep the original out of Git.
 
-Retake a screenshot when the screen it shows changes, since no check notices.
+Retake a real capture when the screen it shows changes, since no check notices.
 
 ## Diagrams
 

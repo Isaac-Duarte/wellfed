@@ -19,7 +19,9 @@
 //! offer is not: a refused offer ends the install here, and the caller
 //! decides what to do; nothing is retried behind its back.
 
-use wellfed_model::{Answer, Op, Refusal, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView};
+use wellfed_model::{
+    Answer, Bank0Blocked, Op, Refusal, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView,
+};
 use wellfed_proto::api::UPDATE_CHUNK_MAX;
 
 /// What is offered: the signed manifest, the downgrade statement it may
@@ -63,6 +65,28 @@ pub enum Next {
     Cancelled,
 }
 
+/// Why bank 1 will not give way to bank 0, and what clears it, as an owner
+/// reads it at the CLI. Bank 0, the recovery copy, installs every update,
+/// so bank 1 hands over only to one that booted and recorded its own image.
+pub fn blocked_words(reason: Bank0Blocked) -> &'static str {
+    match reason {
+        Bank0Blocked::Unrecorded => {
+            "bank 0, the recovery copy, was rewritten and has not recorded itself: \
+             start the feeder from bank 0 once, then offer again"
+        }
+        Bank0Blocked::Changed => {
+            "bank 0, the recovery copy, changed since it recorded itself: \
+             start the feeder from bank 0 once, then offer again"
+        }
+        Bank0Blocked::Key => {
+            "bank 0, the recovery copy, does not trust the key that signed this firmware"
+        }
+        Bank0Blocked::Marker | Bank0Blocked::Extent | Bank0Blocked::Read => {
+            "bank 0, the recovery copy, is not a readable image: it needs a bench repair"
+        }
+    }
+}
+
 /// A refusal as an owner reads it on the app's stop screen and at the CLI.
 /// The rarer ones keep their names, which a bug report can quote.
 fn refused_words(refusal: &Refusal) -> String {
@@ -78,6 +102,9 @@ fn refused_words(refusal: &Refusal) -> String {
         Refusal::Update(UpdateRefusal::Failed) => "this firmware already failed on it",
         Refusal::Update(UpdateRefusal::Installing) => "another update is in progress",
         Refusal::Update(UpdateRefusal::Unconfirmed) => "nobody pressed Dispense in time",
+        Refusal::Update(UpdateRefusal::Fallback { reason }) => {
+            return format!("{} (reason={})", blocked_words(*reason), reason.code());
+        }
         other => return format!("{other:?}"),
     };
     words.to_owned()
@@ -388,5 +415,26 @@ impl<'a> Installer<'a> {
     fn fail(&mut self, error: InstallError) -> InstallError {
         self.stage = Stage::Failed(error);
         error
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wellfed_model::{Bank0Blocked, Refusal, UpdateRefusal};
+
+    use super::InstallError;
+
+    /// A Fallback names the check bank 1 refused on, never a generic no.
+    #[test]
+    fn a_fallback_refusal_says_which_check_and_what_clears_it() {
+        let refused = InstallError::Refused(Refusal::Update(UpdateRefusal::Fallback {
+            reason: Bank0Blocked::Changed,
+        }));
+        assert_eq!(
+            refused.to_string(),
+            "the feeder refused the update: bank 0, the recovery copy, changed since it \
+             recorded itself: start the feeder from bank 0 once, then offer again \
+             (reason=changed)"
+        );
     }
 }

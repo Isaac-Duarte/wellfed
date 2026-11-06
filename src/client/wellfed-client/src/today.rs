@@ -301,6 +301,7 @@ mod tests {
             generation: Generation(1),
             writable: true,
             plans,
+            skipped: wellfed_model::SkippedMeals::NONE,
         });
         assert_eq!(facts.portions_today(TimeZone::UTC), None);
         assert_eq!(facts.today(TimeZone::UTC), Today::default());

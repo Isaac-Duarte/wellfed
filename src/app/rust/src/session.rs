@@ -846,13 +846,17 @@ fn feed_answered(what: Asked, answer: Option<Answer>) -> Option<SessionUpdate> {
 
 /// Whether `body` may mean the plans moved. A one-off plan disables itself when
 /// it is claimed or passed, which moves the generation with no `Plans` event:
-/// the feed or the missed meal is the only news of it.
+/// the feed or the missed meal is the only news of it. A skip and its undo
+/// move a meal's skip (and a one-off plan's switch) with no `Plans` event
+/// either, and a skipped plan's next meal ends its skip.
 const fn moves_plans(body: &EventBody) -> bool {
     matches!(
         body,
         EventBody::Feeder(FeederEvent::Plans { .. })
             | EventBody::Feeder(FeederEvent::Fed { .. })
             | EventBody::Feeder(FeederEvent::Missed { .. })
+            | EventBody::Feeder(FeederEvent::Skipped { .. })
+            | EventBody::Feeder(FeederEvent::Unskipped { .. })
     )
 }
 
@@ -970,7 +974,7 @@ mod tests {
     }
 
     #[test]
-    fn a_feed_or_a_missed_meal_reads_the_plans_again() {
+    fn a_feed_a_missed_meal_or_a_skip_reads_the_plans_again() {
         let fed = EventBody::Feeder(FeederEvent::Fed {
             feed: 1,
             requested: 1,
@@ -988,6 +992,20 @@ mod tests {
 
         assert!(moves_plans(&fed));
         assert!(moves_plans(&missed));
+        for skip in [
+            FeederEvent::Skipped {
+                plan: 0,
+                due: Timestamp::UNIX_EPOCH,
+                by: Source::Feeder,
+            },
+            FeederEvent::Unskipped {
+                plan: 0,
+                due: Timestamp::UNIX_EPOCH,
+                by: Source::Feeder,
+            },
+        ] {
+            assert!(moves_plans(&EventBody::Feeder(skip)), "a skip or its undo");
+        }
         assert!(!moves_plans(&EventBody::Feeder(FeederEvent::Settings {
             generation: Generation(1),
             by: Source::Feeder,

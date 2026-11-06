@@ -160,16 +160,117 @@ pub enum Decision {
 }
 
 impl Decision {
-    /// The code `wellfed_amebad_trial_decide` returns to the C glue.
-    pub fn code(self) -> u32 {
-        match self {
-            Self::NotBank1 { resets } => resets << 8,
-            Self::Confirmed { resets } => 1 | (resets << 8),
-            Self::Counted(n) => 2 | (n << 8),
-            Self::GiveWay => 3,
-            Self::NoFallback(n) => 4 | (n << 8),
-            Self::Held { resets } => 5 | (resets << 8),
-            Self::StormGiveWay { resets } => 6 | (resets << 8),
+    /// Whether KM0 clears bank 1's first marker byte and resets, so the
+    /// loader falls back to bank 0.
+    pub const fn gives_way(self) -> bool {
+        matches!(self, Self::GiveWay | Self::StormGiveWay { .. })
+    }
+
+    /// KM0's `PLTRL1` line for the decision. A trial's give-way has none:
+    /// the C glue's `give_way=1` line follows its marker write.
+    pub fn report(self, line: &mut Line<'_>) {
+        let (text, count, tail) = match self {
+            Self::NotBank1 { resets } => ("PLTRL1 bank=0 resets=", resets, None),
+            Self::Confirmed { resets } => ("PLTRL1 confirmed=1 resets=", resets, None),
+            Self::Counted(n) => ("PLTRL1 confirmed=0 boot=", n, Some((" limit=", LIMIT))),
+            Self::GiveWay => return,
+            Self::NoFallback(n) => ("PLTRL1 error fallback=invalid boot=", n, None),
+            // A reset storm with nothing to fall back to: KM4 boots held.
+            Self::Held { resets } => ("PLTRL1 storm=", resets, Some((" held=", 1))),
+            // A reset storm on a confirmed bank 1: give way as a trial does.
+            Self::StormGiveWay { resets } => {
+                ("PLTRL1 storm=", resets, Some((" limit=", STORM_LIMIT)))
+            }
+        };
+
+        line.text(text);
+        line.decimal(count);
+        if let Some((text, value)) = tail {
+            line.text(text);
+            line.decimal(value);
+        }
+        line.text("\n");
+    }
+}
+
+/// KM0's report of one boot's trial step: on a brownout boot, the register
+/// as it found it, then the decision's line. The host tools parse both
+/// (`wellfed_core::record`).
+pub fn report(reset: Reset, found: u32, decision: Decision, line: &mut Line<'_>) {
+    if reset == Reset::Brownout {
+        line.text("PLTRL1 brownout=1 reg=");
+        line.hex8(found);
+        line.text("\n");
+    }
+    decision.report(line);
+}
+
+/// A line of text for the C glue to print, written without `core::fmt`,
+/// which the KM0 image would otherwise link for it: text and numbers into
+/// the glue's buffer, kept NUL-terminated. What does not fit is dropped;
+/// the glue's buffer holds the longest report with room to spare.
+pub struct Line<'a> {
+    buffer: &'a mut [u8],
+    len: usize,
+}
+
+impl<'a> Line<'a> {
+    /// An empty line in `buffer`, whose last byte is kept for the NUL.
+    pub fn new(buffer: &'a mut [u8]) -> Self {
+        if let Some(first) = buffer.first_mut() {
+            *first = 0;
+        }
+        Self { buffer, len: 0 }
+    }
+
+    /// What was written, without the NUL.
+    pub fn as_bytes(&self) -> &[u8] {
+        self.buffer.get(..self.len).unwrap_or(&[])
+    }
+
+    fn byte(&mut self, byte: u8) {
+        // One byte stays for the NUL after the text.
+        if self.len + 1 >= self.buffer.len() {
+            return;
+        }
+        if let Some(slot) = self.buffer.get_mut(self.len) {
+            *slot = byte;
+        }
+        self.len += 1;
+        if let Some(end) = self.buffer.get_mut(self.len) {
+            *end = 0;
+        }
+    }
+
+    pub fn text(&mut self, text: &str) {
+        for &byte in text.as_bytes() {
+            self.byte(byte);
+        }
+    }
+
+    /// `value` in decimal, as C's `%u` (and `%d` below 2^31) prints it.
+    pub fn decimal(&mut self, value: u32) {
+        let mut place = 1_000_000_000;
+        while place > 1 && value / place == 0 {
+            place /= 10;
+        }
+        while place > 0 {
+            self.digit(value / place % 10);
+            place /= 10;
+        }
+    }
+
+    /// `value` as C's `%08x` prints it: eight lowercase hex digits.
+    pub fn hex8(&mut self, value: u32) {
+        for shift in (0..8).rev() {
+            self.digit((value >> (shift * 4)) & 0xf);
+        }
+    }
+
+    fn digit(&mut self, digit: u32) {
+        let at = usize::try_from(digit).unwrap_or(usize::MAX);
+        if let Some(&byte) = b"0123456789abcdef".get(at) {
+            self.byte(byte);
         }
     }
 }
@@ -404,6 +505,14 @@ pub fn deliberate(register: u32) -> u32 {
     register & !(FIELD_MASK << STORM_SHIFT)
 }
 
+/// KM0's boot count at its peer task's start: up by one in the
+/// register's low 16 bits ([`BOOT_MASK`]), wrapping within them, with the
+/// trial's fields above untouched. The register's new value and the count.
+pub const fn boot_counted(register: u32) -> (u32, u32) {
+    let count = register.wrapping_add(1) & BOOT_MASK;
+    ((register & !BOOT_MASK) | count, count)
+}
+
 /// The build identity, from the reviewed build wrapper (all zeros on host).
 pub fn identity() -> [u8; 32] {
     wellfed_session::hex::decode_array(env!("WELLFED_BUILD_ID").as_bytes()).unwrap_or([0; 32])
@@ -414,13 +523,17 @@ mod exported {
     use wellfed_core::ota::CONFIRM_LEN;
 
     /// Called once by the KM0 main before `km4_boot_on`, with bank 1's and
-    /// bank 0's first 8 physical bytes, the confirmation record and whether
-    /// `BOOT_Reason` carries the brownout bit (nonzero). Writes
-    /// the new backup-register value to `register` and returns
-    /// `Decision::code`. Flash and the register are written by the caller.
+    /// bank 0's first 8 physical bytes, the confirmation record, the backup
+    /// register and whether `BOOT_Reason` carries the brownout bit
+    /// (nonzero). Writes the register's new value back to `register` and
+    /// the `PLTRL1` lines for the glue to print to `line` (NUL-terminated,
+    /// empty before a trial's give-way), and returns 1 when the glue must
+    /// clear bank 1's first marker byte and reset. Flash and the register
+    /// are written by the caller.
     ///
     /// # Safety
-    /// Each pointer is valid for its length (8, 8, `CONFIRM_LEN`, 4 bytes).
+    /// Each pointer is valid for its length (8, 8, `CONFIRM_LEN`, 4 and
+    /// `line_len` bytes).
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn wellfed_amebad_trial_decide(
         bank1: *const [u8; 8],
@@ -428,6 +541,8 @@ mod exported {
         record: *const [u8; CONFIRM_LEN],
         register: *mut u32,
         brownout: u32,
+        line: *mut u8,
+        line_len: u32,
     ) -> u32 {
         let identity = super::identity();
         let reset = if brownout != 0 {
@@ -437,12 +552,34 @@ mod exported {
         };
 
         // SAFETY: the caller's contract.
+        let found = unsafe { *register };
+        // SAFETY: as above.
         let record = super::confirmation(unsafe { &*record });
         // SAFETY: as above.
         let (decision, value) =
-            unsafe { super::decide_after(&*bank1, &*bank0, record, *register, &identity, reset) };
+            unsafe { super::decide_after(&*bank1, &*bank0, record, found, &identity, reset) };
         // SAFETY: as above.
         unsafe { *register = value };
-        decision.code()
+
+        let len = usize::try_from(line_len).unwrap_or(0);
+        // SAFETY: as above; nothing else refers to the glue's buffer.
+        let buffer = unsafe { core::slice::from_raw_parts_mut(line, len) };
+        super::report(reset, found, decision, &mut super::Line::new(buffer));
+        u32::from(decision.gives_way())
+    }
+
+    /// Called once by the KM0 peer task at its start with the backup
+    /// register: writes its new value back and returns the boot count
+    /// ([`super::boot_counted`]).
+    ///
+    /// # Safety
+    /// `register` is valid for 4 bytes.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn wellfed_amebad_boot_count(register: *mut u32) -> u32 {
+        // SAFETY: the caller's contract.
+        let (value, count) = super::boot_counted(unsafe { *register });
+        // SAFETY: as above.
+        unsafe { *register = value };
+        count
     }
 }

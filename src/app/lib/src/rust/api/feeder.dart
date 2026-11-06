@@ -230,6 +230,19 @@ sealed class FeederRequest with _$FeederRequest {
   }) = FeederRequest_PutCalibration;
   const factory FeederRequest.getPlans() = FeederRequest_GetPlans;
 
+  /// Skip one of today's meals, named as the card's `MealAction::Skip`
+  /// names it.
+  const factory FeederRequest.skipMeal({
+    required int slot,
+    required PlatformInt64 dueMs,
+  }) = FeederRequest_SkipMeal;
+
+  /// Undo a meal's skip, named as the card's `MealAction::Undo` names it.
+  const factory FeederRequest.unskipMeal({
+    required int slot,
+    required PlatformInt64 dueMs,
+  }) = FeederRequest_UnskipMeal;
+
   /// The change the owner made to the table they saw.
   const factory FeederRequest.editPlans({
     required PlansView plans,
@@ -664,6 +677,10 @@ class UpdateInfo {
   final int imageLen;
   final int written;
 
+  /// Bank 0, the recovery copy, as bank 1 last checked it: blocked means
+  /// every update is refused until bank 0 boots once.
+  final Bank0Check bank0;
+
   const UpdateInfo({
     required this.phase,
     required this.bank,
@@ -671,6 +688,7 @@ class UpdateInfo {
     required this.version,
     required this.imageLen,
     required this.written,
+    required this.bank0,
   });
 
   @override
@@ -680,7 +698,8 @@ class UpdateInfo {
       minVersion.hashCode ^
       version.hashCode ^
       imageLen.hashCode ^
-      written.hashCode;
+      written.hashCode ^
+      bank0.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -692,7 +711,8 @@ class UpdateInfo {
           minVersion == other.minVersion &&
           version == other.version &&
           imageLen == other.imageLen &&
-          written == other.written;
+          written == other.written &&
+          bank0 == other.bank0;
 }
 
 @freezed

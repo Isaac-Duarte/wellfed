@@ -66,7 +66,7 @@ impl Service {
 
 fn entry(row: AuditRow) -> AuditEntry {
     let action = match row.record {
-        AuditRecord::Change(action) => action,
+        AuditRecord::Change(action) => *action,
         AuditRecord::Command(command) => AuditAction::Command {
             command: view(*command),
         },

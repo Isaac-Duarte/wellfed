@@ -47,6 +47,7 @@ use super::feeding;
 use super::lock::LockBox;
 use super::owner::{self, POLL_MS};
 use super::platform::{Boot, Platform, TaskCount, TaskStack};
+use super::skip;
 use super::time::{self, Time};
 use crate::stats::Keeper;
 use wellfed_device::io::{Accepted, Datagram, Received};
@@ -54,9 +55,9 @@ use wellfed_device::store::events::Read;
 use wellfed_device::update as wire;
 use wellfed_device_api::mailbox::{
     Calibration, CalibrationResult, CallChange, CallClip, CallPlay, CallResult, CallView,
-    ClientChange, KeyResult, LockFields, LockResult, NtpResult, Origin, PlansChange, PlansResult,
-    PlayResult, Requested, SettingsFields, SettingsResult, Table, TimeFields, TimeResult,
-    TimeSettings, TimeSettingsResult, TimeState, WifiResult, WifiSource,
+    ClientChange, KeyResult, LockFields, LockResult, MealSkip, NtpResult, Origin, PlansChange,
+    PlansResult, PlayResult, Requested, SettingsFields, SettingsResult, Table, TimeFields,
+    TimeResult, TimeSettings, TimeSettingsResult, TimeState, WifiResult, WifiSource,
 };
 use wellfed_device_api::pairing::{self, Pairing};
 use wellfed_device_api::wifi::Credentials;
@@ -1167,6 +1168,45 @@ impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
                 self.platform
                     .plans_change(PlansChange::Replace { table, at_s })
             }
+        }
+    }
+
+    /// A skip, or its undo, waits as any store write does while a feed
+    /// holds the outputs, and while the schedule holds feeding for a claim
+    /// or a change of its own: the plans' one mailbox would be the
+    /// schedule's anyway, and a meal it is taking is never the one to skip.
+    fn skip_meal(
+        &mut self,
+        slot: u8,
+        due_s: u32,
+        skip: MealSkip,
+        now_ms: u32,
+    ) -> Result<(), Refusal> {
+        if self.outputs_claimed() || self.meal {
+            return Err(Refusal::Busy);
+        }
+        let view = match self.platform.plans() {
+            PlansResult::Current { pending: true, .. } | PlansResult::Busy => {
+                return Err(Refusal::Busy);
+            }
+            PlansResult::ReadOnly => return Err(Refusal::NotWritable),
+            PlansResult::Unserved => return Err(Refusal::Unavailable),
+            PlansResult::Current { view, .. } => view,
+        };
+        if !view.writable {
+            return Err(Refusal::NotWritable);
+        }
+        let wall_ms = self.platform.wall_ms(now_ms).ok_or(Refusal::NoClock)?;
+        let platform = &*self.platform;
+        let change = skip::change(&view, slot, due_s, skip, wall_ms, |ms| {
+            platform.offset_at(ms)
+        })?;
+
+        match self.platform.plans_change(change) {
+            PlansResult::Current { pending: true, .. } => Ok(()),
+            PlansResult::Current { .. } | PlansResult::Busy => Err(Refusal::Busy),
+            PlansResult::ReadOnly => Err(Refusal::NotWritable),
+            PlansResult::Unserved => Err(Refusal::Unavailable),
         }
     }
 

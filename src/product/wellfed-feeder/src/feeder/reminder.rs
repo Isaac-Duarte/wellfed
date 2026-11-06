@@ -13,10 +13,11 @@
 //! schedule runs by), worked out once a wall-clock minute, is reminded
 //! once the wall clock is within the lead of it and before it is due. A
 //! plan with no mark (saved without a valid clock), or whose mark is at or
-//! past the occurrence (a backward clock jump), is not reminded: its
-//! occurrence may not run. Without a valid clock with an offset, or with a
-//! plans store that cannot be written (which runs nothing), nothing is
-//! reminded.
+//! past the occurrence (a backward clock jump, or a client's skip), is not
+//! reminded: its occurrence may not run. Without a valid clock with an
+//! offset, or with a plans store that cannot be written (which runs
+//! nothing), nothing is reminded. While a plans change is being written,
+//! which may be a skip, the reminder waits for it.
 //!
 //! **Once.** The occurrence last reminded is kept per slot in RAM, never on
 //! flash: nothing about a reminder may touch what decides a meal. A plan
@@ -78,7 +79,14 @@ impl Reminder {
         let Some(lead) = platform.settings().and_then(|s| s.meal_reminder.minutes()) else {
             return;
         };
-        let PlansResult::Current { view, .. } = platform.plans() else {
+        // A change being written may be a skip of the meal about to be
+        // reminded: wait for it, as the schedule does. A change that is not
+        // a skip costs a write's delay, well inside the lead.
+        let PlansResult::Current {
+            view,
+            pending: false,
+        } = platform.plans()
+        else {
             return;
         };
         // A store the schedule cannot write runs nothing.

@@ -281,6 +281,7 @@ mod tests {
             generation: Generation(9),
             writable: true,
             plans: table,
+            skipped: wellfed_model::SkippedMeals::NONE,
         };
         let read = Read {
             settings: None,

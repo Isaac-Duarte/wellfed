@@ -1,14 +1,12 @@
 # RTL8721DM pins
 
-Every GPIO bonded out on the RTL8721DM's QFN68 package, one row each, with one column per device. It is a reference for porting Wellfed to a board.
-
-The same pin often does different jobs on different boards. `PA25` is the buzzer on the PLAF103 and an RFID UART line on the AF301, so a role in one column says nothing about another. Each role carries its [evidence level](../../evidence.md).
+Every GPIO bonded out on the RTL8721DM's QFN68 package, one row each, with a column per device: a reference for porting Wellfed to a board. The same pin often does different jobs on different boards (`PA25` is the PLAF103's buzzer and an RFID UART line on the AF301), so one column says nothing about another. Each role carries its [evidence level](../../evidence.md).
 
 ## Sources
 
-- **Bonded pins (External).** The 34 GPIOs come from [earlynerd's AF301 pin map](https://github.com/earlynerd/Petlibro-One-Custom-Firmware/blob/main/Docs/FEEDER_PINMAP.md), which checked them against the datasheet's package figure and a live chip. Every pin the PLAF103 uses is in that list.
+- **Bonded pins (External).** The 34 GPIOs come from [earlynerd's AF301 pin map](https://github.com/earlynerd/Petlibro-One-Custom-Firmware/blob/main/Docs/FEEDER_PINMAP.md), checked against the datasheet's package figure and a live chip. Every pin the PLAF103 uses is in it.
 - **Pins to avoid (External).** The same project reports that `PB13`, `PB14`, `PB16` and `PB17` fault in the SDK's `gpio_init` and are readable only through the ROM, and that re-muxing the internal flash pads hangs execute-in-place.
-- **Peripheral functions (Recovered).** The UART, ADC and PWM columns are the SDK HAL pin tables at the pinned revision (`component/common/mbed/targets/hal/rtl8721d/`: `serial_api.c`, `analogin_api.c`, `pwmout_api.c`). The pinmux supports more functions (I²C, SPI, I²S, keyscan, captouch) than these tables list. Check `rtl8721d_pinmux.h` and the datasheet before you rely on a pin's absence here.
+- **Peripheral functions (Recovered).** The UART, ADC and PWM columns are the SDK HAL pin tables at the pinned revision (`component/common/mbed/targets/hal/rtl8721d/`: `serial_api.c`, `analogin_api.c`, `pwmout_api.c`). The pinmux supports more (I²C, SPI, I²S, keyscan, captouch); check `rtl8721d_pinmux.h` and the datasheet before relying on a pin's absence here.
 - **SDK number** is `(port << 5) | pin` ([chip](README.md#pins)). `PA7`/`PA8` are the LOGUART.
 
 ## Table
@@ -50,8 +48,8 @@ The same pin often does different jobs on different boards. `PA25` is the buzzer
 | PB29 | 61 | — | — | — | — |
 | PB31 | 63 | — | — | — | — |
 
-A dash in a device column means that device's docs record no role. **It does not mean the pin is unused.** The PLAF103's details, open questions and stock instruction anchors are on its [board page](../../devices/plaf103/board.md).
+A dash in a device column means that device's docs record no role, **not that the pin is unused.** The PLAF103's details, open questions and stock instruction anchors are on its [board page](../../devices/plaf103/board.md).
 
 ## Evidence
 
-- **Recovered, 2026-11-03:** PLWF106 stock 0.0.17 initialization and output/input call sites establish the fountain column. Bank 1 agrees on pump, button and LED startup assignments. These are software roles, not electrical continuity or physical-color measurements; see the [fountain board reference](../../devices/plwf106/board.md).
+- **Recovered, 2026-11-03:** PLWF106 stock 0.0.17 initialization and output and input call sites give the fountain column, and bank 1 agrees on the pump, button and LED startup assignments. These are software roles, not continuity or physical-color measurements ([fountain board](../../devices/plwf106/board.md)).

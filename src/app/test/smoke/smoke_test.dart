@@ -13,6 +13,8 @@ import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/join.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/router.dart';
+import 'package:wellfed/src/rust/api/router.dart' as settled_feed show feedDueSeconds, settledFeed;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/src/rust/frb_generated.dart';
@@ -88,11 +90,22 @@ class _Feeder {
   }
 }
 
-/// The real session; the rest of what a feeder's screens reach is not in play.
+/// The real session and the real path router, with no server, so every
+/// request and feed goes through the router as the app sends it; the rest of
+/// what a feeder's screens reach is not in play.
 class _Ports implements FeederPorts {
-  _Ports(this._key);
+  _Ports(this._key, this.router);
 
   final ClientKey _key;
+
+  @override
+  final PathRouter router;
+
+  @override
+  FeedResult? settledFeed(Settlement settlement) => settled_feed.settledFeed(settlement: settlement);
+
+  @override
+  int feedDueSeconds(int portions) => settled_feed.feedDueSeconds(portions: portions);
 
   @override
   FeederSession open(String identity, String address, {required bool syncClock}) => FeederSession(
@@ -104,6 +117,16 @@ class _Ports implements FeederPorts {
 
   @override
   Future<void> answered(String identity, String build) async {}
+
+  // No server here: nothing is adopted.
+  @override
+  Future<Adoption> adopt(KnownFeeder feeder) => throw UnimplementedError();
+
+  @override
+  Future<Adoption> checkAdoption(String identity) => throw UnimplementedError();
+
+  @override
+  Future<Adoption> claimPhone(String identity) => throw UnimplementedError();
 
   @override
   Future<String?> locate(String identity, Duration wait) async => null;
@@ -190,7 +213,12 @@ void main() {
     sim = await _Feeder.start(target, owner);
     addTearDown(sim.stop);
     final known = KnownFeeder(identity: sim.identity, name: 'Smoke', address: sim.address);
-    feeder = FeederController(FakeBook()..feeders = [known], _Ports(owner), known);
+    final Directory pins = await Directory.systemTemp.createTemp('wellfed-smoke-pins');
+    addTearDown(() async {
+      await pins.delete(recursive: true);
+    });
+    final router = PathRouter(pinsPath: '${pins.path}/pending.json');
+    feeder = FeederController(FakeBook()..feeders = [known], _Ports(owner, router), known);
     addTearDown(feeder.dispose);
     await _until(feeder, (state) => state.cardIsCurrent);
   });
@@ -221,6 +249,41 @@ void main() {
     final FeederReply after = await feeder.ask(const FeederRequest.getPlans());
     if (after is! FeederReply_Plans) fail('no plans: $after');
     expect(after.plans.plans.nonNulls.map((plan) => plan.minute), contains(480));
+  });
+
+  test('a meal skipped here shows as skipped, and its undo brings it back', skip: absent, () async {
+    // A few minutes ahead, so the meal is still to come all through the test.
+    final DateTime now = DateTime.now();
+    final int minute = now.hour * 60 + now.minute + 3;
+    if (minute >= 24 * 60) return markTestSkipped('no minute is left today for a meal to skip');
+    final FeederReply before = await feeder.ask(const FeederRequest.getPlans());
+    if (before is! FeederReply_Plans) fail('no plans: $before');
+    final plan = PlanView(minute: minute, portions: 1, days: Weekday.values, enabled: true, call: 0);
+    final FeederReply added = await feeder.ask(
+      FeederRequest.editPlans(
+        plans: before.plans,
+        edit: PlanEdit.add(plan: plan),
+      ),
+    );
+    expect(added, isA<FeederReply_Done>());
+
+    MealView? meal(FeederState state) => state.card?.meals.where((meal) => meal.minute == minute).firstOrNull;
+    await _until(feeder, (state) => meal(state)?.action is MealAction_Skip);
+    final MealView? offered = meal(feeder.state);
+    if (offered == null) fail('the meal left the card');
+    final MealAction? skip = offered.action;
+    if (skip is! MealAction_Skip) fail('no skip offered: $skip');
+    final FeederReply skipped = await feeder.ask(FeederRequest.skipMeal(slot: offered.slot, dueMs: skip.dueMs));
+    expect(skipped, isA<FeederReply_Done>());
+
+    // The skip's event has the session read the plans again.
+    await _until(feeder, (state) => meal(state)?.standing is MealStanding_Skipped);
+    final MealAction? undo = meal(feeder.state)?.action;
+    if (undo is! MealAction_Undo) fail('no undo offered: $undo');
+    expect(undo.dueMs, skip.dueMs, reason: 'the same meal');
+    final FeederReply undone = await feeder.ask(FeederRequest.unskipMeal(slot: offered.slot, dueMs: undo.dueMs));
+    expect(undone, isA<FeederReply_Done>());
+    await _until(feeder, (state) => meal(state)?.action is MealAction_Skip);
   });
 
   test('a feed goes out once and comes back as its end', skip: absent, () async {

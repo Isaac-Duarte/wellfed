@@ -2,13 +2,26 @@
 //! own file (`pending.json` next to `wellfed.json`), so the pin outlives the
 //! app: a write that may have run is resolved on the path it went on after a
 //! restart too. It holds no secrets: a write a server route carries keeps
-//! its body (a feed, a cancel, settings, the lock, the desiccant, the plans,
-//! the calibration), a meal call write and anything else (a Wi-Fi change
+//! its body (a feed, a cancel, settings, the lock, the desiccant, a meal's
+//! skip, the plans, the calibration), a meal call write and anything else (a Wi-Fi change
 //! among them) only its kind. Nothing is ever sent again from a pin.
 //!
-//! One router owns the file: [`PinStore::open`] refuses a second open in
-//! this process and, through an exclusive lock on `pending.json.lock`, in
-//! any other, so two routers can never each think a feed is not pending.
+//! One router owns the file at a time, so two routers can never each think
+//! a feed is not pending. Another process is refused by an exclusive lock on
+//! `pending.json.lock`. In this process the newest open takes the file over
+//! and fences the store it took it from, which then writes nothing again,
+//! so it sends no write: a Dart isolate that restarted in a live process
+//! (an activity recreated, a hot restart) leaves its router behind, never
+//! closed, and the app must not be left sending nothing until the process
+//! dies. What the fenced router had pinned is on disk, and the new one
+//! reads it back as uncertain. What the fenced router learns after the
+//! fence (an answer it heard, a settlement) is lost with it, and its pins
+//! stay uncertain in the new one until their own path settles them. Only the
+//! app's UI isolate opens a router: one opened in a background isolate
+//! would fence the UI's.
+//!
+//! The file also keeps the adoptions whose answer was lost, so the grace
+//! before a second owner invite outlives a restart.
 //! Written atomically, so a crash keeps the old or the new file. Every write
 //! is written down before it is sent, so a phone that stops mid-send finds
 //! it pinned at its next start. A file that does not load fails the router's
@@ -16,8 +29,10 @@
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use wellfed_formats::private;
@@ -96,6 +111,15 @@ pub(crate) enum PinnedWrite {
         locked: bool,
     },
     Desiccant,
+    /// A skip of one of today's meals, named by its instant.
+    Skip {
+        slot: u8,
+        due: Timestamp,
+    },
+    Unskip {
+        slot: u8,
+        due: Timestamp,
+    },
     Plans {
         base: u32,
         plans: [Option<Plan>; PLANS],
@@ -124,6 +148,7 @@ impl PinnedWrite {
             Self::Settings { .. } => WriteKind::Settings,
             Self::Lock { .. } => WriteKind::Lock,
             Self::Desiccant => WriteKind::Desiccant,
+            Self::Skip { .. } | Self::Unskip { .. } => WriteKind::Skip,
             Self::Plans { .. } => WriteKind::Plans,
             Self::Calibration { .. } => WriteKind::Calibration,
             Self::CallUpload | Self::CallDelete | Self::CallPlay => WriteKind::Call,
@@ -160,16 +185,35 @@ pub(crate) struct RunningFeed {
     pub(crate) until_ms: i64,
 }
 
+/// An adoption of `feeder` whose answer was lost at `at_ms`: until the
+/// server lists it, or the router's grace passes, no second owner invite is
+/// made for it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct LostAdoption {
+    pub(crate) feeder: String,
+    pub(crate) at_ms: i64,
+}
+
 /// The file's shape.
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PinFile {
     pins: Vec<PinRecord>,
     running: Vec<RunningFeed>,
+    adoptions: Vec<LostAdoption>,
+}
+
+/// A pins file open in this process: its lock, and the fence of the store
+/// that holds it now.
+struct Held {
+    path: PathBuf,
+    lock: Arc<File>,
+    fence: Arc<AtomicBool>,
 }
 
 /// The pins files open in this process, by their absolute path.
-static OPEN: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+static OPEN: Mutex<Vec<Held>> = Mutex::new(Vec::new());
 
 /// The one owner of a pins file.
 #[derive(Debug)]
@@ -177,8 +221,12 @@ pub(crate) struct PinStore {
     path: PathBuf,
     /// The path as [`OPEN`] holds it.
     registered: PathBuf,
-    /// Held for as long as the store is open: the exclusive lock.
-    _lock: File,
+    /// The exclusive lock, held for as long as a store of this process has
+    /// the file, and handed to the next one that takes it over.
+    _lock: Arc<File>,
+    /// Set once a newer store in this process took the file over: this one
+    /// writes nothing again.
+    fence: Arc<AtomicBool>,
 }
 
 fn in_use(path: &Path) -> BridgeError {
@@ -188,10 +236,18 @@ fn in_use(path: &Path) -> BridgeError {
     )
 }
 
+fn taken_over(path: &Path) -> BridgeError {
+    BridgeError::new(
+        ErrorKind::InUse,
+        format!("a newer router took {} over", path.display()),
+    )
+}
+
 impl PinStore {
     /// Open the pins at `path` and what they hold, none when the router has
     /// never written them. A pin the last run left sending is uncertain:
-    /// that run ended before it heard.
+    /// that run ended before it heard, or the store taken over here still
+    /// waits for its answer, which it can no longer write down.
     pub(crate) fn open(path: &Path) -> Result<(Self, Book), BridgeError> {
         let parent = path
             .parent()
@@ -203,41 +259,36 @@ impl PinStore {
             .ok_or_else(|| BridgeError::new(ErrorKind::Store, "the pins path names no file"))?;
         let registered = parent.canonicalize().map_err(store_error)?.join(name);
 
-        {
+        let store = {
             let mut open = OPEN.lock().unwrap_or_else(PoisonError::into_inner);
-            if open.contains(&registered) {
-                return Err(in_use(path));
+            let fence = Arc::new(AtomicBool::new(false));
+            let lock = match open.iter_mut().find(|held| held.path == registered) {
+                Some(held) => {
+                    // Fenced under the registry's lock, so the old store
+                    // never writes once the new one has read the file.
+                    held.fence.store(true, Ordering::SeqCst);
+                    held.fence = Arc::clone(&fence);
+                    Arc::clone(&held.lock)
+                }
+                None => {
+                    let lock = Arc::new(lock_file(path)?);
+                    open.push(Held {
+                        path: registered.clone(),
+                        lock: Arc::clone(&lock),
+                        fence: Arc::clone(&fence),
+                    });
+                    lock
+                }
+            };
+            Self {
+                path: path.to_owned(),
+                registered,
+                _lock: lock,
+                fence,
             }
-            open.push(registered.clone());
-        }
-        let opened = Self::locked(path, registered.clone());
-        if opened.is_err() {
-            unregister(&registered);
-        }
-        let store = opened?;
+        };
         let book = store.load()?;
         Ok((store, book))
-    }
-
-    fn locked(path: &Path, registered: PathBuf) -> Result<Self, BridgeError> {
-        let mut lock_path = path.as_os_str().to_owned();
-        lock_path.push(".lock");
-        let lock = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(&lock_path)
-            .map_err(store_error)?;
-        match lock.try_lock() {
-            Ok(()) => {}
-            Err(TryLockError::WouldBlock) => return Err(in_use(path)),
-            Err(TryLockError::Error(error)) => return Err(store_error(error)),
-        }
-        Ok(Self {
-            path: path.to_owned(),
-            registered,
-            _lock: lock,
-        })
     }
 
     fn load(&self) -> Result<Book, BridgeError> {
@@ -256,13 +307,20 @@ impl PinStore {
         Ok(Book {
             pins,
             running: file.running,
+            adoptions: file.adoptions,
         })
     }
 
     pub(crate) fn save(&self, book: &Book) -> Result<(), BridgeError> {
+        // The registry's lock orders this against a takeover's read.
+        let _open = OPEN.lock().unwrap_or_else(PoisonError::into_inner);
+        if self.fence.load(Ordering::SeqCst) {
+            return Err(taken_over(&self.path));
+        }
         let file = PinFile {
             pins: book.pins.clone(),
             running: book.running.clone(),
+            adoptions: book.adoptions.clone(),
         };
         private::write_json(&self.path, &file)?;
         Ok(())
@@ -271,13 +329,27 @@ impl PinStore {
 
 impl Drop for PinStore {
     fn drop(&mut self) {
-        unregister(&self.registered);
+        // A store that was taken over leaves the file to the one that took it.
+        let mut open = OPEN.lock().unwrap_or_else(PoisonError::into_inner);
+        open.retain(|held| held.path != self.registered || !Arc::ptr_eq(&held.fence, &self.fence));
     }
 }
 
-fn unregister(registered: &Path) {
-    let mut open = OPEN.lock().unwrap_or_else(PoisonError::into_inner);
-    open.retain(|held| held != registered);
+/// The exclusive lock on `path`'s lock file: another process's open fails.
+fn lock_file(path: &Path) -> Result<File, BridgeError> {
+    let mut lock_path = path.as_os_str().to_owned();
+    lock_path.push(".lock");
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&lock_path)
+        .map_err(store_error)?;
+    match lock.try_lock() {
+        Ok(()) => Ok(lock),
+        Err(TryLockError::WouldBlock) => Err(in_use(path)),
+        Err(TryLockError::Error(error)) => Err(store_error(error)),
+    }
 }
 
 fn store_error(error: std::io::Error) -> BridgeError {
@@ -337,9 +409,14 @@ mod tests {
             feed: 4,
             until_ms: 9,
         };
+        let lost = LostAdoption {
+            feeder: "cd".repeat(32),
+            at_ms: 11,
+        };
         let saved = Book {
             pins: vec![feed(1), settings.clone()],
             running: vec![running.clone()],
+            adoptions: vec![lost.clone()],
         };
         store.save(&saved).unwrap();
         drop(store);
@@ -356,23 +433,53 @@ mod tests {
                     settings
                 ],
                 running: vec![running],
+                adoptions: vec![lost],
             }
         );
     }
 
     #[test]
-    fn a_pins_file_has_one_owner() {
+    fn a_newer_store_takes_the_file_over_and_the_older_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pending.json");
-        let (store, _) = PinStore::open(&path).unwrap();
+        let (old, _) = PinStore::open(&path).unwrap();
+        let mut book = Book::default();
+        book.pins.push(feed(1));
+        old.save(&book).unwrap();
 
-        let again = PinStore::open(&dir.path().join(".").join("pending.json"));
+        // A restarted isolate's router, the old one never closed.
+        let (new, loaded) = PinStore::open(&dir.path().join(".").join("pending.json")).unwrap();
+        assert_eq!(loaded.pins.len(), 1, "what the old one pinned comes back");
         assert_eq!(
-            again.map(|_| ()).map_err(|error| error.kind),
+            old.save(&Book::default()).map_err(|error| error.kind),
+            Err(ErrorKind::InUse),
+            "the old store is fenced"
+        );
+        new.save(&loaded).unwrap();
+
+        // Dropping the old one leaves the file to the new one.
+        drop(old);
+        new.save(&loaded).unwrap();
+        drop(new);
+        assert!(PinStore::open(&path).is_ok(), "free once the last closes");
+    }
+
+    #[test]
+    fn another_process_holding_the_lock_refuses_the_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pending.json");
+        // Another process's lock: a description of its own, not this
+        // process's registry.
+        let foreign = lock_file(&path).unwrap();
+
+        assert_eq!(
+            PinStore::open(&path)
+                .map(|_| ())
+                .map_err(|error| error.kind),
             Err(ErrorKind::InUse)
         );
-        drop(store);
-        assert!(PinStore::open(&path).is_ok(), "free once the first closes");
+        drop(foreign);
+        assert!(PinStore::open(&path).is_ok());
     }
 
     #[test]

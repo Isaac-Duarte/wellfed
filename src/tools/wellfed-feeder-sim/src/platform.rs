@@ -149,6 +149,8 @@ pub struct SimPlatform {
     calibration_pending: Option<Calibration>,
     plans: PlansStore<Region>,
     plans_pending: Option<PlansChange>,
+    /// The writer leaves a queued plans change queued: a slow write.
+    plans_held: bool,
     call: CallStore<Region>,
     /// An upload's start or a delete, or a chunk at its offset with its
     /// bytes, as the writer's one slot holds them.
@@ -231,6 +233,7 @@ impl SimPlatform {
             calibration_pending: None,
             plans,
             plans_pending: None,
+            plans_held: false,
             call,
             call_pending: None,
             reboot: false,
@@ -409,6 +412,12 @@ impl SimPlatform {
         self.device.answer_read();
     }
 
+    /// Hold a queued plans change in the writer's slot, as a slow flash
+    /// write would, or let the writer take it.
+    pub fn hold_plans(&mut self, held: bool) {
+        self.plans_held = held;
+    }
+
     /// The writer's turn: apply what is queued, the device's settings
     /// first, then the feeder's stores, then a client change, whose result
     /// it gives for the log.
@@ -420,7 +429,9 @@ impl SimPlatform {
         }
         // A change the writer drops (the loop's, against plans that moved
         // on) writes nothing, as on the feeder.
-        if let Some(change) = self.plans_pending.take() {
+        if !self.plans_held
+            && let Some(change) = self.plans_pending.take()
+        {
             self.plans.apply(&change);
         }
         match self.call_pending.take() {

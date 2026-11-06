@@ -13,6 +13,7 @@ use super::*;
 use crate::commands::ota::{ArgError, OtaError, Source};
 use crate::device::{Answer, DeviceError, DeviceStatus};
 use crate::tools::{Capture, CaptureFailure, Captured, InstallJob, Installing, PushError};
+use wellfed_core::ota::SECTOR;
 use wellfed_formats::bench::VERIFICATION;
 use wellfed_formats::bench::progress::{FlashTool, StepState};
 use wellfed_relay::FakeBoard;
@@ -83,6 +84,30 @@ fn plan(command: &str) -> String {
     json!({"operation_plan": operation}).to_string()
 }
 
+/// What the fake's `prepare` writes: [`plan`], with a give-way's fallback and
+/// a marker restore's target as the test set them.
+fn plan_for(calls: &Calls, args: &[String]) -> String {
+    let restore = args.iter().any(|a| a == "--restore-marker");
+    match args[0].as_str() {
+        "give-way" if calls.fallback_sha256.is_some() => {
+            let mut plan: Value = serde_json::from_str(&plan("give-way")).unwrap();
+            plan["operation_plan"]["fallback_ota_sha256"] = json!(calls.fallback_sha256);
+            plan.to_string()
+        }
+        "update" if restore => {
+            let mut plan = development(1, 4);
+            plan.restore_marker = true;
+            plan.target_ota_sha256 = calls.restore_target.clone().unwrap_or("t".into());
+            plan.source_ota_sha256 = calls
+                .restore_source
+                .clone()
+                .or_else(|| calls.restore_target.clone());
+            json!({"operation_plan": plan}).to_string()
+        }
+        command => plan(command),
+    }
+}
+
 fn loader_result() -> Observation {
     Observation {
         bytes: 120,
@@ -147,6 +172,14 @@ struct Calls {
     cancel_answer: Option<Answer>,
     /// The keys the feeder lists as update signers.
     signers: Vec<[u8; 32]>,
+    /// The bank-0 image a prepared give-way pins, when not the default.
+    fallback_sha256: Option<String>,
+    /// The image a prepared marker restore targets, when not the default.
+    restore_target: Option<String>,
+    /// The image it names as its source, when not its target.
+    restore_source: Option<String>,
+    /// Bank 1's first sector, as an `update inspect` saves it.
+    bank1_sector: Option<Vec<u8>>,
 }
 
 /// A push that ends at once, as scripted.
@@ -240,7 +273,17 @@ impl Tools for FakeTools {
         // A successful prepare writes its plan to --output.
         if code == 0 && args[1] == "prepare" {
             let at = args.iter().position(|a| a == "--output").unwrap();
-            fs::write(&args[at + 1], plan(&args[0]))?;
+            fs::write(&args[at + 1], plan_for(&calls, args))?;
+        }
+        // An inspection saves each region it read, the other bank's sector
+        // among them.
+        if code == 0
+            && args[..2] == ["update", "inspect"]
+            && let Some(sector) = &calls.bank1_sector
+        {
+            let output = PathBuf::from(flag(args, "--output"));
+            fs::create_dir_all(&output)?;
+            fs::write(output.join("other-bank-01.bin"), sector)?;
         }
         // A full read writes the image up to bank 1's marker.
         if code == 0 && args[..2] == ["read", "full"] {
@@ -431,6 +474,7 @@ fn update(name: &str) -> UpdateArgs {
         interrupted: false,
         restore_marker: false,
         attended_motion: false,
+        bank1_source: None,
     }
 }
 
@@ -1365,6 +1409,7 @@ fn ota_cancel_sends_one_cancel_and_nothing_else() {
         written: 0,
         wanted: Vec::new(),
         stopped: None,
+        bank0: wellfed_model::Bank0Check::Unchecked,
     };
     rig.tools.0.borrow_mut().cancel_answer = Some(Answer::Update(view));
     assert_eq!(rig.bench.ota(&args).unwrap(), 0);
@@ -2283,4 +2328,719 @@ fn rom_inspect_never_reuses_a_session() {
     assert!(rig.bench.rom_inspect(&rom_inspect("unit")).is_err());
     assert!(rig.tools.0.borrow().observed.is_empty());
     assert!(rig.board.log().is_empty());
+}
+
+const B0: &str = "private/verification/b0-review";
+const B1: &str = "private/verification/b1-review";
+
+/// Freeze a synthetic build as the review `name`: its OTA image's hash and
+/// its bank payload.
+fn bank_review(rig: &Rig, name: &str, seed: u8) -> (String, Vec<u8>) {
+    use wellfed_image::fixtures::{freeze_build, synthetic_payload, wrap};
+    let payload = synthetic_payload(9000, 30000, seed);
+    let image = wrap(&payload);
+    let root = &rig.bench.root;
+    freeze_build(root, &root.join(name), &image, &json!({})).unwrap();
+    (sha256(&image), payload)
+}
+
+/// A rig past a bank-0 prepare of `B0` over a bank 1 holding `B1` (checked
+/// and bound), its write about to verify (exit 3), with the finish's four
+/// captures queued: the give-way's loader, bank 0's boot (`bank0_rx`), the
+/// restore's loader and bank 1's boot (`bank1_rx`). Returns the OTA hashes
+/// of `B0` and `B1`.
+fn bank0_rig(bank0_rx: &str, bank1_rx: &str) -> (Rig, ExecuteArgs, String, String) {
+    let mut rig = rig();
+    rig.bench.status = Status::new(&rig.bench.root, rig.bench.root.join("status"));
+    rig.bench
+        .status
+        .begin(BenchCommand::FlashExecute, Some("unit"), &[])
+        .unwrap();
+    fs::create_dir_all(rig.bench.root.join(VERIFICATION)).unwrap();
+    let (bank0_ota, _) = bank_review(&rig, B0, 3);
+    let (bank1_ota, bank1) = bank_review(&rig, B1, 7);
+    rig.tools.0.borrow_mut().bank1_sector = Some(bank1[..SECTOR].to_vec());
+
+    let mut prepare = update("unit");
+    prepare.bank = 0;
+    prepare.source = None;
+    prepare.target = B0.into();
+    prepare.bank1_source = Some(B1.into());
+    assert_eq!(rig.bench.flash_prepare(&prepare).unwrap(), 0);
+
+    {
+        let mut calls = rig.tools.0.borrow_mut();
+        // The write itself: verified, unrecorded.
+        calls.flash_codes.push_back(3);
+        calls.fallback_sha256 = Some(bank0_ota.to_uppercase());
+        calls.restore_target = Some(bank1_ota.clone());
+        calls.results.extend([
+            loader_result(),
+            boot_result(),
+            loader_result(),
+            boot_result(),
+        ]);
+        calls.rx.extend([
+            Vec::new(),
+            bank0_rx.as_bytes().to_vec(),
+            Vec::new(),
+            bank1_rx.as_bytes().to_vec(),
+        ]);
+    }
+    let args = ExecuteArgs {
+        update: prepare,
+        expected_plan_sha256: "0".repeat(64),
+        boot_seconds: 10.0,
+    };
+    (rig, args, bank0_ota, bank1_ota)
+}
+
+const RECORDED: &str = "[sdk] PLOTA1 bank0 bytes=1081344 recorded=1\r\n";
+const MATCH: &str = "PLOTA1 bank0 check=match recorded_len=1081344 found_len=1081344 \
+                     recorded=abcd0123 found=abcd0123\r\n";
+
+fn next(rig: &Rig) -> String {
+    rig.bench
+        .status
+        .state()
+        .unwrap()
+        .next
+        .clone()
+        .unwrap_or_default()
+}
+
+/// The flash commands a bank-0 execute ran, the prepare's left out.
+fn executed(rig: &Rig) -> Vec<String> {
+    flash_commands(rig)[3..].to_vec()
+}
+
+/// The finish runs the reviewed steps in order, each plan checked to pin the
+/// image it must, and counts as done only on bank 1's `check=match`.
+#[test]
+fn a_bank_0_write_finishes_through_the_give_way_and_the_marker_restore() {
+    let (mut rig, args, bank0_ota, bank1_ota) = bank0_rig(RECORDED, MATCH);
+
+    assert_eq!(rig.bench.flash_execute(&args).unwrap(), 0);
+
+    assert_eq!(
+        executed(&rig),
+        [
+            "update execute",
+            "read small",
+            "give-way inspect",
+            "give-way prepare",
+            "give-way execute",
+            "read small",
+            "update inspect",
+            "update prepare",
+            "update execute",
+        ]
+    );
+    let calls = rig.tools.0.borrow();
+    let give_way = &calls.flash[7];
+    assert_eq!(flag(give_way, "--fallback"), B0);
+    let restore = calls.flash.last().unwrap();
+    assert!(restore.contains(&"--restore-marker".to_string()));
+    assert!(!restore.contains(&"--interrupted".to_string()));
+    assert_eq!(
+        (
+            flag(restore, "--bank"),
+            flag(restore, "--source"),
+            flag(restore, "--target")
+        ),
+        ("1", B1, B1)
+    );
+    // Each execute carries the hash of the plan its own prepare wrote.
+    for execute in [give_way, restore] {
+        assert_eq!(
+            flag(execute, "--expected-plan-sha256"),
+            sha256(plan_for(&calls, execute).as_bytes())
+        );
+    }
+    // The bank-0 write itself boots nothing: the give-way's boot is bank 0's.
+    assert_eq!(calls.observed.len(), 5);
+    drop(calls);
+
+    assert_eq!(
+        rig.bench
+            .written
+            .iter()
+            .map(|w| (w.bank, w.content.clone()))
+            .collect::<Vec<_>>(),
+        [
+            (Bank::Zero, Content::Image { sha256: bank0_ota }),
+            (Bank::One, Content::Invalid),
+            (Bank::One, Content::Image { sha256: bank1_ota }),
+        ]
+    );
+}
+
+#[test]
+fn a_bank_1_check_that_is_not_match_is_not_done() {
+    for (bank1, expected) in [
+        (
+            "PLOTA1 bank0 check=changed recorded_len=8 found_len=8\r\n",
+            "giveway2",
+        ),
+        ("PLOTA1 bank0 check=read\r\n", "dump unit-reread"),
+        ("PLFW1 start build=x bank=1\r\n", "capture unit-check"),
+    ] {
+        let (mut rig, args, ..) = bank0_rig(RECORDED, bank1);
+        assert_eq!(rig.bench.flash_execute(&args).unwrap(), 1, "{bank1}");
+        assert!(next(&rig).contains(expected), "{bank1}: {}", next(&rig));
+        assert_eq!(executed(&rig).len(), 9, "{bank1}: every step ran");
+    }
+}
+
+#[test]
+fn a_bank_0_that_did_not_record_itself_stops_before_the_marker_restore() {
+    for bank0 in ["", "PLOTA1 bank0 recorded=0 error=store\r\n"] {
+        let (mut rig, args, ..) = bank0_rig(bank0, MATCH);
+        assert_eq!(rig.bench.flash_execute(&args).unwrap(), 1, "{bank0}");
+        assert_eq!(
+            executed(&rig).last().map(String::as_str),
+            Some("give-way execute"),
+            "{bank0}"
+        );
+        assert!(
+            next(&rig).contains("boot unit-bank0"),
+            "{bank0}: {}",
+            next(&rig)
+        );
+        assert!(
+            next(&rig).contains("--restore-marker"),
+            "{bank0}: {}",
+            next(&rig)
+        );
+    }
+}
+
+#[test]
+fn a_plan_that_pins_another_image_is_never_executed() {
+    let (mut rig, args, ..) = bank0_rig(RECORDED, MATCH);
+    rig.tools.0.borrow_mut().fallback_sha256 = Some("cc".into());
+    assert_eq!(rig.bench.flash_execute(&args).unwrap(), 1);
+    assert!(!executed(&rig).contains(&"give-way execute".to_string()));
+    assert!(next(&rig).contains(&format!("give-way-prepare unit-giveway2 --fallback {B0}")));
+
+    // A restore whose target, or whose source, is not bank 1's review.
+    for (target, source) in [(Some("cc"), None), (None, Some("cc"))] {
+        let (mut rig, args, _, bank1_ota) = bank0_rig(RECORDED, MATCH);
+        {
+            let mut calls = rig.tools.0.borrow_mut();
+            calls.restore_target = Some(target.map_or(bank1_ota.clone(), String::from));
+            calls.restore_source = source.map(String::from);
+        }
+        assert_eq!(
+            rig.bench.flash_execute(&args).unwrap(),
+            1,
+            "{target:?} {source:?}"
+        );
+        assert_eq!(
+            executed(&rig).last().map(String::as_str),
+            Some("update prepare"),
+            "{target:?} {source:?}"
+        );
+    }
+}
+
+/// A powered rig whose finish stopped at a write: the give-way's
+/// (`stage` 0) or the restore's (1), with no boot captured after it and the
+/// probe's inspections answering `probes` (exit codes, in order).
+fn stopped_at(stage: u8, probes: &[i32]) -> Rig {
+    let (mut rig, args, ..) = bank0_rig(RECORDED, MATCH);
+    {
+        let mut calls = rig.tools.0.borrow_mut();
+        calls.results.clear();
+        calls.rx.clear();
+        if stage == 0 {
+            // read small, inspect, prepare, then the write stops.
+            calls.flash_codes.extend([0, 0, 0, 1]);
+            calls.results.extend([loader_result(), loader_result()]);
+        } else {
+            // The give-way and its boot, the restore's prepare, then its
+            // write stops.
+            calls.flash_codes.extend([0, 0, 0, 0, 0, 0, 0, 1]);
+            calls.results.extend([
+                loader_result(),
+                boot_result(),
+                loader_result(),
+                loader_result(),
+            ]);
+            calls.rx.extend([Vec::new(), RECORDED.as_bytes().to_vec()]);
+        }
+        // The probe's read small, then its inspections.
+        calls.flash_codes.push_back(0);
+        calls.flash_codes.extend(probes.iter().copied());
+    }
+    assert_eq!(rig.bench.flash_execute(&args).unwrap(), 1);
+    rig
+}
+
+/// The probe's inspections, as run: each command and whether it named
+/// `--restore-marker` and `--interrupted`.
+fn probes(rig: &Rig) -> Vec<(String, bool, bool)> {
+    let calls = rig.tools.0.borrow();
+    calls
+        .flash
+        .iter()
+        .filter(|a| a[1] == "inspect" && flag_or(a, "--output").contains("-probe-"))
+        .map(|a| {
+            (
+                a[..2].join(" "),
+                a.contains(&"--restore-marker".to_string()),
+                a.contains(&"--interrupted".to_string()),
+            )
+        })
+        .collect()
+}
+
+fn flag_or(args: &[String], name: &str) -> String {
+    args.iter()
+        .position(|a| a == name)
+        .map(|at| args[at + 1].clone())
+        .unwrap_or_default()
+}
+
+/// After a give-way that stopped, read-only inspections tell an intact
+/// marker (a fresh give-way) from a cleared byte 0 (boot bank 0, then
+/// restore), and only that way on is printed; when neither tells, both are,
+/// each with its condition.
+#[test]
+fn a_stopped_give_way_prints_the_way_on_bank_1_is_in() {
+    let intact = stopped_at(0, &[0]);
+    assert_eq!(probes(&intact), [("give-way inspect".into(), false, false)]);
+    let steps = next(&intact);
+    assert!(
+        steps.starts_with(&format!(
+            "wellfed-bench give-way-prepare unit-giveway2 --fallback {B0}"
+        )),
+        "{steps}"
+    );
+    assert!(!steps.contains("boot unit-bank0"), "{steps}");
+
+    let given = stopped_at(0, &[2, 0]);
+    assert_eq!(
+        probes(&given),
+        [
+            ("give-way inspect".into(), false, false),
+            ("update inspect".into(), true, false)
+        ]
+    );
+    let steps = next(&given);
+    assert!(
+        steps.starts_with("wellfed-bench boot unit-bank0"),
+        "{steps}"
+    );
+    assert!(!steps.contains("give-way-prepare"), "{steps}");
+    assert!(steps.contains("--restore-marker"), "{steps}");
+
+    // An inspection that stopped (exit 1) tells nothing: both ways on, each
+    // with its condition.
+    let unknown = stopped_at(0, &[1]);
+    let steps = next(&unknown);
+    assert!(
+        steps.contains("if give-way-prepare accepts bank 1"),
+        "{steps}"
+    );
+    assert!(steps.contains("if it refuses NothingToGiveWay"), "{steps}");
+    // Nothing more was written after the stop.
+    assert_eq!(
+        flash_commands(&unknown)
+            .iter()
+            .filter(|c| c.ends_with("execute"))
+            .count(),
+        2
+    );
+
+    // Both refused (exit 2), as for a frame that cleared only some of byte
+    // 0's bits: no flash-client way on, and none printed.
+    assert_unrecognized(&stopped_at(0, &[2, 2]));
+}
+
+/// The stop where every inspection refused bank 1: a full read to look,
+/// and none of the writes or conditions the inspections ruled out.
+fn assert_unrecognized(rig: &Rig) {
+    let steps = next(rig);
+    assert!(
+        steps.starts_with("wellfed-bench dump unit-investigate"),
+        "{steps}"
+    );
+    for ruled_out in ["if ", "give-way-prepare", "flash-prepare", "boot unit-bank"] {
+        assert!(!steps.contains(ruled_out), "{ruled_out}: {steps}");
+    }
+}
+
+/// After a marker restore that stopped, the inspections tell the given-way
+/// state (a fresh `--restore-marker`), an erased or staged marker sector
+/// (plain `--interrupted`) and a marker already back (boot bank 1) apart.
+#[test]
+fn a_stopped_marker_restore_prints_the_way_on_bank_1_is_in() {
+    let fresh = stopped_at(1, &[0]);
+    let steps = next(&fresh);
+    assert!(
+        steps.contains("flash-prepare unit-restore2 --bank 1"),
+        "{steps}"
+    );
+    assert!(steps.contains("--restore-marker"), "{steps}");
+    assert!(!steps.contains("--interrupted"), "{steps}");
+
+    let staged = stopped_at(1, &[2, 0]);
+    assert_eq!(
+        probes(&staged),
+        [
+            ("update inspect".into(), true, false),
+            ("update inspect".into(), false, true)
+        ]
+    );
+    let steps = next(&staged);
+    assert!(steps.contains("--interrupted"), "{steps}");
+    assert!(!steps.contains("--restore-marker"), "{steps}");
+
+    let restored = stopped_at(1, &[2, 2, 0]);
+    assert_eq!(
+        probes(&restored)[2],
+        ("update inspect".into(), false, false)
+    );
+    assert!(next(&restored).starts_with("wellfed-bench boot unit-bank1"));
+
+    assert_unrecognized(&stopped_at(1, &[2, 2, 2]));
+
+    // The second inspection stopped: nothing is known, so every way on is
+    // printed with its condition.
+    let unknown = stopped_at(1, &[2, 1]);
+    assert_eq!(probes(&unknown).len(), 2);
+    let steps = next(&unknown);
+    for condition in [
+        "if flash-prepare --restore-marker accepts",
+        "if flash-prepare --interrupted accepts",
+        "if both refuse",
+    ] {
+        assert!(steps.contains(condition), "{condition}: {steps}");
+    }
+    assert!(!steps.contains("--restore-marker --interrupted"), "{steps}");
+}
+
+/// The two marker restores the job prints carry exactly the flag sets the
+/// flash client's own image checks accept for those states (its test
+/// `a_stopped_marker_restore_resumes_by_one_mode_never_both`, which this
+/// crate cannot link): `--restore-marker` alone from the given-way bytes,
+/// `--interrupted` alone from an erased or staged marker sector.
+#[test]
+fn each_printed_marker_restore_names_exactly_one_mode() {
+    use super::bank0::{At, Next, Resume, restore_args};
+
+    for (resume, restore_marker, interrupted) in [
+        (Resume::Fresh, true, false),
+        (Resume::Interrupted, false, true),
+    ] {
+        let args = restore_args("x".into(), Path::new(B1), resume, false);
+        assert_eq!(
+            (args.restore_marker, args.interrupted),
+            (restore_marker, interrupted)
+        );
+        assert_eq!(
+            (args.bank, args.source.as_deref(), args.target.as_path()),
+            (1, Some(Path::new(B1)), Path::new(B1))
+        );
+    }
+
+    let next = Next {
+        name: "unit",
+        target: Path::new(B0),
+        bank1: Path::new(B1),
+        attended_motion: false,
+    };
+    for (at, resume, restore_marker, interrupted) in [
+        (At::Recorded, Resume::Fresh, true, false),
+        (At::RestoreStaged, Resume::Interrupted, false, true),
+    ] {
+        let (_, steps) = next.at(at);
+        assert_eq!(steps, next.restore(resume));
+        for line in &steps[..2] {
+            assert_eq!(line.contains("--restore-marker"), restore_marker, "{line}");
+            assert_eq!(line.contains("--interrupted"), interrupted, "{line}");
+        }
+    }
+    // Where neither inspection told, both lines are printed, each alone.
+    let (_, steps) = next.at(At::RestoreUnknown);
+    assert!(
+        steps
+            .iter()
+            .all(|line| !(line.contains("--restore-marker") && line.contains("--interrupted")))
+    );
+}
+
+#[test]
+fn a_stopped_bank_0_step_never_goes_on() {
+    // The give-way's write stops: no boot follows it.
+    let rig = stopped_at(0, &[0]);
+    let observed = rig.tools.0.borrow().observed.clone();
+    assert!(
+        observed
+            .iter()
+            .all(|path| !path.ends_with("unit-giveway-boot")),
+        "{observed:?}"
+    );
+}
+
+/// A bank-0 write that exits 0 came from an older `wellfed-flash`: the job
+/// says so, records the write, and goes no further.
+#[test]
+fn an_exit_0_from_a_bank_0_write_is_version_skew() {
+    let (mut rig, args, bank0_ota, _) = bank0_rig(RECORDED, MATCH);
+    rig.tools.0.borrow_mut().flash_codes = [0].into();
+    assert_eq!(rig.bench.flash_execute(&args).unwrap(), 1);
+    assert_eq!(executed(&rig), ["update execute"]);
+    assert!(next(&rig).starts_with("cargo build --release -p wellfed-flash"));
+    assert!(next(&rig).contains("give-way-prepare unit-giveway2"));
+    assert_eq!(
+        rig.bench.written.last().map(|w| w.content.clone()),
+        Some(Content::Image { sha256: bank0_ota })
+    );
+}
+
+/// An error after the write still says where the feeder stands, by what
+/// the steps so far wrote, and the error is kept.
+#[test]
+fn an_error_after_the_write_still_says_where_the_feeder_stands() {
+    // Bank 0's review no longer verifies: nothing more was written.
+    let (mut rig, args, ..) = bank0_rig(RECORDED, MATCH);
+    fs::write(rig.bench.root.join(B0).join("image.bin"), b"changed").unwrap();
+    let error = rig.bench.flash_execute(&args).unwrap_err();
+    assert_matches!(error, Error::Command(CommandsError::Review { .. }));
+    assert!(next(&rig).starts_with("wellfed-bench give-way-prepare unit-giveway2"));
+
+    // The give-way landed and bank 0's boot reached the loader instead: the
+    // job stands at a given-way bank 1.
+    let (mut rig, args, ..) = bank0_rig(RECORDED, MATCH);
+    {
+        let mut calls = rig.tools.0.borrow_mut();
+        calls.results.clear();
+        calls.results.extend([loader_result(), loader_result()]);
+    }
+    let error = rig.bench.flash_execute(&args).unwrap_err();
+    assert_matches!(error, Error::Command(CommandsError::ReachedLoader));
+    assert!(
+        next(&rig).starts_with("wellfed-bench boot unit-bank0"),
+        "{}",
+        next(&rig)
+    );
+}
+
+#[test]
+fn bank_0_needs_bank_1_s_review_before_anything_moves() {
+    let mut rig = rig();
+    let mut args = update("unit");
+    args.bank = 0;
+    let error = rig.bench.flash_prepare(&args).unwrap_err();
+    assert_matches!(error, Error::Command(CommandsError::Bank1SourceRequired));
+
+    let mut args = update("unit");
+    args.bank1_source = Some("b1".into());
+    let error = rig.bench.flash_prepare(&args).unwrap_err();
+    assert_matches!(error, Error::Command(CommandsError::Bank1SourceUnused));
+    assert!(rig.board.log().is_empty());
+    assert!(rig.tools.0.borrow().flash.is_empty());
+
+    let mut args = update("unit");
+    args.bank = 0;
+    args.bank1_source = Some("b1".into());
+    assert!(execute_line(&args, "ab").contains("--bank 0 --source s --target t --bank1-source b1"));
+}
+
+/// A bank-1 review that is not what bank 1 holds is refused at prepare,
+/// before anything is written; a given-way bank 1 (byte 0 cleared) is its
+/// review still.
+#[test]
+fn the_bank_1_review_must_be_what_bank_1_holds() {
+    for (seed, byte0, ok) in [(7, None, true), (7, Some(0), true), (8, None, false)] {
+        let mut rig = rig();
+        fs::create_dir_all(rig.bench.root.join(VERIFICATION)).unwrap();
+        bank_review(&rig, B0, 3);
+        bank_review(&rig, B1, 7);
+        let (_, held) = bank_review(&rig, "private/verification/held", seed);
+        let mut sector = held[..SECTOR].to_vec();
+        if let Some(byte) = byte0 {
+            sector[0] = byte;
+        }
+        rig.tools.0.borrow_mut().bank1_sector = Some(sector);
+
+        let mut args = update("unit");
+        args.bank = 0;
+        args.source = None;
+        args.target = B0.into();
+        args.bank1_source = Some(B1.into());
+        let binding = rig
+            .bench
+            .root
+            .join(VERIFICATION)
+            .join("unit-bank1-source.json");
+        if ok {
+            assert_eq!(rig.bench.flash_prepare(&args).unwrap(), 0);
+            assert!(binding.is_file());
+        } else {
+            let error = rig.bench.flash_prepare(&args).unwrap_err();
+            assert_matches!(
+                error,
+                Error::Command(CommandsError::Bank1SourceDiffers { .. })
+            );
+            assert!(!binding.exists());
+            // Checked before the plan: none was prepared.
+            assert!(!flash_commands(&rig).contains(&"update prepare".to_string()));
+            assert!(!Paths::new(&rig.bench.root, "unit").plan.exists());
+        }
+        assert!(!flash_commands(&rig).iter().any(|c| c.ends_with("execute")));
+    }
+}
+
+/// The execute must name the bank-1 review its prepare checked: another
+/// review, or none bound, is refused before the write.
+#[test]
+fn an_execute_needs_the_bank_1_review_its_prepare_bound() {
+    let (mut rig, mut args, ..) = bank0_rig(RECORDED, MATCH);
+    bank_review(&rig, "private/verification/other", 7);
+    args.update.bank1_source = Some("private/verification/other".into());
+    let error = rig.bench.flash_execute(&args).unwrap_err();
+    assert_matches!(
+        error,
+        Error::Command(CommandsError::Bank1SourceUnbound { .. })
+    );
+    assert!(executed(&rig).is_empty());
+
+    let (mut rig, args, ..) = bank0_rig(RECORDED, MATCH);
+    fs::remove_file(
+        rig.bench
+            .root
+            .join(VERIFICATION)
+            .join("unit-bank1-source.json"),
+    )
+    .unwrap();
+    let error = rig.bench.flash_execute(&args).unwrap_err();
+    assert_matches!(
+        error,
+        Error::Command(CommandsError::Bank1SourceUnbound { .. })
+    );
+    assert!(executed(&rig).is_empty());
+}
+
+/// When the bench ledger names the image bank 1 holds, the bank-1 review
+/// must be it, as the feeder last reported it when the two disagree; a
+/// ledger with no image there leaves the first sector the only check.
+#[test]
+fn the_bank_1_review_must_be_what_the_ledger_has_in_bank_1() {
+    use wellfed_formats::bench::banks::{BANKS, Check, Entry, Ledger, Witness};
+
+    let image = |sha256: &str| Content::Image {
+        sha256: sha256.into(),
+    };
+    let bank1_ota = {
+        let rig = rig();
+        bank_review(&rig, B1, 7).0
+    };
+    let cases = [
+        (image(&bank1_ota.to_uppercase()), Check::Unchecked, true),
+        (
+            image(&bank1_ota),
+            Check::Confirmed {
+                by: Witness::Banner,
+                at: 1.0,
+            },
+            true,
+        ),
+        (image("cc"), Check::Unchecked, false),
+        (
+            image(&bank1_ota),
+            Check::Disputed {
+                by: Witness::Banner,
+                at: 1.0,
+                seen: Content::Stock,
+            },
+            false,
+        ),
+        (Content::Stock, Check::Unchecked, false),
+        (Content::Invalid, Check::Unchecked, true),
+        (Content::Unknown, Check::Unchecked, true),
+    ];
+    for (content, check, ok) in cases {
+        let mut rig = rig();
+        fs::create_dir_all(rig.bench.root.join(VERIFICATION)).unwrap();
+        bank_review(&rig, B0, 3);
+        let (_, bank1) = bank_review(&rig, B1, 7);
+        rig.tools.0.borrow_mut().bank1_sector = Some(bank1[..SECTOR].to_vec());
+        let mut ledger = Ledger::default();
+        ledger.banks.insert(
+            Bank::One,
+            Entry {
+                content: content.clone(),
+                source: wellfed_formats::bench::banks::Source::FlashExecute,
+                session: None,
+                at: 0.0,
+                check,
+            },
+        );
+        let path = rig.bench.root.join(BANKS);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, serde_json::to_vec(&ledger).unwrap()).unwrap();
+
+        let mut args = update("unit");
+        args.bank = 0;
+        args.source = None;
+        args.target = B0.into();
+        args.bank1_source = Some(B1.into());
+        if ok {
+            assert_eq!(rig.bench.flash_prepare(&args).unwrap(), 0, "{content:?}");
+        } else {
+            let error = rig.bench.flash_prepare(&args).unwrap_err();
+            assert_matches!(
+                error,
+                Error::Command(CommandsError::Bank1LedgerDiffers { .. }),
+                "{content:?}"
+            );
+            assert!(
+                !flash_commands(&rig).contains(&"update prepare".to_string()),
+                "{content:?}"
+            );
+        }
+    }
+}
+
+/// What a bank 0 bank 1 cannot hand over to needs, by why: a write from
+/// its pinned bytes only when its marker is not valid (the flash client
+/// refuses `--original-read` otherwise), a new build over it as the source
+/// when its headers give no image, and another look when bank 1 could not
+/// read it, since writing it again changes no byte. The flash client's own
+/// checks on each written command are its test
+/// `each_printed_bank_0_rewrite_passes_for_its_state`.
+#[test]
+fn each_unusable_bank_0_prints_the_write_that_applies() {
+    use super::bank0::{Next, Unusable};
+
+    let next = Next {
+        name: "unit",
+        target: Path::new(B0),
+        bank1: Path::new(B1),
+        attended_motion: false,
+    };
+    let marker = next.rewrite(Unusable::Marker).join("\n");
+    assert!(marker.contains("dump unit-reread"), "{marker}");
+    assert!(
+        marker.contains(&format!(
+            "flash-prepare unit-again --bank 0 --original-read <that full read> --target {B0}"
+        )),
+        "{marker}"
+    );
+
+    let extent = next.rewrite(Unusable::Extent).join("\n");
+    assert!(
+        extent.contains(&format!(
+            "flash-prepare unit-again --bank 0 --source {B0} --target <that build's review>"
+        )),
+        "{extent}"
+    );
+    assert!(!extent.contains("--original-read"), "{extent}");
+
+    let read = next.rewrite(Unusable::Read).join("\n");
+    assert!(read.starts_with("wellfed-bench boot unit-bank1"), "{read}");
+    assert!(!read.contains("flash-prepare"), "{read}");
 }

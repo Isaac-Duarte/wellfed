@@ -16,7 +16,7 @@ use uuid::Uuid;
 use wellfed_api::{CommandOutcome, CommandState};
 
 use crate::api::router::{RoutePath, Settlement};
-use crate::route::pins::{PinRecord, PinState, PinnedWrite, RunningFeed};
+use crate::route::pins::{LostAdoption, PinRecord, PinState, PinnedWrite, RunningFeed};
 
 /// How long a server that failed to connect is passed over before a new
 /// request tries it again. The stream reopening or any call answering marks
@@ -26,6 +26,11 @@ pub(crate) const RECHECK_MS: i64 = 30_000;
 /// How long a pin the owner put away is kept, from the acknowledgement, for
 /// its path to settle it. One still pending holds forever.
 pub(crate) const KEEP_MS: i64 = 7 * 24 * 3_600_000;
+
+/// How long a lost adoption waits before the server's list may permit
+/// another invite. A missing command journal entry never uses this grace:
+/// it cannot prove a write was never sent.
+pub(crate) const ADOPTION_GRACE_MS: i64 = 10 * 60_000;
 
 /// What this phone may use to reach a feeder.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,6 +51,31 @@ pub(crate) enum Access {
 pub(crate) enum Keys {
     Own,
     ServerOnly,
+}
+
+/// Whether the server this phone is configured with still takes its token.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Standing {
+    #[default]
+    Taken,
+    /// It refused the token (revoked, expired, the account deleted or
+    /// disabled), or the phone holds none for it. Sticky: only a fresh
+    /// login or removing the server clears it, whatever the server's reach
+    /// does meanwhile.
+    Refused,
+}
+
+impl Keys {
+    /// The keys the account may use while the server stands as `standing`.
+    /// A server that refused this phone's token closes the phone's own keys
+    /// too: the server took this phone's standing away, so the router does
+    /// not route around it on the LAN, even once that server goes down.
+    pub(crate) const fn under(self, standing: Standing) -> Self {
+        match standing {
+            Standing::Refused => Self::ServerOnly,
+            Standing::Taken => self,
+        }
+    }
 }
 
 impl Access {
@@ -72,9 +102,8 @@ pub(crate) enum ServerReach {
         since_ms: i64,
     },
     /// It answers, but no longer for this phone's token (revoked, expired,
-    /// or the account disabled): the server path is closed, not down. An
-    /// account with keys of its own reaches its feeders directly, where
-    /// the feeder itself refuses a key the server revoked.
+    /// or the account disabled): the server path is closed, not down, and
+    /// the phone's own keys close with it, for good ([`Standing::Refused`]).
     Refused,
 }
 
@@ -171,6 +200,15 @@ pub(crate) const fn server_ended(failure: ServerFailure) -> Ended {
         | ServerFailure::Unauthorized
         | ServerFailure::Rejected => Ended::Refused,
         ServerFailure::Interrupted | ServerFailure::OutcomeUnknown => Ended::Uncertain,
+    }
+}
+
+/// What a failure leaves of the phone's standing on the server: a refused
+/// token stays refused, and nothing a call says brings it back.
+pub(crate) const fn standing_after(standing: Standing, failure: ServerFailure) -> Standing {
+    match failure {
+        ServerFailure::Unauthorized => Standing::Refused,
+        _ => standing,
     }
 }
 
@@ -324,6 +362,9 @@ pub(crate) struct Book {
     /// Direct feeds this phone saw the feeder reserve, whose `Fed` it has
     /// not read yet: none is an uncertain feed's end.
     pub(crate) running: Vec<RunningFeed>,
+    /// Adoptions whose answer was lost, kept across a restart so the grace
+    /// before a second owner invite holds through one.
+    pub(crate) adoptions: Vec<LostAdoption>,
 }
 
 impl Book {

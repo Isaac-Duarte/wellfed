@@ -206,6 +206,14 @@ pub(crate) async fn status_command(args: StatusArgs) -> Result<()> {
     match answer {
         Answer::Status(status) if !args.json => {
             println!("{}", text::status(&status, &TimeZone::system()));
+            // An owner's session also reads the recovery copy's check, which
+            // decides whether an update can install; anyone else's is refused
+            // it and the line is left out.
+            if let Answer::Update(view) = connection.ask(&Op::UpdateState).await?
+                && let Some(line) = text::recovery(&view)
+            {
+                println!("{line}");
+            }
             Ok(())
         }
         answer => print_answer(&answer),

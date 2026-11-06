@@ -178,6 +178,57 @@ pub trait Port {
     fn flush(&mut self) -> io::Result<()>;
     /// Bytes already received and not yet read.
     fn in_waiting(&mut self) -> io::Result<usize>;
+    /// How this session waits for the helper to take a command.
+    fn readiness(&self) -> Readiness {
+        Readiness::Settled
+    }
+}
+
+/// How a session waits for the helper's idle-ready NAKs, which it sends
+/// every 50 ms while it waits for a command and never mid-reply.
+///
+/// A command must go right after a NAK arrives: a NAK still on the wire
+/// when the command reaches the helper is read as its reply, and the
+/// session stops (the loader `0x15` stops after host pauses, when queued
+/// NAKs were read in one burst and the command went at a random point of
+/// the helper's 50 ms cycle).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Readiness {
+    /// Three NAKs in a row, buffered ones included, then the rest drained:
+    /// 100 to 150 ms. The stock, recovery and give-way writers keep it, as
+    /// every write was first proven with.
+    Settled,
+    /// Every byte already buffered must be an idle NAK and is dropped, and
+    /// the command goes on the next NAK, just sent: half a cycle on
+    /// average, and never on a stale NAK whatever the host paused for.
+    Fresh,
+}
+
+/// A session that waits [`Readiness::Fresh`]. A development update waits
+/// before each of thousands of commands; a settled wait each time left
+/// the line idle for more than half of it.
+pub struct Prompt<P>(pub P);
+
+impl<P: Port> Port for Prompt<P> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        self.0.read(buffer)
+    }
+
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        self.0.write(data)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
+
+    fn in_waiting(&mut self) -> io::Result<usize> {
+        self.0.in_waiting()
+    }
+
+    fn readiness(&self) -> Readiness {
+        Readiness::Fresh
+    }
 }
 
 pub fn load_helper(data: Vec<u8>) -> Result<Vec<u8>> {
@@ -336,10 +387,20 @@ pub fn drain_naks(port: &mut dyn Port, before: Pending) -> Result<()> {
     Ok(())
 }
 
-/// Helper idle-ready: fresh NAKs, then nothing else buffered.
+/// Helper idle-ready, by the session's [`Readiness`]; then nothing else
+/// buffered.
 pub fn command_ready(port: &mut dyn Port) -> Result<()> {
-    wait_naks(port, 3, Duration::from_secs(5))?;
-    drain_naks(port, Pending::Command)
+    ready(port, Pending::Command)
+}
+
+fn ready(port: &mut dyn Port, before: Pending) -> Result<()> {
+    if port.readiness() == Readiness::Fresh {
+        drain_naks(port, before)?;
+        wait_naks(port, 1, Duration::from_secs(5))?;
+    } else {
+        wait_naks(port, 3, Duration::from_secs(5))?;
+    }
+    drain_naks(port, before)
 }
 
 /// One request; only already-in-flight NAKs may precede its ACK.
@@ -396,8 +457,7 @@ pub fn receive_flash(
     mut progress: Option<&mut dyn FnMut(usize, usize)>,
 ) -> Result<Transfer> {
     let request = read_request(offset, length)?;
-    wait_naks(port, 3, Duration::from_secs(5))?;
-    drain_naks(port, Pending::Read)?;
+    ready(port, Pending::Read)?;
     send(port, &request)?;
 
     let mut total = 0;
@@ -419,8 +479,14 @@ pub fn receive_flash(
                 received: total,
                 length,
             })?;
+            // The helper is idle again. A fresh session's next command
+            // waits for its own NAK, so one is enough here.
+            let naks = match port.readiness() {
+                Readiness::Settled => 3,
+                Readiness::Fresh => 1,
+            };
             send(port, &[ACK])?;
-            wait_naks(port, 3, Duration::from_secs(5))?;
+            wait_naks(port, naks, Duration::from_secs(5))?;
             return Ok(Transfer {
                 bytes: total,
                 packets: total / 1024,
@@ -876,6 +942,89 @@ mod tests {
         assert_eq!(km4_help_model(km0), None);
     }
 
+    /// A line holding `buffered`, which `in_waiting` counts, and then
+    /// `arriving`, a byte per read once the buffer is empty: what the
+    /// helper sends after the session looks.
+    struct Line {
+        buffered: std::collections::VecDeque<u8>,
+        arriving: std::collections::VecDeque<u8>,
+    }
+
+    fn line(buffered: &[u8], arriving: &[u8]) -> Line {
+        Line {
+            buffered: buffered.iter().copied().collect(),
+            arriving: arriving.iter().copied().collect(),
+        }
+    }
+
+    impl Port for Line {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let next = self
+                .buffered
+                .pop_front()
+                .or_else(|| self.arriving.pop_front());
+            match (next, buffer.first_mut()) {
+                (Some(byte), Some(slot)) => {
+                    *slot = byte;
+                    Ok(1)
+                }
+                _ => Ok(0),
+            }
+        }
+
+        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+            Ok(data.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn in_waiting(&mut self) -> io::Result<usize> {
+            Ok(self.buffered.len())
+        }
+    }
+
+    /// A settled session counts buffered NAKs, a stray byte restarting the
+    /// count, so after a pause it goes on NAKs queued long ago.
+    #[test]
+    fn a_settled_session_counts_three_naks_buffered_or_not() {
+        let mut settled = line(&[NAK, b'A', NAK, NAK, NAK], &[NAK]);
+        command_ready(&mut settled).unwrap();
+        assert!(settled.buffered.is_empty());
+        assert_eq!(settled.arriving.len(), 1, "went on buffered NAKs");
+    }
+
+    /// A fresh session drops the NAKs queued while it paused and goes on
+    /// the next one, so the command leaves just after a NAK, never at a
+    /// random point of the helper's cycle; stray output still stops it.
+    #[test]
+    fn a_fresh_session_goes_on_a_new_nak_and_refuses_stray_output() {
+        let mut fresh = Prompt(line(&[NAK, NAK, NAK, NAK], &[NAK, NAK]));
+        command_ready(&mut fresh).unwrap();
+        assert!(fresh.0.buffered.is_empty());
+        assert_eq!(fresh.0.arriving.len(), 1, "waited for one NAK, not more");
+
+        let mut stray = Prompt(line(&[NAK, b'A'], &[NAK]));
+        assert!(matches!(
+            command_ready(&mut stray),
+            Err(crate::Error::Protocol(ProtocolError::UnexpectedOutput(
+                Pending::Command
+            )))
+        ));
+    }
+
+    /// Only the outer session decides: the evidence log and a box pass the
+    /// readiness through, and every other session stays settled.
+    #[test]
+    fn the_readiness_is_the_outer_sessions() {
+        let boxed: Box<dyn Port> = Box::new(line(&[], &[]));
+        assert_eq!(boxed.readiness(), Readiness::Settled);
+        assert_eq!(Prompt(boxed).readiness(), Readiness::Fresh);
+        let inner: Box<dyn Port> = Box::new(Prompt(line(&[], &[])));
+        assert_eq!(inner.readiness(), Readiness::Fresh);
+    }
+
     /// A console that prints its reply in timed pieces.
     struct Scripted {
         start: Option<Instant>,
@@ -1289,9 +1438,11 @@ mod press_tests {
         assert!(press(&mut feeder, DISPENSE).unwrap().released);
     }
 
+    /// Each wrong answer waits out the whole press window, so the cases
+    /// run side by side, each against a feeder of its own.
     #[test]
     fn each_wrong_answer_is_its_own_refusal_and_is_never_resent() {
-        for (answer, refusal) in [
+        let cases = [
             (&b""[..], "unanswered"),
             (b"PLKEY1 virtual refused\r\n", "refused"),
             (
@@ -1306,18 +1457,33 @@ mod press_tests {
                 b"PLKEY1 virtual refused\r\nPLKEY1 virtual press=mic hold_ms=150\r\n",
                 "mismatch",
             ),
-        ] {
-            let mut feeder = Feeder::new(answer);
-            let error = press(&mut feeder, DISPENSE).unwrap_err();
-            let matched = match &error {
-                crate::Error::Protocol(ProtocolError::PressUnanswered { .. }) => "unanswered",
-                crate::Error::Protocol(ProtocolError::PressRefused) => "refused",
-                crate::Error::Protocol(ProtocolError::PressMismatch { .. }) => "mismatch",
-                crate::Error::Protocol(ProtocolError::PressNotReleased) => "not released",
-                _ => "other",
-            };
-            assert_eq!(matched, refusal, "{error}");
-            assert_eq!(feeder.sent, LINE, "sent once");
-        }
+        ];
+
+        std::thread::scope(|scope| {
+            let cases: Vec<_> = cases
+                .into_iter()
+                .map(|(answer, refusal)| {
+                    let pressed = scope.spawn(move || {
+                        let mut feeder = Feeder::new(answer);
+                        let error = press(&mut feeder, DISPENSE).unwrap_err();
+                        (error, feeder.sent)
+                    });
+                    (pressed, refusal)
+                })
+                .collect();
+
+            for (pressed, refusal) in cases {
+                let (error, sent) = pressed.join().unwrap();
+                let matched = match &error {
+                    crate::Error::Protocol(ProtocolError::PressUnanswered { .. }) => "unanswered",
+                    crate::Error::Protocol(ProtocolError::PressRefused) => "refused",
+                    crate::Error::Protocol(ProtocolError::PressMismatch { .. }) => "mismatch",
+                    crate::Error::Protocol(ProtocolError::PressNotReleased) => "not released",
+                    _ => "other",
+                };
+                assert_eq!(matched, refusal, "{error}");
+                assert_eq!(sent, LINE, "sent once");
+            }
+        });
     }
 }

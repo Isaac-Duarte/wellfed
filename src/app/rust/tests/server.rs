@@ -4,7 +4,8 @@
 //!   token reads the account, the feeders, a feeder's status and history,
 //!   and follows the live stream; logging out revokes it, ends the stream
 //!   and leaves it refused;
-//! - pets and foods round-trip as their edit forms hold them;
+//! - pets and foods round-trip as their edit forms hold them, and so do a
+//!   feeder's food and refills and a pet's feeders and weight log;
 //! - each failure a screen tells apart comes back as its own kind.
 
 use std::net::Ipv4Addr;
@@ -15,12 +16,12 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 use wellfed_api::{AdoptFeeder, ClientRole, NewUser, Role};
 use wellfed_app_bridge::api::server::{
-    CommandKind, ServerConnection, ServerEvent, ServerSession, ServerUpdate, Species,
+    CommandKind, NewRefill, ServerConnection, ServerEvent, ServerSession, ServerUpdate, Species,
 };
 use wellfed_app_bridge::api::server_error::ServerErrorKind;
 use wellfed_app_bridge::api::server_views::ServerRole;
 use wellfed_app_bridge::api::session::HistoryBody;
-use wellfed_app_bridge::api::store::{AppStore, load_store, save_store};
+use wellfed_app_bridge::api::store::{AppStore, KnownServer, ListedFeeder, load_store, save_store};
 use wellfed_server_client::{Auth, Client, Lock};
 use wellfed_server_testkit::{TestServer, ada_login, ada_setup, feeder, local};
 
@@ -386,6 +387,113 @@ fn pets_and_foods_round_trip_as_their_forms_hold_them() {
 }
 
 #[test]
+fn refills_weights_and_a_feeders_food_round_trip() {
+    local(async {
+        let sim = feeder::start().await;
+        let (server, owner) = started().await;
+        let session = ada(&server).await;
+        let kitchen = owner
+            .adopt(&AdoptFeeder {
+                invite: feeder::invite(&sim, ClientRole::Server).await,
+                name: "kitchen".into(),
+                address: Some(sim.address.to_string()),
+                phone_key: None,
+            })
+            .await
+            .unwrap()
+            .id
+            .to_string();
+
+        // A full bag needs the feeder's food, whose bag it is.
+        let refused = session
+            .add_refill(kitchen.clone(), NewRefill::FullBag)
+            .await
+            .map_err(|error| error.kind);
+        assert_eq!(refused.err(), Some(ServerErrorKind::NoCurrentFood));
+        let food = session
+            .create_food("Acme".into(), "Kibble".into(), 3500, 2000)
+            .await
+            .unwrap();
+        let period = session
+            .set_feeder_food(kitchen.clone(), food.id.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            (period.food.id.as_str(), period.to_ms),
+            (food.id.as_str(), None)
+        );
+
+        let bag = session
+            .add_refill(kitchen.clone(), NewRefill::FullBag)
+            .await
+            .unwrap();
+        assert_eq!((bag.grams, bag.full_bag), (2000, true));
+        let scoop = session
+            .add_refill(kitchen.clone(), NewRefill::Grams { grams: 300 })
+            .await
+            .unwrap();
+        let page = session
+            .refills(kitchen.clone(), None, Some(1))
+            .await
+            .unwrap();
+        assert_eq!(page.items, std::slice::from_ref(&bag), "oldest first");
+        let rest = session
+            .refills(kitchen.clone(), page.next, None)
+            .await
+            .unwrap();
+        assert_eq!(rest.items, std::slice::from_ref(&scoop));
+        session
+            .delete_refill(kitchen.clone(), scoop.id.clone())
+            .await
+            .unwrap();
+        let food_view = session.feeder_food(kitchen.clone()).await.unwrap();
+        assert_eq!(food_view.last_refill, Some(bag));
+        assert_eq!(
+            food_view.current.map(|current| current.food.id),
+            Some(food.id)
+        );
+
+        let pet = session
+            .create_pet("Tom".into(), Species::Cat, None, None)
+            .await
+            .unwrap();
+        let pet = session
+            .assign_feeder(pet.id, kitchen.clone())
+            .await
+            .unwrap();
+        assert_eq!(pet.feeders, std::slice::from_ref(&kitchen));
+        let vet = 1_760_000_000_000;
+        let earlier = session
+            .add_weight(pet.id.clone(), 4_100, Some(vet))
+            .await
+            .unwrap();
+        assert_eq!((earlier.grams, earlier.at_ms), (4_100, vet));
+        let now = session
+            .add_weight(pet.id.clone(), 4_200, None)
+            .await
+            .unwrap();
+        let log = session.weights(pet.id.clone(), None, None).await.unwrap();
+        assert_eq!(log.items, [earlier.clone(), now.clone()]);
+        session
+            .delete_weight(pet.id.clone(), earlier.id)
+            .await
+            .unwrap();
+        let log = session.weights(pet.id.clone(), None, None).await.unwrap();
+        assert_eq!(log.items, [now]);
+        let refused = session
+            .add_weight(pet.id.clone(), 0, None)
+            .await
+            .map_err(|error| error.kind);
+        assert_eq!(refused.err(), Some(ServerErrorKind::Invalid));
+        let pet = session.unassign_feeder(pet.id, kitchen).await.unwrap();
+        assert!(pet.feeders.is_empty());
+
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+#[test]
 fn each_failure_a_screen_tells_apart_has_its_own_kind() {
     local(async {
         let (server, owner) = started().await;
@@ -500,7 +608,7 @@ fn each_failure_a_screen_tells_apart_has_its_own_kind() {
 }
 
 #[test]
-fn the_app_file_keeps_the_server_link_and_no_secret() {
+fn the_app_file_keeps_the_server_link_and_its_list_and_no_secret() {
     local(async {
         let (server, _owner) = started().await;
         let session = ada(&server).await;
@@ -508,8 +616,18 @@ fn the_app_file_keeps_the_server_link_and_no_secret() {
         let path = dir.path().join("wellfed.json");
         let path = path.to_str().unwrap();
 
+        // The list a cold start with the server down still routes by.
+        let listed = ListedFeeder {
+            id: "00000000-0000-0000-0000-000000000007".into(),
+            identity: "ab".repeat(32),
+            name: "kitchen".into(),
+        };
         let store = AppStore {
-            server: Some(session.link()),
+            server: Some(KnownServer {
+                link: session.link(),
+                feeders: vec![listed],
+                account: Some(session.account().await.unwrap()),
+            }),
             ..AppStore::default()
         };
         save_store(path, &store).unwrap();

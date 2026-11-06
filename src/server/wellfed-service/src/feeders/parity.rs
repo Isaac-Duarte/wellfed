@@ -81,5 +81,7 @@ pub const fn parity(op: &Op) -> Parity {
         Op::StartCall { .. } | Op::CallChunk { .. } => Route(Put, "/feeders/{id}/call"),
         Op::DeleteCall => Route(Delete, "/feeders/{id}/call"),
         Op::PlayCall => Route(Post, "/feeders/{id}/call/play"),
+        Op::SkipMeal { .. } => Route(Post, "/feeders/{id}/meals/skip"),
+        Op::UnskipMeal { .. } => Route(Post, "/feeders/{id}/meals/unskip"),
     }
 }

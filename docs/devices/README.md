@@ -1,26 +1,26 @@
 # Supported devices
 
-Wellfed runs on one model today: the PETLIBRO Granary PLAF103, a feeder. Every model is a model of a kind, a feeder or a water fountain for now. This page lists the models we know of, and explains how a new one gets added.
+Wellfed runs on one model: the PETLIBRO Granary PLAF103, a feeder. Every model is of a kind, for now a feeder or a water fountain. This page lists the models we know of and how a new one is added.
 
-A model counts as supported only when a unit of that model has been through our bench. Sharing a chip is not enough. Boards, pins, flash layouts and stock firmware all differ between models.
+A model counts as supported only once a unit of it has been through our bench. Sharing a chip is not enough: boards, pins, flash layouts and stock firmware differ between models.
 
 | Model | Kind | Product | SoC | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
 | [PLAF103](plaf103/README.md) | Feeder | Granary 5 L | [RTL8721DM](../chips/rtl8721dm/README.md) | **Partial** | Our research device. Feeding, updates and the device API work; see [the roadmap](../roadmap.md). |
-| [PLWF106](plwf106/README.md) | Fountain | Dockstream 2 Smart Fountain | [RTL8721DM](../chips/rtl8721dm/README.md) | **Not started** | Stock firmware and board reference recovered; no Wellfed fountain image demonstrated. |
+| [PLWF106](plwf106/README.md) | Fountain | Dockstream 2 Smart Fountain | [RTL8721DM](../chips/rtl8721dm/README.md) | **Experimental** | Stock firmware and board reference recovered. A [boot-test image](plwf106/boot-test.md) builds and passes its audits, but has not run on a fountain. |
 | PLAF108 | Feeder | Feeder | ESP8266/ESP32 family (External) | Not supported | No unit inspected. A different SoC family. An ESPHome replacement exists outside this project ([references](../references.md#peer-projects)). |
 | PLAF203 | Feeder | Camera feeder | Embedded Linux with Tuya IPC (External) | Not supported | No unit inspected. Root access and filesystem notes exist outside this project ([references](../references.md#peer-projects)). |
 | AF301 (mainboard PLNF301) | Feeder | RFID feeder | RTL8721DM (External) | Not supported | Same SoC, reported by a peer project. Its pin map is a lead for our [pin table](../chips/rtl8721dm/pins.md), not a PLAF103 fact. |
 
-**Not supported** means we have done no work on that model. Anything listed for it comes from other projects.
+**Not supported** means we have done no work on that model, and anything listed for it comes from other projects.
 
 ## Adding a device
 
-A new model starts as **Not supported**. It moves up once its own unit passes the read-only steps: identification, a receive-only UART capture and matching full backups.
+A new model starts as **Not supported**, and moves up once its own unit passes the read-only steps: identification, a receive-only UART capture and matching full backups.
 
 1. Copy [`_template/`](_template/README.md) to `docs/devices/<model>/` and fill in every section, giving each finding its [evidence level](../evidence.md).
 2. Add the model's column to the [chip pin table](../chips/rtl8721dm/pins.md).
 3. Put its machine-readable layout and profile in `src/firmware/devices/<model>/`, next to [`plaf103`](../../src/firmware/devices/plaf103/). The [device layer](../firmware/device-layer.md) explains how firmware picks them up.
 4. Add a row to the table above.
 
-A model of a kind Wellfed already has shares that kind's crates and adds a board crate and a firmware. A new kind also brings its own drivers, policy, stores, device API module and simulator. [Device kinds and models](../firmware/device-kinds.md) follows a fountain through each layer.
+A model of an existing kind shares that kind's crates and adds a board crate and a firmware. A new kind also brings its own drivers, policy, stores, device API module and simulator. [Device kinds and models](../firmware/device-kinds.md) follows a fountain through each layer.

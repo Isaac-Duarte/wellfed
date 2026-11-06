@@ -116,7 +116,9 @@ class EventKind:
     Plans: Final[EventKind]
     Revoked: Final[EventKind]
     Settings: Final[EventKind]
+    Skipped: Final[EventKind]
     Supply: Final[EventKind]
+    Unskipped: Final[EventKind]
     Wifi: Final[EventKind]
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...

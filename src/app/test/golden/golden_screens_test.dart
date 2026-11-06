@@ -35,6 +35,7 @@ import 'package:wellfed/state/setup/setup.dart';
 import '../support/fake_install.dart';
 import '../support/fakes.dart';
 import '../support/harness.dart';
+import 'golden_fixtures.dart';
 import 'golden_support.dart';
 
 /// The build the app carries, newer than the fixture's.
@@ -75,7 +76,15 @@ Future<FeederController> _updating(WidgetTester tester, String build) async {
   await tester.pump();
   session.replies.add(
     const FeederReply.update(
-      update: UpdateInfo(phase: UpdatePhase.idle, bank: 1, minVersion: 6, version: 0, imageLen: 0, written: 0),
+      update: UpdateInfo(
+        phase: UpdatePhase.idle,
+        bank: 1,
+        minVersion: 6,
+        version: 0,
+        imageLen: 0,
+        written: 0,
+        bank0: Bank0Check.unchecked(),
+      ),
     ),
   );
   return feeder;
@@ -192,17 +201,6 @@ TimeInfo? _readClock(TimeInfo? time) => switch (time) {
 
 const _hallway = KnownFeeder(identity: 'bb', name: 'Hallway', address: 'lan:4748');
 
-/// The fixture's two meals: breakfast at 8 every day, and dinner at 6 paused.
-final _plans = PlansView(
-  generation: 3,
-  writable: true,
-  plans: [
-    const PlanView(minute: 8 * 60, portions: 2, days: Weekday.values, enabled: true, call: 0),
-    const PlanView(minute: 18 * 60, portions: 1, days: Weekday.values, enabled: false, call: 2),
-    ...List<PlanView?>.filled(8, null),
-  ],
-);
-
 PairingView _pairing(PairingState state) => PairingView(
   flow: PairingFlow(FakeBook(), FakePairingPorts())..show(state),
   ble: true,
@@ -226,7 +224,7 @@ void main() {
           final FeederController feeder = await goldenFeeder(tester);
           await showPhone(
             tester,
-            overBlank(MealEditor(feeder: feeder, held: _plans, slot: slot)),
+            overBlank(MealEditor(feeder: feeder, held: twoPlans, slot: slot)),
             brightness,
             size: size,
             text: text,

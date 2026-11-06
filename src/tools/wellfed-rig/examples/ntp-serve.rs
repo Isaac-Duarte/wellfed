@@ -1,5 +1,5 @@
 //! A bounded, foreground NTP responder for the bench's live NTP check
-//! (docs/firmware/clock.md#bench-plan):
+//! (docs/firmware/clock-bench-checks.md#1-live-ntp-sync):
 //!
 //! ```text
 //! cargo run -p wellfed-rig --example ntp-serve -- 10.42.103.1:123 --seconds 1800

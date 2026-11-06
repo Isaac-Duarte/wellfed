@@ -1,196 +1,192 @@
 # Power
 
-The feeder runs from its adapter, with three D cells as a backup. This page covers how the firmware reads the supply and the pack's charge, what the feeder does on its batteries, the battery floor below which it will not feed, what happens after a brownout, and why the chip does not sleep yet.
+The feeder runs from its adapter, with three D cells as a backup. This page explains how the firmware reads the supply, what it does on batteries, the floor below which it won't feed, brownouts, and sleep. It is for firmware developers; the physical checks are in [power bench checks](power-bench-checks.md).
 
-The inputs and battery mode are observed on our unit. The charge, the floor and the brownout handling are tested only in simulation. One feed on fresh cells is the only sag measured on the pack ([Evidence](#evidence)), and no tired pack has fed. The [roadmap](../roadmap.md) has the current status.
+Inputs and battery mode are observed on our unit. The charge, the floor and brownout handling are simulation only: the one sag measured on the pack is a single feed on fresh cells, and no tired pack has fed ([Evidence](#evidence)). Status is on the [roadmap](../roadmap.md).
+
+## In short
+
+The feeder never passes off an unknown reading as a value. Battery mode and the brownout hold wait for fresh readings; the floor treats a failed conversion as low.
+
+| Situation | What the feeder does |
+| --- | --- |
+| Adapter in | Feeds normally. The floor never refuses or stops a feed. |
+| On the pack | Feeds from its running clock. Wi-Fi off after 5 s, so nothing reaches it remotely. |
+| On the pack, below the floor | Refuses and stops feeds. Buttons, lock and clock keep working. |
+| Adapter plugged or pulled mid-feed | Fails that feed (`Failed`, `Power`). The next runs on whatever supply is there. |
+| Boot after a brownout | Holds feeding until the adapter returns or the pack reads 50 % for 3 minutes. |
 
 ## Inputs
 
-- **Pack.** ADC channel 5, through a divider of about 2.063 (`power::DIVIDER_PER_MILLE`). Fresh cells read 2357 mV at the pin with the adapter in (4.85 V on a meter) and 2306 mV without (4.77 V). With no pack the pin reads about 16 mV.
-- **Adapter.** PA19, HIGH while the adapter is in. The feeder rides through both transitions without a reset.
-- **Motor current.** ADC channel 4 ([jams and sensor faults](jams-and-sensor-faults.md)).
-- **Chip supply.** Internal ADC channel 10, in millivolts with stock's scaling ([bring-up probes](bring-up-probes.md#power-input-probe)).
+| Input | Where | Notes |
+| --- | --- | --- |
+| Pack | ADC 5, divider ≈2.063 (`power::DIVIDER_PER_MILLE`) | Fresh cells: 2357 mV at the pin on the adapter (4.85 V metered), 2306 mV without (4.77 V). No pack: ≈16 mV. |
+| Adapter | PA19, HIGH when in | Both transitions ride through without a reset. |
+| Motor current | ADC 4 | [Jams and sensor faults](jams-and-sensor-faults.md). |
+| Chip supply | Internal ADC 10 | mV with stock's scaling ([bring-up probes](bring-up-probes.md#power-input-probe)). |
 
-The runtime's power monitor samples every 5 s. In the `feeder` firmware the feeding owner holds the ADC and samples instead: on each of its 20 ms polls during a feed, and every 100 ms at rest. Both publish the same sample (`wellfed_hal::power`).
+The runtime's power monitor samples every 5 s. In the `feeder` firmware the feeding owner holds the ADC instead and samples every 20 ms poll in a feed, every 100 ms at rest. Both publish the same sample (`wellfed_hal::power`).
 
-**Charge.** A plausible pack reading carries a percentage on stock's curve, in the channel's scaled unit. 1650 mV at the pin (the floor, a pack of about 3.40 V) is 0 %, and each 60 mV above it is a 10 % step, up to 2250 mV (about 4.64 V) at 100 %. A reading reports the first step at or above it, so 1651 to 1710 read 10 %, and anything from 2191 up reads 100 %. Fresh cells read about 2306 at rest: 100 %. The curve is `power::PACK.curve` (`wellfed_core::supply::Curve`).
+**Charge** follows stock's curve in pin millivolts (`power::PACK.curve`, `wellfed_core::supply::Curve`): 0 % at 1650 mV (the floor, about 3.40 V pack), then 10 % per 60 mV up to 100 % at 2250 mV (about 4.64 V). A reading reports the first step at or above it, so 1651–1710 mV is 10 % and 2191 mV up is 100 %. Fresh cells (about 2306 mV) read 100 %.
 
-The monitor logs `PLBAT1` records, in every firmware that does not claim the ADC: `start created=<0|1>`, `open ok=<0|1>` once the startup probe has released the ADC, `sample pin_mv=<n> adapter=<0|1>` for the first sample and each adapter change, `error adc` if a conversion fails (the monitor then stops), or `claimed` when the firmware keeps the ADC.
+**`PLBAT1` records** come from every firmware that doesn't claim the ADC:
+
+| Record | When |
+| --- | --- |
+| `start created=<0\|1>` | The monitor starts |
+| `open ok=<0\|1>` | The startup probe frees the ADC |
+| `sample pin_mv=<n> adapter=<0\|1>` | The first sample, and each adapter change |
+| `error adc` | A conversion fails; the monitor stops |
+| `claimed` | The firmware keeps the ADC |
 
 ## The supply on the wire
 
-The device API carries the supply as the feeder judges it. An unknown is never passed off as a value.
+`Supply { adapter, battery, below_floor }`, as defined in `wellfed-proto/src/api.rs`:
 
-- **`Supply { adapter, battery, below_floor }`.** `adapter` is `None` without a fresh sample. `battery` is one of:
-  - `Absent`, no pack;
-  - `Reading { mv, percent }`, the pack's millivolts and its charge;
-  - `Implausible { mv }`, above 5.5 V, or below 2.5 V on the pack alone, where the board could not be running;
-  - `Unread`, no sample: the monitor has not run, its ADC failed, or the firmware does not sample;
-  - `Stale { age_ms }`, older than three monitor periods.
+- `adapter`: `None` without a fresh sample.
+- `battery`, one of:
+  - `Absent`: no pack.
+  - `Reading { mv, percent }`: millivolts and charge.
+  - `Implausible { mv }`: above 5.5 V, or below 2.5 V on the pack alone, where the board couldn't run.
+  - `Unread`: the monitor hasn't run, its ADC failed, or the firmware doesn't sample.
+  - `Stale { age_ms }`: older than three monitor periods.
+- `below_floor`: the owner's verdict (`wellfed_core::supply::classify` against `power::PACK`). `None` before it judges, without an owner, and with no pack.
 
-  `below_floor` is the feeding owner's verdict on the pack's floor, `None` before it has judged, in a firmware without an owner, and with no pack fitted. The judging is `wellfed_core::supply::classify`, against the board's `power::PACK`.
-- **Status.** The feeder's part of the status carries it (`FeederStatus { supply }`), and `wellfed status` prints it.
-- **`Metric::Supply`** goes to subscribers that asked for samples at each power sample (5 s), beside the `Power` metric. The status always carries the judged supply: an unread or stale one says so.
-- **`EventBody::Supply`** records the adapter coming or going and the pack crossing its floor, at most one a minute (`feeder::supply::EVENT_MS`). Changes inside the minute are recorded once it ends, as the supply then stands, so a chattering adapter or a pack hovering at its floor costs one event a minute. A boot's first reading is a baseline, not an event, and a stale sample changes nothing.
-- **Readiness** gains `Blocked::Battery` ([below](#the-floor)), refused `Busy`. It is not lasting, so it is never a `FeedingBlocked` event; the `Supply` event records it instead.
-- **Statistics.** The `Power` section's battery history, least and most take only `Reading` values, so an implausible reading never enters them.
+It appears in:
 
-Nothing is stored in a new place: the events go through the existing ring in its existing 16-byte records.
+- **Status** (`FeederStatus { supply }`, printed by `wellfed status`), always judged, saying so when unread or stale.
+- **`Metric::Supply`**, every 5 s to sample subscribers, beside `Power`.
+- **`EventBody::Supply`**, for adapter changes and floor crossings, at most once a minute (`feeder::supply::EVENT_MS`). Changes within the minute are recorded at its end as the supply then stands, so chatter costs one event a minute. A boot's first reading is a baseline; a stale sample changes nothing. Events use the existing 16-byte ring records.
+- **Readiness**: `Blocked::Battery`, refused `Busy`. It isn't lasting, so it raises no `FeedingBlocked` event; the `Supply` event covers it.
+- **Statistics**: the `Power` section's history, least and most take `Reading` values only.
 
 ## Battery mode
 
-On its batteries the feeder does what stock does ([stock firmware](../devices/plaf103/stock/README.md#power-and-battery)):
+On batteries the feeder behaves as stock does ([stock firmware](../devices/plaf103/stock/README.md#power-and-battery)): Wi-Fi off, meals from the running clock, buttons, lock and lights as usual. An update offer is refused `Update(Battery)` as soon as the adapter reads absent.
 
-| | On batteries |
-| --- | --- |
-| Wi-Fi | Off 5 s after the adapter goes, back on the moment it returns. No app, CLI or server reaches the feeder meanwhile. |
-| Meals once the clock lapses | Held: they wait until the adapter returns and a time source syncs the clock ([below](#battery-mode)). |
-| Meals | Run from the running clock. |
-| Buttons, lock and lights | Work as on the adapter. |
-| Updates | An offer is refused `Update(Battery)` as soon as the adapter reads absent. An install that is receiving stops when Wi-Fi goes off. |
-| Below the floor | No feed starts ([below](#the-floor)). |
+**Entry.** Every fresh sample for 5 s (`feeder::supply::RADIO_OFF_MS`) must read the adapter absent with a plausible pack. A shorter loss changes nothing. An unknown adapter, or a pack reading absent or (on the pack alone) implausible, neither starts nor ends the wait.
 
-**When it starts.** The loop enters battery mode once every fresh sample for 5 s (`feeder::supply::RADIO_OFF_MS`) has read the adapter absent with a plausible pack. A shorter loss changes nothing. If the adapter last read no pack, the [phantom's mask](#battery-mode) holds the pack back for up to 5 s first, so the radio goes off up to 5 s later, about 10 s after the pull. Only a fresh sample moves the mode: an unknown adapter, or a pack that reads absent or implausible on the pack alone, neither starts the wait nor ends it.
+**No cells versus a flat pack.** An empty holder reads about 16 mV at the pin. Anything from 500 mV at the pin (`NO_PACK_PIN_MV`, about 1 V pack, about 0.34 V a cell) is a pack, however flat; below that reads as no batteries, `below_floor` is `None`, and `wellfed status` says `adapter; no batteries`. No flat pack has been measured yet ([check 2](power-bench-checks.md#2-the-floor-without-motion)).
 
-**No cells, or a flat pack.** On the adapter these read differently, so the feeder tells them apart. An empty holder reads about 16 mV at the pin. A pack reads its own voltage through the divider, so anything from about 1 V at the pack up (`NO_PACK_PIN_MV`, 500 mV at the pin) is a pack, however flat. A pack under that, about 0.34 V a cell, reads as no batteries. No flat pack has been measured here yet: [bench check 2](#bench-checks) covers it. A pack that is not there has no floor to be below, so `below_floor` is `None` then, whatever the owner makes of the near-zero channel, and `wellfed status` says `adapter; no batteries`.
+**The phantom at a cut.** With no cells, a power cut reads the dying 5 V rail as a plausible pack (3.86 V seen). So after the adapter's samples read no pack, the loop keeps reporting none until the channel reads otherwise for 5 s (`feeder::supply::CELLS_MS`), whatever PA19 says. The cut's `Supply` event reads `Absent`, and status and metrics, version 1 `Power` included, show no millivolts. The phantom is too brief to start battery mode or lift a [brownout hold](#brownout). It also delays entry: from a no-pack reading, the radio goes off about 10 s after the pull. Cells fitted on the adapter show after 5 s.
 
-**The phantom at a power cut.** With no cells fitted, cutting the adapter reads the decaying 5 V rail as a plausible pack (3.86 V was seen) for the moment before the board stops. So once the adapter's samples read no pack, the loop keeps reporting no pack until the channel has read something else for 5 s (`feeder::supply::CELLS_MS`), whatever the adapter pin says. The `Supply` event at the cut reads `Absent`, and the status and metrics, the version 1 `Power` ones included, give no millivolts. The moment is far shorter than the 5 s, so it never starts battery mode or lifts a brownout hold ([below](#brownout)). Cells fitted on the adapter read 5 s after they go in.
+**Radio off.** The loop asks for it every pass (`Platform::radio`). The Wi-Fi task (`wellfed_core::wifi_task`) then:
 
-**What "Wi-Fi off" does.** The loop asks the platform for the radio off on every pass (`Platform::radio`). On the feeder, the C Wi-Fi task then:
+1. waits 2 s if no association is held, as after a failed or rejected join, so the driver's key-table teardown finishes first (powering the MAC down under it can stall the bus into a watchdog reset). If the adapter returns meanwhile, the radio stays on;
+2. takes the join's turn, which waits out a moving feed;
+3. if joined, leaves as before a restart (DHCP stopped, address released, disconnect, up to 1 s for the association to drop so the access point doesn't hold it against the next join), then waits 500 ms for the disconnect's teardown;
+4. calls `wifi_off`, then gives the turn back;
+5. polls every 50 ms until asked on.
 
-1. with no association held (a join just failed or was rejected), waits 2 s first. A failed join's teardown runs in the driver's timer task and writes the key table, and powering the MAC down under it has stalled the bus into a watchdog reset before. The 2 s is provisional. If the adapter returns meanwhile, the radio stays on;
-2. takes the join's turn, which waits while a feed holds the outputs;
-3. leaves the network as it does before a restart, if it is joined: it stops DHCP, releases the address, disconnects, and waits up to 1 s for the association to go, so the access point drops it rather than holding it against the next join. It then waits 500 ms more, still holding the turn, for the disconnect's key-table teardown in the timer task. The 500 ms is provisional;
-4. calls the vendor's `wifi_off`, which takes the interface down and turns the WLAN driver and radio off, then gives the turn back;
-5. waits, polling every 50 ms, until the radio is asked on again.
+The 2 s and 500 ms are provisional.
 
-**Radio changes take turns with feeds.** `wifi_off` and `wifi_on` stall every task inside the vendor driver, as an association does ([scheduling gaps](resource-budget.md#scheduling-gaps-across-wi-fi-rejoins)), which would break a moving feed's 1 s beat. So each takes the same turn as a join ([the interlock](resource-budget.md#the-interlock)). A feed that is moving defers the change until it ends. A feed asked for during a change is refused, as during a join: a Dispense press then records `DispenseRefused`, and a meal is retried within its grace.
+**Radio on.** The moment the adapter returns, the task takes the turn, calls `wifi_on` in station mode with the boot's power-save settings, gives the turn back, and joins with the backoff reset. A failed `wifi_on` retries every 5 s; after 6 in a row (about 30 s) the feeder restarts, still holding the turn so no feed starts into the reset. A restart asked meanwhile parks the task with the radio off. A join cut short doesn't count toward the credentials' fallback. Once on, the radio stays on at least 60 s (`RADIO_MIN_ON_MS`), so a chattering adapter cycles the WLAN driver, its heap and its firmware load at most once a minute; the boot's first loss isn't held back.
 
-When the adapter returns, the task takes the turn, calls `wifi_on` in station mode with the same power-save settings as at boot, gives the turn back, and joins afresh with the rejoin backoff reset. A `wifi_on` that fails is tried again every 5 s. After 6 failures in a row (about 30 s with no Wi-Fi on the adapter) the feeder restarts. It asks for the restart while still holding the turn, so no feed starts into the reset. A restart asked for meanwhile parks the task with the radio off. A join cut short this way does not count toward the stored credentials' fallback.
+**Turns.** `wifi_off` and `wifi_on` stall every task in the vendor driver, like an association ([scheduling gaps](resource-budget.md#scheduling-gaps-across-wi-fi-rejoins)), which would break a feed's 1 s beat. So they share the join's turn ([the interlock](resource-budget.md#the-interlock)): a moving feed defers the change, and a feed asked during one is refused (`DispenseRefused` for a press; a meal retries within its grace).
 
-**Radio on for at least a minute.** Once Wi-Fi has come back on, it stays on for at least 60 s (`RADIO_MIN_ON_MS`), even if the adapter goes again. An adapter that chatters therefore cycles the WLAN driver, its heap and its firmware load at most once a minute. The boot's first loss is not held back.
+**Installs.** Wi-Fi going off sends a receiving install a cancel at the update stage; it would otherwise hold the write turn about 65 s until it timed out. Bank 1 stays invalid, as at any stop before activation, the server sees `Cancelled`, and the next offer installs.
 
-**Installs.** When Wi-Fi goes off, the loop stops an install that is receiving (a cancel to the update stage). No chunk could reach it, and it would otherwise hold the write turn until it timed out, about 65 s. Bank 1 stays invalid, as at any stop before activation, and the server sees the update `Cancelled`.
+**Setup mode** keeps Wi-Fi on, since the vendor's BLE stack needs the WLAN driver. It already stops advertising without the adapter ([Bluetooth](bluetooth.md)); after it ends (with a restart), battery mode turns Wi-Fi off.
 
-The UART shows `PLBAT2 radio off|on` and `PLBAT2 install stop queued=1` from the loop, and `PLWIF3 … kind=off`, then `kind=on`, from the task. A failed `kind=on` carries its failures in a row as its value.
+**The clock** isn't synced on batteries. It stays valid until its error bound runs out, about 6.6 hours after the last sync with an unlearned rate, about 7 days with a learned one ([clock](clock.md)). After that, **meals hold** until the adapter returns and a time source syncs it. Dispense still feeds.
 
-**Setup mode keeps the radio on.** The vendor's BLE stack runs only while the WLAN driver is up, so BLE setup mode holds Wi-Fi on even on batteries. Setup mode already stops advertising without the adapter ([Bluetooth](bluetooth.md)). Once setup mode ends (with a restart), battery mode turns Wi-Fi off again.
-
-**The clock.** Turning Wi-Fi off does not touch the [clock](clock.md), but nothing syncs it on batteries. It stays valid until its error bound runs out, as it does with no time source: about 6.6 hours after the last sync while its rate is unlearned, about 7 days once learned. **After that, meals hold** for as long as the feeder stays on batteries: no meal runs until the adapter returns and a time source syncs the clock. The Dispense button still feeds.
+**Records:** `PLBAT2 radio off|on` and `PLBAT2 install stop queued=1` from the loop; `PLWIF3 … kind=off`, then `kind=on`, from the task, with a failed `kind=on` carrying its failures in a row.
 
 ## The floor
 
-The pack's floor is `wellfed_hal::power::FLOOR`, in the battery channel's scaled unit (pin millivolts). It is **provisional**: the only sag measured on the pack is one feed on fresh cells, far above this floor, and the regulator's dropout and the chip's brownout level are unmeasured on this board. The SDK leaves the brownout thresholds at their reset values and documents them only as codes.
+`wellfed_hal::power::FLOOR`, in pin millivolts.
+
+> [!NOTE]
+> The floor is **provisional**. The one sag measured is a single feed on fresh cells, far above it. The regulator's dropout and the chip's brownout level are unmeasured, and the SDK leaves the brownout thresholds at reset values documented only as codes.
 
 | Limit | Pin mV | Pack | Why |
 | --- | ---: | ---: | --- |
-| `floor` | 1650 | 3.40 V (1.13 V a cell) | Stock's 0 % point, below which stock stops its outputs on battery ([stock firmware](../devices/plaf103/stock/README.md)) |
-| `clear` | 1710 | 3.53 V | Stock's 10 % step: once below, a pack must recover by a step before feeding again |
-| `cutoff` | 1550 | 3.20 V | A sag this deep leaves the 3.3 V regulator little headroom, so stop at once rather than risk a brownout mid-drive |
-| `hold_ms` | 300 | | Timed from the first reading under `floor`: fifteen 20 ms polls in a feed, three 100 ms conversions at rest. The start-up surge lasted one poll (on the adapter); a sag that outlasts the hold is the pack failing under load |
+| `floor` | 1650 | 3.40 V (1.13 V a cell) | Stock's 0 %, below which stock stops its outputs on battery ([stock firmware](../devices/plaf103/stock/README.md)) |
+| `clear` | 1710 | 3.53 V | Stock's 10 % step: a pack must recover a step before feeding again |
+| `cutoff` | 1550 | 3.20 V | Little 3.3 V regulator headroom left; stop at once rather than brown out mid-drive |
+| `hold_ms` | 300 | | From the first reading under `floor`: 15 polls in a feed, 3 conversions at rest. On the adapter the start-up surge lasted one poll; a longer sag is the pack failing under load |
 
-`wellfed_core::supply::Floor` applies them on every battery conversion the owner takes, on the adapter too, so the verdict is current when the adapter is pulled:
+`wellfed_core::supply::Floor` judges every battery conversion the owner takes, on the adapter too, so the verdict is current when the adapter goes:
 
-- a reading at or above `clear` is above the floor;
-- between `floor` and `clear` a pack keeps its verdict, and a first reading there counts as above;
-- under `floor` for `hold_ms` in a row (a failed conversion counts as under), or under `cutoff` at all, is below.
+- At or above `clear`, the pack is above the floor.
+- Between `floor` and `clear`, it keeps its last verdict. A first reading there counts as above.
+- Under `floor` for `hold_ms` in a row, or under `cutoff` even once, it is below. A failed conversion counts as a reading under `floor`.
 
-Where it acts:
+On the pack alone (PA19 LOW):
 
-- **A running feed on the pack alone** (PA19 LOW) stops when the pack is no longer judged above the floor, or its conversion fails. The controller's power fault ends it `Failed`, `Power`, with STOP applied and the result written as any failure. It is never restarted; a client or schedule must ask again.
-- **A new feed on the pack** is refused before it reaches the owner. `Feeding::blocked` answers `Battery` while `OwnerStatus::supply_low` holds, and readiness reports it. The controller's own start check stays behind it: a feed that lost the race ends `Failed`, `Power` without driving, once its prepare window runs out.
-- **A meal due on a low pack** waits and is retried within its 15-minute grace, then recorded `Missed { reason: Blocked(Battery) }` ([schedules](schedules.md)). It is never fed late.
-- **On the adapter** the floor never refuses or stops a feed.
-- **An adapter change during a feed stops it** (`Failed`, `Power`). The change unsettles power for 100 ms (stock's settle), and a feed does not ride across a change of source. The next feed runs on whichever supply is there.
+- **A running feed** stops when the pack is no longer judged above the floor, or its conversion fails. It ends `Failed`, `Power` with STOP applied, written like any failure, and is never restarted.
+- **A new feed** is refused before reaching the owner: `Feeding::blocked` answers `Battery` while `OwnerStatus::supply_low` holds. The controller's own start check backs it up; a feed that lost the race ends `Failed`, `Power` without driving when its prepare window runs out.
+- **A due meal** retries within its 15-minute grace, then is recorded `Missed { reason: Blocked(Battery) }` ([schedules](schedules.md)), never fed late.
+- **The warning light** blinks.
 
-A pack that sags under load and recovers above `clear` at rest will feed again, and may fail again. Each feed ends with an explicit result and none is retried, so this costs failed feeds, not motion without a result.
+A source change mid-feed fails the feed: it unsettles power for 100 ms (stock's settle). A pack that sags under load but recovers past `clear` at rest feeds again and may fail again. Each attempt ends with a result and none is retried, so the cost is failed feeds, never motion without a result.
 
-**Low battery, in short.** On the pack alone below the floor, the feeder refuses every feed with `Blocked::Battery` (`Busy`), records missed meals as blocked by it, fails a running feed with `Power`, and blinks the warning light. Otherwise it keeps running: the buttons, the lock and the clock work, and it feeds again once the pack reads `clear` or the adapter returns. Stock instead suspends below 0 %: it stops its motor, emitters and lights and polls for mains every second.
+Stock instead suspends below 0 %, stopping its motor, emitters and lights and polling for mains every second.
 
 ## Brownout
 
-A brownout is a reset caused by the supply dropping too low. Three rules keep it from feeding twice, looping, or rolling back a good build:
+A brownout is a reset from the supply dropping too low. Three rules stop it from feeding twice, looping, or rolling back a good build.
 
-- **No feed is replayed.** A feed a brownout interrupted is resolved as `Uncertain` by the next boot's journal recovery, under its own id, and never resumed.
-- **The next feed waits for the adapter or a recovered pack.** A boot whose cause is brownout holds feeding as `Blocked::Battery` (`feeder::supply::Watch`, logged `PLBAT2 hold brownout`). At rest the pack recovers, so its reading at once would let the next feed start and sag it into the same brownout: a loop of resets, each leaving a feed uncertain. The hold ends when the adapter is seen. It also ends once every fresh reading for 3 minutes (`RELEASE_MS`) has been 50 % or more (`RELEASE_PERCENT`): a pin reading above 1890 mV, the floor plus 240 mV, or about 3.9 V at the pack. A reading under it, or any sample that is not a fresh plausible reading, starts the 3 minutes again. Fresh cells read 100 %, so a battery-only feeder feeds again on new cells. Cells fitted after a power cycle start a power-on boot, which never holds. The release is logged `PLBAT2 hold released by=adapter|pack`.
+**No replay.** Journal recovery at the next boot resolves the interrupted feed as `Uncertain` under its own id. It never resumes.
+
+**A hold before the next feed.** A brownout boot holds feeding as `Blocked::Battery` (`feeder::supply::Watch`, logged `PLBAT2 hold brownout`). Otherwise the rested pack's rebound would start a feed that sags it into another brownout, each loop leaving a feed uncertain. The hold ends (`PLBAT2 hold released by=adapter|pack`) when the adapter is seen, or when every fresh reading for 3 minutes (`RELEASE_MS`) is at least 50 % (`RELEASE_PERCENT`): above 1890 mV at the pin, about 3.9 V pack. Anything else restarts the 3 minutes. Fresh cells read 100 %, and cells fitted after a power cycle start a power-on boot, which never holds.
 
 > [!WARNING]
-> The release is **provisional**. It assumes a pack that browned out rebounds at rest well under 50 %. Nobody has measured that on this board; bench checks 2 to 4 [below](#bench-checks) measure it. If a browned-out pack does rebound past 50 % for 3 minutes, the next feed may brown out again. The worst case is one uncertain feed per occurrence: each meal due or Dispense press that starts a feed, never a retried one. Each brownout restarts the hold.
-- **Brownouts are not a reset storm.** Brownouts keep the backup registers, so without a rule KM0 would count a brownout reset like any other unrequested one. A pack weak enough to brown out at idle, on Wi-Fi transmit peaks, could then reach the storm limit of five within ten minutes. A confirmed bank 1 would then give way to bank 0, an older build, for a supply fault rather than a build fault. So KM0 reads `BOOT_Reason` before its trial step, and on a brownout boot takes back the count the previous boot left pending (`trial::decide_after`, `PLTRL1 brownout=1 reg=…`). The brownout neither counts nor ends a burst. A trial still counts a brownout boot, so no trial is shortened or skipped ([OTA design](ota-design.md)).
+> The release is **provisional**: it assumes a browned-out pack rebounds well under 50 % at rest, unmeasured on this board ([checks 2 to 4](power-bench-checks.md)). If it rebounds higher for 3 minutes, the next feed may brown out again: at worst one uncertain feed per brownout, from a due meal or a press, never a retry. Each brownout restarts the hold.
 
-The cause comes from the ROM's flags: `BOOT_Reason` bit 18 is brownout. The statistics report it (`ResetCause::Brownout`), and the `Boot` event carries the raw flags.
+**Not a reset storm.** Brownouts keep the backup registers, so KM0 would otherwise count them as unrequested resets. A pack browning out at idle on Wi-Fi transmit peaks could reach the storm limit (five in ten minutes) and make a confirmed bank 1 give way to older bank 0 for a supply fault. So KM0 reads `BOOT_Reason` before its trial step and, on a brownout boot, takes back the previous boot's pending count (`trial::decide_after`, `PLTRL1 brownout=1 reg=…`). A brownout neither counts nor ends a burst. Trials still count brownout boots, so none is shortened or skipped ([OTA design](ota-design.md)).
 
-The bit may be stale. The loader that copies the ROM's flags into `BOOT_Reason` returns early when it finds none set, so after one real brownout, a reset that sets no flag can read as a brownout too. Two guards follow:
+**The cause** is `BOOT_Reason` bit 18, from the ROM's flags. Statistics report `ResetCause::Brownout`; the `Boot` event carries the raw flags. The bit may be stale: the loader that copies the flags returns early when none are set, so after a real brownout, a later flagless reset can read as one. Two guards:
 
-- No two boots in a row are forgiven (`trial::FORGIVEN`; bit 31 of backup register 4 marks a forgiven boot, and the register's identity tag is now 7 bits). A fault still gives way within 10 early resets, and halts within 16, however the bit reads.
-- A later reset with no flag can read as a brownout and hold feeds the same way: until the adapter is seen, or for 3 minutes on a charged pack.
+- No two boots in a row are forgiven (`trial::FORGIVEN`, bit 31 of backup register 4, leaving its identity tag 7 bits). A fault still gives way within 10 early resets and halts within 16, however the bit reads.
+- A stale bit can hold feeds like a real brownout. The hold still ends when the adapter is seen, or after 3 minutes on a charged pack.
 
-The floor makes a motor-driven brownout unlikely. It cannot prevent an idle one on a pack below the regulator's dropout.
+The floor makes a motor-driven brownout unlikely, but can't prevent an idle one on a pack below the regulator's dropout.
 
 ## Sleep
 
-Sleep is deferred, and both cores keep their wakelocks (recovered):
+The chip doesn't sleep (recovered):
 
-- **Both cores hold `PMU_OS`** from `main` (`firstboot_km0.c`, `firstboot_km4.c`), and the feeding owner takes its own PMU wakelock when it opens. KM4's tickless idle only stops the tick while every task sleeps; with the wakelock held it never enters a low-power mode.
-- **KM0's DLPS path is unmediated.** On entering sleep, the SDK's tickless code reaches flash users (the flash lock and its clock changes) outside the flash authority, so a sleep entry could touch flash while KM4 holds a lease. Before KM0 may sleep, its flash users must go through the authority, or a KM0 deny provider must refuse them.
-- **What safe sleep needs.** The motor verified at STOP and the emitters off before entry. The runtime's watchdog either stopped or fed across the sleep. The 32 kHz clocks that the owner's timing and the [clock](clock.md) rely on kept running. And a wake that resumes no feed: the journal already ensures none is resumed across a reset, but a sleep is not a reset. None of that is built.
-- **Where the saving is.** On batteries, stock shuts Wi-Fi and MQTT 5 s after the adapter leaves and duty-cycles its beams (recovered). The stock inventory does not record whether it enters the chip's low-power modes. Dropping Wi-Fi on the pack is the larger saving, and [battery mode](#battery-mode) does it with no chip sleep. The beams are not duty-cycled yet.
-
-## Bench checks
-
-Physical acceptance needs the cells in, which is the owner's call. The order keeps motion out of the first steps.
-
-1. **Readings at rest.** Fit three fresh D cells, adapter in. `wellfed stats --section power` and a subscriber's `Supply` sample should read `Reading` near the meter's voltage, with `below_floor: false`. Pull the adapter with relay 1: you should see one `Supply` event (`adapter: false`) and readiness `Ready`. Restore it: one more event within a minute.
-2. **The floor without motion.** Replace the cells with a bench supply at the pack terminals, take the adapter out, and start at 4.5 V. Step it down. Readiness turns `Battery` within a poll of the pin reading under 1650 for 300 ms (about 3.40 V), and returns to `Ready` only at about 3.53 V. Note the voltage at which the board resets, if it does, and whether the next boot's reset cause is `Brownout`. That is the margin the floor is provisional on.
-3. **Under load.** This needs an authorization covering motion with the cells or supply in. Run a one-portion feed on fresh cells, with the analyzer on the motor and the supply's voltage logged, to measure the real surge and drive sag. Then repeat at a supply voltage just above the floor. Those figures replace the simulator's zero sags and confirm or move `FLOOR`.
-4. **Brownout hold.** After a brownout reset on the supply with the adapter out, readiness stays `Battery` and the UART shows `PLBAT2 hold brownout`. Leave the supply where the brownout left it for 3 minutes and note the pin reading: it must stay under 1890 (50 %), or the release premise fails. Raise the supply to 4.5 V: the hold ends 3 minutes later (`PLBAT2 hold released by=pack`). Repeat, and fit the adapter instead: it ends at once (`by=adapter`).
-5. **Battery mode.** With fresh cells and the adapter in, run `wellfed events --follow` and keep a UART capture. Pull the adapter with relay 1. Within the first 5 s, `wellfed status` shows `Power: on batteries` with the charge, and an update offer is refused `battery`. After 5 s the UART shows `PLBAT2 radio off` and `PLWIF3 … kind=off`, the session drops, and the feeder leaves the access point's client list. Press Dispense on an unlocked panel: it feeds (hopper empty, one portion). Restore the adapter: you should see `PLBAT2 radio on`, `kind=on` and a join, and the CLI reconnects. The events show the `Supply` changes and the feed. Leave it on batteries across a scheduled meal to see it run from the running clock. Then:
-   - **A short episode.** Pull the adapter for about 20 s, shorter than the access point's idle timeout. Check that the leave's `kind=leave` value reads 0 (not still associated), and that the next join is not rejected with status 30.
-   - **During a join.** Pull the adapter while the feeder is joining, and again during a join the access point rejects (wrong password through the hotspot). The task should settle 2 s, then log `kind=off`, with no watchdog reset.
-   - **Cycles.** Pull and restore the adapter about 20 times, at least a minute apart. Each `wifi_off` and `wifi_on` must return, with no hang or reset. Note the heap's low water (`wellfed stats`) before and after: it must not fall from cycle to cycle.
-   - **Discovery.** After a cycle, `wellfed` finds the feeder over mDNS again, without its address.
-6. **The brownout bit is fresh.** After the brownout of step 4, with the adapter in, force a watchdog reset with a build or probe that stalls the watchdog, such as the `owner-stall` variant. (`wellfed reboot` is deliberate and does not count.) The next boot must not log `PLTRL1 brownout=1`, and its `Boot` event's reset flags must not carry bit 18. If it does, the bit is stale on this board: the bounds above still hold, but record it.
-7. **No cells.** With no cells and the adapter in, `wellfed status` reads `Power: adapter; no batteries`, with no words about a floor. Fit cells: within 5 s it reads the charge. Take them out again, cut relay 1, restore it, and read the history: the `Supply` event at the cut reads `no batteries`, not a voltage.
+- **Wakelocks.** Both cores hold `PMU_OS` from `main` (`firstboot_km0.c`, `firstboot_km4.c`), and the owner takes its own PMU wakelock. KM4's tickless idle only stops the tick while every task sleeps; with the wakelock held it never enters a low-power mode.
+- **KM0's DLPS path** reaches flash users (the flash lock and its clock changes) outside the flash authority, so sleep entry could touch flash during a KM4 lease. They must go through the authority, or a KM0 deny provider must refuse them, before KM0 sleeps.
+- **Safe sleep needs**, none of it present: motor at STOP and emitters off before entry; the watchdog stopped or fed across it; the 32 kHz clocks the owner and [clock](clock.md) use kept running; and no feed resumed on wake (the journal covers resets, but sleep isn't one).
+- **The saving.** Stock drops Wi-Fi and MQTT 5 s after the adapter goes and duty-cycles its beams (recovered); whether it uses the chip's low-power modes isn't recorded. Dropping Wi-Fi is the bigger saving, and [battery mode](#battery-mode) does it without sleep. Beam duty-cycling isn't done yet.
 
 ## Open questions
 
-- The floor's figures under load, and the board's brownout level.
-- Whether a real brownout sets `BOOT_Reason`'s bit here. The storm breaker's brownout rule and the brownout hold both rest on it.
-- Sleep, and with it the KM0 flash users on the DLPS path.
-- How long the vendor's `wifi_off` and `wifi_on` each stall the tasks, and how much current battery mode saves.
+- The floor under load, and the board's brownout level.
+- Whether a real brownout sets bit 18 here; the storm rule and the hold rely on it.
+- Sleep, and KM0's flash users on the DLPS path.
+- How long `wifi_off` and `wifi_on` stall the tasks, and how much current battery mode saves.
 - Whether 2 s is enough for a failed join's teardown before `wifi_off`, and 500 ms for a leave's.
-- Whether a pack that browned out rebounds under 50 % at rest (the brownout hold's release).
-- Stock lights its warning at 20 % or less whenever a pack reads, and duty-cycles its beams on batteries. Neither is built.
+- Whether a browned-out pack rebounds under 50 %.
+- Stock's warning light at ≤20 % whenever a pack reads, and its beam duty-cycling on batteries; the feeder does neither yet.
 
 ## Evidence
 
-- **Battery mode on the feeder.** Observed (October 28, unattended apart from the owner's press, three D cells, hopper empty). Cutting the adapter with relay 1, the status read `on batteries` at once, and the radio went off after 5 s. A Dispense press fed 1 portion on the cells. With the adapter back the radio came on and the feeder rejoined in 12 s, in the same boot. Over 20 cycles, 20 s on the cells and a minute apart, every one rejoined in 12–13 s in the same boot, with the heap's low water steady at 129,440 B, every leave reading 0, and no status-30 reject or hang.
-- **Pack and adapter inputs.** Observed (October 23, UART and meter, the `adc` probe, three D cells, no reboot between states):
+- **Battery mode.** Observed, October 28 (unattended apart from the owner's press, three D cells, empty hopper). A relay-1 cut read `on batteries` at once and the radio went off after 5 s; Dispense fed 1 portion; with the adapter back it rejoined in 12 s in the same boot. Over 20 cycles (20 s on cells, a minute apart) each rejoined in 12–13 s in the same boot, heap low water steady at 129,440 B, every leave 0, no status-30 reject or hang.
+- **Inputs.** Observed, October 23 (UART, meter, `adc` probe, three D cells, no reboot between states):
 
-  | State | PA19 | Channel 5 mean (raw) | Scaled (mV) | Pack on meter |
+  | State | PA19 | Ch 5 mean (raw) | Scaled (mV) | Meter |
   | --- | --- | --- | --- | --- |
   | Adapter, no batteries | 1 | 240 | 16 | — |
   | Adapter and batteries | 1 | 2849 | 2357 | 4.85 V |
-  | Batteries only | 0 | 2737 just after the unplug, settling to about 2793 over 20 s | 2256 to about 2306 | 4.77 V |
-  | Adapter back in | 1 | 2848 | 2356 | — |
+  | Batteries only | 0 | 2737 after the unplug, ≈2793 after 20 s | 2256 to ≈2306 | 4.77 V |
+  | Adapter back | 1 | 2848 | 2356 | — |
 
-  So channel 5 measures the pack, not the adapter, through a divider of about 2.06 (2.058 and 2.068 in the two states). Channel 4 stayed at 240 throughout, and the feeder neither reset nor showed anything visible at either transition. Channel 5 is noisier than the others: about 110 raw between the minimum and maximum of each 16-conversion sample, against 3 or 4 on channels 4 and 10. The meter readings were not time-stamped against particular samples.
-- **Health with a pack.** Observed (October 23): health read `"adapter":true,"battery_mv":4862` with the adapter (meter earlier: 4.85 V), and `"adapter":false,"battery_mv":4755` with it pulled (meter: 4.77 V). With no pack, the monitor logged `PLBAT1 open ok=1` only after the startup probe ended, then `sample pin_mv=15 adapter=1`.
-- **A feed on fresh cells.** Observed (November 1, one feed, three fresh D cells, full hopper, Dispense press after a relay-1 cut): 1 of 1 with no reset, 10,189 ms of drive, peak current 268 and mean 86 on the feeder's scale. The pack read 4,839 mV at rest with the adapter in and 4,586 mV at its lowest by the feeder's own samples, not a meter, so a short dip between samples wouldn't show. The radio went off 35 to 46 s after the cut, about 45 s after boot, not 5 s. Its 60 s minimum on time after a boot is the likely reason, unconfirmed.
-- **Surge.** Observed: the start-up surge lasted one 20 ms poll on the adapter.
-- **Power cut mid-drive.** Observed: an interrupted feed resolves as uncertain at the next boot and is never resumed ([motor and feeds](motor-pulse.md#a-power-cut-mid-feed)).
-- **Stock's floor and battery behavior.** Recovered from the stock firmware.
-- **The floor, supply reporting and brownout rules.** Modeled (October 26):
-  - Core: `wellfed-core/tests/supply.rs` (readings, the floor's hold, cutoff, hysteresis and wrap) and `tests/sensor_inputs.rs` (a surge under the floor tolerated, a long sag or one under the cutoff not, the clear level, the adapter's verdict, a failed conversion).
-  - HAL: `wellfed-hal/tests/power.rs` (unread, stale and implausible readings from the monitor's own samples) and `wellfed-hal-common/tests/trial_brownout.rs` (a brownout bit stuck set still gives way within 10 resets and holds, then halts, on bank 0; never two forgiven in a row; a trial still counts a brownout boot; a brownout in a held, halted or spent-trial boot, and after a settled or deliberate one).
-  - Product: `wellfed-feeder/tests/supply.rs` (events and their rate limit, the brownout hold, readiness order); the firmware's `tests/manual_feed.rs` (a press refused on a low pack, the adapter's loss as a `Supply` event from the board's samples); `wellfed-client/tests/api.rs` (the battery reason to a `POWER` session, and as `Starting` to an older one); wire fixtures for every new variant.
-  - Simulation: the real owner on the fake SDK (`wellfed-sim`). The plant sags the battery channel by `surge_sag_adc` and `drive_sag_adc` while it drives on the pack, both unmeasured and zero by default. The adapter pulled mid-feed fails it, and nothing drives until a new feed, which completes on the pack. A surge under the floor is tolerated, and a sustained sag or one under the cutoff fails the feed. Under the floor and in the band no feed drives; at the clear level one does. Checked-in scenarios: `adapter-loss-mid-feed.json`, `battery-sag.json`.
-- **The brownout bit on hardware.** Unknown: whether a real brownout on this board sets bit 18.
-- **The phantom at a cut.** Observed (October 28, the server's bench run, before the fix): a relay-1 cut with no cells recorded `Supply { adapter: false, battery: Reading 3861 mV }`, the decaying rail. The fix is modeled only: `wellfed-feeder/tests/supply.rs` and `wellfed-feeder-sim/tests/battery.rs`.
-- **Battery mode, the charge and the hold's release.** Modeled (October 28):
-  - Core: `wellfed-core/tests/supply.rs` (stock's steps at every boundary, a reading's charge).
-  - Product: `wellfed-feeder/tests/supply.rs` (the 5 s wait, the radio back at once, a short loss, the radio's minute back on, a boot on batteries across the uptime's wrap, unknown or implausible packs that neither start nor end the wait, setup mode, the rail at a cut, the hold lifted by the adapter or by 3 minutes at 50 %, and every interruption restarting it).
-  - HAL and runtime: `wellfed-hal/tests/link.rs` (the radio's leave, a restart winning over it, a radio change refusing a feed and waiting for a claimed one, and a radio that will not come back restarting the feeder) and `wellfed-device-runtime/tests/network.rs` (joins cut short never count toward the fallback).
-  - Updates: `wellfed-feeder-sim/tests/update.rs` (battery mode stops an install mid-transfer, bank 1 stays invalid, and the next offer installs).
-  - Simulation: `wellfed-feeder-sim/tests/battery.rs`. In the loop: the radio and the address gone, breakfast fed on batteries, a meal missed as blocked on a flat pack, the hold lifted on fresh cells, the rail at a cut. Over TCP: the status's supply and charge, an offer refused `Battery`, the session lost and back. The simulator's console takes `adapter in|out` and `pack <mV>|out`.
-  - The C task's `wifi_off` and `wifi_on` path is static analysis only.
+  So channel 5 is the pack, divider about 2.06 (2.058 and 2.068). Channel 4 stayed at 240; no reset or visible change at either transition. Channel 5 is noisier: about 110 raw min-to-max per 16-conversion sample, against 3–4 on channels 4 and 10. Meter readings weren't time-matched to samples.
+- **Health.** Observed, October 23: `"adapter":true,"battery_mv":4862` (meter 4.85 V) and `"adapter":false,"battery_mv":4755` (4.77 V). With no pack, `PLBAT1 open ok=1` came only after the startup probe, then `sample pin_mv=15 adapter=1`.
+- **A feed on fresh cells.** Observed, November 1 (full hopper, press after a relay-1 cut): 1 of 1, no reset, 10,189 ms drive, peak current 268 and mean 86 on the feeder's scale. Pack 4,839 mV at rest on the adapter, 4,586 mV lowest by the feeder's own samples (no meter, so a dip between samples wouldn't show). The radio went off 35–46 s after the cut (about 45 s after boot), likely the 60 s minimum on time, unconfirmed.
+- **Surge.** Observed: one 20 ms poll on the adapter.
+- **Power cut mid-drive.** Observed: uncertain at the next boot, never resumed ([motor and feeds](motor-pulse.md#a-power-cut-mid-feed)).
+- **Stock's floor and battery behavior.** Recovered.
+- **Phantom at a cut.** Observed, October 28, before the fix: a no-cell cut recorded `Supply { adapter: false, battery: Reading 3861 mV }`, the decaying rail. The fix is modeled only.
+- **Brownout bit on hardware.** Unknown.
+- **Modeled**, October 26 (floor, reporting, brownout) and October 28 (battery mode, charge, hold release, phantom fix), in these tests:
+  - `wellfed-core/tests/supply.rs`, `tests/sensor_inputs.rs`: readings, charge steps, hold, cutoff, hysteresis, wrap, surges, failed conversions.
+  - `wellfed-hal/tests/power.rs`, `tests/link.rs`; `wellfed-hal-common/tests/trial_brownout.rs`: unread, stale and implausible samples; the radio's leave, restarts, refused and deferred feeds, a radio that won't return; a stuck brownout bit still giving way and halting, no two forgiven in a row, trials counting brownouts.
+  - `wellfed-device-runtime/tests/network.rs`: cut-short joins don't count toward the fallback.
+  - `wellfed-feeder/tests/supply.rs`: events and their rate, the 5 s wait, the minute back on, boots across the uptime wrap, setup mode, the phantom, the hold and its release.
+  - The firmware's `tests/manual_feed.rs`, `wellfed-client/tests/api.rs`, and wire fixtures for every variant: a refused press on a low pack, the battery reason on the wire.
+  - Simulation: `wellfed-sim` (sags via `surge_sag_adc`, `drive_sag_adc`, zero by default; scenarios `adapter-loss-mid-feed.json`, `battery-sag.json`), `wellfed-feeder-sim/tests/battery.rs` and `tests/update.rs` (battery mode end to end over TCP, an install cancelled mid-transfer). Its console takes `adapter in|out` and `pack <mV>|out`.
+  - The Wi-Fi task's `wifi_off`/`wifi_on` path is host-tested against a scripted driver (`wellfed-core/tests/wifi_task.rs`) and the SDK fake (`wellfed-hal/tests/link.rs`); on hardware it is static analysis only.

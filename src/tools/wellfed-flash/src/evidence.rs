@@ -135,6 +135,10 @@ impl<P: Port> Port for EvidencePort<P> {
     fn in_waiting(&mut self) -> io::Result<usize> {
         self.port.in_waiting()
     }
+
+    fn readiness(&self) -> crate::link::protocol::Readiness {
+        self.port.readiness()
+    }
 }
 
 #[cfg(test)]

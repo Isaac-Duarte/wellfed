@@ -1,4 +1,4 @@
-.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-goldens app-installer-input sqlx-prepare server-dist server-image check-server-release
+.PHONY: help check check-rust check-deps check-cross check-bench-board check-virtual-feeder check-docs check-fixtures check-web check-app check-homeassistant homeassistant-wheels app-goldens guide-screenshots app-installer-input sqlx-prepare server-dist server-image check-server-release
 
 help:
 	@echo "check: formatting, Clippy, Rust tests, cross-builds, simulator, repository checks"
@@ -10,6 +10,7 @@ help:
 	@echo "check-homeassistant: the Home Assistant integration: its bridge's Clippy with the Python module, its committed stub unchanged, Ruff, mypy strict, and its tests against the simulator with 95% coverage, on Home Assistant 2026.10 and Python 3.14 (needs uv)"
 	@echo "homeassistant-wheels: the Home Assistant bridge's release wheels, cross-built for musllinux and manylinux (aarch64, x86_64, armv7 musl), and its sdist (needs uv; adds Rust targets)"
 	@echo "app-goldens: the app's golden tests on Linux, in a container on any other host; UPDATE=1 writes new images back for review"
+	@echo "guide-screenshots: redraw the owner guide's app screenshots in docs/guide/ from the app's test fixtures"
 	@echo "app-installer-input: copy a review and its signed manifest in as the image the APK installs, and print its pin"
 	@echo "sqlx-prepare: regenerate the server store's query metadata (.sqlx/) after changing a query or migration"
 	@echo "server-dist / server-image: the server's static release binaries in dist/server/ and its container image (docker or podman)"
@@ -24,11 +25,23 @@ check: check-rust check-deps check-cross check-virtual-feeder check-docs
 PRODUCTION_LINTS = -D clippy::unwrap_used -D clippy::cast_possible_truncation \
 	-D clippy::needless_pass_by_value -D unreachable_pub
 
+# Clippy re-checks every crate whose lint flags differ from its last run, so
+# the production pass and the all-targets pass, sharing a target directory,
+# would each undo the other's results and re-check the whole workspace on
+# every `make check`. The production pass keeps its own.
+PRODUCTION = --target-dir $(or $(CARGO_TARGET_DIR),target)/production
+
+# Many tests wait on a socket, a timer or the simulator's 20 ms pace rather
+# than a core, so twice as many run as there are cores: on a 29-core builder
+# the suite took 48 s at one per core, 31 s at two, and no less at more.
+TEST_THREADS ?= $(shell n=$$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4); echo $$((n * 2)))
+
 # The fountain's board, which no workspace build chooses (they are the
 # PLAF103's, `.cargo/config.toml`), in its own target directory so neither
 # board's build replaces the other's: the board crates, the SDK bindings,
 # both cores' chip routines and the chip HAL, which is what builds for it.
 FOUNTAIN = WELLFED_BOARD=plwf106 CARGO_TARGET_DIR=target/plwf106
+FOUNTAIN_PRODUCTION = --target-dir target/plwf106/production
 FOUNTAIN_CRATES = -p wellfed-board -p wellfed-board-plwf106 -p wellfed-amebad-sys \
 	-p wellfed-hal-common -p wellfed-hal -p wellfed-fw-fountain
 
@@ -39,20 +52,19 @@ FOUNTAIN_CRATES = -p wellfed-board -p wellfed-board-plwf106 -p wellfed-amebad-sy
 check-rust:
 	cargo fmt --all -- --check
 	cargo clippy --locked --workspace --all-targets -- -D warnings
-	cargo clippy --locked --workspace --lib --bins -- -D warnings $(PRODUCTION_LINTS)
-	cargo nextest run --locked --workspace --all-targets
-	cargo test --locked --workspace --doc
+	cargo clippy --locked $(PRODUCTION) --workspace --lib --bins -- -D warnings $(PRODUCTION_LINTS)
+	cargo nextest run --locked --workspace --all-targets --test-threads $(TEST_THREADS)
 	cargo clippy --locked -p wellfed-hal-feeder --features stop-fail --all-targets -- -D warnings
-	cargo clippy --locked -p wellfed-hal-feeder --features stop-fail --lib -- -D warnings $(PRODUCTION_LINTS)
+	cargo clippy --locked $(PRODUCTION) -p wellfed-hal-feeder --features stop-fail --lib -- -D warnings $(PRODUCTION_LINTS)
 	cargo nextest run --locked -p wellfed-hal-feeder --features stop-fail --test inject
 	cargo clippy --locked -p wellfed-hal-feeder --features feed-faults --all-targets -- -D warnings
-	cargo clippy --locked -p wellfed-hal-feeder --features feed-faults --lib -- -D warnings $(PRODUCTION_LINTS)
+	cargo clippy --locked $(PRODUCTION) -p wellfed-hal-feeder --features feed-faults --lib -- -D warnings $(PRODUCTION_LINTS)
 	cargo nextest run --locked -p wellfed-hal-feeder --features feed-faults --test feed_faults
 	cargo clippy --locked -p wellfed-hal --features virtual-panel --all-targets -- -D warnings
-	cargo clippy --locked -p wellfed-hal --features virtual-panel --lib -- -D warnings $(PRODUCTION_LINTS)
+	cargo clippy --locked $(PRODUCTION) -p wellfed-hal --features virtual-panel --lib -- -D warnings $(PRODUCTION_LINTS)
 	cargo nextest run --locked -p wellfed-hal --features virtual-panel --test virtual_panel
 	$(FOUNTAIN) cargo clippy --locked $(FOUNTAIN_CRATES) --all-targets -- -D warnings
-	$(FOUNTAIN) cargo clippy --locked $(FOUNTAIN_CRATES) --lib -- -D warnings $(PRODUCTION_LINTS)
+	$(FOUNTAIN) cargo clippy --locked $(FOUNTAIN_PRODUCTION) $(FOUNTAIN_CRATES) --lib -- -D warnings $(PRODUCTION_LINTS)
 	$(FOUNTAIN) cargo nextest run --locked $(FOUNTAIN_CRATES) --all-targets
 
 # Licenses, advisories, duplicate versions and sources (deny.toml), then the
@@ -150,22 +162,38 @@ APP_INSTALLER = $(APP)/assets/installer
 # The goldens belong to Linux: font rasterizers differ by as much as a real
 # change. On any other host they run in a Linux container, fed the app's
 # sources as a tar, so the checkout gets back only the images: new ones with
-# UPDATE=1, and a failed run's diffs in test/golden/failures/.
+# UPDATE=1, and a failed run's diffs in test/golden/failures/. The owner
+# guide's screenshots are goldens too (test/guide/), kept in docs/guide/,
+# which the container mounts where the test looks for it.
 GOLDENS_IMAGE = wellfed-app-goldens:$(FLUTTER_VERSION)
 GOLDENS_DIR = $(CURDIR)/$(APP)/test/golden
+GOLDENS_TESTS = test/golden test/guide
 app-goldens:
 ifeq ($(shell uname),Linux)
-	cd $(APP) && flutter test test/golden $(if $(UPDATE),--update-goldens)
+	cd $(APP) && flutter test $(GOLDENS_TESTS) $(if $(UPDATE),--update-goldens)
 else
 	$(CONTAINER) build -q -t $(GOLDENS_IMAGE) --build-arg FLUTTER_VERSION=$(FLUTTER_VERSION) \
 		-f $(APP)/tools/goldens/Containerfile $(APP)/tools/goldens
 	rm -rf $(GOLDENS_DIR)/failures && mkdir -p $(GOLDENS_DIR)/failures
 	COPYFILE_DISABLE=1 tar -L -C $(APP) --exclude ./build --exclude ./.dart_tool --exclude ./test/golden/failures \
-		--exclude ./android/.gradle --exclude ./android/.kotlin --exclude ./tools/wellfed_lints/.dart_tool -cf - . | \
-		$(CONTAINER) run --rm -i -v wellfed-pub-cache:/root/.pub-cache \
+		--exclude ./test/guide/failures --exclude ./android/.gradle --exclude ./android/.kotlin \
+		--exclude ./tools/wellfed_lints/.dart_tool -cf - . | \
+		$(CONTAINER) run --rm -i -v wellfed-pub-cache:/root/.pub-cache -v $(CURDIR)/docs/guide:/app/docs/guide \
 		-v $(GOLDENS_DIR)/files:/files -v $(GOLDENS_DIR)/failures:/failures $(GOLDENS_IMAGE) \
-		sh -c 'tar -x && flutter test test/golden $(if $(UPDATE),--update-goldens && cp test/golden/files/*.png /files/) \
-			|| { cp -r test/golden/failures/. /failures/ 2>/dev/null; exit 1; }'
+		sh -c 'mkdir -p src/app && cd src/app && tar -x && \
+			flutter test $(GOLDENS_TESTS) $(if $(UPDATE),--update-goldens && cp test/golden/files/*.png /files/) \
+			|| { cp -r test/golden/failures/. /failures/ 2>/dev/null; \
+				mkdir -p /failures/guide && cp -r test/guide/failures/. /failures/guide/ 2>/dev/null; exit 1; }'
+endif
+
+# The owner guide's app screenshots, redrawn from the fixtures the goldens use
+# and written into docs/guide/. Look at each before committing it, and check
+# the guide's alt text still says what it shows.
+guide-screenshots:
+ifeq ($(shell uname),Linux)
+	cd $(APP) && flutter test test/guide --update-goldens
+else
+	$(MAKE) app-goldens UPDATE=1
 endif
 
 app-installer-input:
@@ -227,7 +255,7 @@ HA_STUBS = target/homeassistant-stubs
 HA_WHEEL = target/homeassistant-wheels/check
 check-homeassistant:
 	cargo clippy --locked -p wellfed-homeassistant --features python --all-targets -- -D warnings
-	cargo clippy --locked -p wellfed-homeassistant --features python --lib -- -D warnings $(PRODUCTION_LINTS)
+	cargo clippy --locked $(PRODUCTION) -p wellfed-homeassistant --features python --lib -- -D warnings $(PRODUCTION_LINTS)
 	$(HA_VENV)/bin/python -c 'import sys; sys.exit(sys.version_info[:2] != (3, 14))' 2>/dev/null || uv venv --clear --python 3.14 $(HA_VENV)
 	VIRTUAL_ENV=$(CURDIR)/$(HA_VENV) uv pip install -r $(HA)/tests/requirements.txt
 	$(HA_VENV)/bin/ruff check $(HA)

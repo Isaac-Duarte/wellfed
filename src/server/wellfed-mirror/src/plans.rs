@@ -14,15 +14,21 @@ use crate::session::End;
 use crate::task::Task;
 
 /// Whether `body`, newly stored, may have changed `read`, the plans as
-/// last read: a replacement under a newer generation, or a meal of a plan
-/// that runs once and is still enabled there, since it disables itself
-/// with no `plans` event. History replayed after an outage names older
-/// generations and meals the connect's read already reflects, so it asks
-/// for no read. With no copy, every such event does.
+/// last read: a replacement under a newer generation; a skip or its undo,
+/// which move a plan's skipped meal (and enable or disable a plan that runs
+/// once) with no `plans` event; or a meal of a plan that runs once and is
+/// still enabled there, which disables itself, or of a plan with a skip
+/// there, whose next meal ends the skip. History replayed after an outage
+/// names older generations and meals the connect's read already reflects,
+/// so it asks for no read; a replayed skip asks for one it may not need,
+/// which only costs a read. With no copy, every such event does.
 fn changes_plans(read: Option<&Plans>, body: &EventBody) -> bool {
     let slot = match *body {
         EventBody::Feeder(FeederEvent::Plans { generation, .. }) => {
             return read.is_none_or(|plans| plans.generation < generation);
+        }
+        EventBody::Feeder(FeederEvent::Skipped { .. } | FeederEvent::Unskipped { .. }) => {
+            return true;
         }
         EventBody::Feeder(FeederEvent::Fed {
             by: Source::Schedule { plan },
@@ -34,12 +40,14 @@ fn changes_plans(read: Option<&Plans>, body: &EventBody) -> bool {
     let Some(plans) = read else {
         return true;
     };
-    plans
+    let index = usize::from(slot);
+    let once = plans
         .plans
-        .get(usize::from(slot))
+        .get(index)
         .copied()
         .flatten()
-        .is_some_and(|plan| plan.enabled && plan.days.once())
+        .is_some_and(|plan| plan.enabled && plan.days.once());
+    once || plans.skipped.get(index).is_some()
 }
 
 impl Task {
@@ -119,6 +127,7 @@ mod tests {
             generation: Generation(generation),
             writable: true,
             plans: table,
+            skipped: wellfed_model::SkippedMeals::NONE,
         }
     }
 
@@ -144,6 +153,27 @@ mod tests {
     #[test]
     fn only_a_change_the_copy_does_not_hold_asks_for_a_read() {
         let read = plans(5);
+        // Slot 0's meal skipped, and slot 2, a plan that runs once,
+        // disabled by its skip.
+        let mut seconds = [None; PLANS];
+        seconds[0] = Some(1_790_000_000);
+        seconds[2] = Some(1_790_000_000);
+        let skipping = Plans {
+            skipped: wellfed_model::SkippedMeals::from_seconds(seconds),
+            ..plans(5)
+        };
+        let skip = |plan| {
+            EventBody::Feeder(FeederEvent::Skipped {
+                plan,
+                due: Timestamp::UNIX_EPOCH,
+                by: Source::Feeder,
+            })
+        };
+        let unskip = EventBody::Feeder(FeederEvent::Unskipped {
+            plan: 2,
+            due: Timestamp::UNIX_EPOCH,
+            by: Source::Feeder,
+        });
         let missed = EventBody::Feeder(FeederEvent::Missed {
             plan: 1,
             due: Timestamp::UNIX_EPOCH,
@@ -165,6 +195,15 @@ mod tests {
             ("a once plan already disabled", Some(&read), fed(2), false),
             ("a daily plan's meal", Some(&read), fed(0), false),
             ("an empty slot", Some(&read), fed(7), false),
+            ("a skip", Some(&read), skip(0), true),
+            ("an undo", Some(&skipping), unskip, true),
+            ("a skipped plan's next meal", Some(&skipping), fed(0), true),
+            (
+                "a once plan its skip disabled, run after an undo",
+                Some(&skipping),
+                fed(2),
+                true,
+            ),
             (
                 "anything else",
                 None,

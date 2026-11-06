@@ -4,7 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
+import 'package:wellfed/src/rust/api/router.dart';
+import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 
 /// The feeders this phone knows, and what the flows that add one need of
@@ -53,18 +56,47 @@ abstract interface class FeederBook implements Listenable {
 
   /// This phone gave `identity` its clock, so it no longer owes it.
   void clockSynced(String identity);
+
+  /// The owner's server this phone logged in to, with the feeders it last
+  /// listed; `null` with none.
+  KnownServer? get server;
+
+  /// Keep `server`, or forget the server with `null`. The feeders this phone
+  /// holds its own key on stay either way.
+  Future<void> setServer(KnownServer? server);
+}
+
+/// Why the pins file (`pending.json`) did not open, so the app sends no
+/// request at all.
+enum PinsProblem {
+  /// Another copy of the app, in another process, holds it.
+  inUse,
+
+  /// It can't be read: damaged, or written by a build whose shape this one
+  /// does not read. Only clearing the app's data clears it.
+  unreadable,
 }
 
 /// The phone's identity and the feeders it knows. The client secret lives
 /// in Keystore-backed secure storage; everything else in the app's own
 /// file, which Rust reads and writes.
 class AppState extends ChangeNotifier implements FeederBook {
-  AppState._(this.key, this._store, this._path);
+  AppState._(this.key, this._store, this._path, (PathRouter?, PinsProblem?) opened)
+    : router = opened.$1,
+      pinsProblem = opened.$2;
 
   static const _secretName = 'client-secret';
 
   /// This phone's key.
   final ClientKey key;
+
+  /// The one path router, whose pins (`pending.json`) live beside the app's
+  /// file; `null` when they could not be opened, and then the app sends no
+  /// request at all rather than an unpinned write.
+  final PathRouter? router;
+
+  /// Why [router] is `null`, for the owner to see.
+  final PinsProblem? pinsProblem;
   final String _path;
   AppStore _store;
 
@@ -93,8 +125,31 @@ class AppState extends ChangeNotifier implements FeederBook {
 
     final Directory dir = await getApplicationSupportDirectory();
     final path = '${dir.path}/wellfed.json';
-    return AppState._(key, await loadStore(path: path), path);
+    final AppStore store = await loadStore(path: path);
+    return AppState._(key, store, path, _openRouter('${dir.path}/pending.json', store.server));
   }
+
+  /// The router on `pins`, told at once of the server the app keeps, before
+  /// any feeder session exists: an account the server may have narrowed
+  /// never feeds on the phone's own key while the app reads its token.
+  static (PathRouter?, PinsProblem?) _openRouter(String pins, KnownServer? kept) {
+    try {
+      final router = PathRouter(pinsPath: pins);
+      if (kept != null) router.configureServer(kept: kept);
+      return (router, null);
+    } on BridgeError catch (error) {
+      debugPrint('the pending writes could not be opened, so nothing is sent: ${error.message}');
+      return (null, error.kind == ErrorKind.inUse ? PinsProblem.inUse : PinsProblem.unreadable);
+    }
+  }
+
+  @override
+  KnownServer? get server => _store.server;
+
+  @override
+  Future<void> setServer(KnownServer? server) => _update(
+    (store) => AppStore(label: store.label, feeders: store.feeders, appearance: store.appearance, server: server),
+  );
 
   @override
   String get label => _store.label;

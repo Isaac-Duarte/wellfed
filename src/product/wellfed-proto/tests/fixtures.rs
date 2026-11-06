@@ -426,6 +426,9 @@ fn messages() -> Vec<Fixture> {
                 written: 8192,
                 wanted: [Some(8192), Some(8704), None, None, None, None, None, None],
                 stopped: Some(UpdateStop::Timeout),
+                bank0: Bank0Check::Blocked {
+                    reason: Bank0Blocked::Changed,
+                },
             }))),
             feeder,
         ),
@@ -856,6 +859,7 @@ fn messages() -> Vec<Fixture> {
                 generation: 5,
                 writable: true,
                 plans: plans(),
+                skipped: skipped(),
             })))),
             feeder,
         ),
@@ -1066,7 +1070,57 @@ fn messages() -> Vec<Fixture> {
             entry(&request(Op::Feeder(FeederOp::PlayCall))),
             client,
         ),
+        (
+            "op-skip-meal",
+            entry(&request(Op::Feeder(FeederOp::SkipMeal {
+                slot: 2,
+                due_s: 1_793_200_000,
+            }))),
+            client,
+        ),
+        (
+            "op-unskip-meal",
+            entry(&request(Op::Feeder(FeederOp::UnskipMeal {
+                slot: 2,
+                due_s: 1_793_200_000,
+            }))),
+            client,
+        ),
+        (
+            "event-skipped",
+            entry(&EventBody::Skipped {
+                plan: 2,
+                due: 1_793_200_000,
+                by: Source::Client([1, 2, 3, 4]),
+            }),
+            |b| decode::<EventBody>(b).is_ok(),
+        ),
+        (
+            "event-unskipped",
+            entry(&EventBody::Unskipped {
+                plan: 2,
+                due: 1_793_200_000,
+                by: Source::Client([1, 2, 3, 4]),
+            }),
+            |b| decode::<EventBody>(b).is_ok(),
+        ),
+        (
+            "outcome-update-refused-fallback",
+            entry(&response(Outcome::Refused(Refusal::Update(
+                UpdateRefusal::Fallback {
+                    reason: Bank0Blocked::Unrecorded,
+                },
+            )))),
+            feeder,
+        ),
     ]
+}
+
+/// Slot 0's meal skipped, the rest not.
+fn skipped() -> [Option<u32>; PLANS_MAX] {
+    let mut skipped = [None; PLANS_MAX];
+    skipped[0] = Some(1_793_200_000);
+    skipped
 }
 
 /// Two plans: breakfast every day in slot 0, and a one-off in slot 2.

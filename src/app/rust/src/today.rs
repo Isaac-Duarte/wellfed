@@ -10,7 +10,7 @@ use std::time::Instant;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use wellfed_client::history::Feed;
-use wellfed_client::plans::MealState;
+use wellfed_client::plans::{MealAction as Action, MealState};
 use wellfed_client::today::TimeSettings;
 use wellfed_model::{
     Battery, ClientRole, CoreEvent, Event, EventBody, FeedOutcome, FeederEvent, Gap, Readiness,
@@ -19,8 +19,8 @@ use wellfed_model::{
 
 use crate::api::feeder::TimeInfo;
 use crate::api::session::{
-    Card, FaultView, FedBy, FeedResult, HistoryBody, HistoryEntry, MealStanding, MealView,
-    NextMealView,
+    Card, FaultView, FedBy, FeedResult, HistoryBody, HistoryEntry, MealAction, MealStanding,
+    MealView, NextMealView,
 };
 use crate::requests::{TimeRead, plans_view, settings_view};
 
@@ -83,7 +83,19 @@ pub(crate) fn card(facts: &Facts) -> Option<Card> {
                     at_ms: at.as_millisecond(),
                 },
                 MealState::Later => MealStanding::Later,
+                MealState::Skipped { at } => MealStanding::Skipped {
+                    at_ms: at.as_millisecond(),
+                },
+                MealState::SkipKept => MealStanding::SkipKept,
             },
+            action: meal.action.map(|action| match action {
+                Action::Skip { due } => MealAction::Skip {
+                    due_ms: due.as_millisecond(),
+                },
+                Action::Undo { due } => MealAction::Undo {
+                    due_ms: due.as_millisecond(),
+                },
+            }),
         })
         .collect();
 
@@ -198,6 +210,16 @@ pub(crate) fn event_entry(event: &Event) -> HistoryEntry {
             HistoryBody::DispenseRefused { reason }
         }
         EventBody::Feeder(FeederEvent::Food { level }) => HistoryBody::Food { level },
+        EventBody::Feeder(FeederEvent::Skipped { plan, due, by }) => HistoryBody::Skipped {
+            slot: plan,
+            due_ms: due.as_millisecond(),
+            by: source_of(by),
+        },
+        EventBody::Feeder(FeederEvent::Unskipped { plan, due, by }) => HistoryBody::Unskipped {
+            slot: plan,
+            due_ms: due.as_millisecond(),
+            by: source_of(by),
+        },
     };
     HistoryEntry {
         seq: event.seq,

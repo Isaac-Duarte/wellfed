@@ -39,8 +39,9 @@ use crate::stock::{Stock, StockOptions, Unready, latest_report, view};
 use crate::track::{Stop, Track, Unsettled};
 use crate::{Error, backup, pairing, session::random, storage, update_key};
 
-/// How often the run looks at stock's status and the replacement.
-const POLL: Duration = Duration::from_secs(5);
+/// How often the run looks at stock's status and the replacement
+/// ([`Plan::poll`]).
+pub const POLL: Duration = Duration::from_secs(5);
 /// Stock joins the owner's Wi-Fi and reports within a minute or two of the
 /// frame; the enrollment window bounds this wait.
 const STOCK_GRACE: Duration = Duration::from_secs(5 * 60);
@@ -141,6 +142,10 @@ pub struct Plan {
     /// resume record ([`crate::storage`]).
     pub backups: PathBuf,
     pub stock: StockOptions,
+    /// How often the run looks at stock's status and the replacement:
+    /// [`POLL`], or less where stock and the feeder answer at once (a test
+    /// against stand-ins on loopback).
+    pub poll: Duration,
 }
 
 /// What the platform gives the run.
@@ -469,6 +474,7 @@ struct Run<P, B, D, K, R> {
     track: Track,
     /// When this run's setup frame went out.
     frame_out: Option<Instant>,
+    poll: Duration,
 }
 
 impl<P, B, D, K, R> Run<P, B, D, K, R>
@@ -538,6 +544,7 @@ where
             located,
             unjoined: plan.unjoined,
             backups: plan.backups,
+            poll: plan.poll,
             request: None,
             peer: None,
             refused: None,
@@ -752,7 +759,7 @@ where
                 install.gave_up();
                 return Ok(());
             }
-            tokio::time::sleep(POLL).await;
+            tokio::time::sleep(self.poll).await;
         }
     }
 
@@ -815,7 +822,7 @@ where
                     _ => {}
                 }
             }
-            tokio::time::sleep(POLL).await;
+            tokio::time::sleep(self.poll).await;
         }
         install.gave_up();
     }
@@ -889,7 +896,7 @@ where
                         return Ok(());
                     }
                     Err(wellfed_connect::Error::UnknownKey) => break,
-                    Err(_) if Instant::now() < deadline => tokio::time::sleep(POLL).await,
+                    Err(_) if Instant::now() < deadline => tokio::time::sleep(self.poll).await,
                     // Another identity answers there (a store reset since),
                     // or none: the recovery window settles which.
                     Err(error) => {
@@ -909,7 +916,7 @@ where
                 install.gave_up();
                 return Ok(());
             }
-            tokio::time::sleep(POLL).await;
+            tokio::time::sleep(self.poll).await;
         }
         let (identity, outcome) = loop {
             self.io
@@ -1035,7 +1042,7 @@ where
                     });
                     return None;
                 }
-                Err(_) => tokio::time::sleep(POLL).await,
+                Err(_) => tokio::time::sleep(self.poll).await,
             }
         }
     }
@@ -1053,7 +1060,7 @@ where
                 install.joined();
                 return Ok(());
             }
-            tokio::time::sleep(POLL).await;
+            tokio::time::sleep(self.poll).await;
         }
         install.gave_up();
         Ok(())
@@ -1189,7 +1196,7 @@ where
                     });
                     return install.signers_unread();
                 }
-                Err(_) => tokio::time::sleep(POLL).await,
+                Err(_) => tokio::time::sleep(self.poll).await,
             }
         }
     }
@@ -1219,7 +1226,7 @@ where
                     });
                     return install.gave_up();
                 }
-                Err(_) => tokio::time::sleep(POLL).await,
+                Err(_) => tokio::time::sleep(self.poll).await,
             }
         }
     }
@@ -1277,7 +1284,7 @@ where
                 Err(error) if Instant::now() >= deadline => {
                     return Err(Error::NoSession(Box::new(error)));
                 }
-                Err(_) => tokio::time::sleep(POLL).await,
+                Err(_) => tokio::time::sleep(self.poll).await,
             }
         }
     }
@@ -1302,7 +1309,7 @@ where
     /// starts the read again.
     async fn backup(&self) -> Result<StockBackup, Error> {
         let identity = self.identity.ok_or(Error::NoIdentity)?;
-        let (_, backup) = again_while_lost(&self.io.report, async || {
+        let (_, backup) = again_while_lost(&self.io.report, self.poll, async || {
             let mut connection = self.connect().await?;
             backup::fetch(&mut connection, &self.backups, &identity, &self.io.report).await
         })
@@ -1384,7 +1391,7 @@ where
                         error: error.to_string(),
                     });
                 }
-                Err(_) => tokio::time::sleep(POLL).await,
+                Err(_) => tokio::time::sleep(self.poll).await,
             }
         }
     }
@@ -1441,7 +1448,7 @@ where
                     return Ok(());
                 }
             }
-            tokio::time::sleep(POLL).await;
+            tokio::time::sleep(self.poll).await;
         }
         install.gave_up();
         Ok(())
@@ -1452,6 +1459,7 @@ where
 /// [`BACKUP_RECONNECT`]. Only for what changes nothing on the feeder.
 async fn again_while_lost<T>(
     report: &impl Report,
+    poll: Duration,
     mut read: impl AsyncFnMut() -> Result<T, Error>,
 ) -> Result<T, Error> {
     let deadline = tokio::time::Instant::now() + BACKUP_RECONNECT;
@@ -1461,7 +1469,7 @@ async fn again_while_lost<T>(
                 report.event(Event::SessionDropped {
                     error: crate::text(&error),
                 });
-                tokio::time::sleep(POLL).await;
+                tokio::time::sleep(poll).await;
             }
             read => return read,
         }
@@ -1518,7 +1526,7 @@ mod tests {
         };
 
         let mut reads = 0;
-        let read = again_while_lost(&report, async || {
+        let read = again_while_lost(&report, POLL, async || {
             reads += 1;
             if reads < 3 { Err(lost()) } else { Ok(reads) }
         });
@@ -1526,7 +1534,7 @@ mod tests {
         assert_eq!(said.get(), 2);
 
         let mut reads = 0;
-        let read = again_while_lost(&report, async || -> Result<(), Error> {
+        let read = again_while_lost(&report, POLL, async || -> Result<(), Error> {
             reads += 1;
             Err(Error::Unverified)
         });
@@ -1534,7 +1542,7 @@ mod tests {
         assert_eq!(reads, 1);
 
         let began = tokio::time::Instant::now();
-        let read = again_while_lost(&report, async || -> Result<(), Error> { Err(lost()) });
+        let read = again_while_lost(&report, POLL, async || -> Result<(), Error> { Err(lost()) });
         assert!(read.await.unwrap_err().is_connection_lost());
         assert!(began.elapsed() >= BACKUP_RECONNECT);
     }

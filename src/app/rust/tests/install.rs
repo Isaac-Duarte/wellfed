@@ -161,7 +161,9 @@ impl Fixture {
 }
 
 fn started(fixture: &Fixture, spec: InstallSpec) -> (Run, mpsc::UnboundedReceiver<InstallUpdate>) {
-    let run = Run::new(Some(fixture.pin));
+    // Stock's stand-in reports as it connects, so the run looks again soon
+    // rather than every 5 s, as it does for a feeder on Wi-Fi.
+    let run = Run::new(Some(fixture.pin)).polling_every(Duration::from_millis(100));
     let (updates, heard) = mpsc::unbounded_channel();
     run.start(
         Some(spec),

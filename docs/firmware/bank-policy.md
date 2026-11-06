@@ -1,10 +1,10 @@
 # Bank policy
 
-This page explains how the feeder's factory loader picks which of its two firmware banks to boot, and the rules Wellfed follows so a feeder always has something to boot. It is for owners curious about why updates are safe, and for contributors touching the updater. Bank 0 and bank 1 are in the [glossary](../glossary.md).
+This page explains how the feeder's factory loader picks which of its two firmware banks to boot, and the rules Wellfed follows so a feeder always has something to boot. It is for owners curious why updates are safe, and contributors touching the updater. How an update moves between the banks is in [OTA design](ota-design.md), and the bench checks are in [bank, install and rollback bench checks](install-bench-checks.md#checking-the-bank-rules).
 
 ## In short
 
-The feeder has room for two firmware images, in bank 0 and bank 1. At power-on it always boots bank 1 if bank 1 is valid. Bank 0 holds a known-good build and only boots when bank 1 can't.
+The feeder has room for two firmware images. At power-on it boots bank 1 whenever bank 1 is valid; bank 0 holds a known-good build and boots only when bank 1 can't.
 
 ```mermaid
 %% svg: boot-flow.svg
@@ -22,7 +22,7 @@ flowchart TD
 
 ## An update, start to finish
 
-An update never overwrites the build that is running. Bank 1 hands over to bank 0, and bank 0 writes the new build into bank 1. The new build then runs on **trial**. It confirms itself once it has started cleanly. If it keeps failing, KM0 sends the feeder back to bank 0, which still works.
+An update never overwrites the running build. Bank 1 hands over to bank 0, which writes the new build into bank 1. The new build runs on **trial** and confirms itself once it has started cleanly; if it keeps failing, KM0 sends the feeder back to bank 0.
 
 ```mermaid
 %% svg: ota-update.svg
@@ -46,7 +46,7 @@ sequenceDiagram
 
 ## The one rule: bank 1 wins
 
-The loader checks bank 1 first and boots it whenever it is valid. Bank 0 boots only when bank 1 fails. **Bank 1 has fixed priority; bank 0 is only a fallback.**
+**Bank 1 has fixed priority; bank 0 is only a fallback.**
 
 | Bank 1 (`0x186000`) | Bank 0 (`0x006000`) | Boots |
 | --- | --- | --- |
@@ -58,7 +58,7 @@ The loader checks bank 1 first and boots it whenever it is valid. Bank 0 boots o
 
 A bank counts as valid when its image starts with the 8-byte marker `81958711` (ASCII), followed by valid KM0 and KM4 signatures.
 
-The instructions explain the priority. With the force-bank GPIO disabled, the loader checks bank index 1 first (`0x08000456`) and returns it if its signatures pass. Only on failure does it check bank 0 (`0x0800043a`). The both-valid row held for stock in both banks, for our image in both, and for each mix. The build's audit requires it.
+With the force-bank GPIO disabled, the loader checks bank index 1 first (`0x08000456`) and returns it if its signatures pass, and only on failure checks bank 0 (`0x0800043a`). The both-valid row held for stock in both banks, our image in both, and each mix, and the build's audit requires it.
 
 **How stock moves between banks.** Stock 1.1.15's activation (`0x0e02a648`) writes the new image's marker last, then programs one word over the start of the opposite bank's marker, clearing bits in its first four bytes (physical observation, October 29, 2026: bytes 0–3 changed and 4–7 kept; the one-word program is inferred from that and the static read). Given bank 1's priority, that clearing is what lets stock move from bank 1 to bank 0.
 
@@ -75,9 +75,7 @@ Replacement images run from 684,032 bytes (`blink`) to 1,015,808 bytes (the curr
 
 ## One image runs from either bank
 
-Both banks map to the same virtual addresses. The mapper translates each bank's physical start to `0x0c000000` for KM0 and `0x0e000000` for KM4. So one image runs from either bank without relinking. The emulated mapping is identical for stock and for our image in both banks, and stock's updater writes the same container to either one.
-
-On the feeder, the same replacement image has run from both banks, and today both banks run the `feeder` build. The `device` build profile's OTA-address header matters only to the SDK's own OTA writer, which the replacement does not use.
+The mapper translates each bank's physical start to the same virtual addresses, `0x0c000000` for KM0 and `0x0e000000` for KM4, so one image runs from either bank without relinking. The emulated mapping is identical for stock and our image in both banks, and stock's updater writes the same container to either. On the feeder the same replacement image has run from both banks, and today both run the `feeder` build. The `device` build profile's OTA-address header matters only to the SDK's own OTA writer, which the replacement doesn't use.
 
 ## Rules for the replacement
 
@@ -85,30 +83,16 @@ On the feeder, the same replacement image has run from both banks, and today bot
 2. **Bank 0 holds a known-good fallback,** not a peer. It boots only when bank 1's marker or signatures fail. It runs the full `feeder` build: it serves the device API and feeds, so a failed update lands on a feeder that still works. It is the only bank that writes bank 1 ([OTA design](ota-design.md#updates-over-the-device-api)).
 3. **Never leave both banks invalid.** The loader then waits forever, and only the UART loader recovers. Any marker write must keep at least one valid bank.
 4. **To give way to bank 0, clear bank 1's marker.** Bank 0 cannot win while bank 1 is valid.
-5. **Bank 1 gives way only to the bank 0 it knows.** At boot, bank 0 records its build, its image's length (from the bank's own headers) and its SHA-256 in the update store. Bank 1 hashes bank 0 again before a give-way, and refuses when bank 0 changed or never recorded itself. So a give-way never lands on a build that cannot take the offer.
+5. **Bank 1 gives way only to the bank 0 it knows.** At boot, bank 0 records its build, its image's length (from the bank's own headers) and its SHA-256 in the update store. Bank 1 hashes bank 0 again before a give-way, and refuses when bank 0 changed or never recorded itself, naming which check failed. It runs the same check once per boot and publishes the result in the update state, so a bank 0 written over UART shows as blocked before an offer is refused. A bank-0 write counts as finished only once bank 1 reports that check as `match`. So a give-way never lands on a build that cannot take the offer.
 
 ## When a new build won't start
 
 The loader offers no recovery of its own: an image with a valid marker that crashes after boot is selected again on every reset. Wellfed has two ways out.
 
 - **UART.** The ROM loader lives in ROM, independent of flash, so the relay bench can always enter it and reinstall bank 1.
-- **Firmware fallback.** Bank 0 holds a known-good build, and a new build in bank 1 starts on trial ([OTA design](ota-design.md#boot-confirmation-and-fallback)):
-  - **Count.** Early on every boot, before KM4 starts, KM0 counts unconfirmed boots in a backup register. Backup registers survive a watchdog reset but not power loss, so a power cut only restarts the count.
-  - **Give way.** After three, KM0 clears the first byte of bank 1's marker (one page program, before any other core runs) and resets. The loader then boots bank 0.
-  - **Confirm.** The trial build confirms itself once its startup report, stopped outputs and network link are healthy. A firmware with a feeding owner must also have opened that owner on its journal, at rest, with its checks passing ([what confirmation proves](ota-design.md#what-confirmation-proves)).
-  - **After confirmation.** A confirmed build that keeps resetting soon after every boot (five such resets in a row) gives way to bank 0 the same way. Bank 0, or a bank 1 with nothing to fall back to, holds its outputs stopped instead: for 10 minutes, doubling with each storm in a row up to 160, then it feeds again. If held boots keep resetting too, it stops for an hour. Nothing is permanent, and power loss (the adapter and the D cells both out) clears every count ([reset storms](ota-design.md#reset-storms), [recovery](ota-design.md#recovering-a-held-or-halted-feeder)).
+- **Firmware fallback.** A new build in bank 1 starts on trial ([OTA design](ota-design.md#boot-confirmation-and-fallback)). KM0 counts unconfirmed boots in a backup register before KM4 starts (a power cut, which clears the register, only restarts the count). After three, it clears the first byte of bank 1's marker (one page program, before any other core runs) and resets, and the loader boots bank 0. A build confirms once its startup, stopped outputs and link are healthy and, with a feeding owner, that owner has opened at rest ([what confirmation proves](ota-design.md#what-confirmation-proves)). A confirmed build that keeps resetting soon after every boot gives way the same way, or is held or halted ([reset storms](ota-design.md#reset-storms)).
 
-The fallback only helps if the new build's KM0 code works. A broken KM0 or a broken factory configuration still needs UART. The watchdog is what turns a KM4 hang into a counted reset.
-
-## Checking it on hardware
-
-The tools cover each step with the bank-1 updater's checks, and the factory region stays unwritable ([UART development](../development/uart-development.md)):
-
-1. **Both valid.** `wellfed-bench flash-prepare/flash-execute --bank 0` installs a reviewed replacement image into bank 0. Bank 0 must hold exactly what the plan expects: the frozen `--source` image, or without `--source`, the pinned baseline with an invalidated marker ([UART development](../development/uart-development.md)). Bank 1 must stay valid throughout. You should see the boot report bank 1.
-2. **Fallback.** `wellfed-bench give-way-prepare/give-way-execute --fallback <bank-0 review>` clears bank 1's first marker byte. It runs only while bank 0 is exactly that review. You should see the boot report bank 0.
-3. **Restore.** `wellfed-bench flash-prepare/flash-execute --restore-marker` rewrites bank 1's first sector, marker last. You should see the boot report bank 1 again.
-
-Each step ends with a full-flash read, compared with the one before it. The UART loader path stays available throughout.
+The fallback only helps if the new build's KM0 code works: a broken KM0 or factory configuration still needs UART. The watchdog is what turns a KM4 hang into a counted reset.
 
 ## Evidence
 

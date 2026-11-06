@@ -14,14 +14,14 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 use wellfed_client::api::Invite;
-use wellfed_connect::Connection;
+use wellfed_connect::{Connection, Timing};
 use wellfed_feeder_sim::harness::{Relay, Threaded};
 use wellfed_feeder_sim::serve::Control;
 use wellfed_homeassistant::api::{
     EventKind, FeedOutcome, NotSent, RefusalKind, Role, State, Update, UpdateKind, WriteResult,
     Written,
 };
-use wellfed_homeassistant::feeder::{Feeder, Target};
+use wellfed_homeassistant::feeder::{Clocks, Feeder, Target};
 use wellfed_homeassistant::key::{ClientKey, invite_feeder, join, join_member};
 use wellfed_model::{
     Answer, ClientRole, FeederSettingsPatch, Generation, Op, PLANS, Plan, Pushed, Weekdays,
@@ -30,6 +30,19 @@ use wellfed_session::noise::Keypair;
 
 const OWNER: [u8; 32] = [0x21; 32];
 const WAIT: Duration = Duration::from_secs(60);
+
+/// The clocks of a test that waits out a lost answer or a lost session:
+/// far shorter than Home Assistant's, so it waits seconds rather than
+/// tens of them, and still far longer than the simulator takes to answer.
+/// A test that holds answers back while it does other work keeps
+/// [`Clocks::DEFAULT`], so a slow host never times its write out.
+const SHORT: Clocks = Clocks {
+    session: Timing {
+        answer: Duration::from_secs(2),
+        ..Timing::DEFAULT
+    },
+    retry: Duration::from_millis(200),
+};
 
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
@@ -82,13 +95,18 @@ fn joined() -> (Threaded, ClientKey) {
     (sim, key)
 }
 
-/// The bridge's session with the feeder at `address`.
-fn session(sim: &Threaded, key: ClientKey, address: std::net::SocketAddr) -> Feeder {
+/// The bridge's session with the feeder at `address`, on `clocks`.
+fn session(
+    sim: &Threaded,
+    key: ClientKey,
+    address: std::net::SocketAddr,
+    clocks: Clocks,
+) -> Feeder {
     let target = Target {
         identity: sim.identity,
         address: Some(address.to_string()),
     };
-    Feeder::start(key, target).unwrap()
+    Feeder::start(key, target, clocks).unwrap()
 }
 
 /// Updates until one `want` accepts, failing past [`WAIT`].
@@ -143,7 +161,7 @@ fn the_session_feeds_to_its_fed_event_and_sets_the_lock() {
     let restored = ClientKey::restore(&key.secret()).unwrap();
     assert_eq!(restored.public(), key.public());
 
-    let feeder = session(&sim, restored, sim.address);
+    let feeder = session(&sim, restored, sim.address, Clocks::DEFAULT);
     let role = until(&feeder, |update| update.role);
     assert_eq!(role, Role::Member);
     state_where(&feeder, |state| state.settings.is_some());
@@ -194,7 +212,7 @@ fn the_backlog_sets_the_last_feed_and_is_not_news() {
         }
     });
 
-    let feeder = session(&sim, key, sim.address);
+    let feeder = session(&sim, key, sim.address, Clocks::DEFAULT);
     let replayed = until(&feeder, |update| {
         let event = update.event.as_ref()?;
         (event.kind == EventKind::Fed).then_some(update.replayed)
@@ -212,7 +230,7 @@ fn the_backlog_sets_the_last_feed_and_is_not_news() {
 #[test]
 fn a_running_feed_can_be_cancelled() {
     let (sim, key) = joined();
-    let feeder = session(&sim, key, sim.address);
+    let feeder = session(&sim, key, sim.address, Clocks::DEFAULT);
     state_where(&feeder, |state| state.settings.is_some());
 
     sim.control(Control::StallFeeds(true));
@@ -233,7 +251,7 @@ fn settings_change_on_the_generation_read_and_one_at_a_time() {
     let (sim, key) = joined();
     let relays = relays();
     let relay = relays.block_on(Relay::start(sim.address));
-    let feeder = std::sync::Arc::new(session(&sim, key, relay.address));
+    let feeder = std::sync::Arc::new(session(&sim, key, relay.address, Clocks::DEFAULT));
     state_where(&feeder, |state| state.settings.is_some());
 
     // The first change reaches the feeder; its answer is held back.
@@ -279,7 +297,7 @@ fn a_stale_plans_change_is_refused_and_the_plans_read_again() {
 
     let relays = relays();
     let relay = relays.block_on(Relay::start(sim.address));
-    let feeder = std::sync::Arc::new(session(&sim, key, relay.address));
+    let feeder = std::sync::Arc::new(session(&sim, key, relay.address, Clocks::DEFAULT));
     state_where(&feeder, |state| {
         state.plans.as_ref().is_some_and(|plans| plans.len() == 1)
     });
@@ -321,7 +339,7 @@ fn a_stale_plans_change_is_refused_and_the_plans_read_again() {
 #[test]
 fn a_write_while_the_feeder_is_gone_is_not_sent() {
     let (sim, key) = joined();
-    let feeder = session(&sim, key, sim.address);
+    let feeder = session(&sim, key, sim.address, Clocks::DEFAULT);
     state_where(&feeder, |_| true);
 
     drop(sim);
@@ -334,7 +352,7 @@ fn a_write_while_the_feeder_is_gone_is_not_sent() {
 #[test]
 fn a_member_sets_the_portion_weight() {
     let (sim, key) = joined();
-    let feeder = session(&sim, key, sim.address);
+    let feeder = session(&sim, key, sim.address, Clocks::DEFAULT);
     state_where(&feeder, |_| true);
 
     assert_eq!(feeder.set_portion_weight(9_500), Written::done());
@@ -378,7 +396,7 @@ fn a_feed_whose_answer_is_lost_is_uncertain_sent_once_and_then_settled() {
     let (sim, key) = joined();
     let relays = relays();
     let relay = relays.block_on(Relay::start(sim.address));
-    let feeder = session(&sim, key, relay.address);
+    let feeder = session(&sim, key, relay.address, SHORT);
     state_where(&feeder, |_| true);
 
     relay.hold_answers();
@@ -412,7 +430,7 @@ fn a_feed_whose_answer_is_lost_is_uncertain_sent_once_and_then_settled() {
 fn a_revoked_key_stops_the_session_for_good() {
     let (sim, key) = joined();
     let public = key.public();
-    let feeder = session(&sim, key, sim.address);
+    let feeder = session(&sim, key, sim.address, SHORT);
     state_where(&feeder, |_| true);
 
     let revoke = Op::RevokeClient { key: public };
@@ -428,7 +446,7 @@ fn a_feed_that_never_reached_the_feeder_is_still_unknown_after_the_backlog() {
     let (sim, key) = joined();
     let relays = relays();
     let relay = relays.block_on(Relay::start(sim.address));
-    let feeder = std::sync::Arc::new(session(&sim, key, relay.address));
+    let feeder = std::sync::Arc::new(session(&sim, key, relay.address, SHORT));
     state_where(&feeder, |_| true);
 
     // The request waits in the relay, which then drops it with the

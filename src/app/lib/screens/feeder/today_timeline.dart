@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:wellfed/screens/feeder/feed_detail.dart';
 import 'package:wellfed/screens/feeder/history.dart';
+import 'package:wellfed/screens/feeder/meal_skip.dart';
 import 'package:wellfed/screens/feeder/portion.dart' show gramsText;
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -22,7 +23,7 @@ import 'package:wellfed/widgets/when.dart';
 /// order.
 ///
 /// The meals and how each stands come from the card; a feed asked for by hand
-/// and the reason a meal was skipped come from the history the session keeps,
+/// and the reason a meal was missed come from the history the session keeps,
 /// so a history not read yet shows the meals alone.
 class TodayTimeline extends StatelessWidget {
   const TodayTimeline({super.key, required this.feeder, required this.card});
@@ -213,7 +214,18 @@ class _Rows extends StatelessWidget {
       child: Column(
         children: [
           for (final (i, moment) in moments.indexed)
-            _Row(feeder: feeder, moment: moment, first: i == 0, timeWidth: widest.ceilToDouble()),
+            _Row(
+              // A meal's row keeps its state (a skip waiting on the card) by
+              // its slot, wherever the day's order puts it.
+              key: switch (moment.meal) {
+                final api.MealView meal => ValueKey<int>(meal.slot),
+                null => null,
+              },
+              feeder: feeder,
+              moment: moment,
+              first: i == 0,
+              timeWidth: widest.ceilToDouble(),
+            ),
         ],
       ),
     );
@@ -228,7 +240,7 @@ TextStyle _timeStyle(BuildContext context) => TextStyle(
 );
 
 class _Row extends StatelessWidget {
-  const _Row({required this.feeder, required this.moment, required this.first, required this.timeWidth});
+  const _Row({super.key, required this.feeder, required this.moment, required this.first, required this.timeWidth});
 
   final FeederController feeder;
   final _Moment moment;
@@ -299,6 +311,8 @@ class _Row extends StatelessWidget {
                 ],
               ),
             ),
+            if (moment.meal case api.MealView(:final api.MealAction action?) && final api.MealView meal)
+              MealSkipButton(feeder: feeder, meal: meal, action: action),
             if (fed != null) StrokeIcon(Glyph.chevron, size: 16, color: c.textMuted),
           ],
         ),
@@ -332,12 +346,21 @@ class _Row extends StatelessWidget {
       (api.MealStanding_Passed(), _) => (
         Glyph.warning,
         c.warning,
-        'Skipped · ${portionsText(meal?.portions ?? 0)}',
+        'Missed · ${portionsText(meal?.portions ?? 0)}',
         switch (moment.missed) {
           final MissedReason reason? => missedText(reason),
           null => 'No feed recorded',
         },
         true,
+      ),
+      // Skipped on purpose: quiet, and not a problem, unlike a meal the
+      // feeder missed.
+      (api.MealStanding_Skipped() || api.MealStanding_SkipKept(), _) => (
+        Glyph.minus,
+        c.textMuted,
+        'Skipped',
+        join([portionsText(meal?.portions ?? 0), call]),
+        false,
       ),
       (api.MealStanding_Next(:final PlatformInt64 atMs), _) => (
         Glyph.clock,

@@ -14,7 +14,7 @@ use wellfed_api::{Connection as Link, FeederId};
 use wellfed_model::{Answer, Op};
 
 use crate::task::LongLane;
-use crate::{AskError, Mirror, Random, RequestId};
+use crate::{AskError, Mirror, Pace, Random, RequestId, Timing};
 
 /// One request for the feeder, and where its answer goes.
 pub(crate) struct Command {
@@ -30,6 +30,8 @@ pub struct Operation {
     steps: mpsc::Sender<Command>,
     pub(crate) link: watch::Receiver<Link>,
     answer: Duration,
+    /// How an install on this turn waits between its steps.
+    pub(crate) pace: Pace,
     /// Request ids for the steps an install sends.
     pub(crate) random: Arc<dyn Random>,
     _turn: OwnedSemaphorePermit,
@@ -77,20 +79,17 @@ impl Mirror {
             let handle = handles.get(&id).ok_or(AskError::NotRunning)?;
             handle.long.clone()
         };
-        long.operation(
-            self.shared.config.timing.answer,
-            Arc::clone(&self.shared.random),
-        )
-        .await
+        long.operation(self.shared.config.timing, Arc::clone(&self.shared.random))
+            .await
     }
 }
 
 impl LongLane {
     /// Wait for the turn, and hold it in an [`Operation`] whose steps wait
-    /// `answer` each.
+    /// `timing.answer` each.
     pub(crate) async fn operation(
         self,
-        answer: Duration,
+        timing: Timing,
         random: Arc<dyn Random>,
     ) -> Result<Operation, AskError> {
         let turn = self
@@ -101,7 +100,8 @@ impl LongLane {
         Ok(Operation {
             steps: self.steps,
             link: self.link,
-            answer,
+            answer: timing.answer,
+            pace: timing.pace,
             random,
             _turn: turn,
         })

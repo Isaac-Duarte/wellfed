@@ -80,6 +80,26 @@ enum ServerErrorKind {
   /// A feeder's food history names the food, so it stays.
   foodInUse,
 
+  /// A full bag on a feeder with no food set: set its food first.
+  noCurrentFood,
+
+  /// The feeder is already on this server.
+  alreadyAdopted,
+
+  /// The feeder dropped the invite unanswered: used or expired. A new
+  /// adoption makes a new one.
+  inviteExpired,
+
+  /// The server could not read the feeder's clients to confirm this
+  /// phone's key (the feeder offline, or slow to connect), so the key is
+  /// not this account's yet. Claiming it again records it.
+  phoneKeyUnconfirmed,
+
+  /// The server will not record this phone's key as the account's: the
+  /// feeder does not list it, another phone or client holds it, an owner
+  /// kept it, or only an owner may claim it. `message` says which.
+  phoneKeyRefused,
+
   /// The server has no session with the feeder right now, or could not
   /// reach it.
   feederOffline,

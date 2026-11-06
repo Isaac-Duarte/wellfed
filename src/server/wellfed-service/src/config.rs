@@ -53,6 +53,9 @@ impl Config {
                 time_sync: timing.time_sync,
                 answer: timing.answer,
                 sample_wait: timing.sample_wait,
+                pace: timing.pace,
+                // The feeder's own session clocks; nothing the owner sets.
+                ..wellfed_mirror::Timing::default()
             },
             diagnostics: self.diagnostics,
         }
@@ -76,6 +79,8 @@ pub struct Timing {
     /// The longest an import's upload may go without a byte: the import
     /// holds the one writer meanwhile.
     pub upload_idle: Duration,
+    /// How an install or a stock restore waits between its steps.
+    pub pace: wellfed_mirror::Pace,
 }
 
 impl Default for Timing {
@@ -89,6 +94,7 @@ impl Default for Timing {
             sample_wait: mirror.sample_wait,
             session: Duration::from_secs(30 * 24 * 3600),
             upload_idle: Duration::from_secs(30),
+            pace: mirror.pace,
         }
     }
 }

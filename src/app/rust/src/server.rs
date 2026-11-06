@@ -7,7 +7,8 @@ use jiff::Timestamp;
 use wellfed_api::{
     Command, CommandOutcome, EventPage, FeedAnomaly, Feeder, FeederDetail, FeederFood,
     FeederRefusal, Food, FoodLeft, FoodPeriod, HistoryEvent, Install, IntakeDay, IntakeFeeder, Pet,
-    PetIntake, Refill, Role, SinceRefill, StatusSnapshot, StreamEvent, User,
+    PetIntake, Refill, RefillPage, Role, SinceRefill, StatusSnapshot, StreamEvent, User, Weight,
+    WeightPage,
 };
 use wellfed_model::{Event, Gap};
 use wellfed_server_client::Error;
@@ -20,14 +21,15 @@ use crate::api::server_views::{
     ServerAccount, ServerAnomaly, ServerConnection, ServerEntry, ServerEventPage, ServerFeeder,
     ServerFeederDetail, ServerFeederFood, ServerFeederPortions, ServerFood, ServerFoodLeft,
     ServerFoodPeriod, ServerIntakeDay, ServerIntakeFeeder, ServerNextMeal, ServerPet,
-    ServerPetIntake, ServerRefill, ServerRole, ServerSinceRefill, ServerSnapshot,
+    ServerPetIntake, ServerRefill, ServerRefillPage, ServerRole, ServerSinceRefill, ServerSnapshot,
+    ServerWeight, ServerWeightPage,
 };
 use crate::today::{Facts, event_entry, gap_entry};
 
 /// Ids as Dart passes them back: the UUID strings the views gave.
 pub(crate) mod ids {
     use uuid::Uuid;
-    use wellfed_api::{FeederId, FoodId, PetId};
+    use wellfed_api::{FeederId, FoodId, PetId, RefillId, WeightId};
 
     use crate::api::server_error::{ServerError, ServerErrorKind};
 
@@ -48,6 +50,21 @@ pub(crate) mod ids {
     pub(crate) fn food(id: &str) -> Result<FoodId, ServerError> {
         parse(id).map(FoodId)
     }
+
+    pub(crate) fn weight(id: &str) -> Result<WeightId, ServerError> {
+        parse(id).map(WeightId)
+    }
+
+    pub(crate) fn refill(id: &str) -> Result<RefillId, ServerError> {
+        parse(id).map(RefillId)
+    }
+}
+
+/// Times as Dart passes them: milliseconds since the epoch.
+pub(crate) fn timestamp(at_ms: i64) -> Result<Timestamp, ServerError> {
+    Timestamp::from_millisecond(at_ms).map_err(|error| {
+        ServerError::new(ServerErrorKind::Invalid, format!("time {at_ms}: {error}"))
+    })
 }
 
 /// Dates as Dart passes them: `YYYY-MM-DD`.
@@ -88,6 +105,15 @@ impl From<Error> for ServerError {
                 ErrorCode::NotFound => ServerErrorKind::NotFound,
                 ErrorCode::Invalid => ServerErrorKind::Invalid,
                 ErrorCode::FoodInUse => ServerErrorKind::FoodInUse,
+                ErrorCode::NoCurrentFood => ServerErrorKind::NoCurrentFood,
+                ErrorCode::AlreadyAdopted => ServerErrorKind::AlreadyAdopted,
+                ErrorCode::InviteExpired => ServerErrorKind::InviteExpired,
+                ErrorCode::PhoneKeyUnconfirmed => ServerErrorKind::PhoneKeyUnconfirmed,
+                ErrorCode::PhoneKeyNotListed
+                | ErrorCode::PhoneKeyKept
+                | ErrorCode::PhoneKeyNotAPhone
+                | ErrorCode::PhoneClaimOwnersOnly
+                | ErrorCode::ClientKeyTaken => ServerErrorKind::PhoneKeyRefused,
                 ErrorCode::FeederOffline | ErrorCode::Unreachable => ServerErrorKind::FeederOffline,
                 ErrorCode::OutcomeUnknown => ServerErrorKind::OutcomeUnknown,
                 ErrorCode::KeyReused => ServerErrorKind::KeyReused,
@@ -378,6 +404,34 @@ impl From<Refill> for ServerRefill {
             full_bag: refill.full_bag,
             food: refill.food.map(|food| food.to_string()),
             user: refill.user.to_string(),
+        }
+    }
+}
+
+impl From<RefillPage> for ServerRefillPage {
+    fn from(page: RefillPage) -> Self {
+        Self {
+            items: page.items.into_iter().map(ServerRefill::from).collect(),
+            next: page.next,
+        }
+    }
+}
+
+impl From<Weight> for ServerWeight {
+    fn from(weight: Weight) -> Self {
+        Self {
+            id: weight.id.to_string(),
+            at_ms: ms(weight.at),
+            grams: weight.grams,
+        }
+    }
+}
+
+impl From<WeightPage> for ServerWeightPage {
+    fn from(page: WeightPage) -> Self {
+        Self {
+            items: page.items.into_iter().map(ServerWeight::from).collect(),
+            next: page.next,
         }
     }
 }

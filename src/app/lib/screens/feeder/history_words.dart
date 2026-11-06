@@ -31,7 +31,7 @@ _Words _describe(BuildContext context, FeederController feeder, HistoryBody body
     HistoryBody_Missed(:final PlatformInt64 dueMs, :final MissedReason reason) => loud(
       Glyph.warning,
       c.warning,
-      '${clockTextMs(context, dueMs)} meal skipped',
+      '${clockTextMs(context, dueMs)} meal missed',
       missedText(reason),
     ),
     HistoryBody_Restarted() => quiet(Glyph.power, 'Started up', ''),
@@ -43,6 +43,16 @@ _Words _describe(BuildContext context, FeederController feeder, HistoryBody body
     HistoryBody_SettingsChanged(:final FedBy by) => quiet(Glyph.sliders, 'Settings changed', who(by)),
     HistoryBody_WifiChanged(:final FedBy by) => quiet(Glyph.wifi, 'Wi-Fi changed', who(by)),
     HistoryBody_PlansChanged(:final FedBy by) => quiet(Glyph.clock, 'Meals changed', who(by)),
+    HistoryBody_Skipped(:final PlatformInt64 dueMs, :final FedBy by) => quiet(
+      Glyph.minus,
+      'Skipped the ${clockTextMs(context, dueMs)} meal',
+      who(by),
+    ),
+    HistoryBody_Unskipped(:final PlatformInt64 dueMs, :final FedBy by) => quiet(
+      Glyph.clock,
+      'Brought back the ${clockTextMs(context, dueMs)} meal',
+      who(by),
+    ),
     HistoryBody_Joined(:final String fingerprint) => quiet(Glyph.add, 'Someone joined', feeder.clientName(fingerprint)),
     HistoryBody_UpdateKeyAdded(:final String fingerprint) => quiet(
       Glyph.key,
@@ -110,7 +120,7 @@ String _asker(FeederController feeder, FedBy by) => switch (by) {
   _ => whoText(feeder, by),
 };
 
-/// Why a meal was skipped, as a sentence.
+/// Why a meal was missed, as a sentence.
 String missedText(MissedReason reason) => switch (reason) {
   MissedReason_Late() => 'The feeder was off or had no time',
   MissedReason_Blocked(:final reason) => switch (reason) {

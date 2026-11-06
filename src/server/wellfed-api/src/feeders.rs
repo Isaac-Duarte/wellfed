@@ -122,3 +122,13 @@ pub struct StatusSnapshot {
 pub struct LockRequest {
     pub locked: bool,
 }
+
+/// One of today's meals: its plan's slot and the instant it is due, as
+/// the plans' next meal or their `skipped` list names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct MealRequest {
+    /// The plan's slot, 0 to 9.
+    #[schema(maximum = 9)]
+    pub slot: u8,
+    pub due: Timestamp,
+}

@@ -33,7 +33,7 @@ pub enum Error {
     /// A plans change named a generation the feeder has moved past; it
     /// carries the current plans, which the server answers with.
     #[error("the plans moved on to generation {}", .0.generation)]
-    StalePlans(Plans),
+    StalePlans(Box<Plans>),
     /// A calibration change named a generation the feeder has moved past;
     /// it carries the current calibration, which the server answers with.
     #[error("the calibration moved on to generation {}", .0.generation)]
@@ -238,6 +238,8 @@ pub enum Invalid {
         wellfed_model::CALL_PLAYS_MAX
     )]
     Plan { slot: u8 },
+    #[error("a meal names a plan slot 0-{} and an instant the feeder's clock holds", wellfed_model::PLANS - 1)]
+    Meal,
     #[error("a page holds 1-500 events")]
     Limit,
     #[error("the server's label is 1-16 bytes with no NUL")]

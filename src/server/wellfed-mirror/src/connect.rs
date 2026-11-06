@@ -82,7 +82,15 @@ pub(crate) async fn open(
         .and_then(|address| wellfed_connect::locate(&identity, Some(address), Duration::ZERO).ok());
     if let Some(address) = stored {
         let ephemeral = shared.random()?;
-        match Connection::open(keys, identity, address, ephemeral).await {
+        match Connection::open_with(
+            keys,
+            identity,
+            address,
+            ephemeral,
+            shared.config.timing.session,
+        )
+        .await
+        {
             Ok(connection) => return Ok((connection, address)),
             // The feeder answered: looking elsewhere would not help.
             Err(
@@ -105,9 +113,15 @@ pub(crate) async fn open(
         warn!("remember the address {found}: {error}");
     }
     let ephemeral = shared.random()?;
-    let connection = Connection::open(keys, identity, found, ephemeral)
-        .await
-        .map_err(Unreachable)?;
+    let connection = Connection::open_with(
+        keys,
+        identity,
+        found,
+        ephemeral,
+        shared.config.timing.session,
+    )
+    .await
+    .map_err(Unreachable)?;
     Ok((connection, found))
 }
 

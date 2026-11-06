@@ -1,12 +1,8 @@
 # Device layer
 
-This page lists what in the firmware is specific to the PLAF103, and where each fact lives. It is for contributors who want to bring Wellfed to a second feeder model. Wellfed does not support a second model yet; this is the map of what one would have to supply.
+This page lists what in the firmware is specific to the PLAF103, and where each fact lives. It is for contributors bringing Wellfed to a second model, which it does not support yet. How the code splits by kind is in [device kinds](device-kinds.md).
 
-Each fact is one of three kinds:
-
-- **Board:** another feeder would differ.
-- **Chip:** any AmebaD board shares it.
-- **Unit or stock:** tied to our research unit, or to stock 1.1.15.
+Each fact is a **board** fact (another feeder would differ), a **chip** fact (any AmebaD board shares it), or a **unit or stock** fact (tied to our research unit or to stock 1.1.15).
 
 ## Where the facts live
 
@@ -19,13 +15,14 @@ Each fact is one of three kinds:
 | The model the board is | `MODEL_CODE` in `wellfed-board-plaf103`, checked against `Model` by the firmware | Board |
 | Build inputs: stock image, C entry and BLE ports, first-boot mains | `device.json` | Board |
 
-**Three layers.** The chip HAL (`wellfed-hal`) holds what any AmebaD device needs, plus the generic drivers (buttons, LEDs, buzzer, audio, ADC) that take their pins from the board. The board crate (`wellfed-board-plaf103`) holds the pins, polarities, the outputs' safe state, the storage map and the model. The feeder's own hardware sits above the chip HAL in `wellfed-hal-feeder`: the motor, optics and sensor board, its timer tick and feedback capture, the feeding owner, and the bench variants' injected stop failures, jams and sensor faults.
+**Three layers.** The chip HAL (`wellfed-hal`) holds what any AmebaD device needs, plus the generic drivers (buttons, LEDs, buzzer, audio, ADC) that take their pins from the board. The board crate holds the pins, polarities, the outputs' safe state, the storage map and the model. `wellfed-hal-feeder`, above the chip HAL, holds the feeder's own hardware: the motor, optics and sensor board, its timer tick and feedback capture, the feeding owner, and the bench variants' injected stop failures, jams and sensor faults.
 
-**One source for pins: the board contract.** Nothing reads a board crate directly: the SDK, both drivers and the product read `wellfed-board`, which re-exports the one board `WELLFED_BOARD` names and checks at compile time that it has every item the contract names. The build wrapper sets the variable from the device it builds for. The repository's `.cargo/config.toml` sets `plaf103` for every other build, so the workspace and its tests are the feeder's. A name that is not exactly one known board stops the build. The contract is plain constants, not a trait: every value is used in a constant context (a static's length, a compile-time check, the RAM-resident code of a flash lease), and a trait's associated constants would need a generic parameter through each, which a static cannot take. A second board is a second crate of the same shape and a name in `wellfed-board`'s build script. Nothing reads the board at run time.
+**The board contract.** Nothing reads a board crate directly. The SDK, both driver crates and the product read `wellfed-board`, which re-exports the one board `WELLFED_BOARD` names and checks at compile time that it has every item the contract names. The build wrapper sets the variable from the device it builds for, and `.cargo/config.toml` sets `plaf103` for every other build, so the workspace and its tests are the feeder's. A name that is not exactly one known board stops the build, and nothing reads the board at run time.
 
-**Code only one board runs** is gated on `cfg(wellfed_board = "<name>")`, and code that keeps a store on `cfg(wellfed_board_store)`. `wellfed-board`'s build script emits both and hands them to the crates that gate code, so one check decides for every crate. A Cargo feature would not do: features unify across a workspace build, which would turn on two boards at once.
-
-**Why not `device.json`.** The pins are compile-time constants inside `no_std` firmware, and several feed audited code: the stopped-output check, the panic and RAM-park output writes, and the KM0 pad-table audit. Generating them from JSON would put a code generator in front of audited binaries, for no gain while there is one board. `device.json` stays the description of what the builder needs.
+- **Constants, not a trait.** Every value is used in a constant context (a static's length, a compile-time check, a flash lease's RAM-resident code), and a trait's associated constants would need a generic parameter through each, which a static cannot take.
+- **Gating.** Code only one board runs is gated on `cfg(wellfed_board = "<name>")`, and code that keeps a store on `cfg(wellfed_board_store)`. `wellfed-board`'s build script emits both for the crates that gate code, so one check decides for all. A Cargo feature would not do: features unify across a workspace build, turning on two boards at once.
+- **A second board** is a second crate of the same shape and a name in `wellfed-board`'s build script.
+- **Why not `device.json`.** Several pin constants feed audited code (the stopped-output check, the panic and RAM-park output writes, the KM0 pad-table audit). Generating them from JSON would put a code generator in front of audited binaries, for no gain with one board. `device.json` describes what the builder needs.
 
 ## Known limits
 
@@ -39,12 +36,7 @@ These facts stay where they are, and are listed here instead. A second model wou
 - **Motor driver.** The TC118AH's truth table is split between two crates: `wellfed_core::feed::motor_gate` makes both inputs HIGH its STOP (the driver's brake), and the board's `MotorPins` implementation, `wellfed_hal_feeder::board::BoardPins`, refuses both LOW. The dispensing direction is clockwise, `Drive0`, with PA13 HIGH ([motor pulse](motor-pulse.md)).
 - **Beams.** `wellfed_core::feed::sensor_inputs` holds their polarity, and which is food and which is outlet.
 - **Stopped outputs.** `wellfed_hal::stopped` checks exactly the pins the board's `safe` state covers. On the PLAF103 stopped is motor HIGH, emitters LOW and SWD released; on the PLWF106 it is the pump LOW. The raw-register copies in `target.rs` (`panic_outputs_safe`, `ram_outputs_safe`) write the board's `safe` state. The RAM-park audit checks `ram_outputs_safe` as leaf code.
-- **Raw outputs are `unsafe`.** In `wellfed-amebad-sys` these are `unsafe fn`s whose contract is ownership:
-  - the GPIO writers (`gpio_port_write`, `gpio_write_bit`, `gpio_init`): the motor pins belong to `board` and `stopped`;
-  - the watchdog (`wdg_init`, `wdg_cmd`, `wdg_refresh`): it belongs to the runtime's supervision;
-  - the flash writers (`storage_erase`, `storage_program`, `bank1_erase`, `bank1_program`, `bank1_give_way`): a write needs the armed hooks' lease.
-
-  Product firmware reaches them only through those owners. Bring-up firmwares and their probes take the GPIO, watchdog and storage writers from `wellfed_hal::bringup`, inside an `unsafe` block that states why the contract holds. The bank-1 writers stay the updater's and are not re-exported there. `cargo xtask check-repository` refuses a raw writer or `bringup` in product code (the `feeder` firmware's sources and `src/product/`). It also refuses a raw writer named other than as `bringup::…` in bring-up code (the other firmwares and the probes).
+- **Raw outputs are `unsafe`.** In `wellfed-amebad-sys` they are `unsafe fn`s whose contract is ownership: the GPIO writers (`gpio_port_write`, `gpio_write_bit`, `gpio_init`) belong to `board` and `stopped`, which own the motor pins, the watchdog (`wdg_init`, `wdg_cmd`, `wdg_refresh`) to the runtime's supervision, and the flash writers (`storage_erase`, `storage_program`, `bank1_erase`, `bank1_program`, `bank1_give_way`) need the armed hooks' lease. Product firmware reaches them only through those owners. Bring-up code (the other firmwares and the probes) takes the GPIO, watchdog and storage writers from `wellfed_hal::bringup`, in an `unsafe` block stating why the contract holds; the bank-1 writers stay the updater's and are not re-exported there. `cargo xtask check-repository` refuses a raw writer or `bringup` in product code (the `feeder` firmware's sources and `src/product/`), and a raw writer named other than as `bringup::…` in bring-up code.
 - **Audio pages.** An `sdk::Audio` handle (one at a time, from `Audio::take`) lends one ring page at a time as a `Page` guard, which `submit` consumes. So no two references to a ring page exist, and none outlives the handle.
 - **Shared audio pads.** `firstboot_km0.c` powers the audio-shared pads so PA0–PA7 work as GPIO. `audit/pinmap.rs` checks the stock pad table.
 - **Limits.** The probes' and simulator's feed and sensor limits (300 mA, battery 1650 scaled, settle times) are bench values for this board.
@@ -52,10 +44,7 @@ These facts stay where they are, and are listed here instead. A second model wou
 ### Supervision
 
 - **Shared handles.** `Board` and `Events` are `&self` handles over interior cells. They are borrowed only inside `IrqGuard`, for one call, so the TIM2 and feedback interrupts never alias a task's borrow. A `Board` call nested inside another (from code the first call runs) is refused with `Reentered`, rather than lent the state a second time: on one core, waiting for it would never end. The owner keeps the handles beside its task state, never inside it. The probes still hold them inside the state their task borrows `&mut` through its `Slot`. They are bench tools, but moving them out the same way is still open.
-- **Flash leases during a feed.** The lease provider checks stopped outputs (`stopped::observe`) when it quiesces. A lease during a feed trips it: the hook halts, the watchdog resets the board, and the owner faults a feed that sees a lease. So no lease may start while a feed may move the outputs.
-  - The feed journal writes only at the owner's rest boundaries, with the outputs stopped, under the loop's own claim.
-  - Every other store write (the settings writer's stores, the confirmation, the update stage) first takes the write turn in `wellfed_hal::interlock`. The turn waits while the loop holds the outputs ([device API](device-api.md#in-the-firmware)).
-  - The provider's request and quiesce run under the same serialization as the board.
+- **Flash leases during a feed.** The lease provider checks stopped outputs (`stopped::observe`) when it quiesces, so a lease during a feed halts the hook and the watchdog resets the board, and the owner faults a feed that sees a lease. So no lease starts while a feed may move the outputs: the feed journal writes only at the owner's rest boundaries under the loop's claim, and every other store write takes the write turn in `wellfed_hal::interlock` ([device API](device-api.md#no-flash-write-while-the-motor-may-move)). The provider's request and quiesce run under the board's serialization.
 - **One watchdog owner.** The runtime feeds the hardware watchdog; the feeding owner only publishes a beat (`supervision::beat`). A fault outside initialization stops the beat, so it resets the board. The beat promises two gaps: 1 s while outputs may move, and the runtime's 10 s liveness limit at rest. The second exists because the Wi-Fi driver's WPA3 handshake held the loop off for over a second, and an idle owner then reset the board for nothing.
 
 ### Unit and stock facts
@@ -64,10 +53,7 @@ These facts stay where they are, and are listed here instead. A second model wou
 - **Indicator readback.** PA0–PA7 read back LOW on the tested unit, so only PB22 has input readback.
 - **Flash ID.** `c84017` (GigaDevice, 8 MiB), in the flash probe.
 - **Settings binding.** `SETTINGS_BINDING` names the research unit's installation.
-- **Bank addresses** live in three places:
-  - Rust: `wellfed-amebad-sys`, `core::ota` (const-asserted equal), `FlashMmuEntry::bank`, `wellfed-flash`, `wellfed-emu` and `review.rs`;
-  - C: `firstboot_km0.c`, which also holds the confirmation sector;
-  - the layout file: `layout.json`, the only data-driven copy, which the builder patches into the SDK's OTA addresses.
+- **Bank addresses** live in Rust (`wellfed-amebad-sys`, `core::ota` const-asserted equal, `FlashMmuEntry::bank`, `wellfed-flash`, `wellfed-emu` and `review.rs`), in C (`firstboot_km0.c`, with the confirmation sector), and in `layout.json`, the only data-driven copy, which the builder patches into the SDK's OTA addresses.
 - **BLE system-data patch.** The builder pins `check_sw()` to an erased sector's value, as the research unit's is ([Bluetooth](bluetooth.md#build)).
 - **Stock image constants.** The SHA-256, and the bank-table and pad-table addresses, in the builder's audits.
 
@@ -77,15 +63,7 @@ ADC channel 10 (the internal supply, `wellfed_amebad_sys::ADC_SUPPLY_CHANNEL`), 
 
 ## For a second model
 
-A new feeder needs:
-
-1. **Board:** a `board` module of its own, with pins, ADC channels and polarities.
-2. **Layout:** a `layout.json` from its stock image.
-3. **Storage:** a checked storage region.
-4. **Description:** a `device.json` naming its ports.
-5. **Firmware:** a thin firmware crate ([product architecture](product-architecture.md)).
-
-Every item under Known limits then needs a decision. The panel mapping and the motor gate's names come first, since core carries them.
+A new feeder needs a board crate (pins, ADC channels, polarities), a `layout.json` from its stock image, a checked storage region, a `device.json` naming its ports, and a thin firmware crate ([product architecture](product-architecture.md)). Every known limit above then needs a decision, the panel mapping and the motor gate's names first, since core carries them.
 
 ## Evidence
 

@@ -23,18 +23,20 @@ use crate::api::router::{
     Settlement,
 };
 use crate::api::server::{
-    ServerCommand, ServerCommandOutcome, ServerEvent, ServerHandle, ServerUpdate,
+    ServerCommand, ServerCommandOutcome, ServerEvent, ServerHandle, ServerRefusal, ServerUpdate,
 };
 use crate::api::server_error::{ServerError, ServerErrorKind};
-use crate::api::server_views::{ServerAccount, ServerConnection, ServerFeeder, ServerRole};
+use crate::api::server_views::{
+    KnownServer, ServerAccount, ServerConnection, ServerFeeder, ServerRole,
+};
 use crate::api::session::FeedRefusal;
 use crate::link::{DirectLink, LinkNews};
 use crate::requests;
 use crate::route::core::{
-    self, Access, Book, Ended, Keys, Reach, RetryPlan, ServerFailure, ServerReach,
+    self, Access, Book, Ended, Keys, Reach, RetryPlan, ServerFailure, ServerReach, Standing,
     settled_by_command, settled_by_history,
 };
-use crate::route::pins::{PinRecord, PinState, PinStore, PinnedWrite, ServerMark};
+use crate::route::pins::{LostAdoption, PinRecord, PinState, PinStore, PinnedWrite, ServerMark};
 use crate::route::server as calls;
 use crate::route::shape::{DirectCall, Shape, shape};
 use crate::session::{Command, Heard, feed_due};
@@ -54,6 +56,10 @@ struct State {
     store: PinStore,
     server: Option<Server>,
     reach: ServerReach,
+    /// Whether the configured server still takes this phone's token. Apart
+    /// from `reach`, so a refused token stays refused when that server then
+    /// goes down; only a fresh login or removing the server clears it.
+    standing: Standing,
     feeders: HashMap<String, Entry>,
     book: Book,
     /// Feeds this phone started through the server, whose end the stream
@@ -64,6 +70,11 @@ struct State {
     listeners: Vec<mpsc::UnboundedSender<RouterUpdate>>,
     /// The path each feeder was last said to take.
     announced: HashMap<String, Option<RoutePath>>,
+    /// A server the app keeps, before its session is handed over: the keys
+    /// its kept account may use, so no feeder goes on the phone's own key
+    /// that the account would not allow while the app is still reading its
+    /// token and asking the server.
+    cold: Option<Keys>,
 }
 
 struct Server {
@@ -71,6 +82,9 @@ struct Server {
     keys: Keys,
     /// The account's id, as the server last said.
     user: Option<Uuid>,
+    /// The account as the server last said, or as the app kept it while
+    /// the server has not answered yet.
+    account: Option<ServerAccount>,
 }
 
 impl Server {
@@ -92,7 +106,7 @@ struct Entry {
     direct: Option<Arc<DirectLink>>,
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     Timestamp::now().as_millisecond()
 }
 
@@ -113,7 +127,11 @@ impl State {
     fn access(&self, feeder: &str) -> Option<Access> {
         let entry = self.feeders.get(feeder)?;
         let on_server = self.server.is_some() && entry.server.is_some();
-        let keys = self.server.as_ref().map_or(Keys::Own, |server| server.keys);
+        let keys = match &self.server {
+            Some(server) => server.keys,
+            None => self.cold.unwrap_or(Keys::Own),
+        }
+        .under(self.standing);
         Access::of(on_server, entry.direct.is_some(), keys)
     }
 
@@ -200,18 +218,25 @@ impl State {
     }
 
     /// The account as the server says it is now: a demotion or a new
-    /// expiry takes the phone's own keys away from here on.
+    /// expiry takes the phone's own keys away from here on. The app is told
+    /// of a change, and keeps it for a cold start with the server down.
     fn account_is(&mut self, user: User) {
         let account = ServerAccount::from(user);
-        if let Some(server) = self.server.as_mut() {
-            server.keys = keys_of(&account);
-            server.user = Uuid::parse_str(&account.id).ok();
+        let Some(server) = self.server.as_mut() else {
+            return;
+        };
+        server.keys = keys_of(&account);
+        server.user = Uuid::parse_str(&account.id).ok();
+        if server.account.as_ref() != Some(&account) {
+            server.account = Some(account.clone());
+            self.tell(&[RouterUpdate::Account { account }]);
         }
     }
 
     /// What a failed call says of the server.
     fn heard_failure(&mut self, failure: ServerFailure, now: i64) {
         self.reach = core::reach_after(failure, now);
+        self.standing = core::standing_after(self.standing, failure);
     }
 
     /// The paths that changed since they were last said.
@@ -326,12 +351,14 @@ impl Router {
             store,
             server: None,
             reach: ServerReach::Up,
+            standing: Standing::Taken,
             feeders: HashMap::new(),
             book,
             following: HashMap::new(),
             early: HashMap::new(),
             listeners: Vec::new(),
             announced: HashMap::new(),
+            cold: None,
         };
         Ok(Self {
             inner: Arc::new(Inner {
@@ -356,25 +383,91 @@ impl Router {
             handle,
             keys: keys_of(account),
             user: Uuid::parse_str(&account.id).ok(),
+            account: Some(account.clone()),
         });
         state.reach = ServerReach::Up;
+        state.standing = Standing::Taken;
         state.announce();
+    }
+
+    /// The server the app keeps, before anything else asks the router: its
+    /// feeders' ids, and the keys its kept account may use (none of its own
+    /// with no account kept) until the session is handed over. It sends
+    /// nothing.
+    pub(crate) fn configure(&self, kept: &KnownServer) {
+        let mut state = self.state();
+        for listed in &kept.feeders {
+            // A kept id that does not parse: the next list replaces it.
+            if let Ok(id) = crate::server::ids::feeder(&listed.id) {
+                state
+                    .feeders
+                    .entry(listed.identity.clone())
+                    .or_default()
+                    .server = Some(id);
+            }
+        }
+        state.cold = Some(kept.account.as_ref().map_or(Keys::ServerOnly, keys_of));
+        state.announce();
+    }
+
+    /// A server whose phone token secret is gone: the app is configured
+    /// with it, so nothing goes on the phone's own keys, as with a refused
+    /// token, until a login or removing the server.
+    pub(crate) fn refuse_server(&self) {
+        let mut state = self.state();
+        state.server = None;
+        state.standing = Standing::Refused;
+        state.following.clear();
+        state.announce();
+    }
+
+    /// Route through `handle`, a session the app kept, at a cold start:
+    /// what the server says of the account now, and with the server not
+    /// answering, `cached`, the account as the last login or list read it.
+    /// With neither, the account's standing is unknown, so it holds no
+    /// key of its own until the server says: a viewer or an account with an
+    /// expiry must never fall to the phone's own keys because its server was
+    /// down when the app started. A refused token stays refused.
+    pub(crate) async fn resume(
+        &self,
+        handle: ServerHandle,
+        cached: Option<ServerAccount>,
+    ) -> Result<ServerAccount, ServerError> {
+        let read = handle.client.session().await;
+
+        let error = match read {
+            Ok(user) => {
+                let account = ServerAccount::from(user);
+                self.connect_server(handle, &account);
+                return Ok(account);
+            }
+            Err(error) => error,
+        };
+        let failure = calls::failure(&error);
+        let mut state = self.state();
+        let (keys, user) = match (&cached, failure) {
+            (_, ServerFailure::Unauthorized) | (None, _) => (Keys::ServerOnly, None),
+            (Some(account), _) => (keys_of(account), Uuid::parse_str(&account.id).ok()),
+        };
+        state.server = Some(Server {
+            handle,
+            keys,
+            user,
+            account: cached,
+        });
+        state.heard_failure(failure, now_ms());
+        state.announce();
+        Err(error.into())
     }
 
     pub(crate) fn disconnect_server(&self) {
         let mut state = self.state();
         state.server = None;
+        state.cold = None;
         state.reach = ServerReach::Up;
+        state.standing = Standing::Taken;
         state.following.clear();
         state.announce();
-    }
-
-    pub(crate) fn remember(&self, feeder: &str, id: &str) -> Result<(), ServerError> {
-        let id = crate::server::ids::feeder(id)?;
-        let mut state = self.state();
-        state.feeders.entry(feeder.to_owned()).or_default().server = Some(id);
-        state.announce();
-        Ok(())
     }
 
     pub(crate) async fn refresh(&self) -> Result<Vec<ServerFeeder>, ServerError> {
@@ -412,6 +505,54 @@ impl Router {
         }
         state.announce();
         Ok(feeders.into_iter().map(ServerFeeder::from).collect())
+    }
+
+    /// When `feeder`'s adoption last lost its answer, while that is not
+    /// settled.
+    pub(crate) fn adoption_lost_at(&self, feeder: &str) -> Option<i64> {
+        let state = self.state();
+        state
+            .book
+            .adoptions
+            .iter()
+            .find(|lost| lost.feeder == feeder)
+            .map(|lost| lost.at_ms)
+    }
+
+    /// `feeder`'s adoption lost its answer at `at`; `None` once settled.
+    pub(crate) fn adoption_lost(&self, feeder: &str, at: Option<i64>) {
+        let mut state = self.state();
+        let before = state.book.adoptions.clone();
+        state.book.adoptions.retain(|lost| lost.feeder != feeder);
+        if let Some(at_ms) = at {
+            state.book.adoptions.push(LostAdoption {
+                feeder: feeder.to_owned(),
+                at_ms,
+            });
+        }
+        if state.book.adoptions != before {
+            // Kept for a restart; one that fails to save still holds this run.
+            state.save_or_log();
+        }
+    }
+
+    /// How long a lost adoption waits before the server's list may permit
+    /// another invite. This never settles a missing command journal entry.
+    pub(crate) fn grace_ms(&self) -> i64 {
+        core::ADOPTION_GRACE_MS
+    }
+
+    /// The server's client, when one is configured.
+    pub(crate) fn server_client(&self) -> Option<wellfed_server_client::Client> {
+        self.state().client()
+    }
+
+    /// The server's id for `feeder`, while a server is configured and its
+    /// last list named it.
+    pub(crate) fn listed(&self, feeder: &str) -> Option<FeederId> {
+        let state = self.state();
+        state.server.as_ref()?;
+        state.feeders.get(feeder)?.server
     }
 
     /// Read the account again, so a demotion or a new expiry routes from
@@ -546,6 +687,7 @@ impl Router {
         tried: FeedTry,
     ) -> RoutedFeed {
         let now = now_ms();
+        let held = state.book.get(key).map(PinRecord::view);
         state.book.ended(key, tried.ended(), now);
         if let (RoutePath::Direct, FeedTry::Started(feed)) = (path, &tried) {
             // Its end may come late, after a gap in what the session reads:
@@ -622,6 +764,18 @@ impl Router {
                 error,
             },
         };
+        // A screen made again while the call was out took the pin up from
+        // `pending` as uncertain, and only hears its end here; the caller's
+        // own screen has the call's answer, and a feed still sending there
+        // is no key's yet.
+        if let Some(pending) = held
+            && let Some(settlement) = feed_settlement(&routed)
+        {
+            state.tell(&[RouterUpdate::Settled {
+                pending,
+                settlement,
+            }]);
+        }
         state.announce();
         routed
     }
@@ -1066,6 +1220,7 @@ impl Router {
                         // server that is down.
                         ServerErrorKind::TokenRevoked | ServerErrorKind::AccountDisabled => {
                             state.reach = ServerReach::Refused;
+                            state.standing = Standing::Refused;
                         }
                         ServerErrorKind::Unreachable | ServerErrorKind::Interrupted => {
                             state.reach = ServerReach::Down { since_ms: now_ms() };
@@ -1295,4 +1450,28 @@ fn view_settlement(command: &ServerCommand) -> Option<Settlement> {
         },
         ServerCommandOutcome::Unrecorded => Settlement::Unrecorded,
     })
+}
+
+/// What a feed call's answer settles of its pin, for a screen that holds
+/// only the pin; `None` while it may still have run. A refusal the device
+/// API names no more closely than "other" is left to the bowl.
+fn feed_settlement(routed: &RoutedFeed) -> Option<Settlement> {
+    let refusal = |refusal: FeedRefusal| match refusal {
+        FeedRefusal::Forbidden => Some(ServerRefusal::Forbidden),
+        FeedRefusal::Busy => Some(ServerRefusal::Busy),
+        FeedRefusal::Fault => Some(ServerRefusal::Fault),
+        FeedRefusal::Portions => Some(ServerRefusal::Portions),
+        FeedRefusal::NotFound => Some(ServerRefusal::NotFound),
+        FeedRefusal::Unavailable => Some(ServerRefusal::Unavailable),
+        FeedRefusal::Other => None,
+    };
+    match routed {
+        RoutedFeed::Started { feed, .. } => Some(Settlement::Started { feed: *feed }),
+        RoutedFeed::Refused { refusal: why, .. } => {
+            refusal(*why).map(|refusal| Settlement::Refused { refusal })
+        }
+        RoutedFeed::NotSent { .. } => Some(Settlement::NotSent),
+        RoutedFeed::Settled { settlement, .. } => Some(settlement.clone()),
+        RoutedFeed::Uncertain { .. } | RoutedFeed::Held { .. } => None,
+    }
 }

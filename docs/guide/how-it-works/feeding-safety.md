@@ -84,13 +84,13 @@ flowchart LR
   claim["A meal is claimed"] --> reserve["The feed is reserved"]
   reserve --> run["The motor runs"]
   run --> saved["The result is saved"]
-  claim -.->|cut here| a["Meal skipped: no food, not run again"]
+  claim -.->|cut here| a["Meal missed: no food, not run again"]
   reserve -.->|cut while writing| b["Recorded uncertain. The motor most likely never ran"]
   run -.->|cut here| c["Recorded uncertain, as a range. Never run again"]
   saved -.->|cut here| d["The result stands"]
 ```
 
-A scheduled meal adds a step in front. It first saves a claim on that day's meal, so a restart or a clock moved backward can't run it again. A cut between the claim and the reservation costs that meal: it's recorded as skipped, and it doesn't feed.
+A scheduled meal adds a step in front. It first saves a claim on that day's meal, so a restart or a clock moved backward can't run it again. A cut between the claim and the reservation costs that meal: it's recorded as missed, and it doesn't feed.
 
 The limits of that promise matter:
 
@@ -115,11 +115,11 @@ The motor turning past a mark counts as a portion whether or not food fell. In o
 
 The plans and their marks live on the feeder. It works out each meal once a minute and runs it itself, so no phone, server or internet is involved. It does need the clock. With no valid clock, it holds meals rather than guess.
 
-Once time returns, a meal up to 15 minutes late runs once, and a later one is recorded as skipped. A backward clock jump or a restart doesn't repeat one. [The system at a glance](system.md#what-keeps-working) follows what happens during an outage.
+Once time returns, a meal up to 15 minutes late runs once, and a later one is recorded as missed. A backward clock jump or a restart doesn't repeat one. [The system at a glance](system.md#what-keeps-working) follows what happens during an outage.
 
 ## What this doesn't protect against
 
-- **A pet going hungry.** Meals can be skipped by a long outage, a power cut, a fault or an empty hopper, and no alert reaches you. Alerts are planned for the app, but they haven't been designed or built.
+- **A pet going hungry.** Meals can be missed through a long outage, a power cut, a fault or an empty hopper, and no alert reaches you. Alerts are planned for the app, but they haven't been designed or built.
 - **A real jam.** Kibble pressed into the rotor by hand didn't jam it, so the jam handling has run only on simulated current readings. Whether 1 second of reversing frees a real jam is unknown. The limit of 300 came from empty and lightly filled drives. Four full-hopper feeds later peaked at 236 to 283 and one feed on batteries at 268, on the feeder's own scale, but a real stall's current hasn't been measured, so the margin to a real jam is unknown.
 - **Food stuck above the rotor.** Food bridging in the hopper still counts as portions.
 - **A stuck-clear outlet beam.** The feeder doesn't check that the beam really responds, so a blocked outlet could read as clear. A jam would still end the drive.

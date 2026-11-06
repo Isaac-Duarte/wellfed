@@ -9,6 +9,9 @@ import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/install.dart' show ImageCheck;
 import 'package:wellfed/src/rust/api/model.dart';
+import 'package:wellfed/src/rust/api/router.dart';
+import 'package:wellfed/src/rust/api/server_error.dart';
+import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/feeder/feeder_state.dart';
@@ -16,6 +19,11 @@ import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/restore/restore.dart';
 import 'package:wellfed/state/update/update.dart';
 import 'package:wellfed/state/wifi/networks.dart';
+
+part 'feeder_route.dart';
+part 'feeder_server.dart';
+part 'feeder_session.dart';
+part 'feeder_writes.dart';
 
 /// Where a recording comes from.
 typedef PickRecording = Future<Uint8List?> Function();
@@ -33,13 +41,21 @@ enum AddressChange {
 }
 
 /// One known feeder for the Home card: keeps a session open while the app
-/// runs, reconnecting with backoff, and runs feeds through it. Every feed
-/// goes through the device API like any other client's; this holds no
+/// runs, reconnecting with backoff, and sends every request and feed through
+/// the path router, which picks the owner's server or that session. Every
+/// feed goes through the device API like any other client's; this holds no
 /// feeding logic beyond showing what the feeder said.
 class FeederController extends ChangeNotifier {
-  /// Starts serving `known` at once, and until disposed.
-  FeederController(this._book, this._ports, KnownFeeder known) : _state = FeederState(known: known) {
-    unawaited(_serve());
+  /// Starts serving `known` at once, and until disposed. Without `ownKey`
+  /// the phone holds no key on the feeder, so it opens no session, and the
+  /// owner's server is its only way there.
+  FeederController(this._book, this._ports, KnownFeeder known, {bool ownKey = true})
+    : _state = FeederState(known: known, connection: ownKey ? Connection.looking : Connection.offline),
+      _connection = ownKey ? Connection.looking : Connection.offline,
+      _ownKey = ownKey {
+    _pendingFromBefore();
+    _readUnconfirmed();
+    if (ownKey) unawaited(_serve());
   }
 
   static const _locateWait = Duration(seconds: 8);
@@ -54,12 +70,29 @@ class FeederController extends ChangeNotifier {
   UpdateFlow get update => _update ??= UpdateFlow(this, _ports);
   UpdateFlow? _update;
 
+  /// The phone holds a key of its own on this feeder, and keeps a session
+  /// with it; without one the owner's server is its only way there.
+  bool get ownKey => _ownKey;
+
   /// All that is known of this feeder.
   FeederState get state => _state;
   FeederState _state;
 
   FeederSession? _session;
   bool _disposed = false;
+
+  /// The phone holds a key of its own on the feeder, and keeps a session.
+  final bool _ownKey;
+
+  /// How this phone's own session stands, which [state] shows unless the
+  /// owner's server reaches the feeder while it is down.
+  Connection _connection;
+
+  /// The feeder as the owner's server last told it, while the server lists it.
+  _ServerSide? _server;
+
+  /// The server's account for this phone may only look.
+  bool _viewer = false;
 
   /// Runs out when a running feed's result is overdue.
   Timer? _feedDue;
@@ -101,47 +134,6 @@ class FeederController extends ChangeNotifier {
 
   /// The image this app carries, for the firmware screen to offer.
   Future<ImageCheck> updateImage() => _ports.updateImage();
-
-  /// Feed `portions` once. The feeder's answer and the feed's end arrive
-  /// through the session.
-  void feedNow(int portions) {
-    final FeederSession? session = _session;
-    if (session == null || _feed.active) return;
-    final sent = DateTime.now();
-    _setFeed(FeedSending(portions: portions, sentAt: sent));
-    try {
-      session.feed(portions: portions);
-    } on BridgeError {
-      // The session had already ended; the request never went out.
-      _setFeed(FeedNotSent(portions: portions, sentAt: sent));
-    }
-  }
-
-  /// Ask the feeder to stop the running feed. This never says it stopped: only
-  /// the feed's end does, and a request that can't go out says so.
-  void cancelFeed() {
-    final FeedState running = _feed;
-    if (running is! FeedRunning) return;
-    final FeederSession? session = _session;
-    var sent = session != null;
-    try {
-      session?.cancelFeed(feed: running.feed);
-    } on BridgeError {
-      sent = false;
-    }
-    _setFeed(
-      FeedRunning(
-        feed: running.feed,
-        portions: running.portions,
-        sentAt: running.sentAt,
-        cancelAsked: sent,
-        cancelUnconfirmed: !sent,
-      ),
-    );
-  }
-
-  /// Put a finished feed away.
-  void dismissFeed() => _setFeed(const FeedIdle());
 
   void Function(int dropped, List<String> lines)? _log;
 
@@ -236,14 +228,18 @@ class FeederController extends ChangeNotifier {
   /// The address changed, so the loop dials again without its backoff.
   bool _redial = false;
 
-  /// One request to the feeder. A write goes out once and is never sent
-  /// again; the reply says how it ended, an unknown end included.
+  /// One request to the feeder, through the path router. A write goes out
+  /// once and is never sent again; the reply says how it ended, an unknown
+  /// end included. With no router (its pins could not be opened) nothing
+  /// goes at all, as a write the router cannot pin must not.
   Future<FeederReply> ask(FeederRequest request) async {
-    final FeederSession? session = _session;
-    if (session == null) return const FeederReply.notSent();
-    final FeederReply reply = await session.ask(request: request);
-    _keep(request, reply);
-    return reply;
+    final PathRouter? router = _ports.router;
+    if (router == null) return const FeederReply.notSent();
+    final RoutedReply routed = await router.ask(feeder: _state.known.identity, request: request);
+    if (_disposed) return routed.reply;
+    _keep(request, routed.reply);
+    if (routed.pending != null) _readUnconfirmed();
+    return routed.reply;
   }
 
   /// Keep what a reply says of the meal call and the portion size, whichever
@@ -273,9 +269,9 @@ class FeederController extends ChangeNotifier {
       final String? address = await _address();
       if (_disposed) return;
       if (address == null) {
-        _setState(_state.copyWith(connection: Connection.offline, error: () => ErrorKind.connect));
+        _sessionIs(Connection.offline, error: ErrorKind.connect);
       } else {
-        _set(Connection.connecting);
+        _sessionIs(Connection.connecting);
         final bool opened = await _run(address);
         if (opened) retry = _retryFirst;
       }
@@ -321,149 +317,11 @@ class FeederController extends ChangeNotifier {
   /// working.
   Future<String?> _address() async {
     if (_state.known.manualAddress case final String manual?) return manual;
-    if (_state.connection != Connection.offline && _state.known.address != null) {
+    if (_connection != Connection.offline && _state.known.address != null) {
       return _state.known.address;
     }
-    _set(Connection.looking);
+    _sessionIs(Connection.looking);
     return await _ports.locate(_state.known.identity, _locateWait) ?? _state.known.address;
-  }
-
-  /// One session until it closes; whether it opened.
-  Future<bool> _run(String address) async {
-    final FeederSession session;
-    try {
-      session = _ports.open(_state.known.identity, address, syncClock: _book.clockDue(_state.known.identity));
-    } on BridgeError catch (failed) {
-      _setState(_state.copyWith(connection: Connection.offline, error: () => failed.kind));
-      return false;
-    }
-    _session = session;
-    _setState(_state.copyWith(cardFresh: false));
-
-    var opened = false;
-    await for (final SessionUpdate update in session.run()) {
-      if (_disposed) {
-        session.close();
-        break;
-      }
-      switch (update) {
-        case SessionUpdate_Opened(:final String build, role: final ClientRole role):
-          unawaited(_ports.answered(_state.known.identity, build));
-          opened = true;
-          _setState(
-            _state.copyWith(
-              connection: Connection.online,
-              role: role,
-              error: () => null,
-              history: const [],
-              historyRead: false,
-              // A new session may meet a feeder another client re-weighed or
-              // gave a new clip, or one whose store was erased.
-              call: () => null,
-              calibration: () => null,
-            ),
-          );
-          // The owner's address may be a VPN's route, which updates and
-          // restores can't use, so only where NSD found the feeder is kept.
-          if (address != _state.known.manualAddress) {
-            try {
-              await _book.answeredAt(_state.known.identity, address);
-              final KnownFeeder known = _state.known;
-              _setState(
-                _state.copyWith(
-                  known: _book.feeders.firstWhere((f) => f.identity == known.identity, orElse: () => known),
-                ),
-              );
-            } on BridgeError {
-              // Only a hint for the next start; NSD finds the feeder anyway.
-            }
-          }
-        case SessionUpdate_Status(card: final Card card):
-          _setState(_state.copyWith(card: card, cardAt: clock.now(), cardFresh: true));
-        case SessionUpdate_FeedStarted(:final int feed, :final int portions, :final int dueSeconds):
-          _feedDue?.cancel();
-          _feedDue = Timer(Duration(seconds: dueSeconds), _feedOverdue);
-          _setFeed(FeedRunning(feed: feed, portions: portions, sentAt: _feed.sentAt));
-        case SessionUpdate_FeedRefused(:final FeedRefusal refusal):
-          _setFeed(FeedRefused(refusal: refusal, portions: _feed.portions, sentAt: _feed.sentAt));
-        case SessionUpdate_FeedUnanswered():
-          _setFeed(FeedUnanswered(portions: _feed.portions, sentAt: _feed.sentAt));
-        case SessionUpdate_FeedEnded(:final FeedResult result):
-          _feedEnded(result);
-        case SessionUpdate_CancelUnconfirmed():
-          if (_feed case FeedRunning(:final int feed, :final int portions, :final DateTime? sentAt)) {
-            _setFeed(FeedRunning(feed: feed, portions: portions, sentAt: sentAt, cancelUnconfirmed: true));
-          }
-        case SessionUpdate_ClockSynced():
-          _book.clockSynced(_state.known.identity);
-        case SessionUpdate_ClockNotSynced():
-          // Still due: the next session tries again.
-          break;
-        case SessionUpdate_History(:final List<HistoryEntry> entries, :final bool caughtUp):
-          _setState(
-            _state.copyWith(history: [..._state.history, ...entries], historyRead: _state.historyRead || caughtUp),
-          );
-          // A feed that ended while the link was down, or before this
-          // session's history was read, only ever arrives here.
-          for (final entry in entries) {
-            if (entry.body case HistoryBody_Fed(:final FeedResult result)) _feedEnded(result);
-          }
-        case SessionUpdate_Log(:final int dropped, :final List<String> lines):
-          _log?.call(dropped, lines);
-        case SessionUpdate_Closed(error: final BridgeError? error):
-          _setState(_state.copyWith(error: () => error?.kind));
-      }
-    }
-
-    _session = null;
-    _setState(_state.copyWith(cardFresh: false));
-    // The session reports every feed it sent as started, refused or
-    // unanswered before it closes, so one still sending never went out.
-    switch (_feed) {
-      case FeedSending(:final int portions, :final DateTime? sentAt):
-        _setFeed(FeedNotSent(portions: portions, sentAt: sentAt));
-      case FeedRunning(:final int feed, :final int portions, :final DateTime? sentAt):
-        _setFeed(FeedAdrift(feed: feed, by: FeedLoss.link, portions: portions, sentAt: sentAt));
-      case _:
-        break;
-    }
-    if (!_disposed) _setState(_state.copyWith(connection: Connection.offline));
-    return opened;
-  }
-
-  /// A feed's end, which settles ours only when it carries our number: an
-  /// unanswered feed has none, and the next end may be a meal or another
-  /// phone's. It replaces a lost feed too, since it is what really happened.
-  void _feedEnded(FeedResult result) {
-    final FeedState feed = _feed;
-    final int? ours = switch (feed) {
-      FeedRunning(:final int feed) => feed,
-      FeedAdrift(:final int feed) => feed,
-      _ => null,
-    };
-    if (ours != result.feed) return;
-
-    // The feeder's record says when, if its clock can be trusted. A lost feed's
-    // end may be old, so the phone's clock can't stand in for that one.
-    final PlatformInt64? recorded = (_state.card?.clockSet ?? false) ? result.atMs : null;
-    _setFeed(
-      FeedEnded(
-        result: result,
-        sentAt: feed.sentAt,
-        endedAt: recorded != null
-            ? DateTime.fromMillisecondsSinceEpoch(recorded)
-            : feed is FeedRunning
-            ? DateTime.now()
-            : null,
-      ),
-    );
-  }
-
-  /// Nothing has come of a running feed past the longest the feeder can take.
-  void _feedOverdue() {
-    if (_feed case FeedRunning(:final int feed, :final int portions, :final DateTime? sentAt)) {
-      _setFeed(FeedAdrift(feed: feed, by: FeedLoss.overdue, portions: portions, sentAt: sentAt));
-    }
   }
 
   FeedState get _feed => _state.feed;
@@ -476,10 +334,14 @@ class FeederController extends ChangeNotifier {
     _setState(_state.copyWith(feed: next));
   }
 
-  void _set(Connection next) => _setState(_state.copyWith(connection: next));
+  /// The phone's own session is `next` now, having ended on `error`.
+  void _sessionIs(Connection next, {ErrorKind? error}) {
+    _connection = next;
+    _setState(error == null ? _state : _state.copyWith(error: () => error));
+  }
 
   void _setState(FeederState next) {
-    _state = next;
+    _state = _reached(next);
     if (!_disposed) notifyListeners();
   }
 

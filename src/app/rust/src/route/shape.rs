@@ -9,7 +9,7 @@ use wellfed_model::{Calibration, Op};
 
 use crate::api::feeder::{FeederRequest, NotAsked};
 use crate::api::router::WriteKind;
-use crate::requests::{edited_plans, portion_mg, settings_patch};
+use crate::requests::{edited_plans, meal_due, portion_mg, settings_patch};
 use crate::route::pins::PinnedWrite;
 
 pub(crate) enum Shape {
@@ -60,6 +60,14 @@ pub(crate) fn shape(request: &FeederRequest) -> Shape {
         }),
         FeederRequest::SetLock { locked } => write(PinnedWrite::Lock { locked: *locked }),
         FeederRequest::ResetDesiccant => write(PinnedWrite::Desiccant),
+        FeederRequest::SkipMeal { slot, due_ms } => match meal_due(*due_ms) {
+            Some(due) => write(PinnedWrite::Skip { slot: *slot, due }),
+            None => Shape::NotAsked(NotAsked::EmptySlot),
+        },
+        FeederRequest::UnskipMeal { slot, due_ms } => match meal_due(*due_ms) {
+            Some(due) => write(PinnedWrite::Unskip { slot: *slot, due }),
+            None => Shape::NotAsked(NotAsked::EmptySlot),
+        },
         FeederRequest::EditPlans { plans, edit } => match edited_plans(plans, edit) {
             Ok((base, _, table)) => write(PinnedWrite::Plans {
                 base: base.0,
@@ -140,6 +148,36 @@ mod tests {
         assert_eq!((base, changes.volume), (3, Some(40)));
         assert!(matches!(shape(&FeederRequest::GetPlans), Shape::Read));
         assert!(matches!(shape(&FeederRequest::GetCalibration), Shape::Read));
+    }
+
+    /// A skip and its undo are writes the server carries, under their own
+    /// kind, naming the meal by the instant the card gave; an instant that
+    /// is no whole second names no meal and goes nowhere.
+    #[test]
+    fn a_skip_pins_its_meal_and_an_instant_off_the_second_is_refused() {
+        let due_ms = 1_790_006_400_000;
+        let due = jiff::Timestamp::from_millisecond(due_ms).unwrap();
+        let Shape::Write { write, stream } = shape(&FeederRequest::SkipMeal { slot: 2, due_ms })
+        else {
+            panic!("a skip is a write");
+        };
+        assert_eq!(write, PinnedWrite::Skip { slot: 2, due });
+        assert_eq!(write.kind(), WriteKind::Skip);
+        assert!(stream.is_none());
+        assert!(matches!(
+            shape(&FeederRequest::UnskipMeal { slot: 2, due_ms }),
+            Shape::Write {
+                write: PinnedWrite::Unskip { slot: 2, .. },
+                ..
+            }
+        ));
+        assert!(matches!(
+            shape(&FeederRequest::SkipMeal {
+                slot: 2,
+                due_ms: due_ms + 1
+            }),
+            Shape::NotAsked(NotAsked::EmptySlot)
+        ));
     }
 
     #[test]

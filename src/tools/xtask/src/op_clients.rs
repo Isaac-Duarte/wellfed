@@ -32,13 +32,13 @@ const SHARED: [&str; 3] = [
 /// Written by the code generator from the bridge's own types.
 const GENERATED: &str = "frb_generated.rs";
 
-/// What the CLI must not do, with why.
+/// What the CLI does not do, with why.
 const NOT_IN_CLI: [(&str, &str); 0] = [];
-/// What the app must not do, with why.
+/// What the app does not do, with why.
 const NOT_IN_APP: [(&str, &str); 1] = [(
     "UpdateKeyStatement",
     "a statement is signed offline by a built-in or the release key, and the phone holds no \
-     key a feeder trusts; the owner's computer carries one to the feeder",
+         key a feeder trusts; the owner's computer carries one to the feeder",
 )];
 
 /// The variants `source` declares for `enum`, in order.

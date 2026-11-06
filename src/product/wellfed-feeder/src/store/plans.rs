@@ -9,21 +9,27 @@
 //! | 0..12 | magic `PLFPLN01`, version, record size |
 //! | 12..16 | sequence: the save count, which picks the newest record |
 //! | 16..20 | revision: bumped by every change to the table |
-//! | 20..70 | ten plans of 5 bytes: flags (bit 0 present, bit 1 enabled, bits 2-4 the meal call's plays), minute (u16), portions, weekdays |
+//! | 20..70 | ten plans of 5 bytes: flags (bit 0 present, bit 1 enabled, bits 2-4 the meal call's plays, bit 5 the mark is a client's skip), minute (u16), portions, weekdays |
 //! | 70..110 | ten marks (Unix seconds, u32; 0 for none) |
 //! | 110..120 | the claim: flags (bit 0 present, bit 1 it disabled a plan that runs once), slot, due (Unix seconds, u32), the journal's high water (u32) |
 //! | 120..128 | CRC-32/ISO-HDLC of bytes 0..120, and the `CMIT` commit marker |
 //!
 //! An empty slot and an absent claim are all zero, and a plan is stored
-//! only if it is valid, so one encoding exists per value. Version 2 added
-//! the meal call's plays in the flag byte; a build that reads version 1
-//! goes read-only on it rather than drop a plan's call, and this one reads
-//! no version 1 record (the plans are entered again).
+//! only if it is valid, so one encoding exists per value. Version 3 added
+//! the skip bit; a build that reads version 2 goes read-only on it rather
+//! than lose a skip, and this one reads no older record: its first boot
+//! finds no plans, and they are entered again.
 //!
 //! **Marks** make each occurrence run at most once. A mark is written when
 //! the loop takes an occurrence (the claim), passes one it will never run,
 //! or a client saves the plan; the loop never runs an occurrence at or
-//! before it, whatever the clock does after.
+//! before it, whatever the clock does after. A client's skip moves a mark
+//! up to an occurrence still to come and sets the slot's skip bit; its
+//! undo needs the bit, and moves the mark back to the second before that
+//! occurrence. The bit, not the mark alone, tells a skip from a claim, a
+//! pass or a save that left the mark at the same instant: after a
+//! backward clock jump those can look like a skip still to come, and
+//! undoing one would run its occurrence twice.
 //!
 //! The two sectors were reserved for plans before this store, so a record
 //! here is ours; the newest valid one wins, and a torn newer slot falls
@@ -39,7 +45,7 @@ use wellfed_core::store::slot::{
 };
 use wellfed_device_api::mailbox::{Claim, PLANS, Plan, PlansChange, PlansView, Table, Weekdays};
 
-pub const VERSION: u16 = 2;
+pub const VERSION: u16 = 3;
 const LAYOUT: Layout = Layout {
     magic: *b"PLFPLN01",
     version: VERSION,
@@ -55,6 +61,8 @@ const CLAIM_END: usize = CLAIM_AT + 10;
 
 const PRESENT: u8 = 1;
 const ENABLED: u8 = 2;
+/// The slot's mark is a client's skip (`Plans::skips`).
+const SKIPPED: u8 = 1 << 5;
 /// A plan's meal call, in plays (0 to `clip::PLAYS_MAX`, below 8).
 const CALL_SHIFT: u8 = 2;
 const CALL_MASK: u8 = 0b111 << CALL_SHIFT;
@@ -69,9 +77,16 @@ const _: () = assert!(CLAIM_END <= CRC_AT);
 pub struct Plans {
     pub table: Table,
     pub marks: [u32; PLANS],
+    /// Bit `slot` set: that slot's mark is a client's skip of the
+    /// occurrence at it, which an undo may take back. Only a skip sets it,
+    /// and every other change that moves the slot's mark clears it, so a
+    /// mark left by a claim, a pass or a save is never undone.
+    pub skips: u16,
     pub claim: Option<Claim>,
     pub revision: u32,
 }
+
+const _: () = assert!(PLANS <= u16::BITS as usize);
 
 impl Plans {
     /// The view the writer publishes.
@@ -79,6 +94,7 @@ impl Plans {
         PlansView {
             table: self.table,
             marks: self.marks,
+            skips: self.skips,
             claim: self.claim,
             revision: self.revision,
             replaced: 0,
@@ -94,17 +110,26 @@ impl Plans {
         match *change {
             PlansChange::Replace { table, at_s } => {
                 for (slot, (new, old)) in table.iter().zip(&self.table).enumerate() {
-                    next.marks[slot] = match (new, old) {
-                        (None, _) => 0,
+                    let kept = match (new, old) {
+                        (None, _) => None,
                         // Re-enabling starts the plan afresh, as a new one:
                         // its occurrences while it was off never run.
                         (Some(new), Some(old))
                             if new.same_times(old) && (old.enabled || !new.enabled) =>
                         {
-                            self.marks[slot]
+                            Some(self.marks[slot])
                         }
-                        (Some(_), _) => at_s.unwrap_or(0),
+                        (Some(_), _) => None,
                     };
+                    // A mark kept keeps its skip; a mark reset drops it.
+                    next.marks[slot] = match (kept, new) {
+                        (Some(mark), _) => mark,
+                        (None, None) => 0,
+                        (None, Some(_)) => at_s.unwrap_or(0),
+                    };
+                    if kept.is_none() {
+                        next.set_skip(slot, false);
+                    }
                 }
                 next.table = table;
                 next.revision = self.revision.wrapping_add(1);
@@ -118,12 +143,16 @@ impl Plans {
                 if disabled {
                     next.set_enabled(claim.plan, false);
                 }
+                // The claim is the slot's mark from now on, past any skip.
+                next.set_skip(usize::from(claim.plan), false);
                 next.claim = Some(Claim { disabled, ..claim });
             }
             PlansChange::Release { claim } => {
                 if self.claim != Some(claim) {
                     return None;
                 }
+                // No mark moves: the claim cleared the slot's skip when
+                // it was taken, and nothing gives that back.
                 next.claim = None;
                 if claim.disabled {
                     next.set_enabled(claim.plan, true);
@@ -134,6 +163,7 @@ impl Plans {
                     return None;
                 }
                 next.fold(claim);
+                next.set_skip(usize::from(claim.plan), false);
                 next.claim = None;
             }
             PlansChange::Pass {
@@ -148,12 +178,68 @@ impl Plans {
                 let expected = self.marked(plan);
                 let mark = next.marks.get_mut(usize::from(plan))?;
                 *mark = (*mark).max(due_s);
+                next.set_skip(usize::from(plan), false);
                 if found.days.once() && expected {
                     next.set_enabled(plan, false);
                 }
             }
+            PlansChange::Skip {
+                plan,
+                due_s,
+                revision,
+            } => {
+                let found = self.plan(plan, revision)?;
+                let mark = next.marks.get_mut(usize::from(plan))?;
+                if *mark >= due_s {
+                    return None;
+                }
+                *mark = due_s;
+                next.set_skip(usize::from(plan), true);
+                if found.days.once() {
+                    next.set_enabled(plan, false);
+                }
+            }
+            PlansChange::Unskip {
+                plan,
+                due_s,
+                revision,
+            } => {
+                let found = (*self.table.get(usize::from(plan))?)?;
+                let slot = usize::from(plan);
+                if revision != self.revision || !self.skipped(slot) {
+                    return None;
+                }
+                let mark = next.marks.get_mut(slot)?;
+                if *mark != due_s {
+                    return None;
+                }
+                // The mark before the skip was below `due_s`, so this is
+                // never lower than it, and no occurrence of the plan lies
+                // between the two: the meal runs, and nothing else does.
+                *mark = due_s - 1;
+                next.set_skip(slot, false);
+                if found.days.once() {
+                    next.set_enabled(plan, true);
+                }
+            }
         }
         Some(next)
+    }
+
+    /// Whether slot `slot`'s mark is a client's skip.
+    pub const fn skipped(&self, slot: usize) -> bool {
+        slot < PLANS && self.skips & (1 << slot) != 0
+    }
+
+    fn set_skip(&mut self, slot: usize, skipped: bool) {
+        if slot < PLANS {
+            let bit = 1 << slot;
+            self.skips = if skipped {
+                self.skips | bit
+            } else {
+                self.skips & !bit
+            };
+        }
     }
 
     /// The enabled plan in `slot`, if the table is still at `revision`.
@@ -172,10 +258,15 @@ impl Plans {
                 .is_some_and(|&mark| mark != 0)
     }
 
-    /// The claim's occurrence into its plan's mark.
+    /// The claim's occurrence into its plan's mark; a mark it raises is
+    /// no longer a skip.
     fn fold(&mut self, claim: Claim) {
-        if let Some(mark) = self.marks.get_mut(usize::from(claim.plan)) {
-            *mark = (*mark).max(claim.due_s);
+        let slot = usize::from(claim.plan);
+        if let Some(mark) = self.marks.get_mut(slot)
+            && claim.due_s > *mark
+        {
+            *mark = claim.due_s;
+            self.set_skip(slot, false);
         }
     }
 
@@ -248,7 +339,10 @@ fn encode(sequence: u32, plans: &Plans) -> [u8; RECORD_BYTES] {
     for (slot, plan) in plans.table.iter().enumerate() {
         let at = PLANS_AT + slot * PLAN_BYTES;
         if let Some(plan) = plan {
-            p[at] = PRESENT | if plan.enabled { ENABLED } else { 0 } | plan.call << CALL_SHIFT;
+            p[at] = PRESENT
+                | if plan.enabled { ENABLED } else { 0 }
+                | plan.call << CALL_SHIFT
+                | if plans.skipped(slot) { SKIPPED } else { 0 };
             p[at + 1..at + 3].copy_from_slice(&plan.minute.to_le_bytes());
             p[at + 3] = plan.portions;
             p[at + 4] = plan.days.0;
@@ -283,7 +377,13 @@ fn decode(p: &[u8; RECORD_BYTES]) -> Option<(u32, Plans)> {
         let bytes = p.get(at..at + PLAN_BYTES)?;
         *entry = match bytes[0] {
             0 if bytes.iter().all(|&b| b == 0) => None,
-            flags if flags & !(PRESENT | ENABLED | CALL_MASK) == 0 && flags & PRESENT != 0 => {
+            flags
+                if flags & !(PRESENT | ENABLED | CALL_MASK | SKIPPED) == 0
+                    && flags & PRESENT != 0 =>
+            {
+                if flags & SKIPPED != 0 {
+                    plans.skips |= 1 << slot;
+                }
                 let plan = Plan {
                     minute: u16::from_le_bytes([bytes[1], bytes[2]]),
                     portions: bytes[3],

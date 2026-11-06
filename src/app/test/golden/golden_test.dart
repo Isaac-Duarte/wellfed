@@ -33,33 +33,38 @@ import '../restore/restore_support.dart';
 import '../support/fake_install.dart';
 import '../support/fakes.dart';
 import '../support/harness.dart';
+import 'golden_fixtures.dart';
 import 'golden_support.dart';
 
-/// Four meals with a meal call each, one in every standing, so the rows show
-/// with both a short time ("7:00 AM") and a long one ("12:00 PM").
-Card _fourMealsCard() => fakeCard(
-  nextMeal: NextMealView(slot: 2, atMs: DateTime(2026, 11, 2, 17).millisecondsSinceEpoch, minute: 17 * 60, portions: 2),
-  lastFed: fixtureFed,
-  meals: [
-    MealView(
-      slot: 0,
-      minute: 7 * 60,
-      portions: 2,
-      call: 1,
-      standing: MealStanding.fed(result: fixtureFed),
-    ),
-    const MealView(slot: 1, minute: 12 * 60, portions: 1, call: 1, standing: MealStanding.passed()),
-    MealView(
-      slot: 2,
-      minute: 17 * 60,
-      portions: 2,
-      call: 1,
-      standing: MealStanding.next(atMs: DateTime(2026, 11, 2, 17).millisecondsSinceEpoch),
-    ),
-    const MealView(slot: 3, minute: 22 * 60, portions: 1, call: 1, standing: MealStanding.later()),
-  ],
-  plans: fullCard().plans,
-);
+/// A day with a skip in each standing: breakfast skipped with its time come,
+/// supper offered for a skip, and a late meal skipped with its undo still open.
+Card _skippingCard() {
+  final int supper = DateTime(2026, 11, 2, 17).millisecondsSinceEpoch;
+  final int late = DateTime(2026, 11, 2, 22).millisecondsSinceEpoch;
+  return fakeCard(
+    nextMeal: NextMealView(slot: 2, atMs: supper, minute: 17 * 60, portions: 2),
+    meals: [
+      const MealView(slot: 0, minute: 7 * 60, portions: 2, call: 1, standing: MealStanding.skipKept()),
+      MealView(
+        slot: 2,
+        minute: 17 * 60,
+        portions: 2,
+        call: 1,
+        standing: MealStanding.next(atMs: supper),
+        action: MealAction.skip(dueMs: supper),
+      ),
+      MealView(
+        slot: 3,
+        minute: 22 * 60,
+        portions: 1,
+        call: 0,
+        standing: MealStanding.skipped(atMs: late),
+        action: MealAction.undo(dueMs: late),
+      ),
+    ],
+    plans: fullCard().plans,
+  );
+}
 
 /// Every fact on Today that needs the owner at once: low food, batteries at
 /// 15% with the adapter out, a weak signal, the desiccant overdue, and this
@@ -196,7 +201,7 @@ void main() {
       golden("home with today's meals", (tester) async {
         final (FeederFleet fleet, FakeSession session) = await feederFleet(tester);
         answerAsFull(session);
-        session.status(_fourMealsCard());
+        session.status(fourMealsCard());
         await tester.pump();
         await showPhone(
           tester,
@@ -208,30 +213,13 @@ void main() {
       });
 
       golden('today', (tester) async {
-        // A whole day: a meal fed, one skipped, one next and one later, and a
+        // A whole day: a meal fed, one missed, one next and one later, and a
         // press of the Dispense button between them.
         final (FeederController feeder, FakeSession session) = await oneFeeder(tester, phone: fixturePhone());
         answerAsFull(session);
         session
-          ..status(_fourMealsCard())
-          ..history([
-            HistoryEntry(
-              seq: BigInt.one,
-              atMs: DateTime(2026, 11, 2, 9, 12).millisecondsSinceEpoch,
-              body: HistoryBody.fed(
-                result: fakeFed(atMs: DateTime(2026, 11, 2, 9, 12).millisecondsSinceEpoch, requested: 1, confirmed: 1),
-              ),
-            ),
-            HistoryEntry(
-              seq: BigInt.two,
-              atMs: DateTime(2026, 11, 2, 12, 1).millisecondsSinceEpoch,
-              body: HistoryBody.missed(
-                slot: 1,
-                dueMs: DateTime(2026, 11, 2, 12).millisecondsSinceEpoch,
-                reason: const MissedReason.late_(),
-              ),
-            ),
-          ]);
+          ..status(fourMealsCard())
+          ..history(fourMealsHistory());
         await tester.pump();
         await showPhone(tester, shell(feeder, todayTab), brightness);
         await decodeImages(tester);
@@ -254,6 +242,20 @@ void main() {
         final FeederController feeder = await goldenFeeder(tester);
         await showPhone(tester, shell(feeder, todayTab), brightness, size: smallPhone);
         await matchesGolden('today_small', brightness);
+      });
+
+      golden('today with skipped meals', (tester) async {
+        final FeederController feeder = await goldenFeeder(tester, card: _skippingCard());
+        await showPhone(tester, shell(feeder, todayTab), brightness);
+        await matchesGolden('today_skipped', brightness);
+      });
+
+      golden("a meal skip's confirmation", (tester) async {
+        final FeederController feeder = await goldenFeeder(tester, card: _skippingCard());
+        await showPhone(tester, shell(feeder, todayTab), brightness);
+        await tester.tap(find.text('Skip'));
+        await tester.pumpAndSettle();
+        await matchesGolden('skip_meal_confirm', brightness);
       });
 
       golden('the schedule', (tester) async {

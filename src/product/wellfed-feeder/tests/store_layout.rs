@@ -201,7 +201,8 @@ fn calibration_store_reads_the_pinned_records() {
 }
 
 /// Breakfast every day in slot 0, calling twice, and a one-off in slot 2, saved at
-/// 2026-10-28T07:00Z; then breakfast's occurrence claimed.
+/// 2026-10-28T07:00Z, with breakfast's 07:30 skipped (its skip bit set); and,
+/// from the same save, that occurrence claimed instead.
 fn plans() -> [Plans; 2] {
     let mut table = [None; PLANS];
     table[0] = Some(Plan {
@@ -236,7 +237,14 @@ fn plans() -> [Plans; 2] {
             revision: saved.revision,
         })
         .unwrap();
-    [saved, claimed]
+    let skipped = saved
+        .changed(&PlansChange::Skip {
+            plan: 0,
+            due_s: 1_793_172_600,
+            revision: saved.revision,
+        })
+        .unwrap();
+    [skipped, claimed]
 }
 
 #[test]
@@ -271,16 +279,16 @@ fn plans_store_reads_the_pinned_records() {
 }
 
 const PLANS_SAVED: &[&str] = &[
-    "504c46504c4e30310200800001000000010000000bc201027f00000000000138",
+    "504c46504c4e30310300800001000000010000002bc201027f00000000000138",
     "0401000000000000000000000000000000000000000000000000000000000000",
-    "000000000000709de16a00000000709de16a0000000000000000000000000000",
-    "0000000000000000000000000000000000000000000000008d9d07e7434d4954",
+    "00000000000078a4e16a00000000709de16a0000000000000000000000000000",
+    "000000000000000000000000000000000000000000000000dfb62f18434d4954",
 ];
 const PLANS_CLAIMED: &[&str] = &[
-    "504c46504c4e30310200800002000000010000000bc201027f00000000000138",
+    "504c46504c4e30310300800002000000010000000bc201027f00000000000138",
     "0401000000000000000000000000000000000000000000000000000000000000",
     "000000000000709de16a00000000709de16a0000000000000000000000000000",
-    "0000000000000000000000000000010078a4e16a290000001d8b9a86434d4954",
+    "0000000000000000000000000000010078a4e16a2900000022bb62b7434d4954",
 ];
 
 #[test]
