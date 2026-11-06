@@ -124,13 +124,10 @@ async def test_the_feed_button_asks_for_the_portions_number_and_the_event_fires(
     fired = _state(hass, event).attributes
     assert (fired["requested"], fired["completed"], fired["by"]) == (2, 2, "client")
 
-    last_fed = _state(hass, _id(entry, "sensor", "last_fed"))
-    await _until(
-        hass,
-        lambda: _state(hass, _id(entry, "sensor", "last_fed")).attributes.get("feed")
-        == fired["feed"],
-    )
-    assert last_fed.state != STATE_UNKNOWN
+    last_fed = _id(entry, "sensor", "last_fed")
+    await _until(hass, lambda: _state(hass, last_fed).attributes.get("feed") == fired["feed"])
+    # Read after the wait: once the sensor names this feed it has its time.
+    assert _state(hass, last_fed).state != STATE_UNKNOWN
     assert await hass.config_entries.async_unload(entry.entry_id)
 
 
