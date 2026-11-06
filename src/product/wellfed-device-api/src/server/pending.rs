@@ -117,7 +117,7 @@ impl Server {
                     });
                     Reply::Done(None)
                 }
-                Some(Err(refusal)) => Reply::Refused(refusal),
+                Some(Err(refusal)) => Reply::Refused(refusal.into()),
             },
             Waiting::Signer { key, label } => match self.signer {
                 Some(pairing::Event::Admit {
@@ -150,7 +150,7 @@ impl Server {
                 Some(KeyOutcome::Duplicate)
                     if find(&self.clients, &key).is_some_and(|c| c.role != Role::UpdateSigner) =>
                 {
-                    Reply::Refused(Refusal::Invalid)
+                    Reply::Refused(Refusal::Update(UpdateRefusal::HeldAsSessionKey))
                 }
                 Some(outcome @ (KeyOutcome::Done | KeyOutcome::Duplicate)) => {
                     signer_landed(now_ms, device, outcome, slot_id(index), &key, record);

@@ -72,7 +72,7 @@ deny = [
     { crate = "wellfed-board-plaf103", wrappers = ["wellfed-board"], reason = "every board value reaches the SDK and the product through the board contract, which chooses the board" },
     { crate = "wellfed-board-plwf106", wrappers = ["wellfed-board"], reason = "every board value reaches the SDK and the product through the board contract, which chooses the board" },
     { crate = "wellfed-hal-feeder", wrappers = ["wellfed-fw-feeder", "wellfed-probes", "wellfed-sim"], reason = "the feeder's drivers sit above the chip HAL: only the feeder firmware, the bring-up probes and the virtual feeder link them" },
-    { crate = "wellfed-proto", wrappers = ["wellfed", "wellfed-audit", "wellfed-bench", "wellfed-build", "wellfed-client", "wellfed-connect", "wellfed-device", "wellfed-device-api", "wellfed-feeder", "wellfed-feeder-runtime", "wellfed-feeder-sim", "wellfed-flash", "wellfed-formats", "wellfed-fw-feeder", "wellfed-image", "wellfed-install", "wellfed-mirror", "wellfed-model", "wellfed-rig", "wellfed-server-testkit", "wellfed-signing"], reason = "the device API's wire types are product schema; the SDK takes none" },
+    { crate = "wellfed-proto", wrappers = ["wellfed", "wellfed-audit", "wellfed-bench", "wellfed-build", "wellfed-client", "wellfed-connect", "wellfed-device", "wellfed-device-api", "wellfed-feeder", "wellfed-feeder-runtime", "wellfed-feeder-sim", "wellfed-flash", "wellfed-formats", "wellfed-fw-feeder", "wellfed-homeassistant", "wellfed-image", "wellfed-install", "wellfed-mirror", "wellfed-model", "wellfed-rig", "wellfed-server-testkit", "wellfed-signing"], reason = "the device API's wire types are product schema; the SDK takes none" },
 ]
 
 [sources]

@@ -50,6 +50,11 @@ impl DeviceKind {
 }
 
 /// A device model Wellfed has evidence for: one board, one firmware crate.
+///
+/// Frozen, since the session's welcome carries it. On the wire postcard
+/// encodes the variant's index in declaration order, not its explicit
+/// discriminant (that is [`Self::code`], for records and manifests), so a
+/// new model only ever goes at the end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[repr(u8)]

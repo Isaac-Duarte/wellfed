@@ -23,8 +23,8 @@ use wellfed_model::{
     Answer, ClientRole, DeviceKind, Gap, Hello, Joined, Model, Op, OpenRefusal, Pushed, convert,
 };
 use wellfed_proto::api::{
-    ClientMessage, DeviceMessage, FRAME_MAX, Join as JoinRequest, Open, PROLOGUE, RequestId,
-    Samples, Welcome,
+    ClientMessage, DeviceMessage, FRAME_MAX, Join as JoinRequest, Op as WireOp, Open, PROLOGUE,
+    RequestId, SCHEMA, Samples, Welcome,
 };
 use wellfed_session::frame::{self, PREFIX};
 use wellfed_session::hex::{self, Lower};
@@ -56,6 +56,12 @@ pub enum Error {
     ReservedId,
     #[error("the session is not open yet")]
     NotOpen,
+    #[error(
+        "the feeder runs a different build than this client (schema {feeder:#010x}, this \
+         client {client:#010x}); update the feeder from the app or the CLI, or update this \
+         client"
+    )]
+    OtherSchema { feeder: u32, client: u32 },
     #[error(transparent)]
     Setup(#[from] crate::setup::Error),
 }
@@ -171,6 +177,18 @@ pub struct Opened {
     pub role: ClientRole,
     /// The epoch the feeder's event numbers count in.
     pub epoch: u32,
+    /// The feeder's build's revision of everything outside the frozen
+    /// update path ([`wellfed_proto::api::SCHEMA`]).
+    pub schema: u32,
+}
+
+impl Opened {
+    /// Whether the feeder's build speaks this client's revision. When it
+    /// does not, only the frozen update path and the keepalive go to it:
+    /// another op may decode there as something else.
+    pub fn same_schema(&self) -> bool {
+        self.schema == SCHEMA
+    }
 }
 
 /// What [`Session::next_incoming`] yields.
@@ -198,6 +216,8 @@ pub struct Session {
     /// The welcome's epoch, once it has arrived: what pushed events count
     /// in.
     epoch: Option<u32>,
+    /// The welcome's schema revision, once it has arrived.
+    schema: Option<u32>,
 }
 
 impl std::fmt::Debug for Session {
@@ -249,6 +269,7 @@ impl Session {
             inbox: std::collections::VecDeque::new(),
             events: std::collections::VecDeque::new(),
             epoch: None,
+            schema: None,
         };
         Ok((session, out))
     }
@@ -315,14 +336,17 @@ impl Session {
                     build,
                     role,
                     epoch,
+                    schema,
                 } => {
                     self.epoch = Some(epoch);
+                    self.schema = Some(schema);
                     Incoming::Opened(Opened {
                         kind: model.kind(),
                         model,
                         build: build.to_owned(),
                         role: role.into(),
                         epoch,
+                        schema,
                     })
                 }
                 Welcome::Refused(refusal) => {
@@ -365,19 +389,46 @@ impl Session {
         }))
     }
 
-    /// One request under `id`, sealed and framed.
+    /// One request under `id`, sealed and framed. A feeder of another
+    /// schema revision is sent only frozen ops: anything else is refused
+    /// here, never sent, since it may decode there as another op.
     pub fn request(&mut self, id: RequestId, op: &Op) -> Result<Vec<u8>, Error> {
+        let op = op.to_proto();
+        if !op.is_frozen() {
+            self.same_schema()?;
+        }
+        self.send(&ClientMessage::Request { id, op })
+    }
+
+    /// The keepalive under `id`: frozen, so it goes to a feeder of any
+    /// build, and its answer is always one this client reads.
+    pub fn alive(&mut self, id: RequestId) -> Result<Vec<u8>, Error> {
         self.send(&ClientMessage::Request {
             id,
-            op: op.to_proto(),
+            op: WireOp::Alive,
         })
     }
 
     /// Ask for every event after `after` and then each new one, and the
-    /// live samples if `samples`.
+    /// live samples if `samples`. Not to a feeder of another schema
+    /// revision, whose events this client may not read.
     pub fn subscribe(&mut self, after: Option<u64>, samples: bool) -> Result<Vec<u8>, Error> {
+        self.same_schema()?;
         let samples = if samples { Samples::On } else { Samples::Off };
         self.send(&ClientMessage::Subscribe { after, samples })
+    }
+
+    /// Whether the welcome named this client's schema revision; before the
+    /// welcome, the request is refused as not open.
+    fn same_schema(&self) -> Result<(), Error> {
+        match self.schema {
+            Some(SCHEMA) => Ok(()),
+            Some(feeder) => Err(Error::OtherSchema {
+                feeder,
+                client: SCHEMA,
+            }),
+            None => Err(Error::NotOpen),
+        }
     }
 
     fn send(&mut self, message: &ClientMessage<'_>) -> Result<Vec<u8>, Error> {
@@ -623,6 +674,7 @@ mod tests {
             build: "b",
             role: WireRole::Owner,
             epoch: 1,
+            schema: SCHEMA,
         };
         let bytes = feeder_says(&hello, &Welcome::Refused(WireRefusal::Unknown), &[open]);
 

@@ -17,6 +17,13 @@
 //! 3. Only once the feeder has proven the code does the client send its
 //!    Wi-Fi, in [`Answer::Last`], so a relay never sees the passphrase.
 //! 4. The feeder answers [`Reply::Done`] or [`Reply::Refused`].
+//!
+//! Every message here, the prologue and the code proof are frozen, as the
+//! device API's update path is ([device API](../../../../docs/firmware/device-api.md#evolution)):
+//! the device API's recovery window runs this same exchange, and an owner
+//! who lost every key recovers through it on a feeder of any build. No
+//! field is added, removed, reordered or retyped, an enum only gains
+//! variants at its end, and `tests/fixtures/update-v1.txt` pins the bytes.
 
 use serde::{Deserialize, Serialize};
 
@@ -96,7 +103,10 @@ pub enum WifiSaved {
     Unchanged,
 }
 
+/// Named apart from the device API's `Refusal` for the schema trace, which
+/// keys types by name; postcard never encodes the name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename = "SetupRefusal")]
 pub enum Refusal {
     /// Another setup is waiting for its code.
     Busy,

@@ -166,6 +166,8 @@ class _Summary extends StatelessWidget {
       Connection.looking => (c.textMuted, 'Looking…'),
       Connection.connecting => (c.textMuted, 'Connecting…'),
       Connection.offline => (c.textMuted, "Can't reach it"),
+      Connection.otherBuild => (c.warning, 'Different build: update the feeder or this app'),
+      Connection.otherVersion => (c.warning, 'This feeder needs a different app version'),
       Connection.online when feeder.state.feed.active => (c.accent, 'Feeding'),
       Connection.online when card?.ready ?? false => (c.ok, 'Ready to feed'),
       Connection.online when card?.blocked == Blocked.feeding => (c.accent, 'Feeding'),

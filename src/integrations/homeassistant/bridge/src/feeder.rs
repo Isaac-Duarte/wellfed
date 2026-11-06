@@ -241,7 +241,7 @@ impl Memory {
 }
 
 /// Connect, serve until the session ends, and go again, until the handle is
-/// dropped or the key is revoked.
+/// dropped, the key is revoked, or the feeder runs another build.
 async fn run(
     key: ClientKey,
     target: Target,
@@ -265,7 +265,11 @@ async fn run(
         let reason = match ended {
             Ended::Dropped => return,
             Ended::Revoked => {
-                revoked(&mut commands, &updates).await;
+                stopped(Update::revoked(), &mut commands, &updates).await;
+                return;
+            }
+            Ended::OtherBuild(build) => {
+                stopped(Update::other_build(build), &mut commands, &updates).await;
                 return;
             }
             Ended::Lost(reason) => reason,
@@ -294,13 +298,16 @@ async fn run(
     }
 }
 
-/// The key is gone from the feeder: say so once, then refuse every write
-/// until the handle is dropped. A new key comes from a new invite.
-async fn revoked(
+/// The session cannot go on: say why once, then refuse every write until
+/// the handle is dropped. A revoked key needs a new invite; a feeder of
+/// another build needs an update from the app, which a new session (the
+/// integration's retried setup) then finds.
+async fn stopped(
+    why: Update,
     commands: &mut mpsc::UnboundedReceiver<Command>,
     updates: &std_mpsc::Sender<Update>,
 ) {
-    if updates.send(Update::revoked()).is_err() {
+    if updates.send(why).is_err() {
         return;
     }
     while let Some(command) = commands.recv().await {
@@ -320,6 +327,10 @@ enum Ended {
     /// The handle is gone.
     Dropped,
     Revoked,
+    /// The feeder's build speaks another schema revision, so only the
+    /// frozen update path reaches it: nothing this integration reads or
+    /// writes. Reconnecting would only meet the same build.
+    OtherBuild(String),
     Lost(String),
 }
 
@@ -410,6 +421,9 @@ impl<'a> Session<'a> {
 
     /// Announce the session, read the facts and subscribe.
     async fn open(&mut self) -> Step {
+        if !self.connection.same_schema() {
+            return Err(Ended::OtherBuild(self.connection.build().to_owned()));
+        }
         let connected = Update::connected(self.connection.build(), self.role, self.capabilities);
         self.send(connected)?;
 

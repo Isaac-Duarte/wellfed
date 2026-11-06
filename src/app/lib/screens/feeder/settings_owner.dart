@@ -13,6 +13,7 @@ import 'package:wellfed/src/rust/api/feeder.dart' show CalibrationInfo, CallInfo
 import 'package:wellfed/src/rust/api/model.dart' show CallClip_None, CallClip_Receiving, CallClip_Stored;
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
+import 'package:wellfed/state/feeder/feeder_state.dart';
 import 'package:wellfed/theme/theme.dart';
 import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/icons.dart';
@@ -86,12 +87,14 @@ class _OwnerSectionState extends State<SettingsOwnerSection> {
             open: (screen) => _open(context, screen),
           ),
           _Link('People', people, PeopleScreen(feeder: feeder), open: (screen) => _open(context, screen)),
-          _Link(
-            'Firmware',
-            card == null ? null : shortBuild(card.build),
-            UpdatesScreen(feeder: feeder),
-            open: (screen) => _open(context, screen),
-          ),
+          // A feeder of another major takes no update from this app.
+          if (feeder.state.connection != Connection.otherVersion)
+            _Link(
+              'Firmware',
+              card == null ? null : shortBuild(card.build),
+              UpdatesScreen(feeder: feeder),
+              open: (screen) => _open(context, screen),
+            ),
           _Link(
             'Diagnostics',
             card == null ? null : 'Up ${upText(card.uptimeMs ~/ 1000)}',

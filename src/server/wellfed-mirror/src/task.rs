@@ -59,6 +59,9 @@ pub(crate) struct Handle {
 pub(crate) struct LongLane {
     pub(crate) steps: mpsc::Sender<Command>,
     pub(crate) link: watch::Receiver<Link>,
+    /// The build the open session's welcome names, for an install that
+    /// reconnects.
+    pub(crate) build: watch::Receiver<Option<String>>,
     pub(crate) turn: Arc<Semaphore>,
 }
 
@@ -115,12 +118,14 @@ pub(crate) fn spawn(
     let (steps, step_receiver) = mpsc::channel(STEPS);
     let (link, watching) = watch::channel(Link::Offline);
     let (opened, opens) = watch::channel(None);
+    let (build, builds) = watch::channel(None);
     let (address, addresses) = watch::channel(feeder.address.clone());
     let keys = Keypair::from_secret(feeder.secret);
     let log_stop = log::Stop::default();
     let long = LongLane {
         steps,
         link: watching.clone(),
+        build: builds,
         turn: Arc::new(Semaphore::new(1)),
     };
     let collector = match shared.config.diagnostics {
@@ -148,6 +153,7 @@ pub(crate) fn spawn(
         steps: step_receiver,
         link,
         opened,
+        build,
         updates: updates.clone(),
         cancel: cancel.clone(),
         batch: Batch::default(),
@@ -197,6 +203,8 @@ pub(crate) struct Task {
     pub(crate) zone: watch::Receiver<Option<Arc<Zone>>>,
     link: watch::Sender<Link>,
     pub(crate) opened: watch::Sender<Option<Opened>>,
+    /// The build the open session's welcome names.
+    pub(crate) build: watch::Sender<Option<String>>,
     pub(crate) updates: broadcast::Sender<MirrorEvent>,
     pub(crate) cancel: CancellationToken,
     /// Samples received and not yet written.
@@ -265,6 +273,7 @@ impl Task {
                 }
             };
             self.opened.send_replace(None);
+            self.build.send_replace(None);
             self.set(link);
 
             let wait = match link {

@@ -98,13 +98,16 @@ where
         self.connection = None;
         let deadline = Instant::now() + REOPEN_WAIT;
         loop {
+            // The update state, not the status: bank 0 may run a build of
+            // another schema revision, which only the frozen path reaches.
             if let Ok(mut session) = (self.connect)().await
-                && let Ok(Answer::Status(status)) = session.ask(random()?, &Op::Status).await
+                && let Ok(Answer::Update(view)) = session.ask(random()?, &Op::UpdateState).await
             {
+                let build = session.build().to_owned();
                 self.connection = Some(session);
                 return Ok(Some(Opened {
-                    bank: status.bank,
-                    build: status.build,
+                    bank: view.bank,
+                    build,
                 }));
             }
             if Instant::now() >= deadline {

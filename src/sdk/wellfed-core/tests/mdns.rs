@@ -197,3 +197,34 @@ fn every_address_change_is_announced_twice_a_second_apart() {
     r.set_ip(Some(IP + 1), 6_000);
     assert!(r.announce(6_000, &mut out).is_some());
 }
+
+/// Discovery is part of the frozen update path: a client of any later build
+/// finds a deployed bank 0 by this service, its TXT fields and the port.
+/// Changing them strands every deployed bank 0, whose feeder could never
+/// be found to update again without a UART cable. Only a new major of the
+/// device API changes them.
+#[test]
+fn the_advertised_service_and_txt_fields_never_change() {
+    const STRANDS: &str = "the mDNS service, its TXT fields and the device API's port are \
+                           frozen: changing them strands every deployed bank 0";
+    let mut out = [0; PACKET];
+    let reply = responder()
+        .query(
+            &query("_wellfed._tcp.local", TYPE::PTR, false, 7),
+            PORT,
+            &mut out,
+        )
+        .expect(STRANDS);
+    let (_, found) = records(&out[..reply.len]);
+    let instance = "wellfed-abababab._wellfed._tcp.local";
+    assert_eq!(found[0].0, "_wellfed._tcp.local", "{STRANDS}");
+    assert_eq!(found[1].1, "SRV 4747 wellfed-abababab.local", "{STRANDS}");
+    assert_eq!(
+        found[2],
+        (
+            instance.to_owned(),
+            format!("TXT id={} v=1", "ab".repeat(32))
+        ),
+        "{STRANDS}"
+    );
+}

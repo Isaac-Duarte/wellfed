@@ -38,7 +38,8 @@ impl Pace {
     };
 }
 
-/// A session that opened: the bank and build its status names.
+/// A session that opened: the bank its update state names, and the build
+/// its welcome names.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Opened {
     pub bank: u8,
@@ -61,8 +62,11 @@ pub trait Steps {
     /// request may have run.
     async fn step(&mut self, op: Op) -> Result<Option<Answer>, Self::Error>;
 
-    /// A session that answers a status read, waiting as long as a
-    /// restarting feeder takes; `None` once the feeder did not come back.
+    /// A session that answers an update-state read (the bank) and its
+    /// welcome (the build), waiting as long as a restarting feeder takes;
+    /// `None` once the feeder did not come back. Never the status: bank 0
+    /// may run a build of another schema revision, which only the frozen
+    /// update path reaches.
     async fn reopen(&mut self) -> Result<Option<Opened>, Self::Error>;
 
     /// Whether a session that `opened` shows bank 1 running the build:

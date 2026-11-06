@@ -31,8 +31,9 @@ use wellfed_device_api::{
 use wellfed_model as model;
 use wellfed_model::{Answer, FeederSettingsPatch, Generation, Hello, Joined, Op, OpenRefusal};
 use wellfed_proto::api::{
-    self as proto, DeviceStatus, EventBody, FeederStatus, FoodLevel, Metric, Refusal, Sample,
-    Stats, StatsSection, Status, UpdatePhase, UpdateRefusal, UpdateView, WANTED_MAX,
+    self as proto, DeviceStatus, EventBody, FeederStatus, FoodLevel, FrozenRefusal, Metric,
+    Refusal, Sample, Stats, StatsSection, Status, UpdatePhase, UpdateRefusal, UpdateView,
+    WANTED_MAX,
 };
 use wellfed_session::frame;
 use wellfed_session::noise::Keypair;
@@ -90,10 +91,10 @@ struct Fake {
     chunks_busy: bool,
     /// Update requests queued, in order, and the next one's answer.
     updates: Vec<String>,
-    update_done: Option<(u32, Result<UpdateAnswer, Refusal>)>,
+    update_done: Option<(u32, Result<UpdateAnswer, FrozenRefusal>)>,
     /// Keep the next request queued (its lease held) until `answer_held`.
     hold: bool,
-    held: Option<(u32, Result<UpdateAnswer, Refusal>)>,
+    held: Option<(u32, Result<UpdateAnswer, FrozenRefusal>)>,
     /// Chunk offsets handed over.
     chunks: Vec<u32>,
     time: TimeSettingsView,
@@ -470,9 +471,9 @@ impl Device for Fake {
         })
     }
 
-    fn update(&mut self, request: UpdateRequest<'_>) -> Result<u32, Refusal> {
+    fn update(&mut self, request: UpdateRequest<'_>) -> Result<u32, FrozenRefusal> {
         if !self.update {
-            return Err(Refusal::Unavailable);
+            return Err(FrozenRefusal::Unavailable);
         }
         self.ticket += 1;
         let answer = match request {
@@ -502,21 +503,21 @@ impl Device for Fake {
         Ok(self.ticket)
     }
 
-    fn update_outcome(&mut self, ticket: u32) -> Option<Result<UpdateAnswer, Refusal>> {
+    fn update_outcome(&mut self, ticket: u32) -> Option<Result<UpdateAnswer, FrozenRefusal>> {
         self.update_done
             .filter(|&(done, _)| done == ticket)
             .map(|(_, answer)| answer)
     }
 
-    fn update_chunk(&mut self, offset: u32, _data: &[u8]) -> Result<UpdateView, Refusal> {
+    fn update_chunk(&mut self, offset: u32, _data: &[u8]) -> Result<UpdateView, FrozenRefusal> {
         if !self.update {
-            return Err(Refusal::Unavailable);
+            return Err(FrozenRefusal::Unavailable);
         }
         if self.chunks_busy {
-            return Err(Refusal::Busy);
+            return Err(FrozenRefusal::Busy);
         }
         if !self.installing {
-            return Err(Refusal::Update(UpdateRefusal::NotInstalling));
+            return Err(FrozenRefusal::Update(UpdateRefusal::NotInstalling));
         }
         self.chunks.push(offset);
         Ok(receiving())
@@ -3094,7 +3095,12 @@ fn a_session_key_is_never_enrolled_as_an_update_signer() {
 
     rig.signer = press_dispense(&mut rig);
     let refused = poll_answer(&mut rig, &mut owner, 1, 50).unwrap();
-    assert_eq!(refused, Answer::Refused(model::Refusal::Invalid));
+    assert_eq!(
+        refused,
+        Answer::Refused(model::Refusal::Update(
+            model::UpdateRefusal::HeldAsSessionKey
+        ))
+    );
     let member = rig.device.clients.iter().find(|c| c.key == public(MEMBER));
     assert_eq!(member.map(|c| c.role), Some(Role::Member));
 }

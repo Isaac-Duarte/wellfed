@@ -388,6 +388,14 @@ impl Connection {
         self.opened().epoch
     }
 
+    /// Whether the feeder's build speaks this client's schema revision.
+    /// When it does not, only the frozen update path goes to it: every
+    /// other request and a subscription are refused with
+    /// [`wellfed_client::api::Error::OtherSchema`], never sent.
+    pub fn same_schema(&self) -> bool {
+        self.opened().same_schema()
+    }
+
     /// The newest event or gap end received since [`Self::subscribe`].
     pub fn cursor(&self) -> Option<Cursor> {
         self.session.cursor()
@@ -703,6 +711,7 @@ mod tests {
             build: "fountain",
             role: WireRole::Owner,
             epoch: 1,
+            schema: wellfed_proto::api::SCHEMA,
         };
         let len = wellfed_proto::encode(&welcome, &mut plain).unwrap();
         let mut out = [0; FRAME_MAX];

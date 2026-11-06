@@ -12,9 +12,14 @@
 //!
 //! The connection owns:
 //! - **Keepalive.** The feeder drops a session that sends nothing for its
-//!   idle limit (90 s), so a `Status` goes out under [`KEEPALIVE_ID`] when
-//!   this side has been quiet for [`Timing::keepalive`]; its answer is
-//!   swallowed.
+//!   idle limit (90 s), so the frozen `Alive` goes out under
+//!   [`KEEPALIVE_ID`] when this side has been quiet for
+//!   [`Timing::keepalive`]; its answer is swallowed. Being frozen, it keeps
+//!   a session with a feeder of another build alive too.
+//! - **Another build.** A feeder whose welcome names another schema
+//!   revision ([`Opened::same_schema`]) is sent only the frozen update path:
+//!   any other request, and a subscription, is refused here with
+//!   [`Error::OtherSchema`] and never sent.
 //! - **Silence.** A live feeder answers every keepalive, so hearing nothing
 //!   for [`Timing::silence`] ends the session with [`Error::Silent`]: a
 //!   feeder that lost power sends no reset, and the kernel would keep the
@@ -46,7 +51,7 @@ pub use crate::api::Opened;
 use crate::api::{Error, Incoming, Session, open_frame};
 use crate::setup;
 
-/// The id of the keepalive's `Status`. A read is never remembered by the
+/// The id of the keepalive's `Alive`. A read is never remembered by the
 /// feeder, so reusing one id is safe; its answer is dropped here, so a
 /// caller may not use it.
 pub const KEEPALIVE_ID: RequestId = *b"wellfed-alive\0\0\0";
@@ -348,7 +353,9 @@ impl Connection {
             }
         }
         if self.sent_at + self.timing.keepalive <= now {
-            self.send_request(now, KEEPALIVE_ID, &Op::Status)?;
+            self.live()?;
+            let bytes = self.session.alive(KEEPALIVE_ID)?;
+            self.queue(now, bytes);
         }
         Ok(())
     }

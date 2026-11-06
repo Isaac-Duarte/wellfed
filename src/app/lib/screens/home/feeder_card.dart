@@ -370,6 +370,8 @@ class _Chips extends StatelessWidget {
       Connection.looking => StatusChip('Looking…', color: c.textMuted),
       Connection.connecting => StatusChip('Connecting…', color: c.textMuted),
       Connection.offline => StatusChip("Can't reach it", color: c.textMuted),
+      Connection.otherBuild => StatusChip('Different build: update the feeder or this app', color: c.warning),
+      Connection.otherVersion => StatusChip('This feeder needs a different app version', color: c.warning),
       Connection.online when feed is FeedRunning => StatusChip(
         'Feeding ${feed.portions == 1 ? '1 portion' : '${feed.portions} portions'}',
         color: c.accent,

@@ -37,6 +37,8 @@ RECENT_EVENTS = 20
 UNCERTAIN_ISSUE = "uncertain_feed"
 # A lost feed the feeder's history holds no record of.
 UNKNOWN_ISSUE = "unknown_feed"
+# A feeder of another build, which takes nothing but an update.
+OTHER_BUILD_ISSUE = "other_build"
 
 
 class WriteNotDone(HomeAssistantError):
@@ -101,6 +103,10 @@ class FeederSession:
 
         self.connected = False
         self.revoked = False
+        # The feeder runs a different build, which takes only an update.
+        self.other_build = False
+        # Called once a running session finds the feeder on another build.
+        self.on_other_build: Callable[[], None] | None = None
         # Called once the feeder no longer knows this Home Assistant.
         self.on_revoked: Callable[[], None] | None = None
         self.build: str | None = None
@@ -141,7 +147,7 @@ class FeederSession:
         self._feeder = None
 
     async def ready(self, timeout: float) -> None:
-        """Wait until the first state is in, or the key is found revoked."""
+        """Wait for the first state, a revoked key, or a feeder of another build."""
         with contextlib.suppress(TimeoutError):
             async with asyncio.timeout(timeout):
                 await self._ready.wait()
@@ -244,6 +250,7 @@ class FeederSession:
         kind = update.kind
         if kind == bridge.UpdateKind.Connected:
             self.connected = True
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(OTHER_BUILD_ISSUE))
             self.build = update.build
             self.role = update.role
             self.capabilities = update.capabilities
@@ -288,6 +295,22 @@ class FeederSession:
             self.connected = False
             if self.on_revoked is not None:
                 self.on_revoked()
+        elif kind == bridge.UpdateKind.OtherBuild:
+            _LOGGER.error(
+                "The feeder runs a different build (%s) than this integration: update the "
+                "feeder from the Wellfed app, or update the integration; Home Assistant "
+                "tries again on its own",
+                update.build,
+            )
+            self.other_build = True
+            self.build = update.build
+            self.connected = False
+            self._ready.set()
+            self._issue(
+                OTHER_BUILD_ISSUE, ir.IssueSeverity.ERROR, {"build": update.build or "unknown"}
+            )
+            if self.on_other_build is not None:
+                self.on_other_build()
         elif kind == bridge.UpdateKind.Disconnected:
             if self.connected:
                 _LOGGER.warning("Feeder disconnected: %s", update.reason)

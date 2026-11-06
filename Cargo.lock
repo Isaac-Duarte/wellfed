@@ -530,7 +530,7 @@ dependencies = [
  "log",
  "serde",
  "serde-xml-rs",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "uuid",
 ]
@@ -563,7 +563,7 @@ dependencies = [
  "objc2-foundation",
  "once_cell",
  "static_assertions",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-stream",
  "uuid",
@@ -795,7 +795,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
 dependencies = [
- "thiserror",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1262,7 +1262,7 @@ version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71958f69fb2de856c5dd51ac9377e986ca1aa5919f931bf5395a807277f889a0"
 dependencies = [
- "thiserror",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1451,6 +1451,15 @@ name = "equivalent"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
+
+[[package]]
+name = "erased-discriminant"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1a6df962265a53221f29081896c412ef325c17fa7d638cd9578febe53d3c82c"
+dependencies = [
+ "typeid",
+]
 
 [[package]]
 name = "errno"
@@ -2301,7 +2310,7 @@ dependencies = [
  "jni-sys",
  "log",
  "simd_cesu8",
- "thiserror",
+ "thiserror 2.0.21",
  "walkdir",
  "windows-link",
 ]
@@ -2367,7 +2376,7 @@ checksum = "72f14c90e40a6133f4805b83542a7ed7364f56070b447f56e7f4e90297122209"
 dependencies = [
  "hashbrown 0.17.1",
  "portable-atomic",
- "thiserror",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -2609,7 +2618,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",
  "toml",
@@ -2631,7 +2640,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde",
- "thiserror",
+ "thiserror 2.0.21",
  "tracing",
  "web-time",
 ]
@@ -3145,7 +3154,7 @@ dependencies = [
  "rustc-hash",
  "rustls",
  "socket2",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "tracing",
  "web-time",
@@ -3168,7 +3177,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror",
+ "thiserror 2.0.21",
  "tinyvec",
  "tracing",
  "web-time",
@@ -3282,7 +3291,7 @@ dependencies = [
  "palette",
  "serde",
  "strum 0.28.0",
- "thiserror",
+ "thiserror 2.0.21",
  "unicode-segmentation",
  "unicode-truncate",
  "unicode-width",
@@ -3448,7 +3457,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-util",
  "tracing",
@@ -3487,7 +3496,7 @@ dependencies = [
  "flume 0.11.1",
  "futures-util",
  "log",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -3729,6 +3738,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-reflection"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af0fdf9c543af37502581e3d6cf4e6cd1628d6616d6a1f8f4ca88aae3a405f5c"
+dependencies = [
+ "erased-discriminant",
+ "once_cell",
+ "serde",
+ "thiserror 1.0.69",
+ "typeid",
+]
+
+[[package]]
 name = "serde-xml-rs"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3736,7 +3758,7 @@ checksum = "cc2215ce3e6a77550b80a1c37251b7d294febaf42e36e21b7b411e0bf54d540d"
 dependencies = [
  "log",
  "serde",
- "thiserror",
+ "thiserror 2.0.21",
  "xml",
 ]
 
@@ -4071,7 +4093,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "smallvec",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -4113,7 +4135,7 @@ dependencies = [
  "sqlx-postgres",
  "sqlx-sqlite",
  "syn 2.0.119",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "url",
 ]
@@ -4140,7 +4162,7 @@ dependencies = [
  "sha1",
  "sha2 0.11.1",
  "sqlx-core",
- "thiserror",
+ "thiserror 2.0.21",
  "tracing",
  "uuid",
 ]
@@ -4175,7 +4197,7 @@ dependencies = [
  "smallvec",
  "sqlx-core",
  "stringprep",
- "thiserror",
+ "thiserror 2.0.21",
  "tracing",
  "uuid",
  "whoami",
@@ -4200,7 +4222,7 @@ dependencies = [
  "percent-encoding",
  "serde",
  "sqlx-core",
- "thiserror",
+ "thiserror 2.0.21",
  "tracing",
  "url",
  "uuid",
@@ -4358,11 +4380,31 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
+version = "1.0.69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
+dependencies = [
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
+name = "thiserror"
 version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 2.0.21",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -4664,6 +4706,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
+name = "typeid"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c"
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4681,7 +4729,7 @@ version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7285e83a80ce76f5e7bce79fa41f68d78ba62d1003cf27bf748ab24413808cf4"
 dependencies = [
- "thiserror",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -5048,7 +5096,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "uuid",
  "wellfed-client",
@@ -5101,7 +5149,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "uuid",
  "wellfed-api",
@@ -5129,7 +5177,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "wellfed-formats",
  "wellfed-image",
  "wellfed-proto",
@@ -5157,7 +5205,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "wellfed-client",
  "wellfed-connect",
@@ -5210,7 +5258,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "toml",
  "wellfed-core",
  "wellfed-emu",
@@ -5230,7 +5278,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "thiserror",
+ "thiserror 2.0.21",
  "wellfed-core",
  "wellfed-device",
  "wellfed-device-api",
@@ -5246,7 +5294,7 @@ name = "wellfed-connect"
 version = "0.1.0"
 dependencies = [
  "mdns-sd",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "wellfed-client",
  "wellfed-model",
@@ -5270,7 +5318,7 @@ dependencies = [
 name = "wellfed-device"
 version = "0.1.0"
 dependencies = [
- "thiserror",
+ "thiserror 2.0.21",
  "wellfed-core",
  "wellfed-device-api",
  "wellfed-proto",
@@ -5304,7 +5352,7 @@ name = "wellfed-device-sim"
 version = "0.1.0"
 dependencies = [
  "sha2 0.10.9",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "wellfed-amebad-sys",
  "wellfed-board",
@@ -5318,7 +5366,7 @@ dependencies = [
 name = "wellfed-emu"
 version = "0.1.0"
 dependencies = [
- "thiserror",
+ "thiserror 2.0.21",
  "unicorn-engine",
  "wellfed-formats",
 ]
@@ -5327,7 +5375,7 @@ dependencies = [
 name = "wellfed-feeder"
 version = "0.1.0"
 dependencies = [
- "thiserror",
+ "thiserror 2.0.21",
  "wellfed-core",
  "wellfed-device",
  "wellfed-device-api",
@@ -5361,7 +5409,7 @@ dependencies = [
  "sha2 0.10.9",
  "socket2",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "wellfed-amebad-sys",
  "wellfed-board",
@@ -5392,7 +5440,7 @@ dependencies = [
  "serde_json",
  "serialport",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "uuid",
  "wellfed-core",
  "wellfed-emu",
@@ -5412,7 +5460,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "uuid",
  "wellfed-model",
  "wellfed-proto",
@@ -5515,13 +5563,14 @@ dependencies = [
  "jiff",
  "pyo3",
  "serde_json",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "wellfed-client",
  "wellfed-connect",
  "wellfed-feeder-sim",
  "wellfed-formats",
  "wellfed-model",
+ "wellfed-proto",
  "wellfed-session",
 ]
 
@@ -5532,7 +5581,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "wellfed-core",
  "wellfed-formats",
  "wellfed-proto",
@@ -5548,7 +5597,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "uuid",
  "wellfed-client",
@@ -5571,7 +5620,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "wellfed-core",
  "wellfed-formats",
  "wellfed-model",
@@ -5586,7 +5635,8 @@ dependencies = [
  "getrandom 0.3.4",
  "jiff",
  "jiff-tzdb",
- "thiserror",
+ "serde",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-util",
  "tracing",
@@ -5609,7 +5659,7 @@ dependencies = [
  "jiff",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 2.0.21",
  "utoipa",
  "wellfed-proto",
  "wellfed-session",
@@ -5632,7 +5682,9 @@ dependencies = [
  "postcard",
  "proptest",
  "serde",
- "thiserror",
+ "serde-reflection",
+ "serde_json",
+ "thiserror 2.0.21",
  "wellfed-session",
 ]
 
@@ -5641,7 +5693,7 @@ name = "wellfed-relay"
 version = "0.1.0"
 dependencies = [
  "serialport",
- "thiserror",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -5655,7 +5707,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "tracing",
  "wellfed-api",
@@ -5678,7 +5730,7 @@ dependencies = [
  "serialport",
  "sha2 0.10.9",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "wellfed-build",
  "wellfed-client",
@@ -5730,7 +5782,7 @@ dependencies = [
  "serde_path_to_error",
  "socket2",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -5758,7 +5810,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 2.0.21",
  "uuid",
  "wellfed-api",
 ]
@@ -5801,7 +5853,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -5835,7 +5887,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "wellfed-core",
  "wellfed-formats",
  "wellfed-image",
@@ -5851,7 +5903,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "wellfed-core",
  "wellfed-formats",
  "wellfed-hal",
@@ -5877,7 +5929,7 @@ dependencies = [
  "serde_json",
  "subtle",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -5899,7 +5951,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "tokio",
  "uuid",
  "wellfed-api",
@@ -6187,7 +6239,7 @@ dependencies = [
  "serde_json",
  "syn 2.0.119",
  "tempfile",
- "thiserror",
+ "thiserror 2.0.21",
  "wellfed-formats",
 ]
 

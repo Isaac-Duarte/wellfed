@@ -714,7 +714,8 @@ class Update:
     def build(self, /) -> str | None:
         """
         For [`UpdateKind::Connected`]: the build that answered, this
-        client's role and what the feeder serves.
+        client's role and what the feeder serves. For
+        [`UpdateKind::OtherBuild`], the build alone.
         """
     @property
     def capabilities(self, /) -> Capabilities | None: ...
@@ -781,6 +782,13 @@ class UpdateKind:
     """
     Events this session never received: what happened meanwhile is
     not known.
+    """
+    OtherBuild: Final[UpdateKind]
+    """
+    The feeder runs a different build than this integration, which
+    takes nothing but an update; `build` names it. This session
+    will not reconnect: the integration sets up a new one, retrying
+    until the feeder is updated.
     """
     Revoked: Final[UpdateKind]
     """

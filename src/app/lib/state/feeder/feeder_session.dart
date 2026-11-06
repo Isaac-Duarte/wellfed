@@ -103,7 +103,16 @@ extension FeederSessionRun on FeederController {
         when path != RoutePath.server) {
       _setFeed(FeedAdrift(feed: feed, by: FeedLoss.link, portions: portions, sentAt: sentAt));
     }
-    if (!_disposed) _sessionIs(Connection.offline);
+    // A feeder of another build answers only an update, so the session
+    // ends at its first read, and one of another major refuses it at the
+    // handshake: either is reachable all the same.
+    if (!_disposed) {
+      _sessionIs(switch (_state.error) {
+        ErrorKind.otherBuild => Connection.otherBuild,
+        ErrorKind.version => Connection.otherVersion,
+        _ => Connection.offline,
+      });
+    }
     return opened;
   }
 

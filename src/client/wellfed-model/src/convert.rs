@@ -1487,6 +1487,7 @@ impl From<proto::UpdateRefusal> for UpdateRefusal {
             proto::UpdateRefusal::Store => Self::Store,
             proto::UpdateRefusal::Unconfirmed => Self::Unconfirmed,
             proto::UpdateRefusal::Battery => Self::Battery,
+            proto::UpdateRefusal::HeldAsSessionKey => Self::HeldAsSessionKey,
         }
     }
 }
@@ -1535,18 +1536,21 @@ impl Op {
             | proto::Op::ListClients
             | proto::Op::RevokeClient { .. }
             | proto::Op::Reboot
-            | proto::Op::OfferUpdate { .. }
-            | proto::Op::UpdateChunk { .. }
-            | proto::Op::UpdateState
-            | proto::Op::CancelUpdate
-            | proto::Op::EnrollUpdateKey { .. }
-            | proto::Op::UpdateKeyStatement { .. }
+            | proto::Op::Update(_)
+            | proto::Op::Alive
             | proto::Op::GetTime
             | proto::Op::PutTime { .. }
             | proto::Op::TailLog { .. }
             | proto::Op::Stats { .. }
             | proto::Op::ReadBank1 { .. } => None,
         }
+    }
+
+    /// Whether the op belongs to the frozen update path, which a device of
+    /// any build serves: the only ops a client sends to a build of another
+    /// schema revision.
+    pub fn is_frozen(&self) -> bool {
+        self.to_proto().is_frozen()
     }
 
     /// The wire form, borrowing this op's strings.
@@ -1589,18 +1593,22 @@ impl Op {
             Self::OfferUpdate {
                 manifest,
                 downgrade,
-            } => proto::Op::OfferUpdate {
+            } => proto::Op::Update(proto::UpdateOp::Offer {
                 manifest,
                 downgrade: downgrade.as_deref(),
-            },
-            Self::UpdateChunk { offset, data } => proto::Op::UpdateChunk {
+            }),
+            Self::UpdateChunk { offset, data } => proto::Op::Update(proto::UpdateOp::Chunk {
                 offset: *offset,
                 data,
-            },
-            Self::UpdateState => proto::Op::UpdateState,
-            Self::CancelUpdate => proto::Op::CancelUpdate,
-            Self::EnrollUpdateKey { key, label } => proto::Op::EnrollUpdateKey { key: *key, label },
-            Self::UpdateKeyStatement { statement } => proto::Op::UpdateKeyStatement { statement },
+            }),
+            Self::UpdateState => proto::Op::Update(proto::UpdateOp::State),
+            Self::CancelUpdate => proto::Op::Update(proto::UpdateOp::Cancel),
+            Self::EnrollUpdateKey { key, label } => {
+                proto::Op::Update(proto::UpdateOp::EnrollKey { key: *key, label })
+            }
+            Self::UpdateKeyStatement { statement } => {
+                proto::Op::Update(proto::UpdateOp::KeyStatement { statement })
+            }
             Self::GetTime => proto::Op::GetTime,
             Self::PutTime { base, changes } => proto::Op::PutTime {
                 base: base.0,

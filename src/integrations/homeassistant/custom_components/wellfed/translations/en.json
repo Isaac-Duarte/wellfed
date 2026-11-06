@@ -218,6 +218,9 @@
     "revoked": {
       "message": "The feeder no longer knows this Home Assistant. Pair it again."
     },
+    "other_build": {
+      "message": "The feeder runs a different build than this integration, so it takes nothing but an update. Update the feeder from the Wellfed app, or update the integration. Home Assistant tries again on its own."
+    },
     "not_ready": {
       "message": "The feeder did not answer. Home Assistant will try again."
     },
@@ -296,6 +299,10 @@
     "unknown_feed": {
       "title": "Whether a feed on feeder {feeder} ran is not known",
       "description": "Home Assistant sent a feed of {portions} portions and no answer came, and the feeder's history holds no record of it. It may have run without being recorded, or never reached the feeder. Check the bowl, then ignore this."
+    },
+    "other_build": {
+      "title": "Feeder {feeder} runs a different build",
+      "description": "Feeder {feeder} runs build {build}, a different build than this integration, so Home Assistant sends it nothing and its entities are unavailable. Update the feeder from the Wellfed app, or update the integration. Home Assistant tries again on its own, and this clears once the feeder answers."
     }
   }
 }

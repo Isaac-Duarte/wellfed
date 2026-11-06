@@ -64,8 +64,13 @@ enum ErrorKind {
   /// The feeder does not know this phone's key.
   unknownKey,
 
-  /// The feeder serves another protocol version.
+  /// The feeder serves another major of the protocol: not even an update
+  /// goes to it from this app.
   version,
+
+  /// The feeder runs a build of another schema revision: it takes only
+  /// an update, which this app still sends.
+  otherBuild,
 
   /// Every session slot on the feeder is taken.
   full,

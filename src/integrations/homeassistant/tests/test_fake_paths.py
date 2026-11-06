@@ -1,7 +1,7 @@
 """Paths the simulator cannot reach from Python, on a scripted bridge: a
 feed whose answer was lost opens a repair that its settlement clears, a
-revoked key or a silent feeder at setup, diagnostics
-and stale devices."""
+revoked key, a feeder of another build or a silent feeder at setup,
+diagnostics and stale devices."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import asyncio
 from collections.abc import Callable, Iterator
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, issue_registry as ir
@@ -73,6 +73,12 @@ async def _ready(hass: HomeAssistant, feeder: fake.FakeFeeder) -> MockConfigEntr
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry
+
+
+def _entry_state(entry: ConfigEntry) -> ConfigEntryState:
+    """The entry's state now: read through a call, since a reload changes
+    what an earlier assertion narrowed it to."""
+    return entry.state
 
 
 def _issue(hass: HomeAssistant, issue: str) -> ir.IssueEntry | None:
@@ -144,6 +150,47 @@ async def test_a_key_revoked_before_setup_asks_to_pair_again(
     assert entry.state is ConfigEntryState.SETUP_ERROR
     flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
     assert [flow["context"]["source"] for flow in flows] == ["reauth"]
+
+
+async def test_a_feeder_of_another_build_is_retried_until_it_is_updated(
+    hass: HomeAssistant, feeder: fake.FakeFeeder
+) -> None:
+    feeder.push(fake.update(bridge.UpdateKind.OtherBuild, build="old"))
+    entry = _entry(hass)
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert entry.error_reason_translation_key == "other_build"
+    issue = _issue(hass, "other_build")
+    assert issue is not None and issue.translation_placeholders is not None
+    assert issue.translation_placeholders["build"] == "old"
+    assert not hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+
+    # The feeder is updated: Home Assistant's own retry sets it up, as this
+    # reload does, and the repair goes.
+    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert _entry_state(entry) is ConfigEntryState.LOADED
+    assert _issue(hass, "other_build") is None
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_feeder_that_turns_out_another_build_is_set_up_again(
+    hass: HomeAssistant, feeder: fake.FakeFeeder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("custom_components.wellfed.READY_WAIT", 0.2)
+    entry = await _ready(hass, feeder)
+    feeder.push(fake.update(bridge.UpdateKind.OtherBuild, build="old"))
+    await _until(hass, lambda: entry.state is ConfigEntryState.SETUP_RETRY)
+    assert _issue(hass, "other_build") is not None
+
+    feeder.push(fake.connected(), fake.update(bridge.UpdateKind.State, state=fake.state()))
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    assert _issue(hass, "other_build") is None
+    assert await hass.config_entries.async_unload(entry.entry_id)
 
 
 async def test_a_feeder_that_never_answers_is_tried_again_later(

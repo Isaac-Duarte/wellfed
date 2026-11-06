@@ -6131,6 +6131,7 @@ const _: fn() = || {
         crate::api::model::UpdateRefusal::Store => {}
         crate::api::model::UpdateRefusal::Unconfirmed => {}
         crate::api::model::UpdateRefusal::Battery => {}
+        crate::api::model::UpdateRefusal::HeldAsSessionKey => {}
     }
     {
         let WeighedIntake = None::<crate::api::server_views::WeighedIntake>.unwrap();
@@ -7044,12 +7045,13 @@ impl SseDecode for crate::api::error::ErrorKind {
             9 => crate::api::error::ErrorKind::Closed,
             10 => crate::api::error::ErrorKind::UnknownKey,
             11 => crate::api::error::ErrorKind::Version,
-            12 => crate::api::error::ErrorKind::Full,
-            13 => crate::api::error::ErrorKind::Ended,
-            14 => crate::api::error::ErrorKind::Store,
-            15 => crate::api::error::ErrorKind::Invite,
-            16 => crate::api::error::ErrorKind::Interrupted,
-            17 => crate::api::error::ErrorKind::InUse,
+            12 => crate::api::error::ErrorKind::OtherBuild,
+            13 => crate::api::error::ErrorKind::Full,
+            14 => crate::api::error::ErrorKind::Ended,
+            15 => crate::api::error::ErrorKind::Store,
+            16 => crate::api::error::ErrorKind::Invite,
+            17 => crate::api::error::ErrorKind::Interrupted,
+            18 => crate::api::error::ErrorKind::InUse,
             _ => unreachable!("Invalid variant for ErrorKind: {}", inner),
         };
     }
@@ -10140,6 +10142,7 @@ impl SseDecode for crate::api::server_views::ServerConnection {
             1 => crate::api::server_views::ServerConnection::Connecting,
             2 => crate::api::server_views::ServerConnection::Online,
             3 => crate::api::server_views::ServerConnection::Refused,
+            4 => crate::api::server_views::ServerConnection::OtherBuild,
             _ => unreachable!("Invalid variant for ServerConnection: {}", inner),
         };
     }
@@ -11551,6 +11554,9 @@ impl SseDecode for crate::api::model::UpdateRefusal {
             16 => {
                 return crate::api::model::UpdateRefusal::Battery;
             }
+            17 => {
+                return crate::api::model::UpdateRefusal::HeldAsSessionKey;
+            }
             _ => {
                 unimplemented!("");
             }
@@ -12831,12 +12837,13 @@ impl flutter_rust_bridge::IntoDart for crate::api::error::ErrorKind {
             Self::Closed => 9.into_dart(),
             Self::UnknownKey => 10.into_dart(),
             Self::Version => 11.into_dart(),
-            Self::Full => 12.into_dart(),
-            Self::Ended => 13.into_dart(),
-            Self::Store => 14.into_dart(),
-            Self::Invite => 15.into_dart(),
-            Self::Interrupted => 16.into_dart(),
-            Self::InUse => 17.into_dart(),
+            Self::OtherBuild => 12.into_dart(),
+            Self::Full => 13.into_dart(),
+            Self::Ended => 14.into_dart(),
+            Self::Store => 15.into_dart(),
+            Self::Invite => 16.into_dart(),
+            Self::Interrupted => 17.into_dart(),
+            Self::InUse => 18.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -15201,6 +15208,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server_views::ServerConnectio
             Self::Connecting => 1.into_dart(),
             Self::Online => 2.into_dart(),
             Self::Refused => 3.into_dart(),
+            Self::OtherBuild => 4.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -16733,6 +16741,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::UpdateRefus
             crate::api::model::UpdateRefusal::Store => [14.into_dart()].into_dart(),
             crate::api::model::UpdateRefusal::Unconfirmed => [15.into_dart()].into_dart(),
             crate::api::model::UpdateRefusal::Battery => [16.into_dart()].into_dart(),
+            crate::api::model::UpdateRefusal::HeldAsSessionKey => [17.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -17764,12 +17773,13 @@ impl SseEncode for crate::api::error::ErrorKind {
                 crate::api::error::ErrorKind::Closed => 9,
                 crate::api::error::ErrorKind::UnknownKey => 10,
                 crate::api::error::ErrorKind::Version => 11,
-                crate::api::error::ErrorKind::Full => 12,
-                crate::api::error::ErrorKind::Ended => 13,
-                crate::api::error::ErrorKind::Store => 14,
-                crate::api::error::ErrorKind::Invite => 15,
-                crate::api::error::ErrorKind::Interrupted => 16,
-                crate::api::error::ErrorKind::InUse => 17,
+                crate::api::error::ErrorKind::OtherBuild => 12,
+                crate::api::error::ErrorKind::Full => 13,
+                crate::api::error::ErrorKind::Ended => 14,
+                crate::api::error::ErrorKind::Store => 15,
+                crate::api::error::ErrorKind::Invite => 16,
+                crate::api::error::ErrorKind::Interrupted => 17,
+                crate::api::error::ErrorKind::InUse => 18,
                 _ => {
                     unimplemented!("");
                 }
@@ -20407,6 +20417,7 @@ impl SseEncode for crate::api::server_views::ServerConnection {
                 crate::api::server_views::ServerConnection::Connecting => 1,
                 crate::api::server_views::ServerConnection::Online => 2,
                 crate::api::server_views::ServerConnection::Refused => 3,
+                crate::api::server_views::ServerConnection::OtherBuild => 4,
                 _ => {
                     unimplemented!("");
                 }
@@ -21569,6 +21580,9 @@ impl SseEncode for crate::api::model::UpdateRefusal {
             }
             crate::api::model::UpdateRefusal::Battery => {
                 <i32>::sse_encode(16, serializer);
+            }
+            crate::api::model::UpdateRefusal::HeldAsSessionKey => {
+                <i32>::sse_encode(17, serializer);
             }
             _ => {
                 unimplemented!("");

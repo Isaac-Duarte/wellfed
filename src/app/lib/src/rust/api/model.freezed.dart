@@ -2791,7 +2791,7 @@ extension UpdateRefusalPatterns on UpdateRefusal {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UpdateRefusal_Manifest value)?  manifest,TResult Function( UpdateRefusal_Key value)?  key,TResult Function( UpdateRefusal_Revoked value)?  revoked,TResult Function( UpdateRefusal_Signature value)?  signature,TResult Function( UpdateRefusal_Target value)?  target,TResult Function( UpdateRefusal_Same value)?  same,TResult Function( UpdateRefusal_Downgrade value)?  downgrade,TResult Function( UpdateRefusal_Statement value)?  statement,TResult Function( UpdateRefusal_Pending value)?  pending,TResult Function( UpdateRefusal_Failed value)?  failed,TResult Function( UpdateRefusal_Fallback value)?  fallback,TResult Function( UpdateRefusal_Attempt value)?  attempt,TResult Function( UpdateRefusal_Installing value)?  installing,TResult Function( UpdateRefusal_NotInstalling value)?  notInstalling,TResult Function( UpdateRefusal_Store value)?  store,TResult Function( UpdateRefusal_Unconfirmed value)?  unconfirmed,TResult Function( UpdateRefusal_Battery value)?  battery,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( UpdateRefusal_Manifest value)?  manifest,TResult Function( UpdateRefusal_Key value)?  key,TResult Function( UpdateRefusal_Revoked value)?  revoked,TResult Function( UpdateRefusal_Signature value)?  signature,TResult Function( UpdateRefusal_Target value)?  target,TResult Function( UpdateRefusal_Same value)?  same,TResult Function( UpdateRefusal_Downgrade value)?  downgrade,TResult Function( UpdateRefusal_Statement value)?  statement,TResult Function( UpdateRefusal_Pending value)?  pending,TResult Function( UpdateRefusal_Failed value)?  failed,TResult Function( UpdateRefusal_Fallback value)?  fallback,TResult Function( UpdateRefusal_Attempt value)?  attempt,TResult Function( UpdateRefusal_Installing value)?  installing,TResult Function( UpdateRefusal_NotInstalling value)?  notInstalling,TResult Function( UpdateRefusal_Store value)?  store,TResult Function( UpdateRefusal_Unconfirmed value)?  unconfirmed,TResult Function( UpdateRefusal_Battery value)?  battery,TResult Function( UpdateRefusal_HeldAsSessionKey value)?  heldAsSessionKey,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case UpdateRefusal_Manifest() when manifest != null:
@@ -2811,7 +2811,8 @@ return installing(_that);case UpdateRefusal_NotInstalling() when notInstalling !
 return notInstalling(_that);case UpdateRefusal_Store() when store != null:
 return store(_that);case UpdateRefusal_Unconfirmed() when unconfirmed != null:
 return unconfirmed(_that);case UpdateRefusal_Battery() when battery != null:
-return battery(_that);case _:
+return battery(_that);case UpdateRefusal_HeldAsSessionKey() when heldAsSessionKey != null:
+return heldAsSessionKey(_that);case _:
   return orElse();
 
 }
@@ -2829,7 +2830,7 @@ return battery(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UpdateRefusal_Manifest value)  manifest,required TResult Function( UpdateRefusal_Key value)  key,required TResult Function( UpdateRefusal_Revoked value)  revoked,required TResult Function( UpdateRefusal_Signature value)  signature,required TResult Function( UpdateRefusal_Target value)  target,required TResult Function( UpdateRefusal_Same value)  same,required TResult Function( UpdateRefusal_Downgrade value)  downgrade,required TResult Function( UpdateRefusal_Statement value)  statement,required TResult Function( UpdateRefusal_Pending value)  pending,required TResult Function( UpdateRefusal_Failed value)  failed,required TResult Function( UpdateRefusal_Fallback value)  fallback,required TResult Function( UpdateRefusal_Attempt value)  attempt,required TResult Function( UpdateRefusal_Installing value)  installing,required TResult Function( UpdateRefusal_NotInstalling value)  notInstalling,required TResult Function( UpdateRefusal_Store value)  store,required TResult Function( UpdateRefusal_Unconfirmed value)  unconfirmed,required TResult Function( UpdateRefusal_Battery value)  battery,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( UpdateRefusal_Manifest value)  manifest,required TResult Function( UpdateRefusal_Key value)  key,required TResult Function( UpdateRefusal_Revoked value)  revoked,required TResult Function( UpdateRefusal_Signature value)  signature,required TResult Function( UpdateRefusal_Target value)  target,required TResult Function( UpdateRefusal_Same value)  same,required TResult Function( UpdateRefusal_Downgrade value)  downgrade,required TResult Function( UpdateRefusal_Statement value)  statement,required TResult Function( UpdateRefusal_Pending value)  pending,required TResult Function( UpdateRefusal_Failed value)  failed,required TResult Function( UpdateRefusal_Fallback value)  fallback,required TResult Function( UpdateRefusal_Attempt value)  attempt,required TResult Function( UpdateRefusal_Installing value)  installing,required TResult Function( UpdateRefusal_NotInstalling value)  notInstalling,required TResult Function( UpdateRefusal_Store value)  store,required TResult Function( UpdateRefusal_Unconfirmed value)  unconfirmed,required TResult Function( UpdateRefusal_Battery value)  battery,required TResult Function( UpdateRefusal_HeldAsSessionKey value)  heldAsSessionKey,}){
 final _that = this;
 switch (_that) {
 case UpdateRefusal_Manifest():
@@ -2849,7 +2850,8 @@ return installing(_that);case UpdateRefusal_NotInstalling():
 return notInstalling(_that);case UpdateRefusal_Store():
 return store(_that);case UpdateRefusal_Unconfirmed():
 return unconfirmed(_that);case UpdateRefusal_Battery():
-return battery(_that);}
+return battery(_that);case UpdateRefusal_HeldAsSessionKey():
+return heldAsSessionKey(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -2863,7 +2865,7 @@ return battery(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UpdateRefusal_Manifest value)?  manifest,TResult? Function( UpdateRefusal_Key value)?  key,TResult? Function( UpdateRefusal_Revoked value)?  revoked,TResult? Function( UpdateRefusal_Signature value)?  signature,TResult? Function( UpdateRefusal_Target value)?  target,TResult? Function( UpdateRefusal_Same value)?  same,TResult? Function( UpdateRefusal_Downgrade value)?  downgrade,TResult? Function( UpdateRefusal_Statement value)?  statement,TResult? Function( UpdateRefusal_Pending value)?  pending,TResult? Function( UpdateRefusal_Failed value)?  failed,TResult? Function( UpdateRefusal_Fallback value)?  fallback,TResult? Function( UpdateRefusal_Attempt value)?  attempt,TResult? Function( UpdateRefusal_Installing value)?  installing,TResult? Function( UpdateRefusal_NotInstalling value)?  notInstalling,TResult? Function( UpdateRefusal_Store value)?  store,TResult? Function( UpdateRefusal_Unconfirmed value)?  unconfirmed,TResult? Function( UpdateRefusal_Battery value)?  battery,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( UpdateRefusal_Manifest value)?  manifest,TResult? Function( UpdateRefusal_Key value)?  key,TResult? Function( UpdateRefusal_Revoked value)?  revoked,TResult? Function( UpdateRefusal_Signature value)?  signature,TResult? Function( UpdateRefusal_Target value)?  target,TResult? Function( UpdateRefusal_Same value)?  same,TResult? Function( UpdateRefusal_Downgrade value)?  downgrade,TResult? Function( UpdateRefusal_Statement value)?  statement,TResult? Function( UpdateRefusal_Pending value)?  pending,TResult? Function( UpdateRefusal_Failed value)?  failed,TResult? Function( UpdateRefusal_Fallback value)?  fallback,TResult? Function( UpdateRefusal_Attempt value)?  attempt,TResult? Function( UpdateRefusal_Installing value)?  installing,TResult? Function( UpdateRefusal_NotInstalling value)?  notInstalling,TResult? Function( UpdateRefusal_Store value)?  store,TResult? Function( UpdateRefusal_Unconfirmed value)?  unconfirmed,TResult? Function( UpdateRefusal_Battery value)?  battery,TResult? Function( UpdateRefusal_HeldAsSessionKey value)?  heldAsSessionKey,}){
 final _that = this;
 switch (_that) {
 case UpdateRefusal_Manifest() when manifest != null:
@@ -2883,7 +2885,8 @@ return installing(_that);case UpdateRefusal_NotInstalling() when notInstalling !
 return notInstalling(_that);case UpdateRefusal_Store() when store != null:
 return store(_that);case UpdateRefusal_Unconfirmed() when unconfirmed != null:
 return unconfirmed(_that);case UpdateRefusal_Battery() when battery != null:
-return battery(_that);case _:
+return battery(_that);case UpdateRefusal_HeldAsSessionKey() when heldAsSessionKey != null:
+return heldAsSessionKey(_that);case _:
   return null;
 
 }
@@ -2900,7 +2903,7 @@ return battery(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  manifest,TResult Function()?  key,TResult Function()?  revoked,TResult Function()?  signature,TResult Function()?  target,TResult Function()?  same,TResult Function()?  downgrade,TResult Function()?  statement,TResult Function()?  pending,TResult Function()?  failed,TResult Function( Bank0Blocked reason)?  fallback,TResult Function()?  attempt,TResult Function()?  installing,TResult Function()?  notInstalling,TResult Function()?  store,TResult Function()?  unconfirmed,TResult Function()?  battery,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  manifest,TResult Function()?  key,TResult Function()?  revoked,TResult Function()?  signature,TResult Function()?  target,TResult Function()?  same,TResult Function()?  downgrade,TResult Function()?  statement,TResult Function()?  pending,TResult Function()?  failed,TResult Function( Bank0Blocked reason)?  fallback,TResult Function()?  attempt,TResult Function()?  installing,TResult Function()?  notInstalling,TResult Function()?  store,TResult Function()?  unconfirmed,TResult Function()?  battery,TResult Function()?  heldAsSessionKey,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case UpdateRefusal_Manifest() when manifest != null:
 return manifest();case UpdateRefusal_Key() when key != null:
@@ -2919,7 +2922,8 @@ return installing();case UpdateRefusal_NotInstalling() when notInstalling != nul
 return notInstalling();case UpdateRefusal_Store() when store != null:
 return store();case UpdateRefusal_Unconfirmed() when unconfirmed != null:
 return unconfirmed();case UpdateRefusal_Battery() when battery != null:
-return battery();case _:
+return battery();case UpdateRefusal_HeldAsSessionKey() when heldAsSessionKey != null:
+return heldAsSessionKey();case _:
   return orElse();
 
 }
@@ -2937,7 +2941,7 @@ return battery();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  manifest,required TResult Function()  key,required TResult Function()  revoked,required TResult Function()  signature,required TResult Function()  target,required TResult Function()  same,required TResult Function()  downgrade,required TResult Function()  statement,required TResult Function()  pending,required TResult Function()  failed,required TResult Function( Bank0Blocked reason)  fallback,required TResult Function()  attempt,required TResult Function()  installing,required TResult Function()  notInstalling,required TResult Function()  store,required TResult Function()  unconfirmed,required TResult Function()  battery,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  manifest,required TResult Function()  key,required TResult Function()  revoked,required TResult Function()  signature,required TResult Function()  target,required TResult Function()  same,required TResult Function()  downgrade,required TResult Function()  statement,required TResult Function()  pending,required TResult Function()  failed,required TResult Function( Bank0Blocked reason)  fallback,required TResult Function()  attempt,required TResult Function()  installing,required TResult Function()  notInstalling,required TResult Function()  store,required TResult Function()  unconfirmed,required TResult Function()  battery,required TResult Function()  heldAsSessionKey,}) {final _that = this;
 switch (_that) {
 case UpdateRefusal_Manifest():
 return manifest();case UpdateRefusal_Key():
@@ -2956,7 +2960,8 @@ return installing();case UpdateRefusal_NotInstalling():
 return notInstalling();case UpdateRefusal_Store():
 return store();case UpdateRefusal_Unconfirmed():
 return unconfirmed();case UpdateRefusal_Battery():
-return battery();}
+return battery();case UpdateRefusal_HeldAsSessionKey():
+return heldAsSessionKey();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -2970,7 +2975,7 @@ return battery();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  manifest,TResult? Function()?  key,TResult? Function()?  revoked,TResult? Function()?  signature,TResult? Function()?  target,TResult? Function()?  same,TResult? Function()?  downgrade,TResult? Function()?  statement,TResult? Function()?  pending,TResult? Function()?  failed,TResult? Function( Bank0Blocked reason)?  fallback,TResult? Function()?  attempt,TResult? Function()?  installing,TResult? Function()?  notInstalling,TResult? Function()?  store,TResult? Function()?  unconfirmed,TResult? Function()?  battery,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  manifest,TResult? Function()?  key,TResult? Function()?  revoked,TResult? Function()?  signature,TResult? Function()?  target,TResult? Function()?  same,TResult? Function()?  downgrade,TResult? Function()?  statement,TResult? Function()?  pending,TResult? Function()?  failed,TResult? Function( Bank0Blocked reason)?  fallback,TResult? Function()?  attempt,TResult? Function()?  installing,TResult? Function()?  notInstalling,TResult? Function()?  store,TResult? Function()?  unconfirmed,TResult? Function()?  battery,TResult? Function()?  heldAsSessionKey,}) {final _that = this;
 switch (_that) {
 case UpdateRefusal_Manifest() when manifest != null:
 return manifest();case UpdateRefusal_Key() when key != null:
@@ -2989,7 +2994,8 @@ return installing();case UpdateRefusal_NotInstalling() when notInstalling != nul
 return notInstalling();case UpdateRefusal_Store() when store != null:
 return store();case UpdateRefusal_Unconfirmed() when unconfirmed != null:
 return unconfirmed();case UpdateRefusal_Battery() when battery != null:
-return battery();case _:
+return battery();case UpdateRefusal_HeldAsSessionKey() when heldAsSessionKey != null:
+return heldAsSessionKey();case _:
   return null;
 
 }
@@ -3569,6 +3575,38 @@ int get hashCode => runtimeType.hashCode;
 @override
 String toString() {
     return 'UpdateRefusal.battery()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class UpdateRefusal_HeldAsSessionKey extends UpdateRefusal {
+  const UpdateRefusal_HeldAsSessionKey(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateRefusal_HeldAsSessionKey);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+    return 'UpdateRefusal.heldAsSessionKey()';
 }
 
 

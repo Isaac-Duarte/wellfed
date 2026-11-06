@@ -1,4 +1,5 @@
-//! Byte fixtures for every device API message of major version 1. Postcard
+//! Byte fixtures for every device API message of major version 1 outside
+//! the frozen update path, which `update_path.rs` pins on its own. Postcard
 //! is positional and not self-describing, so a reordered, removed or
 //! retyped field changes these bytes: the test fails here instead of in a
 //! home. A new variant or op appended at the end adds a fixture and leaves
@@ -13,7 +14,6 @@
 
 use serde::Serialize;
 use wellfed_proto::api::*;
-use wellfed_proto::device::Model;
 use wellfed_proto::{decode, encode};
 use wellfed_session::hex::Lower;
 
@@ -153,45 +153,6 @@ fn messages() -> Vec<Fixture> {
     });
 
     vec![
-        ("open-session", entry(&Open::Session), |b| {
-            decode::<Open>(b).is_ok()
-        }),
-        ("open-invite", entry(&Open::Invite { id: 7 }), |b| {
-            decode::<Open>(b).is_ok()
-        }),
-        ("open-recovery", entry(&Open::Recovery), |b| {
-            decode::<Open>(b).is_ok()
-        }),
-        ("hello", entry(&Hello { major: 1 }), |b| {
-            decode::<Hello>(b).is_ok()
-        }),
-        (
-            "welcome-open",
-            entry(&Welcome::Open {
-                major: 1,
-                model: Model::Plaf103,
-                build: "b",
-                role: Role::Member,
-                epoch: 0x1234_5678,
-            }),
-            |b| decode::<Welcome<'_>>(b).is_ok(),
-        ),
-        (
-            "welcome-refused",
-            entry(&Welcome::Refused(OpenRefusal::Version { supported: 1 })),
-            |b| decode::<Welcome<'_>>(b).is_ok(),
-        ),
-        ("join", entry(&Join { label: "phone" }), |b| {
-            decode::<Join<'_>>(b).is_ok()
-        }),
-        (
-            "joined",
-            entry(&Joined::Enrolled {
-                role: Role::Server,
-                model: Model::Plaf103,
-            }),
-            |b| decode::<Joined>(b).is_ok(),
-        ),
         ("op-status", entry(&request(Op::Status)), client),
         (
             "op-get-settings",
@@ -245,11 +206,6 @@ fn messages() -> Vec<Fixture> {
             }))),
             client,
         ),
-        (
-            "op-create-invite",
-            entry(&request(Op::CreateInvite { role: Role::Member })),
-            client,
-        ),
         ("op-list-clients", entry(&request(Op::ListClients)), client),
         (
             "op-revoke-client",
@@ -269,13 +225,6 @@ fn messages() -> Vec<Fixture> {
                 samples: Samples::On,
             }),
             client,
-        ),
-        (
-            "outcome-done",
-            entry(&response(Outcome::Done {
-                generation: Some(10),
-            })),
-            feeder,
         ),
         (
             "outcome-status",
@@ -306,15 +255,6 @@ fn messages() -> Vec<Fixture> {
         (
             "outcome-clients",
             entry(&response(Outcome::Clients(Clients { clients }))),
-            feeder,
-        ),
-        (
-            "outcome-invite",
-            entry(&response(Outcome::Invite(Invite {
-                id: 3,
-                secret: [0x44; 32],
-                seconds: 600,
-            }))),
             feeder,
         ),
         (
@@ -375,68 +315,6 @@ fn messages() -> Vec<Fixture> {
         (
             "outcome-fault",
             entry(&response(Outcome::Refused(Refusal::Fault))),
-            feeder,
-        ),
-        (
-            "op-offer-update",
-            entry(&request(Op::OfferUpdate {
-                manifest: &[0x51; 4],
-                downgrade: Some(&[0x52; 3]),
-            })),
-            client,
-        ),
-        (
-            "op-update-chunk",
-            entry(&request(Op::UpdateChunk {
-                offset: 4096,
-                data: &[0x53; 5],
-            })),
-            client,
-        ),
-        ("op-update-state", entry(&request(Op::UpdateState)), client),
-        (
-            "op-cancel-update",
-            entry(&request(Op::CancelUpdate)),
-            client,
-        ),
-        (
-            "op-enroll-update-key",
-            entry(&request(Op::EnrollUpdateKey {
-                key: [0x54; 32],
-                label: "laptop",
-            })),
-            client,
-        ),
-        (
-            "op-update-key-statement",
-            entry(&request(Op::UpdateKeyStatement {
-                statement: &[0x55; 6],
-            })),
-            client,
-        ),
-        (
-            "outcome-update",
-            entry(&response(Outcome::Update(UpdateView {
-                phase: UpdatePhase::Receiving,
-                bank: 0,
-                min_version: 168,
-                digest: Some([0x56; 32]),
-                version: 170,
-                image_len: 942_080,
-                written: 8192,
-                wanted: [Some(8192), Some(8704), None, None, None, None, None, None],
-                stopped: Some(UpdateStop::Timeout),
-                bank0: Bank0Check::Blocked {
-                    reason: Bank0Blocked::Changed,
-                },
-            }))),
-            feeder,
-        ),
-        (
-            "outcome-update-refused",
-            entry(&response(Outcome::Refused(Refusal::Update(
-                UpdateRefusal::Downgrade,
-            )))),
             feeder,
         ),
         ("op-get-time", entry(&request(Op::GetTime)), client),
@@ -930,13 +808,6 @@ fn messages() -> Vec<Fixture> {
             feeder,
         ),
         (
-            "outcome-update-refused-battery",
-            entry(&response(Outcome::Refused(Refusal::Update(
-                UpdateRefusal::Battery,
-            )))),
-            feeder,
-        ),
-        (
             "event-meal-soon",
             entry(&EventBody::MealSoon {
                 plan: 2,
@@ -1103,15 +974,6 @@ fn messages() -> Vec<Fixture> {
                 by: Source::Client([1, 2, 3, 4]),
             }),
             |b| decode::<EventBody>(b).is_ok(),
-        ),
-        (
-            "outcome-update-refused-fallback",
-            entry(&response(Outcome::Refused(Refusal::Update(
-                UpdateRefusal::Fallback {
-                    reason: Bank0Blocked::Unrecorded,
-                },
-            )))),
-            feeder,
         ),
     ]
 }

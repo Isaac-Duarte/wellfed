@@ -47,6 +47,8 @@ The bench and the simulator drive the same client steps (`wellfed_client::update
 
 The device API's client pushes each offer once, and never again on its own.
 
+Bank 0 keeps the build it was written with, so these messages are frozen, and so are the manifest, the statements and the image limits it checks: a client of any later build still updates a bank 0 of any earlier one, and reads the bank from the update state, never the status ([the frozen update path](device-api.md#the-frozen-part)).
+
 ### The loop never verifies
 
 The device API runs in the loop task, on an 8 KiB stack, and an Ed25519 check needs about 8 KiB. So the loop copies requests and chunks into a mailbox (`wellfed_hal::ota::mailbox`) and answers from what the service task's update stage publishes; nothing on the loop's side checks a signature. In the feeder build the service task's stack bound is 11,504 of 16,384 bytes, its deepest path the install's start (the offer's `verify_strict` is shallower), and the loop's is 5,016 of 8,192, a handshake.

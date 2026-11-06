@@ -18,6 +18,11 @@
 //! gets the new zone in its next connect sequence. The feeder shows online
 //! only once the connect sequence is done, so no command waits behind it.
 //!
+//! A feeder whose welcome names another schema revision runs a build this
+//! server cannot read beyond the frozen update path. Its session does none
+//! of the above: it shows as [`Link::OtherBuild`] and carries only an
+//! install, which updates it.
+//!
 //! [`Timing::time_sync`]: crate::Timing::time_sync
 
 use std::time::Duration;
@@ -36,6 +41,16 @@ use crate::task::{Opened, Task};
 /// How long the task waits on a quiet feeder before looking again; the
 /// connection keeps the session alive meanwhile.
 const QUIET: Duration = Duration::from_secs(60);
+
+/// What a session mirrors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mirrored {
+    /// History, clock, status, settings and plans.
+    Whole,
+    /// Nothing: the feeder runs another build, which only an install
+    /// reaches.
+    UpdateOnly,
+}
 
 /// Why a session ended.
 pub(crate) enum End {
@@ -91,10 +106,16 @@ impl Task {
             () = cancel.cancelled() => Err(End::Cancelled),
             started = self.start(connection, lanes) => started,
         };
-        if let Err(end) = started {
-            return end;
-        }
-        self.set(Link::Online);
+        let mirrored = match started {
+            Ok(mirrored) => mirrored,
+            Err(end) => return end,
+        };
+        let whole = mirrored == Mirrored::Whole;
+        self.set(if whole {
+            Link::Online
+        } else {
+            Link::OtherBuild
+        });
 
         let every = self.shared.config.timing.time_sync;
         let mut next_sync = Instant::now() + every;
@@ -119,11 +140,11 @@ impl Task {
                     Some(step) => lanes.dispatch(Lane::Long, step, connection),
                     None => Err(End::Cancelled),
                 },
-                () = tokio::time::sleep_until(next_sync) => {
+                () = tokio::time::sleep_until(next_sync), if whole => {
                     next_sync += every;
                     self.keep_time(connection, lanes).await
                 }
-                changed = self.zone.changed(), if zone_open => match changed {
+                changed = self.zone.changed(), if zone_open && whole => match changed {
                     Ok(()) => self.keep_time(connection, lanes).await,
                     Err(_) => {
                         zone_open = false;
@@ -149,8 +170,13 @@ impl Task {
     }
 
     /// The connect sequence: history first, then the clock, then the
-    /// cached status, settings and plans.
-    async fn start(&mut self, connection: &mut Connection, lanes: &mut Lanes) -> Result<(), End> {
+    /// cached status, settings and plans; none of it with a feeder of
+    /// another build.
+    async fn start(
+        &mut self,
+        connection: &mut Connection,
+        lanes: &mut Lanes,
+    ) -> Result<Mirrored, End> {
         let Some(row) = self.shared.store.feeder(self.id).await? else {
             return Err(End::Cancelled);
         };
@@ -161,6 +187,21 @@ impl Task {
                 adopted: row.model,
                 welcomed: connection.model(),
             }));
+        }
+        self.build.send_replace(Some(connection.build().to_owned()));
+        if !connection.same_schema() {
+            warn!(
+                build = connection.build(),
+                "the feeder runs a different build than this server: only an update is sent \
+                 to it; update the feeder, or update the server"
+            );
+            self.opened.send_replace(Some(Opened {
+                epoch: connection.epoch(),
+                kind: connection.kind(),
+                model: connection.model(),
+                boot_count: None,
+            }));
+            return Ok(Mirrored::UpdateOnly);
         }
         let from = row.synced.map(|synced| Cursor {
             epoch: synced.epoch,
@@ -200,7 +241,8 @@ impl Task {
                 .record_settings(self.id, &settings, now)
                 .await?;
         }
-        self.read_plans(connection, lanes).await
+        self.read_plans(connection, lanes).await?;
+        Ok(Mirrored::Whole)
     }
 
     /// Set the feeder's clock and its zone's rule.

@@ -21,6 +21,16 @@ enum Connection {
 
   /// Not reachable; [FeederState.error] says how the last try ended.
   offline,
+
+  /// Reachable, but it runs a different build than this app, which takes
+  /// nothing but a firmware update: the phone's session ended with
+  /// [ErrorKind.otherBuild], or the server's link to it reads `otherBuild`.
+  otherBuild,
+
+  /// Reachable, but it serves another major of the protocol
+  /// ([ErrorKind.version]): not even an update goes to it from this app,
+  /// which the owner replaces with a version that speaks it.
+  otherVersion,
 }
 
 /// Why a running feed went lost, which decides what the sheet may claim.

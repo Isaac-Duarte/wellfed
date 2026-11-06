@@ -8798,6 +8798,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return UpdateRefusal_Unconfirmed();
       case 16:
         return UpdateRefusal_Battery();
+      case 17:
+        return UpdateRefusal_HeldAsSessionKey();
       default:
         throw Exception("unreachable");
     }
@@ -14020,6 +14022,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return UpdateRefusal_Unconfirmed();
       case 16:
         return UpdateRefusal_Battery();
+      case 17:
+        return UpdateRefusal_HeldAsSessionKey();
       default:
         throw UnimplementedError('');
     }
@@ -18876,6 +18880,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(15, serializer);
       case UpdateRefusal_Battery():
         sse_encode_i_32(16, serializer);
+      case UpdateRefusal_HeldAsSessionKey():
+        sse_encode_i_32(17, serializer);
     }
   }
 

@@ -17,6 +17,10 @@ thiserror = { version = "2.0.21", default-features = false }
 [dev-dependencies]
 wellfed-session.workspace = true
 proptest.workspace = true
+# Exact: a new release may trace the same types differently, which would
+# change SCHEMA with no change to the wire.
+serde-reflection = { version = "=0.6.0", default-features = false }
+serde_json.workspace = true
 
 [lints]
 workspace = true

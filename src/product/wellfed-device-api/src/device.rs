@@ -22,8 +22,8 @@ use wellfed_core::named_enum;
 use wellfed_core::ota::offer::KeyId;
 use wellfed_core::tone::Tune as CoreTune;
 use wellfed_proto::api::{
-    self as proto, Bank1Page, Blocked, Bowl, EventBody, Phase, Readiness, Refusal, Source, Stats,
-    StatsSection, Status, TracePage, UpdateView,
+    self as proto, Bank1Page, Blocked, Bowl, EventBody, FrozenRefusal, Phase, Readiness, Refusal,
+    Source, Stats, StatsSection, Status, TracePage, UpdateView,
 };
 use wellfed_proto::device::Model;
 
@@ -37,6 +37,12 @@ pub trait Device {
     fn build(&self) -> &'static str;
     /// The device's model, for the welcome; its kind follows from it.
     fn model(&self) -> Model;
+    /// The revision of the protocol outside the frozen update path, for
+    /// the welcome. Every build sends its own; a simulator may play an
+    /// older one.
+    fn schema(&self) -> u32 {
+        wellfed_proto::api::SCHEMA
+    }
     /// The feeder's module of this device: [`NoFeeder`] for another kind,
     /// whose [`Self::feeder`] is always `None`. Generic rather than `dyn`,
     /// so the module's calls stay direct, as the stack audit requires.
@@ -82,17 +88,20 @@ pub trait Device {
 
     /// Queue an update request for the installer: its ticket, or why it
     /// cannot be queued now. A device without an installer serves none.
-    fn update(&mut self, _request: UpdateRequest<'_>) -> Result<u32, Refusal> {
-        Err(Refusal::Unavailable)
+    ///
+    /// The update path is frozen, so its refusals are [`FrozenRefusal`]: a
+    /// client of any later build reads every one.
+    fn update(&mut self, _request: UpdateRequest<'_>) -> Result<u32, FrozenRefusal> {
+        Err(FrozenRefusal::Unavailable)
     }
     /// The result of the update request with `ticket`, once done.
-    fn update_outcome(&mut self, _ticket: u32) -> Option<Result<UpdateAnswer, Refusal>> {
+    fn update_outcome(&mut self, _ticket: u32) -> Option<Result<UpdateAnswer, FrozenRefusal>> {
         None
     }
     /// Hand one chunk to the install: the state once it is taken (or was
     /// not wanted), `Busy` while the last ones are still being written.
-    fn update_chunk(&mut self, _offset: u32, _data: &[u8]) -> Result<UpdateView, Refusal> {
-        Err(Refusal::Unavailable)
+    fn update_chunk(&mut self, _offset: u32, _data: &[u8]) -> Result<UpdateView, FrozenRefusal> {
+        Err(FrozenRefusal::Unavailable)
     }
     /// The update's state now.
     fn update_view(&mut self) -> Option<UpdateView> {

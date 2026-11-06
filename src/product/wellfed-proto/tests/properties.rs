@@ -117,17 +117,19 @@ fn op() -> impl Strategy<Value = Op<'static>> {
         Just(Op::Reboot),
         any::<u32>().prop_map(|feed| Op::Feeder(FeederOp::CancelFeed { feed })),
         (bytes(200), proptest::option::of(bytes(200))).prop_map(|(manifest, downgrade)| {
-            Op::OfferUpdate {
+            Op::Update(UpdateOp::Offer {
                 manifest,
                 downgrade,
-            }
+            })
         }),
         (any::<u32>(), bytes(UPDATE_CHUNK_MAX + 1))
-            .prop_map(|(offset, data)| Op::UpdateChunk { offset, data }),
-        Just(Op::UpdateState),
-        Just(Op::CancelUpdate),
-        (any::<[u8; 32]>(), text(24)).prop_map(|(key, label)| Op::EnrollUpdateKey { key, label }),
-        bytes(200).prop_map(|statement| Op::UpdateKeyStatement { statement }),
+            .prop_map(|(offset, data)| Op::Update(UpdateOp::Chunk { offset, data })),
+        Just(Op::Update(UpdateOp::State)),
+        Just(Op::Update(UpdateOp::Cancel)),
+        Just(Op::Alive),
+        (any::<[u8; 32]>(), text(24))
+            .prop_map(|(key, label)| Op::Update(UpdateOp::EnrollKey { key, label })),
+        bytes(200).prop_map(|statement| Op::Update(UpdateOp::KeyStatement { statement })),
         Just(Op::GetTime),
         (
             any::<u32>(),
@@ -334,6 +336,7 @@ proptest! {
         role in role(),
         build in text(40),
         epoch in any::<u32>(),
+        schema in any::<u32>(),
     ) {
         round_trip!(Open, open);
         round_trip!(Hello, Hello { major });
@@ -341,7 +344,7 @@ proptest! {
         round_trip!(Joined, Joined::Enrolled { role, model });
         round_trip!(
             Welcome<'_>,
-            Welcome::Open { major, model, build, role, epoch }
+            Welcome::Open { major, model, build, role, epoch, schema }
         );
     }
 

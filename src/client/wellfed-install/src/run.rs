@@ -1190,7 +1190,9 @@ where
             };
             match read.await {
                 Ok(clients) => return install.signers(&clients),
-                Err(error) if Instant::now() >= deadline => {
+                // Another build's list is never readable: asking again
+                // only waits out the deadline.
+                Err(error) if matches!(error, Error::OtherBuild) || Instant::now() >= deadline => {
                     self.io.report.event(Event::SignersUnread {
                         error: crate::text(&error),
                     });
@@ -1328,13 +1330,16 @@ where
         .await?)
     }
 
-    /// The build and bank the replacement reports.
+    /// The build and bank the replacement reports: the build from the
+    /// welcome and the bank from the update state, both frozen, so a bank 0
+    /// of an older build still answers.
     async fn status(&self) -> Result<(String, u8), Error> {
         let mut connection = self.connect().await?;
-        match connection.ask(random()?, &Op::Status).await? {
-            Answer::Status(status) => Ok((status.build, status.bank)),
+        let build = connection.build().to_owned();
+        match connection.ask(random()?, &Op::UpdateState).await? {
+            Answer::Update(view) => Ok((build, view.bank)),
             other => Err(Error::Answered {
-                request: "status",
+                request: "update state",
                 answer: Box::new(other),
             }),
         }
@@ -1432,17 +1437,28 @@ where
         tokio::time::sleep(Duration::from_secs(20)).await;
         let deadline = Instant::now() + CONFIRM_WAIT;
         while Instant::now() < deadline {
+            // The bank from the update state and the build from the welcome,
+            // both frozen: a trial that fell back to an older bank 0 reads as
+            // gone back. Readiness is not frozen, so only a build of this
+            // tool's revision is asked for it.
             if let Ok(mut connection) = self.connect().await
-                && let Ok(Answer::Status(status)) = connection.ask(random()?, &Op::Status).await
                 && let Ok(Answer::Update(view)) = connection.ask(random()?, &Op::UpdateState).await
             {
+                let readiness = if connection.same_schema() {
+                    match connection.ask(random()?, &Op::Status).await {
+                        Ok(Answer::Status(status)) => status.feeder().map(|f| f.readiness),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
                 install.confirmed(
                     Replacement {
-                        build: &status.build,
-                        bank: status.bank,
+                        build: connection.build(),
+                        bank: view.bank,
                     },
                     view.min_version,
-                    status.feeder().map(|feeder| feeder.readiness),
+                    readiness,
                 );
                 if !matches!(install.step(), Step::AwaitConfirm) {
                     return Ok(());

@@ -272,9 +272,13 @@ class FeederController extends ChangeNotifier {
       if (address == null) {
         _sessionIs(Connection.offline, error: ErrorKind.connect);
       } else {
+        // A new try: the last one's error no longer says how it stands.
+        _setState(_state.copyWith(error: () => null));
         _sessionIs(Connection.connecting);
         final bool opened = await _run(address);
-        if (opened) retry = _retryFirst;
+        // A feeder of another build opens and ends every session alike:
+        // it backs off as one that never opened does.
+        if (opened && _connection != Connection.otherBuild) retry = _retryFirst;
       }
       if (_disposed) return;
       if (_redial) {

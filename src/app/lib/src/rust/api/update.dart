@@ -15,6 +15,7 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'update.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `confirm`, `reading`, `try_update`, `update`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Reading`
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<FirmwareUpdate>>
 abstract class FirmwareUpdate implements RustOpaqueInterface {

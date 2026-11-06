@@ -734,10 +734,12 @@ impl Device {
         }
     }
 
-    /// The bank a fresh session answers from.
+    /// The bank a fresh session answers from, from the frozen update state:
+    /// bank 0 may run a build of another schema revision, which takes
+    /// nothing else.
     fn bank(&self, connection: &mut Connection) -> Result<u8, DeviceError> {
-        match self.send(connection, random()?, &Ask::Status)? {
-            Answer::Status(status) => Ok(status.bank),
+        match self.send(connection, random()?, &Ask::UpdateState)? {
+            Answer::Update(view) => Ok(view.bank),
             _ => Err(DeviceError::Unwelcome),
         }
     }

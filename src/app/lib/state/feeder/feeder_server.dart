@@ -94,6 +94,11 @@ extension FeederServerSide on FeederController {
     final _ServerSide? server = _server;
     final FeederState listed = next.copyWith(serverId: () => server?.id, viewer: _viewer);
     final Card? card = server?.card;
+    // The server reaches a feeder of another build, which takes only an
+    // update: reachable, and the Firmware screen's update still goes.
+    if (_connection != Connection.online && server?.link == ServerConnection.otherBuild) {
+      return listed.copyWith(connection: Connection.otherBuild);
+    }
     if (_connection == Connection.online || server == null || !server.live || card == null) {
       return listed.copyWith(connection: _connection);
     }

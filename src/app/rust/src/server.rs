@@ -161,6 +161,7 @@ impl From<wellfed_api::Connection> for ServerConnection {
             Connection::Connecting => Self::Connecting,
             Connection::Online => Self::Online,
             Connection::Refused => Self::Refused,
+            Connection::OtherBuild => Self::OtherBuild,
         }
     }
 }

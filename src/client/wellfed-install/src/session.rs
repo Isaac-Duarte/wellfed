@@ -20,6 +20,10 @@ use crate::platform::PlatformError;
 pub trait Session {
     fn role(&self) -> ClientRole;
 
+    /// Whether the feeder's build speaks this tool's schema revision; when
+    /// it does not, only frozen ops reach it.
+    fn same_schema(&self) -> bool;
+
     /// One request under a fresh id, and its answer.
     async fn ask(&mut self, op: &Op) -> Result<Answer, PlatformError>;
 }
@@ -27,6 +31,10 @@ pub trait Session {
 impl Session for wellfed_connect::Connection {
     fn role(&self) -> ClientRole {
         Self::role(self)
+    }
+
+    fn same_schema(&self) -> bool {
+        Self::same_schema(self)
     }
 
     async fn ask(&mut self, op: &Op) -> Result<Answer, PlatformError> {
