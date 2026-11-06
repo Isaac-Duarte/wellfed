@@ -98,6 +98,8 @@ enum LeftChange {
     Signer { slot: u8 },
     /// A revocation the client `by` asked for.
     Revoke { by: Source },
+    /// A redeemed invite's enrollment, as `role`.
+    Join { role: Role },
 }
 
 #[derive(Clone, Copy)]
@@ -373,39 +375,37 @@ impl Server {
 
     /// A session ended with a write pending. One that waits for an update
     /// key's press: the next pass cancels the offer, so the next Dispense
-    /// press feeds again. One past its press has queued the key, and one
-    /// that asked for a revocation has queued it: either lands anyway, and
-    /// the passes that follow record it ([`Self::settle_left`]). Out of
-    /// line, as [`Self::settle_left`] is: it copies the session's key, which
-    /// must not grow `step`'s frame through `end`.
+    /// press feeds again. One past its press has queued the key, one that
+    /// asked for a revocation has queued it, and a joining one has queued
+    /// its own key: each lands anyway, and the passes that follow record it
+    /// ([`Self::settle_left`]). Out of line, as [`Self::settle_left`] is: it
+    /// copies the session's key, which must not grow `step`'s frame through
+    /// `end`.
     #[inline(never)]
     fn forget_waiting(&mut self, index: usize) {
-        let Phase::Open {
-            pending: Some(Pending { waiting, .. }),
-            key: session,
-            ..
-        } = self.slots[index].phase
-        else {
-            return;
-        };
-        let left = match waiting {
-            Waiting::Signer { .. } => {
-                self.cancel_signer = true;
-                return;
-            }
-            Waiting::SignerKeys { ticket, key } => Left {
+        let left = match self.slots[index].phase {
+            // A joining session's ticket is cleared once it reads the
+            // outcome, so one still held is a change nobody has recorded.
+            Phase::Joining {
+                key,
+                role,
+                ticket: Some(ticket),
+                ..
+            } => Left {
                 ticket,
                 key,
-                change: LeftChange::Signer {
-                    slot: slot_id(index),
-                },
+                change: LeftChange::Join { role },
             },
-            Waiting::Keys { ticket, revoked } => Left {
-                ticket,
-                key: revoked,
-                change: LeftChange::Revoke {
-                    by: Source::Client(handshake::fingerprint(&session)),
-                },
+            Phase::Open {
+                pending: Some(Pending { waiting, .. }),
+                key: session,
+                ..
+            } => match Self::left_open(index, waiting, &session) {
+                Some(left) => left,
+                None => {
+                    self.cancel_signer |= matches!(waiting, Waiting::Signer { .. });
+                    return;
+                }
             },
             _ => return,
         };
@@ -417,6 +417,28 @@ impl Server {
         if let Some(entry) = self.left.iter_mut().max_by_key(|entry| age(entry)) {
             *entry = Some(left);
         }
+    }
+
+    /// What an open session ending while `waiting` leaves to record.
+    fn left_open(index: usize, waiting: Waiting, session: &[u8; 32]) -> Option<Left> {
+        let left = match waiting {
+            Waiting::SignerKeys { ticket, key } => Left {
+                ticket,
+                key,
+                change: LeftChange::Signer {
+                    slot: slot_id(index),
+                },
+            },
+            Waiting::Keys { ticket, revoked } => Left {
+                ticket,
+                key: revoked,
+                change: LeftChange::Revoke {
+                    by: Source::Client(handshake::fingerprint(session)),
+                },
+            },
+            _ => return None,
+        };
+        Some(left)
     }
 
     /// Record each change whose session has gone, once the writer has
@@ -440,8 +462,9 @@ impl Server {
             *entry = None;
             // Only a change that went through is news. A duplicate key may
             // belong to a session client, which the live path refuses, so it
-            // must not read as enrolled here; a refused revocation changed
-            // nothing.
+            // must not read as enrolled here, and a joining key already
+            // enrolled had its event when it was; a refused revocation or a
+            // full table changed nothing.
             if !matches!(outcome, crate::KeyOutcome::Done) {
                 continue;
             }
@@ -450,6 +473,9 @@ impl Server {
                     pending::signer_landed(now_ms, device, outcome, slot, &left.key, record);
                 }
                 LeftChange::Revoke { by } => pending::revoked(now_ms, device, &left.key, by),
+                LeftChange::Join { role } => {
+                    session::joined_event(now_ms, device, &left.key, role);
+                }
             }
         }
     }

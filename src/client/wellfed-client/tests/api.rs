@@ -1653,6 +1653,135 @@ fn an_invite_enrolls_a_new_client_once() {
     assert!(rig.ended(Reason::Invite));
 }
 
+/// The history's enrollments: the client, its role and how it came.
+fn enrollments(rig: &Rig) -> Vec<(proto::Fingerprint, proto::Role, proto::Path)> {
+    rig.device
+        .events
+        .iter()
+        .filter_map(|e| match e.body {
+            EventBody::Enrolled { client, role, path } => Some((client, role, path)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A member's invite, asked for as request `id` of the owner's session.
+fn member_invite(rig: &mut Rig, owner: &mut Client_, id: u8) -> Invite {
+    let invite = ask(
+        rig,
+        owner,
+        id,
+        Op::CreateInvite {
+            role: model::ClientRole::Member,
+        },
+    );
+    let Answer::Invite(invite) = invite else {
+        panic!("{invite:?}");
+    };
+    Invite {
+        feeder: public(FEEDER),
+        id: invite.id,
+        secret: invite.secret.0,
+    }
+}
+
+/// Redeem `invite` with `secret` until the joining session has queued its
+/// enrollment, then drop the connection before the writer takes it; the
+/// enrollment's ticket.
+fn redeem_and_drop(rig: &mut Rig, invite: Invite, secret: [u8; 32]) -> u32 {
+    let slot = rig.accept().unwrap();
+    let (mut join, mut outbox) =
+        Join::connect(&Keypair::from_secret(secret), invite, "phone", [0x55; 32]).unwrap();
+    for _ in 0..200 {
+        rig.deliver(slot, &mut outbox);
+        rig.pass();
+        if let Some((ticket, KeyChange::Enroll { key, .. })) = rig.device.keys_pending {
+            assert_eq!(key, public(secret));
+            let records = &mut rig.records;
+            rig.server.closed(slot, |r| records.push(r));
+            return ticket;
+        }
+        let bytes = rig.collect(slot);
+        if !bytes.is_empty()
+            && let Some(JoinStep::Send(bytes)) = join.receive(&bytes).unwrap()
+        {
+            outbox.extend(bytes);
+        }
+    }
+    panic!("no enrollment queued");
+}
+
+/// The connection drops while its enrollment is queued: the writer still
+/// enrolls the key, so the history must still say so, once, as a join that
+/// stayed would have.
+#[test]
+fn a_join_whose_connection_dropped_is_still_in_the_history() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let invite = member_invite(&mut rig, &mut owner, 1);
+    redeem_and_drop(&mut rig, invite, STRANGER);
+    rig.pass();
+    assert_eq!(enrollments(&rig), [], "not before the writer has finished");
+
+    rig.device.write();
+    rig.pass();
+    rig.pass();
+    assert!(rig.device.clients.iter().any(|c| c.key == public(STRANGER)));
+    let enrolled = (
+        fingerprint(STRANGER),
+        proto::Role::Member,
+        proto::Path::Invite,
+    );
+    assert_eq!(enrollments(&rig), [enrolled]);
+}
+
+/// A dropped join the writer refused enrolled nothing new: no event, for a
+/// key already enrolled or a full table.
+#[test]
+fn a_dropped_join_that_was_refused_is_not_in_the_history() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let invite = member_invite(&mut rig, &mut owner, 1);
+    let ticket = redeem_and_drop(&mut rig, invite, STRANGER);
+    rig.device.enroll(public(STRANGER), Role::Member);
+    rig.device.write();
+    assert_eq!(rig.device.keys_outcome(ticket), Some(KeyOutcome::Duplicate));
+    rig.pass();
+    rig.pass();
+    assert_eq!(enrollments(&rig), []);
+
+    let invite = member_invite(&mut rig, &mut owner, 2);
+    let ticket = redeem_and_drop(&mut rig, invite, [0x50; 32]);
+    // The fake's table never fills: finish the change as a full one would.
+    rig.device.keys_pending = None;
+    rig.device.keys_done.push((ticket, KeyOutcome::Full));
+    rig.pass();
+    rig.pass();
+    assert_eq!(enrollments(&rig), []);
+}
+
+/// A join that stays to read its answer is in the history once: its end
+/// leaves nothing to settle.
+#[test]
+fn a_join_that_completes_is_in_the_history_once() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let invite = member_invite(&mut rig, &mut owner, 1);
+    let joined = redeem(&mut rig, invite, STRANGER);
+    assert!(
+        matches!(joined, Some(Joined::Enrolled { .. })),
+        "{joined:?}"
+    );
+    rig.pass();
+    rig.pass();
+    let enrolled = (
+        fingerprint(STRANGER),
+        proto::Role::Member,
+        proto::Path::Invite,
+    );
+    assert_eq!(enrollments(&rig), [enrolled]);
+}
+
 /// Redeem `invite` with a new key; the feeder's answer, or `None` if the
 /// connection was dropped.
 fn redeem(rig: &mut Rig, invite: Invite, secret: [u8; 32]) -> Option<Joined> {

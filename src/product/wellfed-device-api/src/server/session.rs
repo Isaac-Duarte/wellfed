@@ -6,6 +6,7 @@ use super::handshake::fingerprint;
 use super::recovery::Rescue;
 use super::request::{Action, proto_role};
 use super::{Phase, Server, proto_encode, slot_id};
+use crate::clients::Role;
 use crate::pairing::Pairing;
 use crate::{
     Device, EventRead, HANDSHAKE_MS, IDLE_MS, KeyChange, KeyOutcome, Reader, Reason, Record,
@@ -152,6 +153,9 @@ impl Server {
         let Some(outcome) = device.keys_outcome(ticket_id) else {
             return Ok(false);
         };
+        // Read: an end from here on (a failed seal) must not leave the
+        // enrollment to `Server::settle_left` as well.
+        *ticket = None;
 
         let joined = match outcome {
             KeyOutcome::Done | KeyOutcome::Duplicate => Joined::Enrolled {
@@ -162,12 +166,7 @@ impl Server {
             KeyOutcome::NotFound | KeyOutcome::NotWritable => Joined::Refused(Refusal::NotWritable),
         };
         if matches!(joined, Joined::Enrolled { .. }) {
-            let body = EventBody::Enrolled {
-                client: fingerprint(key),
-                role: proto_role(*role),
-                path: proto::Path::Invite,
-            };
-            device.record(now_ms, body);
+            joined_event(now_ms, device, key, *role);
         }
         let len = proto_encode(&joined, &mut self.plain)?;
         let sealed = transport
@@ -409,4 +408,14 @@ impl Server {
         }
         self.seal_plain(index, len).map(|()| true)
     }
+}
+
+/// An invite's key was enrolled, with its joining session or after it.
+pub(super) fn joined_event<D: Device>(now_ms: u32, device: &mut D, key: &[u8; 32], role: Role) {
+    let body = EventBody::Enrolled {
+        client: fingerprint(key),
+        role: proto_role(role),
+        path: proto::Path::Invite,
+    };
+    device.record(now_ms, body);
 }
