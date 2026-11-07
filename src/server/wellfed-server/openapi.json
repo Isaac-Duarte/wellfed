@@ -7313,6 +7313,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "The build this boot activated confirmed itself, with no restart.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "update_confirmed"
+                ]
+              }
+            }
           }
         ],
         "description": "An event every kind of device records."

@@ -81,7 +81,7 @@ pub const PROTOCOL_MAJOR_MIN: u16 = 1;
 /// makes a new revision. The test fails, naming the new value, until this
 /// is updated. The welcome carries it ([`Welcome::Open::schema`]), and a
 /// client of another revision sends that build only frozen ops.
-pub const SCHEMA: u32 = 0xf6ab_21a3;
+pub const SCHEMA: u32 = 0x2af2_8cd8;
 
 /// Frozen. The largest frame either way, Noise tag included.
 pub const FRAME_MAX: usize = 1024;
@@ -1747,6 +1747,11 @@ pub enum EventBody {
     /// queued in the restart's grace, so this normally lands; if it doesn't,
     /// the restart counts as unplanned.
     Restarting,
+    /// The build this boot activated confirmed itself, with no restart.
+    /// Without it a later install in the same boot, through a bank 0 that
+    /// records nothing of its own, would read as a fall from a build that
+    /// never confirmed.
+    UpdateConfirmed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -2971,6 +2976,7 @@ mod tests {
                 candidate: UpdateCandidate::Activated,
             },
             EventBody::Restarting,
+            EventBody::UpdateConfirmed,
         ] {
             let mut out = [0; EVENT_BODY_MAX];
             let len = encode(&body, &mut out).unwrap();

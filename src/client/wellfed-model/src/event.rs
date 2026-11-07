@@ -111,6 +111,8 @@ pub enum CoreEvent {
     },
     /// A restart someone asked for is on its way.
     Restarting,
+    /// The build this boot activated confirmed itself, with no restart.
+    UpdateConfirmed,
 }
 
 /// An event only a feeder records.
@@ -362,6 +364,7 @@ impl EventBody {
                 CoreEvent::UpdateStop { .. } => EventKind::UpdateStop,
                 CoreEvent::UpdateAtBoot { .. } => EventKind::UpdateAtBoot,
                 CoreEvent::Restarting => EventKind::Restarting,
+                CoreEvent::UpdateConfirmed => EventKind::UpdateConfirmed,
             },
             Self::Feeder(event) => match event {
                 FeederEvent::Lock { .. } => EventKind::Lock,
@@ -424,10 +427,11 @@ pub enum EventKind {
     UpdateStop,
     UpdateAtBoot,
     Restarting,
+    UpdateConfirmed,
 }
 
 impl EventKind {
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 22] = [
         Self::Boot,
         Self::Lock,
         Self::Settings,
@@ -449,6 +453,7 @@ impl EventKind {
         Self::UpdateStop,
         Self::UpdateAtBoot,
         Self::Restarting,
+        Self::UpdateConfirmed,
     ];
 
     /// The stored spelling, the same as the JSON one.
@@ -475,6 +480,7 @@ impl EventKind {
             Self::UpdateStop => "update_stop",
             Self::UpdateAtBoot => "update_at_boot",
             Self::Restarting => "restarting",
+            Self::UpdateConfirmed => "update_confirmed",
         }
     }
 
@@ -494,7 +500,8 @@ impl EventKind {
             | Self::Lost
             | Self::UpdateStop
             | Self::UpdateAtBoot
-            | Self::Restarting => None,
+            | Self::Restarting
+            | Self::UpdateConfirmed => None,
             Self::Lock
             | Self::Settings
             | Self::Fed

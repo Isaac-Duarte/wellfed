@@ -219,6 +219,9 @@ pub struct Alerts {
     /// This boot asked for its own restart before the read ended. It excuses
     /// the boot after this one, so it waits for this boot's `Boot` too.
     this_restarting: bool,
+    /// This boot's build confirmed before the read ended, which only means
+    /// something once this boot's update record is judged.
+    this_confirmed: bool,
     /// The thresholds that began at boot have run out.
     settled: bool,
     settling: bool,
@@ -279,6 +282,7 @@ impl Alerts {
             this_boot: None,
             this_candidate: None,
             this_restarting: false,
+            this_confirmed: false,
             settled: false,
             settling: true,
             no_clock: Timer::Off,
@@ -365,6 +369,9 @@ impl Alerts {
             self.judge_boot(now_ms, None, candidate);
         }
         self.restart_asked |= core::mem::take(&mut self.this_restarting);
+        if core::mem::take(&mut self.this_confirmed) {
+            self.confirmed();
+        }
         self.restored = true;
     }
 
@@ -408,6 +415,10 @@ impl Alerts {
             EventBody::Restarting if !self.restored => {
                 self.note_time(at);
                 self.this_restarting = true;
+            }
+            EventBody::UpdateConfirmed if !self.restored => {
+                self.note_time(at);
+                self.this_confirmed = true;
             }
             _ => self.apply(now_ms, at, body),
         }
@@ -461,6 +472,7 @@ impl Alerts {
             EventBody::Boot { bank, reset_flags } => self.booted(now_ms, at, bank, reset_flags),
             EventBody::UpdateAtBoot { candidate } => self.judge_boot(now_ms, at, candidate),
             EventBody::Restarting => self.restart_asked = true,
+            EventBody::UpdateConfirmed => self.confirmed(),
             EventBody::UpdateStop { stop } => {
                 // A cancel is the owner's doing, not a failure.
                 if stop != UpdateStop::Cancelled {
@@ -738,6 +750,15 @@ impl Alerts {
                     self.report(now_ms, OpenAlert { at, alert });
                 }
             }
+        }
+    }
+
+    /// The build the newest boot activated confirmed itself. The store holds
+    /// no candidate from then on, and a give-way later in the same boot is
+    /// an install, never a fall from a build that didn't confirm.
+    fn confirmed(&mut self) {
+        if let Some((bank, UpdateCandidate::Activated)) = self.judged {
+            self.judged = Some((bank, UpdateCandidate::None));
         }
     }
 

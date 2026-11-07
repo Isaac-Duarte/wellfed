@@ -284,6 +284,15 @@ fn an_update_gives_way_installs_from_bank_0_and_confirms() {
         // Its two restarts were its own.
         let view = rig.alerts().await;
         assert_eq!(view.alerts, [], "a good install raises nothing");
+
+        // A second install in the same boot is no fall either.
+        let offer = Offer::new(8, 0x78, 2 * SECTOR);
+        update(&mut rig, offer.image(), &mut Faults::default())
+            .await
+            .unwrap();
+        assert_eq!(rig.bank().await, 1);
+        let view = rig.alerts().await;
+        assert_eq!(view.alerts, [], "two good installs raise nothing");
         rig.sim.stop().await;
     });
 }

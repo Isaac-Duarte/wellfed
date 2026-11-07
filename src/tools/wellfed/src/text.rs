@@ -465,6 +465,7 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
             format!("booted with update candidate {}", word(&candidate))
         }
         EventBody::Core(CoreEvent::Restarting) => "restart asked for".to_owned(),
+        EventBody::Core(CoreEvent::UpdateConfirmed) => "the installed build confirmed".to_owned(),
     }
 }
 

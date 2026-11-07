@@ -121,6 +121,7 @@ class EventKind:
     Supply: Final[EventKind]
     Unskipped: Final[EventKind]
     UpdateAtBoot: Final[EventKind]
+    UpdateConfirmed: Final[EventKind]
     UpdateStop: Final[EventKind]
     Wifi: Final[EventKind]
     def __eq__(self, value: object, /) -> bool: ...

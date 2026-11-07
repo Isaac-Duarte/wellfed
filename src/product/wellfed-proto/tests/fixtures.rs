@@ -1011,6 +1011,11 @@ fn messages() -> Vec<Fixture> {
             )))),
             feeder,
         ),
+        (
+            "event-update-confirmed",
+            entry(&EventBody::UpdateConfirmed),
+            |b| decode::<EventBody>(b).is_ok(),
+        ),
     ]
 }
 

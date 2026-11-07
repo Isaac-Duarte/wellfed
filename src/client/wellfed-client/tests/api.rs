@@ -2599,6 +2599,7 @@ fn every_body() -> Vec<EventBody> {
             EventBody::UpdateStop { .. } => 18,
             EventBody::UpdateAtBoot { .. } => 19,
             EventBody::Restarting => 20,
+            EventBody::UpdateConfirmed => 21,
         }
     }
     let by = proto::Source::Panel;
@@ -2673,6 +2674,7 @@ fn every_body() -> Vec<EventBody> {
             candidate: proto::UpdateCandidate::None,
         },
         EventBody::Restarting,
+        EventBody::UpdateConfirmed,
     ];
     let mut seen: Vec<usize> = bodies.iter().map(variant).collect();
     seen.dedup();

@@ -8,6 +8,7 @@ use std::rc::Rc;
 use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_core::clock::wall::{Fix, Origin, Sync};
 use wellfed_core::feed::controller::FeedReason as CoreReason;
+use wellfed_core::ota::install::CandidateState;
 use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_device::store::events::Read;
 use wellfed_device_api::mailbox::{MealSkip, PlansChange, PlansResult};
@@ -17,7 +18,7 @@ use wellfed_feeder::feeder::{CLAIM_WAIT_MS, Platform};
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::sim::Sim;
-use wellfed_proto::api::{Alert, AlertKind, EventBody, FeedOutcome};
+use wellfed_proto::api::{Alert, AlertKind, EventBody, FeedOutcome, UpdateCandidate};
 
 const MINUTE_MS: u64 = 60_000;
 const HOUR_MS: u64 = 60 * MINUTE_MS;
@@ -260,6 +261,46 @@ fn a_clock_from_ntp_with_no_zone_opens_no_clock() {
     feeder.sync(wall);
     feeder.run(2 * MINUTE_MS);
     assert_eq!(feeder.open_kinds(), [AlertKind::MealMissed]);
+}
+
+/// A build this boot activated confirms with no restart, which clears the
+/// store's candidate. The loop records that once, so a later give-way in
+/// the same boot is judged against a confirmed build.
+#[test]
+fn a_trial_that_confirms_is_recorded_once() {
+    let mut feeder = Feeder::new(true);
+    feeder.restart(WATCHDOG);
+    feeder
+        .sim
+        .platform()
+        .hold_candidate(Some(CandidateState::Activated));
+    feeder.run(5000);
+
+    feeder
+        .sim
+        .platform()
+        .hold_candidate(Some(CandidateState::None));
+    feeder.run(5000);
+
+    let bodies: Vec<EventBody> = feeder.events().into_iter().map(|(_, body)| body).collect();
+    let this_boot = bodies
+        .iter()
+        .rposition(|body| matches!(body, EventBody::Boot { .. }))
+        .unwrap();
+    assert_eq!(
+        bodies[this_boot..],
+        [
+            EventBody::Boot {
+                bank: 1,
+                reset_flags: WATCHDOG
+            },
+            EventBody::UpdateAtBoot {
+                candidate: UpdateCandidate::Activated
+            },
+            EventBody::UpdateConfirmed,
+        ]
+    );
+    assert_eq!(feeder.open_kinds(), []);
 }
 
 #[test]

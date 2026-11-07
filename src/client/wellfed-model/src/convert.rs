@@ -374,6 +374,7 @@ impl From<proto::EventBody> for EventBody {
                 })
             }
             proto::EventBody::Restarting => EventBody::Core(CoreEvent::Restarting),
+            proto::EventBody::UpdateConfirmed => EventBody::Core(CoreEvent::UpdateConfirmed),
             proto::EventBody::Fed {
                 feed,
                 requested,
@@ -495,6 +496,7 @@ impl From<EventBody> for proto::EventBody {
                 candidate: candidate.into(),
             },
             EventBody::Core(CoreEvent::Restarting) => Self::Restarting,
+            EventBody::Core(CoreEvent::UpdateConfirmed) => Self::UpdateConfirmed,
             EventBody::Feeder(FeederEvent::Fed {
                 feed,
                 requested,
@@ -1979,6 +1981,7 @@ mod tests {
                 candidate: proto::UpdateCandidate::Pending,
             },
             proto::EventBody::Restarting,
+            proto::EventBody::UpdateConfirmed,
         ]
     }
 

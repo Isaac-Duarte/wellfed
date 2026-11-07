@@ -238,6 +238,7 @@ view_enum! {
         UpdateStop => "update_stop",
         UpdateAtBoot => "update_at_boot",
         Restarting => "restarting",
+        UpdateConfirmed => "update_confirmed",
     }
 }
 
@@ -269,6 +270,7 @@ impl From<&model::EventBody> for EventKind {
             model::EventBody::Core(model::CoreEvent::UpdateStop { .. }) => Self::UpdateStop,
             model::EventBody::Core(model::CoreEvent::UpdateAtBoot { .. }) => Self::UpdateAtBoot,
             model::EventBody::Core(model::CoreEvent::Restarting) => Self::Restarting,
+            model::EventBody::Core(model::CoreEvent::UpdateConfirmed) => Self::UpdateConfirmed,
         }
     }
 }

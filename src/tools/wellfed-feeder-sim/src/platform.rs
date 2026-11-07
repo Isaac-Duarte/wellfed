@@ -33,7 +33,7 @@ use wellfed_core::clock::wall::{Fix, Jump, Origin, State as ClockState, Sync, Sy
 use wellfed_core::clock::zone::Rule;
 use wellfed_core::indicator::Light;
 use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
-use wellfed_core::ota::install::{Answer, Progress, Refused};
+use wellfed_core::ota::install::{Answer, CandidateState, Progress, Refused};
 use wellfed_core::supply::{self, Reading, Sample};
 use wellfed_core::tone::Tune;
 use wellfed_device::io::{Accepted, BleDrop, Datagram, Received};
@@ -191,6 +191,9 @@ pub struct SimPlatform {
     plans_loading: bool,
     ring_unanswered: bool,
     ring_closed: bool,
+    /// The update store's candidate as the progress shows it, in place of
+    /// the stage's: a trial that has not confirmed yet, or has.
+    candidate_held: Option<CandidateState>,
     /// Answers the ring gave a reader outside the session slots.
     outside_reads: u32,
 }
@@ -269,6 +272,7 @@ impl SimPlatform {
             alerts_on: true,
             ring_opened_at,
             plans_loading: false,
+            candidate_held: None,
             ring_unanswered: false,
             ring_closed: false,
             outside_reads: 0,
@@ -457,6 +461,13 @@ impl SimPlatform {
     /// The ring has not opened yet.
     pub fn hold_ring_closed(&mut self, closed: bool) {
         self.ring_closed = closed;
+    }
+
+    /// The progress shows `candidate` for the update store's, or the
+    /// stage's own with `None`: the simulator's trials confirm at once, so
+    /// this is how a test sees one that takes its time.
+    pub fn hold_candidate(&mut self, candidate: Option<CandidateState>) {
+        self.candidate_held = candidate;
     }
 
     /// Answers the ring gave a reader outside the session slots, as the boot
@@ -897,7 +908,11 @@ impl Platform for SimPlatform {
     }
 
     fn update_progress(&mut self) -> Option<Progress> {
-        mailbox::progress()
+        let mut progress = mailbox::progress()?;
+        if let Some(candidate) = self.candidate_held {
+            progress.candidate = candidate;
+        }
+        Some(progress)
     }
 
     fn installing(&self) -> bool {

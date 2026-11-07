@@ -31,12 +31,14 @@
 //! bank 0 from an install's own restarts. It can't be recorded before the
 //! restart: an activation or a give-way keeps the write turn until the reset,
 //! so nothing queued then could land. The store's own record lands, as both
-//! are written before the marker changes, and this boot reads it.
+//! are written before the marker changes, and this boot reads it. A build
+//! this boot activated that then confirms clears the candidate with no
+//! restart, so that is recorded too, as `UpdateConfirmed`.
 
 use wellfed_core::schedule::latest_due;
 use wellfed_device_api::SESSIONS;
 use wellfed_device_api::mailbox::{PLANS, PlansResult};
-use wellfed_proto::api::{Blocked, EventBody, Readiness, Supply, UpdateStop};
+use wellfed_proto::api::{Blocked, EventBody, Readiness, Supply, UpdateCandidate, UpdateStop};
 
 use super::alerts::History;
 use super::alerts::Readings;
@@ -118,6 +120,10 @@ pub struct AlertStage {
     stop: Option<UpdateStop>,
     /// This boot's update store record is in the queue.
     candidate_noted: bool,
+    /// This boot runs a build it activated, not yet seen to confirm.
+    on_trial: bool,
+    /// The next look at whether it has.
+    trial_look_ms: Option<u32>,
 }
 
 impl Default for AlertStage {
@@ -137,6 +143,8 @@ impl AlertStage {
             installing: false,
             stop: None,
             candidate_noted: false,
+            on_trial: false,
+            trial_look_ms: None,
         }
     }
 
@@ -145,6 +153,7 @@ impl AlertStage {
     pub fn step<P: Platform>(&mut self, platform: &mut P, now_ms: u32, inputs: &Inputs) {
         self.watch_install(platform, now_ms);
         self.note_candidate(platform, now_ms, inputs.booted);
+        self.watch_trial(platform, now_ms);
 
         if !platform.alerts_on() {
             platform.alerts_mut().restored(now_ms, History::Whole);
@@ -220,6 +229,30 @@ impl AlertStage {
         let candidate = wellfed_device::update::candidate(progress.candidate);
         let body = EventBody::UpdateAtBoot { candidate };
         self.candidate_noted = events::record_or_wait(platform, now_ms, body);
+        self.on_trial = self.candidate_noted && candidate == UpdateCandidate::Activated;
+    }
+
+    /// Records the build this boot activated confirming itself, which clears
+    /// the store's candidate with no restart. Looked at once a second, and
+    /// only on trial, as the progress is a copy under a paused scheduler. The
+    /// event goes through the queue like any other, so the writer appends it
+    /// under the write turn, never during a drive.
+    #[inline(never)]
+    fn watch_trial<P: Platform>(&mut self, platform: &mut P, now_ms: u32) {
+        let due = self
+            .trial_look_ms
+            .is_none_or(|at| wellfed_core::deadline_passed(now_ms, at));
+        if !self.on_trial || !due {
+            return;
+        }
+        self.trial_look_ms = Some(now_ms.wrapping_add(LOOK_MS));
+
+        let Some(progress) = platform.update_progress() else {
+            return;
+        };
+        if wellfed_device::update::candidate(progress.candidate) == UpdateCandidate::None {
+            self.on_trial = !events::record_or_wait(platform, now_ms, EventBody::UpdateConfirmed);
+        }
     }
 
     /// The welcome's bound and the read's own, which start apart: a ring that

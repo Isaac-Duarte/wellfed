@@ -1048,6 +1048,54 @@ fn a_fall_to_an_older_bank_0_after_an_activation_is_a_rollback() {
     assert_eq!(alerts.restarts, 0);
 }
 
+/// The first build confirms 30 s into its activation boot, with no restart,
+/// and a second install gives way from that same boot.
+#[test]
+fn two_installs_in_one_boot_through_an_older_bank_0_raise_nothing() {
+    let mut alerts = settled();
+    booted(&mut alerts, WALL, 1, 0, UpdateCandidate::None);
+    old_bank_0(&mut alerts, WALL + 60);
+    booted(
+        &mut alerts,
+        WALL + 120,
+        1,
+        WATCHDOG,
+        UpdateCandidate::Activated,
+    );
+    alerts.event(0, Some(WALL + 150), &EventBody::UpdateConfirmed);
+
+    old_bank_0(&mut alerts, WALL + 600);
+    booted(
+        &mut alerts,
+        WALL + 660,
+        1,
+        WATCHDOG,
+        UpdateCandidate::Activated,
+    );
+    alerts.event(0, Some(WALL + 690), &EventBody::UpdateConfirmed);
+
+    assert_eq!(kinds(&alerts), []);
+    assert_eq!(alerts.restarts, 0);
+}
+
+/// The confirmation can come before the boot read ends: it waits for this
+/// boot's own update record, which it follows.
+#[test]
+fn a_confirmation_during_the_boot_read_follows_this_boots_record() {
+    let mut alerts = Alerts::new();
+    alerts.replay(0, None, Some(WALL), &boot(1, 0));
+    alerts.replay(0, None, Some(WALL), &held(UpdateCandidate::None));
+    alerts.replay(0, None, Some(WALL + 60), &boot(0, WATCHDOG));
+    alerts.event(0, Some(WALL + 120), &boot(1, WATCHDOG));
+    alerts.event(0, Some(WALL + 120), &held(UpdateCandidate::Activated));
+    alerts.event(0, Some(WALL + 150), &EventBody::UpdateConfirmed);
+    alerts.restored(0, History::Whole);
+
+    old_bank_0(&mut alerts, WALL + 600);
+    booted(&mut alerts, WALL + 660, 1, 0, UpdateCandidate::Activated);
+    assert_eq!(kinds(&alerts), []);
+}
+
 #[test]
 fn reading_the_same_boots_back_gives_the_same_verdicts() {
     let boots = [

@@ -329,6 +329,7 @@ pub(crate) async fn project(
         | EventBody::Core(CoreEvent::UpdateStop { .. })
         | EventBody::Core(CoreEvent::UpdateAtBoot { .. })
         | EventBody::Core(CoreEvent::Restarting)
+        | EventBody::Core(CoreEvent::UpdateConfirmed)
         | EventBody::Feeder(FeederEvent::Supply { .. }) => {}
     }
     Ok(())
