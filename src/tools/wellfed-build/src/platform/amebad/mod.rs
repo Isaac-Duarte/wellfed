@@ -670,7 +670,7 @@ impl Build<'_> {
             audits.wifi_link_audit = Some(audit::writes::audit(sdk, binutils, model)?);
             audits.stack_audit = Some(audit::stack::audit(
                 &self.image_directory().join("target_img2.axf"),
-                &binutils.objdump(),
+                binutils,
                 &audit::stack::task_sources(job.repo, job.firmware)?,
             )?);
         }
