@@ -390,10 +390,19 @@ static MAPPING: LazyLock<Regex> = LazyLock::new(|| {
 });
 /// A function symbol in one of the image's sections, as `readelf -s` lists
 /// it: its address (bit 0 set for Thumb) and name. ROM functions are
-/// absolute (`ABS`), with no bytes in the image, and are left out.
+/// absolute (`ABS`), with no bytes in the image, and are left out. readelf
+/// prints a size of 100000 or more in hex, so the size takes either form.
+///
+/// Only `FUNC` symbols are checked. An assembly label with no `.type` is
+/// `NOTYPE`, like the mapping symbols and the section's other labels, so a
+/// function written that way that starts outside Thumb code isn't refused
+/// here.
 static FUNC: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*\d+:\s+([0-9a-f]+)\s+\d+\s+FUNC\s+\S+\s+\S+\s+\d+\s+(\S+)\s*$")
-        .expect("stack audit pattern")
+    Regex::new(concat!(
+        r"^\s*\d+:\s+([0-9a-f]+)\s+(?:0x[0-9a-f]+|\d+)\s+FUNC\s+\S+\s+\S+\s+\d+",
+        r"\s+(\S+)\s*$",
+    ))
+    .expect("stack audit pattern")
 });
 /// A listed line: its address, then its bytes.
 static LINE: LazyLock<Regex> = LazyLock::new(|| {
@@ -1784,6 +1793,17 @@ mod tests {
         assert!(matches!(
             CodeMap::read(&symbols),
             Err(StackError::NotCode { function, address: 0x0e00_14c0 }) if function == "hidden"
+        ));
+
+        // A size of 100000 or more, which readelf prints in hex.
+        let large = "\
+   12: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $t
+   13: 0e0014b8     0 NOTYPE  LOCAL  DEFAULT    3 $d.17
+   14: 0e0014c1 0x186a0 FUNC    LOCAL  DEFAULT    3 large
+";
+        assert!(matches!(
+            CodeMap::read(large),
+            Err(StackError::NotCode { function, address: 0x0e00_14c0 }) if function == "large"
         ));
     }
 
