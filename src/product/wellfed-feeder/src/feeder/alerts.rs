@@ -47,6 +47,8 @@
 //! that finds a candidate activated, as the build it was activated for has
 //! given way. A boot with no record yet is not judged: a later boot's record
 //! judges by what the store says then, and the restart counts all the same.
+//! Bank 0 keeps the build it was written with, which may predate the record,
+//! so a bank 0 boot with none is judged from the boots around it instead.
 
 use core::num::NonZeroU32;
 
@@ -108,6 +110,16 @@ const PORTIONS_BELOW_THE_BEAM: u8 = 5;
 /// records around it say which it was. After a real brownout a later boot can
 /// carry its bit stale, which counts.
 const UNPLANNED_RESET: u32 = 0x1f << 16;
+
+/// What a boot on bank 0 with no update record ran, as the boot after it
+/// shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Build {
+    /// A build that records it: this one record was lost.
+    Recording,
+    /// A build from before the record.
+    Older,
+}
 
 /// A time in Unix seconds, if the clock was valid: what an entry carries.
 type Stamp = Option<NonZeroU32>;
@@ -204,6 +216,9 @@ pub struct Alerts {
     this_boot: Option<(Stamp, u8, u32)>,
     /// This boot's update record, waiting with it.
     this_candidate: Option<UpdateCandidate>,
+    /// This boot asked for its own restart before the read ended. It excuses
+    /// the boot after this one, so it waits for this boot's `Boot` too.
+    this_restarting: bool,
     /// The thresholds that began at boot have run out.
     settled: bool,
     settling: bool,
@@ -226,6 +241,9 @@ pub struct Alerts {
     unjudged: Option<bool>,
     /// The last boot judged, and what the store held then.
     judged: Option<(u8, UpdateCandidate)>,
+    /// A boot on bank 0 with no update record, its time and whether its flags
+    /// say unplanned, until the boot after it shows which build bank 0 runs.
+    unrecorded_0: Option<(Stamp, bool)>,
     /// A restart someone asked for is on its way.
     restart_asked: bool,
     /// The newest unplanned boots' times, oldest first; the last `restarts`
@@ -260,6 +278,7 @@ impl Alerts {
             newest_s: 0,
             this_boot: None,
             this_candidate: None,
+            this_restarting: false,
             settled: false,
             settling: true,
             no_clock: Timer::Off,
@@ -273,6 +292,7 @@ impl Alerts {
             boot_at: None,
             unjudged: None,
             judged: None,
+            unrecorded_0: None,
             restart_asked: false,
             restart_at: [None; RESTARTS],
             restarts: 0,
@@ -339,11 +359,12 @@ impl Alerts {
         self.history_missed(now_ms, history);
         self.end_quiet_episode();
         if let Some((at, bank, reset_flags)) = self.this_boot.take() {
-            self.booted(at, bank, reset_flags);
+            self.booted(now_ms, at, bank, reset_flags);
         }
         if let Some(candidate) = self.this_candidate.take() {
             self.judge_boot(now_ms, None, candidate);
         }
+        self.restart_asked |= core::mem::take(&mut self.this_restarting);
         self.restored = true;
     }
 
@@ -383,6 +404,10 @@ impl Alerts {
             EventBody::UpdateAtBoot { candidate } if !self.restored => {
                 self.note_time(at);
                 self.this_candidate = Some(candidate);
+            }
+            EventBody::Restarting if !self.restored => {
+                self.note_time(at);
+                self.this_restarting = true;
             }
             _ => self.apply(now_ms, at, body),
         }
@@ -433,7 +458,7 @@ impl Alerts {
                 Some(true) => self.power_out = false,
                 Some(false) | None => {}
             },
-            EventBody::Boot { bank, reset_flags } => self.booted(at, bank, reset_flags),
+            EventBody::Boot { bank, reset_flags } => self.booted(now_ms, at, bank, reset_flags),
             EventBody::UpdateAtBoot { candidate } => self.judge_boot(now_ms, at, candidate),
             EventBody::Restarting => self.restart_asked = true,
             EventBody::UpdateStop { stop } => {
@@ -654,10 +679,10 @@ impl Alerts {
     }
 
     /// A boot, which its update record will judge. If the boot before it
-    /// never got one, that boot counts as what its flags say.
-    fn booted(&mut self, at: Stamp, bank: u8, reset_flags: u32) {
-        if self.unjudged == Some(true) {
-            self.restarted(self.boot_at);
+    /// never got one, that boot is judged by what is left.
+    fn booted(&mut self, now_ms: u32, at: Stamp, bank: u8, reset_flags: u32) {
+        if let Some(unplanned) = self.unjudged.take() {
+            self.unrecorded(now_ms, unplanned);
         }
 
         let asked = core::mem::take(&mut self.restart_asked);
@@ -666,12 +691,71 @@ impl Alerts {
         self.boot_at = at;
     }
 
+    /// The newest boot has no update record, and the next boot has come.
+    ///
+    /// On bank 1 the record was lost, and the boot counts as what its flags
+    /// say. On bank 0 it may have been lost too, or bank 0 may run an older
+    /// build, from before this record: bank 0 keeps the build it was written
+    /// with. The boot after it tells which ([`Self::bank_0_build`]).
+    fn unrecorded(&mut self, now_ms: u32, unplanned: bool) {
+        if self.bank == Some(0) {
+            // Two in a row: whatever bank 0 runs never records.
+            if self.unrecorded_0.is_some() {
+                self.bank_0_build(now_ms, Build::Older);
+            }
+            self.unrecorded_0 = Some((self.boot_at, unplanned));
+        } else if unplanned {
+            self.restarted(self.boot_at);
+        }
+    }
+
+    /// A boot on bank 0 with no record, judged once the boot after it shows
+    /// what bank 0 runs.
+    ///
+    /// A build that records lost this one record, so the boot counts as its
+    /// flags say, and the boots around it judge as ever. An older build
+    /// records no boot, and the records say less. Bank 1 gives way to bank 0
+    /// to install, and falls to it when a build it activated never confirms.
+    /// So a boot on bank 0 straight after an activation is taken as that
+    /// fall, and any other as a give-way. Neither counts as a restart: what
+    /// made bank 1 fall counted on bank 1. A fall from a build that had
+    /// confirmed goes unseen, and so do faults while bank 0 runs.
+    fn bank_0_build(&mut self, now_ms: u32, build: Build) {
+        let Some((at, unplanned)) = self.unrecorded_0.take() else {
+            return;
+        };
+
+        match build {
+            Build::Recording => {
+                if unplanned {
+                    self.restarted(at);
+                }
+            }
+            Build::Older => {
+                let before = self.judged.replace((0, UpdateCandidate::None));
+                if before == Some((1, UpdateCandidate::Activated)) {
+                    let alert = Alert::RolledBack;
+                    self.report(now_ms, OpenAlert { at, alert });
+                }
+            }
+        }
+    }
+
     /// What the update store held as the newest boot came up: whether that
     /// boot was an install's own restart, or a fall back to bank 0.
     fn judge_boot(&mut self, now_ms: u32, at: Stamp, candidate: UpdateCandidate) {
         let (Some(bank), Some(unplanned)) = (self.bank, self.unjudged.take()) else {
             return;
         };
+        // A record on bank 0 says bank 0 runs a build that records; one on
+        // bank 1 says nothing of it.
+        let build = if bank == 0 {
+            Build::Recording
+        } else {
+            Build::Older
+        };
+        self.bank_0_build(now_ms, build);
+
         let before = self.judged.replace((bank, candidate));
         let bank_before = before.map(|(bank, _)| bank);
 

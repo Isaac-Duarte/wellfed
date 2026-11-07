@@ -113,7 +113,7 @@ fn joined(at: u32) -> (Option<u32>, EventBody) {
 fn an_entry_and_the_whole_state_stay_small() {
     assert_eq!(size_of::<OpenAlert>(), 16);
     assert_eq!(size_of::<[Option<OpenAlert>; CAPACITY]>(), 16 * CAPACITY);
-    assert_eq!(size_of::<Alerts>(), 336);
+    assert_eq!(size_of::<Alerts>(), 344);
 }
 
 #[test]
@@ -964,6 +964,88 @@ fn a_restart_someone_asked_for_does_not_count_and_only_the_next_boot_is_excused(
 
     booted(&mut alerts, WALL + 120, 1, WATCHDOG, UpdateCandidate::None);
     assert_eq!(alerts.restarts, 1);
+}
+
+/// A restart asked for before the boot read ends is this boot's own: it
+/// excuses the boot after it, never the one that recorded it.
+#[test]
+fn a_restart_asked_for_during_the_boot_read_excuses_only_the_next_boot() {
+    let mut alerts = Alerts::new();
+    alerts.event(0, Some(WALL), &boot(1, WATCHDOG));
+    alerts.event(0, Some(WALL), &held(UpdateCandidate::None));
+    alerts.event(0, Some(WALL + 1), &EventBody::Restarting);
+    alerts.restored(0, History::Whole);
+    assert_eq!(alerts.restarts, 1, "this boot counts by its flags");
+
+    booted(&mut alerts, WALL + 60, 1, WATCHDOG, UpdateCandidate::None);
+    assert_eq!(alerts.restarts, 1, "the boot it asked for is excused");
+}
+
+// Bank 0 keeps the build it was written with: one from before the update
+// record writes a `Boot` and nothing more.
+
+/// An older bank 0's boot with no record of its own.
+fn old_bank_0(alerts: &mut Alerts, at: u32) {
+    alerts.event(0, Some(at), &boot(0, WATCHDOG));
+}
+
+#[test]
+fn an_install_through_an_older_bank_0_is_no_restart() {
+    let mut alerts = settled();
+    booted(&mut alerts, WALL, 1, 0, UpdateCandidate::None);
+
+    // Two installs and a fault within the window: only the fault counts.
+    for round in 0..2 {
+        let at = WALL + round * 600;
+        old_bank_0(&mut alerts, at + 60);
+        booted(
+            &mut alerts,
+            at + 120,
+            1,
+            WATCHDOG,
+            UpdateCandidate::Activated,
+        );
+        booted(&mut alerts, at + 180, 1, 0, UpdateCandidate::None);
+    }
+    booted(&mut alerts, WALL + 1300, 1, WATCHDOG, UpdateCandidate::None);
+
+    assert_eq!(alerts.restarts, 1);
+    assert_eq!(kinds(&alerts), []);
+}
+
+#[test]
+fn a_fall_to_an_older_bank_0_after_an_activation_is_a_rollback() {
+    let mut alerts = settled();
+    booted(&mut alerts, WALL, 1, 0, UpdateCandidate::None);
+    old_bank_0(&mut alerts, WALL + 60);
+    booted(
+        &mut alerts,
+        WALL + 120,
+        1,
+        WATCHDOG,
+        UpdateCandidate::Activated,
+    );
+
+    // The build never confirms, and bank 0 runs a while.
+    old_bank_0(&mut alerts, WALL + 180);
+    old_bank_0(&mut alerts, WALL + 240);
+    assert_eq!(kinds(&alerts), [], "bank 0 may yet record");
+
+    // An install from bank 0 brings bank 1 back.
+    booted(
+        &mut alerts,
+        WALL + 300,
+        1,
+        WATCHDOG,
+        UpdateCandidate::Activated,
+    );
+    let rolled: Vec<_> = alerts
+        .open()
+        .filter(|open| open.alert == Alert::RolledBack)
+        .collect();
+    assert_eq!(rolled.len(), 1, "{:?}", kinds(&alerts));
+    assert_eq!(rolled[0].at, NonZeroU32::new(WALL + 180));
+    assert_eq!(alerts.restarts, 0);
 }
 
 #[test]

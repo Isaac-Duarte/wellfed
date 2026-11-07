@@ -48,12 +48,13 @@ A **condition** opens once its state has held past its threshold, and closes whe
 - A store that can't be read shows `None`, so a fall then reports `RolledBack`: a false alert costs less than silence.
 - A boot with no earlier boot in the read judges nothing.
 - A boot whose record never reached the ring has no verdict of its own. The next boot's record judges from what the store holds then, and the earlier boot counts as a restart by its flags.
+- A boot on bank 0 with no record waits for the next boot to show what bank 0 runs. A record from bank 0 says its build records, and the boot lost its record as above. Otherwise bank 0 runs an older build, from before `UpdateAtBoot`, and the judgement is reduced ([below](#what-clears-an-older-format)).
 - A marker changed by the bench rather than by the update stage reads as a fall.
 
 **What counts as a restart.** A boot counts towards `RepeatedRestarts` if `BOOT_Reason` has its system, watchdog, brownout, KM4 system or KM4 watchdog bit set, except:
 
 - an install's give-way and activation boots, as in the table;
-- the boot after a `Restarting` event, which the loop records as it asks for a reboot over the device API, setup mode's end or the factory reset's restart. The writer appends what is queued in the restart's grace, before it saves the totals. If the event still doesn't land, the boot counts.
+- the boot after a `Restarting` event, though never the boot that recorded it. The loop records the event as it asks for a reboot over the device API, setup mode's end or the factory reset's restart. The writer appends what is queued in the restart's grace, before it saves the totals. If the event still doesn't land, the boot counts.
 
 So faults count, a stale brownout bit counts, a restart after Wi-Fi fails to start counts, and so does a reset in the middle of an install. A power-on with no flags set doesn't.
 
@@ -104,6 +105,8 @@ History in the ring is mostly over, and the clock is seldom valid yet at this po
 ## What clears an older format
 
 The feeder's status gained `alerts_generation`, and a server's store keeps the last status it read as JSON in `feeder_state.status`. A row written before won't read back. On a server that has already held a status, reset its store, or clear that column. The ring needs nothing: the new events come after the old ones, old records read as they are, and old boots have no update record, so they aren't judged. Flash the firmware and build the clients from one source together.
+
+Boot judgement reads bank 0's own `Boot` and `UpdateAtBoot` records, and bank 0 keeps the build it was written with: the update path never rewrites it. A bank 0 older than this build records `Boot` alone, so the rules can't tell a give-way from a fall. They judge it from the boots around it instead. A boot on that bank 0 counts as no restart. If the boot before it on bank 1 was an activation, the new build never confirmed, so the bank 0 boot is a fall and reports `RolledBack`, once. Any other is an install giving way, so the activation boot after it is an install. So one install counts as no restart, but a fall from a build that had already confirmed goes unseen, and so do faults while bank 0 runs. Rewriting bank 0 with this build over UART, the bench step, restores the full judgement.
 
 ## Why feeding is unaffected
 
