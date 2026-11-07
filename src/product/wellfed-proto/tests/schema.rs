@@ -61,6 +61,7 @@ fn roots() -> Vec<Root> {
         UpdateRefusal,
         UpdatePhase,
         UpdateStop,
+        UpdateCandidate,
         Bank0Check,
         OpenRefusal,
         Role,
@@ -94,6 +95,7 @@ fn roots() -> Vec<Root> {
         CurrentUnit,
         Phase,
         Tune,
+        Alert,
         setup::Enrolled,
         setup::WifiSaved,
         setup::Refusal,
@@ -108,9 +110,24 @@ fn name(format: &Format) -> &str {
     }
 }
 
+/// A tracer that knows the values a type can't be made up from: an alert's
+/// time is a `NonZeroU32`, and the tracer's first guess at a `u32` is 0. The
+/// sample's format joins the tracer's registry, as the struct is traced from
+/// it.
+fn tracer() -> (Tracer, Traced) {
+    let config = TracerConfig::default().record_samples_for_structs(true);
+    let mut tracer = Tracer::new(config);
+    let mut samples = Traced::new();
+    let open = OpenAlert {
+        at: core::num::NonZeroU32::new(1),
+        alert: Alert::RolledBack,
+    };
+    tracer.trace_value(&mut samples, &open).unwrap();
+    (tracer, samples)
+}
+
 fn registry() -> Registry {
-    let mut tracer = Tracer::new(TracerConfig::default());
-    let samples = Traced::new();
+    let (mut tracer, samples) = tracer();
     for root in roots() {
         (root.trace)(&mut tracer, &samples);
     }
@@ -166,10 +183,9 @@ fn the_trace_reaches_every_module() {
 #[test]
 fn every_traced_name_is_one_type() {
     let registry = registry();
-    let samples = Traced::new();
     let mut owners: BTreeMap<String, &str> = BTreeMap::new();
     for root in roots() {
-        let mut alone = Tracer::new(TracerConfig::default());
+        let (mut alone, samples) = tracer();
         let format = (root.trace)(&mut alone, &samples);
         let name = name(&format).to_owned();
         if let Some(other) = owners.insert(name.clone(), root.rust) {

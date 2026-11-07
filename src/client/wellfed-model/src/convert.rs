@@ -10,6 +10,7 @@ use wellfed_proto::api as proto;
 use wellfed_proto::device::DeviceKind;
 use wellfed_proto::setup as proto_setup;
 
+use crate::{Alert, AlertsView, OpenAlert, UpdateCandidate};
 use crate::{
     Answer, Bank0Blocked, Bank0Check, Bank1Page, Battery, Blocked, Bowl, Calibration,
     CalibrationView, CallClip, CallView, Client, ClientRole, CoreEvent, Counters, Counts,
@@ -115,6 +116,7 @@ impl From<proto::FeederStatus> for FeederStatus {
             desiccant,
             readiness,
             supply,
+            alerts_generation,
         } = status;
         Self {
             locked,
@@ -128,6 +130,7 @@ impl From<proto::FeederStatus> for FeederStatus {
             readiness: readiness.into(),
             desiccant: desiccant.into(),
             supply: supply.into(),
+            alerts_generation: Generation(alerts_generation),
         }
     }
 }
@@ -362,6 +365,16 @@ impl From<proto::EventBody> for EventBody {
                 jump_ms,
             }),
             proto::EventBody::Lost { count } => EventBody::Core(CoreEvent::Lost { count }),
+            proto::EventBody::UpdateStop { stop } => {
+                EventBody::Core(CoreEvent::UpdateStop { stop: stop.into() })
+            }
+            proto::EventBody::UpdateAtBoot { candidate } => {
+                EventBody::Core(CoreEvent::UpdateAtBoot {
+                    candidate: candidate.into(),
+                })
+            }
+            proto::EventBody::Restarting => EventBody::Core(CoreEvent::Restarting),
+            proto::EventBody::UpdateConfirmed => EventBody::Core(CoreEvent::UpdateConfirmed),
             proto::EventBody::Fed {
                 feed,
                 requested,
@@ -476,6 +489,14 @@ impl From<EventBody> for proto::EventBody {
                 jump_ms,
             },
             EventBody::Core(CoreEvent::Lost { count }) => Self::Lost { count },
+            EventBody::Core(CoreEvent::UpdateStop { stop }) => {
+                Self::UpdateStop { stop: stop.into() }
+            }
+            EventBody::Core(CoreEvent::UpdateAtBoot { candidate }) => Self::UpdateAtBoot {
+                candidate: candidate.into(),
+            },
+            EventBody::Core(CoreEvent::Restarting) => Self::Restarting,
+            EventBody::Core(CoreEvent::UpdateConfirmed) => Self::UpdateConfirmed,
             EventBody::Feeder(FeederEvent::Fed {
                 feed,
                 requested,
@@ -943,6 +964,7 @@ impl From<proto::Outcome<'_>> for Answer {
                 skipped: SkippedMeals::from_seconds(skipped),
             }),
             proto::Outcome::Feeder(proto::FeederOutcome::Call(view)) => Self::Call(view.into()),
+            proto::Outcome::Feeder(proto::FeederOutcome::Alerts(view)) => Self::Alerts(view.into()),
         }
     }
 }
@@ -1450,6 +1472,128 @@ impl From<proto::UpdatePhase> for UpdatePhase {
     }
 }
 
+impl From<proto::AlertsView> for AlertsView {
+    fn from(view: proto::AlertsView) -> Self {
+        Self {
+            epoch: view.epoch,
+            generation: Generation(view.generation),
+            more: view.more,
+            settling: view.settling,
+            alerts: view.alerts.iter().flatten().map(OpenAlert::from).collect(),
+        }
+    }
+}
+
+impl From<&proto::OpenAlert> for OpenAlert {
+    fn from(open: &proto::OpenAlert) -> Self {
+        Self {
+            at: open.at.map(|at| seconds(at.get())),
+            alert: open.alert.into(),
+        }
+    }
+}
+
+impl From<proto::Alert> for Alert {
+    fn from(alert: proto::Alert) -> Self {
+        match alert {
+            proto::Alert::MealFailed {
+                feed,
+                plan,
+                requested,
+                completed,
+                outcome,
+                reason,
+            } => Self::MealFailed {
+                feed,
+                plan,
+                requested,
+                completed,
+                outcome: outcome.into(),
+                reason: reason.into(),
+            },
+            proto::Alert::MealUncertain {
+                feed,
+                plan,
+                requested,
+                completed,
+                reason,
+            } => Self::MealUncertain {
+                feed,
+                plan,
+                requested,
+                completed,
+                reason: reason.into(),
+            },
+            proto::Alert::MealMissed { plan, due, reason } => Self::MealMissed {
+                plan,
+                due: seconds(due),
+                reason: reason.into(),
+            },
+            proto::Alert::MealNoRecord { plan, due } => Self::MealNoRecord {
+                plan,
+                due: seconds(due),
+            },
+            proto::Alert::PowerWasOut => Self::PowerWasOut,
+            proto::Alert::UpdateFailed { stop } => Self::UpdateFailed { stop: stop.into() },
+            proto::Alert::RolledBack => Self::RolledBack,
+            proto::Alert::ClientJoined { client, role, path } => Self::ClientJoined {
+                client: Hex(client),
+                role: role.into(),
+                path: path.into(),
+            },
+            proto::Alert::ClientRevoked { client, by } => Self::ClientRevoked {
+                client: Hex(client),
+                by: by.into(),
+            },
+            proto::Alert::RepeatedRestarts => Self::RepeatedRestarts,
+            proto::Alert::NoClock => Self::NoClock,
+            proto::Alert::CannotFeed { reason } => Self::CannotFeed {
+                reason: reason.into(),
+            },
+            proto::Alert::FoodLow => Self::FoodLow,
+            proto::Alert::FoodLikelyOut { confirmed } => Self::FoodLikelyOut { confirmed },
+            proto::Alert::DesiccantDue { days } => Self::DesiccantDue { days },
+            proto::Alert::BatteryBelowFloor => Self::BatteryBelowFloor,
+            proto::Alert::PlansStuck => Self::PlansStuck,
+        }
+    }
+}
+
+impl From<UpdateCandidate> for proto::UpdateCandidate {
+    fn from(candidate: UpdateCandidate) -> Self {
+        match candidate {
+            UpdateCandidate::None => Self::None,
+            UpdateCandidate::Pending => Self::Pending,
+            UpdateCandidate::Activated => Self::Activated,
+        }
+    }
+}
+
+impl From<proto::UpdateCandidate> for UpdateCandidate {
+    fn from(candidate: proto::UpdateCandidate) -> Self {
+        match candidate {
+            proto::UpdateCandidate::None => Self::None,
+            proto::UpdateCandidate::Pending => Self::Pending,
+            proto::UpdateCandidate::Activated => Self::Activated,
+        }
+    }
+}
+
+impl From<UpdateStop> for proto::UpdateStop {
+    fn from(stop: UpdateStop) -> Self {
+        match stop {
+            UpdateStop::Timeout => Self::Timeout,
+            UpdateStop::Cancelled => Self::Cancelled,
+            UpdateStop::Order => Self::Order,
+            UpdateStop::Marker => Self::Marker,
+            UpdateStop::Write => Self::Write,
+            UpdateStop::Hash => Self::Hash,
+            UpdateStop::Activate => Self::Activate,
+            UpdateStop::Store => Self::Store,
+        }
+    }
+}
+
 impl From<proto::UpdateStop> for UpdateStop {
     fn from(stop: proto::UpdateStop) -> Self {
         match stop {
@@ -1660,6 +1804,7 @@ impl Op {
                 slot: *slot,
                 due_s: u32::try_from(due.as_second()).unwrap_or(u32::MAX),
             }),
+            Self::GetAlerts => proto::Op::Feeder(proto::FeederOp::GetAlerts),
         }
     }
 }
@@ -1829,6 +1974,14 @@ mod tests {
             proto::EventBody::Food {
                 level: proto::FoodLevel::Present,
             },
+            proto::EventBody::UpdateStop {
+                stop: proto::UpdateStop::Hash,
+            },
+            proto::EventBody::UpdateAtBoot {
+                candidate: proto::UpdateCandidate::Pending,
+            },
+            proto::EventBody::Restarting,
+            proto::EventBody::UpdateConfirmed,
         ]
     }
 
@@ -1943,6 +2096,7 @@ mod tests {
                     battery: proto::Battery::Unread,
                     below_floor: None,
                 },
+                alerts_generation: 0,
             }),
         };
         assert_eq!(Status::from(status).clock, None);

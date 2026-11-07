@@ -57,6 +57,8 @@ struct Shared {
     lost: u32,
     last: Option<u64>,
     epoch: Option<u32>,
+    /// The ring's newest record when it was opened.
+    opened: Option<u64>,
     reads: Reads,
 }
 
@@ -67,6 +69,7 @@ static SHARED: TaskCell<Shared> = TaskCell::new(Shared {
     lost: 0,
     last: None,
     epoch: None,
+    opened: None,
     reads: Reads::new(),
 });
 fn with<R>(f: impl FnOnce(&mut Shared) -> R) -> R {
@@ -134,6 +137,7 @@ pub fn finish_pending(last: Option<u64>) {
 pub fn publish_open(epoch: u32, last: Option<u64>) {
     with(|shared| {
         shared.epoch = Some(epoch);
+        shared.opened = last;
         shared.last = last;
     });
 }
@@ -141,6 +145,12 @@ pub fn publish_open(epoch: u32, last: Option<u64>) {
 /// The ring's epoch, once the writer has opened it.
 pub fn epoch() -> Option<u32> {
     with(|shared| shared.epoch)
+}
+
+/// The ring's newest record when the writer opened it: the boots before this
+/// one's, whatever this boot has appended since.
+pub fn opened_at() -> Option<u64> {
+    with(|shared| shared.opened)
 }
 
 /// The ring's newest record, as the writer last published it.
@@ -185,6 +195,7 @@ pub fn reset() {
         shared.lost = 0;
         shared.last = None;
         shared.epoch = None;
+        shared.opened = None;
         shared.reads = Reads::new();
     });
 }

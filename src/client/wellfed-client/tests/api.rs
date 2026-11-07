@@ -329,6 +329,7 @@ impl Device for Fake {
                     battery: proto::Battery::Unread,
                     below_floor: None,
                 },
+                alerts_generation: 0,
             }),
         }
     }
@@ -2595,6 +2596,10 @@ fn every_body() -> Vec<EventBody> {
             EventBody::Food { .. } => 15,
             EventBody::Skipped { .. } => 16,
             EventBody::Unskipped { .. } => 17,
+            EventBody::UpdateStop { .. } => 18,
+            EventBody::UpdateAtBoot { .. } => 19,
+            EventBody::Restarting => 20,
+            EventBody::UpdateConfirmed => 21,
         }
     }
     let by = proto::Source::Panel;
@@ -2662,6 +2667,14 @@ fn every_body() -> Vec<EventBody> {
             due: 1_793_200_000,
             by,
         },
+        EventBody::UpdateStop {
+            stop: proto::UpdateStop::Hash,
+        },
+        EventBody::UpdateAtBoot {
+            candidate: proto::UpdateCandidate::None,
+        },
+        EventBody::Restarting,
+        EventBody::UpdateConfirmed,
     ];
     let mut seen: Vec<usize> = bodies.iter().map(variant).collect();
     seen.dedup();

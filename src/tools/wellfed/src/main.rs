@@ -120,6 +120,8 @@ enum Command {
     Feed(feeding::FeedArgs),
     /// Stop a running feed.
     CancelFeed(feeding::CancelFeedArgs),
+    /// The feeder's open alerts, as it decides them, in JSON.
+    Alerts(Target),
     /// Restart the feeder.
     Reboot(Target),
     /// The feeder's statistics: counters, memory, flash, power, food, feeds
@@ -191,6 +193,7 @@ fn main() -> Result<ExitCode> {
         Command::UpdateKey(args) => runtime.block_on(update_key::command(args)),
         Command::Feed(args) => runtime.block_on(feeding::feed_command(args)),
         Command::CancelFeed(args) => runtime.block_on(feeding::cancel_feed_command(args)),
+        Command::Alerts(target) => runtime.block_on(ask_and_print(&target, &Op::GetAlerts)),
         Command::Reboot(target) => runtime.block_on(ask_and_print(&target, &Op::Reboot)),
         Command::Calibrate(args) => runtime.block_on(configure::calibrate_command(args)),
         Command::Stats(args) => runtime.block_on(history::stats_command(args)),

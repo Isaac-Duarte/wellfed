@@ -2,12 +2,14 @@
 //! `wellfed_core::ota` becomes in the device API, so the firmware and
 //! every host fake answer an owner the same way.
 
-use wellfed_core::ota::install::{Bank0Check, Blocked, Phase, Progress, Refused, Stop, WANTED};
+use wellfed_core::ota::install::{
+    Bank0Check, Blocked, CandidateState, Phase, Progress, Refused, Stop, WANTED,
+};
 use wellfed_core::ota::offer::{KeyError, OfferError, StatementError};
 use wellfed_core::store::update::UpdateError;
 use wellfed_proto::api::{
-    self, Bank0Blocked, FrozenRefusal, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView,
-    WANTED_MAX,
+    self, Bank0Blocked, FrozenRefusal, UpdateCandidate, UpdatePhase, UpdateRefusal, UpdateStop,
+    UpdateView, WANTED_MAX,
 };
 
 const _: () = assert!(WANTED == WANTED_MAX);
@@ -22,6 +24,17 @@ pub const fn stop(stop: Stop) -> UpdateStop {
         Stop::Hash => UpdateStop::Hash,
         Stop::Activate => UpdateStop::Activate,
         Stop::Store => UpdateStop::Store,
+    }
+}
+
+/// What the update store held, as [`EventBody::UpdateAtBoot`] records it.
+///
+/// [`EventBody::UpdateAtBoot`]: wellfed_proto::api::EventBody::UpdateAtBoot
+pub const fn candidate(state: CandidateState) -> UpdateCandidate {
+    match state {
+        CandidateState::None => UpdateCandidate::None,
+        CandidateState::Pending => UpdateCandidate::Pending,
+        CandidateState::Activated => UpdateCandidate::Activated,
     }
 }
 

@@ -204,6 +204,7 @@ mod tests {
                     battery: Battery::Absent,
                     below_floor: None,
                 },
+                alerts_generation: Generation(0),
             }),
         }
     }

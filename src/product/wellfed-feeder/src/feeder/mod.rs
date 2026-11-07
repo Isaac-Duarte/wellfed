@@ -17,16 +17,20 @@
 //!    call ([`call`]); and
 //!    readiness noted ([`feeding`]); then the panel's lights from what the pass now
 //!    knows ([`lights`]), and a press's beep ([`beep`]);
-//! 4. the device API: its sockets, the server's step and the live samples
+//! 4. the alert rules' turn, read only, and an install's stop and what the
+//!    update store held at boot recorded ([`alert_stage`], [`alerts`]);
+//! 5. the device API: its sockets, the server's step and the live samples
 //!    ([`serve`]), with the time settings and the NTP exchange ([`time`]);
-//! 5. the speaker, while a client's tune or a plan's meal call plays (setup
+//! 6. the speaker, while a client's tune or a plan's meal call plays (setup
 //!    mode steps it itself). A feed plays none.
 //!
 //! The feeding owner is the platform's: the firmware steps it before the
 //! pass and hands it in as [`Feeds`], and records its `Fed` events through
 //! [`Feeder::record_outcome`]. Every durable event goes through the
-//! recorder ([`events`]).
+//! recorder ([`events`]), where the alert rules watch them.
 
+pub mod alert_stage;
+pub mod alerts;
 pub mod beep;
 pub mod call;
 pub mod events;
@@ -54,6 +58,7 @@ use wellfed_session::noise::Keypair;
 
 pub use platform::Platform;
 
+use alert_stage::AlertStage;
 use beep::Beeper;
 use call::Call;
 use identity::Identity;
@@ -239,6 +244,7 @@ pub struct Feeder<P: Platform> {
     beep: Beeper,
     schedule: Schedule,
     reminder: Reminder,
+    alert_stage: AlertStage,
     /// When a due restart began waiting for a plan's claim in flight.
     claim_wait: Option<u32>,
     call: Call,
@@ -264,6 +270,7 @@ impl<P: Platform> Feeder<P> {
             beep: Beeper::new(),
             schedule: Schedule::new(),
             reminder: Reminder::new(),
+            alert_stage: AlertStage::new(),
             claim_wait: None,
             call: Call::new(),
         }
@@ -334,6 +341,7 @@ impl<P: Platform> Feeder<P> {
     ) -> u32 {
         let owner_delay = self.owner_stage(now_ms, feeds, &mut record);
         let (local_delay, reading) = self.local_stage(now_ms, feeds, &mut record);
+        self.alert_turn(now_ms, feeds, reading);
 
         let reset = self.owner.reset_pending();
         let inputs = Inputs {
@@ -425,9 +433,31 @@ impl<P: Platform> Feeder<P> {
             // The writer's restart save takes this boot's counts as they are now.
             let counts = self.serve.stats().counts(now_ms);
             self.platform.hand_counts(counts);
+            events::record(&mut self.platform, now_ms, EventBody::Restarting);
             self.platform.reset();
         }
         delay
+    }
+
+    /// The alert rules' turn, after every stage that decides or runs a meal
+    /// and before the device API, so a status in this pass carries what they
+    /// make of it. Out of line so its inputs are not in [`Self::pass`]'s
+    /// frame under the device API's paths.
+    #[inline(never)]
+    fn alert_turn<F: Feeds>(&mut self, now_ms: u32, feeds: &F, supply: Supply) {
+        let claim = self.schedule.claim_in_flight();
+        let inputs = alert_stage::Inputs {
+            ready: self.readiness(feeds),
+            meal_held: self.schedule.meal_held(),
+            food: feeds.food(),
+            feeding: feeds.busy(),
+            supply,
+            claim,
+            busy: feeds.busy() || feeds.feeding() || claim,
+            schedule_at_rest: self.schedule.at_rest(),
+            booted: self.serve.booted(),
+        };
+        self.alert_stage.step(&mut self.platform, now_ms, &inputs);
     }
 
     /// Why a factory reset cannot run now, if so. Out of line so the install

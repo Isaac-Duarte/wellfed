@@ -307,7 +307,8 @@ impl Answer {
             | Model::Calibration(_)
             | Model::Bank1(_)
             | Model::Plans(_)
-            | Model::Call(_) => Self::Unexpected,
+            | Model::Call(_)
+            | Model::Alerts(_) => Self::Unexpected,
         }
     }
 }

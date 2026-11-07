@@ -101,6 +101,9 @@ pub struct FeederStatus {
     pub desiccant: Desiccant,
     /// The supply as the feeder judges it, with the pack's charge.
     pub supply: Supply,
+    /// Changes when the feeder's table of open alerts does: read it again
+    /// then. Counts from 0 at each boot.
+    pub alerts_generation: Generation,
 }
 
 /// The desiccant reminder, counted in the feeder's local calendar days

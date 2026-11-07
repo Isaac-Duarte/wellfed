@@ -148,6 +148,14 @@ impl Binutils {
         self.dir.join("arm-none-eabi-objdump")
     }
 
+    pub fn objcopy(&self) -> PathBuf {
+        self.dir.join("arm-none-eabi-objcopy")
+    }
+
+    pub fn readelf(&self) -> PathBuf {
+        self.dir.join("arm-none-eabi-readelf")
+    }
+
     pub fn nm(&self) -> PathBuf {
         self.dir.join("arm-none-eabi-nm")
     }
@@ -227,7 +235,7 @@ pub(crate) fn linked(
         sdk_hook_audit: hooks::audit(&sdk, &binutils, objects)?,
         firstboot_startup_audit: mains::audit(&sdk, &binutils, model)?,
         wifi_link_audit: writes::audit(&sdk, &binutils, model)?,
-        stack_audit: stack::audit(&elf(&sdk, Core::Hp), &binutils.objdump(), &app)?,
+        stack_audit: stack::audit(&elf(&sdk, Core::Hp), &binutils, &app)?,
     })
 }
 

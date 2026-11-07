@@ -86,7 +86,8 @@ pub(super) fn remembered(reply: Reply) -> Remembered {
         | Reply::Bank1 { .. }
         | Reply::Feeder(FeederReply::Calibration)
         | Reply::Feeder(FeederReply::Plans)
-        | Reply::Feeder(FeederReply::Call) => Remembered::Done(None),
+        | Reply::Feeder(FeederReply::Call)
+        | Reply::Feeder(FeederReply::Alerts) => Remembered::Done(None),
     }
 }
 

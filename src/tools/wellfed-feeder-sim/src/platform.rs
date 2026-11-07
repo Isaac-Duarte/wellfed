@@ -33,7 +33,7 @@ use wellfed_core::clock::wall::{Fix, Jump, Origin, State as ClockState, Sync, Sy
 use wellfed_core::clock::zone::Rule;
 use wellfed_core::indicator::Light;
 use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
-use wellfed_core::ota::install::{Answer, Progress, Refused};
+use wellfed_core::ota::install::{Answer, CandidateState, Progress, Refused};
 use wellfed_core::supply::{self, Reading, Sample};
 use wellfed_core::tone::Tune;
 use wellfed_device::io::{Accepted, BleDrop, Datagram, Received};
@@ -49,6 +49,7 @@ use wellfed_device_api::mailbox::{
 };
 use wellfed_device_api::wifi::Credentials;
 use wellfed_feeder::feeder::Platform;
+use wellfed_feeder::feeder::alerts::Alerts;
 use wellfed_feeder::feeder::platform::{
     BleStep, Boot, Check, DriverStep, EventSlot, Link, TaskCount, TaskStack,
 };
@@ -181,6 +182,20 @@ pub struct SimPlatform {
     /// A bench image's build network, unless a test boots it as a
     /// consumer image ([`Self::set_build_wifi`]).
     build_wifi: BuildWifi,
+    alerts: Alerts,
+    alerts_on: bool,
+    /// The ring's newest record when this boot opened it.
+    ring_opened_at: Option<u64>,
+    /// What a test holds back: the plans' load, the ring's answers and its
+    /// opening.
+    plans_loading: bool,
+    ring_unanswered: bool,
+    ring_closed: bool,
+    /// The update store's candidate as the progress shows it, in place of
+    /// the stage's: a trial that has not confirmed yet, or has.
+    candidate_held: Option<CandidateState>,
+    /// Answers the ring gave a reader outside the session slots.
+    outside_reads: u32,
 }
 
 impl std::fmt::Debug for SimPlatform {
@@ -206,6 +221,7 @@ impl SimPlatform {
         stores::finish_reset(flash, keep_wear);
         stores::finish_handover(flash, bank, &[storage::PLANS]);
         let device = DeviceStores::open(flash, random)?;
+        let ring_opened_at = device.last_event();
         let mut stats = StatsStore::default();
         stats.open(Region::new(flash, storage::STATS));
         let mut stats_base = stats.totals;
@@ -252,6 +268,14 @@ impl SimPlatform {
             reset_flags: 0,
             radio: Radio::On,
             build_wifi: BuildWifi::Present,
+            alerts: Alerts::new(),
+            alerts_on: true,
+            ring_opened_at,
+            plans_loading: false,
+            candidate_held: None,
+            ring_unanswered: false,
+            ring_closed: false,
+            outside_reads: 0,
         };
         // The boot's own early save, so its reset counts however short it is.
         platform.save_now(SaveKind::Early);
@@ -416,6 +440,40 @@ impl SimPlatform {
     /// write would, or let the writer take it.
     pub fn hold_plans(&mut self, held: bool) {
         self.plans_held = held;
+    }
+
+    /// Run with the alert rules (`true`, the default) or without, from the
+    /// first pass on: a control for the rules changing nothing about a meal.
+    pub fn set_alerts_on(&mut self, on: bool) {
+        self.alerts_on = on;
+    }
+
+    /// The plans stay loading, as a store that never opens.
+    pub fn hold_plans_loading(&mut self, loading: bool) {
+        self.plans_loading = loading;
+    }
+
+    /// The ring answers no read, as a writer that gives it no turn.
+    pub fn hold_ring_reads(&mut self, unanswered: bool) {
+        self.ring_unanswered = unanswered;
+    }
+
+    /// The ring has not opened yet.
+    pub fn hold_ring_closed(&mut self, closed: bool) {
+        self.ring_closed = closed;
+    }
+
+    /// The progress shows `candidate` for the update store's, or the
+    /// stage's own with `None`: the simulator's trials confirm at once, so
+    /// this is how a test sees one that takes its time.
+    pub fn hold_candidate(&mut self, candidate: Option<CandidateState>) {
+        self.candidate_held = candidate;
+    }
+
+    /// Answers the ring gave a reader outside the session slots, as the boot
+    /// read is.
+    pub const fn outside_reads(&self) -> u32 {
+        self.outside_reads
     }
 
     /// The writer's turn: apply what is queued, the device's settings
@@ -609,6 +667,9 @@ impl Platform for SimPlatform {
     }
 
     fn plans(&mut self) -> PlansResult {
+        if self.plans_loading {
+            return PlansResult::Busy;
+        }
         PlansResult::Current {
             view: self.plans.view(true),
             pending: self.plans_pending.is_some(),
@@ -738,7 +799,14 @@ impl Platform for SimPlatform {
     }
 
     fn event_after(&mut self, reader: Reader, after: Option<u64>) -> Option<Read> {
-        self.device.event_after(reader, after)
+        if self.ring_unanswered {
+            return None;
+        }
+        let read = self.device.event_after(reader, after);
+        if read.is_some() && reader.index() >= wellfed_device_api::SESSIONS {
+            self.outside_reads += 1;
+        }
+        read
     }
 
     fn reader_left(&mut self, reader: Reader) {
@@ -746,7 +814,23 @@ impl Platform for SimPlatform {
     }
 
     fn epoch(&self) -> Option<u32> {
-        Some(self.device.epoch())
+        (!self.ring_closed).then(|| self.device.epoch())
+    }
+
+    fn ring_opened_at(&self) -> Option<u64> {
+        self.ring_opened_at
+    }
+
+    fn alerts(&self) -> &Alerts {
+        &self.alerts
+    }
+
+    fn alerts_mut(&mut self) -> &mut Alerts {
+        &mut self.alerts
+    }
+
+    fn alerts_on(&self) -> bool {
+        self.alerts_on
     }
 
     fn last_event(&self) -> Option<u64> {
@@ -824,7 +908,11 @@ impl Platform for SimPlatform {
     }
 
     fn update_progress(&mut self) -> Option<Progress> {
-        mailbox::progress()
+        let mut progress = mailbox::progress()?;
+        if let Some(candidate) = self.candidate_held {
+            progress.candidate = candidate;
+        }
+        Some(progress)
     }
 
     fn installing(&self) -> bool {

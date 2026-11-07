@@ -7260,6 +7260,74 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "An install stopped before activation, a cancel among them.",
+            "required": [
+              "stop",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "update_stop"
+                ]
+              },
+              "stop": {
+                "$ref": "#/components/schemas/UpdateStop"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "What the update store held as this boot came up.",
+            "required": [
+              "candidate",
+              "kind"
+            ],
+            "properties": {
+              "candidate": {
+                "$ref": "#/components/schemas/UpdateCandidate"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "update_at_boot"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A restart someone asked for is on its way.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "restarting"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The build this boot activated confirmed itself, with no restart.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "update_confirmed"
+                ]
+              }
+            }
           }
         ],
         "description": "An event every kind of device records."
@@ -8741,9 +8809,14 @@
           "food",
           "readiness",
           "desiccant",
-          "supply"
+          "supply",
+          "alerts_generation"
         ],
         "properties": {
+          "alerts_generation": {
+            "$ref": "#/components/schemas/Generation",
+            "description": "Changes when the feeder's table of open alerts does: read it again\nthen. Counts from 0 at each boot."
+          },
           "desiccant": {
             "$ref": "#/components/schemas/Desiccant",
             "description": "The desiccant reminder."
@@ -12946,6 +13019,15 @@
         "enum": [
           "grams",
           "ounces"
+        ]
+      },
+      "UpdateCandidate": {
+        "type": "string",
+        "description": "What the update store held about a candidate as a boot came up.",
+        "enum": [
+          "none",
+          "pending",
+          "activated"
         ]
       },
       "UpdateRefusal": {
