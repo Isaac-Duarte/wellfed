@@ -633,7 +633,6 @@ impl<P: Platform> Feeder<P> {
             pairing: self.owner.pairing().awaiting().is_some(),
             battery: ready == Readiness::Blocked(Blocked::Battery)
                 || blocked == Some(Blocked::Battery),
-            feeding: feeds.busy(),
             low_food: feeds.food() == Some(false),
             locked: self.owner.lock().is_some_and(Lock::locked),
             online: self.platform.ipv4().is_some(),
