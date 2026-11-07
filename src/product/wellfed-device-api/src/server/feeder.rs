@@ -1,6 +1,6 @@
 //! The feeder's module of the device API ([`FeederOp`]): settings, the
-//! lock and tunes, feeds and their traces, the calibration, the plans and
-//! the meal call. The shared request path (`request`) checks the id, the
+//! lock and tunes, feeds and their traces, the calibration, the plans, the
+//! meal call and the alert table. The shared request path (`request`) checks the id, the
 //! role and the retry, then routes an [`Action::Feeder`] here, or refuses it
 //! `Unavailable` when the device has no feeder module
 //! ([`crate::Device::feeder`]). What the feeder finishes later waits as a
@@ -37,6 +37,8 @@ pub(super) enum FeederReply {
     Plans,
     /// The meal call.
     Call,
+    /// The table of open alerts, read when the answer is sealed.
+    Alerts,
 }
 
 impl FeederReply {
@@ -48,6 +50,7 @@ impl FeederReply {
             Self::Calibration => "calibration",
             Self::Plans => "plans",
             Self::Call => "call",
+            Self::Alerts => "alerts",
         }
     }
 }
@@ -155,6 +158,7 @@ pub(super) enum FeederAction {
     },
     DeleteCall,
     PlayCall,
+    GetAlerts,
 }
 
 /// A feeder op as the server runs it: [`Action::Invalid`] for one whose
@@ -230,6 +234,7 @@ pub(super) fn action(op: FeederOp<'_>) -> Action {
             due_s,
             skip: MealSkip::Unskip,
         },
+        FeederOp::GetAlerts => FeederAction::GetAlerts,
     };
     Action::Feeder(action)
 }
@@ -248,6 +253,7 @@ impl FeederAction {
                 | Self::GetPlans
                 | Self::GetCall
                 | Self::CallChunk { .. }
+                | Self::GetAlerts
         )
     }
 
@@ -280,6 +286,7 @@ impl FeederAction {
             Self::CallChunk { .. } => Self::CALL_CHUNK,
             Self::DeleteCall => "delete-call",
             Self::PlayCall => "play-call",
+            Self::GetAlerts => "get-alerts",
             Self::SkipMeal {
                 skip: MealSkip::Skip,
                 ..
@@ -447,6 +454,7 @@ impl Server {
                 Ok(()) => Reply::Feeder(FeederReply::Call),
                 Err(refusal) => Reply::Refused(refusal),
             },
+            FeederAction::GetAlerts => Reply::Feeder(FeederReply::Alerts),
             // Named before anything else is checked, so the refusal says
             // what to change rather than when to try again.
             FeederAction::Feed { portions } if !(1..=proto::PORTIONS_MAX).contains(&portions) => {
@@ -784,6 +792,10 @@ impl Server {
             FeederReply::FeedTrace { feed, offset } => match feeder.feed_trace(feed, offset) {
                 Ok(page) => Outcome::Feeder(FeederOutcome::FeedTrace(page)),
                 Err(refusal) => Outcome::Refused(refusal),
+            },
+            FeederReply::Alerts => match feeder.alerts() {
+                Some(view) => Outcome::Feeder(FeederOutcome::Alerts(view)),
+                None => unavailable,
             },
         };
         self.seal_and_send(index, &DeviceMessage::Response { id, result })

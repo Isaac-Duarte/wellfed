@@ -90,6 +90,7 @@ Both banks must carry the same built-in keys. Bank 1 checks the offer's key agai
 
 Every failure before activation leaves bank 1's marker clear, so the loader keeps booting bank 0, which keeps answering and feeding. The failures: a flipped byte (the whole-image hash), a chunk not wanted or of the wrong length (order), a failed program or readback (write), a marker that doesn't read back, a minute without a chunk (timeout), a cancel, an update store that can't be written, and a manifest or key the checks refuse.
 
+- The loop records each stop as an `UpdateStop` event, since the update's state forgets it at the next offer or restart ([alerts](alerts.md)).
 - A stop leaves the candidate recorded, so bank 0 refuses any other manifest (`Pending`) until a `CancelUpdate` forgets it (`wellfed-bench ota NAME --cancel`). A cancel answers `Busy` when the store can't be written, rather than claiming it forgot.
 - A dropped connection loses nothing: the install waits a minute for the next chunk, and `UpdateState` says where it stands.
 - A power cut mid-download boots bank 0 again, which takes the offer again from the start.

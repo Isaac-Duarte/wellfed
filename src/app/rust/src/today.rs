@@ -220,6 +220,11 @@ pub(crate) fn event_entry(event: &Event) -> HistoryEntry {
             due_ms: due.as_millisecond(),
             by: source_of(by),
         },
+        // The history shows no install stops or boot records yet: the update
+        // view says how an install went, and a boot reads as `Restarted`.
+        EventBody::Core(
+            CoreEvent::UpdateStop { .. } | CoreEvent::UpdateAtBoot { .. } | CoreEvent::Restarting,
+        ) => HistoryBody::Other,
     };
     HistoryEntry {
         seq: event.seq,

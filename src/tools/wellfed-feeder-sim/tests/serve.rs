@@ -479,8 +479,10 @@ fn the_flash_keeps_the_identity_clients_and_history_across_restarts() {
                 history.as_slice(),
                 [
                     EventBody::Core(CoreEvent::Boot { .. }),
+                    EventBody::Core(CoreEvent::UpdateAtBoot { .. }),
                     EventBody::Feeder(FeederEvent::Lock { locked: false, .. }),
                     EventBody::Core(CoreEvent::Boot { .. }),
+                    EventBody::Core(CoreEvent::UpdateAtBoot { .. }),
                 ]
             ),
             "{history:?}"
@@ -876,12 +878,12 @@ fn events_that_arrive_while_a_request_waits_are_kept_for_next() {
         let mut sim = Running::start(&Flash::memory(), true).await;
         let mut owner = sim.open(OWNER).await.unwrap();
         owner.subscribe(None, false).await.unwrap();
-        // Let the backlog (the boot) arrive unread, so the ask reads it
-        // ahead of its own answer.
+        // Let the backlog (the boot and the update store's record) arrive
+        // unread, so the ask reads it ahead of its own answer.
         tokio::time::sleep(Duration::from_millis(300)).await;
         let answer = sim.ask(&mut owner, &Op::Status).await;
         assert!(matches!(answer, Answer::Status(_)));
-        assert_eq!(owner.queued(), 1);
+        assert_eq!(owner.queued(), 2);
 
         let message = owner.next(WAIT).await.unwrap();
         assert_matches!(

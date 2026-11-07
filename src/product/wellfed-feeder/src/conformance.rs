@@ -618,6 +618,15 @@ pub fn a_meal_call_uploads_in_chunks_and_deletes(rig: &mut impl Rig) {
 /// A recorded event reads back from the ring, after the boot's, under the
 /// ring's epoch.
 pub fn a_recorded_event_reads_back(rig: &mut impl Rig) {
+    // The ring opens, and the alert rules' boot read ends, as the loop runs:
+    // no session is welcomed before.
+    for _ in 0..TURNS {
+        pass(rig, 0);
+        rig.write();
+        if device(rig, 0, |device| device.epoch()).is_some() {
+            break;
+        }
+    }
     assert!(
         device(rig, 0, |device| device.epoch()).is_some(),
         "the ring is open"

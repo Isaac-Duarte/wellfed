@@ -58,6 +58,7 @@ Feeder components:
 | [Indicators bench check](firmware/indicators-bench-check.md) | Checking each light's states on the bench |
 | [Audio](firmware/audio.md) | The speaker and built-in tunes |
 | [Desiccant reminder](firmware/desiccant.md) | Counting the days until the desiccant pack is due |
+| [Alerts](firmware/alerts.md) | The feeder's table of what is wrong, and how a client reads it |
 | [Clock](firmware/clock.md) | Wall clock, offline time and missed time |
 | [Clock bench checks](firmware/clock-bench-checks.md) | Checking live NTP, rate learning, warm resets and expiry on the bench |
 | [Power](firmware/power.md) | The supply, the battery floor, brownout and sleep |

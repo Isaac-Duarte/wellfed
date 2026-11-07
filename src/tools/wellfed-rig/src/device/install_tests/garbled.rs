@@ -303,6 +303,7 @@ fn status() -> proto::Status<'static> {
                 battery: proto::Battery::Unread,
                 below_floor: None,
             },
+            alerts_generation: 0,
         }),
     }
 }

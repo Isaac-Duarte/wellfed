@@ -35,11 +35,18 @@ const GENERATED: &str = "frb_generated.rs";
 /// What the CLI does not do, with why.
 const NOT_IN_CLI: [(&str, &str); 0] = [];
 /// What the app does not do, with why.
-const NOT_IN_APP: [(&str, &str); 1] = [(
-    "UpdateKeyStatement",
-    "a statement is signed offline by a built-in or the release key, and the phone holds no \
+const NOT_IN_APP: [(&str, &str); 2] = [
+    (
+        "UpdateKeyStatement",
+        "a statement is signed offline by a built-in or the release key, and the phone holds no \
          key a feeder trusts; the owner's computer carries one to the feeder",
-)];
+    ),
+    (
+        "GetAlerts",
+        "no screen shows the feeder's alerts yet, and a read no screen shows is no client; the \
+         CLI's `alerts` reads the table",
+    ),
+];
 
 /// The variants `source` declares for `enum`, in order.
 fn variants<'a>(source: &'a str, name: &str) -> Vec<&'a str> {

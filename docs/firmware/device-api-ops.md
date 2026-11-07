@@ -8,7 +8,7 @@ Every kind of device serves these.
 
 | Op | Notes |
 | --- | --- |
-| `Status` | Answered `Status`: the shared fields and the kind's part. A feeder's is `DeviceStatus::Feeder(FeederStatus)`: the lock, the settings' generation, the food beam, the last feed fault, the desiccant count, the readiness and the judged supply |
+| `Status` | Answered `Status`: the shared fields and the kind's part. A feeder's is `DeviceStatus::Feeder(FeederStatus)`: the lock, the settings' generation, the food beam, the last feed fault, the desiccant count, the readiness, the judged supply and the alert table's generation |
 | `Alive` | Answered `Done`, to any role. The keepalive: frozen, so a client keeps a session with a feeder of any build alive ([evolution](device-api.md#evolution)) |
 | `PutWifi { base, wifi }` | `None` clears. Owners only |
 | `TimeSync` | An owner's may step the clock. Anyone else's may only narrow it, and is refused `Time` when it disagrees with a valid clock beyond both error bounds |
@@ -36,6 +36,7 @@ Every kind of device serves these.
 | `SkipMeal { slot, due_s }`, `UnskipMeal { slot, due_s }` | Skip one of today's meals still to come, or undo the skip until it is due |
 | `ResetDesiccant` | Records a desiccant replacement today by the feeder's clock |
 | `GetCall`, `StartCall { bytes, crc }`, `CallChunk { offset, data }`, `DeleteCall`, `PlayCall` | The meal call's clip. `GetCall` is answered `Call(CallView)`. The writes are owners only; `PlayCall` is any client's |
+| `GetAlerts` | Answered `Alerts(AlertsView)`: the feeder's table of open alerts, whole. Owners, members and the server may read it. `FeederStatus::alerts_generation` changes whenever it does ([alerts](alerts.md)) |
 
 ## What a feed records
 

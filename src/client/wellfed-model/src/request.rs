@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
-    Bank1Page, CallView, ClientRole, FeederSettingsPatch, Generation, Hex, PLANS, Plan, Plans,
-    Settings, Stats, StatsSection, Status, TracePage, UpdateRefusal, UpdateView,
+    AlertsView, Bank1Page, CallView, ClientRole, FeederSettingsPatch, Generation, Hex, PLANS, Plan,
+    Plans, Settings, Stats, StatsSection, Status, TracePage, UpdateRefusal, UpdateView,
 };
 
 /// One operation. Reads may be repeated freely; a write's request id makes
@@ -172,6 +172,8 @@ pub enum Op {
         slot: u8,
         due: jiff::Timestamp,
     },
+    /// The feeder's table of open alerts.
+    GetAlerts,
 }
 
 /// What the owner measured, as the feeder keeps it.
@@ -385,6 +387,7 @@ pub enum Answer {
     Bank1(Bank1Page),
     Plans(Plans),
     Call(CallView),
+    Alerts(AlertsView),
 }
 
 /// Why the feeder refused a request.

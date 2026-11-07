@@ -114,11 +114,14 @@ class EventKind:
     MealSoon: Final[EventKind]
     Missed: Final[EventKind]
     Plans: Final[EventKind]
+    Restarting: Final[EventKind]
     Revoked: Final[EventKind]
     Settings: Final[EventKind]
     Skipped: Final[EventKind]
     Supply: Final[EventKind]
     Unskipped: Final[EventKind]
+    UpdateAtBoot: Final[EventKind]
+    UpdateStop: Final[EventKind]
     Wifi: Final[EventKind]
     def __eq__(self, value: object, /) -> bool: ...
     def __hash__(self, /) -> int: ...

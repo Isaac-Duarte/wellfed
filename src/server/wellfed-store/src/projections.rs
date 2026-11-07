@@ -326,6 +326,9 @@ pub(crate) async fn project(
         | EventBody::Core(CoreEvent::Enrolled { .. })
         | EventBody::Core(CoreEvent::Revoked { .. })
         | EventBody::Core(CoreEvent::Lost { .. })
+        | EventBody::Core(CoreEvent::UpdateStop { .. })
+        | EventBody::Core(CoreEvent::UpdateAtBoot { .. })
+        | EventBody::Core(CoreEvent::Restarting)
         | EventBody::Feeder(FeederEvent::Supply { .. }) => {}
     }
     Ok(())

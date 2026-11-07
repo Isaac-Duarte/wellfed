@@ -458,6 +458,13 @@ pub(crate) fn event(event: &Event, zone: &TimeZone) -> String {
             time(Some(due), zone),
             source(Some(by))
         ),
+        EventBody::Core(CoreEvent::UpdateStop { stop }) => {
+            format!("install stopped, {}", word(&stop))
+        }
+        EventBody::Core(CoreEvent::UpdateAtBoot { candidate }) => {
+            format!("booted with update candidate {}", word(&candidate))
+        }
+        EventBody::Core(CoreEvent::Restarting) => "restart asked for".to_owned(),
     }
 }
 
@@ -566,6 +573,7 @@ mod tests {
                     },
                     below_floor: Some(true),
                 },
+                alerts_generation: Generation(0),
             }),
         }
     }

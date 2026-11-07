@@ -57,6 +57,8 @@
 //!   which the welcome carries: a client of another revision sends that
 //!   build only frozen ops.
 
+use core::num::NonZeroU32;
+
 use serde::{Deserialize, Serialize};
 
 use crate::device::Model;
@@ -79,7 +81,7 @@ pub const PROTOCOL_MAJOR_MIN: u16 = 1;
 /// makes a new revision. The test fails, naming the new value, until this
 /// is updated. The welcome carries it ([`Welcome::Open::schema`]), and a
 /// client of another revision sends that build only frozen ops.
-pub const SCHEMA: u32 = 0xb5d9_31f4;
+pub const SCHEMA: u32 = 0xf6ab_21a3;
 
 /// Frozen. The largest frame either way, Noise tag included.
 pub const FRAME_MAX: usize = 1024;
@@ -485,6 +487,10 @@ pub enum FeederOp<'a> {
         slot: u8,
         due_s: u32,
     },
+    /// The feeder's table of open alerts, answered
+    /// [`FeederOutcome::Alerts`]. Owner, member and server sessions.
+    /// [`FeederStatus::alerts_generation`] says when to read it again.
+    GetAlerts,
 }
 
 /// The meal call's stream: 8 kHz mono, 4-bit IMA ADPCM, two samples a
@@ -675,7 +681,8 @@ impl FeederOp<'_> {
             | Self::GetCalibration
             | Self::GetPlans
             | Self::GetCall
-            | Self::CallChunk { .. } => false,
+            | Self::CallChunk { .. }
+            | Self::GetAlerts => false,
             Self::PutSettings { .. }
             | Self::SetLock { .. }
             | Self::Play { .. }
@@ -1067,6 +1074,8 @@ pub enum FeederOutcome<'a> {
     /// The meal call, after [`FeederOp::GetCall`] or
     /// [`FeederOp::CallChunk`].
     Call(CallView),
+    /// The table of open alerts, after [`FeederOp::GetAlerts`].
+    Alerts(AlertsView),
 }
 
 /// One page of bank 1: `bytes` from `offset`, of the `total` the feeder
@@ -1344,6 +1353,18 @@ pub enum UpdatePhase {
     Activated,
 }
 
+/// What the update store held about a candidate as a boot came up. Not part
+/// of the frozen update path: only [`EventBody::UpdateAtBoot`] carries it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UpdateCandidate {
+    /// None, or a store that could not be read.
+    None,
+    /// Bank 1 gave way for one, or bank 0 accepted it.
+    Pending,
+    /// Bank 0 activated one, and no build has confirmed it.
+    Activated,
+}
+
 /// Frozen. Why an install stopped. Bank 1's marker was never written, so
 /// the feeder keeps running bank 0.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1468,6 +1489,10 @@ pub struct FeederStatus {
     /// The supply as the feeder judges it: an unread or stale one says
     /// so ([`Battery`]).
     pub supply: Supply,
+    /// Changes when the table of open alerts does
+    /// ([`AlertsView::generation`]), so a session sees a change on its next
+    /// status. Counts from 0 at each boot.
+    pub alerts_generation: u32,
 }
 
 /// The desiccant reminder, counted in the feeder's local calendar days.
@@ -1705,6 +1730,23 @@ pub enum EventBody {
         due: u32,
         by: Source,
     },
+    /// An install stopped before activation: what the update's state says
+    /// only until the next offer, kept past a restart.
+    UpdateStop {
+        stop: UpdateStop,
+    },
+    /// What the update store held as this boot came up, recorded once in
+    /// every boot. With the bank of the boots around it, this tells how a
+    /// boot got there: an install's own restarts from a fall back to bank 0.
+    /// Recorded after the restart, as an install holds the write turn up to
+    /// the reset and nothing queued before it could land.
+    UpdateAtBoot {
+        candidate: UpdateCandidate,
+    },
+    /// A restart someone asked for is on its way. The writer appends what is
+    /// queued in the restart's grace, so this normally lands; if it doesn't,
+    /// the restart counts as unplanned.
+    Restarting,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1727,6 +1769,264 @@ pub struct FeedFault {
     pub feed: u32,
     pub outcome: FeedOutcome,
     pub reason: FeedReason,
+}
+
+/// The most open alerts the feeder holds.
+pub const ALERTS_MAX: usize = 12;
+
+/// The feeder's table of open alerts, whole: a read is one frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AlertsView {
+    /// The ring's epoch, which a feed's number counts in. It holds for a
+    /// boot, so it comes once rather than with each entry.
+    pub epoch: u32,
+    pub generation: u32,
+    /// A report left the table for want of room, or the boot read missed some
+    /// of the ring, and what is missing could still have been listed. An
+    /// absent alert may not have ended.
+    pub more: bool,
+    /// The feeder can't vouch for an absent condition yet: its thresholds are
+    /// running again after a boot, or a reading one needs is unknown.
+    pub settling: bool,
+    /// Oldest first, the free slots last.
+    pub alerts: [Option<OpenAlert>; ALERTS_MAX],
+}
+
+/// One entry of the feeder's table of open alerts: what its rules say is
+/// wrong now. About 16 B, since the table lives in the loop's RAM.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpenAlert {
+    /// A report's own time, or when a condition opened (Unix seconds); `None`
+    /// if the clock was not valid then.
+    pub at: Option<NonZeroU32>,
+    pub alert: Alert,
+}
+
+impl OpenAlert {
+    /// What makes this the same alert across reads and restarts, within one
+    /// feeder. A feed's number counts within the ring's epoch.
+    pub const fn key(&self) -> AlertKey {
+        let kind = self.alert.kind();
+        match self.alert {
+            Alert::MealFailed { feed, .. } | Alert::MealUncertain { feed, .. } => {
+                AlertKey::Feed { feed }
+            }
+            Alert::MealMissed { plan, due, .. } | Alert::MealNoRecord { plan, due } => {
+                AlertKey::Meal { plan, due }
+            }
+            Alert::ClientJoined { client, .. } | Alert::ClientRevoked { client, .. } => {
+                AlertKey::Client {
+                    kind,
+                    client,
+                    at: self.at,
+                }
+            }
+            Alert::PowerWasOut | Alert::UpdateFailed { .. } | Alert::RolledBack => {
+                AlertKey::Timed { kind, at: self.at }
+            }
+            Alert::RepeatedRestarts
+            | Alert::NoClock
+            | Alert::CannotFeed { .. }
+            | Alert::FoodLow
+            | Alert::FoodLikelyOut { .. }
+            | Alert::DesiccantDue { .. }
+            | Alert::BatteryBelowFloor
+            | Alert::PlansStuck => AlertKey::Kind(kind),
+        }
+    }
+}
+
+/// An alert's identity. A feed's key spans its outcomes, so an uncertain
+/// feed's second `Fed` replaces the first alert, and a meal's spans a report
+/// of no record and the `Missed` that answers it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AlertKey {
+    Feed {
+        feed: u32,
+    },
+    Meal {
+        plan: u8,
+        due: u32,
+    },
+    /// So a later rejoin alerts again.
+    Client {
+        kind: AlertKind,
+        client: Fingerprint,
+        at: Option<NonZeroU32>,
+    },
+    Timed {
+        kind: AlertKind,
+        at: Option<NonZeroU32>,
+    },
+    /// A condition, present or absent.
+    Kind(AlertKind),
+}
+
+/// What is wrong, and what the event or reading adds to its kind. Fields sit
+/// in the variants rather than in a shared struct, whose padding would make
+/// an entry larger.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Alert {
+    /// A feed ended `Failed` or `Expired`. `plan` is its plan, if one asked.
+    MealFailed {
+        feed: u32,
+        plan: Option<u8>,
+        requested: u8,
+        completed: u8,
+        outcome: FeedOutcome,
+        reason: FeedReason,
+    },
+    /// A feed ended `Uncertain`, and may have dispensed up to `requested`.
+    MealUncertain {
+        feed: u32,
+        plan: Option<u8>,
+        requested: u8,
+        completed: u8,
+        reason: FeedReason,
+    },
+    /// The occurrence did not run, and never will.
+    MealMissed {
+        plan: u8,
+        due: u32,
+        reason: MissedReason,
+    },
+    /// The occurrence is well past due and the schedule has no record of it,
+    /// which should be a firmware bug.
+    MealNoRecord {
+        plan: u8,
+        due: u32,
+    },
+    PowerWasOut,
+    UpdateFailed {
+        stop: UpdateStop,
+    },
+    /// Bank 0 kept running after bank 1.
+    RolledBack,
+    ClientJoined {
+        client: Fingerprint,
+        role: Role,
+        path: Path,
+    },
+    ClientRevoked {
+        client: Fingerprint,
+        by: Source,
+    },
+    RepeatedRestarts,
+    NoClock,
+    CannotFeed {
+        reason: Blocked,
+    },
+    FoodLow,
+    /// There is no empty reading: `confirmed` portions have gone since the
+    /// beam, which sits about five above the rotor, read low.
+    FoodLikelyOut {
+        confirmed: u8,
+    },
+    DesiccantDue {
+        days: i32,
+    },
+    BatteryBelowFloor,
+    /// With a valid clock, the plans have stayed out of reach, or a change to
+    /// them has never finished, so nothing can say whether meals ran.
+    PlansStuck,
+}
+
+impl Alert {
+    pub const fn kind(&self) -> AlertKind {
+        match self {
+            Self::MealFailed { .. } => AlertKind::MealFailed,
+            Self::MealUncertain { .. } => AlertKind::MealUncertain,
+            Self::MealMissed { .. } => AlertKind::MealMissed,
+            Self::MealNoRecord { .. } => AlertKind::MealNoRecord,
+            Self::PowerWasOut => AlertKind::PowerWasOut,
+            Self::UpdateFailed { .. } => AlertKind::UpdateFailed,
+            Self::RolledBack => AlertKind::RolledBack,
+            Self::ClientJoined { .. } => AlertKind::ClientJoined,
+            Self::ClientRevoked { .. } => AlertKind::ClientRevoked,
+            Self::RepeatedRestarts => AlertKind::RepeatedRestarts,
+            Self::NoClock => AlertKind::NoClock,
+            Self::CannotFeed { .. } => AlertKind::CannotFeed,
+            Self::FoodLow => AlertKind::FoodLow,
+            Self::FoodLikelyOut { .. } => AlertKind::FoodLikelyOut,
+            Self::DesiccantDue { .. } => AlertKind::DesiccantDue,
+            Self::BatteryBelowFloor => AlertKind::BatteryBelowFloor,
+            Self::PlansStuck => AlertKind::PlansStuck,
+        }
+    }
+
+    pub const fn level(&self) -> AlertLevel {
+        self.kind().level()
+    }
+}
+
+/// An alert's kind, without what it says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AlertKind {
+    MealFailed,
+    MealUncertain,
+    MealMissed,
+    MealNoRecord,
+    PowerWasOut,
+    UpdateFailed,
+    RolledBack,
+    ClientJoined,
+    ClientRevoked,
+    RepeatedRestarts,
+    NoClock,
+    CannotFeed,
+    FoodLow,
+    FoodLikelyOut,
+    DesiccantDue,
+    BatteryBelowFloor,
+    PlansStuck,
+}
+
+impl AlertKind {
+    pub const fn level(self) -> AlertLevel {
+        match self {
+            Self::MealFailed
+            | Self::MealUncertain
+            | Self::MealMissed
+            | Self::MealNoRecord
+            | Self::NoClock
+            | Self::CannotFeed
+            | Self::FoodLikelyOut
+            | Self::PlansStuck => AlertLevel::Urgent,
+            Self::FoodLow
+            | Self::DesiccantDue
+            | Self::PowerWasOut
+            | Self::BatteryBelowFloor
+            | Self::UpdateFailed
+            | Self::RolledBack
+            | Self::RepeatedRestarts => AlertLevel::Soon,
+            Self::ClientJoined | Self::ClientRevoked => AlertLevel::Security,
+        }
+    }
+
+    /// Whether it is present or absent by its kind alone, ending with its
+    /// state rather than lapsing. Repeated restarts report something that
+    /// happened, but are tracked this way so a later episode alerts again.
+    pub const fn is_condition(self) -> bool {
+        matches!(
+            self,
+            Self::RepeatedRestarts
+                | Self::NoClock
+                | Self::CannotFeed
+                | Self::FoodLow
+                | Self::FoodLikelyOut
+                | Self::DesiccantDue
+                | Self::BatteryBelowFloor
+                | Self::PlansStuck
+        )
+    }
+}
+
+/// How soon an alert wants the owner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AlertLevel {
+    Urgent,
+    Soon,
+    Security,
 }
 
 /// What the food beam across the hopper reads, filtered as stock filters
@@ -2188,6 +2488,29 @@ mod tests {
         let len = encode(&clients, &mut out).unwrap();
         assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(clients));
 
+        let alerts = DeviceMessage::Response {
+            id: [0xff; 16],
+            result: Outcome::Feeder(FeederOutcome::Alerts(AlertsView {
+                epoch: u32::MAX,
+                generation: u32::MAX,
+                more: true,
+                settling: true,
+                alerts: [Some(OpenAlert {
+                    at: NonZeroU32::new(u32::MAX),
+                    alert: Alert::MealFailed {
+                        feed: u32::MAX,
+                        plan: Some(u8::MAX),
+                        requested: u8::MAX,
+                        completed: u8::MAX,
+                        outcome: FeedOutcome::Failed,
+                        reason: FeedReason::Interrupted,
+                    },
+                }); ALERTS_MAX],
+            })),
+        };
+        let len = encode(&alerts, &mut out).unwrap();
+        assert_eq!(decode::<DeviceMessage<'_>>(&out[..len]), Ok(alerts));
+
         let wifi = ClientMessage::Request {
             id: [0xff; 16],
             op: Op::PutWifi {
@@ -2641,6 +2964,13 @@ mod tests {
                 due: u32::MAX,
                 by: Source::Client(client),
             },
+            EventBody::UpdateStop {
+                stop: UpdateStop::Store,
+            },
+            EventBody::UpdateAtBoot {
+                candidate: UpdateCandidate::Activated,
+            },
+            EventBody::Restarting,
         ] {
             let mut out = [0; EVENT_BODY_MAX];
             let len = encode(&body, &mut out).unwrap();

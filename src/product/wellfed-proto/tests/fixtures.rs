@@ -85,6 +85,7 @@ fn messages() -> Vec<Fixture> {
                 battery: Battery::Absent,
                 below_floor: None,
             },
+            alerts_generation: 14,
         }),
     };
     let with_feeder = |change: fn(&mut FeederStatus)| {
@@ -975,7 +976,98 @@ fn messages() -> Vec<Fixture> {
             }),
             |b| decode::<EventBody>(b).is_ok(),
         ),
+        (
+            "event-update-stop",
+            entry(&EventBody::UpdateStop {
+                stop: UpdateStop::Hash,
+            }),
+            |b| decode::<EventBody>(b).is_ok(),
+        ),
+        (
+            "event-update-at-boot",
+            entry(&EventBody::UpdateAtBoot {
+                candidate: UpdateCandidate::Activated,
+            }),
+            |b| decode::<EventBody>(b).is_ok(),
+        ),
+        ("event-restarting", entry(&EventBody::Restarting), |b| {
+            decode::<EventBody>(b).is_ok()
+        }),
+        (
+            "op-get-alerts",
+            entry(&request(Op::Feeder(FeederOp::GetAlerts))),
+            client,
+        ),
+        (
+            "outcome-alerts",
+            entry(&response(Outcome::Feeder(FeederOutcome::Alerts(
+                AlertsView {
+                    epoch: 0x5a5a_5a5a,
+                    generation: 7,
+                    more: true,
+                    settling: false,
+                    alerts: alerts_table(),
+                },
+            )))),
+            feeder,
+        ),
     ]
+}
+
+/// One entry of each kind that carries something, short of the table's
+/// limit, so a free slot is pinned too.
+fn alerts_table() -> [Option<OpenAlert>; ALERTS_MAX] {
+    let at = core::num::NonZeroU32::new(1_792_674_000);
+    let alerts = [
+        Alert::MealFailed {
+            feed: 13,
+            plan: Some(2),
+            requested: 3,
+            completed: 1,
+            outcome: FeedOutcome::Failed,
+            reason: FeedReason::Jammed,
+        },
+        Alert::MealUncertain {
+            feed: 14,
+            plan: None,
+            requested: 1,
+            completed: 0,
+            reason: FeedReason::Interrupted,
+        },
+        Alert::MealMissed {
+            plan: 1,
+            due: 1_792_674_000,
+            reason: MissedReason::Blocked(Blocked::Battery),
+        },
+        Alert::MealNoRecord {
+            plan: 0,
+            due: 1_792_674_000,
+        },
+        Alert::UpdateFailed {
+            stop: UpdateStop::Hash,
+        },
+        Alert::ClientJoined {
+            client: [1, 2, 3, 4],
+            role: Role::Member,
+            path: Path::Invite,
+        },
+        Alert::ClientRevoked {
+            client: [1, 2, 3, 4],
+            by: Source::Client([5, 6, 7, 8]),
+        },
+        Alert::RolledBack,
+        Alert::CannotFeed {
+            reason: Blocked::Fault,
+        },
+        Alert::FoodLikelyOut { confirmed: 5 },
+        Alert::DesiccantDue { days: -2 },
+    ];
+
+    let mut table = [None; ALERTS_MAX];
+    for (slot, alert) in table.iter_mut().zip(alerts) {
+        *slot = Some(OpenAlert { at, alert });
+    }
+    table
 }
 
 /// Slot 0's meal skipped, the rest not.

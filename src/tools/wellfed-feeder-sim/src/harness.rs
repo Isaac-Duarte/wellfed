@@ -124,6 +124,19 @@ impl Running {
         owner: Option<[u8; 32]>,
         address: SocketAddr,
     ) -> Self {
+        Self::start_ruled(flash, banks, update_key, owner, address, true).await
+    }
+
+    /// As [`Self::start_with`], with the alert rules on or off: a control for
+    /// the rules changing nothing about a meal.
+    pub async fn start_ruled(
+        flash: &Rc<Flash>,
+        banks: &Rc<RefCell<Banks>>,
+        update_key: Option<[u8; 32]>,
+        owner: Option<[u8; 32]>,
+        address: SocketAddr,
+        rules: bool,
+    ) -> Self {
         let alone = Alone::take();
         let listener = TcpListener::bind(address)
             .await
@@ -140,12 +153,15 @@ impl Running {
             banks: Rc::clone(banks),
             update_key,
             random: Box::new(counter(seed)),
-            prepare: Box::new(move |sim| match owner {
-                Some(key) => {
-                    let label = Label::new(b"test-owner").expect("a 10-byte label");
-                    sim.platform().enroll(key, label, Role::Owner)
+            prepare: Box::new(move |sim| {
+                sim.platform().set_alerts_on(rules);
+                match owner {
+                    Some(key) => {
+                        let label = Label::new(b"test-owner").expect("a 10-byte label");
+                        sim.platform().enroll(key, label, Role::Owner)
+                    }
+                    None => Ok(()),
                 }
-                None => Ok(()),
             }),
         };
         let (control, commands) = mpsc::unbounded_channel();

@@ -21,6 +21,7 @@ use wellfed_proto::api::{Counts, Erases, Power, Refusal, TASKS_MAX};
 use wellfed_proto::device::Model;
 use wellfed_proto::trace::PAGE_MAX;
 
+use super::alerts::Alerts;
 use super::supply::Radio;
 use crate::stats::Totals;
 use wellfed_device::io::{Accepted, BleDrop, BleLink, Datagram, Received};
@@ -276,6 +277,18 @@ pub trait Platform {
     fn reader_left(&mut self, _reader: Reader) {}
     /// The ring's epoch, once the writer has opened it.
     fn epoch(&self) -> Option<u32>;
+    /// The ring's newest record when the writer opened it this boot, the
+    /// boots before this one's; `None` for an empty ring.
+    fn ring_opened_at(&self) -> Option<u64>;
+    /// The alert rules. They live here so that the one recorder can tell them
+    /// what it records; nothing that decides or runs a meal may read them.
+    fn alerts(&self) -> &Alerts;
+    fn alerts_mut(&mut self) -> &mut Alerts;
+    /// Whether the rules run: false only on a host test's control, to show
+    /// that a meal runs the same without them.
+    fn alerts_on(&self) -> bool {
+        true
+    }
     /// The ring's newest record.
     fn last_event(&self) -> Option<u64>;
 

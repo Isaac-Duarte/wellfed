@@ -129,6 +129,18 @@ pub enum UpdatePhase {
     Activated,
 }
 
+/// What the update store held about a candidate as a boot came up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateCandidate {
+    /// None, or a store that could not be read.
+    None,
+    /// Bank 1 gave way for one, or bank 0 accepted it.
+    Pending,
+    /// Bank 0 activated one, and no build has confirmed it.
+    Activated,
+}
+
 /// Why an install stopped. Bank 1's marker was never written, so the
 /// feeder keeps running bank 0.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

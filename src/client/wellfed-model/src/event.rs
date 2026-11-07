@@ -9,7 +9,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{Battery, Blocked, DeviceKind, Generation, Hex};
+use crate::{Battery, Blocked, DeviceKind, Generation, Hex, UpdateCandidate, UpdateStop};
 
 /// What the feeder pushes to a subscribed session, or to one that asked
 /// for its log.
@@ -101,6 +101,16 @@ pub enum CoreEvent {
     Lost {
         count: u16,
     },
+    /// An install stopped before activation, a cancel among them.
+    UpdateStop {
+        stop: UpdateStop,
+    },
+    /// What the update store held as this boot came up.
+    UpdateAtBoot {
+        candidate: UpdateCandidate,
+    },
+    /// A restart someone asked for is on its way.
+    Restarting,
 }
 
 /// An event only a feeder records.
@@ -349,6 +359,9 @@ impl EventBody {
                 CoreEvent::Revoked { .. } => EventKind::Revoked,
                 CoreEvent::ClockSync { .. } => EventKind::ClockSync,
                 CoreEvent::Lost { .. } => EventKind::Lost,
+                CoreEvent::UpdateStop { .. } => EventKind::UpdateStop,
+                CoreEvent::UpdateAtBoot { .. } => EventKind::UpdateAtBoot,
+                CoreEvent::Restarting => EventKind::Restarting,
             },
             Self::Feeder(event) => match event {
                 FeederEvent::Lock { .. } => EventKind::Lock,
@@ -408,10 +421,13 @@ pub enum EventKind {
     Food,
     Skipped,
     Unskipped,
+    UpdateStop,
+    UpdateAtBoot,
+    Restarting,
 }
 
 impl EventKind {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 21] = [
         Self::Boot,
         Self::Lock,
         Self::Settings,
@@ -430,6 +446,9 @@ impl EventKind {
         Self::Food,
         Self::Skipped,
         Self::Unskipped,
+        Self::UpdateStop,
+        Self::UpdateAtBoot,
+        Self::Restarting,
     ];
 
     /// The stored spelling, the same as the JSON one.
@@ -453,6 +472,9 @@ impl EventKind {
             Self::Food => "food",
             Self::Skipped => "skipped",
             Self::Unskipped => "unskipped",
+            Self::UpdateStop => "update_stop",
+            Self::UpdateAtBoot => "update_at_boot",
+            Self::Restarting => "restarting",
         }
     }
 
@@ -469,7 +491,10 @@ impl EventKind {
             | Self::Enrolled
             | Self::Revoked
             | Self::ClockSync
-            | Self::Lost => None,
+            | Self::Lost
+            | Self::UpdateStop
+            | Self::UpdateAtBoot
+            | Self::Restarting => None,
             Self::Lock
             | Self::Settings
             | Self::Fed

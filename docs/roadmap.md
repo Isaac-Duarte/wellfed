@@ -53,6 +53,7 @@ What works today and what comes next, for the replacement firmware, the tools ar
 | Statistics and per-feed traces | Experimental | |
 | Lights and sound settings | Works | Lights and sound windows, volume-0 mute and a beep on every button press, checked on the bench. |
 | Desiccant reminder | Works | Counted on the feeder from the last replacement; the period and the date survive a reboot. |
+| Alerts on the feeder | Experimental | The rules and the read run in simulation. The app shows none yet; `wellfed alerts` prints them. |
 | Meal reminder | Works | An event on the event stream before each scheduled meal, repeated once after a reboot inside the lead. |
 | Skip a meal | Experimental | Skip a plan's next meal today, or undo it until it is due, from the app's Today tab, `wellfed plans skip` or the server. On the research unit, from the CLI, skipped daily and one-time meals neither reminded nor fed, and an undone skip reminded and fed once. The feeder's refusals, the server and the app ran in simulation only. |
 | Meal call | Works | Your own clip, uploaded from the app or CLI, plays before each meal whose plan asks for it, ending as the meal is due; muted with the sound off. Checked by ear on the feeder at low, middle and full volume. |

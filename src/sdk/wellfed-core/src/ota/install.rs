@@ -112,6 +112,23 @@ pub struct Progress {
     /// Bank 0 as bank 1 last checked it; always [`Bank0Check::Unchecked`]
     /// on bank 0, which records itself instead.
     pub bank0: Bank0Check,
+    /// What the update store says about a candidate.
+    pub candidate: CandidateState,
+}
+
+/// What the update store holds, which outlives a restart. Both states are
+/// written before the restart that needs them: a give-way's `Pending` before
+/// bank 1's marker is cleared, an activation's `Activated` before its marker
+/// is programmed. So the next boot can tell how it got there. A store that
+/// can't be read shows `None`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CandidateState {
+    #[default]
+    None,
+    /// Bank 1 gave way for it, or bank 0 accepted it.
+    Pending,
+    /// Bank 0 activated it, and no build has confirmed it.
+    Activated,
 }
 
 impl Progress {
@@ -127,6 +144,7 @@ impl Progress {
             wanted: [None; WANTED],
             stopped: None,
             bank0: Bank0Check::Unchecked,
+            candidate: CandidateState::None,
         }
     }
 

@@ -235,6 +235,9 @@ view_enum! {
         Food => "food",
         Skipped => "skipped",
         Unskipped => "unskipped",
+        UpdateStop => "update_stop",
+        UpdateAtBoot => "update_at_boot",
+        Restarting => "restarting",
     }
 }
 
@@ -263,6 +266,9 @@ impl From<&model::EventBody> for EventKind {
             model::EventBody::Feeder(model::FeederEvent::Food { .. }) => Self::Food,
             model::EventBody::Feeder(model::FeederEvent::Skipped { .. }) => Self::Skipped,
             model::EventBody::Feeder(model::FeederEvent::Unskipped { .. }) => Self::Unskipped,
+            model::EventBody::Core(model::CoreEvent::UpdateStop { .. }) => Self::UpdateStop,
+            model::EventBody::Core(model::CoreEvent::UpdateAtBoot { .. }) => Self::UpdateAtBoot,
+            model::EventBody::Core(model::CoreEvent::Restarting) => Self::Restarting,
         }
     }
 }

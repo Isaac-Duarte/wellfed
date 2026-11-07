@@ -32,10 +32,10 @@ use wellfed_core::ota::install::{Answer, Phase};
 use wellfed_core::ota::offer::{KeyStatement, key_id};
 use wellfed_core::tone::Tune;
 use wellfed_proto::api::{
-    self as proto, BANK1_PAGE_MAX, Bank1Page, Battery, Desiccant, DeviceStatus, EventBody,
-    FeederStatus, FrozenRefusal, Metric, PORT, Power, Readiness, Refusal, Sample, Source, Stats,
-    StatsSection, Status, Supply, TASKS_MAX, TaskStack as WireTask, TracePage, UpdateRefusal,
-    UpdateView,
+    self as proto, AlertsView, BANK1_PAGE_MAX, Bank1Page, Battery, Desiccant, DeviceStatus,
+    EventBody, FeederStatus, FrozenRefusal, Metric, PORT, Power, Readiness, Refusal, Sample,
+    Source, Stats, StatsSection, Status, Supply, TASKS_MAX, TaskStack as WireTask, TracePage,
+    UpdateRefusal, UpdateView,
 };
 use wellfed_proto::device::Model;
 use wellfed_proto::trace::PAGE_MAX;
@@ -271,6 +271,11 @@ impl<S: Copy> Serve<S> {
     /// from.
     pub(super) fn stats_parts(&mut self) -> (&mut Keeper, &mut TaskCache, &mut [u8; PAGE_BYTES]) {
         (&mut self.stats, &mut self.tasks, &mut self.page)
+    }
+
+    /// This boot's `Boot` has been recorded.
+    pub const fn booted(&self) -> bool {
+        self.boot.is_some()
     }
 
     /// This boot's facts, read once.
@@ -834,12 +839,7 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
         let link = self.platform.link();
         let settings = self.platform.settings();
         let settings_generation = settings.map_or(0, |view| view.generation);
-        let today = self.today(now_ms);
-        let desiccant = match settings.map(|view| view.desiccant(today)) {
-            Some(Count::Remaining(days)) => Desiccant::Remaining { days },
-            Some(Count::Unset) => Desiccant::Unset,
-            Some(Count::Unknown) | None => Desiccant::Unknown,
-        };
+        let desiccant = desiccant_now(self.platform, now_ms);
         let wifi_generation = match self.platform.wifi() {
             WifiResult::Current { view, .. } => view.generation,
             _ => 0,
@@ -875,6 +875,7 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
                 feed_fault: self.stats.feed_fault(),
                 readiness: FeederDevice::readiness(self),
                 supply: self.supply,
+                alerts_generation: self.platform.alerts().generation(),
             }),
         }
     }
@@ -968,12 +969,18 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
     }
 
     fn epoch(&self) -> Option<u32> {
-        self.platform.epoch()
+        // On bank 1 no session is welcomed while the alert rules' boot read
+        // has its first seconds to itself. Bank 0 is the recovery bank, there
+        // for installs: an installer reconnecting after a give-way is
+        // welcomed as soon as the ring opens, and the read shares the turns.
+        let epoch = self.platform.epoch()?;
+        (self.boot.bank == 0 || self.platform.alerts().welcoming()).then_some(epoch)
     }
 
     fn reboot(&mut self) {
         // The writer's restart save takes this boot's counts as they are now.
         self.platform.hand_counts(self.stats.counts(self.now_ms));
+        events::record(self.platform, self.now_ms, EventBody::Restarting);
         self.platform.reset();
     }
 
@@ -1101,8 +1108,12 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
 
 impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
     fn today(&mut self, now_ms: u32) -> Option<i32> {
-        let reading = self.platform.clock_state(now_ms).reading?;
-        desiccant::today(&reading)
+        today(self.platform, now_ms)
+    }
+
+    fn alerts(&mut self) -> Option<AlertsView> {
+        let epoch = self.platform.epoch()?;
+        Some(self.platform.alerts().view(epoch))
     }
 
     fn settings(&mut self, change: SettingsFields) -> SettingsResult {
@@ -1302,5 +1313,22 @@ impl<P: Platform, F: Feeds> FeederDevice for DeviceView<'_, P, F> {
             total: read.total,
             bytes: self.page.get(..read.len).unwrap_or(&[]),
         })
+    }
+}
+
+/// The local calendar day, while the clock is valid.
+fn today<P: Platform>(platform: &mut P, now_ms: u32) -> Option<i32> {
+    let reading = platform.clock_state(now_ms).reading?;
+    desiccant::today(&reading)
+}
+
+/// The desiccant reminder as it stands at `now_ms`, as the status and the
+/// alert rules read it.
+pub(super) fn desiccant_now<P: Platform>(platform: &mut P, now_ms: u32) -> Desiccant {
+    let today = today(platform, now_ms);
+    match platform.settings().map(|view| view.desiccant(today)) {
+        Some(Count::Remaining(days)) => Desiccant::Remaining { days },
+        Some(Count::Unset) => Desiccant::Unset,
+        Some(Count::Unknown) | None => Desiccant::Unknown,
     }
 }

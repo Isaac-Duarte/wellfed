@@ -35,6 +35,7 @@ From the bottom up:
 | Peripherals | Buttons, lights, speaker, clock and power | [Buttons](buttons.md), [indicators](indicators.md) and their [bench check](indicators-bench-check.md), [audio](audio.md), [clock](clock.md) and its [bench checks](clock-bench-checks.md), [power](power.md) and its [bench checks](power-bench-checks.md), [optical inputs](optical-inputs.md) |
 | Schedules | Feeding plans: when each runs, at most once | [Schedules](schedules.md) |
 | Reminders | The desiccant reminder's count, from the last replacement | [Desiccant reminder](desiccant.md) |
+| Alerts | The feeder's table of what is wrong, for every client to read | [Alerts](alerts.md) |
 | Bring-up and devices | The probes that first brought the hardware up, the QA self-test, and how a second model or kind slots in | [Bring-up probes](bring-up-probes.md), [QA firmware](qa.md), [device kinds](device-kinds.md) |
 
 The design behind all of this, from "one firmware, server optional" to the choice of Noise, is in [product architecture](product-architecture.md). Whether it fits the chip is measured in [resource budget](resource-budget.md), with its [scheduling gap check](scheduling-gap-check.md). How a stock feeder moves to Wellfed, and back, is in [consumer installation](consumer-installation.md).
