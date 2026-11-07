@@ -24,7 +24,11 @@
 //! which lines are data: a literal pool or a jump table the compiler marked,
 //! whose decoding means nothing and whose words are the addresses a function
 //! loads. Anything in code that still doesn't decode is refused
-//! ([`StackError::Undecoded`]), as is an image with no mapping symbols.
+//! ([`StackError::Undecoded`]), as is an image with no mapping symbols, two
+//! mapping symbols that disagree at one address, and a function that starts
+//! where no Thumb symbol says code runs. A pool decoded as Thumb can also
+//! leave objdump in an IT block, so the code after it prints conditional
+//! (`pushhi`): every instruction pattern takes a condition.
 //!
 //! An indirect call (`blx rN`, or a tail call `bx rN`) is bounded by what it can reach:
 //! - inside `core::fmt`, by the deepest formatting method in the image
@@ -130,6 +134,17 @@ pub enum StackError {
     },
     #[error("The linked image has no mapping symbols, so its code cannot be told from its data")]
     NoMappingSymbols,
+    /// Two mapping symbols at one address name different kinds: which one
+    /// readelf lists last would decide what the bytes are.
+    #[error("Mapping symbols at {address:#x} disagree on whether it is Thumb, ARM or data")]
+    MappingConflict { address: u64 },
+    /// A function in the image starts where no Thumb mapping symbol says code
+    /// runs, so its bytes would be read as data or refused one by one.
+    #[error(
+        "{function} starts at {address:#x}, which no Thumb mapping symbol marks as code: \
+         the stack audit cannot read it"
+    )]
+    NotCode { function: String, address: u64 },
     #[error("No application task entries found in the linked image")]
     NoTasks,
     #[error(
@@ -315,22 +330,32 @@ static DECLARED: LazyLock<Regex> = LazyLock::new(|| {
 });
 static CONSTANT: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"const (\w+): u16 = (\d+);").expect("stack audit pattern"));
+/// A condition suffix, as objdump prints it on an instruction in an IT block.
+///
+/// Every instruction pattern below takes one. A real conditional prologue or
+/// call is rare, and counting it is the safe direction. But with the mapping
+/// symbols stripped, objdump decodes a literal pool's halfwords as Thumb too,
+/// and one that reads as `it` or `ittee` puts the real code after the pool in
+/// an IT block of objdump's making: `push` prints as `pushhi`, `sub sp` as
+/// `subhi sp`. Those decode, so nothing refuses them, and a plain-mnemonic
+/// pattern would drop the frame or the call without a word.
+const COND: &str = "(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al)?";
+
+fn pattern(template: &str) -> Regex {
+    Regex::new(&template.replace("{C}", COND)).expect("stack audit pattern")
+}
+
 /// A direct call or tail call, conditional ones included: `blne` in an IT
 /// block and `bne.w` both leave the function. A branch inside the function
 /// names an offset (`<name+0x12>`), which the target's pattern leaves out.
-static CALL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(concat!(
-        r"\t(?:bl|blx|b)(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)?(?:\.[nw])?",
-        r"\t[0-9a-f]+ <([^>+]+)>",
-    ))
-    .expect("stack audit pattern")
-});
+static CALL: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"\t(?:bl|blx|b){C}(?:\.[nw])?\t[0-9a-f]+ <([^>+]+)>"));
 /// A call or tail call through a register. objdump names r9 to r12 `sb`, `sl`,
 /// `fp` and `ip`, and a tail call through a pointer is `bx rN` (`bx ip` in
 /// vendor C and `core::fmt`). `bx lr` is a return, not a call. A linker
 /// veneer's `bx ip` is not counted: its target comes from its name.
 static INDIRECT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\tbl?x\t(?:r\d+|sb|sl|fp|ip)\b").expect("stack audit pattern"));
+    LazyLock::new(|| pattern(r"\tbl?x{C}(?:\.n)?\t(?:r\d+|sb|sl|fp|ip)\b"));
 /// Every task creation or declaration, whatever its shape: [`TASK`] and
 /// [`DECLARED`] must account for each. A `Task` built by hand is one neither
 /// reads, so it is refused.
@@ -356,12 +381,18 @@ static LINE_COMMENT: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"//[^\n]*").expect("stack audit pattern"));
 /// Half of an address built in a register: `movw r0, #51187` (low) then
 /// `movt r0, #3585` (high).
-static MOVE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^mov([wt])\s+(\w+), #(\d+)").expect("stack audit pattern"));
+static MOVE: LazyLock<Regex> = LazyLock::new(|| pattern(r"^mov([wt]){C}\s+(\w+), #(\d+)"));
 /// A mapping symbol as `readelf -s` lists it: its address, and `t` for Thumb,
 /// `a` for ARM or `d` for data. LLVM numbers them (`$d.12`).
 static MAPPING: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^\s*\d+:\s+([0-9a-f]+)\s+\d+\s+\S+\s+\S+\s+\S+\s+\S+\s+\$([atd])(?:\.\S*)?\s*$")
+        .expect("stack audit pattern")
+});
+/// A function symbol in one of the image's sections, as `readelf -s` lists
+/// it: its address (bit 0 set for Thumb) and name. ROM functions are
+/// absolute (`ABS`), with no bytes in the image, and are left out.
+static FUNC: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*\d+:\s+([0-9a-f]+)\s+\d+\s+FUNC\s+\S+\s+\S+\s+\d+\s+(\S+)\s*$")
         .expect("stack audit pattern")
 });
 /// A listed line: its address, then its bytes.
@@ -379,21 +410,17 @@ static FMT_METHOD: LazyLock<Regex> = LazyLock::new(|| {
     )
     .expect("stack audit pattern")
 });
-static PUSH: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(?:push(?:\.w)?|stmdb(?:\.w)?\s+sp!,)\s*\{([^}]*)\}")
-        .expect("stack audit pattern")
-});
-static VPUSH: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^vpush\s*\{d(\d+)-d(\d+)\}").expect("stack audit pattern"));
+static PUSH: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"^(?:push{C}(?:\.w)?|stmdb{C}(?:\.w)?\s+sp!,)\s*\{([^}]*)\}"));
+static VPUSH: LazyLock<Regex> = LazyLock::new(|| pattern(r"^vpush{C}\s*\{d(\d+)-d(\d+)\}"));
 /// A prologue slot saved by writeback: LLVM keeps `push` to the low registers
 /// and the frame pointer's pair, then saves the rest as `str.w fp, [sp, #-4]!`.
-static WRITEBACK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^str(?:\.w)?\s+\w+,\s*\[sp,\s*#-(\d+)\]!").expect("stack audit pattern")
-});
+static WRITEBACK: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"^str{C}(?:\.w)?\s+\w+,\s*\[sp,\s*#-(\d+)\]!"));
 static SUB: LazyLock<Regex> = LazyLock::new(|| {
     // `subw` is Thumb-2's 12-bit-immediate form, which LLVM picks for frames
     // up to 4 KiB; missing it hid curve25519's 1948-byte frame.
-    Regex::new(r"^sub(?:w|\.w)?\s+sp,\s*(?:sp,\s*)?#(\d+)").expect("stack audit pattern")
+    pattern(r"^sub(?:w)?{C}(?:\.w)?\s+sp,\s*(?:sp,\s*)?#(\d+)")
 });
 
 /// {entry function name: (task name, stack bytes)} from the task sources.
@@ -460,18 +487,41 @@ enum Mapped {
 struct CodeMap(BTreeMap<u64, Mapped>);
 
 impl CodeMap {
-    fn read(symbols: &str) -> Self {
-        let symbol = |line| {
-            let found = MAPPING.captures(line)?;
-            let address = u64::from_str_radix(&found[1], 16).ok()?;
+    /// The mapping symbols in `readelf -sW`'s `symbols`. Refuses two that
+    /// disagree at one address, and a function in the image's sections that
+    /// starts where no Thumb symbol says code runs: either would leave what
+    /// the bytes are to the order readelf lists them in, or read a function
+    /// as data without a word.
+    fn read(symbols: &str) -> std::result::Result<Self, StackError> {
+        let mut map = BTreeMap::new();
+        for found in symbols.lines().filter_map(|line| MAPPING.captures(line)) {
+            let Ok(address) = u64::from_str_radix(&found[1], 16) else {
+                continue;
+            };
             let mapped = match &found[2] {
                 "t" => Mapped::Thumb,
                 "a" => Mapped::Arm,
                 _ => Mapped::Data,
             };
-            Some((address, mapped))
-        };
-        Self(symbols.lines().filter_map(symbol).collect())
+            if *map.entry(address).or_insert(mapped) != mapped {
+                return Err(StackError::MappingConflict { address });
+            }
+        }
+        let map = Self(map);
+
+        for found in symbols.lines().filter_map(|line| FUNC.captures(line)) {
+            let Ok(value) = u64::from_str_radix(&found[1], 16) else {
+                continue;
+            };
+            let address = value & !1;
+            require(map.at(address) == Some(Mapped::Thumb), || {
+                StackError::NotCode {
+                    function: demangle(&found[2]),
+                    address,
+                }
+            })?;
+        }
+        Ok(map)
     }
 
     /// `None` before the first symbol.
@@ -929,7 +979,7 @@ fn veneer(name: &str) -> Option<&str> {
 
 /// The listing of `elf` with its mapping symbols stripped, and the symbols.
 fn listing(elf: &Path, binutils: &Binutils) -> Result<(String, CodeMap)> {
-    let map = CodeMap::read(&tool(&binutils.readelf(), &["-sW"], elf)?);
+    let map = CodeMap::read(&tool(&binutils.readelf(), &["-sW"], elf)?)?;
     if map.0.is_empty() {
         return Err(StackError::NoMappingSymbols.into());
     }
@@ -1514,7 +1564,7 @@ mod tests {
    14: 0e0014cc     0 NOTYPE  LOCAL  DEFAULT    3 $t.18
    15: 0e0014cc     4 FUNC    GLOBAL DEFAULT    3 dns_send
 ";
-        let map = CodeMap::read(symbols);
+        let map = CodeMap::read(symbols).unwrap();
 
         assert_eq!(map.0.len(), 3);
         assert_eq!(map.at(0x0e00_138f), None);
@@ -1631,6 +1681,109 @@ mod tests {
                 address: 0x1000,
                 ..
             }
+        ));
+    }
+
+    /// A pool word that decodes as `itttt hi` leaves objdump's IT state on,
+    /// so the next function's real prologue and calls print conditional.
+    /// They decode, so only the patterns can keep them.
+    #[test]
+    fn a_prologue_and_calls_after_an_it_decoded_from_data_still_count() {
+        let listing = "\
+00001000 <before>:
+    1000:\tb500      \tpush\t{lr}
+    1002:\tbd00      \tpop\t{pc}
+    1004:\tbf88      \tit\thi
+    1006:\tbf81      \titttt\thi
+
+00001008 <after>:
+    1008:\tb510      \tpushhi\t{r4, lr}
+    100a:\tb082      \tsubhi\tsp, #8
+    100c:\tf000 f800 \tblhi\t2000 <other>
+    1010:\t4798      \tblxhi\tr3
+    1012:\tf2c0 0000 \tmovthi\tr0, #0
+";
+        let map = CodeMap(
+            [
+                (0x1000, Mapped::Thumb),
+                (0x1004, Mapped::Data),
+                (0x1008, Mapped::Thumb),
+            ]
+            .into(),
+        );
+        let functions: HashMap<String, Function> = frames(listing, &map).into_iter().collect();
+        let after = &functions["after"];
+
+        assert_eq!(after.frame, 8 + 8);
+        assert!(after.calls.contains("other"), "{:?}", after.calls);
+        assert!(after.indirect);
+        assert!(all_decoded(&functions).is_ok());
+    }
+
+    /// Each pattern also takes a condition on a prologue that really has one.
+    #[test]
+    fn every_instruction_pattern_takes_a_condition() {
+        assert_eq!(
+            &PUSH.captures("pushls\t{r4, r5, r6, lr}").unwrap()[1],
+            "r4, r5, r6, lr"
+        );
+        assert_eq!(
+            &PUSH.captures("stmdbhi.w\tsp!, {r4, lr}").unwrap()[1],
+            "r4, lr"
+        );
+        assert_eq!(&VPUSH.captures("vpushne\t{d8-d9}").unwrap()[2], "9");
+        assert_eq!(
+            &WRITEBACK.captures("strhi.w\tfp, [sp, #-4]!").unwrap()[1],
+            "4"
+        );
+        assert_eq!(&SUB.captures("subhi\tsp, #112").unwrap()[1], "112");
+        assert_eq!(&SUB.captures("subwls\tsp, sp, #1032").unwrap()[1], "1032");
+        assert_eq!(&SUB.captures("subhi.w\tsp, sp, #1032").unwrap()[1], "1032");
+        assert_eq!(&MOVE.captures("movwhi\tr0, #4097").unwrap()[3], "4097");
+        assert!(INDIRECT.is_match("    1010:\t4798      \tblxhi\tr3"));
+        assert!(!INDIRECT.is_match("    1010:\t4770      \tbxhi\tlr"));
+    }
+
+    #[test]
+    fn mapping_symbols_that_disagree_at_one_address_are_refused() {
+        let symbols = "\
+   12: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $t
+   13: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $t.4
+";
+        assert_eq!(CodeMap::read(symbols).unwrap().0.len(), 1);
+
+        let symbols = "\
+   12: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $t
+   13: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $d.4
+";
+        assert!(matches!(
+            CodeMap::read(symbols),
+            Err(StackError::MappingConflict {
+                address: 0x0e00_1390
+            })
+        ));
+    }
+
+    /// A function symbol the mapping symbols call data is refused, wherever
+    /// readelf lists it: its code would be read as a pool. A ROM function,
+    /// with no bytes in the image, is not the map's to judge, and neither is
+    /// an object: the listing heads a table in a code section too.
+    #[test]
+    fn a_function_that_starts_outside_thumb_code_is_refused() {
+        let symbols = "\
+   12: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $t
+   13: 0e0014b8     0 NOTYPE  LOCAL  DEFAULT    3 $d.17
+   14: 0e001391    40 FUNC    GLOBAL DEFAULT    3 dns_send
+   15: 00001234    40 FUNC    GLOBAL DEFAULT  ABS rom_memcpy
+   16: 0e0014b9    18 OBJECT  LOCAL  DEFAULT    3 GDMA_IrqNum
+";
+        assert!(CodeMap::read(symbols).is_ok());
+
+        let symbols =
+            format!("{symbols}   17: 0e0014c1    12 FUNC    LOCAL  DEFAULT    3 hidden\n");
+        assert!(matches!(
+            CodeMap::read(&symbols),
+            Err(StackError::NotCode { function, address: 0x0e00_14c0 }) if function == "hidden"
         ));
     }
 
