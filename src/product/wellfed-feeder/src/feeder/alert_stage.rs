@@ -163,8 +163,10 @@ impl AlertStage {
         }
         self.look_ms = Some(now_ms.wrapping_add(LOOK_MS));
 
+        let wall_ms = platform.wall_ms(now_ms);
         let readings = Readings {
-            wall_s: wall_seconds(platform, now_ms),
+            wall_s: wall_ms.map(seconds),
+            zoned: wall_ms.is_some_and(|ms| platform.offset_at(ms).is_some()),
             blocked: match inputs.ready {
                 Readiness::Blocked(reason) => Some(reason),
                 Readiness::Ready => inputs.meal_held,

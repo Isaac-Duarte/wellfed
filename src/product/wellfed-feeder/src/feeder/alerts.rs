@@ -61,7 +61,7 @@ use wellfed_proto::api::{
 /// Slots in the table. A read and the frame carry at most this many.
 pub const CAPACITY: usize = ALERTS_MAX;
 /// The conditions that can be open at once, repeated restarts among them.
-/// There are eight, but stuck plans need a valid clock and no clock needs none.
+/// There are eight, but stuck plans need local time and no clock needs none.
 const CONDITIONS: usize = 7;
 const _: () = assert!(CONDITIONS < CAPACITY, "a condition always finds room");
 
@@ -117,6 +117,10 @@ type Stamp = Option<NonZeroU32>;
 pub struct Readings {
     /// The wall clock in Unix seconds, if it is valid.
     pub wall_s: Option<u32>,
+    /// The zone's rule or a client's sync gives an offset at the wall clock.
+    /// Without one the schedule holds every plan just as without a clock:
+    /// an NTP fix carries no offset, and a sync's lives in RAM.
+    pub zoned: bool,
     /// Why no feed can start now: readiness, or the reason the schedule is
     /// holding a meal.
     pub blocked: Option<Blocked>,
@@ -525,10 +529,10 @@ impl Alerts {
     fn conditions(&mut self, now_ms: u32, readings: &Readings) {
         let at = readings.wall_s.and_then(NonZeroU32::new);
 
-        if self
-            .no_clock
-            .past(readings.wall_s.is_none(), now_ms, NO_CLOCK_MS)
-        {
+        // No local time is no clock to the plans: the feeder can't tell
+        // when a meal is due, so none runs and none is missed.
+        let no_local_time = readings.wall_s.is_none() || !readings.zoned;
+        if self.no_clock.past(no_local_time, now_ms, NO_CLOCK_MS) {
             self.condition(now_ms, at, Alert::NoClock);
         } else {
             self.close(AlertKind::NoClock);
@@ -545,8 +549,8 @@ impl Alerts {
             None => self.close(AlertKind::CannotFeed),
         }
 
-        // With no clock no meal is due, and `NoClock` says so.
-        let unsettled = readings.wall_s.is_some() && !readings.plans_settled;
+        // With no local time no meal is due, and `NoClock` says so.
+        let unsettled = !no_local_time && !readings.plans_settled;
         if self.plans_stuck.past(unsettled, now_ms, PLANS_STUCK_MS) {
             self.condition(now_ms, at, Alert::PlansStuck);
         } else {

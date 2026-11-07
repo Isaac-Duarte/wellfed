@@ -14,6 +14,7 @@ const WATCHDOG: u32 = 1 << 17;
 fn calm() -> Readings {
     Readings {
         wall_s: Some(WALL),
+        zoned: true,
         blocked: None,
         food: Some(true),
         feeding: false,
@@ -1241,6 +1242,30 @@ fn no_clock_opens_past_its_threshold_and_ends_with_the_state() {
     assert_eq!(kinds(&alerts), []);
 }
 
+/// NTP sets the clock after a cold boot but carries no offset, and a
+/// client's sync lived in RAM: with no zone rule, every plan holds. That is
+/// no clock to the meals, and says so after the same hour.
+#[test]
+fn a_valid_clock_with_no_zone_offset_opens_no_clock() {
+    let mut alerts = settled();
+    let unzoned = Readings {
+        zoned: false,
+        plans_settled: false,
+        ..calm()
+    };
+
+    alerts.step(1000, &unzoned);
+    alerts.step(1000 + NO_CLOCK_MS - 1, &unzoned);
+    assert_eq!(kinds(&alerts), []);
+
+    // Stuck plans need local time too, so the two never open together.
+    alerts.step(1000 + NO_CLOCK_MS, &unzoned);
+    assert_eq!(kinds(&alerts), [AlertKind::NoClock]);
+
+    alerts.step(1001 + NO_CLOCK_MS, &calm());
+    assert_eq!(kinds(&alerts), []);
+}
+
 #[test]
 fn a_condition_past_its_threshold_survives_the_uptime_wrapping() {
     let mut alerts = settled();
@@ -1666,6 +1691,7 @@ fn a_condition_always_finds_room_and_is_never_pushed_out() {
     alerts.event(1, Some(WALL), &done(99, 5, FoodLevel::Low));
     let all = Readings {
         wall_s: None,
+        zoned: false,
         blocked: Some(Blocked::Fault),
         food: Some(false),
         feeding: false,

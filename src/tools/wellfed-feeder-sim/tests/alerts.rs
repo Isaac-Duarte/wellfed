@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use wellfed_core::buttons::{Button, Buttons, Gesture};
-use wellfed_core::clock::wall::{Origin, Sync};
+use wellfed_core::clock::wall::{Fix, Origin, Sync};
 use wellfed_core::feed::controller::FeedReason as CoreReason;
 use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_device::store::events::Read;
@@ -221,6 +221,45 @@ fn a_skipped_meal_opens_no_meal_alert() {
     feeder.run(2 * MINUTE_MS);
     assert!(feeder.sim.platform().alerts().is_restored());
     assert_eq!(feeder.open_kinds(), []);
+}
+
+/// After a cold boot NTP sets the clock but carries no offset, and the
+/// offset a client's sync gave lived in RAM. With no zone rule stored, every
+/// plan holds: no meal runs and none is missed, so only `NoClock` can say so.
+#[test]
+fn a_clock_from_ntp_with_no_zone_opens_no_clock() {
+    let mut feeder = Feeder::new(true);
+    feeder.sync(WEDNESDAY);
+    feeder.put(table(&[(0, plan(30, 1))]));
+    feeder.restart(0);
+
+    let now = feeder.now;
+    let fix = Fix {
+        unix_ms: WEDNESDAY + 5 * MINUTE_MS,
+        error_ms: 25,
+        origin: Origin::Ntp,
+    };
+    feeder.sim.platform().time_fix(now, fix).unwrap();
+    feeder.run(HOUR_MS - MINUTE_MS);
+    assert!(feeder.sim.platform().wall_ms(feeder.now).is_some());
+    assert_eq!(feeder.open_kinds(), []);
+
+    feeder.run(2 * MINUTE_MS);
+    assert_eq!(feeder.open_kinds(), [AlertKind::NoClock]);
+    let events = feeder.events();
+    assert!(
+        !events
+            .iter()
+            .any(|(_, body)| matches!(body, EventBody::Fed { .. } | EventBody::Missed { .. })),
+        "the meal held: {events:?}"
+    );
+
+    // A client's sync gives local time: the condition ends, and the meal it
+    // held, now past its grace, is reported missed.
+    let wall = feeder.sim.platform().wall_ms(feeder.now).unwrap();
+    feeder.sync(wall);
+    feeder.run(2 * MINUTE_MS);
+    assert_eq!(feeder.open_kinds(), [AlertKind::MealMissed]);
 }
 
 #[test]

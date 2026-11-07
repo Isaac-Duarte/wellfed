@@ -23,9 +23,9 @@ A **condition** opens once its state has held past its threshold, and closes whe
 | `MealFailed`, `MealUncertain` | Report | `Fed` at the recorder, `Failed`, `Expired` or `Uncertain` | The boot read |
 | `MealMissed` | Report | `Missed` at the recorder | The boot read |
 | `MealNoRecord` | Report | A plan's latest due time against the schedule's mark, 25 minutes on, with a valid clock. A skipped meal is at the mark, so it never opens this | Worked out again |
-| `NoClock` | Condition | No valid clock for 1 hour of uptime | The timer starts again |
+| `NoClock` | Condition | No local time for 1 hour of uptime: no valid clock, or a valid one with no zone offset | The timer starts again |
 | `CannotFeed` | Condition | Readiness, or the reason the schedule holds a meal, for 30 minutes. A plan's claim the writer hasn't finished after 30 s opens it sooner, with the reason it blocks | The timer starts again |
-| `PlansStuck` | Condition | With a valid clock, for 25 minutes, plans still loading or a change to them never finishing, so no meal can be judged. Readiness takes nothing from this | The timer starts again |
+| `PlansStuck` | Condition | With local time, for 25 minutes, plans still loading or a change to them never finishing, so no meal can be judged. Readiness takes nothing from this | The timer starts again |
 | `FoodLow` | Condition | The food beam's latest reading | Live |
 | `FoodLikelyOut` | Condition | Five portions confirmed since the beam read low. There is no empty reading. A feed whose own reading went low counts none of its portions, since the beam may have read low at its end | The count comes back from the boot read |
 | `DesiccantDue` | Condition | The desiccant count at 0 or below | Live |
@@ -57,7 +57,7 @@ A **condition** opens once its state has held past its threshold, and closes whe
 
 So faults count, a stale brownout bit counts, a restart after Wi-Fi fails to start counts, and so does a reset in the middle of an install. A power-on with no flags set doesn't.
 
-**No valid clock.** The feeder then works out no due times, so a meal it isn't running stays silent until `NoClock` opens at 1 hour.
+**No local time.** Without a valid clock, or with one but no zone offset, the feeder works out no due times and holds every plan ([schedules](schedules.md)), so a meal it isn't running stays silent until `NoClock` opens at 1 hour. The second case is a cold boot that NTP sets with no zone rule stored: NTP carries no offset, and a client's sync kept its offset in RAM. The app stores the phone's zone on a feeder it has just paired, but a feeder paired from the CLI, or whose owner cleared the zone, has none. Once local time returns, a meal held past its grace is reported missed.
 
 **A skipped meal.** A client's `SkipMeal` moves the plan's mark up to the meal it skips ([schedules](schedules.md)), so the meal never runs and is never reported missed. The rules judge it as one the schedule already passed, so it opens no meal alert of any kind. The `Skipped` and `Unskipped` events open nothing either.
 
