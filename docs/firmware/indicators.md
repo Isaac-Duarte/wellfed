@@ -63,7 +63,7 @@ Startup still enables the indicators only from verified stopped outputs and leav
 
 - **Settings, as in stock.** With `lights` off, or outside the lights window on the local clock, every light is dark, faults included. The requests still hold, so the lights come back as they were. While the clock is invalid the window is open.
 - **Low food** shows the beam's latest reading, from a feed or a [window at rest](optical-inputs.md#reading-the-food-beam-at-rest). On the adapter it lights within seconds of a boot and clears within a minute of a refill. On batteries no window runs, so it holds the last reading until a feed.
-- **A feed** shows nothing of its own. It blinked the food light until November 6, 2026, which, red and labeled low food, read as a low-food warning in every feed.
+- **A feed** shows nothing of its own. The food light is the panel's red low-food light, so blinking it through a feed would read as a low-food warning.
 - **Missing time** has no indication yet; it waits for the light policy ([product architecture](product-architecture.md)).
 
 The loop steps the lights after readiness each pass. A change in what a light shows is logged once, not per blink edge: `PLIND1 show light=lock state=pairing`, or `state=none`. A failure is `PLIND1 fail light=… check=refused|input-mismatch|abort`.
