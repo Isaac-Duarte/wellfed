@@ -52,7 +52,7 @@ class SetAsideScreen extends StatelessWidget {
     StoreKind.app =>
       "This $deviceName's list of feeders and its server login start empty, but your feeders still know "
           'this $deviceName. To put one back on the list, stand at the feeder and use Add a feeder, then '
-          'Recover a feeder: it finds this $deviceName already allowed and changes nothing. Or ask someone '
+          'Recover a feeder. Or ask someone '
           'who uses the feeder for an invite. If you use a home server, log in to it again.',
     StoreKind.pending =>
       "The record of feeds and changes that hadn't been confirmed is gone, so a feed sent "

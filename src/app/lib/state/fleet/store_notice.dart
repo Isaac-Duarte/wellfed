@@ -37,7 +37,7 @@ class StoreNoticeFlow extends ChangeNotifier {
       _state = StoreNotice.of([app, router?.setAside()]);
 
   final PathRouter? _router;
-  final void Function()? _appRead;
+  final Future<void> Function()? _appRead;
   StoreNotice? _state;
 
   /// What is still to be said; `null` once read, or with nothing set aside.
@@ -46,18 +46,19 @@ class StoreNoticeFlow extends ChangeNotifier {
   /// The owner read it, and with [StoreNotice.holdsFeeds] looked in every
   /// feeder's bowl: feeds go again. It stays when the router could not write
   /// that down, so feeds still wait.
-  void read() {
+  Future<void> read() async {
     final StoreNotice? notice = _state;
     if (notice == null) return;
     // Each is written down before the notice goes, so a start after a
     // failure says it again; checking the bowls twice changes nothing.
     try {
       if (notice.holdsFeeds) _router?.bowlsChecked();
-      if (notice.files.any((file) => file.kind == StoreKind.app)) _appRead?.call();
+      if (notice.files.any((file) => file.kind == StoreKind.app)) await _appRead?.call();
     } on BridgeError catch (error) {
       debugPrint('the read notice could not be written down, so it stays: ${error.message}');
       return;
     }
+    if (!identical(_state, notice)) return;
     _state = null;
     notifyListeners();
   }

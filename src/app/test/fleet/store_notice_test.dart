@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/screens/home/set_aside.dart';
+import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/store_notice.dart';
 
@@ -19,7 +22,7 @@ Future<void> _show(WidgetTester tester, StoreNoticeFlow flow, {Brightness bright
       ListenableBuilder(
         listenable: flow,
         builder: (context, _) => switch (flow.state) {
-          final StoreNotice notice? => SetAsideScreen(notice: notice, onRead: flow.read),
+          final StoreNotice notice? => SetAsideScreen(notice: notice, onRead: () => unawaited(flow.read())),
           null => const Text('Home'),
         },
       ),
@@ -30,6 +33,27 @@ Future<void> _show(WidgetTester tester, StoreNoticeFlow flow, {Brightness bright
 }
 
 void main() {
+  test('the notice goes only once its clear is written, and stays when that fails', () async {
+    final clear = Completer<void>();
+    final flow = StoreNoticeFlow(app: _file(StoreKind.app, 'wellfed.json'), appRead: () => clear.future);
+    addTearDown(flow.dispose);
+
+    final Future<void> reading = flow.read();
+    await Future<void>.delayed(Duration.zero);
+    expect(flow.state, isNotNull, reason: 'still being written');
+    clear.complete();
+    await reading;
+    expect(flow.state, isNull);
+
+    final failing = StoreNoticeFlow(
+      app: _file(StoreKind.app, 'wellfed.json'),
+      appRead: () async => throw const BridgeError(kind: ErrorKind.store, message: 'disk full'),
+    );
+    addTearDown(failing.dispose);
+    await failing.read();
+    expect(failing.state, isNotNull);
+  });
+
   test('nothing set aside is no notice', () {
     final flow = StoreNoticeFlow(router: FakeRouter());
     addTearDown(flow.dispose);

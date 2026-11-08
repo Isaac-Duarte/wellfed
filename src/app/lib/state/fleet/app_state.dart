@@ -10,6 +10,7 @@ import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/fleet/one_at_a_time.dart';
 import 'package:wellfed/state/fleet/store_notice.dart';
 
 /// The feeders this phone knows, and what the flows that add one need of
@@ -110,12 +111,15 @@ final class AppFailed extends AppStart {
 class AppState extends ChangeNotifier implements FeederBook {
   AppState._(this.key, this._store, this._path, (PathRouter?, PinsProblem?) opened, SetAside? storeSetAside)
     : router = opened.$1,
-      pinsProblem = opened.$2,
-      notice = StoreNoticeFlow(
-        app: storeSetAside,
-        router: opened.$1,
-        appRead: () => storeNoticeRead(path: _path),
-      );
+      pinsProblem = opened.$2 {
+    // Clearing the notice rewrites the app's file, so it waits its turn
+    // behind any change still being written, as each change does.
+    notice = StoreNoticeFlow(
+      app: storeSetAside,
+      router: opened.$1,
+      appRead: () => _writing.run(() async => storeNoticeRead(path: _path)),
+    );
+  }
 
   /// The state of a phone with `key` and `store`, saved at `path`, its
   /// router `router` (none: the pins did not open) and the app's file set
@@ -146,14 +150,14 @@ class AppState extends ChangeNotifier implements FeederBook {
 
   /// The app's files this start set aside, until the owner has read what
   /// that means.
-  final StoreNoticeFlow notice;
+  late final StoreNoticeFlow notice;
 
   /// Feeders that paired since the app started, whose clock this phone has
   /// not set yet. In memory: a feeder with no clock is set whenever a
   /// session opens, whatever this holds.
   final _clockDue = <String>{};
 
-  Future<void> _writing = Future.value();
+  final _writing = OneAtATime();
 
   /// Start the app: [load], or why it could not.
   static Future<AppStart> start() async {
@@ -339,15 +343,10 @@ class AppState extends ChangeNotifier implements FeederBook {
   /// Change the file from what it holds now, not from this copy of it: an
   /// install's run saves a feeder there from Rust, before Dart hears of it.
   /// One at a time, so two changes do not read the same file.
-  Future<void> _update(AppStore Function(AppStore) change) {
-    final Future<void> done = _writing.then((_) async {
-      final AppStore store = change(await loadStore(path: _path));
-      await saveStore(path: _path, store: store);
-      _store = store;
-      notifyListeners();
-    });
-    // A failed write is its caller's to hear; the next one still goes.
-    _writing = done.catchError((Object _) {});
-    return done;
-  }
+  Future<void> _update(AppStore Function(AppStore) change) => _writing.run(() async {
+    final AppStore store = change(await loadStore(path: _path));
+    await saveStore(path: _path, store: store);
+    _store = store;
+    notifyListeners();
+  });
 }

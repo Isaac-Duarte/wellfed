@@ -285,7 +285,7 @@ class _WellfedAppState extends State<WellfedApp> {
     // the welcome.
     book: Listenable.merge([widget.app, _fleet, widget.app.notice]),
     root: (context) => switch (widget.app.notice.state) {
-      final StoreNotice notice? => SetAsideScreen(notice: notice, onRead: widget.app.notice.read),
+      final StoreNotice notice? => SetAsideScreen(notice: notice, onRead: () => unawaited(widget.app.notice.read())),
       null when _fleet.all.isEmpty => const WelcomeScreen(),
       null => HomeScreen(
         fleet: _fleet,
