@@ -43,6 +43,9 @@ pub struct Status {
     pub last_event: Option<u64>,
     /// Open device API sessions, the server's included.
     pub sessions: u8,
+    /// Changes when the device's table of open alerts does: read it again
+    /// then. Counts from 0 at each boot.
+    pub alerts_generation: Generation,
     /// What only this kind of device reports.
     pub device: DeviceStatus,
 }
@@ -101,9 +104,6 @@ pub struct FeederStatus {
     pub desiccant: Desiccant,
     /// The supply as the feeder judges it, with the pack's charge.
     pub supply: Supply,
-    /// Changes when the feeder's table of open alerts does: read it again
-    /// then. Counts from 0 at each boot.
-    pub alerts_generation: Generation,
 }
 
 /// The desiccant reminder, counted in the feeder's local calendar days
@@ -204,6 +204,8 @@ pub enum Blocked {
     Battery,
     /// A restart is coming within seconds.
     Restarting,
+    /// A value a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 impl Blocked {
@@ -235,11 +237,15 @@ impl Blocked {
             Self::Unserved => "unserved",
             Self::Battery => "battery",
             Self::Restarting => "restarting",
+            Self::Unknown => "unknown",
         }
     }
 
     pub fn from_code(code: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|reason| reason.code() == code)
+        Self::ALL
+            .into_iter()
+            .chain([Self::Unknown])
+            .find(|reason| reason.code() == code)
     }
 }
 
@@ -250,6 +256,8 @@ pub enum WifiSource {
     Build,
     Stored,
     Fallback,
+    /// A value a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

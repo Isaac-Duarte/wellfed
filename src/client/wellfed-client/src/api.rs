@@ -20,7 +20,8 @@
 //! [`Session`] directly to send what a well-behaved client never would.
 
 use wellfed_model::{
-    Answer, ClientRole, DeviceKind, Gap, Hello, Joined, Model, Op, OpenRefusal, Pushed, convert,
+    Answer, ClientRole, DeviceKind, Gap, Hello, Joined, Model, Op, OpenRefusal, Pushed, Refusal,
+    convert,
 };
 use wellfed_proto::api::{
     ClientMessage, DeviceMessage, FRAME_MAX, Join as JoinRequest, Op as WireOp, Open, PROLOGUE,
@@ -370,8 +371,11 @@ impl Session {
             }));
         };
 
-        let message: DeviceMessage<'_> =
-            wellfed_proto::decode(&plain).map_err(|_| Error::Malformed(Garbled::of(&plain)))?;
+        let Ok(message) = wellfed_proto::decode::<DeviceMessage<'_>>(&plain) else {
+            return unreadable(&plain)
+                .map(Some)
+                .ok_or_else(|| Error::Malformed(Garbled::of(&plain)));
+        };
         Ok(Some(match message {
             DeviceMessage::Response { id, result } => Incoming::Answer {
                 id,
@@ -441,6 +445,29 @@ impl Session {
         let sealed_len = transport.seal(&plain[..len], &mut sealed)?;
         frame(&sealed[..sealed_len])
     }
+}
+
+/// A response this build cannot decode, which a newer build sent: its id
+/// sits right after the message's tag, so the request it answers is still
+/// known, and the session goes on. An outcome tagged as a refusal is one this
+/// build cannot name; anything else is unreadable. The request may have run
+/// either way, so its caller treats a write answered so as uncertain.
+/// `None` for bytes that are no response at all, which end the session.
+fn unreadable(plain: &[u8]) -> Option<Incoming> {
+    // Postcard writes `DeviceMessage::Response` and `Outcome::Refused`, both
+    // frozen, as their one-byte indices.
+    const RESPONSE: u8 = 0;
+    const REFUSED: u8 = 1;
+
+    let (&RESPONSE, rest) = plain.split_first()? else {
+        return None;
+    };
+    let (id, outcome) = rest.split_first_chunk::<16>()?;
+    let answer = match outcome.first() {
+        Some(&REFUSED) => Answer::Refused(Refusal::Unknown),
+        _ => Answer::Unreadable,
+    };
+    Some(Incoming::Answer { id: *id, answer })
 }
 
 /// An invite as the issuing client shows it.
@@ -686,6 +713,37 @@ mod tests {
         );
         assert_eq!(session.next_incoming().unwrap(), None);
         assert!(!session.is_open());
+    }
+
+    /// A response a newer build sent that this one cannot decode still
+    /// answers its request: an unknown refusal by its tag, anything else
+    /// unreadable. Bytes that are no response at all are no answer, and
+    /// end the session as malformed.
+    #[test]
+    fn an_undecodable_response_answers_its_request() {
+        let id = [0x42; 16];
+        let mut refusal = vec![0];
+        refusal.extend_from_slice(&id);
+        refusal.extend_from_slice(&[1, 0x70]);
+        let mut outcome = vec![0];
+        outcome.extend_from_slice(&id);
+        outcome.extend_from_slice(&[0x70, 0x01, 0x02]);
+        assert_eq!(
+            unreadable(&refusal),
+            Some(Incoming::Answer {
+                id,
+                answer: Answer::Refused(Refusal::Unknown)
+            })
+        );
+        assert_eq!(
+            unreadable(&outcome),
+            Some(Incoming::Answer {
+                id,
+                answer: Answer::Unreadable
+            })
+        );
+        assert_eq!(unreadable(&[0x7f, 1, 2]), None);
+        assert_eq!(unreadable(&[0, 1, 2]), None);
     }
 
     #[test]

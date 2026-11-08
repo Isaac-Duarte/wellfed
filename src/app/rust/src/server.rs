@@ -369,6 +369,7 @@ impl From<FeederRefusal> for ServerRefusal {
             FeederRefusal::Portions => Self::Portions,
             FeederRefusal::NoClock => Self::NoClock,
             FeederRefusal::Unverified => Self::Unverified,
+            FeederRefusal::Unknown => Self::Unknown,
         }
     }
 }

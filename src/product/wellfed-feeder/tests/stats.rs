@@ -186,7 +186,7 @@ fn the_reset_cause_comes_from_the_rom_flags() {
     }
     let mut keeper = Keeper::new();
     keeper.boot(0x0010_0000);
-    assert_eq!(keeper.counters(0, None).reset, ResetCause::Watchdog);
+    assert_eq!(keeper.counters(0, None).reset, ResetCause::Watchdog.into());
 }
 
 #[test]

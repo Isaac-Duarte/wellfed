@@ -59,7 +59,7 @@ fn messages() -> Vec<Fixture> {
         reset_flags: 4,
         faults: 0,
         rssi: -50,
-        wifi: WifiSource::Stored,
+        wifi: WifiSource::Stored.into(),
         link_losses: 5,
         dns_losses: 6,
         clock_ms: Some(1_700_000_000_000),
@@ -70,24 +70,26 @@ fn messages() -> Vec<Fixture> {
         wifi_generation: 7,
         last_event: Some(8),
         sessions: 1,
+        alerts_generation: 14,
         device: DeviceStatus::Feeder(FeederStatus {
             locked: Some(false),
             settings_generation: 6,
             desiccant: Desiccant::Remaining { days: -3 },
-            food: FoodLevel::Present,
+            food: FoodLevel::Present.into(),
             feed_fault: Some(FeedFault {
                 feed: 13,
-                outcome: FeedOutcome::Failed,
-                reason: FeedReason::Jammed,
+                outcome: FeedOutcome::Failed.into(),
+                reason: FeedReason::Jammed.into(),
             }),
-            readiness: Readiness::Blocked(Blocked::Joining),
+            blocked: Some(Blocked::Joining.into()),
             supply: Supply {
                 adapter: Some(true),
                 battery: Battery::Absent,
                 below_floor: None,
             },
-            alerts_generation: 14,
+            ext: Tail::EMPTY,
         }),
+        ext: Tail::EMPTY,
     };
     let with_feeder = |change: fn(&mut FeederStatus)| {
         let DeviceStatus::Feeder(mut feeder) = status.device;
@@ -129,11 +131,11 @@ fn messages() -> Vec<Fixture> {
         feed: 9,
         requested: 3,
         completed: 3,
-        outcome: FeedOutcome::Done,
-        reason: FeedReason::Done,
+        outcome: FeedOutcome::Done.into(),
+        reason: FeedReason::Done.into(),
         drive_ms: 27_241,
         samples: 903,
-        unit: CurrentUnit::Scaled,
+        unit: CurrentUnit::Scaled.into(),
         current_peak: 168,
         current_mean: Some(59),
         rising: 3,
@@ -250,6 +252,7 @@ fn messages() -> Vec<Fixture> {
                     desiccant_reset: Some(20_389),
                     meal_reminder: MealReminder::Before { minutes: 10 },
                     writable: true,
+                    ext: Tail::EMPTY,
                 },
             )))),
             feeder,
@@ -348,9 +351,9 @@ fn messages() -> Vec<Fixture> {
                 rate_bound_ppb: 100_000,
                 learned: true,
                 syncs: 9,
-                last: Some(TimeSource::Ntp),
+                last: Some(TimeSource::Ntp.into()),
                 last_age_s: Some(60),
-                ntp_last: Some(NtpResult::Used),
+                ntp_last: Some(NtpResult::Used.into()),
             }))),
             feeder,
         ),
@@ -386,7 +389,7 @@ fn messages() -> Vec<Fixture> {
             "outcome-stats-counters",
             entry(&response(Outcome::Stats(Stats::Counters(Counters {
                 boot: counts,
-                reset: ResetCause::Watchdog,
+                reset: ResetCause::Watchdog.into(),
                 lifetime: Some(Counts {
                     uptime_s: 900_000,
                     ..counts
@@ -497,7 +500,7 @@ fn messages() -> Vec<Fixture> {
         (
             "outcome-feeder-status-ready",
             entry(&response(Outcome::Status(with_feeder(|feeder| {
-                feeder.readiness = Readiness::Ready;
+                feeder.blocked = None;
             })))),
             feeder,
         ),
@@ -556,7 +559,7 @@ fn messages() -> Vec<Fixture> {
                 traced: 2,
                 drive_ms: 36_313,
                 samples: 1_203,
-                unit: CurrentUnit::Scaled,
+                unit: CurrentUnit::Scaled.into(),
                 current_peak: 333,
                 current_mean: Some(60),
                 rising: 4,
@@ -692,7 +695,7 @@ fn messages() -> Vec<Fixture> {
         (
             "outcome-feeder-status-battery",
             entry(&response(Outcome::Status(with_feeder(|feeder| {
-                feeder.readiness = Readiness::Blocked(Blocked::Battery);
+                feeder.blocked = Some(Blocked::Battery.into());
                 feeder.supply = Supply {
                     adapter: Some(false),
                     battery: Battery::Reading {
@@ -994,22 +997,19 @@ fn messages() -> Vec<Fixture> {
         ("event-restarting", entry(&EventBody::Restarting), |b| {
             decode::<EventBody>(b).is_ok()
         }),
-        (
-            "op-get-alerts",
-            entry(&request(Op::Feeder(FeederOp::GetAlerts))),
-            client,
-        ),
+        ("op-get-alerts", entry(&request(Op::GetAlerts)), client),
         (
             "outcome-alerts",
-            entry(&response(Outcome::Feeder(FeederOutcome::Alerts(
-                AlertsView {
-                    epoch: 0x5a5a_5a5a,
-                    generation: 7,
-                    more: true,
-                    settling: false,
-                    alerts: alerts_table(),
+            entry(&response(Outcome::Alerts(AlertsView {
+                epoch: 0x5a5a_5a5a,
+                generation: 7,
+                more: true,
+                settling: false,
+                alerts: AlertTable {
+                    entries: alerts_table(),
+                    skipped: 0,
                 },
-            )))),
+            }))),
             feeder,
         ),
         (
@@ -1092,6 +1092,7 @@ fn plans() -> [Option<Plan>; PLANS_MAX] {
         days: 0x7f,
         enabled: true,
         call: 2,
+        ext: Tail::EMPTY,
     });
     plans[2] = Some(Plan {
         minute: 18 * 60,
@@ -1099,6 +1100,7 @@ fn plans() -> [Option<Plan>; PLANS_MAX] {
         days: 0,
         enabled: false,
         call: 0,
+        ext: Tail::EMPTY,
     });
     plans
 }

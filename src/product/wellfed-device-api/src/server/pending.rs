@@ -263,6 +263,10 @@ impl Server {
                 };
                 return self.seal_and_send(index, &message);
             }
+            Reply::Alerts => match device.alerts() {
+                Some(view) => Outcome::Alerts(view),
+                None => Outcome::Refused(Refusal::Unavailable),
+            },
             Reply::Bank1 { offset } => {
                 let result = match device.bank1_page(offset) {
                     Ok(page) => Outcome::Bank1(page),
@@ -357,16 +361,16 @@ fn time_view<D: Device>(device: &mut D, now_ms: u32) -> Option<(TimeView<'static
         learned: clock.learned,
         syncs: clock.syncs,
         last: clock.last.map(|(origin, _)| match origin {
-            Origin::Owner => proto::TimeSource::Owner,
-            Origin::Client => proto::TimeSource::Client,
-            Origin::Ntp => proto::TimeSource::Ntp,
+            Origin::Owner => proto::TimeSource::Owner.into(),
+            Origin::Client => proto::TimeSource::Client.into(),
+            Origin::Ntp => proto::TimeSource::Ntp.into(),
         }),
         last_age_s: clock.last.map(|(_, age_ms)| age_ms / 1000),
         ntp_last: state.ntp_last.map(|result| match result {
-            NtpResult::Used => proto::NtpResult::Used,
-            NtpResult::Bounded => proto::NtpResult::Bounded,
-            NtpResult::Lost => proto::NtpResult::Lost,
-            NtpResult::Refused => proto::NtpResult::Refused,
+            NtpResult::Used => proto::NtpResult::Used.into(),
+            NtpResult::Bounded => proto::NtpResult::Bounded.into(),
+            NtpResult::Lost => proto::NtpResult::Lost.into(),
+            NtpResult::Refused => proto::NtpResult::Refused.into(),
         }),
     };
     Some((view, text))

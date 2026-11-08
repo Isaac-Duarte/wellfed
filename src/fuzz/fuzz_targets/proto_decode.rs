@@ -1,5 +1,8 @@
 //! The device protocol's codec: any bytes as every message either side
-//! decodes, and whatever decodes re-encodes to the same value.
+//! decodes, and whatever decodes re-encodes to bytes that read back to
+//! themselves. Not to the same value: what a reader skips (a newer build's
+//! extension tail or alert entry) is dropped on the way, so the first
+//! re-encoding is the fixed point.
 #![no_main]
 
 use wellfed_proto::api::{
@@ -13,7 +16,10 @@ macro_rules! stable {
         if let Ok(value) = decode::<$ty>($bytes) {
             let mut out = [0u8; 4 * FRAME_MAX];
             let len = encode(&value, &mut out).expect("a decoded message re-encodes");
-            assert_eq!(decode::<$ty>(&out[..len]), Ok(value));
+            let again = decode::<$ty>(&out[..len]).expect("a re-encoded message decodes");
+            let mut out_again = [0u8; 4 * FRAME_MAX];
+            let len_again = encode(&again, &mut out_again).expect("it re-encodes again");
+            assert_eq!(out[..len], out_again[..len_again]);
         }
     };
 }

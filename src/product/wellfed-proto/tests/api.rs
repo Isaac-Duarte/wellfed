@@ -48,6 +48,7 @@ fn roots() -> Vec<Root> {
         ClientMessage<'_>,
         DeviceMessage<'_>,
         EncodedEvent<'_>,
+        EncodedAlert<'_>,
         Open,
         Hello,
         Welcome<'_>,
@@ -80,7 +81,6 @@ fn roots() -> Vec<Root> {
         MissedReason,
         FoodLevel,
         DeviceStatus,
-        Readiness,
         Blocked,
         Battery,
         Desiccant,
@@ -114,19 +114,33 @@ fn name(format: &Format) -> &str {
     }
 }
 
-/// A tracer that knows the values a type can't be made up from: an alert's
-/// time is a `NonZeroU32`, and the tracer's first guess at a `u32` is 0. The
-/// sample's format joins the tracer's registry, as the struct is traced from
-/// it.
+/// A tracer that knows the values a type can't be made up from: an alert
+/// entry's time is a `NonZeroU32`, and the tracer's first guess at a `u32`
+/// is 0. The sample's format joins the tracer's registry, as the struct is
+/// traced from it.
 fn tracer() -> (Tracer, Traced) {
     let config = TracerConfig::default().record_samples_for_structs(true);
     let mut tracer = Tracer::new(config);
     let mut samples = Traced::new();
-    let open = OpenAlert {
+    // The sample's bytes serialize as bytes, as they deserialize: a
+    // borrowed slice's own `Serialize` is a sequence.
+    struct Bytes(&'static [u8]);
+    impl serde::Serialize for Bytes {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.serialize_bytes(self.0)
+        }
+    }
+    #[derive(serde::Serialize)]
+    #[serde(rename = "EncodedAlert")]
+    struct Entry {
+        at: Option<core::num::NonZeroU32>,
+        alert: Bytes,
+    }
+    let entry = Entry {
         at: core::num::NonZeroU32::new(1),
-        alert: Alert::RolledBack,
+        alert: Bytes(&[6]),
     };
-    tracer.trace_value(&mut samples, &open).unwrap();
+    tracer.trace_value(&mut samples, &entry).unwrap();
     (tracer, samples)
 }
 
@@ -263,6 +277,52 @@ fn a_change_in_place_is_refused_and_a_new_variant_taken() {
     let mut gone = stored.clone();
     gone.remove("Plan");
     assert_eq!(shrunk(&stored, &gone), ["Plan is gone"]);
+}
+
+/// The enums an answer carries leniently: an older reader reads a variant
+/// a newer build added as unknown.
+fn lenient() -> Vec<(&'static str, &'static [&'static str])> {
+    fn of<T: Unit>() -> (&'static str, &'static [&'static str]) {
+        (T::NAME, T::VARIANTS)
+    }
+    vec![
+        of::<Blocked>(),
+        of::<FoodLevel>(),
+        of::<FeedOutcome>(),
+        of::<FeedReason>(),
+        of::<WifiSource>(),
+        of::<ResetCause>(),
+        of::<NtpResult>(),
+        of::<TimeSource>(),
+        of::<CurrentUnit>(),
+    ]
+}
+
+/// Each lenient enum's index table is the order serde encodes it in, and
+/// it holds unit variants alone: a variant with fields could not be skipped
+/// by an older reader, so such an enum only ever gains unit variants.
+#[test]
+fn every_lenient_enum_is_unit_only_in_its_encoded_order() {
+    let registry = registry();
+    for (name, variants) in lenient() {
+        let Some(ContainerFormat::Enum(traced)) = registry.get(name) else {
+            panic!("{name} is not traced as an enum");
+        };
+        let names: Vec<&str> = traced.values().map(|v| v.name.as_str()).collect();
+        assert_eq!(names, variants, "{name}'s index table");
+        for variant in traced.values() {
+            assert_eq!(
+                variant.value,
+                serde_reflection::VariantFormat::Unit,
+                "{name}::{} carries fields",
+                variant.name
+            );
+        }
+        assert!(
+            registry.contains_key(&format!("Lenient{name}")),
+            "no answer carries {name} leniently"
+        );
+    }
 }
 
 /// The trace reaches the types the hash is meant to cover, the event

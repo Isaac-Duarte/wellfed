@@ -70,6 +70,9 @@ view_enum! {
         Present => "present",
         /// About five portions remain.
         Low => "low",
+        /// A value a newer feeder build added, which this integration
+        /// cannot name: update it.
+        NewerBuild => "newer_build",
     }
 }
 
@@ -79,6 +82,7 @@ impl From<model::FoodLevel> for FoodLevel {
             model::FoodLevel::Unread => Self::Unread,
             model::FoodLevel::Present => Self::Present,
             model::FoodLevel::Low => Self::Low,
+            model::FoodLevel::Unknown => Self::NewerBuild,
         }
     }
 }
@@ -100,6 +104,9 @@ view_enum! {
         Unserved => "unserved",
         Battery => "battery",
         Restarting => "restarting",
+        /// A value a newer feeder build added, which this integration
+        /// cannot name: update it.
+        NewerBuild => "newer_build",
     }
 }
 
@@ -120,6 +127,7 @@ impl From<model::Readiness> for Readiness {
             model::Blocked::Unserved => Self::Unserved,
             model::Blocked::Battery => Self::Battery,
             model::Blocked::Restarting => Self::Restarting,
+            model::Blocked::Unknown => Self::NewerBuild,
         }
     }
 }
@@ -133,6 +141,9 @@ view_enum! {
         Failed => "failed",
         /// It may have run: the feeder cannot tell how much.
         Uncertain => "uncertain",
+        /// A value a newer feeder build added, which this integration
+        /// cannot name: update it.
+        NewerBuild => "newer_build",
     }
 }
 
@@ -144,6 +155,7 @@ impl From<model::FeedOutcome> for FeedOutcome {
             model::FeedOutcome::Expired => Self::Expired,
             model::FeedOutcome::Failed => Self::Failed,
             model::FeedOutcome::Uncertain => Self::Uncertain,
+            model::FeedOutcome::Unknown => Self::NewerBuild,
         }
     }
 }
@@ -166,6 +178,9 @@ view_enum! {
         FeedbackStream => "feedback_stream",
         Output => "output",
         Interrupted => "interrupted",
+        /// A value a newer feeder build added, which this integration
+        /// cannot name: update it.
+        NewerBuild => "newer_build",
     }
 }
 
@@ -187,6 +202,7 @@ impl From<model::FeedReason> for FeedReason {
             model::FeedReason::FeedbackStream => Self::FeedbackStream,
             model::FeedReason::Output => Self::Output,
             model::FeedReason::Interrupted => Self::Interrupted,
+            model::FeedReason::Unknown => Self::NewerBuild,
         }
     }
 }
@@ -293,6 +309,9 @@ view_enum! {
         Unverified => "unverified",
         Portions => "portions",
         NoClock => "no_clock",
+        /// A value a newer feeder build added, which this integration
+        /// cannot name: update it.
+        NewerBuild => "newer_build",
     }
 }
 
@@ -315,6 +334,7 @@ impl From<&model::Refusal> for RefusalKind {
             R::Unverified => Self::Unverified,
             R::Portions { .. } => Self::Portions,
             R::NoClock => Self::NoClock,
+            R::Unknown => Self::NewerBuild,
         }
     }
 }

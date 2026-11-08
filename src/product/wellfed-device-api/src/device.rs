@@ -84,6 +84,11 @@ pub trait Device {
     fn bank1_page(&mut self, _offset: u32) -> Result<Bank1Page<'_>, Refusal> {
         Err(Refusal::Unavailable)
     }
+    /// The table of open alerts, some any device's and some its kind's. A
+    /// device that keeps none answers `None`, refused `Unavailable`.
+    fn alerts(&mut self) -> Option<AlertsView> {
+        None
+    }
 
     /// Queue an update request for the installer: its ticket, or why it
     /// cannot be queued now. A device without an installer serves none.
@@ -205,11 +210,6 @@ pub trait FeederDevice: Device {
     /// Queue the stored meal call to play once, so its owner can hear it.
     fn play_call(&mut self) -> CallPlay {
         CallPlay::Unserved
-    }
-    /// The table of open alerts. A feeder that keeps none answers `None`,
-    /// refused `Unavailable`.
-    fn alerts(&mut self) -> Option<AlertsView> {
-        None
     }
     /// Today's local calendar day (days since 1970-01-01, UTC when the
     /// clock knows no offset) while the clock is valid: the day a desiccant

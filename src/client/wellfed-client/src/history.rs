@@ -67,7 +67,9 @@ impl Delivered {
     /// through here, so none shows an uncertain feed as a count.
     pub const fn of(outcome: FeedOutcome, completed: u8, requested: u8) -> Self {
         match outcome {
-            FeedOutcome::Uncertain => Self::Uncertain {
+            // An ending a newer build added says nothing this build can
+            // count on: shown as uncertain, never as a count.
+            FeedOutcome::Uncertain | FeedOutcome::Unknown => Self::Uncertain {
                 confirmed: completed,
                 requested,
             },

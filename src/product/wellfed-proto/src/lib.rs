@@ -9,10 +9,13 @@
 //! A feed's trace body ([`trace`]) is a compact format of its own,
 //! carried in the device API's pages and kept in the feeder's storage.
 //! What a device is, its kind and model ([`device`]), opens every session.
+//! [`grow`] holds what lets a message grow without stranding older readers.
 //!
 //! [API design]: ../../../../docs/firmware/device-api.md
 #![no_std]
 
+#[macro_use]
+pub mod grow;
 pub mod api;
 pub mod device;
 pub mod setup;

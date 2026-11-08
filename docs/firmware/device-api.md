@@ -113,7 +113,7 @@ The feeder checks a session's key against the enrolled clients the settings writ
 
 **Two paths, one write.** An owner's or member's phone holds its own key beside the server's, and the two send different write ids, so a write resent on the other path would run twice. An uncertain write is retried only on its own path under its own id, or resolved from the history ([two paths, one feed](../server/README.md#two-paths-one-feed)).
 
-**Readiness** is one decision that says whether a feed can start now (`wellfed_feeder::feeder::feeding::readiness`). `FeederStatus { readiness, supply, … }` carries it (the model's `Status.readiness`), beside `supply`, the judged supply with the pack's charge.
+**Readiness** is one decision that says whether a feed can start now (`wellfed_feeder::feeder::feeding::readiness`). `FeederStatus { blocked, supply, … }` carries it as the reason feeding is blocked, `None` when it is ready (the model's `FeederStatus.readiness`), beside `supply`, the judged supply with the pack's charge. A reason a newer build added reads as unknown in an older client.
 
 | Reason | Means | Feed refused as |
 | --- | --- | --- |
@@ -260,6 +260,16 @@ From the public beta, feeders, phones, members' phones, the owner's server and H
 1. **Nothing changes in place.** No field is added, removed, reordered or retyped, and no variant moves or changes. A struct that will grow carries room for it at its end.
 2. **Enums grow only at their end.**
 3. **A changed op is a new op.** A retired op keeps its index, and the device refuses it `Unavailable`.
+
+A client of an older build still reads what a newer feeder says, through these pieces of `wellfed-proto` ([`grow`](../../src/product/wellfed-proto/src/grow.rs)):
+
+- **Unit enums inside answers are lenient.** A food level, a feed's outcome and reason, what blocks feeding, the Wi-Fi source, a reset cause, a clock source, an NTP result and a current unit travel as `Lenient<T>`. An index the client's build doesn't know reads as unknown, and the rest of the answer reads on. The model names it `Unknown`, Home Assistant `newer_build`. A feed's unknown outcome counts as uncertain, never as done. `every_lenient_enum_is_unit_only_in_its_encoded_order` checks that each one is unit-only, so it can only grow by a variant at its end.
+- **Structs that will grow end in a tail.** `Status`, `FeederStatus`, `Settings` and `Plan` end in `ext`, a length-prefixed run of bytes. This build writes it empty. A later build puts its new fields there as a struct of their own, and an older reader skips them by their length.
+- **An answer the client can't read is not the end of the session.** The response's id sits right after its tag, so `wellfed-client` answers an undecodable response `Unreadable`, or `Refused(Unknown)` when only the refusal is new, and keeps the session. A write answered either way is uncertain: the client reports it as unanswered and never sends it again, as for a write whose session dropped ([feeds](#feeds)).
+- **Events carry their length.** The device sends each event body behind its 1-byte length, so an older client reads a body it doesn't know as `Pushed::Unknown { seq, at, raw }`, and its cursor moves past it. The server stores those raw bytes, with no kind, and a later server build decodes them when it rebuilds its projections.
+- **Alert entries carry their length.** `AlertsView` sends each open alert behind its own length, so an older client skips an alert kind it doesn't know and counts it (`unread`) rather than failing the table ([alerts](alerts.md#reading-the-table)).
+
+**Whole-replace writes.** `PutPlans` replaces all ten slots, and `PutCalibration` the calibration. A write that replaced what a newer build stores beside them would drop fields the older client never saw. So neither op ever gains a field: a later field arrives in a plan's tail or through a new op. A device keeps a slot's stored extension when a plan's tail comes empty, and refuses `Invalid` a plan whose tail it can't read, rather than store less than was asked (`a_plan_with_a_tail_this_build_cannot_read_is_refused_invalid`). `PutCalibration` sets only the fields it carries, so a calibration field a later op adds survives an older client's write.
 
 `tests/fixtures/api.json` holds the traced structure of every message at the newest revision: `tests/api.rs` traces every type of the device API and the setup exchange with `serde-reflection`, down to each enum's variants and each field's name and type, and `the_api_only_grows` refuses a trace that does not hold every stored type unchanged, a new variant at an enum's end being the only change it takes. A trace that grew needs `REVISION` raised by one and a blessing (`WELLFED_BLESS=1`), which stores it; no blessing takes a change in place. `tests/fixtures/v1.txt` pins the bytes of each message beside it, and its test only appends.
 

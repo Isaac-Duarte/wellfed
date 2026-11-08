@@ -45,6 +45,7 @@ pub enum _FoodLevel {
     Unread,
     Present,
     Low,
+    Unknown,
 }
 
 #[frb(mirror(Blocked))]
@@ -60,6 +61,7 @@ pub enum _Blocked {
     Unserved,
     Battery,
     Restarting,
+    Unknown,
 }
 
 #[frb(mirror(FeedOutcome))]
@@ -69,6 +71,7 @@ pub enum _FeedOutcome {
     Expired,
     Failed,
     Uncertain,
+    Unknown,
 }
 
 #[frb(mirror(FeedReason))]
@@ -88,6 +91,7 @@ pub enum _FeedReason {
     FeedbackStream,
     Output,
     Interrupted,
+    Unknown,
 }
 
 pub use wellfed_model::{
@@ -154,6 +158,7 @@ pub enum _TimeSource {
     Owner,
     Client,
     Ntp,
+    Unknown,
 }
 
 #[frb(mirror(NtpResult))]
@@ -162,6 +167,7 @@ pub enum _NtpResult {
     Bounded,
     Lost,
     Refused,
+    Unknown,
 }
 
 #[frb(mirror(CallClip))]
@@ -291,6 +297,7 @@ pub enum _ResetCause {
     Software,
     Brownout,
     Other,
+    Unknown,
 }
 
 #[frb(mirror(Resets))]
@@ -381,6 +388,7 @@ pub struct _FeedStats {
 pub enum _CurrentUnit {
     Scaled,
     MilliAmps,
+    Unknown,
 }
 
 #[frb(mirror(TraceSummary))]

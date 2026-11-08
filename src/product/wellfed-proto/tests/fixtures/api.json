@@ -209,13 +209,8 @@
         },
         {
           "alerts": {
-            "TUPLEARRAY": {
-              "CONTENT": {
-                "OPTION": {
-                  "TYPENAME": "OpenAlert"
-                }
-              },
-              "SIZE": 12
+            "SEQ": {
+              "TYPENAME": "EncodedAlert"
             }
           }
         }
@@ -584,7 +579,7 @@
         },
         {
           "reset": {
-            "TYPENAME": "ResetCause"
+            "TYPENAME": "LenientResetCause"
           }
         },
         {
@@ -746,6 +741,18 @@
           }
         }
       }
+    },
+    "EncodedAlert": {
+      "STRUCT": [
+        {
+          "at": {
+            "OPTION": "U32"
+          }
+        },
+        {
+          "alert": "BYTES"
+        }
+      ]
     },
     "EncodedEvent": {
       "STRUCT": [
@@ -1115,12 +1122,12 @@
         },
         {
           "outcome": {
-            "TYPENAME": "FeedOutcome"
+            "TYPENAME": "LenientFeedOutcome"
           }
         },
         {
           "reason": {
-            "TYPENAME": "FeedReason"
+            "TYPENAME": "LenientFeedReason"
           }
         }
       ]
@@ -1206,7 +1213,7 @@
         },
         {
           "unit": {
-            "TYPENAME": "CurrentUnit"
+            "TYPENAME": "LenientCurrentUnit"
           }
         },
         {
@@ -1416,9 +1423,6 @@
               }
             ]
           }
-        },
-        "19": {
-          "GetAlerts": "UNIT"
         }
       }
     },
@@ -1467,13 +1471,6 @@
               "TYPENAME": "CallView"
             }
           }
-        },
-        "6": {
-          "Alerts": {
-            "NEWTYPE": {
-              "TYPENAME": "AlertsView"
-            }
-          }
         }
       }
     },
@@ -1489,7 +1486,7 @@
         },
         {
           "food": {
-            "TYPENAME": "FoodLevel"
+            "TYPENAME": "LenientFoodLevel"
           }
         },
         {
@@ -1505,8 +1502,10 @@
           }
         },
         {
-          "readiness": {
-            "TYPENAME": "Readiness"
+          "blocked": {
+            "OPTION": {
+              "TYPENAME": "LenientBlocked"
+            }
           }
         },
         {
@@ -1515,7 +1514,7 @@
           }
         },
         {
-          "alerts_generation": "U32"
+          "ext": "BYTES"
         }
       ]
     },
@@ -1632,6 +1631,33 @@
           }
         }
       }
+    },
+    "LenientBlocked": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientCurrentUnit": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientFeedOutcome": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientFeedReason": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientFoodLevel": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientNtpResult": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientResetCause": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientTimeSource": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientWifiSource": {
+      "NEWTYPESTRUCT": "U32"
     },
     "MealReminder": {
       "ENUM": {
@@ -1943,6 +1969,9 @@
           }
         },
         "14": {
+          "GetAlerts": "UNIT"
+        },
+        "15": {
           "Feeder": {
             "NEWTYPE": {
               "TYPENAME": "FeederOp"
@@ -1969,20 +1998,6 @@
           "Recovery": "UNIT"
         }
       }
-    },
-    "OpenAlert": {
-      "STRUCT": [
-        {
-          "at": {
-            "OPTION": "U32"
-          }
-        },
-        {
-          "alert": {
-            "TYPENAME": "Alert"
-          }
-        }
-      ]
     },
     "OpenRefusal": {
       "ENUM": {
@@ -2073,6 +2088,13 @@
           }
         },
         "9": {
+          "Alerts": {
+            "NEWTYPE": {
+              "TYPENAME": "AlertsView"
+            }
+          }
+        },
+        "10": {
           "Feeder": {
             "NEWTYPE": {
               "TYPENAME": "FeederOutcome"
@@ -2123,6 +2145,9 @@
         },
         {
           "call": "U8"
+        },
+        {
+          "ext": "BYTES"
         }
       ]
     },
@@ -2233,20 +2258,6 @@
           "period_s": "U32"
         }
       ]
-    },
-    "Readiness": {
-      "ENUM": {
-        "0": {
-          "Ready": "UNIT"
-        },
-        "1": {
-          "Blocked": {
-            "NEWTYPE": {
-              "TYPENAME": "Blocked"
-            }
-          }
-        }
-      }
     },
     "Refusal": {
       "ENUM": {
@@ -2497,6 +2508,9 @@
         },
         {
           "writable": "BOOL"
+        },
+        {
+          "ext": "BYTES"
         }
       ]
     },
@@ -2695,7 +2709,7 @@
         },
         {
           "wifi": {
-            "TYPENAME": "WifiSource"
+            "TYPENAME": "LenientWifiSource"
           }
         },
         {
@@ -2728,9 +2742,15 @@
           "sessions": "U8"
         },
         {
+          "alerts_generation": "U32"
+        },
+        {
           "device": {
             "TYPENAME": "DeviceStatus"
           }
+        },
+        {
+          "ext": "BYTES"
         }
       ]
     },
@@ -2854,7 +2874,7 @@
         {
           "last": {
             "OPTION": {
-              "TYPENAME": "TimeSource"
+              "TYPENAME": "LenientTimeSource"
             }
           }
         },
@@ -2866,7 +2886,7 @@
         {
           "ntp_last": {
             "OPTION": {
-              "TYPENAME": "NtpResult"
+              "TYPENAME": "LenientNtpResult"
             }
           }
         }
@@ -2906,12 +2926,12 @@
         },
         {
           "outcome": {
-            "TYPENAME": "FeedOutcome"
+            "TYPENAME": "LenientFeedOutcome"
           }
         },
         {
           "reason": {
-            "TYPENAME": "FeedReason"
+            "TYPENAME": "LenientFeedReason"
           }
         },
         {
@@ -2922,7 +2942,7 @@
         },
         {
           "unit": {
-            "TYPENAME": "CurrentUnit"
+            "TYPENAME": "LenientCurrentUnit"
           }
         },
         {

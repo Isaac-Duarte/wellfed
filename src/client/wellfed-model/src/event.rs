@@ -240,6 +240,8 @@ pub enum FoodLevel {
     /// No food in front of the beam, which sits above the rotor, so about five
     /// portions remain (at any time during a feed, for a `Fed` event).
     Low,
+    /// A value a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -255,6 +257,8 @@ pub enum FeedOutcome {
     /// When a power cut lost the reservation itself, `requested` is the
     /// feeder's cap on one feed, not what was asked.
     Uncertain,
+    /// A value a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 /// Why a feed ended.
@@ -293,6 +297,8 @@ pub enum FeedReason {
     /// A reset (power cut, watchdog, fault) cut the feed short, and the
     /// next boot resolved it: always `Uncertain`.
     Interrupted,
+    /// A value a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 impl FeedOutcome {
@@ -312,11 +318,15 @@ impl FeedOutcome {
             Self::Expired => "expired",
             Self::Failed => "failed",
             Self::Uncertain => "uncertain",
+            Self::Unknown => "unknown",
         }
     }
 
     pub fn from_code(code: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|outcome| outcome.code() == code)
+        Self::ALL
+            .into_iter()
+            .chain([Self::Unknown])
+            .find(|outcome| outcome.code() == code)
     }
 }
 
@@ -357,11 +367,15 @@ impl FeedReason {
             Self::Jammed => "jammed",
             Self::MarkStuck => "mark_stuck",
             Self::Interrupted => "interrupted",
+            Self::Unknown => "unknown",
         }
     }
 
     pub fn from_code(code: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|reason| reason.code() == code)
+        Self::ALL
+            .into_iter()
+            .chain([Self::Unknown])
+            .find(|reason| reason.code() == code)
     }
 }
 

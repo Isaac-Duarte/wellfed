@@ -53,6 +53,7 @@ impl Batch {
 /// A stored event of `epoch` as the feeder sent it, or `None` when its
 /// body does not decode.
 pub fn stored_event(epoch: u32, row: &EventRow) -> Option<HistoryEvent> {
+    row.kind?;
     let event = Event {
         epoch,
         seq: row.seq,
@@ -63,9 +64,12 @@ pub fn stored_event(epoch: u32, row: &EventRow) -> Option<HistoryEvent> {
 }
 
 /// A stored body as the event it encodes, or `None` when it does not
-/// decode.
+/// decode. A body that came unread is stored as the feeder's ring keeps it,
+/// trailing zeros trimmed, so it is read padded back to the ring's size.
 pub(crate) fn stored_body(raw: &[u8]) -> Option<EventBody> {
-    let body: proto::EventBody = wellfed_proto::decode(raw).ok()?;
+    let mut padded = [0; proto::EVENT_BODY_MAX];
+    padded.get_mut(..raw.len())?.copy_from_slice(raw);
+    let body: proto::EventBody = wellfed_proto::decode_padded(&padded)?;
     Some(EventBody::from(body))
 }
 
@@ -126,7 +130,9 @@ impl Task {
         let mut raw = [0u8; RAW];
         let update = match pushed {
             Pushed::Event(event) => {
-                let len = wellfed_proto::encode(&proto::EventBody::from(event.body), &mut raw)
+                let body = proto::EventBody::try_from(event.body)
+                    .map_err(|_| End::Failed(Failure::Encode))?;
+                let len = wellfed_proto::encode(&body, &mut raw)
                     .map_err(|_| Failure::Encode)
                     .map_err(End::Failed)?;
                 let new = store
@@ -137,7 +143,7 @@ impl Task {
                             seq: event.seq,
                             at: event.at,
                             received,
-                            body: event.body,
+                            body: Some(event.body),
                             raw: &raw[..len],
                         },
                     )
@@ -153,14 +159,30 @@ impl Task {
                 }
                 MirrorEvent::Event(HistoryEvent::new(event, received))
             }
-            // A newer build's event, which this server cannot read or
-            // store yet: the session's cursor moves past it all the same.
+            // A newer build's event, which this server cannot read: kept
+            // as the ring holds it, so a later server reads it, and the
+            // cursor moves past it. Nothing is broadcast: no client of this
+            // server's build could show it.
             Pushed::Unknown(event) => {
-                warn!(
-                    epoch = event.epoch,
-                    seq = event.seq,
-                    "an event of a newer build than this server, not stored"
-                );
+                let used = event
+                    .raw
+                    .0
+                    .iter()
+                    .rposition(|&b| b != 0)
+                    .map_or(0, |last| last + 1);
+                store
+                    .record_event(
+                        self.id,
+                        NewEvent {
+                            epoch: event.epoch,
+                            seq: event.seq,
+                            at: event.at,
+                            received,
+                            body: None,
+                            raw: event.raw.0.get(..used).unwrap_or_default(),
+                        },
+                    )
+                    .await?;
                 return Ok(());
             }
             Pushed::Gap(gap) => {

@@ -162,6 +162,7 @@ pub(crate) fn refusal(error: &Error) -> Option<FeederRefusal> {
             Api::Portions => FeederRefusal::Portions { asked: 0 },
             Api::NoClock => FeederRefusal::NoClock,
             Api::Unverified => FeederRefusal::Unverified,
+            Api::Unknown => FeederRefusal::Unknown,
         }),
         _ => None,
     }

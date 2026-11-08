@@ -184,6 +184,8 @@ pub enum FeederRefusal {
     NoClock,
     /// A calibration named a bowl mode the feeder has not verified.
     Unverified,
+    /// A refusal a newer feeder build added, which this server cannot name.
+    Unknown,
 }
 
 impl From<Refusal> for FeederRefusal {
@@ -203,6 +205,7 @@ impl From<Refusal> for FeederRefusal {
             Refusal::Portions { .. } => Self::Portions,
             Refusal::NoClock => Self::NoClock,
             Refusal::Unverified => Self::Unverified,
+            Refusal::Unknown => Self::Unknown,
             // An install reads its own refusals from the update driver;
             // through a journalled write one could only be a session
             // without the owner role, refused before these could arrive.

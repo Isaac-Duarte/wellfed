@@ -283,7 +283,7 @@ fn status() -> proto::Status<'static> {
         reset_flags: 0,
         faults: 0,
         rssi: 0,
-        wifi: proto::WifiSource::Build,
+        wifi: proto::WifiSource::Build.into(),
         link_losses: 0,
         dns_losses: 0,
         clock_ms: None,
@@ -291,20 +291,22 @@ fn status() -> proto::Status<'static> {
         wifi_generation: 0,
         last_event: None,
         sessions: 1,
+        alerts_generation: 0,
         device: proto::DeviceStatus::Feeder(proto::FeederStatus {
             locked: None,
             settings_generation: 0,
             desiccant: proto::Desiccant::Unset,
-            food: FoodLevel::Unread,
+            food: FoodLevel::Unread.into(),
             feed_fault: None,
-            readiness: proto::Readiness::Ready,
+            blocked: None,
             supply: proto::Supply {
                 adapter: None,
                 battery: proto::Battery::Unread,
                 below_floor: None,
             },
-            alerts_generation: 0,
+            ext: wellfed_proto::api::Tail::EMPTY,
         }),
+        ext: wellfed_proto::api::Tail::EMPTY,
     }
 }
 

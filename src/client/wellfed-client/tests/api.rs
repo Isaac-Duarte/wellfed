@@ -140,11 +140,11 @@ fn trace(feed: u32) -> (proto::TraceSummary, Vec<u8>, bool) {
         feed,
         requested: 1,
         completed: 0,
-        outcome: proto::FeedOutcome::Failed,
-        reason: proto::FeedReason::NoFeedback,
+        outcome: proto::FeedOutcome::Failed.into(),
+        reason: proto::FeedReason::NoFeedback.into(),
         drive_ms: 12_000,
         samples: 400,
-        unit: proto::CurrentUnit::Scaled,
+        unit: proto::CurrentUnit::Scaled.into(),
         current_peak: 66,
         current_mean: Some(63),
         rising: 0,
@@ -308,7 +308,7 @@ impl Device for Fake {
             reset_flags: 0,
             faults: 0,
             rssi: -50,
-            wifi: proto::WifiSource::Stored,
+            wifi: proto::WifiSource::Stored.into(),
             link_losses: 0,
             dns_losses: 0,
             clock_ms: None,
@@ -316,6 +316,7 @@ impl Device for Fake {
             wifi_generation: self.wifi_generation,
             last_event: self.events.last().map(|e| e.seq),
             sessions: 0,
+            alerts_generation: 0,
             device: DeviceStatus::Feeder(FeederStatus {
                 locked: self.locked,
                 settings_generation: self.settings.generation,
@@ -324,16 +325,17 @@ impl Device for Fake {
                     Count::Unknown => proto::Desiccant::Unknown,
                     Count::Remaining(days) => proto::Desiccant::Remaining { days },
                 },
-                food: FoodLevel::Unread,
+                food: FoodLevel::Unread.into(),
                 feed_fault: None,
-                readiness: self.readiness(),
+                blocked: self.readiness().blocked(),
                 supply: proto::Supply {
                     adapter: None,
                     battery: proto::Battery::Unread,
                     below_floor: None,
                 },
-                alerts_generation: 0,
+                ext: wellfed_proto::api::Tail::EMPTY,
             }),
+            ext: wellfed_proto::api::Tail::EMPTY,
         }
     }
 
@@ -2764,11 +2766,15 @@ fn every_subscriber_receives_every_body() {
     let now = member.now(&rig);
     member.connection.subscribe(now, None, false).unwrap();
     drive(&mut rig, &mut member, |live| {
-        pushed(live).last().map(|e| EventBody::from(e.body)) == Some(EventBody::Lost { count: 9 })
+        pushed(live).last().map(|e| EventBody::try_from(e.body))
+            == Some(Ok(EventBody::Lost { count: 9 }))
     })
     .unwrap();
 
-    let received: Vec<EventBody> = pushed(&member).iter().map(|e| e.body.into()).collect();
+    let received: Vec<EventBody> = pushed(&member)
+        .iter()
+        .map(|e| e.body.try_into().unwrap())
+        .collect();
     assert_eq!(received, all);
 }
 

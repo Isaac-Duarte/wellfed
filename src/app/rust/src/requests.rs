@@ -585,6 +585,7 @@ pub(crate) const fn refusal_of(refusal: Refusal) -> FeederRefusal {
         Refusal::Unverified => FeederRefusal::Unverified,
         Refusal::Portions { asked } => FeederRefusal::Portions { asked },
         Refusal::NoClock => FeederRefusal::NoClock,
+        Refusal::Unknown => FeederRefusal::Unknown,
     }
 }
 
@@ -673,6 +674,7 @@ pub(crate) fn reply_of(answer: Answer) -> FeederReply {
         | Answer::FeedTrace(_)
         | Answer::Bank1(_)
         | Answer::Alerts(_) => FeederReply::Unexpected,
+        Answer::Unreadable => FeederReply::Unreadable,
     }
 }
 

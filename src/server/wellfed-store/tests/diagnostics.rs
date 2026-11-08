@@ -71,7 +71,7 @@ async fn fed(store: &Store, epoch: u32, seq: u64, feed: u32) {
                 seq,
                 at: None,
                 received: at(1_000),
-                body,
+                body: Some(body),
                 raw: &raw,
             },
         )

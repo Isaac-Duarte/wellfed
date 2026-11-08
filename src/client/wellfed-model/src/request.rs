@@ -282,6 +282,8 @@ pub enum TimeSource {
     /// A member's or the server's session, which may only narrow it.
     Client,
     Ntp,
+    /// A value a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 /// What the feeder's last NTP exchange came to.
@@ -293,6 +295,8 @@ pub enum NtpResult {
     Bounded,
     Lost,
     Refused,
+    /// A value a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 /// The time settings and the feeder's clock.
@@ -388,6 +392,10 @@ pub enum Answer {
     Plans(Plans),
     Call(CallView),
     Alerts(AlertsView),
+    /// An answer this build could not read: a newer feeder build's. The
+    /// request may have run, so a write answered so is uncertain, and is
+    /// never sent again.
+    Unreadable,
 }
 
 /// Why the feeder refused a request.
@@ -429,6 +437,8 @@ pub enum Refusal {
     /// The feeder's clock is invalid, so it cannot date the change: sync
     /// its time first.
     NoClock,
+    /// A refusal a newer feeder build added, which this build cannot name.
+    Unknown,
 }
 
 /// One enrolled client.

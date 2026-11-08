@@ -105,7 +105,7 @@ fn event(seq: u64, kind: EventKind) -> NewEvent<'static> {
         seq,
         at: Some(at(1_700_000_000_000)),
         received: at(1_700_000_000_500),
-        body,
+        body: Some(body),
         raw: &[0, 1, 2],
     }
 }
@@ -456,7 +456,7 @@ async fn a_new_epoch_keeps_its_own_history_and_restarts_the_cursor() {
     let old = store.events(id, EPOCH, None, 100, None).await.unwrap();
     let new = store.events(id, EPOCH + 1, None, 100, None).await.unwrap();
     assert_eq!((old.len(), new.len()), (3, 1));
-    assert_eq!(new[0].kind, EventKind::Lock);
+    assert_eq!(new[0].kind, Some(EventKind::Lock));
 }
 
 #[tokio::test]
@@ -497,6 +497,7 @@ async fn the_cached_status_and_settings_read_back() {
         wifi_generation: Generation(0),
         last_event: Some(9),
         sessions: 1,
+        alerts_generation: Generation(0),
         device: DeviceStatus::Feeder(FeederStatus {
             locked: Some(true),
             settings_generation: Generation(4),
@@ -512,7 +513,6 @@ async fn the_cached_status_and_settings_read_back() {
                 battery: wellfed_api::Battery::Absent,
                 below_floor: None,
             },
-            alerts_generation: Generation(0),
         }),
     };
     store.record_status(id, &status, at(200)).await.unwrap();

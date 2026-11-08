@@ -132,7 +132,7 @@ impl Store {
         loop {
             let (feeder, epoch, seq) = after.map_or((None, 0, 0), |(f, e, s)| (Some(f), e, s));
             let rows = sqlx::query!(
-                r#"SELECT feeder_id, epoch, seq, at_s, received_ms, body FROM events
+                r#"SELECT feeder_id, epoch, seq, at_s, received_ms, kind, body FROM events
                    WHERE ?1 IS NULL OR (feeder_id, epoch, seq) > (?1, ?2, ?3)
                    ORDER BY feeder_id, epoch, seq LIMIT ?4"#,
                 feeder,
@@ -153,6 +153,20 @@ impl Store {
                     undecoded += 1;
                     continue;
                 };
+                // A body that came from a newer feeder build than the
+                // server that stored it is read now: it takes its kind.
+                if row.kind == crate::history::UNREAD {
+                    let kind = body.kind().code();
+                    sqlx::query!(
+                        "UPDATE events SET kind = ? WHERE feeder_id = ? AND epoch = ? AND seq = ?",
+                        kind,
+                        row.feeder_id,
+                        row.epoch,
+                        row.seq,
+                    )
+                    .execute(&mut *tx)
+                    .await?;
+                }
                 let id =
                     Uuid::from_slice(&row.feeder_id).map_err(|_| Error::Corrupt("feeder id"))?;
                 let place = Place {

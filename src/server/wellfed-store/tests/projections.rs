@@ -85,7 +85,7 @@ async fn ingest(store: &Store, feeders: &[FeederId], pushed: &Pushed) -> bool {
                 seq: pushed.seq,
                 at: pushed.at_s.map(|s| Timestamp::from_second(s).unwrap()),
                 received: at(pushed.received_ms),
-                body: pushed.body,
+                body: Some(pushed.body),
                 raw: &raw,
             },
         )

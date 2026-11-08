@@ -847,12 +847,17 @@ fn feed_answered(what: Asked, answer: Option<Answer>) -> Option<SessionUpdate> {
         (Asked::Feed { .. }, Some(Answer::Refused(refusal))) => Some(SessionUpdate::FeedRefused {
             refusal: FeedRefusal::from(refusal),
         }),
-        // The feed may have run; it is never sent again.
-        (Asked::Feed { .. }, None) => Some(SessionUpdate::FeedUnanswered),
+        // The feed may have run; it is never sent again. An answer a newer
+        // feeder build sent that this one cannot read says no more.
+        (Asked::Feed { .. }, None | Some(Answer::Unreadable)) => {
+            Some(SessionUpdate::FeedUnanswered)
+        }
         (Asked::Cancel, Some(Answer::Refused(refusal))) => Some(SessionUpdate::CancelUnconfirmed {
             refusal: Some(FeedRefusal::from(refusal)),
         }),
-        (Asked::Cancel, None) => Some(SessionUpdate::CancelUnconfirmed { refusal: None }),
+        (Asked::Cancel, None | Some(Answer::Unreadable)) => {
+            Some(SessionUpdate::CancelUnconfirmed { refusal: None })
+        }
         _ => None,
     }
 }
