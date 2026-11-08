@@ -18,6 +18,13 @@ use wellfed_hal::settings;
 static SETTINGS: TaskCell<Option<Stamp>> = TaskCell::new(None);
 
 /// The loop's half: [`settings::request`], with who asked for a change.
+///
+/// The stamp goes in before the request, on purpose: the writer may take
+/// the change the moment it is queued, and must find its stamp there. A
+/// request then refused (a read-only store, or no published settings yet)
+/// leaves a stamp beside an empty mailbox. That is harmless: the loop is
+/// the only caller, and overwrites it with its next change's before that
+/// change is queued.
 pub fn settings_request(fields: SettingsFields, asked: Option<Stamp>) -> SettingsResult {
     if fields.changes() && settings::pending().is_none() {
         // SAFETY: the mailbox is empty, so the writer is not reading this
