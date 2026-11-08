@@ -22,8 +22,8 @@ class SetAsideScreen extends StatelessWidget {
     leading: Leading.none,
     title: "Some of this $deviceName's data couldn't be read",
     body:
-        "Wellfed kept it and started over with that part empty. This $deviceName's key and "
-        'any saved copies of stock firmware are stored apart, and are untouched.',
+        'Wellfed kept it and started over with that part empty. What lets your feeders recognize '
+        'this $deviceName, and any saved copies of the original firmware, are stored apart and are untouched.',
     content: [
       for (final SetAside file in notice.files) ...[
         Notice(
@@ -50,9 +50,10 @@ class SetAsideScreen extends StatelessWidget {
 
   static String _words(StoreKind kind) => switch (kind) {
     StoreKind.app =>
-      "This $deviceName's list of feeders and its server login start empty. For a feeder you own, use "
-          'Add a feeder, then Recover a feeder. For one someone else owns, ask them for a new invite. If '
-          'you use a home server, log in to it again.',
+      "This $deviceName's list of feeders and its server login start empty, but your feeders still know "
+          'this $deviceName. To put one back on the list, stand at the feeder and use Add a feeder, then '
+          'Recover a feeder: it finds this $deviceName already allowed and changes nothing. Or ask someone '
+          'who uses the feeder for an invite. If you use a home server, log in to it again.',
     StoreKind.pending =>
       "The record of feeds and changes that hadn't been confirmed is gone, so a feed sent "
           "just before may have run. Look in every feeder's bowl before you feed again.",

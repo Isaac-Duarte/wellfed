@@ -298,7 +298,8 @@ sealed class RetryOutcome with _$RetryOutcome {
   const factory RetryOutcome.unknown() = RetryOutcome_Unknown;
 }
 
-/// The way a request reaches a feeder.
+/// The way a request reaches a feeder. Stored in `pending.json`, like
+/// [`WriteKind`].
 enum RoutePath {
   /// Through the owner's server.
   server,
@@ -475,7 +476,9 @@ sealed class Settlement with _$Settlement {
   const factory Settlement.superseded() = Settlement_Superseded;
 }
 
-/// What a write asks of a feeder.
+/// What a write asks of a feeder. Stored in `pending.json` (a pin keeps
+/// its write's kind), so renaming or removing a variant changes that
+/// file's shape: bump its version and keep the reader for the one before.
 enum WriteKind {
   feed,
   cancel,

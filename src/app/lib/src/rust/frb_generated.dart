@@ -84,7 +84,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 829676680;
+  int get rustContentHash => -1167199098;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -587,6 +587,8 @@ abstract class RustLibApi extends BaseApi {
   String crateApiSetupSetupControl();
 
   String crateApiSetupSetupService();
+
+  void crateApiStoreStoreNoticeRead({required String path});
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_ClientKey;
@@ -4748,6 +4750,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiSetupSetupServiceConstMeta =>
       const TaskConstMeta(debugName: "setup_service", argNames: []);
+
+  @override
+  void crateApiStoreStoreNoticeRead({required String path}) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 123,
+          )!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateApiStoreStoreNoticeReadConstMeta,
+        argValues: [path],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiStoreStoreNoticeReadConstMeta =>
+      const TaskConstMeta(debugName: "store_notice_read", argNames: ["path"]);
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_ClientKey => wire

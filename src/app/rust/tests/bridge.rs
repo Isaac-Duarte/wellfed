@@ -27,7 +27,7 @@ use wellfed_app_bridge::api::setup::{
 };
 use wellfed_app_bridge::api::store::{
     AppStore, KnownFeeder, OpenedStore, StoreKind, feeder_address, load_store, open_store,
-    save_store,
+    save_store, store_notice_read,
 };
 use wellfed_app_bridge::requests;
 use wellfed_app_bridge::session::{self, Command};
@@ -746,6 +746,26 @@ fn a_store_that_does_not_read_is_set_aside_at_the_start() {
     assert_eq!(set_aside.kind, StoreKind::App);
     assert_eq!(std::fs::read(&set_aside.moved_to).unwrap(), unversioned);
     assert_eq!(load_store(path).unwrap(), AppStore::default(), "replaced");
+
+    // An app that dies before the owner reads the notice says it again,
+    // and a change meanwhile keeps it.
+    let named = AppStore {
+        label: "Pixel 8".into(),
+        ..AppStore::default()
+    };
+    save_store(path, &named).unwrap();
+    let again = open_store(path).unwrap();
+    assert_eq!(again.store, named);
+    assert_eq!(again.set_aside, Some(set_aside));
+
+    store_notice_read(path).unwrap();
+    assert_eq!(
+        open_store(path).unwrap(),
+        OpenedStore {
+            store: named,
+            set_aside: None
+        }
+    );
 }
 
 /// The owner's typed address becomes what a session dials: an IP alone takes

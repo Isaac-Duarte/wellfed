@@ -1163,6 +1163,10 @@ fn a_pins_file_that_does_not_read_is_set_aside_and_holds_feeds_until_the_bowls_a
         let RoutedFeed::Started { .. } = phone.router.feed(kitchen, 1).await else {
             panic!("the owner checked the bowls");
         };
+
+        // Written down: the next start holds nothing back.
+        let phone = phone.restarted().await;
+        assert_eq!(phone.router.set_aside(), None);
         sim.stop().await;
     });
 }

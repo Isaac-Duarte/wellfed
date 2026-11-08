@@ -111,7 +111,23 @@ class AppState extends ChangeNotifier implements FeederBook {
   AppState._(this.key, this._store, this._path, (PathRouter?, PinsProblem?) opened, SetAside? storeSetAside)
     : router = opened.$1,
       pinsProblem = opened.$2,
-      notice = StoreNoticeFlow(app: storeSetAside, router: opened.$1);
+      notice = StoreNoticeFlow(
+        app: storeSetAside,
+        router: opened.$1,
+        appRead: () => storeNoticeRead(path: _path),
+      );
+
+  /// The state of a phone with `key` and `store`, saved at `path`, its
+  /// router `router` (none: the pins did not open) and the app's file set
+  /// aside as `storeSetAside`, for a test of the whole app.
+  @visibleForTesting
+  AppState.of({
+    required ClientKey key,
+    required AppStore store,
+    required String path,
+    PathRouter? router,
+    SetAside? storeSetAside,
+  }) : this._(key, store, path, (router, router == null ? PinsProblem.unavailable : null), storeSetAside);
 
   static const _secretName = 'client-secret';
 
@@ -170,12 +186,23 @@ class AppState extends ChangeNotifier implements FeederBook {
     final Directory dir = await getApplicationSupportDirectory();
     final path = '${dir.path}/wellfed.json';
     final OpenedStore opened = await openStore(path: path);
+    final AppStore store = opened.store;
     // The server's link went with the file, so its token's secret can never
     // be used again, nor the token revoked from here: drop the secret, and a
-    // new login makes a new token.
-    if (opened.setAside?.kind == StoreKind.app) await const AppServerPorts().forgetSecret();
-    final AppStore store = opened.store;
+    // new login makes a new token. Every start does it until the owner reads
+    // the notice, so one that dies first still does, but never once a new
+    // login has kept a server, whose secret it would be.
+    if (opened.setAside?.kind == StoreKind.app && store.server == null) await _forgetServerSecret();
     return AppState._(key, store, path, _openRouter('${dir.path}/pending.json', store.server), opened.setAside);
+  }
+
+  /// Best effort: a secret left behind is unused, and the start goes on.
+  static Future<void> _forgetServerSecret() async {
+    try {
+      await const AppServerPorts().forgetSecret();
+    } on Exception catch (error) {
+      debugPrint('the old server token secret could not be deleted: $error');
+    }
   }
 
   /// The router on `pins`, told at once of the server the app keeps, before

@@ -43,10 +43,12 @@ void main() {
     await _show(tester, flow);
 
     expect(find.textContaining("couldn't be read"), findsOneWidget);
-    expect(find.textContaining('key and any saved copies of stock firmware'), findsOneWidget);
+    expect(find.textContaining('saved copies of the original firmware'), findsOneWidget);
+    await tester.scrollUntilVisible(find.textContaining('Kept as wellfed.json.damaged-1'), 100);
     expect(find.textContaining('Kept as wellfed.json.damaged-1'), findsOneWidget);
+    expect(find.textContaining('your feeders still know this phone', findRichText: true), findsOneWidget);
     expect(find.textContaining('then Recover a feeder', findRichText: true), findsOneWidget);
-    expect(find.textContaining('ask them for a new invite', findRichText: true), findsOneWidget);
+    expect(find.textContaining('ask someone who uses the feeder for an invite', findRichText: true), findsOneWidget);
     expect(find.textContaining("Clear the app's data"), findsNothing);
 
     await tester.tap(find.text('Continue'));
@@ -60,6 +62,7 @@ void main() {
     addTearDown(flow.dispose);
     await _show(tester, flow);
 
+    await tester.scrollUntilVisible(find.textContaining('Feeding is paused.', findRichText: true), 100);
     expect(find.textContaining('Feeding is paused.', findRichText: true), findsOneWidget);
     await tester.scrollUntilVisible(find.textContaining('Kept as pending.json.damaged-1'), 100);
     expect(find.textContaining('Kept as pending.json.damaged-1'), findsOneWidget);

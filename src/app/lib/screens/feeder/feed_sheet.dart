@@ -321,7 +321,7 @@ class _Progress extends StatelessWidget {
                   "didn't send it.",
             FeedNotSent(why: NotSentWhy.setAside) =>
               "This $deviceName lost its record of feeds that hadn't been confirmed, so feeding waits until "
-                  "you've looked in the bowls. Open Wellfed again to say you have.",
+                  "you've looked in the bowls. Go back to the home screen and confirm you've checked the bowls.",
             _ =>
               'The connection dropped before the request went out. Try again '
                   'once the feeder is online.',

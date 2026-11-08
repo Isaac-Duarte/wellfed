@@ -23,7 +23,7 @@ class StartFailedApp extends StatelessWidget {
         leading: Leading.none,
         title: "Wellfed couldn't start",
         body:
-            "This $deviceName's storage couldn't be read. Nothing was changed or deleted. "
+            "This $deviceName's storage couldn't be read. Nothing was deleted. "
             'Close the app and open it again; if this stays, restart the $deviceName.',
         content: [
           SelectableText(

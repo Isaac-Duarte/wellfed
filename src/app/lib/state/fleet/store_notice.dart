@@ -29,13 +29,15 @@ final class StoreNotice {
 /// writes stays set aside across starts until the owner says the bowls are
 /// checked, since the router holds every feed back until then.
 class StoreNoticeFlow extends ChangeNotifier {
-  /// The notice for the app's file as the start opened it (`app`) and the
-  /// router's record of writes, read from `router`.
-  StoreNoticeFlow({SetAside? app, PathRouter? router})
+  /// The notice for the app's file as the start opened it (`app`), which
+  /// `appRead` clears from that file, and the router's record of writes,
+  /// read from `router`.
+  StoreNoticeFlow({SetAside? app, PathRouter? router, this._appRead})
     : _router = router,
       _state = StoreNotice.of([app, router?.setAside()]);
 
   final PathRouter? _router;
+  final void Function()? _appRead;
   StoreNotice? _state;
 
   /// What is still to be said; `null` once read, or with nothing set aside.
@@ -47,13 +49,14 @@ class StoreNoticeFlow extends ChangeNotifier {
   void read() {
     final StoreNotice? notice = _state;
     if (notice == null) return;
-    if (notice.holdsFeeds) {
-      try {
-        _router?.bowlsChecked();
-      } on BridgeError catch (error) {
-        debugPrint('the checked bowls could not be written down, so feeds still wait: ${error.message}');
-        return;
-      }
+    // Each is written down before the notice goes, so a start after a
+    // failure says it again; checking the bowls twice changes nothing.
+    try {
+      if (notice.holdsFeeds) _router?.bowlsChecked();
+      if (notice.files.any((file) => file.kind == StoreKind.app)) _appRead?.call();
+    } on BridgeError catch (error) {
+      debugPrint('the read notice could not be written down, so it stays: ${error.message}');
+      return;
     }
     _state = null;
     notifyListeners();

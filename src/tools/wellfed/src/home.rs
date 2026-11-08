@@ -4,9 +4,11 @@
 //!
 //! That directory is `WELLFED_HOME` when it is set, and otherwise the
 //! platform's data directory for the app: `$XDG_DATA_HOME/wellfed` (or
-//! `~/.local/share/wellfed`) on Linux, Application Support on macOS and
-//! AppData on Windows. It never depends on the working directory, so a
-//! command run from anywhere finds the same key. Each file's flag (`--keys`,
+//! `~/.local/share/wellfed`) on Linux,
+//! `~/Library/Application Support/io.github.isaacduarte.wellfed` on macOS
+//! and `%APPDATA%\isaacduarte\wellfed\data` on Windows. It never depends
+//! on the working directory, so a command run from anywhere finds the same
+//! key. Each file's flag (`--keys`,
 //! `--backups`, `--token-file`) still names another path. The names inside
 //! are the ones `private/` has always used, so `WELLFED_HOME=private` in a
 //! checkout keeps the bench's layout.
@@ -62,12 +64,18 @@ impl Home {
 }
 
 fn platform() -> Result<PathBuf, HomeError> {
-    let strategy = choose_app_strategy(AppStrategyArgs {
+    Ok(choose_app_strategy(app())?.data_dir())
+}
+
+/// The app as `etcetera` names its directories: `wellfed` under XDG,
+/// `io.github.isaacduarte.wellfed` on macOS, `isaacduarte\wellfed` on
+/// Windows.
+fn app() -> AppStrategyArgs {
+    AppStrategyArgs {
         top_level_domain: "io.github".into(),
         author: "isaacduarte".into(),
         app_name: "wellfed".into(),
-    })?;
-    Ok(strategy.data_dir())
+    }
 }
 
 /// `given`, or the file `pick` names in the [`Home`].
@@ -121,12 +129,11 @@ mod tests {
         assert_eq!(or_home(Some(given), |_| unreachable!()).unwrap(), given);
     }
 
-    /// The platform's directory on this host: an absolute path ending in
-    /// the app's name, whatever the working directory.
+    /// The names the platform's directories take, which the docs give:
+    /// pure, so the host's `HOME` plays no part.
     #[test]
-    fn the_platform_directory_is_absolute() {
-        let path = platform().unwrap();
-        assert!(path.is_absolute(), "{}", path.display());
-        assert!(path.ends_with("wellfed") || path.to_string_lossy().contains("wellfed"));
+    fn the_app_is_named_as_the_docs_say() {
+        assert_eq!(app().unixy_name(), "wellfed");
+        assert_eq!(app().bundle_id(), "io.github.isaacduarte.wellfed");
     }
 }

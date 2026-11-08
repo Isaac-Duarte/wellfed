@@ -1,8 +1,10 @@
 //! What an install keeps, under the owner's backups directory: one
 //! subdirectory per feeder (named by its identity) holding its stock backup
 //! (`stock-1.1.15.bin`) and the promotion manifests the run signed, and beside
-//! them `installing.json`, the record a resumed run finds its feeder by. The CLI's directory is `private/stock-backups`; the
-//! app's is in its own storage.
+//! them `installing.json`, the record a resumed run finds its feeder by. The
+//! CLI's directory is `stock-backups` in its data directory (`WELLFED_HOME`,
+//! or the platform's), and the bench's `private/stock-backups`; the app's is
+//! in its own storage.
 //!
 //! Nothing kept is ever replaced by a different copy: a backup a run read stays
 //! as it was read, and a different read refuses.

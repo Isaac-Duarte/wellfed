@@ -10,7 +10,10 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'server_views.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `file`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `AppFile`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored (category: IgnoreBecauseOwnerTyShouldIgnore): `default`
 
 /// This app's version, as its About screen says it.
 String appVersion() => RustLib.instance.api.crateApiStoreAppVersion();
@@ -23,9 +26,15 @@ String feederAddress({required String text}) =>
 /// The store at `path` as the app's start reads it: an empty one when the
 /// app has never saved, and an empty one too, with the old file set aside,
 /// when it does not read. The client key in secure storage and the stock
-/// backups are not in this file, so neither is touched.
+/// backups are not in this file, so neither is touched. `set_aside` stays
+/// in the answer at every start until [`store_notice_read`].
 Future<OpenedStore> openStore({required String path}) =>
     RustLib.instance.api.crateApiStoreOpenStore(path: path);
+
+/// The owner read the notice of a set-aside `wellfed.json`: the next start
+/// says nothing of it.
+void storeNoticeRead({required String path}) =>
+    RustLib.instance.api.crateApiStoreStoreNoticeRead(path: path);
 
 /// The store at `path`, or an empty one when the app has never saved. Strict:
 /// a file that does not read is an error, since the start already set aside
@@ -33,6 +42,7 @@ Future<OpenedStore> openStore({required String path}) =>
 Future<AppStore> loadStore({required String path}) =>
     RustLib.instance.api.crateApiStoreLoadStore(path: path);
 
+/// Replace the store at `path`, keeping a notice the owner has not read.
 Future<void> saveStore({required String path, required AppStore store}) =>
     RustLib.instance.api.crateApiStoreSaveStore(path: path, store: store);
 
@@ -160,7 +170,9 @@ class OpenedStore {
 }
 
 /// A file of the app's that did not read at the start, kept under another
-/// name beside it and replaced with an empty one.
+/// name beside it and replaced with an empty one. Stored in `wellfed.json`
+/// and `pending.json` until the owner reads the notice, so a change to it
+/// changes those files' shape.
 class SetAside {
   final StoreKind kind;
 

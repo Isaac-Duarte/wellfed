@@ -26,7 +26,18 @@ pub struct AppStore {
     pub server: Option<KnownServer>,
 }
 
-impl Versioned for AppStore {
+/// `wellfed.json` as it is on disk: the store, and the file it replaced when
+/// that one did not read, kept until the owner has read the notice, so an
+/// app that dies before then says so again at its next start.
+#[flutter_rust_bridge::frb(ignore)]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct AppFile {
+    store: AppStore,
+    set_aside: Option<SetAside>,
+}
+
+impl Versioned for AppFile {
     const VERSION: u32 = 1;
 }
 
@@ -43,7 +54,9 @@ pub enum StoreKind {
 }
 
 /// A file of the app's that did not read at the start, kept under another
-/// name beside it and replaced with an empty one.
+/// name beside it and replaced with an empty one. Stored in `wellfed.json`
+/// and `pending.json` until the owner reads the notice, so a change to it
+/// changes those files' shape.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SetAside {
@@ -108,35 +121,55 @@ pub fn feeder_address(text: &str) -> Result<String, BridgeError> {
 /// The store at `path` as the app's start reads it: an empty one when the
 /// app has never saved, and an empty one too, with the old file set aside,
 /// when it does not read. The client key in secure storage and the stock
-/// backups are not in this file, so neither is touched.
+/// backups are not in this file, so neither is touched. `set_aside` stays
+/// in the answer at every start until [`store_notice_read`].
 pub fn open_store(path: &str) -> Result<OpenedStore, BridgeError> {
-    Ok(
-        match stored::open(Path::new(path), StoreKind::App, |_| AppStore::default())? {
-            Opened::Absent => OpenedStore {
-                store: AppStore::default(),
-                set_aside: None,
-            },
-            Opened::Read(store) => OpenedStore {
-                store,
-                set_aside: None,
-            },
-            Opened::SetAside { value, set_aside } => OpenedStore {
-                store: value,
-                set_aside: Some(set_aside),
-            },
-        },
-    )
+    let fresh = |set_aside: &SetAside| AppFile {
+        store: AppStore::default(),
+        set_aside: Some(set_aside.clone()),
+    };
+    let file = match stored::open(Path::new(path), StoreKind::App, fresh)? {
+        Opened::Absent => AppFile::default(),
+        Opened::Read(file) | Opened::SetAside { value: file, .. } => file,
+    };
+    Ok(OpenedStore {
+        store: file.store,
+        set_aside: file.set_aside,
+    })
+}
+
+/// The owner read the notice of a set-aside `wellfed.json`: the next start
+/// says nothing of it.
+#[flutter_rust_bridge::frb(sync)]
+pub fn store_notice_read(path: &str) -> Result<(), BridgeError> {
+    let path = Path::new(path);
+    let mut file = file(path)?;
+    if file.set_aside.take().is_some() {
+        stored::write(path, &file)?;
+    }
+    Ok(())
+}
+
+/// The file at `path`, strictly, or an empty one when nothing was written.
+fn file(path: &Path) -> Result<AppFile, BridgeError> {
+    Ok(stored::load(path)?.unwrap_or_default())
 }
 
 /// The store at `path`, or an empty one when the app has never saved. Strict:
 /// a file that does not read is an error, since the start already set aside
 /// any it found, and a change must not empty the store behind the owner.
 pub fn load_store(path: &str) -> Result<AppStore, BridgeError> {
-    Ok(stored::load(Path::new(path))?.unwrap_or_default())
+    Ok(file(Path::new(path))?.store)
 }
 
+/// Replace the store at `path`, keeping a notice the owner has not read.
 pub fn save_store(path: &str, store: &AppStore) -> Result<(), BridgeError> {
-    stored::write(Path::new(path), store)
+    let path = Path::new(path);
+    let file = AppFile {
+        store: store.clone(),
+        set_aside: file(path)?.set_aside,
+    };
+    stored::write(path, &file)
 }
 
 /// A key as the store and NSD's `id` spell it: lowercase hex.

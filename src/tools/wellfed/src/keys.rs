@@ -59,44 +59,75 @@ impl OwnerKey {
         missing: Missing,
         random: &Path,
     ) -> Result<Self> {
-        let created = !path
+        let exists = path
             .try_exists()
             .with_context(|| format!("look for {}", path.display()))?;
-        if created && missing == Missing::Refuse {
-            return Err(KeyError::Missing {
+        match (exists, missing) {
+            (true, _) => Self::existing(path, label),
+            (false, Missing::Create) => Self::create(path, label, random),
+            (false, Missing::Refuse) => Err(KeyError::Missing {
                 path: path.to_path_buf(),
             }
-            .into());
+            .into()),
         }
-        let mut file = if !created {
-            owner::load(path).with_context(|| format!("read the key file {}", path.display()))?
-        } else {
-            let secret: [u8; 32] =
-                private::random(random).context("read the system random source")?;
-            OwnerKeyFile {
-                version: VERSION,
-                secret: hex::encode(&secret),
-                label: DEFAULT_LABEL.into(),
-                feeders: Vec::new(),
-            }
-        };
-        let relabelled = label.is_some_and(|label| label != file.label);
-        if let Some(label) = label {
-            file.label = label.into();
-        }
+    }
 
-        let secret = hex::decode::<32>(&file.secret)
-            .with_context(|| format!("{}: the secret is not 32 bytes of hex", path.display()))?;
-        let key = Self {
-            path: path.to_path_buf(),
-            keypair: Keypair::from_secret(secret),
-            file,
-        };
+    /// The key file at `path`, relabelled when `label` differs.
+    fn existing(path: &Path, label: Option<&str>) -> Result<Self> {
+        let file =
+            owner::load(path).with_context(|| format!("read the key file {}", path.display()))?;
+        let mut key = Self::of(path, file)?;
         // Every command opens the key: rewrite it only when it changed.
-        if created || relabelled {
+        if let Some(label) = label.filter(|label| *label != key.file.label) {
+            key.file.label = label.into();
             key.save()?;
         }
         Ok(key)
+    }
+
+    /// A new key at `path`. The file appears whole, and only where none is:
+    /// two runs that both found no key race to write it, and the one that
+    /// loses opens the winner's rather than replace a key a feeder may
+    /// already have enrolled.
+    fn create(path: &Path, label: Option<&str>, random: &Path) -> Result<Self> {
+        let secret: [u8; 32] = private::random(random).context("read the system random source")?;
+        let file = OwnerKeyFile {
+            version: VERSION,
+            secret: hex::encode(&secret),
+            label: label.unwrap_or(DEFAULT_LABEL).into(),
+            feeders: Vec::new(),
+        };
+        let mut bytes = serde_json::to_vec_pretty(&file).context("encode the key file")?;
+        bytes.push(b'\n');
+
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("create {}", parent.display()))?;
+        }
+        match private::write_new_whole(path, &bytes) {
+            Ok(()) => Self::of(path, file),
+            Err(wellfed_formats::Error::Io(error))
+                if error.kind() == std::io::ErrorKind::AlreadyExists =>
+            {
+                Self::existing(path, label)
+            }
+            Err(error) => {
+                Err(error).with_context(|| format!("write the key file {}", path.display()))
+            }
+        }
+    }
+
+    fn of(path: &Path, file: OwnerKeyFile) -> Result<Self> {
+        let secret = hex::decode::<32>(&file.secret)
+            .with_context(|| format!("{}: the secret is not 32 bytes of hex", path.display()))?;
+        Ok(Self {
+            path: path.to_path_buf(),
+            keypair: Keypair::from_secret(secret),
+            file,
+        })
     }
 
     /// The default random source.
@@ -211,6 +242,29 @@ mod tests {
         let mut same = OwnerKey::open(&path, Some("laptop"), Missing::Create, &random).unwrap();
         same.remember(&[5; 32]).unwrap();
         assert_eq!(modified(), before);
+    }
+
+    /// Two runs that both found no key: the one that writes second opens
+    /// the first one's key and leaves its file as it was.
+    #[test]
+    fn a_key_made_by_a_concurrent_run_is_opened_not_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("home").join("owner.json");
+        let random = dir.path().join("random");
+        std::fs::write(&random, [9u8; 32]).unwrap();
+        let first = OwnerKey::create(&path, None, &random).unwrap();
+        let written = std::fs::read(&path).unwrap();
+
+        std::fs::write(&random, [1u8; 32]).unwrap();
+        let second = OwnerKey::create(&path, None, &random).unwrap();
+
+        assert_eq!(second.keypair().public(), first.keypair().public());
+        assert_eq!(std::fs::read(&path).unwrap(), written, "not replaced");
+        let left: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(left, ["owner.json"], "no temporary file left");
     }
 
     #[test]
