@@ -128,12 +128,20 @@ impl Describe for FeederRecord {
                 generation,
                 early,
                 missed,
-            } => write!(
-                f,
-                "stats open status={} generation={generation} early={early} missed={}",
-                status.name(),
-                u8::from(missed)
-            ),
+            } => {
+                write!(
+                    f,
+                    "stats open status={} generation={generation} early={early} missed={}",
+                    status.name(),
+                    u8::from(missed)
+                )?;
+                // A record this build could not read: the totals and the
+                // wear counts it held are gone.
+                if status == StatsStatus::Lost {
+                    f.write_str(" wear_lost=1")?;
+                }
+                Ok(())
+            }
             Self::StatsSaved { generation, early } => {
                 write!(f, "stats saved generation={generation} early={early}")
             }
@@ -261,8 +269,9 @@ impl<F> Default for FeederStores<F> {
 /// The factory reset's step for the lifetime statistics: rewrite them
 /// keeping only the erase counts ([`Totals::wear_only`]), as one dual-slot
 /// save, so a cut leaves the old totals or the wear-only ones and the boot
-/// after does it again. A store with nothing in it, or one this build
-/// cannot write (a newer schema), is left as it is.
+/// after does it again. A store with nothing in it, one this build cannot
+/// read (its next save writes over it), or one a newer major wrote, is left
+/// as it is.
 ///
 /// The statistics pair is the region's most written, so it may be the one
 /// to wear out. A save that fails must not stop the reset for good (every
@@ -578,8 +587,6 @@ impl<F: FlashOps> FeederStores<F> {
 
 impl<F: FlashOps> Product<F> for FeederStores<F> {
     type Record = FeederRecord;
-
-    const HANDOVER_CLEARED: &'static [u32] = &[PLANS_BASE, PLANS_BASE + 1];
 
     fn open_kept(&mut self) {
         self.calibration.open(Slots::new());

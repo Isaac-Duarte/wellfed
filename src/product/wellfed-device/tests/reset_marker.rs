@@ -92,3 +92,42 @@ fn attempts_count_without_an_erase_and_clear_with_the_marker() {
     let io = unsafe { flash.io() };
     assert_eq!(reset::attempts(&io), 1, "a torn attempt counts");
 }
+
+/// The mark says the reset was asked for by hand, the word going down
+/// before the marker; a marker without the word, or the word without a
+/// marker, is not a reset by hand.
+#[test]
+fn a_mark_is_by_hand_and_only_the_whole_word_counts() {
+    let mut flash = one_unit();
+    // SAFETY: as above.
+    let io = unsafe { flash.io() };
+    assert!(!reset::by_hand(&io));
+    assert!(reset::mark(&io));
+    assert!(reset::by_hand(&io));
+    assert_eq!(&flash.bytes[0][48..64], &reset::BY_HAND);
+
+    // A marker some other way: no word.
+    let mut flash = one_unit();
+    flash.bytes[0][..16].copy_from_slice(&MARKER);
+    // SAFETY: as above.
+    let io = unsafe { flash.io() };
+    assert!(reset::pending(&io) && !reset::by_hand(&io));
+
+    // A word left by a mark cut before its marker: no reset, and the next
+    // mark keeps it rather than erase.
+    let mut flash = one_unit();
+    flash.bytes[0][48..64].copy_from_slice(&reset::BY_HAND);
+    // SAFETY: as above.
+    let io = unsafe { flash.io() };
+    assert!(!reset::pending(&io) && !reset::by_hand(&io));
+    assert!(reset::mark(&io));
+    assert!(reset::by_hand(&io));
+
+    // A word torn by a cut: not by hand.
+    let mut flash = one_unit();
+    flash.bytes[0][..16].copy_from_slice(&MARKER);
+    flash.bytes[0][48..56].copy_from_slice(&reset::BY_HAND[..8]);
+    // SAFETY: as above.
+    let io = unsafe { flash.io() };
+    assert!(reset::pending(&io) && !reset::by_hand(&io));
+}

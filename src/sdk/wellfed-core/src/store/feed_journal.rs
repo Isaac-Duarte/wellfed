@@ -2,11 +2,28 @@
 //! ([`slot`](crate::store::slot)) with its strictest policy: it never
 //! falls back past a reservation it might forget.
 //!
-//! The on-flash v1 record is 128 bytes and must stay byte-identical:
-//! magic `PLFJNL01`, version, record size, type, mode, direction, flags,
-//! sequence, binding, high-water ID, result counts, outcome, reason,
-//! max portions, a zero span, CRC-32/ISO-HDLC of bytes 0..120 at 120 and
-//! the `CMIT` commit marker at 124.
+//! The on-flash record is 128 bytes, major 1: magic `PLFJNL01`, major,
+//! minor, record size, type, mode, direction, flags, sequence, binding,
+//! high-water ID, result counts, outcome, reason, max portions (bytes
+//! 12..48), spare room (48..120, zero), CRC-32/ISO-HDLC of bytes 0..120 at
+//! 120 and the `CMIT` commit marker at 124.
+//!
+//! Bank 0 runs this journal for the life of the feeder, so its record only
+//! changes by additive minors in the spare room: the journal reads its
+//! units whole, so its length never changes within a major (a cut erase
+//! over a longer record would read as corrupt and stop feeding). A newer
+//! minor decodes for the fields this build knows and keeps the rest when
+//! the journal writes its next record. Bytes 48..80 are kept for the minor
+//! that makes a feed's write id durable: the 16-byte request id, the 8-byte
+//! key id of the client that sent it and the 8-byte id of the feed it named,
+//! so a resend after a restart finds its feed. An older build carries those
+//! bytes unread into every record it writes, the next feed's included, so
+//! the feed id ties them to their feed: a reader compares it with the
+//! record's high-water ID (bytes 32..40) and ignores a request id whose
+//! feed id differs. Anything a minor adds there reads zero as "none", the
+//! way a record of this minor leaves it. A newer or older major is one the
+//! journal cannot read, and faults it, as it must never forget a
+//! reservation.
 //!
 //! A reservation a reset interrupted is resolved at the next boot by one
 //! more result record, outcome [`OwnerOutcome::Uncertain`]: same layout,
@@ -35,21 +52,29 @@ use crate::feed::controller::{FeedReason, FeedRequest};
 use crate::feed::progress::{BowlMode, Direction};
 use crate::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult, OwnerStorage};
 use crate::store::slot::{
-    CRC_AT, DualSlot, Extent, Found, Layout, Prepare, RECORD_BYTES, SlotIo, get_u16, get_u64,
-    put_u16, put_u64, seal,
+    CRC_AT, DualSlot, Extent, Found, Layout, Prepare, RECORD_BYTES, SlotIo, Version, get_u16,
+    get_u64, put_u16, put_u64, seal,
 };
 
 const GENESIS: u8 = 0;
 const INTENT: u8 = 1;
 const RESULT: u8 = 2;
 
+/// Where the fields this build knows end, and the spare room starts.
+const FIELDS_END: usize = 48;
+/// The room kept for a durable write id: the request id, the requesting
+/// client's key id, then the id of the feed it named, which an older
+/// build's records carry forward unread onto later feeds.
+pub const REQUEST_ID_AT: usize = FIELDS_END;
+const REQUEST_FEED_AT: usize = REQUEST_ID_AT + 16 + 8;
+pub const REQUEST_ID_END: usize = REQUEST_FEED_AT + 8;
+
+const _: () = assert!(REQUEST_ID_END <= CRC_AT);
+
 /// The journal reads its whole units, so unrelated bytes are never taken
 /// for an empty journal.
-const LAYOUT: Layout = Layout {
-    magic: *b"PLFJNL01",
-    version: 1,
-    extent: Extent::Unit,
-};
+const LAYOUT: Layout = Layout::new(*b"PLFJNL01", Version::new(1, 0), FIELDS_END, Extent::Unit);
+const _: () = assert!(LAYOUT.fits(RECORD_BYTES));
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct JournalConfig {
@@ -245,7 +270,7 @@ impl<I: SlotIo> FeedJournal<I> {
             || p[15] > 7
             || get_u64::<24, _>(p) != self.config.binding
             || get_u16::<46, _>(p) != self.config.max_portions
-            || !all(&p[48..CRC_AT], 0)
+            || !all(&p[FIELDS_END..CRC_AT], 0)
         {
             return None;
         }
@@ -337,7 +362,7 @@ impl<I: SlotIo> FeedJournal<I> {
     /// older format version is one it cannot read, so it is invalid and
     /// faults whatever it sits beside.
     fn scan(&self, slot: c_uint) -> Option<Found<JournalView>> {
-        let found = self.units.scan(slot, |p| self.decode(p))?;
+        let found = self.units.scan(slot, |_, p| self.decode(p))?;
         Some(match found {
             Found::Future | Found::Older => Found::Invalid,
             found => found,
@@ -446,8 +471,15 @@ impl<I: SlotIo> FeedJournal<I> {
 
     /// Write `next` to unit `slot` by the torn-write rule, which every
     /// torn state `open` reads stands on.
+    /// A newer minor's bytes in the record being replaced are kept.
     fn write_record(&mut self, slot: c_uint, next: &JournalView, prepare: Prepare) -> bool {
-        let ok = self.units.write(slot, &self.encode(next), prepare);
+        let record = self.encode(next);
+        let ok = match prepare {
+            Prepare::Erase => self
+                .units
+                .replace(slot, self.opened.then_some(self.slot), &record),
+            Prepare::Erased => self.units.write(slot, &record, prepare),
+        };
         if !ok {
             self.fail(JournalError::Io);
             return false;

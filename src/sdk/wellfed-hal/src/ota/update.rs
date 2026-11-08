@@ -420,6 +420,7 @@ pub fn describe(record: Record, f: &mut impl fmt::Write) -> fmt::Result {
                 UpdateStatus::Loaded => "loaded",
                 UpdateStatus::Empty => "empty",
                 UpdateStatus::ReadOnly => "newer",
+                UpdateStatus::Corrupt => "corrupt",
                 UpdateStatus::Io | UpdateStatus::Unopened => "unreadable",
             },
             u8::from(attempt)
@@ -625,6 +626,18 @@ impl<I: SlotIo + Clone> Update<I> {
             self.check_bank0 = true;
             self.bank0 = Bank0Check::Unchecked;
             self.scan = None;
+        }
+        // Bank 0 gives up recording itself on a store it cannot write; one
+        // the factory reset or the handover emptied since has room for the
+        // record again, and no restart follows either of them.
+        if self.bank == 0
+            && matches!(
+                self.store.status,
+                UpdateStatus::Empty | UpdateStatus::Loaded
+            )
+            && self.store.record().bank0.is_none()
+        {
+            self.record_bank0 = true;
         }
         self.attempt = self.bank == 0 && arming::update_attempted();
         self.publish();

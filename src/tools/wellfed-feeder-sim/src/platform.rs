@@ -219,7 +219,7 @@ impl SimPlatform {
         mdns: Option<(UdpSocket, Ipv4Addr)>,
     ) -> Result<Self, DeviceError> {
         stores::finish_reset(flash, keep_wear);
-        stores::finish_handover(flash, bank, &[storage::PLANS]);
+        stores::finish_handover(flash, bank);
         let device = DeviceStores::open(flash, random)?;
         let ring_opened_at = device.last_event();
         let mut stats = StatsStore::default();
