@@ -28,6 +28,7 @@ class HomeScreen extends StatefulWidget {
   final AdoptFlow? adopt;
 
   /// Why the record of unconfirmed writes did not open: then nothing is sent.
+  /// One that opened but did not read was set aside, and the start said so.
   final PinsProblem? pinsProblem;
 
   /// What an earlier install left, read from its records. A run that died
@@ -75,10 +76,10 @@ class _HomeScreenState extends State<HomeScreen> {
             text: switch (problem) {
               PinsProblem.inUse =>
                 'Another copy of Wellfed holds its record of unconfirmed writes. Close it, then open the app again.',
-              PinsProblem.unreadable =>
-                "This $deviceName's record of unconfirmed writes can't be read, so the app sends nothing rather than "
-                    "risk a feed twice. Clear the app's data${isDesktop ? '' : ' (Android Settings, Apps, Wellfed, Storage)'}, "
-                    'then pair your feeders again.',
+              PinsProblem.unavailable =>
+                "This $deviceName's storage couldn't open its record of unconfirmed writes, so the app sends "
+                    'nothing rather than risk a feed twice. Close the app and open it again; if this stays, restart '
+                    'the $deviceName.',
             },
           ),
           const SizedBox(height: Space.s4),

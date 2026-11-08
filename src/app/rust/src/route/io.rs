@@ -30,15 +30,16 @@ use crate::api::server_views::{
     KnownServer, ServerAccount, ServerConnection, ServerFeeder, ServerRole,
 };
 use crate::api::session::FeedRefusal;
+use crate::api::store::SetAside;
 use crate::link::{DirectLink, LinkNews};
 use crate::requests;
 use crate::route::core::{
-    self, Access, Book, Ended, Keys, Reach, RetryPlan, ServerFailure, ServerReach, Standing,
+    self, Access, Book, Ended, Held, Keys, Reach, RetryPlan, ServerFailure, ServerReach, Standing,
     settled_by_command, settled_by_history, settled_unfound,
 };
 use crate::route::pins::{LostAdoption, PinRecord, PinState, PinStore, PinnedWrite, ServerMark};
 use crate::route::server as calls;
-use crate::route::shape::{DirectCall, Shape, shape};
+use crate::route::shape::{DirectCall, SentWrite, Shape, shape};
 use crate::session::{Command, Heard, feed_due};
 
 /// The router: cheap to clone, one state behind every clone.
@@ -617,6 +618,25 @@ impl Router {
         self.state().book.pins.iter().map(PinRecord::view).collect()
     }
 
+    /// The pins file that did not read at the open, while feeds still wait
+    /// for the owner to check the bowls.
+    pub(crate) fn set_aside(&self) -> Option<SetAside> {
+        self.state().book.set_aside.clone()
+    }
+
+    pub(crate) fn bowls_checked(&self) -> Result<(), BridgeError> {
+        let mut state = self.state();
+        let held = state.book.set_aside.clone();
+        if state.book.bowls_checked()
+            && let Err(error) = state.save()
+        {
+            // Not written down: the hold stays, so a restart still has it.
+            state.book.set_aside = held;
+            return Err(error);
+        }
+        Ok(())
+    }
+
     pub(crate) fn acknowledge(&self, key: &str) -> Result<(), BridgeError> {
         let key = Uuid::parse_str(key)
             .map_err(|_| BridgeError::new(ErrorKind::Key, "not an idempotency key"))?;
@@ -640,13 +660,17 @@ impl Router {
             };
             let path = core::choose(access, state.reach(feeder), now);
             let pin = state.pin(key, feeder, path, PinnedWrite::Feed { portions }, now);
-            if let Err(holding) = state.book.admit(pin, now) {
-                return match state.book.get(holding) {
-                    Some(holding) => RoutedFeed::Held {
-                        pending: holding.view(),
-                    },
-                    None => not_sent(NotSentReason::NoPath, None),
-                };
+            match state.book.admit(pin, now) {
+                Ok(()) => {}
+                Err(Held::SetAside) => return not_sent(NotSentReason::SetAside, None),
+                Err(Held::By(holding)) => {
+                    return match state.book.get(holding) {
+                        Some(holding) => RoutedFeed::Held {
+                            pending: holding.view(),
+                        },
+                        None => not_sent(NotSentReason::NoPath, None),
+                    };
+                }
             }
             // Written down before it goes, or it does not go.
             if state.save().is_err() {
@@ -849,7 +873,7 @@ impl Router {
     pub(crate) async fn cancel(&self, feeder: &str, feed: u32) -> RoutedReply {
         self.write(
             feeder,
-            PinnedWrite::Cancel { feed },
+            SentWrite::Cancel { feed },
             None,
             DirectCall::Op(Op::CancelFeed { feed }),
         )
@@ -921,7 +945,7 @@ impl Router {
     async fn write(
         &self,
         feeder: &str,
-        write: PinnedWrite,
+        write: SentWrite,
         stream: Option<Vec<u8>>,
         call: DirectCall,
     ) -> RoutedReply {
@@ -936,7 +960,7 @@ impl Router {
                 return nowhere(NotSentReason::NoPath, None);
             };
             let path = core::choose(access, state.reach(feeder), now);
-            let pin = state.pin(key, feeder, path, write.clone(), now);
+            let pin = state.pin(key, feeder, path, write.pinned(), now);
             // Only a feed is ever held back, so this admits it; written
             // down before it goes, or it does not go.
             if state.book.admit(pin, now).is_err() || state.save().is_err() {
@@ -1017,7 +1041,7 @@ impl Router {
     async fn write_on_server(
         &self,
         feeder: &str,
-        write: &PinnedWrite,
+        write: &SentWrite,
         stream: Option<Vec<u8>>,
         key: Uuid,
     ) -> WriteTry {

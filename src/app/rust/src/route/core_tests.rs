@@ -5,7 +5,9 @@ use wellfed_api::FeederRefusal;
 use wellfed_model::{FeedOutcome, FeedReason};
 
 use super::*;
+use crate::api::router::WriteKind;
 use crate::api::server::ServerRefusal;
+use crate::api::store::StoreKind;
 
 const NOW: i64 = 1_000_000;
 const MARK: ServerMark = ServerMark {
@@ -364,7 +366,9 @@ fn a_direct_feed_settles_by_this_phone_s_one_fed_after_its_mark() {
     assert_eq!(settled_by_history(&unmarked, &[], &[seen(12, 2)]), None);
     // Only a feed is the feeder history's to settle.
     let lock = PinRecord {
-        write: PinnedWrite::Lock { locked: true },
+        write: PinnedWrite::Other {
+            kind: WriteKind::Lock,
+        },
         ..pin
     };
     assert_eq!(settled_by_history(&lock, &[], &[seen(12, 2)]), None);
@@ -402,7 +406,7 @@ fn a_feed_waits_for_one_unanswered_or_uncertain_until_the_owner_puts_it_away() {
     let held = book
         .admit(feed_pin(2, "a", RoutePath::Direct), NOW)
         .unwrap_err();
-    assert_eq!(held, Uuid::from_u128(1));
+    assert_eq!(held, Held::By(Uuid::from_u128(1)));
     // Another feeder's feed goes.
     book.admit(feed_pin(3, "b", RoutePath::Direct), NOW)
         .unwrap();
@@ -424,12 +428,46 @@ fn a_feed_waits_for_one_unanswered_or_uncertain_until_the_owner_puts_it_away() {
 }
 
 #[test]
+fn a_set_aside_pins_file_holds_every_feed_back_until_the_bowls_are_checked() {
+    let mut book = Book {
+        set_aside: Some(SetAside {
+            kind: StoreKind::Pending,
+            moved_to: "pending.json.damaged-1".into(),
+            reason: "not this file's shape".into(),
+            at_ms: NOW,
+        }),
+        ..Book::default()
+    };
+
+    for feeder in ["a", "b"] {
+        assert_eq!(
+            book.admit(feed_pin(1, feeder, RoutePath::Direct), NOW),
+            Err(Held::SetAside)
+        );
+    }
+    let lock = PinRecord {
+        write: PinnedWrite::Other {
+            kind: WriteKind::Lock,
+        },
+        ..feed_pin(2, "a", RoutePath::Server)
+    };
+    book.admit(lock, NOW).unwrap();
+
+    assert!(book.bowls_checked());
+    assert!(!book.bowls_checked(), "once");
+    book.admit(feed_pin(3, "a", RoutePath::Direct), NOW)
+        .unwrap();
+}
+
+#[test]
 fn a_write_other_than_a_feed_is_never_held_back() {
     let mut book = Book::default();
     book.admit(feed_pin(1, "a", RoutePath::Server), NOW)
         .unwrap();
     let lock = PinRecord {
-        write: PinnedWrite::Lock { locked: true },
+        write: PinnedWrite::Other {
+            kind: WriteKind::Lock,
+        },
         ..feed_pin(2, "a", RoutePath::Server)
     };
     book.admit(lock, NOW).unwrap();
@@ -490,7 +528,9 @@ fn any_end_but_uncertain_takes_the_pin_out() {
 fn putting_away_a_write_nothing_can_settle_takes_it_out() {
     let mut book = Book::default();
     let lock = PinRecord {
-        write: PinnedWrite::Lock { locked: true },
+        write: PinnedWrite::Other {
+            kind: WriteKind::Lock,
+        },
         state: PinState::Uncertain,
         ..feed_pin(1, "a", RoutePath::Direct)
     };

@@ -3,19 +3,18 @@
 //! as, the newest-valid-wins pick, and a power cut at every mutation and a
 //! failure at every call of a write, for both extents and several unit
 //! sizes. Each store's own power-cut test then checks its policy over the
-//! same rule.
+//! same rule. Then the versions: a newer minor read and rewritten with the
+//! bytes this build doesn't know, an older minor or a previous major
+//! handed to the decoder, and a newer major refused.
 
 use wellfed_core::store::slot::{
-    CRC_AT, DualSlot, Extent, Found, Layout, Pick, Prepare, RECORD_BYTES, crc32, get_u64, newest,
-    put_u64, seal, target,
+    CRC_AT, DualSlot, Extent, Found, Layout, Pick, Prepare, RECORD_BYTES, Version, crc32, get_u64,
+    newest, put_u64, seal, target, unwritten,
 };
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo};
 
-const UNIT: Layout = Layout {
-    magic: *b"PLFTEST1",
-    version: 3,
-    extent: Extent::Unit,
-};
+/// Fields at 12..21: the generation and one payload byte.
+const UNIT: Layout = Layout::new(*b"PLFTEST1", Version::new(3, 0), 24, Extent::Unit);
 const RECORD: Layout = Layout {
     extent: Extent::Record,
     ..UNIT
@@ -41,7 +40,7 @@ fn record(layout: &Layout, generation: u64, value: u8) -> [u8; RECORD_BYTES] {
 }
 
 /// The generation and the payload; anything else in the fields is refused.
-fn decode(p: &[u8; RECORD_BYTES]) -> Option<(u64, u8)> {
+fn decode(_: Version, p: &[u8; RECORD_BYTES]) -> Option<(u64, u8)> {
     let generation = get_u64::<12, _>(p);
     (generation != 0 && p[21..CRC_AT].iter().all(|&b| b == 0)).then_some((generation, p[20]))
 }
@@ -347,4 +346,306 @@ fn unbound_units_refuse_everything_and_a_clear_erases_both() {
     f.bytes[1][4000] = 0;
     assert!(units(&mut f, &UNIT).clear());
     assert!(f.bytes.iter().flatten().all(|&b| b == u8::MAX));
+}
+
+#[test]
+fn only_erased_units_or_a_cut_first_save_are_unwritten() {
+    let found = [
+        Found::Erased,
+        Found::Valid(1u64),
+        Found::Future,
+        Found::Older,
+        Found::Partial,
+        Found::Unmarked,
+        Found::Torn,
+        Found::Invalid,
+    ];
+    for a in found {
+        for b in found {
+            let blank = |f: Found<u64>| f == Found::Erased;
+            let expected = (blank(a) && blank(b))
+                || (a == Found::Partial && blank(b))
+                || (blank(a) && b == Found::Partial);
+            assert_eq!(unwritten(&a, &b), expected, "{a:?} {b:?}");
+        }
+    }
+}
+
+/// A record of this store in version `major.minor` and `len` bytes: the
+/// generation and payload this build knows, then `len - 32` bytes it
+/// doesn't, none of them zero.
+fn versioned(major: u8, minor: u8, len: usize, generation: u64, value: u8) -> Vec<u8> {
+    let mut p = vec![0u8; len];
+    p[..8].copy_from_slice(b"PLFTEST1");
+    p[8] = major;
+    p[9] = minor;
+    p[10..12].copy_from_slice(&u16::try_from(len).unwrap().to_le_bytes());
+    p[12..20].copy_from_slice(&generation.to_le_bytes());
+    p[20] = value;
+    for (i, b) in p[24..len - 8].iter_mut().enumerate() {
+        *b = (i as u8) | 0x80;
+    }
+    let crc = crc32(&p[..len - 8]);
+    p[len - 8..len - 4].copy_from_slice(&crc.to_le_bytes());
+    p[len - 4..].copy_from_slice(b"CMIT");
+    p
+}
+
+/// What `layout` reads in unit `slot`, with the version the decoder saw.
+fn scan_versioned(
+    f: &mut FakeJournalFlash,
+    layout: &'static Layout,
+    slot: u32,
+) -> Found<(Version, u64, u8)> {
+    units(f, layout)
+        .scan(slot, |version, p| {
+            decode(version, p).map(|(generation, value)| (version, generation, value))
+        })
+        .expect("the fake flash reads")
+}
+
+#[test]
+fn a_newer_minor_is_read_for_the_fields_this_build_knows() {
+    for layout in [&UNIT, &RECORD] {
+        // Longer than the build's record, or the same length with its
+        // spare room used: either way the decoder sees the unknown bytes as
+        // zero.
+        // A store read whole never grows: a cut erase over a longer record
+        // would leave written bytes past its own.
+        for len in [RECORD_BYTES, 256, 1024] {
+            let mut f = FakeJournalFlash::with_unit(1024);
+            place(&mut f, 0, &versioned(3, 1, len, 7, 9));
+            let expected = if len == RECORD_BYTES || layout.extent == Extent::Record {
+                Found::Valid((Version::new(3, 1), 7, 9))
+            } else {
+                Found::Invalid
+            };
+            assert_eq!(
+                scan_versioned(&mut f, layout, 0),
+                expected,
+                "{layout:?} {len}"
+            );
+        }
+
+        // Its checksum is the one at its own length.
+        let mut f = FakeJournalFlash::with_unit(512);
+        let mut p = versioned(3, 1, 256, 7, 9);
+        p[200] ^= 1;
+        place(&mut f, 0, &p);
+        assert!(!scan(&mut f, layout, 0).is_valid());
+
+        // A newer minor never shrinks the record.
+        let mut f = FakeJournalFlash::with_unit(512);
+        place(&mut f, 0, &versioned(3, 1, 64, 7, 9));
+        assert_eq!(scan(&mut f, layout, 0), Found::Invalid);
+
+        // A length past the unit is no length at all.
+        let mut f = FakeJournalFlash::with_unit(256);
+        let mut p = versioned(3, 1, 256, 7, 9);
+        p[10..12].copy_from_slice(&512u16.to_le_bytes());
+        place(&mut f, 0, &p);
+        assert!(!scan(&mut f, layout, 0).is_valid());
+
+        // A newer major is never decoded, whatever its length.
+        for len in [RECORD_BYTES, 256] {
+            let mut f = FakeJournalFlash::with_unit(512);
+            place(&mut f, 0, &versioned(4, 0, len, 7, 9));
+            assert_eq!(scan(&mut f, layout, 0), Found::Future, "{len}");
+        }
+    }
+
+    // Read alone, a longer record ignores what follows it.
+    let mut f = FakeJournalFlash::with_unit(512);
+    place(&mut f, 0, &versioned(3, 1, 256, 7, 9));
+    f.bytes[0][300] = 0;
+    assert_eq!(scan(&mut f, &RECORD, 0), Found::Valid((7, 9)));
+}
+
+/// This build's record grown by a minor: fields at 12..21 and 24..28.
+const GROWN: Layout = Layout::new(*b"PLFTEST1", Version::new(3, 2), 28, Extent::Record);
+/// A build that moved to major 4 and still reads major 3.
+const MOVED: Layout = Layout {
+    oldest_major: 3,
+    ..Layout::new(*b"PLFTEST1", Version::new(4, 0), 24, Extent::Unit)
+};
+
+#[test]
+fn an_older_minor_or_a_previous_major_reaches_the_decoder() {
+    // A shorter record of an older minor: what it lacks reads as zero.
+    let mut short: [u8; 64] = UNIT.record();
+    put_u64::<12, _>(&mut short, 5);
+    short[20] = 6;
+    seal(&mut short);
+    let mut f = FakeJournalFlash::with_unit(256);
+    place(&mut f, 0, &short);
+    let found = units(&mut f, &GROWN)
+        .scan(0, |version, p: &[u8; RECORD_BYTES]| {
+            p[64..].iter().all(|&b| b == 0).then_some((version, p[20]))
+        })
+        .unwrap();
+    assert_eq!(found, Found::Valid((Version::new(3, 0), 6)));
+
+    // The same length: its spare room must still be zero.
+    place(&mut f, 0, &record(&UNIT, 5, 6));
+    assert_eq!(
+        scan_versioned(&mut f, &GROWN, 0),
+        Found::Valid((Version::new(3, 0), 5, 6))
+    );
+    let mut f = FakeJournalFlash::with_unit(256);
+    place(&mut f, 0, &versioned(3, 0, RECORD_BYTES, 5, 6));
+    assert_eq!(scan(&mut f, &GROWN, 0), Found::Invalid);
+
+    // The build's own minor in another length is no record of it.
+    let mut f = FakeJournalFlash::with_unit(256);
+    let mut p = versioned(3, 0, 64, 5, 6);
+    p[24..56].fill(0);
+    let crc = crc32(&p[..56]);
+    p[56..60].copy_from_slice(&crc.to_le_bytes());
+    place(&mut f, 0, &p);
+    assert_eq!(scan(&mut f, &UNIT, 0), Found::Invalid);
+    assert_eq!(scan(&mut f, &RECORD, 0), Found::Invalid);
+
+    // A previous major the layout still reads goes to its decoder with
+    // its version; one older than that is superseded.
+    let mut f = FakeJournalFlash::with_unit(256);
+    place(&mut f, 0, &record(&UNIT, 5, 6));
+    assert_eq!(
+        scan_versioned(&mut f, &MOVED, 0),
+        Found::Valid((Version::new(3, 0), 5, 6))
+    );
+    let only_four = Layout {
+        oldest_major: 4,
+        ..MOVED
+    };
+    let only_four: &'static Layout = Box::leak(Box::new(only_four));
+    assert_eq!(scan(&mut f, only_four, 0), Found::Older);
+}
+
+#[test]
+fn a_rewrite_keeps_a_newer_minors_bytes() {
+    for layout in [&UNIT, &RECORD] {
+        let grows = layout.extent == Extent::Record;
+        let lens = [RECORD_BYTES, 256, 1024].into_iter();
+        for len in lens.filter(|&len| grows || len == RECORD_BYTES) {
+            let mut f = FakeJournalFlash::with_unit(1024);
+            let old = versioned(3, 1, len, 7, 9);
+            place(&mut f, 0, &old);
+            assert!(units(&mut f, layout).replace(1, Some(0), &record(layout, 8, 10)));
+
+            // The known fields are the build's, the rest the newer minor's,
+            // under its version and length.
+            let written = &f.bytes[1][..len];
+            assert_eq!(&written[..12], &old[..12], "{layout:?} {len}");
+            assert_eq!(&written[12..24], &record(layout, 8, 10)[12..24]);
+            assert_eq!(&written[24..len - 8], &old[24..len - 8]);
+            assert_eq!(
+                written[len - 8..len - 4],
+                crc32(&written[..len - 8]).to_le_bytes()
+            );
+            assert_eq!(&written[len - 4..], b"CMIT");
+            assert!(f.bytes[1][len..].iter().all(|&b| b == u8::MAX));
+            assert_eq!(
+                scan_versioned(&mut f, layout, 1),
+                Found::Valid((Version::new(3, 1), 8, 10))
+            );
+            assert_eq!(f.bytes[0][..len], old[..], "the source untouched");
+
+            // Rewritten again from the carried record, nothing changes but
+            // the fields this build knows.
+            assert!(units(&mut f, layout).replace(0, Some(1), &record(layout, 9, 11)));
+            assert_eq!(&f.bytes[0][24..len - 8], &old[24..len - 8]);
+            assert_eq!(scan(&mut f, layout, 0), Found::Valid((9, 11)));
+        }
+
+        // From the build's own minor, an older one, or none at all, a
+        // rewrite is a plain write.
+        for from in [None, Some(0)] {
+            let mut f = FakeJournalFlash::with_unit(256);
+            place(&mut f, 0, &record(layout, 1, 1));
+            assert!(units(&mut f, layout).replace(1, from, &record(layout, 2, 2)));
+            assert_eq!(f.bytes[1][..RECORD_BYTES], record(layout, 2, 2));
+        }
+    }
+}
+
+/// Unit 0 holding a newer minor of `len` bytes, and the carried rewrite
+/// into unit 1 as it lands whole.
+fn carried_base(
+    layout: &'static Layout,
+    len: usize,
+) -> (FakeJournalFlash, FakeJournalFlash, [u8; RECORD_BYTES]) {
+    let mut base = FakeJournalFlash::with_unit(512);
+    place(&mut base, 0, &versioned(3, 1, len, 7, 9));
+    let next = record(layout, 8, 10);
+    let mut done = base.clone();
+    assert!(units(&mut done, layout).replace(1, Some(0), &next));
+    (base, done, next)
+}
+
+/// After a carried rewrite cut short or failed: unit 0 untouched, unit 1
+/// erased, a cut or the whole new record, and the pick the old or the new.
+fn check_carried(
+    f: &mut FakeJournalFlash,
+    layout: &'static Layout,
+    base: &FakeJournalFlash,
+    done: &FakeJournalFlash,
+    case: &str,
+) {
+    assert_eq!(f.bytes[0], base.bytes[0], "{case}: the source");
+    let found = scan(f, layout, 1);
+    assert!(
+        matches!(
+            found,
+            Found::Erased | Found::Partial | Found::Unmarked | Found::Torn
+        ) || (found == Found::Valid((8, 10)) && f.bytes[1] == done.bytes[1]),
+        "{case}: {found:?}"
+    );
+    let pick = newest(scan(f, layout, 0), found, |&(generation, _)| generation);
+    assert!(
+        matches!(pick, Pick::Newest(0, (7, 9)) | Pick::Newest(1, (8, 10))),
+        "{case}: {pick:?}"
+    );
+}
+
+#[test]
+fn a_carried_rewrite_cut_or_failed_leaves_the_old_record_or_the_new() {
+    for (layout, len) in [
+        (&UNIT, RECORD_BYTES),
+        (&RECORD, RECORD_BYTES),
+        (&RECORD, 256),
+    ] {
+        let (base, done, next) = carried_base(layout, len);
+
+        let mut probe = base.clone();
+        let start = probe.mutations;
+        assert!(units(&mut probe, layout).replace(1, Some(0), &next));
+        let span = i64::from(probe.mutations - start);
+        assert_eq!(span as usize, 512 + len, "one erase, one record");
+        for cut in 0..=span {
+            let mut f = base.clone();
+            f.budget = cut;
+            assert!(!units(&mut f, layout).replace(1, Some(0), &next));
+            f.budget = -1;
+            let case = format!("{layout:?} {len} cut {cut}");
+            check_carried(&mut f, layout, &base, &done, &case);
+        }
+
+        let mut probe = base.clone();
+        let start = probe.calls;
+        assert!(units(&mut probe, layout).replace(1, Some(0), &next));
+        let calls = probe.calls - start;
+        for failure in 1..=calls {
+            let mut f = base.clone();
+            f.fail_call = f.calls + failure;
+            assert!(!units(&mut f, layout).replace(1, Some(0), &next));
+            f.fail_call = 0;
+            let case = format!("{layout:?} {len} call {failure}");
+            check_carried(&mut f, layout, &base, &done, &case);
+        }
+
+        // A program that lands nothing is caught before the marker.
+        let mut f = base.clone();
+        f.silent_program = true;
+        assert!(!units(&mut f, layout).replace(1, Some(0), &next));
+    }
 }

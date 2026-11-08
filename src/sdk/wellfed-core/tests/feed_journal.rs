@@ -16,7 +16,9 @@ use wellfed_core::feed::progress::{BowlMode, Direction};
 use wellfed_core::feed::storage::{
     OwnerOutcome, OwnerRecovery, OwnerResult, OwnerStorage, RotorPhase,
 };
-use wellfed_core::store::feed_journal::{FeedJournal, JournalConfig, JournalError};
+use wellfed_core::store::feed_journal::{
+    FeedJournal, JournalConfig, JournalError, REQUEST_ID_AT, REQUEST_ID_END,
+};
 use wellfed_core::store::slot::{RECORD_BYTES, SlotIo, crc32};
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, UNIT};
 
@@ -1017,4 +1019,38 @@ fn a_jam_or_a_stuck_mark_is_journaled_as_the_reason_it_refines() {
         let read = j.last_result().expect("the result reads back");
         assert_eq!((read.outcome, read.reason), (OwnerOutcome::Failed, stored));
     }
+}
+
+/// A newer minor of the journal's record (here one that fills the request
+/// id room, feed id and all) opens, feeds go on, and every record the
+/// journal writes after it keeps that minor and those bytes. A newer major
+/// faults the journal.
+#[test]
+fn a_newer_minor_opens_and_its_bytes_are_kept() {
+    let mut f = FakeJournalFlash::default();
+    let mut j = create(&mut f, false);
+    let at = j.slot as usize;
+    let room: Vec<u8> = (0..32).map(|i| 0x80 | i).collect();
+    f.bytes[at][9] = 1;
+    f.bytes[at][REQUEST_ID_AT..REQUEST_ID_END].copy_from_slice(&room);
+    repair_crc(&mut f.bytes[at][..RECORD_BYTES]);
+    assert_eq!(reopen(&mut f, &mut j, &CONFIG), JournalError::Ok);
+
+    assert!(reserve(&mut j, 1));
+    assert!(finish(&mut j, true, true));
+    for unit in 0..2 {
+        assert_eq!(f.bytes[unit][9], 1, "unit {unit}: the minor");
+        assert_eq!(
+            &f.bytes[unit][REQUEST_ID_AT..REQUEST_ID_END],
+            &room[..],
+            "unit {unit}: the room"
+        );
+    }
+    assert_eq!(reopen(&mut f, &mut j, &CONFIG), JournalError::Ok);
+    assert_eq!(j.view.recovery.high_water_id, 1);
+
+    let at = j.slot as usize;
+    f.bytes[at][8] = 2;
+    repair_crc(&mut f.bytes[at][..RECORD_BYTES]);
+    assert_eq!(reopen(&mut f, &mut j, &CONFIG), JournalError::Corrupt);
 }

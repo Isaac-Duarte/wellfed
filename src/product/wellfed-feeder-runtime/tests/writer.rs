@@ -431,6 +431,52 @@ fn keys_carry_the_seed_and_create_the_identity_once() {
     ));
 }
 
+/// A client table this build cannot read (here an older major) is never
+/// written over: the boot draws no new identity, which would orphan every
+/// client the build that wrote it paired, and the sectors stay as they
+/// were until a factory reset erases them.
+#[test]
+fn an_unreadable_client_table_never_gets_a_new_identity() {
+    use wellfed_device::store::clients::RECORD_BYTES;
+    use wellfed_hal::board::storage;
+
+    let (_guard, _, _) = start();
+    fake::with(|h| h.adc_noise = 0x2468_ace1);
+    assert_eq!(rng::start().result, Ok(()));
+    assert!(matches!(
+        boot_keys(),
+        Record::Keys {
+            identity: Identity::Created,
+            ..
+        }
+    ));
+
+    let sectors = |h: &mut fake::Hardware| {
+        let first = storage::CLIENTS.first as usize * 0x1000;
+        h.storage[first..first + 2 * 0x1000].to_vec()
+    };
+    fake::with(|h| {
+        let first = storage::CLIENTS.first as usize * 0x1000;
+        let record = &mut h.storage[first..first + RECORD_BYTES];
+        record[8] = 0;
+        let crc_at = RECORD_BYTES - 8;
+        let crc = wellfed_core::store::slot::crc32(&record[..crc_at]);
+        record[crc_at..crc_at + 4].copy_from_slice(&crc.to_le_bytes());
+    });
+    let before = fake::with(sectors);
+
+    assert!(matches!(
+        boot_keys(),
+        Record::Keys {
+            clients: ClientStatus::Corrupt,
+            enrolled: 0,
+            identity: Identity::Missing,
+            ..
+        }
+    ));
+    assert_eq!(fake::with(sectors), before, "the table untouched");
+}
+
 /// One queued key change, applied on the writer's next step.
 fn change(writer: &mut Writer<Armed>, provider: &mut Provider, change: Change) -> Record {
     assert_eq!(keys::request(change), Requested::Queued);
@@ -2241,10 +2287,36 @@ fn restart_mailboxes() {
     supervision::reset();
 }
 
+/// Write an update store record with the floor `version`, as a confirmed
+/// update leaves it.
+fn floor_update_store(version: u32) {
+    use wellfed_core::ota::offer::ImageKind;
+    use wellfed_core::store::update::{Candidate, UpdateStore};
+    use wellfed_hal::board::storage;
+
+    let mut update = UpdateStore::default();
+    update.open(wellfed_sdk::storage::Region::<
+        Armed,
+        { storage::UPDATE.first },
+        2,
+    >::new());
+    let build = [0x55; 32];
+    update
+        .set_activated(Candidate {
+            digest: [1; 32],
+            version,
+            build_id: build,
+            kind: ImageKind::Replacement,
+        })
+        .unwrap();
+    update.confirm(&build).unwrap();
+}
+
 /// A first boot with a generator that fills the stores the reset clears
 /// and the calibration it keeps, then takes an unlocked Reset hold's
-/// change. Sentinels stand in for the journal, the confirmation record and
-/// the update store, which this writer never writes, and for a trace.
+/// change. Sentinels stand in for the journal and the confirmation record,
+/// which this writer never writes, and for a trace; the update store holds
+/// a floor, which a reset keeps.
 fn filled_then_reset() -> (MutexGuard<'static, ()>, Provider) {
     use wellfed_device_api::mailbox::{Calibration, PLANS, Plan, PlansChange, Weekdays};
     use wellfed_device_api::wifi::Credentials;
@@ -2255,7 +2327,7 @@ fn filled_then_reset() -> (MutexGuard<'static, ()>, Provider) {
     restart_mailboxes();
     fake::with(|h| {
         h.adc_noise = 0x0f0f_5a5a;
-        for kept in [storage::JOURNAL, storage::CONFIRM, storage::UPDATE] {
+        for kept in [storage::JOURNAL, storage::CONFIRM] {
             let first = kept.first as usize * 0x1000;
             h.storage[first..first + 64].fill(0x42);
         }
@@ -2267,6 +2339,7 @@ fn filled_then_reset() -> (MutexGuard<'static, ()>, Provider) {
             h.storage[first..first + 64].fill(0x77);
         }
     });
+    floor_update_store(7);
     assert_eq!(rng::start().result, Ok(()));
     for _ in 0..7 {
         step(&mut writer, &mut provider);
@@ -2361,8 +2434,10 @@ fn reset_boot(provider: &mut Provider, steps: Option<usize>) -> Vec<Record> {
             Some(Record::ResetDone { .. } | Record::Open { .. } | Record::HandoverDone { .. })
         ) {
             // Net, time, keys, events, stats and the stats save, or the
-            // handover's eight steps.
-            left = Some(8);
+            // handover's steps: its cleared sectors, the clients, the
+            // update store, the confirmation and the mark.
+            let handover = wellfed_hal::board::storage::HANDOVER_CLEARED_SECTORS as usize + 4;
+            left = Some(handover.max(8));
         }
         records.extend(record);
     }
@@ -2543,7 +2618,10 @@ fn a_cut_during_a_handover_repeats_it() {
     let confirmed = ota::confirm_record(&[0x55; 32], 5);
     for bank in [0, 1] {
         let (mut before, mut after) = (0, 0);
-        for cut in 1..9 {
+        // Every step but the mark: the cleared sectors, the clients, the
+        // update store and the confirmation.
+        let steps = storage::HANDOVER_CLEARED_SECTORS as usize + 4;
+        for cut in 1..=steps {
             let (guard, mut provider, identity) = paired_with_wifi();
             fake::with(|h| h.running_bank = Some(bank));
             let at = storage::CONFIRM.first as usize * 0x1000;
@@ -2641,7 +2719,8 @@ fn a_handover_waits_for_an_update_store_it_can_read() {
     assert!(
         stopped
             .iter()
-            .any(|record| matches!(record, Record::HandoverStopped { stage: 5 })),
+            .any(|record| matches!(record, Record::HandoverStopped { stage }
+                if u32::from(*stage) == storage::HANDOVER_CLEARED_SECTORS + 1)),
         "{stopped:?}"
     );
     let at = storage_reset_first();
@@ -2735,7 +2814,7 @@ fn a_factory_reset_clears_the_decided_stores_on_the_next_boot_and_keeps_the_rest
     let records = reset_boot(&mut provider, None);
     assert_eq!(records.first(), Some(&Record::ResetPending));
     assert!(
-        records.contains(&Record::ResetDone { erased: 33 }),
+        records.contains(&Record::ResetDone { erased: 36 }),
         "{records:?}"
     );
     assert!(
@@ -2773,11 +2852,11 @@ fn a_power_cut_at_any_step_of_the_reset_leaves_it_to_the_next_boot() {
     let kept_before = kept();
     let marked = fake::with(|h| h.storage.clone());
 
-    // `done` steps landed (each sector's erase, then the statistics'
-    // wear-only save, then the marker's erase) and the next was cut: an
-    // erase left half its sector, the save is all or nothing.
+    // `done` steps landed (each sector's erase, the update store's step,
+    // the statistics' wear-only save, then the marker's erase) and the next
+    // was cut: an erase left half its sector, the save is all or nothing.
     let erases = storage::FACTORY_CLEARED_SECTORS;
-    for done in 0..=erases + 1 {
+    for done in 0..=erases + 2 {
         fake::with(|h| h.storage.clone_from(&marked));
         let steps = usize::try_from(done).unwrap() + 1;
         let records = reset_boot(&mut provider, Some(steps));
@@ -2791,7 +2870,7 @@ fn a_power_cut_at_any_step_of_the_reset_leaves_it_to_the_next_boot() {
 
         let torn = match done {
             _ if done < erases => storage::factory_cleared(done),
-            _ if done == erases => None,
+            _ if done <= erases + 1 => None,
             _ => Some(storage::RESET.first),
         };
         if let Some(torn) = torn {
@@ -2803,9 +2882,9 @@ fn a_power_cut_at_any_step_of_the_reset_leaves_it_to_the_next_boot() {
 
         // A torn marker reads as no reset: every step before it is done.
         let records = reset_boot(&mut provider, None);
-        let finished = done <= erases;
+        let finished = done <= erases + 1;
         assert_eq!(
-            records.contains(&Record::ResetDone { erased: 33 }),
+            records.contains(&Record::ResetDone { erased: 36 }),
             finished,
             "cut after {done} steps: {records:?}"
         );
@@ -2910,7 +2989,7 @@ fn a_reset_that_cannot_finish_asks_for_one_restart_only() {
     ERASE_FAILS.with(|f| f.set(None));
     let records = reset_boot(&mut provider, None);
     assert!(
-        records.contains(&Record::ResetDone { erased: 33 }),
+        records.contains(&Record::ResetDone { erased: 36 }),
         "{records:?}"
     );
     assert!(!keys::restart_wanted());
@@ -2989,7 +3068,7 @@ fn a_reset_over_an_unwritable_client_store_still_completes() {
 
     let records = reset_boot(&mut provider, None);
     assert!(
-        records.contains(&Record::ResetDone { erased: 33 }),
+        records.contains(&Record::ResetDone { erased: 36 }),
         "{records:?}"
     );
     assert!(
@@ -3041,8 +3120,17 @@ fn reset_records_format() {
     assert_eq!(line(Record::ResetPending), "reset pending");
     assert_eq!(line(Record::ResetWearLost), "reset wear_lost=1");
     assert_eq!(
-        line(Record::ResetDone { erased: 33 }),
-        "reset done erased=33"
+        line(Record::Product(FeederRecord::StatsOpen {
+            status: StatsStatus::Lost,
+            generation: 0,
+            early: 0,
+            missed: false,
+        })),
+        "stats open status=lost generation=0 early=0 missed=0 wear_lost=1"
+    );
+    assert_eq!(
+        line(Record::ResetDone { erased: 36 }),
+        "reset done erased=36"
     );
     assert_eq!(
         line(Record::ResetError {
@@ -3089,7 +3177,7 @@ fn an_attempt_that_does_not_land_asks_for_no_restart() {
     PROGRAM_FAILS.with(|f| f.set(false));
     let records = reset_boot(&mut provider, None);
     assert!(
-        records.contains(&Record::ResetDone { erased: 33 }),
+        records.contains(&Record::ResetDone { erased: 36 }),
         "{records:?}"
     );
 }
@@ -3112,7 +3200,7 @@ fn a_worn_statistics_pair_loses_the_wear_counts_but_not_the_reset() {
         .position(|record| *record == Record::ResetWearLost);
     let done = records
         .iter()
-        .position(|record| *record == Record::ResetDone { erased: 33 });
+        .position(|record| *record == Record::ResetDone { erased: 36 });
     assert!(lost.is_some() && lost < done, "{records:?}");
     assert!(!reset_marked());
     assert!(
@@ -3134,7 +3222,7 @@ fn a_worn_statistics_pair_loses_the_wear_counts_but_not_the_reset() {
 
         let records = reset_boot(&mut provider, None);
         assert!(
-            records.contains(&Record::ResetDone { erased: 33 }),
+            records.contains(&Record::ResetDone { erased: 36 }),
             "{erased} erased: {records:?}"
         );
         if erased == storage::STATS.count {
@@ -3160,4 +3248,77 @@ fn a_worn_statistics_pair_loses_the_wear_counts_but_not_the_reset() {
         ]
     );
     assert!(reset_marked());
+}
+
+/// Fill both update store sectors with bytes no build wrote, so the store
+/// opens corrupt.
+fn corrupt_update_store() {
+    use wellfed_hal::board::storage;
+
+    fake::with(|h| {
+        for unit in 0..2 {
+            let first = (storage::UPDATE.first as usize + unit) * 0x1000;
+            h.storage[first..first + 64].fill(0x42);
+        }
+    });
+}
+
+fn update_status() -> wellfed_core::store::update::UpdateStatus {
+    use wellfed_core::store::update::UpdateStore;
+    use wellfed_hal::board::storage;
+
+    let mut update = UpdateStore::default();
+    update.open(wellfed_sdk::storage::Region::<
+        Armed,
+        { storage::UPDATE.first },
+        2,
+    >::new())
+}
+
+/// The Reset hold over an update store this build cannot read erases it,
+/// so the owner gets back to updates without a cable: the floor is 0.
+#[test]
+fn a_reset_by_hand_erases_a_corrupt_update_store() {
+    use wellfed_core::store::update::UpdateStatus;
+    use wellfed_hal::board::storage;
+
+    let (_guard, mut provider) = filled_then_reset();
+    corrupt_update_store();
+    assert_eq!(update_status(), UpdateStatus::Corrupt);
+
+    let records = reset_boot(&mut provider, None);
+    assert!(records.contains(&Record::ResetUpdateCleared), "{records:?}");
+    assert!(
+        records.contains(&Record::ResetDone { erased: 36 }),
+        "{records:?}"
+    );
+    assert!(sectors(storage::UPDATE).iter().all(|&byte| byte == 0xff));
+    assert_eq!(update_status(), UpdateStatus::Empty);
+}
+
+/// A reset whose marker lacks the by-hand word (one a later build asked
+/// for some other way) finishes, but leaves a corrupt update store as it
+/// is: only a person at the feeder may reopen a downgrade.
+#[test]
+fn a_reset_not_asked_by_hand_keeps_a_corrupt_update_store() {
+    use wellfed_core::store::update::UpdateStatus;
+    use wellfed_hal::board::storage;
+
+    let (_guard, mut provider) = filled_then_reset();
+    corrupt_update_store();
+    let at = storage_reset_first();
+    fake::with(|h| h.storage[at + 48..at + 64].fill(0xff));
+    let before = sectors(storage::UPDATE);
+
+    let records = reset_boot(&mut provider, None);
+    assert!(
+        !records.contains(&Record::ResetUpdateCleared),
+        "{records:?}"
+    );
+    assert!(
+        records.contains(&Record::ResetDone { erased: 36 }),
+        "{records:?}"
+    );
+    assert_eq!(sectors(storage::UPDATE), before);
+    assert_eq!(update_status(), UpdateStatus::Corrupt);
 }

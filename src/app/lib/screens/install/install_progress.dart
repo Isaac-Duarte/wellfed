@@ -415,6 +415,9 @@ class _DoneState extends State<InstallDonePage> {
   final _name = TextEditingController(text: InstallFlow.defaultFeederName);
   String? _shareFailed;
 
+  /// The owner saved the backup elsewhere, or said not now.
+  bool _offered = false;
+
   @override
   void dispose() {
     _name.dispose();
@@ -429,7 +432,7 @@ class _DoneState extends State<InstallDonePage> {
 
   Future<void> _save() async {
     final String? failed = await widget.flow.saveBackup();
-    if (failed != null && mounted) setState(() => _shareFailed = failed);
+    if (mounted) setState(() => failed == null ? _offered = true : _shareFailed = failed);
   }
 
   @override
@@ -457,14 +460,23 @@ class _DoneState extends State<InstallDonePage> {
               child: TextField(controller: _name, textCapitalization: TextCapitalization.words),
             ),
             const SizedBox(height: Space.s4),
-            const SizedBox(height: Space.s5),
-            FilledButton(onPressed: () => unawaited(_go()), child: const Text('Go to the feeder')),
-            if (widget.state.backupPath != null) ...[
+            // The one copy of stock is on this device: offered once, plainly.
+            if (widget.state.backupPath != null && !_offered) ...[
+              Notice(
+                tone: Tone.warning,
+                lead: 'Save the original firmware somewhere else.',
+                text:
+                    'Its backup is only on this $deviceName. Keep a copy in your files or cloud storage, so '
+                    "you can go back to it if this $deviceName is lost or reset. It's in Settings too.",
+              ),
               const SizedBox(height: Space.s2),
-              TextButton(onPressed: () => unawaited(_save()), child: const Text('Save the backup somewhere else')),
+              FilledButton.tonal(onPressed: () => unawaited(_save()), child: const Text('Save the backup')),
+              TextButton(onPressed: () => setState(() => _offered = true), child: const Text('Not now')),
             ],
             if (_shareFailed case final failed?)
               Notice(tone: Tone.fault, lead: "The backup wasn't saved elsewhere.", text: failed),
+            const SizedBox(height: Space.s5),
+            FilledButton(onPressed: () => unawaited(_go()), child: const Text('Go to the feeder')),
           ],
         ),
       ),

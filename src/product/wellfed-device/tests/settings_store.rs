@@ -171,7 +171,7 @@ fn newer_schema_is_read_only_until_reset() {
     assert!(s.save(&custom(5)));
 
     let mut record = f.bytes[0][..RECORD_BYTES].to_vec();
-    record[8..10].copy_from_slice(&(VERSION + 1).to_le_bytes());
+    record[8] = VERSION.major + 1;
     let crc = crc32(&record[..120]).to_le_bytes();
     record[120..124].copy_from_slice(&crc);
     f.bytes[0][..RECORD_BYTES].copy_from_slice(&record);

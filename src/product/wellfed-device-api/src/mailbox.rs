@@ -318,7 +318,11 @@ pub enum ClientChange {
         key: [u8; 32],
     },
     /// The factory reset: mark it, forget every client, and leave the rest
-    /// to the restart that follows.
+    /// to the restart that follows. Only the panel's Reset hold asks for it,
+    /// so the marker records the reset as asked for by hand, which lets it
+    /// erase an update store the build cannot read
+    /// (`wellfed_device::store::reset`). A reset asked for any other way
+    /// would need a variant of its own that leaves that word out.
     Reset,
 }
 

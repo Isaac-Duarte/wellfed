@@ -15,7 +15,7 @@ import 'setup.dart';
 import 'store.dart';
 part 'install.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// The image unpacked in `dir`, checked against this build's pin and against
 /// its own review.
@@ -67,6 +67,11 @@ void feederAnswered({
   identity: identity,
   build: build,
 );
+
+/// Every copy of stock this phone keeps, found in its backups folder rather
+/// than through the feeders it lists, in identity order.
+List<KeptBackup> keptBackups({required String dataDir}) =>
+    RustLib.instance.api.crateApiInstallKeptBackups(dataDir: dataDir);
 
 /// The checked copy of stock this phone keeps for the feeder with `identity`.
 String? keptBackup({required String dataDir, required List<int> identity}) =>
@@ -477,6 +482,27 @@ sealed class InstallUpdate with _$InstallUpdate {
   /// The last update of a run.
   const factory InstallUpdate.ended({required InstallEnd end}) =
       InstallUpdate_Ended;
+}
+
+/// A copy of stock this phone keeps.
+class KeptBackup {
+  /// The feeder it was read from, lowercase hex: one this phone may no
+  /// longer list, after it was forgotten or a reset gave it a new identity.
+  final String identity;
+  final String path;
+
+  const KeptBackup({required this.identity, required this.path});
+
+  @override
+  int get hashCode => identity.hashCode ^ path.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is KeptBackup &&
+          runtimeType == other.runtimeType &&
+          identity == other.identity &&
+          path == other.path;
 }
 
 @freezed

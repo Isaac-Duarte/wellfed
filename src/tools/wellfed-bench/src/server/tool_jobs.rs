@@ -365,6 +365,11 @@ fn converse(
     let mut command = Command::new(path);
     own_group_with_input(&mut command)
         .current_dir(&bench.root)
+        // The checkout's own key and backups, whatever the host user's are.
+        .env(
+            "WELLFED_HOME",
+            bench.root.join(wellfed_formats::bench::WELLFED_HOME),
+        )
         .args(arguments)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

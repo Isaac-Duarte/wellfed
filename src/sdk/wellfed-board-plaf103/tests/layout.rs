@@ -31,6 +31,7 @@ fn storage_region_and_sector_map_are_pinned() {
     assert_eq!(storage::STATS, at(32, 2));
     assert_eq!(storage::CALIBRATION, at(34, 2));
     assert_eq!(storage::RESET, at(36, 1));
+    assert_eq!(storage::UPLINK, at(37, 3));
     assert_eq!(storage::CALL, at(40, 8));
 
     assert_eq!(
@@ -50,25 +51,29 @@ fn storage_region_and_sector_map_are_pinned() {
             storage::STATS,
             storage::CALIBRATION,
             storage::RESET,
+            storage::UPLINK,
             storage::CALL,
         ]
     );
 }
 
-/// The factory reset erases exactly the stores the owner decided, and
-/// never the journal, calibration, update store, confirmation or seed, nor
-/// the statistics, which it rewrites keeping the erase counts.
+/// The factory reset keeps exactly the stores the owner decided (the
+/// journal, calibration, update store, confirmation and seed, and the
+/// statistics, which it rewrites keeping the erase counts) and erases
+/// every other sector, clients first: the uplink store's reserved sectors
+/// among them, and whatever a later build allocates.
 #[test]
-fn the_factory_reset_clears_the_decided_stores_only() {
+fn the_factory_reset_clears_every_sector_it_does_not_keep() {
     let cleared: Vec<u32> = (0..storage::FACTORY_CLEARED_SECTORS)
         .map(|index| storage::factory_cleared(index).unwrap())
         .collect();
     assert_eq!(
         cleared,
-        [9, 10, 5, 6, 2, 3, 27, 28, 11, 12, 29, 30, 31]
+        [9, 10, 2, 3, 5, 6, 11, 12]
             .into_iter()
             .chain(13..25)
-            .chain(40..48)
+            .chain(27..32)
+            .chain(37..48)
             .collect::<Vec<u32>>()
     );
     assert_eq!(
@@ -89,6 +94,26 @@ fn the_factory_reset_clears_the_decided_stores_only() {
             assert!(!cleared.contains(&sector), "sector {sector} is kept");
         }
     }
+    let kept: u32 = storage::FACTORY_KEPT.iter().map(|s| s.count).sum();
+    assert_eq!(
+        kept + storage::FACTORY_CLEARED_SECTORS,
+        wellfed_board_plaf103::STORAGE_SECTORS
+    );
+}
+
+/// The handover from stock erases the Wi-Fi, the plans and the uplink
+/// store's sectors, in region order, and nothing it keeps or clears in a
+/// step of its own.
+#[test]
+fn the_handover_clears_every_sector_it_does_not_keep() {
+    let cleared: Vec<u32> = (0..storage::HANDOVER_CLEARED_SECTORS)
+        .map(|index| storage::handover_cleared(index).unwrap())
+        .collect();
+    assert_eq!(cleared, [5, 6, 11, 12, 37, 38, 39]);
+    assert_eq!(
+        storage::handover_cleared(storage::HANDOVER_CLEARED_SECTORS),
+        None
+    );
 }
 
 #[test]

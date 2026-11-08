@@ -12,6 +12,7 @@ import 'package:wellfed/screens/feeder/live_log.dart';
 import 'package:wellfed/screens/feeder/motor_trace.dart';
 import 'package:wellfed/screens/settings/app_settings.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
+import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/model.dart';
 import 'package:wellfed/src/rust/api/session.dart';
 import 'package:wellfed/src/rust/api/store.dart';
@@ -55,8 +56,12 @@ const _summary = TraceSummary(
 class _FakeBackups implements BackupPorts {
   final shared = <String>[];
 
+  /// The kitchen's, and one of a feeder this phone no longer lists.
   @override
-  Future<String?> kept(String identity) async => '/backups/$identity';
+  Future<List<KeptBackup>> kept() async => const [
+    KeptBackup(identity: '0123456789abcdef0123', path: '/backups/gone'),
+    KeptBackup(identity: 'aa', path: '/backups/aa'),
+  ];
 
   @override
   Future<void> share(String path) async => shared.add(path);
@@ -64,7 +69,7 @@ class _FakeBackups implements BackupPorts {
 
 class _FailingBackups implements BackupPorts {
   @override
-  Future<String?> kept(String identity) async => '/backups/$identity';
+  Future<List<KeptBackup>> kept() async => const [KeptBackup(identity: 'aa', path: '/backups/aa')];
 
   @override
   Future<void> share(String path) async =>
@@ -303,6 +308,15 @@ void main() {
       expect(find.text('None yet'), findsNothing);
       await tapIn(tester, find.byTooltip("Share Kitchen's backup"));
       expect(backups.shared, ['/backups/aa']);
+    });
+
+    testWidgets('a backup of a feeder this phone no longer lists is listed by its identity', (tester) async {
+      final (_, _FakeBackups backups) = await settings(tester);
+
+      expect(find.text('Feeder 0123456789abcdef'), findsOneWidget);
+      expect(find.text('Not on this phone any more'), findsOneWidget);
+      await tapIn(tester, find.byTooltip("Share Feeder 0123456789abcdef's backup"));
+      expect(backups.shared, ['/backups/gone']);
     });
 
     testWidgets('a backup that could not be saved says why', (tester) async {

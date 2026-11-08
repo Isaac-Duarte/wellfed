@@ -2,7 +2,8 @@
 //! `logout` revokes it and deletes the file, and every other verb sends
 //! it.
 //!
-//! The file sits beside the device API's key file under `private/`, mode
+//! The file sits beside the device API's key file in the owner's data
+//! directory ([`crate::home`]), mode
 //! 0600 like every private file, and holds the server's address, the
 //! account's name and the token. Only a login session can make a token, so
 //! `login` opens one, makes the token and ends the session: nothing but

@@ -561,6 +561,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ServerSnapshot dco_decode_box_autoadd_server_snapshot(dynamic raw);
 
   @protected
+  SetAside dco_decode_box_autoadd_set_aside(dynamic raw);
+
+  @protected
   SettingsChanges dco_decode_box_autoadd_settings_changes(dynamic raw);
 
   @protected
@@ -771,6 +774,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   JoinAnswer dco_decode_join_answer(dynamic raw);
 
   @protected
+  KeptBackup dco_decode_kept_backup(dynamic raw);
+
+  @protected
   KnownFeeder dco_decode_known_feeder(dynamic raw);
 
   @protected
@@ -784,6 +790,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<HistoryEntry> dco_decode_list_history_entry(dynamic raw);
+
+  @protected
+  List<KeptBackup> dco_decode_list_kept_backup(dynamic raw);
 
   @protected
   List<KnownFeeder> dco_decode_list_known_feeder(dynamic raw);
@@ -902,6 +911,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NtpView dco_decode_ntp_view(dynamic raw);
 
   @protected
+  OpenedStore dco_decode_opened_store(dynamic raw);
+
+  @protected
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
@@ -1003,6 +1015,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ServerSnapshot? dco_decode_opt_box_autoadd_server_snapshot(dynamic raw);
+
+  @protected
+  SetAside? dco_decode_opt_box_autoadd_set_aside(dynamic raw);
 
   @protected
   SettingsView? dco_decode_opt_box_autoadd_settings_view(dynamic raw);
@@ -1230,6 +1245,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SessionUpdate dco_decode_session_update(dynamic raw);
 
   @protected
+  SetAside dco_decode_set_aside(dynamic raw);
+
+  @protected
   SettingsChanges dco_decode_settings_changes(dynamic raw);
 
   @protected
@@ -1255,6 +1273,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   StopCase dco_decode_stop_case(dynamic raw);
+
+  @protected
+  StoreKind dco_decode_store_kind(dynamic raw);
 
   @protected
   TaskStack dco_decode_task_stack(dynamic raw);
@@ -1874,6 +1895,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  SetAside sse_decode_box_autoadd_set_aside(SseDeserializer deserializer);
+
+  @protected
   SettingsChanges sse_decode_box_autoadd_settings_changes(
     SseDeserializer deserializer,
   );
@@ -2098,6 +2122,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   JoinAnswer sse_decode_join_answer(SseDeserializer deserializer);
 
   @protected
+  KeptBackup sse_decode_kept_backup(SseDeserializer deserializer);
+
+  @protected
   KnownFeeder sse_decode_known_feeder(SseDeserializer deserializer);
 
   @protected
@@ -2113,6 +2140,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<HistoryEntry> sse_decode_list_history_entry(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<KeptBackup> sse_decode_list_kept_backup(SseDeserializer deserializer);
 
   @protected
   List<KnownFeeder> sse_decode_list_known_feeder(SseDeserializer deserializer);
@@ -2249,6 +2279,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NtpView sse_decode_ntp_view(SseDeserializer deserializer);
+
+  @protected
+  OpenedStore sse_decode_opened_store(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -2392,6 +2425,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ServerSnapshot? sse_decode_opt_box_autoadd_server_snapshot(
     SseDeserializer deserializer,
   );
+
+  @protected
+  SetAside? sse_decode_opt_box_autoadd_set_aside(SseDeserializer deserializer);
 
   @protected
   SettingsView? sse_decode_opt_box_autoadd_settings_view(
@@ -2645,6 +2681,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SessionUpdate sse_decode_session_update(SseDeserializer deserializer);
 
   @protected
+  SetAside sse_decode_set_aside(SseDeserializer deserializer);
+
+  @protected
   SettingsChanges sse_decode_settings_changes(SseDeserializer deserializer);
 
   @protected
@@ -2670,6 +2709,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   StopCase sse_decode_stop_case(SseDeserializer deserializer);
+
+  @protected
+  StoreKind sse_decode_store_kind(SseDeserializer deserializer);
 
   @protected
   TaskStack sse_decode_task_stack(SseDeserializer deserializer);
@@ -3444,6 +3486,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_set_aside(
+    SetAside self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_settings_changes(
     SettingsChanges self,
     SseSerializer serializer,
@@ -3708,6 +3756,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_join_answer(JoinAnswer self, SseSerializer serializer);
 
   @protected
+  void sse_encode_kept_backup(KeptBackup self, SseSerializer serializer);
+
+  @protected
   void sse_encode_known_feeder(KnownFeeder self, SseSerializer serializer);
 
   @protected
@@ -3725,6 +3776,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_history_entry(
     List<HistoryEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_kept_backup(
+    List<KeptBackup> self,
     SseSerializer serializer,
   );
 
@@ -3904,6 +3961,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_ntp_view(NtpView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opened_store(OpenedStore self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
@@ -4088,6 +4148,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_server_snapshot(
     ServerSnapshot? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_set_aside(
+    SetAside? self,
     SseSerializer serializer,
   );
 
@@ -4413,6 +4479,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_session_update(SessionUpdate self, SseSerializer serializer);
 
   @protected
+  void sse_encode_set_aside(SetAside self, SseSerializer serializer);
+
+  @protected
   void sse_encode_settings_changes(
     SettingsChanges self,
     SseSerializer serializer,
@@ -4441,6 +4510,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_stop_case(StopCase self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_store_kind(StoreKind self, SseSerializer serializer);
 
   @protected
   void sse_encode_task_stack(TaskStack self, SseSerializer serializer);

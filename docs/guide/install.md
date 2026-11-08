@@ -73,7 +73,7 @@ The feeder copies the vendor's firmware to your phone, which checks that the cop
 > [!WARNING]
 > After this step, your backup is the only copy of your feeder's original firmware, and the feeder can't make another. Uninstalling the app or clearing its data deletes the app's copy.
 
-Save the backup somewhere else when the app offers it. You can also share it later from the app's settings.
+When the install finishes, the app asks you to save the backup somewhere else: tap **Save the backup**, or **Not now**. Its only copy is on your phone until you do. You can also share it later from the app's settings, under **Firmware backups**, which lists every copy on the phone, including those of feeders you've removed.
 
 ## If the install stops
 

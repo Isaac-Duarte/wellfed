@@ -217,6 +217,12 @@ pub fn kept_backup(data_dir: &Path, identity: &[u8]) -> Option<String> {
     Some(path.display().to_string())
 }
 
+/// Every stock backup this phone keeps, whether or not its feeder is still in
+/// the app's list.
+pub fn kept_backups(data_dir: &Path) -> Result<Vec<wellfed_install::storage::KeptBackup>, Error> {
+    wellfed_install::storage::kept_backups(&data_dir.join(BACKUPS))
+}
+
 pub fn listen_seconds() -> u32 {
     u32::try_from(UNCERTAIN_WAIT.as_secs()).unwrap_or(u32::MAX)
 }

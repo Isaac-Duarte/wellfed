@@ -26,7 +26,8 @@ use wellfed_app_bridge::api::setup::{
     SetupDriver, SetupStep, recover, setup_control, setup_service,
 };
 use wellfed_app_bridge::api::store::{
-    AppStore, KnownFeeder, feeder_address, load_store, save_store,
+    AppStore, KnownFeeder, OpenedStore, StoreKind, feeder_address, load_store, open_store,
+    save_store, store_notice_read,
 };
 use wellfed_app_bridge::requests;
 use wellfed_app_bridge::session::{self, Command};
@@ -718,6 +719,53 @@ fn the_store_round_trips_and_starts_empty() {
     };
     save_store(path, &store).unwrap();
     assert_eq!(load_store(path).unwrap(), store);
+    assert_eq!(
+        open_store(path).unwrap(),
+        OpenedStore {
+            store,
+            set_aside: None
+        }
+    );
+}
+
+/// A store this build cannot read (damaged, or an unversioned file) is kept
+/// under another name, never deleted, and the app starts on an empty one.
+/// Only the start sets a file aside: a change later reads it strictly.
+#[test]
+fn a_store_that_does_not_read_is_set_aside_at_the_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("wellfed.json");
+    let unversioned = br#"{"label": "", "feeders": [], "appearance": "system", "server": null}"#;
+    std::fs::write(&path, unversioned).unwrap();
+    let path = path.to_str().unwrap();
+
+    assert_eq!(load_store(path).unwrap_err().kind, ErrorKind::Store);
+    let opened = open_store(path).unwrap();
+    assert_eq!(opened.store, AppStore::default());
+    let set_aside = opened.set_aside.expect("set aside");
+    assert_eq!(set_aside.kind, StoreKind::App);
+    assert_eq!(std::fs::read(&set_aside.moved_to).unwrap(), unversioned);
+    assert_eq!(load_store(path).unwrap(), AppStore::default(), "replaced");
+
+    // An app that dies before the owner reads the notice says it again,
+    // and a change meanwhile keeps it.
+    let named = AppStore {
+        label: "Pixel 8".into(),
+        ..AppStore::default()
+    };
+    save_store(path, &named).unwrap();
+    let again = open_store(path).unwrap();
+    assert_eq!(again.store, named);
+    assert_eq!(again.set_aside, Some(set_aside));
+
+    store_notice_read(path).unwrap();
+    assert_eq!(
+        open_store(path).unwrap(),
+        OpenedStore {
+            store: named,
+            set_aside: None
+        }
+    );
 }
 
 /// The owner's typed address becomes what a session dials: an IP alone takes

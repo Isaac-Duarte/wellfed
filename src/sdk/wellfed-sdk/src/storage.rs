@@ -98,4 +98,49 @@ impl<F: FlashOps, const BASE: u32, const COUNT: u32> SlotIo for Region<F, BASE, 
     fn erase(&self, slot: u32) -> bool {
         Self::sector(slot).is_some_and(F::erase)
     }
+
+    /// The same sectors as values, so the slot layer's code runs on one
+    /// type for every region rather than on a copy per `BASE` and `COUNT`.
+    fn shared(&self) -> impl SlotIo + '_ {
+        Sectors::<F> {
+            base: BASE,
+            count: COUNT,
+            flash: PhantomData,
+        }
+    }
+}
+
+/// `count` sectors from region sector `base`, one erase unit each, through
+/// `F`: a [`Region`] whose place is a value, which the slot layer runs on.
+struct Sectors<F> {
+    base: u32,
+    count: u32,
+    flash: PhantomData<fn() -> F>,
+}
+
+impl<F> Sectors<F> {
+    /// The sector holding unit `slot`.
+    fn sector(&self, slot: u32) -> Option<u32> {
+        (slot < self.count).then(|| self.base + slot)
+    }
+}
+
+impl<F: FlashOps> SlotIo for Sectors<F> {
+    fn unit_bytes(&self) -> u32 {
+        sdk::SECTOR_BYTES
+    }
+
+    fn read(&self, slot: u32, offset: u32, bytes: &mut [u8]) -> bool {
+        self.sector(slot)
+            .is_some_and(|sector| F::read(sector, offset, bytes))
+    }
+
+    fn program(&self, slot: u32, offset: u32, bytes: &[u8]) -> bool {
+        self.sector(slot)
+            .is_some_and(|sector| F::program(sector, offset, bytes))
+    }
+
+    fn erase(&self, slot: u32) -> bool {
+        self.sector(slot).is_some_and(F::erase)
+    }
 }

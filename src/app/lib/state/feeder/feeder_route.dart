@@ -186,6 +186,7 @@ extension FeederFeeds on FeederController {
 
   static NotSentWhy? _notSentWhy(NotSentReason reason, ServerError? error) => switch ((reason, error?.kind)) {
     (NotSentReason.store, _) => NotSentWhy.notPinned,
+    (NotSentReason.setAside, _) => NotSentWhy.setAside,
     (_, ServerErrorKind.tokenRevoked || ServerErrorKind.accountDisabled) => NotSentWhy.signedOut,
     (_, ServerErrorKind.forbidden) => NotSentWhy.forbidden,
     _ => null,

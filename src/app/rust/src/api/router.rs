@@ -3,9 +3,12 @@
 //! phone's own session, but it still pins every write, so Dart makes every
 //! request through it once the app has one, and never around it: a session
 //! the router holds refuses [`FeederSession::feed`]. A pins file that does
-//! not open (corrupt, or already open in another router) fails
-//! [`PathRouter::new`], and the app then sends no write at all: it never
-//! falls back to unpinned writes.
+//! not read is set aside, never deleted, and the router opens on a new one
+//! that holds every feed back until the owner has looked at the bowls
+//! ([`PathRouter::set_aside`], [`PathRouter::bowls_checked`]). One that
+//! cannot be opened at all (already open in another router, or an IO error)
+//! fails [`PathRouter::new`], and the app then sends no write at all: it
+//! never falls back to unpinned writes.
 //!
 //! The path is chosen per feeder, server first: a new read or a new write
 //! goes direct when the server is unreachable, or reports the feeder offline
@@ -69,11 +72,13 @@ use crate::api::server::{ServerRefusal, ServerSession, ServerUpdate};
 use crate::api::server_error::ServerError;
 use crate::api::server_views::{KnownServer, ServerAccount, ServerFeeder};
 use crate::api::session::{FedBy, FeedRefusal, FeedResult, FeederSession};
+use crate::api::store::SetAside;
 use crate::frb_generated::StreamSink;
 use crate::route::core::UNFOUND_GRACE_MS;
 use crate::route::io::Router;
 
-/// The way a request reaches a feeder.
+/// The way a request reaches a feeder. Stored in `pending.json`, like
+/// [`WriteKind`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RoutePath {
@@ -83,7 +88,9 @@ pub enum RoutePath {
     Direct,
 }
 
-/// What a write asks of a feeder.
+/// What a write asks of a feeder. Stored in `pending.json` (a pin keeps
+/// its write's kind), so renaming or removing a variant changes that
+/// file's shape: bump its version and keep the reader for the one before.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WriteKind {
@@ -166,6 +173,10 @@ pub enum NotSentReason {
     Server,
     /// The phone's own session ended before it went.
     Session,
+    /// A feed, held back: the record of writes that may have run did not
+    /// read and was set aside, and the owner has not yet said the bowls are
+    /// checked ([`PathRouter::bowls_checked`]).
+    SetAside,
 }
 
 /// How a feed through the router began.
@@ -495,6 +506,21 @@ impl PathRouter {
     #[frb(sync)]
     pub fn acknowledge(&self, key: String) -> Result<(), BridgeError> {
         self.router.acknowledge(&key)
+    }
+
+    /// The record of writes that may have run, when it did not read at the
+    /// open and was set aside: every feed waits, as
+    /// [`NotSentReason::SetAside`], until [`Self::bowls_checked`].
+    #[frb(sync)]
+    pub fn set_aside(&self) -> Option<SetAside> {
+        self.router.set_aside()
+    }
+
+    /// The owner looked at every feeder's bowl after the record of writes
+    /// was set aside: feeds go again.
+    #[frb(sync)]
+    pub fn bowls_checked(&self) -> Result<(), BridgeError> {
+        self.router.bowls_checked()
     }
 
     /// Read the server's journal for every write pinned to it, and settle

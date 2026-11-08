@@ -10,7 +10,7 @@
 //! | Bytes | Field |
 //! | --- | --- |
 //! | 0..8 | magic `PLFCLI01` |
-//! | 8..12 | version (u16), record length (u16) |
+//! | 8..12 | major, minor, record length (u16) |
 //! | 12..20 | generation (u64) |
 //! | 20..52 | the feeder's X25519 secret |
 //! | 52 | 1 when the secret is set |
@@ -19,9 +19,20 @@
 //! | 580 | `CMIT`, programmed last |
 //!
 //! Unused bytes are zero, so one encoding exists per table. The newest valid
-//! record wins; a torn newer unit falls back to the older one. The sectors
-//! are this store's alone, so an unreadable record is a save of ours cut
-//! short; only a newer schema makes the store read-only.
+//! record wins; a torn newer unit falls back to the older one. A newer minor
+//! of the record is read for the fields this build knows and rewritten with
+//! the rest kept; a later minor adds fields only after the entries, at byte
+//! 576 on, since an older build's rewrite moves clients between entries.
+//!
+//! The store never writes over a record of its own it cannot read. With no
+//! valid record it starts empty only when both units are erased or hold a
+//! first save cut short; anything else (a record of an older major, one
+//! that fails to decode, a torn record beside no valid one) opens
+//! [`ClientStatus::Corrupt`], and a newer major
+//! [`ClientStatus::ReadOnly`]. Neither draws a new identity: an identity
+//! drawn over a table that was only unreadable to this build would orphan
+//! every paired client of the build that wrote it. The factory reset erases
+//! the sectors, which is the way out of both.
 //!
 //! The identity secret sits in plain flash: the board has no secure element,
 //! so anyone who can read the flash chip can impersonate this feeder. The
@@ -31,17 +42,15 @@
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{
-    DualSlot, Extent, Found, Layout, Pick, Prepare, SlotIo, get_u64, newest, put_u64, seal, target,
+    DualSlot, Extent, Found, Layout, Pick, SlotIo, Version, get_u64, newest, put_u64, seal, target,
+    unwritten,
 };
 use wellfed_device_api::clients::{CLIENTS, Client, LABEL_LEN, Label, Role};
 use wellfed_device_api::mailbox::KeyResult;
 
-pub const VERSION: u16 = 1;
-const LAYOUT: Layout = Layout {
-    magic: *b"PLFCLI01",
-    version: VERSION,
-    extent: Extent::Record,
-};
+pub const VERSION: Version = Version::new(1, 0);
+const LAYOUT: Layout = Layout::new(*b"PLFCLI01", VERSION, CRC_AT, Extent::Record);
+const _: () = assert!(LAYOUT.fits(RECORD_BYTES));
 
 const GENERATION_AT: usize = 12;
 const IDENTITY_AT: usize = 20;
@@ -65,8 +74,11 @@ pub enum ClientStatus {
     /// No record: no identity and no clients, writable.
     Empty,
     Loaded,
-    /// A newer schema version: read-only.
+    /// A newer major: read-only.
     ReadOnly,
+    /// A record of this store but none this build reads: read-only until
+    /// the factory reset erases it.
+    Corrupt,
     Io,
 }
 
@@ -224,7 +236,7 @@ impl<I: SlotIo> ClientStore<I> {
     /// decoded tables on the stack.
     fn scan(&mut self, slot: c_uint) -> Option<Found<u64>> {
         let table = &mut self.table;
-        self.units.scan(slot, |p| decode(p, table))
+        self.units.scan(slot, |_, p| decode(p, table))
     }
 
     /// Bind to two exclusive erase units and load the newest valid table.
@@ -242,6 +254,7 @@ impl<I: SlotIo> ClientStore<I> {
             self.status = ClientStatus::Io;
             return self.status;
         };
+        let empty = unwritten(&a, &b);
 
         // Both scans wrote the table; reload the winner's, or start empty.
         self.table = Table::EMPTY;
@@ -257,7 +270,8 @@ impl<I: SlotIo> ClientStore<I> {
                 self.generation = generation;
                 ClientStatus::Loaded
             }
-            Pick::Nothing => ClientStatus::Empty,
+            Pick::Nothing if empty => ClientStatus::Empty,
+            Pick::Nothing => ClientStatus::Corrupt,
         };
         self.status
     }
@@ -337,10 +351,8 @@ impl<I: SlotIo> ClientStore<I> {
         }
         let generation = self.generation + 1;
         let slot = target(self.generation, self.slot);
-        if !self
-            .units
-            .write(slot, &encode(generation, table), Prepare::Erase)
-        {
+        let from = (self.generation > 0).then_some(self.slot);
+        if !self.units.replace(slot, from, &encode(generation, table)) {
             self.status = ClientStatus::Io;
             return Err(ClientError::Io);
         }
