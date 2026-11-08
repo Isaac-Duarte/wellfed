@@ -757,8 +757,13 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
             Some(Entry::Feed(feed)) => Some(feed),
             _ => None,
         };
-        if let (Some(link), Pushed::Event(event)) = (self.link, pushed) {
-            link.event_at(Some(event.seq));
+        let seq = match pushed {
+            Pushed::Event(event) => Some(event.seq),
+            Pushed::Unknown(event) => Some(event.seq),
+            Pushed::Gap(_) | Pushed::Sample(_) | Pushed::Log(_) => None,
+        };
+        if let (Some(link), Some(seq)) = (self.link, seq) {
+            link.event_at(Some(seq));
         }
         if let (Some(link), Some(feed)) = (self.link, fed.as_ref()) {
             link.fed(feed);
@@ -773,6 +778,14 @@ impl<U: FnMut(SessionUpdate) -> bool> Serving<'_, U> {
         let entry = match pushed {
             Pushed::Event(event) => event_entry(event),
             Pushed::Gap(gap) => gap_entry(gap),
+            // A newer feeder build's event, which this app cannot show: it
+            // makes no entry, but may still end the backlog.
+            Pushed::Unknown(_) => {
+                return Ok(match self.backlog {
+                    Some(backlog) if backlog.ends_at(pushed) => self.end_backlog(),
+                    Some(_) | None => true,
+                });
+            }
             Pushed::Sample(_) | Pushed::Log(_) => return Ok(true),
         };
 

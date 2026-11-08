@@ -101,7 +101,6 @@ impl From<wellfed_connect::Error> for BridgeError {
             Error::Closed | Error::Io(_) => ErrorKind::Closed,
             Error::UnknownKey => ErrorKind::UnknownKey,
             Error::Version(_) => ErrorKind::Version,
-            Error::Session(wellfed_client::api::Error::OtherSchema { .. }) => ErrorKind::OtherBuild,
             Error::Full => ErrorKind::Full,
             Error::Session(_) | Error::Encode | Error::ReservedId => ErrorKind::Protocol,
         };

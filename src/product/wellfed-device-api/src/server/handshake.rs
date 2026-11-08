@@ -300,7 +300,7 @@ fn encode_welcome<D: Device>(
             build: device.build(),
             role: proto_role(role),
             epoch,
-            schema: device.schema(),
+            schema: device.revision(),
         },
         (Some(refusal), _) => Welcome::Refused(refusal),
         (None, None) => Welcome::Refused(OpenRefusal::Unknown),

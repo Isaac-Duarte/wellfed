@@ -339,6 +339,12 @@ pub(crate) fn pushed(pushed: &Pushed, zone: &TimeZone) -> String {
             time(event.at, zone),
             self::event(event, zone)
         ),
+        Pushed::Unknown(event) => format!(
+            "{:>6}  {}  an event of a newer feeder build than this CLI ({})",
+            event.seq,
+            time(event.at, zone),
+            event.raw
+        ),
         Pushed::Gap(gap) => format!(
             "events {}-{} left the feeder's history before they were read",
             gap.from, gap.to

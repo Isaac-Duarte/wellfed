@@ -514,8 +514,10 @@ impl Lent {
 fn wants(message: &Pushed, after: Option<u64>, epoch: Option<u32>) -> bool {
     let last = match message {
         Pushed::Event(event) if Some(event.epoch) != epoch => return true,
+        Pushed::Unknown(event) if Some(event.epoch) != epoch => return true,
         Pushed::Gap(gap) if Some(gap.epoch) != epoch => return true,
         Pushed::Event(event) => event.seq,
+        Pushed::Unknown(event) => event.seq,
         Pushed::Gap(gap) => gap.to,
         Pushed::Log(batch) => u64::from(batch.seq),
         Pushed::Sample(_) => return false,

@@ -153,6 +153,16 @@ impl Task {
                 }
                 MirrorEvent::Event(HistoryEvent::new(event, received))
             }
+            // A newer build's event, which this server cannot read or
+            // store yet: the session's cursor moves past it all the same.
+            Pushed::Unknown(event) => {
+                warn!(
+                    epoch = event.epoch,
+                    seq = event.seq,
+                    "an event of a newer build than this server, not stored"
+                );
+                return Ok(());
+            }
             Pushed::Gap(gap) => {
                 let (epoch, from, to) = (gap.epoch, gap.from, gap.to);
                 warn!(from, to, "events lost before the server read them");

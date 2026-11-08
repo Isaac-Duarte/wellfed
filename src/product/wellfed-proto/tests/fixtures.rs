@@ -7,9 +7,10 @@
 //!
 //! `WELLFED_BLESS=1 cargo nextest run -p wellfed-proto` appends the
 //! fixtures of new variants to `fixtures/v1.txt`. It refuses to rewrite a
-//! line already there, so a struct that gained a field, or a variant that
-//! moved, fails here even when blessed: a message changed in place has its
-//! lines rewritten by hand, on purpose. The rules are in the
+//! line already there: the API only grows, since older clients and
+//! feeders stay in use, so a message whose bytes moved is a mistake, not a
+//! fixture to update. `api.rs` holds the same rule over every type's
+//! structure; the rules are in the
 //! [device API](../../../../docs/firmware/device-api.md#evolution).
 
 use serde::Serialize;
@@ -38,7 +39,7 @@ fn messages() -> Vec<Fixture> {
         let mut buf = vec![0; FRAME_MAX];
         let mut writer = EventBatchWriter::new(&mut buf);
         for event in events {
-            writer.push(event).unwrap();
+            writer.push(&RawEvent::encode(event).unwrap()).unwrap();
         }
         entry(&DeviceMessage::Events(writer.batch()))
     }

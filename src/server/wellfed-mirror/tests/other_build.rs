@@ -17,7 +17,7 @@ use wellfed_api::{Connection as Link, Model};
 use wellfed_mirror::{AskError, Config, Diagnostics, Discovery, Feeder, Mirror, MirrorEvent};
 use wellfed_model::{Answer, Op};
 use wellfed_proto::api::{
-    Bank0Check, FRAME_MAX, Open, PROLOGUE, PROTOCOL_MAJOR, Refusal, RequestId, Role, SCHEMA,
+    Bank0Check, FRAME_MAX, Open, PROLOGUE, PROTOCOL_MAJOR, REVISION, Refusal, RequestId, Role,
     UpdateOp, UpdatePhase, UpdateView, WANTED_MAX, Welcome,
 };
 use wellfed_server_testkit::fixed::{FixedClock, SeededRandom};
@@ -103,7 +103,7 @@ fn serve(mut stream: TcpStream, seen: &Mutex<Vec<&'static str>>) {
         build: "old",
         role: Role::Owner,
         epoch: 1,
-        schema: SCHEMA ^ 1,
+        schema: REVISION + 1,
     };
     let len = wellfed_proto::encode(&welcome, &mut plain).unwrap();
     let written = handshake.write_message(&plain[..len], &mut sealed).unwrap();

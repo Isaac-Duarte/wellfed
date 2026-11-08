@@ -6,7 +6,7 @@
 //! The device here declares, on its own, only the frozen variants of the
 //! messages ([`ClientMessage::Request`], [`Op::Update`], [`Op::Alive`], and
 //! the frozen answers), as a build that knew nothing else would. Its welcome
-//! names another schema revision. The client offers to bank 1, which gives
+//! names an older revision. The client offers to bank 1, which gives
 //! way; reconnects to bank 0, reads its bank, offers again and pushes every
 //! chunk until bank 0 activates. Every request it sends must decode as one
 //! of the frozen ops: one that does not is answered `Unavailable`, as a
@@ -16,13 +16,13 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use wellfed_client::api::Error;
+use wellfed_client::api::Skew;
 use wellfed_client::connection::{Connection, Event, Timing};
 use wellfed_client::update::{Image, Installer, Next, Sent};
-use wellfed_model::{Answer, Op as ModelOp, UpdatePhase as ModelPhase};
+use wellfed_model::{Answer, Op as ModelOp, Refusal as ModelRefusal, UpdatePhase as ModelPhase};
 use wellfed_proto::api::{
-    Bank0Check, FRAME_MAX, Hello, Open, PROLOGUE, PROTOCOL_MAJOR, Refusal, RequestId, Role, SCHEMA,
-    UPDATE_CHUNK_MAX, UpdateOp, UpdatePhase, UpdateView, WANTED_MAX, Welcome,
+    Bank0Check, FRAME_MAX, Hello, Open, PROLOGUE, PROTOCOL_MAJOR, REVISION, Refusal, RequestId,
+    Role, UPDATE_CHUNK_MAX, UpdateOp, UpdatePhase, UpdateView, WANTED_MAX, Welcome,
 };
 use wellfed_proto::device::Model;
 use wellfed_session::frame::{self, PREFIX};
@@ -30,8 +30,8 @@ use wellfed_session::noise::{Handshake, Keypair, Pattern, Role as Side, Transpor
 
 const FEEDER: [u8; 32] = [0x10; 32];
 const OWNER: [u8; 32] = [0x20; 32];
-/// The older build's revision: anything but this client's.
-const OLD_SCHEMA: u32 = SCHEMA ^ 0x5a5a_5a5a;
+/// The older build's revision.
+const OLD_REVISION: u32 = REVISION - 1;
 
 /// What an older build decodes: the frozen request alone.
 #[derive(Debug, Deserialize)]
@@ -203,7 +203,7 @@ impl OldBuild {
                     },
                     role: Role::Owner,
                     epoch: 7,
-                    schema: OLD_SCHEMA,
+                    schema: OLD_REVISION,
                 };
                 let len = wellfed_proto::encode(&welcome, &mut plain).unwrap();
                 let mut sealed = [0; FRAME_MAX];
@@ -352,7 +352,11 @@ impl Client {
         };
         client.pump(device);
         let opened = client.connection.opened().expect("the welcome");
-        assert!(!opened.same_schema(), "the device plays another build");
+        assert_eq!(
+            opened.skew(),
+            Skew::FeederBehind,
+            "the device plays an older build"
+        );
         client
     }
 
@@ -473,47 +477,31 @@ fn an_update_goes_through_a_bank_0_of_another_build() {
     assert_eq!(device.bank, 1, "bank 0 activated and restarted into bank 1");
 }
 
-/// On a session with another build, only the frozen path leaves: any other
-/// op and a subscription are refused here, with nothing sent; the keepalive
-/// is the frozen `Alive`, and its answer keeps the session open.
+/// On a session with an older build every op goes: the API only grows, so
+/// an op the build knows means the same there, and one it lacks comes back
+/// `Unavailable` with the session kept. The keepalive is the frozen
+/// `Alive`, and its answer keeps the session open.
 #[test]
-fn a_session_with_another_build_sends_only_the_frozen_path() {
+fn a_session_with_an_older_build_sends_every_op_and_reads_unavailable() {
     let mut device = OldBuild::new(1_000);
     let now = Instant::now();
     let mut client = Client::connect(&mut device, now);
 
-    for op in [
-        ModelOp::Status,
-        ModelOp::Feed { portions: 1 },
-        ModelOp::ListClients,
-        ModelOp::Reboot,
-    ] {
-        let id = client.id();
-        let refused = client.connection.request(client.now, id, &op);
-        assert!(
-            matches!(
-                refused,
-                Err(Error::OtherSchema {
-                    feeder: OLD_SCHEMA,
-                    client: SCHEMA
-                })
-            ),
-            "{op:?}: {refused:?}"
-        );
-        assert_eq!(client.connection.poll_transmit(), None, "{op:?} was sent");
+    for op in [ModelOp::Status, ModelOp::ListClients] {
+        let answer = client.ask(&mut device, &op);
+        assert_eq!(answer, Answer::Refused(ModelRefusal::Unavailable), "{op:?}");
     }
-    assert!(matches!(
-        client.connection.subscribe(client.now, None, false),
-        Err(Error::OtherSchema { .. })
-    ));
-    assert_eq!(client.connection.poll_transmit(), None);
+    assert_eq!(
+        device.unknown, 2,
+        "both went, and the build could not read them"
+    );
+    assert!(client.connection.opened().is_some(), "the session is kept");
 
     // Quiet past the keepalive: `Alive` goes, and its answer is swallowed.
     client.now += Timing::DEFAULT.keepalive;
     client.connection.handle_timeout(client.now).unwrap();
     client.pump(&mut device);
     assert_eq!(device.ops, ["alive"]);
-    assert_eq!(device.unknown, 0);
     assert_eq!(client.connection.poll_event(), None);
     // Heard within the silence limit, so the session lives on.
     client.now += Timing::DEFAULT.keepalive;

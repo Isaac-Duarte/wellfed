@@ -388,12 +388,16 @@ impl Connection {
         self.opened().epoch
     }
 
-    /// Whether the feeder's build speaks this client's schema revision.
-    /// When it does not, only the frozen update path goes to it: every
-    /// other request and a subscription are refused with
-    /// [`wellfed_client::api::Error::OtherSchema`], never sent.
+    /// Whether the feeder's build speaks exactly this client's API
+    /// revision.
     pub fn same_schema(&self) -> bool {
         self.opened().same_schema()
+    }
+
+    /// Which side is the older build ([`wellfed_client::api::Skew`]): every
+    /// op goes either way, and this says what to update when one is missing.
+    pub fn skew(&self) -> wellfed_client::api::Skew {
+        self.opened().skew()
     }
 
     /// The newest event or gap end received since [`Self::subscribe`].
@@ -711,7 +715,7 @@ mod tests {
             build: "fountain",
             role: WireRole::Owner,
             epoch: 1,
-            schema: wellfed_proto::api::SCHEMA,
+            schema: wellfed_proto::api::REVISION,
         };
         let len = wellfed_proto::encode(&welcome, &mut plain).unwrap();
         let mut out = [0; FRAME_MAX];

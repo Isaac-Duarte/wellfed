@@ -38,7 +38,7 @@ pub use call::{CALL_BYTES_MAX, CALL_CHUNK_MAX, CALL_PLAYS_MAX, CALL_RATE_HZ, Cal
 pub use event::{
     ClientRole, CoreEvent, EnrollPath, Event, EventBody, EventKind, FeedOutcome, FeedReason,
     FeederEvent, FoodLevel, Gap, LogLines, MetricKind, MissedReason, Pushed, Sample, SampleValue,
-    Source,
+    Source, UnknownEvent,
 };
 pub use plan::{
     NextMeal, PLANS, PORTIONS_MAX, Plan, Plans, SkippedMeals, TimeOfDay, Weekday, Weekdays,

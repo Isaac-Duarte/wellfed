@@ -70,8 +70,11 @@ struct Fake {
     events: Vec<proto::Event>,
     /// Events before this sequence number left the ring.
     oldest: u64,
-    /// Events lost inside the ring (a body this build cannot read, say).
+    /// Events lost inside the ring.
     lost: Option<(u64, u64)>,
+    /// Bodies a newer build recorded, by the event's number: served in
+    /// place of the event's own.
+    newer: Vec<(u64, proto::RawBody)>,
     /// `None` until the writer has opened the ring.
     epoch: Option<u32>,
     rebooted: bool,
@@ -562,7 +565,13 @@ impl Device for Fake {
         self.events
             .iter()
             .find(|e| e.seq > after && e.seq >= self.oldest)
-            .map_or(EventRead::None, |e| EventRead::Event(*e))
+            .map_or(EventRead::None, |e| {
+                let mut raw = proto::RawEvent::encode(e).expect("a body fits the ring");
+                if let Some((_, body)) = self.newer.iter().find(|(seq, _)| *seq == e.seq) {
+                    raw.body = *body;
+                }
+                EventRead::Event(raw)
+            })
     }
 
     fn epoch(&self) -> Option<u32> {
@@ -1928,9 +1937,10 @@ fn the_largest_events_fill_a_frame_and_the_rest_follow() {
     owner.outbox.extend(bytes);
     let frames = frames(&mut rig, &mut owner, 70);
 
-    // 32 bytes each: 31 fill all but 13 of the batch's 1,005.
+    // 33 bytes each, the body's length among them: 30 fill all but 15 of
+    // the batch's 1,005.
     let per_frame = (proto::EVENTS_BYTES_MAX - proto::EVENT_BYTES_MAX) / proto::EVENT_BYTES_MAX + 1;
-    assert_eq!(per_frame, 31);
+    assert_eq!(per_frame, 30);
     let sizes: Vec<usize> = frames.iter().map(Vec::len).collect();
     assert_eq!(sizes, [per_frame, per_frame, 70 - 2 * per_frame]);
     let seqs: Vec<u64> = frames.iter().flatten().map(|&(seq, _)| seq).collect();
@@ -2570,6 +2580,57 @@ fn a_cursor_resumes_in_its_epoch_and_restarts_from_another() {
     drive(&mut rig, &mut mirror, |live| pushed(live).len() == 3).unwrap();
     let seqs: Vec<u64> = pushed(&mirror).iter().map(|e| e.seq).collect();
     assert_eq!(seqs, [1, 2, 3]);
+    assert_eq!(mirror.connection.cursor(), Some(newest));
+}
+
+/// A newer build's body comes out unknown, numbered and kept whole, between
+/// the events around it, and the cursor moves past it: a mirror never
+/// asks for it again.
+#[test]
+fn a_newer_build_s_event_comes_out_unknown_and_moves_the_cursor() {
+    let mut rig = Rig::new();
+    for count in 1..=3 {
+        rig.device.record(0, EventBody::Lost { count });
+    }
+    let mut unknown = [0; proto::EVENT_BODY_MAX];
+    unknown[..3].copy_from_slice(&[0xf0, 0x01, 0x07]);
+    rig.device.newer.push((2, unknown));
+
+    let mut owner = live(&mut rig, OWNER);
+    let now = owner.now(&rig);
+    owner.connection.subscribe(now, None, false).unwrap();
+    drive(&mut rig, &mut owner, |live| live.events.len() >= 3).unwrap();
+
+    let seqs: Vec<(u64, bool)> = owner
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Pushed(model::Pushed::Event(event)) => Some((event.seq, true)),
+            Event::Pushed(model::Pushed::Unknown(event)) => {
+                assert_eq!(event.raw, model::Hex(unknown));
+                assert_eq!(event.epoch, EPOCH);
+                Some((event.seq, false))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(seqs, [(1, true), (2, false), (3, true)]);
+    let newest = Cursor {
+        epoch: EPOCH,
+        seq: 3,
+    };
+    assert_eq!(owner.connection.cursor(), Some(newest));
+
+    // Its number is the cursor while it is the newest.
+    rig.device.newer.push((3, unknown));
+    let mut mirror = live(&mut rig, MEMBER);
+    let now = mirror.now(&rig);
+    let from = Cursor {
+        epoch: EPOCH,
+        seq: 2,
+    };
+    mirror.connection.subscribe(now, Some(from), false).unwrap();
+    drive(&mut rig, &mut mirror, |live| !live.events.is_empty()).unwrap();
     assert_eq!(mirror.connection.cursor(), Some(newest));
 }
 

@@ -684,7 +684,7 @@ impl<'a> Session<'a> {
             Pushed::Event(event) => self
                 .backlog
                 .is_some_and(|backlog| backlog.newest.is_some_and(|newest| event.seq <= newest)),
-            Pushed::Gap(_) => self.backlog.is_some(),
+            Pushed::Gap(_) | Pushed::Unknown(_) => self.backlog.is_some(),
             Pushed::Sample(_) | Pushed::Log(_) => return Ok(()),
         };
         self.memory.cursor = self.connection.cursor();
@@ -701,7 +701,9 @@ impl<'a> Session<'a> {
                 }
             }
             Pushed::Gap(gap) => self.send(Update::gap(Some(gap)))?,
-            Pushed::Sample(_) | Pushed::Log(_) => {}
+            // A newer feeder build's event, which this integration cannot
+            // show: it only moves the cursor and may end the backlog.
+            Pushed::Unknown(_) | Pushed::Sample(_) | Pushed::Log(_) => {}
         }
 
         match self.backlog {

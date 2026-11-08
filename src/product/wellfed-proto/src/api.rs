@@ -41,22 +41,18 @@
 //!   ([`Op::Update`]), the keepalive ([`Op::Alive`]), invites
 //!   ([`Op::CreateInvite`], [`Join`], [`Joined`]), the recovery window's
 //!   setup exchange ([`crate::setup`]) and every answer they get never
-//!   change: no field is added, removed, reordered or retyped,
-//!   and an enum only gains variants at its end. The frozen variants of
-//!   [`ClientMessage`], [`DeviceMessage`], [`Op`], [`Outcome`] and
-//!   [`Refusal`] come first, so the rest can change behind them. Only a
-//!   new major changes the frozen part, and a device keeps serving major
-//!   1's for good. So does every client, even once a new major exists: a
-//!   feeder never updated since speaks nothing else.
+//!   change. Only a new major changes the frozen part, and a device keeps
+//!   serving major 1's for good. So does every client, even once a new
+//!   major exists: a feeder never updated since speaks nothing else.
 //!   `tests/fixtures/update-v1.txt` pins it, and its test only appends.
-//! - Everything else is positional too, but changes in place while the
-//!   research unit is the only device running Wellfed: the firmware and
-//!   every client are built from this repository together. The change
-//!   rewrites the message's lines in `tests/fixtures/v1.txt` by hand
-//!   (blessing only appends). Any change to a type changes [`SCHEMA`],
-//!   which the welcome carries: a client of another revision sends that
-//!   build only frozen ops.
-
+//! - **Everything else is append-only.** Feeders, phones, the server and
+//!   Home Assistant run different builds, so no field is added, removed,
+//!   reordered or retyped, an enum gains variants only at its end, a
+//!   changed op becomes a new op, and a retired op keeps its index and is
+//!   refused `Unavailable`. `tests/fixtures/api.json` holds the traced
+//!   structure of every message, and `tests/api.rs` refuses a trace that is
+//!   not a superset of it. Each growth raises [`REVISION`], which the
+//!   welcome carries, so a client knows which side to update.
 use core::num::NonZeroU32;
 
 use serde::{Deserialize, Serialize};
@@ -75,13 +71,14 @@ pub const PROTOCOL_MAJOR: u16 = 1;
 /// The oldest major this device still serves.
 pub const PROTOCOL_MAJOR_MIN: u16 = 1;
 
-/// The revision of everything outside the frozen part: a hash of every
-/// message type's structure, traced variant by variant and field by field
-/// (`tests/schema.rs`), so any change to a type, fixture or no fixture,
-/// makes a new revision. The test fails, naming the new value, until this
-/// is updated. The welcome carries it ([`Welcome::Open::schema`]), and a
-/// client of another revision sends that build only frozen ops.
-pub const SCHEMA: u32 = 0x2af2_8cd8;
+/// The API revision this build speaks: a count that rises by one each
+/// time the messages grow (`tests/api.rs` refuses a grown trace without
+/// it). The welcome carries it ([`Welcome::Open::schema`]). Since the API
+/// only grows, a client at or above the feeder's revision may send any op
+/// it knows, and reads a refused `Unavailable` as one the feeder's build
+/// lacks; a client below it still uses every op it knows, and only what
+/// the newer build added is out of its reach.
+pub const REVISION: u32 = 1;
 
 /// Frozen. The largest frame either way, Noise tag included.
 pub const FRAME_MAX: usize = 1024;
@@ -133,10 +130,9 @@ pub enum Welcome<'a> {
         /// so a cursor from another epoch means nothing here: the client
         /// starts again from the oldest event kept.
         epoch: u32,
-        /// The build's [`SCHEMA`]: which revision of everything outside the
-        /// frozen update path it speaks. A client of another revision sends
-        /// only frozen ops on this session, since its other ops may decode
-        /// here as something else.
+        /// The build's [`REVISION`]: an ordered count, so a client knows
+        /// whether the feeder or the client is the older build. The name
+        /// is the frozen field's.
         schema: u32,
     },
     Refused(OpenRefusal),
@@ -889,18 +885,73 @@ pub const LOG_TEXT_MAX: usize = MESSAGE_MAX - 16;
 /// The most bytes an [`EventBody`] encodes to: what the event ring keeps
 /// of one.
 pub const EVENT_BODY_MAX: usize = 16;
-/// The most bytes an [`Event`] encodes to: a `u64` varint's 10, an
-/// `Option<u32>`'s 6 and the body.
-pub const EVENT_BYTES_MAX: usize = 10 + 6 + EVENT_BODY_MAX;
+/// The most bytes an [`EncodedEvent`] takes in a batch: a `u64` varint's
+/// 10, an `Option<u32>`'s 6, the body's one-byte length and the body.
+pub const EVENT_BYTES_MAX: usize = 10 + 6 + 1 + EVENT_BODY_MAX;
 /// The most encoded events one [`DeviceMessage::Events`] carries: a
 /// frame's message, less the message's tag and the bytes' two-byte length.
 pub const EVENTS_BYTES_MAX: usize = MESSAGE_MAX - 3;
 
-/// Events as [`DeviceMessage::Events`] carries them: each [`Event`]
-/// encoded in turn, borrowed from the message as [`DeviceMessage::Log`]'s
-/// text is. The feeder fills one with an [`EventBatchWriter`] in a buffer
-/// it already holds, so it never keeps an array of events; a client reads
-/// it with [`Self::iter`].
+/// A body as the event ring keeps it: the [`EventBody`]'s encoding, padded
+/// with zeros to [`EVENT_BODY_MAX`].
+pub type RawBody = [u8; EVENT_BODY_MAX];
+
+/// One durable event as the ring keeps it and a batch carries it, its body
+/// still encoded. A device passes on bodies it cannot read itself (a newer
+/// build's, met by a bank 0 that kept an older one), and a client decodes
+/// each with [`Self::body`]: one it cannot read is still numbered, so its
+/// cursor moves past it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RawEvent {
+    pub seq: u64,
+    pub at: Option<u32>,
+    pub body: RawBody,
+}
+
+impl RawEvent {
+    /// `event`, its body encoded as the ring keeps it.
+    pub fn encode(event: &Event) -> Result<Self, crate::Error> {
+        let mut body = [0; EVENT_BODY_MAX];
+        crate::encode(&event.body, &mut body)?;
+        Ok(Self {
+            seq: event.seq,
+            at: event.at,
+            body,
+        })
+    }
+
+    /// The body, `None` when this build does not know it.
+    pub fn body(&self) -> Option<EventBody> {
+        crate::decode_padded(&self.body)
+    }
+
+    /// The event, `None` when this build does not know its body.
+    pub fn event(&self) -> Option<Event> {
+        Some(Event {
+            seq: self.seq,
+            at: self.at,
+            body: self.body()?,
+        })
+    }
+}
+
+/// One event as [`EventBatch`] carries it: the ring's body with its
+/// trailing zeros trimmed, behind its length. The length is what lets a
+/// reader skip a body it does not know and read the next event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EncodedEvent<'a> {
+    pub seq: u64,
+    pub at: Option<u32>,
+    /// At most [`EVENT_BODY_MAX`] bytes.
+    #[serde(borrow)]
+    pub body: &'a [u8],
+}
+
+/// Events as [`DeviceMessage::Events`] carries them: each an
+/// [`EncodedEvent`] in turn, borrowed from the message as
+/// [`DeviceMessage::Log`]'s text is. The feeder fills one with an
+/// [`EventBatchWriter`] in a buffer it already holds, so it never keeps an
+/// array of events; a client reads it with [`Self::iter`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventBatch<'a> {
     #[serde(borrow)]
@@ -908,8 +959,9 @@ pub struct EventBatch<'a> {
 }
 
 impl<'a> EventBatch<'a> {
-    /// The events in order. A batch whose bytes do not decode as events
-    /// yields one error and then nothing.
+    /// The events in order, bodies still encoded. A batch whose bytes do
+    /// not frame as events yields one error and then nothing; a body the
+    /// reader does not know is no error here.
     pub const fn iter(&self) -> EventBatchIter<'a> {
         EventBatchIter { rest: self.encoded }
     }
@@ -925,7 +977,7 @@ impl<'a> EventBatch<'a> {
 }
 
 impl<'a> IntoIterator for &EventBatch<'a> {
-    type Item = Result<Event, crate::Error>;
+    type Item = Result<RawEvent, crate::Error>;
     type IntoIter = EventBatchIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -940,18 +992,33 @@ pub struct EventBatchIter<'a> {
 }
 
 impl Iterator for EventBatchIter<'_> {
-    type Item = Result<Event, crate::Error>;
+    type Item = Result<RawEvent, crate::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.rest.is_empty() {
             return None;
         }
-        match postcard::take_from_bytes::<Event>(self.rest) {
-            Ok((event, rest)) => {
+        let read = postcard::take_from_bytes::<EncodedEvent<'_>>(self.rest)
+            .ok()
+            .and_then(|(event, rest)| {
+                let mut body = [0; EVENT_BODY_MAX];
+                body.get_mut(..event.body.len())?
+                    .copy_from_slice(event.body);
+                Some((
+                    RawEvent {
+                        seq: event.seq,
+                        at: event.at,
+                        body,
+                    },
+                    rest,
+                ))
+            });
+        match read {
+            Some((event, rest)) => {
                 self.rest = rest;
                 Some(Ok(event))
             }
-            Err(_) => {
+            None => {
                 self.rest = &[];
                 Some(Err(crate::Error::Malformed))
             }
@@ -960,7 +1027,7 @@ impl Iterator for EventBatchIter<'_> {
 }
 
 /// [`EventBatchWriter::push`]'s refusal: the event does not fit the room
-/// left. Encoding an [`Event`] fails for no other reason.
+/// left. Encoding an [`EncodedEvent`] fails for no other reason.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("the event does not fit the batch")]
 pub struct BatchFull;
@@ -991,11 +1058,21 @@ impl<'b> EventBatchWriter<'b> {
         self.len == 0
     }
 
-    /// Append `event`; an event that does not fit leaves the batch as it
-    /// was.
-    pub fn push(&mut self, event: &Event) -> Result<(), BatchFull> {
+    /// Append `event`, its body's trailing zeros trimmed (the reader pads
+    /// them back); an event that does not fit leaves the batch as it was.
+    pub fn push(&mut self, event: &RawEvent) -> Result<(), BatchFull> {
+        let used = event
+            .body
+            .iter()
+            .rposition(|&byte| byte != 0)
+            .map_or(0, |last| last + 1);
+        let encoded = EncodedEvent {
+            seq: event.seq,
+            at: event.at,
+            body: event.body.get(..used).unwrap_or_default(),
+        };
         let rest = self.buf.get_mut(self.len..).ok_or(BatchFull)?;
-        self.len += crate::encode(event, rest).map_err(|_| BatchFull)?;
+        self.len += crate::encode(&encoded, rest).map_err(|_| BatchFull)?;
         Ok(())
     }
 
@@ -1610,8 +1687,9 @@ pub struct Invite {
     pub seconds: u16,
 }
 
-/// One durable record of the feeder's history.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// One durable record of the feeder's history, its body decoded. On the
+/// wire and in the ring it is a [`RawEvent`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Event {
     /// Monotonic across reboots; a client's cursor.
     pub seq: u64,
@@ -2826,7 +2904,9 @@ mod tests {
         let mut writer = EventBatchWriter::new(&mut buf);
         let mut seq = u64::MAX - 100;
         while writer.has_room() {
-            writer.push(&event(seq)).unwrap();
+            writer
+                .push(&RawEvent::encode(&event(seq)).unwrap())
+                .unwrap();
             seq += 1;
         }
         let written = seq - (u64::MAX - 100);
@@ -2838,9 +2918,93 @@ mod tests {
         let Ok(DeviceMessage::Events(batch)) = decode::<DeviceMessage<'_>>(&out[..len]) else {
             panic!("not a batch");
         };
-        let read: Vec<_> = batch.iter().map(Result::unwrap).collect();
+        let read: Vec<_> = batch
+            .iter()
+            .map(|raw| raw.unwrap().event().unwrap())
+            .collect();
         let expected: Vec<_> = (u64::MAX - 100..seq).map(event).collect();
         assert_eq!(read, expected);
+    }
+
+    /// A body this build does not know (a newer build's) keeps its number,
+    /// and the events after it still read.
+    #[test]
+    fn an_unknown_body_is_skipped_by_its_length() {
+        let mut unknown = [0; EVENT_BODY_MAX];
+        unknown[0] = 0xf0;
+        unknown[1] = 0x01;
+        unknown[2] = 0x07;
+        let next = Event {
+            seq: 3,
+            at: None,
+            body: EventBody::Lost { count: 1 },
+        };
+        let mut buf = [0; 128];
+        let mut writer = EventBatchWriter::new(&mut buf);
+        writer
+            .push(&RawEvent {
+                seq: 2,
+                at: Some(5),
+                body: unknown,
+            })
+            .unwrap();
+        writer.push(&RawEvent::encode(&next).unwrap()).unwrap();
+
+        let read: Vec<RawEvent> = writer.batch().iter().map(Result::unwrap).collect();
+
+        assert_eq!(read.len(), 2);
+        assert_eq!(
+            (read[0].seq, read[0].at, read[0].body),
+            (2, Some(5), unknown)
+        );
+        assert_eq!(read[0].event(), None);
+        assert_eq!(read[1].event(), Some(next));
+    }
+
+    /// Trailing zeros are trimmed on the wire and padded back: a body that
+    /// encodes to zeros alone costs only its length byte.
+    #[test]
+    fn a_body_s_trailing_zeros_are_trimmed_and_restored() {
+        let event = Event {
+            seq: 1,
+            at: None,
+            body: EventBody::Boot {
+                bank: 0,
+                reset_flags: 0,
+            },
+        };
+        let mut buf = [0; 64];
+        let mut writer = EventBatchWriter::new(&mut buf);
+        writer.push(&RawEvent::encode(&event).unwrap()).unwrap();
+
+        assert_eq!(writer.batch().as_bytes(), [1, 0, 0]);
+        let read: Vec<_> = writer.batch().iter().collect();
+        assert_eq!(read, [Ok(RawEvent::encode(&event).unwrap())]);
+        assert_eq!(read[0].unwrap().event(), Some(event));
+    }
+
+    /// A body longer than the ring keeps is no event: the batch is
+    /// malformed from there.
+    #[test]
+    fn a_body_past_the_ring_s_size_is_malformed() {
+        let long = [0x01; EVENT_BODY_MAX + 1];
+        let mut out = [0; 64];
+        let len = encode(
+            &EncodedEvent {
+                seq: 1,
+                at: None,
+                body: &long,
+            },
+            &mut out,
+        )
+        .unwrap();
+        let batch = EventBatch {
+            encoded: &out[..len],
+        };
+
+        let read: Vec<_> = batch.iter().collect();
+
+        assert_eq!(read, [Err(crate::Error::Malformed)]);
     }
 
     /// Bytes that are not events yield one error, then nothing.
@@ -2848,13 +3012,12 @@ mod tests {
     fn a_garbled_batch_fails_once() {
         let mut buf = [0; 64];
         let mut writer = EventBatchWriter::new(&mut buf);
-        writer
-            .push(&Event {
-                seq: 1,
-                at: None,
-                body: EventBody::Lost { count: 1 },
-            })
-            .unwrap();
+        let lost = Event {
+            seq: 1,
+            at: None,
+            body: EventBody::Lost { count: 1 },
+        };
+        writer.push(&RawEvent::encode(&lost).unwrap()).unwrap();
         let mut bytes = writer.batch().as_bytes().to_vec();
         bytes.push(0xff);
         let batch = EventBatch { encoded: &bytes };
@@ -2982,15 +3145,18 @@ mod tests {
             let len = encode(&body, &mut out).unwrap();
             assert_eq!(decode::<EventBody>(&out[..len]), Ok(body));
 
-            // The largest event around the largest body.
+            // The largest event around the largest body fits its bound.
             let event = Event {
                 seq: u64::MAX,
                 at: Some(u32::MAX),
                 body,
             };
             let mut out = [0; EVENT_BYTES_MAX];
-            let len = encode(&event, &mut out).unwrap();
-            assert_eq!(decode::<Event>(&out[..len]), Ok(event));
+            let mut writer = EventBatchWriter::new(&mut out);
+            writer.push(&RawEvent::encode(&event).unwrap()).unwrap();
+            let read: Vec<_> = writer.batch().iter().collect();
+            assert_eq!(read.len(), 1);
+            assert_eq!(read[0].unwrap().event(), Some(event));
         }
     }
 }

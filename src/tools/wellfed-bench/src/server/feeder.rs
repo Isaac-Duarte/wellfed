@@ -399,6 +399,7 @@ impl Pushes {
                 ring.first += 1;
                 let gone = match dropped {
                     Some(Pushed::Event(event)) => Some(event.seq),
+                    Some(Pushed::Unknown(event)) => Some(event.seq),
                     Some(Pushed::Gap(gap)) => Some(gap.to),
                     Some(Pushed::Log(batch)) => Some(u64::from(batch.seq)),
                     Some(Pushed::Sample(_)) | None => None,
@@ -1006,7 +1007,9 @@ impl Open<'_> {
                     .seen(&Seen::Event(&event_name(event.body.kind())));
                 self.events.push(message);
             }
-            Pushed::Gap(_) => {
+            // A newer build's event this bench cannot read is kept as it
+            // came, so a page of the history still numbers it.
+            Pushed::Gap(_) | Pushed::Unknown(_) => {
                 *self.cursor = self.connection.cursor();
                 self.keep_cursor();
                 self.events.push(message);

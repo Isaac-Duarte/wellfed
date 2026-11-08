@@ -10,7 +10,7 @@ use wellfed_proto::api as proto;
 use wellfed_proto::device::DeviceKind;
 use wellfed_proto::setup as proto_setup;
 
-use crate::{Alert, AlertsView, OpenAlert, UpdateCandidate};
+use crate::{Alert, AlertsView, OpenAlert, Pushed, UnknownEvent, UpdateCandidate};
 use crate::{
     Answer, Bank0Blocked, Bank0Check, Bank1Page, Battery, Blocked, Bowl, Calibration,
     CalibrationView, CallClip, CallView, Client, ClientRole, CoreEvent, Counters, Counts,
@@ -34,6 +34,23 @@ pub fn log(seq: u32, dropped: u32, text: &str) -> LogLines {
         seq,
         dropped,
         lines: text.lines().map(str::to_owned).collect(),
+    }
+}
+
+/// One event of the history `epoch` counts, as a batch carries it: an
+/// [`UnknownEvent`] when this build does not know its body.
+pub fn raw_event(epoch: u32, raw: proto::RawEvent) -> Pushed {
+    match raw.event() {
+        Some(known) => Pushed::Event(event(epoch, known)),
+        None => {
+            let proto::RawEvent { seq, at, body } = raw;
+            Pushed::Unknown(UnknownEvent {
+                epoch,
+                seq,
+                at: at.map(seconds),
+                raw: Hex(body),
+            })
+        }
     }
 }
 

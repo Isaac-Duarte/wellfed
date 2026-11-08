@@ -318,7 +318,9 @@ impl Device for Fake {
         self.events
             .iter()
             .find(|e| e.seq > after)
-            .map_or(EventRead::None, |e| EventRead::Event(*e))
+            .map_or(EventRead::None, |e| {
+                EventRead::Event(proto::RawEvent::encode(e).expect("a body fits the ring"))
+            })
     }
 
     fn epoch(&self) -> Option<u32> {

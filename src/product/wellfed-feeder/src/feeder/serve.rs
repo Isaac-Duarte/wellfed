@@ -946,21 +946,11 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
             None => EventRead::Wait,
             Some(Read::End) => EventRead::None,
             Some(Read::Gap { from, to }) => EventRead::Gap { from, to },
-            Some(Read::Record(record)) => {
-                match wellfed_proto::decode_padded::<EventBody>(&record.body) {
-                    Some(body) => EventRead::Event(proto::Event {
-                        seq: record.seq,
-                        at: record.at,
-                        body,
-                    }),
-                    // A body this build cannot read (a newer one's): skip it
-                    // as lost rather than stall the subscriber.
-                    None => EventRead::Gap {
-                        from: record.seq,
-                        to: record.seq,
-                    },
-                }
-            }
+            Some(Read::Record(record)) => EventRead::Event(proto::RawEvent {
+                seq: record.seq,
+                at: record.at,
+                body: record.body,
+            }),
         }
     }
 

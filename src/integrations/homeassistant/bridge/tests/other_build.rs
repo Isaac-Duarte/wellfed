@@ -12,7 +12,7 @@ use wellfed_connect::Timing;
 use wellfed_homeassistant::api::{NotSent, UpdateKind, Written};
 use wellfed_homeassistant::feeder::{Clocks, Feeder, Target};
 use wellfed_homeassistant::key::ClientKey;
-use wellfed_proto::api::{FRAME_MAX, Open, PROLOGUE, PROTOCOL_MAJOR, Role, SCHEMA, Welcome};
+use wellfed_proto::api::{FRAME_MAX, Open, PROLOGUE, PROTOCOL_MAJOR, REVISION, Role, Welcome};
 use wellfed_session::frame::{self, PREFIX};
 use wellfed_session::noise::{Handshake, Keypair, Pattern, Role as Side};
 
@@ -57,7 +57,7 @@ fn serve(mut stream: TcpStream, sent: &Mutex<usize>) {
         build: "old",
         role: Role::Member,
         epoch: 1,
-        schema: SCHEMA ^ 1,
+        schema: REVISION + 1,
     };
     let len = wellfed_proto::encode(&welcome, &mut plain).unwrap();
     let written = handshake.write_message(&plain[..len], &mut sealed).unwrap();

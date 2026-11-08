@@ -142,7 +142,9 @@ impl Entry {
             }),
             Pushed::Event(event) => Feed::from_event(event).map(Self::Feed),
             Pushed::Gap(gap) => Some(Self::Gap(*gap)),
-            Pushed::Sample(_) | Pushed::Log(_) => None,
+            // A newer build's event, which this one cannot read: feeds end
+            // in a `Fed` this build knows.
+            Pushed::Unknown(_) | Pushed::Sample(_) | Pushed::Log(_) => None,
         }
     }
 }
@@ -168,6 +170,7 @@ impl Backlog {
     pub fn ends_at(self, pushed: &Pushed) -> bool {
         let seq = match pushed {
             Pushed::Event(event) => event.seq,
+            Pushed::Unknown(event) => event.seq,
             Pushed::Gap(gap) => gap.to,
             Pushed::Sample(_) | Pushed::Log(_) => return false,
         };

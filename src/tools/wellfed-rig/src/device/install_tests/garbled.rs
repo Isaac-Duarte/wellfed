@@ -227,7 +227,7 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>) -> std::io::Result<()> {
         build: "garbled",
         role: proto::Role::Owner,
         epoch: 1,
-        schema: proto::SCHEMA,
+        schema: proto::REVISION,
     };
     let mut payload = [0; 128];
     let len = wellfed_proto::encode(&welcome, &mut payload).unwrap();

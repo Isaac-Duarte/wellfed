@@ -19,7 +19,7 @@ No build opens an MQTT session; the broker in `wellfed-stock` serves only stock 
 - **Opening.** A connection's first frame is a clear `Open`: `Session`, `Invite { id }` or `Recovery`. It only picks the handshake, and tampering with it makes the handshake fail.
 - **Sessions are Noise IK.** An enrolled client already knows the feeder's key and sends its own encrypted in the first message, so the feeder learns who is connecting without trying each enrolled key. KK would need up to 8 DH operations per first message, over the loop's 80 ms budget. IK is one round trip, mutually authenticated, with no identity in the clear.
 - **Other handshakes.** An invite is redeemed with **XXpsk3** and the invite's secret. The recovery window runs the setup exchange (XX and the code proof) over the stream. Both sides run `wellfed-session::noise`, checked byte for byte against `snow`.
-- **Hello and welcome.** IK's first payload is a `Hello { major }`. The second is a `Welcome` or a typed `OpenRefusal`: an unknown key, an unsupported version or no free slot, so the app can say "update the app" or "update the feeder". The welcome names the major, the device's model, its build, the client's role, the event history's epoch and the build's schema revision ([below](#evolution)).
+- **Hello and welcome.** IK's first payload is a `Hello { major }`. The second is a `Welcome` or a typed `OpenRefusal`: an unknown key, an unsupported version or no free slot, so the app can say "update the app" or "update the feeder". The welcome names the major, the device's model, its build, the client's role, the event history's epoch and the build's API revision ([below](#evolution)).
 - **Model and kind.** The model (`Model`: PLAF103, PLWF106) names the board. Its kind (`Model::kind`, a `DeviceKind`: feeder, fountain, litter box) names the module of ops the device serves beside the shared core, so the client derives the kind rather than reading it twice. There are no feature bits: what a session serves follows from the model and the major.
 - **Keys.** A client's identity is its static X25519 key. There are no separate request keys: the session is the security.
 
@@ -30,7 +30,7 @@ All messages are serde enums in `wellfed-proto`.
 ```text
 Client → device                       Device → client
 Request { id, op }                    Response { id, result }
-Subscribe { after, samples }          Events [{ seq, at, body }, …]   // as many as fit a frame
+Subscribe { after, samples }          Events [{ seq, at, body }, …]   // as many as fit a frame, each body behind its length
                                       Gap { from, to }   // events lost to the ring
                                       Sample { at_ms, metric }
                                       Log { seq, dropped, text }   // after TailLog
@@ -41,7 +41,7 @@ Subscribe { after, samples }          Events [{ seq, at, body }, …]   // as ma
 - **Results** are typed enums of outcomes and refusals, with no free-text error. The ops and their refusals are in [device API operations](device-api-ops.md).
 - **`Subscribe`** asks for every event after a cursor (`None`: the oldest kept), then each new one, plus every live sample if `samples` is `On`. Every subscriber gets every event.
 - **Events** are durable records ([data](product-architecture.md#data)). `seq` rises across reboots within the ring's epoch. A ring re-created by a storage wipe or the [factory reset](pairing.md#factory-reset) draws a new epoch and counts from 1 again. The event cursor travels in `Subscribe`, and the client sends it only when it counts in the welcome's epoch.
-- **`Events`** carries the next events after the session's cursor, oldest first, each postcard-encoded in turn: as many as fit `EVENTS_BYTES_MAX` (1,005 bytes), or as many as the feeder has to hand. A `Gap` always goes alone. `wellfed-client` hands events on one per `Pushed::Event` either way.
+- **`Events`** carries the next events after the session's cursor, oldest first, each an `EncodedEvent` in turn: its number, its time, and its body as the ring keeps it, trailing zeros trimmed, behind a one-byte length. As many go as fit `EVENTS_BYTES_MAX` (1,005 bytes), or as the feeder has to hand. A `Gap` always goes alone. The feeder never decodes a body to send it, so a bank 0 sends a newer build's bodies as they are. `wellfed-client` pads each body back to 16 bytes and hands it on as a `Pushed::Event`, or as a `Pushed::Unknown` with its number, time and raw bytes when its build doesn't know the body. The cursor moves past either.
 - **Sizes.** Every event body fits the ring's 16 bytes (`every_event_body_fits_sixteen_bytes`). So events and refusals stay one flat enum each, whatever kind they belong to: a feeder's `Fed` already takes 15 bytes, and a kind's tag in front wouldn't fit. The largest messages, the widest statistics section and the fullest `Events` batch are checked against `MESSAGE_MAX` (`the_largest_messages_fit_a_frame`, and the device API's property test through the server).
 
 ## In the firmware
@@ -224,7 +224,7 @@ Every flash lease checks that the outputs are stopped, and fails closed when the
 
 ## Evolution
 
-The device API changes in two ways. The update path, invite redemption and recovery are frozen for good. Everything else changes in place, and a schema revision tells a client when the feeder's build speaks another one.
+The device API changes in two ways. The update path, invite redemption and recovery are frozen for good. Everything else only grows, and an ordered API revision tells each side which of them is the older build.
 
 ### The frozen part
 
@@ -233,7 +233,7 @@ Every update passes through bank 0, which keeps the build it was written with ([
 - the TCP port, the mDNS service and its TXT fields (`v=1`, `id=`);
 - the frames: a 2-byte little-endian length, at most 1 KiB;
 - `Open` with every variant;
-- `Open::Session`, the Noise IK handshake under the prologue `wellfed-api-v1`, `Hello`, and `Welcome` with everything it carries (`Model`, `Role`, `OpenRefusal`, the schema revision);
+- `Open::Session`, the Noise IK handshake under the prologue `wellfed-api-v1`, `Hello`, and `Welcome` with everything it carries (`Model`, `Role`, `OpenRefusal`, the API revision in its `schema` field);
 - `Open::Invite`, the Noise XXpsk3 handshake under the same prologue with the invite's secret as the PSK, the client's `Join` and the device's `Joined`;
 - `Open::Recovery` and the setup exchange it runs, which BLE setup runs too: the Noise XX handshake under the prologue `wellfed-setup-v2`, the setup `Request`, `Answer` and `Reply` with their refusals, the code proof, and BLE's service, characteristic and 448-byte messages;
 - `ClientMessage::Request { id, op }` and `DeviceMessage::Response { id, result }`;
@@ -255,23 +255,24 @@ The rules for the frozen part:
 
 ### Everything else
 
-None of the rest is kept for backward compatibility ([AGENTS.md](../../AGENTS.md#compatibility)). The firmware and every client are built from this repository together, so a message changes in place, and its lines in `tests/fixtures/v1.txt` are rewritten by hand. `WELLFED_BLESS=1` only appends lines for new variants.
+From the public beta, feeders, phones, members' phones, the owner's server and Home Assistant run whatever build each last took, so the rest of the API only grows. Before the beta nothing is released, and the API was reshaped freely; the stored trace starts at revision 1.
 
-**The schema revision.** `SCHEMA` in `wellfed-proto` is a hash of the messages' structure: `tests/schema.rs` traces every type of the device API and the setup exchange with `serde-reflection`, down to each enum's variants and each field's type. `the_schema_revision_follows_the_types` fails, naming the new value, until `SCHEMA` is updated. Any change that moves a byte on the wire changes the trace, so it gets a new revision; renaming a field does too, which costs only an update. The welcome carries the build's revision.
+1. **Nothing changes in place.** No field is added, removed, reordered or retyped, and no variant moves or changes. A struct that will grow carries room for it at its end.
+2. **Enums grow only at their end.**
+3. **A changed op is a new op.** A retired op keeps its index, and the device refuses it `Unavailable`.
 
-A client whose revision differs from the welcome's knows the feeder runs another build. Its other ops might decode there as different ops, so it sends that session only the frozen ops:
+`tests/fixtures/api.json` holds the traced structure of every message at the newest revision: `tests/api.rs` traces every type of the device API and the setup exchange with `serde-reflection`, down to each enum's variants and each field's name and type, and `the_api_only_grows` refuses a trace that does not hold every stored type unchanged, a new variant at an enum's end being the only change it takes. A trace that grew needs `REVISION` raised by one and a blessing (`WELLFED_BLESS=1`), which stores it; no blessing takes a change in place. `tests/fixtures/v1.txt` pins the bytes of each message beside it, and its test only appends.
 
-- `wellfed-client`'s `Session` refuses any other request, and a subscription, with `Error::OtherSchema` before anything is sent. The CLI, the app, the server and Home Assistant all go through it.
-- The owner's server neither subscribes nor reads the status. It shows the feeder as `other_build`, refuses every command but an install (`409 feeder_other_build`, never sent), and keeps the session for the install that updates it.
-- An update driver reads the bank from the update state and the build from the welcome, never from the status. A check of the enrolled signers is skipped, said so.
-- The app shows the feeder as on a different build, with its Firmware screen still offered; a feeder of another major (a refused `Hello`) shows as needing a different app version, with no Firmware screen, since not even an update reaches it. Home Assistant sends it nothing and raises a repair, and its setup retries, backing off, until the feeder answers on this build.
-- An update key goes to a feeder of another build without the client list read first; a key the feeder holds as a session key is refused `UpdateRefusal::HeldAsSessionKey` after the press.
+**The API revision.** `REVISION` in `wellfed-proto` counts the API's growths, and the welcome carries the build's in its frozen `schema` field. Since every revision's ops mean the same to every build that knows them, a client sends any op it knows to a feeder of any revision:
 
-A feeder of another build still feeds on its own schedule. Its owner updates it, and every other client works with it again.
+- A feeder behind the client refuses an op its build lacks `Unavailable` and keeps the session. `wellfed-client`'s `Opened::skew` says `FeederBehind`, so a client can say "update the feeder".
+- A feeder ahead of the client answers every op the client knows. `Opened::skew` says `FeederAhead`, so a client can say "update this app". Its events that the client's build doesn't know arrive as `Pushed::Unknown`.
+
+The server, Home Assistant and the update key still treat a feeder of any other revision as another build: the server shows it as `other_build` and sends it only an install, and Home Assistant raises a repair. Those follow the revision's direction in a later change.
 
 These rules hold for both parts:
 
-1. **What a session serves follows from the welcome alone.** There are no feature bits. The model names the board, its images and its kind; the kind names the module of ops beside the shared core; the major and the schema revision name the messages. The server is generic over the shared `Device`, and reaches a kind's module only through it (`Device::feeder`). A device of another kind refuses the module's ops `Unavailable` after the same retry and role checks as any write, as does a build that doesn't serve an op. A client doesn't send another kind's op at all (`Op::kind`, checked in `wellfed-connect`). Every subscriber gets every event. Enforced by `every_subscriber_receives_every_body` (`wellfed-client/tests/api.rs`), whose exhaustive match keeps the list of bodies whole, and `a_device_without_a_feeder_module_refuses_its_ops_and_remembers_the_refusal` (`wellfed-device-api/tests/kinds.rs`).
+1. **What a session serves follows from the welcome alone.** There are no feature bits. The model names the board, its images and its kind; the kind names the module of ops beside the shared core; the major and the API revision name the messages. The server is generic over the shared `Device`, and reaches a kind's module only through it (`Device::feeder`). A device of another kind refuses the module's ops `Unavailable` after the same retry and role checks as any write, as does a build that doesn't serve an op. A client doesn't send another kind's op at all (`Op::kind`, checked in `wellfed-connect`). Every subscriber gets every event. Enforced by `every_subscriber_receives_every_body` (`wellfed-client/tests/api.rs`), whose exhaustive match keeps the list of bodies whole, and `a_device_without_a_feeder_module_refuses_its_ops_and_remembers_the_refusal` (`wellfed-device-api/tests/kinds.rs`).
 2. **The event history carries an epoch.** `Welcome::Open.epoch` is drawn at random when the ring is created and kept with it, and event numbers count within it. So a cursor from a re-created ring is recognized, instead of freezing a mirror that waits for numbers it already has. `wellfed-client`'s `Connection::subscribe` resumes after a cursor only in the feeder's current epoch, and otherwise starts from the oldest event kept (`Resume::Restarted`). The server keys events and gaps by (feeder, epoch, seq), and keeps an older epoch's history readable (`?epoch=`). Enforced by `a_cursor_resumes_in_its_epoch_and_restarts_from_another`, the event ring's epoch tests, and the store's `a_new_epoch_keeps_its_own_history_and_restarts_the_cursor`.
 3. **The prologue never changes.** `wellfed-api-v1` is bound into every handshake. A changed prologue would fail the handshake with no reason, where a new major gets the typed refusal. Enforced by `the_prologue_never_changes` (`wellfed-proto/tests/fixtures.rs`), the frozen fixtures, and `a_major_2_hello_gets_the_typed_version_refusal` (`wellfed-client/tests/api.rs`).
 

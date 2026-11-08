@@ -1,12 +1,15 @@
-//! `SCHEMA` follows the protocol's structure: every type a message reaches,
-//! traced field by field and variant by variant. A variant inserted
-//! mid-enum, a field added, removed, renamed or retyped anywhere, even in a
-//! type no byte fixture exercises, changes the trace and so needs a new
-//! revision. A client of another revision then speaks only the frozen part
-//! to that build ([device API](../../../../docs/firmware/device-api.md#evolution)).
+//! The device API only grows. Every type a message reaches is traced
+//! field by field and variant by variant, and `fixtures/api.json` keeps the
+//! trace of the newest [`REVISION`]. Feeders, phones, the server and Home
+//! Assistant run different builds, so the current trace must hold every
+//! stored type unchanged: each struct with the same fields in the same
+//! order, each enum with the same variants at the same indices, and only
+//! new variants after them. A trace that grew needs the next revision and
+//! a blessing (`WELLFED_BLESS=1`), which stores it; nothing blesses a
+//! change in place ([device API](../../../../docs/firmware/device-api.md#evolution)).
 //!
-//! The frozen types are traced too: they never change, so they never move
-//! the hash.
+//! Names are pinned with the shapes: a renamed variant usually means a
+//! changed meaning, which is a new variant.
 
 use std::collections::BTreeMap;
 
@@ -35,7 +38,8 @@ macro_rules! roots {
 
 /// Every type the device and its clients exchange: the top-level messages,
 /// then every enum they reach. An event batch carries its events as bytes,
-/// so [`Event`] is a root; so are the clear and handshake payloads, and BLE
+/// and each event its body as bytes, so [`EncodedEvent`] and [`EventBody`]
+/// are roots; so are the clear and handshake payloads, and BLE
 /// setup's. A nested enum is explored past its first variant only when
 /// traced on its own, and the registry names any left incomplete, so a new
 /// one fails here until it is added.
@@ -43,7 +47,7 @@ fn roots() -> Vec<Root> {
     roots!(
         ClientMessage<'_>,
         DeviceMessage<'_>,
-        Event,
+        EncodedEvent<'_>,
         Open,
         Hello,
         Welcome<'_>,
@@ -136,24 +140,129 @@ fn registry() -> Registry {
         .expect("every enum traced on its own: trace the ones named here too")
 }
 
-/// FNV-1a over the registry's JSON: a `BTreeMap` by type name, so the
-/// bytes do not depend on the order types were met.
-fn hash(registry: &Registry) -> u32 {
-    let json = serde_json::to_vec(registry).unwrap();
-    json.iter().fold(0x811c_9dc5_u32, |hash, &byte| {
-        (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
-    })
+/// The stored trace: the revision it is, and every type by name.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct Stored {
+    revision: u32,
+    registry: Registry,
 }
 
+const STORED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/api.json");
+
+/// What in `current` breaks a reader of `stored`: each stored type must be
+/// there by its name, a struct or other container unchanged, an enum with
+/// every stored variant at its index unchanged. A type a field names is
+/// checked under its own name, so the whole tree is covered.
+fn shrunk(stored: &Registry, current: &Registry) -> Vec<String> {
+    let mut broken = Vec::new();
+    for (name, old) in stored {
+        let Some(new) = current.get(name) else {
+            broken.push(format!("{name} is gone"));
+            continue;
+        };
+        match (old, new) {
+            (ContainerFormat::Enum(old), ContainerFormat::Enum(new)) => {
+                for (index, variant) in old {
+                    match new.get(index) {
+                        Some(now) if now == variant => {}
+                        Some(now) => broken.push(format!(
+                            "{name} variant {index} was {variant:?}, is {now:?}"
+                        )),
+                        None => broken.push(format!("{name} lost variant {index}")),
+                    }
+                }
+            }
+            (old, new) if old == new => {}
+            (old, new) => broken.push(format!("{name} was {old:?}, is {new:?}")),
+        }
+    }
+    broken
+}
+
+/// The device API only grows, and each growth is a new revision.
 #[test]
-fn the_schema_revision_follows_the_types() {
-    let registry = registry();
-    let hash = hash(&registry);
-    assert_eq!(
-        SCHEMA, hash,
-        "the device API's types changed: set wellfed_proto::api::SCHEMA to {hash:#010x}, so \
-         clients of the old revision speak only the frozen part to this build"
+fn the_api_only_grows() {
+    let current = registry();
+    let stored: Stored = serde_json::from_str(&std::fs::read_to_string(STORED).unwrap()).unwrap();
+
+    let broken = shrunk(&stored.registry, &current);
+    assert!(
+        broken.is_empty(),
+        "the device API changed in place, which strands every client and feeder of an older \
+         build: add a field to a struct's extension or a new variant at an enum's end instead. \
+         {broken:#?}"
     );
+    assert!(
+        REVISION >= stored.revision,
+        "REVISION went back from {} to {REVISION}",
+        stored.revision
+    );
+    if current == stored.registry && REVISION == stored.revision {
+        return;
+    }
+    assert!(
+        REVISION == stored.revision + 1,
+        "the device API grew: set wellfed_proto::api::REVISION to {}",
+        stored.revision + 1
+    );
+    assert!(
+        std::env::var_os("WELLFED_BLESS").is_some(),
+        "revision {REVISION} grew the API: bless it (WELLFED_BLESS=1) to store its trace"
+    );
+    let grown = Stored {
+        revision: REVISION,
+        registry: current,
+    };
+    let mut json = serde_json::to_string_pretty(&grown).unwrap();
+    json.push('\n');
+    std::fs::write(STORED, json).unwrap();
+}
+
+/// The check refuses each way a type can change in place, and takes a
+/// variant added at an enum's end.
+#[test]
+fn a_change_in_place_is_refused_and_a_new_variant_taken() {
+    let stored = registry();
+    let enum_of = |registry: &mut Registry, name: &str| match registry.get_mut(name) {
+        Some(ContainerFormat::Enum(variants)) => variants.clone(),
+        other => panic!("{name} is {other:?}"),
+    };
+
+    let mut grown = stored.clone();
+    let mut variants = enum_of(&mut grown, "Tune");
+    let next = u32::try_from(variants.len()).unwrap();
+    variants.insert(
+        next,
+        serde_reflection::Named {
+            name: "Fanfare".to_owned(),
+            value: serde_reflection::VariantFormat::Unit,
+        },
+    );
+    grown.insert("Tune".to_owned(), ContainerFormat::Enum(variants));
+    assert_eq!(shrunk(&stored, &grown), Vec::<String>::new());
+
+    let mut moved = stored.clone();
+    let mut variants = enum_of(&mut moved, "Tune");
+    let first = variants.remove(&0).unwrap();
+    let second = variants.remove(&1).unwrap();
+    variants.insert(0, second);
+    variants.insert(1, first);
+    moved.insert("Tune".to_owned(), ContainerFormat::Enum(variants));
+    assert_eq!(shrunk(&stored, &moved).len(), 2);
+
+    let mut widened = stored.clone();
+    let Some(ContainerFormat::Struct(fields)) = widened.get_mut("Plan") else {
+        panic!("Plan is not a struct");
+    };
+    fields.push(serde_reflection::Named {
+        name: "grams".to_owned(),
+        value: Format::U16,
+    });
+    assert_eq!(shrunk(&stored, &widened).len(), 1);
+
+    let mut gone = stored.clone();
+    gone.remove("Plan");
+    assert_eq!(shrunk(&stored, &gone), ["Plan is gone"]);
 }
 
 /// The trace reaches the types the hash is meant to cover, the event

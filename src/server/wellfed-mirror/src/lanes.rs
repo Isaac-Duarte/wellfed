@@ -160,14 +160,6 @@ fn send(slot: &mut Slot, command: Command, connection: &mut Connection) -> Resul
             command.reply(Err(AskError::Unsendable));
             Ok(())
         }
-        // A feeder of another build: nothing was sent, and the session
-        // still carries the update path.
-        Err(wellfed_connect::Error::Session(wellfed_client::api::Error::OtherSchema {
-            ..
-        })) => {
-            command.reply(Err(AskError::OtherBuild));
-            Ok(())
-        }
         Err(error) => {
             command.reply(Err(AskError::Unknown));
             Err(End::Lost(error))

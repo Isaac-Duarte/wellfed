@@ -17,6 +17,8 @@ use crate::{Battery, Blocked, DeviceKind, Generation, Hex, UpdateCandidate, Upda
 #[serde(rename_all = "snake_case")]
 pub enum Pushed {
     Event(Event),
+    /// An event whose body this build does not know: a newer feeder's.
+    Unknown(UnknownEvent),
     Gap(Gap),
     Sample(Sample),
     Log(LogLines),
@@ -46,6 +48,18 @@ pub struct Event {
     /// The feeder's clock when it happened; `None` while that was invalid.
     pub at: Option<Timestamp>,
     pub body: EventBody,
+}
+
+/// An event the feeder recorded whose body this build cannot read, since a
+/// newer build added it. It still counts in the history: a cursor moves
+/// past it, and a host that keeps the body can read it once it is updated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnknownEvent {
+    pub epoch: u32,
+    pub seq: u64,
+    pub at: Option<Timestamp>,
+    /// The body as the feeder's ring keeps it, zero-padded.
+    pub raw: Hex<16>,
 }
 
 /// Events `from..=to` of `epoch` left the feeder's ring before this session
