@@ -139,6 +139,37 @@ pub trait SlotIo {
     fn writable(&self) -> bool {
         true
     }
+
+    /// The I/O the slot layer's checks and writes run on. Code generic
+    /// over the I/O is one copy per type, and every store's units are a
+    /// type of their own; I/O that differs only in where its units sit
+    /// returns one shared type here (the SDK's regions return their sectors
+    /// as values), so that code exists once. By default, the I/O itself.
+    fn shared(&self) -> impl SlotIo + '_ {
+        self
+    }
+}
+
+impl<T: SlotIo + ?Sized> SlotIo for &T {
+    fn unit_bytes(&self) -> u32 {
+        (**self).unit_bytes()
+    }
+
+    fn read(&self, slot: u32, offset: u32, bytes: &mut [u8]) -> bool {
+        (**self).read(slot, offset, bytes)
+    }
+
+    fn program(&self, slot: u32, offset: u32, bytes: &[u8]) -> bool {
+        (**self).program(slot, offset, bytes)
+    }
+
+    fn erase(&self, slot: u32) -> bool {
+        (**self).erase(slot)
+    }
+
+    fn writable(&self) -> bool {
+        (**self).writable()
+    }
 }
 
 /// How much of a unit a scan reads.
@@ -359,20 +390,12 @@ impl<I: SlotIo> DualSlot<I> {
         self.io.as_ref().is_some_and(SlotIo::writable)
     }
 
-    fn read(&self, slot: c_uint, offset: u32, bytes: &mut [u8]) -> bool {
-        self.io
-            .as_ref()
-            .is_some_and(|io| io.read(slot, offset, bytes))
-    }
-
-    fn program(&self, slot: c_uint, offset: u32, bytes: &[u8]) -> bool {
-        self.io
-            .as_ref()
-            .is_some_and(|io| io.program(slot, offset, bytes))
-    }
-
-    fn erase(&self, slot: c_uint) -> bool {
-        self.io.as_ref().is_some_and(|io| io.erase(slot))
+    /// The units on their shared I/O ([`SlotIo::shared`]); `None` unbound.
+    fn units(&self) -> Option<Units<'_, impl SlotIo + '_>> {
+        self.io.as_ref().map(|io| Units {
+            io: io.shared(),
+            layout: self.layout,
+        })
     }
 
     /// Read unit `slot` by the torn-write rule, `decode` taking a record
@@ -386,7 +409,7 @@ impl<I: SlotIo> DualSlot<I> {
         decode: impl FnOnce(Version, &[u8; N]) -> Option<V>,
     ) -> Option<Found<V>> {
         let mut p = [0u8; N];
-        Some(match self.classify(slot, &mut p)? {
+        Some(match self.units()?.classify(slot, &mut p)? {
             Class::Current(version) => decode(version, &p).map_or(Found::Invalid, Found::Valid),
             Class::Erased => Found::Erased,
             Class::Future => Found::Future,
@@ -396,6 +419,73 @@ impl<I: SlotIo> DualSlot<I> {
             Class::Torn => Found::Torn,
             Class::Invalid => Found::Invalid,
         })
+    }
+
+    /// Write `record` to unit `slot` by the torn-write rule. False when any
+    /// step failed; the unit may then hold any state a cut leaves.
+    pub fn write<const N: usize>(&self, slot: c_uint, record: &[u8; N], prepare: Prepare) -> bool {
+        self.units()
+            .is_some_and(|units| units.write(slot, record, prepare))
+    }
+
+    /// Write `record` to unit `slot` in place of the record in unit `from`
+    /// (none on a store's first save), erasing `slot` first, by the
+    /// torn-write rule. When `from` holds a newer minor of this store's
+    /// major, the written record keeps that minor, its length and every
+    /// byte from [`Layout::fields_end`] to its checksum, copied from
+    /// `from`, so a later build finds its fields again; otherwise this is
+    /// [`Self::write`]. False when any step failed, as for `write`.
+    pub fn replace<const N: usize>(
+        &self,
+        slot: c_uint,
+        from: Option<c_uint>,
+        record: &[u8; N],
+    ) -> bool {
+        let Some(units) = self.units() else {
+            return false;
+        };
+        let newer = match from {
+            Some(from) if from != slot => match units.newer_minor(from, N) {
+                Some(newer) => newer,
+                None => return false,
+            },
+            _ => None,
+        };
+        match newer {
+            Some(newer) => units.write_carried(slot, record, newer),
+            None => units.write(slot, record, Prepare::Erase),
+        }
+    }
+
+    /// Erase both units and check them erased: a store's explicit reset.
+    pub fn clear(&self) -> bool {
+        self.units().is_some_and(|units| units.clear())
+    }
+}
+
+/// A store's units on their shared I/O, and its layout: the code here is
+/// generic over the shared I/O alone, so stores whose units differ only in
+/// where they sit share one copy of it.
+struct Units<'a, C> {
+    io: C,
+    layout: &'a Layout,
+}
+
+impl<C: SlotIo> Units<'_, C> {
+    fn unit_bytes(&self) -> u32 {
+        self.io.unit_bytes()
+    }
+
+    fn read(&self, slot: c_uint, offset: u32, bytes: &mut [u8]) -> bool {
+        self.io.read(slot, offset, bytes)
+    }
+
+    fn program(&self, slot: c_uint, offset: u32, bytes: &[u8]) -> bool {
+        self.io.program(slot, offset, bytes)
+    }
+
+    fn erase(&self, slot: c_uint) -> bool {
+        self.io.erase(slot)
     }
 
     /// The record's state, before its fields are decoded. A record to
@@ -582,9 +672,8 @@ impl<I: SlotIo> DualSlot<I> {
         self.read(slot, 0, p) && erased(p) && self.tail_erased(slot, p.len()) == Some(true)
     }
 
-    /// Write `record` to unit `slot` by the torn-write rule. False when any
-    /// step failed; the unit may then hold any state a cut leaves.
-    pub fn write<const N: usize>(&self, slot: c_uint, record: &[u8; N], prepare: Prepare) -> bool {
+    /// [`DualSlot::write`].
+    fn write<const N: usize>(&self, slot: c_uint, record: &[u8; N], prepare: Prepare) -> bool {
         let mut checked = [0u8; N];
         let Some((body, marker)) = record.split_last_chunk::<MARKER_BYTES>() else {
             return false;
@@ -600,32 +689,6 @@ impl<I: SlotIo> DualSlot<I> {
             && self.program(slot, marker_at, marker)
             && self.read(slot, 0, &mut checked)
             && checked == *record
-    }
-
-    /// Write `record` to unit `slot` in place of the record in unit `from`
-    /// (none on a store's first save), erasing `slot` first, by the
-    /// torn-write rule. When `from` holds a newer minor of this store's
-    /// major, the written record keeps that minor, its length and every
-    /// byte from [`Layout::fields_end`] to its checksum, copied from
-    /// `from`, so a later build finds its fields again; otherwise this is
-    /// [`Self::write`]. False when any step failed, as for `write`.
-    pub fn replace<const N: usize>(
-        &self,
-        slot: c_uint,
-        from: Option<c_uint>,
-        record: &[u8; N],
-    ) -> bool {
-        let newer = match from {
-            Some(from) if from != slot => match self.newer_minor(from, N) {
-                Some(newer) => newer,
-                None => return false,
-            },
-            _ => None,
-        };
-        match newer {
-            Some(newer) => self.write_carried(slot, record, newer),
-            None => self.write(slot, record, Prepare::Erase),
-        }
     }
 
     /// The committed newer minor of this store's major unit `from` holds,
@@ -654,10 +717,10 @@ impl<I: SlotIo> DualSlot<I> {
         }))
     }
 
-    /// [`Self::replace`] keeping a newer minor's bytes: the body a chunk at
+    /// [`DualSlot::replace`] keeping a newer minor's bytes: the body a chunk at
     /// a time in order, so a cut leaves a prefix as one program would, then
     /// the checksum, a check, the marker and a check.
-    fn write_carried<const N: usize>(&self, slot: c_uint, record: &[u8; N], newer: Newer) -> bool {
+    fn write_carried(&self, slot: c_uint, record: &[u8], newer: Newer) -> bool {
         let Some(end) = newer.length.checked_sub(TRAILER_BYTES) else {
             return false;
         };
@@ -693,14 +756,12 @@ impl<I: SlotIo> DualSlot<I> {
 
     /// Bytes `offset..` of the carried record into `out`: the header with
     /// the newer minor and length, the build's fields, then `from`'s bytes.
-    fn carried<const N: usize>(
-        &self,
-        record: &[u8; N],
-        newer: Newer,
-        offset: usize,
-        out: &mut [u8],
-    ) -> bool {
-        let own = self.layout.known(N).saturating_sub(offset).min(out.len());
+    fn carried(&self, record: &[u8], newer: Newer, offset: usize, out: &mut [u8]) -> bool {
+        let own = self
+            .layout
+            .known(record.len())
+            .saturating_sub(offset)
+            .min(out.len());
         let (head, rest) = out.split_at_mut(own);
         if own > 0 {
             let Some(fields) = record.get(offset..offset + own) else {
@@ -731,10 +792,10 @@ impl<I: SlotIo> DualSlot<I> {
 
     /// Whether unit `slot` holds the carried record as written, then `crc`
     /// and `marker`.
-    fn carried_holds<const N: usize>(
+    fn carried_holds(
         &self,
         slot: c_uint,
-        record: &[u8; N],
+        record: &[u8],
         newer: Newer,
         crc: [u8; 4],
         marker: [u8; MARKER_BYTES],
@@ -765,8 +826,8 @@ impl<I: SlotIo> DualSlot<I> {
             && trailer[4..] == marker
     }
 
-    /// Erase both units and check them erased: a store's explicit reset.
-    pub fn clear(&self) -> bool {
+    /// [`DualSlot::clear`].
+    fn clear(&self) -> bool {
         let mut p = [0u8; TAIL_CHUNK as usize];
         self.erase(0) && self.erase(1) && self.unit_erased(0, &mut p) && self.unit_erased(1, &mut p)
     }

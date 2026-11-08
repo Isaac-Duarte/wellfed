@@ -208,10 +208,10 @@ fn a_newer_schema_is_read_only_with_no_totals() {
     assert!(!r.save(&totals(2), Settled));
 }
 
-/// A record this build cannot read is not written over with zeros: the
-/// store opens corrupt, with no totals, until a factory reset erases it.
+/// A record this build cannot read never leaves the store stuck: the
+/// totals start at zero, writable, and the next save writes over it.
 #[test]
-fn records_that_fail_their_checks_are_not_read_or_written_over() {
+fn records_that_fail_their_checks_are_lost_and_written_over() {
     for (name, change) in [
         ("padding", (|r: &mut [u8]| r[278] = 1) as fn(&mut [u8])),
         ("spare room", |r: &mut [u8]| r[300] = 1),
@@ -227,15 +227,20 @@ fn records_that_fail_their_checks_are_not_read_or_written_over() {
         let mut s = open(&mut f);
         assert!(s.save(&totals(1), Settled));
         rewrite(&mut f, change);
-        let before = f.bytes.clone();
         let mut r = open(&mut f);
         assert_eq!(
             (r.status, r.totals),
-            (StatsStatus::Corrupt, Totals::ZERO),
+            (StatsStatus::Lost, Totals::ZERO),
             "{name}"
         );
-        assert!(!r.save(&totals(2), Settled));
-        assert_eq!(f.bytes, before, "{name}");
+        assert!(r.writable(), "{name}");
+        assert!(r.save(&totals(2), Settled), "{name}");
+        let r = open(&mut f);
+        assert_eq!(
+            (r.status, r.totals),
+            (StatsStatus::Loaded, totals(2)),
+            "{name}"
+        );
     }
 }
 

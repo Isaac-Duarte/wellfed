@@ -3120,6 +3120,15 @@ fn reset_records_format() {
     assert_eq!(line(Record::ResetPending), "reset pending");
     assert_eq!(line(Record::ResetWearLost), "reset wear_lost=1");
     assert_eq!(
+        line(Record::Product(FeederRecord::StatsOpen {
+            status: StatsStatus::Lost,
+            generation: 0,
+            early: 0,
+            missed: false,
+        })),
+        "stats open status=lost generation=0 early=0 missed=0 wear_lost=1"
+    );
+    assert_eq!(
         line(Record::ResetDone { erased: 36 }),
         "reset done erased=36"
     );

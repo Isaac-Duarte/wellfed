@@ -33,14 +33,14 @@
 //! The store owns its two sectors outright, so the newest valid record wins
 //! and anything else beside it is a save of its own cut short: losing that
 //! save loses at most one save interval of counts, never the totals before
-//! it. The totals start at zero only when nothing was ever committed there.
-//! The store saves on its own every hour, so a record of it this build
-//! cannot read (an older major, fields that fail their checks, a torn
-//! record beside no valid one) opens [`StatsStatus::Corrupt`] rather than be
-//! written over with zeros, and a newer major [`StatsStatus::ReadOnly`]: the
+//! it. With no valid record the totals start at zero. When something of the
+//! store's was committed there that this build cannot read (an older major,
+//! fields that fail their checks, a torn record beside no valid one), it
+//! opens [`StatsStatus::Lost`]: zero totals, writable, and the next save
+//! writes over it, so lifetime figures never leave a feeder stuck. Only a
+//! newer major makes the store read-only ([`StatsStatus::ReadOnly`]): the
 //! feeder then reports no lifetime figures rather than totals it cannot
-//! keep. The factory reset's statistics step erases a corrupt pair, and
-//! leaves a newer major's alone.
+//! keep, and the factory reset leaves that pair alone.
 
 use core::ffi::c_uint;
 
@@ -82,9 +82,9 @@ pub enum StatsStatus {
     Loaded,
     /// A newer major: no totals, read-only.
     ReadOnly,
-    /// A record of this store but none this build reads: no totals,
-    /// read-only until the factory reset erases it.
-    Corrupt,
+    /// A record of this store but none this build reads: zero totals,
+    /// writable, and the next save writes over it; what it held is lost.
+    Lost,
     Io,
 }
 
@@ -96,7 +96,7 @@ impl StatsStatus {
             Self::Empty => "empty",
             Self::Loaded => "loaded",
             Self::ReadOnly => "read-only",
-            Self::Corrupt => "corrupt",
+            Self::Lost => "lost",
             Self::Io => "io",
         }
     }
@@ -340,7 +340,7 @@ impl<I: SlotIo> StatsStore<I> {
                 StatsStatus::Loaded
             }
             Pick::Nothing if empty => StatsStatus::Empty,
-            Pick::Nothing => StatsStatus::Corrupt,
+            Pick::Nothing => StatsStatus::Lost,
         };
         self.status
     }
@@ -348,7 +348,10 @@ impl<I: SlotIo> StatsStore<I> {
     /// The totals can be read and saved: a record or none, in this
     /// build's version.
     pub fn writable(&self) -> bool {
-        matches!(self.status, StatsStatus::Empty | StatsStatus::Loaded)
+        matches!(
+            self.status,
+            StatsStatus::Empty | StatsStatus::Loaded | StatsStatus::Lost
+        )
     }
 
     /// The unit the next save erases and writes, so the caller can count
