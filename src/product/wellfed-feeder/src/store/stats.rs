@@ -57,6 +57,7 @@ pub const VERSION: Version = Version::new(2, 0);
 /// 32 spare bytes.
 pub const RECORD_BYTES: usize = 320;
 const LAYOUT: Layout = Layout::new(*b"PLFSTA01", VERSION, FIELDS_END, Extent::Record);
+const _: () = assert!(LAYOUT.fits(RECORD_BYTES));
 const GENERATION_AT: usize = 12;
 const COUNTS_AT: usize = 20;
 const RESETS_AT: usize = 60;

@@ -36,6 +36,7 @@ const LAYOUT: Layout = Layout::new(
     ZONE_END.next_multiple_of(4),
     Extent::Record,
 );
+const _: () = assert!(LAYOUT.fits(RECORD_BYTES));
 const GENERATION_AT: usize = 12;
 const NTP_AT: usize = 20;
 const IP_AT: usize = 21;

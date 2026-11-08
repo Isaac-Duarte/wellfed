@@ -29,6 +29,7 @@ use crate::store::slot::{
 
 pub const VERSION: Version = Version::new(1, 0);
 const LAYOUT: Layout = Layout::new(*b"PLFSEED1", VERSION, SEED_END, Extent::Record);
+const _: () = assert!(LAYOUT.fits(RECORD_BYTES));
 const GENERATION_AT: usize = 12;
 const SEED_AT: usize = 20;
 const SEED_END: usize = SEED_AT + 32;

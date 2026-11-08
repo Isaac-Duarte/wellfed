@@ -42,6 +42,7 @@ pub const VERSION: Version = Version::new(4, 0);
 /// Settings read their whole units, as the journal does, so data another
 /// writer left is never taken for empty settings and overwritten.
 const LAYOUT: Layout = Layout::new(*b"PLFSET01", VERSION, 52, Extent::Unit);
+const _: () = assert!(LAYOUT.fits(RECORD_BYTES));
 const GENERATION_AT: usize = 12;
 const BINDING_AT: usize = 20;
 

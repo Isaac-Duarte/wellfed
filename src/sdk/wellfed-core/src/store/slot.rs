@@ -35,9 +35,15 @@
 //!   its minors use the spare room it reserves. When the build rewrites it
 //!   ([`DualSlot::replace`]), it keeps the bytes it doesn't know, and the
 //!   record's minor and length with them, so the later build finds its
-//!   fields again. A field whose meaning an older build's rewrite would
-//!   break (a per-client flag that would outlive the client it named) is
-//!   not a minor's to add.
+//!   fields again. So a minor's field must be safe for every older build
+//!   both to ignore and to carry: across that build's own writes, its
+//!   factory reset and its start-overs, which keep the bytes as they are.
+//!   A field whose meaning such a rewrite would break (a per-client flag
+//!   that would outlive the client it named, a value tied to one record
+//!   that an older build copies onto the next) is not a minor's to add
+//!   unless it names what it belongs to, so a reader can tell it stale.
+//!   Nor is anything bank 0 must enforce: bank 0 never reads a minor's
+//!   fields, so a limit kept only there binds nothing.
 //! - **An older minor** of the build's major, the same length or (read
 //!   alone) shorter, is read with the fields it lacks as zero, and
 //!   rewritten in the build's own minor.
@@ -170,6 +176,10 @@ impl<T: SlotIo + ?Sized> SlotIo for &T {
     fn writable(&self) -> bool {
         (**self).writable()
     }
+
+    fn shared(&self) -> impl SlotIo + '_ {
+        (**self).shared()
+    }
 }
 
 /// How much of a unit a scan reads.
@@ -239,6 +249,13 @@ impl Layout {
         p[MINOR_AT] = self.version.minor;
         put_u16::<LENGTH_AT, N>(&mut p, u16::try_from(N).unwrap_or(u16::MAX));
         p
+    }
+
+    /// Whether the known fields end at or before the checksum of a record
+    /// of `record_bytes`: each store checks its own layout against its
+    /// record size as a constant, since the layout does not carry it.
+    pub const fn fits(&self, record_bytes: usize) -> bool {
+        record_bytes >= FIELDS_AT + TRAILER_BYTES && self.fields_end <= record_bytes - TRAILER_BYTES
     }
 
     /// The end of the known fields in a record of `n` bytes.

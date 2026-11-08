@@ -111,20 +111,21 @@ One table names every sector, `wellfed_board::storage` (the PLAF103 board's), ch
 
 ### Record versions
 
-Every store but the event ring and the meal call keeps one record in each of two sectors, written in turn ([`wellfed_core::store::slot`](../../src/sdk/wellfed-core/src/store/slot.rs)). Its header holds the store's magic, a major and a minor version, and the record's length.
+The feed journal, settings, Wi-Fi credentials, seed, clients, plans, update store, time settings, statistics and calibration each keep one record in each of two sectors, written in turn ([`wellfed_core::store::slot`](../../src/sdk/wellfed-core/src/store/slot.rs)). Its header holds the store's magic, a major and a minor version, and the record's length.
 
 Bank 0 never updates over the air. The build the installer writes there reads these records for the life of the feeder, so a later build may change a record only in ways that build can follow:
 
 - **A newer minor** only adds fields, in spare room the store reserves or past the record's end. An older build of the same major reads the fields it knows, sees the rest as zero, and keeps those bytes when it rewrites the record. The settings and the feed journal read their sectors whole, so their records keep one length and grow only into their spare room.
 - **A new field reads zero as "none"**, the value an older minor leaves there.
-- **A field an older build's rewrite would make wrong** isn't a minor's to add. A per-plan or per-client field would outlive the plan or client it named once an older build moves entries around. The plans store ties any such field to the table revision it was written at, which every change bumps.
+- **A field an older build's rewrite would make wrong** isn't a minor's to add. An older build carries a minor's bytes unread through its own writes, its factory reset and its start-overs, so the field must stay true across all of them. A per-plan or per-client field would outlive the plan or client it named once an older build moves entries around, and a value tied to one record would ride onto the next. Such a field names what it belongs to, so a reader can tell it stale: the plans store ties one to the table revision it was written at, which every change bumps, and the journal's durable request id carries its feed's id.
+- **Nothing bank 0 must enforce is a minor.** Bank 0 never reads a minor's fields. So the update floor and the retired key ids never grow by a minor: the store holds 16 retired ids for good, and more needs a new store.
 - **A newer major** makes the store read-only. So a change that isn't additive is a new store, in new sectors.
 
 A store never writes over a record of its own it can't read, with four exceptions. Settings starts over on an older major, since defaults are safe. The seed is only a nonce. The Wi-Fi credentials, the time settings and the calibration are written only by your own change, which replaces what was there. The statistics start again from zero over a record they can't read, logging `wear_lost=1`, since lifetime figures aren't worth a stuck feeder. The clients, the update store and the plans open as corrupt and stay untouched until a factory reset erases them. So a build never draws a new identity over a client table it can't read.
 
 | Store | Major | Size | Spare room |
 | --- | --- | --- | --- |
-| Feed journal | 1 | 128 B | bytes 48–120, of which 48–72 are kept for a durable request id |
+| Feed journal | 1 | 128 B | bytes 48–120, of which 48–80 are kept for a durable request id and its feed's id |
 | Settings | 4 | 128 B | bytes 52–120 |
 | Clients | 1 | 584 B | past the record's end |
 | Update store | 2 | 384 B | bytes 336–376 |

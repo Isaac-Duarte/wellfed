@@ -54,8 +54,11 @@
 //! over the air ([OTA design](../../../../../docs/firmware/ota-design.md)),
 //! so the record changes only by additive minors, in the spare room from
 //! byte 336 or past the record's end: bank 0 decodes the fields it knows
-//! and keeps the rest when it rewrites the record. A change that is not
-//! additive is a new store in new sectors.
+//! and keeps the rest when it rewrites the record. Since bank 0 enforces
+//! the floor and the retired ids and never reads a minor's bytes, neither
+//! grows by a minor: [`REVOKED`] stays sixteen for good, and a later
+//! floor, more retired ids or any other check bank 0 must make is a new
+//! store in new sectors, as is every change that is not additive.
 //!
 //! The store never writes over a record of its own it cannot read: with no
 //! valid record it starts empty only when both units are erased or hold a
@@ -81,6 +84,7 @@ use crate::store::slot::{
 
 pub const VERSION: Version = Version::new(2, 0);
 const LAYOUT: Layout = Layout::new(*b"PLFUPD01", VERSION, REVOKED_END, Extent::Record);
+const _: () = assert!(LAYOUT.fits(RECORD_BYTES));
 /// Retired key ids the store keeps.
 pub const REVOKED: usize = 16;
 /// The whole record.

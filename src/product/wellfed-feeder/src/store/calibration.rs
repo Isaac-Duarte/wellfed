@@ -32,6 +32,7 @@ use wellfed_device_api::mailbox::Calibration;
 
 pub const VERSION: Version = Version::new(1, 0);
 const LAYOUT: Layout = Layout::new(*b"PLFCAL01", VERSION, PORTION_END, Extent::Record);
+const _: () = assert!(LAYOUT.fits(RECORD_BYTES));
 const GENERATION_AT: usize = 12;
 const PORTION_AT: usize = 20;
 const PORTION_END: usize = PORTION_AT + 4;

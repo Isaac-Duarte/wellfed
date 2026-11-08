@@ -35,6 +35,7 @@ pub enum BuildWifi {
 
 pub const VERSION: Version = Version::new(1, 0);
 const LAYOUT: Layout = Layout::new(*b"PLFNET01", VERSION, CRC_AT, Extent::Record);
+const _: () = assert!(LAYOUT.fits(RECORD_BYTES));
 const GENERATION_AT: usize = 12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

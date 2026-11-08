@@ -71,6 +71,7 @@ const LAYOUT: Layout = Layout::new(
     CLAIM_END.next_multiple_of(4),
     Extent::Record,
 );
+const _: () = assert!(LAYOUT.fits(RECORD_BYTES));
 const SEQUENCE_AT: usize = 12;
 const REVISION_AT: usize = 16;
 const PLANS_AT: usize = 20;

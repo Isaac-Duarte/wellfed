@@ -1058,6 +1058,13 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             Some(sector) => Some((sector, F::erase(sector) && blank::<F>(sector))),
             None if index == FACTORY_CLEARED_SECTORS => {
                 let (cleared, done) = clear_corrupt_update::<F>(&marker);
+                // The update stage runs on the service task and may have
+                // opened the corrupt record already; it reads the erased
+                // store again on its next step rather than serve Corrupt
+                // until the next boot.
+                if cleared {
+                    wellfed_hal::ota::update::store_started_over();
+                }
                 update_cleared = cleared;
                 Some((UPDATE_BASE, done))
             }

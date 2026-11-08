@@ -29,6 +29,13 @@
 //! goes first, so a marker that reads back means the word is down too, and
 //! a reset some later build asks for another way leaves it out, so a bank 0
 //! that finishes that reset keeps the update store.
+//!
+//! A mark cut after its word but before its marker leaves the word alone in
+//! the sector, and the next mark keeps it rather than erase. That is safe
+//! only because every mark this build makes is by hand: the stale word
+//! says no more than the new one would. A later build that marks a reset
+//! another way must erase a sector holding the word first, and the finished
+//! reset's erase of the whole sector clears it either way.
 
 use wellfed_core::store::slot::SlotIo;
 
