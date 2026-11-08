@@ -8,15 +8,18 @@
 //! A record with an empty SSID means "use the build's credentials", so a
 //! clear keeps the generation rising. The newest valid record wins; a torn or
 //! invalid newer slot falls back to the older one. The two sectors belong to
-//! this store alone, so an unreadable record is a save of ours cut short and
-//! may be overwritten. Only a newer schema version makes the store read-only;
-//! then, as with no record, the build's credentials apply.
+//! this store alone, and it is written only when the owner or setup sets
+//! the network, so with no valid record it starts writable whatever it
+//! holds: a record this build cannot read is replaced by the owner's choice,
+//! never on the build's own. A newer minor is read for the credentials and
+//! rewritten with the rest kept. Only a newer major makes the store
+//! read-only; then, as with no record, the build's credentials apply.
 
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{
-    CRC_AT, DualSlot, Extent, Layout, Pick, Prepare, RECORD_BYTES, SlotIo, Version, get_u64,
-    newest, put_u64, seal, target,
+    CRC_AT, DualSlot, Extent, Layout, Pick, RECORD_BYTES, SlotIo, Version, get_u64, newest,
+    put_u64, seal, target,
 };
 use wellfed_device_api::wifi::{Credentials, MAX_PSK, MAX_SSID};
 
@@ -152,9 +155,10 @@ impl<I: SlotIo> NetStore<I> {
         }
         let generation = self.generation + 1;
         let slot = target(self.generation, self.slot);
+        let from = (self.generation > 0).then_some(self.slot);
         if !self
             .units
-            .write(slot, &encode(generation, credentials), Prepare::Erase)
+            .replace(slot, from, &encode(generation, credentials))
         {
             self.status = NetStatus::Io;
             return false;

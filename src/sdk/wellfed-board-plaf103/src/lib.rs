@@ -178,42 +178,113 @@ pub mod storage {
         count: 1,
     };
 
-    /// What the factory reset erases, in the order it erases them: the
-    /// clients and identity first, then the Wi-Fi credentials, the
-    /// settings, the time settings, the plans, the traces, the event
-    /// history and the meal call's clip. The lifetime statistics are not erased but rewritten with
-    /// only the flash erase counts, which are the hardware's wear. It keeps
-    /// the feed journal (a feed is never re-run and its numbers never go
-    /// back), the portion calibration (a property of the hardware), the
-    /// update store and confirmation record (the anti-rollback floor and the
-    /// build in trial) and the generator's seed.
-    pub const FACTORY_CLEARED: [Sectors; 8] =
-        [CLIENTS, NET, SETTINGS, TIME, PLANS, TRACES, EVENTS, CALL];
+    /// Reserved for the uplink store, the owner's server link. No build
+    /// writes it yet; the factory reset and the handover from stock both
+    /// clear it, as every sector off their keep lists, so a bank 0 built
+    /// before the store clears it too.
+    pub const UPLINK: Sectors = Sectors {
+        first: 37,
+        count: 3,
+    };
 
-    /// The sectors [`FACTORY_CLEARED`] names, one by one.
-    pub const FACTORY_CLEARED_SECTORS: u32 = cleared_count();
+    /// What the factory reset keeps: the feed journal (a feed is never
+    /// re-run and its numbers never go back), the boot confirmation and
+    /// the update store (the build in trial and the anti-rollback floor;
+    /// the reset erases a corrupt update store apart, see
+    /// `wellfed_core::store::update`), the generator's seed, the lifetime
+    /// statistics (rewritten with only the erase counts, the hardware's
+    /// wear, as a step of their own), the portion calibration (a property
+    /// of the hardware), and the reset's own marker, erased last.
+    ///
+    /// The reset erases every other sector of the region, clients and
+    /// identity first, then in region order. Whichever bank finishes a
+    /// reset clears by its own build's lists, and bank 0 keeps one build
+    /// for the life of the feeder: so a store a later build adds is cleared
+    /// by default, and one that must survive a reset can only be added here
+    /// by a build that also runs on bank 0.
+    pub const FACTORY_KEPT: [Sectors; 7] =
+        [JOURNAL, CONFIRM, SEED, UPDATE, STATS, CALIBRATION, RESET];
 
-    const fn cleared_count() -> u32 {
-        let mut total = 0;
+    /// The sectors the factory reset erases.
+    pub const FACTORY_CLEARED_SECTORS: u32 = cleared_count(&FACTORY_KEPT);
+
+    /// The `index`th sector the factory reset erases, in its order: the
+    /// clients first, then every other sector off [`FACTORY_KEPT`].
+    pub const fn factory_cleared(index: u32) -> Option<u32> {
+        nth_cleared(&FACTORY_KEPT, CLIENTS, index)
+    }
+
+    /// What the handover from stock keeps: everything a first install
+    /// keeps, and what it clears in steps of its own (the clients, keeping
+    /// the identity; the update store's floor; the boot confirmation; the
+    /// handover's own mark). It erases every other sector in region order:
+    /// the Wi-Fi credentials, the plans and whatever a later build adds,
+    /// for the same reason as [`FACTORY_KEPT`].
+    pub const HANDOVER_KEPT: [Sectors; 13] = [
+        JOURNAL,
+        SETTINGS,
+        CONFIRM,
+        SEED,
+        CLIENTS,
+        EVENTS,
+        UPDATE,
+        TIME,
+        TRACES,
+        STATS,
+        CALIBRATION,
+        RESET,
+        CALL,
+    ];
+
+    /// The sectors the handover erases.
+    pub const HANDOVER_CLEARED_SECTORS: u32 = cleared_count(&HANDOVER_KEPT);
+
+    /// The `index`th sector the handover erases, in region order.
+    pub const fn handover_cleared(index: u32) -> Option<u32> {
+        nth_cleared(&HANDOVER_KEPT, Sectors { first: 0, count: 0 }, index)
+    }
+
+    /// Whether `sector` is in one of `keep`.
+    const fn kept(keep: &[Sectors], sector: u32) -> bool {
         let mut i = 0;
-        while i < FACTORY_CLEARED.len() {
-            total += FACTORY_CLEARED[i].count;
+        while i < keep.len() {
+            if keep[i].first <= sector && sector < keep[i].end() {
+                return true;
+            }
             i += 1;
+        }
+        false
+    }
+
+    /// The region's sectors off `keep`.
+    const fn cleared_count(keep: &[Sectors]) -> u32 {
+        let mut total = 0;
+        let mut sector = 0;
+        while sector < STORAGE_SECTORS {
+            if !kept(keep, sector) {
+                total += 1;
+            }
+            sector += 1;
         }
         total
     }
 
-    /// The `index`th sector the factory reset erases, in its order.
-    pub const fn factory_cleared(index: u32) -> Option<u32> {
-        let mut skipped = 0;
-        let mut i = 0;
-        while i < FACTORY_CLEARED.len() {
-            let store = FACTORY_CLEARED[i];
-            if index < skipped + store.count {
-                return Some(store.first + (index - skipped));
+    /// The `index`th sector off `keep`: `first`'s, then the rest in region
+    /// order.
+    const fn nth_cleared(keep: &[Sectors], first: Sectors, index: u32) -> Option<u32> {
+        if index < first.count {
+            return Some(first.first + index);
+        }
+        let mut left = index - first.count;
+        let mut sector = 0;
+        while sector < STORAGE_SECTORS {
+            if !kept(keep, sector) && !kept(&[first], sector) {
+                if left == 0 {
+                    return Some(sector);
+                }
+                left -= 1;
             }
-            skipped += store.count;
-            i += 1;
+            sector += 1;
         }
         None
     }
@@ -226,8 +297,8 @@ pub mod storage {
         count: 8,
     };
 
-    /// Every allocation, in region order; sectors 37-39 are free.
-    pub const ALL: [Sectors; 15] = [
+    /// Every allocation, in region order.
+    pub const ALL: [Sectors; 16] = [
         JOURNAL,
         SETTINGS,
         CONFIRM,
@@ -242,6 +313,7 @@ pub mod storage {
         STATS,
         CALIBRATION,
         RESET,
+        UPLINK,
         CALL,
     ];
 
@@ -256,4 +328,21 @@ pub mod storage {
         ALL[ALL.len() - 1].end() <= STORAGE_SECTORS
     }
     const _: () = assert!(disjoint_and_inside());
+
+    /// The region is allocated whole, so a sector neither list keeps is
+    /// always a store's, never a stray one.
+    const fn covered() -> bool {
+        let mut sector = 0;
+        while sector < STORAGE_SECTORS {
+            if !kept(&ALL, sector) {
+                return false;
+            }
+            sector += 1;
+        }
+        true
+    }
+    const _: () = assert!(covered());
+    const _: () =
+        assert!(!kept(&FACTORY_KEPT, CLIENTS.first) && !kept(&FACTORY_KEPT, UPLINK.first));
+    const _: () = assert!(!kept(&HANDOVER_KEPT, UPLINK.first) && !kept(&HANDOVER_KEPT, NET.first));
 }

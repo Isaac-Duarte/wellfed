@@ -108,7 +108,7 @@ The feeder checks a session's key against the enrolled clients the settings writ
 **A feed's write id is remembered from the moment it is queued,** not when its answer is sent.
 
 - A client whose session ended before the reservation and resends the id on a new session waits for that same feed and gets its `Feeding { feed }`, during or after it. Nothing is queued twice.
-- The window is the boot. Ids live in the server's RAM (32 per client key, 4 keys). The journal keeps the feed's number but not the request id, so after a restart a resent id is a new request. Making the id durable would change the journal's record, and need a bank-0 refresh first.
+- The window is the boot. Ids live in the server's RAM (32 per client key, 4 keys). The journal keeps the feed's number but not the request id, so after a restart a resent id is a new request. The journal's record keeps room for the id (bytes 48–72: the request id and the sending client's key id), so a later build can make it durable as an additive minor that bank 0 reads and keeps ([record versions](pairing.md#record-versions)).
 - So clients never resend a feed whose answer they didn't get: an unanswered feed is uncertain, and `Connection` reports it `Unanswered`. The owner's server likewise never re-asks a lost feed. It settles it from the history's `Fed` events ([server design](../server/design.md#commands-and-feeds)).
 
 **Two paths, one write.** An owner's or member's phone holds its own key beside the server's, and the two send different write ids, so a write resent on the other path would run twice. An uncertain write is retried only on its own path under its own id, or resolved from the history ([two paths, one feed](../server/README.md#two-paths-one-feed)).

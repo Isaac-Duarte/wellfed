@@ -471,35 +471,52 @@ fn applied(result: Result<(), ClientError>) -> KeyResult {
 }
 
 /// Finish a factory reset an earlier boot marked, before any store opens,
-/// as the writer does: erase every cleared store in the board's order, let
-/// the device kind rewrite what it keeps (`keep`), then erase the marker.
-/// The simulator's image cannot lose power part-way through a boot's
-/// erases; the firmware's writer, which can, is tested for it.
+/// as the writer does: erase every sector the board's reset clears, an
+/// update store this build cannot read when the reset was asked for by
+/// hand, let the device kind rewrite what it keeps (`keep`), then erase the
+/// marker. The simulator's image cannot lose power part-way through a
+/// boot's erases; the firmware's writer, which can, is tested for it.
 pub fn finish_reset(flash: &Rc<Flash>, keep: impl FnOnce(&Rc<Flash>)) {
     let marker = Region::new(flash, storage::RESET);
     if !reset::pending(&marker) {
         return;
     }
-    for store in storage::FACTORY_CLEARED {
-        erase(flash, store);
+    for sector in (0..storage::FACTORY_CLEARED_SECTORS).filter_map(storage::factory_cleared) {
+        erase(
+            flash,
+            Sectors {
+                first: sector,
+                count: 1,
+            },
+        );
+    }
+    if reset::by_hand(&marker) {
+        let mut update = UpdateStore::default();
+        update.open(Region::new(flash, storage::UPDATE));
+        let _ = update.clear_corrupt();
     }
     keep(flash);
     reset::clear(&marker);
 }
 
 /// A handover from stock's activation, as the settings writer finishes it: a
-/// consumer image's, for the simulator has no build Wi-Fi. The Wi-Fi, then
-/// the device kind's `cleared` stores, the clients, the update store's floor
+/// consumer image's, for the simulator has no build Wi-Fi. Every sector the
+/// board's handover clears, then the clients, the update store's floor
 /// and, on bank 0, the confirmation. A cut in the middle repeats it, since
 /// the mark goes last.
-pub fn finish_handover(flash: &Rc<Flash>, bank: u8, cleared: &[Sectors]) {
+pub fn finish_handover(flash: &Rc<Flash>, bank: u8) {
     let marker = Region::new(flash, storage::RESET);
     if !handover::pending(&marker) {
         return;
     }
-    erase(flash, storage::NET);
-    for &store in cleared {
-        erase(flash, store);
+    for sector in (0..storage::HANDOVER_CLEARED_SECTORS).filter_map(storage::handover_cleared) {
+        erase(
+            flash,
+            Sectors {
+                first: sector,
+                count: 1,
+            },
+        );
     }
     let mut clients = ClientStore::default();
     clients.open(Region::new(flash, storage::CLIENTS));

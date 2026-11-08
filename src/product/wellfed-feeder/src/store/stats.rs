@@ -1,21 +1,22 @@
 //! The lifetime statistics on NOR: what the feeder counted over every
 //! boot, its boots by reset cause and its erases by storage sector.
 //!
-//! A 288-byte record in the dual-slot store (`wellfed_core::store::slot`),
-//! little-endian: magic `PLFSTA01`, version, record size, generation (u64
-//! at 12), the ten counts of `Counts` in wire order (u32 each at 20..60:
-//! uptime, feeds, feeds not done, portions, presses, sessions, reconnects,
-//! DHCP renewals, outages, seconds on battery), the five reset causes
-//! (60..80: power-on, watchdog, software, brownout, other), bank 1's erases
-//! (80), each storage sector's erases (84..276, sector 0 first), the early
-//! saves' tokens in use (276, at most `EARLY_SAVES`), flags
-//! (277: bit 0, the early budget was spent), zero padding, CRC-32/ISO-HDLC
-//! of bytes 0..280 at 280 and the `CMIT` commit marker at 284.
+//! A 320-byte record in the dual-slot store (`wellfed_core::store::slot`),
+//! little-endian: magic `PLFSTA01`, major 2, minor, record size,
+//! generation (u64 at 12), the ten counts of `Counts` in wire order (u32
+//! each at 20..60: uptime, feeds, feeds not done, portions, presses,
+//! sessions, reconnects, DHCP renewals, outages, seconds on battery), the
+//! five reset causes (60..80: power-on, watchdog, software, brownout,
+//! other), bank 1's erases (80), each storage sector's erases (84..276,
+//! sector 0 first), the early saves' tokens in use (276, at most
+//! `EARLY_SAVES`), flags (277: bit 0, the early budget was spent), zero
+//! padding, 32 spare bytes from 280, zero, CRC-32/ISO-HDLC of bytes 0..312
+//! at 312 and the `CMIT` commit marker at 316.
 //!
-//! The erase list covers `TOTAL_SECTORS`, the region as it is now: growing
-//! the region again changes the record's layout, so it takes a new
-//! version (and this build reads the old one as invalid, as no migration
-//! exists).
+//! The erase list covers `TOTAL_SECTORS`, the region as it is now. A count
+//! a later build adds goes in the spare room or past the record's end, as
+//! a minor this build reads and keeps; growing the region again does the
+//! same with the erases of the sectors it adds.
 //!
 //! **Early saves** are the one each boot makes as it starts, so its reset
 //! is counted even if it ends at once, and one at an intentional restart
@@ -30,26 +31,32 @@
 //! lifetime counts are then lower bounds.
 //!
 //! The store owns its two sectors outright, so the newest valid record wins
-//! and anything else is a save of its own cut short: losing that save loses
-//! at most one save interval of counts, never the totals before it. With no
-//! record the totals start at zero. A newer schema version makes the store
-//! read-only, and the feeder then reports no lifetime figures rather than
-//! totals it cannot keep.
+//! and anything else beside it is a save of its own cut short: losing that
+//! save loses at most one save interval of counts, never the totals before
+//! it. The totals start at zero only when nothing was ever committed there.
+//! The store saves on its own every hour, so a record of it this build
+//! cannot read (an older major, fields that fail their checks, a torn
+//! record beside no valid one) opens [`StatsStatus::Corrupt`] rather than be
+//! written over with zeros, and a newer major [`StatsStatus::ReadOnly`]: the
+//! feeder then reports no lifetime figures rather than totals it cannot
+//! keep. The factory reset's statistics step erases a corrupt pair, and
+//! leaves a newer major's alone.
 
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{
-    DualSlot, Extent, Layout, Pick, Prepare, SlotIo, Version, get_u32, get_u64, newest, put_u32,
-    put_u64, seal, target,
+    DualSlot, Extent, Layout, Pick, SlotIo, Version, get_u32, get_u64, newest, put_u32, put_u64,
+    seal, target, unwritten,
 };
 use wellfed_proto::api::{Counts, Resets};
 
 use crate::stats::{EARLY_SAVES, RESTART_SETTLED_MS, TOTAL_SECTORS, Totals};
 
-pub const VERSION: Version = Version::new(1, 0);
-/// The record's size: the totals, padded to a 4-byte program granule.
-pub const RECORD_BYTES: usize = 288;
-const LAYOUT: Layout = Layout::new(*b"PLFSTA01", VERSION, CRC_AT, Extent::Record);
+pub const VERSION: Version = Version::new(2, 0);
+/// The record's size: the totals, padded to a 4-byte program granule, and
+/// 32 spare bytes.
+pub const RECORD_BYTES: usize = 320;
+const LAYOUT: Layout = Layout::new(*b"PLFSTA01", VERSION, FIELDS_END, Extent::Record);
 const GENERATION_AT: usize = 12;
 const COUNTS_AT: usize = 20;
 const RESETS_AT: usize = 60;
@@ -62,7 +69,10 @@ const MISSED: u8 = 1;
 /// The checksum and the marker, as `seal` places them.
 const CRC_AT: usize = RECORD_BYTES - 8;
 
-const _: () = assert!(FLAGS_AT < CRC_AT);
+/// Where the spare room starts.
+const FIELDS_END: usize = (FLAGS_AT + 1).next_multiple_of(4);
+
+const _: () = assert!(FIELDS_END + 32 == CRC_AT);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StatsStatus {
@@ -70,8 +80,11 @@ pub enum StatsStatus {
     /// No record yet: zero totals, writable.
     Empty,
     Loaded,
-    /// A newer schema version: no totals, read-only.
+    /// A newer major: no totals, read-only.
     ReadOnly,
+    /// A record of this store but none this build reads: no totals,
+    /// read-only until the factory reset erases it.
+    Corrupt,
     Io,
 }
 
@@ -83,6 +96,7 @@ impl StatsStatus {
             Self::Empty => "empty",
             Self::Loaded => "loaded",
             Self::ReadOnly => "read-only",
+            Self::Corrupt => "corrupt",
             Self::Io => "io",
         }
     }
@@ -315,6 +329,7 @@ impl<I: SlotIo> StatsStore<I> {
             return self.status;
         };
 
+        let empty = unwritten(&a, &b);
         self.status = match newest(a, b, |&(generation, _, _)| generation) {
             Pick::Future => StatsStatus::ReadOnly,
             Pick::Newest(slot, (generation, totals, budget)) => {
@@ -324,9 +339,8 @@ impl<I: SlotIo> StatsStore<I> {
                 self.budget = budget;
                 StatsStatus::Loaded
             }
-            // The two sectors are this store's alone, so anything else there
-            // is a save of ours cut short: zero totals, still writable.
-            Pick::Nothing => StatsStatus::Empty,
+            Pick::Nothing if empty => StatsStatus::Empty,
+            Pick::Nothing => StatsStatus::Corrupt,
         };
         self.status
     }
@@ -361,9 +375,10 @@ impl<I: SlotIo> StatsStore<I> {
         let generation = self.generation + 1;
         let slot = self.next_slot();
         let budget = self.budget.after(kind);
+        let from = (self.generation > 0).then_some(self.slot);
         if !self
             .units
-            .write(slot, &encode(generation, totals, budget), Prepare::Erase)
+            .replace(slot, from, &encode(generation, totals, budget))
         {
             self.status = StatsStatus::Io;
             return false;

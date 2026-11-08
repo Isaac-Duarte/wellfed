@@ -19,11 +19,13 @@
 //! restart so a power cut anywhere leaves it safe. The Reset change
 //! programs the marker (sector 36) and forgets every client; the loop then
 //! restarts. A boot that finds the marker opens and publishes nothing the
-//! reset clears, erases each cleared sector (`storage::FACTORY_CLEARED`) as
-//! its own step, lets the product rewrite what it keeps of a cleared store
-//! if it keeps any ([`Product::keep_on_reset`]), erases the marker last, and only then
-//! opens the stores, empty. The feed journal, the update store and the seed
-//! are never touched, nor any store the product opens as kept.
+//! reset clears, erases each cleared sector (every one off
+//! `storage::FACTORY_KEPT`) as its own step, erases an update store it
+//! cannot read when the owner asked for the reset by hand, lets the product
+//! rewrite what it keeps of a cleared store if it keeps any
+//! ([`Product::keep_on_reset`]), erases the marker last, and only then opens
+//! the stores, empty. The feed journal, a readable update store and the
+//! seed are never touched, nor any store the product opens as kept.
 //!
 //! It keeps the time settings too (sectors 27 and 28,
 //! `wellfed_device::store::time`): the owner's zone and the NTP server,
@@ -68,7 +70,9 @@ use wellfed_device::store::net::{NetStatus, NetStore};
 use wellfed_device::store::reset as reset_marker;
 use wellfed_device::store::settings::{Settings, SettingsStatus, SettingsStore};
 use wellfed_device::store::time::{TimeStatus, TimeStore};
-use wellfed_hal::board::storage::{FACTORY_CLEARED_SECTORS, factory_cleared};
+use wellfed_hal::board::storage::{
+    FACTORY_CLEARED_SECTORS, HANDOVER_CLEARED_SECTORS, factory_cleared, handover_cleared,
+};
 use wellfed_hal::flash::park::Mmio;
 use wellfed_hal::flash_lock::arming::{self, Arming, Hooks, Poll};
 use wellfed_hal::flash_lock::provider::Provider;
@@ -224,6 +228,9 @@ pub enum Record<R> {
     /// failing that, its erase's fallback, so the reset erased it: what it
     /// meant to keep is lost, and the reset goes on.
     ResetWearLost,
+    /// The factory reset, asked for by hand, erased an update store this
+    /// build cannot read: the floor is 0 and no key id is retired.
+    ResetUpdateCleared,
     /// The handover from stock's activation is done: Wi-Fi, the product's
     /// cleared stores and clients went, unless the build has its own Wi-Fi
     /// and keeps its bench key (`cleared`).
@@ -371,6 +378,7 @@ pub fn describe<R: Describe>(record: Record<R>, f: &mut impl fmt::Write) -> fmt:
         Record::EventError => f.write_str("events error stage=append"),
         Record::ResetPending => f.write_str("reset pending"),
         Record::ResetWearLost => f.write_str("reset wear_lost=1"),
+        Record::ResetUpdateCleared => f.write_str("reset update=cleared"),
         Record::ResetDone { erased } => write!(f, "reset done erased={erased}"),
         Record::HandoverDone { cleared } => {
             write!(f, "handover done cleared={}", u8::from(cleared))
@@ -453,10 +461,6 @@ pub trait Product<F: FlashOps>: Default {
     /// Its own records, logged among the writer's.
     type Record: Describe;
 
-    /// The sectors the handover from stock clears after the Wi-Fi's, one
-    /// step each, in order.
-    const HANDOVER_CLEARED: &'static [u32];
-
     /// First thing each boot: the stores a factory reset keeps.
     fn open_kept(&mut self);
 
@@ -488,10 +492,29 @@ pub trait Product<F: FlashOps>: Default {
     /// at rest, if any. `writable` when this boot may write.
     fn rest(&mut self, core: &mut Core<F>, writable: bool) -> Option<Step<Self::Record>>;
 
-    /// The factory reset's step after the cleared sectors: rewrite what it
+    /// The factory reset's step after the cleared sectors and the update
+    /// store's: rewrite what it
     /// keeps of a cleared store, named by its first sector, or `None` when
     /// it keeps nothing, and the marker's erase follows at once.
     fn keep_on_reset() -> Option<(u32, Wear)>;
+}
+
+/// The factory reset's update store step: erase the store if this build
+/// cannot read it and the owner asked for the reset at the panel
+/// (`reset::by_hand`), and leave it alone otherwise. Whether it erased,
+/// and whether the step is done; an erase that fails stops the reset, and
+/// one cut short leaves a store the next boot finds corrupt and erases
+/// again.
+fn clear_corrupt_update<F: FlashOps>(marker: &Region<F, RESET_BASE, 1>) -> (bool, bool) {
+    if !reset_marker::by_hand(marker) {
+        return (false, true);
+    }
+    let mut update = UpdateStore::default();
+    update.open(Region::<F, UPDATE_BASE, 2>::new());
+    match update.clear_corrupt() {
+        Ok(cleared) => (cleared, true),
+        Err(_) => (false, false),
+    }
 }
 
 /// Whether `sector` reads erased, in small reads to spare the stack: an
@@ -900,13 +923,13 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         step
     }
 
-    /// One step of the handover: the Wi-Fi's two sectors, the product's
-    /// cleared sectors (`Product::HANDOVER_CLEARED`), the clients, the
-    /// update store's floor, the boot confirmation, then the mark, each
-    /// under its own write turn and attempt marker. A cut anywhere repeats
-    /// it, since the mark goes last. A build with Wi-Fi of its own is a
-    /// bench image, which pairs through the recovery window rather than
-    /// Bluetooth, so it keeps its Wi-Fi, the product's cleared stores and
+    /// One step of the handover: every sector off `storage::HANDOVER_KEPT`
+    /// (the Wi-Fi's, the plans', and any a later build added), the
+    /// clients, the update store's floor, the boot confirmation, then the
+    /// mark, each under its own write turn and attempt marker. A cut
+    /// anywhere repeats it, since the mark goes last. A build with Wi-Fi of
+    /// its own is a bench image, which pairs through the recovery window
+    /// rather than Bluetooth, so it keeps the cleared sectors and its
     /// clients, but any image installed from stock has to take the same
     /// version again, and earn its floor with a real trial.
     ///
@@ -927,19 +950,15 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             return next(WRITE_WAIT_POLL_MS, None);
         };
 
-        // The steps: the Wi-Fi's two sectors, the product's, the clients,
-        // the update store, the confirmation, the mark.
-        let cleared = P::HANDOVER_CLEARED.len();
-        let clients = 2 + cleared;
-        let index = usize::from(step);
+        // The steps: the cleared sectors, the clients, the update store,
+        // the confirmation, the mark.
+        let clients = HANDOVER_CLEARED_SECTORS;
+        let index = u32::from(step);
         let clears = !cfg!(build_wifi);
         arming::set_attempt();
         let done = if index <= clients && !clears {
             true
-        } else if index < 2 {
-            let sector = NET_BASE + u32::from(step);
-            F::erase(sector) && blank::<F>(sector)
-        } else if let Some(&sector) = P::HANDOVER_CLEARED.get(index - 2) {
+        } else if let Some(sector) = handover_cleared(index) {
             F::erase(sector) && blank::<F>(sector)
         } else if index == clients {
             self.core.clients.open(Slots::new());
@@ -1027,15 +1046,21 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         let mut keeping = None;
         // Past the cleared sectors: the product's keep step, if it has one
         // (asked once, at its index), then the marker.
-        let kept = if noted && index == FACTORY_CLEARED_SECTORS {
+        let kept = if noted && index == FACTORY_CLEARED_SECTORS + 1 {
             P::keep_on_reset()
         } else {
             None
         };
         let mut marked = false;
+        let mut update_cleared = false;
         let step = match factory_cleared(index) {
             _ if !noted => None,
             Some(sector) => Some((sector, F::erase(sector) && blank::<F>(sector))),
+            None if index == FACTORY_CLEARED_SECTORS => {
+                let (cleared, done) = clear_corrupt_update::<F>(&marker);
+                update_cleared = cleared;
+                Some((UPDATE_BASE, done))
+            }
             None => match kept {
                 Some((sector, result)) => {
                     wear = result;
@@ -1069,7 +1094,11 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
         }
         if !marked {
             core.resetting = Some(index + 1);
-            let record = (wear == Wear::Lost).then_some(Record::ResetWearLost);
+            let record = if update_cleared {
+                Some(Record::ResetUpdateCleared)
+            } else {
+                (wear == Wear::Lost).then_some(Record::ResetWearLost)
+            };
             return next(RESET_POLL_MS, record);
         }
         core.resetting = None;

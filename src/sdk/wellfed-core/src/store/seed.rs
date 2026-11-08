@@ -4,9 +4,12 @@
 //! magic `PLFSEED1`, version, record size, generation, the 32-byte seed,
 //! zero padding, CRC-32/ISO-HDLC of bytes 0..120 at 120 and `CMIT` at 124.
 //! The newest valid record wins and a torn newer slot falls back to the
-//! older one. The sectors are this store's alone, so an unreadable record
-//! is a save of ours cut short; only a newer schema makes the store
-//! read-only.
+//! older one. A newer minor is read for the seed and rewritten with the
+//! rest kept; a newer major makes the store read-only. With no valid record
+//! the store starts empty and writable whatever its units hold, an
+//! unreadable record of its own included: the seed is only a nonce mixed
+//! with fresh input, so writing over one this build cannot read costs
+//! nothing, and holding back would leave every later boot without it.
 //!
 //! [`start`] is the only intended writer: each boot instantiates the DRBG
 //! from fresh pool input with the stored seed as its nonce, then stores a
@@ -20,12 +23,12 @@ use core::ffi::c_uint;
 
 use crate::rng::{Drbg, Error};
 use crate::store::slot::{
-    CRC_AT, DualSlot, Extent, Layout, Pick, Prepare, RECORD_BYTES, SlotIo, Version, get_u64,
-    newest, put_u64, seal, target,
+    CRC_AT, DualSlot, Extent, Layout, Pick, RECORD_BYTES, SlotIo, Version, get_u64, newest,
+    put_u64, seal, target,
 };
 
 pub const VERSION: Version = Version::new(1, 0);
-const LAYOUT: Layout = Layout::new(*b"PLFSEED1", VERSION, CRC_AT, Extent::Record);
+const LAYOUT: Layout = Layout::new(*b"PLFSEED1", VERSION, SEED_END, Extent::Record);
 const GENERATION_AT: usize = 12;
 const SEED_AT: usize = 20;
 const SEED_END: usize = SEED_AT + 32;
@@ -142,10 +145,8 @@ impl<I: SlotIo> SeedStore<I> {
         }
         let generation = self.generation + 1;
         let slot = target(self.generation, self.slot);
-        if !self
-            .units
-            .write(slot, &encode(generation, seed), Prepare::Erase)
-        {
+        let from = (self.generation > 0).then_some(self.slot);
+        if !self.units.replace(slot, from, &encode(generation, seed)) {
             self.status = SeedStatus::Io;
             return false;
         }

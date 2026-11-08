@@ -261,8 +261,9 @@ impl<F> Default for FeederStores<F> {
 /// The factory reset's step for the lifetime statistics: rewrite them
 /// keeping only the erase counts ([`Totals::wear_only`]), as one dual-slot
 /// save, so a cut leaves the old totals or the wear-only ones and the boot
-/// after does it again. A store with nothing in it, or one this build
-/// cannot write (a newer schema), is left as it is.
+/// after does it again. A store with nothing in it, or one a newer major
+/// wrote, is left as it is; one this build cannot read is erased, as below,
+/// so the feeder counts again.
 ///
 /// The statistics pair is the region's most written, so it may be the one
 /// to wear out. A save that fails must not stop the reset for good (every
@@ -272,11 +273,12 @@ impl<F> Default for FeederStores<F> {
 fn keep_wear<F: FlashOps>() -> Wear {
     let mut stats = StatsStore::default();
     stats.open(Slots::<F, STATS_BASE>::new());
-    if stats.status != StatsStatus::Loaded || !stats.writable() {
+    let corrupt = stats.status == StatsStatus::Corrupt;
+    if !corrupt && (stats.status != StatsStatus::Loaded || !stats.writable()) {
         return Wear::Kept;
     }
     let wear = stats.totals.wear_only();
-    if stats.totals == wear || stats.save(&wear, SaveKind::Restart) {
+    if !corrupt && (stats.totals == wear || stats.save(&wear, SaveKind::Restart)) {
         return Wear::Kept;
     }
 
@@ -578,8 +580,6 @@ impl<F: FlashOps> FeederStores<F> {
 
 impl<F: FlashOps> Product<F> for FeederStores<F> {
     type Record = FeederRecord;
-
-    const HANDOVER_CLEARED: &'static [u32] = &[PLANS_BASE, PLANS_BASE + 1];
 
     fn open_kept(&mut self) {
         self.calibration.open(Slots::new());

@@ -1,23 +1,29 @@
 //! Two-slot alternating device settings, in the dual-slot store
 //! (`wellfed_core::store::slot`) as the feed journal is.
 //!
-//! The on-flash v4 record is 128 bytes: magic `PLFSET01`, version, record
-//! size, generation, binding, bowl mode, flags (bit 0 lights, bit 1 sound),
-//! volume, the meal reminder's lead in minutes (0 off), UTC offset in
-//! minutes, the lights and sound windows (a kind byte each at 34 and 35, 0
+//! The on-flash record is 128 bytes, major 4: magic `PLFSET01`, major,
+//! minor, record size, generation, binding, bowl mode, flags (bit 0
+//! lights, bit 1 sound), volume, the meal reminder's lead in minutes (0
+//! off), UTC offset in minutes, the lights and sound windows (a kind byte each at 34 and 35, 0
 //! always and 1 between, then each window's start and end minute as u16 at
 //! 36..40 and 40..44), the desiccant reminder (its period in days at 44, 1
 //! at 45 when a replacement is recorded, two zero bytes, and the
 //! replacement's local calendar day as an i32 at 48..52, zero when none),
 //! zero padding, CRC-32/ISO-HDLC of bytes 0..120 at 120 and the `CMIT`
-//! commit marker at 124. A record in an older version (v1 without the
-//! windows, v2 without the desiccant reminder, v3 without the meal
-//! reminder) is never migrated: it counts as erased, so the store opens on
-//! defaults and the next save replaces it.
+//! commit marker at 124. A record of an older major (1 without the
+//! windows, 2 without the desiccant reminder, 3 without the meal reminder)
+//! is never migrated: it counts as erased, so the store opens on defaults
+//! and the next save replaces it. Settings are defaults-safe, so this is
+//! the one store that starts over on an older major.
+//!
+//! The store reads its units whole, so its length never changes within a
+//! major: a later field goes in the spare room from byte 52 as a minor,
+//! which this build reads for the fields it knows and rewrites with the
+//! rest kept.
 //!
 //! Unlike the journal, losing the newest settings change is safe, so a torn
 //! or invalid newer slot falls back to the older valid one. Storage with no
-//! valid record, or holding a newer schema version, reads as defaults and is
+//! valid record, or holding a newer major, reads as defaults and is
 //! never written until an explicit [`SettingsStore::reset`]: this firmware
 //! does not overwrite data it cannot interpret. Only a save of its own cut
 //! short beside an erased unit ([`SlotState::Dirty`]) still reads as empty.
@@ -28,14 +34,14 @@ use wellfed_core::desiccant;
 use wellfed_core::feed::progress::BowlMode;
 use wellfed_core::settings::{MealReminder, SettingsFields, SettingsView, Window};
 use wellfed_core::store::slot::{
-    CRC_AT, DualSlot, Extent, Found, Layout, Pick, Prepare, RECORD_BYTES, SlotIo, Version, get_u16,
-    get_u32, get_u64, newest, put_u16, put_u32, put_u64, seal, target,
+    CRC_AT, DualSlot, Extent, Found, Layout, Pick, RECORD_BYTES, SlotIo, Version, get_u16, get_u32,
+    get_u64, newest, put_u16, put_u32, put_u64, seal, target,
 };
 
 pub const VERSION: Version = Version::new(4, 0);
 /// Settings read their whole units, as the journal does, so data another
 /// writer left is never taken for empty settings and overwritten.
-const LAYOUT: Layout = Layout::new(*b"PLFSET01", VERSION, CRC_AT, Extent::Unit);
+const LAYOUT: Layout = Layout::new(*b"PLFSET01", VERSION, 52, Extent::Unit);
 const GENERATION_AT: usize = 12;
 const BINDING_AT: usize = 20;
 
@@ -357,9 +363,10 @@ impl<I: SlotIo> SettingsStore<I> {
 
         let generation = self.generation + 1;
         let slot = target(self.generation, self.slot);
+        let from = (self.generation > 0).then_some(self.slot);
         if !self
             .units
-            .write(slot, &self.encode(generation, settings), Prepare::Erase)
+            .replace(slot, from, &self.encode(generation, settings))
         {
             self.status = SettingsStatus::Io;
             return false;

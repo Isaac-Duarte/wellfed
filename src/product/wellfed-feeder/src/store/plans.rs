@@ -1,24 +1,35 @@
 //! The feeding plans on NOR (storage sectors 11 and 12): the plan in each
 //! slot, each slot's mark, and the occurrence the loop last took.
 //!
-//! A 128-byte record in the dual-slot store (`wellfed_core::store::slot`),
+//! A 256-byte record in the dual-slot store (`wellfed_core::store::slot`),
 //! little-endian:
 //!
 //! | Bytes | Field |
 //! | --- | --- |
-//! | 0..12 | magic `PLFPLN01`, version, record size |
+//! | 0..12 | magic `PLFPLN01`, major 4, minor, record size |
 //! | 12..16 | sequence: the save count, which picks the newest record |
 //! | 16..20 | revision: bumped by every change to the table |
 //! | 20..70 | ten plans of 5 bytes: flags (bit 0 present, bit 1 enabled, bits 2-4 the meal call's plays, bit 5 the mark is a client's skip), minute (u16), portions, weekdays |
 //! | 70..110 | ten marks (Unix seconds, u32; 0 for none) |
 //! | 110..120 | the claim: flags (bit 0 present, bit 1 it disabled a plan that runs once), slot, due (Unix seconds, u32), the journal's high water (u32) |
-//! | 120..128 | CRC-32/ISO-HDLC of bytes 0..120, and the `CMIT` commit marker |
+//! | 120..248 | spare, zero |
+//! | 248..256 | CRC-32/ISO-HDLC of bytes 0..248, and the `CMIT` commit marker |
 //!
 //! An empty slot and an absent claim are all zero, and a plan is stored
-//! only if it is valid, so one encoding exists per value. Version 3 added
-//! the skip bit; a build that reads version 2 goes read-only on it rather
-//! than lose a skip, and this one reads no older record: its first boot
-//! finds no plans, and they are entered again.
+//! only if it is valid, so one encoding exists per value. This build reads
+//! no older major: its first boot over one opens [`PlansStatus::Corrupt`]
+//! until a factory reset erases the plans.
+//!
+//! **The spare room** is for minors that add per-plan grams and more
+//! plans. Bank 0 runs this build's reader for good and keeps those bytes
+//! when it rewrites the table, but an older build moves plans between slots
+//! and changes them without knowing what such a field says. So a minor
+//! that adds a per-plan field ties it to the revision it was written at,
+//! and a reader that finds another revision ignores it: every table change
+//! bumps the revision, so an older build's change voids the field rather
+//! than leave it on another plan. Plans past the tenth an older build never
+//! runs or marks, so a minor adding them gives each its own revision tag
+//! and mark the same way.
 //!
 //! **Marks** make each occurrence run at most once. A mark is written when
 //! the loop takes an occurrence (the claim), passes one it will never run,
@@ -33,20 +44,33 @@
 //!
 //! The two sectors were reserved for plans before this store, so a record
 //! here is ours; the newest valid one wins, and a torn newer slot falls
-//! back to the older. With none the table starts empty and writable. Only
-//! a newer schema version makes the store read-only, with no plans, so
-//! nothing runs that this build cannot read.
+//! back to the older. With none the table starts empty and writable, but
+//! only when nothing was ever committed there: a record of this store the
+//! build cannot read (an older major, fields that fail their checks, a
+//! torn record beside no valid one) opens [`PlansStatus::Corrupt`], and a
+//! newer major [`PlansStatus::ReadOnly`]. Either way there are no plans,
+//! so nothing runs that this build cannot read, and the owner's plans are
+//! never written over by an empty table. The factory reset erases the
+//! sectors, which is the way out of both.
 
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{
-    CRC_AT, DualSlot, Extent, Layout, Pick, Prepare, RECORD_BYTES, SlotIo, Version, get_u32,
-    newest, put_u32, seal, target,
+    DualSlot, Extent, Layout, Pick, SlotIo, Version, get_u32, newest, put_u32, seal, target,
+    unwritten,
 };
 use wellfed_device_api::mailbox::{Claim, PLANS, Plan, PlansChange, PlansView, Table, Weekdays};
 
-pub const VERSION: Version = Version::new(3, 0);
-const LAYOUT: Layout = Layout::new(*b"PLFPLN01", VERSION, CRC_AT, Extent::Record);
+pub const VERSION: Version = Version::new(4, 0);
+/// The whole record.
+pub const RECORD_BYTES: usize = 256;
+const CRC_AT: usize = RECORD_BYTES - 8;
+const LAYOUT: Layout = Layout::new(
+    *b"PLFPLN01",
+    VERSION,
+    CLAIM_END.next_multiple_of(4),
+    Extent::Record,
+);
 const SEQUENCE_AT: usize = 12;
 const REVISION_AT: usize = 16;
 const PLANS_AT: usize = 20;
@@ -282,8 +306,11 @@ pub enum PlansStatus {
     /// No record yet: no plans, writable.
     Empty,
     Loaded,
-    /// A newer schema version: no plans, read-only.
+    /// A newer major: no plans, read-only.
     ReadOnly,
+    /// A record of this store but none this build reads: no plans,
+    /// read-only until the factory reset erases it.
+    Corrupt,
     Io,
 }
 
@@ -295,6 +322,7 @@ impl PlansStatus {
             Self::Empty => "empty",
             Self::Loaded => "loaded",
             Self::ReadOnly => "read-only",
+            Self::Corrupt => "corrupt",
             Self::Io => "io",
         }
     }
@@ -442,6 +470,7 @@ impl<I: SlotIo> PlansStore<I> {
             return self.status;
         };
 
+        let empty = unwritten(&a, &b);
         self.status = match newest(a, b, |&(sequence, _)| u64::from(sequence)) {
             Pick::Future => PlansStatus::ReadOnly,
             Pick::Newest(slot, (sequence, plans)) => {
@@ -450,9 +479,8 @@ impl<I: SlotIo> PlansStore<I> {
                 self.plans = plans;
                 PlansStatus::Loaded
             }
-            // The two sectors are this store's alone, so anything else there
-            // is a save of ours cut short: no plans, still writable.
-            Pick::Nothing => PlansStatus::Empty,
+            Pick::Nothing if empty => PlansStatus::Empty,
+            Pick::Nothing => PlansStatus::Corrupt,
         };
         self.status
     }
@@ -492,10 +520,8 @@ impl<I: SlotIo> PlansStore<I> {
             return false;
         };
         let slot = target(u64::from(self.sequence), self.slot);
-        if !self
-            .units
-            .write(slot, &encode(sequence, plans), Prepare::Erase)
-        {
+        let from = (self.sequence > 0).then_some(self.slot);
+        if !self.units.replace(slot, from, &encode(sequence, plans)) {
             self.status = PlansStatus::Io;
             return false;
         }

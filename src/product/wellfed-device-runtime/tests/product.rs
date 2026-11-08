@@ -46,8 +46,6 @@ struct Bare;
 impl<F: FlashOps> Product<F> for Bare {
     type Record = Never;
 
-    const HANDOVER_CLEARED: &'static [u32] = &[];
-
     fn open_kept(&mut self) {}
 
     fn open_cleared(&mut self) {}
@@ -212,7 +210,8 @@ fn a_product_without_stores_keeps_the_devices() {
 }
 
 #[test]
-fn a_factory_reset_with_nothing_kept_erases_the_marker_after_the_cleared_sectors() {
+fn a_factory_reset_with_nothing_kept_erases_the_marker_after_the_cleared_sectors_and_the_update_step()
+ {
     let (mut writer, mut provider) = boot();
     assert!(reset::mark(&Region::<Armed, RESET_BASE, 1>::new()));
 
@@ -225,6 +224,11 @@ fn a_factory_reset_with_nothing_kept_erases_the_marker_after_the_cleared_sectors
         );
         assert!(reset::pending(&Region::<Armed, RESET_BASE, 1>::new()));
     }
+    assert_eq!(
+        step(&mut writer, &mut provider),
+        None,
+        "the update store's step, with nothing to clear"
+    );
     assert_eq!(
         step(&mut writer, &mut provider),
         Some(Record::ResetDone {

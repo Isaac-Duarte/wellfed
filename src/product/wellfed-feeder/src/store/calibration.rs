@@ -12,8 +12,11 @@
 //! never reads or writes them, and the settings record stays as it was: a
 //! bank that predates the store runs on its own settings and ignores
 //! these. The newest valid record wins; a torn or invalid newer slot falls
-//! back to the older one. With no record no weight is known. Only a newer
-//! schema version makes the store read-only, with no weight.
+//! back to the older one. With no record no weight is known, and the store
+//! is writable: it is written only when the owner calibrates, so a record
+//! this build cannot read is replaced by a new measurement, never on the
+//! build's own. A newer minor is read for the weight and rewritten with the
+//! rest kept; a newer major makes the store read-only, with no weight.
 //!
 //! The bowl mode is not stored here: a build runs the one mode it was
 //! verified for, and the settings record's bowl byte stays the single
@@ -22,13 +25,13 @@
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{
-    CRC_AT, DualSlot, Extent, Layout, Pick, Prepare, RECORD_BYTES, SlotIo, Version, get_u64,
-    newest, put_u64, seal, target,
+    CRC_AT, DualSlot, Extent, Layout, Pick, RECORD_BYTES, SlotIo, Version, get_u64, newest,
+    put_u64, seal, target,
 };
 use wellfed_device_api::mailbox::Calibration;
 
 pub const VERSION: Version = Version::new(1, 0);
-const LAYOUT: Layout = Layout::new(*b"PLFCAL01", VERSION, CRC_AT, Extent::Record);
+const LAYOUT: Layout = Layout::new(*b"PLFCAL01", VERSION, PORTION_END, Extent::Record);
 const GENERATION_AT: usize = 12;
 const PORTION_AT: usize = 20;
 const PORTION_END: usize = PORTION_AT + 4;
@@ -159,9 +162,10 @@ impl<I: SlotIo> CalibrationStore<I> {
         }
         let generation = self.generation + 1;
         let slot = target(self.generation, self.slot);
+        let from = (self.generation > 0).then_some(self.slot);
         if !self
             .units
-            .write(slot, &encode(generation, calibration), Prepare::Erase)
+            .replace(slot, from, &encode(generation, calibration))
         {
             self.status = CalibrationStatus::Io;
             return false;

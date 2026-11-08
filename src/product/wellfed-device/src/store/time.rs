@@ -13,20 +13,29 @@
 //! bank that predates the store runs on its own settings and ignores these.
 //! The newest valid record wins; a torn or invalid newer slot falls back to
 //! the older one. With no record the defaults apply (no zone, NTP from the
-//! gateway on port 123). Only a newer schema version makes the store
-//! read-only, with the defaults.
+//! gateway on port 123), and the store is writable: it is written only
+//! when the owner changes the time settings, so writing over a record this
+//! build cannot read (an older major, say) replaces it with the owner's
+//! choice, never with defaults. A newer minor is read for the fields this
+//! build knows and rewritten with the rest kept; a newer major makes the
+//! store read-only, with the defaults.
 
 use core::ffi::c_uint;
 
 use wellfed_core::clock::zone::{TEXT_MAX, Zone};
 use wellfed_core::store::slot::{
-    CRC_AT, DualSlot, Extent, Layout, Pick, Prepare, RECORD_BYTES, SlotIo, Version, get_u16,
-    get_u64, newest, put_u16, put_u64, seal, target,
+    CRC_AT, DualSlot, Extent, Layout, Pick, RECORD_BYTES, SlotIo, Version, get_u16, get_u64,
+    newest, put_u16, put_u64, seal, target,
 };
 use wellfed_device_api::mailbox::{NtpServer, TimeSettings};
 
 pub const VERSION: Version = Version::new(1, 0);
-const LAYOUT: Layout = Layout::new(*b"PLFTIM01", VERSION, CRC_AT, Extent::Record);
+const LAYOUT: Layout = Layout::new(
+    *b"PLFTIM01",
+    VERSION,
+    ZONE_END.next_multiple_of(4),
+    Extent::Record,
+);
 const GENERATION_AT: usize = 12;
 const NTP_AT: usize = 20;
 const IP_AT: usize = 21;
@@ -177,9 +186,10 @@ impl<I: SlotIo> TimeStore<I> {
         }
         let generation = self.generation + 1;
         let slot = target(self.generation, self.slot);
+        let from = (self.generation > 0).then_some(self.slot);
         if !self
             .units
-            .write(slot, &encode(generation, settings), Prepare::Erase)
+            .replace(slot, from, &encode(generation, settings))
         {
             self.status = TimeStatus::Io;
             return false;

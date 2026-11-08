@@ -6,7 +6,7 @@
 //!
 //! | Bytes | Field |
 //! | --- | --- |
-//! | 0..8 | magic `PLFCAL01` |
+//! | 0..8 | magic `PLFMCL01` |
 //! | 8..10 | version |
 //! | 10..12 | zero |
 //! | 12..16 | the stream's bytes, 1 to [`clip::BYTES_MAX`] |
@@ -24,6 +24,11 @@
 //!
 //! An upload in progress lives in RAM: a restart forgets it, and the
 //! client starts again.
+//!
+//! The magic is this store's own, not the calibration store's, so no
+//! reader of one takes the other's bytes for its own. A header of another
+//! version reads as no clip, so a build plays only a clip it can decode,
+//! and the next upload replaces it.
 
 use core::ffi::c_uint;
 
@@ -32,7 +37,7 @@ use wellfed_core::store::slot::{Crc32, SlotIo, crc32, get_u32};
 use wellfed_device_api::mailbox::{CallClip, CallView, chunk_wanted};
 
 pub const VERSION: u16 = 1;
-const MAGIC: [u8; 8] = *b"PLFCAL01";
+const MAGIC: [u8; 8] = *b"PLFMCL01";
 const HEADER_BYTES: usize = 24;
 const BYTES_AT: usize = 12;
 const CRC_AT: usize = 16;

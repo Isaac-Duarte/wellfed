@@ -22,7 +22,7 @@ The loop keeps the figures in RAM as it runs (`wellfed_feeder::stats::Keeper`): 
 - **Food is the latest reading.** The beam is read only while the emitters are on, during a feed or a [window at rest](optical-inputs.md#reading-the-food-beam-at-rest). So `Food::present` is `None` until the first reading of a boot (`Status.food` reads `Unread`), and then the latest. A window never blocks a feed or changes readiness.
 - **Lifetime figures** (`Counters::lifetime`, `resets`, `Flash::lifetime`) are the stored totals plus this boot's figures.
 
-**The store** (`wellfed_feeder::store::stats`, sectors 32–33 of the 48-sector region) is one 288-byte dual-slot record (`PLFSTA01`). It holds the ten counts, boots by reset cause, erases of every storage sector and of bank 1, and the early-save budget. It keeps all 48 sectors' erases, though the wire's `Erases` lists the first 32. Newest valid wins, so a cut save loses only that save. Its layout covers the region as it is, and growing the region again takes a new record version.
+**The store** (`wellfed_feeder::store::stats`, sectors 32–33 of the 48-sector region) is one 320-byte dual-slot record (`PLFSTA01`, major 2). It holds the ten counts, boots by reset cause, erases of every storage sector and of bank 1, the early-save budget, and 32 spare bytes. It keeps all 48 sectors' erases, though the wire's `Erases` lists the first 32. Newest valid wins, so a cut save loses only that save. A later count goes in the spare room or past the record's end, as a minor older builds keep ([record versions](pairing.md#record-versions)). A record this build can't read is never written over with zeros; the factory reset erases it.
 
 **At boot** the writer loads it, adds this boot to its reset cause (from the ROM's flags, as `Counters::reset`) and publishes it for the loop (`PLCFG1 stats open status= generation= early= missed=`). The loop hands this boot's counts to the writer every 30 s beside the signal sample, again as each feed ends, and just before it asks for a restart. The loop never writes.
 
@@ -43,7 +43,7 @@ The loop keeps the figures in RAM as it runs (`wellfed_feeder::stats::Keeper`): 
 
 **Lower bounds.** The lifetime counts and `resets` never exceed the truth. A power cut loses up to an hour of a boot's counts and 10 minutes of its feeds. While no token is left, a short boot's reset goes uncounted, and so does anything else it counted unless a feed's save took it along. The feed history records every feed, so the lifetime feed count can read under it. The `missed` flag that says so is in the log, not on the wire.
 
-**`None`** comes from a build that keeps no totals, and from a store this build can't write (a newer record version, or a read error).
+**`None`** comes from a build that keeps no totals, and from a store this build can't write (a newer major, a record it can't read, or a read error).
 
 **The Wi-Fi task** reports two more events in `PLWIF3`: `kind=ap`, after each join's DHCP, with the channel and the BSSID's last four bytes; and `kind=renew`, a lease renewal. A renewal is seen as lwIP's lease clock going back while the client is bound. A release on expiry also zeroes it, and isn't counted.
 
