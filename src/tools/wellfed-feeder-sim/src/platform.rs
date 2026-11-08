@@ -809,6 +809,11 @@ impl Platform for SimPlatform {
         self.device.take_written()
     }
 
+    /// The simulator's outbox has room for every one.
+    fn take_written_lost(&mut self) -> u32 {
+        0
+    }
+
     fn event_after(&mut self, reader: Reader, after: Option<u64>) -> Option<Read> {
         if self.ring_unanswered {
             return None;

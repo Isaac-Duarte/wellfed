@@ -37,7 +37,7 @@ use wellfed_device_api::mailbox::{CallChange, CallClip, PlansChange};
 use wellfed_device_runtime::events;
 use wellfed_device_runtime::writer::{
     self as device, Core, Describe, EVENTS_POLL_MS, ErrorStage, POLL_MS, Product,
-    READ_LINGER_POLLS, Wear, blank, next,
+    READ_LINGER_POLLS, Wear, WriteEvent, blank, next,
 };
 use wellfed_feeder::stats::{FEED_SAVE_MS, SAVE_MS, TOTAL_SECTORS, Totals, reset_cause};
 use wellfed_feeder::store::calibration::CalibrationStore;
@@ -98,6 +98,7 @@ pub enum FeederRecord {
     PlansSaved {
         sequence: u32,
         revision: u32,
+        event: WriteEvent,
     },
     /// A change of the loop's taken against plans that have moved on:
     /// nothing written, and the loop decides again.
@@ -157,9 +158,14 @@ impl Describe for FeederRecord {
                 }
             }
             Self::CalibrationError { stage } => write!(f, "calibration error stage={stage}"),
-            Self::PlansSaved { sequence, revision } => {
-                write!(f, "plans saved sequence={sequence} revision={revision}")
-            }
+            Self::PlansSaved {
+                sequence,
+                revision,
+                event,
+            } => write!(
+                f,
+                "plans saved sequence={sequence} revision={revision} event={event}"
+            ),
             Self::PlansDropped => f.write_str("plans dropped"),
             Self::PlansError { stage } => write!(f, "plans error stage={stage}"),
             Self::Call { clip } => match clip {
@@ -357,16 +363,18 @@ impl<F: FlashOps> FeederStores<F> {
         arming::clear_attempt();
         // A client's change records its event in the turn that saved it
         // ([`Core::append_written`]); the schedule's own carry no stamp.
-        if ok
-            && let Some(asked) = plans::asked()
-            && let Some(body) = self.plans.event(change, asked.by)
-        {
-            core.append_written::<Self>(asked.at, &body);
-        }
+        let event = match plans::asked() {
+            Some(asked) if ok => match self.plans.event(change, asked.by) {
+                Some(body) => core.append_written::<Self>(asked.at, &body),
+                None => WriteEvent::None,
+            },
+            _ => WriteEvent::None,
+        };
         Some(if ok {
             FeederRecord::PlansSaved {
                 sequence: self.plans.sequence,
                 revision: self.plans.plans.revision,
+                event,
             }
         } else {
             FeederRecord::PlansError {

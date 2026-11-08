@@ -18,11 +18,15 @@
 //!   shared with any other whose cursor falls in it, round robin among
 //!   those waiting, and given up at once by a subscriber that ends
 //!   ([`reader_left`]).
-//! - **The writer's own:** an event the writer records for a change it
-//!   makes (a client enrolled or revoked) goes straight to the ring in the
-//!   turn that made the change, never through the queue, and is handed
-//!   back with [`wrote`] so the loop's alert rules hear of it
-//!   ([`take_written`]), as they hear of every event the loop records.
+//! - **The writer's own:** the event of a change the writer saves for
+//!   someone who asked (a client's settings, Wi-Fi, plans or keys, or BLE
+//!   setup's enrollment) goes straight to the ring in the turn that saved
+//!   the change, never through the queue. [`wrote`] then publishes the
+//!   ring's newest record, and hands an enrollment or revocation back for
+//!   the loop's alert rules ([`take_written`]), the only ones they act on.
+//!   One the outbox has no room for is counted ([`take_written_lost`]): it
+//!   is in the ring, and only its alert is missed until the next boot's
+//!   replay.
 //! - **Epoch:** the writer publishes the ring's epoch once it has opened
 //!   it ([`publish_open`]); the device API welcomes no session before then,
 //!   since a welcome names the epoch its event numbers count in.
@@ -63,6 +67,8 @@ struct Shared {
     /// them, until the loop takes them.
     written: [Queued; WRITTEN],
     written_len: usize,
+    /// Enrollments and revocations the outbox had no room for.
+    written_lost: u32,
     lost: u32,
     last: Option<u64>,
     epoch: Option<u32>,
@@ -77,6 +83,7 @@ static SHARED: TaskCell<Shared> = TaskCell::new(Shared {
     len: 0,
     written: [UNQUEUED; WRITTEN],
     written_len: 0,
+    written_lost: 0,
     lost: 0,
     last: None,
     epoch: None,
@@ -91,10 +98,9 @@ fn with<R>(f: impl FnOnce(&mut Shared) -> R) -> R {
     })
 }
 
-/// Events the writer appended itself that the loop has yet to take. The
-/// writer makes one client change per step, and the loop takes them every
-/// pass, so a few is plenty; one past them is still in the ring, and only
-/// its alert is missed (the next boot's replay restores it).
+/// Enrollments and revocations the writer appended that the loop has yet
+/// to take. The writer makes one client store change per step, and the
+/// loop takes them every pass, so a few is plenty.
 pub const WRITTEN: usize = 4;
 
 /// Slots only [`record_outcome`] may fill.
@@ -151,15 +157,28 @@ pub fn finish_pending(last: Option<u64>) {
 }
 
 /// The writer's half: it appended `body` itself, and `last` is the ring's
-/// newest record now.
-pub fn wrote(at: Option<u32>, body: [u8; BODY_BYTES], last: Option<u64>) {
+/// newest record now. With `alerting`, `body` also waits for the loop's
+/// alert rules, or is counted when the outbox is full.
+pub fn wrote(at: Option<u32>, body: [u8; BODY_BYTES], last: Option<u64>, alerting: bool) {
     with(|shared| {
         shared.last = last;
-        if let Some(slot) = shared.written.get_mut(shared.written_len) {
-            *slot = Queued { at, body };
-            shared.written_len += 1;
+        if !alerting {
+            return;
+        }
+        match shared.written.get_mut(shared.written_len) {
+            Some(slot) => {
+                *slot = Queued { at, body };
+                shared.written_len += 1;
+            }
+            None => shared.written_lost = shared.written_lost.saturating_add(1),
         }
     });
+}
+
+/// Enrollments and revocations the outbox had no room for since the last
+/// call: in the ring, but never told to the alert rules this boot.
+pub fn take_written_lost() -> u32 {
+    with(|shared| core::mem::take(&mut shared.written_lost))
 }
 
 /// The loop's half: the oldest event the writer appended itself and the
@@ -238,6 +257,7 @@ pub fn reset() {
         shared.len = 0;
         shared.written = [UNQUEUED; WRITTEN];
         shared.written_len = 0;
+        shared.written_lost = 0;
         shared.lost = 0;
         shared.last = None;
         shared.epoch = None;

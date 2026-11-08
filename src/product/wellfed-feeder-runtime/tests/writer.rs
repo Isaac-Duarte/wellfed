@@ -17,7 +17,7 @@ use wellfed_device_api::mailbox::{SettingsFields, SettingsResult, Stamp};
 use wellfed_device_api::{KeyChange as ApiChange, Reader};
 use wellfed_device_runtime::keys::{self, Change, Requested};
 use wellfed_device_runtime::writer::{
-    self as writer, ErrorStage, Identity, KeyChange, KeyEvent, KeyResult,
+    self as writer, ErrorStage, Identity, KeyChange, KeyResult, WriteEvent,
 };
 use wellfed_device_runtime::{asked, events, network};
 use wellfed_feeder::stats::{EARLY_SAVES, FEED_SAVE_MS, RESTART_SETTLED_MS, SAVE_MS, Totals};
@@ -248,6 +248,7 @@ fn changes_are_saved_once_each_inside_a_marked_attempt() {
     let Some(Record::Saved {
         generation,
         settings: saved,
+        ..
     }) = step(&mut writer, &mut provider)
     else {
         panic!("saved")
@@ -332,7 +333,8 @@ fn wifi_credentials_are_saved_inside_a_marked_attempt_and_cleared() {
         step(&mut writer, &mut provider),
         Some(Record::NetSaved {
             generation: 1,
-            stored: true
+            stored: true,
+            event: WriteEvent::None,
         })
     );
     assert!(ATTEMPT_SEEN.with(Cell::get));
@@ -347,7 +349,8 @@ fn wifi_credentials_are_saved_inside_a_marked_attempt_and_cleared() {
         step(&mut writer, &mut provider),
         Some(Record::NetSaved {
             generation: 2,
-            stored: false
+            stored: false,
+            event: WriteEvent::None,
         })
     );
 }
@@ -498,9 +501,9 @@ fn change(writer: &mut Writer<Armed>, provider: &mut Provider, change: Change) -
 /// its event appended.
 fn changed(change: KeyChange, result: KeyResult, enrolled: usize) -> Record {
     let event = if result == KeyResult::Done && change != KeyChange::Reset {
-        KeyEvent::Appended
+        WriteEvent::Appended
     } else {
-        KeyEvent::None
+        WriteEvent::None
     };
     Record::KeysChanged {
         change,
@@ -748,7 +751,7 @@ fn a_cut_between_the_change_and_its_event_loses_only_the_event() {
     else {
         panic!("the change's record");
     };
-    assert_eq!((result, event), (KeyResult::Done, KeyEvent::Lost));
+    assert_eq!((result, event), (KeyResult::Done, WriteEvent::Lost));
     assert_eq!(events::take_written(), None);
     EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
 
@@ -833,7 +836,7 @@ fn client_writes_events() -> [EventBody; 3] {
 /// A client's Wi-Fi, plans and settings change, queued together and all
 /// saved before the loop looks, each record their event in the turn that
 /// saved them, with the client's time on it, straight to the ring past a
-/// full queue of the loop's records; the alert rules hear of each.
+/// full queue of the loop's records.
 #[test]
 fn client_writes_record_their_events_in_the_writers_turn() {
     let (_guard, mut writer, mut provider) = opened();
@@ -853,13 +856,7 @@ fn client_writes_record_their_events_in_the_writers_turn() {
     assert_eq!(settings::pending(), None);
     assert_eq!(events::last_seq(), Some(last + 3), "past the full queue");
 
-    let taken: Vec<_> = std::iter::from_fn(events::take_written)
-        .map(|written| {
-            assert_eq!(written.at, Some(ASKED_AT));
-            wellfed_proto::decode_padded::<EventBody>(&written.body).unwrap()
-        })
-        .collect();
-    assert_eq!(taken, client_writes_events());
+    assert_eq!(events::take_written(), None, "no alert rule acts on these");
     let ours: Vec<_> = ring(&mut writer, &mut provider)
         .into_iter()
         .filter(|(_, body)| *body != locked)
@@ -906,6 +903,76 @@ fn writes_nobody_asked_for_record_nothing() {
 
     assert_eq!(events::take_written(), None);
     assert_eq!(ring(&mut writer, &mut provider), before);
+}
+
+/// A client's settings change queued while a feed holds the outputs waits
+/// for the write turn with its stamp, and records its event once the feed
+/// releases them and the writer saves it.
+#[test]
+fn a_settings_change_that_waits_out_a_feed_keeps_its_event() {
+    let (_guard, mut writer, mut provider) = opened();
+    INTERLOCK.claim_feed(u32::MAX).unwrap();
+    let louder = SettingsFields {
+        volume: Some(7),
+        ..SettingsFields::default()
+    };
+    asked::settings_request(louder, Some(ASKED));
+    for _ in 0..5 {
+        assert_eq!(step(&mut writer, &mut provider), None, "waits its turn");
+    }
+    assert!(settings::pending().is_some());
+
+    INTERLOCK.release_feed();
+    let Some(Record::Saved { event, .. }) = step(&mut writer, &mut provider) else {
+        panic!("saved once the feed released the outputs");
+    };
+    assert_eq!(event, WriteEvent::Appended);
+    let by = ASKED.by;
+    assert_eq!(
+        ring(&mut writer, &mut provider),
+        [(Some(ASKED_AT), EventBody::Settings { generation: 1, by })]
+    );
+
+    // Its stamp went with it: a later change queued with none records none.
+    let quieter = SettingsFields {
+        volume: Some(3),
+        ..SettingsFields::default()
+    };
+    settings::request(quieter);
+    let Some(Record::Saved { event, .. }) = step(&mut writer, &mut provider) else {
+        panic!("saved");
+    };
+    assert_eq!(event, WriteEvent::None);
+}
+
+/// Only enrollments and revocations go back to the loop's alert rules, and
+/// one past the outbox's room is counted, its event still in the ring.
+#[test]
+fn the_alert_outbox_takes_key_events_and_counts_an_overflow() {
+    let (_guard, mut writer, mut provider) = opened();
+    let enroll = |key: u8| Change::Key {
+        change: ApiChange::Enroll {
+            key: [key; 32],
+            label: Label::new(b"phone").unwrap(),
+            role: Role::Member,
+            path: Path::Invite,
+        },
+        at: Some(ASKED_AT),
+    };
+    for key in 1..=u8::try_from(events::WRITTEN).unwrap() + 1 {
+        change(&mut writer, &mut provider, enroll(key));
+    }
+    queue_client_writes();
+    for _ in 0..3 {
+        step(&mut writer, &mut provider);
+    }
+
+    let taken = std::iter::from_fn(events::take_written).count();
+    assert_eq!(taken, events::WRITTEN);
+    assert_eq!(events::take_written_lost(), 1);
+    assert_eq!(events::take_written_lost(), 0, "taken once");
+    let recorded = ring(&mut writer, &mut provider).len();
+    assert_eq!(recorded, events::WRITTEN + 1 + 3, "every event in the ring");
 }
 
 /// A restart before the writer saves a client's changes loses them with
@@ -1507,6 +1574,7 @@ fn store_writes_decode_for_the_bench() {
         Record::Saved {
             generation: 7,
             settings: Settings::default(),
+            event: WriteEvent::Appended,
         },
         Some(Event::Settings(record::Settings::Saved {
             generation: Some(7),
@@ -1516,6 +1584,7 @@ fn store_writes_decode_for_the_bench() {
         Record::NetSaved {
             generation: 3,
             stored: false,
+            event: WriteEvent::None,
         },
         Some(Event::Settings(record::Settings::NetSaved {
             stored: false,
@@ -2116,6 +2185,7 @@ fn a_plans_change_is_applied_saved_inside_a_marked_attempt_and_published() {
     let saved = Record::Product(FeederRecord::PlansSaved {
         sequence: 1,
         revision: 1,
+        event: WriteEvent::None,
     });
     assert_eq!(step(&mut writer, &mut provider), Some(saved));
     assert!(ATTEMPT_SEEN.with(Cell::get));
@@ -2158,7 +2228,7 @@ fn a_plans_change_is_applied_saved_inside_a_marked_attempt_and_published() {
 
     let mut text = String::new();
     writer::describe(saved, &mut text).unwrap();
-    assert_eq!(text, "plans saved sequence=1 revision=1");
+    assert_eq!(text, "plans saved sequence=1 revision=1 event=none");
 }
 
 /// The meal call's upload lands chunk by chunk inside marked attempts. A

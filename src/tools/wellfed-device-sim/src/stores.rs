@@ -36,7 +36,7 @@ use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
     ClientChange, KEYS_FINISHED, KeyResult, Requested, SettingsFields, SettingsResult,
     SettingsView, Stamp, TimeSettings, TimeSettingsResult, TimeSettingsView, WifiResult,
-    WifiSource, WifiView,
+    WifiSource, WifiView, tells_alerts,
 };
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_api::{KeyChange, Reader};
@@ -365,11 +365,13 @@ impl DeviceStores {
     }
 
     /// Append an event the writer records itself, for a change it just
-    /// made, and keep it for the loop's alert rules
-    /// ([`Self::take_written`]).
+    /// made, and keep an enrollment or revocation for the loop's alert
+    /// rules ([`Self::take_written`]), as the firmware's writer does.
     pub fn append_written(&mut self, at: Option<u32>, body: &EventBody) {
         let mut bytes = [0; BODY_BYTES];
-        if wellfed_proto::encode(body, &mut bytes).is_ok() && self.events.append(at, &bytes).is_ok()
+        if wellfed_proto::encode(body, &mut bytes).is_ok()
+            && self.events.append(at, &bytes).is_ok()
+            && tells_alerts(body)
         {
             self.written.push_back((at, bytes));
         }

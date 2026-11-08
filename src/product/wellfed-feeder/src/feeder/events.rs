@@ -54,12 +54,14 @@ fn queue(platform: &mut impl Platform, now_ms: u32, body: EventBody, slot: Event
     push(platform, now_ms, at, body, slot);
 }
 
-/// Tell the alert rules of each event the settings writer appended itself
-/// (a client enrolled or revoked, recorded in the turn that made the
-/// change), as [`record`] tells them of the loop's own. Out of line: the
-/// decoded body must not sit in the pass's frame.
+/// Tell the alert rules of each enrollment and revocation the settings
+/// writer appended itself, in the turn that saved the change, as [`record`]
+/// tells them of the loop's own; how many the writer had no room to hand
+/// over. The writer records its other events (settings, Wi-Fi, plans) to
+/// the ring alone, since no rule acts on them. Out of line: the decoded
+/// body must not sit in the pass's frame.
 #[inline(never)]
-pub fn written(platform: &mut impl Platform, now_ms: u32) {
+pub fn written(platform: &mut impl Platform, now_ms: u32) -> u32 {
     while let Some((at, bytes)) = platform.take_written() {
         if platform.alerts_on()
             && let Some(body) = wellfed_proto::decode_padded::<EventBody>(&bytes)
@@ -67,6 +69,7 @@ pub fn written(platform: &mut impl Platform, now_ms: u32) {
             platform.alerts_mut().event(now_ms, at, &body);
         }
     }
+    platform.take_written_lost()
 }
 
 /// The wall clock's second at `now_ms`, which an event carries; `None`

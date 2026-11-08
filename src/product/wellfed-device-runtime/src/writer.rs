@@ -89,6 +89,7 @@ use crate::network::{self, NET_BASE};
 use crate::time::{self, TIME_BASE};
 use crate::{asked, events};
 use wellfed_device_api::KeyChange as ApiChange;
+use wellfed_device_api::mailbox::tells_alerts;
 use wellfed_proto::api::EventBody;
 
 /// The factory reset's marker sector (`storage::RESET`).
@@ -151,10 +152,12 @@ named_enum! {
 }
 
 named_enum! {
-    /// What became of a client store change's history event (`event=`).
-    pub enum KeyEvent {
-        /// None was due: the change did not go through, changed nothing, or
-        /// was the factory reset, whose restart starts a new ring.
+    /// What became of the history event of a change the writer saved for
+    /// someone who asked (`event=` on its record).
+    pub enum WriteEvent {
+        /// None was due: the change did not go through, changed nothing,
+        /// was the loop's own, or was the factory reset, whose restart
+        /// starts a new ring.
         None = "none",
         /// Appended in the turn that made the change.
         Appended = "appended",
@@ -183,6 +186,7 @@ pub enum Record<R> {
     Saved {
         generation: u64,
         settings: Settings,
+        event: WriteEvent,
     },
     Error {
         stage: ErrorStage,
@@ -197,6 +201,7 @@ pub enum Record<R> {
     NetSaved {
         generation: u64,
         stored: bool,
+        event: WriteEvent,
     },
     NetError {
         stage: ErrorStage,
@@ -227,7 +232,7 @@ pub enum Record<R> {
         change: KeyChange,
         result: KeyResult,
         enrolled: usize,
-        event: KeyEvent,
+        event: WriteEvent,
     },
     /// The event ring as opened.
     Events {
@@ -326,9 +331,11 @@ pub fn describe<R: Describe>(record: Record<R>, f: &mut impl fmt::Write) -> fmt:
         Record::Saved {
             generation,
             settings,
+            event,
         } => {
             write!(f, "saved generation={generation} ")?;
-            values(f, &settings)
+            values(f, &settings)?;
+            write!(f, " event={event}")
         }
         Record::Error { stage, status } => {
             write!(f, "error stage={stage} status={}", status.code())
@@ -344,9 +351,13 @@ pub fn describe<R: Describe>(record: Record<R>, f: &mut impl fmt::Write) -> fmt:
             status as u8,
             u8::from(stored)
         ),
-        Record::NetSaved { generation, stored } => write!(
+        Record::NetSaved {
+            generation,
+            stored,
+            event,
+        } => write!(
             f,
-            "net saved generation={generation} stored={}",
+            "net saved generation={generation} stored={} event={event}",
             u8::from(stored)
         ),
         Record::NetError { stage } => write!(f, "net error stage={stage}"),
@@ -863,13 +874,9 @@ impl<F: FlashOps> Core<F> {
 
         let event = match change {
             Change::Key { change, at } if result == KeyResult::Done => {
-                if self.append_written::<P>(at, &change.event()) {
-                    KeyEvent::Appended
-                } else {
-                    KeyEvent::Lost
-                }
+                self.append_written::<P>(at, &change.event())
             }
-            Change::Key { .. } | Change::Reset => KeyEvent::None,
+            Change::Key { .. } | Change::Reset => WriteEvent::None,
         };
 
         let reset = kind == KeyChange::Reset && result == KeyResult::Done;
@@ -893,9 +900,11 @@ impl<F: FlashOps> Core<F> {
 
     /// Append `body`, the history event of a change the writer has just
     /// saved for someone who asked (a client, or BLE setup), straight to the
-    /// ring under its own attempt marker, and hand it to the loop's alert
-    /// rules; false if the ring refused it. The caller holds the write turn
-    /// it saved the change under.
+    /// ring under its own attempt marker; [`WriteEvent::Lost`] if the ring
+    /// refused it. The caller holds the write turn it saved the change
+    /// under. A client's enrollment or revocation is also handed to the
+    /// loop's alert rules ([`events::wrote`]), the only events written here
+    /// that they act on.
     ///
     /// Every such event goes after its store write, in the same turn: a cut
     /// between the two leaves the change without its event, never an event
@@ -903,25 +912,36 @@ impl<F: FlashOps> Core<F> {
     /// again. It comes straight to the ring, not through the loop's queue,
     /// so a full queue cannot drop it, and nobody has to stay to read the
     /// result for it to be recorded.
-    pub fn append_written<P: Product<F>>(&mut self, at: Option<u32>, body: &EventBody) -> bool {
+    ///
+    /// It is in the ring before the result is published, so a waiter that
+    /// reads `Done` finds it. That costs the turn one more record program
+    /// (under a millisecond), and, when the append opens the ring's next
+    /// unit, that unit's sector erase (about 30 to 45 ms): the write turn,
+    /// and a feed or a client's answer waiting on it, is held that much
+    /// longer.
+    pub fn append_written<P: Product<F>>(
+        &mut self,
+        at: Option<u32>,
+        body: &EventBody,
+    ) -> WriteEvent {
         let mut bytes = [0; ring::BODY_BYTES];
         if wellfed_proto::encode(body, &mut bytes).is_err() {
-            return false;
+            return WriteEvent::Lost;
         }
 
         arming::set_attempt();
         let appended = self.events.append(at, &bytes);
         arming::clear_attempt();
 
-        let appended = appended.is_ok();
-        if appended {
-            events::wrote(at, bytes, self.events.last_seq());
-            P::events_filled(EventsFill {
-                kept: self.events.kept(),
-                capacity: self.events.capacity(),
-            });
+        if appended.is_err() {
+            return WriteEvent::Lost;
         }
-        appended
+        events::wrote(at, bytes, self.events.last_seq(), tells_alerts(body));
+        P::events_filled(EventsFill {
+            kept: self.events.kept(),
+            capacity: self.events.capacity(),
+        });
+        WriteEvent::Appended
     }
 
     fn apply(
@@ -1393,17 +1413,21 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                 if saved {
                     // The client's event in the same turn, after the save
                     // ([`Core::append_written`]).
-                    if let Some(asked) = network::asked() {
-                        let generation = generation(core.net.generation);
-                        let body = EventBody::Wifi {
-                            generation,
-                            by: asked.by,
-                        };
-                        core.append_written::<P>(asked.at, &body);
-                    }
+                    let event = match network::asked() {
+                        Some(asked) => {
+                            let generation = generation(core.net.generation);
+                            let body = EventBody::Wifi {
+                                generation,
+                                by: asked.by,
+                            };
+                            core.append_written::<P>(asked.at, &body)
+                        }
+                        None => WriteEvent::None,
+                    };
                     Record::NetSaved {
                         generation: core.net.generation,
                         stored: core.net.credentials.is_some(),
+                        event,
                     }
                 } else {
                     Record::NetError {
@@ -1461,7 +1485,6 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             return self.events_step(writable);
         };
         let target = core.store.settings.changed(fields);
-        let asked = asked::take_settings();
         let record = if core.unarmed::<H>() {
             Record::Error {
                 stage: ErrorStage::Unarmed,
@@ -1471,6 +1494,7 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             Record::Saved {
                 generation: core.store.generation,
                 settings: target,
+                event: WriteEvent::None,
             }
         } else {
             let Some(_turn) = core.take_turn() else {
@@ -1482,17 +1506,23 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             if saved {
                 // The client's event in the same turn, after the save; a
                 // change that left the settings as they were records none.
-                if let Some(asked) = asked {
-                    let generation = generation(core.store.generation);
-                    let body = EventBody::Settings {
-                        generation,
-                        by: asked.by,
-                    };
-                    core.append_written::<P>(asked.at, &body);
-                }
+                // The stamp is read only now, with the turn held, and stays
+                // queued through any wait for it.
+                let event = match asked::settings() {
+                    Some(asked) => {
+                        let generation = generation(core.store.generation);
+                        let body = EventBody::Settings {
+                            generation,
+                            by: asked.by,
+                        };
+                        core.append_written::<P>(asked.at, &body)
+                    }
+                    None => WriteEvent::None,
+                };
                 Record::Saved {
                     generation: core.store.generation,
                     settings: core.store.settings,
+                    event,
                 }
             } else {
                 Record::Error {
@@ -1502,7 +1532,7 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             }
         };
         self.publish();
-        settings::finish();
+        asked::finish_settings();
         next(POLL_MS, Some(record))
     }
 }

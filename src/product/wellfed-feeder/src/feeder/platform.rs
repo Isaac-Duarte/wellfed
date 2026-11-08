@@ -280,6 +280,9 @@ pub trait Platform {
     /// change's) that the loop has not yet taken: its time and body, for
     /// the alert rules.
     fn take_written(&mut self) -> Option<(Option<u32>, [u8; BODY_BYTES])>;
+    /// Enrollments and revocations the writer appended but had no room to
+    /// hand back since the last call: in the ring, their alerts missed.
+    fn take_written_lost(&mut self) -> u32;
     /// The ring's answer for `after`, for the subscriber in slot `reader`;
     /// `None` while the writer reads it, or while it waits its turn.
     fn event_after(&mut self, reader: Reader, after: Option<u64>) -> Option<Read>;

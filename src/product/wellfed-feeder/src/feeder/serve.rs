@@ -101,6 +101,12 @@ pub enum Record {
         ip: u32,
     },
     Time(time::Record),
+    /// Enrollments and revocations the settings writer recorded that the
+    /// alert rules never heard of, its outbox being full: in the history,
+    /// their alerts missed until the next boot's replay.
+    Unheard {
+        count: u32,
+    },
     /// Once a minute: the heap, and the mDNS datagrams seen and answered.
     Stats {
         free: u32,
@@ -126,6 +132,7 @@ pub fn describe(record: Record, f: &mut impl fmt::Write) -> fmt::Result {
             write!(f, "mdns address={a}.{b}.{c}.{d} port={PORT}")
         }
         Record::Time(record) => time::describe(record, f),
+        Record::Unheard { count } => write!(f, "alerts unheard={count}"),
         Record::Stats {
             free,
             min,
@@ -422,7 +429,10 @@ impl<S: Copy> Serve<S> {
             let count = u16::try_from(lost).unwrap_or(u16::MAX);
             events::record(platform, now_ms, EventBody::Lost { count });
         }
-        events::written(platform, now_ms);
+        let unheard = events::written(platform, now_ms);
+        if unheard > 0 {
+            record(Record::Unheard { count: unheard });
+        }
         self.keep_stats(platform, feeds, now_ms);
 
         let (table, seen) = self.server.clients_table();

@@ -13,7 +13,7 @@ pub use wellfed_core::clock::zone::Zone;
 use wellfed_core::named_enum;
 
 use crate::KeyChange;
-use wellfed_proto::api::Source;
+use wellfed_proto::api::{EventBody, Source};
 
 pub use wellfed_core::settings::{
     MAX_VOLUME, MealReminder, SettingsFields, SettingsResult, SettingsView, Window,
@@ -324,6 +324,14 @@ pub struct Asked<T> {
 pub struct Stamp {
     pub by: Source,
     pub at: Option<u32>,
+}
+
+/// Whether the loop's alert rules act on `body`, among the events the
+/// settings writer records itself: a client's enrollment or revocation.
+/// The writer hands only these back to the loop, so the few it holds for
+/// it are never taken by a settings or plans change.
+pub const fn tells_alerts(body: &EventBody) -> bool {
+    matches!(body, EventBody::Enrolled { .. } | EventBody::Revoked { .. })
 }
 
 /// A change to the client store, queued for the settings writer, which
