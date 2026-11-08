@@ -16,7 +16,7 @@ use wellfed_core::desiccant::Count;
 use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
 use wellfed_core::tone::Tune;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
-use wellfed_device_api::mailbox::{KEYS_FINISHED, Lock};
+use wellfed_device_api::mailbox::{Asked, KEYS_FINISHED, Lock};
 use wellfed_device_api::mailbox::{
     LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields,
     TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState, WifiResult,
@@ -55,11 +55,11 @@ fn public(secret: [u8; 32]) -> [u8; 32] {
 struct Fake {
     counter: u8,
     settings: SettingsView,
-    settings_pending: Option<SettingsFields>,
+    settings_pending: Option<Asked<SettingsFields>>,
     /// Today's local calendar day; `None` while the clock is invalid.
     today: Option<i32>,
     wifi_generation: u32,
-    wifi_pending: Option<Option<Credentials>>,
+    wifi_pending: Option<Asked<Option<Credentials>>>,
     locked: Option<bool>,
     clients: Vec<Client>,
     keys_pending: Option<(u32, KeyChange)>,
@@ -213,9 +213,10 @@ impl Fake {
         self.update_done = self.held.take();
     }
 
-    /// The settings writer's turn: apply what is queued.
+    /// The settings writer's turn: apply what is queued, and record each
+    /// client change's event as it saves it.
     fn write(&mut self) {
-        if let Some(fields) = self.settings_pending.take() {
+        if let Some(Asked { change: fields, by }) = self.settings_pending.take() {
             self.settings.lights = fields.lights.unwrap_or(self.settings.lights);
             self.settings.sound = fields.sound.unwrap_or(self.settings.sound);
             self.settings.volume = fields.volume.unwrap_or(self.settings.volume);
@@ -228,9 +229,13 @@ impl Fake {
             self.settings.desiccant_reset =
                 fields.desiccant_reset.or(self.settings.desiccant_reset);
             self.settings.generation += 1;
+            let generation = self.settings.generation;
+            self.record(0, EventBody::Settings { generation, by });
         }
-        if self.wifi_pending.take().is_some() {
+        if let Some(Asked { by, .. }) = self.wifi_pending.take() {
             self.wifi_generation += 1;
+            let generation = self.wifi_generation;
+            self.record(0, EventBody::Wifi { generation, by });
         }
         if let Some(settings) = self.time_pending.take()
             && !std::mem::take(&mut self.time_fails)
@@ -343,7 +348,7 @@ impl Device for Fake {
         }
     }
 
-    fn wifi(&mut self, change: Option<Option<Credentials>>) -> WifiResult {
+    fn wifi(&mut self, change: Option<Asked<Option<Credentials>>>) -> WifiResult {
         if let Some(change) = change {
             if self.wifi_pending.is_some() {
                 return WifiResult::Busy;
@@ -594,13 +599,13 @@ impl FeederDevice for Fake {
         self.today
     }
 
-    fn settings(&mut self, change: SettingsFields) -> SettingsResult {
-        if !change.changes() {
+    fn settings(&mut self, change: Option<Asked<SettingsFields>>) -> SettingsResult {
+        let Some(change) = change.filter(|asked| asked.change.changes()) else {
             return SettingsResult::Current {
                 view: self.settings,
                 pending: self.settings_pending.is_some(),
             };
-        }
+        };
         if self.settings_pending.is_some() {
             return SettingsResult::Busy;
         }
@@ -946,6 +951,74 @@ fn a_stale_settings_write_is_refused_and_a_current_one_applies() {
             .iter()
             .any(|e| matches!(e.body, EventBody::Settings { generation: 8, .. }))
     );
+}
+
+/// The history's settings and Wi-Fi events: each generation and who asked.
+fn store_events(rig: &Rig) -> Vec<EventBody> {
+    rig.device
+        .events
+        .iter()
+        .map(|e| e.body)
+        .filter(|body| matches!(body, EventBody::Settings { .. } | EventBody::Wifi { .. }))
+        .collect()
+}
+
+/// The owner's settings change or Wi-Fi clear, sent and left for the
+/// writer; the event it records.
+fn send_store_write(rig: &mut Rig, owner: &mut Client_, wifi: bool) -> EventBody {
+    let by = proto::Source::Client(fingerprint(OWNER));
+    if wifi {
+        let base = rig.device.wifi_generation;
+        let op = Op::PutWifi {
+            base: Generation(base),
+            wifi: None,
+        };
+        send_unwritten(rig, owner, 1, op);
+        assert!(rig.device.wifi_pending.is_some(), "queued");
+        let generation = base + 1;
+        return EventBody::Wifi { generation, by };
+    }
+    let changes = FeederSettingsPatch {
+        volume: Some(60),
+        ..FeederSettingsPatch::default()
+    };
+    let op = Op::PutSettings {
+        base: Generation(7),
+        changes,
+    };
+    send_unwritten(rig, owner, 1, op);
+    assert!(rig.device.settings_pending.is_some(), "queued");
+    EventBody::Settings { generation: 8, by }
+}
+
+/// A session that goes once its settings or Wi-Fi change is queued: the
+/// writer saves it and records its event, once and naming who asked, as it
+/// does for a session that stays to read the answer, which adds nothing of
+/// its own.
+#[test]
+fn store_writes_whose_session_left_are_still_in_the_history() {
+    for wifi in [false, true] {
+        let mut rig = Rig::new();
+        let mut owner = open(&mut rig, OWNER);
+        let expected = send_store_write(&mut rig, &mut owner, wifi);
+        let records = &mut rig.records;
+        rig.server.closed(owner.slot, |r| records.push(r));
+        rig.pass();
+        assert_eq!(store_events(&rig), [], "not before the writer has saved");
+        rig.device.write();
+        rig.pass();
+        rig.pass();
+        assert_eq!(store_events(&rig), [expected]);
+
+        let mut rig = Rig::new();
+        let mut owner = open(&mut rig, OWNER);
+        send_store_write(&mut rig, &mut owner, wifi);
+        rig.device.write();
+        let answer = poll_answer(&mut rig, &mut owner, 1, 5);
+        assert!(matches!(answer, Some(Answer::Done { .. })), "{answer:?}");
+        rig.pass();
+        assert_eq!(store_events(&rig), [expected]);
+    }
 }
 
 /// A window crosses the wire both ways, and a bound past the last minute

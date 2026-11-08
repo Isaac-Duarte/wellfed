@@ -7,7 +7,7 @@ use super::memory::Remembered;
 use super::{Phase, Server, Waiting, slot_id};
 use crate::clients::{Label, Role};
 use crate::mailbox::{
-    NtpServer, Origin, TimeFields, TimeResult, TimeSettingsResult, WifiResult, Zone,
+    Asked, NtpServer, Origin, TimeFields, TimeResult, TimeSettingsResult, WifiResult, Zone,
 };
 use crate::pairing::{self, Pairing};
 use crate::wifi::Credentials;
@@ -86,7 +86,7 @@ impl Server {
             },
             Action::Alive => Reply::Done(None),
             Action::Status => Reply::Status,
-            Action::PutWifi { base, wifi } => match put_wifi(base, wifi, device) {
+            Action::PutWifi { base, wifi } => match put_wifi(base, wifi, by, device) {
                 Ok(()) => return self.wait(index, id, action, Waiting::Wifi),
                 Err(refusal) => Reply::Refused(refusal),
             },
@@ -122,10 +122,7 @@ impl Server {
             Action::RevokeClient { key: revoked } => {
                 if find(&self.clients, &revoked).is_none() {
                     Reply::Refused(Refusal::NotFound)
-                } else if let Some(ticket) = device.keys(KeyChange::Revoke {
-                    key: revoked,
-                    by: Source::Client(fingerprint(&key)),
-                }) {
+                } else if let Some(ticket) = device.keys(KeyChange::Revoke { key: revoked, by }) {
                     let waiting = Waiting::Keys { ticket };
                     return self.wait(index, id, action, waiting);
                 } else {
@@ -264,6 +261,7 @@ impl Server {
 fn put_wifi<D: Device>(
     base: u32,
     credentials: Option<Credentials>,
+    by: Source,
     device: &mut D,
 ) -> Result<(), Refusal> {
     match device.wifi(None) {
@@ -273,7 +271,10 @@ fn put_wifi<D: Device>(
         WifiResult::Current { view, .. } if view.generation != base => Err(Refusal::Stale {
             current: view.generation,
         }),
-        WifiResult::Current { .. } => match device.wifi(Some(credentials)) {
+        WifiResult::Current { .. } => match device.wifi(Some(Asked {
+            change: credentials,
+            by,
+        })) {
             WifiResult::Current { pending: true, .. } => Ok(()),
             WifiResult::Current { .. } | WifiResult::Busy => Err(Refusal::Busy),
             WifiResult::ReadOnly => Err(Refusal::NotWritable),

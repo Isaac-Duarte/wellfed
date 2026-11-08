@@ -13,13 +13,13 @@ use wellfed_device::store::net::NetStatus;
 use wellfed_device::store::settings::{Settings, SettingsStatus};
 use wellfed_device::store::time::TimeStatus;
 use wellfed_device_api::clients::{Label, Role};
-use wellfed_device_api::mailbox::{SettingsFields, SettingsResult};
+use wellfed_device_api::mailbox::{SettingsFields, SettingsResult, Stamp};
 use wellfed_device_api::{KeyChange as ApiChange, Reader};
 use wellfed_device_runtime::keys::{self, Change, Requested};
 use wellfed_device_runtime::writer::{
     self as writer, ErrorStage, Identity, KeyChange, KeyEvent, KeyResult,
 };
-use wellfed_device_runtime::{events, network};
+use wellfed_device_runtime::{asked, events, network};
 use wellfed_feeder::stats::{EARLY_SAVES, FEED_SAVE_MS, RESTART_SETTLED_MS, SAVE_MS, Totals};
 use wellfed_feeder::store::stats::StatsStatus;
 use wellfed_feeder_runtime::stats;
@@ -325,7 +325,7 @@ fn wifi_credentials_are_saved_inside_a_marked_attempt_and_cleared() {
 
     let set = Credentials::new(b"net", b"password").unwrap();
     assert!(matches!(
-        network::change(Some(set)),
+        network::change(Some(set), None),
         WifiResult::Current { pending: true, .. }
     ));
     assert_eq!(
@@ -342,7 +342,7 @@ fn wifi_credentials_are_saved_inside_a_marked_attempt_and_cleared() {
         WifiResult::Current { view, pending: false } if view.stored_ssid_crc.is_some()
     ));
 
-    network::change(None);
+    network::change(None, None);
     assert_eq!(
         step(&mut writer, &mut provider),
         Some(Record::NetSaved {
@@ -767,6 +767,193 @@ fn a_cut_between_the_change_and_its_event_loses_only_the_event() {
         text,
         "keys change=enroll result=done enrolled=1 event=appended"
     );
+}
+
+/// The client every slice 2 test's writes come from, and when it asked.
+const ASKED: Stamp = Stamp {
+    by: Source::Client([9, 9, 9, 9]),
+    at: Some(ASKED_AT),
+};
+
+/// A plans table with one plan, at 07:30 every day.
+fn one_plan() -> wellfed_device_api::mailbox::Table {
+    use wellfed_device_api::mailbox::{PLANS, Plan, Weekdays};
+
+    let mut table = [None; PLANS];
+    table[0] = Some(Plan {
+        minute: 7 * 60 + 30,
+        portions: 2,
+        days: Weekdays::EVERY_DAY,
+        enabled: true,
+        call: 0,
+    });
+    table
+}
+
+/// Queue a client's Wi-Fi, plans and settings change together, as three
+/// sessions might.
+fn queue_client_writes() {
+    use wellfed_device_api::mailbox::{PlansChange, PlansResult, WifiResult};
+    use wellfed_device_api::wifi::Credentials;
+
+    let set = Credentials::new(b"net", b"password").unwrap();
+    assert!(matches!(
+        network::change(Some(set), Some(ASKED)),
+        WifiResult::Current { pending: true, .. }
+    ));
+    let replace = PlansChange::Replace {
+        table: one_plan(),
+        at_s: Some(ASKED_AT),
+    };
+    assert!(matches!(
+        wellfed_feeder_runtime::plans::change(replace, Some(ASKED)),
+        PlansResult::Current { pending: true, .. }
+    ));
+    let louder = SettingsFields {
+        volume: Some(7),
+        ..SettingsFields::default()
+    };
+    assert!(matches!(
+        asked::settings_request(louder, Some(ASKED)),
+        SettingsResult::Current { pending: true, .. }
+    ));
+}
+
+/// The events a client's Wi-Fi, plans and settings change record, in the
+/// order the writer saves them.
+fn client_writes_events() -> [EventBody; 3] {
+    let by = ASKED.by;
+    [
+        EventBody::Wifi { generation: 1, by },
+        EventBody::Plans { generation: 1, by },
+        EventBody::Settings { generation: 1, by },
+    ]
+}
+
+/// A client's Wi-Fi, plans and settings change, queued together and all
+/// saved before the loop looks, each record their event in the turn that
+/// saved them, with the client's time on it, straight to the ring past a
+/// full queue of the loop's records; the alert rules hear of each.
+#[test]
+fn client_writes_record_their_events_in_the_writers_turn() {
+    let (_guard, mut writer, mut provider) = opened();
+    let locked = EventBody::Lock {
+        locked: true,
+        by: Source::Panel,
+    };
+    let mut body = [0; 16];
+    wellfed_proto::encode(&locked, &mut body).unwrap();
+    while events::record(None, body) {}
+    let last = events::last_seq().unwrap_or(0);
+
+    queue_client_writes();
+    for _ in 0..3 {
+        step(&mut writer, &mut provider);
+    }
+    assert_eq!(settings::pending(), None);
+    assert_eq!(events::last_seq(), Some(last + 3), "past the full queue");
+
+    let taken: Vec<_> = std::iter::from_fn(events::take_written)
+        .map(|written| {
+            assert_eq!(written.at, Some(ASKED_AT));
+            wellfed_proto::decode_padded::<EventBody>(&written.body).unwrap()
+        })
+        .collect();
+    assert_eq!(taken, client_writes_events());
+    let ours: Vec<_> = ring(&mut writer, &mut provider)
+        .into_iter()
+        .filter(|(_, body)| *body != locked)
+        .collect();
+    let expected: Vec<_> = client_writes_events()
+        .into_iter()
+        .map(|body| (Some(ASKED_AT), body))
+        .collect();
+    assert_eq!(ours, expected);
+}
+
+/// A change nobody asked for records nothing: the schedule's own plans
+/// change, BLE setup's Wi-Fi, settings queued without a stamp, or a
+/// settings change that leaves them as they were.
+#[test]
+fn writes_nobody_asked_for_record_nothing() {
+    use wellfed_device_api::mailbox::PlansChange;
+    use wellfed_device_api::wifi::Credentials;
+
+    let (_guard, mut writer, mut provider) = opened();
+    let before = ring(&mut writer, &mut provider);
+
+    network::save(Credentials::new(b"net", b"password").unwrap());
+    step(&mut writer, &mut provider);
+    let replace = PlansChange::Replace {
+        table: one_plan(),
+        at_s: Some(ASKED_AT),
+    };
+    wellfed_feeder_runtime::plans::change(replace, None);
+    step(&mut writer, &mut provider);
+    let unchanged = SettingsFields {
+        volume: Some(current().2),
+        ..SettingsFields::default()
+    };
+    asked::settings_request(unchanged, Some(ASKED));
+    step(&mut writer, &mut provider);
+    let louder = SettingsFields {
+        volume: Some(7),
+        ..SettingsFields::default()
+    };
+    settings::request(louder);
+    step(&mut writer, &mut provider);
+    assert_eq!(current().2, 7, "saved");
+
+    assert_eq!(events::take_written(), None);
+    assert_eq!(ring(&mut writer, &mut provider), before);
+}
+
+/// A restart before the writer saves a client's changes loses them with
+/// their events; one after keeps both, once, and nothing replays them.
+#[test]
+fn a_restart_keeps_client_writes_and_their_events_together() {
+    let (_guard, _writer, mut provider) = opened();
+    queue_client_writes();
+    restart_mailboxes();
+    let (mut writer, _, _) = boot(&mut provider);
+    assert_eq!(current().3, 0, "the settings never saved");
+    assert_eq!(ring(&mut writer, &mut provider), []);
+
+    queue_client_writes();
+    for _ in 0..3 {
+        step(&mut writer, &mut provider);
+    }
+    restart_mailboxes();
+    let (mut writer, _, _) = boot(&mut provider);
+    assert_eq!(current().3, 1, "the settings kept");
+    let bodies: Vec<_> = ring(&mut writer, &mut provider)
+        .into_iter()
+        .map(|(_, body)| body)
+        .collect();
+    assert_eq!(bodies, client_writes_events(), "once each");
+}
+
+/// The save goes before its event: a cut between the two leaves the
+/// settings saved without their event, never an event for a save that did
+/// not land.
+#[test]
+fn a_cut_after_a_client_write_loses_only_its_event() {
+    let (_guard, mut writer, mut provider) = opened();
+    EVENTS_PROGRAMS_FAIL.with(|f| f.set(true));
+    let louder = SettingsFields {
+        volume: Some(7),
+        ..SettingsFields::default()
+    };
+    asked::settings_request(louder, Some(ASKED));
+    assert!(matches!(
+        step(&mut writer, &mut provider),
+        Some(Record::Saved { .. })
+    ));
+    EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
+
+    assert_eq!(current().2, 7);
+    assert_eq!(events::take_written(), None);
+    assert_eq!(ring(&mut writer, &mut provider), []);
 }
 
 #[test]
@@ -1207,7 +1394,7 @@ fn every_store_write_waits_for_a_feed_and_completes_after_it() {
     ));
     let set = Credentials::new(b"net", b"password").unwrap();
     assert!(matches!(
-        network::change(Some(set)),
+        network::change(Some(set), None),
         WifiResult::Current { pending: true, .. }
     ));
     let phone = phone();
@@ -1921,10 +2108,10 @@ fn a_plans_change_is_applied_saved_inside_a_marked_attempt_and_published() {
         at_s: Some(1_000),
     };
     assert!(matches!(
-        plans::change(replace),
+        plans::change(replace, None),
         PlansResult::Current { pending: true, .. }
     ));
-    assert_eq!(plans::change(replace), PlansResult::Busy);
+    assert_eq!(plans::change(replace, None), PlansResult::Busy);
     ATTEMPT_SEEN.with(|s| s.set(false));
     let saved = Record::Product(FeederRecord::PlansSaved {
         sequence: 1,
@@ -1943,7 +2130,7 @@ fn a_plans_change_is_applied_saved_inside_a_marked_attempt_and_published() {
     };
     let stale = PlansChange::Claim { claim, revision: 0 };
     assert!(matches!(
-        plans::change(stale),
+        plans::change(stale, None),
         PlansResult::Current { pending: true, .. }
     ));
     ATTEMPT_SEEN.with(|s| s.set(false));
@@ -1955,7 +2142,7 @@ fn a_plans_change_is_applied_saved_inside_a_marked_attempt_and_published() {
 
     let current = PlansChange::Claim { claim, revision: 1 };
     assert!(matches!(
-        plans::change(current),
+        plans::change(current, None),
         PlansResult::Current { pending: true, .. }
     ));
     step(&mut writer, &mut provider);
@@ -2123,7 +2310,7 @@ fn every_mailbox_wakes_the_writer_once_when_queued_and_not_when_refused() {
         ("wifi", &mut || {
             let set = Credentials::new(b"home", b"passphrase").unwrap();
             matches!(
-                network::change(Some(set)),
+                network::change(Some(set), None),
                 WifiResult::Current { pending: true, .. }
             )
         }),
@@ -2156,7 +2343,7 @@ fn every_mailbox_wakes_the_writer_once_when_queued_and_not_when_refused() {
                 at_s: Some(1_000),
             };
             matches!(
-                plans::change(change),
+                plans::change(change, None),
                 PlansResult::Current { pending: true, .. }
             )
         }),
@@ -2572,7 +2759,10 @@ fn filled_then_reset() -> (MutexGuard<'static, ()>, Provider) {
         ..SettingsFields::default()
     });
     step(&mut writer, &mut provider);
-    network::change(Some(Credentials::new(b"home", b"passphrase").unwrap()));
+    network::change(
+        Some(Credentials::new(b"home", b"passphrase").unwrap()),
+        None,
+    );
     step(&mut writer, &mut provider);
     calibration::change(Calibration {
         portion_mg: Some(9_800),
@@ -2586,10 +2776,13 @@ fn filled_then_reset() -> (MutexGuard<'static, ()>, Provider) {
         enabled: true,
         call: 0,
     });
-    plans::change(PlansChange::Replace {
-        table,
-        at_s: Some(1_000),
-    });
+    plans::change(
+        PlansChange::Replace {
+            table,
+            at_s: Some(1_000),
+        },
+        None,
+    );
     step(&mut writer, &mut provider);
     let phone = phone();
     change(&mut writer, &mut provider, phone);
@@ -2674,7 +2867,10 @@ fn paired_with_wifi() -> (MutexGuard<'static, ()>, Provider, [u8; 32]) {
     for _ in 0..7 {
         step(&mut writer, &mut provider);
     }
-    network::change(Some(Credentials::new(b"home", b"passphrase").unwrap()));
+    network::change(
+        Some(Credentials::new(b"home", b"passphrase").unwrap()),
+        None,
+    );
     step(&mut writer, &mut provider);
     let mut table = [None; PLANS];
     table[0] = Some(Plan {
@@ -2684,10 +2880,13 @@ fn paired_with_wifi() -> (MutexGuard<'static, ()>, Provider, [u8; 32]) {
         enabled: true,
         call: 0,
     });
-    plans::change(PlansChange::Replace {
-        table,
-        at_s: Some(1_000),
-    });
+    plans::change(
+        PlansChange::Replace {
+            table,
+            at_s: Some(1_000),
+        },
+        None,
+    );
     step(&mut writer, &mut provider);
     assert!(
         sectors(wellfed_hal::board::storage::PLANS)

@@ -28,10 +28,10 @@ use crate::feeder::{DeviceView, Feeder, Feeds, NoFeeds, Platform, Record};
 use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::mailbox::{
-    Calibration, CalibrationResult, CallChange, CallClip, CallResult, LockResult, MealReminder,
-    NtpServer, Origin, PLANS, Plan, PlansResult, SettingsFields, SettingsResult, SettingsView,
-    Table, TimeFields, TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, Weekdays,
-    WifiResult, WifiView, Window, Zone,
+    Asked, Calibration, CalibrationResult, CallChange, CallClip, CallResult, LockResult,
+    MealReminder, MealSkip, NtpServer, Origin, PLANS, Plan, PlansResult, SettingsFields,
+    SettingsResult, SettingsView, Table, TimeFields, TimeResult, TimeSettings, TimeSettingsResult,
+    TimeSettingsView, Weekdays, WifiResult, WifiView, Window, Zone,
 };
 use wellfed_device_api::mailbox::{KeyResult, Requested};
 use wellfed_device_api::wifi::Credentials;
@@ -74,7 +74,9 @@ fn device<R: Rig, T>(
     call(&mut device)
 }
 
+/// A read with no fields; a change as the suite's client asks it.
 fn settings(rig: &mut impl Rig, change: SettingsFields) -> SettingsResult {
+    let change = change.changes().then_some(Asked { change, by: CLIENT });
     device(rig, 0, |device| device.settings(change))
 }
 
@@ -89,6 +91,7 @@ fn settings_view(rig: &mut impl Rig) -> SettingsView {
 }
 
 fn wifi(rig: &mut impl Rig, change: Option<Option<Credentials>>) -> WifiResult {
+    let change = change.map(|change| Asked { change, by: CLIENT });
     device(rig, 0, |device| device.wifi(change))
 }
 
@@ -133,13 +136,13 @@ fn enroll(key: u8) -> KeyChange {
     }
 }
 
-/// The client that asks for the suite's revocations.
-const REVOKER: Source = Source::Client([1, 2, 3, 4]);
+/// The client that asks for the suite's writes.
+const CLIENT: Source = Source::Client([1, 2, 3, 4]);
 
 fn revoke(key: u8) -> KeyChange {
     KeyChange::Revoke {
         key: [key; 32],
-        by: REVOKER,
+        by: CLIENT,
     }
 }
 
@@ -311,7 +314,7 @@ pub fn a_client_change_records_its_event_unread(rig: &mut impl Rig) {
     };
     let revoked = EventBody::Revoked {
         client: [7; 4],
-        by: REVOKER,
+        by: CLIENT,
     };
     let mut events = [None; 4];
     let count = events_after(rig, before, &mut events);
@@ -336,8 +339,86 @@ pub fn a_client_change_records_its_event_unread(rig: &mut impl Rig) {
     }));
     assert!(alerted(Alert::ClientRevoked {
         client: [7; 4],
-        by: REVOKER,
+        by: CLIENT,
     }));
+}
+
+/// A client's settings, Wi-Fi, plans, skip and undo each record their
+/// event in the writer's turn, naming the client, with nobody reading the
+/// result (the session that asked has gone); a change that leaves the
+/// settings as they were records none.
+pub fn a_client_write_records_its_event_unread(rig: &mut impl Rig) {
+    open_ring(rig);
+    let sync = TimeFields {
+        unix_ms: 1_793_170_800_000,
+        offset_s: 0,
+        next_change_s: 0,
+        next_offset_s: 0,
+    };
+    device(rig, 0, |device| device.time_sync(sync, Origin::Owner));
+    rig.write();
+    let before = device(rig, 0, |device| device.status(0)).last_event;
+
+    for _ in 0..2 {
+        settings(rig, volume(3));
+        rig.write();
+    }
+    let settings = settings_view(rig).generation;
+    wifi(rig, Some(Some(credentials())));
+    rig.write();
+    let wifi = wifi_view(rig).generation;
+    let mut table = [None; PLANS];
+    table[4] = Some(Plan {
+        minute: 7 * 60 + 30,
+        portions: 2,
+        days: Weekdays::EVERY_DAY,
+        enabled: true,
+        call: 0,
+    });
+    plans(rig, Some(table));
+    rig.write();
+    let PlansResult::Current { view, .. } = plans(rig, None) else {
+        panic!("the plans after the writer's turn");
+    };
+    // Today's 07:30, still to come at 07:00.
+    let due = 1_793_172_600;
+    for skip in [MealSkip::Skip, MealSkip::Unskip] {
+        let asked = Asked {
+            change: skip,
+            by: CLIENT,
+        };
+        device(rig, 0, |device| device.skip_meal(4, due, asked, 0)).expect("queued");
+        rig.write();
+    }
+
+    let mut events = [None; 8];
+    let count = events_after(rig, before, &mut events);
+    let expected = [
+        EventBody::Settings {
+            generation: settings,
+            by: CLIENT,
+        },
+        EventBody::Wifi {
+            generation: wifi,
+            by: CLIENT,
+        },
+        EventBody::Plans {
+            generation: view.revision,
+            by: CLIENT,
+        },
+        EventBody::Skipped {
+            plan: 4,
+            due,
+            by: CLIENT,
+        },
+        EventBody::Unskipped {
+            plan: 4,
+            due,
+            by: CLIENT,
+        },
+    ];
+    assert_eq!(count, expected.len(), "one event per change: {events:?}");
+    assert_eq!(events[..expected.len()], expected.map(Some));
 }
 
 /// While a feed holds the outputs, every store write is refused at once
@@ -581,6 +662,7 @@ pub fn the_desiccant_count_follows_the_clock_and_its_reset(rig: &mut impl Rig) {
 }
 
 fn plans(rig: &mut impl Rig, change: Option<Table>) -> PlansResult {
+    let change = change.map(|change| Asked { change, by: CLIENT });
     device(rig, 0, |device| device.plans(change))
 }
 
@@ -1166,6 +1248,7 @@ macro_rules! conformance {
             wifi_credentials_are_saved_and_cleared,
             client_changes_answer_by_ticket,
             a_client_change_records_its_event_unread,
+            a_client_write_records_its_event_unread,
             writes_are_refused_while_the_outputs_are_claimed,
             the_lock_follows_the_panel_owner,
             a_time_sync_sets_the_clock,

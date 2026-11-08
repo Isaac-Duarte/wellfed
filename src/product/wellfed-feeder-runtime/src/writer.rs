@@ -33,7 +33,7 @@ use core::fmt;
 
 use wellfed_device::store::events::EventsFill;
 use wellfed_device::store::traces::TraceRing;
-use wellfed_device_api::mailbox::{CallChange, CallClip};
+use wellfed_device_api::mailbox::{CallChange, CallClip, PlansChange};
 use wellfed_device_runtime::events;
 use wellfed_device_runtime::writer::{
     self as device, Core, Describe, EVENTS_POLL_MS, ErrorStage, POLL_MS, Product,
@@ -339,7 +339,7 @@ impl<F: FlashOps> FeederStores<F> {
     fn save_plans<H: Hooks>(
         &mut self,
         core: &mut Core<F>,
-        change: &wellfed_device_api::mailbox::PlansChange,
+        change: &PlansChange,
     ) -> Option<FeederRecord> {
         if core.unarmed::<H>() {
             return Some(FeederRecord::PlansError {
@@ -355,6 +355,14 @@ impl<F: FlashOps> FeederStores<F> {
         arming::set_attempt();
         let ok = self.plans.apply(change) == Some(true);
         arming::clear_attempt();
+        // A client's change records its event in the turn that saved it
+        // ([`Core::append_written`]); the schedule's own carry no stamp.
+        if ok
+            && let Some(asked) = plans::asked()
+            && let Some(body) = self.plans.event(change, asked.by)
+        {
+            core.append_written::<Self>(asked.at, &body);
+        }
         Some(if ok {
             FeederRecord::PlansSaved {
                 sequence: self.plans.sequence,

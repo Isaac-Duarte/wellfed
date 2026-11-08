@@ -11,14 +11,14 @@ use wellfed_core::feed::controller::FeedReason as CoreReason;
 use wellfed_core::ota::install::CandidateState;
 use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_device::store::events::Read;
-use wellfed_device_api::mailbox::{MealSkip, PlansChange, PlansResult};
+use wellfed_device_api::mailbox::{Asked, MealSkip, PlansChange, PlansResult};
 use wellfed_feeder::feeder::alert_stage::{BOOT_READ, BOOT_READ_MS, RING_WAIT_MS, WELCOME_MS};
 use wellfed_feeder::feeder::platform::EventSlot;
 use wellfed_feeder::feeder::{CLAIM_WAIT_MS, Platform};
 use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::sim::Sim;
-use wellfed_proto::api::{Alert, AlertKind, EventBody, FeedOutcome, UpdateCandidate};
+use wellfed_proto::api::{Alert, AlertKind, EventBody, FeedOutcome, Source, UpdateCandidate};
 
 const MINUTE_MS: u64 = 60_000;
 const HOUR_MS: u64 = 60 * MINUTE_MS;
@@ -98,7 +98,7 @@ impl Feeder {
     fn put(&mut self, table: Table) {
         let at_s = u32::try_from(self.wall / 1000).ok();
         let change = PlansChange::Replace { table, at_s };
-        let queued = self.sim.platform().plans_change(change);
+        let queued = self.sim.platform().plans_change(change, None);
         assert!(matches!(queued, PlansResult::Current { pending: true, .. }));
         self.run(1);
     }
@@ -200,7 +200,11 @@ fn a_skipped_meal_opens_no_meal_alert() {
     feeder.put(table(&[(0, plan(10, 2))]));
     let due_s = u32::try_from(WEDNESDAY / 1000).unwrap() + 10 * 60;
     let now = feeder.now;
-    feeder.sim.skip_meal(now, 0, due_s, MealSkip::Skip).unwrap();
+    let skip = Asked {
+        change: MealSkip::Skip,
+        by: Source::Client([1, 2, 3, 4]),
+    };
+    feeder.sim.skip_meal(now, 0, due_s, skip).unwrap();
     feeder.run(2 * HOUR_MS);
 
     let PlansResult::Current { view, .. } = feeder.sim.platform().plans() else {
@@ -400,10 +404,13 @@ fn a_change_to_the_plans_that_never_finishes_opens_plans_stuck() {
     feeder.run(2000);
     feeder.sim.platform().hold_plans(true);
     let at_s = u32::try_from(feeder.wall / 1000).ok();
-    let queued = feeder.sim.platform().plans_change(PlansChange::Replace {
-        table: table(&[(0, plan(600, 1))]),
-        at_s,
-    });
+    let queued = feeder.sim.platform().plans_change(
+        PlansChange::Replace {
+            table: table(&[(0, plan(600, 1))]),
+            at_s,
+        },
+        None,
+    );
     assert!(matches!(queued, PlansResult::Current { pending: true, .. }));
 
     feeder.run(24 * MINUTE_MS);

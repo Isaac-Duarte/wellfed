@@ -190,7 +190,7 @@ impl Server {
         if !self.slots[index].wire.tx_idle() {
             return Ok(false);
         }
-        if let Some((id, op, reply)) = self.poll_pending(index, now_ms, device, record)? {
+        if let Some((id, op, reply)) = self.poll_pending(index, device, record)? {
             return self
                 .answer(index, id, op, reply, now_ms, device, record)
                 .map(|()| true);

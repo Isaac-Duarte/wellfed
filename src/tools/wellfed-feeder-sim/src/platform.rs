@@ -45,7 +45,7 @@ use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
     Calibration, CalibrationResult, CalibrationView, CallChange, CallResult, ClientChange,
     KeyResult, PlansChange, PlansResult, PlayResult, Requested, SettingsFields, SettingsResult,
-    SettingsView, TimeSettings, TimeSettingsResult, WifiResult, WifiSource, chunk_wanted,
+    SettingsView, Stamp, TimeSettings, TimeSettingsResult, WifiResult, WifiSource, chunk_wanted,
 };
 use wellfed_device_api::wifi::Credentials;
 use wellfed_feeder::feeder::Platform;
@@ -149,7 +149,7 @@ pub struct SimPlatform {
     calibration: CalibrationStore<Region>,
     calibration_pending: Option<Calibration>,
     plans: PlansStore<Region>,
-    plans_pending: Option<PlansChange>,
+    plans_pending: Option<(PlansChange, Option<Stamp>)>,
     /// The writer leaves a queued plans change queued: a slow write.
     plans_held: bool,
     call: CallStore<Region>,
@@ -488,9 +488,12 @@ impl SimPlatform {
         // A change the writer drops (the loop's, against plans that moved
         // on) writes nothing, as on the feeder.
         if !self.plans_held
-            && let Some(change) = self.plans_pending.take()
+            && let Some((change, asked)) = self.plans_pending.take()
+            && self.plans.apply(&change) == Some(true)
+            && let Some(asked) = asked
+            && let Some(body) = self.plans.event(&change, asked.by)
         {
-            self.plans.apply(&change);
+            self.device.append_written(asked.at, &body);
         }
         match self.call_pending.take() {
             Some(CallWork::Change(CallChange::Start { bytes, crc })) => {
@@ -676,7 +679,7 @@ impl Platform for SimPlatform {
         }
     }
 
-    fn plans_change(&mut self, change: PlansChange) -> PlansResult {
+    fn plans_change(&mut self, change: PlansChange, asked: Option<Stamp>) -> PlansResult {
         let view = self.plans.view(true);
         if !view.writable {
             return PlansResult::ReadOnly;
@@ -684,7 +687,7 @@ impl Platform for SimPlatform {
         if self.plans_pending.is_some() {
             return PlansResult::Busy;
         }
-        self.plans_pending = Some(change);
+        self.plans_pending = Some((change, asked));
         PlansResult::Current {
             view,
             pending: true,
@@ -751,16 +754,20 @@ impl Platform for SimPlatform {
         Some(self.device.settings())
     }
 
-    fn settings_request(&mut self, change: SettingsFields) -> SettingsResult {
-        self.device.settings_request(change)
+    fn settings_request(&mut self, change: SettingsFields, asked: Option<Stamp>) -> SettingsResult {
+        self.device.settings_request(change, asked)
     }
 
     fn wifi(&mut self) -> WifiResult {
         self.device.wifi()
     }
 
-    fn wifi_change(&mut self, credentials: Option<Credentials>) -> WifiResult {
-        self.device.wifi_change(credentials)
+    fn wifi_change(
+        &mut self,
+        credentials: Option<Credentials>,
+        asked: Option<Stamp>,
+    ) -> WifiResult {
+        self.device.wifi_change(credentials, asked)
     }
 
     fn wifi_saving(&self) -> bool {

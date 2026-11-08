@@ -24,7 +24,7 @@ use wellfed_core::buttons::Gesture;
 use wellfed_core::feed::controller::FeedReason;
 use wellfed_core::tone::{PlayResult, Tune};
 use wellfed_device_api::FeederDevice;
-use wellfed_device_api::mailbox::{KeyResult, MealSkip};
+use wellfed_device_api::mailbox::{Asked, KeyResult, MealSkip};
 pub use wellfed_device_sim::updates::TRIAL_MS;
 use wellfed_device_sim::updates::{Booted, Updates};
 use wellfed_feeder::feeder::{self, Feeder};
@@ -172,15 +172,15 @@ impl Sim {
         self.feeder.device(now_ms, &mut self.feeds).play(tune)
     }
 
-    /// A client's skip of slot `slot`'s meal due at `due_s`, or its undo,
-    /// as the device API asks it at `now_ms`: checked and queued for the
-    /// writer, or refused.
+    /// The client `by`'s skip of slot `slot`'s meal due at `due_s`, or its
+    /// undo, as the device API asks it at `now_ms`: checked and queued for
+    /// the writer, or refused.
     pub fn skip_meal(
         &mut self,
         now_ms: u32,
         slot: u8,
         due_s: u32,
-        skip: MealSkip,
+        skip: Asked<MealSkip>,
     ) -> Result<(), wellfed_proto::api::Refusal> {
         self.feeder
             .device(now_ms, &mut self.feeds)

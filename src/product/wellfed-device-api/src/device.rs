@@ -12,8 +12,8 @@
 
 use crate::clients::{Label, Role};
 use crate::mailbox::{
-    Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult, MealSkip, Origin,
-    PlansResult, PlayResult, SettingsFields, SettingsResult, Table, TimeFields, TimeResult,
+    Asked, Calibration, CalibrationResult, CallChange, CallPlay, CallResult, LockResult, MealSkip,
+    Origin, PlansResult, PlayResult, SettingsFields, SettingsResult, Table, TimeFields, TimeResult,
     TimeSettings, TimeSettingsResult, TimeState, WifiResult,
 };
 use crate::wifi::Credentials;
@@ -52,8 +52,9 @@ pub trait Device {
     /// Everything [`Status`] reports, the kind's part included, but the
     /// session count.
     fn status(&mut self, now_ms: u32) -> Status<'static>;
-    /// The Wi-Fi store; with `Some`, one change (`Some(None)` clears) queued.
-    fn wifi(&mut self, change: Option<Option<Credentials>>) -> WifiResult;
+    /// The Wi-Fi store; with `Some`, one change (`None` credentials clear)
+    /// queued, whose `Wifi` event the writer records as it saves it.
+    fn wifi(&mut self, change: Option<Asked<Option<Credentials>>>) -> WifiResult;
     /// A client's sync; `origin` says whether it may step the clock.
     fn time_sync(&mut self, fields: TimeFields, origin: Origin) -> TimeResult;
     /// Queue a client store change; its ticket, or `None` while the mailbox
@@ -143,8 +144,9 @@ pub trait Device {
 /// The rest of a feeder, as the feeder's module of the device API needs
 /// it ([`proto::FeederOp`]).
 pub trait FeederDevice: Device {
-    /// The settings, or one change queued for the writer.
-    fn settings(&mut self, change: SettingsFields) -> SettingsResult;
+    /// The settings; with `Some`, one change queued for the writer, which
+    /// records its `Settings` event as it saves it.
+    fn settings(&mut self, change: Option<Asked<SettingsFields>>) -> SettingsResult;
     fn lock(&mut self, locked: bool) -> LockResult;
     /// Queue a tune for the speaker, or say why it will not sound now.
     /// `Started` means queued, not heard: a codec that then will not open
@@ -178,19 +180,22 @@ pub trait FeederDevice: Device {
         CalibrationResult::Unserved
     }
     /// The feeding plans; with `Some`, a client's whole new table queued
-    /// for the writer. A feeder without a plans store keeps none.
-    fn plans(&mut self, _change: Option<Table>) -> PlansResult {
+    /// for the writer, which records its `Plans` event as it saves it. A
+    /// feeder without a plans store keeps none.
+    fn plans(&mut self, _change: Option<Asked<Table>>) -> PlansResult {
         PlansResult::Unserved
     }
     /// Queue a client's skip of slot `slot`'s meal due at `due_s` (Unix
     /// seconds), or its undo, for the plans' writer, after checking it is
     /// that plan's meal still to come today (`Invalid`), with a valid clock
-    /// and offset (`NoClock`). A feeder without a plans store keeps none.
+    /// and offset (`NoClock`). The writer records the `Skipped` or
+    /// `Unskipped` event, naming `by`, as it saves it. A feeder without a
+    /// plans store keeps none.
     fn skip_meal(
         &mut self,
         _slot: u8,
         _due_s: u32,
-        _skip: MealSkip,
+        _skip: Asked<MealSkip>,
         _now_ms: u32,
     ) -> Result<(), Refusal> {
         Err(Refusal::Unavailable)
@@ -253,7 +258,7 @@ impl Device for NoFeeder {
     fn status(&mut self, _now_ms: u32) -> Status<'static> {
         match *self {}
     }
-    fn wifi(&mut self, _change: Option<Option<Credentials>>) -> WifiResult {
+    fn wifi(&mut self, _change: Option<Asked<Option<Credentials>>>) -> WifiResult {
         match *self {}
     }
     fn time_sync(&mut self, _fields: TimeFields, _origin: Origin) -> TimeResult {
@@ -283,7 +288,7 @@ impl Device for NoFeeder {
 }
 
 impl FeederDevice for NoFeeder {
-    fn settings(&mut self, _change: SettingsFields) -> SettingsResult {
+    fn settings(&mut self, _change: Option<Asked<SettingsFields>>) -> SettingsResult {
         match *self {}
     }
     fn lock(&mut self, _locked: bool) -> LockResult {

@@ -623,7 +623,7 @@ impl Setup {
             return self.done(platform, now, Reply::Done { enrolled, wifi }, record);
         };
         let before = generation(platform).unwrap_or(0);
-        match platform.wifi_change(Some(credentials)) {
+        match platform.wifi_change(Some(credentials), None) {
             WifiResult::Current { .. } => self.stage = Stage::Saving { enrolled, before },
             WifiResult::Invalid => self.finish(platform, Reply::Refused(Refusal::Invalid), record),
             WifiResult::Busy | WifiResult::ReadOnly => {

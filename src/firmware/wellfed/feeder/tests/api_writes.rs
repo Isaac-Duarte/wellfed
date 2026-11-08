@@ -6,7 +6,9 @@ use std::sync::{Mutex, MutexGuard};
 use wellfed_core::store::slot::SlotIo;
 use wellfed_device::store::net::NetStore;
 use wellfed_device_api::clients::{Label, Role};
-use wellfed_device_api::mailbox::{SettingsFields, SettingsResult, SettingsView, WifiResult};
+use wellfed_device_api::mailbox::{
+    Asked, SettingsFields, SettingsResult, SettingsView, WifiResult,
+};
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_api::{Device, FeederDevice, KeyChange};
 use wellfed_device_runtime::{keys, network};
@@ -51,11 +53,20 @@ fn device<R>(call: impl FnOnce(&mut DeviceView<'_, Plaf103, NoFeeds>) -> R) -> R
     call(&mut device)
 }
 
+/// A read with no fields; a change as a client asks it.
 fn settings_request(change: SettingsFields) -> SettingsResult {
+    let change = change.changes().then_some(Asked {
+        change,
+        by: Source::Panel,
+    });
     device(|device| device.settings(change))
 }
 
 fn wifi_request(change: Option<Option<Credentials>>) -> WifiResult {
+    let change = change.map(|change| Asked {
+        change,
+        by: Source::Panel,
+    });
     device(|device| device.wifi(change))
 }
 

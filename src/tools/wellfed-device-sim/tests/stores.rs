@@ -32,10 +32,10 @@ fn a_settings_change_waits_for_the_writers_turn() {
         ..SettingsFields::default()
     };
     assert!(matches!(
-        device.settings_request(change),
+        device.settings_request(change, None),
         SettingsResult::Current { pending: true, .. }
     ));
-    assert_eq!(device.settings_request(change), SettingsResult::Busy);
+    assert_eq!(device.settings_request(change, None), SettingsResult::Busy);
     assert_eq!(
         device.settings().generation,
         before,

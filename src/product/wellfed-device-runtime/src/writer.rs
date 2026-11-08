@@ -83,11 +83,11 @@ use wellfed_sdk::storage::{
     SETTINGS_BINDING, Slots,
 };
 
-use crate::events;
 pub use crate::keys::KeyResult;
 use crate::keys::{self, Change};
 use crate::network::{self, NET_BASE};
 use crate::time::{self, TIME_BASE};
+use crate::{asked, events};
 use wellfed_device_api::KeyChange as ApiChange;
 use wellfed_proto::api::EventBody;
 
@@ -643,6 +643,12 @@ impl<F, P: Default> Default for Writer<F, P> {
     }
 }
 
+/// A store's generation as its event names it: the low 32 bits, saturated
+/// rather than wrapped back to an old value, as the published views do.
+fn generation(generation: u64) -> u32 {
+    u32::try_from(generation).unwrap_or(u32::MAX)
+}
+
 /// The epoch a new event ring takes, drawn after the seed is mixed in and
 /// never 0, which a ring written before epochs reads as. A boot without a
 /// generator holds no session either (every handshake needs one), so its
@@ -808,7 +814,7 @@ impl<F: FlashOps> Core<F> {
     /// event comes straight to the ring, not through the loop's queue, so a
     /// full queue cannot drop it either; the loop's alert rules hear of it
     /// through [`events::take_written`].
-    fn change<R>(&mut self, change: Change, writable: bool) -> Record<R> {
+    fn change<P: Product<F>, R>(&mut self, change: Change, writable: bool) -> Record<R> {
         let kind = match change {
             Change::Key {
                 change: ApiChange::Enroll { .. },
@@ -857,7 +863,7 @@ impl<F: FlashOps> Core<F> {
 
         let event = match change {
             Change::Key { change, at } if result == KeyResult::Done => {
-                if self.append_written(at, &change.event()) {
+                if self.append_written::<P>(at, &change.event()) {
                     KeyEvent::Appended
                 } else {
                     KeyEvent::Lost
@@ -885,11 +891,19 @@ impl<F: FlashOps> Core<F> {
         }
     }
 
-    /// Append `body`, an event the writer records for a change it just
-    /// made, straight to the ring under its own attempt marker, and hand it
-    /// to the loop's alert rules; false if the ring refused it. The caller
-    /// holds the write turn.
-    fn append_written(&mut self, at: Option<u32>, body: &EventBody) -> bool {
+    /// Append `body`, the history event of a change the writer has just
+    /// saved for someone who asked (a client, or BLE setup), straight to the
+    /// ring under its own attempt marker, and hand it to the loop's alert
+    /// rules; false if the ring refused it. The caller holds the write turn
+    /// it saved the change under.
+    ///
+    /// Every such event goes after its store write, in the same turn: a cut
+    /// between the two leaves the change without its event, never an event
+    /// for a change that did not land, which a retry would then record
+    /// again. It comes straight to the ring, not through the loop's queue,
+    /// so a full queue cannot drop it, and nobody has to stay to read the
+    /// result for it to be recorded.
+    pub fn append_written<P: Product<F>>(&mut self, at: Option<u32>, body: &EventBody) -> bool {
         let mut bytes = [0; ring::BODY_BYTES];
         if wellfed_proto::encode(body, &mut bytes).is_err() {
             return false;
@@ -902,6 +916,10 @@ impl<F: FlashOps> Core<F> {
         let appended = appended.is_ok();
         if appended {
             events::wrote(at, bytes, self.events.last_seq());
+            P::events_filled(EventsFill {
+                kept: self.events.kept(),
+                capacity: self.events.capacity(),
+            });
         }
         appended
     }
@@ -1356,9 +1374,8 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             } else {
                 None
             };
-            let record = core.change(change, writable);
+            let record = core.change::<P, _>(change, writable);
             drop(turn);
-            self.publish_fill();
             return next(POLL_MS, Some(record));
         }
         if let Some(credentials) = network::pending() {
@@ -1374,6 +1391,16 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
                 let saved = core.net.save(credentials.as_ref());
                 arming::clear_attempt();
                 if saved {
+                    // The client's event in the same turn, after the save
+                    // ([`Core::append_written`]).
+                    if let Some(asked) = network::asked() {
+                        let generation = generation(core.net.generation);
+                        let body = EventBody::Wifi {
+                            generation,
+                            by: asked.by,
+                        };
+                        core.append_written::<P>(asked.at, &body);
+                    }
                     Record::NetSaved {
                         generation: core.net.generation,
                         stored: core.net.credentials.is_some(),
@@ -1434,6 +1461,7 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             return self.events_step(writable);
         };
         let target = core.store.settings.changed(fields);
+        let asked = asked::take_settings();
         let record = if core.unarmed::<H>() {
             Record::Error {
                 stage: ErrorStage::Unarmed,
@@ -1452,6 +1480,16 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             let saved = core.store.save(&target);
             arming::clear_attempt();
             if saved {
+                // The client's event in the same turn, after the save; a
+                // change that left the settings as they were records none.
+                if let Some(asked) = asked {
+                    let generation = generation(core.store.generation);
+                    let body = EventBody::Settings {
+                        generation,
+                        by: asked.by,
+                    };
+                    core.append_written::<P>(asked.at, &body);
+                }
                 Record::Saved {
                     generation: core.store.generation,
                     settings: core.store.settings,

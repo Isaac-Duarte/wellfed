@@ -108,7 +108,7 @@ impl Feeder {
         });
         let at_s = u32::try_from(self.wall() / 1000).ok();
         let change = PlansChange::Replace { table, at_s };
-        let queued = self.sim.platform().plans_change(change);
+        let queued = self.sim.platform().plans_change(change, None);
         assert!(matches!(queued, PlansResult::Current { pending: true, .. }));
         self.run(1);
     }

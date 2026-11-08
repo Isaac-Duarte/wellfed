@@ -33,7 +33,7 @@ use wellfed_core::store::handover;
 use wellfed_core::store::slot::SlotIo;
 use wellfed_device::store::net::NetStore;
 use wellfed_device::store::reset;
-use wellfed_device_api::mailbox::{WifiResult, WifiSource, WifiView};
+use wellfed_device_api::mailbox::{Stamp, WifiResult, WifiSource, WifiView};
 use wellfed_device_api::wifi::Credentials;
 
 use wellfed_core::wifi_task::Attempt;
@@ -109,6 +109,9 @@ enum Hand {
 /// The queued change; written only by the claimant of `STATE` (`Empty` to
 /// `Filling`), read only by the writer after `Queued`.
 static PENDING: TaskCell<Option<Credentials>> = TaskCell::new(None);
+/// Who asked for the queued change, for its `Wifi` event; `None` for BLE
+/// setup's save. Written and read as `PENDING` is.
+static ASKED: TaskCell<Option<Stamp>> = TaskCell::new(None);
 static STATE: AtomicU8 = AtomicU8::new(Hand::Empty as u8);
 
 /// What NOR holds, published by the writer.
@@ -151,19 +154,20 @@ pub fn current() -> WifiResult {
 
 /// BLE setup's half: queue checked credentials for the writer.
 pub fn save(credentials: Credentials) -> WifiResult {
-    change(Some(credentials))
+    change(Some(credentials), None)
 }
 
 /// The device API's half: queue checked credentials, or a clear with
-/// `None`, for the writer.
-pub fn change(credentials: Option<Credentials>) -> WifiResult {
+/// `None`, for the writer, with who asked (`asked`), whose `Wifi` event the
+/// writer records as it saves them.
+pub fn change(credentials: Option<Credentials>, asked: Option<Stamp>) -> WifiResult {
     if !LOADED.load(Ordering::Acquire) {
         return WifiResult::Busy;
     }
     if !WRITABLE.load(Ordering::Acquire) {
         return WifiResult::ReadOnly;
     }
-    queue(credentials)
+    queue(credentials, asked)
 }
 
 /// Whether a queued change still waits for the writer.
@@ -171,7 +175,7 @@ pub fn saving() -> bool {
     STATE.load(Ordering::Acquire) != Hand::Empty as u8
 }
 
-fn queue(credentials: Option<Credentials>) -> WifiResult {
+fn queue(credentials: Option<Credentials>, asked: Option<Stamp>) -> WifiResult {
     if STATE
         .compare_exchange(
             Hand::Empty as u8,
@@ -184,7 +188,10 @@ fn queue(credentials: Option<Credentials>) -> WifiResult {
         return WifiResult::Busy;
     }
     // SAFETY: `Filling` makes this the only accessor until `Queued`.
-    unsafe { *PENDING.get() = credentials };
+    unsafe {
+        *PENDING.get() = credentials;
+        *ASKED.get() = asked;
+    }
     STATE.store(Hand::Queued as u8, Ordering::Release);
     wellfed_hal::writer_wake::wake();
     WifiResult::Current {
@@ -197,6 +204,14 @@ fn queue(credentials: Option<Credentials>) -> WifiResult {
 pub fn pending() -> Option<Option<Credentials>> {
     // SAFETY: `Queued` hands the value to the writer until `finish`.
     (STATE.load(Ordering::Acquire) == Hand::Queued as u8).then(|| unsafe { *PENDING.get() })
+}
+
+/// The writer's half: who asked for the queued change, if anyone.
+pub fn asked() -> Option<Stamp> {
+    // SAFETY: as in `pending`.
+    (STATE.load(Ordering::Acquire) == Hand::Queued as u8)
+        .then(|| unsafe { *ASKED.get() })
+        .flatten()
 }
 
 pub fn finish() {

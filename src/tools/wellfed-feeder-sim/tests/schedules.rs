@@ -14,8 +14,8 @@ use wellfed_core::store::slot::crc32;
 use wellfed_core::tone::{PlayResult, Tune};
 use wellfed_device::store::events::Read;
 use wellfed_device_api::mailbox::{
-    CallChange, CallClip, CallResult, MealReminder, MealSkip, PlansChange, PlansResult, PlansView,
-    SettingsFields, SettingsResult,
+    Asked, CallChange, CallClip, CallResult, MealReminder, MealSkip, PlansChange, PlansResult,
+    PlansView, SettingsFields, SettingsResult,
 };
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::{self, schedule};
@@ -129,7 +129,7 @@ impl Feeder {
     fn put(&mut self, table: Table) {
         let at_s = self.wall().map(|ms| u32::try_from(ms / 1000).unwrap());
         let change = PlansChange::Replace { table, at_s };
-        let queued = self.sim.platform().plans_change(change);
+        let queued = self.sim.platform().plans_change(change, None);
         assert!(matches!(queued, PlansResult::Current { pending: true, .. }));
         self.run(1);
     }
@@ -204,7 +204,7 @@ impl Feeder {
             meal_reminder: Some(reminder),
             ..SettingsFields::default()
         };
-        let queued = self.sim.platform().settings_request(fields);
+        let queued = self.sim.platform().settings_request(fields, None);
         assert!(matches!(
             queued,
             SettingsResult::Current { pending: true, .. }
@@ -238,6 +238,8 @@ impl Feeder {
     /// the device API asks it now.
     fn skip(&mut self, due_ms: u64, skip: MealSkip) -> Result<(), Refusal> {
         let now = self.now;
+        let by = Source::Client([1, 2, 3, 4]);
+        let skip = Asked { change: skip, by };
         self.sim.skip_meal(now, 0, seconds(due_ms), skip)
     }
 
@@ -1435,7 +1437,7 @@ fn a_change_that_is_no_skip_only_delays_the_reminder_by_its_write() {
         table: table(&[(0, plan(7 * 60 + 30, 3))]),
         at_s: Some(seconds(BREAKFAST - 10 * MINUTE_MS)),
     };
-    let queued = feeder.sim.platform().plans_change(more);
+    let queued = feeder.sim.platform().plans_change(more, None);
     assert!(matches!(queued, PlansResult::Current { pending: true, .. }));
     feeder.run(5_000);
     assert!(feeder.soon().is_empty(), "held while the change is written");

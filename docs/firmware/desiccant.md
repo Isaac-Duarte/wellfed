@@ -30,7 +30,7 @@ After a cold boot the count is `unknown` until a time source sets the [clock](cl
 
 ## Recording a replacement
 
-A replacement is dated by the feeder's clock, never the client's. While the clock is invalid the reset is refused `NoClock` and nothing is recorded, since a guessed date would make the count wrong for weeks: sync the time (`wellfed time`) and try again. A reset is answered `Done` with the settings' new generation and records a `Settings` event. If the clock moved back after a reset, so the recorded day is after today, the count shows the whole period until that day passes.
+A replacement is dated by the feeder's clock, never the client's. While the clock is invalid the reset is refused `NoClock` and nothing is recorded, since a guessed date would make the count wrong for weeks: sync the time (`wellfed time`) and try again. A reset is answered `Done` with the settings' new generation and records a `Settings` event. A second reset on the same day changes nothing, so it records none. If the clock moved back after a reset, so the recorded day is after today, the count shows the whole period until that day passes.
 
 ## How it differs from stock
 

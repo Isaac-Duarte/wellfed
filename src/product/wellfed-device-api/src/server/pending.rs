@@ -3,7 +3,7 @@
 //! the answer once the device is done.
 
 use super::feeder::{self, FeederReply};
-use super::handshake::{find, fingerprint};
+use super::handshake::find;
 use super::memory::remembered;
 use super::request::{Action, Name, Reply};
 use super::{Pending, Phase, Server, Waiting, slot_id};
@@ -13,8 +13,7 @@ use crate::pairing::{self, Path};
 use crate::{Device, KeyChange, KeyOutcome, Reason, Record, UpdateAnswer, UpdateKeyChange};
 use wellfed_core::ota::offer::key_id;
 use wellfed_proto::api::{
-    self as proto, DeviceMessage, EventBody, Outcome, Refusal, RequestId, Source, TimeView,
-    UpdateRefusal,
+    self as proto, DeviceMessage, Outcome, Refusal, RequestId, TimeView, UpdateRefusal,
 };
 
 impl Server {
@@ -40,38 +39,32 @@ impl Server {
     pub(super) fn poll_pending<D: Device>(
         &mut self,
         index: usize,
-        now_ms: u32,
         device: &mut D,
         record: &mut impl FnMut(Record),
     ) -> Result<Option<(RequestId, &'static str, Reply)>, Reason> {
         let Phase::Open {
             pending: Some(pending),
-            key,
             memory,
             ..
         } = self.slots[index].phase
         else {
             return Ok(None);
         };
-        let by = Source::Client(fingerprint(&key));
 
         let outcome = match pending.waiting {
             Waiting::Feeder(wait) => match device.feeder() {
-                Some(feeder) => match feeder::poll(wait, now_ms, by, feeder) {
+                Some(feeder) => match feeder::poll(wait, feeder) {
                     Some(reply) => reply,
                     None => return Ok(None),
                 },
                 None => Reply::Refused(Refusal::Unavailable),
             },
+            // The writer recorded the `Wifi` event as it saved the change.
             Waiting::Wifi => match device.wifi(None) {
                 WifiResult::Current {
                     view,
                     pending: false,
-                } => {
-                    let generation = view.generation;
-                    device.record(now_ms, EventBody::Wifi { generation, by });
-                    Reply::Done(Some(generation))
-                }
+                } => Reply::Done(Some(view.generation)),
                 WifiResult::Current { pending: true, .. } | WifiResult::Busy => return Ok(None),
                 WifiResult::ReadOnly | WifiResult::Invalid => Reply::Refused(Refusal::NotWritable),
             },

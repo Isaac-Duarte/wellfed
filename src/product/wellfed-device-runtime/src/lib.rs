@@ -28,6 +28,7 @@
 #[cfg(all(target_os = "none", not(feature = "km4")))]
 compile_error!("wellfed-device-runtime target builds are KM4-only");
 
+pub mod asked;
 pub mod events;
 pub mod keys;
 pub mod network;
