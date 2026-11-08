@@ -167,3 +167,91 @@ fn a_newer_schema_or_too_small_a_unit_refuses_writes() {
     let mut small = FakeJournalFlash::with_unit(256);
     assert_eq!(open(&mut small).status, ClientStatus::Io);
 }
+
+/// Rewrite unit `slot`'s record as version `major.minor`, `extra` bytes
+/// longer, with every byte past this build's fields nonzero, as a later
+/// build would leave it. The record as placed.
+fn reversion(f: &mut FakeJournalFlash, slot: usize, major: u8, minor: u8, extra: usize) -> Vec<u8> {
+    let len = RECORD_BYTES + extra;
+    let mut p = f.bytes[slot][..RECORD_BYTES - 8].to_vec();
+    p[8] = major;
+    p[9] = minor;
+    p[10..12].copy_from_slice(&u16::try_from(len).unwrap().to_le_bytes());
+    p.resize(len - 8, 0x5a);
+    let crc = crc32(&p);
+    p.extend_from_slice(&crc.to_le_bytes());
+    p.extend_from_slice(b"CMIT");
+    f.bytes[slot][..len].copy_from_slice(&p);
+    p
+}
+
+#[test]
+fn a_newer_minor_is_read_and_rewritten_with_its_fields_kept() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    s.set_identity(&[0xaa; 32]).unwrap();
+    s.enroll([1; 32], label("phone"), Role::Owner).unwrap();
+    let newer = reversion(&mut f, 1, 1, 1, 64);
+
+    let mut r = open(&mut f);
+    assert_eq!(
+        (r.status, r.identity()),
+        (ClientStatus::Loaded, Some(&[0xaa; 32]))
+    );
+    assert_eq!(r.find(&[1; 32]).unwrap().role, Role::Owner);
+    r.enroll([2; 32], label("server"), Role::Server).unwrap();
+
+    // The rewrite keeps the later build's version, length and fields.
+    let len = RECORD_BYTES + 64;
+    assert_eq!(&f.bytes[0][8..12], &newer[8..12]);
+    assert_eq!(
+        &f.bytes[0][RECORD_BYTES - 8..len - 8],
+        &newer[RECORD_BYTES - 8..len - 8]
+    );
+    let r = open(&mut f);
+    assert_eq!((r.status, r.generation), (ClientStatus::Loaded, 3));
+    assert_eq!(r.identity(), Some(&[0xaa; 32]));
+    assert_eq!(r.clients().count(), 2);
+}
+
+/// Every way a record of this store can be one this build cannot read:
+/// an older major, fields that fail to decode, a checksum that fails.
+fn unreadable(f: &mut FakeJournalFlash, case: usize) {
+    let crc_at = RECORD_BYTES - 8;
+    let record = &mut f.bytes[0][..RECORD_BYTES];
+    match case {
+        0 => record[8] = 0,
+        1 => record[52] = 2,
+        _ => {
+            record[30] ^= 1;
+            return;
+        }
+    }
+    let crc = crc32(&record[..crc_at]);
+    record[crc_at..crc_at + 4].copy_from_slice(&crc.to_le_bytes());
+}
+
+#[test]
+fn a_record_this_build_cannot_read_is_never_written_over() {
+    for case in 0..3 {
+        let mut f = FakeJournalFlash::with_unit(UNIT);
+        open(&mut f).set_identity(&[0xaa; 32]).unwrap();
+        unreadable(&mut f, case);
+        let before = f.bytes.clone();
+
+        let mut r = open(&mut f);
+        assert_eq!(
+            (r.status, r.identity()),
+            (ClientStatus::Corrupt, None),
+            "case {case}"
+        );
+        assert!(!r.writable());
+        assert_eq!(r.set_identity(&[0xbb; 32]), Err(ClientError::NotWritable));
+        assert_eq!(
+            r.enroll([1; 32], label("x"), Role::Owner),
+            Err(ClientError::NotWritable)
+        );
+        assert_eq!(r.reset(&[0xbb; 32]), Err(ClientError::NotWritable));
+        assert_eq!(f.bytes, before, "case {case}: nothing written");
+    }
+}

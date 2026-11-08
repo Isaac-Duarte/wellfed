@@ -28,18 +28,14 @@ use wellfed_core::desiccant;
 use wellfed_core::feed::progress::BowlMode;
 use wellfed_core::settings::{MealReminder, SettingsFields, SettingsView, Window};
 use wellfed_core::store::slot::{
-    CRC_AT, DualSlot, Extent, Found, Layout, Pick, Prepare, RECORD_BYTES, SlotIo, get_u16, get_u32,
-    get_u64, newest, put_u16, put_u32, put_u64, seal, target,
+    CRC_AT, DualSlot, Extent, Found, Layout, Pick, Prepare, RECORD_BYTES, SlotIo, Version, get_u16,
+    get_u32, get_u64, newest, put_u16, put_u32, put_u64, seal, target,
 };
 
-pub const VERSION: u16 = 4;
+pub const VERSION: Version = Version::new(4, 0);
 /// Settings read their whole units, as the journal does, so data another
 /// writer left is never taken for empty settings and overwritten.
-const LAYOUT: Layout = Layout {
-    magic: *b"PLFSET01",
-    version: VERSION,
-    extent: Extent::Unit,
-};
+const LAYOUT: Layout = Layout::new(*b"PLFSET01", VERSION, CRC_AT, Extent::Unit);
 const GENERATION_AT: usize = 12;
 const BINDING_AT: usize = 20;
 
@@ -290,7 +286,7 @@ impl<I: SlotIo> SettingsStore<I> {
     }
 
     fn scan(&self, slot: c_uint) -> Option<Found<(u64, Settings)>> {
-        self.units.scan(slot, |p| self.decode(p))
+        self.units.scan(slot, |_, p| self.decode(p))
     }
 
     /// Bind to two exclusive erase units and load the newest valid record.

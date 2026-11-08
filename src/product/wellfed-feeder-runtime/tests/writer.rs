@@ -431,6 +431,52 @@ fn keys_carry_the_seed_and_create_the_identity_once() {
     ));
 }
 
+/// A client table this build cannot read (here an older major) is never
+/// written over: the boot draws no new identity, which would orphan every
+/// client the build that wrote it paired, and the sectors stay as they
+/// were until a factory reset erases them.
+#[test]
+fn an_unreadable_client_table_never_gets_a_new_identity() {
+    use wellfed_device::store::clients::RECORD_BYTES;
+    use wellfed_hal::board::storage;
+
+    let (_guard, _, _) = start();
+    fake::with(|h| h.adc_noise = 0x2468_ace1);
+    assert_eq!(rng::start().result, Ok(()));
+    assert!(matches!(
+        boot_keys(),
+        Record::Keys {
+            identity: Identity::Created,
+            ..
+        }
+    ));
+
+    let sectors = |h: &mut fake::Hardware| {
+        let first = storage::CLIENTS.first as usize * 0x1000;
+        h.storage[first..first + 2 * 0x1000].to_vec()
+    };
+    fake::with(|h| {
+        let first = storage::CLIENTS.first as usize * 0x1000;
+        let record = &mut h.storage[first..first + RECORD_BYTES];
+        record[8] = 0;
+        let crc_at = RECORD_BYTES - 8;
+        let crc = wellfed_core::store::slot::crc32(&record[..crc_at]);
+        record[crc_at..crc_at + 4].copy_from_slice(&crc.to_le_bytes());
+    });
+    let before = fake::with(sectors);
+
+    assert!(matches!(
+        boot_keys(),
+        Record::Keys {
+            clients: ClientStatus::Corrupt,
+            enrolled: 0,
+            identity: Identity::Missing,
+            ..
+        }
+    ));
+    assert_eq!(fake::with(sectors), before, "the table untouched");
+}
+
 /// One queued key change, applied on the writer's next step.
 fn change(writer: &mut Writer<Armed>, provider: &mut Provider, change: Change) -> Record {
     assert_eq!(keys::request(change), Requested::Queued);

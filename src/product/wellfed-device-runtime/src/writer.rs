@@ -407,6 +407,7 @@ fn client_status(status: ClientStatus) -> &'static str {
         ClientStatus::Empty => "empty",
         ClientStatus::Loaded => "loaded",
         ClientStatus::ReadOnly => "read-only",
+        ClientStatus::Corrupt => "corrupt",
         ClientStatus::Io => "io",
     }
 }
@@ -950,8 +951,9 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             let mut update = UpdateStore::default();
             update.open(Region::<F, UPDATE_BASE, 2>::new());
             let started = match update.status {
-                // A newer schema's floor is not this build's to touch.
-                UpdateStatus::ReadOnly => true,
+                // A newer major's floor, or a record this build cannot
+                // read, is not this build's to touch.
+                UpdateStatus::ReadOnly | UpdateStatus::Corrupt => true,
                 // Its floor is unknown and may still stand, so the mark
                 // stays and the next boot tries again.
                 UpdateStatus::Io => false,

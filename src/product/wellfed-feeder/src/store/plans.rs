@@ -40,17 +40,13 @@
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{
-    CRC_AT, DualSlot, Extent, Layout, Pick, Prepare, RECORD_BYTES, SlotIo, get_u32, newest,
-    put_u32, seal, target,
+    CRC_AT, DualSlot, Extent, Layout, Pick, Prepare, RECORD_BYTES, SlotIo, Version, get_u32,
+    newest, put_u32, seal, target,
 };
 use wellfed_device_api::mailbox::{Claim, PLANS, Plan, PlansChange, PlansView, Table, Weekdays};
 
-pub const VERSION: u16 = 3;
-const LAYOUT: Layout = Layout {
-    magic: *b"PLFPLN01",
-    version: VERSION,
-    extent: Extent::Record,
-};
+pub const VERSION: Version = Version::new(3, 0);
+const LAYOUT: Layout = Layout::new(*b"PLFPLN01", VERSION, CRC_AT, Extent::Record);
 const SEQUENCE_AT: usize = 12;
 const REVISION_AT: usize = 16;
 const PLANS_AT: usize = 20;
@@ -438,7 +434,10 @@ impl<I: SlotIo> PlansStore<I> {
             self.status = PlansStatus::Io;
             return self.status;
         }
-        let (Some(a), Some(b)) = (self.units.scan(0, decode), self.units.scan(1, decode)) else {
+        let (Some(a), Some(b)) = (
+            self.units.scan(0, |_, p| decode(p)),
+            self.units.scan(1, |_, p| decode(p)),
+        ) else {
             self.status = PlansStatus::Io;
             return self.status;
         };

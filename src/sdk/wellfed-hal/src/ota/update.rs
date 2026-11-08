@@ -420,6 +420,7 @@ pub fn describe(record: Record, f: &mut impl fmt::Write) -> fmt::Result {
                 UpdateStatus::Loaded => "loaded",
                 UpdateStatus::Empty => "empty",
                 UpdateStatus::ReadOnly => "newer",
+                UpdateStatus::Corrupt => "corrupt",
                 UpdateStatus::Io | UpdateStatus::Unopened => "unreadable",
             },
             u8::from(attempt)

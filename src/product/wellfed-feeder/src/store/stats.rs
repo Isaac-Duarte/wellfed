@@ -39,21 +39,17 @@
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{
-    DualSlot, Extent, Layout, Pick, Prepare, SlotIo, get_u32, get_u64, newest, put_u32, put_u64,
-    seal, target,
+    DualSlot, Extent, Layout, Pick, Prepare, SlotIo, Version, get_u32, get_u64, newest, put_u32,
+    put_u64, seal, target,
 };
 use wellfed_proto::api::{Counts, Resets};
 
 use crate::stats::{EARLY_SAVES, RESTART_SETTLED_MS, TOTAL_SECTORS, Totals};
 
-pub const VERSION: u16 = 1;
+pub const VERSION: Version = Version::new(1, 0);
 /// The record's size: the totals, padded to a 4-byte program granule.
 pub const RECORD_BYTES: usize = 288;
-const LAYOUT: Layout = Layout {
-    magic: *b"PLFSTA01",
-    version: VERSION,
-    extent: Extent::Record,
-};
+const LAYOUT: Layout = Layout::new(*b"PLFSTA01", VERSION, CRC_AT, Extent::Record);
 const GENERATION_AT: usize = 12;
 const COUNTS_AT: usize = 20;
 const RESETS_AT: usize = 60;
@@ -311,7 +307,10 @@ impl<I: SlotIo> StatsStore<I> {
             self.status = StatsStatus::Io;
             return self.status;
         }
-        let (Some(a), Some(b)) = (self.units.scan(0, decode), self.units.scan(1, decode)) else {
+        let (Some(a), Some(b)) = (
+            self.units.scan(0, |_, p| decode(p)),
+            self.units.scan(1, |_, p| decode(p)),
+        ) else {
             self.status = StatsStatus::Io;
             return self.status;
         };

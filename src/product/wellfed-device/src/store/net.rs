@@ -15,8 +15,8 @@
 use core::ffi::c_uint;
 
 use wellfed_core::store::slot::{
-    CRC_AT, DualSlot, Extent, Layout, Pick, Prepare, RECORD_BYTES, SlotIo, get_u64, newest,
-    put_u64, seal, target,
+    CRC_AT, DualSlot, Extent, Layout, Pick, Prepare, RECORD_BYTES, SlotIo, Version, get_u64,
+    newest, put_u64, seal, target,
 };
 use wellfed_device_api::wifi::{Credentials, MAX_PSK, MAX_SSID};
 
@@ -30,12 +30,8 @@ pub enum BuildWifi {
     Absent,
 }
 
-pub const VERSION: u16 = 1;
-const LAYOUT: Layout = Layout {
-    magic: *b"PLFNET01",
-    version: VERSION,
-    extent: Extent::Record,
-};
+pub const VERSION: Version = Version::new(1, 0);
+const LAYOUT: Layout = Layout::new(*b"PLFNET01", VERSION, CRC_AT, Extent::Record);
 const GENERATION_AT: usize = 12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,7 +116,10 @@ impl<I: SlotIo> NetStore<I> {
             self.status = NetStatus::Io;
             return self.status;
         }
-        let (Some(a), Some(b)) = (self.units.scan(0, decode), self.units.scan(1, decode)) else {
+        let (Some(a), Some(b)) = (
+            self.units.scan(0, |_, p| decode(p)),
+            self.units.scan(1, |_, p| decode(p)),
+        ) else {
             self.status = NetStatus::Io;
             return self.status;
         };

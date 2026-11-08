@@ -22,7 +22,7 @@
 //! | Bytes | Field |
 //! | --- | --- |
 //! | 0..8 | magic `PLFUPD01` |
-//! | 8..12 | version (u16), record length (u16) |
+//! | 8..12 | major, minor, record length (u16) |
 //! | 12..20 | generation (u64) |
 //! | 20..24 | `min_version` |
 //! | 24 | state: 0 none, 1 pending, 2 activated |
@@ -45,9 +45,20 @@
 //!
 //! Unused bytes are zero. A torn write leaves the older record, which is
 //! always consistent: the floor and the retired ids it holds are ones a
-//! newer record only extends. Storage formats stay readable by the bank-0
-//! build ([OTA design](../../../../../docs/firmware/ota-design.md)), so a
-//! change to this layout ships a bank-0 refresh first. The factory reset
+//! newer record only extends.
+//!
+//! Bank 0 reads this store for the life of the feeder and never updates
+//! over the air ([OTA design](../../../../../docs/firmware/ota-design.md)),
+//! so the record changes only by additive minors, from byte 240 on: bank 0
+//! decodes the fields it knows and keeps the rest when it rewrites the
+//! record. A change that is not additive is a new store in new sectors.
+//!
+//! The store never writes over a record of its own it cannot read: with no
+//! valid record it starts empty only when both units are erased or hold a
+//! first save cut short. Anything else opens [`UpdateStatus::Corrupt`] and
+//! a newer major [`UpdateStatus::ReadOnly`]; both leave the floor unknown,
+//! so the update path refuses every offer, since starting empty would lower
+//! the floor and forget the retired keys. The factory reset
 //! leaves the store alone: a reset must not reopen a downgrade. Going back to
 //! stock does reopen it, since that was the owner's signed choice and an
 //! install from stock has to take the same version again.
@@ -56,16 +67,12 @@ use core::ffi::c_uint;
 
 use crate::ota::offer::{ImageKind, KeyId, key_id};
 use crate::store::slot::{
-    DualSlot, Extent, Layout, Pick, Prepare, SlotIo, get_u32, get_u64, newest, put_u32, put_u64,
-    seal, target,
+    DualSlot, Extent, Layout, Pick, SlotIo, Version, get_u32, get_u64, newest, put_u32, put_u64,
+    seal, target, unwritten,
 };
 
-pub const VERSION: u16 = 1;
-const LAYOUT: Layout = Layout {
-    magic: *b"PLFUPD01",
-    version: VERSION,
-    extent: Extent::Record,
-};
+pub const VERSION: Version = Version::new(1, 0);
+const LAYOUT: Layout = Layout::new(*b"PLFUPD01", VERSION, BANK0_END, Extent::Record);
 /// Retired key ids the store keeps.
 pub const REVOKED: usize = 4;
 /// The whole record.
@@ -184,8 +191,11 @@ pub enum UpdateStatus {
     /// No record yet: writable, floor 0.
     Empty,
     Loaded,
-    /// A newer schema version: read-only.
+    /// A newer major: read-only.
     ReadOnly,
+    /// A record of this store but none this build reads: read-only, and
+    /// left for a build that reads it.
+    Corrupt,
     Io,
 }
 
@@ -382,11 +392,15 @@ impl<I: SlotIo> UpdateStore<I> {
             self.status = UpdateStatus::Io;
             return self.status;
         }
-        let (Some(a), Some(b)) = (self.units.scan(0, decode), self.units.scan(1, decode)) else {
+        let (Some(a), Some(b)) = (
+            self.units.scan(0, |_, p| decode(p)),
+            self.units.scan(1, |_, p| decode(p)),
+        ) else {
             self.status = UpdateStatus::Io;
             return self.status;
         };
 
+        let empty = unwritten(&a, &b);
         self.status = match newest(a, b, |&(generation, _)| generation) {
             Pick::Future => UpdateStatus::ReadOnly,
             Pick::Newest(slot, (generation, record)) => {
@@ -395,7 +409,8 @@ impl<I: SlotIo> UpdateStore<I> {
                 self.record = record;
                 UpdateStatus::Loaded
             }
-            Pick::Nothing => UpdateStatus::Empty,
+            Pick::Nothing if empty => UpdateStatus::Empty,
+            Pick::Nothing => UpdateStatus::Corrupt,
         };
         self.status
     }
@@ -404,8 +419,8 @@ impl<I: SlotIo> UpdateStore<I> {
         matches!(self.status, UpdateStatus::Empty | UpdateStatus::Loaded)
     }
 
-    /// Whether the floor is known. A store that could not be read, or one
-    /// a newer schema wrote, has no floor this build can trust, so the
+    /// Whether the floor is known. A store that could not be read, one a
+    /// newer major wrote, or one holding a record this build cannot read, has no floor this build can trust, so the
     /// update path refuses every offer until a build that reads it runs.
     pub fn readable(&self) -> bool {
         matches!(self.status, UpdateStatus::Empty | UpdateStatus::Loaded)
@@ -511,8 +526,12 @@ impl<I: SlotIo> UpdateStore<I> {
     /// outlives any firmware, and so do the release slot's key and bank 0's
     /// recorded image, which only say what is true of this feeder. Only the
     /// handover from stock's activation may call this. Writes nothing when
-    /// there is nothing to forget, so repeating it after a cut costs no erase.
+    /// there is nothing to forget, so repeating it after a cut costs no erase;
+    /// a store this build cannot write refuses it, as it has no floor to keep.
     pub fn start_over(&mut self) -> Result<(), UpdateError> {
+        if !self.writable() {
+            return Err(UpdateError::NotWritable);
+        }
         let state = match self.record.state {
             State::Pending(_) => State::None,
             kept => kept,
@@ -544,10 +563,8 @@ impl<I: SlotIo> UpdateStore<I> {
         }
         let generation = self.generation + 1;
         let slot = target(self.generation, self.slot);
-        if !self
-            .units
-            .write(slot, &encode(generation, next), Prepare::Erase)
-        {
+        let from = (self.generation > 0).then_some(self.slot);
+        if !self.units.replace(slot, from, &encode(generation, next)) {
             self.status = UpdateStatus::Io;
             return Err(UpdateError::Io);
         }

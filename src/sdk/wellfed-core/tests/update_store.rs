@@ -259,3 +259,85 @@ fn starting_over_forgets_the_floor_and_a_pending_candidate_only() {
     s.start_over().unwrap();
     assert_eq!(open(&mut f).record().state, State::None);
 }
+
+/// Rewrite unit `slot`'s record as version `major.minor`, `extra` bytes
+/// longer, with every byte past this build's fields (240 on) nonzero, as a
+/// later build would leave it. The record as placed.
+fn reversion(f: &mut FakeJournalFlash, slot: usize, major: u8, minor: u8, extra: usize) -> Vec<u8> {
+    let len = RECORD_BYTES + extra;
+    let mut p = f.bytes[slot][..240].to_vec();
+    p[8] = major;
+    p[9] = minor;
+    p[10..12].copy_from_slice(&u16::try_from(len).unwrap().to_le_bytes());
+    p.resize(len - 8, 0x5a);
+    let crc = crc32(&p);
+    p.extend_from_slice(&crc.to_le_bytes());
+    p.extend_from_slice(b"CMIT");
+    f.bytes[slot][..len].copy_from_slice(&p);
+    p
+}
+
+#[test]
+fn a_newer_minor_is_read_and_rewritten_with_its_fields_kept() {
+    let mut f = FakeJournalFlash::with_unit(UNIT);
+    let mut s = open(&mut f);
+    s.revoke(&[4; 8]).unwrap();
+    for extra in [0, 32] {
+        open(&mut f).set_pending(candidate(7, 1)).unwrap();
+        let slot = usize::try_from(open(&mut f).slot).unwrap();
+        let newer = reversion(&mut f, slot, 1, 1, extra);
+
+        let mut r = open(&mut f);
+        assert_eq!(r.status, UpdateStatus::Loaded);
+        assert!(r.readable());
+        assert_eq!(r.record().state, State::Pending(candidate(7, 1)));
+        assert_eq!(r.record().revoked(), [[4; 8]]);
+        r.set_activated(candidate(7, 1)).unwrap();
+
+        let written = &f.bytes[1 - slot];
+        let len = RECORD_BYTES + extra;
+        assert_eq!(&written[8..12], &newer[8..12], "extra {extra}");
+        assert_eq!(&written[240..len - 8], &newer[240..len - 8]);
+        let r = open(&mut f);
+        assert_eq!(r.record().state, State::Activated(candidate(7, 1)));
+        assert_eq!(r.record().revoked(), [[4; 8]]);
+    }
+}
+
+#[test]
+fn a_record_this_build_cannot_read_leaves_no_floor_and_is_never_written_over() {
+    let crc_at = RECORD_BYTES - 8;
+    for case in 0..3 {
+        let mut f = FakeJournalFlash::with_unit(UNIT);
+        let mut s = open(&mut f);
+        s.set_activated(candidate(7, 1)).unwrap();
+        s.confirm(&[1; 32]).unwrap();
+        // Only unit 1 holds a record from here: the floor of 7.
+        f.bytes[0].fill(u8::MAX);
+
+        let record = &mut f.bytes[1][..RECORD_BYTES];
+        match case {
+            // An older major.
+            0 => record[8] = 0,
+            // A state no build writes.
+            1 => record[24] = 9,
+            // A checksum that fails.
+            _ => record[30] ^= 1,
+        }
+        if case < 2 {
+            let crc = crc32(&record[..crc_at]);
+            record[crc_at..crc_at + 4].copy_from_slice(&crc.to_le_bytes());
+        }
+        let before = f.bytes.clone();
+
+        let mut r = open(&mut f);
+        assert_eq!(r.status, UpdateStatus::Corrupt, "case {case}");
+        assert!(!r.readable(), "case {case}: the floor is unknown, not 0");
+        assert_eq!(
+            r.set_pending(candidate(8, 2)),
+            Err(UpdateError::NotWritable)
+        );
+        assert_eq!(r.start_over(), Err(UpdateError::NotWritable));
+        assert_eq!(f.bytes, before, "case {case}: nothing written");
+    }
+}

@@ -35,8 +35,8 @@ use crate::feed::controller::{FeedReason, FeedRequest};
 use crate::feed::progress::{BowlMode, Direction};
 use crate::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult, OwnerStorage};
 use crate::store::slot::{
-    CRC_AT, DualSlot, Extent, Found, Layout, Prepare, RECORD_BYTES, SlotIo, get_u16, get_u64,
-    put_u16, put_u64, seal,
+    CRC_AT, DualSlot, Extent, Found, Layout, Prepare, RECORD_BYTES, SlotIo, Version, get_u16,
+    get_u64, put_u16, put_u64, seal,
 };
 
 const GENESIS: u8 = 0;
@@ -45,11 +45,7 @@ const RESULT: u8 = 2;
 
 /// The journal reads its whole units, so unrelated bytes are never taken
 /// for an empty journal.
-const LAYOUT: Layout = Layout {
-    magic: *b"PLFJNL01",
-    version: 1,
-    extent: Extent::Unit,
-};
+const LAYOUT: Layout = Layout::new(*b"PLFJNL01", Version::new(1, 0), CRC_AT, Extent::Unit);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct JournalConfig {
@@ -337,7 +333,7 @@ impl<I: SlotIo> FeedJournal<I> {
     /// older format version is one it cannot read, so it is invalid and
     /// faults whatever it sits beside.
     fn scan(&self, slot: c_uint) -> Option<Found<JournalView>> {
-        let found = self.units.scan(slot, |p| self.decode(p))?;
+        let found = self.units.scan(slot, |_, p| self.decode(p))?;
         Some(match found {
             Found::Future | Found::Older => Found::Invalid,
             found => found,
