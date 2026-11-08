@@ -109,13 +109,28 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                     _ => null,
                   };
                   final bool current = offered != null && build != null && offered.$1 == build;
+                  // Never a downgrade: this app sends no downgrade statement,
+                  // so an image at or below the version the feeder confirmed,
+                  // or any image for a feeder on a newer API revision, is not
+                  // offered. The feeder is newer than this app, which is the
+                  // side to update.
+                  final bool older =
+                      !current &&
+                      offered != null &&
+                      (_feeder.state.skew == Skew.feederAhead || (state != null && offered.$2 <= state.minVersion));
                   // The feeder refuses every update until its recovery copy
                   // checks itself in, so none is offered meanwhile.
                   final Bank0Blocked? blocked = switch (state?.bank0) {
                     Bank0Check_Blocked(:final Bank0Blocked field0) => field0,
                     _ => null,
                   };
-                  final bool can = offered != null && !current && blocked == null && _feeder.state.cardIsCurrent;
+                  final bool can =
+                      offered != null &&
+                      !current &&
+                      !older &&
+                      state != null &&
+                      blocked == null &&
+                      _feeder.state.cardIsCurrent;
 
                   return ListView(
                     padding: const EdgeInsets.all(Space.s4),
@@ -145,6 +160,12 @@ class _UpdatesScreenState extends State<UpdatesScreen> {
                         )
                       else if (current)
                         Notice(tone: Tone.neutral, glyph: Glyph.check, text: '$name runs the version this app carries.')
+                      else if (older)
+                        Notice(
+                          tone: Tone.warning,
+                          glyph: Glyph.info,
+                          text: '$name runs newer firmware than this app carries. Update this app.',
+                        )
                       else if (offered == null)
                         const Notice(
                           tone: Tone.neutral,

@@ -513,6 +513,10 @@ sealed class SessionUpdate with _$SessionUpdate {
   const factory SessionUpdate.opened({
     required String build,
     required ClientRole role,
+
+    /// Which side to update when the feeder's API revision differs:
+    /// the feeder (`FeederBehind`) or this app (`FeederAhead`).
+    required Skew skew,
   }) = SessionUpdate_Opened;
   const factory SessionUpdate.status({required Card card}) =
       SessionUpdate_Status;

@@ -19,6 +19,7 @@
 //! [`Session`]: the clients use it, and the bench and tests use
 //! [`Session`] directly to send what a well-behaved client never would.
 
+pub use wellfed_model::Skew;
 use wellfed_model::{
     Answer, ClientRole, DeviceKind, Gap, Hello, Joined, Model, Op, OpenRefusal, Pushed, Refusal,
     convert,
@@ -178,35 +179,13 @@ pub struct Opened {
 }
 
 impl Opened {
-    /// Whether the feeder's build speaks exactly this client's revision.
-    pub fn same_schema(&self) -> bool {
-        self.skew() == Skew::Same
-    }
-
     /// Which side is the older build. The API only grows, so either way
     /// every op this client knows may go: a feeder behind it refuses what
     /// its build lacks `Unavailable`, and one ahead of it has more than this
     /// client can show.
     pub fn skew(&self) -> Skew {
-        match self.schema.cmp(&REVISION) {
-            std::cmp::Ordering::Less => Skew::FeederBehind,
-            std::cmp::Ordering::Equal => Skew::Same,
-            std::cmp::Ordering::Greater => Skew::FeederAhead,
-        }
+        Skew::of(self.schema, REVISION)
     }
-}
-
-/// How a feeder's API revision stands against this client's: what to tell
-/// the person when something is missing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Skew {
-    Same,
-    /// The feeder's build is older: an op it answers `Unavailable` needs
-    /// the feeder updated.
-    FeederBehind,
-    /// The feeder's build is newer: what it added needs this client
-    /// updated.
-    FeederAhead,
 }
 
 /// What [`Session::next_incoming`] yields.

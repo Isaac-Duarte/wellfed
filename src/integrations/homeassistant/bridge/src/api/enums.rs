@@ -423,10 +423,30 @@ view_enum! {
         /// not reconnect.
         Revoked => "revoked",
         Disconnected => "disconnected",
-        /// The feeder runs a different build than this integration, which
-        /// takes nothing but an update; `build` names it. This session
-        /// will not reconnect: the integration sets up a new one, retrying
-        /// until the feeder is updated.
-        OtherBuild => "other_build",
+    }
+}
+
+view_enum! {
+    /// How the feeder's device API revision stands against this
+    /// integration's. Either way the session reads and writes everything
+    /// both know; this says which side to update for the rest.
+    Skew {
+        Same => "same",
+        /// The feeder is older: what it lacks is refused until it is
+        /// updated, from the app.
+        FeederBehind => "feeder_behind",
+        /// The feeder is newer: what it added reads as `newer_build` until
+        /// this integration is updated.
+        FeederAhead => "feeder_ahead",
+    }
+}
+
+impl From<model::Skew> for Skew {
+    fn from(skew: model::Skew) -> Self {
+        match skew {
+            model::Skew::Same => Self::Same,
+            model::Skew::FeederBehind => Self::FeederBehind,
+            model::Skew::FeederAhead => Self::FeederAhead,
+        }
     }
 }

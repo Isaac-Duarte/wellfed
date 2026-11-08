@@ -576,6 +576,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SetupRefusal dco_decode_box_autoadd_setup_refusal(dynamic raw);
 
   @protected
+  Skew dco_decode_box_autoadd_skew(dynamic raw);
+
+  @protected
   Stats dco_decode_box_autoadd_stats(dynamic raw);
 
   @protected
@@ -1029,6 +1032,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SetupRefusal? dco_decode_opt_box_autoadd_setup_refusal(dynamic raw);
 
   @protected
+  Skew? dco_decode_opt_box_autoadd_skew(dynamic raw);
+
+  @protected
   TimeInfo? dco_decode_opt_box_autoadd_time_info(dynamic raw);
 
   @protected
@@ -1261,6 +1267,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SetupStep dco_decode_setup_step(dynamic raw);
+
+  @protected
+  Skew dco_decode_skew(dynamic raw);
 
   @protected
   Species dco_decode_species(dynamic raw);
@@ -1916,6 +1925,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  Skew sse_decode_box_autoadd_skew(SseDeserializer deserializer);
+
+  @protected
   Stats sse_decode_box_autoadd_stats(SseDeserializer deserializer);
 
   @protected
@@ -2445,6 +2457,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  Skew? sse_decode_opt_box_autoadd_skew(SseDeserializer deserializer);
+
+  @protected
   TimeInfo? sse_decode_opt_box_autoadd_time_info(SseDeserializer deserializer);
 
   @protected
@@ -2697,6 +2712,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SetupStep sse_decode_setup_step(SseDeserializer deserializer);
+
+  @protected
+  Skew sse_decode_skew(SseDeserializer deserializer);
 
   @protected
   Species sse_decode_species(SseDeserializer deserializer);
@@ -3516,6 +3534,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_skew(Skew self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_stats(Stats self, SseSerializer serializer);
 
   @protected
@@ -4176,6 +4197,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_skew(Skew? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_time_info(
     TimeInfo? self,
     SseSerializer serializer,
@@ -4498,6 +4522,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_setup_step(SetupStep self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_skew(Skew self, SseSerializer serializer);
 
   @protected
   void sse_encode_species(Species self, SseSerializer serializer);

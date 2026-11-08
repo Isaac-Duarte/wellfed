@@ -74,9 +74,7 @@ impl Service {
                     .read_calibration(id)
                     .await
                     .map_err(|error| match error {
-                        Error::Command(CommandError::Offline | CommandError::OtherBuild) => {
-                            CommandError::Unknown.into()
-                        }
+                        Error::Command(CommandError::Offline) => CommandError::Unknown.into(),
                         other => other,
                     })?;
                 self.amend(&recorded.key, &CommandOutcome::Calibration { calibration })

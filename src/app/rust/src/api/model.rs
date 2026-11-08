@@ -7,8 +7,18 @@ use flutter_rust_bridge::frb;
 pub use wellfed_model::setup::{Enrolled, Refusal as SetupRefusal, WifiSaved};
 pub use wellfed_model::{
     Bank0Blocked, Bank0Check, Blocked, ClientRole, FeedOutcome, FeedReason, FoodLevel,
-    MissedReason, UpdatePhase, UpdateStop,
+    MissedReason, Skew, UpdatePhase, UpdateStop,
 };
+
+/// How a feeder's API revision stands against this app's (or the server's):
+/// which side to update. Every op both know still goes, so neither side is
+/// ever offered an older build for it.
+#[frb(mirror(Skew))]
+pub enum _Skew {
+    Same,
+    FeederBehind,
+    FeederAhead,
+}
 
 #[frb(mirror(Enrolled))]
 pub enum _Enrolled {
@@ -105,12 +115,14 @@ pub use wellfed_model::{
 pub enum _Bowl {
     Single,
     Double,
+    Unknown,
 }
 
 #[frb(mirror(Phase))]
 pub enum _Phase {
     AtMark,
     Unknown,
+    Newer,
 }
 
 #[frb(mirror(Tune))]

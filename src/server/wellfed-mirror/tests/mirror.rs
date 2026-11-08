@@ -11,7 +11,7 @@ use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::TryRecvError;
 use wellfed_api::{Connection as Link, EventBody, EventKind, FeederEvent, HistoryEvent, Source};
 use wellfed_mirror::{AskError, MirrorEvent};
-use wellfed_model::{Answer, Op};
+use wellfed_model::{Answer, Op, Skew};
 use wellfed_server_testkit::feeder::{self, Relay};
 use wellfed_server_testkit::{TempStore, WAIT, local, until};
 use wellfed_store::Store;
@@ -136,10 +136,12 @@ fn a_stopped_feeder_is_let_go() {
         let address = sim.address.to_string();
         let (mirror, mut updates) = mirrored(&store, &sim, &address, WAIT).await;
         assert_eq!(mirror.link(ID), Some(Link::Online));
+        assert_eq!(mirror.skew(ID), Some(Skew::Same));
 
         assert!(mirror.stop(ID).await);
         assert!(!mirror.stop(ID).await, "already stopped");
         assert_eq!(mirror.link(ID), None);
+        assert_eq!(mirror.skew(ID), None);
         assert!(mirror.subscribe(ID).is_none());
         let asked = mirror.ask(ID, [1; 16], Op::Status).await;
         assert_eq!(asked, Err(AskError::NotRunning));

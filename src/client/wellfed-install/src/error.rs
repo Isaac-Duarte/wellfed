@@ -167,13 +167,6 @@ pub enum Error {
     },
     #[error("the feeder refused to list its clients: {0:?}")]
     ClientsRefused(wellfed_model::Refusal),
-    /// The feeder runs a build of another schema revision, which takes
-    /// only the frozen update path: its client list cannot be read.
-    #[error(
-        "the feeder runs a different build than this tool; update the feeder, or update this \
-         tool, to read its clients"
-    )]
-    OtherBuild,
     #[error("the feeder's identity is not known yet")]
     NoIdentity,
     #[error("no session with the replacement")]

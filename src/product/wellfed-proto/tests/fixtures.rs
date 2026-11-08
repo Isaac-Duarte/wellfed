@@ -584,7 +584,7 @@ fn messages() -> Vec<Fixture> {
                 base: 2,
                 calibration: Calibration {
                     portion_mg: Some(9_800),
-                    bowl: Bowl::Single,
+                    bowl: Bowl::Single.into(),
                 },
             }))),
             client,
@@ -597,9 +597,9 @@ fn messages() -> Vec<Fixture> {
                     writable: true,
                     calibration: Calibration {
                         portion_mg: Some(9_800),
-                        bowl: Bowl::Single,
+                        bowl: Bowl::Single.into(),
                     },
-                    phase: Some(Phase::Unknown),
+                    phase: Some(Phase::Unknown.into()),
                 },
             )))),
             feeder,

@@ -14,9 +14,7 @@
 //!    before anyone is asked to press.
 //! 2. The feeder's client list: a key already an update signer needs
 //!    nothing sent, and a key the feeder holds under another role is a
-//!    session key, never an update signer ([`Enroll::listed`]). A feeder of
-//!    another build has no readable list ([`Enroll::unlisted`]): the
-//!    enrollment goes straight on, and the feeder's own checks answer.
+//!    session key, never an update signer ([`Enroll::listed`]).
 //! 3. `EnrollUpdateKey`, answered once Dispense is pressed or the window
 //!    closes. It is sent once: a second offer would need a second press,
 //!    and an unanswered one may already have enrolled the key (a press
@@ -72,8 +70,8 @@ pub enum EnrollError {
     #[error("the feeder holds this key as a {role:?}; an update key must be a key of its own")]
     SessionKey { role: ClientRole },
     /// The same, as the feeder itself refuses it after the press
-    /// (`UpdateRefusal::HeldAsSessionKey`): on a feeder of another build,
-    /// whose list was not read, or one enrolled since the list was read.
+    /// (`UpdateRefusal::HeldAsSessionKey`), for a key enrolled since the list
+    /// was read.
     #[error(
         "the feeder holds this key as a client that opens sessions; an update key must be a key of its own"
     )]
@@ -144,19 +142,6 @@ impl Enroll {
 
     pub fn key(&self) -> [u8; 32] {
         self.key
-    }
-
-    /// Enroll without reading the client list first: for a feeder of
-    /// another schema revision, which takes only frozen ops. The feeder's
-    /// own checks then answer for the list: a key it already holds as a
-    /// signer is `Done` after the press, and one it holds as a session key
-    /// is refused [`EnrollError::HeldAsSessionKey`].
-    #[must_use]
-    pub fn unlisted(mut self) -> Self {
-        if self.stage == Stage::Start {
-            self.stage = Stage::Absent;
-        }
-        self
     }
 
     /// What to do next.
@@ -366,29 +351,6 @@ mod tests {
             };
             assert_eq!(enroll.poll(), expected, "{answer:?}");
         }
-    }
-
-    /// A feeder of another build has no readable list: the enrollment goes
-    /// straight out, and its refusal of a session key says so.
-    #[test]
-    fn an_unlisted_enrollment_skips_the_list() {
-        let mut enroll = enroll().unlisted();
-        assert_eq!(
-            enroll.poll(),
-            Next::Press(Op::EnrollUpdateKey {
-                key: KEY,
-                label: "laptop".into()
-            })
-        );
-        enroll.answer(&Answer::Refused(Refusal::Update(
-            UpdateRefusal::HeldAsSessionKey,
-        )));
-        assert_eq!(enroll.poll(), Next::Failed(EnrollError::HeldAsSessionKey));
-
-        let mut enroll = self::enroll().unlisted();
-        enroll.poll();
-        enroll.answer(&Answer::Done { generation: None });
-        assert_eq!(enroll.poll(), Next::Done(Enrolled::Now));
     }
 
     /// An unanswered enrollment may have enrolled the key, and is never

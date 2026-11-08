@@ -5787,6 +5787,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Skew dco_decode_box_autoadd_skew(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_skew(raw);
+  }
+
+  @protected
   Stats dco_decode_box_autoadd_stats(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_stats(raw);
@@ -6261,6 +6267,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return FeederRefusal_Portions(asked: dco_decode_u_8(raw[1]));
       case 14:
         return FeederRefusal_NoClock();
+      case 15:
+        return FeederRefusal_Unknown();
       default:
         throw Exception("unreachable");
     }
@@ -6320,6 +6328,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return FeederReply_NotSent();
       case 15:
         return FeederReply_Unexpected();
+      case 16:
+        return FeederReply_Unreadable();
       default:
         throw Exception("unreachable");
     }
@@ -7484,6 +7494,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Skew? dco_decode_opt_box_autoadd_skew(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_skew(raw);
+  }
+
+  @protected
   TimeInfo? dco_decode_opt_box_autoadd_time_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_time_info(raw);
@@ -8121,8 +8137,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ServerFeeder dco_decode_server_feeder(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 9)
-      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return ServerFeeder(
       id: dco_decode_String(arr[0]),
       name: dco_decode_String(arr[1]),
@@ -8130,9 +8146,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       role: dco_decode_client_role(arr[3]),
       address: dco_decode_opt_String(arr[4]),
       connection: dco_decode_server_connection(arr[5]),
-      synced: dco_decode_opt_box_autoadd_u_64(arr[6]),
-      epoch: dco_decode_opt_box_autoadd_u_32(arr[7]),
-      archivedMs: dco_decode_opt_box_autoadd_i_64(arr[8]),
+      skew: dco_decode_opt_box_autoadd_skew(arr[6]),
+      synced: dco_decode_opt_box_autoadd_u_64(arr[7]),
+      epoch: dco_decode_opt_box_autoadd_u_32(arr[8]),
+      archivedMs: dco_decode_opt_box_autoadd_i_64(arr[9]),
     );
   }
 
@@ -8444,6 +8461,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return SessionUpdate_Opened(
           build: dco_decode_String(raw[1]),
           role: dco_decode_client_role(raw[2]),
+          skew: dco_decode_skew(raw[3]),
         );
       case 1:
         return SessionUpdate_Status(card: dco_decode_box_autoadd_card(raw[1]));
@@ -8602,6 +8620,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw Exception("unreachable");
     }
+  }
+
+  @protected
+  Skew dco_decode_skew(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return Skew.values[raw as int];
   }
 
   @protected
@@ -10234,6 +10258,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Skew sse_decode_box_autoadd_skew(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_skew(deserializer));
+  }
+
+  @protected
   Stats sse_decode_box_autoadd_stats(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_stats(deserializer));
@@ -10779,6 +10809,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return FeederRefusal_Portions(asked: var_asked);
       case 14:
         return FeederRefusal_NoClock();
+      case 15:
+        return FeederRefusal_Unknown();
       default:
         throw UnimplementedError('');
     }
@@ -10837,6 +10869,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return FeederReply_NotSent();
       case 15:
         return FeederReply_Unexpected();
+      case 16:
+        return FeederReply_Unreadable();
       default:
         throw UnimplementedError('');
     }
@@ -12482,6 +12516,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  Skew? sse_decode_opt_box_autoadd_skew(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_skew(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   TimeInfo? sse_decode_opt_box_autoadd_time_info(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -13301,6 +13346,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_role = sse_decode_client_role(deserializer);
     var var_address = sse_decode_opt_String(deserializer);
     var var_connection = sse_decode_server_connection(deserializer);
+    var var_skew = sse_decode_opt_box_autoadd_skew(deserializer);
     var var_synced = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_epoch = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_archivedMs = sse_decode_opt_box_autoadd_i_64(deserializer);
@@ -13311,6 +13357,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       role: var_role,
       address: var_address,
       connection: var_connection,
+      skew: var_skew,
       synced: var_synced,
       epoch: var_epoch,
       archivedMs: var_archivedMs,
@@ -13643,7 +13690,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 0:
         var var_build = sse_decode_String(deserializer);
         var var_role = sse_decode_client_role(deserializer);
-        return SessionUpdate_Opened(build: var_build, role: var_role);
+        var var_skew = sse_decode_skew(deserializer);
+        return SessionUpdate_Opened(
+          build: var_build,
+          role: var_role,
+          skew: var_skew,
+        );
       case 1:
         var var_card = sse_decode_box_autoadd_card(deserializer);
         return SessionUpdate_Status(card: var_card);
@@ -13835,6 +13887,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw UnimplementedError('');
     }
+  }
+
+  @protected
+  Skew sse_decode_skew(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return Skew.values[inner];
   }
 
   @protected
@@ -15730,6 +15789,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_skew(Skew self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_skew(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_stats(Stats self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_stats(self, serializer);
@@ -16180,6 +16245,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_u_8(asked, serializer);
       case FeederRefusal_NoClock():
         sse_encode_i_32(14, serializer);
+      case FeederRefusal_Unknown():
+        sse_encode_i_32(15, serializer);
     }
   }
 
@@ -16232,6 +16299,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(14, serializer);
       case FeederReply_Unexpected():
         sse_encode_i_32(15, serializer);
+      case FeederReply_Unreadable():
+        sse_encode_i_32(16, serializer);
     }
   }
 
@@ -17731,6 +17800,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_skew(Skew? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_skew(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_time_info(
     TimeInfo? self,
     SseSerializer serializer,
@@ -18426,6 +18505,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_client_role(self.role, serializer);
     sse_encode_opt_String(self.address, serializer);
     sse_encode_server_connection(self.connection, serializer);
+    sse_encode_opt_box_autoadd_skew(self.skew, serializer);
     sse_encode_opt_box_autoadd_u_64(self.synced, serializer);
     sse_encode_opt_box_autoadd_u_32(self.epoch, serializer);
     sse_encode_opt_box_autoadd_i_64(self.archivedMs, serializer);
@@ -18678,10 +18758,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_session_update(SessionUpdate self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     switch (self) {
-      case SessionUpdate_Opened(build: final build, role: final role):
+      case SessionUpdate_Opened(
+        build: final build,
+        role: final role,
+        skew: final skew,
+      ):
         sse_encode_i_32(0, serializer);
         sse_encode_String(build, serializer);
         sse_encode_client_role(role, serializer);
+        sse_encode_skew(skew, serializer);
       case SessionUpdate_Status(card: final card):
         sse_encode_i_32(1, serializer);
         sse_encode_box_autoadd_card(card, serializer);
@@ -18836,6 +18921,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(4, serializer);
         sse_encode_box_autoadd_bridge_error(error, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_skew(Skew self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected

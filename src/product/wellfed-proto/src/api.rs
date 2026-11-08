@@ -543,25 +543,31 @@ pub const PORTION_MG_MAX: u32 = 50_000;
 pub struct Calibration {
     /// The mean weight of one portion, `None` until measured.
     pub portion_mg: Option<u32>,
-    /// The bowl mode the feeder runs.
-    pub bowl: Bowl,
+    /// The bowl mode the feeder runs. In [`FeederOp::PutCalibration`] a
+    /// device refuses any but its own `Unverified`, a mode it does not know
+    /// among them.
+    pub bowl: Lenient<Bowl>,
 }
 
-/// A single bowl turns one way and drops every compartment into one bowl;
-/// a double bowl alternates directions between two.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Bowl {
-    Single,
-    Double,
+unit_enum! {
+    /// A single bowl turns one way and drops every compartment into one bowl;
+    /// a double bowl alternates directions between two.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum Bowl {
+        Single,
+        Double,
+    }
 }
 
-/// Where the rotor rests between feeds, as the feeding owner knows it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Phase {
-    /// Just past a mark, where a completed feed stops.
-    AtMark,
-    /// Anywhere between two marks: the next feed homes it first.
-    Unknown,
+unit_enum! {
+    /// Where the rotor rests between feeds, as the feeding owner knows it.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum Phase {
+        /// Just past a mark, where a completed feed stops.
+        AtMark,
+        /// Anywhere between two marks: the next feed homes it first.
+        Unknown,
+    }
 }
 
 /// [`FeederOp::GetCalibration`]'s answer.
@@ -571,7 +577,7 @@ pub struct CalibrationView {
     pub writable: bool,
     pub calibration: Calibration,
     /// `None` from a feeder with no feeding owner, or before it opens.
-    pub phase: Option<Phase>,
+    pub phase: Option<Lenient<Phase>>,
 }
 
 /// Plan slots a feeder keeps, as stock keeps at most ten plans.

@@ -1,7 +1,6 @@
-//! A feeder whose welcome names another schema revision (an older bank 0
-//! after a failed trial, say) takes only the frozen update path, which the
-//! app sends. The bridge sends it nothing, says so once, and stops for good
-//! rather than reconnecting to the same build.
+//! A feeder whose welcome names a newer API revision is served as any
+//! other: the API only grows, so the bridge reads and writes what both
+//! know, and its connect update says the integration is the side to update.
 
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
@@ -9,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use wellfed_connect::Timing;
-use wellfed_homeassistant::api::{NotSent, UpdateKind, Written};
+use wellfed_homeassistant::api::{Skew, UpdateKind};
 use wellfed_homeassistant::feeder::{Clocks, Feeder, Target};
 use wellfed_homeassistant::key::ClientKey;
 use wellfed_proto::api::{FRAME_MAX, Open, PROLOGUE, PROTOCOL_MAJOR, REVISION, Role, Welcome};
@@ -28,8 +27,8 @@ fn read_frame(stream: &mut TcpStream) -> Option<Vec<u8>> {
     Some(body)
 }
 
-/// Open one session as a build of another schema revision would, then
-/// count every message that arrives after the welcome.
+/// Open one session as a build of a newer revision would, then count
+/// every message that arrives after the welcome, answering none.
 fn serve(mut stream: TcpStream, sent: &Mutex<usize>) {
     let Some(open) = read_frame(&mut stream) else {
         return;
@@ -54,7 +53,7 @@ fn serve(mut stream: TcpStream, sent: &Mutex<usize>) {
     let welcome = Welcome::Open {
         major: PROTOCOL_MAJOR,
         model: wellfed_proto::device::Model::Plaf103,
-        build: "old",
+        build: "new",
         role: Role::Member,
         epoch: 1,
         schema: REVISION + 1,
@@ -72,16 +71,14 @@ fn serve(mut stream: TcpStream, sent: &Mutex<usize>) {
 }
 
 #[test]
-fn a_feeder_of_another_build_stops_the_session_for_good() {
+fn a_feeder_of_a_newer_revision_is_served_and_named_ahead() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let address = listener.local_addr().unwrap();
     let sent = Arc::new(Mutex::new(0));
-    let connections = Arc::new(Mutex::new(0));
     {
-        let (sent, connections) = (Arc::clone(&sent), Arc::clone(&connections));
+        let sent = Arc::clone(&sent);
         std::thread::spawn(move || {
             for stream in listener.incoming() {
-                *connections.lock().unwrap() += 1;
                 let sent = Arc::clone(&sent);
                 std::thread::spawn(move || serve(stream.unwrap(), &sent));
             }
@@ -102,23 +99,21 @@ fn a_feeder_of_another_build_stops_the_session_for_good() {
     let feeder = Feeder::start(ClientKey::generate().unwrap(), target, clocks).unwrap();
 
     let deadline = Instant::now() + WAIT;
-    let stopped = loop {
-        assert!(Instant::now() < deadline, "no other_build update");
+    let connected = loop {
+        assert!(Instant::now() < deadline, "no connected update");
         let Some(update) = feeder.next_update(Duration::from_secs(1)) else {
             continue;
         };
-        assert_ne!(update.kind, UpdateKind::Connected);
-        assert_ne!(update.kind, UpdateKind::Disconnected);
-        if update.kind == UpdateKind::OtherBuild {
+        if update.kind == UpdateKind::Connected {
             break update;
         }
     };
-    assert_eq!(stopped.build.as_deref(), Some("old"));
-    assert_eq!(feeder.feed(1), Written::not_sent(NotSent::Stopped));
+    assert_eq!(connected.build.as_deref(), Some("new"));
+    assert_eq!(connected.skew, Some(Skew::FeederAhead));
 
-    // Well past the retry clock: no second connection, and nothing sent.
-    std::thread::sleep(Duration::from_millis(500));
-    assert!(feeder.next_update(Duration::from_millis(100)).is_none());
-    assert_eq!(*connections.lock().unwrap(), 1);
-    assert_eq!(*sent.lock().unwrap(), 0);
+    // The status read goes out, as to a feeder of this revision.
+    while *sent.lock().unwrap() == 0 {
+        assert!(Instant::now() < deadline, "nothing was asked of it");
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

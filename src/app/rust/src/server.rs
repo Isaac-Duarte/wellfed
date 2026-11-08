@@ -161,7 +161,6 @@ impl From<wellfed_api::Connection> for ServerConnection {
             Connection::Connecting => Self::Connecting,
             Connection::Online => Self::Online,
             Connection::Refused => Self::Refused,
-            Connection::OtherBuild => Self::OtherBuild,
         }
     }
 }
@@ -186,6 +185,7 @@ impl From<Feeder> for ServerFeeder {
             role: feeder.role,
             address: feeder.address,
             connection: feeder.connection.into(),
+            skew: feeder.skew,
             synced: feeder.synced,
             epoch: feeder.epoch,
             archived_ms: feeder.archived.map(ms),

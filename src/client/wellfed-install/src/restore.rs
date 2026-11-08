@@ -433,9 +433,7 @@ async fn signed_up<D: Discovery>(
                     .any(|c| c.key.0 == key.public() && c.role == ClientRole::UpdateSigner);
                 return listed.then_some(session);
             }
-            // Another build's list is never readable: asking again only
-            // waits out the deadline.
-            Err(error) if matches!(error, Error::OtherBuild) || Instant::now() >= deadline => {
+            Err(error) if Instant::now() >= deadline => {
                 report.event(Event::SignersUnread {
                     error: crate::text(&error),
                 });

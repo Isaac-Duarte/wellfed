@@ -33,7 +33,13 @@ from .session import FeederSession
 PARALLEL_UPDATES = 0
 
 FOOD_LEVELS = [
-    level.key for level in (bridge.FoodLevel.Unread, bridge.FoodLevel.Present, bridge.FoodLevel.Low)
+    level.key
+    for level in (
+        bridge.FoodLevel.Unread,
+        bridge.FoodLevel.Present,
+        bridge.FoodLevel.Low,
+        bridge.FoodLevel.NewerBuild,
+    )
 ]
 READINESS = [
     readiness.key
@@ -50,6 +56,7 @@ READINESS = [
         bridge.Readiness.Unserved,
         bridge.Readiness.Battery,
         bridge.Readiness.Restarting,
+        bridge.Readiness.NewerBuild,
     )
 ]
 

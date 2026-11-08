@@ -1165,8 +1165,9 @@ impl From<proto::CalibrationView> for CalibrationView {
             writable,
             calibration: calibration.into(),
             phase: phase.map(|phase| match phase {
-                proto::Phase::AtMark => Phase::AtMark,
-                proto::Phase::Unknown => Phase::Unknown,
+                proto::Lenient::Known(proto::Phase::AtMark) => Phase::AtMark,
+                proto::Lenient::Known(proto::Phase::Unknown) => Phase::Unknown,
+                proto::Lenient::Unknown(_) => Phase::Newer,
             }),
         }
     }
@@ -1178,8 +1179,9 @@ impl From<proto::Calibration> for Calibration {
         Self {
             portion_mg,
             bowl: match bowl {
-                proto::Bowl::Single => Bowl::Single,
-                proto::Bowl::Double => Bowl::Double,
+                proto::Lenient::Known(proto::Bowl::Single) => Bowl::Single,
+                proto::Lenient::Known(proto::Bowl::Double) => Bowl::Double,
+                proto::Lenient::Unknown(_) => Bowl::Unknown,
             },
         }
     }
@@ -1191,8 +1193,12 @@ impl From<Calibration> for proto::Calibration {
         Self {
             portion_mg,
             bowl: match bowl {
-                Bowl::Single => proto::Bowl::Single,
-                Bowl::Double => proto::Bowl::Double,
+                Bowl::Single => proto::Bowl::Single.into(),
+                Bowl::Double => proto::Bowl::Double.into(),
+                // An index no build gives a mode: the device refuses any
+                // mode but its own `Unverified`, so a calibration read from
+                // a newer build and written back changes nothing.
+                Bowl::Unknown => proto::Lenient::Unknown(u8::MAX),
             },
         }
     }

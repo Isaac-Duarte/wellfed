@@ -275,10 +275,7 @@ class FeederController extends ChangeNotifier {
         // A new try: the last one's error no longer says how it stands.
         _setState(_state.copyWith(error: () => null));
         _sessionIs(Connection.connecting);
-        final bool opened = await _run(address);
-        // A feeder of another build opens and ends every session alike:
-        // it backs off as one that never opened does.
-        if (opened && _connection != Connection.otherBuild) retry = _retryFirst;
+        if (await _run(address)) retry = _retryFirst;
       }
       if (_disposed) return;
       if (_redial) {

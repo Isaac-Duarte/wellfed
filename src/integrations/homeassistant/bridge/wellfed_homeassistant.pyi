@@ -1,7 +1,7 @@
 from typing import Final, SupportsFloat, SupportsIndex, final
 from typing_extensions import disjoint_base
 
-__all__ = ["By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "NextMeal", "NotSent", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "Settings", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key"]
+__all__ = ["By", "Capabilities", "Event", "EventKind", "Feed", "FeedFault", "FeedOutcome", "FeedReason", "Feeder", "FoodLevel", "Joined", "NextMeal", "NotSent", "Plan", "PortionsToday", "Readiness", "RefusalKind", "Role", "Settings", "Skew", "State", "Status", "Tune", "Update", "UpdateKind", "WellfedError", "WriteResult", "Written", "generate_secret", "invite_feeder", "join", "public_key"]
 
 @final
 class By:
@@ -216,6 +216,11 @@ class FeedOutcome:
     Done: Final[FeedOutcome]
     Expired: Final[FeedOutcome]
     Failed: Final[FeedOutcome]
+    NewerBuild: Final[FeedOutcome]
+    """
+    A value a newer feeder build added, which this integration
+    cannot name: update it.
+    """
     Uncertain: Final[FeedOutcome]
     """
     It may have run: the feeder cannot tell how much.
@@ -243,6 +248,11 @@ class FeedReason:
     Interrupted: Final[FeedReason]
     Jammed: Final[FeedReason]
     MarkStuck: Final[FeedReason]
+    NewerBuild: Final[FeedReason]
+    """
+    A value a newer feeder build added, which this integration
+    cannot name: update it.
+    """
     NoFeedback: Final[FeedReason]
     ObservationGap: Final[FeedReason]
     OutletBlocked: Final[FeedReason]
@@ -316,6 +326,11 @@ class FoodLevel:
     Low: Final[FoodLevel]
     """
     About five portions remain.
+    """
+    NewerBuild: Final[FoodLevel]
+    """
+    A value a newer feeder build added, which this integration
+    cannot name: update it.
     """
     Present: Final[FoodLevel]
     Unread: Final[FoodLevel]
@@ -469,6 +484,11 @@ class Readiness:
     Feeding: Final[Readiness]
     Joining: Final[Readiness]
     Journal: Final[Readiness]
+    NewerBuild: Final[Readiness]
+    """
+    A value a newer feeder build added, which this integration
+    cannot name: update it.
+    """
     Ready: Final[Readiness]
     Resolving: Final[Readiness]
     Restarting: Final[Readiness]
@@ -498,6 +518,11 @@ class RefusalKind:
     Full: Final[RefusalKind]
     Invalid: Final[RefusalKind]
     Muted: Final[RefusalKind]
+    NewerBuild: Final[RefusalKind]
+    """
+    A value a newer feeder build added, which this integration
+    cannot name: update it.
+    """
     NoClock: Final[RefusalKind]
     NotFound: Final[RefusalKind]
     NotWritable: Final[RefusalKind]
@@ -564,6 +589,35 @@ class Settings:
     def volume(self, /) -> int:
         """
         0-100.
+        """
+
+@final
+class Skew:
+    """
+    How the feeder's device API revision stands against this
+    integration's. Either way the session reads and writes everything
+    both know; this says which side to update for the rest.
+    """
+    FeederAhead: Final[Skew]
+    """
+    The feeder is newer: what it added reads as `newer_build` until
+    this integration is updated.
+    """
+    FeederBehind: Final[Skew]
+    """
+    The feeder is older: what it lacks is refused until it is
+    updated, from the app.
+    """
+    Same: Final[Skew]
+    def __eq__(self, value: object, /) -> bool: ...
+    def __hash__(self, /) -> int: ...
+    def __int__(self, /) -> int: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def key(self, /) -> str:
+        """
+        The snake_case name: an entity's state and its translation key.
         """
 
 @final
@@ -718,8 +772,8 @@ class Update:
     def build(self, /) -> str | None:
         """
         For [`UpdateKind::Connected`]: the build that answered, this
-        client's role and what the feeder serves. For
-        [`UpdateKind::OtherBuild`], the build alone.
+        client's role, what the feeder serves and how its API revision
+        stands against this integration's.
         """
     @property
     def capabilities(self, /) -> Capabilities | None: ...
@@ -762,6 +816,8 @@ class Update:
     @property
     def role(self, /) -> Role | None: ...
     @property
+    def skew(self, /) -> Skew | None: ...
+    @property
     def state(self, /) -> State | None:
         """
         For [`UpdateKind::State`].
@@ -786,13 +842,6 @@ class UpdateKind:
     """
     Events this session never received: what happened meanwhile is
     not known.
-    """
-    OtherBuild: Final[UpdateKind]
-    """
-    The feeder runs a different build than this integration, which
-    takes nothing but an update; `build` names it. This session
-    will not reconnect: the integration sets up a new one, retrying
-    until the feeder is updated.
     """
     Revoked: Final[UpdateKind]
     """

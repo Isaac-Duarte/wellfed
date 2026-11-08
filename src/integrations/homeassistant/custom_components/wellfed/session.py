@@ -37,8 +37,10 @@ RECENT_EVENTS = 20
 UNCERTAIN_ISSUE = "uncertain_feed"
 # A lost feed the feeder's history holds no record of.
 UNKNOWN_ISSUE = "unknown_feed"
-# A feeder of another build, which takes nothing but an update.
-OTHER_BUILD_ISSUE = "other_build"
+# A feeder of an older API revision: what it lacks needs it updated.
+UPDATE_FEEDER_ISSUE = "update_feeder"
+# A feeder of a newer API revision: what it added needs this integration updated.
+UPDATE_INTEGRATION_ISSUE = "update_integration"
 
 
 class WriteNotDone(HomeAssistantError):
@@ -103,10 +105,6 @@ class FeederSession:
 
         self.connected = False
         self.revoked = False
-        # The feeder runs a different build, which takes only an update.
-        self.other_build = False
-        # Called once a running session finds the feeder on another build.
-        self.on_other_build: Callable[[], None] | None = None
         # Called once the feeder no longer knows this Home Assistant.
         self.on_revoked: Callable[[], None] | None = None
         self.build: str | None = None
@@ -147,7 +145,7 @@ class FeederSession:
         self._feeder = None
 
     async def ready(self, timeout: float) -> None:
-        """Wait for the first state, a revoked key, or a feeder of another build."""
+        """Wait for the first state, or a revoked key."""
         with contextlib.suppress(TimeoutError):
             async with asyncio.timeout(timeout):
                 await self._ready.wait()
@@ -250,7 +248,7 @@ class FeederSession:
         kind = update.kind
         if kind == bridge.UpdateKind.Connected:
             self.connected = True
-            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(OTHER_BUILD_ISSUE))
+            self._skewed(update.skew, update.build)
             self.build = update.build
             self.role = update.role
             self.capabilities = update.capabilities
@@ -295,22 +293,6 @@ class FeederSession:
             self.connected = False
             if self.on_revoked is not None:
                 self.on_revoked()
-        elif kind == bridge.UpdateKind.OtherBuild:
-            _LOGGER.error(
-                "The feeder runs a different build (%s) than this integration: update the "
-                "feeder from the Wellfed app, or update the integration; Home Assistant "
-                "tries again on its own",
-                update.build,
-            )
-            self.other_build = True
-            self.build = update.build
-            self.connected = False
-            self._ready.set()
-            self._issue(
-                OTHER_BUILD_ISSUE, ir.IssueSeverity.ERROR, {"build": update.build or "unknown"}
-            )
-            if self.on_other_build is not None:
-                self.on_other_build()
         elif kind == bridge.UpdateKind.Disconnected:
             if self.connected:
                 _LOGGER.warning("Feeder disconnected: %s", update.reason)
@@ -323,6 +305,30 @@ class FeederSession:
         self._uncertain = max(0, self._uncertain - 1)
         if self._uncertain == 0:
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(UNCERTAIN_ISSUE))
+
+    @callback
+    def _skewed(self, skew: bridge.Skew | None, build: str | None) -> None:
+        """Name the side to update while the feeder's API revision differs.
+
+        Everything both sides know still works, so this is a warning, not a stop.
+        """
+        issues = {
+            bridge.Skew.FeederBehind: UPDATE_FEEDER_ISSUE,
+            bridge.Skew.FeederAhead: UPDATE_INTEGRATION_ISSUE,
+        }
+        wanted = issues.get(skew) if skew is not None else None
+        for issue in issues.values():
+            if issue != wanted:
+                ir.async_delete_issue(self.hass, DOMAIN, self._issue_id(issue))
+        if wanted is not None:
+            _LOGGER.warning(
+                "The feeder runs another revision of the device API (build %s): %s",
+                build,
+                "update the feeder from the Wellfed app"
+                if wanted == UPDATE_FEEDER_ISSUE
+                else "update this integration",
+            )
+            self._issue(wanted, ir.IssueSeverity.WARNING, {"build": build or "unknown"})
 
     def _issue_id(self, issue: str) -> str:
         return f"{issue}_{self.identity.hex()}"

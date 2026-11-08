@@ -301,8 +301,7 @@ struct Reading {
 /// What a fresh session says it runs, or `None` while it cannot say. The
 /// bank comes from the update state and the build from the welcome, both
 /// frozen, so a trial that fell back to an older bank 0 reads as having
-/// gone back. Readiness is not frozen, so it is read only from a build of
-/// this app's revision; another build is not the served one anyway.
+/// gone back. A status this app cannot read leaves it not ready.
 async fn reading(
     connect: &impl AsyncFn() -> Result<Connection, wellfed_install::Error>,
 ) -> Option<Reading> {
@@ -312,16 +311,13 @@ async fn reading(
     let Answer::Update(view) = session.ask(id, &Op::UpdateState).await.ok()? else {
         return None;
     };
-    let mut ready = false;
-    if session.same_schema() {
-        let id = wellfed_install::session::random().ok()?;
-        let Answer::Status(status) = session.ask(id, &Op::Status).await.ok()? else {
-            return None;
-        };
-        ready = status
+    let id = wellfed_install::session::random().ok()?;
+    let ready = match session.ask(id, &Op::Status).await.ok()? {
+        Answer::Status(status) => status
             .feeder()
-            .is_some_and(|feeder| feeder.readiness == Readiness::Ready);
-    }
+            .is_some_and(|feeder| feeder.readiness == Readiness::Ready),
+        _ => false,
+    };
     Some(Reading { build, view, ready })
 }
 

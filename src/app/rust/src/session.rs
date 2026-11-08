@@ -340,6 +340,7 @@ async fn serve(
     if !update(SessionUpdate::Opened {
         build: connection.build().to_owned(),
         role: connection.role(),
+        skew: connection.skew(),
     }) {
         return Ok(());
     }

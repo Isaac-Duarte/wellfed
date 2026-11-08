@@ -419,7 +419,7 @@
         },
         {
           "bowl": {
-            "TYPENAME": "Bowl"
+            "TYPENAME": "LenientBowl"
           }
         }
       ]
@@ -440,7 +440,7 @@
         {
           "phase": {
             "OPTION": {
-              "TYPENAME": "Phase"
+              "TYPENAME": "LenientPhase"
             }
           }
         }
@@ -1635,6 +1635,9 @@
     "LenientBlocked": {
       "NEWTYPESTRUCT": "U32"
     },
+    "LenientBowl": {
+      "NEWTYPESTRUCT": "U32"
+    },
     "LenientCurrentUnit": {
       "NEWTYPESTRUCT": "U32"
     },
@@ -1648,6 +1651,9 @@
       "NEWTYPESTRUCT": "U32"
     },
     "LenientNtpResult": {
+      "NEWTYPESTRUCT": "U32"
+    },
+    "LenientPhase": {
       "NEWTYPESTRUCT": "U32"
     },
     "LenientResetCause": {

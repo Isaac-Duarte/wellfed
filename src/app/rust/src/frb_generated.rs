@@ -6861,6 +6861,7 @@ impl SseDecode for crate::api::model::Blocked {
             8 => crate::api::model::Blocked::Unserved,
             9 => crate::api::model::Blocked::Battery,
             10 => crate::api::model::Blocked::Restarting,
+            11 => crate::api::model::Blocked::Unknown,
             _ => unreachable!("Invalid variant for Blocked: {}", inner),
         };
     }
@@ -6880,6 +6881,7 @@ impl SseDecode for crate::api::model::Bowl {
         return match inner {
             0 => crate::api::model::Bowl::Single,
             1 => crate::api::model::Bowl::Double,
+            2 => crate::api::model::Bowl::Unknown,
             _ => unreachable!("Invalid variant for Bowl: {}", inner),
         };
     }
@@ -7159,6 +7161,7 @@ impl SseDecode for crate::api::model::CurrentUnit {
         return match inner {
             0 => crate::api::model::CurrentUnit::Scaled,
             1 => crate::api::model::CurrentUnit::MilliAmps,
+            2 => crate::api::model::CurrentUnit::Unknown,
             _ => unreachable!("Invalid variant for CurrentUnit: {}", inner),
         };
     }
@@ -7231,13 +7234,12 @@ impl SseDecode for crate::api::error::ErrorKind {
             9 => crate::api::error::ErrorKind::Closed,
             10 => crate::api::error::ErrorKind::UnknownKey,
             11 => crate::api::error::ErrorKind::Version,
-            12 => crate::api::error::ErrorKind::OtherBuild,
-            13 => crate::api::error::ErrorKind::Full,
-            14 => crate::api::error::ErrorKind::Ended,
-            15 => crate::api::error::ErrorKind::Store,
-            16 => crate::api::error::ErrorKind::Invite,
-            17 => crate::api::error::ErrorKind::Interrupted,
-            18 => crate::api::error::ErrorKind::InUse,
+            12 => crate::api::error::ErrorKind::Full,
+            13 => crate::api::error::ErrorKind::Ended,
+            14 => crate::api::error::ErrorKind::Store,
+            15 => crate::api::error::ErrorKind::Invite,
+            16 => crate::api::error::ErrorKind::Interrupted,
+            17 => crate::api::error::ErrorKind::InUse,
             _ => unreachable!("Invalid variant for ErrorKind: {}", inner),
         };
     }
@@ -7300,6 +7302,7 @@ impl SseDecode for crate::api::model::FeedOutcome {
             2 => crate::api::model::FeedOutcome::Expired,
             3 => crate::api::model::FeedOutcome::Failed,
             4 => crate::api::model::FeedOutcome::Uncertain,
+            5 => crate::api::model::FeedOutcome::Unknown,
             _ => unreachable!("Invalid variant for FeedOutcome: {}", inner),
         };
     }
@@ -7339,6 +7342,7 @@ impl SseDecode for crate::api::model::FeedReason {
             12 => crate::api::model::FeedReason::FeedbackStream,
             13 => crate::api::model::FeedReason::Output,
             14 => crate::api::model::FeedReason::Interrupted,
+            15 => crate::api::model::FeedReason::Unknown,
             _ => unreachable!("Invalid variant for FeedReason: {}", inner),
         };
     }
@@ -7482,6 +7486,9 @@ impl SseDecode for crate::api::feeder::FeederRefusal {
             14 => {
                 return crate::api::feeder::FeederRefusal::NoClock;
             }
+            15 => {
+                return crate::api::feeder::FeederRefusal::Unknown;
+            }
             _ => {
                 unimplemented!("");
             }
@@ -7566,6 +7573,9 @@ impl SseDecode for crate::api::feeder::FeederReply {
             }
             15 => {
                 return crate::api::feeder::FeederReply::Unexpected;
+            }
+            16 => {
+                return crate::api::feeder::FeederReply::Unreadable;
             }
             _ => {
                 unimplemented!("");
@@ -7767,6 +7777,7 @@ impl SseDecode for crate::api::model::FoodLevel {
             0 => crate::api::model::FoodLevel::Unread,
             1 => crate::api::model::FoodLevel::Present,
             2 => crate::api::model::FoodLevel::Low,
+            3 => crate::api::model::FoodLevel::Unknown,
             _ => unreachable!("Invalid variant for FoodLevel: {}", inner),
         };
     }
@@ -9009,6 +9020,7 @@ impl SseDecode for crate::api::model::NtpResult {
             1 => crate::api::model::NtpResult::Bounded,
             2 => crate::api::model::NtpResult::Lost,
             3 => crate::api::model::NtpResult::Refused,
+            4 => crate::api::model::NtpResult::Unknown,
             _ => unreachable!("Invalid variant for NtpResult: {}", inner),
         };
     }
@@ -9486,6 +9498,17 @@ impl SseDecode for Option<crate::api::model::SetupRefusal> {
     }
 }
 
+impl SseDecode for Option<crate::api::model::Skew> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::model::Skew>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::api::feeder::TimeInfo> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -9688,6 +9711,7 @@ impl SseDecode for crate::api::model::Phase {
         return match inner {
             0 => crate::api::model::Phase::AtMark,
             1 => crate::api::model::Phase::Unknown,
+            2 => crate::api::model::Phase::Newer,
             _ => unreachable!("Invalid variant for Phase: {}", inner),
         };
     }
@@ -9884,6 +9908,7 @@ impl SseDecode for crate::api::model::ResetCause {
             2 => crate::api::model::ResetCause::Software,
             3 => crate::api::model::ResetCause::Brownout,
             4 => crate::api::model::ResetCause::Other,
+            5 => crate::api::model::ResetCause::Unknown,
             _ => unreachable!("Invalid variant for ResetCause: {}", inner),
         };
     }
@@ -10376,7 +10401,6 @@ impl SseDecode for crate::api::server_views::ServerConnection {
             1 => crate::api::server_views::ServerConnection::Connecting,
             2 => crate::api::server_views::ServerConnection::Online,
             3 => crate::api::server_views::ServerConnection::Refused,
-            4 => crate::api::server_views::ServerConnection::OtherBuild,
             _ => unreachable!("Invalid variant for ServerConnection: {}", inner),
         };
     }
@@ -10513,6 +10537,7 @@ impl SseDecode for crate::api::server_views::ServerFeeder {
         let mut var_address = <Option<String>>::sse_decode(deserializer);
         let mut var_connection =
             <crate::api::server_views::ServerConnection>::sse_decode(deserializer);
+        let mut var_skew = <Option<crate::api::model::Skew>>::sse_decode(deserializer);
         let mut var_synced = <Option<u64>>::sse_decode(deserializer);
         let mut var_epoch = <Option<u32>>::sse_decode(deserializer);
         let mut var_archivedMs = <Option<i64>>::sse_decode(deserializer);
@@ -10523,6 +10548,7 @@ impl SseDecode for crate::api::server_views::ServerFeeder {
             role: var_role,
             address: var_address,
             connection: var_connection,
+            skew: var_skew,
             synced: var_synced,
             epoch: var_epoch,
             archived_ms: var_archivedMs,
@@ -10814,6 +10840,7 @@ impl SseDecode for crate::api::server::ServerRefusal {
             11 => crate::api::server::ServerRefusal::Portions,
             12 => crate::api::server::ServerRefusal::NoClock,
             13 => crate::api::server::ServerRefusal::Unverified,
+            14 => crate::api::server::ServerRefusal::Unknown,
             _ => unreachable!("Invalid variant for ServerRefusal: {}", inner),
         };
     }
@@ -10923,9 +10950,11 @@ impl SseDecode for crate::api::session::SessionUpdate {
             0 => {
                 let mut var_build = <String>::sse_decode(deserializer);
                 let mut var_role = <crate::api::model::ClientRole>::sse_decode(deserializer);
+                let mut var_skew = <crate::api::model::Skew>::sse_decode(deserializer);
                 return crate::api::session::SessionUpdate::Opened {
                     build: var_build,
                     role: var_role,
+                    skew: var_skew,
                 };
             }
             1 => {
@@ -11169,6 +11198,19 @@ impl SseDecode for crate::api::setup::SetupStep {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseDecode for crate::api::model::Skew {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::model::Skew::Same,
+            1 => crate::api::model::Skew::FeederBehind,
+            2 => crate::api::model::Skew::FeederAhead,
+            _ => unreachable!("Invalid variant for Skew: {}", inner),
+        };
     }
 }
 
@@ -11428,6 +11470,7 @@ impl SseDecode for crate::api::model::TimeSource {
             0 => crate::api::model::TimeSource::Owner,
             1 => crate::api::model::TimeSource::Client,
             2 => crate::api::model::TimeSource::Ntp,
+            3 => crate::api::model::TimeSource::Unknown,
             _ => unreachable!("Invalid variant for TimeSource: {}", inner),
         };
     }
@@ -12638,6 +12681,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::Blocked> {
             crate::api::model::Blocked::Unserved => 8.into_dart(),
             crate::api::model::Blocked::Battery => 9.into_dart(),
             crate::api::model::Blocked::Restarting => 10.into_dart(),
+            crate::api::model::Blocked::Unknown => 11.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -12659,6 +12703,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::Bowl> {
         match self.0 {
             crate::api::model::Bowl::Single => 0.into_dart(),
             crate::api::model::Bowl::Double => 1.into_dart(),
+            crate::api::model::Bowl::Unknown => 2.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -13003,6 +13048,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::CurrentUnit
         match self.0 {
             crate::api::model::CurrentUnit::Scaled => 0.into_dart(),
             crate::api::model::CurrentUnit::MilliAmps => 1.into_dart(),
+            crate::api::model::CurrentUnit::Unknown => 2.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -13105,13 +13151,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::error::ErrorKind {
             Self::Closed => 9.into_dart(),
             Self::UnknownKey => 10.into_dart(),
             Self::Version => 11.into_dart(),
-            Self::OtherBuild => 12.into_dart(),
-            Self::Full => 13.into_dart(),
-            Self::Ended => 14.into_dart(),
-            Self::Store => 15.into_dart(),
-            Self::Invite => 16.into_dart(),
-            Self::Interrupted => 17.into_dart(),
-            Self::InUse => 18.into_dart(),
+            Self::Full => 12.into_dart(),
+            Self::Ended => 13.into_dart(),
+            Self::Store => 14.into_dart(),
+            Self::Invite => 15.into_dart(),
+            Self::Interrupted => 16.into_dart(),
+            Self::InUse => 17.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -13181,6 +13226,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::FeedOutcome
             crate::api::model::FeedOutcome::Expired => 2.into_dart(),
             crate::api::model::FeedOutcome::Failed => 3.into_dart(),
             crate::api::model::FeedOutcome::Uncertain => 4.into_dart(),
+            crate::api::model::FeedOutcome::Unknown => 5.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -13237,6 +13283,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::FeedReason>
             crate::api::model::FeedReason::FeedbackStream => 12.into_dart(),
             crate::api::model::FeedReason::Output => 13.into_dart(),
             crate::api::model::FeedReason::Interrupted => 14.into_dart(),
+            crate::api::model::FeedReason::Unknown => 15.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -13366,6 +13413,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::feeder::FeederRefusal {
                 [13.into_dart(), asked.into_into_dart().into_dart()].into_dart()
             }
             crate::api::feeder::FeederRefusal::NoClock => [14.into_dart()].into_dart(),
+            crate::api::feeder::FeederRefusal::Unknown => [15.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -13429,6 +13477,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::feeder::FeederReply {
             crate::api::feeder::FeederReply::Unanswered => [13.into_dart()].into_dart(),
             crate::api::feeder::FeederReply::NotSent => [14.into_dart()].into_dart(),
             crate::api::feeder::FeederReply::Unexpected => [15.into_dart()].into_dart(),
+            crate::api::feeder::FeederReply::Unreadable => [16.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -13613,6 +13662,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::FoodLevel> 
             crate::api::model::FoodLevel::Unread => 0.into_dart(),
             crate::api::model::FoodLevel::Present => 1.into_dart(),
             crate::api::model::FoodLevel::Low => 2.into_dart(),
+            crate::api::model::FoodLevel::Unknown => 3.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -14583,6 +14633,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::NtpResult> 
             crate::api::model::NtpResult::Bounded => 1.into_dart(),
             crate::api::model::NtpResult::Lost => 2.into_dart(),
             crate::api::model::NtpResult::Refused => 3.into_dart(),
+            crate::api::model::NtpResult::Unknown => 4.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -14703,6 +14754,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::Phase> {
         match self.0 {
             crate::api::model::Phase::AtMark => 0.into_dart(),
             crate::api::model::Phase::Unknown => 1.into_dart(),
+            crate::api::model::Phase::Newer => 2.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -14944,6 +14996,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::ResetCause>
             crate::api::model::ResetCause::Software => 2.into_dart(),
             crate::api::model::ResetCause::Brownout => 3.into_dart(),
             crate::api::model::ResetCause::Other => 4.into_dart(),
+            crate::api::model::ResetCause::Unknown => 5.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -15519,7 +15572,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::server_views::ServerConnectio
             Self::Connecting => 1.into_dart(),
             Self::Online => 2.into_dart(),
             Self::Refused => 3.into_dart(),
-            Self::OtherBuild => 4.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -15693,6 +15745,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server_views::ServerFeeder {
             self.role.into_into_dart().into_dart(),
             self.address.into_into_dart().into_dart(),
             self.connection.into_into_dart().into_dart(),
+            self.skew.into_into_dart().into_dart(),
             self.synced.into_into_dart().into_dart(),
             self.epoch.into_into_dart().into_dart(),
             self.archived_ms.into_into_dart().into_dart(),
@@ -16081,6 +16134,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::server::ServerRefusal {
             Self::Portions => 11.into_dart(),
             Self::NoClock => 12.into_dart(),
             Self::Unverified => 13.into_dart(),
+            Self::Unknown => 14.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -16240,10 +16294,11 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::server_views::ServerWeightPag
 impl flutter_rust_bridge::IntoDart for crate::api::session::SessionUpdate {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
-            crate::api::session::SessionUpdate::Opened { build, role } => [
+            crate::api::session::SessionUpdate::Opened { build, role, skew } => [
                 0.into_dart(),
                 build.into_into_dart().into_dart(),
                 role.into_into_dart().into_dart(),
+                skew.into_into_dart().into_dart(),
             ]
             .into_dart(),
             crate::api::session::SessionUpdate::Status { card } => {
@@ -16497,6 +16552,28 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::setup::SetupStep>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::Skew> {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self.0 {
+            crate::api::model::Skew::Same => 0.into_dart(),
+            crate::api::model::Skew::FeederBehind => 1.into_dart(),
+            crate::api::model::Skew::FeederAhead => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for FrbWrapper<crate::api::model::Skew>
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<crate::api::model::Skew>>
+    for crate::api::model::Skew
+{
+    fn into_into_dart(self) -> FrbWrapper<crate::api::model::Skew> {
+        self.into()
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::server_views::Species> {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self.0 {
@@ -16726,6 +16803,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::model::TimeSource>
             crate::api::model::TimeSource::Owner => 0.into_dart(),
             crate::api::model::TimeSource::Client => 1.into_dart(),
             crate::api::model::TimeSource::Ntp => 2.into_dart(),
+            crate::api::model::TimeSource::Unknown => 3.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -17804,6 +17882,7 @@ impl SseEncode for crate::api::model::Blocked {
                 crate::api::model::Blocked::Unserved => 8,
                 crate::api::model::Blocked::Battery => 9,
                 crate::api::model::Blocked::Restarting => 10,
+                crate::api::model::Blocked::Unknown => 11,
                 _ => {
                     unimplemented!("");
                 }
@@ -17827,6 +17906,7 @@ impl SseEncode for crate::api::model::Bowl {
             match self {
                 crate::api::model::Bowl::Single => 0,
                 crate::api::model::Bowl::Double => 1,
+                crate::api::model::Bowl::Unknown => 2,
                 _ => {
                     unimplemented!("");
                 }
@@ -18051,6 +18131,7 @@ impl SseEncode for crate::api::model::CurrentUnit {
             match self {
                 crate::api::model::CurrentUnit::Scaled => 0,
                 crate::api::model::CurrentUnit::MilliAmps => 1,
+                crate::api::model::CurrentUnit::Unknown => 2,
                 _ => {
                     unimplemented!("");
                 }
@@ -18123,13 +18204,12 @@ impl SseEncode for crate::api::error::ErrorKind {
                 crate::api::error::ErrorKind::Closed => 9,
                 crate::api::error::ErrorKind::UnknownKey => 10,
                 crate::api::error::ErrorKind::Version => 11,
-                crate::api::error::ErrorKind::OtherBuild => 12,
-                crate::api::error::ErrorKind::Full => 13,
-                crate::api::error::ErrorKind::Ended => 14,
-                crate::api::error::ErrorKind::Store => 15,
-                crate::api::error::ErrorKind::Invite => 16,
-                crate::api::error::ErrorKind::Interrupted => 17,
-                crate::api::error::ErrorKind::InUse => 18,
+                crate::api::error::ErrorKind::Full => 12,
+                crate::api::error::ErrorKind::Ended => 13,
+                crate::api::error::ErrorKind::Store => 14,
+                crate::api::error::ErrorKind::Invite => 15,
+                crate::api::error::ErrorKind::Interrupted => 16,
+                crate::api::error::ErrorKind::InUse => 17,
                 _ => {
                     unimplemented!("");
                 }
@@ -18187,6 +18267,7 @@ impl SseEncode for crate::api::model::FeedOutcome {
                 crate::api::model::FeedOutcome::Expired => 2,
                 crate::api::model::FeedOutcome::Failed => 3,
                 crate::api::model::FeedOutcome::Uncertain => 4,
+                crate::api::model::FeedOutcome::Unknown => 5,
                 _ => {
                     unimplemented!("");
                 }
@@ -18225,6 +18306,7 @@ impl SseEncode for crate::api::model::FeedReason {
                 crate::api::model::FeedReason::FeedbackStream => 12,
                 crate::api::model::FeedReason::Output => 13,
                 crate::api::model::FeedReason::Interrupted => 14,
+                crate::api::model::FeedReason::Unknown => 15,
                 _ => {
                     unimplemented!("");
                 }
@@ -18344,6 +18426,9 @@ impl SseEncode for crate::api::feeder::FeederRefusal {
             crate::api::feeder::FeederRefusal::NoClock => {
                 <i32>::sse_encode(14, serializer);
             }
+            crate::api::feeder::FeederRefusal::Unknown => {
+                <i32>::sse_encode(15, serializer);
+            }
             _ => {
                 unimplemented!("");
             }
@@ -18415,6 +18500,9 @@ impl SseEncode for crate::api::feeder::FeederReply {
             }
             crate::api::feeder::FeederReply::Unexpected => {
                 <i32>::sse_encode(15, serializer);
+            }
+            crate::api::feeder::FeederReply::Unreadable => {
+                <i32>::sse_encode(16, serializer);
             }
             _ => {
                 unimplemented!("");
@@ -18583,6 +18671,7 @@ impl SseEncode for crate::api::model::FoodLevel {
                 crate::api::model::FoodLevel::Unread => 0,
                 crate::api::model::FoodLevel::Present => 1,
                 crate::api::model::FoodLevel::Low => 2,
+                crate::api::model::FoodLevel::Unknown => 3,
                 _ => {
                     unimplemented!("");
                 }
@@ -19621,6 +19710,7 @@ impl SseEncode for crate::api::model::NtpResult {
                 crate::api::model::NtpResult::Bounded => 1,
                 crate::api::model::NtpResult::Lost => 2,
                 crate::api::model::NtpResult::Refused => 3,
+                crate::api::model::NtpResult::Unknown => 4,
                 _ => {
                     unimplemented!("");
                 }
@@ -20031,6 +20121,16 @@ impl SseEncode for Option<crate::api::model::SetupRefusal> {
     }
 }
 
+impl SseEncode for Option<crate::api::model::Skew> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::model::Skew>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::api::feeder::TimeInfo> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -20210,6 +20310,7 @@ impl SseEncode for crate::api::model::Phase {
             match self {
                 crate::api::model::Phase::AtMark => 0,
                 crate::api::model::Phase::Unknown => 1,
+                crate::api::model::Phase::Newer => 2,
                 _ => {
                     unimplemented!("");
                 }
@@ -20373,6 +20474,7 @@ impl SseEncode for crate::api::model::ResetCause {
                 crate::api::model::ResetCause::Software => 2,
                 crate::api::model::ResetCause::Brownout => 3,
                 crate::api::model::ResetCause::Other => 4,
+                crate::api::model::ResetCause::Unknown => 5,
                 _ => {
                     unimplemented!("");
                 }
@@ -20804,7 +20906,6 @@ impl SseEncode for crate::api::server_views::ServerConnection {
                 crate::api::server_views::ServerConnection::Connecting => 1,
                 crate::api::server_views::ServerConnection::Online => 2,
                 crate::api::server_views::ServerConnection::Refused => 3,
-                crate::api::server_views::ServerConnection::OtherBuild => 4,
                 _ => {
                     unimplemented!("");
                 }
@@ -20919,6 +21020,7 @@ impl SseEncode for crate::api::server_views::ServerFeeder {
         <crate::api::model::ClientRole>::sse_encode(self.role, serializer);
         <Option<String>>::sse_encode(self.address, serializer);
         <crate::api::server_views::ServerConnection>::sse_encode(self.connection, serializer);
+        <Option<crate::api::model::Skew>>::sse_encode(self.skew, serializer);
         <Option<u64>>::sse_encode(self.synced, serializer);
         <Option<u32>>::sse_encode(self.epoch, serializer);
         <Option<i64>>::sse_encode(self.archived_ms, serializer);
@@ -21107,6 +21209,7 @@ impl SseEncode for crate::api::server::ServerRefusal {
                 crate::api::server::ServerRefusal::Portions => 11,
                 crate::api::server::ServerRefusal::NoClock => 12,
                 crate::api::server::ServerRefusal::Unverified => 13,
+                crate::api::server::ServerRefusal::Unknown => 14,
                 _ => {
                     unimplemented!("");
                 }
@@ -21195,10 +21298,11 @@ impl SseEncode for crate::api::session::SessionUpdate {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         match self {
-            crate::api::session::SessionUpdate::Opened { build, role } => {
+            crate::api::session::SessionUpdate::Opened { build, role, skew } => {
                 <i32>::sse_encode(0, serializer);
                 <String>::sse_encode(build, serializer);
                 <crate::api::model::ClientRole>::sse_encode(role, serializer);
+                <crate::api::model::Skew>::sse_encode(skew, serializer);
             }
             crate::api::session::SessionUpdate::Status { card } => {
                 <i32>::sse_encode(1, serializer);
@@ -21399,6 +21503,23 @@ impl SseEncode for crate::api::setup::SetupStep {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::api::model::Skew {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::model::Skew::Same => 0,
+                crate::api::model::Skew::FeederBehind => 1,
+                crate::api::model::Skew::FeederAhead => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
@@ -21643,6 +21764,7 @@ impl SseEncode for crate::api::model::TimeSource {
                 crate::api::model::TimeSource::Owner => 0,
                 crate::api::model::TimeSource::Client => 1,
                 crate::api::model::TimeSource::Ntp => 2,
+                crate::api::model::TimeSource::Unknown => 3,
                 _ => {
                     unimplemented!("");
                 }

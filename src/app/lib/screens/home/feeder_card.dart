@@ -314,7 +314,24 @@ String blockedWords(Blocked reason) => switch (reason) {
   Blocked.unserved => 'This firmware does not feed',
   Blocked.battery => 'Battery too low to feed',
   Blocked.restarting => 'Restarting',
+  Blocked.unknown => 'Blocked for a reason this app does not know',
 };
+
+/// Which side to update while the feeder runs another revision of the device
+/// API than this app, or than the owner's server: `null` while they match.
+/// Everything both sides know still works, so this is advice, never a block,
+/// and a newer feeder is never offered this app's older firmware.
+String? skewWords(FeederState state) {
+  final bool owner = state.role == ClientRole.owner;
+  return switch ((state.skew, state.serverSkew)) {
+    (Skew.feederAhead, _) => 'Update this app: the feeder runs newer firmware',
+    (Skew.feederBehind, _) ||
+    (null, Skew.feederBehind) when owner => 'Update the feeder: it runs older firmware than this app',
+    (Skew.feederBehind, _) || (null, Skew.feederBehind) => 'The feeder runs older firmware: its owner can update it',
+    (_, Skew.feederAhead) => 'Update the Wellfed server: the feeder runs newer firmware',
+    _ => null,
+  };
+}
 
 /// A sunken fact: a label, the value, and a note under it.
 class _Tile extends StatelessWidget {
@@ -370,7 +387,6 @@ class _Chips extends StatelessWidget {
       Connection.looking => StatusChip('Looking…', color: c.textMuted),
       Connection.connecting => StatusChip('Connecting…', color: c.textMuted),
       Connection.offline => StatusChip("Can't reach it", color: c.textMuted),
-      Connection.otherBuild => StatusChip('Different build: update the feeder or this app', color: c.warning),
       Connection.otherVersion => StatusChip('This feeder needs a different app version', color: c.warning),
       Connection.online when feed is FeedRunning => StatusChip(
         'Feeding ${feed.portions == 1 ? '1 portion' : '${feed.portions} portions'}',
@@ -389,6 +405,7 @@ class _Chips extends StatelessWidget {
         if (card != null) _FoodChip(card.food),
         if (card?.adapter == false) StatusChip('On battery', color: c.warning, glyph: Glyph.battery),
         if (live != null && !live.clockSet) StatusChip('No time', color: c.warning, glyph: Glyph.clock),
+        if (skewWords(state) case final String words) StatusChip(words, color: c.warning),
       ],
     );
   }
@@ -407,6 +424,7 @@ class _FoodChip extends StatelessWidget {
       FoodLevel.present => ('Food in', c.text),
       FoodLevel.low => ('Food low', c.fault),
       FoodLevel.unread => ('Food not read', c.textMuted),
+      FoodLevel.unknown => ('Food level unknown to this app', c.textMuted),
     };
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -415,7 +433,7 @@ class _FoodChip extends StatelessWidget {
           present: switch (food) {
             FoodLevel.present => true,
             FoodLevel.low => false,
-            FoodLevel.unread => null,
+            FoodLevel.unread || FoodLevel.unknown => null,
           },
         ),
         const SizedBox(width: 6),

@@ -191,6 +191,7 @@ impl Service {
             role: row.role,
             address: row.address,
             connection,
+            skew: self.mirror.skew(row.id),
             synced: row.synced.map(|synced| synced.seq),
             epoch: row.synced.map(|synced| synced.epoch),
             archived: row.archived,

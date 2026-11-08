@@ -32,9 +32,6 @@ pub enum ErrorKind {
     /// The feeder serves another major of the protocol: not even an update
     /// goes to it from this app.
     Version,
-    /// The feeder runs a build of another schema revision: it takes only
-    /// an update, which this app still sends.
-    OtherBuild,
     /// Every session slot on the feeder is taken.
     Full,
     /// The session already ended.

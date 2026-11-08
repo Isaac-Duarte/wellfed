@@ -129,7 +129,9 @@ pub(super) enum FeederAction {
     PutCalibration {
         base: u32,
         calibration: Calibration,
-        bowl: Bowl,
+        /// Refused `Unverified` unless it is the build's own mode, which a
+        /// mode this build does not know never is.
+        bowl: proto::Lenient<Bowl>,
     },
     GetPlans,
     /// The table stays in the plaintext buffer, read again when the op
@@ -370,7 +372,7 @@ impl Server {
             },
             // A build runs the one bowl mode it was verified for: another
             // would turn the rotor a way no bench run has checked.
-            FeederAction::PutCalibration { bowl, .. } if bowl != device.bowl() => {
+            FeederAction::PutCalibration { bowl, .. } if bowl != device.bowl().into() => {
                 Reply::Refused(Refusal::Unverified)
             }
             FeederAction::PutCalibration {
@@ -763,9 +765,9 @@ impl Server {
                         writable: view.writable,
                         calibration: proto::Calibration {
                             portion_mg: view.calibration.portion_mg,
-                            bowl: feeder.bowl(),
+                            bowl: feeder.bowl().into(),
                         },
-                        phase: feeder.phase(),
+                        phase: feeder.phase().map(Into::into),
                     }))
                 }
                 _ => unavailable,

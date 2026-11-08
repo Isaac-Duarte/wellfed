@@ -5,7 +5,7 @@ use std::fmt;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use wellfed_model::{ClientRole, DeviceKind, Hex, Model, NextMeal, PLANS, Plan, Status};
+use wellfed_model::{ClientRole, DeviceKind, Hex, Model, NextMeal, PLANS, Plan, Skew, Status};
 
 use crate::{FeederId, HomeId};
 
@@ -54,10 +54,6 @@ pub enum Connection {
     Online,
     /// The feeder no longer knows the server's key (revoked, or reset).
     Refused,
-    /// The feeder runs a build that speaks another revision of the device
-    /// API than this server: it is mirrored no further and sent nothing but
-    /// an install, which updates it.
-    OtherBuild,
 }
 
 /// A device the server mirrors. The API names every one a feeder for now;
@@ -83,6 +79,12 @@ pub struct Feeder {
     /// Where the server last reached it.
     pub address: Option<String>,
     pub connection: Connection,
+    /// How the feeder's device API revision stands against this server's,
+    /// from its last welcome: `feeder_behind` asks for the feeder to be
+    /// updated, `feeder_ahead` for the server. Either way it is mirrored and
+    /// sent every command: what one side lacks is refused or read as
+    /// unknown. `None` before a session has opened since the server started.
+    pub skew: Option<Skew>,
     /// The newest event the server holds, `None` before the first.
     pub synced: Option<u64>,
     /// The feeder's history epoch `synced` counts in.

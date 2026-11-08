@@ -268,10 +268,6 @@ async fn run(
                 stopped(Update::revoked(), &mut commands, &updates).await;
                 return;
             }
-            Ended::OtherBuild(build) => {
-                stopped(Update::other_build(build), &mut commands, &updates).await;
-                return;
-            }
             Ended::Lost(reason) => reason,
         };
         if updates.send(Update::disconnected(reason)).is_err() {
@@ -299,9 +295,7 @@ async fn run(
 }
 
 /// The session cannot go on: say why once, then refuse every write until
-/// the handle is dropped. A revoked key needs a new invite; a feeder of
-/// another build needs an update from the app, which a new session (the
-/// integration's retried setup) then finds.
+/// the handle is dropped. A revoked key needs a new invite.
 async fn stopped(
     why: Update,
     commands: &mut mpsc::UnboundedReceiver<Command>,
@@ -327,10 +321,6 @@ enum Ended {
     /// The handle is gone.
     Dropped,
     Revoked,
-    /// The feeder's build speaks another schema revision, so only the
-    /// frozen update path reaches it: nothing this integration reads or
-    /// writes. Reconnecting would only meet the same build.
-    OtherBuild(String),
     Lost(String),
 }
 
@@ -421,10 +411,12 @@ impl<'a> Session<'a> {
 
     /// Announce the session, read the facts and subscribe.
     async fn open(&mut self) -> Step {
-        if !self.connection.same_schema() {
-            return Err(Ended::OtherBuild(self.connection.build().to_owned()));
-        }
-        let connected = Update::connected(self.connection.build(), self.role, self.capabilities);
+        let connected = Update::connected(
+            self.connection.build(),
+            self.role,
+            self.capabilities,
+            self.connection.skew(),
+        );
         self.send(connected)?;
 
         let status = match self

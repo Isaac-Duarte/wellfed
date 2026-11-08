@@ -176,8 +176,6 @@ fn status(code: ErrorCode) -> StatusCode {
         ErrorCode::InviteExpired => StatusCode::GONE,
         ErrorCode::Unreachable => StatusCode::BAD_GATEWAY,
         ErrorCode::FeederOffline => StatusCode::SERVICE_UNAVAILABLE,
-        // Lasting until one side is updated, so no retry after a wait.
-        ErrorCode::FeederOtherBuild => StatusCode::CONFLICT,
         ErrorCode::OutcomeUnknown => StatusCode::GATEWAY_TIMEOUT,
         ErrorCode::KeyReused => StatusCode::UNPROCESSABLE_ENTITY,
         ErrorCode::Superseded => StatusCode::CONFLICT,

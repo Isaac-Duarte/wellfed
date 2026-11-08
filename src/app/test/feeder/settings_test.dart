@@ -27,7 +27,7 @@ const _settings = SettingsView(
 
 Future<(FeederController, FakeSession)> _settingsTab(WidgetTester tester, {ClientRole role = ClientRole.owner}) async {
   final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
-  session.updates.add(SessionUpdate.opened(build: 'test', role: role));
+  session.updates.add(SessionUpdate.opened(build: 'test', role: role, skew: Skew.same));
   session.status(fakeCard(settings: _settings));
   await showTab(tester, SettingsTab(feeder: feeder));
   session.requests.clear();
@@ -113,9 +113,8 @@ void main() {
       expect(find.text('Diagnostics'), findsOneWidget);
     });
 
-    // A feeder of another build still takes an update from the Firmware
-    // row; one of another major takes none from this app.
-    for (final (ErrorKind kind, bool offered) in [(ErrorKind.otherBuild, true), (ErrorKind.version, false)]) {
+    // A feeder of another major takes no update from this app.
+    for (final (ErrorKind kind, bool offered) in [(ErrorKind.version, false)]) {
       testWidgets('after a session ended $kind, Firmware is ${offered ? '' : 'not '}offered', (tester) async {
         final (_, FakeSession session) = await _settingsTab(tester);
         session.updates.add(

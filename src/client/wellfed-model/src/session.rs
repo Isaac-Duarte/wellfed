@@ -35,6 +35,35 @@ pub enum OpenRefusal {
     Full,
 }
 
+/// How a feeder's API revision stands against a client's: what to tell the
+/// person when something is missing. The API only grows, so either way every
+/// op the client knows still goes ([device API evolution]); this only says
+/// which side to update.
+///
+/// [device API evolution]: ../../../../docs/firmware/device-api.md#evolution
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Skew {
+    Same,
+    /// The feeder's build is older: an op it answers `Unavailable` needs
+    /// the feeder updated.
+    FeederBehind,
+    /// The feeder's build is newer: what it added needs the client
+    /// updated. Never a reason to offer the feeder an older build.
+    FeederAhead,
+}
+
+impl Skew {
+    /// How a feeder's `revision` stands against `ours`.
+    pub fn of(revision: u32, ours: u32) -> Self {
+        match revision.cmp(&ours) {
+            core::cmp::Ordering::Less => Self::FeederBehind,
+            core::cmp::Ordering::Equal => Self::Same,
+            core::cmp::Ordering::Greater => Self::FeederAhead,
+        }
+    }
+}
+
 /// How an invite redemption ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -74,5 +103,19 @@ pub mod schema {
             .enum_values(Some(Model::ALL.map(Model::name)))
             .description(Some("A device model, which names its kind."))
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Skew;
+
+    /// The revision is an ordered count: the lower one is the older build,
+    /// and the client's own is the reference.
+    #[test]
+    fn the_older_revision_is_the_side_to_update() {
+        assert_eq!(Skew::of(1, 2), Skew::FeederBehind);
+        assert_eq!(Skew::of(2, 2), Skew::Same);
+        assert_eq!(Skew::of(3, 2), Skew::FeederAhead);
     }
 }

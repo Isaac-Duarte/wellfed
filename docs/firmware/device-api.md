@@ -263,7 +263,7 @@ From the public beta, feeders, phones, members' phones, the owner's server and H
 
 A client of an older build still reads what a newer feeder says, through these pieces of `wellfed-proto` ([`grow`](../../src/product/wellfed-proto/src/grow.rs)):
 
-- **Unit enums inside answers are lenient.** A food level, a feed's outcome and reason, what blocks feeding, the Wi-Fi source, a reset cause, a clock source, an NTP result and a current unit travel as `Lenient<T>`. An index the client's build doesn't know reads as unknown, and the rest of the answer reads on. The model names it `Unknown`, Home Assistant `newer_build`. A feed's unknown outcome counts as uncertain, never as done. `every_lenient_enum_is_unit_only_in_its_encoded_order` checks that each one is unit-only, so it can only grow by a variant at its end.
+- **Unit enums inside answers are lenient.** A food level, a feed's outcome and reason, what blocks feeding, the Wi-Fi source, a reset cause, a clock source, an NTP result, a current unit, the bowl mode and the rotor's phase travel as `Lenient<T>`. An index the client's build doesn't know reads as unknown, and the rest of the answer reads on. The model names it `Unknown`, or `Phase::Newer` beside the phase that is itself unknown; Home Assistant names it `newer_build`. A bowl mode the client can't name, written back in `PutCalibration`, is refused `Unverified`, as any mode but the build's own. A feed's unknown outcome counts as uncertain, never as done. `every_lenient_enum_is_unit_only_in_its_encoded_order` checks that each one is unit-only, so it can only grow by a variant at its end.
 - **Structs that will grow end in a tail.** `Status`, `FeederStatus`, `Settings` and `Plan` end in `ext`, a length-prefixed run of bytes. This build writes it empty. A later build puts its new fields there as a struct of their own, and an older reader skips them by their length.
 - **An answer the client can't read is not the end of the session.** The response's id sits right after its tag, so `wellfed-client` answers an undecodable response `Unreadable`, or `Refused(Unknown)` when only the refusal is new, and keeps the session. A write answered either way is uncertain: the client reports it as unanswered and never sends it again, as for a write whose session dropped ([feeds](#feeds)).
 - **Events carry their length.** The device sends each event body behind its 1-byte length, so an older client reads a body it doesn't know as `Pushed::Unknown { seq, at, raw }`, and its cursor moves past it. The server stores those raw bytes, with no kind, and a later server build decodes them when it rebuilds its projections.
@@ -278,7 +278,12 @@ A client of an older build still reads what a newer feeder says, through these p
 - A feeder behind the client refuses an op its build lacks `Unavailable` and keeps the session. `wellfed-client`'s `Opened::skew` says `FeederBehind`, so a client can say "update the feeder".
 - A feeder ahead of the client answers every op the client knows. `Opened::skew` says `FeederAhead`, so a client can say "update this app". Its events that the client's build doesn't know arrive as `Pushed::Unknown`.
 
-The server, Home Assistant and the update key still treat a feeder of any other revision as another build: the server shows it as `other_build` and sends it only an install, and Home Assistant raises a repair. Those follow the revision's direction in a later change.
+Every client serves a feeder of any revision the same way, and `Skew` (`wellfed-model`) only says which side to update:
+
+- **The app** shows "Update this app" for a feeder ahead of it, and "Update the feeder" for one behind it (to a member, that its owner can update it). It never offers a feeder ahead of it, or one whose confirmed version is at or past the image the app carries, that image: the app sends no downgrade statement, so an install there could only be a downgrade.
+- **The server** mirrors it whole and sends it every command. Its feeder view carries `skew` against the server's own revision, so a feeder ahead asks for the server to be updated.
+- **Home Assistant** serves it and raises a warning repair, `update_feeder` or `update_integration`, that clears once the revisions match.
+- **The update key's enrollment and the installer** read the client list and status as from any feeder; a status they can't read leaves readiness unknown.
 
 These rules hold for both parts:
 

@@ -295,6 +295,8 @@ fn lenient() -> Vec<(&'static str, &'static [&'static str])> {
         of::<NtpResult>(),
         of::<TimeSource>(),
         of::<CurrentUnit>(),
+        of::<Bowl>(),
+        of::<Phase>(),
     ]
 }
 

@@ -388,15 +388,9 @@ impl Connection {
         self.opened().epoch
     }
 
-    /// Whether the feeder's build speaks exactly this client's API
-    /// revision.
-    pub fn same_schema(&self) -> bool {
-        self.opened().same_schema()
-    }
-
-    /// Which side is the older build ([`wellfed_client::api::Skew`]): every
-    /// op goes either way, and this says what to update when one is missing.
-    pub fn skew(&self) -> wellfed_client::api::Skew {
+    /// Which side is the older build ([`wellfed_model::Skew`]): every op
+    /// goes either way, and this says what to update when one is missing.
+    pub fn skew(&self) -> wellfed_model::Skew {
         self.opened().skew()
     }
 

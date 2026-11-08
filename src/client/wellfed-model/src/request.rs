@@ -190,6 +190,10 @@ pub struct Calibration {
 pub enum Bowl {
     Single,
     Double,
+    /// A mode a newer feeder build added, which this build cannot name.
+    /// Written back, the feeder refuses it `Unverified`, as any mode but
+    /// its own.
+    Unknown,
 }
 
 /// Where the rotor rests between feeds.
@@ -201,6 +205,9 @@ pub enum Phase {
     /// Between two marks: the next feed homes it first, and may drop part
     /// of a compartment more than it credits.
     Unknown,
+    /// A resting place a newer feeder build added, which this build cannot
+    /// name. Not [`Self::Unknown`], which is a phase of its own.
+    Newer,
 }
 
 /// The calibration as the feeder holds it.

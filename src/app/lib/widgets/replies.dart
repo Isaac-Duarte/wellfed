@@ -13,6 +13,9 @@ String? replyProblem(FeederReply reply) => switch (reply) {
         'send it again.',
   FeederReply_NotSent() => 'The connection dropped before this went out. Nothing changed.',
   FeederReply_Unexpected() => 'The feeder answered something unexpected.',
+  FeederReply_Unreadable() =>
+    "The feeder runs newer firmware and answered in a way this app can't read, so "
+        "it may or may not have gone through. Wellfed won't send it again. Update this app.",
   _ => null,
 };
 
@@ -32,6 +35,7 @@ String refusalWords(FeederRefusal refusal) => switch (refusal) {
   FeederRefusal_Unverified() => 'This feeder has not verified that mode.',
   FeederRefusal_Portions(:final asked) => 'A feed is 1 to 48 portions, not $asked.',
   FeederRefusal_NoClock() => "The feeder doesn't know the date. Set its time first.",
+  FeederRefusal_Unknown() => 'The feeder refused it for a reason this app does not know. Update this app.',
 };
 
 String notAskedWords(NotAsked reason) => switch (reason) {

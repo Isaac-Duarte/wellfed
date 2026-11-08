@@ -13,7 +13,7 @@ use tokio_util::task::TaskTracker;
 use tracing::{Instrument, debug, info, info_span, warn};
 use wellfed_api::{Connection as Link, FeederId};
 use wellfed_connect::Connection;
-use wellfed_model::{DeviceKind, Model, Plans};
+use wellfed_model::{DeviceKind, Model, Plans, Skew};
 use wellfed_session::noise::Keypair;
 
 use crate::collect::Collector;
@@ -73,6 +73,8 @@ pub(crate) struct Opened {
     /// Which module of the device API it serves, and its model.
     pub(crate) kind: DeviceKind,
     pub(crate) model: Model,
+    /// How its API revision stands against this server's.
+    pub(crate) skew: Skew,
     /// Its boot count, once its status is read.
     pub(crate) boot_count: Option<u32>,
 }
@@ -84,6 +86,10 @@ impl Handle {
 
     pub(crate) fn epoch(&self) -> Option<u32> {
         self.opened.borrow().map(|opened| opened.epoch)
+    }
+
+    pub(crate) fn skew(&self) -> Option<Skew> {
+        self.opened.borrow().map(|opened| opened.skew)
     }
 
     pub(crate) fn is_open(&self) -> bool {

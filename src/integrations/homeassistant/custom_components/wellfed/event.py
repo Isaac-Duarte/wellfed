@@ -16,12 +16,15 @@ from .session import FeederSession
 PARALLEL_UPDATES = 0
 
 # A feed's outcome as an event type; a feed that ran to its end is `fed`.
+# An outcome a newer feeder build added is uncertain here: it is never
+# taken for a feed that ran.
 TYPES = {
     bridge.FeedOutcome.Done.key: "fed",
     bridge.FeedOutcome.Cancelled.key: "cancelled",
     bridge.FeedOutcome.Failed.key: "failed",
     bridge.FeedOutcome.Uncertain.key: "uncertain",
     bridge.FeedOutcome.Expired.key: "expired",
+    bridge.FeedOutcome.NewerBuild.key: "uncertain",
 }
 
 

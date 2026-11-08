@@ -22,11 +22,6 @@ enum Connection {
   /// Not reachable; [FeederState.error] says how the last try ended.
   offline,
 
-  /// Reachable, but it runs a different build than this app, which takes
-  /// nothing but a firmware update: the phone's session ended with
-  /// [ErrorKind.otherBuild], or the server's link to it reads `otherBuild`.
-  otherBuild,
-
   /// Reachable, but it serves another major of the protocol
   /// ([ErrorKind.version]): not even an update goes to it from this app,
   /// which the owner replaces with a version that speaks it.
@@ -205,6 +200,8 @@ final class FeederState {
     this.serverId,
     this.viewer = false,
     this.unconfirmed = const [],
+    this.skew,
+    this.serverSkew,
   });
 
   /// What this phone keeps about the feeder.
@@ -262,6 +259,14 @@ final class FeederState {
   /// held on the path they went until a check or the owner puts them away.
   final List<PendingWrite> unconfirmed;
 
+  /// How the feeder's API revision stands against this app's, from the
+  /// last session's welcome: which side to update, never a reason to offer
+  /// the feeder an older build. `null` before a session has opened.
+  final Skew? skew;
+
+  /// The same against the owner's server, as the server last said.
+  final Skew? serverSkew;
+
   /// The card is what this session read, not an earlier one.
   bool get cardIsCurrent => connection == Connection.online && cardFresh;
 
@@ -288,6 +293,8 @@ final class FeederState {
     String? Function()? serverId,
     bool? viewer,
     List<PendingWrite>? unconfirmed,
+    Skew? Function()? skew,
+    Skew? Function()? serverSkew,
   }) => FeederState(
     known: known ?? this.known,
     connection: connection ?? this.connection,
@@ -306,5 +313,7 @@ final class FeederState {
     serverId: serverId == null ? this.serverId : serverId(),
     viewer: viewer ?? this.viewer,
     unconfirmed: unconfirmed == null ? this.unconfirmed : List.unmodifiable(unconfirmed),
+    skew: skew == null ? this.skew : skew(),
+    serverSkew: serverSkew == null ? this.serverSkew : serverSkew(),
   );
 }

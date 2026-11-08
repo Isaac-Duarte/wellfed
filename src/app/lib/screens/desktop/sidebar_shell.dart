@@ -324,7 +324,7 @@ class _FeederItem extends StatelessWidget {
       final Color dot = switch (state.connection) {
         Connection.online => c.ok,
         Connection.offline => c.fault,
-        Connection.otherBuild || Connection.otherVersion => c.warning,
+        Connection.otherVersion => c.warning,
         Connection.looking || Connection.connecting => c.lineStrong,
       };
       return _Item(
@@ -339,10 +339,6 @@ class _FeederItem extends StatelessWidget {
         trailing: switch (state.connection) {
           Connection.offline => Text(
             'Offline',
-            style: TextStyle(fontSize: Sizes.xs, color: c.textMuted),
-          ),
-          Connection.otherBuild => Text(
-            'Different build',
             style: TextStyle(fontSize: Sizes.xs, color: c.textMuted),
           ),
           Connection.otherVersion => Text(

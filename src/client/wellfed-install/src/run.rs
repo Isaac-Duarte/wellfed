@@ -1190,9 +1190,7 @@ where
             };
             match read.await {
                 Ok(clients) => return install.signers(&clients),
-                // Another build's list is never readable: asking again
-                // only waits out the deadline.
-                Err(error) if matches!(error, Error::OtherBuild) || Instant::now() >= deadline => {
+                Err(error) if Instant::now() >= deadline => {
                     self.io.report.event(Event::SignersUnread {
                         error: crate::text(&error),
                     });
@@ -1439,18 +1437,14 @@ where
         while Instant::now() < deadline {
             // The bank from the update state and the build from the welcome,
             // both frozen: a trial that fell back to an older bank 0 reads as
-            // gone back. Readiness is not frozen, so only a build of this
-            // tool's revision is asked for it.
+            // gone back. A status this build cannot read leaves readiness
+            // unknown.
             if let Ok(mut connection) = self.connect().await
                 && let Ok(Answer::Update(view)) = connection.ask(random()?, &Op::UpdateState).await
             {
-                let readiness = if connection.same_schema() {
-                    match connection.ask(random()?, &Op::Status).await {
-                        Ok(Answer::Status(status)) => status.feeder().map(|f| f.readiness),
-                        _ => None,
-                    }
-                } else {
-                    None
+                let readiness = match connection.ask(random()?, &Op::Status).await {
+                    Ok(Answer::Status(status)) => status.feeder().map(|f| f.readiness),
+                    _ => None,
                 };
                 install.confirmed(
                     Replacement {

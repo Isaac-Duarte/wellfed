@@ -17,6 +17,8 @@ Future<(FakeFeederPorts, FakeSession)> _show(
   ImageCheck image = const ImageCheck.ready(provisioning: ImageProvisioning.consumer, build: _newBuild, version: 7),
   String build = 'ab',
   Bank0Check bank0 = const Bank0Check.unchecked(),
+  int minVersion = 6,
+  Skew skew = Skew.same,
 }) async {
   final book = FakeBook()..feeders = [kitchen];
   final ports = FakeFeederPorts()..image = image;
@@ -24,7 +26,7 @@ Future<(FakeFeederPorts, FakeSession)> _show(
   ports.controller = feeder;
   addTearDown(feeder.dispose);
   await tester.pump();
-  ports.session.opened();
+  ports.session.opened(skew: skew);
   ports.session.status(fakeCard(build: build));
   await tester.pump();
   ports.session.replies.add(
@@ -32,7 +34,7 @@ Future<(FakeFeederPorts, FakeSession)> _show(
       update: UpdateInfo(
         phase: UpdatePhase.idle,
         bank: 1,
-        minVersion: 6,
+        minVersion: minVersion,
         version: 0,
         imageLen: 0,
         written: 0,
@@ -57,6 +59,20 @@ void main() {
     expect(find.textContaining('carries no update'), findsOneWidget);
     expect(find.text('Install on Kitchen'), findsNothing);
   });
+
+  // The app sends no downgrade statement, and a newer feeder is never offered
+  // this app's older firmware: the app is the side to update.
+  for (final (String why, int minVersion, Skew skew) in [
+    ("a confirmed version at the image's", 7, Skew.same),
+    ("a confirmed version past the image's", 9, Skew.same),
+    ('a newer API revision', 6, Skew.feederAhead),
+  ]) {
+    testWidgets('a feeder with $why is offered no downgrade, and told to update the app', (tester) async {
+      await _show(tester, minVersion: minVersion, skew: skew);
+      expect(find.textContaining('newer firmware than this app carries'), findsOneWidget);
+      expect(find.text('Install on Kitchen'), findsNothing);
+    });
+  }
 
   testWidgets('the running build is up to date', (tester) async {
     await _show(tester, build: _newBuild);
