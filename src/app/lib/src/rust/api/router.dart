@@ -16,6 +16,7 @@ import 'server.dart';
 import 'server_error.dart';
 import 'server_views.dart';
 import 'session.dart';
+import 'store.dart';
 part 'router.freezed.dart';
 
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`
@@ -68,6 +69,10 @@ abstract class PathRouter implements RustOpaqueInterface {
   /// it before running the session, so the router hears its history from
   /// the start; a later session replaces it.
   void attach({required FeederSession session});
+
+  /// The owner looked at every feeder's bowl after the record of writes
+  /// was set aside: feeds go again.
+  void bowlsChecked();
 
   /// Stop the feed numbered `feed` if it still runs.
   Future<RoutedReply> cancelFeed({required String feeder, required int feed});
@@ -159,6 +164,11 @@ abstract class PathRouter implements RustOpaqueInterface {
   /// the phone's own session read it. Nothing is sent, on either path.
   Future<RetryOutcome> retry({required String key});
 
+  /// The record of writes that may have run, when it did not read at the
+  /// open and was set aside: every feed waits, as
+  /// [`NotSentReason::SetAside`], until [`Self::bowls_checked`].
+  SetAside? setAside();
+
   /// Hear the router's updates until [`Self::close`].
   Stream<RouterUpdate> updates();
 }
@@ -210,6 +220,11 @@ enum NotSentReason {
 
   /// The phone's own session ended before it went.
   session,
+
+  /// A feed, held back: the record of writes that may have run did not
+  /// read and was set aside, and the owner has not yet said the bowls are
+  /// checked ([`PathRouter::bowls_checked`]).
+  setAside,
 }
 
 /// A write that may have run, pinned to the path it went on.

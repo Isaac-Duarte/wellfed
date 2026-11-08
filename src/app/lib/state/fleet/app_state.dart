@@ -9,6 +9,7 @@ import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/fleet/store_notice.dart';
 
 /// The feeders this phone knows, and what the flows that add one need of
 /// the app's file.
@@ -67,23 +68,49 @@ abstract interface class FeederBook implements Listenable {
 }
 
 /// Why the pins file (`pending.json`) did not open, so the app sends no
-/// request at all.
+/// request at all. A file that opens but does not read is not one of these:
+/// it is set aside, and [AppState.notice] says so.
 enum PinsProblem {
   /// Another copy of the app, in another process, holds it.
   inUse,
 
-  /// It can't be read: damaged, or written by a build whose shape this one
-  /// does not read. Only clearing the app's data clears it.
-  unreadable,
+  /// The phone's storage failed to read it: it may read at the next start.
+  unavailable,
+}
+
+/// How the app's start went.
+sealed class AppStart {
+  /// For the two outcomes.
+  const AppStart();
+}
+
+/// The app's state, ready.
+final class AppStarted extends AppStart {
+  /// Started on `app`.
+  const AppStarted(this.app);
+
+  /// The phone's key, its feeders and its router.
+  final AppState app;
+}
+
+/// The phone's key or the app's file could not be read at all: not their
+/// contents, which are set aside, but the storage under them.
+final class AppFailed extends AppStart {
+  /// Failed, saying `message`.
+  const AppFailed(this.message);
+
+  /// What failed, for a support request.
+  final String message;
 }
 
 /// The phone's identity and the feeders it knows. The client secret lives
 /// in [secureStorage]; everything else in the app's own file, which Rust
 /// reads and writes.
 class AppState extends ChangeNotifier implements FeederBook {
-  AppState._(this.key, this._store, this._path, (PathRouter?, PinsProblem?) opened)
+  AppState._(this.key, this._store, this._path, (PathRouter?, PinsProblem?) opened, SetAside? storeSetAside)
     : router = opened.$1,
-      pinsProblem = opened.$2;
+      pinsProblem = opened.$2,
+      notice = StoreNoticeFlow(app: storeSetAside, router: opened.$1);
 
   static const _secretName = 'client-secret';
 
@@ -100,6 +127,10 @@ class AppState extends ChangeNotifier implements FeederBook {
   final String _path;
   AppStore _store;
 
+  /// The app's files this start set aside, until the owner has read what
+  /// that means.
+  final StoreNoticeFlow notice;
+
   /// Feeders that paired since the app started, whose clock this phone has
   /// not set yet. In memory: a feeder with no clock is set whenever a
   /// session opens, whatever this holds.
@@ -107,7 +138,20 @@ class AppState extends ChangeNotifier implements FeederBook {
 
   Future<void> _writing = Future.value();
 
-  /// Read this phone's key and file, making a key the first time.
+  /// Start the app: [load], or why it could not.
+  static Future<AppStart> start() async {
+    try {
+      return AppStarted(await load());
+    } on Object catch (error) {
+      // Any failure here would otherwise leave a blank screen: say it.
+      debugPrint('the app could not start: $error');
+      return AppFailed(error is BridgeError ? error.message : '$error');
+    }
+  }
+
+  /// Read this phone's key and file, making a key the first time. A file
+  /// that does not read is set aside ([notice]); only the storage itself
+  /// failing throws.
   static Future<AppState> load() async {
     final String? saved = await secureStorage.read(key: _secretName);
     final ClientKey key;
@@ -124,8 +168,9 @@ class AppState extends ChangeNotifier implements FeederBook {
 
     final Directory dir = await getApplicationSupportDirectory();
     final path = '${dir.path}/wellfed.json';
-    final AppStore store = await loadStore(path: path);
-    return AppState._(key, store, path, _openRouter('${dir.path}/pending.json', store.server));
+    final OpenedStore opened = await openStore(path: path);
+    final AppStore store = opened.store;
+    return AppState._(key, store, path, _openRouter('${dir.path}/pending.json', store.server), opened.setAside);
   }
 
   /// The router on `pins`, told at once of the server the app keeps, before
@@ -138,7 +183,7 @@ class AppState extends ChangeNotifier implements FeederBook {
       return (router, null);
     } on BridgeError catch (error) {
       debugPrint('the pending writes could not be opened, so nothing is sent: ${error.message}');
-      return (null, error.kind == ErrorKind.inUse ? PinsProblem.inUse : PinsProblem.unreadable);
+      return (null, error.kind == ErrorKind.inUse ? PinsProblem.inUse : PinsProblem.unavailable);
     }
   }
 

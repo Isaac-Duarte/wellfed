@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/src/rust/api/server.dart';
 import 'package:wellfed/src/rust/api/server_views.dart';
 import 'package:wellfed/src/rust/api/session.dart';
+import 'package:wellfed/src/rust/api/store.dart';
 
 import 'fakes.dart';
 
@@ -108,6 +110,21 @@ class FakeRouter with FakeOpaque implements PathRouter {
 
   @override
   void acknowledge({required String key}) => acknowledged.add(key);
+
+  /// The record of writes it set aside at its open, until the bowls are checked.
+  SetAside? setAsideFile;
+
+  /// Whether a check of the bowls fails to be written down.
+  bool bowlsFail = false;
+
+  @override
+  SetAside? setAside() => setAsideFile;
+
+  @override
+  void bowlsChecked() {
+    if (bowlsFail) throw const BridgeError(kind: ErrorKind.store, message: 'disk full');
+    setAsideFile = null;
+  }
 
   @override
   Future<RetryOutcome> retry({required String key}) async {

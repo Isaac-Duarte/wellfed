@@ -10,7 +10,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'server_views.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// This app's version, as its About screen says it.
 String appVersion() => RustLib.instance.api.crateApiStoreAppVersion();
@@ -20,7 +20,16 @@ String appVersion() => RustLib.instance.api.crateApiStoreAppVersion();
 String feederAddress({required String text}) =>
     RustLib.instance.api.crateApiStoreFeederAddress(text: text);
 
-/// The store at `path`, or an empty one when the app has never saved.
+/// The store at `path` as the app's start reads it: an empty one when the
+/// app has never saved, and an empty one too, with the old file set aside,
+/// when it does not read. The client key in secure storage and the stock
+/// backups are not in this file, so neither is touched.
+Future<OpenedStore> openStore({required String path}) =>
+    RustLib.instance.api.crateApiStoreOpenStore(path: path);
+
+/// The store at `path`, or an empty one when the app has never saved. Strict:
+/// a file that does not read is an error, since the start already set aside
+/// any it found, and a change must not empty the store behind the owner.
 Future<AppStore> loadStore({required String path}) =>
     RustLib.instance.api.crateApiStoreLoadStore(path: path);
 
@@ -127,4 +136,73 @@ class KnownFeeder {
           name == other.name &&
           address == other.address &&
           manualAddress == other.manualAddress;
+}
+
+/// The app's file as its start opened it.
+class OpenedStore {
+  final AppStore store;
+
+  /// The file that did not read and was set aside, if it did not.
+  final SetAside? setAside;
+
+  const OpenedStore({required this.store, this.setAside});
+
+  @override
+  int get hashCode => store.hashCode ^ setAside.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OpenedStore &&
+          runtimeType == other.runtimeType &&
+          store == other.store &&
+          setAside == other.setAside;
+}
+
+/// A file of the app's that did not read at the start, kept under another
+/// name beside it and replaced with an empty one.
+class SetAside {
+  final StoreKind kind;
+
+  /// Where it is kept now.
+  final String movedTo;
+
+  /// Why it did not read, for a support request.
+  final String reason;
+
+  /// When it was set aside, by the phone's clock (ms).
+  final PlatformInt64 atMs;
+
+  const SetAside({
+    required this.kind,
+    required this.movedTo,
+    required this.reason,
+    required this.atMs,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^ movedTo.hashCode ^ reason.hashCode ^ atMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SetAside &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          movedTo == other.movedTo &&
+          reason == other.reason &&
+          atMs == other.atMs;
+}
+
+/// Which of the app's files was set aside.
+enum StoreKind {
+  /// `wellfed.json`: the feeders this phone knows and its server.
+  app,
+
+  /// `pending.json`: the writes that may have run.
+  pending,
+
+  /// `alerts.json`: what the phone keeps of the feeders' alerts.
+  alerts,
 }

@@ -9,6 +9,7 @@
 //! With a server configured, every feeder request goes through the path
 //! router (`route`, exposed as [`api::router`]).
 
+pub mod alerts;
 #[cfg(target_os = "android")]
 pub mod android;
 pub mod api;
@@ -33,6 +34,7 @@ pub mod restore;
 mod route;
 mod server;
 pub mod session;
+mod stored;
 mod today;
 mod trace;
 mod writes;

@@ -18,7 +18,9 @@
 //! - a `feeder_offline` answer lost, whose entry the server dropped;
 //! - a `500` before the journal held the write.
 //!
-//! A direct feed's pin never takes the end of a feed already running, and
+//! A pins file that does not read is set aside, and no feed goes until the
+//! owner has checked the bowls. A direct feed's pin never takes the end of a
+//! feed already running, and
 //! one pins file has one router at a time: a newer one in the process takes
 //! it over, and the one it took it from sends no write again. A session offers Dart no request of its
 //! own, so nothing reaches a feeder around the router.
@@ -1120,6 +1122,47 @@ fn adopting_with_no_server_or_no_invite_adopts_nothing() {
         );
         assert!(owner.feeders().await.unwrap().is_empty());
         server.stop().await;
+        sim.stop().await;
+    });
+}
+
+#[test]
+fn a_pins_file_that_does_not_read_is_set_aside_and_holds_feeds_until_the_bowls_are_checked() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let pins = tempfile::tempdir().unwrap();
+        std::fs::write(path(&pins), b"{ not json").unwrap();
+        let (router, updates) = router(&pins, UNFOUND);
+        let phone = Phone {
+            key: ClientKey::restore(feeder::OWNER.to_vec()).unwrap(),
+            pins,
+            router,
+            updates,
+        };
+        let _direct = phone.open(&sim, sim.address).await;
+        let kitchen = identity(&sim);
+
+        let set_aside = phone
+            .router
+            .set_aside()
+            .expect("the router says it set the file aside");
+        assert_eq!(
+            std::fs::read(&set_aside.moved_to).unwrap(),
+            b"{ not json",
+            "kept, not deleted"
+        );
+        let RoutedFeed::NotSent { reason, .. } = phone.router.feed(kitchen.clone(), 1).await else {
+            panic!("a lost pin may have been a feed that ran");
+        };
+        assert_eq!(reason, NotSentReason::SetAside);
+        assert_eq!(feeder::feeds(&flash), 0);
+
+        phone.router.bowls_checked().unwrap();
+        assert_eq!(phone.router.set_aside(), None);
+        let RoutedFeed::Started { .. } = phone.router.feed(kitchen, 1).await else {
+            panic!("the owner checked the bowls");
+        };
         sim.stop().await;
     });
 }
