@@ -216,7 +216,7 @@ class FakeSession with FakeOpaque implements FeederSession {
 /// A phone with no backups.
 class FakeBackupPorts implements BackupPorts {
   @override
-  Future<String?> kept(String identity) async => null;
+  Future<List<KeptBackup>> kept() async => const [];
 
   @override
   Future<void> share(String path) async {}

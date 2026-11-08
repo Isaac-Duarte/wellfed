@@ -50,9 +50,9 @@ class SetAsideScreen extends StatelessWidget {
 
   static String _words(StoreKind kind) => switch (kind) {
     StoreKind.app =>
-      "This $deviceName's list of feeders and its server login start empty. Add your feeders again, "
-          'and log in to your server again if you use one. Feeders that knew this '
-          '$deviceName still know it.',
+      "This $deviceName's list of feeders and its server login start empty. For a feeder you own, use "
+          'Add a feeder, then Recover a feeder. For one someone else owns, ask them for a new invite. If '
+          'you use a home server, log in to it again.',
     StoreKind.pending =>
       "The record of feeds and changes that hadn't been confirmed is gone, so a feed sent "
           "just before may have run. Look in every feeder's bowl before you feed again.",

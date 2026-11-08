@@ -86,6 +86,45 @@ pub(crate) fn write_new(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     })
 }
 
+/// A stock backup found under the backups directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeptBackup {
+    /// The feeder it was read from.
+    pub identity: [u8; 32],
+    pub path: PathBuf,
+}
+
+/// Every stock backup kept under `backups`, found by its directory rather than
+/// by any list of feeders, so a feeder forgotten, or one a reset gave a new
+/// identity, still has its copy listed. In identity order; none when the
+/// directory does not exist. Listing does not open them: a damaged one is
+/// found when it is used, by [`load_backup`]'s checks.
+pub fn kept_backups(backups: &Path) -> Result<Vec<KeptBackup>, Error> {
+    let read_error = |source| Error::Read {
+        path: backups.to_path_buf(),
+        source,
+    };
+    let entries = match std::fs::read_dir(backups) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => return Err(read_error(source)),
+    };
+
+    let mut kept = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(read_error)?;
+        let Some(identity) = entry.file_name().to_str().and_then(hex::decode::<32>) else {
+            continue;
+        };
+        let path = backup_path(backups, &identity);
+        if path.is_file() {
+            kept.push(KeptBackup { identity, path });
+        }
+    }
+    kept.sort_by_key(|backup| backup.identity);
+    Ok(kept)
+}
+
 /// Whether an earlier run paired with a feeder and did not reach the end, so
 /// a new one may pick up from bank 0.
 pub fn resumable(backups: &Path) -> bool {
@@ -258,6 +297,43 @@ mod tests {
         std::fs::create_dir_all(at.parent().unwrap()).unwrap();
         std::fs::write(&at, b"not stock").unwrap();
         assert!(matches!(load_backup(&at), Err(Error::BackupDamaged { .. })));
+    }
+
+    /// Every feeder directory holding a backup is listed, whatever else is
+    /// beside it.
+    #[test]
+    fn kept_backups_are_found_by_their_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let backups = dir.path().join("stock-backups");
+        assert_eq!(kept_backups(&backups).unwrap(), Vec::new(), "no directory");
+
+        for identity in [[0xcd; 32], [0xab; 32]] {
+            let at = backup_path(&backups, &identity);
+            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+            std::fs::write(&at, b"kept").unwrap();
+        }
+        // A feeder directory with no backup yet, a set-aside one, and others.
+        std::fs::create_dir_all(feeder_directory(&backups, &[0x11; 32])).unwrap();
+        let aside = feeder_directory(&backups, &[0x22; 32]);
+        std::fs::create_dir_all(&aside).unwrap();
+        std::fs::write(aside.join("stock-1.1.15.bin.damaged-1"), b"x").unwrap();
+        std::fs::create_dir_all(backups.join("not-a-feeder")).unwrap();
+        std::fs::write(backups.join("installing.json"), b"{}").unwrap();
+
+        let kept = kept_backups(&backups).unwrap();
+        assert_eq!(
+            kept,
+            vec![
+                KeptBackup {
+                    identity: [0xab; 32],
+                    path: backup_path(&backups, &[0xab; 32]),
+                },
+                KeptBackup {
+                    identity: [0xcd; 32],
+                    path: backup_path(&backups, &[0xcd; 32]),
+                },
+            ]
+        );
     }
 
     /// Only a file that does not open, or a difference a run stopped on, goes;

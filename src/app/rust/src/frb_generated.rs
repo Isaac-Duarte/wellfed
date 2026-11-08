@@ -48,7 +48,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -630238695;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 829676680;
 
 // Section: executor
 
@@ -5624,6 +5624,36 @@ fn wire__crate__api__install__kept_backup_impl(
         },
     )
 }
+fn wire__crate__api__install__kept_backups_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "kept_backups",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_data_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, crate::api::error::BridgeError>((move || {
+                let output_ok = crate::api::install::kept_backups(api_data_dir)?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__store__load_store_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -8288,6 +8318,18 @@ impl SseDecode for crate::api::join::JoinAnswer {
     }
 }
 
+impl SseDecode for crate::api::install::KeptBackup {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_identity = <String>::sse_decode(deserializer);
+        let mut var_path = <String>::sse_decode(deserializer);
+        return crate::api::install::KeptBackup {
+            identity: var_identity,
+            path: var_path,
+        };
+    }
+}
+
 impl SseDecode for crate::api::store::KnownFeeder {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -8353,6 +8395,18 @@ impl SseDecode for Vec<crate::api::session::HistoryEntry> {
             ans_.push(<crate::api::session::HistoryEntry>::sse_decode(
                 deserializer,
             ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::install::KeptBackup> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::install::KeptBackup>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -12093,13 +12147,13 @@ fn pde_ffi_dispatcher_primary_impl(
         94 => wire__crate__api__store__appearance_default_impl(port, ptr, rust_vec_len, data_len),
         106 => wire__crate__api__init_app_impl(port, ptr, rust_vec_len, data_len),
         109 => wire__crate__api__join__join_feeder_impl(port, ptr, rust_vec_len, data_len),
-        111 => wire__crate__api__store__load_store_impl(port, ptr, rust_vec_len, data_len),
-        112 => wire__crate__api__store__open_store_impl(port, ptr, rust_vec_len, data_len),
-        114 => {
+        112 => wire__crate__api__store__load_store_impl(port, ptr, rust_vec_len, data_len),
+        113 => wire__crate__api__store__open_store_impl(port, ptr, rust_vec_len, data_len),
+        115 => {
             wire__crate__api__restore__read_restore_feeder_impl(port, ptr, rust_vec_len, data_len)
         }
-        115 => wire__crate__api__store__save_store_impl(port, ptr, rust_vec_len, data_len),
-        118 => wire__crate__api__feeder__settings_changes_default_impl(
+        116 => wire__crate__api__store__save_store_impl(port, ptr, rust_vec_len, data_len),
+        119 => wire__crate__api__feeder__settings_changes_default_impl(
             port,
             ptr,
             rust_vec_len,
@@ -12185,12 +12239,13 @@ fn pde_ffi_dispatcher_sync_impl(
         107 => wire__crate__api__install__install_request_open_impl(ptr, rust_vec_len, data_len),
         108 => wire__crate__api__join__invite_feeder_impl(ptr, rust_vec_len, data_len),
         110 => wire__crate__api__install__kept_backup_impl(ptr, rust_vec_len, data_len),
-        113 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
-        116 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
-        117 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
-        119 => wire__crate__api__router__settled_feed_impl(ptr, rust_vec_len, data_len),
-        120 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
-        121 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
+        111 => wire__crate__api__install__kept_backups_impl(ptr, rust_vec_len, data_len),
+        114 => wire__crate__api__install__pending_install_impl(ptr, rust_vec_len, data_len),
+        117 => wire__crate__api__install__set_aside_backup_impl(ptr, rust_vec_len, data_len),
+        118 => wire__crate__api__install__set_aside_ledgers_impl(ptr, rust_vec_len, data_len),
+        120 => wire__crate__api__router__settled_feed_impl(ptr, rust_vec_len, data_len),
+        121 => wire__crate__api__setup__setup_control_impl(ptr, rust_vec_len, data_len),
+        122 => wire__crate__api__setup__setup_service_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -14104,6 +14159,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::join::JoinAnswer>
     for crate::api::join::JoinAnswer
 {
     fn into_into_dart(self) -> crate::api::join::JoinAnswer {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::install::KeptBackup {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.identity.into_into_dart().into_dart(),
+            self.path.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::install::KeptBackup
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::install::KeptBackup>
+    for crate::api::install::KeptBackup
+{
+    fn into_into_dart(self) -> crate::api::install::KeptBackup {
         self
     }
 }
@@ -18980,6 +19056,14 @@ impl SseEncode for crate::api::join::JoinAnswer {
     }
 }
 
+impl SseEncode for crate::api::install::KeptBackup {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.identity, serializer);
+        <String>::sse_encode(self.path, serializer);
+    }
+}
+
 impl SseEncode for crate::api::store::KnownFeeder {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -19025,6 +19109,16 @@ impl SseEncode for Vec<crate::api::session::HistoryEntry> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::session::HistoryEntry>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::install::KeptBackup> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::install::KeptBackup>::sse_encode(item, serializer);
         }
     }
 }

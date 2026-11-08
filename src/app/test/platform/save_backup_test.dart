@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wellfed/platform/install_ports.dart';
+import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/state/settings/backups.dart';
 
 import '../support/fakes.dart';
@@ -13,7 +14,7 @@ class _SavingPorts implements BackupPorts {
   final SaveBackup save;
 
   @override
-  Future<String?> kept(String identity) async => null;
+  Future<List<KeptBackup>> kept() async => const [];
 
   @override
   Future<void> share(String path) => save(path);

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:wellfed/platform/secure_storage.dart';
+import 'package:wellfed/platform/server_ports.dart';
 import 'package:wellfed/src/rust/api/error.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
 import 'package:wellfed/src/rust/api/router.dart';
@@ -169,6 +170,10 @@ class AppState extends ChangeNotifier implements FeederBook {
     final Directory dir = await getApplicationSupportDirectory();
     final path = '${dir.path}/wellfed.json';
     final OpenedStore opened = await openStore(path: path);
+    // The server's link went with the file, so its token's secret can never
+    // be used again, nor the token revoked from here: drop the secret, and a
+    // new login makes a new token.
+    if (opened.setAside?.kind == StoreKind.app) await const AppServerPorts().forgetSecret();
     final AppStore store = opened.store;
     return AppState._(key, store, path, _openRouter('${dir.path}/pending.json', store.server), opened.setAside);
   }

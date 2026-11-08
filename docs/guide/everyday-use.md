@@ -101,7 +101,7 @@ flowchart LR
 | Erase people, Wi-Fi, meals, settings and history | On an unlocked panel, hold Reset for 5 seconds |
 
 > [!WARNING]
-> Holding Reset wipes the feeder and draws a new identity. The backup of the vendor's firmware stays filed under the old identity, so the app no longer finds it for this feeder, and you'd need the copy you saved. If you didn't save one, keep the old feeder in the app's list: the app's settings should still offer its copy under **Firmware backups**. We haven't tried that rescue. Portion size and the record of past feed numbers are kept.
+> Holding Reset wipes the feeder and draws a new identity. The backup of the vendor's firmware stays filed under the old identity, so the app no longer finds it for this feeder, and you'd need the copy you saved. If you didn't save one, the app's settings still list the copy under **Firmware backups**, named by the old identity once the feeder is no longer in your list, so you can share it. We haven't tried that rescue. Portion size and the record of past feed numbers are kept.
 >
 > The feeder then waits for Bluetooth setup, so choose **Add a feeder** on your phone.
 

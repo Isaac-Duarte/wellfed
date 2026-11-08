@@ -774,6 +774,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   JoinAnswer dco_decode_join_answer(dynamic raw);
 
   @protected
+  KeptBackup dco_decode_kept_backup(dynamic raw);
+
+  @protected
   KnownFeeder dco_decode_known_feeder(dynamic raw);
 
   @protected
@@ -787,6 +790,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<HistoryEntry> dco_decode_list_history_entry(dynamic raw);
+
+  @protected
+  List<KeptBackup> dco_decode_list_kept_backup(dynamic raw);
 
   @protected
   List<KnownFeeder> dco_decode_list_known_feeder(dynamic raw);
@@ -2116,6 +2122,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   JoinAnswer sse_decode_join_answer(SseDeserializer deserializer);
 
   @protected
+  KeptBackup sse_decode_kept_backup(SseDeserializer deserializer);
+
+  @protected
   KnownFeeder sse_decode_known_feeder(SseDeserializer deserializer);
 
   @protected
@@ -2131,6 +2140,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<HistoryEntry> sse_decode_list_history_entry(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<KeptBackup> sse_decode_list_kept_backup(SseDeserializer deserializer);
 
   @protected
   List<KnownFeeder> sse_decode_list_known_feeder(SseDeserializer deserializer);
@@ -3744,6 +3756,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_join_answer(JoinAnswer self, SseSerializer serializer);
 
   @protected
+  void sse_encode_kept_backup(KeptBackup self, SseSerializer serializer);
+
+  @protected
   void sse_encode_known_feeder(KnownFeeder self, SseSerializer serializer);
 
   @protected
@@ -3761,6 +3776,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_history_entry(
     List<HistoryEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_kept_backup(
+    List<KeptBackup> self,
     SseSerializer serializer,
   );
 

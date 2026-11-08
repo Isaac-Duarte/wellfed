@@ -45,6 +45,8 @@ void main() {
     expect(find.textContaining("couldn't be read"), findsOneWidget);
     expect(find.textContaining('key and any saved copies of stock firmware'), findsOneWidget);
     expect(find.textContaining('Kept as wellfed.json.damaged-1'), findsOneWidget);
+    expect(find.textContaining('then Recover a feeder', findRichText: true), findsOneWidget);
+    expect(find.textContaining('ask them for a new invite', findRichText: true), findsOneWidget);
     expect(find.textContaining("Clear the app's data"), findsNothing);
 
     await tester.tap(find.text('Continue'));

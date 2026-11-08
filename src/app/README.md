@@ -94,6 +94,8 @@ The client key and a server token's secret are in secure storage, and the stock 
 
 A build that changes a file's shape bumps its version and keeps the reader for the version before, converting. A file the start can't read (damaged, from a build too old or too new) is kept as `<name>.damaged-<n>` beside it, never deleted, and replaced with an empty one, and the app says so on a screen before Home. For `pending.json`, a lost pin may have been a feed that ran, so every feed waits until the owner says the bowls are checked; the hold is written into the new file, so a restart keeps it. A file the phone's storage can't read at all fails the start, which says so rather than guess.
 
+A set-aside `wellfed.json` loses the server's link, so the start also deletes the server token's secret from secure storage: nothing could use it again. The token itself stays on the server, since revoking it from the phone needs the link; revoke it on the server (`/tokens`, [as for a lost phone](../../docs/server/running.md)). The notice sends the owner back to their feeders through Recover a feeder, and anyone else through a new invite.
+
 The versions start at 1 with this build, and an earlier build's unversioned files are set aside like any other. No phone outside the bench ran one.
 
 ## Toolchain
