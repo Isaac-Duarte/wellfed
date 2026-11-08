@@ -16,6 +16,7 @@ import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
 import 'package:wellfed/screens/home/add_feeder.dart';
 import 'package:wellfed/screens/home/home.dart';
+import 'package:wellfed/screens/home/set_aside.dart';
 import 'package:wellfed/screens/home/welcome.dart';
 import 'package:wellfed/screens/install/install_screen.dart';
 import 'package:wellfed/screens/server/server_screens.dart';
@@ -28,6 +29,7 @@ import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/fleet/adopt.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
+import 'package:wellfed/state/fleet/store_notice.dart';
 import 'package:wellfed/state/install/install.dart';
 import 'package:wellfed/state/join/join.dart';
 import 'package:wellfed/state/server/add_server.dart';
@@ -281,18 +283,20 @@ class _WellfedAppState extends State<WellfedApp> {
   late final GoRouter _router = wellfedRouter(
     // The server's feeders count as the phone's own do: with none at all,
     // the welcome.
-    book: Listenable.merge([widget.app, _fleet]),
-    root: (context) => _fleet.all.isEmpty
-        ? const WelcomeScreen()
-        : HomeScreen(
-            fleet: _fleet,
-            adopt: _adopt,
-            pinsProblem: widget.app.pinsProblem,
-            earlierInstall: () async {
-              final ports = AppInstallPorts(widget.app.key);
-              return ports.pending(await ports.paths());
-            },
-          ),
+    book: Listenable.merge([widget.app, _fleet, widget.app.notice]),
+    root: (context) => switch (widget.app.notice.state) {
+      final StoreNotice notice? => SetAsideScreen(notice: notice, onRead: () => unawaited(widget.app.notice.read())),
+      null when _fleet.all.isEmpty => const WelcomeScreen(),
+      null => HomeScreen(
+        fleet: _fleet,
+        adopt: _adopt,
+        pinsProblem: widget.app.pinsProblem,
+        earlierInstall: () async {
+          final ports = AppInstallPorts(widget.app.key);
+          return ports.pending(await ports.paths());
+        },
+      ),
+    },
     feeder: (context, identity, tab) =>
         FeederRoute(fleet: _fleet, identity: identity, initialTab: tab, server: _serverScreens),
     shell: isDesktop

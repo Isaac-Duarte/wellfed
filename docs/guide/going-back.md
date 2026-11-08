@@ -6,7 +6,7 @@ This page walks through putting the vendor's firmware back on a feeder running W
 > There's no public build of Wellfed yet, so nobody can follow this outside our bench. It shows what the return involves, on the one feeder we've tested.
 
 > [!WARNING]
-> **Don't start by holding Reset.** That's the last step, and only after a restore reports success. On a feeder still running Wellfed, the hold wipes it and draws a new identity, and the phone's backup stays filed under the old one. You'd then need the copy you saved. If you didn't save one, keep the old feeder in the app's list: the app's settings should still offer its copy under **Firmware backups**. We haven't tried that rescue.
+> **Don't start by holding Reset.** That's the last step, and only after a restore reports success. On a feeder still running Wellfed, the hold wipes it and draws a new identity, and the phone's backup stays filed under the old one. You'd then need the copy you saved. If you didn't save one, the app's settings still list the copy under **Firmware backups**, named by the old identity if the feeder is no longer in your list, so you can share it. We haven't tried that rescue.
 
 ## Before you start
 
@@ -92,7 +92,7 @@ The vendor's firmware now runs, and it keeps trying to reach your phone or compu
 
 If the panel ignores the hold, the vendor's app may have disabled the buttons. Hold Lock for about 3 seconds, then Reset for about 3 seconds.
 
-**Keep your backup.** You can use it again if you ever return. In the app, the feeder stays in your list until you choose **Remove from this phone** in its settings. Share the backup somewhere safe first: once the feeder is removed, the app no longer lists its copy.
+**Keep your backup.** You can use it again if you ever return. In the app, the feeder stays in your list until you choose **Remove from this phone** in its settings. Share the backup somewhere safe too: the app's settings keep listing its copy under **Firmware backups** after the feeder is removed, but a copy only on the phone goes with the phone.
 
 **A vendor update can close the way back.** The install expects the vendor's 1.1.15. If the vendor's app updates the feeder, installing Wellfed again may not work. We haven't tried it, and we don't know whether that app updates by itself.
 

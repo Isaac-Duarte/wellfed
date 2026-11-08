@@ -52,7 +52,7 @@ A cancelled write stops terminally and leaves its bank half-written until anothe
 
 ## The feeder session
 
-The server opens one session as the bench's owner key (`private/wellfed-owner.json`), finding the feeder by its identity over mDNS or its MAC in the hotspot's neighbour table, as the rig does; `serve --feeder-address` names an address instead (the simulator, say). The session:
+The server opens one session as the bench's owner key (`private/wellfed-owner.json`; a `wellfed` command reaches it through the server only with that key, so run the CLI from the checkout with `WELLFED_HOME=private`, as the server's own jobs do), finding the feeder by its identity over mDNS or its MAC in the hotspot's neighbour table, as the rig does; `serve --feeder-address` names an address instead (the simulator, say). The session:
 
 - subscribes after the newest event it took, kept in `private/bench-status/device-cursor.json`, so a new server does not replay history;
 - follows the feeder's debug log into the state and `private/bench-status/device-log/YYYY-MM-DD.log` (one file a UTC day, each line stamped with host time, buffered, never synced). Lines the feeder overwrote before sending (a batch's `dropped`) are marked by a line such as `-- 6 lines not in the feeder's tail --`; no feeder line starts with `--`. The first boot a new server follows reads from the oldest line kept, so lines lost before that read get no marker;

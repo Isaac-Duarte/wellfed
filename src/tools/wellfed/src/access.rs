@@ -8,7 +8,7 @@ use clap::{Args, ValueEnum};
 use wellfed_client::api::Invite;
 use wellfed_model::{Answer, ClientRole, Joined, Op};
 
-use crate::keys::{OwnerKey, fingerprint};
+use crate::keys::fingerprint;
 use crate::{Target, connect, device, print_answer};
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -30,9 +30,15 @@ pub(crate) struct InviteArgs {
 pub(crate) struct JoinArgs {
     /// The invite as `wellfed invite` printed it.
     invite: String,
-    /// The key that joins, created on first use.
-    #[arg(long, default_value = "private/wellfed-owner.json")]
-    keys: PathBuf,
+    /// The key that joins [default: wellfed-owner.json in
+    /// WELLFED_HOME, or the platform's data directory].
+    #[arg(long)]
+    keys: Option<PathBuf>,
+    /// Make a new key at that path if there is none. Without it, a missing
+    /// key is refused, so a command pointed at the wrong place never makes a
+    /// second key.
+    #[arg(long)]
+    create_key: bool,
     #[arg(long)]
     label: Option<String>,
     #[arg(long)]
@@ -76,7 +82,8 @@ pub(crate) async fn invite_command(args: InviteArgs) -> Result<()> {
 
 pub(crate) async fn join_command(args: JoinArgs) -> Result<()> {
     let invite = Invite::parse(&args.invite)?;
-    let mut key = OwnerKey::open(&args.keys, args.label.as_deref(), OwnerKey::system())?;
+    let mut key =
+        crate::pairing::open_key(args.keys.as_deref(), args.label.as_deref(), args.create_key)?;
     let address = device::locate(&invite.feeder, args.address.as_deref())?;
     let joined = wellfed_connect::join(
         key.keypair(),

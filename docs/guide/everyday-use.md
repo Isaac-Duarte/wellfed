@@ -7,7 +7,7 @@ This page covers life with a feeder running Wellfed: meals, feeding now, the but
 
 The app has one screen per feeder, with four tabs: **Today**, **Schedule**, **History** and **Settings**. Your phone has to be on the same network as the feeder, since the app talks to it directly.
 
-The CLI keeps your key in `private/wellfed-owner.json` under the folder you run it from, and makes a new key if that file is missing. So run it from the folder you first ran it in, or pass `--keys`.
+The CLI keeps your key, your stock backups and your server login in one folder, whichever folder you run it from: `~/.local/share/wellfed` on Linux (or `$XDG_DATA_HOME/wellfed`), `~/Library/Application Support/io.github.isaacduarte.wellfed` on a Mac and `%APPDATA%\isaacduarte\wellfed\data` on Windows. Set `WELLFED_HOME` to use another folder, or pass `--keys`. It makes a key only when you ask: the first time on a computer, add `--create-key` to `wellfed setup`, `wellfed recover` or `wellfed join`. Any other command with no key stops and names the file it looked for.
 
 ![The app's Today tab, with Ready to feed at the top, 3 portions fed today, the day's meals (fed at 7:00 AM, a Dispense button press at 9:12 AM, missed at noon, next at 5:00 PM, one later), a line saying power, Wi-Fi and clock look fine, and a Feed now button](app-today.png)
 
@@ -101,7 +101,7 @@ flowchart LR
 | Erase people, Wi-Fi, meals, settings and history | On an unlocked panel, hold Reset for 5 seconds |
 
 > [!WARNING]
-> Holding Reset wipes the feeder and draws a new identity. The backup of the vendor's firmware stays filed under the old identity, so the app no longer finds it for this feeder, and you'd need the copy you saved. If you didn't save one, keep the old feeder in the app's list: the app's settings should still offer its copy under **Firmware backups**. We haven't tried that rescue. Portion size and the record of past feed numbers are kept.
+> Holding Reset wipes the feeder and draws a new identity. The backup of the vendor's firmware stays filed under the old identity, so the app no longer finds it for this feeder, and you'd need the copy you saved. If you didn't save one, the app's settings still list the copy under **Firmware backups**, named by the old identity once the feeder is no longer in your list, so you can share it. We haven't tried that rescue. Portion size and the record of past feed numbers are kept.
 >
 > The feeder then waits for Bluetooth setup, so choose **Add a feeder** on your phone.
 

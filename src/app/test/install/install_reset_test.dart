@@ -59,7 +59,7 @@ void main() {
     );
     run.end(const InstallEnd.done());
     await settle(tester);
-    await installTap(tester, 'Save the backup somewhere else');
+    await installTap(tester, 'Save the backup');
     expect(ports.shared, ['/data/kept.bin']);
   });
 

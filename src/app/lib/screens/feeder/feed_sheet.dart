@@ -319,6 +319,9 @@ class _Progress extends StatelessWidget {
             FeedNotSent(why: NotSentWhy.notPinned) =>
               "This $deviceName couldn't write the feed down before sending it, so it "
                   "didn't send it.",
+            FeedNotSent(why: NotSentWhy.setAside) =>
+              "This $deviceName lost its record of feeds that hadn't been confirmed, so feeding waits until "
+                  "you've looked in the bowls. Go back to the home screen and confirm you've checked the bowls.",
             _ =>
               'The connection dropped before the request went out. Try again '
                   'once the feeder is online.',

@@ -163,6 +163,10 @@ enum NotSentWhy {
 
   /// The phone could not write the pending feed down first, so it held it back.
   notPinned,
+
+  /// The record of writes that may have run was set aside, and the owner
+  /// has not yet said the bowls are checked.
+  setAside,
 }
 
 /// The link went while the feed ran, or its end is overdue. If the feeder

@@ -20,7 +20,7 @@ use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::platform::Random;
 use wellfed_feeder_sim::serve::{self, Advertise, Control, Event, Feeder};
 use wellfed_formats::hex;
-use wellfed_formats::owner::{EnrolledFeeder, OwnerKeyFile};
+use wellfed_formats::owner::{self, EnrolledFeeder};
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
 use wellfed_proto::api::PORT;
 use wellfed_session::hex::Lower;
@@ -64,8 +64,8 @@ fn main() -> Result<()> {
 
 /// The key file's public key and label.
 fn owner_key(path: &Path) -> Result<([u8; 32], Label)> {
-    let file: OwnerKeyFile = wellfed_formats::load(path)
-        .with_context(|| format!("read the key file {}", path.display()))?;
+    let file =
+        owner::load(path).with_context(|| format!("read the key file {}", path.display()))?;
     let secret = hex::decode::<32>(&file.secret)
         .with_context(|| format!("{}: the secret is not 32 bytes of hex", path.display()))?;
     let label = Label::new(file.label.as_bytes())
@@ -76,8 +76,8 @@ fn owner_key(path: &Path) -> Result<([u8; 32], Label)> {
 /// Record the feeder in the key file, as `wellfed setup` does, so the
 /// CLI finds it by identity.
 fn remember(path: &Path, identity: &[u8; 32]) -> Result<()> {
-    let mut file: OwnerKeyFile = wellfed_formats::load(path)
-        .with_context(|| format!("read the key file {}", path.display()))?;
+    let mut file =
+        owner::load(path).with_context(|| format!("read the key file {}", path.display()))?;
     let identity = hex::encode(identity);
     if file.feeders.iter().any(|f| f.identity == identity) {
         return Ok(());
