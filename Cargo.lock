@@ -5345,6 +5345,7 @@ dependencies = [
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-hal",
+ "wellfed-proto",
  "wellfed-sdk",
 ]
 
@@ -5361,6 +5362,7 @@ dependencies = [
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-hal",
+ "wellfed-proto",
 ]
 
 [[package]]

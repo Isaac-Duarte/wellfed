@@ -12,11 +12,13 @@ use wellfed_device::store::events::Read;
 use wellfed_device::store::net::NetStatus;
 use wellfed_device::store::settings::{Settings, SettingsStatus};
 use wellfed_device::store::time::TimeStatus;
-use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::mailbox::{SettingsFields, SettingsResult};
+use wellfed_device_api::{KeyChange as ApiChange, Reader};
 use wellfed_device_runtime::keys::{self, Change, Requested};
-use wellfed_device_runtime::writer::{self as writer, ErrorStage, Identity, KeyChange, KeyResult};
+use wellfed_device_runtime::writer::{
+    self as writer, ErrorStage, Identity, KeyChange, KeyEvent, KeyResult,
+};
 use wellfed_device_runtime::{events, network};
 use wellfed_feeder::stats::{EARLY_SAVES, FEED_SAVE_MS, RESTART_SETTLED_MS, SAVE_MS, Totals};
 use wellfed_feeder::store::stats::StatsStatus;
@@ -30,7 +32,7 @@ use wellfed_hal::interlock::INTERLOCK;
 use wellfed_hal::sdk::{self, fake};
 use wellfed_hal::{rng, settings};
 use wellfed_hal::{stopped, supervision};
-use wellfed_proto::api::{Counts, Resets};
+use wellfed_proto::api::{Counts, EventBody, Path, Resets, Source};
 use wellfed_sdk::storage::{FlashOps, SETTINGS_BASE};
 
 thread_local! {
@@ -42,6 +44,9 @@ thread_local! {
     static ERASE_FAILS: Cell<Option<u32>> = const { Cell::new(None) };
     /// Programs of the statistics' sectors fail, as a worn-out pair's do.
     static STATS_PROGRAMS_FAIL: Cell<bool> = const { Cell::new(false) };
+    /// Programs of the event ring's sectors fail, as a power cut after
+    /// another store's write would leave them unwritten.
+    static EVENTS_PROGRAMS_FAIL: Cell<bool> = const { Cell::new(false) };
 }
 
 struct NoMmio;
@@ -100,7 +105,10 @@ impl FlashOps for Armed {
         let stats = wellfed_hal::board::storage::STATS;
         let worn = STATS_PROGRAMS_FAIL.with(Cell::get)
             && (stats.first..stats.first + stats.count).contains(&sector);
-        if PROGRAM_FAILS.with(Cell::get) || worn {
+        let events = wellfed_hal::board::storage::EVENTS;
+        let cut = EVENTS_PROGRAMS_FAIL.with(Cell::get)
+            && (events.first..events.first + events.count).contains(&sector);
+        if PROGRAM_FAILS.with(Cell::get) || worn || cut {
             return false;
         }
         // SAFETY: as in `erase`.
@@ -135,6 +143,7 @@ fn start() -> (MutexGuard<'static, ()>, Writer<Armed>, Provider) {
     PROGRAM_FAILS.with(|f| f.set(false));
     ERASE_FAILS.with(|f| f.set(None));
     STATS_PROGRAMS_FAIL.with(|f| f.set(false));
+    EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
     (guard, Writer::default(), Provider::default())
 }
 
@@ -485,11 +494,46 @@ fn change(writer: &mut Writer<Armed>, provider: &mut Provider, change: Change) -
     record
 }
 
+/// The record of a key change; one that went through, but the reset, has
+/// its event appended.
 fn changed(change: KeyChange, result: KeyResult, enrolled: usize) -> Record {
+    let event = if result == KeyResult::Done && change != KeyChange::Reset {
+        KeyEvent::Appended
+    } else {
+        KeyEvent::None
+    };
     Record::KeysChanged {
         change,
         result,
         enrolled,
+        event,
+    }
+}
+
+/// The time the suite's client changes are asked at.
+const ASKED_AT: u32 = 1_700_000_000;
+
+/// An owner's phone joining through an invite.
+fn phone() -> Change {
+    Change::Key {
+        change: ApiChange::Enroll {
+            key: [7; 32],
+            label: Label::new(b"phone").unwrap(),
+            role: Role::Owner,
+            path: Path::Invite,
+        },
+        at: Some(ASKED_AT),
+    }
+}
+
+/// The panel's owner revoking `key`.
+fn revoke(key: [u8; 32]) -> Change {
+    Change::Key {
+        change: ApiChange::Revoke {
+            key,
+            by: Source::Client([7, 7, 7, 7]),
+        },
+        at: Some(ASKED_AT),
     }
 }
 
@@ -503,11 +547,7 @@ fn key_changes_apply_and_a_reset_publishes_a_new_identity() {
     }
     let (first, identity) = keys::identity_since(0).expect("the identity is published");
 
-    let phone = Change::Enroll {
-        key: [7; 32],
-        label: Label::new(b"phone").unwrap(),
-        role: Role::Owner,
-    };
+    let phone = phone();
     assert_eq!(
         change(&mut writer, &mut provider, phone),
         changed(KeyChange::Enroll, KeyResult::Done, 1)
@@ -529,7 +569,7 @@ fn key_changes_apply_and_a_reset_publishes_a_new_identity() {
         "an enrollment keeps the identity"
     );
 
-    let revoke = Change::Revoke { key: [8; 32] };
+    let revoke = revoke([8; 32]);
     assert_eq!(
         change(&mut writer, &mut provider, revoke),
         changed(KeyChange::Revoke, KeyResult::NotFound, 1)
@@ -542,6 +582,191 @@ fn key_changes_apply_and_a_reset_publishes_a_new_identity() {
     let (_, new) = keys::identity_since(first).expect("the new identity");
     assert_ne!(new, identity);
     assert!(reset_marked(), "the next boot finishes the factory reset");
+}
+
+/// The phone's enrollment event, as the writer records it.
+fn phone_joined() -> EventBody {
+    EventBody::Enrolled {
+        client: [7; 4],
+        role: wellfed_proto::api::Role::Owner,
+        path: Path::Invite,
+    }
+}
+
+/// The revocation's event, as the writer records it.
+fn phone_revoked() -> EventBody {
+    EventBody::Revoked {
+        client: [7; 4],
+        by: Source::Client([7, 7, 7, 7]),
+    }
+}
+
+/// Every record in the ring, oldest first, read as subscriber A through
+/// the writer's read turns: each its time and body.
+fn ring(writer: &mut Writer<Armed>, provider: &mut Provider) -> Vec<(Option<u32>, EventBody)> {
+    let mut records = Vec::new();
+    let mut after = None;
+    for _ in 0..256 {
+        match events::read_result(A, after) {
+            Some(Read::Record(record)) => {
+                after = Some(record.seq);
+                let body = wellfed_proto::decode_padded::<EventBody>(&record.body)
+                    .expect("a body this build reads");
+                records.push((record.at, body));
+            }
+            Some(Read::End) if events::pending().is_none() => return records,
+            Some(Read::Gap { from, to }) => panic!("events {from}..={to} lost"),
+            Some(Read::End) | None => {
+                step(writer, provider);
+            }
+        }
+    }
+    panic!("the ring never reached its end");
+}
+
+/// The writer opened, and its first statistics save taken.
+fn opened() -> (MutexGuard<'static, ()>, Writer<Armed>, Provider) {
+    let (guard, mut writer, mut provider) = start();
+    fake::with(|h| h.adc_noise = 0x1357_9bdf);
+    assert_eq!(rng::start().result, Ok(()));
+    for _ in 0..7 {
+        step(&mut writer, &mut provider);
+    }
+    (guard, writer, provider)
+}
+
+/// An enrollment that goes through records its event in the turn that made
+/// it, at the time it was asked for, before its result is published, so
+/// no one has to read the result for the history to hold it; one that
+/// changed nothing records none. It goes straight to the ring: a full
+/// queue of the loop's records neither drops it nor waits for it.
+#[test]
+fn a_client_change_records_its_event_in_the_writers_turn() {
+    let (_guard, mut writer, mut provider) = opened();
+    let locked = EventBody::Lock {
+        locked: true,
+        by: Source::Panel,
+    };
+    let mut body = [0; 16];
+    wellfed_proto::encode(&locked, &mut body).unwrap();
+    let mut queued = 0;
+    while events::record(None, body) {
+        queued += 1;
+    }
+    assert_eq!(events::take_lost(), 1, "the loop's queue is full");
+    let last = events::last_seq();
+
+    assert_eq!(
+        change(&mut writer, &mut provider, phone()),
+        changed(KeyChange::Enroll, KeyResult::Done, 1)
+    );
+    assert_eq!(keys::outcome(keys::ticket()), Some(KeyResult::Done));
+    assert_eq!(events::last_seq(), last.map_or(Some(1), |l| Some(l + 1)));
+    let Some(written) = events::take_written() else {
+        panic!("the alert rules hear of it");
+    };
+    assert_eq!(written.at, Some(ASKED_AT));
+    assert_eq!(
+        wellfed_proto::decode_padded::<EventBody>(&written.body),
+        Some(phone_joined())
+    );
+    assert_eq!(events::take_written(), None);
+
+    assert_eq!(
+        change(&mut writer, &mut provider, phone()),
+        changed(KeyChange::Enroll, KeyResult::Duplicate, 1)
+    );
+    assert_eq!(events::take_written(), None, "a duplicate changed nothing");
+
+    let records = ring(&mut writer, &mut provider);
+    let joined: Vec<_> = records
+        .iter()
+        .filter(|(_, body)| *body == phone_joined())
+        .collect();
+    assert_eq!(joined, [&(Some(ASKED_AT), phone_joined())], "once");
+    assert_eq!(
+        records.len(),
+        queued + 1,
+        "the loop's queued records land too, after it: {records:?}"
+    );
+}
+
+/// Two changes finished before the loop takes either: both are in the
+/// ring, in the order they were made, and the alert rules hear of both.
+#[test]
+fn changes_that_overlap_each_keep_their_event() {
+    let (_guard, mut writer, mut provider) = opened();
+    change(&mut writer, &mut provider, phone());
+    change(&mut writer, &mut provider, revoke([7; 32]));
+
+    let taken: Vec<_> = std::iter::from_fn(events::take_written)
+        .map(|written| wellfed_proto::decode_padded::<EventBody>(&written.body))
+        .collect();
+    assert_eq!(taken, [Some(phone_joined()), Some(phone_revoked())]);
+    let bodies: Vec<_> = ring(&mut writer, &mut provider)
+        .into_iter()
+        .map(|(_, body)| body)
+        .collect();
+    assert_eq!(bodies, [phone_joined(), phone_revoked()]);
+}
+
+/// A restart before the writer takes a queued change loses the change
+/// with its event; one after the turn that made it keeps both, and the
+/// next boot records nothing again.
+#[test]
+fn a_restart_keeps_a_change_and_its_event_together() {
+    let (_guard, _writer, mut provider) = opened();
+    assert_eq!(keys::request(phone()), Requested::Queued);
+    restart_mailboxes();
+    let (mut writer, _, _) = boot(&mut provider);
+    let mut table = [None; wellfed_device_api::clients::CLIENTS];
+    keys::clients_since(0, &mut table).expect("the table is published");
+    assert!(table.iter().all(Option::is_none), "never written");
+    assert_eq!(ring(&mut writer, &mut provider), []);
+
+    change(&mut writer, &mut provider, phone());
+    restart_mailboxes();
+    let (mut writer, _, _) = boot(&mut provider);
+    keys::clients_since(0, &mut table).expect("the table is published");
+    assert!(table.iter().flatten().any(|client| client.key == [7; 32]));
+    assert_eq!(
+        ring(&mut writer, &mut provider),
+        [(Some(ASKED_AT), phone_joined())],
+        "once, and nothing replays it"
+    );
+    assert_eq!(events::take_written(), None);
+}
+
+/// The store write goes before its event: a cut between the two programs
+/// leaves the change standing without its event, never an event for a
+/// change that did not land.
+#[test]
+fn a_cut_between_the_change_and_its_event_loses_only_the_event() {
+    let (_guard, mut writer, mut provider) = opened();
+    EVENTS_PROGRAMS_FAIL.with(|f| f.set(true));
+    let Record::KeysChanged { result, event, .. } = change(&mut writer, &mut provider, phone())
+    else {
+        panic!("the change's record");
+    };
+    assert_eq!((result, event), (KeyResult::Done, KeyEvent::Lost));
+    assert_eq!(events::take_written(), None);
+    EVENTS_PROGRAMS_FAIL.with(|f| f.set(false));
+
+    let mut table = [None; wellfed_device_api::clients::CLIENTS];
+    keys::clients_since(0, &mut table).expect("the table is published");
+    assert!(table.iter().flatten().any(|client| client.key == [7; 32]));
+    assert!(
+        !ring(&mut writer, &mut provider)
+            .iter()
+            .any(|(_, body)| *body == phone_joined())
+    );
+
+    let mut text = String::new();
+    writer::describe(changed(KeyChange::Enroll, KeyResult::Done, 1), &mut text).unwrap();
+    assert_eq!(
+        text,
+        "keys change=enroll result=done enrolled=1 event=appended"
+    );
 }
 
 #[test]
@@ -577,7 +802,10 @@ fn key_change_records_format() {
         &mut text,
     )
     .unwrap();
-    assert_eq!(text, "keys change=reset result=no-generator enrolled=0");
+    assert_eq!(
+        text,
+        "keys change=reset result=no-generator enrolled=0 event=none"
+    );
 }
 
 /// The loop's queued events reach the ring, survive a reboot, and
@@ -982,11 +1210,7 @@ fn every_store_write_waits_for_a_feed_and_completes_after_it() {
         network::change(Some(set)),
         WifiResult::Current { pending: true, .. }
     ));
-    let phone = Change::Enroll {
-        key: [7; 32],
-        label: Label::new(b"phone").unwrap(),
-        role: Role::Owner,
-    };
+    let phone = phone();
     assert_eq!(keys::request(phone), Requested::Queued);
 
     let before = storage();
@@ -1017,13 +1241,15 @@ fn every_store_write_waits_for_a_feed_and_completes_after_it() {
     for _ in 0..3 {
         step(&mut writer, &mut provider);
     }
-    assert_eq!(events::last_seq(), Some(3));
+    // The enrollment's own event, then the three queued.
+    assert_eq!(events::last_seq(), Some(4));
     assert_eq!(events::pending(), None);
     assert!(!INTERLOCK.writing(), "every turn given back");
     assert_eq!(INTERLOCK.status().writes_deferred, 2);
 
-    // The appends kept their order.
-    let mut after = None;
+    // The enrollment's event went in its own turn, first; the loop's
+    // appends kept their order behind it.
+    let mut after = Some(1);
     for body in [[1; 16], [2; 16], [3; 16]] {
         events::read_result(A, after);
         step(&mut writer, &mut provider);
@@ -1902,11 +2128,7 @@ fn every_mailbox_wakes_the_writer_once_when_queued_and_not_when_refused() {
             )
         }),
         ("keys", &mut || {
-            let phone = Change::Enroll {
-                key: [7; 32],
-                label: Label::new(b"phone").unwrap(),
-                role: Role::Owner,
-            };
+            let phone = phone();
             keys::request(phone) == Requested::Queued
         }),
         ("time", &mut || {
@@ -2369,11 +2591,7 @@ fn filled_then_reset() -> (MutexGuard<'static, ()>, Provider) {
         at_s: Some(1_000),
     });
     step(&mut writer, &mut provider);
-    let phone = Change::Enroll {
-        key: [7; 32],
-        label: Label::new(b"phone").unwrap(),
-        role: Role::Owner,
-    };
+    let phone = phone();
     change(&mut writer, &mut provider, phone);
     assert!(events::record(Some(1_700_000_000), [1; 16]));
     step(&mut writer, &mut provider);
@@ -2476,11 +2694,7 @@ fn paired_with_wifi() -> (MutexGuard<'static, ()>, Provider, [u8; 32]) {
             .iter()
             .any(|&b| b != 0xff)
     );
-    let phone = Change::Enroll {
-        key: [7; 32],
-        label: Label::new(b"phone").unwrap(),
-        role: Role::Owner,
-    };
+    let phone = phone();
     change(&mut writer, &mut provider, phone);
     let (_, identity) = keys::identity_since(0).expect("the identity is published");
     (guard, provider, identity)
@@ -3015,11 +3229,7 @@ fn a_reset_over_an_unwritable_client_store_still_completes() {
     for _ in 0..7 {
         step(&mut writer, &mut provider);
     }
-    let phone = Change::Enroll {
-        key: [7; 32],
-        label: Label::new(b"phone").unwrap(),
-        role: Role::Owner,
-    };
+    let phone = phone();
     change(&mut writer, &mut provider, phone);
 
     // Every valid slot claims a newer schema.

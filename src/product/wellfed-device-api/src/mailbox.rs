@@ -12,7 +12,7 @@ pub use wellfed_core::clock::wall::{Origin, State as ClockState};
 pub use wellfed_core::clock::zone::Zone;
 use wellfed_core::named_enum;
 
-use crate::clients::{Label, Role};
+use crate::KeyChange;
 
 pub use wellfed_core::settings::{
     MAX_VOLUME, MealReminder, SettingsFields, SettingsResult, SettingsView, Window,
@@ -309,14 +309,11 @@ pub enum WifiResult {
 /// alone writes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClientChange {
-    Enroll {
-        key: [u8; 32],
-        label: Label,
-        role: Role,
-    },
-    Revoke {
-        key: [u8; 32],
-    },
+    /// A client's enrollment or revocation, with the wall-clock second it
+    /// was asked at (`None` with no valid clock), which its history event
+    /// carries: the writer appends that event in the same turn as the
+    /// store write ([`KeyChange::event`]).
+    Key { change: KeyChange, at: Option<u32> },
     /// The factory reset: mark it, forget every client, and leave the rest
     /// to the restart that follows. Only the panel's Reset hold asks for it,
     /// so the marker records the reset as asked for by hand, which lets it
@@ -330,10 +327,11 @@ pub enum ClientChange {
 /// waiter still holding a ticket can read its result.
 ///
 /// The mailbox queues one change at a time, so tickets finish in order, and
-/// every waiter reads its result by the next loop pass: an open session or
-/// a joining one polls each pass (a session with a write pending sends
-/// nothing else, so it is never held back by its transmit buffer), and a
-/// session that ended waiting is settled at the start of the next pass.
+/// every waiter reads its result by the next loop pass: an open, joining or
+/// recovering session polls each pass (a session with a write pending sends
+/// nothing else, so it is never held back by its transmit buffer), as do
+/// the BLE setup and the panel's reset. A waiter that ends reads nothing,
+/// and loses nothing: the writer records the change's event itself.
 /// Between a ticket finishing and that read, each requester can have at
 /// most one newer change queued and finished: the [`crate::SESSIONS`]
 /// slots, the BLE setup and the panel's reset. Their tickets and the

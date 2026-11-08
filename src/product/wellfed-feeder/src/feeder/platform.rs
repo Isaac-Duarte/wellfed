@@ -270,6 +270,10 @@ pub trait Platform {
     fn queue_event(&mut self, at: Option<u32>, body: [u8; BODY_BYTES], slot: EventSlot) -> bool;
     /// Records the queue dropped since the last call.
     fn take_lost(&mut self) -> u32;
+    /// The oldest event the settings writer appended itself (a client store
+    /// change's) that the loop has not yet taken: its time and body, for
+    /// the alert rules.
+    fn take_written(&mut self) -> Option<(Option<u32>, [u8; BODY_BYTES])>;
     /// The ring's answer for `after`, for the subscriber in slot `reader`;
     /// `None` while the writer reads it, or while it waits its turn.
     fn event_after(&mut self, reader: Reader, after: Option<u64>) -> Option<Read>;

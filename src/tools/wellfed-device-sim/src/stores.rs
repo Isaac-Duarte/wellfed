@@ -32,7 +32,6 @@ use wellfed_device::store::reads::{READ_BATCH, Reads};
 use wellfed_device::store::reset;
 use wellfed_device::store::settings::{SettingsStatus, SettingsStore};
 use wellfed_device::store::time::TimeStore;
-use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
 use wellfed_device_api::mailbox::{
     ClientChange, KEYS_FINISHED, KeyResult, Requested, SettingsFields, SettingsResult,
@@ -40,7 +39,9 @@ use wellfed_device_api::mailbox::{
     WifiView,
 };
 use wellfed_device_api::wifi::Credentials;
+use wellfed_device_api::{KeyChange, Reader};
 use wellfed_hal::ota::signers;
+use wellfed_proto::api::EventBody;
 
 use crate::flash::{Flash, Region};
 
@@ -84,6 +85,8 @@ pub struct DeviceStores {
     /// The last finished changes, newest last, as many as the firmware's
     /// mailbox remembers.
     keys_done: VecDeque<(u32, KeyResult)>,
+    /// Events the writer appended itself, until the loop takes them.
+    written: VecDeque<(Option<u32>, [u8; BODY_BYTES])>,
     ticket: u32,
     events: EventLog<Region>,
     /// The turns subscribers read the ring in, the firmware's own, and
@@ -156,6 +159,7 @@ impl DeviceStores {
             identity_generation: 1,
             keys_pending: None,
             keys_done: VecDeque::with_capacity(KEYS_FINISHED),
+            written: VecDeque::new(),
             ticket: 0,
             events,
             reads: Reads::new(),
@@ -352,6 +356,23 @@ impl DeviceStores {
         self.events.append(at, body).is_ok()
     }
 
+    /// Append an event the writer records itself, for a change it just
+    /// made, and keep it for the loop's alert rules
+    /// ([`Self::take_written`]).
+    fn append_written(&mut self, at: Option<u32>, body: &EventBody) {
+        let mut bytes = [0; BODY_BYTES];
+        if wellfed_proto::encode(body, &mut bytes).is_ok() && self.events.append(at, &bytes).is_ok()
+        {
+            self.written.push_back((at, bytes));
+        }
+    }
+
+    /// The oldest event the writer appended itself that the loop has not
+    /// yet taken.
+    pub fn take_written(&mut self) -> Option<(Option<u32>, [u8; BODY_BYTES])> {
+        self.written.pop_front()
+    }
+
     /// A subscriber's read, through the firmware's turns.
     pub fn event_after(&mut self, reader: Reader, after: Option<u64>) -> Option<Read> {
         self.reads.result(reader, after, self.events.last_seq())
@@ -418,10 +439,17 @@ impl DeviceStores {
     pub fn apply_keys(&mut self) -> Option<KeyResult> {
         let (ticket, change) = self.keys_pending.take()?;
         let result = match change {
-            ClientChange::Enroll { key, label, role } => {
-                applied(self.clients.enroll(key, label, role))
-            }
-            ClientChange::Revoke { key } => applied(self.clients.revoke(&key)),
+            ClientChange::Key {
+                change:
+                    KeyChange::Enroll {
+                        key, label, role, ..
+                    },
+                ..
+            } => applied(self.clients.enroll(key, label, role)),
+            ClientChange::Key {
+                change: KeyChange::Revoke { key, .. },
+                ..
+            } => applied(self.clients.revoke(&key)),
             // The factory reset, as the writer's: it draws its identity from
             // the generator or does not happen, marks the reset, then
             // forgets every client; the loop restarts and the next boot
@@ -439,6 +467,13 @@ impl DeviceStores {
                 None => KeyResult::NoGenerator,
             },
         };
+        // The event in the same turn as the store write, before the result
+        // is published, as the firmware's writer appends it.
+        if let ClientChange::Key { change, at } = change
+            && result == KeyResult::Done
+        {
+            self.append_written(at, &change.event());
+        }
         if self.keys_done.len() == KEYS_FINISHED {
             self.keys_done.pop_front();
         }

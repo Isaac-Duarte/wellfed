@@ -422,6 +422,7 @@ impl<S: Copy> Serve<S> {
             let count = u16::try_from(lost).unwrap_or(u16::MAX);
             events::record(platform, now_ms, EventBody::Lost { count });
         }
+        events::written(platform, now_ms);
         self.keep_stats(platform, feeds, now_ms);
 
         let (table, seen) = self.server.clients_table();
@@ -917,10 +918,8 @@ impl<P: Platform, F: Feeds> Device for DeviceView<'_, P, F> {
         if self.outputs_claimed() {
             return None;
         }
-        let change = match change {
-            KeyChange::Enroll { key, label, role } => ClientChange::Enroll { key, label, role },
-            KeyChange::Revoke { key } => ClientChange::Revoke { key },
-        };
+        let at = events::wall_s(self.platform, self.now_ms);
+        let change = ClientChange::Key { change, at };
         (self.platform.keys_request(change) == Requested::Queued)
             .then(|| self.platform.keys_ticket().max(1))
     }

@@ -4,13 +4,14 @@
 //! through the firmware's read turns, answered between passes.
 
 use wellfed_device::store::events::{BODY_BYTES, Read};
-use wellfed_device_api::Reader;
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::mailbox::{
     ClientChange, KeyResult, Requested, SettingsFields, SettingsResult,
 };
+use wellfed_device_api::{KeyChange, Reader};
 use wellfed_device_sim::flash::Flash;
 use wellfed_device_sim::stores::{DeviceError, DeviceStores};
+use wellfed_proto::api::{self as proto, EventBody, Path};
 
 fn stores() -> DeviceStores {
     let mut next = 0u8;
@@ -51,10 +52,14 @@ fn a_client_change_answers_its_ticket_on_the_writers_turn() {
     let mut device = stores();
     let label = Label::new(b"phone").expect("a short label");
     assert_eq!(
-        device.keys_request(ClientChange::Enroll {
-            key: [9; 32],
-            label,
-            role: Role::Owner,
+        device.keys_request(ClientChange::Key {
+            change: KeyChange::Enroll {
+                key: [9; 32],
+                label,
+                role: Role::Owner,
+                path: Path::Setup,
+            },
+            at: Some(1_700_000_000),
         }),
         Requested::Queued
     );
@@ -63,6 +68,26 @@ fn a_client_change_answers_its_ticket_on_the_writers_turn() {
 
     assert_eq!(device.apply_keys(), Some(KeyResult::Done));
     assert_eq!(device.keys_outcome(ticket), Some(KeyResult::Done));
+    // Its event is in the ring with the change, at the time it was asked
+    // for, and kept for the loop's alert rules.
+    let Read::Record(record) = device.ring_after(None) else {
+        panic!("the enrollment's event is in the ring");
+    };
+    assert_eq!(record.at, Some(1_700_000_000));
+    let enrolled = EventBody::Enrolled {
+        client: [9; 4],
+        role: proto::Role::Owner,
+        path: Path::Setup,
+    };
+    assert_eq!(
+        wellfed_proto::decode_padded::<EventBody>(&record.body),
+        Some(enrolled)
+    );
+    assert_eq!(
+        device.take_written(),
+        Some((Some(1_700_000_000), record.body))
+    );
+    assert_eq!(device.take_written(), None);
     assert_eq!(
         device.enroll([9; 32], label, Role::Member),
         Err(DeviceError::EnrolledAs(Role::Owner)),

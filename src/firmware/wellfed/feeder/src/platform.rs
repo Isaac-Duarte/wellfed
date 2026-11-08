@@ -361,6 +361,10 @@ impl Platform for Plaf103 {
         events::take_lost()
     }
 
+    fn take_written(&mut self) -> Option<(Option<u32>, [u8; BODY_BYTES])> {
+        events::take_written().map(|written| (written.at, written.body))
+    }
+
     fn event_after(&mut self, reader: Reader, after: Option<u64>) -> Option<Read> {
         events::read_result(reader, after)
     }

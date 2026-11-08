@@ -122,8 +122,11 @@ impl Server {
             Action::RevokeClient { key: revoked } => {
                 if find(&self.clients, &revoked).is_none() {
                     Reply::Refused(Refusal::NotFound)
-                } else if let Some(ticket) = device.keys(KeyChange::Revoke { key: revoked }) {
-                    let waiting = Waiting::Keys { ticket, revoked };
+                } else if let Some(ticket) = device.keys(KeyChange::Revoke {
+                    key: revoked,
+                    by: Source::Client(fingerprint(&key)),
+                }) {
+                    let waiting = Waiting::Keys { ticket };
                     return self.wait(index, id, action, waiting);
                 } else {
                     Reply::Refused(Refusal::Busy)

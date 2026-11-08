@@ -249,7 +249,7 @@ impl Fake {
                         KeyOutcome::Done
                     }
                 }
-                KeyChange::Revoke { key } => {
+                KeyChange::Revoke { key, .. } => {
                     let before = self.clients.len();
                     self.clients.retain(|c| c.key != key);
                     if self.clients.len() < before {
@@ -259,6 +259,10 @@ impl Fake {
                     }
                 }
             };
+            // The writer's event, in the turn that made the change.
+            if outcome == KeyOutcome::Done {
+                self.record(0, change.event());
+            }
             if self.keys_done.len() == KEYS_FINISHED {
                 self.keys_done.remove(0);
             }
@@ -1615,7 +1619,10 @@ fn a_change_finished_behind_another_still_answers_its_session() {
     send_unwritten(&mut rig, &mut owner, 1, revoke);
     rig.device.write();
 
-    let other = rig.device.keys(KeyChange::Revoke { key: [0x99; 32] });
+    let other = rig.device.keys(KeyChange::Revoke {
+        key: [0x99; 32],
+        by: proto::Source::Client([0x99; 4]),
+    });
     rig.device.write();
     assert_eq!(
         rig.device.keys_outcome(other.unwrap()),
@@ -2120,6 +2127,26 @@ fn recover(
     code: Code,
     keyed: Code,
 ) -> Option<wellfed_model::setup::Reply> {
+    recover_until(rig, secret, code, keyed, Leave::Never)
+}
+
+/// When a recovery client hangs up.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Leave {
+    /// It stays for the last reply.
+    Never,
+    /// As soon as its enrollment is queued, before the writer takes it.
+    OnceQueued,
+}
+
+/// [`recover`], with the client hanging up as `leave` says.
+fn recover_until(
+    rig: &mut Rig,
+    secret: [u8; 32],
+    code: Code,
+    keyed: Code,
+    leave: Leave,
+) -> Option<wellfed_model::setup::Reply> {
     use wellfed_client::setup::{Ask, Session as Setup};
     use wellfed_model::setup::Reply;
 
@@ -2139,6 +2166,11 @@ fn recover(
         }
         rig.deliver(slot, &mut outbox);
         rig.pass();
+        if leave == Leave::OnceQueued && rig.device.keys_pending.is_some() {
+            let records = &mut rig.records;
+            rig.server.closed(slot, |r| records.push(r));
+            return None;
+        }
         let received = rig.collect(slot);
         rig.device.write();
         match recovery.handle_input(&received) {
@@ -2261,13 +2293,13 @@ fn the_recovery_window_admits_one_owner_who_proves_the_code() {
             .iter()
             .any(|c| c.key == public(STRANGER) && c.role == Role::Owner)
     );
-    assert!(rig.device.events.iter().any(|e| matches!(
-        e.body,
-        EventBody::Enrolled {
-            path: proto::Path::Recovery,
-            ..
-        }
-    )));
+    // Once: the writer's event, and nothing from the session that read it.
+    let enrolled = (
+        fingerprint(STRANGER),
+        proto::Role::Owner,
+        proto::Path::Recovery,
+    );
+    assert_eq!(enrollments(&rig), [enrolled]);
 
     // The offer closed the window: the next client is turned away.
     assert_eq!(
@@ -2277,6 +2309,36 @@ fn the_recovery_window_admits_one_owner_who_proves_the_code() {
     );
     rig.publish();
     let _owner = open(&mut rig, STRANGER);
+}
+
+/// A recovery client that hangs up once its enrollment is queued is still
+/// enrolled, and the history says so once: the writer records it with the
+/// store write, not the session that has gone.
+#[test]
+fn a_recovery_whose_client_left_is_still_in_the_history() {
+    let mut rig = Rig::new();
+    open_recovery(&mut rig);
+    let code = Code::from_bits(0x0abc);
+    let reply = recover_until(&mut rig, STRANGER, code, code, Leave::OnceQueued);
+    assert_eq!(reply, None, "gone before its answer");
+    assert!(rig.ended(Reason::Closed));
+    assert_eq!(enrollments(&rig), [], "not before the writer has made it");
+
+    rig.device.write();
+    rig.pass();
+    rig.pass();
+    assert!(
+        rig.device
+            .clients
+            .iter()
+            .any(|c| c.key == public(STRANGER) && c.role == Role::Owner)
+    );
+    let enrolled = (
+        fingerprint(STRANGER),
+        proto::Role::Owner,
+        proto::Path::Recovery,
+    );
+    assert_eq!(enrollments(&rig), [enrolled]);
 }
 
 #[test]

@@ -345,16 +345,46 @@ pub enum UpdateAnswer {
     },
 }
 
+/// A client store change the device API asks for. Each names what its
+/// history event needs, since the settings writer, not the asking session,
+/// records it ([`KeyChange::event`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyChange {
     Enroll {
         key: [u8; 32],
         label: Label,
         role: Role,
+        /// How the key joined.
+        path: proto::Path,
     },
     Revoke {
         key: [u8; 32],
+        /// The client that asked.
+        by: Source,
     },
+}
+
+impl KeyChange {
+    /// The history event this change records once the writer has made it
+    /// (`Done`). A device records it in the same turn as the store write,
+    /// whether or not the asking session is still there to read the
+    /// outcome; a change that was refused, or changed nothing (a key
+    /// already enrolled), records none.
+    pub fn event(&self) -> EventBody {
+        match *self {
+            Self::Enroll {
+                key, role, path, ..
+            } => EventBody::Enrolled {
+                client: crate::fingerprint(&key),
+                role: crate::proto_role(role),
+                path,
+            },
+            Self::Revoke { key, by } => EventBody::Revoked {
+                client: crate::fingerprint(&key),
+                by,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

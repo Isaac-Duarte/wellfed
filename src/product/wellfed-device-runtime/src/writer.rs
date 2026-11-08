@@ -88,6 +88,8 @@ pub use crate::keys::KeyResult;
 use crate::keys::{self, Change};
 use crate::network::{self, NET_BASE};
 use crate::time::{self, TIME_BASE};
+use wellfed_device_api::KeyChange as ApiChange;
+use wellfed_proto::api::EventBody;
 
 /// The factory reset's marker sector (`storage::RESET`).
 pub const RESET_BASE: u32 = wellfed_hal::board::storage::RESET.first;
@@ -145,6 +147,20 @@ named_enum! {
         Enroll = "enroll",
         Revoke = "revoke",
         Reset = "reset",
+    }
+}
+
+named_enum! {
+    /// What became of a client store change's history event (`event=`).
+    pub enum KeyEvent {
+        /// None was due: the change did not go through, changed nothing, or
+        /// was the factory reset, whose restart starts a new ring.
+        None = "none",
+        /// Appended in the turn that made the change.
+        Appended = "appended",
+        /// The ring refused it (closed, or a failed write): the change
+        /// stands without its event.
+        Lost = "lost",
     }
 }
 
@@ -211,6 +227,7 @@ pub enum Record<R> {
         change: KeyChange,
         result: KeyResult,
         enrolled: usize,
+        event: KeyEvent,
     },
     /// The event ring as opened.
     Events {
@@ -359,9 +376,10 @@ pub fn describe<R: Describe>(record: Record<R>, f: &mut impl fmt::Write) -> fmt:
             change,
             result,
             enrolled,
+            event,
         } => write!(
             f,
-            "keys change={change} result={result} enrolled={enrolled}"
+            "keys change={change} result={result} enrolled={enrolled} event={event}"
         ),
         Record::Events {
             open,
@@ -777,18 +795,44 @@ impl<F: FlashOps> Core<F> {
     /// end now, not at the restart). Once the marker is down the answer is
     /// `Done`: the loop restarts the device, and that boot erases the
     /// cleared stores.
+    ///
+    /// An enrollment or revocation that went through records its history
+    /// event here, in the same write turn, before the result is published:
+    /// whoever asked may have gone (a session that dropped, a BLE link that
+    /// closed), and the device, not their survival, decides what the
+    /// history holds. A waiter that reads `Done` finds the event already in
+    /// the ring. The store write goes first and the event second, so a
+    /// power cut between the two programs leaves the change without its
+    /// event, never an event for a change that did not land: that one
+    /// would be false, and the client's retry would record it twice. The
+    /// event comes straight to the ring, not through the loop's queue, so a
+    /// full queue cannot drop it either; the loop's alert rules hear of it
+    /// through [`events::take_written`].
     fn change<R>(&mut self, change: Change, writable: bool) -> Record<R> {
         let kind = match change {
-            Change::Enroll { .. } => KeyChange::Enroll,
-            Change::Revoke { .. } => KeyChange::Revoke,
+            Change::Key {
+                change: ApiChange::Enroll { .. },
+                ..
+            } => KeyChange::Enroll,
+            Change::Key {
+                change: ApiChange::Revoke { .. },
+                ..
+            } => KeyChange::Revoke,
             Change::Reset => KeyChange::Reset,
         };
         let result = match change {
             _ if !writable => KeyResult::Unarmed,
-            Change::Enroll { key, label, role } => {
-                self.apply(|clients| clients.enroll(key, label, role))
-            }
-            Change::Revoke { key } => self.apply(|clients| clients.revoke(&key)),
+            Change::Key {
+                change:
+                    ApiChange::Enroll {
+                        key, label, role, ..
+                    },
+                ..
+            } => self.apply(|clients| clients.enroll(key, label, role)),
+            Change::Key {
+                change: ApiChange::Revoke { key, .. },
+                ..
+            } => self.apply(|clients| clients.revoke(&key)),
             Change::Reset => match rng::bytes() {
                 Some(identity) => {
                     arming::set_attempt();
@@ -811,6 +855,17 @@ impl<F: FlashOps> Core<F> {
             },
         };
 
+        let event = match change {
+            Change::Key { change, at } if result == KeyResult::Done => {
+                if self.append_written(at, &change.event()) {
+                    KeyEvent::Appended
+                } else {
+                    KeyEvent::Lost
+                }
+            }
+            Change::Key { .. } | Change::Reset => KeyEvent::None,
+        };
+
         let reset = kind == KeyChange::Reset && result == KeyResult::Done;
         if reset && let Some(secret) = self.clients.identity() {
             keys::publish_identity(secret);
@@ -826,7 +881,29 @@ impl<F: FlashOps> Core<F> {
             change: kind,
             result,
             enrolled: self.clients.clients().count(),
+            event,
         }
+    }
+
+    /// Append `body`, an event the writer records for a change it just
+    /// made, straight to the ring under its own attempt marker, and hand it
+    /// to the loop's alert rules; false if the ring refused it. The caller
+    /// holds the write turn.
+    fn append_written(&mut self, at: Option<u32>, body: &EventBody) -> bool {
+        let mut bytes = [0; ring::BODY_BYTES];
+        if wellfed_proto::encode(body, &mut bytes).is_err() {
+            return false;
+        }
+
+        arming::set_attempt();
+        let appended = self.events.append(at, &bytes);
+        arming::clear_attempt();
+
+        let appended = appended.is_ok();
+        if appended {
+            events::wrote(at, bytes, self.events.last_seq());
+        }
+        appended
     }
 
     fn apply(
@@ -1281,6 +1358,7 @@ impl<F: FlashOps, P: Product<F>> Writer<F, P> {
             };
             let record = core.change(change, writable);
             drop(turn);
+            self.publish_fill();
             return next(POLL_MS, Some(record));
         }
         if let Some(credentials) = network::pending() {

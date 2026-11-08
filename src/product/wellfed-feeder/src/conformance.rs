@@ -16,9 +16,9 @@
 
 use wellfed_core::store::slot::crc32;
 use wellfed_proto::api::{
-    Blocked, CurrentUnit, Desiccant, DeviceStatus, EventBody, FeedOutcome, FeedReason,
-    FeederStatus, FoodLevel, FrozenRefusal, Readiness, Refusal, Resets, Source, Stats,
-    StatsSection, Status, TraceSummary,
+    self as proto, Alert, Blocked, CurrentUnit, Desiccant, DeviceStatus, EventBody, FeedOutcome,
+    FeedReason, FeederStatus, FoodLevel, FrozenRefusal, Path, Readiness, Refusal, Resets, Source,
+    Stats, StatsSection, Status, TraceSummary,
 };
 use wellfed_proto::device::{DeviceKind, Model};
 
@@ -129,7 +129,56 @@ fn enroll(key: u8) -> KeyChange {
         key: [key; 32],
         label: Label::new(b"phone").expect("a short label"),
         role: Role::Member,
+        path: Path::Invite,
     }
+}
+
+/// The client that asks for the suite's revocations.
+const REVOKER: Source = Source::Client([1, 2, 3, 4]);
+
+fn revoke(key: u8) -> KeyChange {
+    KeyChange::Revoke {
+        key: [key; 32],
+        by: REVOKER,
+    }
+}
+
+/// Run the loop and the writer until the event ring is open (the alert
+/// rules' boot read ends as the loop runs, too).
+fn open_ring(rig: &mut impl Rig) {
+    for _ in 0..TURNS {
+        pass(rig, 0);
+        rig.write();
+        if device(rig, 0, |device| device.epoch()).is_some() {
+            return;
+        }
+    }
+    panic!("the ring never opened");
+}
+
+/// The events after `after`, through the subscriber's turns: as many as
+/// fit `out`, and how many there were.
+fn events_after(
+    rig: &mut impl Rig,
+    mut after: Option<u64>,
+    out: &mut [Option<EventBody>],
+) -> usize {
+    let mut count = 0;
+    for _ in 0..TURNS {
+        match device(rig, 0, |device| device.event_after(Reader::slot(0), after)) {
+            EventRead::Event(read) => {
+                after = Some(read.seq);
+                if let Some(slot) = out.get_mut(count) {
+                    *slot = read.body();
+                }
+                count += 1;
+            }
+            EventRead::Wait => rig.write(),
+            EventRead::None => return count,
+            EventRead::Gap { from, to } => panic!("events {from}..={to} lost"),
+        }
+    }
+    panic!("the ring never reached its end");
 }
 
 fn credentials() -> Credentials {
@@ -236,14 +285,59 @@ pub fn client_changes_answer_by_ticket(rig: &mut impl Rig) {
     assert_eq!(keys_outcome(rig, ticket), Some(KeyOutcome::Done));
 
     assert_eq!(key_change(rig, enroll(7)), KeyOutcome::Duplicate);
+    assert_eq!(key_change(rig, revoke(9)), KeyOutcome::NotFound);
+    assert_eq!(key_change(rig, revoke(7)), KeyOutcome::Done);
+}
+
+/// A client store change records its history event in the writer's turn,
+/// with nobody reading its outcome (the session that asked has gone): one
+/// event for each change that went through, the change's own time on it,
+/// and none for one that changed nothing. The alert rules hear of each on
+/// the loop's next pass, as they do of the loop's own events.
+pub fn a_client_change_records_its_event_unread(rig: &mut impl Rig) {
+    open_ring(rig);
+    let before = device(rig, 0, |device| device.status(0)).last_event;
+
+    for change in [enroll(7), enroll(7), revoke(7), revoke(7)] {
+        keys(rig, change).expect("the client mailbox is free");
+        rig.write();
+    }
+    pass(rig, 0);
+
+    let joined = EventBody::Enrolled {
+        client: [7; 4],
+        role: proto::Role::Member,
+        path: Path::Invite,
+    };
+    let revoked = EventBody::Revoked {
+        client: [7; 4],
+        by: REVOKER,
+    };
+    let mut events = [None; 4];
+    let count = events_after(rig, before, &mut events);
     assert_eq!(
-        key_change(rig, KeyChange::Revoke { key: [9; 32] }),
-        KeyOutcome::NotFound
+        count, 2,
+        "one event per change that went through: {events:?}"
     );
-    assert_eq!(
-        key_change(rig, KeyChange::Revoke { key: [7; 32] }),
-        KeyOutcome::Done
-    );
+    assert_eq!(events[..2], [Some(joined), Some(revoked)]);
+
+    let view = device(rig, 0, |device| device.alerts()).expect("the ring is open");
+    let alerted = |alert: Alert| {
+        view.alerts
+            .entries
+            .iter()
+            .flatten()
+            .any(|open| open.alert == alert)
+    };
+    assert!(alerted(Alert::ClientJoined {
+        client: [7; 4],
+        role: proto::Role::Member,
+        path: Path::Invite,
+    }));
+    assert!(alerted(Alert::ClientRevoked {
+        client: [7; 4],
+        by: REVOKER,
+    }));
 }
 
 /// While a feed holds the outputs, every store write is refused at once
@@ -1071,6 +1165,7 @@ macro_rules! conformance {
             a_settings_change_lands_on_the_writer_turn,
             wifi_credentials_are_saved_and_cleared,
             client_changes_answer_by_ticket,
+            a_client_change_records_its_event_unread,
             writes_are_refused_while_the_outputs_are_claimed,
             the_lock_follows_the_panel_owner,
             a_time_sync_sets_the_clock,

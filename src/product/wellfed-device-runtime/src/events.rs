@@ -18,6 +18,11 @@
 //!   shared with any other whose cursor falls in it, round robin among
 //!   those waiting, and given up at once by a subscriber that ends
 //!   ([`reader_left`]).
+//! - **The writer's own:** an event the writer records for a change it
+//!   makes (a client enrolled or revoked) goes straight to the ring in the
+//!   turn that made the change, never through the queue, and is handed
+//!   back with [`wrote`] so the loop's alert rules hear of it
+//!   ([`take_written`]), as they hear of every event the loop records.
 //! - **Epoch:** the writer publishes the ring's epoch once it has opened
 //!   it ([`publish_open`]); the device API welcomes no session before then,
 //!   since a welcome names the epoch its event numbers count in.
@@ -54,6 +59,10 @@ struct Shared {
     queue: [Queued; QUEUE],
     head: usize,
     len: usize,
+    /// Events the writer appended itself, oldest first, `written_len` of
+    /// them, until the loop takes them.
+    written: [Queued; WRITTEN],
+    written_len: usize,
     lost: u32,
     last: Option<u64>,
     epoch: Option<u32>,
@@ -66,6 +75,8 @@ static SHARED: TaskCell<Shared> = TaskCell::new(Shared {
     queue: [UNQUEUED; QUEUE],
     head: 0,
     len: 0,
+    written: [UNQUEUED; WRITTEN],
+    written_len: 0,
     lost: 0,
     last: None,
     epoch: None,
@@ -79,6 +90,12 @@ fn with<R>(f: impl FnOnce(&mut Shared) -> R) -> R {
         f(unsafe { &mut *SHARED.get() })
     })
 }
+
+/// Events the writer appended itself that the loop has yet to take. The
+/// writer makes one client change per step, and the loop takes them every
+/// pass, so a few is plenty; one past them is still in the ring, and only
+/// its alert is missed (the next boot's replay restores it).
+pub const WRITTEN: usize = 4;
 
 /// Slots only [`record_outcome`] may fill.
 pub const RESERVED: usize = 1;
@@ -131,6 +148,33 @@ pub fn finish_pending(last: Option<u64>) {
         }
         shared.last = last;
     });
+}
+
+/// The writer's half: it appended `body` itself, and `last` is the ring's
+/// newest record now.
+pub fn wrote(at: Option<u32>, body: [u8; BODY_BYTES], last: Option<u64>) {
+    with(|shared| {
+        shared.last = last;
+        if let Some(slot) = shared.written.get_mut(shared.written_len) {
+            *slot = Queued { at, body };
+            shared.written_len += 1;
+        }
+    });
+}
+
+/// The loop's half: the oldest event the writer appended itself and the
+/// loop has not yet taken, for the alert rules.
+pub fn take_written() -> Option<Queued> {
+    with(|shared| {
+        if shared.written_len == 0 {
+            return None;
+        }
+        let first = shared.written[0];
+        shared.written.copy_within(1.., 0);
+        shared.written_len -= 1;
+        shared.written[shared.written_len] = UNQUEUED;
+        Some(first)
+    })
 }
 
 /// The writer's half: the ring's epoch and newest record, after opening it.
@@ -192,6 +236,8 @@ pub fn reset() {
         shared.queue = [UNQUEUED; QUEUE];
         shared.head = 0;
         shared.len = 0;
+        shared.written = [UNQUEUED; WRITTEN];
+        shared.written_len = 0;
         shared.lost = 0;
         shared.last = None;
         shared.epoch = None;

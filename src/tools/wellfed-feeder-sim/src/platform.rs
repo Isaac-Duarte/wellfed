@@ -798,6 +798,10 @@ impl Platform for SimPlatform {
         0
     }
 
+    fn take_written(&mut self) -> Option<(Option<u32>, [u8; BODY_BYTES])> {
+        self.device.take_written()
+    }
+
     fn event_after(&mut self, reader: Reader, after: Option<u64>) -> Option<Read> {
         if self.ring_unanswered {
             return None;
