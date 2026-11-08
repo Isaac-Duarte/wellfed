@@ -1022,8 +1022,9 @@ fn a_jam_or_a_stuck_mark_is_journaled_as_the_reason_it_refines() {
 }
 
 /// A newer minor of the journal's record (here one that fills the request
-/// id room, feed id and all) opens, feeds go on, and every record the journal writes after
-/// it keeps that minor and those bytes. A newer major faults the journal.
+/// id room, feed id and all) opens, feeds go on, and every record the
+/// journal writes after it keeps that minor and those bytes. A newer major
+/// faults the journal.
 #[test]
 fn a_newer_minor_opens_and_its_bytes_are_kept() {
     let mut f = FakeJournalFlash::default();

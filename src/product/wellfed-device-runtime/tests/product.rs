@@ -6,6 +6,7 @@
 use std::cell::Cell;
 use std::fmt;
 
+use wellfed_core::store::update::UpdateStatus;
 use wellfed_device::store::events::EventsFill;
 use wellfed_device::store::reset;
 use wellfed_device::store::settings::SettingsStatus;
@@ -14,11 +15,12 @@ use wellfed_device_runtime::writer::{
     self as writer, Core, Describe, POLL_MS, Product, RESET_BASE, Record, Step, Wear, Writer,
 };
 use wellfed_device_runtime::{events, keys, network};
-use wellfed_hal::board::storage::FACTORY_CLEARED_SECTORS;
+use wellfed_hal::board::storage::{FACTORY_CLEARED_SECTORS, UPDATE};
 use wellfed_hal::flash::park::Mmio;
 use wellfed_hal::flash_lock::arming::Hooks;
 use wellfed_hal::flash_lock::provider::Provider;
 use wellfed_hal::interlock::INTERLOCK;
+use wellfed_hal::ota::update::{self as update, SdkFlash, StoreSlots, Update};
 use wellfed_hal::sdk::{self, fake};
 use wellfed_hal::{settings, supervision};
 use wellfed_sdk::storage::{FlashOps, Region};
@@ -237,4 +239,39 @@ fn a_factory_reset_with_nothing_kept_erases_the_marker_after_the_cleared_sectors
         "with no keep step the marker goes next"
     );
     assert!(!reset::pending(&Region::<Armed, RESET_BASE, 1>::new()));
+}
+
+/// The update stage runs on another task and may have opened a corrupt
+/// store before the reset clears it: the writer tells it to read the store
+/// again, and it serves the empty store without waiting for a restart.
+#[test]
+fn a_reset_by_hand_over_a_corrupt_update_store_reopens_the_update_stage_empty() {
+    let (mut writer, mut provider) = boot();
+    let mut junk = [0u8; 384];
+    junk[..8].copy_from_slice(b"PLFUPD01");
+    junk[8] = 2;
+    junk[10..12].copy_from_slice(&384u16.to_le_bytes());
+    junk[380..].copy_from_slice(b"CMIT");
+    // SAFETY: the fake's storage, which this test owns.
+    assert!(unsafe { sdk::storage_program(UPDATE.first, 0, &junk) });
+
+    let mut stage = Box::new(Update::new(1, [0xee; 32], None, StoreSlots::<Armed>::new()));
+    let mut flash = SdkFlash::<Armed>::new();
+    let opened = |step: update::Step| match step.record {
+        Some(update::Record::Opened { status, .. }) => Some(status),
+        _ => None,
+    };
+    assert_eq!(
+        opened(stage.step(&mut flash, 1)),
+        Some(UpdateStatus::Corrupt)
+    );
+
+    assert!(reset::mark(&Region::<Armed, RESET_BASE, 1>::new()));
+    let records: Vec<Record<Never>> = (0..FACTORY_CLEARED_SECTORS + 3)
+        .filter_map(|_| step(&mut writer, &mut provider))
+        .collect();
+    assert!(!reset::pending(&Region::<Armed, RESET_BASE, 1>::new()));
+    assert!(records.contains(&Record::ResetUpdateCleared), "{records:?}");
+
+    assert_eq!(opened(stage.step(&mut flash, 2)), Some(UpdateStatus::Empty));
 }

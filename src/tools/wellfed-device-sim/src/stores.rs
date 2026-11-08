@@ -24,7 +24,7 @@ use wellfed_board::storage::{self, Sectors};
 use wellfed_core::clock::wall::WallClock;
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::{SlotIo, crc32};
-use wellfed_core::store::update::UpdateStore;
+use wellfed_core::store::update::{UpdateStatus, UpdateStore};
 use wellfed_device::store::clients::{ClientError, ClientStatus, ClientStore};
 use wellfed_device::store::events::{BODY_BYTES, EMPTY, EventLog, EventsFill, Read, Record};
 use wellfed_device::store::net::NetStore;
@@ -493,7 +493,9 @@ pub fn finish_reset(flash: &Rc<Flash>, keep: impl FnOnce(&Rc<Flash>)) {
     if reset::by_hand(&marker) {
         let mut update = UpdateStore::default();
         update.open(Region::new(flash, storage::UPDATE));
-        let _ = update.clear_corrupt();
+        if update.clear_corrupt() == Ok(true) {
+            wellfed_hal::ota::update::store_started_over();
+        }
     }
     keep(flash);
     reset::clear(&marker);
@@ -525,8 +527,16 @@ pub fn finish_handover(flash: &Rc<Flash>, bank: u8) {
     }
     let mut update = UpdateStore::default();
     update.open(Region::new(flash, storage::UPDATE));
-    let _ = update.start_over();
-    wellfed_hal::ota::update::store_started_over();
+    // As the firmware's handover: a record this build cannot read, or a
+    // newer major's, is left alone, and the stage reads the store again
+    // only when it started over.
+    let started = match update.status {
+        UpdateStatus::ReadOnly | UpdateStatus::Corrupt | UpdateStatus::Io => false,
+        _ => update.start_over().is_ok(),
+    };
+    if started {
+        wellfed_hal::ota::update::store_started_over();
+    }
     if bank == 0 {
         Region::new(flash, storage::CONFIRM).erase(0);
     }

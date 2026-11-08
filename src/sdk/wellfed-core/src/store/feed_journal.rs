@@ -18,9 +18,10 @@
 //! key id of the client that sent it and the 8-byte id of the feed it named,
 //! so a resend after a restart finds its feed. An older build carries those
 //! bytes unread into every record it writes, the next feed's included, so
-//! the feed id ties them to their feed: a reader ignores a request id whose
-//! feed id is not the record's own feed. Anything a minor adds there reads
-//! zero as "none", the way a record of this minor leaves it. A newer or older major is one the
+//! the feed id ties them to their feed: a reader compares it with the
+//! record's high-water ID (bytes 32..40) and ignores a request id whose
+//! feed id differs. Anything a minor adds there reads zero as "none", the
+//! way a record of this minor leaves it. A newer or older major is one the
 //! journal cannot read, and faults it, as it must never forget a
 //! reservation.
 //!
@@ -65,7 +66,7 @@ const FIELDS_END: usize = 48;
 /// client's key id, then the id of the feed it named, which an older
 /// build's records carry forward unread onto later feeds.
 pub const REQUEST_ID_AT: usize = FIELDS_END;
-pub const REQUEST_FEED_AT: usize = REQUEST_ID_AT + 16 + 8;
+const REQUEST_FEED_AT: usize = REQUEST_ID_AT + 16 + 8;
 pub const REQUEST_ID_END: usize = REQUEST_FEED_AT + 8;
 
 const _: () = assert!(REQUEST_ID_END <= CRC_AT);
