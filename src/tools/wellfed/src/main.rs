@@ -38,6 +38,7 @@ mod configure;
 mod device;
 mod feeding;
 mod history;
+mod home;
 mod keys;
 mod pairing;
 mod plans;
@@ -57,7 +58,8 @@ use wellfed_formats::bench::rendezvous;
 use wellfed_model::{Answer, Op};
 
 use crate::device::Connection;
-use crate::keys::{OwnerKey, fingerprint};
+use crate::home::Home;
+use crate::keys::{Missing, OwnerKey, fingerprint};
 
 #[derive(Parser)]
 #[command(version, about = "The owner's command line for a Wellfed feeder")]
@@ -223,9 +225,10 @@ fn passphrase() -> Result<String> {
 /// Which feeder, and with which key.
 #[derive(Args)]
 struct Target {
-    /// This computer's client key.
-    #[arg(long, default_value = "private/wellfed-owner.json")]
-    keys: PathBuf,
+    /// This computer's client key [default: wellfed-owner.json in
+    /// WELLFED_HOME, or the platform's data directory].
+    #[arg(long)]
+    keys: Option<PathBuf>,
     /// The feeder's identity, as a hex prefix; needed when the key file
     /// knows more than one.
     #[arg(long)]
@@ -233,6 +236,13 @@ struct Target {
     /// The feeder's address (ip or ip:port); otherwise found over mDNS.
     #[arg(long)]
     address: Option<String>,
+}
+
+impl Target {
+    /// The key file this command uses.
+    fn keys(&self) -> Result<PathBuf> {
+        Ok(home::or_home(self.keys.as_deref(), Home::owner_key)?)
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -269,15 +279,16 @@ async fn connect_via(
     target: &Target,
     rendezvous: &[PathBuf],
 ) -> Result<(OwnerKey, [u8; 32], Connection)> {
+    let keys = target.keys()?;
     if let Some(bench) = bench::Bench::find(rendezvous).await? {
         let lent = bench::lend(
             bench,
-            &target.keys,
+            &keys,
             target.feeder.as_deref(),
             target.address.as_deref(),
         )
         .await?;
-        let key = OwnerKey::open(&target.keys, None, OwnerKey::system())?;
+        let key = OwnerKey::open(&keys, None, Missing::Refuse, OwnerKey::system())?;
         let identity = key.feeder(target.feeder.as_deref())?;
         if wellfed_formats::hex::encode(&identity) != lent.identity() {
             bail!(
@@ -295,7 +306,7 @@ async fn connect_via(
         return Ok((key, identity, Connection::Bench(Box::new(lent))));
     }
 
-    let key = OwnerKey::open(&target.keys, None, OwnerKey::system())?;
+    let key = OwnerKey::open(&keys, None, Missing::Refuse, OwnerKey::system())?;
     let identity = key.feeder(target.feeder.as_deref())?;
     let address = device::locate(&identity, target.address.as_deref())?;
     let connection = Connection::open(&key, identity, address).await?;

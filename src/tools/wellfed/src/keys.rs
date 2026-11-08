@@ -1,13 +1,45 @@
 //! The owner's client key file (`wellfed_formats::owner`): created once
-//! from the system's random source, then reused for every feeder.
+//! from the system's random source, only by a command that pairs or joins
+//! and was told to (`--create-key`), then reused for every feeder. Any
+//! other open of a missing file is refused with the path it looked at, so a
+//! command pointed at the wrong place never makes a second key that no
+//! feeder knows.
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
 use wellfed_formats::hex;
-use wellfed_formats::owner::{EnrolledFeeder, OwnerKeyFile, VERSION};
+use wellfed_formats::owner::{self, EnrolledFeeder, OwnerKeyFile, VERSION};
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
 use wellfed_session::noise::Keypair;
+
+use crate::home::HOME_VAR;
+
+/// What an open does when there is no key file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Missing {
+    /// Make a new key there.
+    Create,
+    /// Refuse, naming the path.
+    Refuse,
+}
+
+impl Missing {
+    /// A command's `--create-key`.
+    pub(crate) const fn when(create: bool) -> Self {
+        if create { Self::Create } else { Self::Refuse }
+    }
+}
+
+/// Why the key file did not open.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum KeyError {
+    #[error(
+        "no owner key at {}: pass --keys or set {HOME_VAR} to where yours is, or run setup, recover or join with --create-key to make one there",
+        path.display()
+    )]
+    Missing { path: PathBuf },
+}
 
 /// The label a new key file gets unless `--label` names one.
 pub(crate) const DEFAULT_LABEL: &str = "wellfed-cli";
@@ -19,20 +51,25 @@ pub(crate) struct OwnerKey {
 }
 
 impl OwnerKey {
-    /// The key at `path`, or a new one written there. `label` replaces the
-    /// stored label when given.
-    pub(crate) fn open(path: &Path, label: Option<&str>, random: &Path) -> Result<Self> {
-        let created = !path.exists();
+    /// The key at `path`; with [`Missing::Create`], a new one written there
+    /// when there is none. `label` replaces the stored label when given.
+    pub(crate) fn open(
+        path: &Path,
+        label: Option<&str>,
+        missing: Missing,
+        random: &Path,
+    ) -> Result<Self> {
+        let created = !path
+            .try_exists()
+            .with_context(|| format!("look for {}", path.display()))?;
+        if created && missing == Missing::Refuse {
+            return Err(KeyError::Missing {
+                path: path.to_path_buf(),
+            }
+            .into());
+        }
         let mut file = if !created {
-            let file: OwnerKeyFile = wellfed_formats::load(path)
-                .with_context(|| format!("read the key file {}", path.display()))?;
-            ensure!(
-                file.version == VERSION,
-                "{}: key file version {} (this tool reads {VERSION})",
-                path.display(),
-                file.version
-            );
-            file
+            owner::load(path).with_context(|| format!("read the key file {}", path.display()))?
         } else {
             let secret: [u8; 32] =
                 private::random(random).context("read the system random source")?;
@@ -146,14 +183,23 @@ mod tests {
         let random = dir.path().join("random");
         std::fs::write(&random, [9u8; 32]).unwrap();
 
-        let mut key = OwnerKey::open(&path, None, &random).unwrap();
+        let Err(refused) = OwnerKey::open(&path, None, Missing::Refuse, &random) else {
+            panic!("a missing key is refused");
+        };
+        assert!(matches!(
+            refused.downcast_ref::<KeyError>(),
+            Some(KeyError::Missing { path: looked }) if *looked == path
+        ));
+        assert!(!path.exists(), "a refused open makes nothing");
+
+        let mut key = OwnerKey::open(&path, None, Missing::Create, &random).unwrap();
         assert_eq!(key.label(), DEFAULT_LABEL);
         let public = *key.keypair().public();
         key.remember(&[5; 32]).unwrap();
         key.remember(&[5; 32]).unwrap();
 
         std::fs::write(&random, [1u8; 32]).unwrap();
-        let again = OwnerKey::open(&path, Some("laptop"), &random).unwrap();
+        let again = OwnerKey::open(&path, Some("laptop"), Missing::Create, &random).unwrap();
         assert_eq!(*again.keypair().public(), public, "the same key");
         assert_eq!(again.label(), "laptop");
         assert_eq!(again.file.feeders.len(), 1);
@@ -162,7 +208,7 @@ mod tests {
         // Opening a key that does not change leaves its file alone.
         let modified = || std::fs::metadata(&path).unwrap().modified().unwrap();
         let before = modified();
-        let mut same = OwnerKey::open(&path, Some("laptop"), &random).unwrap();
+        let mut same = OwnerKey::open(&path, Some("laptop"), Missing::Create, &random).unwrap();
         same.remember(&[5; 32]).unwrap();
         assert_eq!(modified(), before);
     }
@@ -176,6 +222,11 @@ mod tests {
             r#"{"version":1,"secret":"00","label":"x","feeders":[]}"#,
         )
         .unwrap();
-        assert!(OwnerKey::open(&path, None, &path).is_err());
+        assert!(OwnerKey::open(&path, None, Missing::Create, &path).is_err());
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            br#"{"version":1,"secret":"00","label":"x","feeders":[]}"#,
+            "a key file that does not open is never replaced"
+        );
     }
 }

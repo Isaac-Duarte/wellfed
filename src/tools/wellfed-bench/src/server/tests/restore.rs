@@ -23,6 +23,7 @@ fn stand_in(checkout: &Checkout, name: &str, script: &str) {
 /// press; these two show each kind of answer on the way through.
 const ASKS: &str = r#"#!/bin/sh
 echo "$@" > args
+echo "$WELLFED_HOME" > home
 echo "Starting" >&2
 echo '{"kind":"recognize-feeder","device":"AF_TEST","address":"192.168.1.31"}'
 read a; echo "recognize $a" >> answers
@@ -154,6 +155,11 @@ async fn a_restore_job_asks_through_the_state() {
         "recognize \"yes\"\ndispense \"done\"\n"
     );
     assert!(lines.iter().any(|line| line == "Restored"), "{lines:?}");
+    assert_eq!(
+        read(&checkout, "home").trim(),
+        checkout.root().join("private").display().to_string(),
+        "the checkout's key and backups"
+    );
     // Without the flag the press was a person's: the job typed nothing.
     assert_eq!(read(&checkout, "presses"), "");
     let state = server.state().await;

@@ -14,7 +14,7 @@ Nothing over Bluetooth can feed, play a sound, or change anything but the Wi-Fi 
 
 ## Setting up from a computer
 
-`wellfed setup --ssid NAME` reads the Wi-Fi passphrase from stdin, creates the computer's client key in `private/wellfed-owner.json` on first use, prints the code with each button's position and name, and records the feeder's identity in the same file after `Done`. The protocol is `wellfed-client`'s, which the Android app shares.
+`wellfed setup --ssid NAME` reads the Wi-Fi passphrase from stdin, uses the computer's client key (`wellfed-owner.json` in the CLI's data directory; `--create-key` makes it the first time), prints the code with each button's position and name, and records the feeder's identity in the same file after `Done`. The protocol is `wellfed-client`'s, which the Android app shares.
 
 It uses BlueZ (`bluer`) on Linux and CoreBluetooth (`btleplug`) on macOS, finding the feeder by its service UUID among devices advertising now, or by `--address`. macOS never shows a Bluetooth address, so there `--address` takes the UUID the Mac assigns, which the CLI prints when it finds a device. The macOS path has not run against a feeder yet.
 

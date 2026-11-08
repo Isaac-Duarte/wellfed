@@ -37,6 +37,10 @@ pub const VERIFICATION: &str = "private/verification";
 /// Root-relative: the owner's stock backups, one directory per feeder,
 /// where a run that signed its own promotion also keeps it.
 pub const STOCK_BACKUPS: &str = "private/stock-backups";
+/// Root-relative: the `wellfed` CLI's home (`WELLFED_HOME`) for the bench's
+/// jobs. Its key, backups and server login keep `private/`'s names there,
+/// so the job finds [`STOCK_BACKUPS`] and the bench's owner key.
+pub const WELLFED_HOME: &str = "private";
 
 /// `private/bench.json`: the ports and pinned evidence the bench uses.
 #[derive(Debug, Clone, Deserialize)]
