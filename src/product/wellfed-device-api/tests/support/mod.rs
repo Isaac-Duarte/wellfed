@@ -247,6 +247,7 @@ impl Device for Fake {
                     battery: proto::Battery::Unread,
                     below_floor: None,
                 },
+                alerts_generation: 0,
             }),
         }
     }

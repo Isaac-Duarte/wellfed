@@ -34,6 +34,7 @@ use wellfed_device_api::mailbox::{
 use wellfed_device_api::wifi::Credentials;
 use wellfed_device_runtime::{events, keys, network, time};
 use wellfed_feeder::feeder::Platform;
+use wellfed_feeder::feeder::alerts::Alerts;
 use wellfed_feeder::feeder::platform::{
     BleStep, Boot, Check, DriverRecord, DriverStep, EventSlot, Link, TaskCount, TaskStack,
 };
@@ -93,6 +94,7 @@ pub struct Plaf103 {
     ble: BleSetup,
     speaker: Speaker,
     build_wifi: BuildWifi,
+    alerts: Alerts,
 }
 
 impl Plaf103 {
@@ -108,6 +110,7 @@ impl Plaf103 {
             ble: BleSetup::new(),
             speaker: Speaker::quiet(),
             build_wifi,
+            alerts: Alerts::new(),
         }
     }
 }
@@ -368,6 +371,18 @@ impl Platform for Plaf103 {
 
     fn epoch(&self) -> Option<u32> {
         events::epoch()
+    }
+
+    fn ring_opened_at(&self) -> Option<u64> {
+        events::opened_at()
+    }
+
+    fn alerts(&self) -> &Alerts {
+        &self.alerts
+    }
+
+    fn alerts_mut(&mut self) -> &mut Alerts {
+        &mut self.alerts
     }
 
     fn last_event(&self) -> Option<u64> {

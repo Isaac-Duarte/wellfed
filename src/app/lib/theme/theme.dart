@@ -54,6 +54,9 @@ ThemeData wellfedTheme(Brightness brightness) {
       foregroundColor: t.text,
       elevation: 0,
       scrolledUnderElevation: 0,
+      // Material centers a title on Apple platforms; Wellfed's pages put it at
+      // the start everywhere, in line with the tabs and fields under it.
+      centerTitle: false,
       titleTextStyle: TextStyle(
         fontFamily: Fonts.family,
         fontSize: Sizes.lg,
@@ -130,7 +133,14 @@ ThemeData wellfedTheme(Brightness brightness) {
           )
         : null,
     dialogTheme: isDesktop
-        ? DialogThemeData(backgroundColor: t.surface, surfaceTintColor: Colors.transparent, shape: dialogShape)
+        ? DialogThemeData(
+            backgroundColor: t.surface,
+            surfaceTintColor: Colors.transparent,
+            shape: dialogShape,
+            // Material's dialogs set no widest, so a question with a long
+            // line ran nearly the width of a large window.
+            constraints: const BoxConstraints(minWidth: 280, maxWidth: 560),
+          )
         : null,
     scrollbarTheme: isDesktop
         ? ScrollbarThemeData(

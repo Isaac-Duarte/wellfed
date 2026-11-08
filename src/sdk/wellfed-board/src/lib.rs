@@ -72,8 +72,8 @@ mod contract {
     /// What the shared stores reach: the boot confirmation record, which
     /// the OTA trial on both cores keeps, and what the settings writer's
     /// factory reset and handover reach: the reset's marker, the update
-    /// store, and the sectors the reset clears, erased one step each by
-    /// index.
+    /// store, and the sectors the reset and the handover clear, erased one
+    /// step each by index.
     #[cfg(wellfed_board_store)]
     mod store {
         use crate::storage::{self, Sectors};
@@ -82,5 +82,7 @@ mod contract {
         const _: [Sectors; 2] = [storage::RESET, storage::UPDATE];
         const _: u32 = storage::FACTORY_CLEARED_SECTORS;
         const _: fn(u32) -> Option<u32> = storage::factory_cleared;
+        const _: u32 = storage::HANDOVER_CLEARED_SECTORS;
+        const _: fn(u32) -> Option<u32> = storage::handover_cleared;
     }
 }

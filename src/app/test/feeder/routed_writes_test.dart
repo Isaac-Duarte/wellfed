@@ -136,13 +136,14 @@ void main() {
         HomeScreen(
           fleet: fleet,
           earlierInstall: () async => PendingInstall.nothing,
-          pinsProblem: PinsProblem.unreadable,
+          pinsProblem: PinsProblem.unavailable,
         ),
       ),
     );
     await settle(tester);
 
     expect(find.textContaining('Feeding and changes are off.', findRichText: true), findsOneWidget);
-    expect(find.textContaining("Clear the app's data", findRichText: true), findsOneWidget);
+    expect(find.textContaining('Close the app and open it again', findRichText: true), findsOneWidget);
+    expect(find.textContaining("Clear the app's data", findRichText: true), findsNothing);
   });
 }

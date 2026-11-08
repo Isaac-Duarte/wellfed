@@ -90,6 +90,7 @@ Both banks must carry the same built-in keys. Bank 1 checks the offer's key agai
 
 Every failure before activation leaves bank 1's marker clear, so the loader keeps booting bank 0, which keeps answering and feeding. The failures: a flipped byte (the whole-image hash), a chunk not wanted or of the wrong length (order), a failed program or readback (write), a marker that doesn't read back, a minute without a chunk (timeout), a cancel, an update store that can't be written, and a manifest or key the checks refuse.
 
+- The loop records each stop as an `UpdateStop` event, since the update's state forgets it at the next offer or restart ([alerts](alerts.md)).
 - A stop leaves the candidate recorded, so bank 0 refuses any other manifest (`Pending`) until a `CancelUpdate` forgets it (`wellfed-bench ota NAME --cancel`). A cancel answers `Busy` when the store can't be written, rather than claiming it forgot.
 - A dropped connection loses nothing: the install waits a minute for the next chunk, and `UpdateState` says where it stands.
 - A power cut mid-download boots bank 0 again, which takes the offer again from the start.
@@ -142,7 +143,9 @@ A `PLREV1` statement retires any key id for good. Built-in keys and the release 
 - Confirmation raises the floor after arming, and before it erases the confirmation sector. A store that can't be written leaves the build unconfirmed.
 - Sector 4's version field carries the version bank 0 activated: 0 for a build installed over UART, or after a torn confirmation rewrite (the store's candidate was already confirmed, so the retry finds nothing naming the build). Nothing decides on that field; the floor lives in the update store.
 
-**The update store** (`wellfed_core::store::update`, storage sectors 25–26) is one 256-byte record, A/B, newest valid wins. It holds the floor, the candidate (pending, then activated), the release slot's key, up to four retired ids, and bank 0's recorded image. A torn write leaves the older, consistent record. It isn't the confirmation sector, which is erased before each write, and the factory reset leaves it alone.
+**The update store** (`wellfed_core::store::update`, storage sectors 25–26) is one 384-byte record, A/B, newest valid wins. It holds the floor, the candidate (pending, then activated), the release slot's key, up to 16 retired ids, and bank 0's recorded image. A torn write leaves the older, consistent record. It isn't the confirmation sector, which is erased before each write.
+
+The store never writes over a record of its own it can't read. With no valid record, it starts empty only when both sectors are erased or hold a first save cut short. Anything else (an older major, a record that fails its checks) opens corrupt, and a newer major read-only. Both leave the floor unknown, so every offer is refused. The factory reset leaves a readable store alone. It erases a corrupt one, and only when you held Reset on the panel. Anyone at the feeder could erase it over UART anyway, so this gives you a way back to updates without a cable.
 
 A record that would lower the floor or forget a retired id is never written, with one exception: the handover from stock's activation resets the floor to 0, since an install from stock must take the same version again. It clears a pending candidate, which the install run never cancels before its promotion, and keeps an activated one, so that exact manifest stays refused as failed whether or not stock booted. That holds too when the loader falls back to bank 0 because stock didn't boot, since the owner's signed downgrade already reopened the floor. The retired ids, the release slot's key and bank 0's recorded image stay.
 
@@ -150,7 +153,9 @@ A record that would lower the floor or forget a retired id is never written, wit
 
 ## Storage-format rule
 
-Storage formats stay readable by the bank-0 build, or a format change ships a bank-0 refresh first. A store bank 0 can't read (a newer schema) has no floor it can trust, so bank 0 refuses every offer, and a format change that skipped the refresh would strand the unit on bank 0 until a UART install.
+Bank 0 never updates over the air, so the build the installer writes there reads every store for the life of the feeder. A store bank 0 can't read has no floor it can trust, so bank 0 refuses every offer, and the unit would be stranded until a UART install.
+
+So the records bank 0 reads change only by additive minors ([record versions](pairing.md#record-versions)). Bank 0 reads the fields it knows from a newer minor and keeps the rest when it rewrites the record. A change that isn't additive is a new major, and a new major is a new store in new sectors.
 
 ## Boot confirmation and fallback
 

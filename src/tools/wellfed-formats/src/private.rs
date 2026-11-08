@@ -85,18 +85,37 @@ fn move_new(from: &Path, to: &Path) -> std::io::Result<()> {
     fs::hard_link(from, to)
 }
 
-/// Rename a file an owner agreed to give up, to a numbered name beside it. It is
-/// never deleted, and never replaces an earlier one set aside. The new path.
-pub fn set_aside(path: &Path) -> std::io::Result<std::path::PathBuf> {
+/// The names a file set aside beside `path` takes, numbered, in order.
+fn aside_names(path: &Path) -> std::io::Result<impl Iterator<Item = std::path::PathBuf>> {
     const MOST: u32 = 1000;
 
     let name = path
         .file_name()
-        .ok_or_else(|| std::io::Error::other("the path names no file"))?;
-    for number in 1..=MOST {
-        let mut aside = name.to_owned();
+        .ok_or_else(|| std::io::Error::other("the path names no file"))?
+        .to_owned();
+    let path = path.to_owned();
+    Ok((1..=MOST).map(move |number| {
+        let mut aside = name.clone();
         aside.push(format!(".damaged-{number}"));
-        let aside = path.with_file_name(aside);
+        path.with_file_name(aside)
+    }))
+}
+
+fn too_many() -> std::io::Error {
+    std::io::Error::other("too many files already set aside")
+}
+
+fn sync_parent(path: &Path) -> std::io::Result<()> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::File::open(parent)?.sync_all()?;
+    }
+    Ok(())
+}
+
+/// Rename a file an owner agreed to give up, to a numbered name beside it. It is
+/// never deleted, and never replaces an earlier one set aside. The new path.
+pub fn set_aside(path: &Path) -> std::io::Result<std::path::PathBuf> {
+    for aside in aside_names(path)? {
         match move_new(path, &aside) {
             Ok(()) => {
                 // A hard link leaves the old name behind; a rename does not.
@@ -105,16 +124,42 @@ pub fn set_aside(path: &Path) -> std::io::Result<std::path::PathBuf> {
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                     Err(error) => return Err(error),
                 }
-                if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-                    fs::File::open(parent)?.sync_all()?;
-                }
+                sync_parent(path)?;
                 return Ok(aside);
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error),
         }
     }
-    Err(std::io::Error::other("too many files already set aside"))
+    Err(too_many())
+}
+
+/// Keep `data`, what `path` held, under the numbered name [`set_aside`]
+/// would give it, durably, and leave `path` as it is. A caller that then
+/// replaces `path` with [`write_json`] is crash-safe at every step: `path`
+/// holds the old contents or the new, and the old are kept either way. The
+/// new path.
+pub fn copy_aside(path: &Path, data: &[u8]) -> std::io::Result<std::path::PathBuf> {
+    for aside in aside_names(path)? {
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        match options.open(&aside) {
+            Ok(mut file) => {
+                file.write_all(data)?;
+                file.sync_all()?;
+                sync_parent(path)?;
+                return Ok(aside);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Err(too_many())
 }
 
 /// Fsync a directory, so the entries just created in it are durable.
@@ -174,6 +219,24 @@ mod tests {
         assert_eq!(second, dir.path().join("a.json.damaged-2"));
         assert_eq!(std::fs::read(first).unwrap(), b"one");
         assert_eq!(std::fs::read(second).unwrap(), b"two");
+    }
+
+    #[test]
+    fn a_copy_aside_takes_the_next_number_and_leaves_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.json");
+        std::fs::write(dir.path().join("a.json.damaged-1"), "earlier").unwrap();
+        std::fs::write(&path, "bad").unwrap();
+
+        let aside = super::copy_aside(&path, b"bad").unwrap();
+
+        assert_eq!(aside, dir.path().join("a.json.damaged-2"));
+        assert_eq!(std::fs::read(&aside).unwrap(), b"bad");
+        assert_eq!(std::fs::read(&path).unwrap(), b"bad", "left in place");
+        assert_eq!(
+            std::fs::read(dir.path().join("a.json.damaged-1")).unwrap(),
+            b"earlier"
+        );
     }
 
     use super::*;

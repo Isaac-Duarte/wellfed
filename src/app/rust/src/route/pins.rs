@@ -1,10 +1,9 @@
 //! The writes pinned to a path, kept in the app's private storage beside its
 //! own file (`pending.json` next to `wellfed.json`), so the pin outlives the
 //! app: a write that may have run is resolved on the path it went on after a
-//! restart too. It holds no secrets: a write a server route carries keeps
-//! its body (a feed, a cancel, settings, the lock, the desiccant, a meal's
-//! skip, the plans, the calibration), a meal call write and anything else (a Wi-Fi change
-//! among them) only its kind. Nothing is ever sent again from a pin.
+//! restart too. It holds no secrets and no body: a feed keeps its portions,
+//! which its `Fed` event is matched by, and any other write only its kind.
+//! Nothing is ever sent again from a pin.
 //!
 //! One router owns the file at a time, so two routers can never each think
 //! a feed is not pending. Another process is refused by an exclusive lock on
@@ -24,23 +23,28 @@
 //! before a second owner invite outlives a restart.
 //! Written atomically, so a crash keeps the old or the new file. Every write
 //! is written down before it is sent, so a phone that stops mid-send finds
-//! it pinned at its next start. A file that does not load fails the router's
-//! open: the app then sends no write at all rather than one unpinned.
+//! it pinned at its next start. The file is versioned ([`crate::stored`]).
+//! One that does not read is set aside, never deleted, and the router opens
+//! on a new one that holds every feed on every feeder back until the owner
+//! has looked at the bowls ([`Book::set_aside`]): a lost pin is a write that
+//! may have run, which is never sent again, and a feed that may have run
+//! holds the next one back. A file that cannot be read at all (an IO error)
+//! fails the open, and the app then sends no write at all rather than one
+//! unpinned.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use wellfed_formats::private;
-use wellfed_model::{Calibration, FeederSettingsPatch, PLANS, Plan};
 
 use crate::api::error::{BridgeError, ErrorKind};
 use crate::api::router::{PendingWrite, RoutePath, WriteKind};
+use crate::api::store::{SetAside, StoreKind};
 use crate::route::core::Book;
+use crate::stored::{self, Opened, Versioned};
 
 /// A write pinned to the path it went on, from its confirmation to its
 /// result.
@@ -93,66 +97,23 @@ pub(crate) enum PinState {
     Uncertain,
 }
 
-/// What a pinned write asked: the body its one send carries.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// What the pin keeps of the write it holds: a feed's portions, which
+/// settle it from the feeder's history, and any other write's kind alone.
+/// The body that went out is not kept, since nothing is ever sent again from
+/// a pin, and it holds no device API type, so a change to the device API never
+/// changes this file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "write", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum PinnedWrite {
-    Feed {
-        portions: u8,
-    },
-    Cancel {
-        feed: u32,
-    },
-    Settings {
-        base: u32,
-        changes: FeederSettingsPatch,
-    },
-    Lock {
-        locked: bool,
-    },
-    Desiccant,
-    /// A skip of one of today's meals, named by its instant.
-    Skip {
-        slot: u8,
-        due: Timestamp,
-    },
-    Unskip {
-        slot: u8,
-        due: Timestamp,
-    },
-    Plans {
-        base: u32,
-        plans: [Option<Plan>; PLANS],
-    },
-    Calibration {
-        base: u32,
-        calibration: Calibration,
-    },
-    /// A meal call upload. The clip itself is not kept: nothing is ever
-    /// sent again from a pin.
-    CallUpload,
-    CallDelete,
-    CallPlay,
-    /// A write no server route carries, sent on the phone's own session:
-    /// only its kind is kept.
-    Other {
-        kind: WriteKind,
-    },
+    Feed { portions: u8 },
+    Other { kind: WriteKind },
 }
 
 impl PinnedWrite {
-    pub(crate) const fn kind(&self) -> WriteKind {
+    pub(crate) const fn kind(self) -> WriteKind {
         match self {
             Self::Feed { .. } => WriteKind::Feed,
-            Self::Cancel { .. } => WriteKind::Cancel,
-            Self::Settings { .. } => WriteKind::Settings,
-            Self::Lock { .. } => WriteKind::Lock,
-            Self::Desiccant => WriteKind::Desiccant,
-            Self::Skip { .. } | Self::Unskip { .. } => WriteKind::Skip,
-            Self::Plans { .. } => WriteKind::Plans,
-            Self::Calibration { .. } => WriteKind::Calibration,
-            Self::CallUpload | Self::CallDelete | Self::CallPlay => WriteKind::Call,
-            Self::Other { kind } => *kind,
+            Self::Other { kind } => kind,
         }
     }
 }
@@ -202,6 +163,13 @@ struct PinFile {
     pins: Vec<PinRecord>,
     running: Vec<RunningFeed>,
     adoptions: Vec<LostAdoption>,
+    /// The file before this one did not read and was set aside: until the
+    /// owner says the bowls are checked, no feed goes.
+    set_aside: Option<SetAside>,
+}
+
+impl Versioned for PinFile {
+    const VERSION: u32 = 1;
 }
 
 /// A pins file open in this process: its lock, and the fence of the store
@@ -291,11 +259,17 @@ impl PinStore {
         Ok((store, book))
     }
 
+    /// What the file holds. One that does not read is set aside and
+    /// replaced by one that holds every feed back, since a feed it held may
+    /// have run.
     fn load(&self) -> Result<Book, BridgeError> {
-        if !self.path.try_exists().map_err(store_error)? {
-            return Ok(Book::default());
-        }
-        let file: PinFile = wellfed_formats::load(&self.path)?;
+        let file = match stored::open(&self.path, StoreKind::Pending, |set_aside| PinFile {
+            set_aside: Some(set_aside.clone()),
+            ..PinFile::default()
+        })? {
+            Opened::Absent => return Ok(Book::default()),
+            Opened::Read(file) | Opened::SetAside { value: file, .. } => file,
+        };
         let pins = file
             .pins
             .into_iter()
@@ -308,6 +282,7 @@ impl PinStore {
             pins,
             running: file.running,
             adoptions: file.adoptions,
+            set_aside: file.set_aside,
         })
     }
 
@@ -321,9 +296,9 @@ impl PinStore {
             pins: book.pins.clone(),
             running: book.running.clone(),
             adoptions: book.adoptions.clone(),
+            set_aside: book.set_aside.clone(),
         };
-        private::write_json(&self.path, &file)?;
-        Ok(())
+        stored::write(&self.path, &file)
     }
 }
 
@@ -391,12 +366,8 @@ mod tests {
             key: Uuid::from_u128(2),
             path: RoutePath::Direct,
             server: None,
-            write: PinnedWrite::Settings {
-                base: 4,
-                changes: FeederSettingsPatch {
-                    volume: Some(30),
-                    ..FeederSettingsPatch::default()
-                },
+            write: PinnedWrite::Other {
+                kind: WriteKind::Settings,
             },
             state: PinState::Uncertain,
             mark: Some(17),
@@ -417,6 +388,7 @@ mod tests {
             pins: vec![feed(1), settings.clone()],
             running: vec![running.clone()],
             adoptions: vec![lost.clone()],
+            set_aside: None,
         };
         store.save(&saved).unwrap();
         drop(store);
@@ -434,6 +406,7 @@ mod tests {
                 ],
                 running: vec![running],
                 adoptions: vec![lost],
+                set_aside: None,
             }
         );
     }
@@ -483,11 +456,55 @@ mod tests {
     }
 
     #[test]
-    fn a_pins_file_that_does_not_load_fails_the_open() {
+    fn a_pins_file_that_does_not_read_is_set_aside_and_holds_feeds_back() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pending.json");
         std::fs::write(&path, b"{ not json").unwrap();
-        assert!(PinStore::open(&path).is_err());
+
+        let (store, book) = PinStore::open(&path).unwrap();
+        let set_aside = book
+            .set_aside
+            .clone()
+            .expect("the open says it set the file aside");
+        assert_eq!(set_aside.kind, StoreKind::Pending);
+        let aside = dir.path().join("pending.json.damaged-1");
+        assert_eq!(set_aside.moved_to, aside.display().to_string());
+        assert_eq!(std::fs::read(&aside).unwrap(), b"{ not json", "kept whole");
+        assert!(book.pins.is_empty());
+        drop(store);
+
+        // The hold is on disk before anything is sent, so a restart keeps it.
+        let (_store, again) = PinStore::open(&path).unwrap();
+        assert_eq!(again.set_aside, Some(set_aside));
+    }
+
+    #[test]
+    fn a_pins_file_of_another_version_is_set_aside_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pending.json");
+        std::fs::write(
+            &path,
+            br#"{"version": 99, "data": {"pins": [], "running": [], "adoptions": [], "set_aside": null}}"#,
+        )
+        .unwrap();
+
+        let (_store, book) = PinStore::open(&path).unwrap();
+        let set_aside = book.set_aside.expect("set aside");
+        assert!(
+            set_aside.reason.contains("version 99"),
+            "{}",
+            set_aside.reason
+        );
+    }
+
+    #[test]
+    fn the_file_is_versioned() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pending.json");
+        let (store, _) = PinStore::open(&path).unwrap();
+        store.save(&Book::default()).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("\"version\": 1"), "{text}");
     }
 
     #[test]

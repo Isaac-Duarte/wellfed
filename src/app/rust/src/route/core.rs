@@ -16,6 +16,7 @@ use uuid::Uuid;
 use wellfed_api::{CommandOutcome, CommandState};
 
 use crate::api::router::{RoutePath, Settlement};
+use crate::api::store::SetAside;
 use crate::route::pins::{LostAdoption, PinRecord, PinState, PinnedWrite, RunningFeed};
 
 /// How long a server that failed to connect is passed over before a new
@@ -365,6 +366,22 @@ pub(crate) struct Book {
     /// Adoptions whose answer was lost, kept across a restart so the grace
     /// before a second owner invite holds through one.
     pub(crate) adoptions: Vec<LostAdoption>,
+    /// The pins file before this one did not read and was set aside. Any
+    /// pin it held is lost, and a lost pin is a write that may have run: a
+    /// feed among them would hold the next one on its feeder back, and which
+    /// feeders they were on is lost too. So every feed waits until the owner
+    /// has looked at the bowls ([`Book::bowls_checked`]).
+    pub(crate) set_aside: Option<SetAside>,
+}
+
+/// Why a write is not admitted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Held {
+    /// A feed on its feeder holds it back: this pin.
+    By(Uuid),
+    /// The pins file was set aside, and the owner has not yet said the bowls
+    /// are checked.
+    SetAside,
 }
 
 impl Book {
@@ -402,12 +419,16 @@ impl Book {
     /// A write about to go, written down before it is sent, so a phone that
     /// stops mid-send still finds it pinned. A feed is refused, with the key
     /// of the feed that holds it back, while another feed on its feeder
-    /// does. A direct feed's pin takes no end from a feed already running.
-    pub(crate) fn admit(&mut self, pin: PinRecord, now_ms: i64) -> Result<(), Uuid> {
-        if matches!(pin.write, PinnedWrite::Feed { .. })
-            && let Some(holding) = self.holding_feeds(&pin.feeder)
-        {
-            return Err(holding.key);
+    /// does, and while a set-aside pins file holds every feed back. A direct
+    /// feed's pin takes no end from a feed already running.
+    pub(crate) fn admit(&mut self, pin: PinRecord, now_ms: i64) -> Result<(), Held> {
+        if matches!(pin.write, PinnedWrite::Feed { .. }) {
+            if self.set_aside.is_some() {
+                return Err(Held::SetAside);
+            }
+            if let Some(holding) = self.holding_feeds(&pin.feeder) {
+                return Err(Held::By(holding.key));
+            }
         }
         let mut pin = pin;
         if pin.path == RoutePath::Direct {
@@ -454,6 +475,12 @@ impl Book {
             }
             _ => false,
         }
+    }
+
+    /// The owner looked at every feeder's bowl after the pins file was set
+    /// aside: feeds go again. Whether it changed.
+    pub(crate) fn bowls_checked(&mut self) -> bool {
+        self.set_aside.take().is_some()
     }
 
     /// Take `key` out; whether it was there.

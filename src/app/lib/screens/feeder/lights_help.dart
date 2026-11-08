@@ -98,7 +98,7 @@ class LightsHelp extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _Heading('Lights'),
-                _Key('1', 'Food.', 'Blinks while it feeds.'),
+                _Key('1', 'Low food.', 'On: the hopper reads low.'),
                 _Key(
                   '2',
                   'Lock.',

@@ -187,6 +187,13 @@ impl Sim {
             .skip_meal(slot, due_s, skip, now_ms)
     }
 
+    /// The epoch a session connecting at `now_ms` is welcomed under, as the
+    /// device API asks it: `None` while none is welcomed.
+    pub fn welcome_epoch(&mut self, now_ms: u32) -> Option<u32> {
+        let device = self.feeder.device(now_ms, &mut self.feeds);
+        wellfed_device_api::Device::epoch(&device)
+    }
+
     /// Whether the feeder asked for a restart, taken once: the driver drops
     /// every connection and opens the feeder again from its flash, after
     /// the lifetime totals are saved.

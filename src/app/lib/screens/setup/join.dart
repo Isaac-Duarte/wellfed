@@ -17,13 +17,17 @@ import 'package:wellfed/widgets/replies.dart';
 /// a join whose answer never came is not sent again: the screen says so and
 /// asks for a new one.
 class JoinScreen extends StatefulWidget {
-  const JoinScreen({super.key, required this.newFlow, this.scanner});
+  const JoinScreen({super.key, required this.newFlow, this.scanner, this.canScan = true});
 
   /// The controller of this screen's one join.
   final JoinFlow Function() newFlow;
 
   /// What reads a code in place of the camera, handing on each text it sees.
   final Widget Function(void Function(String))? scanner;
+
+  /// Whether this host has a camera scanner at all: Android and macOS do, and
+  /// Linux does not, so a desktop there takes only the pasted link.
+  final bool canScan;
 
   @override
   State<JoinScreen> createState() => _JoinScreenState();
@@ -51,6 +55,14 @@ class _JoinScreenState extends State<JoinScreen> {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: _flow,
     builder: (context, _) => switch (_flow.state) {
+      // A computer seldom has a camera facing the phone that shows the code,
+      // and opening one asks macOS for it, so a desktop takes the link the
+      // owner shares and opens the camera only when asked.
+      final JoinScanning state when isDesktop => _PasteInvite(
+        seen: _flow.seen,
+        badText: state.badText,
+        camera: widget.canScan ? (seen) => widget.scanner?.call(seen) ?? _Camera(seen) : null,
+      ),
       final JoinScanning state => Builder(
         builder: (context) {
           final ThemeTokens c = context.colors;
@@ -154,6 +166,77 @@ class _JoinScreenState extends State<JoinScreen> {
       ),
     },
   );
+}
+
+/// The desktop's way in: the invite link pasted into a field, with the camera
+/// behind a button.
+class _PasteInvite extends StatefulWidget {
+  const _PasteInvite({required this.seen, required this.badText, required this.camera});
+
+  final void Function(String) seen;
+  final String? badText;
+
+  /// The camera, where the host has one to scan with.
+  final Widget Function(void Function(String))? camera;
+
+  @override
+  State<_PasteInvite> createState() => _PasteInviteState();
+}
+
+class _PasteInviteState extends State<_PasteInvite> {
+  final _link = TextEditingController();
+  bool _camera = false;
+
+  @override
+  void dispose() {
+    _link.dispose();
+    super.dispose();
+  }
+
+  void _use() {
+    final String text = _link.text.trim();
+    if (text.isNotEmpty) widget.seen(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeTokens c = context.colors;
+    return StepScaffold(
+      title: 'Join with an invite',
+      body: 'Ask an owner to open People › Invite someone, then paste the link they send you.',
+      content: [
+        LabeledField(
+          label: 'Invite link',
+          child: TextField(
+            controller: _link,
+            autofocus: true,
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) => _use(),
+          ),
+        ),
+        if (widget.badText case final String bad?)
+          Padding(
+            padding: const EdgeInsets.only(top: Space.s3),
+            child: Text(bad, style: TextStyle(color: c.fault)),
+          ),
+        if (widget.camera case final camera? when _camera) ...[
+          const SizedBox(height: Space.s4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: SizedBox(height: 300, child: camera(widget.seen)),
+          ),
+        ],
+      ],
+      actions: [
+        FilledButton(onPressed: _link.text.trim().isEmpty ? null : _use, child: const Text('Use this link')),
+        if (widget.camera != null)
+          OutlinedButton(
+            onPressed: () => setState(() => _camera = !_camera),
+            child: Text(_camera ? 'Close the camera' : 'Scan the code with a camera'),
+          ),
+      ],
+    );
+  }
 }
 
 class _Camera extends StatelessWidget {

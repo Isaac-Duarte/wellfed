@@ -124,13 +124,13 @@ class _NameStepState extends State<NameStep> {
           ),
         ),
         const SizedBox(height: 20),
-        const Notice(
+        Notice(
           tone: Tone.neutral,
           glyph: Glyph.key,
           radius: Radii.card,
           text:
               "You'll be this feeder's **owner**. Its key stays on this "
-              "phone; there's no account to sign in to.",
+              "$deviceName; there's no account to sign in to.",
         ),
         if (_failed case final failed?) ...[
           const SizedBox(height: Space.s3),

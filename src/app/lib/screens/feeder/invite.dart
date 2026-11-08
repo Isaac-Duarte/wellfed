@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import 'package:wellfed/src/rust/api/feeder.dart';
@@ -125,6 +126,14 @@ class _InviteScreenState extends State<InviteScreen> {
     if (_left > 0) setState(() => _left -= 1);
   }
 
+  /// The link went to the clipboard, so the button says so.
+  bool _copied = false;
+
+  void _copy() {
+    unawaited(Clipboard.setData(ClipboardData(text: widget.invite.text)));
+    setState(() => _copied = true);
+  }
+
   @override
   void dispose() {
     _tick.dispose();
@@ -156,8 +165,11 @@ class _InviteScreenState extends State<InviteScreen> {
         padding: const EdgeInsets.all(Space.s5),
         children: [
           Text(
-            'On their phone: Wellfed › Add a feeder › Join with an invite, '
-            'then scan this.',
+            isDesktop
+                ? 'On their phone or computer: Wellfed › Add a feeder › Join with an invite, then scan this or paste '
+                      'the link.'
+                : 'On their phone: Wellfed › Add a feeder › Join with an invite, '
+                      'then scan this.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 15, height: 1.5, color: c.textMuted),
           ),
@@ -186,10 +198,15 @@ class _InviteScreenState extends State<InviteScreen> {
             style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
           ),
           const SizedBox(height: Space.s4),
-          OutlinedButton(
-            onPressed: expired ? null : () => unawaited(widget.share(invite.text)),
-            child: const Text('Share link instead'),
-          ),
+          // A desktop's share menu opens from a corner of the window, and a
+          // link is pasted from the clipboard there anyway.
+          if (isDesktop)
+            OutlinedButton(onPressed: expired ? null : _copy, child: Text(_copied ? 'Link copied' : 'Copy link'))
+          else
+            OutlinedButton(
+              onPressed: expired ? null : () => unawaited(widget.share(invite.text)),
+              child: const Text('Share link instead'),
+            ),
         ],
       ),
     );

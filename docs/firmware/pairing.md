@@ -60,16 +60,18 @@ The Reset hold restores a new owner's state. Stock's own restore was never decom
 | Feeding plans, their marks and last claim | The flash erase counts by sector and of bank 1, the hardware's wear (owner, October 28) |
 | The event history and the per-feed traces | |
 | The meal call's clip | |
+| The uplink store's reserved sectors, and any store a later build adds | |
+| An update store the build can't read, if you held Reset on the panel | |
 | The rest of the lifetime statistics: uptime, feeds, portions, presses, sessions, link figures and boots by cause | |
 
-`wellfed_board::storage::FACTORY_CLEARED` lists the erased stores in erase order. The statistics are rewritten, not erased, in one atomic save holding only the erase counts (`Totals::wear_only`).
+`wellfed_board::storage::FACTORY_KEPT` lists what the reset keeps. It erases every other sector of the region, the clients first, then in region order. Whichever bank finishes a reset clears by its own build's list, and bank 0 keeps one build for the life of the feeder. So a store a later build adds is cleared by default, even by an older bank 0. The statistics are rewritten, not erased, in one atomic save holding only the erase counts (`Totals::wear_only`).
 
-**How it runs.** It erases 33 sectors and rewrites one store, surviving a power cut at any point:
+**How it runs.** It erases 36 sectors and rewrites one store, surviving a power cut at any point:
 
 1. **The hold** is refused while a feed is queued or runs (`PLPANEL1 reset refused=feeding`) or an install (`reset refused=updating`), and otherwise queued (`reset keys=queued`). Until the restart an install offer is refused `busy`, so the reset's boot is never a trial boot.
-2. **The marker.** Under its write turn, so after a feed's outputs stop, the writer programs a 16-byte marker in sector 36, committing the reset. It forgets every client, ends every session, and answers `done` even if the client store can't be written, since the next boot erases it (`PLCFG1 keys change=reset result=done`).
+2. **The marker.** Under its write turn, so after a feed's outputs stop, the writer programs a 16-byte word saying you asked at the panel, then a 16-byte marker in sector 36, committing the reset. It forgets every client, ends every session, and answers `done` even if the client store can't be written, since the next boot erases it (`PLCFG1 keys change=reset result=done`).
 3. **The restart** (`reset result=done`) comes once no feed is queued or running and no claimed meal waits, so a claimed meal is never missed. From then no feed starts ([readiness](device-api.md#feeds) `Restarting`).
-4. **The erases.** The boot that finds the marker logs `PLCFG1 reset pending` and opens nothing the reset clears. Once armed, it erases each cleared sector under its own write turn and attempt marker and reads it back blank. It then saves the wear-only statistics (leaving a store this build can't write, a newer schema, alone). That pair is the region's most written, so a failed save erases it instead, losing only the erase counts (`reset wear_lost=1`); only a pair that takes neither stops the reset. The marker is erased last (`reset done erased=33`). Events recorded meanwhile wait in the queue and land in the new ring.
+4. **The erases.** The boot that finds the marker logs `PLCFG1 reset pending` and opens nothing the reset clears. Once armed, it erases each cleared sector under its own write turn and attempt marker and reads it back blank. If the update store is one this build can't read and the word says you asked at the panel, it erases that too (`reset update=cleared`). It then saves the wear-only statistics, leaving a newer major's alone. That pair is the region's most written, so a failed save erases it instead, losing only the erase counts (`reset wear_lost=1`); only a pair that takes neither stops the reset. The marker is erased last (`reset done erased=36`). Events recorded meanwhile wait in the queue and land in the new ring.
 5. **The fresh boot** opens empty stores, draws a new identity, and starts the event ring under a new epoch.
 
 **Power cuts.**
@@ -104,8 +106,31 @@ One table names every sector, `wellfed_board::storage` (the PLAF103 board's), ch
 | 32–33 | Lifetime statistics ([statistics](device-api-diagnostics.md#statistics)) |
 | 34–35 | Portion calibration ([calibration](calibration.md#storage)) |
 | 36 | The factory reset's marker, or the [handover mark](consumer-installation.md#rollback) stock's activation leaves |
-| 37–39 | Free |
+| 37–39 | Reserved for the uplink store, the owner's server link. No build writes it yet; the factory reset and the handover from stock clear it |
 | 40–47 | The meal call's clip ([schedules](schedules.md#meal-call)) |
+
+### Record versions
+
+The feed journal, settings, Wi-Fi credentials, seed, clients, plans, update store, time settings, statistics and calibration each keep one record in each of two sectors, written in turn ([`wellfed_core::store::slot`](../../src/sdk/wellfed-core/src/store/slot.rs)). Its header holds the store's magic, a major and a minor version, and the record's length.
+
+Bank 0 never updates over the air. The build the installer writes there reads these records for the life of the feeder, so a later build may change a record only in ways that build can follow:
+
+- **A newer minor** only adds fields, in spare room the store reserves or past the record's end. An older build of the same major reads the fields it knows, sees the rest as zero, and keeps those bytes when it rewrites the record. The settings and the feed journal read their sectors whole, so their records keep one length and grow only into their spare room.
+- **A new field reads zero as "none"**, the value an older minor leaves there.
+- **A field an older build's rewrite would make wrong** isn't a minor's to add. An older build carries a minor's bytes unread through its own writes, its factory reset and its start-overs, so the field must stay true across all of them. A per-plan or per-client field would outlive the plan or client it named once an older build moves entries around, and a value tied to one record would ride onto the next. Such a field names what it belongs to, so a reader can tell it stale: the plans store ties one to the table revision it was written at, which every change bumps, and the journal's durable request id carries its feed's id, which a reader compares with the record's high-water ID (bytes 32–40) before trusting it.
+- **Nothing bank 0 must enforce is a minor.** Bank 0 never reads a minor's fields. So the update floor and the retired key ids never grow by a minor: the store holds 16 retired ids for good, and more needs a new store.
+- **A newer major** makes the store read-only. So a change that isn't additive is a new store, in new sectors.
+
+A store never writes over a record of its own it can't read, with four exceptions. Settings starts over on an older major, since defaults are safe. The seed is only a nonce. The Wi-Fi credentials, the time settings and the calibration are written only by your own change, which replaces what was there. The statistics start again from zero over a record they can't read, logging `wear_lost=1`, since lifetime figures aren't worth a stuck feeder. The clients, the update store and the plans open as corrupt and stay untouched until a factory reset erases them. So a build never draws a new identity over a client table it can't read.
+
+| Store | Major | Size | Spare room |
+| --- | --- | --- | --- |
+| Feed journal | 1 | 128 B | bytes 48–120, of which 48–80 are kept for a durable request id and its feed's id |
+| Settings | 4 | 128 B | bytes 52–120 |
+| Clients | 1 | 584 B | past the record's end |
+| Update store | 2 | 384 B | bytes 336–376 |
+| Plans | 4 | 256 B | bytes 120–248, for per-plan grams and more plans |
+| Lifetime statistics | 2 | 320 B | bytes 280–312 |
 
 ## Clients
 

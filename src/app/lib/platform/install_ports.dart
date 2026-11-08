@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_selector/file_selector.dart' show getSaveLocation;
 import 'package:flutter/foundation.dart' show FlutterError;
 import 'package:flutter/services.dart' show ByteData, MethodChannel, rootBundle;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -16,7 +17,6 @@ import 'package:wellfed/platform/setup_link.dart';
 import 'package:wellfed/src/rust/api/install.dart' as rust;
 import 'package:wellfed/src/rust/api/install.dart';
 import 'package:wellfed/src/rust/api/keys.dart';
-import 'package:wellfed/src/rust/api/store.dart';
 import 'package:wellfed/state/wifi/networks.dart';
 
 /// Where the installer's files live on this phone.
@@ -338,24 +338,47 @@ class _Link implements InstallLink {
 
 /// The firmware backups this phone keeps: which feeder, and handing one on.
 abstract interface class BackupPorts {
-  /// The kept backup's path for feeder `identity`, if there is one.
-  Future<String?> kept(String identity);
+  /// Every backup this phone keeps, whether or not its feeder is still in
+  /// the app's list.
+  Future<List<KeptBackup>> kept();
 
-  /// Hand the backup at `path` to wherever the owner keeps files.
+  /// Hand the backup at `path` to wherever the owner keeps files: the share
+  /// sheet on a phone, a save dialog on a computer.
   Future<void> share(String path);
 }
 
 /// The kept backups, by the paths the install keeps them under.
 class AppBackupPorts implements BackupPorts {
-  /// Ports signed by `key`.
-  AppBackupPorts(ClientKey key) : _install = AppInstallPorts(key);
+  /// Ports signed by `key`; a computer saves through `save`.
+  AppBackupPorts(ClientKey key, {this._save = const SaveBackup()}) : _install = AppInstallPorts(key);
 
   final AppInstallPorts _install;
+  final SaveBackup _save;
 
   @override
-  Future<String?> kept(String identity) async =>
-      _install.keptBackup(await _install.paths(), identityBytes(hex: identity));
+  Future<List<KeptBackup>> kept() async => rust.keptBackups(dataDir: (await _install.paths()).data);
 
   @override
-  Future<void> share(String path) => _install.shareBackup(path);
+  Future<void> share(String path) => onDesktopHost ? _save(path) : _install.shareBackup(path);
+}
+
+/// A backup saved on a computer: a copy where the owner picks. A Mac's share
+/// menu opens from a corner of the window and offers no folder to keep a file
+/// in, so a computer asks where to save instead.
+class SaveBackup {
+  /// Asks with `pick`, the save dialog unless a test gives another.
+  const SaveBackup({this.pick = _dialog});
+
+  /// Where to save a file suggested as `name`; `null` when the owner cancels.
+  final Future<String?> Function(String name) pick;
+
+  static Future<String?> _dialog(String name) async => (await getSaveLocation(suggestedName: name))?.path;
+
+  /// Copy the backup at `path` where the owner picks. Cancelling saves
+  /// nothing; a copy that fails throws its [FileSystemException].
+  Future<void> call(String path) async {
+    final String? to = await pick(File(path).uri.pathSegments.last);
+    if (to == null) return;
+    await File(path).copy(to);
+  }
 }

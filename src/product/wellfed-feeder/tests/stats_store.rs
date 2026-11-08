@@ -200,7 +200,7 @@ fn a_newer_schema_is_read_only_with_no_totals() {
     let mut f = FakeJournalFlash::with_unit(512);
     let mut s = open(&mut f);
     assert!(s.save(&totals(1), Settled));
-    rewrite(&mut f, |record| record[8] = 2);
+    rewrite(&mut f, |record| record[8] = 3);
 
     let mut r = open(&mut f);
     assert_eq!((r.status, r.totals), (StatsStatus::ReadOnly, Totals::ZERO));
@@ -208,10 +208,14 @@ fn a_newer_schema_is_read_only_with_no_totals() {
     assert!(!r.save(&totals(2), Settled));
 }
 
+/// A record this build cannot read never leaves the store stuck: the
+/// totals start at zero, writable, and the next save writes over it.
 #[test]
-fn records_that_fail_their_checks_are_not_read() {
+fn records_that_fail_their_checks_are_lost_and_written_over() {
     for (name, change) in [
         ("padding", (|r: &mut [u8]| r[278] = 1) as fn(&mut [u8])),
+        ("spare room", |r: &mut [u8]| r[300] = 1),
+        ("an older major", |r: &mut [u8]| r[8] = 1),
         ("early past the budget", |r: &mut [u8]| {
             r[276] = EARLY_SAVES + 1
         }),
@@ -223,10 +227,18 @@ fn records_that_fail_their_checks_are_not_read() {
         let mut s = open(&mut f);
         assert!(s.save(&totals(1), Settled));
         rewrite(&mut f, change);
+        let mut r = open(&mut f);
+        assert_eq!(
+            (r.status, r.totals),
+            (StatsStatus::Lost, Totals::ZERO),
+            "{name}"
+        );
+        assert!(r.writable(), "{name}");
+        assert!(r.save(&totals(2), Settled), "{name}");
         let r = open(&mut f);
         assert_eq!(
             (r.status, r.totals),
-            (StatsStatus::Empty, Totals::ZERO),
+            (StatsStatus::Loaded, totals(2)),
             "{name}"
         );
     }
@@ -255,12 +267,12 @@ fn the_record_is_pinned() {
     assert!(f.bytes[0][RECORD_BYTES..].iter().all(|&b| b == u8::MAX));
 }
 
-/// Magic, version 1, 288 bytes, generation 1; the ten counts; power-on,
+/// Magic, major 2 minor 0, 320 bytes, generation 1; the ten counts; power-on,
 /// watchdog and software resets; bank 1's erases (7); sectors 0-47's
-/// erases (100-147); one early save, no flags; padding, checksum and
+/// erases (100-147); one early save, no flags; padding, 32 spare bytes, checksum and
 /// `CMIT`.
 const PINNED: &[&str] = &[
-    "504c465354413031010020010100000000000000100e00000a00000001000000",
+    "504c465354413031020040010100000000000000100e00000a00000001000000",
     "1400000003000000050000000200000004000000020000003c00000001000000",
     "0100000001000000000000000000000007000000640000006500000066000000",
     "6700000068000000690000006a0000006b0000006c0000006d0000006e000000",
@@ -268,5 +280,6 @@ const PINNED: &[&str] = &[
     "7700000078000000790000007a0000007b0000007c0000007d0000007e000000",
     "7f00000080000000810000008200000083000000840000008500000086000000",
     "8700000088000000890000008a0000008b0000008c0000008d0000008e000000",
-    "8f000000900000009100000092000000930000000100000063464848434d4954",
+    "8f00000090000000910000009200000093000000010000000000000000000000",
+    "000000000000000000000000000000000000000000000000c1c797cd434d4954",
 ];

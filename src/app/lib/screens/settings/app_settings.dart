@@ -78,10 +78,16 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
     final String trimmed = name.trim();
     final int bytes = utf8.encode(trimmed).length;
     if (bytes < 1 || bytes > NameStep.maxBytes) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A phone name is 1 to 16 bytes.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('A $deviceName name is 1 to 16 bytes.')));
       return;
     }
     await widget.book.setLabel(trimmed);
+  }
+
+  Future<void> _share(String path) async {
+    final String? failed = await _backups.share(path);
+    if (failed == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(failed)));
   }
 
   @override
@@ -172,24 +178,32 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
               last: true,
               Column(
                 children: [
-                  if (_backups.state.isEmpty)
+                  if (_backups.state.copies.isEmpty)
                     SettingsTile(
                       first: true,
                       child: Align(
                         alignment: AlignmentDirectional.centerStart,
-                        child: Text('None yet', style: TextStyle(fontSize: 15, color: c.textMuted)),
+                        child: Text(
+                          _backups.state.problem ?? 'None yet',
+                          style: TextStyle(fontSize: 15, color: c.textMuted),
+                        ),
                       ),
                     ),
-                  for (final (index, (feeder, path)) in _backups.state.indexed)
+                  for (final (index, copy) in _backups.state.copies.indexed)
                     SettingsTile(
                       first: index == 0,
                       child: Row(
                         children: [
-                          Expanded(child: SettingsWords(feeder.name)),
+                          Expanded(
+                            child: SettingsWords(
+                              copy.label,
+                              copy.name == null ? 'Not on this $deviceName any more' : null,
+                            ),
+                          ),
                           IconButton(
-                            tooltip: "Share ${feeder.name}'s backup",
-                            icon: Icon(Icons.share_outlined, color: c.textMuted),
-                            onPressed: () => unawaited(_backups.share(path)),
+                            tooltip: isDesktop ? "Save ${copy.label}'s backup" : "Share ${copy.label}'s backup",
+                            icon: Icon(isDesktop ? Icons.save_alt_outlined : Icons.share_outlined, color: c.textMuted),
+                            onPressed: () => unawaited(_share(copy.path)),
                           ),
                         ],
                       ),

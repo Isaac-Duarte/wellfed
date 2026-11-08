@@ -51,10 +51,11 @@ pub(crate) struct ServerArgs {
     /// Print the API's bodies as JSON, one per line, instead of text.
     #[arg(long, global = true)]
     json: bool,
-    /// Where `login` keeps the server's address and its token (mode 0600),
-    /// beside the device API's key file.
-    #[arg(long, global = true, default_value = "private/wellfed-server.json")]
-    token_file: PathBuf,
+    /// Where `login` keeps the server's address and its token (mode 0600)
+    /// [default: wellfed-server.json in WELLFED_HOME, or the platform's
+    /// data directory, beside the device API's key file].
+    #[arg(long, global = true)]
+    token_file: Option<PathBuf>,
     #[command(subcommand)]
     verb: Verb,
 }
@@ -124,7 +125,9 @@ enum Verb {
 
 pub(crate) async fn run(args: ServerArgs) -> Result<ExitCode> {
     let out = Output { json: args.json };
-    let ran = verb(args.verb, &args.token_file, out).await;
+    let token_file =
+        crate::home::or_home(args.token_file.as_deref(), crate::home::Home::server_token)?;
+    let ran = verb(args.verb, &token_file, out).await;
 
     match ran {
         Ok(Settled::Known) => Ok(ExitCode::SUCCESS),

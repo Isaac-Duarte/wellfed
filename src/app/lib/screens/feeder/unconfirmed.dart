@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:wellfed/src/rust/api/router.dart';
 import 'package:wellfed/state/feeder/feeder.dart';
 import 'package:wellfed/theme/theme.dart';
+import 'package:wellfed/widgets/desktop.dart';
 import 'package:wellfed/widgets/layout.dart';
 
 /// What a change is, in a few words, for a sentence.
@@ -18,7 +19,7 @@ String writeWords(WriteKind kind) => switch (kind) {
   WriteKind.play => 'Playing the meal call',
   WriteKind.clock => 'Setting the clock',
   WriteKind.invite => 'An invite',
-  WriteKind.revoke => 'Removing a phone',
+  WriteKind.revoke => 'Removing a $anyDevice',
   WriteKind.reboot => 'A restart',
   WriteKind.calibration => 'The portion size',
   WriteKind.call => 'A meal call change',

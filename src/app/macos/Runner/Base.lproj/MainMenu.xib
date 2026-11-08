@@ -33,6 +33,12 @@
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="VOq-y0-SEH"/>
+                            <menuItem title="Settings…" keyEquivalent="," id="wfS-et-tg1">
+                                <connections>
+                                    <action selector="showSettings:" target="Voe-Tx-rLC" id="wfS-et-ac1"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="wfS-et-sp1"/>
                             <menuItem title="Services" id="NMo-om-nkz">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <menu key="submenu" title="Services" systemMenu="services" id="hz9-B4-Xy5"/>
@@ -59,6 +65,18 @@
                             <menuItem title="Quit Wellfed" keyEquivalent="q" id="4sb-4s-VLi">
                                 <connections>
                                     <action selector="terminate:" target="-1" id="Te7-pn-YzF"/>
+                                </connections>
+                            </menuItem>
+                        </items>
+                    </menu>
+                </menuItem>
+                <menuItem title="File" id="wfF-il-e01">
+                    <modifierMask key="keyEquivalentModifierMask"/>
+                    <menu key="submenu" title="File" id="wfF-il-e02">
+                        <items>
+                            <menuItem title="Close" keyEquivalent="w" id="wfF-il-e03">
+                                <connections>
+                                    <action selector="performClose:" target="-1" id="wfF-il-e04"/>
                                 </connections>
                             </menuItem>
                         </items>

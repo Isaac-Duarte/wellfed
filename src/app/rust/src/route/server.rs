@@ -10,54 +10,52 @@ use crate::api::feeder::{FeederRefusal, FeederReply, FeederRequest};
 use crate::api::session::FeedRefusal;
 use crate::requests::{calibration_of, call_of, plans_view, settings_view};
 use crate::route::core::ServerFailure;
-use crate::route::pins::PinnedWrite;
+use crate::route::shape::SentWrite;
 
 const fn done(generation: Option<u32>) -> FeederReply {
     FeederReply::Done { generation }
 }
 
 /// Send `write` to feeder `id` under `key`, its one send; `stream` is a
-/// meal call upload's clip. `None` for a write no server route carries (and
-/// for a feed, which goes by [`Client::feed`] for its journal entry).
+/// meal call upload's clip. `None` for a write no server route carries. A
+/// feed is not one of these: it goes by [`Client::feed`] for its journal entry.
 pub(crate) async fn send(
     client: &Client,
     id: FeederId,
-    write: &PinnedWrite,
+    write: &SentWrite,
     stream: Option<Vec<u8>>,
     key: Uuid,
 ) -> Option<Result<FeederReply, Error>> {
     let sent = match *write {
-        PinnedWrite::Cancel { feed } => {
-            client.cancel_feed(id, feed, key).await.map(|()| done(None))
-        }
-        PinnedWrite::Settings { base, changes } => client
+        SentWrite::Cancel { feed } => client.cancel_feed(id, feed, key).await.map(|()| done(None)),
+        SentWrite::Settings { base, changes } => client
             .put_settings(id, Generation(base), &changes, key)
             .await
             .map(|settings| done(Some(settings.generation().0))),
-        PinnedWrite::Lock { locked } => {
+        SentWrite::Lock { locked } => {
             let lock = if locked { Lock::Locked } else { Lock::Unlocked };
             client.set_lock(id, lock, key).await.map(|()| done(None))
         }
-        PinnedWrite::Desiccant => client.reset_desiccant(id, key).await.map(|()| done(None)),
-        PinnedWrite::Skip { slot, due } => client
+        SentWrite::Desiccant => client.reset_desiccant(id, key).await.map(|()| done(None)),
+        SentWrite::Skip { slot, due } => client
             .skip_meal(id, MealRequest { slot, due }, key)
             .await
             .map(|()| done(None)),
-        PinnedWrite::Unskip { slot, due } => client
+        SentWrite::Unskip { slot, due } => client
             .unskip_meal(id, MealRequest { slot, due }, key)
             .await
             .map(|()| done(None)),
-        PinnedWrite::Plans { base, plans } => client
+        SentWrite::Plans { base, plans } => client
             .put_plans(id, Generation(base), &PlansChange { plans }, key)
             .await
             .map(|plans| done(Some(plans.generation.0))),
-        PinnedWrite::Calibration { base, calibration } => client
+        SentWrite::Calibration { base, calibration } => client
             .put_calibration(id, Generation(base), &calibration, key)
             .await
             .map(|view| FeederReply::Calibration {
                 calibration: calibration_of(view),
             }),
-        PinnedWrite::CallUpload => {
+        SentWrite::CallUpload => {
             client
                 .upload_call(id, stream?, key)
                 .await
@@ -65,9 +63,9 @@ pub(crate) async fn send(
                     call: call_of(view),
                 })
         }
-        PinnedWrite::CallDelete => client.delete_call(id, key).await.map(|()| done(None)),
-        PinnedWrite::CallPlay => client.play_call(id, key).await.map(|()| done(None)),
-        PinnedWrite::Feed { .. } | PinnedWrite::Other { .. } => return None,
+        SentWrite::CallDelete => client.delete_call(id, key).await.map(|()| done(None)),
+        SentWrite::CallPlay => client.play_call(id, key).await.map(|()| done(None)),
+        SentWrite::Other { .. } => return None,
     };
     Some(sent)
 }

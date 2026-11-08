@@ -96,10 +96,12 @@ class SidebarShell extends StatelessWidget {
   /// Ctrl+1 to Ctrl+9 open the feeders in the sidebar's order, Ctrl+0 the
   /// overview (Welcome before there is a feeder); Ctrl+N adds one, Ctrl+,
   /// opens settings and Escape steps back. On a Mac each is ⌘ in place of
-  /// Ctrl, as in every Mac app.
+  /// Ctrl, as in every Mac app, except ⌘,: the app menu's Settings… owns it
+  /// there, so one press never opens settings twice.
   Map<ShortcutActivator, VoidCallback> _shortcuts(List<FeederController> feeders) => {
     const SingleActivator(LogicalKeyboardKey.escape): back,
-    _command(LogicalKeyboardKey.comma): () => go(const SettingsPlace()),
+    if (defaultTargetPlatform != TargetPlatform.macOS)
+      _command(LogicalKeyboardKey.comma): () => go(const SettingsPlace()),
     _command(LogicalKeyboardKey.keyN): () => go(const AddPlace()),
     _command(LogicalKeyboardKey.digit0): () => go(const OverviewPlace()),
     for (final (i, feeder) in feeders.take(_digits.length).indexed)

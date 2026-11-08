@@ -5,8 +5,8 @@
 //! after stock installed it, bank 1 still holds stock, and the bank-0
 //! role streams it over the device API (`wellfed_install::backup`, which
 //! the app's install runs too). It is kept per feeder under the owner's data
-//! directory (`private/stock-backups/<identity>/stock-1.1.15.bin` by
-//! default), never replaced by another copy.
+//! directory (`stock-backups/<identity>/stock-1.1.15.bin` in the
+//! [`crate::home`] by default), never replaced by another copy.
 //!
 //! "Restore stock" signs that container as the stock image (only the
 //! pinned container signs) with a downgrade statement bound to the feeder
@@ -37,12 +37,12 @@ use wellfed_install::{Discovery, Mdns, Stop};
 use wellfed_signing::Key;
 
 use crate::ask::{Asker, Prompts};
-use crate::keys::OwnerKey;
+use crate::home::{self, Home};
+use crate::keys::{Missing, OwnerKey};
 use crate::report::Printer;
 use crate::{Target, connect};
 
 /// The owner's data directory for backups, one subdirectory per feeder.
-pub(crate) const BACKUPS: &str = wellfed_formats::bench::STOCK_BACKUPS;
 
 #[derive(Args)]
 pub(crate) struct BackupArgs {
@@ -65,24 +65,27 @@ enum BackupCommand {
 struct ReadArgs {
     #[command(flatten)]
     target: Target,
-    /// The owner's data directory for backups.
-    #[arg(long, default_value = BACKUPS)]
-    backups: PathBuf,
+    /// The owner's data directory for backups [default: stock-backups in
+    /// WELLFED_HOME, or the platform's data directory].
+    #[arg(long)]
+    backups: Option<PathBuf>,
 }
 
 /// Which kept backup: the feeder's, as the key file knows it.
 #[derive(Args)]
 struct Stored {
-    /// This computer's client key.
-    #[arg(long, default_value = "private/wellfed-owner.json")]
-    keys: PathBuf,
+    /// This computer's client key [default: wellfed-owner.json in
+    /// WELLFED_HOME, or the platform's data directory].
+    #[arg(long)]
+    keys: Option<PathBuf>,
     /// The feeder's identity, as a hex prefix; needed when the key file
     /// knows more than one.
     #[arg(long)]
     feeder: Option<String>,
-    /// The owner's data directory for backups.
-    #[arg(long, default_value = BACKUPS)]
-    backups: PathBuf,
+    /// The owner's data directory for backups [default: stock-backups in
+    /// WELLFED_HOME, or the platform's data directory].
+    #[arg(long)]
+    backups: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -98,9 +101,10 @@ struct ExportArgs {
 pub(crate) struct RestoreArgs {
     #[command(flatten)]
     target: Target,
-    /// The owner's data directory for backups.
-    #[arg(long, default_value = BACKUPS)]
-    backups: PathBuf,
+    /// The owner's data directory for backups [default: stock-backups in
+    /// WELLFED_HOME, or the platform's data directory].
+    #[arg(long)]
+    backups: Option<PathBuf>,
     /// A stock 1.1.15 image to restore instead of the kept backup (an
     /// exported copy, say); it must match the pinned image exactly.
     #[arg(long)]
@@ -134,9 +138,10 @@ struct Shown {
 pub(crate) async fn command(args: BackupArgs) -> Result<()> {
     match args.command {
         BackupCommand::Read(args) => {
+            let backups = backups(args.backups.as_deref())?;
             let (_, identity, mut connection) = connect(&args.target).await?;
             let (path, _) =
-                wellfed_install::backup::fetch(&mut connection, &args.backups, &identity, &Printer)
+                wellfed_install::backup::fetch(&mut connection, &backups, &identity, &Printer)
                     .await?;
             show(&path)
         }
@@ -148,9 +153,10 @@ pub(crate) async fn command(args: BackupArgs) -> Result<()> {
 impl Stored {
     /// The kept backup's path for the feeder the key file names.
     fn path(&self) -> Result<PathBuf> {
-        let key = OwnerKey::open(&self.keys, None, OwnerKey::system())?;
+        let keys = home::or_home(self.keys.as_deref(), Home::owner_key)?;
+        let key = OwnerKey::open(&keys, None, Missing::Refuse, OwnerKey::system())?;
         let identity = key.feeder(self.feeder.as_deref())?;
-        Ok(backup_path(&self.backups, &identity))
+        Ok(backup_path(&backups(self.backups.as_deref())?, &identity))
     }
 }
 
@@ -182,9 +188,20 @@ fn export(path: &Path, output: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The backups directory `given`, or the home's.
+fn backups(given: Option<&Path>) -> Result<PathBuf> {
+    Ok(home::or_home(given, Home::backups)?)
+}
+
 /// `wellfed restore-stock`: install the backup over the replacement.
 pub(crate) async fn restore(args: RestoreArgs) -> Result<()> {
-    let key_file = OwnerKey::open(&args.target.keys, None, OwnerKey::system())?;
+    let key_file = OwnerKey::open(
+        &args.target.keys()?,
+        None,
+        Missing::Refuse,
+        OwnerKey::system(),
+    )?;
+    let backups = backups(args.backups.as_deref())?;
     let identity = key_file.feeder(args.target.feeder.as_deref())?;
     let backup = match &args.backup {
         Some(given) => {
@@ -193,7 +210,7 @@ pub(crate) async fn restore(args: RestoreArgs) -> Result<()> {
             StockBackup::open(bytes).with_context(|| format!("{}", given.display()))?
         }
         None => {
-            let kept = backup_path(&args.backups, &identity);
+            let kept = backup_path(&backups, &identity);
             load_backup(&kept)?.with_context(|| {
                 format!(
                     "no stock backup kept at {}; pass --backup with a copy",
@@ -221,7 +238,7 @@ pub(crate) async fn restore(args: RestoreArgs) -> Result<()> {
         RestoreTarget {
             identity,
             address,
-            backups: args.backups,
+            backups,
             signing,
             version: args.version,
         },

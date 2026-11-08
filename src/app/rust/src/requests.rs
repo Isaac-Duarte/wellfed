@@ -671,7 +671,8 @@ pub(crate) fn reply_of(answer: Answer) -> FeederReply {
         | Answer::Status(_)
         | Answer::Feeding { .. }
         | Answer::FeedTrace(_)
-        | Answer::Bank1(_) => FeederReply::Unexpected,
+        | Answer::Bank1(_)
+        | Answer::Alerts(_) => FeederReply::Unexpected,
     }
 }
 

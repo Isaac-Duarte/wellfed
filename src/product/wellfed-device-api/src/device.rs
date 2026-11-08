@@ -22,8 +22,8 @@ use wellfed_core::named_enum;
 use wellfed_core::ota::offer::KeyId;
 use wellfed_core::tone::Tune as CoreTune;
 use wellfed_proto::api::{
-    self as proto, Bank1Page, Blocked, Bowl, EventBody, FrozenRefusal, Phase, Readiness, Refusal,
-    Source, Stats, StatsSection, Status, TracePage, UpdateView,
+    self as proto, AlertsView, Bank1Page, Blocked, Bowl, EventBody, FrozenRefusal, Phase,
+    Readiness, Refusal, Source, Stats, StatsSection, Status, TracePage, UpdateView,
 };
 use wellfed_proto::device::Model;
 
@@ -206,6 +206,11 @@ pub trait FeederDevice: Device {
     /// Queue the stored meal call to play once, so its owner can hear it.
     fn play_call(&mut self) -> CallPlay {
         CallPlay::Unserved
+    }
+    /// The table of open alerts. A feeder that keeps none answers `None`,
+    /// refused `Unavailable`.
+    fn alerts(&mut self) -> Option<AlertsView> {
+        None
     }
     /// Today's local calendar day (days since 1970-01-01, UTC when the
     /// clock knows no offset) while the clock is valid: the day a desiccant

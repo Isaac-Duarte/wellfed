@@ -43,7 +43,7 @@ use wellfed_formats::bench::feeder::{
 use wellfed_formats::bench::lease::{self, Holder};
 use wellfed_formats::bench::live::{BenchState, Session};
 use wellfed_formats::bench::rendezvous;
-use wellfed_formats::owner::OwnerKeyFile;
+use wellfed_formats::owner;
 use wellfed_model::{Answer, ClientRole, DeviceKind, Op, Pushed};
 use wellfed_session::noise::Keypair;
 
@@ -270,7 +270,7 @@ impl Bench {
 /// The public half of the key in the file at `keys`, hex; `None` when there
 /// is no such file or it holds no key.
 fn public_key(keys: &Path) -> Option<String> {
-    let file: OwnerKeyFile = wellfed_formats::load(keys).ok()?;
+    let file = owner::load(keys).ok()?;
     let secret = wellfed_formats::hex::decode::<32>(&file.secret)?;
     Some(wellfed_formats::hex::encode(
         Keypair::from_secret(secret).public(),
@@ -719,7 +719,7 @@ mod tests {
 
     fn target(keys: &Path) -> Target {
         Target {
-            keys: keys.to_path_buf(),
+            keys: Some(keys.to_path_buf()),
             feeder: None,
             address: None,
         }

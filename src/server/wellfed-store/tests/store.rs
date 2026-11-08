@@ -484,6 +484,7 @@ async fn the_cached_status_and_settings_read_back() {
                 battery: wellfed_api::Battery::Absent,
                 below_floor: None,
             },
+            alerts_generation: Generation(0),
         }),
     };
     store.record_status(id, &status, at(200)).await.unwrap();

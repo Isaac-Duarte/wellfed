@@ -3,9 +3,9 @@
 //! that fails its checks is not read, and each change moves the marks and
 //! the claim as the schedule relies on.
 
-use wellfed_core::store::slot::{RECORD_BYTES, crc32};
+use wellfed_core::store::slot::crc32;
 use wellfed_device_api::mailbox::{Claim, PLANS, Plan, PlansChange, Table, Weekdays};
-use wellfed_feeder::store::plans::{Plans, PlansStatus, PlansStore};
+use wellfed_feeder::store::plans::{Plans, PlansStatus, PlansStore, RECORD_BYTES};
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, UNIT};
 
 fn open(f: &mut FakeJournalFlash) -> PlansStore<FlashIo> {
@@ -131,17 +131,19 @@ fn a_plans_meal_call_round_trips_in_its_flag_bits() {
     assert_eq!(r.status, PlansStatus::Loaded);
     assert_eq!(r.plans.table[1], Some(calling));
 
-    // A call past the limit is no record of ours.
+    // A call past the limit is no record this build reads: the plans are
+    // not written over.
     rewrite(&mut f, |record| record[25] = 0b0001_1011);
-    assert_eq!(open(&mut f).status, PlansStatus::Empty);
+    assert_eq!(open(&mut f).status, PlansStatus::Corrupt);
 }
 
 /// Rewrite slot 0's record with `change` applied and a valid checksum.
 fn rewrite(f: &mut FakeJournalFlash, change: impl FnOnce(&mut [u8])) {
     let mut record = f.bytes[0][..RECORD_BYTES].to_vec();
     change(&mut record);
-    let crc = crc32(&record[..120]);
-    record[120..124].copy_from_slice(&crc.to_le_bytes());
+    let crc_at = RECORD_BYTES - 8;
+    let crc = crc32(&record[..crc_at]);
+    record[crc_at..crc_at + 4].copy_from_slice(&crc.to_le_bytes());
     f.bytes[0][..RECORD_BYTES].copy_from_slice(&record);
 }
 
@@ -150,7 +152,7 @@ fn a_newer_schema_is_read_only_with_no_plans() {
     let mut f = FakeJournalFlash::with_unit(UNIT);
     let mut s = open(&mut f);
     assert!(s.save(&breakfast(1_000)));
-    rewrite(&mut f, |record| record[8] = 4);
+    rewrite(&mut f, |record| record[8] = 5);
 
     let mut r = open(&mut f);
     assert_eq!(
@@ -161,25 +163,32 @@ fn a_newer_schema_is_read_only_with_no_plans() {
     assert!(!r.save(&breakfast(2_000)));
 }
 
-/// A record of an older version (2, from before the skip bit, or 1, from
-/// before the meal call) is not read: the store starts empty and writable,
-/// and the plans are entered again.
+/// A record of an older major (3, a 128-byte record from before the
+/// spare room; 2, from before the skip bit; 1, from before the meal call)
+/// is not read, and not written over: the store opens corrupt, with no
+/// plans, until a factory reset erases it.
 #[test]
-fn an_older_record_is_not_read() {
-    for version in [1, 2] {
+fn an_older_record_is_not_read_or_written_over() {
+    for version in [1, 2, 3] {
         let mut f = FakeJournalFlash::with_unit(UNIT);
         let mut s = open(&mut f);
         assert!(s.save(&breakfast(1_000)));
         rewrite(&mut f, |record| record[8] = version);
+        let before = f.bytes.clone();
 
         let mut r = open(&mut f);
         let opened = (r.status, r.plans);
-        assert_eq!(opened, (PlansStatus::Empty, Plans::default()), "{version}");
-        assert!(r.save(&breakfast(2_000)));
+        assert_eq!(
+            opened,
+            (PlansStatus::Corrupt, Plans::default()),
+            "{version}"
+        );
+        assert!(!r.save(&breakfast(2_000)));
+        assert_eq!(f.bytes, before, "{version}");
     }
 }
 
-/// A version 3 record wins over an older one in the other sector, even
+/// A current record wins over an older one in the other sector, even
 /// one whose save count is higher: the older is not read at all.
 #[test]
 fn a_current_record_wins_over_an_older_version_with_a_higher_sequence() {
@@ -225,7 +234,7 @@ fn records_that_fail_their_checks_are_not_read() {
         let r = open(&mut f);
         assert_eq!(
             (r.status, r.plans),
-            (PlansStatus::Empty, Plans::default()),
+            (PlansStatus::Corrupt, Plans::default()),
             "{name}"
         );
     }

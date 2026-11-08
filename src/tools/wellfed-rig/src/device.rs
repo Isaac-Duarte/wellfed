@@ -38,7 +38,7 @@ use wellfed_client::api::{Error as SessionError, Incoming, Session};
 use wellfed_client::update::{Image, InstallError, Installer, Next, Sent};
 use wellfed_formats::bench::live::Unavailable;
 use wellfed_formats::hex;
-use wellfed_formats::owner::OwnerKeyFile;
+use wellfed_formats::owner::{self, OwnerKeyFile};
 use wellfed_formats::private::{self, SYSTEM_RANDOM};
 use wellfed_model::{
     FeederSettingsPatch, Generation, Op, OpenRefusal, Refusal, Settings, Stats, StatsSection,
@@ -66,7 +66,7 @@ pub enum DeviceError {
     #[error("{}: {error}", path.display())]
     Keys {
         path: PathBuf,
-        error: wellfed_formats::Error,
+        error: wellfed_formats::owner::OwnerError,
     },
     #[error("{}: the secret or a feeder identity is not 32 bytes of hex", .0.display())]
     BadKey(PathBuf),
@@ -307,7 +307,8 @@ impl Answer {
             | Model::Calibration(_)
             | Model::Bank1(_)
             | Model::Plans(_)
-            | Model::Call(_) => Self::Unexpected,
+            | Model::Call(_)
+            | Model::Alerts(_) => Self::Unexpected,
         }
     }
 }
@@ -498,7 +499,7 @@ impl Owner {
     /// at `config`, both under `root`.
     pub fn open(root: &Path, keys: &Path, config: &Path) -> crate::Result<Self> {
         let file: OwnerKeyFile =
-            wellfed_formats::load(&root.join(keys)).map_err(|error| DeviceError::Keys {
+            owner::load(&root.join(keys)).map_err(|error| DeviceError::Keys {
                 path: keys.to_path_buf(),
                 error,
             })?;

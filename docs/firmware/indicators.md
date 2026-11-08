@@ -57,20 +57,20 @@ Startup still enables the indicators only from verified stopped outputs and leav
 | `setup` | BLE setup mode runs | connection | Blink 500/500 ms | 70 |
 | `pairing` | An offer waits for a Dispense press or its code | lock | Blink 250/250 ms | 70 |
 | `battery` | The battery holds feeds | fault | Blink 1000/1000 ms | 60 |
-| `feeding` | A feed is queued or runs | food | Blink 500/500 ms | 50 |
 | `low-food` | The food beam's latest reading is low | food | Steady | 10 |
 | `locked` | The panel is locked | lock | Steady | 10 |
 | `online` | The feeder has an address | connection | Steady | 10 |
 
 - **Settings, as in stock.** With `lights` off, or outside the lights window on the local clock, every light is dark, faults included. The requests still hold, so the lights come back as they were. While the clock is invalid the window is open.
 - **Low food** shows the beam's latest reading, from a feed or a [window at rest](optical-inputs.md#reading-the-food-beam-at-rest). On the adapter it lights within seconds of a boot and clears within a minute of a refill. On batteries no window runs, so it holds the last reading until a feed.
+- **A feed** shows nothing of its own. The food light is the panel's red low-food light, so blinking it through a feed would read as a low-food warning.
 - **Missing time** has no indication yet; it waits for the light policy ([product architecture](product-architecture.md)).
 
 The loop steps the lights after readiness each pass. A change in what a light shows is logged once, not per blink edge: `PLIND1 show light=lock state=pairing`, or `state=none`. A failure is `PLIND1 fail light=… check=refused|input-mismatch|abort`.
 
 ## Evidence
 
-- **The bench check.** Observed (October 28, owner watching, `feeder` `f1e4655c…` on bank 1, then the `sensor-fault` variant for the steady fault): every step passed, with no `PLIND1 fail`. Lock and Wi-Fi lit steady at boot; the lock went dark on unlock and back on lock; the `lights` setting darkened all four and restored them; the lock blinked through a recovery offer that timed out; Wi-Fi blinked in setup mode; low food blinked through each 1-portion feed and went dark after its result; a second Dispense press during a feed was refused `busy` and flashed the warning for 3 s; a held sensor fault lit the warning steady, and a later press changed nothing. Low food and warning are red, lock and Wi-Fi white.
+- **The bench check.** Observed (October 28, owner watching, `feeder` `f1e4655c…` on bank 1, then the `sensor-fault` variant for the steady fault): every step passed, with no `PLIND1 fail`. Lock and Wi-Fi lit steady at boot; the lock went dark on unlock and back on lock; the `lights` setting darkened all four and restored them; the lock blinked through a recovery offer that timed out; Wi-Fi blinked in setup mode; low food blinked through each 1-portion feed (the feed's blink, removed since) and went dark after its result; a second Dispense press during a feed was refused `busy` and flashed the warning for 3 s; a held sensor fault lit the warning steady, and a later press changed nothing. Low food and warning are red, lock and Wi-Fi white.
 - **Pins and polarity.** Observed: each light on its pad, lit HIGH, from the startup indicator probe with the operator watching, and the owner's observation of the icon order (October 24). PB22 is red.
-- **The service.** Modeled (October 26): `wellfed-core/tests/indicator.rs` (priority, ties, cancellation, stale handles, expiry and blink phase across the clock's wrap, refusals, claims, the driver's settle-and-check and failure), `wellfed-hal/tests/leds.rs` (writes with the motor and an emitter on, latch and direction failures) and `wellfed-fw-feeder/tests/lights.rs` (the mapping against the fake GPIO: each state's pad, priorities, the 3 s refused flash, the setting, food blinking during a feed with motor bits untouched, a failure darkening all four).
+- **The service.** Modeled (October 26): `wellfed-core/tests/indicator.rs` (priority, ties, cancellation, stale handles, expiry and blink phase across the clock's wrap, refusals, claims, the driver's settle-and-check and failure), `wellfed-hal/tests/leds.rs` (writes with the motor and an emitter on, latch and direction failures) and `wellfed-fw-feeder/tests/lights.rs` (the mapping against the fake GPIO: each state's pad, priorities, the 3 s refused flash, the setting, low food steady through a feed with motor bits untouched, a failure darkening all four).
 - **Builds.** Fresh `device` and `firstboot` `feeder` builds passed their link, RAM-park and stack audits (loop stack 5,412 of 8,192 B).

@@ -45,7 +45,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use sha2::{Digest, Sha256};
 pub use wellfed_core::ota::SectorStep;
 use wellfed_core::ota::install::{
-    Bank0Check, Bank0Error, Blocked, Install, Phase, Progress, Refused, Stop, Taken,
+    Bank0Check, Bank0Error, Blocked, CandidateState, Install, Phase, Progress, Refused, Stop, Taken,
 };
 use wellfed_core::ota::offer::{
     self, Admitted, Context, ImageKind, KeyId, KeyRing, KeyStatement, Trust, admit_offer,
@@ -420,6 +420,7 @@ pub fn describe(record: Record, f: &mut impl fmt::Write) -> fmt::Result {
                 UpdateStatus::Loaded => "loaded",
                 UpdateStatus::Empty => "empty",
                 UpdateStatus::ReadOnly => "newer",
+                UpdateStatus::Corrupt => "corrupt",
                 UpdateStatus::Io | UpdateStatus::Unopened => "unreadable",
             },
             u8::from(attempt)
@@ -626,6 +627,18 @@ impl<I: SlotIo + Clone> Update<I> {
             self.bank0 = Bank0Check::Unchecked;
             self.scan = None;
         }
+        // Bank 0 gives up recording itself on a store it cannot write; one
+        // the factory reset or the handover emptied since has room for the
+        // record again, and no restart follows either of them.
+        if self.bank == 0
+            && matches!(
+                self.store.status,
+                UpdateStatus::Empty | UpdateStatus::Loaded
+            )
+            && self.store.record().bank0.is_none()
+        {
+            self.record_bank0 = true;
+        }
         self.attempt = self.bank == 0 && arming::update_attempted();
         self.publish();
         Record::Opened {
@@ -640,8 +653,14 @@ impl<I: SlotIo + Clone> Update<I> {
     }
 
     fn progress(&self) -> Progress {
+        let candidate = match self.store.record().state {
+            State::None => CandidateState::None,
+            State::Pending(_) => CandidateState::Pending,
+            State::Activated(_) => CandidateState::Activated,
+        };
         Progress {
             bank0: self.bank0,
+            candidate,
             ..self.work_progress()
         }
     }
@@ -1140,7 +1159,9 @@ impl<I: SlotIo + Clone> Update<I> {
     }
 
     /// End the install in order: bank 1 stays invalid, the lease and the
-    /// attempt bit are released.
+    /// attempt bit are released. The stop is shown before the lease goes, as
+    /// the loop runs meanwhile: a pass that finds no install must find why,
+    /// or the stop goes unrecorded.
     fn stop(&mut self, stop: Stop) -> Record {
         if let Some(install) = self.install.as_mut() {
             install.abort(stop);
@@ -1151,6 +1172,7 @@ impl<I: SlotIo + Clone> Update<I> {
             .and_then(|i| i.stopped())
             .unwrap_or(stop);
         self.stopped = Some(stop);
+        self.publish();
         arming::set_update_attempt(false);
         mailbox::drop_chunks();
         mailbox::release();

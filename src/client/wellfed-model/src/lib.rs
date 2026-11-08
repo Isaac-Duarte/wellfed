@@ -15,6 +15,7 @@
 //! [API design]: ../../../../docs/server/design.md#crates
 #![forbid(unsafe_code)]
 
+mod alerts;
 mod call;
 pub mod convert;
 mod event;
@@ -32,6 +33,7 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use utoipa::ToSchema;
 
+pub use alerts::{Alert, AlertsView, OpenAlert};
 pub use call::{CALL_BYTES_MAX, CALL_CHUNK_MAX, CALL_PLAYS_MAX, CALL_RATE_HZ, CallClip, CallView};
 pub use event::{
     ClientRole, CoreEvent, EnrollPath, Event, EventBody, EventKind, FeedOutcome, FeedReason,
@@ -58,7 +60,8 @@ pub use status::{
 };
 pub use trace::{CurrentUnit, Malformed, Trace, TraceEntry, TraceMotor, TracePage, TraceSummary};
 pub use update::{
-    Bank0Blocked, Bank0Check, Bank1Page, UpdatePhase, UpdateRefusal, UpdateStop, UpdateView,
+    Bank0Blocked, Bank0Check, Bank1Page, UpdateCandidate, UpdatePhase, UpdateRefusal, UpdateStop,
+    UpdateView,
 };
 /// The desiccant reminder's period limits and default, in days.
 pub use wellfed_proto::api::{

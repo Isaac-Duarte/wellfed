@@ -632,6 +632,30 @@ pub fn feeder_answered(data_dir: String, identity: Vec<u8>, build: String) {
     install::feeder_answered(std::path::Path::new(&data_dir), &identity, &build);
 }
 
+/// A copy of stock this phone keeps.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeptBackup {
+    /// The feeder it was read from, lowercase hex: one this phone may no
+    /// longer list, after it was forgotten or a reset gave it a new identity.
+    pub identity: String,
+    pub path: String,
+}
+
+/// Every copy of stock this phone keeps, found in its backups folder rather
+/// than through the feeders it lists, in identity order.
+#[frb(sync)]
+pub fn kept_backups(data_dir: String) -> Result<Vec<KeptBackup>, BridgeError> {
+    let kept = install::kept_backups(std::path::Path::new(&data_dir))
+        .map_err(|error| BridgeError::new(ErrorKind::Store, install::text(&error)))?;
+    Ok(kept
+        .into_iter()
+        .map(|backup| KeptBackup {
+            identity: wellfed_formats::hex::encode(&backup.identity),
+            path: backup.path.display().to_string(),
+        })
+        .collect())
+}
+
 /// The checked copy of stock this phone keeps for the feeder with `identity`.
 #[frb(sync)]
 pub fn kept_backup(data_dir: String, identity: Vec<u8>) -> Option<String> {

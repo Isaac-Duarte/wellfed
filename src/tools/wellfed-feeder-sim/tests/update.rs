@@ -29,8 +29,8 @@ use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::serve::Control;
 use wellfed_model::{
-    Answer, Client, ClientRole, Joined, Model, Op, Refusal, UpdatePhase, UpdateRefusal, UpdateStop,
-    UpdateView,
+    Alert, AlertsView, Answer, Client, ClientRole, Joined, Model, Op, Refusal, UpdatePhase,
+    UpdateRefusal, UpdateStop, UpdateView,
 };
 use wellfed_proto::api::RequestId;
 use wellfed_session::noise::Keypair;
@@ -142,6 +142,24 @@ impl Rig {
     }
 
     /// The bank the feeder answers from now.
+    /// The feeder's table of open alerts now.
+    async fn alerts(&mut self) -> AlertsView {
+        let mut connection = self.open().await;
+        let answer = connection.ask(self.id(), &Op::GetAlerts).await.unwrap();
+        let Answer::Alerts(view) = answer else {
+            panic!("{answer:?}");
+        };
+        view
+    }
+
+    /// The table shows a rollback.
+    async fn rolled_back(&mut self) -> bool {
+        let view = self.alerts().await;
+        view.alerts
+            .iter()
+            .any(|open| open.alert == Alert::RolledBack)
+    }
+
     async fn bank(&mut self) -> u8 {
         let mut connection = self.open().await;
         self.state(&mut connection).await.bank
@@ -262,6 +280,19 @@ fn an_update_gives_way_installs_from_bank_0_and_confirms() {
             &rig.banks.borrow().bank1()[..offer.payload.len()],
             &offer.payload[..]
         );
+
+        // Its two restarts were its own.
+        let view = rig.alerts().await;
+        assert_eq!(view.alerts, [], "a good install raises nothing");
+
+        // A second install in the same boot is no fall either.
+        let offer = Offer::new(8, 0x78, 2 * SECTOR);
+        update(&mut rig, offer.image(), &mut Faults::default())
+            .await
+            .unwrap();
+        assert_eq!(rig.bank().await, 1);
+        let view = rig.alerts().await;
+        assert_eq!(view.alerts, [], "two good installs raise nothing");
         rig.sim.stop().await;
     });
 }
@@ -406,6 +437,17 @@ fn a_flipped_byte_stops_at_the_hash() {
         let stopped = update(&mut rig, offer.image(), &mut Faults::default()).await;
         assert_eq!(stopped, Err(InstallError::Stopped(UpdateStop::Hash)));
         assert_on_bank_0(&mut rig, Some(UpdateStop::Hash)).await;
+
+        // The stop is an event and an alert, and the bank 0 it ran on was the
+        // install's, which is no rollback.
+        let view = rig.alerts().await;
+        let open: Vec<_> = view.alerts.iter().map(|open| open.alert).collect();
+        assert_eq!(
+            open,
+            [Alert::UpdateFailed {
+                stop: UpdateStop::Hash
+            }]
+        );
         rig.sim.stop().await;
     });
 }
@@ -507,6 +549,7 @@ fn a_confirmed_build_that_keeps_resetting_gives_way_to_a_bank_0_that_answers() {
             7,
             "it had confirmed: the floor stays where it raised it"
         );
+        assert!(rig.rolled_back().await, "nothing was pending when it fell");
 
         // A fixed build installs and stays.
         rig.banks.borrow_mut().trial = Trial::Confirms;
@@ -536,6 +579,7 @@ fn a_build_that_never_confirms_gives_way_to_a_bank_0_that_answers() {
         assert!(!rig.banks.borrow().bank1_valid());
         let mut connection = rig.open().await;
         assert_eq!(rig.state(&mut connection).await.min_version, 0);
+        assert!(rig.rolled_back().await, "the candidate had been activated");
 
         // The failed candidate is not installed again; another one is.
         let again = update(&mut rig, offer.image(), &mut Faults::default()).await;

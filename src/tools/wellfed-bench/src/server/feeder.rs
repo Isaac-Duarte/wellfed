@@ -466,6 +466,7 @@ fn read_only(op: &Op) -> bool {
             | Op::ReadBank1 { .. }
             | Op::GetPlans
             | Op::GetCall
+            | Op::GetAlerts
     )
 }
 

@@ -404,6 +404,7 @@ impl Device for Feeder {
                     battery: proto::Battery::Unread,
                     below_floor: None,
                 },
+                alerts_generation: 0,
             }),
         }
     }

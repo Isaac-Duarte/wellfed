@@ -89,7 +89,6 @@ const IDLE: States = States {
     setup: false,
     pairing: false,
     battery: false,
-    feeding: false,
     low_food: false,
     locked: false,
     online: false,
@@ -131,10 +130,10 @@ fn a_locked_panel_lights_the_lock_steady_and_the_setting_darkens_it() {
 }
 
 #[test]
-fn a_feed_blinks_the_food_light_while_the_motor_runs() {
+fn low_food_holds_steady_while_the_motor_runs() {
     let mut rig = Rig::new();
-    let feeding = States {
-        feeding: true,
+    let low = States {
+        low_food: true,
         ..IDLE
     };
 
@@ -142,18 +141,14 @@ fn a_feed_blinks_the_food_light_while_the_motor_runs() {
     fake::with(|h| h.output[0] = (h.output[0] & !MOTOR_A_BIT) | IR_PA_BIT);
     let outputs = fake::with(|h| h.output[0] & stopped::PA_MASK);
 
-    let seen = rig.run(feeding, 2_000);
-    let food: Vec<bool> = seen.iter().map(|(_, l)| l[Light::Food.index()]).collect();
-    let edges = food.windows(2).filter(|w| w[0] != w[1]).count();
-    assert_eq!(edges, 3, "500/500 ms over 2 s");
-    for (now, levels) in &seen {
-        let phase = now % 1_000;
-        // Within a settle of each edge the latch already follows it.
-        if phase % 500 >= leds::SETTLE_MS {
-            assert_eq!(levels[Light::Food.index()], phase < 500, "at {now}");
-        }
-    }
-    assert_eq!(rig.take(), [shows(Light::Food, Some(State::Feeding))]);
+    let seen = rig.run(low, 2_000);
+    assert!(
+        seen.iter()
+            .skip_while(|(now, _)| *now < leds::SETTLE_MS)
+            .all(|(_, lit)| lit[Light::Food.index()]),
+        "a feed adds no blink to the red food light"
+    );
+    assert_eq!(rig.take(), [shows(Light::Food, Some(State::LowFood))]);
     fake::with(|h| assert_eq!(h.output[0] & stopped::PA_MASK, outputs));
 
     rig.run(IDLE, 100);
@@ -512,33 +507,4 @@ fn the_lights_window_darkens_the_panel_outside_it() {
     passes(&mut feeder, 400, 200);
     assert!(on(Light::Lock) && on(Light::Fault));
     drop(rig);
-}
-
-/// Low food holds the light steady at rest, a feed's blink shows over it, and
-/// a reading of food turns it off.
-#[test]
-fn low_food_is_steady_under_a_feed_s_blink() {
-    let mut rig = Rig::new();
-    let low = States {
-        low_food: true,
-        ..IDLE
-    };
-    assert!(
-        rig.run(low, 1_200)
-            .iter()
-            .all(|(_, lit)| lit[Light::Food.index()])
-    );
-
-    let feeding = States {
-        feeding: true,
-        ..low
-    };
-    let seen = rig.run(feeding, 1_200);
-    assert!(seen.iter().any(|(_, lit)| lit[Light::Food.index()]));
-    assert!(seen.iter().any(|(_, lit)| !lit[Light::Food.index()]));
-
-    rig.run(low, 20);
-    assert!(on(Light::Food));
-    rig.run(IDLE, 20);
-    assert!(!on(Light::Food));
 }

@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:wellfed/src/rust/api/feeder.dart';
 import 'package:wellfed/src/rust/api/model.dart';
@@ -325,7 +325,7 @@ class _MealCallScreenState extends State<MealCallScreen> {
           ],
           if (_recording.problem case final problem?) ...[
             const SizedBox(height: Space.s3),
-            Notice(tone: Tone.warning, text: _recordingWords(problem)),
+            Notice(tone: Tone.warning, text: recordingWords(problem)),
           ],
           const SizedBox(height: Space.s6),
           if (_recording.recording) ...[
@@ -366,8 +366,14 @@ class _MealCallScreenState extends State<MealCallScreen> {
   }
 }
 
-String _recordingWords(RecordingProblem problem) => switch (problem) {
-  RecordingProblem.denied => "The app may not use the microphone. Allow it in Android's settings.",
+/// Why nothing was recorded, and where on this platform to allow the microphone.
+String recordingWords(RecordingProblem problem) => switch (problem) {
+  RecordingProblem.denied => switch (defaultTargetPlatform) {
+    TargetPlatform.macOS =>
+      'The app may not use the microphone. Allow Wellfed in System Settings › Privacy & Security › Microphone.',
+    TargetPlatform.android => "The app may not use the microphone. Allow it in Android's settings.",
+    _ => "The app may not use the microphone. Allow it in this computer's sound settings.",
+  },
   RecordingProblem.failed => "Couldn't record. Try again.",
   RecordingProblem.interrupted => 'The recording stopped when you left the app, so nothing was sent.',
 };

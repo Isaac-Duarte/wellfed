@@ -458,8 +458,18 @@ void main() {
     testWidgets('the backup goes to the share sheet', (tester) async {
       final ports = FakeInstallPorts();
       await finished(tester, ports);
-      await installTap(tester, 'Save the backup somewhere else');
+      expect(find.textContaining('Its backup is only on this phone', findRichText: true), findsOneWidget);
+      await installTap(tester, 'Save the backup');
       expect(ports.shared, ['/data/stock.bin']);
+      expect(find.text('Save the backup'), findsNothing, reason: 'offered once');
+    });
+
+    testWidgets('the backup prompt can be put off', (tester) async {
+      final ports = FakeInstallPorts();
+      await finished(tester, ports);
+      await installTap(tester, 'Not now');
+      expect(find.text('Save the backup'), findsNothing);
+      expect(ports.shared, isEmpty);
     });
   });
 }

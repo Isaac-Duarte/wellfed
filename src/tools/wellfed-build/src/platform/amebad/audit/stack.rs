@@ -15,6 +15,21 @@
 //! (`__name_veneer`, the long branch into RAM or ROM) leads to its target.
 //! Recursion is cut at the cycle.
 //!
+//! **What is code.** The pinned objdump lists some instructions inside a
+//! function as data (`blx r3` as `.short 0x4798`, a `sub sp` as half of a
+//! `.word`), and sometimes as ARM, because of how it looks mapping symbols up.
+//! A call or a frame it hides that way would understate the bound. So the walk
+//! disassembles a copy with the mapping symbols stripped, which decodes every
+//! byte as Thumb, and reads the symbols themselves, with `readelf`, to tell
+//! which lines are data: a literal pool or a jump table the compiler marked,
+//! whose decoding means nothing and whose words are the addresses a function
+//! loads. Anything in code that still doesn't decode is refused
+//! ([`StackError::Undecoded`]), as is an image with no mapping symbols, two
+//! mapping symbols that disagree at one address, and a function that starts
+//! where no Thumb symbol says code runs. A pool decoded as Thumb can also
+//! leave objdump in an IT block, so the code after it prints conditional
+//! (`pushhi`): every instruction pattern takes a condition.
+//!
 //! An indirect call (`blx rN`, or a tail call `bx rN`) is bounded by what it can reach:
 //! - inside `core::fmt`, by the deepest formatting method in the image
 //!   (`Display::fmt`, `Write::write_str` and the rest), nested up to
@@ -37,15 +52,16 @@
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
+use std::process::Command;
 use std::sync::LazyLock;
 
 use regex::Regex;
 use wellfed_formats::audit::{StackAudit, TaskBound};
 
 use super::writes::{demangle, loaded};
-use super::{HEADING, tool};
+use super::{Binutils, HEADING, tool};
 use crate::firmware::Runtime;
-use crate::{Firmware, Repo, Result};
+use crate::{Firmware, Repo, Result, text};
 use wellfed_formats::require;
 
 /// Why the stack audit could not bound a task, or refused how the firmware
@@ -107,6 +123,28 @@ pub enum StackError {
         stack: u64,
         path: Vec<String>,
     },
+    #[error(
+        "{function} has {line:?} in its code, at {address:#x}, with no mapping symbol calling \
+         it data: the stack audit cannot say what it does"
+    )]
+    Undecoded {
+        function: String,
+        address: u64,
+        line: String,
+    },
+    #[error("The linked image has no mapping symbols, so its code cannot be told from its data")]
+    NoMappingSymbols,
+    /// Two mapping symbols at one address name different kinds: which one
+    /// readelf lists last would decide what the bytes are.
+    #[error("Mapping symbols at {address:#x} disagree on whether it is Thumb, ARM or data")]
+    MappingConflict { address: u64 },
+    /// A function in the image starts where no Thumb mapping symbol says code
+    /// runs, so its bytes would be read as data or refused one by one.
+    #[error(
+        "{function} starts at {address:#x}, which no Thumb mapping symbol marks as code: \
+         the stack audit cannot read it"
+    )]
+    NotCode { function: String, address: u64 },
     #[error("No application task entries found in the linked image")]
     NoTasks,
     #[error(
@@ -292,22 +330,32 @@ static DECLARED: LazyLock<Regex> = LazyLock::new(|| {
 });
 static CONSTANT: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"const (\w+): u16 = (\d+);").expect("stack audit pattern"));
+/// A condition suffix, as objdump prints it on an instruction in an IT block.
+///
+/// Every instruction pattern below takes one. A real conditional prologue or
+/// call is rare, and counting it is the safe direction. But with the mapping
+/// symbols stripped, objdump decodes a literal pool's halfwords as Thumb too,
+/// and one that reads as `it` or `ittee` puts the real code after the pool in
+/// an IT block of objdump's making: `push` prints as `pushhi`, `sub sp` as
+/// `subhi sp`. Those decode, so nothing refuses them, and a plain-mnemonic
+/// pattern would drop the frame or the call without a word.
+const COND: &str = "(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al)?";
+
+fn pattern(template: &str) -> Regex {
+    Regex::new(&template.replace("{C}", COND)).expect("stack audit pattern")
+}
+
 /// A direct call or tail call, conditional ones included: `blne` in an IT
 /// block and `bne.w` both leave the function. A branch inside the function
 /// names an offset (`<name+0x12>`), which the target's pattern leaves out.
-static CALL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(concat!(
-        r"\t(?:bl|blx|b)(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)?(?:\.[nw])?",
-        r"\t[0-9a-f]+ <([^>+]+)>",
-    ))
-    .expect("stack audit pattern")
-});
+static CALL: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"\t(?:bl|blx|b){C}(?:\.[nw])?\t[0-9a-f]+ <([^>+]+)>"));
 /// A call or tail call through a register. objdump names r9 to r12 `sb`, `sl`,
 /// `fp` and `ip`, and a tail call through a pointer is `bx rN` (`bx ip` in
 /// vendor C and `core::fmt`). `bx lr` is a return, not a call. A linker
 /// veneer's `bx ip` is not counted: its target comes from its name.
 static INDIRECT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\tbl?x\t(?:r\d+|sb|sl|fp|ip)\b").expect("stack audit pattern"));
+    LazyLock::new(|| pattern(r"\tbl?x{C}(?:\.n)?\t(?:r\d+|sb|sl|fp|ip)\b"));
 /// Every task creation or declaration, whatever its shape: [`TASK`] and
 /// [`DECLARED`] must account for each. A `Task` built by hand is one neither
 /// reads, so it is refused.
@@ -333,11 +381,33 @@ static LINE_COMMENT: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"//[^\n]*").expect("stack audit pattern"));
 /// Half of an address built in a register: `movw r0, #51187` (low) then
 /// `movt r0, #3585` (high).
-static MOVE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^mov([wt])\s+(\w+), #(\d+)").expect("stack audit pattern"));
-/// A literal word in a function's pool.
-static WORD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\.word\s+0x([0-9a-f]+)").expect("stack audit pattern"));
+static MOVE: LazyLock<Regex> = LazyLock::new(|| pattern(r"^mov([wt]){C}\s+(\w+), #(\d+)"));
+/// A mapping symbol as `readelf -s` lists it: its address, and `t` for Thumb,
+/// `a` for ARM or `d` for data. LLVM numbers them (`$d.12`).
+static MAPPING: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*\d+:\s+([0-9a-f]+)\s+\d+\s+\S+\s+\S+\s+\S+\s+\S+\s+\$([atd])(?:\.\S*)?\s*$")
+        .expect("stack audit pattern")
+});
+/// A function symbol in one of the image's sections, as `readelf -s` lists
+/// it: its address (bit 0 set for Thumb) and name. ROM functions are
+/// absolute (`ABS`), with no bytes in the image, and are left out. readelf
+/// prints a size of 100000 or more in hex, so the size takes either form.
+///
+/// Only `FUNC` symbols are checked. An assembly label with no `.type` is
+/// `NOTYPE`, like the mapping symbols and the section's other labels, so a
+/// function written that way that starts outside Thumb code isn't refused
+/// here.
+static FUNC: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"^\s*\d+:\s+([0-9a-f]+)\s+(?:0x[0-9a-f]+|\d+)\s+FUNC\s+\S+\s+\S+\s+\d+",
+        r"\s+(\S+)\s*$",
+    ))
+    .expect("stack audit pattern")
+});
+/// A listed line: its address, then its bytes.
+static LINE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*([0-9a-f]+):\t([0-9a-f ]+?)\s*(?:\t|$)").expect("stack audit pattern")
+});
 /// How many words of a vtable (or other table) a reference may name
 /// functions in: the drop, size and alignment slots, then the methods.
 const TABLE_WORDS: u64 = 8;
@@ -349,21 +419,17 @@ static FMT_METHOD: LazyLock<Regex> = LazyLock::new(|| {
     )
     .expect("stack audit pattern")
 });
-static PUSH: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(?:push(?:\.w)?|stmdb(?:\.w)?\s+sp!,)\s*\{([^}]*)\}")
-        .expect("stack audit pattern")
-});
-static VPUSH: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^vpush\s*\{d(\d+)-d(\d+)\}").expect("stack audit pattern"));
+static PUSH: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"^(?:push{C}(?:\.w)?|stmdb{C}(?:\.w)?\s+sp!,)\s*\{([^}]*)\}"));
+static VPUSH: LazyLock<Regex> = LazyLock::new(|| pattern(r"^vpush{C}\s*\{d(\d+)-d(\d+)\}"));
 /// A prologue slot saved by writeback: LLVM keeps `push` to the low registers
 /// and the frame pointer's pair, then saves the rest as `str.w fp, [sp, #-4]!`.
-static WRITEBACK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^str(?:\.w)?\s+\w+,\s*\[sp,\s*#-(\d+)\]!").expect("stack audit pattern")
-});
+static WRITEBACK: LazyLock<Regex> =
+    LazyLock::new(|| pattern(r"^str{C}(?:\.w)?\s+\w+,\s*\[sp,\s*#-(\d+)\]!"));
 static SUB: LazyLock<Regex> = LazyLock::new(|| {
     // `subw` is Thumb-2's 12-bit-immediate form, which LLVM picks for frames
     // up to 4 KiB; missing it hid curve25519's 1948-byte frame.
-    Regex::new(r"^sub(?:w|\.w)?\s+sp,\s*(?:sp,\s*)?#(\d+)").expect("stack audit pattern")
+    pattern(r"^sub(?:w)?{C}(?:\.w)?\s+sp,\s*(?:sp,\s*)?#(\d+)")
 });
 
 /// {entry function name: (task name, stack bytes)} from the task sources.
@@ -417,6 +483,102 @@ fn tasks(source: &str) -> Result<BTreeMap<String, (String, u64)>> {
     Ok(found)
 }
 
+/// What a run of bytes is, by the mapping symbol that starts it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mapped {
+    Thumb,
+    Arm,
+    Data,
+}
+
+/// The image's mapping symbols, by address.
+#[derive(Debug, Default)]
+struct CodeMap(BTreeMap<u64, Mapped>);
+
+impl CodeMap {
+    /// The mapping symbols in `readelf -sW`'s `symbols`. Refuses two that
+    /// disagree at one address, and a function in the image's sections that
+    /// starts where no Thumb symbol says code runs: either would leave what
+    /// the bytes are to the order readelf lists them in, or read a function
+    /// as data without a word.
+    fn read(symbols: &str) -> std::result::Result<Self, StackError> {
+        let mut map = BTreeMap::new();
+        for found in symbols.lines().filter_map(|line| MAPPING.captures(line)) {
+            let Ok(address) = u64::from_str_radix(&found[1], 16) else {
+                continue;
+            };
+            let mapped = match &found[2] {
+                "t" => Mapped::Thumb,
+                "a" => Mapped::Arm,
+                _ => Mapped::Data,
+            };
+            if *map.entry(address).or_insert(mapped) != mapped {
+                return Err(StackError::MappingConflict { address });
+            }
+        }
+        let map = Self(map);
+
+        for found in symbols.lines().filter_map(|line| FUNC.captures(line)) {
+            let Ok(value) = u64::from_str_radix(&found[1], 16) else {
+                continue;
+            };
+            let address = value & !1;
+            require(map.at(address) == Some(Mapped::Thumb), || {
+                StackError::NotCode {
+                    function: demangle(&found[2]),
+                    address,
+                }
+            })?;
+        }
+        Ok(map)
+    }
+
+    /// `None` before the first symbol.
+    fn at(&self, address: u64) -> Option<Mapped> {
+        self.0
+            .range(..=address)
+            .next_back()
+            .map(|(_, mapped)| *mapped)
+    }
+
+    /// Whether the bytes from `address` for `len` are all `mapped`.
+    fn all(&self, address: u64, len: u64, mapped: Mapped) -> bool {
+        self.at(address) == Some(mapped)
+            && self
+                .0
+                .range(address..address + len)
+                .all(|(_, here)| *here == mapped)
+    }
+}
+
+/// A listed line's bytes as halfwords, in address order. objdump prints a
+/// halfword in value order, and a word as one eight-digit group.
+fn halfwords(bytes: &str) -> Vec<u16> {
+    let mut halves = Vec::new();
+    for group in bytes.split_whitespace() {
+        let Ok(value) = u32::from_str_radix(group, 16) else {
+            continue;
+        };
+        match group.len() {
+            4 => halves.extend(u16::try_from(value).ok()),
+            8 => {
+                halves.extend(u16::try_from(value & 0xffff).ok());
+                halves.extend(u16::try_from(value >> 16).ok());
+            }
+            _ => {}
+        }
+    }
+    halves
+}
+
+/// The bytes a listed line covers.
+fn byte_len(bytes: &str) -> u64 {
+    bytes
+        .split_whitespace()
+        .map(|group| group.len() as u64 / 2)
+        .sum()
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct Function {
     address: u64,
@@ -427,13 +589,18 @@ struct Function {
     /// Addresses the function builds or loads (`movw`/`movt` pairs and
     /// literal words): the formatting methods and vtables it passes on.
     refs: BTreeSet<u64>,
+    /// The first line in its code that didn't decode: its address and text.
+    undecoded: Option<(u64, String)>,
 }
 
 /// Each function's prologue frame, direct callees and whether it makes
-/// indirect calls, from `objdump -d`, in listing order.
-fn frames(listing: &str) -> Vec<(String, Function)> {
+/// indirect calls, from `objdump -d` of the image with its mapping symbols
+/// stripped, in listing order. `map` says which lines are data.
+fn frames(listing: &str, map: &CodeMap) -> Vec<(String, Function)> {
     let mut functions: Vec<(String, Function)> = Vec::new();
     let mut low: HashMap<String, u64> = HashMap::new();
+    // The low half of a literal word, waiting for its high half.
+    let mut low_half: Option<(u64, u16)> = None;
     for line in listing.lines() {
         if let Some(heading) = HEADING.captures(line) {
             let address = u64::from_str_radix(&heading[1], 16).unwrap_or_default();
@@ -448,11 +615,37 @@ fn frames(listing: &str) -> Vec<(String, Function)> {
         let Some((name, f)) = functions.last_mut() else {
             continue;
         };
-        if !line.contains(":\t") {
+        let Some(listed) = LINE.captures(line) else {
+            continue;
+        };
+        let address = u64::from_str_radix(&listed[1], 16).unwrap_or_default();
+        let bytes = &listed[2];
+        let insn = line.splitn(3, '\t').last().unwrap_or_default();
+
+        if map.all(address, byte_len(bytes), Mapped::Data) {
+            // What this decoded to means nothing. Its words are what the
+            // function loads: a pool is word-aligned, a table's halves aren't.
+            let mut at = address;
+            for half in halfwords(bytes) {
+                match low_half.take() {
+                    Some((before, low)) if before + 2 == at && before % 4 == 0 => {
+                        f.refs.insert(u64::from(half) << 16 | u64::from(low));
+                    }
+                    _ => low_half = Some((at, half)),
+                }
+                at += 2;
+            }
+            continue;
+        }
+        low_half = None;
+
+        let decoded = !insn.starts_with('.') && !insn.contains("UNDEFINED");
+        if !decoded || !map.all(address, byte_len(bytes), Mapped::Thumb) {
+            f.undecoded
+                .get_or_insert_with(|| (address, line.trim().to_string()));
             continue;
         }
 
-        let insn = line.splitn(3, '\t').last().unwrap_or_default();
         if !f.sized {
             if let Some(push) = PUSH.captures(insn) {
                 f.frame += 4 * push[1].split(',').filter(|r| !r.trim().is_empty()).count() as u64;
@@ -485,9 +678,6 @@ fn frames(listing: &str) -> Vec<(String, Function)> {
             } else if let Some(low) = low.remove(&m[2]) {
                 f.refs.insert(value << 16 | low);
             }
-        } else if let Some(word) = WORD.captures(insn) {
-            f.refs
-                .insert(u64::from_str_radix(&word[1], 16).unwrap_or_default());
         }
     }
     functions
@@ -796,18 +986,57 @@ fn veneer(name: &str) -> Option<&str> {
     name.strip_prefix("__")?.strip_suffix("_veneer")
 }
 
+/// The listing of `elf` with its mapping symbols stripped, and the symbols.
+fn listing(elf: &Path, binutils: &Binutils) -> Result<(String, CodeMap)> {
+    let map = CodeMap::read(&tool(&binutils.readelf(), &["-sW"], elf)?)?;
+    if map.0.is_empty() {
+        return Err(StackError::NoMappingSymbols.into());
+    }
+
+    let scratch = tempfile::tempdir()?;
+    let stripped = scratch.path().join("stripped.axf");
+    text(
+        Command::new(binutils.objcopy())
+            .args(["--wildcard", "--strip-symbol=$*"])
+            .arg(elf)
+            .arg(&stripped),
+    )?;
+    Ok((tool(&binutils.objdump(), &["-d"], &stripped)?, map))
+}
+
+/// The first line of code in `functions` that didn't decode, refused.
+fn all_decoded(functions: &HashMap<String, Function>) -> Result<()> {
+    let undecoded = functions
+        .iter()
+        .filter_map(|(name, f)| Some((name, f.undecoded.as_ref()?)))
+        .min_by_key(|(_, (address, _))| *address);
+
+    match undecoded {
+        Some((function, (address, line))) => Err(StackError::Undecoded {
+            function: demangle(function),
+            address: *address,
+            line: line.clone(),
+        }
+        .into()),
+        None => Ok(()),
+    }
+}
+
 /// Per-task bounds; refuses if a task's bound leaves less than MARGIN free,
-/// or if the firmware starts more tasks than its share of the slots.
-pub(crate) fn audit(elf: &Path, objdump: &Path, sources: &TaskSources) -> Result<StackAudit> {
+/// if a function's code can't be read, or if the firmware starts more tasks
+/// than its share of the slots.
+pub(crate) fn audit(elf: &Path, binutils: &Binutils, sources: &TaskSources) -> Result<StackAudit> {
+    let (listed, map) = listing(elf, binutils)?;
     // A repeated heading starts that function over, as a later definition.
-    let functions = link(frames(&tool(objdump, &["-d"], elf)?).into_iter().collect());
+    let functions = link(frames(&listed, &map).into_iter().collect());
+    all_decoded(&functions)?;
     if sources.kind == Runtime::Bare {
         let linked = sdk_runtime_in(functions.keys());
         require(linked.is_empty(), || StackError::BareRuntime {
             functions: linked,
         })?;
     }
-    let data = loaded(elf, objdump)?;
+    let data = loaded(elf, &binutils.objdump())?;
     let graph = Graph::new(&functions, &data);
     let hook = graph.hook_charge(sources.kind)?;
     let mut by_short: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -1262,7 +1491,8 @@ mod tests {
 00005000 <jumped>:
     5000:\t4770      \tbx\tlr
 ";
-        let functions: HashMap<String, Function> = frames(listing).into_iter().collect();
+        let functions: HashMap<String, Function> =
+            frames(listing, &code_only()).into_iter().collect();
 
         let calls: Vec<&str> = functions["caller"]
             .calls
@@ -1290,7 +1520,8 @@ mod tests {
     2000:\tf84d 8d08 \tstr.w\tr8, [sp, #-8]!
     2004:\t9001      \tstr\tr0, [sp, #4]
 ";
-        let functions: HashMap<String, Function> = frames(listing).into_iter().collect();
+        let functions: HashMap<String, Function> =
+            frames(listing, &code_only()).into_iter().collect();
 
         assert_eq!(
             functions["fn"].frame,
@@ -1302,7 +1533,8 @@ mod tests {
 
     #[test]
     fn deepest_path_sums_prologues_and_cuts_recursion() {
-        let functions: HashMap<String, Function> = frames(LISTING).into_iter().collect();
+        let functions: HashMap<String, Function> =
+            frames(LISTING, &code_only()).into_iter().collect();
         assert_eq!(functions["task"].frame, 20 + 3280);
         assert!(functions["task"].indirect);
         assert_eq!(functions["deep"].frame, 36 + 16 + 836);
@@ -1314,6 +1546,265 @@ mod tests {
         assert_eq!(path, ["task", "deep", "shallow"]);
         assert_eq!(unbounded, ["task".to_string()].into(), "vendor C, listed");
         assert_eq!(cut, ["deep"]);
+    }
+
+    /// An image that is all Thumb.
+    fn code_only() -> CodeMap {
+        CodeMap([(0, Mapped::Thumb)].into())
+    }
+
+    /// [`CLASSES`]' one literal word.
+    fn classes_map() -> CodeMap {
+        CodeMap(
+            [
+                (0, Mapped::Thumb),
+                (0x3008, Mapped::Data),
+                (0x4000, Mapped::Thumb),
+            ]
+            .into(),
+        )
+    }
+
+    #[test]
+    fn mapping_symbols_read_from_readelf_with_or_without_a_number() {
+        let symbols = "\
+   12: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $t
+   13: 0e0014b8     0 NOTYPE  LOCAL  DEFAULT    3 $d.17
+   14: 0e0014cc     0 NOTYPE  LOCAL  DEFAULT    3 $t.18
+   15: 0e0014cc     4 FUNC    GLOBAL DEFAULT    3 dns_send
+";
+        let map = CodeMap::read(symbols).unwrap();
+
+        assert_eq!(map.0.len(), 3);
+        assert_eq!(map.at(0x0e00_138f), None);
+        assert_eq!(map.at(0x0e00_1390), Some(Mapped::Thumb));
+        assert_eq!(map.at(0x0e00_14c0), Some(Mapped::Data));
+        assert_eq!(map.at(0x0e00_14cc), Some(Mapped::Thumb));
+    }
+
+    /// A pool's words can decode as anything, even a call. They are what the
+    /// function loads, and nothing it does.
+    #[test]
+    fn data_is_read_for_its_words_and_never_as_instructions() {
+        let listing = "\
+00001000 <fn>:
+    1000:\tb500      \tpush\t{lr}
+    1002:\t4770      \tbx\tlr
+    1004:\tdcc0      \tbgt.n\t1088 <fn+0x88>
+    1006:\t1001      \tasrs\tr1, r0, #32
+    1008:\tf000 f800 \tbl\t2000 <never>
+    100c:\t4798      \tblx\tr3
+    100e:\tb082      \tsub\tsp, #8
+    1010:\tb084      \tsub\tsp, #16
+";
+        let map = CodeMap(
+            [
+                (0x1000, Mapped::Thumb),
+                (0x1004, Mapped::Data),
+                (0x1010, Mapped::Thumb),
+            ]
+            .into(),
+        );
+        let functions: HashMap<String, Function> = frames(listing, &map).into_iter().collect();
+        let f = &functions["fn"];
+
+        assert!(f.calls.is_empty(), "{:?}", f.calls);
+        assert!(!f.indirect);
+        assert!(f.refs.contains(&0x1001_dcc0), "{:x?}", f.refs);
+        assert!(f.refs.contains(&0xf800_f000), "{:x?}", f.refs);
+        assert_eq!(f.undecoded, None);
+    }
+
+    /// What the pinned objdump hides, once decoded, counts.
+    #[test]
+    fn a_call_or_a_frame_the_data_view_hid_is_counted() {
+        let listing = "\
+00001000 <fn>:
+    1000:\tb500      \tpush\t{lr}
+    1002:\tb087      \tsub\tsp, #28
+    1004:\t4798      \tblx\tr3
+    1006:\tf000 f800 \tbl\t2000 <other>
+";
+        let functions: HashMap<String, Function> =
+            frames(listing, &code_only()).into_iter().collect();
+
+        assert_eq!(functions["fn"].frame, 4 + 28);
+        assert!(functions["fn"].indirect);
+        assert!(functions["fn"].calls.contains("other"));
+    }
+
+    fn refused(listing: &str, map: &CodeMap) -> StackError {
+        let functions: HashMap<String, Function> = frames(listing, map).into_iter().collect();
+        match all_decoded(&functions) {
+            Err(Error::Stack(error)) => error,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn code_that_still_does_not_decode_is_refused() {
+        for line in [
+            "    1002:\t4798      \t.short\t0x4798",
+            "    1002:\t47984b36 \t.word\t0x47984b36",
+            "    1002:\tf04fe7b3 \t\t\t; <UNDEFINED> instruction: 0xf04fe7b3",
+        ] {
+            let listing = format!("00001000 <fn>:\n    1000:\tb500      \tpush\t{{lr}}\n{line}\n");
+            let error = refused(&listing, &code_only());
+            assert!(
+                matches!(&error, StackError::Undecoded { function, address: 0x1002, .. } if function == "fn"),
+                "{error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_line_across_the_end_of_a_pool_or_with_no_symbol_is_refused() {
+        let listing = "\
+00001000 <fn>:
+    1000:\tb500      \tpush\t{lr}
+    1002:\tf000 f800 \tbl\t2000 <other>
+";
+        // A desynchronized decode: it starts in code and ends in data.
+        let map = CodeMap([(0x1000, Mapped::Thumb), (0x1004, Mapped::Data)].into());
+        assert!(matches!(
+            refused(listing, &map),
+            StackError::Undecoded {
+                address: 0x1002,
+                ..
+            }
+        ));
+
+        let map = CodeMap([(0x1002, Mapped::Thumb)].into());
+        assert!(matches!(
+            refused(listing, &map),
+            StackError::Undecoded {
+                address: 0x1000,
+                ..
+            }
+        ));
+
+        let map = CodeMap([(0x1000, Mapped::Arm)].into());
+        assert!(matches!(
+            refused(listing, &map),
+            StackError::Undecoded {
+                address: 0x1000,
+                ..
+            }
+        ));
+    }
+
+    /// A pool word that decodes as `itttt hi` leaves objdump's IT state on,
+    /// so the next function's real prologue and calls print conditional.
+    /// They decode, so only the patterns can keep them.
+    #[test]
+    fn a_prologue_and_calls_after_an_it_decoded_from_data_still_count() {
+        let listing = "\
+00001000 <before>:
+    1000:\tb500      \tpush\t{lr}
+    1002:\tbd00      \tpop\t{pc}
+    1004:\tbf88      \tit\thi
+    1006:\tbf81      \titttt\thi
+
+00001008 <after>:
+    1008:\tb510      \tpushhi\t{r4, lr}
+    100a:\tb082      \tsubhi\tsp, #8
+    100c:\tf000 f800 \tblhi\t2000 <other>
+    1010:\t4798      \tblxhi\tr3
+    1012:\tf2c0 0000 \tmovthi\tr0, #0
+";
+        let map = CodeMap(
+            [
+                (0x1000, Mapped::Thumb),
+                (0x1004, Mapped::Data),
+                (0x1008, Mapped::Thumb),
+            ]
+            .into(),
+        );
+        let functions: HashMap<String, Function> = frames(listing, &map).into_iter().collect();
+        let after = &functions["after"];
+
+        assert_eq!(after.frame, 8 + 8);
+        assert!(after.calls.contains("other"), "{:?}", after.calls);
+        assert!(after.indirect);
+        assert!(all_decoded(&functions).is_ok());
+    }
+
+    /// Each pattern also takes a condition on a prologue that really has one.
+    #[test]
+    fn every_instruction_pattern_takes_a_condition() {
+        assert_eq!(
+            &PUSH.captures("pushls\t{r4, r5, r6, lr}").unwrap()[1],
+            "r4, r5, r6, lr"
+        );
+        assert_eq!(
+            &PUSH.captures("stmdbhi.w\tsp!, {r4, lr}").unwrap()[1],
+            "r4, lr"
+        );
+        assert_eq!(&VPUSH.captures("vpushne\t{d8-d9}").unwrap()[2], "9");
+        assert_eq!(
+            &WRITEBACK.captures("strhi.w\tfp, [sp, #-4]!").unwrap()[1],
+            "4"
+        );
+        assert_eq!(&SUB.captures("subhi\tsp, #112").unwrap()[1], "112");
+        assert_eq!(&SUB.captures("subwls\tsp, sp, #1032").unwrap()[1], "1032");
+        assert_eq!(&SUB.captures("subhi.w\tsp, sp, #1032").unwrap()[1], "1032");
+        assert_eq!(&MOVE.captures("movwhi\tr0, #4097").unwrap()[3], "4097");
+        assert!(INDIRECT.is_match("    1010:\t4798      \tblxhi\tr3"));
+        assert!(!INDIRECT.is_match("    1010:\t4770      \tbxhi\tlr"));
+    }
+
+    #[test]
+    fn mapping_symbols_that_disagree_at_one_address_are_refused() {
+        let symbols = "\
+   12: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $t
+   13: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $t.4
+";
+        assert_eq!(CodeMap::read(symbols).unwrap().0.len(), 1);
+
+        let symbols = "\
+   12: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $t
+   13: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $d.4
+";
+        assert!(matches!(
+            CodeMap::read(symbols),
+            Err(StackError::MappingConflict {
+                address: 0x0e00_1390
+            })
+        ));
+    }
+
+    /// A function symbol the mapping symbols call data is refused, wherever
+    /// readelf lists it: its code would be read as a pool. A ROM function,
+    /// with no bytes in the image, is not the map's to judge, and neither is
+    /// an object: the listing heads a table in a code section too.
+    #[test]
+    fn a_function_that_starts_outside_thumb_code_is_refused() {
+        let symbols = "\
+   12: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $t
+   13: 0e0014b8     0 NOTYPE  LOCAL  DEFAULT    3 $d.17
+   14: 0e001391    40 FUNC    GLOBAL DEFAULT    3 dns_send
+   15: 00001234    40 FUNC    GLOBAL DEFAULT  ABS rom_memcpy
+   16: 0e0014b9    18 OBJECT  LOCAL  DEFAULT    3 GDMA_IrqNum
+";
+        assert!(CodeMap::read(symbols).is_ok());
+
+        let symbols =
+            format!("{symbols}   17: 0e0014c1    12 FUNC    LOCAL  DEFAULT    3 hidden\n");
+        assert!(matches!(
+            CodeMap::read(&symbols),
+            Err(StackError::NotCode { function, address: 0x0e00_14c0 }) if function == "hidden"
+        ));
+
+        // A size of 100000 or more, which readelf prints in hex.
+        let large = "\
+   12: 0e001390     0 NOTYPE  LOCAL  DEFAULT    3 $t
+   13: 0e0014b8     0 NOTYPE  LOCAL  DEFAULT    3 $d.17
+   14: 0e0014c1 0x186a0 FUNC    LOCAL  DEFAULT    3 large
+";
+        assert!(matches!(
+            CodeMap::read(large),
+            Err(StackError::NotCode { function, address: 0x0e00_14c0 }) if function == "large"
+        ));
     }
 
     /// A Rust task formatting a record through `core::fmt::write`, whose
@@ -1360,7 +1851,7 @@ mod tests {
 
     #[test]
     fn indirect_calls_are_charged_by_class_through_veneers() {
-        let functions = link(frames(CLASSES).into_iter().collect());
+        let functions = link(frames(CLASSES, &classes_map()).into_iter().collect());
         let graph = Graph::new(&functions, &[]);
         let task = "_RNvNtCs1_3app4task";
         assert_eq!(
@@ -1394,7 +1885,7 @@ mod tests {
 
     #[test]
     fn an_unclassified_rust_indirect_call_is_reported_for_refusal() {
-        let functions = link(frames(CLASSES).into_iter().collect());
+        let functions = link(frames(CLASSES, &classes_map()).into_iter().collect());
         let graph = Graph::new(&functions, &[]);
 
         let ((_, _, unbounded), _) = graph.worst("_RNvNtCs1_3app6callee", Charges::default());
@@ -1409,7 +1900,7 @@ mod tests {
             "    3008:\t00004001",
             "    3006:\tf000 f800 \tbl\t8000 <_RNvNtCs1_3app6callee>\n    3008:\t00004001",
         );
-        let functions = link(frames(&listing).into_iter().collect());
+        let functions = link(frames(&listing, &code_only()).into_iter().collect());
         let graph = Graph::new(&functions, &[]);
 
         let task = "_RNvNtCs1_3app4task";
@@ -1426,7 +1917,7 @@ mod tests {
             "    7002:\tb0c0      \tsub\tsp, #256\n    7004:\tf000 f800 \tbl\t8000 <_RNvNtCs1_3app6callee>\n",
         );
         assert_ne!(listing, CLASSES);
-        let functions = link(frames(&listing).into_iter().collect());
+        let functions = link(frames(&listing, &code_only()).into_iter().collect());
         assert!(matches!(
             stack_error(Graph::new(&functions, &[]).hook_charge(Runtime::Sdk)),
             StackError::CallbackUnbounded { .. }
@@ -1439,7 +1930,7 @@ mod tests {
 00007000 <_RNvNtCs3_11wellfed_sdk7runtime12hook_acquire>:
     7000:\tb5f0      \tpush\t{r4, r5, r6, r7, lr}
 ";
-        let functions = link(frames(listing).into_iter().collect());
+        let functions = link(frames(listing, &code_only()).into_iter().collect());
         assert!(matches!(
             stack_error(Graph::new(&functions, &[]).hook_charge(Runtime::Sdk)),
             StackError::NoHookSite
@@ -1453,7 +1944,7 @@ mod tests {
     6000:\tb538      \tpush\t{r3, r4, r5, lr}
     6002:\t4790      \tblx\tr2
 ";
-        let functions = link(frames(listing).into_iter().collect());
+        let functions = link(frames(listing, &code_only()).into_iter().collect());
         assert!(matches!(
             stack_error(Graph::new(&functions, &[]).hook_charge(Runtime::Sdk)),
             StackError::NoCallback

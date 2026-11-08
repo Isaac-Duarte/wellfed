@@ -52,7 +52,7 @@ Most of this is design. What has been built and observed is on the [roadmap](../
 - **The installer** is the app. Every install from stock runs from the app; the server only installs releases on a feeder already running Wellfed. An install on an iPhone is an open question: iOS suspends an app soon after it leaves the screen, and the phone is serving the feeder its firmware.
 - **Distribution:** APKs and server builds as GitHub releases. App stores and F-Droid come later. Apple's review of an app that replaces a feeder's firmware is an open question, to settle before any public iPhone release.
 - **App and server together.** With a server configured, the app goes through it first, and straight to the feeder on the LAN only when the server is down ([two paths, one feed](../server/README.md#two-paths-one-feed)). App-direct only was rejected: no remote access, and each person's actions would reach the audit log only through the feeder.
-- **Alerts** are planned for the app and aren't designed yet ([deferred](#deferred)).
+- **Alerts** are decided by the feeder, which keeps a small table of what is wrong for every client to read ([alerts](alerts.md)). The app doesn't show them yet ([deferred](#deferred)).
 - **Remote access** goes through a reverse proxy in front of the server, or the owner's VPN ([deferred](#deferred)).
 - **Home Assistant pairs with the feeder directly**, as its own client ([below](#home-assistant)).
 
@@ -167,7 +167,7 @@ A custom integration pairs with the feeder as an ordinary device API client, by 
 
 ## Deferred
 
-- **Alerts.** Planned after the app's next install from stock ([roadmap](../roadmap.md)), and not designed yet. One earlier design had the server decide what is an alert and the app deliver it. Push on iOS and Android goes through Apple and Google services, which need credentials tied to the app's publisher, so a self-hosted server can't send them alone. The options are ntfy or UnifiedPush, a small project relay, or both.
+- **Showing alerts.** The feeder's rules exist ([alerts](alerts.md)). What the app displays, how a phone hears of an alert away from home and what a server does with one are open ([roadmap](../roadmap.md)). Push on iOS and Android goes through Apple and Google services, which need credentials tied to the app's publisher, so a self-hosted server can't send them alone.
 - **Remote access.** Only through the owner's server; the owner's VPN is one route.
 
 ## What this asks of the SDK

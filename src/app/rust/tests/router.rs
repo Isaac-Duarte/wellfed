@@ -18,7 +18,9 @@
 //! - a `feeder_offline` answer lost, whose entry the server dropped;
 //! - a `500` before the journal held the write.
 //!
-//! A direct feed's pin never takes the end of a feed already running, and
+//! A pins file that does not read is set aside, and no feed goes until the
+//! owner has checked the bowls. A direct feed's pin never takes the end of a
+//! feed already running, and
 //! one pins file has one router at a time: a newer one in the process takes
 //! it over, and the one it took it from sends no write again. A session
 //! offers Dart no request of its own, so nothing reaches a feeder around
@@ -279,6 +281,11 @@ fn path(dir: &tempfile::TempDir) -> String {
 /// This covers the old ten-minute inference without a ten-minute sleep.
 fn age_pins(dir: &tempfile::TempDir) {
     #[derive(Deserialize, Serialize)]
+    struct SavedFile {
+        version: u32,
+        data: SavedPins,
+    }
+    #[derive(Deserialize, Serialize)]
     struct SavedPins {
         pins: Vec<Attempt>,
         #[serde(flatten)]
@@ -292,9 +299,10 @@ fn age_pins(dir: &tempfile::TempDir) {
         other: BTreeMap<String, serde_json::Value>,
     }
     let file = path(dir);
-    let mut saved: SavedPins = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
-    assert_eq!(saved.pins.len(), 1);
-    for pin in &mut saved.pins {
+    let mut saved: SavedFile = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(saved.version, 1);
+    assert_eq!(saved.data.pins.len(), 1);
+    for pin in &mut saved.data.pins {
         pin.sent_ms -= 11 * 60_000;
         pin.tried_ms -= 11 * 60_000;
     }
@@ -849,6 +857,101 @@ fn a_restored_server_backup_cannot_settle_a_dispensed_feed_as_never_sent() {
 }
 
 #[test]
+fn a_set_aside_uncertain_feed_is_never_replayed_and_waits_for_the_bowls_check() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let (server, owner) = started().await;
+        adopt(&owner, &sim, sim.address).await;
+        let front = Relay::start(server.address()).await;
+        let phone = Phone::new();
+        let session = phone.log_in_as_ada(&server).await;
+        let _fronted = phone
+            .through(&session, format!("http://{}", front.address))
+            .await;
+        let kitchen = identity(&sim);
+
+        front.hold_answers();
+        let first = uncertain(phone.router.feed(kitchen.clone(), 1).await);
+        journal_fed(&owner, &first.key).await;
+        assert_eq!(feeder::feeds(&flash), 1);
+        front.pause();
+        front.cut();
+        phone.router.disconnect_server();
+
+        // A downgrade can read the version header but not the newer
+        // payload. Keep that payload opaque, including the real lost feed.
+        #[derive(Deserialize, Serialize)]
+        struct SavedFile {
+            version: u32,
+            data: serde_json::Value,
+        }
+        let mut saved: SavedFile =
+            serde_json::from_slice(&std::fs::read(path(&phone.pins)).unwrap()).unwrap();
+        assert_eq!(saved.version, 1);
+        saved.version = 99;
+        let unreadable = serde_json::to_vec(&saved).unwrap();
+        std::fs::write(path(&phone.pins), &unreadable).unwrap();
+
+        let phone = phone.restarted().await;
+        let set_aside = phone.router.set_aside().expect("the pins were set aside");
+        assert!(set_aside.reason.contains("version 99"));
+        assert_eq!(std::fs::read(&set_aside.moved_to).unwrap(), unreadable);
+        phone
+            .router
+            .connect_server(&session, session.account().await.unwrap());
+        phone.router.refresh().await.unwrap();
+        assert!(matches!(
+            phone.router.retry(first.key.clone()).await,
+            RetryOutcome::Unknown
+        ));
+
+        // Acknowledging one key cannot stand in for checking every bowl:
+        // the unreadable file no longer says which feeders had a pin.
+        phone.router.acknowledge(first.key.clone()).unwrap();
+        let RoutedFeed::NotSent { reason, .. } = phone.router.feed(kitchen.clone(), 1).await else {
+            panic!("the set-aside notice still holds feeds back");
+        };
+        assert_eq!(reason, NotSentReason::SetAside);
+        assert_eq!(feeder::feeds(&flash), 1);
+
+        let phone = phone.restarted().await;
+        assert_eq!(phone.router.set_aside(), Some(set_aside));
+        phone
+            .router
+            .connect_server(&session, session.account().await.unwrap());
+        phone.router.refresh().await.unwrap();
+        let RoutedFeed::NotSent { reason, .. } = phone.router.feed(kitchen.clone(), 1).await else {
+            panic!("the bowl-check hold survives another restart");
+        };
+        assert_eq!(reason, NotSentReason::SetAside);
+
+        phone.router.bowls_checked().unwrap();
+        let RoutedFeed::Started { key, .. } = phone.router.feed(kitchen, 1).await else {
+            panic!("the owner checked the bowls, so a new feed may go");
+        };
+        assert_ne!(key, first.key);
+        eventually("only the new feed runs", async || {
+            (feeder::feeds(&flash) == 2).then_some(())
+        })
+        .await;
+        for _ in 0..3 {
+            assert!(matches!(
+                phone.router.retry(first.key.clone()).await,
+                RetryOutcome::Unknown
+            ));
+        }
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        assert_eq!(feeder::feeds(&flash), 2, "the old key never feeds again");
+        let phone = phone.restarted().await;
+        assert_eq!(phone.router.set_aside(), None, "the bowl check was saved");
+
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+#[test]
 fn a_lost_feeder_offline_answer_stays_uncertain_and_its_key_never_feeds() {
     local(async {
         let flash = Flash::memory();
@@ -1228,6 +1331,51 @@ fn adopting_with_no_server_or_no_invite_adopts_nothing() {
         );
         assert!(owner.feeders().await.unwrap().is_empty());
         server.stop().await;
+        sim.stop().await;
+    });
+}
+
+#[test]
+fn a_pins_file_that_does_not_read_is_set_aside_and_holds_feeds_until_the_bowls_are_checked() {
+    local(async {
+        let flash = Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let pins = tempfile::tempdir().unwrap();
+        std::fs::write(path(&pins), b"{ not json").unwrap();
+        let (router, updates) = router(&pins);
+        let phone = Phone {
+            key: ClientKey::restore(feeder::OWNER.to_vec()).unwrap(),
+            pins,
+            router,
+            updates,
+        };
+        let _direct = phone.open(&sim, sim.address).await;
+        let kitchen = identity(&sim);
+
+        let set_aside = phone
+            .router
+            .set_aside()
+            .expect("the router says it set the file aside");
+        assert_eq!(
+            std::fs::read(&set_aside.moved_to).unwrap(),
+            b"{ not json",
+            "kept, not deleted"
+        );
+        let RoutedFeed::NotSent { reason, .. } = phone.router.feed(kitchen.clone(), 1).await else {
+            panic!("a lost pin may have been a feed that ran");
+        };
+        assert_eq!(reason, NotSentReason::SetAside);
+        assert_eq!(feeder::feeds(&flash), 0);
+
+        phone.router.bowls_checked().unwrap();
+        assert_eq!(phone.router.set_aside(), None);
+        let RoutedFeed::Started { .. } = phone.router.feed(kitchen, 1).await else {
+            panic!("the owner checked the bowls");
+        };
+
+        // Written down: the next start holds nothing back.
+        let phone = phone.restarted().await;
+        assert_eq!(phone.router.set_aside(), None);
         sim.stop().await;
     });
 }

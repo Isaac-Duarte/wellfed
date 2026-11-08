@@ -20,6 +20,22 @@
 //! cannot tell an intentional restart from a hang (both are the watchdog's
 //! reset on this board), and every backup register is taken, so the count
 //! lives here: it bounds the restarts a boot that cannot finish asks for.
+//!
+//! Before the marker, [`mark`] programs a 16-byte word saying the owner
+//! asked for the reset by hand, at the panel. Only such a reset erases an
+//! update store this build cannot read (`UpdateStore::clear_corrupt`):
+//! whoever stands at the feeder could erase it over UART anyway, while a
+//! reset asked for any other way must never reopen a downgrade. The word
+//! goes first, so a marker that reads back means the word is down too, and
+//! a reset some later build asks for another way leaves it out, so a bank 0
+//! that finishes that reset keeps the update store.
+//!
+//! A mark cut after its word but before its marker leaves the word alone in
+//! the sector, and the next mark keeps it rather than erase. That is safe
+//! only because every mark this build makes is by hand: the stale word
+//! says no more than the new one would. A later build that marks a reset
+//! another way must erase a sector holding the word first, and the finished
+//! reset's erase of the whole sector clears it either way.
 
 use wellfed_core::store::slot::SlotIo;
 
@@ -39,8 +55,10 @@ pub fn pending<I: SlotIo>(io: &I) -> bool {
     io.read(0, 0, &mut bytes) && marked(&bytes)
 }
 
-/// Program the marker: erase the sector first unless it is blank (or
-/// already marked), then program and read the pattern back.
+/// Program the factory reset the owner asked for by holding Reset: erase
+/// the sector first unless it is blank (or already marked), then program
+/// the by-hand word and the marker, and read the marker back. Every
+/// factory reset today is the panel's Reset hold.
 pub fn mark<I: SlotIo>(io: &I) -> bool {
     let mut bytes = [0; MARKER.len()];
     if !io.read(0, 0, &mut bytes) {
@@ -50,10 +68,29 @@ pub fn mark<I: SlotIo>(io: &I) -> bool {
         return true;
     }
 
-    if bytes.iter().any(|&byte| byte != u8::MAX) && !io.erase(0) {
+    let mut hand = [0; BY_HAND.len()];
+    if !io.read(0, BY_HAND_AT, &mut hand) {
         return false;
     }
-    io.program(0, 0, &MARKER) && pending(io)
+    let blank = |b: &[u8]| b.iter().all(|&byte| byte == u8::MAX);
+    if !(blank(&bytes) && (blank(&hand) || hand == BY_HAND)) && !io.erase(0) {
+        return false;
+    }
+    io.program(0, BY_HAND_AT, &BY_HAND) && io.program(0, 0, &MARKER) && pending(io)
+}
+
+/// What [`mark`] programs before the marker: the reset was asked for at
+/// the panel.
+pub const BY_HAND: [u8; 16] = *b"PLFRST01BYHAND!!";
+
+/// Where the by-hand word sits: after the marker and its attempts.
+const BY_HAND_AT: u32 = (ATTEMPTS + 1) * 16;
+
+/// Whether the pending reset in the marker sector `io` was asked for by
+/// hand. Only the exact word counts; an unreadable sector says no.
+pub fn by_hand<I: SlotIo>(io: &I) -> bool {
+    let mut bytes = [0; BY_HAND.len()];
+    pending(io) && io.read(0, BY_HAND_AT, &mut bytes) && bytes == BY_HAND
 }
 
 /// Erase the marker and its attempts: the reset is over.

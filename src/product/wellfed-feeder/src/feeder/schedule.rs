@@ -200,6 +200,20 @@ impl Schedule {
         }
     }
 
+    /// Whether the schedule has nothing in hand: what its marks say about an
+    /// occurrence is its last word for now, with no write of its own to come.
+    pub const fn at_rest(&self) -> bool {
+        matches!(self.step, Step::Idle)
+    }
+
+    /// Why the schedule is holding a meal it could not start, if it is.
+    pub const fn meal_held(&self) -> Option<Blocked> {
+        match self.waiting {
+            Some((_, _, reason)) => Some(reason),
+            None => None,
+        }
+    }
+
     /// One pass at `now_ms`; `ready` is the feeder's readiness without the
     /// schedule's own hold.
     pub fn step<P: Platform, F: Feeds>(
@@ -568,7 +582,7 @@ const fn blocked(refusal: Refusal) -> Blocked {
 }
 
 /// Unix seconds of an occurrence, which is whole seconds (offsets are).
-fn seconds(due_ms: u64) -> u32 {
+pub(super) fn seconds(due_ms: u64) -> u32 {
     u32::try_from(due_ms / 1000).unwrap_or(u32::MAX)
 }
 

@@ -1,7 +1,8 @@
 //! The event recorder: one durable event queued for the settings writer,
 //! which alone appends the ring, stamped with the wall clock when it is
 //! valid. The device API's events, the panel's lock changes, the boot and a
-//! feed's end all come through here.
+//! feed's end all come through here, so the alert rules watch here: they see
+//! an event whether or not the queue has room for it.
 
 use wellfed_proto::api::EventBody;
 
@@ -26,12 +27,31 @@ pub fn record_outcome(
     body: EventBody,
 ) {
     let at = ran_s.or_else(|| wall_s(platform, now_ms));
-    push(platform, at, body, EventSlot::Outcome);
+    push(platform, now_ms, at, body, EventSlot::Outcome);
+}
+
+/// As [`record`] for an event that must not be lost to a full queue: false if
+/// there was no room, and the caller asks again. The rules hear of it only
+/// once it has a place.
+#[inline(never)]
+pub fn record_or_wait(platform: &mut impl Platform, now_ms: u32, body: EventBody) -> bool {
+    let at = wall_s(platform, now_ms);
+    let mut bytes = [0u8; BODY_BYTES];
+    if wellfed_proto::encode(&body, &mut bytes).is_err()
+        || !platform.queue_event(at, bytes, EventSlot::Shared)
+    {
+        return false;
+    }
+
+    if platform.alerts_on() {
+        platform.alerts_mut().event(now_ms, at, &body);
+    }
+    true
 }
 
 fn queue(platform: &mut impl Platform, now_ms: u32, body: EventBody, slot: EventSlot) {
     let at = wall_s(platform, now_ms);
-    push(platform, at, body, slot);
+    push(platform, now_ms, at, body, slot);
 }
 
 fn wall_s(platform: &mut impl Platform, now_ms: u32) -> Option<u32> {
@@ -40,7 +60,20 @@ fn wall_s(platform: &mut impl Platform, now_ms: u32) -> Option<u32> {
         .and_then(|ms| u32::try_from(ms / 1000).ok())
 }
 
-fn push(platform: &mut impl Platform, at: Option<u32>, body: EventBody, slot: EventSlot) {
+// Out of line: a caller's frame must not carry the encoding buffer, and two
+// of them are on the loop's deepest paths.
+#[inline(never)]
+fn push(
+    platform: &mut impl Platform,
+    now_ms: u32,
+    at: Option<u32>,
+    body: EventBody,
+    slot: EventSlot,
+) {
+    if platform.alerts_on() {
+        platform.alerts_mut().event(now_ms, at, &body);
+    }
+
     let mut bytes = [0u8; BODY_BYTES];
     // Every body fits the ring's record; one that did not would be a lost
     // event.

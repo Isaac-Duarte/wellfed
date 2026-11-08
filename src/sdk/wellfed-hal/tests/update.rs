@@ -16,14 +16,16 @@ use std::sync::{Mutex, MutexGuard};
 use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
 use wellfed_core::flash_coord::{FlashFault, FlashPhase, FlashReply};
-use wellfed_core::ota::install::{Bank0Check, Blocked, IDLE_MS, Phase, Progress, Refused, Stop};
+use wellfed_core::ota::install::{
+    Bank0Check, Bank0Error, Blocked, IDLE_MS, Phase, Progress, Refused, Stop,
+};
 use wellfed_core::ota::offer::{
     self, ImageKind, KeyError, KeyStatement, OfferError, Signed, StatementError, key_id,
 };
 use wellfed_core::ota::{MARKER, MAX_CHUNK, Manifest, SECTOR};
 use wellfed_core::store::handover;
 use wellfed_core::store::slot::SlotIo;
-use wellfed_core::store::update::{Bank0, Candidate, State, UpdateStore};
+use wellfed_core::store::update::{Bank0, Candidate, State, UpdateStatus, UpdateStore};
 use wellfed_hal::flash::park::{self, Mmio};
 use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::flash_lock::arming::{self, Arming, Event, Hooks, Poll, UPDATE_BIT};
@@ -42,6 +44,9 @@ thread_local! {
     static ARMED: Cell<bool> = const { Cell::new(true) };
     /// The stage's store writes fail from here on.
     static STORE_FAILS: Cell<bool> = const { Cell::new(false) };
+    /// What a loop pass would read while the store erases: whether the
+    /// install holds the flash, and the stop the stage shows.
+    static SEEN_IN_ERASE: Cell<Option<(bool, Option<Stop>)>> = const { Cell::new(None) };
 }
 
 struct FakeHooks;
@@ -76,6 +81,8 @@ impl SlotIo for StageSlots {
         !STORE_FAILS.with(Cell::get) && self.0.program(slot, offset, bytes)
     }
     fn erase(&self, slot: u32) -> bool {
+        let stop = mailbox::progress().and_then(|progress| progress.stopped);
+        SEEN_IN_ERASE.with(|seen| seen.set(Some((mailbox::installing(), stop))));
         !STORE_FAILS.with(Cell::get) && self.0.erase(slot)
     }
     fn writable(&self) -> bool {
@@ -653,6 +660,24 @@ fn a_cancel_that_cannot_forget_the_candidate_says_busy() {
     assert_eq!(store().record().state, State::None);
 }
 
+/// A cancel's erase takes long enough for the loop to run. A pass that finds
+/// the install gone must already find why, or the stop is never recorded.
+#[test]
+fn a_pass_during_a_cancels_erase_sees_the_stop_with_the_lease_gone() {
+    let _guard = start(0);
+    let mut rig = Rig::bench(0);
+    let payload = image(SECTOR);
+    rig.offer(&manifest(3, &payload), None).unwrap();
+    assert!(mailbox::installing());
+    SEEN_IN_ERASE.with(|seen| seen.set(None));
+
+    rig.ask(Request::Cancel).unwrap();
+
+    let seen = SEEN_IN_ERASE.with(Cell::get);
+    assert_eq!(seen, Some((false, Some(Stop::Cancelled))));
+    assert_eq!(store().record().state, State::None);
+}
+
 #[test]
 fn an_unwanted_chunk_stops_the_install_in_order() {
     let _guard = start(0);
@@ -1170,6 +1195,39 @@ fn bank_0_records_its_image_once() {
         fake::with(|h| h.storage_erases),
         erases,
         "no write for the same image"
+    );
+}
+
+/// Bank 0 cannot record itself on a corrupt store (a committed record
+/// whose checksum fails); once the factory reset
+/// erases it and the stage reads it again, bank 0 records its image without
+/// a restart.
+#[test]
+fn bank_0_records_its_image_after_a_corrupt_store_is_cleared() {
+    let _guard = start(0);
+    let mut junk = [0u8; 384];
+    junk[..8].copy_from_slice(b"PLFUPD01");
+    junk[8] = 2;
+    junk[10..12].copy_from_slice(&384u16.to_le_bytes());
+    junk[380..].copy_from_slice(b"CMIT");
+    assert!(Slots::new().program(0, 0, &junk));
+    assert_eq!(store().status, UpdateStatus::Corrupt);
+    let mut rig = Rig::bench(0);
+    rig.steps(20);
+    assert!(rig.records.contains(&Record::Bank0Unrecorded {
+        error: Bank0Error::Store
+    }));
+    assert_eq!(store().record().bank0, None);
+
+    assert!(Slots::new().erase(0) && Slots::new().erase(1));
+    store_started_over();
+    rig.steps(20);
+    assert_eq!(store().status, UpdateStatus::Loaded);
+    assert!(store().record().bank0.is_some());
+    assert!(
+        rig.records
+            .iter()
+            .any(|r| matches!(r, Record::Bank0 { recorded: true, .. }))
     );
 }
 

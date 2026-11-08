@@ -5087,6 +5087,7 @@ dependencies = [
  "btleplug",
  "bytes",
  "clap",
+ "etcetera",
  "futures-util",
  "http-body-util",
  "hyper",
