@@ -13,11 +13,12 @@ use wellfed_device_runtime::keys::{self, Change, KeyResult, Requested};
 use wellfed_feeder::feeder::owner::{Owner, POLL_MS, Record, ResetRefusal};
 use wellfed_feeder::feeder::setup;
 use wellfed_feeder::panel::{Action, Event, Source};
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_fw_feeder::platform::{Driver, Plaf103};
 use wellfed_sdk::buttons::{Button, Buttons, Gesture};
 use wellfed_sdk::hal::leds;
 use wellfed_sdk::hal::sdk::{self, fake};
-use wellfed_sdk::hal::{buttons, settings, stopped};
+use wellfed_sdk::hal::{buttons, stopped};
 
 /// The button queue, the settings and the key mailbox are process-wide.
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -45,7 +46,7 @@ fn ready() -> Rig {
     let serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     fake::reset_hardware();
     buttons::reset();
-    settings::reset();
+    SETTINGS.reset();
     keys::reset();
     assert!(stopped::initialize().verified());
     assert!(leds::initialize());
@@ -69,7 +70,7 @@ fn step(
     for &gesture in gestures {
         buttons::inject(gesture);
     }
-    settings::publish(SettingsView {
+    SETTINGS.publish(SettingsView {
         lights,
         sound: true,
         volume: 50,

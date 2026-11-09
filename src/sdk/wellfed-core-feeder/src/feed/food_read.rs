@@ -13,7 +13,7 @@
 //! never waits for anything itself, and whatever stopped it costs only a try
 //! after [`FOOD_READ_RETRY_MS`].
 
-use crate::deadline_passed;
+use wellfed_core::deadline_passed;
 
 /// How long a reading lights the emitters: the sensor filter's 100 ms of
 /// settling and 1 s of continuous readings without food, and four 20 ms

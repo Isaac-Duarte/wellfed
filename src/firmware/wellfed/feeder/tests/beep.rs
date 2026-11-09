@@ -9,11 +9,12 @@ use wellfed_core::settings::Window;
 use wellfed_device_api::mailbox::SettingsView;
 use wellfed_feeder::feeder::beep::{BEEP_MS, Beeper};
 use wellfed_feeder::feeder::{Feeder, Feeds, Record as PassRecord};
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_fw_feeder::platform::{Driver, Plaf103};
 use wellfed_proto::api::{Blocked, Refusal, Source};
 use wellfed_sdk::buttons::{Button, Buttons, Gesture};
 use wellfed_sdk::hal::sdk::fake;
-use wellfed_sdk::hal::{buttons, buzzer, clock, leds, settings, stopped};
+use wellfed_sdk::hal::{buttons, buzzer, clock, leds, stopped};
 
 /// The settings and the button queue are process-wide.
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -21,7 +22,7 @@ static SERIAL: Mutex<()> = Mutex::new(());
 fn start() -> MutexGuard<'static, ()> {
     let serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     fake::reset_hardware();
-    settings::reset();
+    SETTINGS.reset();
     clock::reset();
     buttons::reset();
     assert!(stopped::initialize().verified());
@@ -30,7 +31,7 @@ fn start() -> MutexGuard<'static, ()> {
 }
 
 fn publish(sound: bool, volume: u8) {
-    settings::publish(SettingsView {
+    SETTINGS.publish(SettingsView {
         lights: true,
         sound,
         volume,
@@ -153,7 +154,7 @@ fn the_line_is_enabled_only_at_rest_and_a_press_before_is_silent() {
 #[test]
 fn a_press_outside_the_sound_window_is_silent() {
     let _serial = start();
-    settings::publish(SettingsView {
+    SETTINGS.publish(SettingsView {
         lights: true,
         sound: true,
         volume: 50,

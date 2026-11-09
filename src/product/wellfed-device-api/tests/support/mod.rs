@@ -65,6 +65,8 @@ pub struct Fake {
     writes_held: bool,
     /// A settings write is queued.
     write_queued: bool,
+    /// The writer fails each settings write: nothing saved, no event.
+    settings_fail: bool,
     plans: PlansView,
     /// Skips (and undos) the device was asked for.
     skips: u32,
@@ -344,17 +346,22 @@ impl FeederDevice for Fake {
         Some(20_389)
     }
 
-    /// The writer's event goes with the change, as the device's does.
+    /// The writer's event goes with the change, as the device's does; a
+    /// failing writer saves nothing and records nothing, and finishes the
+    /// change as failed.
     fn settings(&mut self, change: Option<Asked<SettingsFields>>) -> SettingsResult {
         if let Some(Asked { change, by }) = change
             && change.changes()
         {
-            self.settings.generation += 1;
             self.write_queued = true;
-            let generation = self.settings.generation;
-            self.record(0, EventBody::Settings { generation, by });
-        } else if !self.writes_held {
+            if !self.settings_fail {
+                self.settings.generation += 1;
+                let generation = self.settings.generation;
+                self.record(0, EventBody::Settings { generation, by });
+            }
+        } else if !self.writes_held && self.write_queued {
             self.write_queued = false;
+            self.settings.saved.finish(self.settings_fail);
         }
         SettingsResult::Current {
             view: self.settings,
@@ -642,6 +649,11 @@ impl<D: Faked> Rig<D> {
     /// let it finish.
     pub fn hold_writes(&mut self, held: bool) {
         self.device.fake().writes_held = held;
+    }
+
+    /// Have the writer fail each settings write, or save it.
+    pub fn fail_settings(&mut self, fail: bool) {
+        self.device.fake().settings_fail = fail;
     }
 
     /// Empty the client table, as the writer would publish it: every session

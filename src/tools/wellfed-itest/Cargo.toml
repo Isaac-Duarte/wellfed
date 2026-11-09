@@ -11,6 +11,7 @@ publish.workspace = true
 clap.workspace = true
 wellfed-rig = { path = "../wellfed-rig" }
 wellfed-core.workspace = true
+wellfed-core-feeder.workspace = true
 wellfed-formats.workspace = true
 wellfed-model.workspace = true
 wellfed-relay = { path = "../wellfed-relay" }

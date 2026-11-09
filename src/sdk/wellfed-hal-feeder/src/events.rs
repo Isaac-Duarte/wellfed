@@ -10,13 +10,13 @@ use core::ffi::c_void;
 use core::ptr;
 
 use wellfed_core::clock::tick::TickClock;
-use wellfed_core::feed::controller::{
+use wellfed_core::interval_valid;
+use wellfed_core_feeder::feed::controller::{
     FeedController, FeedReason, FeedRequest, FeedSample, FeedStartResult, MotorCommand,
 };
-use wellfed_core::feed::feedback::{CAPACITY, FeedbackDrive, FeedbackEvents, FeedbackFault};
-use wellfed_core::feed::motor_gate::MotorGateFault;
-use wellfed_core::feed::sensor_inputs::SensorInputs;
-use wellfed_core::interval_valid;
+use wellfed_core_feeder::feed::feedback::{CAPACITY, FeedbackDrive, FeedbackEvents, FeedbackFault};
+use wellfed_core_feeder::feed::motor_gate::MotorGateFault;
+use wellfed_core_feeder::feed::sensor_inputs::SensorInputs;
 
 use crate::board::{self, Board};
 use wellfed_hal::active_pointer;

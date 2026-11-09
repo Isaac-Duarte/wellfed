@@ -18,7 +18,7 @@
 use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
 use wellfed_core::adc_scale::SAMPLES;
-use wellfed_core::feed::controller::MotorCommand;
+use wellfed_core_feeder::feed::controller::MotorCommand;
 
 use wellfed_board::pins::{FEEDBACK, OUTLET, bit};
 

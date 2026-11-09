@@ -4,8 +4,10 @@
 use uuid::Uuid;
 use wellfed_api::{
     AdoptFeeder, ClientRole, CommandKind, CommandOutcome, CommandQuery, CommandState,
-    CommandStateFilter, Connection, Desiccant, ErrorCode, FeederSettingsPatch, PREFIX,
+    CommandStateFilter, Connection, Desiccant, ErrorCode, FeederRefusal, FeederSettingsPatch,
+    Generation, PREFIX,
 };
+use wellfed_server_client::reqwest::header::ETAG;
 use wellfed_server_client::{Lock, Method, StatusCode};
 use wellfed_server_testkit::{TestServer, ada_setup, feeder, local, refused, refused_for, until};
 
@@ -195,4 +197,86 @@ fn the_desiccant_reminder_resets_through_the_journal() {
         server.stop().await;
         sim.stop().await;
     });
+}
+
+/// A feeder whose settings records come apart (its own record's save
+/// failing after the device's landed) holds them read-only with no
+/// generation until it repairs them. The server answers a write with the
+/// feeder's read-only refusal, never a precondition failure, and a read
+/// carries no entity tag, so no client can name a generation it never had.
+#[test]
+fn settings_with_no_generation_are_read_only_over_http() {
+    local(async {
+        let flash = feeder::Flash::memory();
+        let sim = feeder::start_on(&flash).await;
+        let server = TestServer::start().await;
+        let mut http = server.client();
+        http.setup(&ada_setup()).await.unwrap();
+        let kitchen = http
+            .adopt(&AdoptFeeder {
+                invite: feeder::invite(&sim, ClientRole::Server).await,
+                name: "kitchen".into(),
+                address: Some(sim.address.to_string()),
+                phone_key: None,
+            })
+            .await
+            .unwrap()
+            .id;
+        until("the server connects to the feeder", || async {
+            http.feeders().await.unwrap()[0].connection == Connection::Online
+        })
+        .await;
+
+        let before = http.settings(kitchen).await.unwrap();
+        let base = before.generation().unwrap();
+        feeder::fail_feeder_settings(&flash, true);
+        let patch = FeederSettingsPatch {
+            volume: Some(35),
+            ..FeederSettingsPatch::default()
+        };
+        let failed = http.put_settings(kitchen, base, &patch, key(1)).await;
+        assert_not_writable(failed);
+
+        let read = http
+            .request(Method::GET, &format!("{PREFIX}/feeders/{kitchen}/settings"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(read.status(), StatusCode::OK);
+        assert!(read.headers().get(ETAG).is_none(), "no generation, no tag");
+        let body: serde_json::Value = read.json().await.unwrap();
+        assert_eq!(body["generation"], u32::MAX, "the field keeps its type");
+        let apart = http.settings(kitchen).await.unwrap();
+        let held = apart.feeder().unwrap();
+        assert_eq!((held.generation, held.writable), (None, false));
+
+        // Whatever a client names, the write is refused read-only.
+        for (n, base) in [(2, base), (3, Generation(u32::MAX))] {
+            let again = http.put_settings(kitchen, base, &patch, key(n)).await;
+            assert_not_writable(again);
+        }
+
+        server.stop().await;
+        sim.stop().await;
+    });
+}
+
+#[track_caller]
+fn assert_not_writable<T: std::fmt::Debug>(result: Result<T, wellfed_server_client::Error>) {
+    match result {
+        Err(wellfed_server_client::Error::Problem {
+            status, problem, ..
+        }) => {
+            assert_eq!(
+                (status, problem.code, problem.refusal),
+                (
+                    StatusCode::CONFLICT,
+                    ErrorCode::FeederRefused,
+                    Some(FeederRefusal::NotWritable)
+                ),
+                "{problem:?}"
+            );
+        }
+        other => panic!("expected the feeder's read-only refusal, got {other:?}"),
+    }
 }

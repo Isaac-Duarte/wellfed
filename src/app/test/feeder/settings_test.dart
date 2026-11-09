@@ -23,12 +23,17 @@ const _settings = SettingsView(
   desiccantDays: 14,
   mealReminder: MealReminder.before(minutes: 15),
   writable: true,
+  repairing: false,
 );
 
-Future<(FeederController, FakeSession)> _settingsTab(WidgetTester tester, {ClientRole role = ClientRole.owner}) async {
+Future<(FeederController, FakeSession)> _settingsTab(
+  WidgetTester tester, {
+  ClientRole role = ClientRole.owner,
+  SettingsView settings = _settings,
+}) async {
   final (FeederController feeder, FakeSession session) = await oneFeeder(tester);
   session.updates.add(SessionUpdate.opened(build: 'test', role: role, skew: Skew.same));
-  session.status(fakeCard(settings: _settings));
+  session.status(fakeCard(settings: settings));
   await showTab(tester, SettingsTab(feeder: feeder));
   session.requests.clear();
   return (feeder, session);
@@ -47,6 +52,7 @@ SettingsView _withLights(bool lights) => SettingsView(
   desiccantDays: _settings.desiccantDays,
   mealReminder: _settings.mealReminder,
   writable: true,
+  repairing: false,
 );
 
 SettingsView _withVolume(int volume) => SettingsView(
@@ -59,6 +65,7 @@ SettingsView _withVolume(int volume) => SettingsView(
   desiccantDays: _settings.desiccantDays,
   mealReminder: _settings.mealReminder,
   writable: true,
+  repairing: false,
 );
 
 void main() {
@@ -138,6 +145,48 @@ void main() {
       expect(find.text('Diagnostics'), findsNothing);
       expect(find.text('Firmware updates'), findsOneWidget);
     });
+
+    // The feeder's two settings records came apart: it holds them read-only,
+    // with no generation, until it repairs them.
+    for (final (bool repairing, String why) in [
+      (true, 'The feeder is repairing its settings. Restart it if this lasts.'),
+      (false, "The feeder can't save settings changes right now."),
+    ]) {
+      testWidgets('read-only settings say why and offer no change${repairing ? ' while repairing' : ''}', (
+        tester,
+      ) async {
+        final readOnly = SettingsView(
+          generation: _settings.generation,
+          lights: _settings.lights,
+          sound: _settings.sound,
+          volume: _settings.volume,
+          lightsWindow: _settings.lightsWindow,
+          soundWindow: _settings.soundWindow,
+          desiccantDays: _settings.desiccantDays,
+          mealReminder: _settings.mealReminder,
+          writable: false,
+          repairing: repairing,
+        );
+        final (_, FakeSession session) = await _settingsTab(tester, settings: readOnly);
+
+        expect(find.text(why), findsOneWidget);
+        expect(find.text('7:00 AM to 10:00 PM'), findsOneWidget, reason: 'what the feeder holds still shows');
+        for (final Switch control in tester.widgetList<Switch>(find.byType(Switch))) {
+          expect(control.onChanged, isNull);
+        }
+        expect(tester.widget<Slider>(find.byType(Slider)).onChanged, isNull);
+        expect(tester.widget<TextButton>(find.widgetWithText(TextButton, 'Mark changed')).onPressed, isNull);
+        expect(
+          tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.volume_up_outlined)).onPressed,
+          isNotNull,
+          reason: 'the test sound changes nothing',
+        );
+
+        await tester.tap(find.byType(Switch).first);
+        await tester.pump();
+        expect(session.requests, isEmpty);
+      });
+    }
 
     testWidgets('a toggle goes against the generation it read', (tester) async {
       final (_, FakeSession session) = await _settingsTab(tester);

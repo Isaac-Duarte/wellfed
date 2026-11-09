@@ -395,6 +395,11 @@ impl<I> DualSlot<I> {
     pub fn bind(&mut self, io: I) {
         self.io = Some(io);
     }
+
+    /// The I/O it is bound to, if any.
+    pub const fn io(&self) -> Option<&I> {
+        self.io.as_ref()
+    }
 }
 
 impl<I: SlotIo> DualSlot<I> {

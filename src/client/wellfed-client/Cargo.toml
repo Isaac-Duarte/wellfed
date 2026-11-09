@@ -12,6 +12,7 @@ jiff = { workspace = true, features = ["serde"] }
 jiff-tzdb = "0.1.9"
 serde.workspace = true
 wellfed-core.workspace = true
+wellfed-core-feeder.workspace = true
 wellfed-signed.workspace = true
 wellfed-model.workspace = true
 wellfed-proto.workspace = true

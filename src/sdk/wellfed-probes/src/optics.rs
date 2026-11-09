@@ -26,9 +26,11 @@
 
 use core::fmt;
 
-use wellfed_core::feed::controller::{FeedController, FeedLimits};
-use wellfed_core::feed::sensor_inputs::{SensorFilter, SensorInputs, SensorLimits, SensorReading};
 use wellfed_core::flash_coord::{FlashCoord, FlashReply};
+use wellfed_core_feeder::feed::controller::{FeedController, FeedLimits};
+use wellfed_core_feeder::feed::sensor_inputs::{
+    SensorFilter, SensorInputs, SensorLimits, SensorReading,
+};
 
 use crate::{elapsed_ms, ticks_ms};
 use wellfed_hal::flash::park::{self, Mmio, Reply};
@@ -65,7 +67,7 @@ pub const SENSORS: SensorLimits = SensorLimits {
     power_settle_ms: 100,
     max_observation_gap_ms: 100,
     max_age_ms: 100,
-    battery: wellfed_hal::power::FLOOR,
+    battery: wellfed_hal_feeder::power::FLOOR,
 };
 
 /// Never started: `observe` needs an idle controller.

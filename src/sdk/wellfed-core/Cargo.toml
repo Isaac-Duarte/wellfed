@@ -4,7 +4,7 @@ name = "wellfed-core"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
-description = "Hardware-independent PLAF103 feeding, sensing, journal and flash-lease logic"
+description = "Hardware-independent logic every Wellfed device shares: clocks, the slot store, updates, flash leases, the link, the panel and the UART records"
 publish.workspace = true
 
 [dev-dependencies]

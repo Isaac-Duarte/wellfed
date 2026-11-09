@@ -2,7 +2,7 @@
 //! most once ([schedules]).
 //!
 //! **Deciding.** With a valid clock, each enabled plan's latest occurrence
-//! (`wellfed_core::schedule::latest_due`, worked out once a wall-clock
+//! (`wellfed_core_feeder::schedule::latest_due`, worked out once a wall-clock
 //! minute) meets the missed-meal rule (`wellfed_core::clock::wall::occurrence`)
 //! against the plan's mark: at or before it, nothing; at most 15 minutes
 //! late, it runs; later, it is passed and reported missed. Without a valid
@@ -34,7 +34,7 @@
 use core::fmt;
 
 use wellfed_core::clock::wall::{Occurrence, occurrence};
-use wellfed_core::schedule::latest_due;
+use wellfed_core_feeder::schedule::latest_due;
 use wellfed_device_api::mailbox::{Claim, PLANS, PlansChange, PlansResult, PlansView, PlayResult};
 use wellfed_proto::api::{Blocked, EventBody, MissedReason, Readiness, Refusal, Source};
 

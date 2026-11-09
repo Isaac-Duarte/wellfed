@@ -328,7 +328,8 @@ pub struct DeviceStatus {
     pub losses: u32,
     /// Unix milliseconds, `None` while the clock is invalid.
     pub clock_ms: Option<u64>,
-    /// A feeder's settings generation; `None` from another kind.
+    /// A feeder's settings generation; `None` from another kind, or while
+    /// its settings records share none.
     pub settings_generation: Option<u32>,
     pub wifi_generation: u32,
     /// A feeder panel's child lock; `None` before it is known.
@@ -347,7 +348,10 @@ impl DeviceStatus {
             clock_ms: status
                 .clock
                 .and_then(|clock| u64::try_from(clock.as_millisecond()).ok()),
-            settings_generation: status.feeder().map(|feeder| feeder.settings_generation.0),
+            settings_generation: status
+                .feeder()
+                .and_then(|feeder| feeder.settings_generation)
+                .map(|generation| generation.0),
             wifi_generation: status.wifi_generation.0,
             locked: status.feeder().and_then(|feeder| feeder.locked),
         }

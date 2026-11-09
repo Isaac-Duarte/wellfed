@@ -153,7 +153,7 @@ impl From<proto::FeederStatus> for FeederStatus {
         } = status;
         Self {
             locked,
-            settings_generation: Generation(settings_generation),
+            settings_generation: Generation::settings(settings_generation),
             food: lenient(food, FoodLevel::Unknown),
             feed_fault: feed_fault.map(|fault| FeedFault {
                 feed: fault.feed,
@@ -312,7 +312,7 @@ impl From<proto::Settings> for FeederSettings {
             ext: _,
         } = settings;
         Self {
-            generation: Generation(generation),
+            generation: Generation::settings(generation),
             lights,
             sound,
             volume,
@@ -2029,6 +2029,40 @@ pub fn setup_reply(reply: proto_setup::Reply) -> Option<setup::Reply> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The feeder's "no generation" (its settings records apart, read-only
+    /// until it repairs them) decodes to none; JSON keeps the number, so
+    /// `/api/v1` and its older readers see the field unchanged.
+    #[test]
+    fn settings_with_no_generation_decode_to_none() {
+        let wire = proto::Settings {
+            generation: proto::NO_SETTINGS_GENERATION,
+            lights: true,
+            sound: true,
+            volume: 50,
+            lights_window: proto::Window::Always,
+            sound_window: proto::Window::Always,
+            desiccant_days: 14,
+            desiccant_reset: None,
+            meal_reminder: proto::MealReminder::Off,
+            writable: false,
+            ext: proto::Tail::EMPTY,
+        };
+        let settings = FeederSettings::from(wire);
+        assert_eq!((settings.generation, settings.writable), (None, false));
+
+        let json = serde_json::to_value(settings).unwrap();
+        assert_eq!(json["generation"], u32::MAX);
+        let back: FeederSettings = serde_json::from_value(json).unwrap();
+        assert_eq!(back, settings);
+
+        let held = FeederSettings::from(proto::Settings {
+            generation: 7,
+            ..wire
+        });
+        assert_eq!(held.generation, Some(Generation(7)));
+        assert_eq!(serde_json::to_value(held).unwrap()["generation"], 7);
+    }
 
     const CLIENT: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
 

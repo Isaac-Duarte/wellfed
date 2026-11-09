@@ -1,5 +1,5 @@
 //! The simulator's feeding owner: no motor, but the feeder's own feed
-//! journal (`wellfed_core::store::feed_journal`) on the storage region's
+//! journal (`wellfed_core_feeder::feed_journal`) on the storage region's
 //! journal sectors, so feed numbers, reservations and the resolution of an
 //! interrupted feed behave as the firmware's do.
 //!
@@ -21,8 +21,8 @@
 //!   first step, so a client sees `resolving` only briefly. A feed queued
 //!   but not yet reserved is lost with the restart, as on the feeder: the
 //!   motor never ran, and no `Fed` event names it.
-//! - The pack's floor is the firmware's (`wellfed_core::supply::Floor`
-//!   against `wellfed_hal::power::FLOOR`), judged on every step from the
+//! - The pack's floor is the firmware's (`wellfed_core_feeder::floor::Floor`
+//!   against `wellfed_hal_feeder::power::FLOOR`), judged on every step from the
 //!   simulated supply: on the pack alone, a feed is refused `Battery` until
 //!   the pack is judged above it. A feed already running is not stopped by
 //!   a sag; the firmware's owner and its plant (`wellfed-sim`) cover that.
@@ -48,12 +48,12 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use wellfed_board::storage;
-use wellfed_core::feed::controller::{FeedReason, FeedRequest};
-use wellfed_core::feed::food_read::{FoodReads, FoodStep, FoodView};
-use wellfed_core::feed::progress::{BowlMode, Direction};
-use wellfed_core::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult};
-use wellfed_core::store::feed_journal::{FeedJournal, JournalConfig, JournalError};
-use wellfed_core::supply::Floor;
+use wellfed_core_feeder::feed::controller::{FeedReason, FeedRequest};
+use wellfed_core_feeder::feed::food_read::{FoodReads, FoodStep, FoodView};
+use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
+use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult};
+use wellfed_core_feeder::feed_journal::{FeedJournal, JournalConfig, JournalError};
+use wellfed_core_feeder::floor::Floor;
 use wellfed_feeder::feed::{self, Durability};
 use wellfed_feeder::feeder::{Feeds, RefusedClaim};
 use wellfed_hal::interlock::{ClaimStep, ClaimWait, Interlock, WriteStep, WriteTurn};
@@ -178,7 +178,7 @@ impl SimFeeds {
         self.adapter = supply.adapter;
         if let Some(pin_mv) = supply.pin_mv {
             self.floor
-                .update(now_ms, Some(pin_mv), &wellfed_hal::power::FLOOR);
+                .update(now_ms, Some(pin_mv), &wellfed_hal_feeder::power::FLOOR);
         }
     }
 

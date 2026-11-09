@@ -6,14 +6,14 @@
 //! firmware writes the bodies with `core::fmt` (each module's `describe`);
 //! the bench reads them with [`Record::event`], which decodes the words
 //! through the same tables the firmware prints from (the install's
-//! [`StopStage`] and [`RefusedReason`], the owner's numbers). The SDK's and
-//! the feeder's record tests run their `describe` functions through it, so
-//! a renamed field or word fails the host tests rather than a half-hour
-//! bench run.
+//! [`StopStage`] and [`RefusedReason`]). The SDK's and the feeder's record
+//! tests run their `describe` functions through it, so a renamed field or
+//! word fails the host tests rather than a half-hour bench run.
+//!
+//! A device kind's own records (the feeder's owner, `PLOWN1`) use words the
+//! SDK cannot name, so the kind's crate decodes them ([`KindRecord`]) and a
+//! host reads them with [`Record::event_with`].
 
-use crate::feed::controller::FeedReason;
-use crate::feed::owner::OwnerState;
-use crate::feed::storage::OwnerOutcome;
 use crate::ota::install::{Bank0Check, Bank0Error, Blocked, RefusedReason, StopStage};
 
 crate::named_enum! {
@@ -40,9 +40,6 @@ crate::named_enum! {
         Clock = "PLTIM1",
         /// BLE setup: `ready`, `advertising on=…`, `drop reason=…`.
         Ble = "PLBLE1",
-        /// The feeding owner: `state=…`, `feed id=…`, `fed id=…`,
-        /// `interlock …`.
-        Owner = "PLOWN1",
         /// The device API: `session …`, `request slot=… op=… result=…`.
         Api = "PLAPI1",
         /// The panic handler: `panic file=… line=… col=…`, then a halt the
@@ -51,10 +48,28 @@ crate::named_enum! {
     }
 }
 
-/// What a record says, for the tags and forms the bench acts on. A form
-/// the bench does not act on decodes to `None`.
+/// A device kind's own records, which its crate decodes: the SDK's tags
+/// are [`Tag`], and a record under any other tag goes to the kind.
+pub trait KindRecord<'a>: Sized {
+    /// What `record` says, when it is one of the kind's tags and forms.
+    fn decode(record: &Record<'a>) -> Option<Self>;
+}
+
+/// No kind's records: [`Record::event`] decodes the SDK's alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Event<'a> {
+pub enum NoKind {}
+
+impl KindRecord<'_> for NoKind {
+    fn decode(_: &Record<'_>) -> Option<Self> {
+        None
+    }
+}
+
+/// What a record says, for the tags and forms the bench acts on. A form
+/// the bench does not act on decodes to `None`. `K` is a device kind's own
+/// records ([`KindRecord`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Event<'a, K = NoKind> {
     /// `PLFW1 start`: `bank` is `None` when the startup could not tell.
     Start {
         build: &'a str,
@@ -65,12 +80,13 @@ pub enum Event<'a> {
     Watch(Watch),
     Update(Update),
     Settings(Settings),
-    Owner(Owner),
     Api(Api<'a>),
     Panic {
         file: &'a str,
         line: Option<u32>,
     },
+    /// A record of the device kind's.
+    Kind(K),
 }
 
 /// KM0's boot trial (`PLTRL1`).
@@ -167,37 +183,6 @@ pub enum Settings {
     KeysChanged,
 }
 
-/// The feeding owner (`PLOWN1`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Owner {
-    State {
-        state: OwnerState,
-        stopped: bool,
-    },
-    /// A feed was handed to the owner, whether or not it took it
-    /// (`submit=`); the bench waits on the record, not the answer. A
-    /// refused submission names the next id without consuming it, so the
-    /// next feed it takes logs the same id: only an `accepted` one is a
-    /// feed.
-    Submitted {
-        id: u64,
-        /// `submit=0`: the owner queued it.
-        accepted: bool,
-    },
-    /// A feed was refused before the owner saw it.
-    Held,
-    Fed {
-        id: u64,
-        requested: u16,
-        completed: u16,
-        outcome: Option<OwnerOutcome>,
-        reason: Option<FeedReason>,
-    },
-    Interlock {
-        writes_deferred: Option<u32>,
-    },
-}
-
 /// The device API (`PLAPI1`). Its words are the product's (the device API
 /// crate's), which the SDK cannot name, so they stay text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -287,9 +272,17 @@ impl<'a> Record<'a> {
         Tag::parse(self.tag)
     }
 
-    /// What the record says, for the forms the bench acts on.
+    /// What the record says, for the SDK's forms the bench acts on.
     pub fn event(&self) -> Option<Event<'a>> {
-        Some(match self.kind()? {
+        self.event_with::<NoKind>()
+    }
+
+    /// What the record says, for the SDK's forms and the kind `K`'s.
+    pub fn event_with<K: KindRecord<'a>>(&self) -> Option<Event<'a, K>> {
+        let Some(kind) = self.kind() else {
+            return K::decode(self).map(Event::Kind);
+        };
+        Some(match kind {
             Tag::Start => {
                 if self.first != "start" {
                     return None;
@@ -304,7 +297,6 @@ impl<'a> Record<'a> {
             Tag::Watch => Event::Watch(self.watch()?),
             Tag::Update => Event::Update(self.update()?),
             Tag::Settings => Event::Settings(self.settings()?),
-            Tag::Owner => Event::Owner(self.owner()?),
             Tag::Api => Event::Api(match self.first {
                 "request" => Api::Request {
                     op: self.field("op"),
@@ -423,35 +415,6 @@ impl<'a> Record<'a> {
                 stored: self.flag("stored")?,
             },
             ("keys", Some(word)) if word.starts_with("change=") => Settings::KeysChanged,
-            _ => return None,
-        })
-    }
-
-    fn owner(&self) -> Option<Owner> {
-        if let Some(state) = self.number("state") {
-            return Some(Owner::State {
-                state: OwnerState::from_code(state)?,
-                stopped: self.flag("stopped")?,
-            });
-        }
-        Some(match self.first {
-            "feed" if self.field("held").is_some() => Owner::Held,
-            "feed" => Owner::Submitted {
-                id: self.number("id")?,
-                // The owner's `SubmitResult::Enqueued`, which this crate
-                // cannot name.
-                accepted: self.number::<u32>("submit")? == 0,
-            },
-            "fed" => Owner::Fed {
-                id: self.number("id")?,
-                requested: self.number("requested")?,
-                completed: self.number("completed")?,
-                outcome: self.number("outcome").and_then(OwnerOutcome::from_byte),
-                reason: self.number("reason").and_then(FeedReason::from_byte),
-            },
-            "interlock" => Owner::Interlock {
-                writes_deferred: self.number("writes_deferred"),
-            },
             _ => return None,
         })
     }

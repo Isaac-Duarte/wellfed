@@ -5,7 +5,7 @@ use wellfed_core::record::{self, Event, Record as Line, Tag};
 use wellfed_device::store::net::NetStatus;
 use wellfed_device::store::settings::{Settings, SettingsStatus};
 use wellfed_device_runtime::writer::{
-    self as writer, ErrorStage, KeyChange, KeyResult, WriteEvent,
+    self as writer, ErrorStage, KeyChange, KeyResult, SettingsPart, WriteEvent,
 };
 use wellfed_feeder_runtime::writer::Record;
 
@@ -15,20 +15,24 @@ use crate::support::changed;
 #[test]
 fn error_records_format_as_before() {
     let words: Vec<_> = ErrorStage::ALL.iter().map(|s| s.as_str()).collect();
-    assert_eq!(words, ["unarmed", "save", "erase"]);
+    assert_eq!(words, ["unarmed", "save", "erase", "repair", "apart"]);
 
     let mut text = String::new();
     writer::describe(
         Record::Error {
             stage: ErrorStage::Save,
-            status: SettingsStatus::Corrupt,
+            store: SettingsPart::Kind,
+            status: SettingsStatus::Io,
         },
         &mut text,
     )
     .unwrap();
     assert_eq!(
         text,
-        format!("error stage=save status={}", SettingsStatus::Corrupt.code())
+        format!(
+            "error stage=save store=kind status={}",
+            SettingsStatus::Io.code()
+        )
     );
 
     text.clear();
@@ -60,6 +64,7 @@ fn store_writes_decode_for_the_bench() {
         Record::Saved {
             generation: 7,
             settings: Settings::default(),
+            kind: None,
             event: WriteEvent::Appended,
         },
         Some(Event::Settings(record::Settings::Saved {

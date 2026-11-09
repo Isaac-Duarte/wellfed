@@ -16,13 +16,13 @@
 //! zone stays on the syncs' offsets.
 //!
 //! A plan's next meal ([`next_meal`]) is the feeder's own reckoning
-//! (`wellfed_core::schedule`) run on the host's zone, so a skipped or
+//! (`wellfed_core_feeder::schedule`) run on the host's zone, so a skipped or
 //! repeated minute lands where the feeder will feed.
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use wellfed_core::clock::zone::{Rule, Zone};
-use wellfed_core::schedule;
+use wellfed_core_feeder::schedule;
 use wellfed_model::{NextMeal, Plan, Plans, TimeSync, TimeView};
 
 /// How far ahead a rule must agree with its zone.

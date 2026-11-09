@@ -42,7 +42,7 @@
 //! nowhere.
 
 use crate::feed::progress::{BowlMode, Direction, FeedProgress, ProgressResult};
-use crate::{HALF_RANGE, interval_valid};
+use wellfed_core::{HALF_RANGE, interval_valid};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u32)]

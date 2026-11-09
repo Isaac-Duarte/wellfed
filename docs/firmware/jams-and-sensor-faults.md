@@ -4,7 +4,7 @@ A feed can go wrong: kibble jams the rotor, the mark sensor stops reporting, the
 
 Every case has run on hardware through fault-injection variants, and a taped outlet beam has been tried by hand. A jam with real food and a current reference are still open ([left for the owner](#left-for-the-owner)). Status is on the [roadmap](../roadmap.md), and the bench procedure is in [motor bench checks](motor-bench-checks.md#2-jams-and-sensor-faults).
 
-The limits are in `feeding::CONFIG` (`src/firmware/wellfed/feeder/src/feeding.rs`). The behavior is the controller's (`wellfed_core::feed::controller`) and the owner's (`wellfed_hal_feeder::owner`). The drive, its marks and its current are in [motor and feeds](motor-pulse.md#how-a-feed-drives-the-motor).
+The limits are in `feeding::CONFIG` (`src/firmware/wellfed/feeder/src/feeding.rs`). The behavior is the controller's (`wellfed_core_feeder::feed::controller`) and the owner's (`wellfed_hal_feeder::owner`). The drive, its marks and its current are in [motor and feeds](motor-pulse.md#how-a-feed-drives-the-motor).
 
 ## Jams: bounded reversals
 
@@ -29,7 +29,7 @@ A jam is motor current held over the limit: two consecutive polls, 20 ms apart, 
 
 **Threshold risk.** The 300 and 1000 come from empty and light-food drives on the adapter. On November 1, four full-hopper feeds peaked at 236 to 283, one feed on batteries at 268, and empty feeds at 259 and 273. Older feeds went higher: 289 on food, and 324 on an empty feed that still finished. A real stall's current is not measured. Peaks near 300 would make sound feeds back off, and end them after three reversals. A stall reading over 1000 would stop every jam at once with no reversal: safe, but never freeing one.
 
-Rules the controller keeps (host-tested in `wellfed-core`'s `feed_controller`):
+Rules the controller keeps (host-tested in `wellfed-core-feeder`'s `feed_controller`):
 
 - **Bounded time.** Each reversal adds what it costs, 2.5 s (back, pause, and forward to win the ground back), to the feed's deadline and its feedback window. Three add at most 7.5 s, and the deadline never passes `max_duration_ms`. A jam that clears in time completes its portions. A slower rotor or a jam freed late can still end the feed on its deadline.
 - **A jam both ways ends it.** The limit held while backing off, or during the pause, ends the feed at once, with no more motion either way.

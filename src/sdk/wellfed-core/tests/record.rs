@@ -1,10 +1,7 @@
 //! The host tools' view of the firmware's UART records.
 
-use wellfed_core::feed::owner::OwnerState;
 use wellfed_core::ota::install::{Bank0Check, Bank0Error, Blocked, RefusedReason, StopStage};
-use wellfed_core::record::{
-    Api, Confirm, Event, Owner, Record, Settings, Tag, Trial, Update, Watch,
-};
+use wellfed_core::record::{Api, Confirm, Event, Record, Settings, Tag, Trial, Update, Watch};
 
 fn event(line: &str) -> Option<Event<'_>> {
     Record::parse(line)
@@ -196,7 +193,7 @@ fn update_records_decode_their_words() {
 }
 
 #[test]
-fn settings_owner_and_api_records_decode() {
+fn settings_and_api_records_decode() {
     assert_eq!(
         event("PLCFG1 net saved generation=4 stored=1"),
         Some(Event::Settings(Settings::NetSaved { stored: true }))
@@ -211,32 +208,6 @@ fn settings_owner_and_api_records_decode() {
     );
 
     assert_eq!(
-        event("PLOWN1 state=4 fault=0 supervisor=0 stopped=0 optics_off=0"),
-        Some(Event::Owner(Owner::State {
-            state: OwnerState::Feeding,
-            stopped: false,
-        }))
-    );
-    assert_eq!(
-        event("PLOWN1 feed portions=2 held=1"),
-        Some(Event::Owner(Owner::Held))
-    );
-    assert_eq!(
-        event("PLOWN1 feed id=7 portions=2 submit=0"),
-        Some(Event::Owner(Owner::Submitted {
-            id: 7,
-            accepted: true
-        }))
-    );
-    assert_eq!(
-        event("PLOWN1 feed id=7 portions=2 submit=4"),
-        Some(Event::Owner(Owner::Submitted {
-            id: 7,
-            accepted: false
-        }))
-    );
-
-    assert_eq!(
         event("PLAPI1 session slot=0 state=ended reason=noise"),
         Some(Event::Api(Api::Session {
             reason: Some("noise"),
@@ -245,7 +216,7 @@ fn settings_owner_and_api_records_decode() {
 }
 
 /// The tags as the firmware prints them; some of its lines name the tag as
-/// a literal (`c"PLOWN1 stall begin=1"`), so a renamed tag fails here.
+/// a literal (`c"PLCFG1 …"`), so a renamed tag fails here.
 #[test]
 fn tags_are_unchanged() {
     let words: Vec<_> = Tag::ALL.iter().map(|tag| tag.as_str()).collect();
@@ -253,24 +224,7 @@ fn tags_are_unchanged() {
         words,
         [
             "PLFW1", "PLTRL1", "PLCNF1", "PLWCH1", "PLOTA1", "PLCFG1", "PLTIM1", "PLBLE1",
-            "PLOWN1", "PLAPI1", "PLPNC1"
+            "PLAPI1", "PLPNC1"
         ]
     );
-}
-
-/// The owner's numbers, as `state=` and `fault=` print them, decode back.
-#[test]
-fn owner_codes_round_trip() {
-    use wellfed_core::feed::owner::OwnerFault;
-
-    for code in 0..9 {
-        let state = OwnerState::from_code(code).unwrap();
-        assert_eq!(state.code(), code);
-    }
-    assert_eq!(OwnerState::from_code(9), None);
-    for code in 0..8 {
-        let fault = OwnerFault::from_code(code).unwrap();
-        assert_eq!(fault.code(), code);
-    }
-    assert_eq!(OwnerFault::from_code(8), None);
 }

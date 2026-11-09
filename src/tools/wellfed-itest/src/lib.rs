@@ -49,7 +49,11 @@ mod tests;
 use log::Log;
 use scenarios::{DeviceState, SCENARIOS, Scenario};
 use wellfed_core::ota::install::{RefusedReason, StopStage};
-use wellfed_core::record::Event;
+use wellfed_core_feeder::record::Owner;
+
+/// A record the suite waits on: the SDK's, or the feeding owner's
+/// (`Event::Kind`).
+pub(crate) type Event<'a> = wellfed_core::record::Event<'a, Owner>;
 
 /// How often waits look at the UART and the server again.
 const POLL: Duration = Duration::from_secs(1);

@@ -8,15 +8,15 @@
 
 use core::ffi::c_void;
 
-use wellfed_core::feed::controller::{
+use wellfed_core_feeder::feed::controller::{
     FeedController, FeedLimits, FeedReason, FeedRequest, FeedSample, FeedStartResult, FeedState,
     MotorCommand,
 };
-use wellfed_core::feed::feedback::{
+use wellfed_core_feeder::feed::feedback::{
     CAPACITY, FeedbackDrive, FeedbackEvent, FeedbackEvents, FeedbackFault, FeedbackTakeResult,
 };
-use wellfed_core::feed::motor_gate::{MotorGate, MotorGateFault, MotorPins};
-use wellfed_core::feed::progress::{BowlMode, Direction};
+use wellfed_core_feeder::feed::motor_gate::{MotorGate, MotorGateFault, MotorPins};
+use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
 
 /// Compressed intervals; none is a deployment default.
 const LIMITS: FeedLimits = FeedLimits {

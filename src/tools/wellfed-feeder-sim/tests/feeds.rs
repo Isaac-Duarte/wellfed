@@ -15,11 +15,12 @@ use std::time::Duration;
 use tokio::time::sleep;
 use wellfed_client::history::{Delivered, Entry};
 use wellfed_connect::Connection;
-use wellfed_core::feed::food_read::{FOOD_READ_EVERY_MS, FOOD_READ_FIRST_MS};
+use wellfed_core_feeder::feed::food_read::{FOOD_READ_EVERY_MS, FOOD_READ_FIRST_MS};
 use wellfed_feeder_sim::feeding;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness::{Running, local};
 use wellfed_feeder_sim::serve::Control;
+use wellfed_hal::interlock::WRITE_WAIT_MS;
 use wellfed_model::{
     Answer, Blocked, EventBody, FeedFault, FeedOutcome, FeedReason, FeederEvent,
     FeederSettingsPatch, FoodLevel, Generation, Op, Pushed, Readiness, Refusal, Source,
@@ -608,7 +609,7 @@ fn a_client_gone_while_its_claim_was_refused_hears_the_refusal_on_a_retry() {
         drop(gone);
 
         // Past the deadline, with the number free again.
-        sleep(Duration::from_millis(3_100)).await;
+        sleep(Duration::from_millis(u64::from(WRITE_WAIT_MS) + 100)).await;
         sim.control(Control::HoldWrite(false));
         sim.control(Control::StallFeeds(true));
         let mut owner = open(&sim).await;

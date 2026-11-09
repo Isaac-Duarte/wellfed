@@ -292,18 +292,19 @@ fn the_outputs_turn_is_released_only_at_rest() {
 /// parser to what the bench acts on.
 #[test]
 fn owner_records_decode_for_the_bench() {
-    use wellfed_core::feed::controller::FeedReason;
-    use wellfed_core::feed::storage::{OwnerOutcome, OwnerResult};
-    use wellfed_core::record::{Event, Owner, Record as Line, Tag};
+    use wellfed_core::record::{Event, Record as Line};
+    use wellfed_core_feeder::feed::controller::FeedReason;
+    use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerResult};
+    use wellfed_core_feeder::record::{Owner, Tag};
     use wellfed_feeder::feed::Durability;
     use wellfed_fw_feeder::feeding::Record;
     use wellfed_hal_feeder::events::EventsFault;
     use wellfed_hal_feeder::owner::{FeedTrace, OwnerFault, OwnerState, SubmitResult};
     use wellfed_sdk::hal::interlock::{self, Held};
 
-    fn decodes(record: Record, expected: Option<Event<'_>>) {
+    fn decodes(record: Record, expected: Option<Event<'_, Owner>>) {
         let line = format!("{} {record}", Tag::Owner);
-        let event = Line::parse(&line).and_then(|line| line.event());
+        let event = Line::parse(&line).and_then(|line| line.event_with::<Owner>());
         assert_eq!(event, expected, "{line}");
     }
 
@@ -315,7 +316,7 @@ fn owner_records_decode_for_the_bench() {
             stopped: true,
             optics_off: false,
         },
-        Some(Event::Owner(Owner::State {
+        Some(Event::Kind(Owner::State {
             state: OwnerState::Feeding,
             stopped: true,
         })),
@@ -326,7 +327,7 @@ fn owner_records_decode_for_the_bench() {
             portions: 2,
             result: SubmitResult::Enqueued,
         },
-        Some(Event::Owner(Owner::Submitted {
+        Some(Event::Kind(Owner::Submitted {
             id: 12,
             accepted: true,
         })),
@@ -337,7 +338,7 @@ fn owner_records_decode_for_the_bench() {
             portions: 2,
             result: SubmitResult::RejectPhase,
         },
-        Some(Event::Owner(Owner::Submitted {
+        Some(Event::Kind(Owner::Submitted {
             id: 12,
             accepted: false,
         })),
@@ -347,7 +348,7 @@ fn owner_records_decode_for_the_bench() {
             portions: 2,
             held: Held::Joining,
         },
-        Some(Event::Owner(Owner::Held)),
+        Some(Event::Kind(Owner::Held)),
     );
     decodes(
         Record::Fed {
@@ -362,7 +363,7 @@ fn owner_records_decode_for_the_bench() {
             durability: Durability::Durable,
             trace: FeedTrace::default(),
         },
-        Some(Event::Owner(Owner::Fed {
+        Some(Event::Kind(Owner::Fed {
             id: 12,
             requested: 2,
             completed: 1,
@@ -377,7 +378,7 @@ fn owner_records_decode_for_the_bench() {
     };
     decodes(
         Record::Writes(counters),
-        Some(Event::Owner(Owner::Interlock {
+        Some(Event::Kind(Owner::Interlock {
             writes_deferred: Some(3),
         })),
     );
@@ -388,7 +389,7 @@ fn owner_records_decode_for_the_bench() {
             feed: 12,
             homed_ms: Some(3_990),
             outlet_breaks: 4,
-            phase: wellfed_core::feed::storage::RotorPhase::AtMark,
+            phase: wellfed_core_feeder::feed::storage::RotorPhase::AtMark,
         },
         None,
     );
@@ -410,8 +411,8 @@ fn owner_records_decode_for_the_bench() {
 /// one after the other.
 #[test]
 fn a_feeds_result_and_its_current_are_logged() {
-    use wellfed_core::feed::controller::FeedReason;
-    use wellfed_core::feed::storage::{OwnerOutcome, OwnerResult};
+    use wellfed_core_feeder::feed::controller::FeedReason;
+    use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerResult};
     use wellfed_feeder::feed::Durability;
     use wellfed_fw_feeder::feeding::Record;
     use wellfed_hal_feeder::owner::FeedTrace;
@@ -469,10 +470,10 @@ fn a_feeds_result_and_its_current_are_logged() {
 /// figures: a line that does not is dropped whole.
 #[test]
 fn a_feeds_records_fit_a_log_line_at_their_widest() {
-    use wellfed_core::feed::controller::FeedReason;
-    use wellfed_core::feed::storage::{OwnerOutcome, OwnerResult, RotorPhase};
-    use wellfed_core::record::Tag;
-    use wellfed_core::store::feed_journal::JournalError;
+    use wellfed_core_feeder::feed::controller::FeedReason;
+    use wellfed_core_feeder::feed::storage::{OwnerOutcome, OwnerResult, RotorPhase};
+    use wellfed_core_feeder::feed_journal::JournalError;
+    use wellfed_core_feeder::record::Tag;
     use wellfed_feeder::feed::Durability;
     use wellfed_fw_feeder::feeding::Record;
     use wellfed_hal_feeder::events::{EDGE_LOG, EventsFault, PinWatch};
@@ -591,7 +592,7 @@ fn a_feeds_records_fit_a_log_line_at_their_widest() {
 /// the owner's calibration runs.
 #[test]
 fn a_feeds_marks_and_outlet_breaks_are_logged() {
-    use wellfed_core::feed::storage::RotorPhase;
+    use wellfed_core_feeder::feed::storage::RotorPhase;
     use wellfed_fw_feeder::feeding::{Record, outlet_breaks};
     use wellfed_hal_feeder::events::PinWatch;
 

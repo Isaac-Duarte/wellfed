@@ -9,13 +9,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use wellfed_core::clock::zone::Zone;
-use wellfed_core::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_core::store::slot::crc32;
 use wellfed_core::tone::{PlayResult, Tune};
+use wellfed_core_feeder::schedule::{PLANS, Plan, Table, Weekdays};
 use wellfed_device::store::events::Read;
 use wellfed_device_api::mailbox::{
-    Asked, CallChange, CallClip, CallResult, MealReminder, MealSkip, PlansChange, PlansResult,
-    PlansView, SettingsFields, SettingsResult,
+    Asked, CallChange, CallClip, CallResult, FeederFields, MealReminder, MealSkip, PlansChange,
+    PlansResult, PlansView, SettingsFields, SettingsResult,
 };
 use wellfed_feeder::feeder::Platform;
 use wellfed_feeder::feeder::{self, schedule};
@@ -23,6 +23,7 @@ use wellfed_feeder_sim::banks::Banks;
 use wellfed_feeder_sim::flash::Flash;
 use wellfed_feeder_sim::harness;
 use wellfed_feeder_sim::sim::{Record, Sim};
+use wellfed_hal::interlock::WRITE_WAIT_MS;
 use wellfed_proto::api::{Blocked, EventBody, FeedOutcome, MissedReason, Refusal, Source};
 
 const MINUTE_MS: u64 = 60_000;
@@ -201,7 +202,10 @@ impl Feeder {
     /// Set the meal reminder, as a client's settings write does.
     fn remind(&mut self, reminder: MealReminder) {
         let fields = SettingsFields {
-            meal_reminder: Some(reminder),
+            kind: FeederFields {
+                meal_reminder: Some(reminder),
+                ..FeederFields::default()
+            },
             ..SettingsFields::default()
         };
         let queued = self.sim.platform().settings_request(fields, None);
@@ -210,7 +214,7 @@ impl Feeder {
             SettingsResult::Current { pending: true, .. }
         ));
         self.run(1);
-        let saved = self.sim.platform().settings().map(|s| s.meal_reminder);
+        let saved = self.sim.platform().settings().map(|s| s.kind.meal_reminder);
         assert_eq!(saved, Some(reminder));
     }
 
@@ -588,7 +592,7 @@ fn a_meal_behind_a_write_runs_once_when_its_claim_is_taken() {
 fn a_meal_past_its_claim_s_deadline_gives_its_occurrence_back_and_retries() {
     let mut feeder = breakfast();
     feeder.sim.hold_write(true);
-    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + 2_000);
+    feeder.run_until(WEDNESDAY + 7 * HOUR_MS + 30 * MINUTE_MS + u64::from(WRITE_WAIT_MS) - 1_000);
     assert!(feeder.plans().claim.is_some(), "still within its wait");
     feeder.run(2_000);
     assert_eq!(feeder.plans().claim, None, "given back");
@@ -727,7 +731,7 @@ fn reminded_breakfast(lead: u8) -> Feeder {
 fn the_reminder_is_off_by_default() {
     let mut feeder = breakfast();
     let settings = feeder.sim.platform().settings().unwrap();
-    assert_eq!(settings.meal_reminder, MealReminder::Off);
+    assert_eq!(settings.kind.meal_reminder, MealReminder::Off);
 
     feeder.run_until(BREAKFAST + MINUTE_MS);
     assert_eq!(feeder.fed().len(), 1);

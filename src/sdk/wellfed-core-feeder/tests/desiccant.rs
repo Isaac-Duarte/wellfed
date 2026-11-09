@@ -4,7 +4,9 @@
 
 use wellfed_core::clock::wall::Reading;
 use wellfed_core::clock::zone::Zone;
-use wellfed_core::desiccant::{Count, PERIOD_DEFAULT, PERIOD_MAX, PERIOD_MIN, period_valid, today};
+use wellfed_core_feeder::desiccant::{
+    Count, PERIOD_DEFAULT, PERIOD_MAX, PERIOD_MIN, period_valid, today,
+};
 
 /// US Mountain time: daylight from the second Sunday in March to the first
 /// Sunday in November (2026: March 8 and November 1, both at 02:00).

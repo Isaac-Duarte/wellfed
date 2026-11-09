@@ -11,15 +11,15 @@
 //! a cut reservation the committed state or a pending intent: no cut ever
 //! faults the journal.
 
-use wellfed_core::feed::controller::{FeedReason, FeedRequest};
-use wellfed_core::feed::progress::{BowlMode, Direction};
-use wellfed_core::feed::storage::{
+use wellfed_core::store::slot::{RECORD_BYTES, SlotIo, crc32};
+use wellfed_core_feeder::feed::controller::{FeedReason, FeedRequest};
+use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
+use wellfed_core_feeder::feed::storage::{
     OwnerOutcome, OwnerRecovery, OwnerResult, OwnerStorage, RotorPhase,
 };
-use wellfed_core::store::feed_journal::{
+use wellfed_core_feeder::feed_journal::{
     FeedJournal, JournalConfig, JournalError, REQUEST_ID_AT, REQUEST_ID_END,
 };
-use wellfed_core::store::slot::{RECORD_BYTES, SlotIo, crc32};
 use wellfed_testkit::journal_flash::{FakeJournalFlash, FlashIo, UNIT};
 
 /// Unit sizes for torn-write/restart coverage: the virtual feeder's 256, a
@@ -594,7 +594,7 @@ fn id_and_sequence_exhaustion() {
 
 #[test]
 fn wear_limit_refuses_new_reservations_but_never_strands_a_pending_one() {
-    use wellfed_core::store::feed_journal::WEAR_LIMIT;
+    use wellfed_core_feeder::feed_journal::WEAR_LIMIT;
 
     let mut f = FakeJournalFlash::default();
     let mut j = FeedJournal::default();

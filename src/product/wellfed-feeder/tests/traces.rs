@@ -3,8 +3,8 @@
 //! order, wrap, lookups and a power cut at every mutation of an append and
 //! of the erase that makes room.
 
-use wellfed_core::feed::controller::MotorCommand;
-use wellfed_core::feed::observe::{Beams, Observation};
+use wellfed_core_feeder::feed::controller::MotorCommand;
+use wellfed_core_feeder::feed::observe::{Beams, Observation};
 use wellfed_device::store::traces::{self, MAX_UNITS, TraceRing};
 use wellfed_feeder::trace::{DriveFigures, Recorder};
 use wellfed_proto::api::{

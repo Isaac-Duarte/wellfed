@@ -28,10 +28,10 @@ use crate::feeder::{DeviceView, Feeder, Feeds, NoFeeds, Platform, Record};
 use wellfed_core::buttons::{Button, Buttons, Gesture};
 use wellfed_device_api::clients::{Label, Role};
 use wellfed_device_api::mailbox::{
-    Asked, Calibration, CalibrationResult, CallChange, CallClip, CallResult, LockResult,
-    MealReminder, MealSkip, NtpServer, Origin, PLANS, Plan, PlansResult, SettingsFields,
-    SettingsResult, SettingsView, Table, TimeFields, TimeResult, TimeSettings, TimeSettingsResult,
-    TimeSettingsView, Weekdays, WifiResult, WifiView, Window, Zone,
+    Asked, Calibration, CalibrationResult, CallChange, CallClip, CallResult, FeederFields,
+    LockResult, MealReminder, MealSkip, NtpServer, Origin, PLANS, Plan, PlansResult,
+    SettingsFields, SettingsResult, SettingsView, Table, TimeFields, TimeResult, TimeSettings,
+    TimeSettingsResult, TimeSettingsView, Weekdays, WifiResult, WifiView, Window, Zone,
 };
 use wellfed_device_api::mailbox::{KeyResult, Requested};
 use wellfed_device_api::wifi::Credentials;
@@ -231,10 +231,13 @@ pub fn a_settings_change_lands_on_the_writer_turn(rig: &mut impl Rig) {
     assert_eq!(windowed.generation, after.generation + 1);
 
     // The meal reminder, off by default, lands on its own field.
-    assert_eq!(windowed.meal_reminder, MealReminder::Off);
+    assert_eq!(windowed.kind.meal_reminder, MealReminder::Off);
     let soon = MealReminder::Before { minutes: 15 };
     let reminder = SettingsFields {
-        meal_reminder: Some(soon),
+        kind: FeederFields {
+            meal_reminder: Some(soon),
+            ..FeederFields::default()
+        },
         ..SettingsFields::default()
     };
     assert!(matches!(
@@ -244,7 +247,7 @@ pub fn a_settings_change_lands_on_the_writer_turn(rig: &mut impl Rig) {
     rig.write();
 
     let reminded = settings_view(rig);
-    assert_eq!(reminded.meal_reminder, soon);
+    assert_eq!(reminded.kind.meal_reminder, soon);
     assert_eq!(reminded.lights_window, night);
     assert_eq!(reminded.generation, windowed.generation + 1);
 }
@@ -628,7 +631,10 @@ pub fn a_calibration_lands_and_weighs_the_portions(rig: &mut impl Rig) {
 /// status's count from the full period.
 pub fn the_desiccant_count_follows_the_clock_and_its_reset(rig: &mut impl Rig) {
     let before = settings_view(rig);
-    assert_eq!((before.desiccant_days, before.desiccant_reset), (14, None));
+    assert_eq!(
+        (before.kind.desiccant_days, before.kind.desiccant_reset),
+        (14, None)
+    );
     assert_eq!(device(rig, 0, |device| device.today(0)), None);
     let status = device(rig, 0, |device| device.status(0));
     assert_eq!(feeder(&status).desiccant, Desiccant::Unset);
@@ -646,7 +652,10 @@ pub fn the_desiccant_count_follows_the_clock_and_its_reset(rig: &mut impl Rig) {
     assert_eq!(today, Some(20_754));
 
     let reset = SettingsFields {
-        desiccant_reset: today,
+        kind: FeederFields {
+            desiccant_reset: today,
+            ..FeederFields::default()
+        },
         ..SettingsFields::default()
     };
     assert!(matches!(
@@ -655,7 +664,7 @@ pub fn the_desiccant_count_follows_the_clock_and_its_reset(rig: &mut impl Rig) {
     ));
     rig.write();
     let after = settings_view(rig);
-    assert_eq!(after.desiccant_reset, today);
+    assert_eq!(after.kind.desiccant_reset, today);
     assert_eq!(after.generation, before.generation + 1);
     let status = device(rig, 0, |device| device.status(0));
     assert_eq!(feeder(&status).desiccant, Desiccant::Remaining { days: 14 });

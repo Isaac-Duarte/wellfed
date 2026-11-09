@@ -7,8 +7,8 @@
 
 use core::ffi::c_void;
 
-use wellfed_core::feed::controller::MotorCommand;
-use wellfed_core::feed::motor_gate::{MotorGate, MotorGateFault, MotorPins};
+use wellfed_core_feeder::feed::controller::MotorCommand;
+use wellfed_core_feeder::feed::motor_gate::{MotorGate, MotorGateFault, MotorPins};
 
 #[derive(Default)]
 struct Output {

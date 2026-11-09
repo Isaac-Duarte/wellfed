@@ -27,14 +27,14 @@
 //!
 //! **A claim behind writes.** A feed that finds storage writes ahead of it is
 //! accepted and numbered, and its claim on the outputs is tried once a pass
-//! ([`Feeds::claim_step`]) for at most 3 s, the loop serving everything else
+//! ([`Feeds::claim_step`]) for at most `WRITE_WAIT_MS` (5 s), the loop serving everything else
 //! meanwhile. So a `queue` that returns a number has not started anything yet:
 //! a client's answer waits for the reservation, as it always did, and a press
 //! or a plan hears a late refusal through [`super::Feeder`]'s own pass, with
 //! the same consequences an immediate one has.
 //!
 //! **Food level.** The food beam is lit during feeds and in a short window at
-//! rest (`wellfed_core::feed::food_read`), so its level is the latest of
+//! rest (`wellfed_core_feeder::feed::food_read`), so its level is the latest of
 //! either's. With no feed in flight, a level that differs from the last one
 //! seen this boot is a `Food` event ([`Watch::food`]): at most one a feed or a
 //! window, however the beam flickers as the last kibble passes. A boot's first

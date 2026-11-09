@@ -12,10 +12,10 @@ const fn at(first: u32, count: u32) -> Sectors {
 #[test]
 fn storage_region_and_sector_map_are_pinned() {
     assert_eq!(STORAGE_OFFSET, 0x34_0000);
-    assert_eq!(STORAGE_SECTORS, 48);
+    assert_eq!(STORAGE_SECTORS, 50);
     // Grown upward only: 0x340000 stays the first sector, and the end stays
     // under stock's settings at 0x3e8000.
-    assert_eq!(STORAGE_OFFSET + STORAGE_SECTORS * 0x1000, 0x37_0000);
+    assert_eq!(STORAGE_OFFSET + STORAGE_SECTORS * 0x1000, 0x37_2000);
 
     assert_eq!(storage::JOURNAL, at(0, 2));
     assert_eq!(storage::SETTINGS, at(2, 2));
@@ -33,6 +33,7 @@ fn storage_region_and_sector_map_are_pinned() {
     assert_eq!(storage::RESET, at(36, 1));
     assert_eq!(storage::UPLINK, at(37, 3));
     assert_eq!(storage::CALL, at(40, 8));
+    assert_eq!(storage::FEEDER_SETTINGS, at(48, 2));
 
     assert_eq!(
         storage::ALL,
@@ -53,6 +54,7 @@ fn storage_region_and_sector_map_are_pinned() {
             storage::RESET,
             storage::UPLINK,
             storage::CALL,
+            storage::FEEDER_SETTINGS,
         ]
     );
 }
@@ -61,7 +63,8 @@ fn storage_region_and_sector_map_are_pinned() {
 /// journal, calibration, update store, confirmation and seed, and the
 /// statistics, which it rewrites keeping the erase counts) and erases
 /// every other sector, clients first: the uplink store's reserved sectors
-/// among them, and whatever a later build allocates.
+/// and the feeder's settings among them, and whatever a later build
+/// allocates.
 #[test]
 fn the_factory_reset_clears_every_sector_it_does_not_keep() {
     let cleared: Vec<u32> = (0..storage::FACTORY_CLEARED_SECTORS)
@@ -73,7 +76,7 @@ fn the_factory_reset_clears_every_sector_it_does_not_keep() {
             .into_iter()
             .chain(13..25)
             .chain(27..32)
-            .chain(37..48)
+            .chain(37..50)
             .collect::<Vec<u32>>()
     );
     assert_eq!(
@@ -110,6 +113,10 @@ fn the_handover_clears_every_sector_it_does_not_keep() {
         .map(|index| storage::handover_cleared(index).unwrap())
         .collect();
     assert_eq!(cleared, [5, 6, 11, 12, 37, 38, 39]);
+    assert!(
+        storage::HANDOVER_KEPT.contains(&storage::FEEDER_SETTINGS),
+        "the feeder's settings stay with the device's"
+    );
     assert_eq!(
         storage::handover_cleared(storage::HANDOVER_CLEARED_SECTORS),
         None

@@ -10,7 +10,7 @@ It fits.
 - **Heap:** about 120 KB free in Bluetooth setup mode, the tightest case.
 - **Tasks:** none spare, by design. Everything new joins the loop task.
 - **Latency:** three rules keep the loop responsive: one handshake operation per pass, feeds and Wi-Fi joins take turns, and logging never holds the scheduler.
-- **Storage:** a 48-sector region with 3 sectors still free; the meal call's clip takes the last 8.
+- **Storage:** a 50-sector region with 3 sectors still free; the meal call's clip takes 8 and the feeder's settings the last 2.
 
 ## Flash
 
@@ -87,7 +87,7 @@ A firmware gets four tasks (`FIRMWARE_TASKS`). The product uses two:
 
 **Code the listing hid.** The pinned objdump lists some instructions inside a function as data, such as `blx r3` as `.short 0x4798`, so the audit could miss a call or a frame there. It now disassembles a copy with the mapping symbols stripped, so every byte decodes as Thumb, reads the symbols with `readelf` to tell which lines are a literal pool or a table, and refuses an image with code that still doesn't decode, mapping symbols that disagree at one address, or a function that starts where no Thumb symbol says code runs. A pool decoded as Thumb can leave objdump in an IT block of its own making, so the real code after it prints conditional (`pushhi`, `subhi sp`); every pattern the audit reads takes a condition, so those frames and calls still count. On the bench `firstboot` feeder at the same source no loop frame moved: the loop's bound stayed 5,344 B, and the Wi-Fi task's rose 8 B, from 1,976 B to 1,984 B. The lists of unbounded vendor calls grew (the loop's from 21 to 27, the Wi-Fi task's from 20 to 126), and under the old reader they changed from build to build as code moved, since what it misread depended on the layout. The other audits that read `objdump -d` (`writes`, `mains`, `park`, `hooks`) still read the unstripped listing.
 
-**The Wi-Fi task.** `example_entry.c` creates `wellfed_wifi` (1,280 words, 5 KiB) so its stack stays sized for the vendor driver's calls, and its body is Rust (`wellfed_wifi_run`). The audit walks it from its C entry, so its Rust frames and the vendor C it calls directly count; the driver's own indirect calls are listed and left to the margin. Its bound is 1,984 B of 5,120 in the consumer `firstboot` feeder build. The deepest path is the credential select's flash-mapped read of the stored credentials (`select > NetStore::open > DualSlot::scan > decode`), down to a slice index's panic. Under each vendor call the Rust holds about 290 B: the driver's loop with the task's machine (144 B), its step (64 B) and the call's dispatch (64 B), with the C wrapper's few bytes above.
+**The Wi-Fi task.** `example_entry.c` creates `wellfed_wifi` (1,280 words, 5 KiB) so its stack stays sized for the vendor driver's calls, and its body is Rust (`wellfed_wifi_run`). The audit walks it from its C entry, so its Rust frames and the vendor C it calls directly count; the driver's own indirect calls are listed and left to the margin. Its bound is 2,040 B of 5,120 in the `firstboot` feeder builds, bench and consumer alike. The deepest path is the credential select's read of the stored credentials (`select > NetStore::open > DualSlot::scan > decode > Credentials::new`), down to a slice copy's length-mismatch panic. Under each vendor call the Rust holds about 290 B: the driver's loop with the task's machine (144 B), its step (64 B) and the call's dispatch (64 B), with the C wrapper's few bytes above.
 
 **Outside the audit.** The stack audit takes its roots from the firmware's `spawn` calls and the Wi-Fi task's entry, so other C-created tasks are outside it:
 
@@ -214,7 +214,7 @@ How each case plays out:
 - **A join during a feed** waits in the Wi-Fi task, looking again every 50 ms, and marks itself waiting. A second feed is then refused (`held=2`), and the release hands the turn straight to the join, so back-to-back feeds cannot starve it.
 - **Joins cannot starve feeds.** An attempt ends within the task's 10 s scan wait, plus one association and one DHCP run, and attempts back off at least 1 s. Only the vendor SDK's own timeouts inside `wifi_connect` and `LwIP_DHCP`, prebuilt and not in this repository, bound the association and DHCP runs. So the loop counts a join that holds its turn past 60 s (`LONG_JOIN_MS`, logged as `PLOWN1 joins … long_joins=`). Feeds stay refused while it does.
 - **No deadlock.** A join waits at most the claim's bound, `FEED_BOUND_MS`: the owner's `optics_max_on_ms` plus 2 s, which is 580 s for 48 portions. (The owner's configuration check holds the prepare timeout and the longest drive inside `optics_max_on_ms`.) Past the bound the join goes ahead and is counted as forced (`PLOWN1 joins … forced=`). A loop that stops stepping during a feed resets through the beat long before then.
-- **Storage writes take a turn too.** A flash lease while the outputs may move fails its stopped-outputs check and resets the board. So every store write outside the feed journal takes the write turn (`WriteTurn::begin`) for one record, granted only while no feed holds the outputs ([device API](device-api.md#no-flash-write-while-the-motor-may-move)). A claim waits at most `WRITE_WAIT_MS` for writes: 3 s, one record's three leases at their whole budget plus `WRITER_POLL_MS` (500 ms), the slowest writer poll in the service task. The loop tries the claim once a pass and never sleeps for it. A write still running, or a client's change still in its mailbox, then refuses the feed (`held=3`). Waiting writers are passed, since they have not started. Writes and joins do not wait for each other.
+- **Storage writes take a turn too.** A flash lease while the outputs may move fails its stopped-outputs check and resets the board. So every store write outside the feed journal takes the write turn (`WriteTurn::begin`) for one record, or for a settings change's two, granted only while no feed holds the outputs ([device API](device-api.md#no-flash-write-while-the-motor-may-move)). A claim waits at most `WRITE_WAIT_MS` for writes: 5 s, two records' three leases each at their whole budget (a settings change writes the device's record and the feeder's in one turn) plus `WRITER_POLL_MS` (500 ms), the slowest writer poll in the service task. The loop tries the claim once a pass and never sleeps for it. A write still running, or a client's change still in its mailbox, then refuses the feed (`held=3`). Waiting writers are passed, since they have not started. Writes and joins do not wait for each other.
 - **The cost.** Feeds are refused for a whole attempt, scan and DHCP included, though only the association stalls. While the network is away, that is the scan (up to 10 s) every backoff (1–30 s). Narrowing the turn to the association alone would mean ending it between scan and connect.
 
 ## Clients, request IDs and buffers
@@ -232,16 +232,17 @@ How each case plays out:
 
 ## The storage region
 
-The replacement's storage lives at 0x340000–0x370000: 48 sectors of 4 KiB. The full sector map is in [pairing](pairing.md#storage-sectors).
+The replacement's storage lives at 0x340000–0x372000: 50 sectors of 4 KiB. The full sector map is in [pairing](pairing.md#storage-sectors).
 
-**Why it grew.** The original region was 16 sectors (0x340000–0x350000). The journal (sectors 0–1), settings (2–3), confirmation (4) and Wi-Fi (5–6) left 9 free sectors, 36 KB. Client keys and schedules needed a few of those too, so a 12-sector event ring did not fit, and 16 sectors would have meant about 3 days of history. So the owner extended the region to 32 sectors (0x340000–0x360000), then to 48 (0x340000–0x370000) for the lifetime statistics.
+**Why it grew.** The original region was 16 sectors (0x340000–0x350000). The journal (sectors 0–1), settings (2–3), confirmation (4) and Wi-Fi (5–6) left 9 free sectors, 36 KB. Client keys and schedules needed a few of those too, so a 12-sector event ring did not fit, and 16 sectors would have meant about 3 days of history. So the owner extended the region to 32 sectors (0x340000–0x360000), then to 48 (0x340000–0x370000) for the lifetime statistics, and on November 9, 2026 to 50 (0x340000–0x372000), when the feeder's settings moved out of the device's record into their own (sectors 48–49).
 
 **Why that space is safe to use.**
 
 - A static pass over stock 1.1.15 found no fixed or bounded computed flash access in 0x306000–0x3e8000.
-- All 15 full dumps of the research unit are blank there, nine of them from before the replacement ran.
+- All 15 full dumps of the research unit are blank there, nine of them from before the replacement ran. That covers 0x370000–0x372000, the last two sectors added.
+- The factory loader only selects between the two banks, checking bank 1's marker and then bank 0's ([bank policy](bank-policy.md), modeled), and never writes flash; the blank dumps, taken after many loader boots, agree.
 - The area is headroom left by the vendor's shifted SDK layout. Only an oversized OTA image (over about 1.79 MB) or the UART console's `FLASH` command could reach it.
-- 0x370000 is still 480 KiB below stock's settings at 0x3e8000.
+- 0x372000 is still 472 KiB below stock's settings at 0x3e8000.
 - The region grows only upward, so bank 1's room is unchanged.
 
 **Stock's clock block.** The same pass found that stock's clock checkpoint save block-erases **0x3f0000–0x400000**, 64 KiB at a time, at minute 30 and on save. It is in `layout.json`'s preserve ranges (`clock_checkpoint_block`). Nothing of ours is near it.

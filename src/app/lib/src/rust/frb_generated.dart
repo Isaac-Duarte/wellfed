@@ -8559,8 +8559,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SettingsView dco_decode_settings_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 10)
-      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return SettingsView(
       generation: dco_decode_u_32(arr[0]),
       lights: dco_decode_bool(arr[1]),
@@ -8572,6 +8572,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       desiccantReplaced: dco_decode_opt_String(arr[7]),
       mealReminder: dco_decode_meal_reminder(arr[8]),
       writable: dco_decode_bool(arr[9]),
+      repairing: dco_decode_bool(arr[10]),
     );
   }
 
@@ -13836,6 +13837,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_desiccantReplaced = sse_decode_opt_String(deserializer);
     var var_mealReminder = sse_decode_meal_reminder(deserializer);
     var var_writable = sse_decode_bool(deserializer);
+    var var_repairing = sse_decode_bool(deserializer);
     return SettingsView(
       generation: var_generation,
       lights: var_lights,
@@ -13847,6 +13849,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       desiccantReplaced: var_desiccantReplaced,
       mealReminder: var_mealReminder,
       writable: var_writable,
+      repairing: var_repairing,
     );
   }
 
@@ -18912,6 +18915,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.desiccantReplaced, serializer);
     sse_encode_meal_reminder(self.mealReminder, serializer);
     sse_encode_bool(self.writable, serializer);
+    sse_encode_bool(self.repairing, serializer);
   }
 
   @protected

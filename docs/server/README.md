@@ -64,7 +64,7 @@ Some conventions hold across the API:
 
 - **Errors** are RFC 9457 `application/problem+json`, with a typed `code`. There is no free-text error. A client reads a code it doesn't know as `unknown`, still a refusal.
 - **Writes** carry an `Idempotency-Key` header (a UUID). A feed requires one.
-- **Edits** carry `If-Match` with the generation of the settings, plans or calibration they change. A stale one gets `412` with the current settings, plans or calibration.
+- **Edits** carry `If-Match` with the generation of the settings, plans or calibration they change. A stale one gets `412` with the current settings, plans or calibration. A feeder whose two settings records disagree holds its settings read-only until it repairs them: a read then carries no `ETag` (`generation` reads `4294967295`, `writable` false), and an edit gets `409` with the feeder's `not_writable` refusal, whatever it names.
 - **The meal call** goes up as the feeder's own stream (`PUT /feeders/{id}/call`, `application/octet-stream`), converted on the client. The server converts nothing and checks only its length, as the feeder does. It sends the clip a chunk at a time beside feeds and status reads, and answers once the feeder stores it.
   - A retry under the same key after `outcome_unknown` sends only what the feeder lacks.
   - A retry never undoes a later change. It is `409 superseded`, and sends nothing, if the feeder holds another clip than its first send found. The same goes for an upload the feeder had begun, once the feeder no longer holds its clip.

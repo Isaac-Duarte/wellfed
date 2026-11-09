@@ -5,8 +5,8 @@
 //! the motor gate's applied drive matched the controller's command. Every
 //! call must be serialized by the caller, and a queue fault is sticky.
 
-use crate::HALF_RANGE;
 use crate::feed::controller::{FeedController, FeedReason, FeedSample, FeedState, MotorCommand};
+use wellfed_core::HALF_RANGE;
 
 pub const CAPACITY: usize = 32;
 

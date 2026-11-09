@@ -334,6 +334,44 @@ fn a_retried_write_gets_its_first_answer_even_after_a_reconnect() {
     );
 }
 
+/// A settings write the writer could not save is refused `NotWritable`,
+/// never answered `Done`, and leaves the settings and their generation as
+/// they were, with no event.
+#[test]
+fn a_settings_write_answers_what_the_writer_did() {
+    let mut rig = Rig::new();
+    let mut owner = open(&mut rig, OWNER);
+    let put = |base, volume| Op::PutSettings {
+        base: Generation(base),
+        changes: FeederSettingsPatch {
+            volume: Some(volume),
+            ..FeederSettingsPatch::default()
+        },
+    };
+
+    rig.device.settings_fails = true;
+    let failed = ask(&mut rig, &mut owner, 1, put(7, 60));
+    assert_eq!(failed, Answer::Refused(model::Refusal::NotWritable));
+    let Answer::Settings(settings) = ask(&mut rig, &mut owner, 2, Op::GetSettings) else {
+        panic!("the settings");
+    };
+    assert_eq!(settings.generation(), Some(Generation(7)));
+    assert!(
+        !rig.device
+            .events
+            .iter()
+            .any(|e| matches!(e.body, EventBody::Settings { .. }))
+    );
+
+    let done = ask(&mut rig, &mut owner, 3, put(7, 60));
+    assert_eq!(
+        done,
+        Answer::Done {
+            generation: Some(Generation(8))
+        }
+    );
+}
+
 /// A time settings write answers `Done` with the new generation once the
 /// store holds it, `Done` too when it changed nothing, and is refused when
 /// the writer could not make it, rather than answered with the old

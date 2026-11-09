@@ -35,7 +35,7 @@
 //! this boot activated that then confirms clears the candidate with no
 //! restart, so that is recorded too, as `UpdateConfirmed`.
 
-use wellfed_core::schedule::latest_due;
+use wellfed_core_feeder::schedule::latest_due;
 use wellfed_device_api::SESSIONS;
 use wellfed_device_api::mailbox::{PLANS, PlansResult};
 use wellfed_proto::api::{Blocked, EventBody, Readiness, Supply, UpdateCandidate, UpdateStop};

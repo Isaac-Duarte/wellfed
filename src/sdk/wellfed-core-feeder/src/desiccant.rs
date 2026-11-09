@@ -1,12 +1,13 @@
 //! The desiccant reminder: how many days are left before the hopper's
 //! desiccant pack is due for replacement.
 //!
-//! The settings record keeps the period and the local calendar day of the
-//! last replacement, never a count, so the reminder survives any number of
-//! restarts and needs no write as days pass. The feeder has no battery-backed
-//! clock: after a cold boot it cannot tell the date until a time source
-//! syncs, so the count is unknown until then, and a replacement is recorded
-//! only with a valid clock rather than on a guessed date.
+//! The feeder's settings record keeps the period and the local calendar
+//! day of the last replacement, never a count, so the reminder survives any
+//! number of restarts and needs no write as days pass. The feeder has no
+//! battery-backed clock: after a cold boot it cannot tell the date until a
+//! time source syncs, so the count is unknown until then, and a
+//! replacement is recorded only with a valid clock rather than on a
+//! guessed date.
 //!
 //! Days are calendar days of the feeder's local time (UTC while it knows no
 //! offset), so a daylight change, which makes one day 23 or 25 hours long,
@@ -14,7 +15,7 @@
 //! P days leaves P days that day, and is due (0 left) on day D + P; the count
 //! goes on below zero after that, as stock's cloud reported it.
 
-use crate::clock::wall::Reading;
+use wellfed_core::clock::wall::Reading;
 
 /// The shortest period between replacements, in days.
 pub const PERIOD_MIN: u8 = 1;

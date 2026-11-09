@@ -22,7 +22,7 @@ The loop keeps the figures in RAM as it runs (`wellfed_feeder::stats::Keeper`): 
 - **Food is the latest reading.** The beam is read only while the emitters are on, during a feed or a [window at rest](optical-inputs.md#reading-the-food-beam-at-rest). So `Food::present` is `None` until the first reading of a boot (`Status.food` reads `Unread`), and then the latest. A window never blocks a feed or changes readiness.
 - **Lifetime figures** (`Counters::lifetime`, `resets`, `Flash::lifetime`) are the stored totals plus this boot's figures.
 
-**The store** (`wellfed_feeder::store::stats`, sectors 32–33 of the 48-sector region) is one 320-byte dual-slot record (`PLFSTA01`, major 2). It holds the ten counts, boots by reset cause, erases of every storage sector and of bank 1, the early-save budget, and 32 spare bytes. It keeps all 48 sectors' erases, though the wire's `Erases` lists the first 32. Newest valid wins, so a cut save loses only that save. A later count goes in the spare room or past the record's end, as a minor older builds keep ([record versions](pairing.md#record-versions)). Over a record this build can't read, the totals start again from zero and the next save replaces it (`stats open status=lost wear_lost=1`). Only a newer major leaves the store read-only.
+**The store** (`wellfed_feeder::store::stats`, sectors 32–33 of the 50-sector region) is one 320-byte dual-slot record (`PLFSTA01`, major 2, minor 1). It holds the ten counts, boots by reset cause, erases of every storage sector and of bank 1, the early-save budget, and 24 spare bytes. Minor 1 added sectors 48 and 49's erases when the region grew; a minor-0 record reads with them zero. It keeps all 50 sectors' erases, though the wire's `Erases` lists the first 32. Newest valid wins, so a cut save loses only that save. A later count goes in the spare room or past the record's end, as a minor older builds keep ([record versions](pairing.md#record-versions)). Over a record this build can't read, the totals start again from zero and the next save replaces it (`stats open status=lost wear_lost=1`). Only a newer major leaves the store read-only.
 
 **At boot** the writer loads it, adds this boot to its reset cause (from the ROM's flags, as `Counters::reset`) and publishes it for the loop (`PLCFG1 stats open status= generation= early= missed=`). The loop hands this boot's counts to the writer every 30 s beside the signal sample, again as each feed ends, and just before it asks for a restart. The loop never writes.
 
@@ -53,7 +53,7 @@ The live metrics that go beside the statistics are in [samples](device-api-ops.m
 
 The feeder keeps what each feed's drive measured, poll by poll, in RAM and then in its own storage, so an owner can read it without a UART or a server: `wellfed trace <feed>` (`--json` for the whole trace). It is a feeder op (`FeederOp::FeedTrace`).
 
-**Recorded after each owner step, never inside it.** The feeding owner keeps one `Observation` (`wellfed_core::feed::observe`) per poll of a feed being prepared or driven:
+**Recorded after each owner step, never inside it.** The feeding owner keeps one `Observation` (`wellfed_core_feeder::feed::observe`) per poll of a feed being prepared or driven:
 
 - the current channel (PB1, ADC channel 4);
 - the battery pack in millivolts;

@@ -66,6 +66,8 @@ pub use update::{
     Bank0Blocked, Bank0Check, Bank1Page, UpdateCandidate, UpdatePhase, UpdateRefusal, UpdateStop,
     UpdateView,
 };
+/// What a feeder's settings report as their generation while it has none.
+pub use wellfed_proto::api::NO_SETTINGS_GENERATION;
 /// The desiccant reminder's period limits and default, in days.
 pub use wellfed_proto::api::{
     DESICCANT_DAYS_DEFAULT, DESICCANT_DAYS_MAX, DESICCANT_DAYS_MIN, MEAL_REMINDER_MINUTES_MAX,
@@ -84,6 +86,42 @@ pub struct Generation(pub u32);
 impl fmt::Display for Generation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl Generation {
+    /// A feeder's settings generation as it reports it: `None` for
+    /// [`wellfed_proto::api::NO_SETTINGS_GENERATION`], which it reports,
+    /// read-only, while its two settings records share none.
+    pub const fn settings(raw: u32) -> Option<Self> {
+        if raw == wellfed_proto::api::NO_SETTINGS_GENERATION {
+            None
+        } else {
+            Some(Self(raw))
+        }
+    }
+}
+
+/// A settings generation that may be none, in JSON as the feeder sends it:
+/// a number always, [`wellfed_proto::api::NO_SETTINGS_GENERATION`] for
+/// none, so `/api/v1` keeps the field's type for older readers.
+pub(crate) mod settings_generation {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    use super::Generation;
+
+    pub(crate) fn serialize<S: Serializer>(
+        generation: &Option<Generation>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let raw = generation.map_or(wellfed_proto::api::NO_SETTINGS_GENERATION, |g| g.0);
+        serializer.serialize_u32(raw)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Generation>, D::Error> {
+        u32::deserialize(deserializer).map(Generation::settings)
     }
 }
 

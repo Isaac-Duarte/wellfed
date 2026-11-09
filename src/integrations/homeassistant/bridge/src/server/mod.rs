@@ -687,7 +687,12 @@ impl<'a> Session<'a> {
 
         let facts = &self.memory.facts;
         let read = writes::Read {
-            settings: facts.settings.as_ref().map(|settings| settings.generation),
+            // A view with no generation (read-only while the feeder
+            // repairs its settings) gives a write nothing to name.
+            settings: facts
+                .settings
+                .as_ref()
+                .and_then(|settings| settings.generation),
             plans: facts.plans.as_ref(),
             calibration: self.memory.calibration.as_ref(),
         };

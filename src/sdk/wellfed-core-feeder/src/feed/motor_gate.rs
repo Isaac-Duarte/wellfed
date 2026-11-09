@@ -6,8 +6,8 @@
 //! `lease_ms`, which an independent timer tick enforces while the owner
 //! stalls. Any fault latches STOP.
 
-use crate::HALF_RANGE;
 use crate::feed::controller::MotorCommand;
+use wellfed_core::HALF_RANGE;
 
 /// The motor pin pair.
 pub trait MotorPins {

@@ -6,11 +6,11 @@ use std::time::{Duration, Instant};
 use wellfed_client::api::{Error, Incoming, Session};
 use wellfed_client::connection::{Connection, Event, Timing};
 use wellfed_core::clock::wall::WallClock;
-use wellfed_core::desiccant::Count;
 use wellfed_core::log_tail::{Batch as LogBatch, LogTail};
 use wellfed_core::tone::Tune;
+use wellfed_core_feeder::desiccant::Count;
 use wellfed_device_api::clients::{CLIENTS, Client, Label, Role};
-use wellfed_device_api::mailbox::{Asked, KEYS_FINISHED};
+use wellfed_device_api::mailbox::{Asked, FeederSettings, KEYS_FINISHED, KindSettings as _};
 use wellfed_device_api::mailbox::{
     LockResult, Origin, PlayResult, SettingsFields, SettingsResult, SettingsView, TimeFields,
     TimeResult, TimeSettings, TimeSettingsResult, TimeSettingsView, TimeState, WifiResult,
@@ -95,6 +95,8 @@ pub(crate) struct Fake {
     pub(crate) time_pending: Option<TimeSettings>,
     /// The writer's next time save fails, leaving the store as it was.
     pub(crate) time_fails: bool,
+    /// The writer's next settings save fails: nothing saved, no event.
+    pub(crate) settings_fails: bool,
     /// Keeps a log tail, `tail`.
     pub(crate) log: bool,
     pub(crate) tail: LogTail<4096>,
@@ -133,7 +135,7 @@ impl Fake {
                 lights: true,
                 sound: true,
                 volume: 40,
-                desiccant_days: 14,
+                kind: FeederSettings::DEFAULT,
                 generation: 7,
                 writable: true,
                 ..Default::default()
@@ -166,6 +168,10 @@ impl Fake {
     /// The settings writer's turn: apply what is queued, and record each
     /// client change's event as it saves it.
     pub(crate) fn write(&mut self) {
+        if let Some(Asked { .. }) = self.settings_pending.take_if(|_| self.settings_fails) {
+            self.settings_fails = false;
+            self.settings.saved.finish(true);
+        }
         if let Some(Asked { change: fields, by }) = self.settings_pending.take() {
             self.settings.lights = fields.lights.unwrap_or(self.settings.lights);
             self.settings.sound = fields.sound.unwrap_or(self.settings.sound);
@@ -173,12 +179,9 @@ impl Fake {
             self.settings.lights_window =
                 fields.lights_window.unwrap_or(self.settings.lights_window);
             self.settings.sound_window = fields.sound_window.unwrap_or(self.settings.sound_window);
-            self.settings.desiccant_days = fields
-                .desiccant_days
-                .unwrap_or(self.settings.desiccant_days);
-            self.settings.desiccant_reset =
-                fields.desiccant_reset.or(self.settings.desiccant_reset);
+            self.settings.kind = self.settings.kind.changed(&fields.kind);
             self.settings.generation += 1;
+            self.settings.saved.finish(false);
             let generation = self.settings.generation;
             self.record(0, EventBody::Settings { generation, by });
         }
@@ -279,7 +282,7 @@ impl Device for Fake {
             device: DeviceStatus::Feeder(FeederStatus {
                 locked: self.locked,
                 settings_generation: self.settings.generation,
-                desiccant: match self.settings.desiccant(self.today) {
+                desiccant: match self.settings.kind.desiccant(self.today) {
                     Count::Unset => proto::Desiccant::Unset,
                     Count::Unknown => proto::Desiccant::Unknown,
                     Count::Remaining(days) => proto::Desiccant::Remaining { days },

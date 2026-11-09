@@ -100,7 +100,10 @@ impl DeviceStatus {
 pub struct FeederStatus {
     /// The panel's child lock; `None` before it is known.
     pub locked: Option<bool>,
-    pub settings_generation: Generation,
+    // `None` while the feeder's settings records share no generation.
+    #[serde(with = "crate::settings_generation")]
+    #[schema(value_type = Generation, required = true)]
+    pub settings_generation: Option<Generation>,
     /// The hopper as the food beam last read it, in a feed or at rest.
     pub food: FoodLevel,
     /// The last feed this boot that ended on a fault (failed or
@@ -327,10 +330,11 @@ impl Settings {
 
     /// The settings store's generation: it goes back in `If-Match` with a
     /// change, and is the `ETag` of a read. `None` for a kind this build
-    /// cannot read, whose settings it never changes.
+    /// cannot read, whose settings it never changes, and while a feeder's
+    /// settings records share none (read-only until it repairs them).
     pub const fn generation(&self) -> Option<Generation> {
         match self {
-            Self::Feeder(settings) => Some(settings.generation),
+            Self::Feeder(settings) => settings.generation,
             Self::Unknown => None,
         }
     }
@@ -348,7 +352,11 @@ impl Settings {
 /// change, and is the `ETag` of a read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct FeederSettings {
-    pub generation: Generation,
+    // `None` while the feeder's two settings records share no generation:
+    // then `writable` is false, and nothing may name one in `If-Match`.
+    #[serde(with = "crate::settings_generation")]
+    #[schema(value_type = Generation, required = true)]
+    pub generation: Option<Generation>,
     pub lights: bool,
     pub sound: bool,
     /// 0-100.

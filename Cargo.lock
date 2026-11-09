@@ -5283,6 +5283,7 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror 2.0.21",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-feeder",
@@ -5319,6 +5320,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wellfed-core-feeder"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "wellfed-core",
+ "wellfed-testkit",
+]
+
+[[package]]
 name = "wellfed-device"
 version = "0.1.0"
 dependencies = [
@@ -5337,6 +5347,7 @@ dependencies = [
  "proptest",
  "serde",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-proto",
  "wellfed-session",
  "wellfed-signed",
@@ -5386,6 +5397,7 @@ version = "0.1.0"
 dependencies = [
  "thiserror 2.0.21",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-proto",
@@ -5399,6 +5411,7 @@ name = "wellfed-feeder-runtime"
 version = "0.1.0"
 dependencies = [
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-device-runtime",
@@ -5427,6 +5440,7 @@ dependencies = [
  "wellfed-client",
  "wellfed-connect",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-device-sim",
@@ -5434,6 +5448,7 @@ dependencies = [
  "wellfed-feeder-sim",
  "wellfed-formats",
  "wellfed-hal",
+ "wellfed-hal-feeder",
  "wellfed-model",
  "wellfed-proto",
  "wellfed-session",
@@ -5502,6 +5517,7 @@ version = "0.1.0"
 dependencies = [
  "wellfed-client",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-device",
  "wellfed-device-api",
  "wellfed-device-runtime",
@@ -5566,6 +5582,7 @@ version = "0.1.0"
 dependencies = [
  "wellfed-board",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-hal",
  "wellfed-testkit",
 ]
@@ -5639,6 +5656,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-formats",
  "wellfed-model",
  "wellfed-relay",
@@ -5687,6 +5705,7 @@ name = "wellfed-probes"
 version = "0.1.0"
 dependencies = [
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-hal",
  "wellfed-hal-feeder",
  "wellfed-sdk",
@@ -5934,6 +5953,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "wellfed-core",
+ "wellfed-core-feeder",
  "wellfed-formats",
  "wellfed-hal",
  "wellfed-hal-feeder",

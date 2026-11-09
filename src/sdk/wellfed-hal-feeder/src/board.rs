@@ -18,10 +18,10 @@ use core::ptr;
 
 use wellfed_core::HALF_RANGE;
 use wellfed_core::adc_scale::{AdcCalibration, SAMPLES};
-use wellfed_core::feed::controller::MotorCommand;
-use wellfed_core::feed::motor_gate::{MotorGate, MotorGateFault, MotorPins};
-use wellfed_core::feed::sensor_inputs::SensorReading;
 use wellfed_core::flash_coord::FlashCoord;
+use wellfed_core_feeder::feed::controller::MotorCommand;
+use wellfed_core_feeder::feed::motor_gate::{MotorGate, MotorGateFault, MotorPins};
+use wellfed_core_feeder::feed::sensor_inputs::SensorReading;
 
 use wellfed_board::pins::{
     ADAPTER, ADC_BATTERY, ADC_CURRENT, FEEDBACK, FOOD, IR_PA, IR_PB, MOTOR_A_BIT, MOTOR_B_BIT,

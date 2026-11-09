@@ -40,6 +40,7 @@ use wellfed_feeder::feeder::platform::{
 };
 use wellfed_feeder::feeder::supply::Radio;
 use wellfed_feeder::stats::Totals;
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_feeder_runtime::{calibration, call, plans, stats, traces};
 use wellfed_proto::api::{Counts, Erases, FLASH_SECTORS, Power, Refusal, TASKS_MAX};
 use wellfed_proto::device::{DeviceKind, Model};
@@ -50,7 +51,7 @@ use wellfed_sdk::hal::interlock::INTERLOCK;
 use wellfed_sdk::hal::leds::{self, Decision, Led};
 use wellfed_sdk::hal::ota::mailbox::{self, Request};
 use wellfed_sdk::hal::sdk::{self, ApiRecv};
-use wellfed_sdk::hal::{buzzer, clock, link, net_status, power, rng, settings, startup};
+use wellfed_sdk::hal::{buzzer, clock, link, net_status, power, rng, startup};
 use wellfed_sdk::storage::{TRACES_BASE, TRACES_UNITS};
 
 /// The model this image is built for: the board's, by its code. A board
@@ -275,11 +276,11 @@ impl Platform for Plaf103 {
     }
 
     fn settings(&mut self) -> Option<SettingsView> {
-        settings::current()
+        SETTINGS.current()
     }
 
     fn settings_request(&mut self, change: SettingsFields, asked: Option<Stamp>) -> SettingsResult {
-        asked::settings_request(change, asked)
+        asked::settings_request(&SETTINGS, change, asked)
     }
 
     fn wifi(&mut self) -> WifiResult {

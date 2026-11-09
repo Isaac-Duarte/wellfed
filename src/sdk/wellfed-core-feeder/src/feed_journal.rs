@@ -1,5 +1,5 @@
 //! Two-slot alternating feed journal, in the dual-slot store
-//! ([`slot`](crate::store::slot)) with its strictest policy: it never
+//! ([`slot`](wellfed_core::store::slot)) with its strictest policy: it never
 //! falls back past a reservation it might forget.
 //!
 //! The on-flash record is 128 bytes, major 1: magic `PLFJNL01`, major,
@@ -51,7 +51,7 @@ use core::ffi::c_uint;
 use crate::feed::controller::{FeedReason, FeedRequest};
 use crate::feed::progress::{BowlMode, Direction};
 use crate::feed::storage::{OwnerOutcome, OwnerRecovery, OwnerResult, OwnerStorage};
-use crate::store::slot::{
+use wellfed_core::store::slot::{
     CRC_AT, DualSlot, Extent, Found, Layout, Prepare, RECORD_BYTES, SlotIo, Version, get_u16,
     get_u64, put_u16, put_u64, seal,
 };

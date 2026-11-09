@@ -11,14 +11,14 @@
 //! have been (02:30 runs at 03:30 when the clock jumps from 02:00), and a
 //! minute a fall-back change repeats runs on its first pass only: the rule
 //! RFC 5545 and Temporal's "compatible" disambiguation use. Offsets come
-//! from the clock ([`crate::clock::wall::WallClock::offset_at`]): the zone's
+//! from the clock ([`wellfed_core::clock::wall::WallClock::offset_at`]): the zone's
 //! rule, or a client sync's offsets until the next change it named.
 //!
 //! The next occurrence ([`next_due`]) follows the same rule, so a reminder
 //! ahead of a meal names the instant the meal will run.
 //!
 //! What an occurrence does (run, report as missed, or nothing) is the
-//! missed-meal rule, [`crate::clock::wall::occurrence`], against a mark per
+//! missed-meal rule, [`wellfed_core::clock::wall::occurrence`], against a mark per
 //! plan: the loop that keeps the marks lives in the product.
 
 /// Plan slots a feeder keeps, as stock keeps at most ten plans.
@@ -66,7 +66,7 @@ pub struct Plan {
     pub days: Weekdays,
     pub enabled: bool,
     /// How many times the meal call plays before the feed, 0 to
-    /// [`crate::clip::PLAYS_MAX`]; 0 plays none.
+    /// [`wellfed_core::clip::PLAYS_MAX`]; 0 plays none.
     pub call: u8,
 }
 
@@ -78,7 +78,7 @@ impl Plan {
             && self.portions >= 1
             && self.portions <= PORTIONS_MAX
             && self.days.valid()
-            && self.call <= crate::clip::PLAYS_MAX
+            && self.call <= wellfed_core::clip::PLAYS_MAX
     }
 
     /// Whether `other` keeps this plan's occurrences: the same minute and

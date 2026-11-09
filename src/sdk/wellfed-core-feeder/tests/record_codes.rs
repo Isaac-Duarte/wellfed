@@ -2,9 +2,9 @@
 //! variant. Flash written by an earlier build must keep decoding, so these
 //! numbers never change without a record migration.
 
-use wellfed_core::feed::controller::FeedReason;
-use wellfed_core::feed::progress::{BowlMode, Direction};
-use wellfed_core::feed::storage::OwnerOutcome;
+use wellfed_core_feeder::feed::controller::FeedReason;
+use wellfed_core_feeder::feed::progress::{BowlMode, Direction};
+use wellfed_core_feeder::feed::storage::OwnerOutcome;
 
 #[test]
 fn persisted_variants_keep_their_bytes() {

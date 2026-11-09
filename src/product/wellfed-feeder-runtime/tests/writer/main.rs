@@ -10,6 +10,7 @@ mod handover;
 mod keys;
 mod records;
 mod reset;
+mod settings_split;
 mod settings_wifi_and_time;
 mod stats;
 mod support;

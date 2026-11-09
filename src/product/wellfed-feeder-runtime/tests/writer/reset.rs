@@ -11,12 +11,13 @@ use wellfed_device_runtime::keys::{self, Change};
 use wellfed_device_runtime::writer::{self as writer, ErrorStage, Identity, KeyChange, KeyResult};
 use wellfed_device_runtime::{events, network};
 use wellfed_feeder::store::stats::StatsStatus;
+use wellfed_feeder_runtime::settings::SETTINGS;
 use wellfed_feeder_runtime::stats;
 use wellfed_feeder_runtime::writer::{FeederRecord, Record, Writer};
 use wellfed_hal::flash::peer::MARKER_REGISTER;
 use wellfed_hal::flash_lock::provider::Provider;
+use wellfed_hal::rng;
 use wellfed_hal::sdk::{self, fake};
-use wellfed_hal::{rng, settings};
 
 use crate::support::{
     ARMED, ATTEMPT_SEEN, Armed, ERASE_FAILS, PROGRAM_FAILS, STATS_PROGRAMS_FAIL, change, changed,
@@ -82,7 +83,7 @@ fn filled_then_reset() -> (MutexGuard<'static, ()>, Provider) {
         step(&mut writer, &mut provider);
     }
 
-    settings::request(SettingsFields {
+    SETTINGS.request(SettingsFields {
         volume: Some(7),
         ..SettingsFields::default()
     });
@@ -231,7 +232,7 @@ fn a_factory_reset_clears_the_decided_stores_on_the_next_boot_and_keeps_the_rest
     let records = reset_boot(&mut provider, None);
     assert_eq!(records.first(), Some(&Record::ResetPending));
     assert!(
-        records.contains(&Record::ResetDone { erased: 36 }),
+        records.contains(&Record::ResetDone { erased: 38 }),
         "{records:?}"
     );
     assert!(
@@ -279,7 +280,7 @@ fn a_power_cut_at_any_step_of_the_reset_leaves_it_to_the_next_boot() {
         let records = reset_boot(&mut provider, Some(steps));
         assert_eq!(records, [Record::ResetPending], "cut after {done} steps");
         assert_eq!(
-            settings::request(SettingsFields::default()),
+            SETTINGS.request(SettingsFields::default()),
             SettingsResult::Busy,
             "nothing is served mid-reset"
         );
@@ -301,7 +302,7 @@ fn a_power_cut_at_any_step_of_the_reset_leaves_it_to_the_next_boot() {
         let records = reset_boot(&mut provider, None);
         let finished = done <= erases + 1;
         assert_eq!(
-            records.contains(&Record::ResetDone { erased: 36 }),
+            records.contains(&Record::ResetDone { erased: 38 }),
             finished,
             "cut after {done} steps: {records:?}"
         );
@@ -320,7 +321,7 @@ fn a_torn_marker_is_no_reset() {
     for _ in 0..7 {
         step(&mut writer, &mut provider);
     }
-    settings::request(SettingsFields {
+    SETTINGS.request(SettingsFields {
         volume: Some(9),
         ..SettingsFields::default()
     });
@@ -362,7 +363,7 @@ fn an_unarmed_boot_serves_nothing_and_keeps_the_marker() {
     assert!(!keys::restart_wanted());
     assert_eq!(step(&mut writer, &mut provider), None, "stopped");
     assert_eq!(
-        settings::request(SettingsFields::default()),
+        SETTINGS.request(SettingsFields::default()),
         SettingsResult::Busy
     );
     assert_eq!(keys::identity_since(0), None);
@@ -406,7 +407,7 @@ fn a_reset_that_cannot_finish_asks_for_one_restart_only() {
     ERASE_FAILS.with(|f| f.set(None));
     let records = reset_boot(&mut provider, None);
     assert!(
-        records.contains(&Record::ResetDone { erased: 36 }),
+        records.contains(&Record::ResetDone { erased: 38 }),
         "{records:?}"
     );
     assert!(!keys::restart_wanted());
@@ -481,7 +482,7 @@ fn a_reset_over_an_unwritable_client_store_still_completes() {
 
     let records = reset_boot(&mut provider, None);
     assert!(
-        records.contains(&Record::ResetDone { erased: 36 }),
+        records.contains(&Record::ResetDone { erased: 38 }),
         "{records:?}"
     );
     assert!(
@@ -542,8 +543,8 @@ fn reset_records_format() {
         "stats open status=lost generation=0 early=0 missed=0 wear_lost=1"
     );
     assert_eq!(
-        line(Record::ResetDone { erased: 36 }),
-        "reset done erased=36"
+        line(Record::ResetDone { erased: 38 }),
+        "reset done erased=38"
     );
     assert_eq!(
         line(Record::ResetError {
@@ -590,7 +591,7 @@ fn an_attempt_that_does_not_land_asks_for_no_restart() {
     PROGRAM_FAILS.with(|f| f.set(false));
     let records = reset_boot(&mut provider, None);
     assert!(
-        records.contains(&Record::ResetDone { erased: 36 }),
+        records.contains(&Record::ResetDone { erased: 38 }),
         "{records:?}"
     );
 }
@@ -613,7 +614,7 @@ fn a_worn_statistics_pair_loses_the_wear_counts_but_not_the_reset() {
         .position(|record| *record == Record::ResetWearLost);
     let done = records
         .iter()
-        .position(|record| *record == Record::ResetDone { erased: 36 });
+        .position(|record| *record == Record::ResetDone { erased: 38 });
     assert!(lost.is_some() && lost < done, "{records:?}");
     assert!(!reset_marked());
     assert!(
@@ -635,7 +636,7 @@ fn a_worn_statistics_pair_loses_the_wear_counts_but_not_the_reset() {
 
         let records = reset_boot(&mut provider, None);
         assert!(
-            records.contains(&Record::ResetDone { erased: 36 }),
+            records.contains(&Record::ResetDone { erased: 38 }),
             "{erased} erased: {records:?}"
         );
         if erased == storage::STATS.count {
@@ -702,7 +703,7 @@ fn a_reset_by_hand_erases_a_corrupt_update_store() {
     let records = reset_boot(&mut provider, None);
     assert!(records.contains(&Record::ResetUpdateCleared), "{records:?}");
     assert!(
-        records.contains(&Record::ResetDone { erased: 36 }),
+        records.contains(&Record::ResetDone { erased: 38 }),
         "{records:?}"
     );
     assert!(sectors(storage::UPDATE).iter().all(|&byte| byte == 0xff));
@@ -729,7 +730,7 @@ fn a_reset_not_asked_by_hand_keeps_a_corrupt_update_store() {
         "{records:?}"
     );
     assert!(
-        records.contains(&Record::ResetDone { erased: 36 }),
+        records.contains(&Record::ResetDone { erased: 38 }),
         "{records:?}"
     );
     assert_eq!(sectors(storage::UPDATE), before);

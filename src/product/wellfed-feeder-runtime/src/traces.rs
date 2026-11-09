@@ -22,7 +22,7 @@
 
 use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
-use wellfed_core::feed::observe::Observation;
+use wellfed_core_feeder::feed::observe::Observation;
 use wellfed_device::store::traces::{TraceRead, TracesFill};
 use wellfed_feeder::trace::{DriveFigures, Recorder};
 use wellfed_hal::cell::TaskCell;
