@@ -5136,11 +5136,13 @@ fn wire__crate__api__alerts__alerts_swept_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_dir = <String>::sse_decode(&mut deserializer);
+            let api_taken_off = <Vec<i32>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, crate::api::error::BridgeError>(
                     (move || async move {
-                        let output_ok = crate::api::alerts::alerts_swept(api_dir).await?;
+                        let output_ok =
+                            crate::api::alerts::alerts_swept(api_dir, api_taken_off).await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,

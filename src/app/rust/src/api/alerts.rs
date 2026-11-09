@@ -494,17 +494,23 @@ pub async fn alerts_to_sweep(dir: String, showing: Vec<i32>) -> Result<Vec<i32>,
             .into_iter()
             .filter(|id| !known.contains(id))
             .collect();
-        state.sweeping.clone_from(&stale);
+        // Another engine's sweep may be under way: its ids stay held too.
+        for id in &stale {
+            if !state.sweeping.contains(id) {
+                state.sweeping.push(*id);
+            }
+        }
         Ok(stale)
     })
     .await?
 }
 
-/// The notifications [`alerts_to_sweep`] chose are off.
-pub async fn alerts_swept(dir: String) -> Result<(), BridgeError> {
+/// The notifications [`alerts_to_sweep`] chose for this engine (`taken_off`)
+/// are off. Another engine's, still being taken off, stay held.
+pub async fn alerts_swept(dir: String, taken_off: Vec<i32>) -> Result<(), BridgeError> {
     alerts::change(Path::new(&dir), |state| {
         state.sweep = false;
-        state.sweeping.clear();
+        state.sweeping.retain(|id| !taken_off.contains(id));
     })
     .await
 }

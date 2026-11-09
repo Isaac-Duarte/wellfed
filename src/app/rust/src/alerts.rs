@@ -553,21 +553,6 @@ mod tests {
         }
     }
 
-    /// The name an `AlertKey` variant is written under. The match is
-    /// exhaustive, so a new variant doesn't compile until it is named here,
-    /// and [`KEY_NAMES`] beside it lists the same names.
-    const fn key_name(key: &AlertKey) -> &'static str {
-        match key {
-            AlertKey::Feed { .. } => "feed",
-            AlertKey::Meal { .. } => "meal",
-            AlertKey::Client { .. } => "client",
-            AlertKey::Timed { .. } => "timed",
-            AlertKey::Kind { .. } => "kind",
-        }
-    }
-
-    const KEY_NAMES: [&str; 5] = ["feed", "meal", "client", "timed", "kind"];
-
     /// Every value `T`'s schema names, as written: the model derives the
     /// schema from the enum itself, so a new variant is named here as soon
     /// as it exists. `Unknown` stands for a newer build's value and is never
@@ -596,9 +581,15 @@ mod tests {
     /// The name `value` is written under: a string, or a tagged object's
     /// `kind`.
     fn name_of(value: impl Serialize) -> String {
+        tag_of(value, "kind")
+    }
+
+    /// The name `value` is written under: a string, or the tagged object's
+    /// `tag`.
+    fn tag_of(value: impl Serialize, tag: &str) -> String {
         match serde_json::to_value(value).unwrap() {
             serde_json::Value::String(name) => name,
-            serde_json::Value::Object(map) => map["kind"].as_str().unwrap().to_owned(),
+            serde_json::Value::Object(map) => map[tag].as_str().unwrap().to_owned(),
             other => panic!("{other}"),
         }
     }
@@ -611,8 +602,11 @@ mod tests {
         let alerts = every_alert();
         let kinds: BTreeSet<_> = alerts.iter().map(|open| open.alert.kind()).collect();
         assert_eq!(kinds, AlertKind::ALL.into_iter().collect());
-        let keys: BTreeSet<_> = alerts.iter().map(|open| key_name(&open.key())).collect();
-        assert_eq!(keys, KEY_NAMES.into_iter().collect());
+        let keys: BTreeSet<_> = alerts
+            .iter()
+            .map(|open| tag_of(open.key(), "key"))
+            .collect();
+        assert_eq!(keys, every_name::<AlertKey>());
 
         let mut found: [BTreeSet<String>; 8] = Default::default();
         for open in &alerts {
@@ -757,10 +751,38 @@ mod tests {
                 [0x4000_0abc],
                 "only the unknown one"
             );
-            crate::api::alerts::alerts_swept(dir_name.clone())
+            crate::api::alerts::alerts_swept(dir_name.clone(), vec![0x4000_0abc])
                 .await
                 .unwrap();
             assert!(sweep().await.unwrap().is_empty(), "done");
+            assert!(read(dir.path()).await.unwrap().sweeping.is_empty());
+        });
+    }
+
+    /// Two engines sweeping at once: the first to finish lets go only of
+    /// what it took off, and the other's ids stay held until it does.
+    #[test]
+    fn overlapping_sweeps_hold_each_others_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_name = dir.path().display().to_string();
+        run(async {
+            let mut state = every_field();
+            state.sweeping.clear();
+            change(dir.path(), |stored| *stored = state).await.unwrap();
+            let api =
+                |showing: Vec<i32>| crate::api::alerts::alerts_to_sweep(dir_name.clone(), showing);
+
+            let first = api(vec![0x4000_0001]).await.unwrap();
+            let second = api(vec![0x4000_0001, 0x4000_0002]).await.unwrap();
+            assert_eq!(second, [0x4000_0001, 0x4000_0002]);
+
+            crate::api::alerts::alerts_swept(dir_name.clone(), first)
+                .await
+                .unwrap();
+            assert_eq!(read(dir.path()).await.unwrap().sweeping, [0x4000_0002]);
+            crate::api::alerts::alerts_swept(dir_name.clone(), second)
+                .await
+                .unwrap();
             assert!(read(dir.path()).await.unwrap().sweeping.is_empty());
         });
     }
@@ -803,7 +825,7 @@ mod tests {
                 "posted again after the sweep"
             );
 
-            crate::api::alerts::alerts_swept(dir_name.clone())
+            crate::api::alerts::alerts_swept(dir_name.clone(), vec![id])
                 .await
                 .unwrap();
             crate::api::alerts::confirm_notices(dir_name, KITCHEN.into(), vec![id], vec![])

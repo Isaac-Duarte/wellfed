@@ -116,7 +116,7 @@ class Notices {
     // Empty once the sweep is done, and then nothing changes.
     final List<int> stale = await alertsToSweep(dir: dir, showing: Int32List.fromList(showing));
     await remove(stale);
-    await alertsSwept(dir: dir);
+    await alertsSwept(dir: dir, takenOff: Int32List.fromList(stale));
   }
 
   static Future<void> _show(String identity, String name, NoticeView notice) async {

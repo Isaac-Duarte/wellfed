@@ -16,16 +16,19 @@ void main() {
     expect(showsWords(const [], 7, words), isFalse, reason: 'swiped away, or never shown');
   });
 
-  test("a refused ask opens Android's settings only for a lasting denial", () {
-    bool opens(bool? before, bool? after, {bool silentBefore = false}) =>
-        opensNotificationSettings(before: before, after: after, silentBefore: silentBefore);
-
-    expect(opens(false, true), isFalse, reason: 'the first denial, in the dialog');
-    expect(opens(true, true), isFalse);
-    expect(opens(true, false), isTrue, reason: 'a lasting denial, just made');
-    expect(opens(false, false), isFalse, reason: 'the dialog dismissed, or a denial from before');
-    expect(opens(false, false, silentBefore: true), isTrue, reason: 'a second tap with no dialog');
-    expect(opens(null, null), isTrue, reason: 'below Android 13 only the settings turn them on');
+  test("an Allow tap opens Android's settings only when no dialog showed", () {
+    expect(
+      opensNotificationSettings(allowed: false, dialogShown: false),
+      isTrue,
+      reason: 'a lasting denial, or Android 12',
+    );
+    expect(
+      opensNotificationSettings(allowed: false, dialogShown: true),
+      isFalse,
+      reason: "the owner's own Don't allow, or the dialog dismissed",
+    );
+    expect(opensNotificationSettings(allowed: true, dialogShown: true), isFalse);
+    expect(opensNotificationSettings(allowed: true, dialogShown: false), isFalse);
   });
 
   test('a sweep takes only alert notifications', () {

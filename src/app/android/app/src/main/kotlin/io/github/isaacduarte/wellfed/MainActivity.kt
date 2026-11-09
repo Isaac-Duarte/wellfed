@@ -10,7 +10,6 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSpecifier
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -113,7 +112,6 @@ class MainActivity : FlutterActivity() {
                 "instant" -> result.success(KeepAliveService.setInstant(applicationContext, call.arguments == true))
                 "hold" -> result.success(KeepAliveService.hold(applicationContext, call.arguments as? String))
                 "instantRunning" -> result.success(KeepAliveService.instantRunning())
-                "notificationRationale" -> result.success(notificationRationale())
                 "notificationSettings" -> {
                     openNotificationSettings()
                     result.success(null)
@@ -133,17 +131,6 @@ class MainActivity : FlutterActivity() {
                 }
             }
     }
-
-    // Whether Android would show its dialog for notifications again after a
-    // denial. Before the first ask and after a lasting denial it says no, so
-    // the app reads it before and after asking to tell those apart. Null
-    // below Android 13, which has no dialog: only the settings turn them on.
-    private fun notificationRationale(): Boolean? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            null
-        }
 
     // The app's own page in Android's notification settings: where the owner
     // turns them on once Android no longer asks.

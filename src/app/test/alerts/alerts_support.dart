@@ -133,6 +133,9 @@ class FakeAlertPorts implements AlertPorts {
   Future<void> postOpen(List<KnownFeeder> feeders) async => postedOpen.add(feeders);
 
   @override
+  bool asking = false;
+
+  @override
   Future<bool> askForNotifications(List<KnownFeeder> feeders) async {
     asked.add(feeders);
     return allowed = true;

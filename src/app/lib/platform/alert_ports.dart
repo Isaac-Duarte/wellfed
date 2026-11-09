@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:path_provider/path_provider.dart';
 import 'package:wellfed/platform/discovery.dart';
 import 'package:wellfed/platform/notices.dart';
@@ -47,6 +48,10 @@ abstract interface class AlertPorts {
   /// Post what is still open for `feeders`: for notifications allowed in
   /// Android's settings, with the app away.
   Future<void> postOpen(List<KnownFeeder> feeders);
+
+  /// An ask is out: Android's dialog pauses the app and resumes it, and the
+  /// ask posts what is open itself once allowed.
+  bool get asking;
 }
 
 /// The Wi-Fi network as Kotlin described it, or none.
@@ -159,45 +164,49 @@ class AppAlertPorts implements AlertPorts {
   Future<bool> notificationsAllowed() => Notices.allowed();
 
   @override
-  Future<bool> askForNotifications(List<KnownFeeder> feeders) async {
-    final bool? before = await _rationale();
-    final bool allowed = await Notices.ask() ?? await Notices.allowed();
+  Future<bool> askForNotifications(List<KnownFeeder> feeders) => _asked(() async {
+    // Android's dialog takes the screen, so the app goes inactive while it
+    // shows. An ask that never does showed none.
+    var shown = false;
+    final AppLifecycleListener listener = AppLifecycleListener(onInactive: () => shown = true);
+    final bool allowed;
+    try {
+      allowed = await Notices.ask() ?? await Notices.allowed();
+    } finally {
+      listener.dispose();
+    }
     if (allowed) {
       await postPending(feeders);
-      return true;
-    }
-    final bool? after = await _rationale();
-    final bool silent = before == false && after == false;
-    if (opensNotificationSettings(before: before, after: after, silentBefore: _silent)) {
+    } else if (opensNotificationSettings(allowed: allowed, dialogShown: shown)) {
       await alertsChannel.invokeMethod<void>('notificationSettings');
     }
-    _silent = _silent || silent;
-    return false;
-  }
+    return allowed;
+  });
 
   @override
   Future<void> postOpen(List<KnownFeeder> feeders) => postPending(feeders);
 
-  /// An ask this run that Android refused with its dialog maybe not shown.
-  static bool _silent = false;
-
-  static Future<bool?> _rationale() => alertsChannel.invokeMethod<bool>('notificationRationale');
+  @override
+  bool get asking => _asking;
 }
 
-/// Whether a refused ask leaves only Android's settings to let alerts
-/// through, from whether Android would explain the ask `before` and `after`
-/// it (`null` below Android 13, which has no dialog). It says yes only
-/// after one denial in the dialog, so yes then no is a lasting denial just
-/// made. No on both sides is a lasting denial from before, or a dialog the
-/// owner dismissed without choosing, which asks again: so only a second
-/// such tap (`silentBefore`) opens the settings.
-bool opensNotificationSettings({required bool? before, required bool? after, required bool silentBefore}) =>
-    switch ((before, after)) {
-      (null, _) || (_, null) => true,
-      (true, false) => true,
-      (false, false) => silentBefore,
-      _ => false,
-    };
+/// Whether an ask is out, in this engine.
+bool _asking = false;
+
+Future<T> _asked<T>(Future<T> Function() ask) async {
+  _asking = true;
+  try {
+    return await ask();
+  } finally {
+    _asking = false;
+  }
+}
+
+/// Whether an Allow tap Android refused leaves only its settings to let
+/// alerts through: when no dialog showed on that tap, as after a lasting
+/// denial or below Android 13. A refusal made in the dialog, or a dialog
+/// dismissed, is the owner's answer, and the app takes it.
+bool opensNotificationSettings({required bool allowed, required bool dialogShown}) => !allowed && !dialogShown;
 
 /// Post every change still to make for `feeders`, with no catch-up. A
 /// feeder not in `feeders` keeps its own for its next catch-up.
@@ -222,7 +231,7 @@ Future<bool> offerNotifications(List<KnownFeeder> feeders) async {
     final String dir = await AppAlertPorts._dir();
     if (!await notificationsOfferDue(dir: dir)) return true;
     // `null`: Android could not ask now, so the offer stays due.
-    final bool? allowed = await Notices.ask();
+    final bool? allowed = await _asked(Notices.ask);
     if (allowed == null) return false;
     await notificationsOffered(dir: dir);
     if (allowed) await postPending(feeders);

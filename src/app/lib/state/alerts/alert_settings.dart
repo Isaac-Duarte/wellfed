@@ -120,6 +120,8 @@ class AlertSettingsController extends ChangeNotifier {
   /// The app is back in front: notifications may have been turned on in
   /// Android's settings meanwhile, and then the open alerts post.
   Future<void> resumed() async {
+    // An ask's own dialog resumes the app, and the ask posts for itself.
+    if (_ports.asking) return;
     final AlertSettingsState before = _state;
     final bool turnedOn = before is AlertSettingsShown && !before.notificationsAllowed;
     String? problem;

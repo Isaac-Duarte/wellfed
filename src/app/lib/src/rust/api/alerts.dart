@@ -149,9 +149,13 @@ Future<Int32List> alertsToSweep({
   showing: showing,
 );
 
-/// The notifications [`alerts_to_sweep`] chose are off.
-Future<void> alertsSwept({required String dir}) =>
-    RustLib.instance.api.crateApiAlertsAlertsSwept(dir: dir);
+/// The notifications [`alerts_to_sweep`] chose for this engine (`taken_off`)
+/// are off. Another engine's, still being taken off, stay held.
+Future<void> alertsSwept({required String dir, required List<int> takenOff}) =>
+    RustLib.instance.api.crateApiAlertsAlertsSwept(
+      dir: dir,
+      takenOff: takenOff,
+    );
 
 /// The owner read the notice of a set-aside `alerts.json`.
 Future<void> alertsNoticeRead({required String dir}) =>

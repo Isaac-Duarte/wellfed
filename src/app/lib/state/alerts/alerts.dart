@@ -105,6 +105,8 @@ class FeederAlertsController extends ChangeNotifier {
   /// The app is back in front: notifications may have been turned on in
   /// Android's settings meanwhile, and then this feeder's open alerts post.
   Future<void> resumed() async {
+    // An ask's own dialog resumes the app, and the ask posts for itself.
+    if (_ports.asking) return;
     final AlertsState before = _state;
     await load();
     final AlertsState now = _state;

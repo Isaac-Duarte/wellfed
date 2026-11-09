@@ -507,7 +507,10 @@ abstract class RustLibApi extends BaseApi {
 
   Future<SetAside?> crateApiAlertsAlertsSetAside({required String dir});
 
-  Future<void> crateApiAlertsAlertsSwept({required String dir});
+  Future<void> crateApiAlertsAlertsSwept({
+    required String dir,
+    required List<int> takenOff,
+  });
 
   Future<Int32List> crateApiAlertsAlertsToSweep({
     required String dir,
@@ -4021,12 +4024,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "alerts_set_aside", argNames: ["dir"]);
 
   @override
-  Future<void> crateApiAlertsAlertsSwept({required String dir}) {
+  Future<void> crateApiAlertsAlertsSwept({
+    required String dir,
+    required List<int> takenOff,
+  }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dir, serializer);
+          sse_encode_list_prim_i_32_loose(takenOff, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -4039,14 +4046,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateApiAlertsAlertsSweptConstMeta,
-        argValues: [dir],
+        argValues: [dir, takenOff],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiAlertsAlertsSweptConstMeta =>
-      const TaskConstMeta(debugName: "alerts_swept", argNames: ["dir"]);
+  TaskConstMeta get kCrateApiAlertsAlertsSweptConstMeta => const TaskConstMeta(
+    debugName: "alerts_swept",
+    argNames: ["dir", "takenOff"],
+  );
 
   @override
   Future<Int32List> crateApiAlertsAlertsToSweep({

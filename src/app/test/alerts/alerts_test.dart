@@ -196,6 +196,27 @@ void main() {
       expect(ports.postedOpen, hasLength(1), reason: 'only when they were just turned on');
     });
 
+    test("an ask's own dialog resuming the app posts nothing twice", () async {
+      final ports = FakeAlertPorts()..allowed = false;
+      final settings = AlertSettingsController(ports, FakeBook()..feeders = [kitchen]);
+      addTearDown(settings.dispose);
+      await settings.load();
+
+      ports
+        ..allowed = true
+        ..asking = true;
+      await settings.resumed();
+      expect(ports.postedOpen, isEmpty, reason: 'the ask posts for itself');
+
+      final alerts = FeederAlertsController(ports, kitchen);
+      addTearDown(alerts.dispose);
+      ports.allowed = false;
+      await alerts.load();
+      ports.allowed = true;
+      await alerts.resumed();
+      expect(ports.postedOpen, isEmpty);
+    });
+
     test('instant mode on but stopped starts again, and says so when Android refuses', () async {
       final ports = FakeAlertPorts()..instant = true;
       final settings = AlertSettingsController(ports, FakeBook());
