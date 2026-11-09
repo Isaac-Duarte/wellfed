@@ -6,9 +6,8 @@
 //! factory region `0x0-0x6000` belongs to neither.
 
 use wellfed_formats::flash_plan::Kind;
-use wellfed_signed::SECTOR;
-
 use wellfed_formats::require;
+use wellfed_signed::{BANK1_BYTES, BANK1_OFFSET, SECTOR};
 
 use crate::error::Result;
 
@@ -31,11 +30,12 @@ pub struct Layout {
     pub other: (usize, usize),
 }
 
+/// Bank 1 and its limits, as bank 0 checks an offer's image against them.
 pub const BANK1: Layout = Layout {
     kind: Kind::Bank1Update,
     bank: 1,
-    start: 0x186000,
-    end: 0x2D6000,
+    start: BANK1_OFFSET as usize,
+    end: (BANK1_OFFSET + BANK1_BYTES) as usize,
     other: (0x6000, SECTOR),
 };
 

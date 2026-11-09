@@ -190,7 +190,7 @@ impl Baseline {
     pub fn bootable(&self, marker: &[u8]) -> bool {
         match self.model {
             Model::Plaf103 => *marker == self.data[START..START + 8],
-            Model::Plwf106 => *marker == *crate::writers::development::MARKER,
+            Model::Plwf106 => *marker == wellfed_signed::MARKER,
         }
     }
 }

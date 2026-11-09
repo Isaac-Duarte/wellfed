@@ -405,7 +405,7 @@ fn a_fountain_install_needs_stock_bank_0() {
     let mut bank0 = unit.flash[0x6000..0xf_1000].to_vec();
     bank0[0x9_0000] ^= 1;
     let mut first = unit.flash[START..START + SECTOR].to_vec();
-    first[..8].copy_from_slice(MARKER);
+    first[..8].copy_from_slice(&MARKER);
     assert!(matches!(
         development::pinned_give_way_plan(&unit.baseline, &bank0, &first),
         Err(crate::Error::Development(DevelopmentError::FallbackDiffers))

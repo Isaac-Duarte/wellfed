@@ -10,13 +10,14 @@ use std::path::Path;
 use serde_json::{Value, json};
 use wellfed_formats::canonical::sha256;
 
-use crate::ota::IMAGE_MAGIC;
+use wellfed_signed::MARKER;
 
 /// A structurally valid synthetic payload: never a boot candidate.
 pub fn synthetic_payload(km0: usize, km4: usize, seed: u8) -> Vec<u8> {
     fn image(out: &mut Vec<u8>, address: u32, body: usize, seed: u8) {
         let size = u32::try_from(body).unwrap_or(u32::MAX);
-        for word in [IMAGE_MAGIC[0], IMAGE_MAGIC[1], size, address] {
+        out.extend_from_slice(&MARKER);
+        for word in [size, address] {
             out.extend_from_slice(&word.to_le_bytes());
         }
         out.extend_from_slice(&[0xff; 16]);

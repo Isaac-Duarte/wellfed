@@ -25,9 +25,11 @@ use wellfed_formats::review::{
     BuildDetails, Details, FactoryRun, ImageKind, ImageReview, MappingCase, ReviewKind,
     SCHEMA_VERSION, Stop,
 };
+use wellfed_image::bank::{BANK1, PLWF106_BANK1};
 use wellfed_image::ota::{STOCK_SHA256, container, images};
 use wellfed_image::root::Root;
 use wellfed_proto::device::Model;
+use wellfed_signed::SECTOR;
 
 use crate::identity::current_inputs;
 use crate::image::audit_build;
@@ -105,12 +107,6 @@ pub enum ReviewError {
     InstalledStock { stop: Stop, result: u32 },
 }
 
-/// The PLAF103's bank-1 extent; a development image must fit it
-/// sector-aligned.
-const BANK_BYTES: usize = 0x15_0000;
-/// The PLWF106's bank-1 write window: stock bank 0's rounded footprint.
-const FOUNTAIN_BANK_BYTES: usize = 0xe_b000;
-const SECTOR: usize = 4096;
 const ARTIFACTS: [&str; 4] = [
     "OTA_All.bin",
     "km0_image2_all.bin",
@@ -193,10 +189,12 @@ pub fn bank_payload(image: &[u8]) -> Result<&[u8]> {
 
 /// [`bank_payload`] within `model`'s bank-1 window.
 fn model_payload(image: &[u8], model: Model) -> Result<&[u8]> {
+    // A development image must fit the model's bank-1 window sector-aligned.
     let bank = match model {
-        Model::Plaf103 => BANK_BYTES,
-        Model::Plwf106 => FOUNTAIN_BANK_BYTES,
+        Model::Plaf103 => BANK1,
+        Model::Plwf106 => PLWF106_BANK1,
     };
+    let bank = bank.end - bank.start;
     let payload = container(image)?;
     require(
         !payload.is_empty() && payload.len() <= bank && payload.len() % SECTOR == 0,

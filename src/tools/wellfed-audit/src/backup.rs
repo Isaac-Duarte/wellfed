@@ -20,6 +20,7 @@ use wellfed_formats::layout::{Hex, Layout};
 use wellfed_formats::require;
 use wellfed_image::ota;
 use wellfed_proto::device::Model;
+use wellfed_signed::MARKER;
 
 use crate::{Error, Result, digest};
 
@@ -51,9 +52,6 @@ pub enum BackupError {
 pub(crate) const MODEL: Model = Model::Plaf103;
 const MAX_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_RUNS: usize = 128;
-/// The bank marker `81958711` as two little-endian words; a valid bank's image
-/// starts with it (docs/firmware/bank-policy.md).
-const IMAGE_MAGIC: [u32; 2] = [0x35393138, 0x31313738];
 
 /// Names a bank's saved body from its OTA container hash.
 fn known_image(sha: &str) -> Option<&'static str> {
@@ -274,15 +272,13 @@ fn normalize(payload: &[u8], original: &[u8]) -> Normalized {
 
 fn banks(data: &[u8], layout: &Layout, original: Option<&[u8]>) -> Result<Vec<Bank>> {
     let size = offset(Hex(layout.candidate_payload_cap_bytes))?;
-    let magic: Vec<u8> = IMAGE_MAGIC.iter().flat_map(|w| w.to_le_bytes()).collect();
-
     let mut result = Vec::new();
     for (index, &value) in layout.ota_bank_offsets.iter().enumerate() {
         let start = offset(value)?;
         let end = start + size;
         let payload = data.get(start..end).map(|payload| BankPayload {
             payload_sha256: digest(payload),
-            marker_matches_known_magic: payload[..8] == magic[..],
+            marker_matches_known_magic: payload[..8] == MARKER,
             normalized: original.map(|original| normalize(payload, original)),
         });
 

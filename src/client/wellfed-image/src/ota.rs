@@ -6,8 +6,9 @@
 //! `container` and `regions`, so an image outside this one profile is refused.
 
 use serde::Serialize;
-
 use wellfed_formats::require;
+use wellfed_signed::image::{HEADER, PARTS};
+use wellfed_signed::{MARKER, SECTOR};
 
 use crate::error::Result;
 
@@ -40,8 +41,8 @@ pub enum OtaError {
 /// The original stock image, the only one a frozen review may accept
 /// without a build manifest.
 pub const STOCK_SHA256: &str = "05147476fc70c91cc77ad7da6d6772376b2081d460ac7b1912e2d73868a09498";
-/// Each image header's first two words: ASCII `81958711`, the loader marker.
-pub(crate) const IMAGE_MAGIC: [u32; 2] = [0x35393138, 0x31313738];
+/// What a report calls each of the loader's [`PARTS`], in bank order.
+const NAMES: [&str; PARTS.len()] = ["km0_xip", "km0_ram", "km4_xip", "km4_ram", "km4_psram"];
 
 fn words(data: &[u8], at: usize) -> [u32; 8] {
     std::array::from_fn(|i| {
@@ -98,21 +99,16 @@ pub struct Image {
     pub runtime_address: String,
 }
 
-/// Both cores' images at their exact addresses, with only erased padding.
+/// Both cores' images at their exact addresses, with only erased padding:
+/// the loader's one profile ([`PARTS`]), with every padding byte checked.
 pub fn images(payload: &[u8]) -> Result<Vec<Image>> {
-    let profile = [
-        ("km0_xip", 0x0C00_0020u32),
-        ("km0_ram", 0x0008_3000),
-        ("km4_xip", 0x0E00_0020),
-        ("km4_ram", 0x1000_5000),
-        ("km4_psram", 0x0200_0020),
-    ];
+    let header_len = HEADER as usize;
     let mut result = Vec::new();
     let mut offset = 0usize;
 
-    for (name, address) in profile {
-        if name == "km4_xip" {
-            let aligned = (offset + 4095) & !4095;
+    for (index, (name, part)) in NAMES.into_iter().zip(PARTS).enumerate() {
+        if part.aligned {
+            let aligned = offset.next_multiple_of(SECTOR);
             require(
                 aligned <= payload.len() && payload[offset..aligned].iter().all(|b| *b == 0xff),
                 || OtaError::InterCorePadding,
@@ -120,20 +116,23 @@ pub fn images(payload: &[u8]) -> Result<Vec<Image>> {
             offset = aligned;
         }
 
-        require(offset + 32 <= payload.len(), || OtaError::MissingHeader {
-            name,
+        require(offset + header_len <= payload.len(), || {
+            OtaError::MissingHeader { name }
         })?;
         let header = words(payload, offset);
         require(
-            header[..2] == IMAGE_MAGIC && header[3] == address && header[4..] == [0xffff_ffff; 4],
+            payload[offset..offset + MARKER.len()] == MARKER
+                && header[3] == part.address
+                && header[4..] == [0xffff_ffff; 4],
             || OtaError::Header { name },
         )?;
 
+        // Only the last part, KM4's PSRAM, is empty, and it always is.
         let body = header[2] as usize;
-        require((name == "km4_psram") == (body == 0), || {
+        require((index == PARTS.len() - 1) == (body == 0), || {
             OtaError::BodySize { name }
         })?;
-        require(offset + 32 + body <= payload.len(), || {
+        require(offset + header_len + body <= payload.len(), || {
             OtaError::BodyOverrun { name }
         })?;
 
@@ -141,13 +140,14 @@ pub fn images(payload: &[u8]) -> Result<Vec<Image>> {
             name,
             payload_header_offset: offset,
             body_bytes: body,
-            runtime_address: format!("0x{address:08x}"),
+            runtime_address: format!("0x{:08x}", part.address),
         });
-        offset += 32 + body;
+        offset += header_len + body;
     }
 
     require(
-        payload.len() == (offset + 4095) & !4095 && payload[offset..].iter().all(|b| *b == 0xff),
+        payload.len() == offset.next_multiple_of(SECTOR)
+            && payload[offset..].iter().all(|b| *b == 0xff),
         || OtaError::FinalPadding,
     )?;
     Ok(result)
