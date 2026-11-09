@@ -461,8 +461,7 @@ fn utc() -> String {
     "UTC".into()
 }
 
-/// One `ip -j neigh` entry; incomplete entries have no `lladdr`. The same
-/// lookup as `wellfed-stock`'s `neighbour::discover`.
+/// One `ip -j neigh` entry; incomplete entries have no `lladdr`.
 #[derive(Deserialize)]
 struct Neighbour {
     dst: String,
