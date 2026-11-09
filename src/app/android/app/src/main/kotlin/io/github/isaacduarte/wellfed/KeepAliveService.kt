@@ -47,22 +47,28 @@ class KeepAliveService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Promptly, every time: Android ends an app that asked for a
-        // foreground service and did not start one.
+        // Promptly, every time, even to stop: Android ends an app that asked
+        // for a foreground service and did not start one.
         startForeground(NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+        pending = maxOf(0, pending - 1)
+        live = this
         apply()
         // Not restarted by Android after a kill: the app brings instant mode
         // back when it opens, and a run never survives its engine.
         return START_NOT_STICKY
     }
 
-    // A run lives in the app's engine, which goes with the task.
+    // A run lives in the app's engine, which goes with the task, and never
+    // says it ended: its hold on catch-ups goes too, or they stay off for the
+    // two hours a hold takes to lapse.
     override fun onTaskRemoved(rootIntent: Intent?) {
         run = null
+        RustHolds.clear()
         apply()
     }
 
     override fun onDestroy() {
+        if (live === this) live = null
         main.removeCallbacks(tick)
         engine?.destroy()
         engine = null
@@ -73,7 +79,8 @@ class KeepAliveService : Service() {
 
     private fun apply() {
         if (run == null && !instant) {
-            stopSelf()
+            // A start still on its way runs onStartCommand, which stops it.
+            if (pending == 0) stopSelf()
             return
         }
 
@@ -148,9 +155,22 @@ class KeepAliveService : Service() {
         // here keeps an urgent one within about a minute of the feeder.
         private const val INSTANT_EVERY_MS = 60_000L
 
-        // What the service is for. Changed on the main thread only.
+        // What the service is for, and its state. Changed on the main thread
+        // only.
         private var run: String? = null
         private var instant = false
+
+        // Starts asked for that onStartCommand has not run yet, and the
+        // service once one has.
+        private var pending = 0
+        private var live: KeepAliveService? = null
+
+        /**
+         * Whether instant mode runs now. It may be on in the settings and not
+         * run: Android stopped the service, the phone restarted, or the app's
+         * process is new. Opening the app starts it again.
+         */
+        fun instantRunning(): Boolean = instant && live?.engine != null
 
         /**
          * Hold the process for a run, saying `text`, or let go with `null`.
@@ -170,13 +190,17 @@ class KeepAliveService : Service() {
         }
 
         private fun update(context: Context): Boolean {
-            val intent = Intent(context, KeepAliveService::class.java)
             if (run == null && !instant) {
-                context.stopService(intent)
+                // Never stopService: a start still on its way would end
+                // before its startForeground, and Android ends the app for
+                // that. The service stops itself, from onStartCommand if a
+                // start is on its way, or here once it runs.
+                if (pending == 0) live?.apply()
                 return true
             }
             return try {
-                context.startForegroundService(intent)
+                context.startForegroundService(Intent(context, KeepAliveService::class.java))
+                pending += 1
                 true
             } catch (error: IllegalStateException) {
                 // Android refuses a foreground service to an app it does

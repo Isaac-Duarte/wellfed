@@ -102,12 +102,23 @@ class Notices {
           posted.add(notice.id);
       }
     }
-    await confirmNotices(dir: dir, identity: identity, posted: posted, removed: removed);
+    // A feeder forgotten while these were on the way: what went up comes off.
+    final List<int> again = await confirmNotices(dir: dir, identity: identity, posted: posted, removed: removed);
+    await remove(again);
+  }
+
+  /// Take off every alert notification, once `alerts.json` was set aside:
+  /// none of their ids is known any more, so nothing else ever would.
+  static Future<void> sweep(String dir) async {
+    if (!await alertsSweepDue(dir: dir)) return;
+    await remove(alertNotificationIds(await _plugin.getActiveNotifications()));
+    await alertsSwept(dir: dir);
   }
 
   static Future<void> _show(String identity, String name, NoticeView notice) async {
     final AndroidNotificationChannel channel = _channel(notice.level);
     final NoticeWords words = noticeWords(notice, name);
+    final List<ActiveNotification> showing = await _plugin.getActiveNotifications();
     await _plugin.show(
       id: notice.id,
       title: words.title,
@@ -120,8 +131,10 @@ class Notices {
           channelDescription: channel.description,
           importance: channel.importance,
           priority: notice.level == AlertLevel.urgent ? Priority.high : Priority.defaultPriority,
-          // Delivery is at least once: a repeat under this id must not buzz.
-          onlyAlertOnce: true,
+          // Delivery is at least once: a repeat of the same words under this
+          // id must not buzz, but new words (an uncertain meal found failed)
+          // must.
+          onlyAlertOnce: showsWords(showing, notice.id, words),
           styleInformation: BigTextStyleInformation(words.body),
           when: notice.atMs,
           showWhen: notice.atMs != null,
@@ -130,10 +143,23 @@ class Notices {
     );
   }
 
-  /// Take notifications off, for a feeder this phone forgot.
+  /// Take notifications off: a feeder this phone forgot, or a sweep.
   static Future<void> remove(Iterable<int> ids) async {
     for (final int id in ids) {
       await _plugin.cancel(id: id);
     }
   }
 }
+
+/// The alert notifications among `active`: those on an alert channel.
+List<int> alertNotificationIds(List<ActiveNotification> active) => [
+  for (final ActiveNotification each in active)
+    if (each case ActiveNotification(id: final int id, channelId: final String channel)
+        when channel.startsWith('alerts-'))
+      id,
+];
+
+/// Whether `active` shows notification `id` with these very words already, so
+/// posting it again need not alert.
+bool showsWords(List<ActiveNotification> active, int id, NoticeWords words) =>
+    active.any((each) => each.id == id && each.title == words.title && (each.bigText ?? each.body) == words.body);

@@ -104,6 +104,23 @@ class _List extends StatelessWidget {
           null => 'Not checked yet: this phone checks while it is home.',
         }, style: muted),
         const SizedBox(height: Space.s3),
+        if (!shown.notificationsAllowed) ...[
+          const Notice(
+            tone: Tone.warning,
+            glyph: Glyph.warning,
+            lead: 'Notifications are off.',
+            text: 'Android is keeping alerts off this phone, so they only list here.',
+          ),
+          const SizedBox(height: Space.s2),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FilledButton(
+              onPressed: () => unawaited(alerts.allowNotifications()),
+              child: const Text('Allow notifications'),
+            ),
+          ),
+          const SizedBox(height: Space.s3),
+        ],
         if (shown.problem case final String problem) ...[
           Notice(tone: Tone.warning, glyph: Glyph.warning, text: problem),
           const SizedBox(height: Space.s3),

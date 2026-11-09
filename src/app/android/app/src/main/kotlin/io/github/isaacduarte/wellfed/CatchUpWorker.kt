@@ -39,7 +39,9 @@ class CatchUpWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         private const val EVERY_MINUTES = 15L
 
         /**
-         * Ask for the periodic catch-up, keeping one already asked for. On any
+         * Ask for the periodic catch-up, updating one already asked for in
+         * place, so a new build's period or constraints take without
+         * resetting when the next one runs. On any
          * network, not only Wi-Fi: a round must run to see the phone left
          * home. With a network constraint all the same, so Android holds the
          * job until this app may use the network, and a Doze window can't
@@ -51,7 +53,7 @@ class CatchUpWorker(context: Context, params: WorkerParameters) : CoroutineWorke
                     .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                     .build()
             WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+                .enqueueUniquePeriodicWork(NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
         }
     }
 }

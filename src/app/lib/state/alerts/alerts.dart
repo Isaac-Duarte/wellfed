@@ -25,6 +25,7 @@ final class AlertsShown extends AlertsState {
     required List<NoticeView> notices,
     required this.unread,
     required this.reachedMs,
+    required this.notificationsAllowed,
     this.checking = false,
     this.problem,
   }) : notices = List.unmodifiable(notices);
@@ -38,6 +39,9 @@ final class AlertsShown extends AlertsState {
   /// When a catch-up last reached the feeder, by this phone's clock.
   final int? reachedMs;
 
+  /// Android lets this app post: without it, alerts only list here.
+  final bool notificationsAllowed;
+
   /// A catch-up runs now.
   final bool checking;
 
@@ -45,8 +49,14 @@ final class AlertsShown extends AlertsState {
   final String? problem;
 
   /// This, with `checking` and `problem` replaced.
-  AlertsShown copyWith({required bool checking, String? problem}) =>
-      AlertsShown(notices: notices, unread: unread, reachedMs: reachedMs, checking: checking, problem: problem);
+  AlertsShown copyWith({required bool checking, String? problem}) => AlertsShown(
+    notices: notices,
+    unread: unread,
+    reachedMs: reachedMs,
+    notificationsAllowed: notificationsAllowed,
+    checking: checking,
+    problem: problem,
+  );
 }
 
 /// The phone's alert file could not be read.
@@ -78,11 +88,37 @@ class FeederAlertsController extends ChangeNotifier {
     AlertsState next;
     try {
       final FeederAlerts found = await _ports.alerts(_feeder.identity);
-      next = AlertsShown(notices: found.notices, unread: found.unread, reachedMs: found.reachedMs);
+      next = AlertsShown(
+        notices: found.notices,
+        unread: found.unread,
+        reachedMs: found.reachedMs,
+        notificationsAllowed: await _ports.notificationsAllowed(),
+      );
     } on BridgeError catch (error) {
       next = AlertsFailed(error.message);
+    } on PlatformException catch (error) {
+      next = AlertsFailed(error.message ?? error.code);
     }
     _set(next);
+  }
+
+  /// Ask Android to let alerts through; this feeder's alerts still open are
+  /// posted once it does.
+  Future<void> allowNotifications() async {
+    String? problem;
+    try {
+      await _ports.askForNotifications([_feeder]);
+    } on PlatformException catch (error) {
+      problem = "Couldn't ask Android: ${error.message ?? error.code}.";
+    } on BridgeError catch (error) {
+      problem = "Couldn't post its alerts: ${error.message}.";
+    }
+    final AlertsState shown = _state;
+    if (problem != null && shown is AlertsShown) {
+      _set(shown.copyWith(checking: false, problem: problem));
+      return;
+    }
+    await load();
   }
 
   /// Catch up with the feeder now, then list again.

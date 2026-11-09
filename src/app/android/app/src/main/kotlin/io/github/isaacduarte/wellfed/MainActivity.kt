@@ -47,7 +47,7 @@ class MainActivity : FlutterActivity() {
                 home = network
                 // Refused under a VPN that apps cannot bypass: the user
                 // must exclude the app from it.
-                connectivity.bindProcessToNetwork(network)
+                WifiNetworks.bindForActivity(connectivity, network)
             }
 
             override fun onLost(network: Network) {
@@ -55,7 +55,7 @@ class MainActivity : FlutterActivity() {
                 // This request matches the feeder's network too: while it is
                 // held, an unbound process would send the frame out by default.
                 if (feeder == null && connectivity.boundNetworkForProcess == network) {
-                    connectivity.bindProcessToNetwork(null)
+                    WifiNetworks.bindForActivity(connectivity, null)
                 }
             }
         }
@@ -109,6 +109,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "instant" -> result.success(KeepAliveService.setInstant(applicationContext, call.arguments == true))
                 "hold" -> result.success(KeepAliveService.hold(applicationContext, call.arguments as? String))
+                "instantRunning" -> result.success(KeepAliveService.instantRunning())
                 "network" -> result.success(WifiNetworks.current(connectivity))
                 else -> result.notImplemented()
             }
@@ -154,7 +155,7 @@ class MainActivity : FlutterActivity() {
         // may be gone: only a join this call made says the frame can go.
         feeder?.let { connectivity.unregisterNetworkCallback(it) }
         feeder = null
-        home?.let { connectivity.bindProcessToNetwork(it) }
+        home?.let { WifiNetworks.bindForActivity(connectivity, it) }
         val wifiManager = getSystemService(WifiManager::class.java)
         Log.i(
             TAG,
@@ -174,7 +175,7 @@ class MainActivity : FlutterActivity() {
         val callback =
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    connectivity.bindProcessToNetwork(network)
+                    WifiNetworks.bindForActivity(connectivity, network)
                     if (answered) return
                     answered = true
                     main.post { result.success(null) }
@@ -201,7 +202,7 @@ class MainActivity : FlutterActivity() {
     private fun leaveFeeder(result: MethodChannel.Result) {
         feeder?.let { connectivity.unregisterNetworkCallback(it) }
         feeder = null
-        home?.let { connectivity.bindProcessToNetwork(it) }
+        home?.let { WifiNetworks.bindForActivity(connectivity, it) }
 
         var left = HOME_WAIT_MS
         val poll =
@@ -209,7 +210,7 @@ class MainActivity : FlutterActivity() {
                 override fun run() {
                     val address = homeAddress()
                     if (address != null || left <= 0) {
-                        home?.let { connectivity.bindProcessToNetwork(it) }
+                        home?.let { WifiNetworks.bindForActivity(connectivity, it) }
                         result.success(address)
                         return
                     }
@@ -269,7 +270,7 @@ class MainActivity : FlutterActivity() {
         // new activity's sockets out over mobile data.
         if (current === this) {
             current = null
-            connectivity.bindProcessToNetwork(null)
+            WifiNetworks.bindForActivity(connectivity, null)
         }
         super.onDestroy()
     }

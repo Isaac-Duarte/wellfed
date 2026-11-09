@@ -27,6 +27,11 @@ object WifiNetworks {
     private var ours: Network? = null
     private val users = mutableSetOf<Any>()
 
+    // The network MainActivity bound the process to, which wins over ours: a
+    // background round that ends never unbinds what the activity bound,
+    // even the same network it bound itself first.
+    private var activity: Network? = null
+
     /**
      * Binds the process to the Wi-Fi network if nothing is bound, and
      * describes the network the process uses. Null with no Wi-Fi, or while
@@ -46,15 +51,33 @@ object WifiNetworks {
         return found
     }
 
-    /** `user` is done with the network. */
+    /** `user` is done with the network. Unbinds only what no one else claims. */
     @Synchronized
     fun release(context: Context, user: Any) {
         if (!users.remove(user) || users.isNotEmpty()) return
         val connectivity = context.getSystemService(ConnectivityManager::class.java) ?: return
-        if (ours != null && connectivity.boundNetworkForProcess == ours) {
+        if (activity == null && ours != null && connectivity.boundNetworkForProcess == ours) {
             connectivity.bindProcessToNetwork(null)
         }
         ours = null
+    }
+
+    /**
+     * MainActivity binds the process to `network`, or lets go with null. Its
+     * binding is its own from then on, whoever bound first. When it lets go
+     * while a background round still uses the Wi-Fi, the round keeps it.
+     * Whether Android bound it.
+     */
+    @Synchronized
+    fun bindForActivity(connectivity: ConnectivityManager, network: Network?): Boolean {
+        activity = network
+        if (network != null) {
+            ours = null
+            return connectivity.bindProcessToNetwork(network)
+        }
+        val kept = if (users.isEmpty()) null else wifi(connectivity)
+        ours = kept
+        return connectivity.bindProcessToNetwork(kept)
     }
 
     /** The network the app's own engine uses now, described, binding nothing. */

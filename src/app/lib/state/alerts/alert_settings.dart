@@ -26,6 +26,7 @@ final class AlertSettingsShown extends AlertSettingsState {
   AlertSettingsShown({
     required this.notificationsAllowed,
     required this.instant,
+    required this.instantRunning,
     required List<KindLevel> kinds,
     required Set<NoticeKind> mutedKinds,
     required Set<AlertLevel> mutedLevels,
@@ -39,6 +40,10 @@ final class AlertSettingsShown extends AlertSettingsState {
 
   /// "Instant while home" is on.
   final bool instant;
+
+  /// Instant mode runs now. On but not running, Android would not start it
+  /// again just now; it comes back when the app is opened.
+  final bool instantRunning;
 
   /// Every kind of alert, with its level, in the order the page lists them.
   final List<KindLevel> kinds;
@@ -79,14 +84,18 @@ class AlertSettingsController extends ChangeNotifier {
   AlertSettingsState get state => _state;
   AlertSettingsState _state = const AlertSettingsLoading();
 
-  /// Read the settings, and Android's word on notifications.
+  /// Read the settings, and Android's word on notifications. Instant mode
+  /// that is on but stopped starts again here, as the page is in front.
   Future<void> load({String? problem}) async {
     AlertSettingsState next;
     try {
       final AlertSettingsView settings = await _ports.settings();
+      bool running = settings.instant && await _ports.instantRunning();
+      if (settings.instant && !running) running = await _ports.resumeInstant();
       next = AlertSettingsShown(
         notificationsAllowed: await _ports.notificationsAllowed(),
         instant: settings.instant,
+        instantRunning: running,
         kinds: settings.kinds,
         mutedKinds: settings.mutedKinds.toSet(),
         mutedLevels: settings.mutedLevels.toSet(),
@@ -94,16 +103,26 @@ class AlertSettingsController extends ChangeNotifier {
       );
     } on BridgeError catch (error) {
       next = AlertSettingsFailed(error.message);
+    } on PlatformException catch (error) {
+      next = AlertSettingsFailed(error.message ?? error.code);
     }
     if (_disposed) return;
     _state = next;
     notifyListeners();
   }
 
-  /// Ask Android to let alerts through.
+  /// Ask Android to let alerts through; alerts still open are posted once
+  /// it does.
   Future<void> allowNotifications() async {
-    await _ports.askForNotifications();
-    await load();
+    String? problem;
+    try {
+      await _ports.askForNotifications(_book.feeders);
+    } on PlatformException catch (error) {
+      problem = "Couldn't ask Android: ${error.message ?? error.code}.";
+    } on BridgeError catch (error) {
+      problem = "Couldn't post the open alerts: ${error.message}.";
+    }
+    await load(problem: problem);
   }
 
   /// Turn "instant while home" on or off.

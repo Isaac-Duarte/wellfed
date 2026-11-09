@@ -29,11 +29,20 @@ abstract interface class AlertPorts {
   /// Turn "instant while home" on or off. Whether Android went along.
   Future<bool> setInstant({required bool on});
 
+  /// Whether instant mode runs now. On in the settings, it still stops when
+  /// the phone restarts or Android stops it, until the app opens again.
+  Future<bool> instantRunning();
+
+  /// Start instant mode again, as it is on in the settings, keeping that
+  /// setting whatever Android says. Whether it runs.
+  Future<bool> resumeInstant();
+
   /// Whether Android lets this app post notifications.
   Future<bool> notificationsAllowed();
 
-  /// Ask Android to let it; whether it does now.
-  Future<bool> askForNotifications();
+  /// Ask Android to let it; whether it does now. Once it does, alerts still
+  /// open for `feeders` are posted.
+  Future<bool> askForNotifications(List<KnownFeeder> feeders);
 }
 
 /// The Wi-Fi network as Kotlin described it, or none.
@@ -63,6 +72,7 @@ Future<void> catchUpRound({
   required List<KnownFeeder> feeders,
   required Future<PhoneNetwork> Function() network,
 }) async {
+  await Notices.sweep(dir);
   final PhoneNetwork here = await network();
   for (final KnownFeeder feeder in feeders) {
     Future<CatchUp> attempt(Attempt attempt) => catchUpWith(
@@ -136,12 +146,50 @@ class AppAlertPorts implements AlertPorts {
   }
 
   @override
+  Future<bool> instantRunning() async => await alertsChannel.invokeMethod<bool>('instantRunning') ?? false;
+
+  @override
+  Future<bool> resumeInstant() async => await alertsChannel.invokeMethod<bool>('instant', true) ?? false;
+
+  @override
   Future<bool> notificationsAllowed() => Notices.allowed();
 
   @override
-  Future<bool> askForNotifications() async {
-    final bool? granted = await Notices.ask();
-    return granted ?? await Notices.allowed();
+  Future<bool> askForNotifications(List<KnownFeeder> feeders) => _ask(feeders);
+}
+
+/// Ask Android to let the app post, then post what is still open for
+/// `feeders`: alerts held back while it could not. Whether it may now.
+Future<bool> _ask(List<KnownFeeder> feeders) async {
+  final bool allowed = await Notices.ask() ?? await Notices.allowed();
+  if (allowed) await postPending(feeders);
+  return allowed;
+}
+
+/// Post every change still to make for `feeders`, with no catch-up. A
+/// feeder not in `feeders` keeps its own for its next catch-up.
+Future<void> postPending(List<KnownFeeder> feeders) async {
+  final String dir = await AppAlertPorts._dir();
+  for (final FeederNotices each in await pendingNotices(dir: dir)) {
+    final KnownFeeder? feeder = feeders.where((feeder) => feeder.identity == each.identity).firstOrNull;
+    if (feeder == null) continue;
+    await Notices.deliver(dir: dir, identity: each.identity, name: feeder.name, changes: each.changes);
+  }
+}
+
+/// Ask Android once, unprompted, to let alerts through: when this phone first
+/// has a feeder to hear from. After that only the owner asks, from the alert
+/// screens. Whatever fails here leaves the app as it was.
+Future<void> offerNotifications(List<KnownFeeder> feeders) async {
+  if (feeders.isEmpty) return;
+  try {
+    if (await Notices.allowed()) return;
+    if (!await askForNotificationsOnce(dir: await AppAlertPorts._dir())) return;
+    await _ask(feeders);
+  } on PlatformException catch (error) {
+    debugPrint('notifications were not asked for: ${error.message ?? error.code}');
+  } on BridgeError catch (error) {
+    debugPrint('notifications were not asked for: ${error.message}');
   }
 }
 
@@ -155,6 +203,7 @@ class AppAlertPorts implements AlertPorts {
 Future<void> startAlerts() async {
   try {
     await Notices.init();
+    await Notices.sweep(await AppAlertPorts._dir());
     await alertsChannel.invokeMethod<void>('schedule');
     final AlertSettingsView settings = await alertSettings(dir: await AppAlertPorts._dir());
     if (settings.instant) await alertsChannel.invokeMethod<bool>('instant', true);

@@ -100,6 +100,19 @@ void main() {
       expect(find.textContaining('Last checked'), findsOneWidget);
     });
 
+    testWidgets("notifications that are off say so, and allowing them posts this feeder's", (tester) async {
+      final ports = FakeAlertPorts()
+        ..notices = [failedMeal()]
+        ..allowed = false;
+      await _showAlerts(tester, ports);
+
+      expect(find.textContaining('Notifications are off.', findRichText: true), findsOneWidget);
+      await tester.tap(find.text('Allow notifications'));
+      await settle(tester);
+      expect(ports.asked.single.single.identity, 'ab', reason: "this feeder's open alerts post");
+      expect(find.textContaining('Notifications are off.', findRichText: true), findsNothing);
+    });
+
     testWidgets('nothing wrong, and alerts too new for this app, say so', (tester) async {
       final ports = FakeAlertPorts()..unread = 2;
       await _showAlerts(tester, ports);
@@ -145,6 +158,32 @@ void main() {
       expect(shown.problem, contains("Android didn't let it start"));
     });
 
+    test('instant mode on but stopped starts again, and says so when Android refuses', () async {
+      final ports = FakeAlertPorts()..instant = true;
+      final settings = AlertSettingsController(ports, FakeBook());
+      addTearDown(settings.dispose);
+      await settings.load();
+      expect((settings.state as AlertSettingsShown).instantRunning, isTrue);
+      expect(ports.instant, isTrue);
+
+      ports
+        ..running = false
+        ..resumes = false;
+      await settings.load();
+      final shown = settings.state as AlertSettingsShown;
+      expect(shown.instant, isTrue, reason: 'still on in the settings');
+      expect(shown.instantRunning, isFalse);
+    });
+
+    testWidgets('instant mode that is not running says when it comes back', (tester) async {
+      final ports = FakeAlertPorts()
+        ..instant = true
+        ..resumes = false;
+      await _showSettings(tester, ports);
+      expect(find.textContaining("Instant isn't running.", findRichText: true), findsOneWidget);
+      expect(find.textContaining('It starts again when you open Wellfed.', findRichText: true), findsOneWidget);
+    });
+
     testWidgets('the page says alerts work only at home, and asks for notifications', (tester) async {
       final ports = FakeAlertPorts()..allowed = false;
       await _showSettings(tester, ports);
@@ -154,6 +193,7 @@ void main() {
       await tester.tap(find.text('Allow notifications'));
       await settle(tester);
       expect(find.text('Allow notifications'), findsNothing);
+      expect(ports.asked.single.single.identity, 'ab', reason: 'the open alerts post');
 
       await tester.tap(find.text('Instant while home'));
       await settle(tester);

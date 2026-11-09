@@ -52,6 +52,11 @@ class FakeAlertPorts implements AlertPorts {
   bool allowed = true;
   bool instantRefused = false;
 
+  /// Whether instant mode runs, and whether Android starts it again.
+  bool running = false;
+  bool resumes = true;
+  final asked = <List<KnownFeeder>>[];
+
   /// What the next read or change throws, as a damaged store would.
   BridgeError? fails;
   final checked = <List<KnownFeeder>>[];
@@ -110,12 +115,22 @@ class FakeAlertPorts implements AlertPorts {
   Future<bool> setInstant({required bool on}) async {
     final bool went = !(on && instantRefused);
     instant = on && went;
+    running = instant;
     return went;
   }
+
+  @override
+  Future<bool> instantRunning() async => running;
+
+  @override
+  Future<bool> resumeInstant() async => running = resumes;
 
   @override
   Future<bool> notificationsAllowed() async => allowed;
 
   @override
-  Future<bool> askForNotifications() async => allowed = true;
+  Future<bool> askForNotifications(List<KnownFeeder> feeders) async {
+    asked.add(feeders);
+    return allowed = true;
+  }
 }

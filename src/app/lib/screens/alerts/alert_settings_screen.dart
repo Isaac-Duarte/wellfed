@@ -102,6 +102,17 @@ class _Choices extends StatelessWidget {
           Notice(tone: Tone.warning, glyph: Glyph.warning, text: problem),
           const SizedBox(height: Space.s4),
         ],
+        if (shown.instant && !shown.instantRunning) ...[
+          const Notice(
+            tone: Tone.warning,
+            glyph: Glyph.warning,
+            lead: "Instant isn't running.",
+            text:
+                'Android stopped it and would not start it again just now. Until it runs, alerts come '
+                'about every 15 minutes. It starts again when you open Wellfed.',
+          ),
+          const SizedBox(height: Space.s4),
+        ],
         SettingsSection(
           'On this phone',
           Column(
@@ -121,7 +132,8 @@ class _Choices extends StatelessWidget {
                   subtitle: Text(
                     'Checks every minute while this phone is on the Wi-Fi, with a notice that stays while it '
                     'runs. It uses more battery. Off, Android checks about every 15 minutes, and less '
-                    'often while the phone sleeps. After a restart, open Wellfed to turn it back on.',
+                    'often while the phone sleeps. It stops when the phone restarts or Android stops it, '
+                    'and starts again when you open Wellfed.',
                     style: TextStyle(fontSize: Sizes.sm, color: c.textMuted),
                   ),
                   value: shown.instant,
