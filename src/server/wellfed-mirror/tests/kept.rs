@@ -73,7 +73,7 @@ fn kept() -> Kept {
     let mut kept = Kept::default();
     kept.watch.reached(Some("server".into()), at(0));
     kept.take(
-        table(4, false, vec![own, food.clone(), clock], at(10)),
+        table(4, false, vec![own, food, clock], at(10)),
         &context(at(10)),
     );
     kept.take(table(5, true, vec![own, failed], at(20)), &context(at(20)));
