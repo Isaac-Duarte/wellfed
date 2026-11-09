@@ -15,10 +15,11 @@ use std::time::Duration;
 
 use wellfed_app_bridge::api::alerts::{
     Attempt, CatchUp, CatchUpEnd, NoticeChange, NoticeDetail, PhoneNetwork, catch_up_with,
-    confirm_notices, dismiss_notice, feeder_alerts,
+    confirm_notices, dismiss_notice, feeder_alerts, forget_alerts,
 };
 use wellfed_app_bridge::api::keys::ClientKey;
 use wellfed_app_bridge::api::model::{FeedOutcome, FeedReason, NoticeKind};
+use wellfed_app_bridge::api::store::{AppStore, KnownFeeder, save_store};
 use wellfed_connect::Connection;
 use wellfed_feeder_sim::feeding;
 use wellfed_feeder_sim::flash::Flash;
@@ -47,6 +48,24 @@ fn home() -> PhoneNetwork {
         dns: vec!["192.168.1.1".into()],
         domains: None,
     }
+}
+
+/// The app's own file in `dir` lists exactly `identities`, as the app saves
+/// a feeder before it ever catches up with it.
+fn know(dir: &str, identities: &[&str]) {
+    let store = AppStore {
+        feeders: identities
+            .iter()
+            .map(|identity| KnownFeeder {
+                identity: (*identity).to_owned(),
+                name: "Kitchen".into(),
+                address: None,
+                manual_address: None,
+            })
+            .collect(),
+        ..AppStore::default()
+    };
+    save_store(&format!("{dir}/wellfed.json"), &store).unwrap();
 }
 
 fn hex(identity: &[u8; 32]) -> String {
@@ -113,11 +132,12 @@ fn posts(catch_up: &CatchUp) -> Vec<NoticeKind> {
 #[test]
 fn a_failed_meal_posts_once_and_a_dismissal_stays_on_the_phone() {
     bounded(async {
-        let dir = tempfile::tempdir().unwrap();
-        let dir = dir.path().display().to_string();
+        let kept = tempfile::tempdir().unwrap();
+        let dir = kept.path().display().to_string();
         let flash: Rc<Flash> = Flash::memory();
         let sim = Running::start(&flash, Some(*Keypair::from_secret(OWNER).public())).await;
         let identity = hex(&sim.identity);
+        know(&dir, &[&identity]);
 
         let first = catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
         assert_eq!(first.end, CatchUpEnd::Read);
@@ -178,6 +198,15 @@ fn a_failed_meal_posts_once_and_a_dismissal_stays_on_the_phone() {
             "dismissed here only, and not posted again"
         );
 
+        // Forgotten: a catch-up that ends after the app forgot the feeder
+        // (one already out, or a background round's) brings nothing back.
+        know(&dir, &[]);
+        forget_alerts(dir.clone(), identity.clone()).await.unwrap();
+        let forgotten = catch_up(&dir, &sim, &identity, Attempt::First, home()).await;
+        assert_eq!(forgotten.changes, []);
+        let listed = feeder_alerts(dir.clone(), identity.clone()).await.unwrap();
+        assert_eq!(listed.notices, []);
+
         assert_eq!(feeding::reserved(&flash), Some(1), "the owner's feed alone");
         sim.stop().await;
     });
@@ -186,11 +215,12 @@ fn a_failed_meal_posts_once_and_a_dismissal_stays_on_the_phone() {
 #[test]
 fn only_the_home_networks_last_try_counts_towards_unreachable() {
     bounded(async {
-        let dir = tempfile::tempdir().unwrap();
-        let dir = dir.path().display().to_string();
+        let kept = tempfile::tempdir().unwrap();
+        let dir = kept.path().display().to_string();
         let flash: Rc<Flash> = Flash::memory();
         let sim = Running::start(&flash, Some(*Keypair::from_secret(OWNER).public())).await;
         let identity = hex(&sim.identity);
+        know(&dir, &[&identity]);
         let address = sim.address;
 
         let reached = catch_up(&dir, &sim, &identity, Attempt::First, home()).await;

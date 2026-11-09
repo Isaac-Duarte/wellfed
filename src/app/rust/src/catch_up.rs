@@ -125,35 +125,34 @@ pub(crate) async fn catch_up(
     let [a, b, c, d, ..] = *target.keys.public();
     let own = Hex([a, b, c, d]);
     let changes = alerts::change(dir, |state| {
-        let mutes = state.settings.mutes.clone();
-        let context = Context {
-            now: now(),
-            mutes: &mutes,
-            own,
-        };
-        let watched = state.watched_mut(&identity);
-        match visit {
-            Visit::Table(cursor, view) => {
-                watched.watch.apply(cursor, &view, &context);
-                watched.watch.reached(target.network.clone(), context.now);
-                watched.address = address;
+        state.catch_up(dir, &identity, |watched, mutes| {
+            let context = Context {
+                now: now(),
+                mutes,
+                own,
+            };
+            match visit {
+                Visit::Table(cursor, view) => {
+                    watched.watch.apply(cursor, &view, &context);
+                    watched.watch.reached(target.network.clone(), context.now);
+                    watched.address = address;
+                }
+                Visit::Unchanged => {
+                    watched.watch.lapse(context.now);
+                    watched.watch.reached(target.network.clone(), context.now);
+                    watched.address = address;
+                }
+                Visit::Answered => watched.watch.reached(target.network.clone(), context.now),
+                Visit::NoAnswer if end == CatchUpEnd::Failed => {
+                    watched
+                        .watch
+                        .unanswered(target.network.as_deref(), &context);
+                }
+                Visit::NoAnswer => {}
             }
-            Visit::Unchanged => {
-                watched.watch.lapse(context.now);
-                watched.watch.reached(target.network.clone(), context.now);
-                watched.address = address;
-            }
-            Visit::Answered => watched.watch.reached(target.network.clone(), context.now),
-            Visit::NoAnswer if end == CatchUpEnd::Failed => {
-                watched
-                    .watch
-                    .unanswered(target.network.as_deref(), &context);
-            }
-            Visit::NoAnswer => {}
-        }
-        watched.watch.changes()
+        })
     })
-    .await?;
+    .await??;
     Ok((end, changes))
 }
 

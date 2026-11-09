@@ -44,8 +44,10 @@ Future<CatchUp> catchUpWith({
 );
 
 /// The changes Dart made: each posted notification's id and each removed one's.
-/// A change that went stale meanwhile is left for the next catch-up.
-Future<void> confirmNotices({
+/// A change that went stale meanwhile is left for the next catch-up. The ids
+/// to take off again: everything posted for a feeder forgotten while its
+/// changes were on the way.
+Future<Int32List> confirmNotices({
   required String dir,
   required String identity,
   required List<int> posted,
@@ -82,6 +84,18 @@ Future<List<NoticeChange>> dismissNotice({
 Future<AlertSettingsView> alertSettings({required String dir}) =>
     RustLib.instance.api.crateApiAlertsAlertSettings(dir: dir);
 
+/// Whether to ask Android now to let the app post: the first time only, at
+/// a moment the owner sees why (a feeder to hear from). Later asks are the
+/// owner's, from the alert screens.
+Future<bool> askForNotificationsOnce({required String dir}) =>
+    RustLib.instance.api.crateApiAlertsAskForNotificationsOnce(dir: dir);
+
+/// Every feeder's changes still to make, with no catch-up: for when Android
+/// starts letting the app post. Only alerts still open are posted; one that
+/// ended meanwhile was never kept.
+Future<List<FeederNotices>> pendingNotices({required String dir}) =>
+    RustLib.instance.api.crateApiAlertsPendingNotices(dir: dir);
+
 /// Save whether "instant while home" is on.
 Future<void> saveInstant({required String dir, required bool enabled}) =>
     RustLib.instance.api.crateApiAlertsSaveInstant(dir: dir, enabled: enabled);
@@ -113,6 +127,16 @@ Future<Int32List> forgetAlerts({
 /// the notice.
 Future<SetAside?> alertsSetAside({required String dir}) =>
     RustLib.instance.api.crateApiAlertsAlertsSetAside(dir: dir);
+
+/// Whether `alerts.json` was set aside with notifications it posted maybe
+/// still up: the app takes every alert notification off, then calls
+/// [`alerts_swept`].
+Future<bool> alertsSweepDue({required String dir}) =>
+    RustLib.instance.api.crateApiAlertsAlertsSweepDue(dir: dir);
+
+/// Every alert notification is off since `alerts.json` was set aside.
+Future<void> alertsSwept({required String dir}) =>
+    RustLib.instance.api.crateApiAlertsAlertsSwept(dir: dir);
 
 /// The owner read the notice of a set-aside `alerts.json`.
 Future<void> alertsNoticeRead({required String dir}) =>

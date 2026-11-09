@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "data": {
+    "settings": {
+      "instant": true,
+      "mutes": {
+        "kinds": [
+          "food_low"
+        ],
+        "levels": [
+          "security"
+        ]
+      },
+      "asked": true
+    },
+    "feeders": [
+      {
+        "identity": "abababababababababababababababababababababababababababababababab",
+        "address": "192.168.1.20:4433",
+        "watch": {
+          "cursor": {
+            "epoch": 3,
+            "boot": 12,
+            "generation": 9
+          },
+          "open": [
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "feed",
+                  "feed": 7
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T08:00:00Z",
+                  "alert": {
+                    "kind": "meal_failed",
+                    "feed": 7,
+                    "plan": 1,
+                    "requested": 2,
+                    "completed": 1,
+                    "outcome": "failed",
+                    "reason": "jammed"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:05Z",
+              "delivery": "posted",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "client",
+                  "kind": "client_joined",
+                  "client": "deadbeef",
+                  "at": null
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": null,
+                  "alert": {
+                    "kind": "client_joined",
+                    "client": "deadbeef",
+                    "role": "member",
+                    "path": "invite"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:05Z",
+              "delivery": "quiet",
+              "absent": "2027-01-15T08:00:30Z"
+            },
+            {
+              "key": {
+                "notice": "unreachable"
+              },
+              "notice": {
+                "notice": "unreachable",
+                "since": "2027-01-15T08:00:40Z"
+              },
+              "seen": "2027-01-15T08:00:50Z",
+              "delivery": "due",
+              "absent": null
+            },
+            {
+              "key": {
+                "notice": "alert",
+                "epoch": 3,
+                "key": {
+                  "key": "kind",
+                  "kind": "food_low"
+                }
+              },
+              "notice": {
+                "notice": "alert",
+                "open": {
+                  "at": "2027-01-15T07:59:00Z",
+                  "alert": {
+                    "kind": "food_low"
+                  }
+                }
+              },
+              "seen": "2027-01-15T08:00:05Z",
+              "delivery": "dismissed",
+              "absent": null
+            }
+          ],
+          "removing": [
+            {
+              "notice": "alert",
+              "epoch": 2,
+              "key": {
+                "key": "feed",
+                "feed": 7
+              }
+            }
+          ],
+          "unread": 1,
+          "reach": {
+            "home": "5f3a",
+            "failures": 2,
+            "first_failure": "2027-01-15T08:01:00Z",
+            "reached": "2027-01-15T08:00:20Z"
+          }
+        }
+      }
+    ],
+    "set_aside": {
+      "kind": "alerts",
+      "moved_to": "/data/alerts.json.damaged-1",
+      "reason": "version 2, where this build reads 1",
+      "at_ms": 1800000000000
+    },
+    "sweep": true
+  }
+}

@@ -257,16 +257,21 @@ pub async fn catch_up_with(
 }
 
 /// The changes Dart made: each posted notification's id and each removed one's.
-/// A change that went stale meanwhile is left for the next catch-up.
+/// A change that went stale meanwhile is left for the next catch-up. The ids
+/// to take off again: everything posted for a feeder forgotten while its
+/// changes were on the way.
 pub async fn confirm_notices(
     dir: String,
     identity: String,
     posted: Vec<i32>,
     removed: Vec<i32>,
-) -> Result<(), BridgeError> {
+) -> Result<Vec<i32>, BridgeError> {
     let feeder = identity_of(&identity)?;
     alerts::change(Path::new(&dir), |state| {
-        let watch = &mut state.watched_mut(&identity).watch;
+        let Some(watched) = state.watched_mut(&identity) else {
+            return posted;
+        };
+        let watch = &mut watched.watch;
         for change in watch.changes() {
             let made = match &change {
                 Change::Post(tracked) => posted.contains(&tracked.key.notification_id(&feeder)),
@@ -276,6 +281,7 @@ pub async fn confirm_notices(
                 watch.confirm(&change);
             }
         }
+        Vec::new()
     })
     .await
 }
@@ -311,7 +317,10 @@ pub async fn dismiss_notice(
 ) -> Result<Vec<NoticeChange>, BridgeError> {
     let feeder = identity_of(&identity)?;
     let changes = alerts::change(Path::new(&dir), |state| {
-        let watch = &mut state.watched_mut(&identity).watch;
+        let Some(watched) = state.watched_mut(&identity) else {
+            return Vec::new();
+        };
+        let watch = &mut watched.watch;
         let key = watch
             .listed()
             .map(|tracked| tracked.key)
@@ -339,6 +348,34 @@ pub async fn alert_settings(dir: String) -> Result<AlertSettingsView, BridgeErro
         muted_kinds: state.settings.mutes.kinds,
         muted_levels: state.settings.mutes.levels,
     })
+}
+
+/// Whether to ask Android now to let the app post: the first time only, at
+/// a moment the owner sees why (a feeder to hear from). Later asks are the
+/// owner's, from the alert screens.
+pub async fn ask_for_notifications_once(dir: String) -> Result<bool, BridgeError> {
+    alerts::change(Path::new(&dir), |state| {
+        !std::mem::replace(&mut state.settings.asked, true)
+    })
+    .await
+}
+
+/// Every feeder's changes still to make, with no catch-up: for when Android
+/// starts letting the app post. Only alerts still open are posted; one that
+/// ended meanwhile was never kept.
+pub async fn pending_notices(dir: String) -> Result<Vec<FeederNotices>, BridgeError> {
+    let state = alerts::read(Path::new(&dir)).await?;
+    state
+        .feeders
+        .iter()
+        .map(|watched| {
+            let feeder = identity_of(&watched.identity)?;
+            Ok(FeederNotices {
+                identity: watched.identity.clone(),
+                changes: views(&feeder, &watched.watch.changes()),
+            })
+        })
+        .collect()
 }
 
 /// Save whether "instant while home" is on.
@@ -404,18 +441,14 @@ fn toggle<T: PartialEq>(list: &mut Vec<T>, item: T, on: bool) {
 pub async fn forget_alerts(dir: String, identity: String) -> Result<Vec<i32>, BridgeError> {
     let feeder = identity_of(&identity)?;
     alerts::change(Path::new(&dir), |state| {
-        let ids = state
-            .watched(&identity)
-            .map(|watched| {
-                watched
-                    .watch
-                    .every_key()
-                    .map(|key| key.notification_id(&feeder))
-                    .collect()
+        state
+            .forget(&identity)
+            .iter()
+            .map(|change| match change {
+                Change::Post(tracked) => tracked.key.notification_id(&feeder),
+                Change::Remove(key) => key.notification_id(&feeder),
             })
-            .unwrap_or_default();
-        state.feeders.retain(|watched| watched.identity != identity);
-        ids
+            .collect()
     })
     .await
 }
@@ -424,6 +457,18 @@ pub async fn forget_alerts(dir: String, identity: String) -> Result<Vec<i32>, Br
 /// the notice.
 pub async fn alerts_set_aside(dir: String) -> Result<Option<SetAside>, BridgeError> {
     Ok(alerts::read(Path::new(&dir)).await?.set_aside)
+}
+
+/// Whether `alerts.json` was set aside with notifications it posted maybe
+/// still up: the app takes every alert notification off, then calls
+/// [`alerts_swept`].
+pub async fn alerts_sweep_due(dir: String) -> Result<bool, BridgeError> {
+    Ok(alerts::read(Path::new(&dir)).await?.sweep)
+}
+
+/// Every alert notification is off since `alerts.json` was set aside.
+pub async fn alerts_swept(dir: String) -> Result<(), BridgeError> {
+    alerts::change(Path::new(&dir), |state| state.sweep = false).await
 }
 
 /// The owner read the notice of a set-aside `alerts.json`.
