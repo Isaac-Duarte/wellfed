@@ -36,9 +36,12 @@ class SettingsButton extends StatelessWidget {
 
 /// The app's own settings (15.1).
 class AppSettingsScreen extends StatefulWidget {
-  const AppSettingsScreen({super.key, required this.book, required this.newBackups, this.server});
+  const AppSettingsScreen({super.key, required this.book, required this.newBackups, this.server, this.alerts = false});
 
   final FeederBook book;
+
+  /// This phone watches for alerts, so the page links to their settings.
+  final bool alerts;
 
   /// The owner's server's screens: its row opens the account, or adding one.
   final ServerScreens? server;
@@ -151,6 +154,16 @@ class _AppSettingsScreenState extends State<AppSettingsScreen> {
                 ],
               ),
             ),
+            if (widget.alerts)
+              SettingsSection(
+                'Alerts',
+                SettingsLink(
+                  'Alerts at home',
+                  'Notifications, instant checks and what to mute',
+                  first: true,
+                  onTap: () => unawaited(context.push('/alert-settings')),
+                ),
+              ),
             if (widget.server case final ServerScreens server?)
               SettingsSection(
                 'Home server',

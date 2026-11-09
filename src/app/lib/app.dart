@@ -3,14 +3,18 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:wellfed/platform/alert_ports.dart';
 import 'package:wellfed/platform/feeder_ports.dart';
 import 'package:wellfed/platform/host.dart';
 import 'package:wellfed/platform/install_ports.dart';
 import 'package:wellfed/platform/join_ports.dart';
 import 'package:wellfed/platform/menu.dart';
+import 'package:wellfed/platform/notices.dart';
 import 'package:wellfed/platform/pairing_ports.dart';
 import 'package:wellfed/platform/phone.dart';
 import 'package:wellfed/platform/server_ports.dart';
+import 'package:wellfed/screens/alerts/alert_settings_screen.dart';
+import 'package:wellfed/screens/alerts/alerts_screen.dart';
 import 'package:wellfed/screens/desktop/sidebar_shell.dart';
 import 'package:wellfed/screens/feeder/shell.dart';
 import 'package:wellfed/screens/feeder/tabs.dart';
@@ -26,6 +30,8 @@ import 'package:wellfed/screens/setup/recover_screen.dart';
 import 'package:wellfed/screens/setup/setup_screen.dart';
 import 'package:wellfed/src/rust/api/server.dart';
 import 'package:wellfed/src/rust/api/store.dart';
+import 'package:wellfed/state/alerts/alert_settings.dart';
+import 'package:wellfed/state/alerts/alerts.dart';
 import 'package:wellfed/state/fleet/adopt.dart';
 import 'package:wellfed/state/fleet/app_state.dart';
 import 'package:wellfed/state/fleet/fleet.dart';
@@ -54,6 +60,7 @@ GoRouter wellfedRouter({
   required WidgetBuilder root,
   required Map<String, WidgetBuilder> pages,
   Widget Function(BuildContext, String identity, int tab)? feeder,
+  Widget Function(BuildContext, String identity)? alerts,
   Widget Function(BuildContext, GoRouter router, GlobalKey<NavigatorState> pages, Widget child)? shell,
 }) {
   final List<RouteBase> routes = [
@@ -77,6 +84,12 @@ GoRouter wellfedRouter({
             int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
           ),
         ),
+      ),
+    if (alerts != null)
+      GoRoute(
+        path: '/alerts/:id',
+        builder: (context, state) =>
+            KeyedSubtree(key: ValueKey(state.uri.toString()), child: alerts(context, state.pathParameters['id'] ?? '')),
       ),
   ];
   if (shell == null) return GoRouter(routes: routes);
@@ -274,11 +287,39 @@ class _WellfedAppState extends State<WellfedApp> {
   );
   late final AppLifecycleListener _lifecycle;
 
+  /// Alerts at home: Android only, where this phone watches in the
+  /// background.
+  static final bool _alerts = Platform.isAndroid;
+  late final _alertPorts = AppAlertPorts(widget.app.key);
+  StreamSubscription<String>? _taps;
+
   @override
   void initState() {
     super.initState();
     _lifecycle = AppLifecycleListener(onResume: _fleet.resumed);
+    if (_alerts) {
+      _watched = {for (final KnownFeeder feeder in widget.app.feeders) feeder.identity};
+      widget.app.addListener(_feedersChanged);
+      // A tap on an alert opens its feeder's alerts.
+      _taps = Notices.tapped.listen(_openAlerts);
+      unawaited(Notices.launchedFor().then((identity) => identity == null ? null : _openAlerts(identity)));
+    }
   }
+
+  /// The feeders this phone knew when the book last changed.
+  Set<String> _watched = {};
+
+  /// A feeder this phone forgot takes its alerts with it, and their
+  /// notifications come off.
+  void _feedersChanged() {
+    final Set<String> now = {for (final KnownFeeder feeder in widget.app.feeders) feeder.identity};
+    for (final String gone in _watched.difference(now)) {
+      unawaited(forgetFeederAlerts(gone));
+    }
+    _watched = now;
+  }
+
+  void _openAlerts(String identity) => unawaited(_router.push('/alerts/$identity'));
 
   late final GoRouter _router = wellfedRouter(
     // The server's feeders count as the phone's own do: with none at all,
@@ -297,8 +338,26 @@ class _WellfedAppState extends State<WellfedApp> {
         },
       ),
     },
-    feeder: (context, identity, tab) =>
-        FeederRoute(fleet: _fleet, identity: identity, initialTab: tab, server: _serverScreens),
+    feeder: (context, identity, tab) => FeederRoute(
+      fleet: _fleet,
+      identity: identity,
+      initialTab: tab,
+      server: _serverScreens,
+      openAlerts: _alerts ? (context, identity) => unawaited(context.push('/alerts/$identity')) : null,
+    ),
+    alerts: _alerts
+        ? (context, identity) {
+            final KnownFeeder? known = widget.app.feeders.where((feeder) => feeder.identity == identity).firstOrNull;
+            if (known == null) {
+              return const Scaffold(body: Center(child: Text('This phone no longer knows that feeder.')));
+            }
+            return AlertsScreen(
+              name: known.name,
+              newController: () => FeederAlertsController(_alertPorts, known),
+              openSettings: () => unawaited(context.push('/alert-settings')),
+            );
+          }
+        : null,
     shell: isDesktop
         ? (context, router, pages, child) => DesktopShell(
             fleet: _fleet,
@@ -315,7 +374,11 @@ class _WellfedAppState extends State<WellfedApp> {
         book: widget.app,
         newBackups: () => BackupsFlow(widget.app, AppBackupPorts(widget.app.key)),
         server: _serverScreens,
+        alerts: _alerts,
       ),
+      if (_alerts)
+        '/alert-settings': (context) =>
+            AlertSettingsScreen(newController: () => AlertSettingsController(_alertPorts, widget.app)),
       '/join': (context) =>
           JoinScreen(newFlow: () => JoinFlow(widget.app, AppJoinPorts(widget.app.key)), canScan: hostCanScan),
       '/recover': (context) => RecoverScreen(newFlow: () => RecoverFlow(widget.app, _pairing, _phone)),
@@ -325,6 +388,8 @@ class _WellfedAppState extends State<WellfedApp> {
 
   @override
   void dispose() {
+    unawaited(_taps?.cancel());
+    if (_alerts) widget.app.removeListener(_feedersChanged);
     _lifecycle.dispose();
     _router.dispose();
     _adopt.dispose();

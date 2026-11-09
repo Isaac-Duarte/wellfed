@@ -80,6 +80,12 @@ class Discovery {
     return out.stream;
   }
 
+  /// How long Android may take to say discovery stopped. Only its callback
+  /// ends the wait, and a catch-up round waits on it, so one that never comes
+  /// must not stall every later round. The plugin lets go of its multicast
+  /// lock as the stop goes in, before this wait.
+  static const _stopWait = Duration(seconds: 3);
+
   static Stream<T> _nsd<T>(String type, T? Function(nsd.Service) read) {
     late final StreamController<T> out;
     nsd.Discovery? discovery;
@@ -88,7 +94,7 @@ class Discovery {
     Future<void> stop() async {
       final running = discovery;
       discovery = null;
-      if (running != null) await nsd.stopDiscovery(running);
+      if (running != null) await nsd.stopDiscovery(running).timeout(_stopWait, onTimeout: () {});
     }
 
     out = StreamController<T>(
@@ -97,7 +103,7 @@ class Discovery {
           final nsd.Discovery started = await nsd.startDiscovery(type, ipLookupType: nsd.IpLookupType.v4);
           // Cancelled while starting: stop what just started.
           if (cancelled) {
-            await nsd.stopDiscovery(started);
+            await nsd.stopDiscovery(started).timeout(_stopWait, onTimeout: () {});
             return;
           }
           discovery = started;

@@ -99,6 +99,20 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ALERTS_CHANNEL).setMethodCallHandler {
+            call,
+            result ->
+            when (call.method) {
+                "schedule" -> {
+                    CatchUpWorker.schedule(applicationContext)
+                    result.success(null)
+                }
+                "instant" -> result.success(KeepAliveService.setInstant(applicationContext, call.arguments == true))
+                "hold" -> result.success(KeepAliveService.hold(applicationContext, call.arguments as? String))
+                "network" -> result.success(WifiNetworks.current(connectivity))
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -266,6 +280,7 @@ class MainActivity : FlutterActivity() {
         const val TAG = "wellfed"
         const val CHANNEL = "io.github.isaacduarte.wellfed/wifi"
         const val SCREEN_CHANNEL = "io.github.isaacduarte.wellfed/screen"
+        const val ALERTS_CHANNEL = "io.github.isaacduarte.wellfed/alerts"
         const val SETUP_PREFIX = "PL-AF103-"
         const val JOIN_TIMEOUT_MS = 60_000
         const val HOME_WAIT_MS = 30_000L
